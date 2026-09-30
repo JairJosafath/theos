@@ -7,11 +7,13 @@ code for it goes.
 ## Layers
 
 ```
-     cmd/main.go                 cmd/c4session             ui/ (server.mjs + React)
-     (operator manager)          (Session client CLI)      (read-only UI)
-          │                            │                         │
-          ▼                            ▼                         ▼
-  internal/controller          internal/sessionclient    Kubernetes API, GET only
+     cmd/main.go            cmd/c4session          cmd/c4agent               ui/ (server.mjs + React)
+     (operator manager)     (Session client CLI)   (runner in a sandbox)     (read-only UI)
+          │                       │                      │                        │
+          ▼                       ▼                      ▼                        ▼
+  internal/controller     internal/sessionclient  internal/agentrunner     Kubernetes API, GET only
+                                                  (git + agent CLI; result
+                                                   in the termination message)
      │        │        │               │
      │        │        └───────────┐   └──► Kubernetes API (Sessions)
      ▼        ▼                    ▼
@@ -30,6 +32,7 @@ every scaffolded repository.
 | API types | `api/v1alpha1` | apimachinery | anything under `internal/` |
 | Business rules | `internal/model`, `internal/scaffold` | the standard library, `text/template`, YAML; `scaffold` may use `model` | Kubernetes, controller-runtime, `net/http`, `api/`, other `internal/` layers |
 | Adapters | `internal/gitprovider` | `net/http`, go-git, business rules | Kubernetes, controller-runtime, `api/`, `internal/controller` |
+| Sandbox runner | `internal/agentrunner`, `cmd/c4agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/gitprovider`, `internal/controller` |
 | Clients of the API | `internal/controller`, `internal/sessionclient` | everything above | `cmd/` |
 | Assets | `features` | `internal/scaffold` | everything else |
 | Entry points | `cmd/*` | everything | nothing imports them |
@@ -81,3 +84,30 @@ but the resource shapes.
 
 Each step is safe to repeat: see "Two rules keep this safe to retry" in
 [design.md](design.md#scaffolding-a-container).
+
+## Flow of one Task
+
+1. `internal/controller` reads the Task live (not from the cache: steps have side
+   effects), adopts it under its Container, and gathers the facts: is the
+   Container Ready, is an earlier Task still active on it, what did the current
+   sandbox report, what do the checks say.
+2. `internal/model.NextTaskStep` turns the facts into one step: wait, start the
+   implementer or reviewer, open the pull request, merge, next round, or fail.
+3. To start a run, the controller makes sure the Container's agent bot user exists
+   (`gitprovider.EnsureAgentAccess`, token in Secret `<container>-agent-git`) and
+   creates an Agent Sandbox `Sandbox` owned by the Task. Its pod mounts no
+   ServiceAccount token; the project's NetworkPolicy lets it reach only DNS, the Git
+   host and public HTTPS.
+4. In the pod, `cmd/c4agent` reads its job from the environment, and
+   `internal/agentrunner` clones with the bot's token, runs the agent, runs
+   `make check` and sends the agent back while it fails, pushes the branch, and
+   writes one JSON `Result` to the termination message. A reviewer run answers
+   with a JSON verdict instead.
+5. The controller reads the result from the pod status, opens the pull request,
+   polls the combined commit status until CI is done, runs the reviewer, and
+   squash-merges on approval. Status is patched with an optimistic lock, so a
+   stale write is retried rather than repeating a step.
+
+The operator never branches on a Container type: `internal/controller/typeneutral_test.go`
+fails when controller, scaffold or runner code names one. Everything type-specific
+lives in the catalog's templates.

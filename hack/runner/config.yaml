@@ -1,0 +1,14 @@
+# Gitea runner settings; see `gitea-runner config generate` for every option.
+log:
+  level: info
+runner:
+  file: /data/.runner
+  # One job at a time: Gradle builds need most of the node's memory.
+  capacity: 1
+  timeout: 1h
+  labels:
+    - "flutter:host"
+cache:
+  enabled: false
+host:
+  workdir_parent: /data/work

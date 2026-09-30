@@ -1,0 +1,20 @@
+apiVersion: c4.factory.io/v1alpha1
+kind: Task
+metadata:
+  name: audio-cutter-v1
+  namespace: toolbox
+spec:
+  containerRef: {name: audio-cutter}
+  agentRef: {name: claude}
+  goal: |
+    Build version 1 of Audio Cutter: trim audio and make ringtones.
+    - Open an audio file (mp3, m4a, wav, ogg, flac) from the system picker.
+    - Show its waveform; select a range with draggable start and end handles, and
+      play the selection.
+    - Trim to the selection or cut the selection out; fade in and fade out.
+    - Export as mp3, m4a or wav; save and share.
+    - Record from the microphone (ask for the permission when recording starts),
+      then edit the recording the same way.
+    Suggested packages: ffmpeg_kit_flutter_new_audio (the LGPL variant; keep ffmpeg
+    behind a small interface of your own), just_audio, record, audio_waveforms.
+    Keep the release manifest free of the INTERNET permission.

@@ -11,7 +11,8 @@ one Git repository per Container from pinned templates, then only reports. Read
 ```
 cmd/main.go                        Manager entry (registers controllers, Session feature flags)
 cmd/c4session/                     Session client CLI, run in devcontainers
-api/v1alpha1/*_types.go            CRD schemas for all twelve kinds (+kubebuilder markers)
+cmd/c4agent/                       Task runner, run in agent sandboxes
+api/v1alpha1/*_types.go            CRD schemas for all fifteen kinds (+kubebuilder markers)
 api/v1alpha1/shared_types.go       Refs, Container types, condition names and labels
 api/v1alpha1/zz_generated.*        Auto-generated (DO NOT EDIT)
 internal/controller/*              Reconcilers: read resources, call rules, write status
@@ -19,18 +20,25 @@ internal/model/                    Pure business rules: choices, relationships, 
 internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity, commit trailers
 internal/gitprovider/              GitProvider interface and the Gitea implementation (REST + go-git)
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete
+internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report
 features/src/c4session/            The c4session devcontainer feature, embedded by the operator
 config/crd/bases/*                 Generated CRDs (DO NOT EDIT)
 config/rbac/role.yaml              Generated RBAC (DO NOT EDIT)
 config/policy/                     ValidatingAdmissionPolicy (Project name equals namespace)
 config/gitea/                      Gitea for the test environment
 config/samples/webshop/            The sample story (edit these)
+config/samples/toolbox/            The agent factory story: six tool apps, Agents and Tasks
+config/runner/                     The Gitea CI runner for Container repositories
 config/ui/                         The read-only UI's Deployment and read-only RBAC
 templates/<name>/                  Template repositories, pushed and tagged into Gitea by the seed job
 templates/versions.txt             The tag each template is released at
 hack/testenv.mk                    Make targets for the Kind test environment
 hack/seed/                         The seed job image and manifests
 hack/session/                      The Session client image and the test Session pod
+hack/toolchain/                    The Flutter toolchain image CI, agents and devcontainers share
+hack/runner/, hack/agent/          The CI runner and agent images, built on the toolchain
+hack/render/                       Renders templates locally, the way the operator scaffolds
+test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox)
 test/e2e/                          End-to-end tests against the Kind cluster (make e2e)
 ui/                                Read-only UI (React + a GET-only proxy)
 docs/                              Design, architecture, plans and screenshots
@@ -124,8 +132,8 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
 kubebuilder create api --group c4 --version v1alpha1 --kind <Kind> --resource --controller
 ```
 
-Catalog kinds (Framework, Compute, Deployment, Connector) and GitProvider have no
-reconciler of their own in v1; create them with `--controller=false`.
+Catalog kinds (Framework, Standard, Compute, Deployment, Connector, Agent) and
+GitProvider have no reconciler of their own; create them with `--controller=false`.
 
 ### Controller for Core Kubernetes Types
 ```bash
@@ -148,6 +156,9 @@ make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
 make test-gitea          # gitprovider against the seeded Gitea
+make toolchain runner agent-sandbox agent-image  # CI runner, Agent Sandbox, agent image
+make toolbox             # The toolbox story; then kubectl apply -k config/samples/toolbox/tasks
+make claude-secret CLAUDE_TOKEN=...  # The real agent's token, from `claude setup-token`
 make e2e                 # All of the above, then check every milestone in Kind
 ```
 

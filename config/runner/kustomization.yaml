@@ -1,0 +1,9 @@
+# The Gitea CI runner for the test environment: `make runner`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: c4factory-testenv
+    includeTemplates: true
+resources:
+  - deployment.yaml

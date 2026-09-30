@@ -37,7 +37,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 
 ## The model
 
-Twelve namespaced kinds in `c4.factory.io/v1alpha1`: six tell the story, one tracks work, and five configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
+Fifteen namespaced kinds in `c4.factory.io/v1alpha1`: six tell the story, two track work (Session and, since v2, Task), and seven configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
 
 &#91;embedded content: ownership tree · 9 boxes, 1 relationship\]
 
@@ -54,6 +54,9 @@ Solid arrows mean "owns": deleting a parent deletes its children. The dashed Rel
 | Session | Container | `spec.containerRef` | An agent or human at work in a devcontainer |
 | GitProvider | Project | none | Where repositories are created, with credentials |
 | Framework, Compute, Deployment, Connector | Project | none | Catalog entries: a pinned template plus the Container types it supports |
+| Standard (v2) | Project | none | Catalog entry: coding rules, checks and CI, rendered right after the Framework it fits |
+| Agent (v2) | Project | none | Who does Tasks: an image with the agent CLI and toolchain, credentials and limits |
+| Task (v2) | Container | `spec.containerRef` | A goal for a Container, implemented, checked, reviewed and merged by agents |
 
 The story kinds, abbreviated:
 
@@ -168,6 +171,41 @@ In v1, the client authenticates with a per-namespace ServiceAccount that may onl
 - **Container phase:** `Pending`, `Scaffolding`, then `Ready` or `Failed`, with conditions `ReferencesResolved`, `ChoicesValid`, `RepositoryCreated` and `Scaffolded`.
 - **Roll-up:** SoftwareSystem and Project show counts, such as "3 of 4 containers Ready, 2 active sessions".
 - **kubectl:** printer columns (Type, Phase, Sessions, Age) make `kubectl get containers` a quick text view.
+
+## v2: agents build the apps
+
+Settled step by step on 30 September 2026; the full design is
+[superpowers/specs/2026-09-30-agent-factory-design.md](superpowers/specs/2026-09-30-agent-factory-design.md)
+and the plan [plans/agent-factory.md](plans/agent-factory.md).
+
+Agents build complete apps when asked, and stay inside their workspace while they
+do. Quality does not come from trusting the agent but from what the platform
+enforces.
+
+- **A new Container type, `mobile-app`.** The operator never branches on a type;
+  a test keeps it that way. A later `function` type (AWS serverless) is one enum
+  value plus templates.
+- **Standard: the rules as a layer.** Lint and format config, `AGENTS.md`, offline
+  style digests, the `make check` contract and its CI workflow, rendered right after
+  the Framework it lists. A Container with a Standard gets `main` protected by
+  required checks at scaffold time, and `status.checks` reports CI on `main`.
+- **CI in Gitea.** Gitea Actions with a runner in the cluster on the same toolchain
+  image the agents and devcontainers use.
+- **Task: a goal for a Container.** The operator runs the Agent in an
+  [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox), which works on
+  branch `task/<name>`; opens a pull request; waits for CI; runs the Agent again as
+  reviewer; and squash-merges on approval. Failed checks, requested changes or a
+  failed run start the next round with that feedback, up to the Agent's
+  `maxRounds`. One Task works on a Container at a time.
+- **The fence.** The sandbox pod has no ServiceAccount token and reports through
+  its termination message; a per-Container Gitea bot user can write to that one
+  repository only, and `main` takes no pushes; a per-project NetworkPolicy allows
+  only DNS, the Git host and public HTTPS; each run has a deadline. The Claude token
+  is readable inside the sandbox; Agent Substrate's egress credential injection is
+  the later fix.
+- **App values are needs, not platform rules.** "Works offline, no login, no ads"
+  is a need on the Pocket Tools SoftwareSystem in `config/samples/toolbox`; the
+  agents get the needs with every Task.
 
 ## Out of scope for v1
 

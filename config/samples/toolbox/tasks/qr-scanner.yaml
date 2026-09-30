@@ -1,0 +1,21 @@
+apiVersion: c4.factory.io/v1alpha1
+kind: Task
+metadata:
+  name: qr-scanner-v1
+  namespace: toolbox
+spec:
+  containerRef: {name: qr-scanner}
+  agentRef: {name: claude}
+  goal: |
+    Build version 1 of QR Scanner: scan and make QR codes and barcodes.
+    - Live camera scan of QR, EAN/UPC, Code 128, DataMatrix and PDF417, with torch
+      and zoom; ask for the camera permission only when scanning starts, and explain
+      a denial with a way to the settings.
+    - Scan from a gallery image.
+    - Understand the result: URL (show the full URL and ask before opening it),
+      Wi-Fi, contact, plain text; copy and share.
+    - A local history (newest first, delete, clear all), stored on the phone.
+    - A generator for text, URL and Wi-Fi codes; save or share the code as PNG.
+    Suggested packages: mobile_scanner (it bundles its ML Kit model, so it works
+    offline), qr_flutter, sqflite or shared_preferences, share_plus.
+    Keep the release manifest free of the INTERNET permission.

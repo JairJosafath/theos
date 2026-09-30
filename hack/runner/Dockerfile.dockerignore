@@ -1,0 +1,3 @@
+# Build context for hack/runner/Dockerfile: only the runner files.
+**
+!hack/runner/**

@@ -1,0 +1,149 @@
+# Who uses what, and what it is made of: six tool apps that do one job well,
+# with nothing between the person and the job.
+apiVersion: c4.factory.io/v1alpha1
+kind: Person
+metadata:
+  name: everyday-user
+spec:
+  displayName: Everyday user
+  description: Someone with a phone and a small job to do, who wants it done and nothing else.
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: pocket-tools
+spec:
+  displayName: Pocket Tools
+  description: Everyday tool apps that work on the phone alone.
+  needs:
+  - Works fully offline; the release app asks for no INTERNET permission
+  - No account, no login, no sign-up
+  - No ads, no tracking, no analytics, no paywalls; every feature is free
+  - Files stay on the phone unless the person shares them
+  - Usable one-handed, readable at large text sizes, and accessible
+  kpis:
+  - Time from opening the app to the job done
+  - Crash-free sessions
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: everyday-user-uses-pocket-tools
+spec:
+  source: {kind: Person, name: everyday-user}
+  target: {kind: SoftwareSystem, name: pocket-tools}
+  description: Gets small jobs done
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: image-shrink
+spec:
+  softwareSystemRef:
+    name: pocket-tools
+  displayName: Image Shrink
+  description: Compresses, resizes and converts photos, down to a target file size.
+  type: mobile-app
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: flutter-app
+  standardRef:
+    name: flutter-standard
+  deploymentRef:
+    name: android-release
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: qr-scanner
+spec:
+  softwareSystemRef:
+    name: pocket-tools
+  displayName: QR Scanner
+  description: Scans and makes QR codes and barcodes, with a local history.
+  type: mobile-app
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: flutter-app
+  standardRef:
+    name: flutter-standard
+  deploymentRef:
+    name: android-release
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: doc-scanner
+spec:
+  softwareSystemRef:
+    name: pocket-tools
+  displayName: Doc Scanner
+  description: Turns photos of paper into clean, cropped PDFs.
+  type: mobile-app
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: flutter-app
+  standardRef:
+    name: flutter-standard
+  deploymentRef:
+    name: android-release
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: audio-cutter
+spec:
+  softwareSystemRef:
+    name: pocket-tools
+  displayName: Audio Cutter
+  description: Trims, joins and fades audio clips, and makes ringtones.
+  type: mobile-app
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: flutter-app
+  standardRef:
+    name: flutter-standard
+  deploymentRef:
+    name: android-release
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: bg-eraser
+spec:
+  softwareSystemRef:
+    name: pocket-tools
+  displayName: Background Eraser
+  description: Removes the background of a photo on the phone, with a manual touch-up brush.
+  type: mobile-app
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: flutter-app
+  standardRef:
+    name: flutter-standard
+  deploymentRef:
+    name: android-release
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: photo-editor
+spec:
+  softwareSystemRef:
+    name: pocket-tools
+  displayName: Photo Editor
+  description: Crops, adjusts, filters and annotates photos.
+  type: mobile-app
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: flutter-app
+  standardRef:
+    name: flutter-standard
+  deploymentRef:
+    name: android-release

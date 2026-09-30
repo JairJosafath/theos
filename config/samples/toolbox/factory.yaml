@@ -1,0 +1,85 @@
+# Where repositories go, the Flutter catalog, and the Agents that do Tasks.
+# Templates are pinned to tags pushed by the seed job (templates/versions.txt).
+apiVersion: c4.factory.io/v1alpha1
+kind: GitProvider
+metadata:
+  name: gitea
+spec:
+  provider: gitea
+  url: http://gitea.gitea.svc.cluster.local:3000
+  owner: toolbox
+  credentialsSecretRef:
+    name: gitea-credentials
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Framework
+metadata:
+  name: flutter-app
+spec:
+  displayName: Flutter app (Android)
+  description: A Flutter app for Android in the recommended layout, with widget tests.
+  supportedTypes: [mobile-app]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/flutter-app
+    ref: v1.0.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Standard
+metadata:
+  name: flutter-standard
+spec:
+  displayName: Flutter quality standard
+  description: Strict lints, the agent guide, style digests and the make check CI.
+  supportedTypes: [mobile-app]
+  supportedFrameworks: [flutter-app]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/flutter-standard
+    ref: v1.0.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Deployment
+metadata:
+  name: android-release
+spec:
+  displayName: Signed APK on a Gitea release
+  description: Builds a signed release APK on a version tag and attaches it to the release.
+  supportedTypes: [mobile-app]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/android-release
+    ref: v1.0.0
+---
+# Claude Code on the Flutter toolchain. Needs Secret claude-credentials with
+# CLAUDE_CODE_OAUTH_TOKEN: make claude-secret CLAUDE_TOKEN=...
+apiVersion: c4.factory.io/v1alpha1
+kind: Agent
+metadata:
+  name: claude
+spec:
+  displayName: Claude Code (Flutter)
+  description: Implements and reviews Flutter apps.
+  image: c4factory/agent-flutter:dev
+  credentialsSecretRef:
+    name: claude-credentials
+  maxRounds: 4
+  timeoutMinutes: 90
+  resources:
+    requests: {cpu: "1", memory: 2Gi}
+    limits: {memory: 6Gi}
+---
+# A stand-in that makes a scripted change and approves it: proves the loop
+# without spending tokens.
+apiVersion: c4.factory.io/v1alpha1
+kind: Agent
+metadata:
+  name: stand-in
+spec:
+  displayName: Stand-in agent
+  description: Adds a line to STAND-IN.md; asks for changes once, then approves.
+  image: c4factory/agent-flutter:dev
+  maxRounds: 2
+  timeoutMinutes: 15
+  env:
+    - name: C4AGENT_FAKE
+      value: "1"
+    - name: C4AGENT_FAKE_CHANGES_FIRST
+      value: "true"

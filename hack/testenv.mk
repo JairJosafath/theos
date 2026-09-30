@@ -52,7 +52,7 @@ gitea-admin: ## Print the Gitea admin's username and generated password, for sig
 seed: ## Seed Gitea: orgs, tagged template repos, Secret gitea-credentials.
 	$(CONTAINER_TOOL) build -t $(SEED_IMG) -f hack/seed/Dockerfile .
 	$(KIND) load docker-image $(SEED_IMG) --name '$(KIND_CLUSTER)'
-	$(TESTENV_KUBECTL) create namespace webshop --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -
+	for ns in webshop toolbox; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -; done
 	$(TESTENV_KUBECTL) apply -f hack/seed/rbac.yaml
 	@# Foreground: the old pods are gone before the new Job starts.
 	$(TESTENV_KUBECTL) -n gitea delete job seed --ignore-not-found --cascade=foreground --wait=true
@@ -117,3 +117,46 @@ session: session-image ## Run the test Session: a pod that clones orders-api and
 .PHONY: session-kill
 session-kill: ## Kill the test Session's client abruptly, as a crashed devcontainer would.
 	$(TESTENV_KUBECTL) -n webshop exec session-orders-api -c client -- pkill -KILL c4session
+
+##@ Agents
+
+AGENT_SANDBOX_VERSION ?= v1.0.4
+FLUTTER_IMG ?= c4factory/flutter:3.47.5
+RUNNER_IMG ?= c4factory/gitea-runner:dev
+AGENT_IMG ?= c4factory/agent-flutter:dev
+
+.PHONY: toolchain
+toolchain: ## Build the Flutter toolchain image (hack/toolchain); slow the first time.
+	$(CONTAINER_TOOL) build -t $(FLUTTER_IMG) hack/toolchain
+
+.PHONY: runner
+runner: ## Build the CI runner, load it into Kind and run it in namespace gitea.
+	$(CONTAINER_TOOL) build -t $(RUNNER_IMG) -f hack/runner/Dockerfile .
+	$(KIND) load docker-image $(RUNNER_IMG) --name '$(KIND_CLUSTER)'
+	$(TESTENV_KUBECTL) apply -k config/runner
+	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner
+	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner --timeout=600s
+
+.PHONY: agent-image
+agent-image: ## Build the agent image (c4agent + Claude Code + Flutter) and load it into Kind.
+	$(CONTAINER_TOOL) build -t $(AGENT_IMG) -f hack/agent/Dockerfile .
+	$(KIND) load docker-image $(AGENT_IMG) --name '$(KIND_CLUSTER)'
+
+.PHONY: agent-sandbox
+agent-sandbox: ## Install Agent Sandbox $(AGENT_SANDBOX_VERSION), which runs the agents.
+	$(TESTENV_KUBECTL) apply --server-side -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/$(AGENT_SANDBOX_VERSION)/sandbox.yaml
+	$(TESTENV_KUBECTL) -n agent-sandbox-system rollout status deployment --timeout=300s
+
+CLAUDE_NAMESPACE ?= toolbox
+
+.PHONY: claude-secret
+claude-secret: ## Store a Claude token for agents: make claude-secret CLAUDE_TOKEN=... (from `claude setup-token`).
+	@test -n "$(CLAUDE_TOKEN)" || { echo "Set CLAUDE_TOKEN to the output of 'claude setup-token'" >&2; exit 1; }
+	@printf '%s' "$(CLAUDE_TOKEN)" | $(TESTENV_KUBECTL) -n $(CLAUDE_NAMESPACE) create secret generic claude-credentials \
+		--from-file=CLAUDE_CODE_OAUTH_TOKEN=/dev/stdin --dry-run=client -o yaml | \
+		$(TESTENV_KUBECTL) apply --server-side --field-manager=c4factory-testenv -f - >/dev/null
+	@echo "Stored Secret $(CLAUDE_NAMESPACE)/claude-credentials"
+
+.PHONY: toolbox
+toolbox: ## Apply the toolbox story: offline tool apps built by agents (config/samples/toolbox).
+	$(TESTENV_KUBECTL) apply -k config/samples/toolbox

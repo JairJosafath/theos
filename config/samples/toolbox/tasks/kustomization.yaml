@@ -1,0 +1,12 @@
+# The agents' Tasks for the toolbox: one per app. Apply after `make toolbox`, and
+# after `make claude-secret` for the real agent. stand-in.yaml is separate: it
+# proves the loop without tokens (make toolbox-stand-in).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- image-shrink.yaml
+- qr-scanner.yaml
+- doc-scanner.yaml
+- audio-cutter.yaml
+- bg-eraser.yaml
+- photo-editor.yaml

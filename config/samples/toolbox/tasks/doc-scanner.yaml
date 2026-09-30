@@ -1,0 +1,20 @@
+apiVersion: c4.factory.io/v1alpha1
+kind: Task
+metadata:
+  name: doc-scanner-v1
+  namespace: toolbox
+spec:
+  containerRef: {name: doc-scanner}
+  agentRef: {name: claude}
+  goal: |
+    Build version 1 of Doc Scanner: turn photos of paper into clean PDFs.
+    - Take pages with the camera or import photos.
+    - Find the page edges automatically, let the person drag the four corners, and
+      correct the perspective.
+    - Filters: original, grayscale, black and white (adaptive threshold).
+    - Multi-page documents: reorder, rotate and delete pages.
+    - Export to PDF (A4, Letter or fit to page) or JPEG; save and share.
+    - A local library of documents with rename and delete.
+    Suggested packages: camera, opencv_dart, pdf, printing, image_picker. Do not use
+    the ML Kit Document Scanner: its models come from Play services, so it is not
+    offline. Keep the release manifest free of the INTERNET permission.
