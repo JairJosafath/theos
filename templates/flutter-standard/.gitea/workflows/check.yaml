@@ -1,0 +1,21 @@
+# Runs the quality contract on every pull request and on main. The branch
+# protection of main requires a passing "check" context before a merge.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: flutter
+    steps:
+      - name: Check out
+        run: |
+          git init -q .
+          git -c http.extraHeader="Authorization: token ${{ gitea.token }}" \
+            fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
+          git checkout -q FETCH_HEAD
+      - name: make check
+        run: make check

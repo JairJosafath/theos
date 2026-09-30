@@ -428,3 +428,20 @@ func TestBuildRejectsStandardBeforeFramework(t *testing.T) {
 		t.Fatalf("Build() error = %v, want out of order", err)
 	}
 }
+
+func TestDartString(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"Photo Editor", `'Photo Editor'`},
+		{"Rick's Editor", `"Rick's Editor"`},
+		{`Rick's "Editor"`, `'Rick\'s "Editor"'`},
+		{"Pay $5", `r'Pay $5'`},
+		{`Pay $5 "now" 'please'`, `'Pay \$5 "now" \'please\''`},
+		{`C:\tools`, `r'C:\tools'`},
+		{"Tab\there", `'Tab\u{9}here'`},
+	}
+	for _, tt := range tests {
+		if got := dartString(tt.in); got != tt.want {
+			t.Errorf("dartString(%q) = %s, want %s", tt.in, got, tt.want)
+		}
+	}
+}

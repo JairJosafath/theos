@@ -1,0 +1,19 @@
+{
+  "image": "c4factory/flutter:3.47.5",
+  "postCreateCommand": "flutter pub get",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Dart-Code.dart-code",
+        "Dart-Code.flutter"
+      ],
+      "settings": {
+        "dart.lineLength": 80,
+        "[dart]": {
+          "editor.formatOnSave": true,
+          "editor.rulers": [80]
+        }
+      }
+    }
+  }
+}

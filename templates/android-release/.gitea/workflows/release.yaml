@@ -1,0 +1,48 @@
+# Builds a signed release APK when a version tag (v1.2.3) is pushed and attaches
+# it to a Gitea release of that tag. The keystore comes from the organization's
+# Actions secrets, which C4 Factory's seed job creates.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: flutter
+    env:
+      ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      API: ${{ gitea.server_url }}/api/v1/repos/${{ gitea.repository }}
+      TOKEN: ${{ gitea.token }}
+      TAG: ${{ gitea.ref_name }}
+    steps:
+      - name: Check out
+        run: |
+          git init -q .
+          git -c http.extraHeader="Authorization: token $TOKEN" \
+            fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
+          git checkout -q FETCH_HEAD
+      - name: Build the release APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "Actions secret ANDROID_KEYSTORE_B64 is missing" >&2; exit 1; }
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$ANDROID_KEYSTORE_PATH"
+          flutter pub get
+          flutter build apk --release
+      - name: Attach it to the release
+        run: |
+          name="$(basename "${{ gitea.repository }}")-$TAG.apk"
+          release=$(curl -sf -H "Authorization: token $TOKEN" "$API/releases/tags/$TAG" || true)
+          if [ -z "$release" ]; then
+            release=$(curl -sf -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
+              -d "{\"tag_name\": \"$TAG\", \"name\": \"$TAG\"}" "$API/releases")
+          fi
+          id=$(printf '%s' "$release" | jq -r .id)
+          curl -sf -X POST -H "Authorization: token $TOKEN" \
+            -F "attachment=@build/app/outputs/flutter-apk/app-release.apk" \
+            "$API/releases/$id/assets?name=$name" > /dev/null
+          echo "Attached $name to release $TAG"

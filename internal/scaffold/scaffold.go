@@ -285,4 +285,39 @@ var funcs = template.FuncMap{
 	"snake": func(s string) string { return strings.ReplaceAll(s, "-", "_") },
 	"upper": strings.ToUpper,
 	"lower": strings.ToLower,
+	"dart":  dartString,
+}
+
+// dartString quotes s as a Dart string literal the way Effective Dart and the
+// formatter and linter want it: single quotes, or double quotes when s holds a
+// single quote and no double one; raw when that avoids escapes; else with
+// backslashes, dollars and the quote escaped.
+func dartString(s string) string {
+	quote := "'"
+	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
+		quote = `"`
+	}
+	// A raw string when only backslashes or dollars would need escaping
+	// (use_raw_strings).
+	if strings.ContainsAny(s, `\\$`) && !strings.Contains(s, quote) &&
+		!strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 }) {
+		return "r" + quote + s + quote
+	}
+	var b strings.Builder
+	b.WriteString(quote)
+	for _, r := range s {
+		switch {
+		case r == '\\' || r == '$' || string(r) == quote:
+			b.WriteRune('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r < 0x20:
+			fmt.Fprintf(&b, `\u{%x}`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteString(quote)
+	return b.String()
 }

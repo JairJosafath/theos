@@ -1,0 +1,29 @@
+{{- $title := .Container }}{{ if .DisplayName }}{{ $title = .DisplayName }}{{ end -}}
+{{- $literal := dart $title -}}
+import 'package:app/ui/core/theme.dart';
+import 'package:app/ui/home/home_page.dart';
+import 'package:flutter/material.dart';
+
+/// The application: theme, title and the first page.
+class App extends StatelessWidget {
+  const new({super.key});
+
+  /// The name people see, in the app switcher and the title bar.
+{{- /* dart format keeps the declaration on one line only when it fits in 80. */}}
+{{- if le (len $literal) 56 }}
+  static const title = {{ $literal }};
+{{- else }}
+  static const title =
+      {{ $literal }};
+{{- end }}
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: title,
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      home: const HomePage(title: title),
+    );
+  }
+}
