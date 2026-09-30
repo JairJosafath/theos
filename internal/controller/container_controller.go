@@ -19,15 +19,21 @@ package controller
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 )
 
-// ContainerReconciler reconciles a Container object
+// ContainerReconciler makes a Container a child of its SoftwareSystem and counts
+// its active Sessions.
 type ContainerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -37,27 +43,88 @@ type ContainerReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Container object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.25.0/pkg/reconcile
+// Reconcile adopts the Container and updates its status.
 func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	var container c4v1alpha1.Container
+	if err := r.Get(ctx, req.NamespacedName, &container); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	status := container.Status.DeepCopy()
 
-	// TODO(user): your logic here
+	active, err := r.countSessions(ctx, &container)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	status.ActiveSessions = int32(active)
 
-	return ctrl.Result{}, nil
+	var system c4v1alpha1.SoftwareSystem
+	err = r.Get(ctx, types.NamespacedName{Namespace: container.Namespace, Name: container.Spec.SoftwareSystemRef.Name}, &system)
+	switch {
+	case apierrors.IsNotFound(err):
+		status.Phase = c4v1alpha1.ContainerPending
+		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
+			metav1.ConditionFalse, c4v1alpha1.ReasonNotFound,
+			notFoundMessage([]string{"SoftwareSystem " + container.Spec.SoftwareSystemRef.Name}))
+		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
+	case err != nil:
+		return ctrl.Result{}, err
+	}
+	labels := projectLabels(container.Namespace)
+	labels[c4v1alpha1.LabelSoftwareSystem] = system.Name
+	if err := adopt(ctx, r.Client, r.Scheme, &system, &container, labels); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if status.Phase == "" {
+		status.Phase = c4v1alpha1.ContainerPending
+	}
+	return ctrl.Result{}, r.writeStatus(ctx, &container, status)
+}
+
+func (r *ContainerReconciler) countSessions(ctx context.Context, container *c4v1alpha1.Container) (int, error) {
+	var sessions c4v1alpha1.SessionList
+	if err := r.List(ctx, &sessions, client.InNamespace(container.Namespace),
+		client.MatchingFields{indexContainer: container.Name}); err != nil {
+		return 0, err
+	}
+	return countActive(sessions.Items), nil
+}
+
+func (r *ContainerReconciler) writeStatus(ctx context.Context, container *c4v1alpha1.Container, status *c4v1alpha1.ContainerStatus) error {
+	status.ObservedGeneration = container.Generation
+	if equality.Semantic.DeepEqual(&container.Status, status) {
+		return nil
+	}
+	orig := container.DeepCopy()
+	container.Status = *status
+	return r.Status().Patch(ctx, container, client.MergeFrom(orig))
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	toContainer := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
+		session, ok := obj.(*c4v1alpha1.Session)
+		if !ok {
+			return nil
+		}
+		return []reconcile.Request{requestFor(session.Namespace, session.Spec.ContainerRef.Name)}
+	})
+	systemContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		var containers c4v1alpha1.ContainerList
+		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace()),
+			client.MatchingFields{indexSoftwareSystem: obj.GetName()}); err != nil {
+			return nil
+		}
+		reqs := make([]reconcile.Request, 0, len(containers.Items))
+		for _, c := range containers.Items {
+			reqs = append(reqs, requestFor(c.Namespace, c.Name))
+		}
+		return reqs
+	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.Container{}).
+		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).
+		Watches(&c4v1alpha1.SoftwareSystem{}, systemContainers, createOrDelete()).
 		Named("container").
 		Complete(r)
 }

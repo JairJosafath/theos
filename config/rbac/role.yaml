@@ -7,6 +7,21 @@ rules:
 - apiGroups:
   - c4.factory.io
   resources:
+  - computes
+  - connectors
+  - deployments
+  - frameworks
+  - gitproviders
+  - people
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - c4.factory.io
+  resources:
   - containers
   - datastores
   - projects

@@ -17,9 +17,11 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -37,6 +39,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/controller"
+	"github.com/JairJosafath/c4factory/internal/model"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -62,6 +65,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var sessionStaleAfter time.Duration
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -85,6 +89,8 @@ func main() {
 	opts := zap.Options{
 		Development: true,
 	}
+	flag.DurationVar(&sessionStaleAfter, "session-stale-after", model.DefaultStaleAfter,
+		"How long a Session may go without a heartbeat before it is marked Stale.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -182,6 +188,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := controller.SetupIndexes(context.Background(), mgr); err != nil {
+		setupLog.Error(err, "Failed to set up field indexes")
+		os.Exit(1)
+	}
+
 	if err := (&controller.ProjectReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -218,8 +229,9 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.SessionReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		StaleAfter: sessionStaleAfter,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "session")
 		os.Exit(1)
