@@ -35,6 +35,48 @@ linters:
           deny:
             - pkg: sort
               desc: Should be replaced with slices package
+        # The layering in docs/architecture.md. Business rules stay pure.
+        business-rules-are-pure:
+          files:
+            - "**/internal/model/**"
+            - "**/internal/scaffold/**"
+          deny:
+            - pkg: k8s.io
+              desc: business rules must not import Kubernetes (docs/architecture.md)
+            - pkg: sigs.k8s.io
+              desc: business rules must not import controller-runtime or other Kubernetes libraries (docs/architecture.md)
+            - pkg: net/http
+              desc: business rules must not do I/O over HTTP; that belongs in internal/gitprovider (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/api
+              desc: business rules take plain values; controllers convert resources (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/controller
+              desc: business rules must not depend on controllers (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/gitprovider
+              desc: business rules must not depend on adapters (docs/architecture.md)
+        model-is-the-bottom:
+          files:
+            - "**/internal/model/**"
+          deny:
+            - pkg: github.com/JairJosafath/c4factory/internal/scaffold
+              desc: model is the lowest layer; scaffold builds on it (docs/architecture.md)
+        adapters-stay-out-of-kubernetes:
+          files:
+            - "**/internal/gitprovider/**"
+          deny:
+            - pkg: k8s.io
+              desc: adapters must not import Kubernetes (docs/architecture.md)
+            - pkg: sigs.k8s.io
+              desc: adapters must not import controller-runtime (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/api
+              desc: adapters take plain values (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/controller
+              desc: adapters must not depend on controllers (docs/architecture.md)
+        api-stands-alone:
+          files:
+            - "**/api/**"
+          deny:
+            - pkg: github.com/JairJosafath/c4factory/internal
+              desc: API types must not import internal packages (docs/architecture.md)
     revive:
       rules:
         - name: comment-spacings
@@ -52,6 +94,10 @@ linters:
           - dupl
           - lll
         path: internal/*
+      # Table tests repeat literals on purpose.
+      - linters:
+          - goconst
+        path: _test\.go
     paths:
       - third_party$
       - builtin$
