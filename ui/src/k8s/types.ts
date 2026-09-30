@@ -63,7 +63,7 @@ export interface ElementRef {
   name: string
 }
 
-export type ContainerType = 'static-site' | 'service' | 'job' | 'worker'
+export type ContainerType = 'static-site' | 'service' | 'job' | 'worker' | 'mobile-app'
 export type ContainerPhase = 'Pending' | 'Scaffolding' | 'Ready' | 'Failed'
 export type SessionPhase = 'Active' | 'Stale'
 export type Actor = 'agent' | 'human'

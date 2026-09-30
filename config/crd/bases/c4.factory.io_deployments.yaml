@@ -78,6 +78,7 @@ spec:
                   - service
                   - job
                   - worker
+                  - mobile-app
                   type: string
                 minItems: 1
                 type: array

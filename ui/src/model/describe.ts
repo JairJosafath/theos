@@ -60,6 +60,7 @@ const CONTAINER_TYPES: Record<ContainerType, string> = {
   service: 'service',
   job: 'job',
   worker: 'worker',
+  'mobile-app': 'mobile app',
 }
 
 /** The Container type in words, such as "static site". */
