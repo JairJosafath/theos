@@ -1,0 +1,194 @@
+package agentrunner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os/exec"
+	"strings"
+	"unicode/utf8"
+)
+
+// Result is what one sandbox run reports. It travels in the pod's termination
+// message, so Encode keeps it under MaxResultBytes.
+type Result struct {
+	Role string `json:"role"`
+	// Commit is the head of the branch after an implement run.
+	Commit string `json:"commit,omitempty"`
+	// Summary is the agent's own account, or the reviewer's findings.
+	Summary string `json:"summary,omitempty"`
+	// Verdict is approve or changes, for a review.
+	Verdict string `json:"verdict,omitempty"`
+	// Error says why the run failed. Feedback for the next round when set.
+	Error string `json:"error,omitempty"`
+}
+
+// MaxResultBytes fits a Kubernetes termination message (4096 bytes).
+const MaxResultBytes = 4000
+
+// Encode returns the Result as JSON of at most MaxResultBytes, shortening the
+// summary and error when needed.
+func (r Result) Encode() []byte {
+	for {
+		data, _ := json.Marshal(r)
+		if len(data) <= MaxResultBytes {
+			return data
+		}
+		switch {
+		case len(r.Summary) > 200:
+			r.Summary = shorten(r.Summary, len(r.Summary)-(len(data)-MaxResultBytes)-16)
+		case len(r.Error) > 200:
+			r.Error = shorten(r.Error, len(r.Error)-(len(data)-MaxResultBytes)-16)
+		default:
+			r.Summary, r.Error = shorten(r.Summary, 100), shorten(r.Error, 100)
+		}
+	}
+}
+
+func shorten(s string, n int) string {
+	if n < 0 {
+		n = 0
+	}
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
+}
+
+// protectedPaths belong to the operator and the Standard's CI; an agent must not
+// change them.
+var protectedPaths = []string{".devcontainer/", ".c4factory.yaml", ".gitea/"}
+
+// checkFixAttempts is how often the agent is sent back when the check fails.
+const checkFixAttempts = 2
+
+// Run does one job in dir and reports the outcome. Failures of the work itself
+// are in Result.Error; the run as such does not fail.
+func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
+	result := Result{Role: job.Role}
+	r, err := clone(ctx, job, dir)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	if job.Role == RoleReview {
+		return review(ctx, job, agent, r, result)
+	}
+	return implement(ctx, job, agent, r, result)
+}
+
+func implement(ctx context.Context, job Job, agent Agent, r *repo, result Result) Result {
+	start, err := r.head(ctx)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	summary, err := agent.Run(ctx, r.dir, ImplementPrompt(job))
+	result.Summary = summary
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+
+	checkOutput, checkErr := runCheck(ctx, job, r.dir)
+	for attempt := 1; checkErr != nil && attempt <= checkFixAttempts && ctx.Err() == nil; attempt++ {
+		prompt := fmt.Sprintf("%q fails. Fix every failure, then run it again until it passes. Output:\n%s",
+			strings.Join(job.CheckCommand, " "), tail(checkOutput, 6000))
+		if _, err := agent.Run(ctx, r.dir, prompt); err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		checkOutput, checkErr = runCheck(ctx, job, r.dir)
+	}
+
+	message := fmt.Sprintf("%s\n\nTask %s, round %d.", firstLine(job.Goal), job.Task, job.Round)
+	if err := r.commitAll(ctx, message); err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	head, err := r.head(ctx)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	if head == start {
+		result.Error = "the agent made no changes"
+		return result
+	}
+	changed, err := r.changedPaths(ctx, start, head)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	if touched := touchedProtected(changed); len(touched) > 0 {
+		result.Error = fmt.Sprintf("the change touches %s, which belong to the platform; leave them as they are",
+			strings.Join(touched, ", "))
+		return result
+	}
+	// Push even when the check fails, so the next round continues from here.
+	if err := r.push(ctx, job.Branch); err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	result.Commit = head
+	if checkErr != nil {
+		result.Error = fmt.Sprintf("%q still fails after %d attempts to fix it:\n%s",
+			strings.Join(job.CheckCommand, " "), checkFixAttempts, tail(checkOutput, 2500))
+	}
+	return result
+}
+
+func review(ctx context.Context, job Job, agent Agent, r *repo, result Result) Result {
+	head, err := r.head(ctx)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	result.Commit = head
+	output, err := agent.Run(ctx, r.dir, ReviewPrompt(job))
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	result.Verdict, result.Summary, err = ParseVerdict(output)
+	if err != nil {
+		result.Error = err.Error()
+	}
+	return result
+}
+
+func runCheck(ctx context.Context, job Job, dir string) (string, error) {
+	cmd := exec.CommandContext(ctx, job.CheckCommand[0], job.CheckCommand[1:]...)
+	cmd.Dir = dir
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if err != nil && !errors.As(err, &exitErr) {
+		return err.Error(), err
+	}
+	return out.String(), err
+}
+
+func touchedProtected(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		for _, protected := range protectedPaths {
+			if p == protected || strings.HasPrefix(p, protected) {
+				out = append(out, p)
+				break
+			}
+		}
+	}
+	return out
+}
+
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	return shorten(line, 72)
+}
