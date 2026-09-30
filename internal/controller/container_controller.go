@@ -184,8 +184,8 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return reqs
 	})
-	// A catalog entry, GitProvider or DataStore appearing can unblock any Container
-	// in the namespace that isn't scaffolded yet.
+	// A catalog entry, GitProvider or DataStore appearing or changing its spec can
+	// unblock any Container in the namespace that isn't scaffolded yet.
 	waitingContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 		var containers c4v1alpha1.ContainerList
 		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace())); err != nil {
@@ -211,12 +211,12 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).
 		Watches(&c4v1alpha1.SoftwareSystem{}, systemContainers, createOrDelete()).
 		Watches(&c4v1alpha1.Relationship{}, sourceContainer).
-		Watches(&c4v1alpha1.GitProvider{}, waitingContainers).
-		Watches(&c4v1alpha1.Framework{}, waitingContainers).
-		Watches(&c4v1alpha1.Compute{}, waitingContainers).
-		Watches(&c4v1alpha1.Deployment{}, waitingContainers).
-		Watches(&c4v1alpha1.Connector{}, waitingContainers).
-		Watches(&c4v1alpha1.DataStore{}, waitingContainers).
+		Watches(&c4v1alpha1.GitProvider{}, waitingContainers, specChanged()).
+		Watches(&c4v1alpha1.Framework{}, waitingContainers, specChanged()).
+		Watches(&c4v1alpha1.Compute{}, waitingContainers, specChanged()).
+		Watches(&c4v1alpha1.Deployment{}, waitingContainers, specChanged()).
+		Watches(&c4v1alpha1.Connector{}, waitingContainers, specChanged()).
+		Watches(&c4v1alpha1.DataStore{}, waitingContainers, specChanged()).
 		Named("container").
 		Complete(r)
 }

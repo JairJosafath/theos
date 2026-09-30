@@ -3,6 +3,7 @@ package gitprovider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -258,5 +259,28 @@ func TestSameHost(t *testing.T) {
 		if got := SameHost(tt.a, tt.b); got != tt.want {
 			t.Errorf("SameHost(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
 		}
+	}
+}
+
+func TestCheckoutError(t *testing.T) {
+	other := errors.New("disk full")
+	for _, tt := range []struct {
+		name     string
+		err      error
+		unpinned bool
+	}{
+		{"missing commit", plumbing.ErrObjectNotFound, true},
+		{"wrapped missing commit", fmt.Errorf("get commit: %w", plumbing.ErrObjectNotFound), true},
+		{"any other error", other, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkoutError(tt.err, "abc", "repo")
+			if got := errors.Is(err, ErrUnpinnedRef); got != tt.unpinned {
+				t.Errorf("errors.Is(%v, ErrUnpinnedRef) = %v, want %v", err, got, tt.unpinned)
+			}
+			if !tt.unpinned && !errors.Is(err, tt.err) {
+				t.Errorf("checkoutError() = %v, want it to wrap %v", err, tt.err)
+			}
+		})
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // Identity is the content of .c4factory.yaml: which Container a repository is.
@@ -58,7 +60,7 @@ const (
 
 // CommitMessage is the message of the single initial commit. Its trailers let the
 // operator recognise its own commit when it retries, and recover what it recorded.
-func CommitMessage(in Input, scaffoldedFrom, relationships []string) string {
+func CommitMessage(in Input, scaffoldedFrom []string, relationships []model.AppliedRelationship) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Scaffold %s\n\n", in.Container)
 	fmt.Fprintf(&b, "Created by C4 Factory for Container %s in SoftwareSystem %s.\n", in.Container, in.SoftwareSystem)
@@ -78,8 +80,9 @@ type CommitInfo struct {
 	// Container is project/container.
 	Container      string
 	ScaffoldedFrom []string
-	// Relationships are the Relationships whose Connectors were applied.
-	Relationships []string
+	// Relationships are the Relationships whose Connectors were applied. Commits
+	// made before targets were recorded give only their names.
+	Relationships []model.AppliedRelationship
 }
 
 // ErrNotOurs means a commit wasn't made by the operator.
@@ -100,7 +103,7 @@ func ParseCommitMessage(msg string) (CommitInfo, error) {
 		case trailerFrom:
 			info.ScaffoldedFrom = append(info.ScaffoldedFrom, strings.TrimSpace(value))
 		case trailerRelationship:
-			info.Relationships = append(info.Relationships, strings.TrimSpace(value))
+			info.Relationships = append(info.Relationships, model.ParseAppliedRelationship(value))
 		}
 	}
 	if info.Container == "" {

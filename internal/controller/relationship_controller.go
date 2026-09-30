@@ -85,7 +85,8 @@ func (r *RelationshipReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if toModel(rel).ChangesScaffold() {
 		container, _ := source.(*c4v1alpha1.Container)
-		setApplied(status, &rel, container)
+		dataStore, _ := target.(*c4v1alpha1.DataStore)
+		setApplied(status, &rel, container, dataStore)
 	} else {
 		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionApplied)
 	}
@@ -99,13 +100,16 @@ func (r *RelationshipReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 // setApplied reports whether the source Container's scaffold included this link.
-// A link added after scaffolding is not applied, by design, and says so.
-func setApplied(status *c4v1alpha1.RelationshipStatus, rel *c4v1alpha1.Relationship, container *c4v1alpha1.Container) {
+// A link added after scaffolding is not applied, by design, and says so; so is
+// one recreated under the same name with another target. dataStore is nil when
+// the target is gone.
+func setApplied(status *c4v1alpha1.RelationshipStatus, rel *c4v1alpha1.Relationship,
+	container *c4v1alpha1.Container, dataStore *c4v1alpha1.DataStore) {
 	switch {
 	case container == nil || container.Status.Phase != c4v1alpha1.ContainerReady:
 		setCondition(&status.Conditions, rel.Generation, c4v1alpha1.ConditionApplied, metav1.ConditionUnknown,
 			c4v1alpha1.ReasonWaiting, "the Connector is applied when the Container is scaffolded")
-	case slices.Contains(container.Status.AppliedRelationships, rel.Name):
+	case appliedAtScaffold(container, rel, dataStore):
 		setCondition(&status.Conditions, rel.Generation, c4v1alpha1.ConditionApplied, metav1.ConditionTrue,
 			c4v1alpha1.ReasonAppliedAtScaffold, "the Connector was part of the scaffold")
 	default:
@@ -114,6 +118,26 @@ func setApplied(status *c4v1alpha1.RelationshipStatus, rel *c4v1alpha1.Relations
 			fmt.Sprintf("%s was scaffolded before this Relationship existed; scaffolding happens once",
 				container.Name))
 	}
+}
+
+// appliedAtScaffold reports whether the Container recorded this Relationship, with
+// its current target, as applied. A Container scaffolded before targets were
+// recorded has only the name.
+func appliedAtScaffold(container *c4v1alpha1.Container, rel *c4v1alpha1.Relationship, dataStore *c4v1alpha1.DataStore) bool {
+	if !slices.Contains(container.Status.AppliedRelationships, rel.Name) {
+		return false
+	}
+	record := model.AppliedRelationship{Name: rel.Name}
+	for _, a := range container.Status.AppliedConnectors {
+		if a.Relationship == rel.Name {
+			record = model.AppliedRelationship{Name: a.Relationship, DataStore: a.DataStore, Connector: a.Connector}
+		}
+	}
+	connector := ""
+	if dataStore != nil {
+		connector = dataStore.Spec.ConnectorRef.Name
+	}
+	return record.StillApplied(rel.Spec.Target.Name, connector)
 }
 
 // getElement returns the story element a ref points to, or nil if it doesn't exist.

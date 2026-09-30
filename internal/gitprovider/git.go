@@ -83,10 +83,19 @@ func (c Client) FetchTemplate(ctx context.Context, repoURL, ref string, creds *C
 			return nil, err
 		}
 		if err := wt.Checkout(&git.CheckoutOptions{Hash: checkout}); err != nil {
-			return nil, fmt.Errorf("%w: commit %s not found in %s", ErrUnpinnedRef, ref, repoURL)
+			return nil, checkoutError(err, ref, repoURL)
 		}
 	}
 	return readTree(worktree)
+}
+
+// checkoutError reports a missing commit as ErrUnpinnedRef, which is permanent,
+// and wraps any other checkout error as it is, so the caller retries it.
+func checkoutError(err error, ref, repoURL string) error {
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		return fmt.Errorf("%w: commit %s not found in %s", ErrUnpinnedRef, ref, repoURL)
+	}
+	return fmt.Errorf("check out %s in %s: %w", ref, repoURL, err)
 }
 
 // readTree reads every file of a checked-out worktree, except .git.

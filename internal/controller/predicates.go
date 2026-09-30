@@ -58,3 +58,21 @@ func sessionPhaseChanges() builder.WatchesOption {
 		},
 	})
 }
+
+// specChanged passes creations, deletions and spec changes, but not status or
+// metadata writes such as adoption: resolving a reference reads only spec.
+func specChanged() builder.WatchesOption {
+	return builder.WithPredicates(predicate.GenerationChangedPredicate{})
+}
+
+// containerPhaseChanges passes a Container's creation, deletion and phase
+// changes: all the Project roll-up reads from it.
+func containerPhaseChanges() builder.WatchesOption {
+	return builder.WithPredicates(predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldContainer, ok1 := e.ObjectOld.(*c4v1alpha1.Container)
+			newContainer, ok2 := e.ObjectNew.(*c4v1alpha1.Container)
+			return !ok1 || !ok2 || oldContainer.Status.Phase != newContainer.Status.Phase
+		},
+	})
+}

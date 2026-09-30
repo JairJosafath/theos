@@ -110,13 +110,61 @@ func (r Relationship) ChangesScaffold() bool {
 	return r.Source.Kind == KindContainer && r.Target.Kind == KindDataStore
 }
 
+// AppliedRelationship is a Relationship whose Connector went into a scaffold: the
+// DataStore it pointed at and the Connector that DataStore used. A record from
+// before targets were kept has only a Name.
+type AppliedRelationship struct {
+	Name      string
+	DataStore string
+	Connector string
+}
+
+// String returns the form kept in a commit trailer, such as
+// "orders-api-to-orders-db DataStore/orders-db Connector/postgres".
+func (a AppliedRelationship) String() string {
+	if a.DataStore == "" {
+		return a.Name
+	}
+	return fmt.Sprintf("%s %s/%s Connector/%s", a.Name, KindDataStore, a.DataStore, a.Connector)
+}
+
+// ParseAppliedRelationship reads the String form, and the older name-only form.
+func ParseAppliedRelationship(s string) AppliedRelationship {
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return AppliedRelationship{}
+	}
+	a := AppliedRelationship{Name: fields[0]}
+	for _, f := range fields[1:] {
+		kind, name, _ := strings.Cut(f, "/")
+		switch kind {
+		case KindDataStore:
+			a.DataStore = name
+		case "Connector":
+			a.Connector = name
+		}
+	}
+	return a
+}
+
+// StillApplied reports whether a Relationship that now points at dataStore, whose
+// Connector is connector, is the one recorded as applied: one recreated under the
+// same name with another target is not. A name-only record can't tell, so it
+// matches. An empty connector means the DataStore is gone; it isn't compared.
+func (a AppliedRelationship) StillApplied(dataStore, connector string) bool {
+	if a.DataStore == "" {
+		return true
+	}
+	return a.DataStore == dataStore && (connector == "" || a.Connector == connector)
+}
+
 // DataStoreUse is what a Container picks up from its Relationships to DataStores.
 type DataStoreUse struct {
 	// Connectors are the unique Connector names, sorted. A Connector reached through
 	// two DataStores is applied once.
 	Connectors []string
-	// Relationships are the names of the Relationships that were applied, sorted.
-	Relationships []string
+	// Relationships are the Relationships that were applied, sorted by name.
+	Relationships []AppliedRelationship
 	// MissingDataStores are DataStores named by a Relationship that don't exist.
 	MissingDataStores []string
 }
@@ -134,13 +182,14 @@ func DataStoresUsedBy(container string, rels []Relationship, connectorOf map[str
 			use.MissingDataStores = append(use.MissingDataStores, rel.Target.Name)
 			continue
 		}
-		use.Relationships = append(use.Relationships, rel.Name)
+		use.Relationships = append(use.Relationships,
+			AppliedRelationship{Name: rel.Name, DataStore: rel.Target.Name, Connector: connector})
 		if !slices.Contains(use.Connectors, connector) {
 			use.Connectors = append(use.Connectors, connector)
 		}
 	}
 	slices.Sort(use.Connectors)
-	slices.Sort(use.Relationships)
+	slices.SortFunc(use.Relationships, func(a, b AppliedRelationship) int { return strings.Compare(a.Name, b.Name) })
 	slices.Sort(use.MissingDataStores)
 	use.MissingDataStores = slices.Compact(use.MissingDataStores)
 	return use

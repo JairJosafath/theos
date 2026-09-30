@@ -117,6 +117,7 @@ export interface Container extends K8sObject {
     repositoryURL?: string
     scaffoldedFrom?: string[]
     appliedRelationships?: string[]
+    appliedConnectors?: { relationship: string; dataStore: string; connector: string }[]
     activeSessions?: number
     observedGeneration?: number
     conditions?: Condition[]

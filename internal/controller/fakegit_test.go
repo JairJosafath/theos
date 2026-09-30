@@ -101,6 +101,8 @@ func (g *fakeGit) addTemplate(url, ref string, tree scaffold.Tree) {
 }
 
 // seedRepo creates a repository with one commit, as if someone else made it.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) seedRepo(owner, name, message string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
