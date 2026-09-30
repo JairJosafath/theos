@@ -154,6 +154,35 @@ spec:
                   Container.
                 format: int32
                 type: integer
+              appliedConnectors:
+                description: |-
+                  appliedConnectors records, for each applied Relationship, the DataStore it
+                  pointed at and the Connector that went into the scaffold. A Container
+                  scaffolded before this was kept has only appliedRelationships.
+                items:
+                  description: AppliedConnector is what one Relationship added to
+                    a scaffold.
+                  properties:
+                    connector:
+                      description: connector is the DataStore's Connector that was
+                        applied.
+                      type: string
+                    dataStore:
+                      description: dataStore is the DataStore the Relationship pointed
+                        at.
+                      type: string
+                    relationship:
+                      description: relationship is the Relationship's name.
+                      type: string
+                  required:
+                  - connector
+                  - dataStore
+                  - relationship
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - relationship
+                x-kubernetes-list-type: map
               appliedRelationships:
                 description: appliedRelationships lists the Relationships whose Connectors
                   were part of the scaffold.

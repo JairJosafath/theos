@@ -365,7 +365,7 @@ func TestIdentityRoundTrip(t *testing.T) {
 
 func TestCommitMessageRoundTrip(t *testing.T) {
 	from := []string{"python-fastapi@v1.2.0", "postgres@v1.1.0"}
-	rels := []string{"orders-api-to-orders-db"}
+	rels := []model.AppliedRelationship{{Name: "orders-api-to-orders-db", DataStore: "orders-db", Connector: "postgres"}}
 	info, err := ParseCommitMessage(CommitMessage(ordersAPI, from, rels))
 	if err != nil {
 		t.Fatal(err)
@@ -373,6 +373,13 @@ func TestCommitMessageRoundTrip(t *testing.T) {
 	if info.Container != "webshop/orders-api" || !slices.Equal(info.ScaffoldedFrom, from) ||
 		!slices.Equal(info.Relationships, rels) {
 		t.Errorf("info = %+v", info)
+	}
+
+	// A commit made before targets were recorded names only the Relationship.
+	old := strings.Replace(CommitMessage(ordersAPI, from, rels), " DataStore/orders-db Connector/postgres", "", 1)
+	info, err = ParseCommitMessage(old)
+	if err != nil || !slices.Equal(info.Relationships, []model.AppliedRelationship{{Name: "orders-api-to-orders-db"}}) {
+		t.Errorf("info from a name-only commit = %+v, %v", info, err)
 	}
 	if _, err := ParseCommitMessage("Initial commit\n"); !errors.Is(err, ErrNotOurs) {
 		t.Errorf("ParseCommitMessage(foreign) error = %v, want ErrNotOurs", err)

@@ -70,6 +70,21 @@ const (
 	ContainerFailed      ContainerPhase = "Failed"
 )
 
+// AppliedConnector is what one Relationship added to a scaffold.
+type AppliedConnector struct {
+	// relationship is the Relationship's name.
+	// +required
+	Relationship string `json:"relationship"`
+
+	// dataStore is the DataStore the Relationship pointed at.
+	// +required
+	DataStore string `json:"dataStore"`
+
+	// connector is the DataStore's Connector that was applied.
+	// +required
+	Connector string `json:"connector"`
+}
+
 // ContainerStatus defines the observed state of Container.
 type ContainerStatus struct {
 	// phase is Pending, Scaffolding, then Ready or Failed.
@@ -89,6 +104,14 @@ type ContainerStatus struct {
 	// +listType=set
 	// +optional
 	AppliedRelationships []string `json:"appliedRelationships,omitempty"`
+
+	// appliedConnectors records, for each applied Relationship, the DataStore it
+	// pointed at and the Connector that went into the scaffold. A Container
+	// scaffolded before this was kept has only appliedRelationships.
+	// +listType=map
+	// +listMapKey=relationship
+	// +optional
+	AppliedConnectors []AppliedConnector `json:"appliedConnectors,omitempty"`
 
 	// activeSessions is the number of Active Sessions on this Container.
 	// +optional

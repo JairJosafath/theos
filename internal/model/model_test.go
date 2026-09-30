@@ -65,7 +65,7 @@ func TestDataStoresUsedBy(t *testing.T) {
 		{
 			name: "one datastore",
 			rels: []Relationship{rel("orders-api-to-orders-db", KindContainer, "orders-api", KindDataStore, "orders-db")},
-			want: DataStoreUse{Connectors: []string{"postgres"}, Relationships: []string{"orders-api-to-orders-db"}},
+			want: DataStoreUse{Connectors: []string{"postgres"}, Relationships: []AppliedRelationship{{"orders-api-to-orders-db", "orders-db", "postgres"}}},
 		},
 		{
 			name: "same connector through two datastores applies once",
@@ -74,7 +74,9 @@ func TestDataStoresUsedBy(t *testing.T) {
 				rel("a", KindContainer, "orders-api", KindDataStore, "orders-db"),
 				rel("c", KindContainer, "orders-api", KindDataStore, "cache"),
 			},
-			want: DataStoreUse{Connectors: []string{"postgres", "redis"}, Relationships: []string{"a", "b", "c"}},
+			want: DataStoreUse{Connectors: []string{"postgres", "redis"}, Relationships: []AppliedRelationship{
+				{"a", "orders-db", "postgres"}, {"b", "audit-db", "postgres"}, {"c", "cache", "redis"},
+			}},
 		},
 		{
 			name: "story-only links and other containers are ignored",
@@ -138,6 +140,40 @@ func TestSessionFreshness(t *testing.T) {
 			stale, remaining := SessionFreshness(tt.heartbeat, created, tt.now, DefaultStaleAfter)
 			if stale != tt.wantStale || remaining != tt.wantRemaining {
 				t.Errorf("SessionFreshness() = (%v, %v), want (%v, %v)", stale, remaining, tt.wantStale, tt.wantRemaining)
+			}
+		})
+	}
+}
+
+func TestAppliedRelationship(t *testing.T) {
+	applied := AppliedRelationship{Name: "orders-api-to-orders-db", DataStore: "orders-db", Connector: "postgres"}
+	nameOnly := AppliedRelationship{Name: "orders-api-to-orders-db"}
+
+	for _, a := range []AppliedRelationship{applied, nameOnly} {
+		if got := ParseAppliedRelationship(a.String()); got != a {
+			t.Errorf("ParseAppliedRelationship(%q) = %+v, want %+v", a.String(), got, a)
+		}
+	}
+	if got := applied.String(); got != "orders-api-to-orders-db DataStore/orders-db Connector/postgres" {
+		t.Errorf("String() = %q", got)
+	}
+
+	tests := []struct {
+		name                 string
+		record               AppliedRelationship
+		dataStore, connector string
+		want                 bool
+	}{
+		{"same target", applied, "orders-db", "postgres", true},
+		{"recreated with another DataStore", applied, "cache-db", "redis", false},
+		{"DataStore recreated with another Connector", applied, "orders-db", "redis", false},
+		{"DataStore gone", applied, "orders-db", "", true},
+		{"name-only record", nameOnly, "cache-db", "redis", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.record.StillApplied(tt.dataStore, tt.connector); got != tt.want {
+				t.Errorf("StillApplied(%q, %q) = %v, want %v", tt.dataStore, tt.connector, got, tt.want)
 			}
 		})
 	}

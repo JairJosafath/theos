@@ -43,8 +43,8 @@ var _ = Describe("Relationship", func() {
 			To(MatchError(ContainSubstring("source is immutable")))
 	})
 
-	// Applied is decided by name, so a retargeted link would keep reporting a
-	// Connector that isn't in the scaffold.
+	// A link changes what it means when its target changes; recreate it instead,
+	// and Applied compares the new target with what was scaffolded.
 	It("keeps its target for life", func() {
 		ns := newProjectNamespace()
 		rel := newRelationship(ns, "orders-api-to-orders-db",

@@ -67,7 +67,7 @@ but the resource shapes.
    `.c4factory.yaml`, and returns one file tree.
 5. `internal/gitprovider` pushes that tree as a single commit.
 6. `internal/controller` writes `Ready`, `repositoryURL`, `scaffoldedFrom` and
-   `appliedRelationships`.
+   `appliedRelationships` with `appliedConnectors` (what each Relationship added).
 
 ## Flow of one Session
 

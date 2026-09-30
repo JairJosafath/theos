@@ -144,6 +144,7 @@ export function demoStory(now: number): StoryData {
         repositoryURL: `${GITEA}/webshop/orders-api`,
         scaffoldedFrom: ['python-fastapi@v1.2.1', 'small@v1.0.0', 'k8s-manifests@v1.1.0', 'postgres@v1.1.0'],
         appliedRelationships: ['orders-api-to-orders-db'],
+        appliedConnectors: [{ relationship: 'orders-api-to-orders-db', dataStore: 'orders-db', connector: 'postgres' }],
         activeSessions: 1,
         conditions: [
           cond('ReferencesResolved', 'True', 'Resolved', 'All references exist', ago(10700)),

@@ -25,10 +25,12 @@ import (
 	. "github.com/onsi/gomega"
 	"go.yaml.in/yaml/v3"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -51,6 +53,29 @@ func createWebshop(ns string) {
 			element(c4v1alpha1.ElementDataStore, "orders-db")),
 		container,
 	)
+}
+
+// ordersDBApplied and ordersDBConnector are what the sample's orders-db link adds.
+var (
+	ordersDBApplied = model.AppliedRelationship{
+		Name: "orders-api-to-orders-db", DataStore: "orders-db", Connector: "postgres",
+	}
+	ordersDBConnector = c4v1alpha1.AppliedConnector{
+		Relationship: "orders-api-to-orders-db", DataStore: "orders-db", Connector: "postgres",
+	}
+)
+
+// eventuallyApplied waits for a Relationship's Applied condition.
+func eventuallyApplied(ns, name string, status metav1.ConditionStatus, reason string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var rel c4v1alpha1.Relationship
+		g.Expect(k8sClient.Get(ctx, key(ns, name), &rel)).To(Succeed())
+		cond := condition(rel.Status.Conditions, c4v1alpha1.ConditionApplied)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Status).To(Equal(status))
+		g.Expect(cond.Reason).To(Equal(reason))
+	}).Should(Succeed())
 }
 
 // eventuallyOrdersAPI waits for orders-api to reach a phase and returns it.
@@ -218,16 +243,54 @@ var _ = Describe("Container scaffolding", func() {
 		ns := newProjectNamespace()
 		in := scaffold.Input{Project: ns, SoftwareSystem: "webshop-core", Container: "orders-api"}
 		gitFake.seedRepo(ns, "orders-api",
-			scaffold.CommitMessage(in, ordersAPIScaffoldedFrom, []string{"orders-api-to-orders-db"}))
+			scaffold.CommitMessage(in, ordersAPIScaffoldedFrom, []model.AppliedRelationship{ordersDBApplied}))
 		pushes := gitFake.pushCount()
 		createWebshop(ns)
 
 		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
 		Expect(container.Status.ScaffoldedFrom).To(Equal(ordersAPIScaffoldedFrom))
 		Expect(container.Status.AppliedRelationships).To(ConsistOf("orders-api-to-orders-db"))
+		Expect(container.Status.AppliedConnectors).To(ConsistOf(ordersDBConnector))
 		Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded).Message).
 			To(ContainSubstring("earlier attempt"))
 		Expect(gitFake.pushCount()).To(Equal(pushes))
+	})
+
+	It("reads a commit from before targets were recorded as applied by name", func() {
+		ns := newProjectNamespace()
+		in := scaffold.Input{Project: ns, SoftwareSystem: "webshop-core", Container: "orders-api"}
+		gitFake.seedRepo(ns, "orders-api", scaffold.CommitMessage(in, ordersAPIScaffoldedFrom,
+			[]model.AppliedRelationship{{Name: "orders-api-to-orders-db"}}))
+		createWebshop(ns)
+
+		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		Expect(container.Status.AppliedRelationships).To(ConsistOf("orders-api-to-orders-db"))
+		Expect(container.Status.AppliedConnectors).To(BeEmpty())
+		eventuallyApplied(ns, "orders-api-to-orders-db", metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
+	})
+
+	It("doesn't count a Relationship recreated under the same name with a new target as applied", func() {
+		ns := newProjectNamespace()
+		createWebshop(ns)
+		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		Expect(container.Status.AppliedConnectors).To(ConsistOf(ordersDBConnector))
+		eventuallyApplied(ns, "orders-api-to-orders-db", metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
+
+		rel := &c4v1alpha1.Relationship{}
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api-to-orders-db"), rel)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, rel)).To(Succeed())
+		Eventually(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-to-orders-db"), rel))
+		}).Should(BeTrue())
+		cache := newOrdersDB(ns)
+		cache.Name = "cache-db"
+		cache.Spec.ConnectorRef.Name = "redis"
+		mustCreate(cache, newRelationship(ns, "orders-api-to-orders-db",
+			element(c4v1alpha1.ElementContainer, "orders-api"),
+			element(c4v1alpha1.ElementDataStore, "cache-db")))
+
+		eventuallyApplied(ns, "orders-api-to-orders-db", metav1.ConditionFalse, c4v1alpha1.ReasonAddedAfterScaffold)
+		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "no second scaffold")
 	})
 
 	It("stops when the repository has commits it didn't make", func() {

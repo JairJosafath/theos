@@ -29,6 +29,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -178,10 +179,10 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 
 // ready records a finished scaffold. From here on the factory only reports.
 func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus, from, relationships []string, message string) (ctrl.Result, error) {
+	status *c4v1alpha1.ContainerStatus, from []string, relationships []model.AppliedRelationship, message string) (ctrl.Result, error) {
 	status.Phase = c4v1alpha1.ContainerReady
 	status.ScaffoldedFrom = from
-	status.AppliedRelationships = relationships
+	status.AppliedRelationships, status.AppliedConnectors = appliedStatus(relationships)
 	r.condition(container, status, c4v1alpha1.ConditionScaffolded, metav1.ConditionTrue,
 		c4v1alpha1.ReasonScaffolded, message)
 	return ctrl.Result{}, r.writeStatus(ctx, container, status)
@@ -221,4 +222,20 @@ func repoDescription(container *c4v1alpha1.Container) string {
 		return container.Spec.DisplayName
 	}
 	return fmt.Sprintf("The %s %s of %s", container.Name, container.Spec.Type, container.Spec.SoftwareSystemRef.Name)
+}
+
+// appliedStatus splits what was applied into the Relationship names and, for
+// the ones whose targets are known, what each added.
+func appliedStatus(relationships []model.AppliedRelationship) ([]string, []c4v1alpha1.AppliedConnector) {
+	names := make([]string, 0, len(relationships))
+	var connectors []c4v1alpha1.AppliedConnector
+	for _, a := range relationships {
+		names = append(names, a.Name)
+		if a.DataStore != "" {
+			connectors = append(connectors, c4v1alpha1.AppliedConnector{
+				Relationship: a.Name, DataStore: a.DataStore, Connector: a.Connector,
+			})
+		}
+	}
+	return names, connectors
 }
