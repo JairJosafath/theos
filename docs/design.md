@@ -189,7 +189,7 @@ The highlighted operator is the main thing being built. Gitea and kind are off t
 
 | Part | Namespace | Role |
 | --- | --- | --- |
-| Gitea | `gitea` | Single container with SQLite and a small volume. Holds the template repositories and the Container repositories. |
+| Gitea | `gitea` | Single container with SQLite and a small volume. Holds the template repositories and the Container repositories. Its admin password is generated per cluster into Secret `gitea-admin`, never committed. |
 | Seed job | `gitea` | Creates the `templates` and `webshop` organizations, pushes and tags the template repositories, and stores an access token as Secret `gitea-credentials` in `webshop`. |
 | Operator | `c4-factory-system` | The kubebuilder manager with all controllers. |
 | Sample project | `webshop` | Project, GitProvider, catalog entries and the story resources. |

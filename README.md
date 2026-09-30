@@ -54,7 +54,9 @@ make e2e                  # all of the above, then check every milestone
 
 A minute after `make sample`, Gitea (`make gitea-forward`, http://localhost:3000)
 holds `webshop/orders-api`: a uv project with FastAPI, Kubernetes manifests and a
-devcontainer with Postgres, pushed as one commit.
+devcontainer with Postgres, pushed as one commit. The repositories are public; to sign
+in, `make gitea-admin` prints the admin password, which `make gitea` generates for
+each cluster.
 
 ## Contributing
 
