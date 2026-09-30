@@ -27,13 +27,15 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// ContainerReconciler makes a Container a child of its SoftwareSystem and counts
-// its active Sessions.
+// ContainerReconciler makes a Container a child of its SoftwareSystem, checks its
+// catalog choices and counts its active Sessions.
 type ContainerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -43,8 +45,14 @@ type ContainerReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers/finalizers,verbs=update
 
-// Reconcile adopts the Container and updates its status.
+// +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;computes;deployments;connectors,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
+
+// Reconcile adopts the Container, resolves its references, checks its catalog
+// choices and updates its status.
 func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
 	var container c4v1alpha1.Container
 	if err := r.Get(ctx, req.NamespacedName, &container); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -75,9 +83,35 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	if status.Phase == "" {
-		status.Phase = c4v1alpha1.ContainerPending
+	// Scaffolding happens once. After that the factory only reports.
+	if status.Phase == c4v1alpha1.ContainerReady {
+		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
 	}
+
+	res, missing, err := r.resolve(ctx, &container)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if len(missing) > 0 {
+		status.Phase = c4v1alpha1.ContainerPending
+		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
+			metav1.ConditionFalse, c4v1alpha1.ReasonNotFound, notFoundMessage(missing))
+		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
+	}
+	setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
+		metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
+
+	if err := model.CheckChoices(string(container.Spec.Type), res.entries); err != nil {
+		status.Phase = c4v1alpha1.ContainerFailed
+		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionChoicesValid,
+			metav1.ConditionFalse, c4v1alpha1.ReasonUnsupportedType, err.Error())
+		log.Info("Rejected catalog choices", "reason", err.Error())
+		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
+	}
+	setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionChoicesValid,
+		metav1.ConditionTrue, c4v1alpha1.ReasonValid, "")
+
+	status.Phase = c4v1alpha1.ContainerPending
 	return ctrl.Result{}, r.writeStatus(ctx, &container, status)
 }
 
@@ -121,10 +155,39 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return reqs
 	})
+	// A catalog entry, GitProvider or DataStore appearing can unblock any Container
+	// in the namespace that isn't scaffolded yet.
+	waitingContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		var containers c4v1alpha1.ContainerList
+		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace())); err != nil {
+			return nil
+		}
+		var reqs []reconcile.Request
+		for _, c := range containers.Items {
+			if c.Status.Phase != c4v1alpha1.ContainerReady {
+				reqs = append(reqs, requestFor(c.Namespace, c.Name))
+			}
+		}
+		return reqs
+	})
+	sourceContainer := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
+		rel, ok := obj.(*c4v1alpha1.Relationship)
+		if !ok || rel.Spec.Source.Kind != c4v1alpha1.ElementContainer {
+			return nil
+		}
+		return []reconcile.Request{requestFor(rel.Namespace, rel.Spec.Source.Name)}
+	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.Container{}).
 		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).
 		Watches(&c4v1alpha1.SoftwareSystem{}, systemContainers, createOrDelete()).
+		Watches(&c4v1alpha1.Relationship{}, sourceContainer).
+		Watches(&c4v1alpha1.GitProvider{}, waitingContainers).
+		Watches(&c4v1alpha1.Framework{}, waitingContainers).
+		Watches(&c4v1alpha1.Compute{}, waitingContainers).
+		Watches(&c4v1alpha1.Deployment{}, waitingContainers).
+		Watches(&c4v1alpha1.Connector{}, waitingContainers).
+		Watches(&c4v1alpha1.DataStore{}, waitingContainers).
 		Named("container").
 		Complete(r)
 }
