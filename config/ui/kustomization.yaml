@@ -1,0 +1,18 @@
+# The read-only UI (ui/), in its own namespace. It reads the c4.factory.io
+# resources in every namespace and can change none of them: its ClusterRole has
+# only get, list and watch, and its server proxies only GET.
+#   make ui          build the image, load it into Kind and apply this
+#   make ui-forward  open it on http://localhost:8080
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: c4-factory-ui
+labels:
+- pairs:
+    app.kubernetes.io/part-of: c4-factory
+    app.kubernetes.io/managed-by: kustomize
+  includeSelectors: false
+resources:
+- namespace.yaml
+- rbac.yaml
+- deployment.yaml
+- service.yaml

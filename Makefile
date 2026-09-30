@@ -255,3 +255,4 @@ $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{
 endef
 
 include hack/testenv.mk
+include hack/ui.mk

@@ -1,0 +1,8 @@
+# Build context is ui/. Keep it to the sources the image needs.
+node_modules
+dist
+test-results
+*.log
+Dockerfile
+.dockerignore
+go.mod
