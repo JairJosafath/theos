@@ -45,8 +45,9 @@ func ParseIdentity(data []byte) (Identity, error) {
 
 // Commit trailers that mark the operator's own initial commit.
 const (
-	trailerContainer = "C4-Factory-Container"
-	trailerFrom      = "Scaffolded-From"
+	trailerContainer    = "C4-Factory-Container"
+	trailerFrom         = "Scaffolded-From"
+	trailerRelationship = "Applied-Relationship"
 )
 
 // Author of the initial commit.
@@ -56,8 +57,8 @@ const (
 )
 
 // CommitMessage is the message of the single initial commit. Its trailers let the
-// operator recognise its own commit when it retries.
-func CommitMessage(in Input, scaffoldedFrom []string) string {
+// operator recognise its own commit when it retries, and recover what it recorded.
+func CommitMessage(in Input, scaffoldedFrom, relationships []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Scaffold %s\n\n", in.Container)
 	fmt.Fprintf(&b, "Created by C4 Factory for Container %s in SoftwareSystem %s.\n", in.Container, in.SoftwareSystem)
@@ -65,6 +66,9 @@ func CommitMessage(in Input, scaffoldedFrom []string) string {
 	fmt.Fprintf(&b, "%s: %s/%s\n", trailerContainer, in.Project, in.Container)
 	for _, from := range scaffoldedFrom {
 		fmt.Fprintf(&b, "%s: %s\n", trailerFrom, from)
+	}
+	for _, rel := range relationships {
+		fmt.Fprintf(&b, "%s: %s\n", trailerRelationship, rel)
 	}
 	return b.String()
 }
@@ -74,6 +78,8 @@ type CommitInfo struct {
 	// Container is project/container.
 	Container      string
 	ScaffoldedFrom []string
+	// Relationships are the Relationships whose Connectors were applied.
+	Relationships []string
 }
 
 // ErrNotOurs means a commit wasn't made by the operator.
@@ -93,6 +99,8 @@ func ParseCommitMessage(msg string) (CommitInfo, error) {
 			info.Container = strings.TrimSpace(value)
 		case trailerFrom:
 			info.ScaffoldedFrom = append(info.ScaffoldedFrom, strings.TrimSpace(value))
+		case trailerRelationship:
+			info.Relationships = append(info.Relationships, strings.TrimSpace(value))
 		}
 	}
 	if info.Container == "" {

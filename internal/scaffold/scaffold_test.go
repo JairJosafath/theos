@@ -318,11 +318,13 @@ func TestIdentityRoundTrip(t *testing.T) {
 
 func TestCommitMessageRoundTrip(t *testing.T) {
 	from := []string{"python-fastapi@v1.2.0", "postgres@v1.1.0"}
-	info, err := ParseCommitMessage(CommitMessage(ordersAPI, from))
+	rels := []string{"orders-api-to-orders-db"}
+	info, err := ParseCommitMessage(CommitMessage(ordersAPI, from, rels))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Container != "webshop/orders-api" || !slices.Equal(info.ScaffoldedFrom, from) {
+	if info.Container != "webshop/orders-api" || !slices.Equal(info.ScaffoldedFrom, from) ||
+		!slices.Equal(info.Relationships, rels) {
 		t.Errorf("info = %+v", info)
 	}
 	if _, err := ParseCommitMessage("Initial commit\n"); !errors.Is(err, ErrNotOurs) {
