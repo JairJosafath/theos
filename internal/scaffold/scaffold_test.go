@@ -159,8 +159,7 @@ func TestBuildConflicts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Build(ordersAPI, tt.mutate(webshopLayers()), Options{})
-			var conflict *ConflictError
-			if !errors.As(err, &conflict) {
+			if _, ok := errors.AsType[*ConflictError](err); !ok {
 				t.Fatalf("Build() error = %v, want *ConflictError", err)
 			}
 			if err.Error() != tt.want {

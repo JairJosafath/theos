@@ -41,8 +41,7 @@ func TestCheckChoices(t *testing.T) {
 				}
 				return
 			}
-			var choiceErr *ChoiceError
-			if !errors.As(err, &choiceErr) {
+			if _, ok := errors.AsType[*ChoiceError](err); !ok {
 				t.Fatalf("CheckChoices() = %v, want *ChoiceError", err)
 			}
 			if err.Error() != tt.want {
