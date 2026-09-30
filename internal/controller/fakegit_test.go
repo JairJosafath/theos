@@ -131,6 +131,8 @@ func (g *fakeGit) hanging(key string) <-chan struct{} {
 }
 
 // historyCount is how often the operator has read a repository's history.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) historyCount(owner, name string) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
