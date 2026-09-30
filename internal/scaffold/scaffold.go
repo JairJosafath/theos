@@ -39,6 +39,11 @@ type Input struct {
 	Container      string
 	DisplayName    string
 	Type           string
+	// Framework, Compute and Deployment name the chosen catalog entries. Compute
+	// and Deployment are empty when the Container doesn't pick one.
+	Framework  string
+	Compute    string
+	Deployment string
 	// Connectors are the unique Connector names, sorted.
 	Connectors []string
 }

@@ -18,10 +18,12 @@ package controller
 
 import (
 	"encoding/json"
+	"path"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.yaml.in/yaml/v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,7 +33,7 @@ import (
 )
 
 var ordersAPIScaffoldedFrom = []string{
-	"python-fastapi@v1.2.0", "small@v1.0.0", "k8s-manifests@v1.0.0", "postgres@v1.1.0",
+	"python-fastapi@v1.2.1", "small@v1.0.0", "k8s-manifests@v1.1.0", "postgres@v1.1.0",
 }
 
 // createWebshop creates the sample story in ns: webshop-core with orders-api
@@ -60,6 +62,27 @@ func eventuallyOrdersAPI(ns string, phase c4v1alpha1.ContainerPhase) *c4v1alpha1
 		g.Expect(container.Status.Phase).To(Equal(phase))
 	}).Should(Succeed())
 	return &container
+}
+
+// kustomizationFiles returns the repository paths that deploy/k8s/kustomization.yaml
+// names as resources and patches.
+func kustomizationFiles(files scaffold.Tree) []string {
+	GinkgoHelper()
+	var k struct {
+		Resources []string `yaml:"resources"`
+		Patches   []struct {
+			Path string `yaml:"path"`
+		} `yaml:"patches"`
+	}
+	Expect(yaml.Unmarshal(files["deploy/k8s/kustomization.yaml"].Data, &k)).To(Succeed())
+	out := make([]string, 0, len(k.Resources)+len(k.Patches))
+	for _, r := range k.Resources {
+		out = append(out, path.Join("deploy/k8s", r))
+	}
+	for _, p := range k.Patches {
+		out = append(out, path.Join("deploy/k8s", p.Path))
+	}
+	return out
 }
 
 var _ = Describe("Container scaffolding", func() {
@@ -125,6 +148,31 @@ var _ = Describe("Container scaffolding", func() {
 			g.Expect(container.Status.Conditions).To(Equal(before.Conditions))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1))
+	})
+
+	It("writes manifests that name only files it wrote, with or without a Compute", func() {
+		ns := newProjectNamespace()
+		createWebshop(ns)
+		catalogAPI := newContainer(ns, "catalog-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		catalogAPI.Spec.ComputeRef = nil
+		mustCreate(catalogAPI)
+		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "catalog-api"), catalogAPI)).To(Succeed())
+			g.Expect(catalogAPI.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		}).Should(Succeed())
+
+		ordersFiles := gitFake.repo(ns, "orders-api").files
+		Expect(kustomizationFiles(ordersFiles)).To(ConsistOf("deploy/k8s/deployment.yaml",
+			"deploy/k8s/service.yaml", "deploy/k8s/connector-postgres.yaml", "deploy/k8s/compute.yaml"))
+		catalogFiles := gitFake.repo(ns, "catalog-api").files
+		Expect(kustomizationFiles(catalogFiles)).To(ConsistOf("deploy/k8s/deployment.yaml",
+			"deploy/k8s/service.yaml"))
+		for _, files := range []scaffold.Tree{ordersFiles, catalogFiles} {
+			for _, p := range kustomizationFiles(files) {
+				Expect(files).To(HaveKey(p))
+			}
+		}
 	})
 
 	It("rolls the Ready Container up into its SoftwareSystem and Project", func() {

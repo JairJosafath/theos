@@ -79,7 +79,7 @@ spec:
 status:
   phase: Ready
   repositoryURL: http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api
-  scaffoldedFrom: [python-fastapi@v1.2.0, small@v1.0.0, k8s-manifests@v1.0.0, postgres@v1.1.0]
+  scaffoldedFrom: [python-fastapi@v1.2.1, small@v1.0.0, k8s-manifests@v1.1.0, postgres@v1.1.0]
   activeSessions: 1
 ---
 kind: DataStore
@@ -140,7 +140,7 @@ A Container is scaffolded exactly once, from the catalog entries it picks and th
 1. **Resolve references.** The SoftwareSystem, GitProvider and catalog entries must exist. Until they do, the Container stays `Pending` with the missing name in its condition.
 2. **Check types.** Every catalog entry used, including the Connectors reached through Relationships, must list the Container's type. If not, the Container is `Failed` with `ChoicesValid=False`, for example "python-fastapi does not support static-site".
 3. **Create the repository** in the GitProvider's organization, named after the Container.
-4. **Render the layers** in a fixed order: Framework, Compute, Deployment, then each Connector. Templates are Go `text/template` files that receive the project, system, container and type names, plus the list of Connectors.
+4. **Render the layers** in a fixed order: Framework, Compute, Deployment, then each Connector. Templates are Go `text/template` files that receive the project, system, container and type names, the names of the chosen Framework, Compute and Deployment (empty when the Container picks none), plus the list of Connectors.
 5. **Assemble the devcontainer.** The operator writes `.devcontainer/devcontainer.json` itself: the Framework's base settings plus one compose file per Connector, such as a Postgres service for local development and tests.
 6. **Write the identity file** `.c4factory.yaml` with the project and container names.
 7. **Push one initial commit,** then set `Ready`, `repositoryURL` and `scaffoldedFrom`.
@@ -197,9 +197,9 @@ The highlighted operator is the main thing being built. Gitea and kind are off t
 The seeded templates are the smallest set that exercises every layer:
 
 - `python-fastapi` (Framework): a uv project with FastAPI, ruff and pytest, plus the base devcontainer settings.
-- `small` (Compute): resource requests and limits for the manifests.
-- `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests.
-- `postgres` (Connector): a compose service for the devcontainer and connection settings.
+- `small` (Compute): resource requests and limits for the manifests, as a `deploy/k8s/compute.yaml` patch.
+- `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests. It patches in `compute.yaml` when a Compute is chosen, and lists `connector-<name>.yaml` for each Connector, so a Connector used with it ships that file.
+- `postgres` (Connector): a compose service for the devcontainer and connection settings in `deploy/k8s/connector-postgres.yaml`.
 
 The sample in `config/samples/webshop/` tells a small story: a `customer` Person uses `webshop-core`, whose `orders-api` service reads and writes the `orders-db` DataStore.
 

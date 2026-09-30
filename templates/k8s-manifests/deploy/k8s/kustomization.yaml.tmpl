@@ -12,6 +12,8 @@ resources:
 {{- range .Connectors }}
   - connector-{{ . }}.yaml
 {{- end }}
+{{- if .Compute }}
 patches:
   # Resources from the Compute layer.
   - path: compute.yaml
+{{- end }}

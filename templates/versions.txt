@@ -1,4 +1,4 @@
-python-fastapi v1.2.0
+python-fastapi v1.2.1
 small v1.0.0
-k8s-manifests v1.0.0
+k8s-manifests v1.1.0
 postgres v1.1.0

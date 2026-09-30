@@ -22,7 +22,8 @@ same path, except `.c4factory/`, which is input for the factory. Files ending in
 suffix; a `.tmpl` that renders to only whitespace is left out. Other files are copied
 byte for byte.
 
-Data: `.Project`, `.SoftwareSystem`, `.Container`, `.DisplayName`, `.Type` and
+Data: `.Project`, `.SoftwareSystem`, `.Container`, `.DisplayName`, `.Type`, the chosen
+`.Framework`, `.Compute` and `.Deployment` (empty when none is chosen), and
 `.Connectors` (sorted names). Functions: `has`, `snake`, `upper`, `lower`, plus the
 `text/template` builtins.
 

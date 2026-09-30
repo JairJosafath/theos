@@ -129,7 +129,14 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		Container:      container.Name,
 		DisplayName:    container.Spec.DisplayName,
 		Type:           string(container.Spec.Type),
+		Framework:      container.Spec.FrameworkRef.Name,
 		Connectors:     res.use.Connectors,
+	}
+	if container.Spec.ComputeRef != nil {
+		in.Compute = container.Spec.ComputeRef.Name
+	}
+	if container.Spec.DeploymentRef != nil {
+		in.Deployment = container.Spec.DeploymentRef.Name
 	}
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
 	if err != nil {

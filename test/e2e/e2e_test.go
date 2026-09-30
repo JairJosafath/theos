@@ -45,7 +45,7 @@ var _ = Describe("C4 Factory", Ordered, ContinueOnFailure, func() {
 	Context("milestone 1: test environment", func() {
 		It("has the four template repositories, tagged", func() {
 			for name, tag := range map[string]string{
-				"python-fastapi": "v1.2.0", "small": "v1.0.0", "k8s-manifests": "v1.0.0", "postgres": "v1.1.0",
+				"python-fastapi": "v1.2.1", "small": "v1.0.0", "k8s-manifests": "v1.1.0", "postgres": "v1.1.0",
 			} {
 				var tags []struct {
 					Name string `json:"name"`
@@ -167,7 +167,7 @@ var _ = Describe("C4 Factory", Ordered, ContinueOnFailure, func() {
 			}).WithTimeout(3 * time.Minute).Should(Succeed())
 			Expect(container.Status.RepositoryURL).To(Equal("http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api"))
 			Expect(container.Status.ScaffoldedFrom).To(Equal([]string{
-				"python-fastapi@v1.2.0", "small@v1.0.0", "k8s-manifests@v1.0.0", "postgres@v1.1.0",
+				"python-fastapi@v1.2.1", "small@v1.0.0", "k8s-manifests@v1.1.0", "postgres@v1.1.0",
 			}))
 			Expect(commitsOf("orders-api")).To(HaveLen(1))
 
