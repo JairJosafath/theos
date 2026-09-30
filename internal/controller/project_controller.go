@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,7 +41,8 @@ import (
 const ConditionNameMatchesNamespace = "NameMatchesNamespace"
 
 // ProjectReconciler adopts the kinds a Project owns directly (Person,
-// SoftwareSystem, GitProvider and the catalog entries) and rolls up status.
+// SoftwareSystem, GitProvider and the catalog entries), gives the namespace the
+// Session client's ServiceAccount, and rolls up status.
 type ProjectReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -70,6 +73,9 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		"NameMatches", "")
 
 	if err := r.adoptChildren(ctx, &project); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.ensureSessionAccess(ctx, &project); err != nil {
 		return ctrl.Result{}, err
 	}
 	if err := r.rollUp(ctx, &project, status); err != nil {
@@ -182,6 +188,9 @@ func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.Project{}).
+		Owns(&corev1.ServiceAccount{}).
+		Owns(&rbacv1.Role{}).
+		Owns(&rbacv1.RoleBinding{}).
 		Watches(&c4v1alpha1.Person{}, toProject).
 		Watches(&c4v1alpha1.SoftwareSystem{}, toProject).
 		Watches(&c4v1alpha1.GitProvider{}, toProject).
