@@ -1,0 +1,24 @@
+# c4session devcontainer feature
+
+Installs `c4session`, the C4 Factory Session client, and runs `c4session start` on
+every start of the devcontainer. The client reads the repository's `.c4factory.yaml`,
+registers a Session on its Container, and sends a heartbeat every 30 seconds. When
+the devcontainer stops without a clean shutdown, the operator marks the Session
+`Stale` after two minutes.
+
+The operator writes this feature into every repository it scaffolds, as
+`.devcontainer/c4session/`, and references it as `./c4session`.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `binaryUrl` | empty | URL of a linux `c4session` binary; `${arch}` becomes `amd64` or `arm64`. The operator sets it from `--session-binary-url`. |
+| `version` | `latest` | Module version for `go install`, used when `binaryUrl` is empty and Go is present. |
+| `actor` | `human` | `human` or `agent`. |
+| `summary` | empty | One line about the work. |
+
+Installing never fails the devcontainer build: without a binary the container
+still works, it just doesn't show up as a Session.
+
+The client needs to reach the cluster, with a kubeconfig (`KUBECONFIG` or
+`~/.kube/config`) for the project's `c4-session` ServiceAccount, or in-cluster
+credentials. In v1 that account can touch any Session in its project.
