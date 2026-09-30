@@ -71,8 +71,8 @@ var _ = Describe("Container", func() {
 		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
 		mustCreate(container)
 
-		container.Spec.SoftwareSystemRef.Name = "another-system"
-		Expect(k8sClient.Update(ctx, container)).To(MatchError(ContainSubstring("softwareSystemRef is immutable")))
+		Expect(patch(container, func() { container.Spec.SoftwareSystemRef.Name = "another-system" })).
+			To(MatchError(ContainSubstring("softwareSystemRef is immutable")))
 	})
 
 	It("rejects a type outside the fixed list", func() {

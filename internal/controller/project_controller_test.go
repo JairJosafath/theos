@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -68,6 +69,37 @@ var _ = Describe("Project", func() {
 				g.Expect(obj.GetLabels()).To(HaveKeyWithValue(c4v1alpha1.LabelProject, ns))
 			}).Should(Succeed())
 		}
+	})
+
+	It("gives the namespace a ServiceAccount that may only work with Sessions", func() {
+		ns := newProjectNamespace()
+		var project c4v1alpha1.Project
+		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+
+		var account corev1.ServiceAccount
+		var role rbacv1.Role
+		var binding rbacv1.RoleBinding
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, SessionAccountName), &account)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, key(ns, SessionAccountName), &role)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, key(ns, SessionAccountName), &binding)).To(Succeed())
+		}).Should(Succeed())
+		Expect(controlledBy(&account, &project)).To(BeTrue())
+		Expect(controlledBy(&role, &project)).To(BeTrue())
+		Expect(controlledBy(&binding, &project)).To(BeTrue())
+		for _, rule := range role.Rules {
+			Expect(rule.Resources).To(Or(ConsistOf("sessions"), ConsistOf("sessions/status")))
+		}
+		Expect(binding.Subjects).To(ConsistOf(HaveField("Name", SessionAccountName)))
+
+		By("repairing a Role someone changed")
+		Expect(patch(&role, func() {
+			role.Rules = append(role.Rules, rbacv1.PolicyRule{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"get"}})
+		})).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, SessionAccountName), &role)).To(Succeed())
+			g.Expect(role.Rules).To(HaveLen(2))
+		}).Should(Succeed())
 	})
 
 	It("rolls up containers and sessions", func() {

@@ -64,7 +64,7 @@ var _ = Describe("Session", func() {
 		ns := newProjectNamespace()
 		session := newSession(ns, "s", "orders-api")
 		mustCreate(session)
-		session.Spec.ContainerRef.Name = "other"
-		Expect(k8sClient.Update(ctx, session)).To(MatchError(ContainSubstring("containerRef is immutable")))
+		Expect(patch(session, func() { session.Spec.ContainerRef.Name = "other" })).
+			To(MatchError(ContainSubstring("containerRef is immutable")))
 	})
 })

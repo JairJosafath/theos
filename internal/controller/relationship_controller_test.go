@@ -39,8 +39,8 @@ var _ = Describe("Relationship", func() {
 			element(c4v1alpha1.ElementPerson, "customer"),
 			element(c4v1alpha1.ElementSoftwareSystem, "webshop-core"))
 		mustCreate(rel)
-		rel.Spec.Source.Name = "admin"
-		Expect(k8sClient.Update(ctx, rel)).To(MatchError(ContainSubstring("source is immutable")))
+		Expect(patch(rel, func() { rel.Spec.Source.Name = "admin" })).
+			To(MatchError(ContainSubstring("source is immutable")))
 	})
 
 	It("is owned by its source and tells the story", func() {

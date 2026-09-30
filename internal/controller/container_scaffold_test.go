@@ -215,8 +215,7 @@ var _ = Describe("Container scaffolding", func() {
 		createFactory(ns)
 		var framework c4v1alpha1.Framework
 		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
-		framework.Spec.Template.Ref = "main"
-		Expect(k8sClient.Update(ctx, &framework)).To(Succeed())
+		Expect(patch(&framework, func() { framework.Spec.Template.Ref = "main" })).To(Succeed())
 		mustCreate(newSystem(ns, "webshop-core"),
 			newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService))
 

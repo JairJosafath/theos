@@ -120,6 +120,14 @@ func newCatalogSpec(url, ref string, supported ...c4v1alpha1.ContainerType) c4v1
 	}
 }
 
+// patch applies mutate to obj and sends the change as a merge patch, so a test's
+// write can't collide with the operator adopting or labelling the object meanwhile.
+func patch(obj client.Object, mutate func()) error {
+	orig, _ := obj.DeepCopyObject().(client.Object)
+	mutate()
+	return k8sClient.Patch(ctx, obj, client.MergeFrom(orig))
+}
+
 // controlledBy asserts that obj's controller ownerReference points at owner.
 func controlledBy(obj, owner client.Object) bool {
 	return metav1.IsControlledBy(obj, owner)

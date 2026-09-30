@@ -131,8 +131,7 @@ var _ = Describe("Container catalog choices", func() {
 			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerFailed))
 		}).Should(Succeed())
 
-		container.Spec.Type = c4v1alpha1.ContainerTypeService
-		Expect(k8sClient.Update(ctx, container)).To(Succeed())
+		Expect(patch(container, func() { container.Spec.Type = c4v1alpha1.ContainerTypeService })).To(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "storefront"), container)).To(Succeed())
 			g.Expect(container.Status.Phase).NotTo(Equal(c4v1alpha1.ContainerFailed))
