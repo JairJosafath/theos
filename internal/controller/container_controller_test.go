@@ -91,7 +91,7 @@ var _ = Describe("SoftwareSystem", func() {
 			newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService),
 			newContainer(ns, "storefront", "webshop-core", c4v1alpha1.ContainerTypeStaticSite),
 			newContainer(ns, "reports", "back-office", c4v1alpha1.ContainerTypeJob),
-			newDataStore(ns, "orders-db", "webshop-core", "postgres"),
+			newOrdersDB(ns),
 		)
 		Eventually(func(g Gomega) {
 			var system c4v1alpha1.SoftwareSystem

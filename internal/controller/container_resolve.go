@@ -143,14 +143,14 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 	case *c4v1alpha1.Connector:
 		spec = o.Spec
 	}
-	types := make([]string, 0, len(spec.SupportedTypes))
+	supported := make([]string, 0, len(spec.SupportedTypes))
 	for _, t := range spec.SupportedTypes {
-		types = append(types, string(t))
+		supported = append(supported, string(t))
 	}
 	return model.CatalogEntry{
 		Side:           side,
 		Name:           obj.GetName(),
-		SupportedTypes: types,
+		SupportedTypes: supported,
 		TemplateURL:    spec.Template.URL,
 		TemplateRef:    spec.Template.Ref,
 	}

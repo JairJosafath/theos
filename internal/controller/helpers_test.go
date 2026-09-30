@@ -80,12 +80,13 @@ func newContainer(ns, name, system string, typ c4v1alpha1.ContainerType) *c4v1al
 	}
 }
 
-func newDataStore(ns, name, system, connector string) *c4v1alpha1.DataStore {
+// newOrdersDB returns the sample story's orders-db: a Postgres DataStore in webshop-core.
+func newOrdersDB(ns string) *c4v1alpha1.DataStore {
 	return &c4v1alpha1.DataStore{
-		ObjectMeta: objectMeta(ns, name),
+		ObjectMeta: objectMeta(ns, "orders-db"),
 		Spec: c4v1alpha1.DataStoreSpec{
-			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: system},
-			ConnectorRef:      c4v1alpha1.LocalRef{Name: connector},
+			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: "webshop-core"},
+			ConnectorRef:      c4v1alpha1.LocalRef{Name: "postgres"},
 		},
 	}
 }

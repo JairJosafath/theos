@@ -102,7 +102,7 @@ var _ = Describe("Container catalog choices", func() {
 		container.Spec.DeploymentRef = nil
 		mustCreate(
 			newSystem(ns, "webshop-core"),
-			newDataStore(ns, "orders-db", "webshop-core", "postgres"),
+			newOrdersDB(ns),
 			newRelationship(ns, "export-reads-orders",
 				element(c4v1alpha1.ElementContainer, "nightly-export"),
 				element(c4v1alpha1.ElementDataStore, "orders-db")),

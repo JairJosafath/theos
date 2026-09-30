@@ -75,7 +75,7 @@ var _ = Describe("Relationship", func() {
 		rel := newRelationship(ns, "orders-api-to-orders-db",
 			element(c4v1alpha1.ElementContainer, "orders-api"),
 			element(c4v1alpha1.ElementDataStore, "orders-db"))
-		mustCreate(newSystem(ns, "webshop-core"), container, newDataStore(ns, "orders-db", "webshop-core", "postgres"), rel)
+		mustCreate(newSystem(ns, "webshop-core"), container, newOrdersDB(ns), rel)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, rel.Name), rel)).To(Succeed())
@@ -92,7 +92,7 @@ var _ = Describe("DataStore", func() {
 	It("is a child of its SoftwareSystem and resolves its Connector", func() {
 		ns := newProjectNamespace()
 		system := newSystem(ns, "webshop-core")
-		store := newDataStore(ns, "orders-db", "webshop-core", "postgres")
+		store := newOrdersDB(ns)
 		mustCreate(system, store)
 
 		Eventually(func(g Gomega) {
