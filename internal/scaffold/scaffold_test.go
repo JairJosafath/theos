@@ -230,6 +230,36 @@ func TestBuildRejectsBadInput(t *testing.T) {
 			},
 			want: "can't write .git",
 		},
+		{
+			name: "template renders to .git",
+			in:   ordersAPI,
+			layers: func() []Layer {
+				l := webshopLayers()
+				l[0].Files[".git.tmpl"] = File{Data: []byte("x")}
+				return l
+			},
+			want: "can't write .git",
+		},
+		{
+			name: "template writes a nested .git",
+			in:   ordersAPI,
+			layers: func() []Layer {
+				l := webshopLayers()
+				l[0].Files["app/.git/config"] = File{Data: []byte("x")}
+				return l
+			},
+			want: "can't write .git",
+		},
+		{
+			name: "framework devcontainer.json is null",
+			in:   ordersAPI,
+			layers: func() []Layer {
+				l := webshopLayers()
+				l[0].Files[".c4factory/devcontainer.json"] = File{Data: []byte("null")}
+				return l
+			},
+			want: "python-fastapi: .c4factory/devcontainer.json:",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

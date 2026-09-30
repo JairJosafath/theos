@@ -208,6 +208,9 @@ func renderLayer(in Input, layer Layer) (Tree, error) {
 		}
 		f := layer.Files[p]
 		target, data, keep, err := renderFile(in, p, f.Data)
+		if err == nil {
+			err = checkPath(target)
+		}
 		if err != nil {
 			return nil, &TemplateError{Layer: layer.Name, Path: p, Err: err}
 		}
@@ -263,7 +266,8 @@ func checkPath(p string) error {
 	if p == "" || strings.HasPrefix(p, "/") || path.Clean(p) != p || p == ".." || strings.HasPrefix(p, "../") {
 		return fmt.Errorf("path must be relative and clean")
 	}
-	if p == ".git" || strings.HasPrefix(p, ".git/") {
+	// Git refuses a .git entry at any depth, in any case.
+	if slices.ContainsFunc(strings.Split(p, "/"), func(part string) bool { return strings.EqualFold(part, ".git") }) {
 		return fmt.Errorf("templates can't write .git")
 	}
 	return nil

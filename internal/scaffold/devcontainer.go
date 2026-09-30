@@ -3,6 +3,7 @@ package scaffold
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -35,6 +36,10 @@ func assembleDevcontainer(in Input, layers []Layer, opts Options) (Tree, error) 
 				settings = map[string]any{}
 				if err := json.Unmarshal(data, &settings); err != nil {
 					return nil, &TemplateError{Layer: layer.Name, Path: metaDir + "devcontainer.json", Err: err}
+				}
+				if settings == nil { // the file was null
+					return nil, &TemplateError{Layer: layer.Name, Path: metaDir + "devcontainer.json",
+						Err: errors.New("want a JSON object")}
 				}
 			}
 		case model.SideConnector:
