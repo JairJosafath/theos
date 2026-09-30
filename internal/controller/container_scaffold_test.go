@@ -95,6 +95,9 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(json.Unmarshal(repo.files[".devcontainer/devcontainer.json"].Data, &devcontainer)).To(Succeed())
 		Expect(devcontainer).To(HaveKeyWithValue("name", "Orders API"))
 		Expect(devcontainer).To(HaveKeyWithValue("service", "app"))
+		Expect(devcontainer).To(HaveKeyWithValue("features", HaveKey("./c4session")),
+			"the Session client is part of every devcontainer")
+		Expect(repo.files[".devcontainer/c4session/install.sh"].Executable).To(BeTrue())
 
 		identity, err := scaffold.ParseIdentity(repo.files[scaffold.IdentityPath].Data)
 		Expect(err).NotTo(HaveOccurred())

@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/features"
 	"github.com/JairJosafath/c4factory/internal/controller"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -67,6 +68,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var sessionStaleAfter time.Duration
+	var sessionFeature, sessionBinaryURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -92,6 +94,11 @@ func main() {
 	}
 	flag.DurationVar(&sessionStaleAfter, "session-stale-after", model.DefaultStaleAfter,
 		"How long a Session may go without a heartbeat before it is marked Stale.")
+	flag.StringVar(&sessionFeature, "session-feature", features.SessionFeatureLocal,
+		"How scaffolded devcontainers get the Session client: local (write the feature into each repository), "+
+			"none, or a feature reference such as an OCI image.")
+	flag.StringVar(&sessionBinaryURL, "session-binary-url", "",
+		"URL of a linux c4session binary for the feature to download; ${arch} becomes amd64 or arm64.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -208,11 +215,17 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "softwaresystem")
 		os.Exit(1)
 	}
+	scaffoldOptions, err := features.ScaffoldOptions(sessionFeature, sessionBinaryURL)
+	if err != nil {
+		setupLog.Error(err, "Failed to load the Session feature")
+		os.Exit(1)
+	}
 	if err := (&controller.ContainerReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		APIReader: mgr.GetAPIReader(),
-		Git:       gitprovider.Client{},
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		APIReader:       mgr.GetAPIReader(),
+		Git:             gitprovider.Client{},
+		ScaffoldOptions: scaffoldOptions,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "container")
 		os.Exit(1)

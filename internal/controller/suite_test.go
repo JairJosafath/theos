@@ -41,6 +41,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/features"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -119,10 +120,15 @@ var _ = BeforeSuite(func() {
 // setupReconcilers registers every reconciler the way cmd/main.go does.
 func setupReconcilers(mgr ctrl.Manager) error {
 	c, s := mgr.GetClient(), mgr.GetScheme()
+	sessionFeature, err := features.ScaffoldOptions(features.SessionFeatureLocal, "")
+	if err != nil {
+		return err
+	}
 	for _, r := range []interface{ SetupWithManager(ctrl.Manager) error }{
 		&ProjectReconciler{Client: c, Scheme: s},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
-		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake},
+		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
+			ScaffoldOptions: sessionFeature},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},

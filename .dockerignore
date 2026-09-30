@@ -9,6 +9,9 @@
 !**/*.go
 **/*_test.go
 
+# The devcontainer features the operator embeds.
+!features/src/**
+
 # Re-include Go module files
 !go.mod
 !go.sum
