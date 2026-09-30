@@ -116,7 +116,7 @@ var _ = Describe("Container scaffolding", func() {
 		pushes := gitFake.pushCount()
 		before := container.Status.DeepCopy()
 		orig := container.DeepCopy()
-		container.Annotations = map[string]string{"test/poke": time.Now().String()}
+		container.Annotations = map[string]string{c4v1alpha1.AnnotationRetry: time.Now().String()}
 		Expect(k8sClient.Patch(ctx, container, client.MergeFrom(orig))).To(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.pushCount()).To(Equal(pushes))
