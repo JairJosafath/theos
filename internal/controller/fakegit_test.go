@@ -40,6 +40,7 @@ type fakeGit struct {
 	templates map[string]scaffold.Tree // url@ref
 	repos     map[string]*fakeRepo     // owner/name
 	pushes    int
+	histories map[string]int // History calls per owner/name
 }
 
 type fakeRepo struct {
@@ -48,7 +49,7 @@ type fakeRepo struct {
 }
 
 func newFakeGit(templatesDir string) (*fakeGit, error) {
-	g := &fakeGit{templates: map[string]scaffold.Tree{}, repos: map[string]*fakeRepo{}}
+	g := &fakeGit{templates: map[string]scaffold.Tree{}, repos: map[string]*fakeRepo{}, histories: map[string]int{}}
 	versions, err := os.Open(filepath.Join(templatesDir, "versions.txt"))
 	if err != nil {
 		return nil, err
@@ -104,6 +105,20 @@ func (g *fakeGit) seedRepo(owner, name, message string) {
 	g.repos[owner+"/"+name] = &fakeRepo{commits: []gitprovider.Commit{{Hash: "c0ffee", Message: message}}}
 }
 
+// clearRepo removes a repository's commits, as someone fixing it by hand would.
+func (g *fakeGit) clearRepo(owner, name string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.repos[owner+"/"+name] = &fakeRepo{}
+}
+
+// historyCount is how often the operator has read a repository's history.
+func (g *fakeGit) historyCount(owner, name string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.histories[owner+"/"+name]
+}
+
 func (g *fakeGit) repo(owner, name string) *fakeRepo {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -149,6 +164,7 @@ func (p *fakeProvider) EnsureRepository(_ context.Context, name, _ string) (gitp
 func (p *fakeProvider) History(_ context.Context, repo gitprovider.Repository, limit int) ([]gitprovider.Commit, error) {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
+	p.git.histories[repo.Owner+"/"+repo.Name]++
 	r := p.git.repos[repo.Owner+"/"+repo.Name]
 	var out []gitprovider.Commit
 	for i := len(r.commits) - 1; i >= 0 && len(out) < limit; i-- {

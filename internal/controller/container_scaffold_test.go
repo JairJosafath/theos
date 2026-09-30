@@ -192,6 +192,27 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonForeignCommits))
 		Expect(cond.Message).To(ContainSubstring("has commits C4 Factory didn't make"))
+
+		By("not trying again on its own")
+		reads := gitFake.historyCount(ns, "orders-api")
+		Consistently(func() int { return gitFake.historyCount(ns, "orders-api") }, "2s").Should(Equal(reads))
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerFailed))
+	})
+
+	It("tries a Failed Container again when the retry annotation changes", func() {
+		ns := newProjectNamespace()
+		gitFake.seedRepo(ns, "orders-api", "Initial commit\n")
+		createWebshop(ns)
+		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
+
+		gitFake.clearRepo(ns, "orders-api")
+		Expect(patch(container, func() {
+			container.Annotations = map[string]string{c4v1alpha1.AnnotationRetry: "1"}
+		})).To(Succeed())
+
+		container = eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		Expect(container.Status.ScaffoldedFrom).To(Equal(ordersAPIScaffoldedFrom))
 	})
 
 	It("fails when two layers write the same path, naming it", func() {

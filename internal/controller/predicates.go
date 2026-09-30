@@ -33,6 +33,20 @@ func createOrDelete() builder.WatchesOption {
 	})
 }
 
+// specOrRetry passes a Container's creation, deletion and spec changes, and
+// changes to its retry annotation, but not the operator's own status and
+// metadata writes: a Failed Container stays failed until one of its inputs
+// changes or someone asks for a retry.
+func specOrRetry() builder.Predicates {
+	retryChanged := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return e.ObjectOld.GetAnnotations()[c4v1alpha1.AnnotationRetry] !=
+				e.ObjectNew.GetAnnotations()[c4v1alpha1.AnnotationRetry]
+		},
+	}
+	return builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, retryChanged))
+}
+
 // sessionPhaseChanges ignores heartbeats: a Session matters to its ancestors only
 // when it appears, disappears or changes phase.
 func sessionPhaseChanges() builder.WatchesOption {

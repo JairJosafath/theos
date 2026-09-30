@@ -140,3 +140,7 @@ const (
 	LabelSoftwareSystem = "c4.factory.io/software-system"
 	LabelContainer      = "c4.factory.io/container"
 )
+
+// AnnotationRetry, set or changed on a Failed Container, makes the operator try
+// to scaffold it again: after emptying its repository, for example.
+const AnnotationRetry = "c4.factory.io/retry"

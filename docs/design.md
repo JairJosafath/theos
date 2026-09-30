@@ -145,7 +145,7 @@ A Container is scaffolded exactly once, from the catalog entries it picks and th
 6. **Write the identity file** `.c4factory.yaml` with the project and container names.
 7. **Push one initial commit,** then set `Ready`, `repositoryURL` and `scaffoldedFrom`.
 
-Two rules keep this safe to retry. Every file belongs to exactly one layer, so two layers writing the same path fail the Container with that path in the message. And if the repository exists but is empty, the operator retries the commit; if it has commits the operator didn't make, it stops with `Failed`.
+Two rules keep this safe to retry. Every file belongs to exactly one layer, so two layers writing the same path fail the Container with that path in the message. And if the repository exists but is empty, the operator retries the commit; if it has commits the operator didn't make, it stops with `Failed`. A `Failed` Container tries again when something it depends on changes (its spec, a catalog entry, the GitProvider, a DataStore or a Relationship), or when someone sets or changes its `c4.factory.io/retry` annotation, for example after emptying the repository.
 
 ### Relationships
 

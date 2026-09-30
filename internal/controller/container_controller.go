@@ -199,7 +199,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return []reconcile.Request{requestFor(rel.Namespace, rel.Spec.Source.Name)}
 	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.Container{}).
+		For(&c4v1alpha1.Container{}, specOrRetry()).
 		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).
 		Watches(&c4v1alpha1.SoftwareSystem{}, systemContainers, createOrDelete()).
 		Watches(&c4v1alpha1.Relationship{}, sourceContainer).
