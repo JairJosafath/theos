@@ -1,8 +1,25 @@
 name: Lint
 
+# Only Go sources and the linter's own configuration can change the result.
 on:
   push:
+    branches: [main]
+    paths: &paths
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - .golangci.yml
+      - .custom-gcl.yml
+      - Makefile
+      - .github/workflows/lint.yml
   pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+# A newer push to a pull request replaces the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 

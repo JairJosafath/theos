@@ -1,8 +1,34 @@
 name: E2E Tests
 
+# The slowest check: it builds every image and the whole Kind environment. Anything
+# that ends up in the cluster counts; documentation, the UI, unit tests and lint
+# settings don't.
 on:
   push:
+    branches: [main]
+    paths: &paths
+      - '**'
+      - '!**/*.md'
+      - '!docs/**'
+      - '!ui/**'
+      - '!config/ui/**'
+      - '!.devcontainer/**'
+      - '!**/*_test.go'
+      - 'test/e2e/**'
+      - '!.golangci.yml'
+      - '!.custom-gcl.yml'
+      - '!hack/evidence.sh'
+      - '!hack/ui.mk'
+      - '!.github/**'
+      - .github/workflows/test-e2e.yml
   pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+# A newer push to a pull request replaces the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
@@ -25,7 +51,7 @@ jobs:
 
       - name: Install the latest version of kind
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
