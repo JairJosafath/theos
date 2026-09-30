@@ -33,17 +33,28 @@ such as ArgoCD, Flux and Crossplane.
 
 ## Status
 
-Design stage. [docs/design.md](docs/design.md) holds the design and the MVP v1 plan:
-six milestones from a local test cluster to a read-only UI.
+MVP v1 runs end to end in a local Kind cluster: the story model, the catalog,
+scaffolding into Gitea, Sessions and a read-only UI. [docs/design.md](docs/design.md)
+holds the design and plan, [docs/results.md](docs/results.md) shows each milestone
+working, with screenshots.
 
-## Getting started
+## Try it
 
 Open the repository in the dev container. It includes Go, kubebuilder, Docker, Kind,
 kubectl, Helm, uv and Node; see [.devcontainer/README.md](.devcontainer/README.md).
 
-Everything runs in one local Kind cluster: Gitea for the repositories, the operator,
-and a sample `webshop` project. The Make targets planned for milestone 1 are
-`make cluster gitea seed`, then `make deploy sample`, or `make e2e` for all of it.
+```sh
+make cluster gitea seed   # a Kind cluster with Gitea and the tagged templates
+make deploy sample        # the operator, and the webshop story
+kubectl get c4 -n webshop # the story as the operator sees it
+make session              # a test Session: a pod working on orders-api
+make ui ui-forward        # the read-only UI on http://localhost:8080
+make e2e                  # all of the above, then check every milestone
+```
+
+A minute after `make sample`, Gitea (`make gitea-forward`, http://localhost:3000)
+holds `webshop/orders-api`: a uv project with FastAPI, Kubernetes manifests and a
+devcontainer with Postgres, pushed as one commit.
 
 ## Contributing
 

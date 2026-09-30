@@ -58,3 +58,30 @@ These are the calls made while building. Each is small and easy to change.
 
 `make lint` runs depguard with the rules in [architecture.md](../architecture.md).
 `make check` runs manifests, generate, fmt, vet, lint and test.
+
+## Progress
+
+All six milestones are built on `explore/mvp-v1`; [results.md](../results.md) shows
+each check passing. Where the build departed from this plan, or learned something:
+
+- **Stale cache after our own writes.** A reconcile queued during a scaffold could
+  read the Container from the cache before its `Ready` status arrived and scaffold
+  again. The retry rules caught it (the repository held our own commit), but the Git
+  calls repeated. The scaffold step now checks the live object first.
+- **Tests write with merge patches.** A test's `Update` could race the operator
+  adopting the same object; CI caught it once. Tests use `patch()` now.
+- **The feature is written into each repository** rather than published, and
+  downloads the client from `--session-binary-url`. Publishing it as an OCI feature
+  works through the same flag (`--session-feature=<ref>`).
+- **Stopping a devcontainer only signals its first process.** Checked with a real
+  `devcontainer up` on a scaffolded repository: the Session registered, but on stop
+  it would only have turned Stale. The operator's `compose.yaml` now runs the `app`
+  service under a small shell that passes SIGTERM on to the client, so the Session
+  is deleted, as the design asks.
+- **The test pod shares its process namespace,** so `make session-kill` can SIGKILL
+  the client (as a crashed devcontainer would) while deleting the pod still sends a
+  clean SIGTERM.
+- **Applied Relationships are recorded twice:** in `status.appliedRelationships` and
+  in the commit's trailers, so a lost status can be rebuilt from the repository.
+- **`ui/go.mod`** keeps the Go tooling out of `node_modules`, where an npm package
+  ships Go sources.
