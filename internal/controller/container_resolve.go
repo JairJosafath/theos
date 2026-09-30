@@ -19,11 +19,13 @@ package controller
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -31,6 +33,8 @@ import (
 // values the business rules take.
 type resolved struct {
 	provider *c4v1alpha1.GitProvider
+	// creds come from the GitProvider's credentials Secret.
+	creds gitprovider.Credentials
 	// entries are the catalog entries in layer order: Framework, Compute,
 	// Deployment, then each Connector.
 	entries []model.CatalogEntry
@@ -53,6 +57,15 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1alpha1
 	}
 	if found {
 		res.provider = &provider
+		creds, ok, err := r.credentials(ctx, &provider)
+		if err != nil {
+			return res, nil, err
+		}
+		if ok {
+			res.creds = creds
+		} else {
+			missing = append(missing, "Secret "+provider.Spec.CredentialsSecretRef.Name)
+		}
 	} else {
 		missing = append(missing, "GitProvider "+spec.GitProviderRef.Name)
 	}
@@ -119,6 +132,25 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1alpha1
 		res.entries = append(res.entries, catalogEntry(model.SideConnector, &connector))
 	}
 	return res, missing, nil
+}
+
+// credentials reads a GitProvider's Secret. It goes straight to the API server
+// rather than through the cache, so the operator never caches every Secret.
+func (r *ContainerReconciler) credentials(ctx context.Context, provider *c4v1alpha1.GitProvider) (gitprovider.Credentials, bool, error) {
+	var secret corev1.Secret
+	err := r.APIReader.Get(ctx, types.NamespacedName{
+		Namespace: provider.Namespace, Name: provider.Spec.CredentialsSecretRef.Name,
+	}, &secret)
+	if apierrors.IsNotFound(err) {
+		return gitprovider.Credentials{}, false, nil
+	}
+	if err != nil {
+		return gitprovider.Credentials{}, false, err
+	}
+	return gitprovider.Credentials{
+		Username: string(secret.Data["username"]),
+		Token:    string(secret.Data["token"]),
+	}, true, nil
 }
 
 // lookup gets a named object and reports whether it exists.

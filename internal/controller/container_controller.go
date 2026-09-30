@@ -32,13 +32,20 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
 // ContainerReconciler makes a Container a child of its SoftwareSystem, checks its
-// catalog choices and counts its active Sessions.
+// catalog choices, scaffolds its repository once and counts its active Sessions.
 type ContainerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// APIReader reads Secrets without caching them.
+	APIReader client.Reader
+	// Git reaches the Git hosts.
+	Git GitClient
+	// ScaffoldOptions configure the parts of a scaffold the operator owns.
+	ScaffoldOptions scaffold.Options
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
@@ -47,9 +54,10 @@ type ContainerReconciler struct {
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;computes;deployments;connectors,verbs=get;list;watch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile adopts the Container, resolves its references, checks its catalog
-// choices and updates its status.
+// choices and scaffolds its repository once.
 func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -111,8 +119,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionChoicesValid,
 		metav1.ConditionTrue, c4v1alpha1.ReasonValid, "")
 
-	status.Phase = c4v1alpha1.ContainerPending
-	return ctrl.Result{}, r.writeStatus(ctx, &container, status)
+	return r.scaffold(ctx, &container, res, status)
 }
 
 func (r *ContainerReconciler) countSessions(ctx context.Context, container *c4v1alpha1.Container) (int, error) {
