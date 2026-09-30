@@ -62,6 +62,8 @@ func (c Client) FetchTemplate(ctx context.Context, repoURL, ref string, creds *C
 		opts.SingleBranch = true
 		opts.Depth = 1
 	case commitSHA.MatchString(ref):
+		// The commit may be reachable only from a tag.
+		opts.Tags = git.AllTags
 		opts.NoCheckout = true
 		checkout = plumbing.NewHash(ref)
 	case has(plumbing.NewBranchReferenceName(ref)):

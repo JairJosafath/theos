@@ -119,6 +119,48 @@ func TestFetchTemplate(t *testing.T) {
 	}
 }
 
+// A commit reachable only from a tag, such as a release cut from a branch that
+// has since been deleted, is still a valid pin.
+func TestFetchTemplateTaggedCommit(t *testing.T) {
+	ctx := context.Background()
+	dir, _ := templateRepo(t)
+	clone := t.TempDir()
+	local, err := git.PlainClone(clone, false, &git.CloneOptions{URL: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, _ := local.Worktree()
+	if err := wt.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("release"), Create: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clone, "README.md.tmpl"), []byte("# release\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("README.md.tmpl"); err != nil {
+		t.Fatal(err)
+	}
+	sig := &object.Signature{Name: "Test", Email: "test@example.com", When: testAuthor.When.Add(2 * time.Hour)}
+	release, err := wt.Commit("Release", &git.CommitOptions{Author: sig})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.CreateTag("v2.0.0", release, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Only the tag is pushed; no branch on the remote holds the commit.
+	if err := local.Push(&git.PushOptions{RefSpecs: []config.RefSpec{"refs/tags/v2.0.0:refs/tags/v2.0.0"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	tree, err := Client{}.FetchTemplate(ctx, dir, release.String(), nil)
+	if err != nil {
+		t.Fatalf("FetchTemplate() error = %v", err)
+	}
+	if got := string(tree["README.md.tmpl"].Data); got != "# release\n" {
+		t.Errorf("README.md.tmpl = %q, want the file at the tagged commit", got)
+	}
+}
+
 func TestHistoryAndInitialCommit(t *testing.T) {
 	ctx := context.Background()
 	dir := bareRepo(t)
