@@ -76,3 +76,19 @@ twice on each push. Before merging:
 Done when GitGuardian passes on the rewritten branch, a fresh cluster seeds with a
 generated password, a devcontainer's Postgres accepts the app without one, and CI
 skips workflows a change can't affect.
+
+Both are done:
+
+- **No commit holds the old values.** A scan of every commit on the branch finds
+  neither the old Gitea password nor a Postgres password, and the tip passes
+  `make check`.
+- **The generated password works.** On the local cluster, `make gitea` replaced
+  the password that used to be committed: the old one now gets HTTP 401, the new
+  one 200, and `make seed` signs in with it.
+- **Postgres takes the app without a password.** The rendered compose fragment,
+  run with Docker Compose, lets `app` connect with its `DATABASE_URL` and
+  publishes no port.
+- **The filters were checked before pushing.** actionlint accepts the workflows,
+  and a simulation of GitHub's `paths` rules over sample changes gave the intended
+  runs. It also showed that `**.go` style patterns can match only at the root, so
+  the filters use `**/*.go`.
