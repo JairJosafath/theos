@@ -92,7 +92,7 @@ func Run(ctx context.Context, c client.Client, opts Options) error {
 		log = slog.Default()
 	}
 
-	name, err := register(ctx, c, opts)
+	name, err := register(ctx, c, opts, log)
 	if err != nil {
 		return err
 	}
@@ -104,6 +104,9 @@ func Run(ctx context.Context, c client.Client, opts Options) error {
 	for {
 		select {
 		case <-ctx.Done():
+			if name == "" {
+				return nil
+			}
 			// ctx is done, so clean up with a short context of our own.
 			cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -116,11 +119,22 @@ func Run(ctx context.Context, c client.Client, opts Options) error {
 			log.Info("Deleted Session", "session", name)
 			return nil
 		case <-ticker.C:
+			if name == "" {
+				// The last registration failed; try again rather than give up.
+				if name, err = register(ctx, c, opts, log); err != nil {
+					log.Error("Could not register Session", "error", err)
+				} else {
+					log.Info("Registered Session", "session", name, "container", opts.Container)
+				}
+				continue
+			}
 			err := heartbeat(ctx, c, opts.Namespace, name)
 			switch {
+			case apierrors.IsNotFound(err) && !deleted(ctx, c, opts.Namespace, name):
+				log.Error("Could not send heartbeat; retrying", "session", name, "error", err)
 			case apierrors.IsNotFound(err):
 				log.Info("Session was deleted; registering a new one", "session", name)
-				if name, err = register(ctx, c, opts); err != nil {
+				if name, err = register(ctx, c, opts, log); err != nil {
 					log.Error("Could not register Session", "error", err)
 				}
 			case err != nil && ctx.Err() == nil:
@@ -132,7 +146,7 @@ func Run(ctx context.Context, c client.Client, opts Options) error {
 }
 
 // register creates the Session and sends its first heartbeat.
-func register(ctx context.Context, c client.Client, opts Options) (string, error) {
+func register(ctx context.Context, c client.Client, opts Options, log *slog.Logger) (string, error) {
 	session := &c4v1alpha1.Session{
 		ObjectMeta: metav1.ObjectMeta{GenerateName: opts.Container + "-", Namespace: opts.Namespace},
 		Spec: c4v1alpha1.SessionSpec{
@@ -144,10 +158,18 @@ func register(ctx context.Context, c client.Client, opts Options) (string, error
 	if err := c.Create(ctx, session); err != nil {
 		return "", fmt.Errorf("register Session on Container %s/%s: %w", opts.Namespace, opts.Container, err)
 	}
+	// The Session exists now; a first heartbeat that fails is retried on the next tick.
 	if err := heartbeat(ctx, c, opts.Namespace, session.Name); err != nil {
-		return "", fmt.Errorf("first heartbeat of Session %s: %w", session.Name, err)
+		log.Error("Could not send the first heartbeat; retrying", "session", session.Name, "error", err)
 	}
 	return session.Name, nil
+}
+
+// deleted reports whether the Session is really gone, rather than its status
+// endpoint answering 404 for a moment.
+func deleted(ctx context.Context, c client.Client, namespace, name string) bool {
+	err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &c4v1alpha1.Session{})
+	return apierrors.IsNotFound(err)
 }
 
 // heartbeat marks the Session Active now. It is a merge patch of the status

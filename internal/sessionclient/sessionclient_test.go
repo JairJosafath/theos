@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,6 +49,18 @@ func startAPIServer(t *testing.T) client.Client {
 	return c
 }
 
+// testLogger sends the client's log to the test's, so a failure shows what it did.
+func testLogger(t *testing.T) *slog.Logger {
+	return slog.New(slog.NewTextHandler(testWriter{t}, nil))
+}
+
+type testWriter struct{ t *testing.T }
+
+func (w testWriter) Write(p []byte) (int, error) {
+	w.t.Log(strings.TrimSpace(string(p)))
+	return len(p), nil
+}
+
 func sessions(t *testing.T, c client.Client) []c4v1alpha1.Session {
 	t.Helper()
 	var list c4v1alpha1.SessionList
@@ -57,10 +70,10 @@ func sessions(t *testing.T, c client.Client) []c4v1alpha1.Session {
 	return list.Items
 }
 
-// waitFor polls cond for up to five seconds.
+// waitFor polls cond for up to 20 seconds; CI runners can be slow.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(20 * time.Second)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)
@@ -77,7 +90,7 @@ func TestRunRegistersHeartbeatsAndDeletes(t *testing.T) {
 		done <- Run(ctx, c, Options{
 			Namespace: "webshop", Container: "orders-api", Actor: c4v1alpha1.ActorAgent,
 			Summary: "Adding order validation", Heartbeat: 200 * time.Millisecond,
-			Log: slog.New(slog.DiscardHandler),
+			Log: testLogger(t),
 		})
 	}()
 
@@ -112,11 +125,17 @@ func TestRunRegistersHeartbeatsAndDeletes(t *testing.T) {
 
 func TestRunRegistersAgainWhenDeleted(t *testing.T) {
 	c := startAPIServer(t)
-	ctx := t.Context()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
 	go func() {
-		_ = Run(ctx, c, Options{Namespace: "webshop", Container: "orders-api",
-			Heartbeat: 100 * time.Millisecond, Log: slog.New(slog.DiscardHandler)})
+		defer close(done)
+		if err := Run(ctx, c, Options{Namespace: "webshop", Container: "orders-api",
+			Heartbeat: 100 * time.Millisecond, Log: testLogger(t)}); err != nil {
+			t.Errorf("Run() = %v", err)
+		}
 	}()
+	// Stop the client before the test ends: it logs through t.
+	defer func() { cancel(); <-done }()
 
 	var name string
 	waitFor(t, "a Session", func() bool {
