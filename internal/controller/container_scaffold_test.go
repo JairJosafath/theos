@@ -200,6 +200,34 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerFailed))
 	})
 
+	It("stays Ready when its SoftwareSystem goes missing", func() {
+		ns := newProjectNamespace()
+		createWebshop(ns)
+		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		reads := gitFake.historyCount(ns, "orders-api")
+
+		// Envtest has no garbage collector, so the Container outlives its system,
+		// as it would after `kubectl delete --cascade=orphan`.
+		Expect(k8sClient.Delete(ctx, newSystem(ns, "webshop-core"))).To(Succeed())
+		var container c4v1alpha1.Container
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
+			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+			g.Expect(cond).To(HaveField("Reason", c4v1alpha1.ReasonNotFound))
+		}).Should(Succeed())
+		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+
+		By("not scaffolding again when it comes back")
+		mustCreate(newSystem(ns, "webshop-core"))
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
+			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+			g.Expect(cond).To(HaveField("Status", metav1.ConditionTrue))
+		}).Should(Succeed())
+		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		Expect(gitFake.historyCount(ns, "orders-api")).To(Equal(reads))
+	})
+
 	It("tries a Failed Container again when the retry annotation changes", func() {
 		ns := newProjectNamespace()
 		gitFake.seedRepo(ns, "orders-api", "Initial commit\n")

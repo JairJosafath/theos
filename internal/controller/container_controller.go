@@ -86,7 +86,11 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	err = r.Get(ctx, types.NamespacedName{Namespace: container.Namespace, Name: container.Spec.SoftwareSystemRef.Name}, &system)
 	switch {
 	case apierrors.IsNotFound(err):
-		status.Phase = c4v1alpha1.ContainerPending
+		// A scaffolded Container stays Ready: its repository is still there, and
+		// losing Ready would scaffold it again.
+		if status.Phase != c4v1alpha1.ContainerReady {
+			status.Phase = c4v1alpha1.ContainerPending
+		}
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
 			metav1.ConditionFalse, c4v1alpha1.ReasonNotFound,
 			notFoundMessage([]string{"SoftwareSystem " + container.Spec.SoftwareSystemRef.Name}))
@@ -102,6 +106,8 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Scaffolding happens once. After that the factory only reports.
 	if status.Phase == c4v1alpha1.ContainerReady {
+		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
+			metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
 		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
 	}
 
