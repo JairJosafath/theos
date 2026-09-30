@@ -242,5 +242,16 @@ var _ = Describe("Container scaffolding", func() {
 			g.Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)).
 				To(HaveField("Message", "Secret gitea-credentials not found"))
 		}).Should(Succeed())
+
+		By("scaffolding once the Secret appears, though Secrets aren't watched")
+		mustCreate(&corev1.Secret{
+			ObjectMeta: objectMeta(ns, "gitea-credentials"),
+			StringData: map[string]string{"username": "c4admin", "token": "t0ken"},
+		})
+		Eventually(func(g Gomega) {
+			var container c4v1alpha1.Container
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
+			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		}).WithTimeout(secretRecheck + 10*time.Second).Should(Succeed())
 	})
 })

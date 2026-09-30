@@ -18,6 +18,9 @@ package controller
 
 import (
 	"context"
+	"slices"
+	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -56,6 +59,9 @@ type ContainerReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
+// secretRecheck is how often a Container waiting for its credentials Secret looks again.
+const secretRecheck = 15 * time.Second
+
 // Reconcile adopts the Container, resolves its references, checks its catalog
 // choices and scaffolds its repository once.
 func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -64,6 +70,9 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	var container c4v1alpha1.Container
 	if err := r.Get(ctx, req.NamespacedName, &container); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	if !container.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
 	}
 	status := container.Status.DeepCopy()
 
@@ -104,7 +113,12 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		status.Phase = c4v1alpha1.ContainerPending
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
 			metav1.ConditionFalse, c4v1alpha1.ReasonNotFound, notFoundMessage(missing))
-		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
+		// Secrets aren't watched (they're read uncached), so look again for one.
+		var result ctrl.Result
+		if slices.ContainsFunc(missing, func(m string) bool { return strings.HasPrefix(m, "Secret ") }) {
+			result.RequeueAfter = secretRecheck
+		}
+		return result, r.writeStatus(ctx, &container, status)
 	}
 	setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
 		metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")

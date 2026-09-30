@@ -63,6 +63,9 @@ var (
 
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
+	// Reconcilers run in the background; give them time on a busy machine or CI runner.
+	SetDefaultEventuallyTimeout(10 * time.Second)
+	SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
 
 	RunSpecs(t, "Controller Suite")
 }
