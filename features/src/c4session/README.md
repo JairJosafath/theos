@@ -2,9 +2,13 @@
 
 Installs `c4session`, the C4 Factory Session client, and runs `c4session start` on
 every start of the devcontainer. The client reads the repository's `.c4factory.yaml`,
-registers a Session on its Container, and sends a heartbeat every 30 seconds. When
-the devcontainer stops without a clean shutdown, the operator marks the Session
-`Stale` after two minutes.
+registers a Session on its Container, and sends a heartbeat every 30 seconds.
+
+Stopping a container only signals its first process, so the `app` service in the
+operator's `.devcontainer/compose.yaml` passes SIGTERM on to the client, which then
+deletes its Session. A devcontainer without Connectors has no compose file; there,
+and whenever a devcontainer dies without a clean stop, the operator marks the
+Session `Stale` two minutes after its last heartbeat.
 
 The operator writes this feature into every repository it scaffolds, as
 `.devcontainer/c4session/`, and references it as `./c4session`.

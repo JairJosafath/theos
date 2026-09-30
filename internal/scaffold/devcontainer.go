@@ -98,6 +98,19 @@ func assembleDevcontainer(in Input, layers []Layer, opts Options) (Tree, error) 
 	return out, nil
 }
 
+// appCommand keeps the app container up. Stopping a devcontainer only signals
+// its first process, so this one passes SIGTERM on to the Session client and gives
+// it a few seconds to delete its Session, rather than leaving it to turn Stale.
+const appCommand = `    # Keeps the container up. When the devcontainer stops, it stops the Session
+    # client first, so the client deletes its Session instead of leaving it Stale.
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        trap 'pkill -TERM -x c4session; for i in 1 2 3 4 5 6 7 8 9 10; do pkill -0 -x c4session || break; sleep 0.5; done; exit 0' TERM INT;
+        sleep infinity & wait
+`
+
 func appCompose(image string) string {
 	var b strings.Builder
 	b.WriteString("# Written by C4 Factory. The application's devcontainer; each\n")
@@ -105,7 +118,7 @@ func appCompose(image string) string {
 	b.WriteString("services:\n")
 	b.WriteString("  app:\n")
 	fmt.Fprintf(&b, "    image: %s\n", image)
-	b.WriteString("    command: sleep infinity\n")
+	b.WriteString(appCommand)
 	b.WriteString("    volumes:\n")
 	b.WriteString("      - ../..:/workspaces:cached\n")
 	return b.String()

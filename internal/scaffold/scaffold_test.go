@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -270,6 +272,18 @@ func TestDevcontainerWithConnectorsUsesCompose(t *testing.T) {
 	}
 	if !strings.Contains(string(res.Files[".devcontainer/devcontainer.json"].Data), `"a && b"`) {
 		t.Error("devcontainer.json escapes & for HTML; people read this file")
+	}
+	var compose struct {
+		Services map[string]struct {
+			Image   string   `yaml:"image"`
+			Command []string `yaml:"command"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(res.Files[".devcontainer/compose.yaml"].Data, &compose); err != nil {
+		t.Fatalf("compose.yaml is not valid YAML: %v", err)
+	}
+	if cmd := compose.Services["app"].Command; len(cmd) != 3 || !strings.Contains(cmd[2], "pkill -TERM -x c4session") {
+		t.Errorf("app command = %q, want it to stop the Session client on SIGTERM", cmd)
 	}
 	if !strings.Contains(string(res.Files[".devcontainer/compose.yaml"].Data), "image: python:3.12") {
 		t.Error("compose.yaml doesn't carry the Framework image")
