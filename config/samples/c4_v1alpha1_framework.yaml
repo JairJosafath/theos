@@ -1,0 +1,9 @@
+apiVersion: c4.factory.io/v1alpha1
+kind: Framework
+metadata:
+  labels:
+    app.kubernetes.io/name: c4-factory
+    app.kubernetes.io/managed-by: kustomize
+  name: framework-sample
+spec:
+  # TODO(user): Add fields here

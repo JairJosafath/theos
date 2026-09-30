@@ -43,3 +43,7 @@ __pycache__/
 # Local secrets
 .env
 *.local.yaml
+
+# Kubebuilder
+Dockerfile.cross
+!vendor/**/zz_generated.*

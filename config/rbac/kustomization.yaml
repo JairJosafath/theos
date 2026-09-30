@@ -1,0 +1,61 @@
+resources:
+# All RBAC will be applied under this service account in
+# the deployment namespace. You may comment out this resource
+# if your manager will use a service account that exists at
+# runtime. Be sure to update RoleBinding and ClusterRoleBinding
+# subjects if changing service account names.
+- service_account.yaml
+- role.yaml
+- role_binding.yaml
+- leader_election_role.yaml
+- leader_election_role_binding.yaml
+# The following RBAC configurations are used to protect
+# the metrics endpoint with authn/authz. These configurations
+# ensure that only authorized users and service accounts
+# can access the metrics endpoint. Comment the following
+# permissions if you want to disable this protection.
+# More info: https://book.kubebuilder.io/reference/metrics.html
+- metrics_auth_role.yaml
+- metrics_auth_role_binding.yaml
+- metrics_reader_role.yaml
+# For each CRD, "Admin", "Editor" and "Viewer" roles are scaffolded by
+# default, aiding admins in cluster management. Those roles are
+# not used by the c4-factory itself. You can comment the following lines
+# if you do not want those helpers be installed with your Project.
+- connector_admin_role.yaml
+- connector_editor_role.yaml
+- connector_viewer_role.yaml
+- deployment_admin_role.yaml
+- deployment_editor_role.yaml
+- deployment_viewer_role.yaml
+- compute_admin_role.yaml
+- compute_editor_role.yaml
+- compute_viewer_role.yaml
+- framework_admin_role.yaml
+- framework_editor_role.yaml
+- framework_viewer_role.yaml
+- gitprovider_admin_role.yaml
+- gitprovider_editor_role.yaml
+- gitprovider_viewer_role.yaml
+- person_admin_role.yaml
+- person_editor_role.yaml
+- person_viewer_role.yaml
+- session_admin_role.yaml
+- session_editor_role.yaml
+- session_viewer_role.yaml
+- relationship_admin_role.yaml
+- relationship_editor_role.yaml
+- relationship_viewer_role.yaml
+- datastore_admin_role.yaml
+- datastore_editor_role.yaml
+- datastore_viewer_role.yaml
+- container_admin_role.yaml
+- container_editor_role.yaml
+- container_viewer_role.yaml
+- softwaresystem_admin_role.yaml
+- softwaresystem_editor_role.yaml
+- softwaresystem_viewer_role.yaml
+- project_admin_role.yaml
+- project_editor_role.yaml
+- project_viewer_role.yaml
+
