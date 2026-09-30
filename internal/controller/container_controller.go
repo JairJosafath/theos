@@ -111,7 +111,8 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if status.Phase == c4v1alpha1.ContainerReady {
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
 			metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
-		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
+		result := r.refreshChecks(ctx, &container, status)
+		return result, r.writeStatus(ctx, &container, status)
 	}
 
 	res, missing, err := r.resolve(ctx, &container)

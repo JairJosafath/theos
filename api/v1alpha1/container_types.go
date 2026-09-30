@@ -118,6 +118,11 @@ type ContainerStatus struct {
 	// +optional
 	AppliedConnectors []AppliedConnector `json:"appliedConnectors,omitempty"`
 
+	// checks is the latest CI result on the default branch. Only Containers with a
+	// Standard have checks.
+	// +optional
+	Checks *CheckStatus `json:"checks,omitempty"`
+
 	// activeSessions is the number of Active Sessions on this Container.
 	// +optional
 	ActiveSessions int32 `json:"activeSessions"`
@@ -138,6 +143,7 @@ type ContainerStatus struct {
 // +kubebuilder:resource:scope=Namespaced,categories=c4
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Checks",type=string,JSONPath=".status.checks.state"
 // +kubebuilder:printcolumn:name="Sessions",type=integer,JSONPath=".status.activeSessions"
 // +kubebuilder:printcolumn:name="Repository",type=string,JSONPath=".status.repositoryURL",priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"

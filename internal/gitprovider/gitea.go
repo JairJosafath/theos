@@ -21,6 +21,8 @@ type gitea struct {
 	owner string
 	creds Credentials
 	http  *http.Client
+	// basic, when set, signs requests with a username and password instead of the token.
+	basic *Credentials
 }
 
 func newGitea(cfg Config, client *http.Client) (*gitea, error) {
@@ -79,6 +81,10 @@ func (g *gitea) EnsureRepository(ctx context.Context, name, description string) 
 	return g.repository(name), nil
 }
 
+// Repository returns the addresses of a repository in the owner organization,
+// without calling the host.
+func (g *gitea) Repository(name string) Repository { return g.repository(name) }
+
 // repository builds addresses from the configured base URL rather than trusting
 // the API's, which follow the Host the request came in on.
 func (g *gitea) repository(name string) Repository {
@@ -110,7 +116,10 @@ func (g *gitea) do(ctx context.Context, method, path string, body []byte) (int, 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if g.creds.Token != "" {
+	switch {
+	case g.basic != nil:
+		req.SetBasicAuth(g.basic.Username, g.basic.Token)
+	case g.creds.Token != "":
 		req.Header.Set("Authorization", "token "+g.creds.Token)
 	}
 	resp, err := g.http.Do(req)

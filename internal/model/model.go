@@ -243,3 +243,13 @@ func joinAnd(items []string) string {
 		return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 	}
 }
+
+// CheckContexts are the status check contexts a protected default branch requires.
+// A Standard's CI must report under a context that matches one of these glob
+// patterns, such as "check / check (pull_request)".
+var CheckContexts = []string{"check*"}
+
+// Protected reports whether a Container's default branch is protected by required
+// checks: only a Standard brings CI, so only a Container with one has checks to
+// require.
+func Protected(hasStandard bool) bool { return hasStandard }

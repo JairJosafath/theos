@@ -144,8 +144,13 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1alpha1
 // credentials reads a GitProvider's Secret. It goes straight to the API server
 // rather than through the cache, so the operator never caches every Secret.
 func (r *ContainerReconciler) credentials(ctx context.Context, provider *c4v1alpha1.GitProvider) (gitprovider.Credentials, bool, error) {
+	return readCredentials(ctx, r.APIReader, provider)
+}
+
+// readCredentials reads a GitProvider's Secret without caching it.
+func readCredentials(ctx context.Context, apiReader client.Reader, provider *c4v1alpha1.GitProvider) (gitprovider.Credentials, bool, error) {
 	var secret corev1.Secret
-	err := r.APIReader.Get(ctx, types.NamespacedName{
+	err := apiReader.Get(ctx, types.NamespacedName{
 		Namespace: provider.Namespace, Name: provider.Spec.CredentialsSecretRef.Name,
 	}, &secret)
 	if apierrors.IsNotFound(err) {

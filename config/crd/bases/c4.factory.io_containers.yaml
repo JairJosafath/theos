@@ -23,6 +23,9 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - jsonPath: .status.checks.state
+      name: Checks
+      type: string
     - jsonPath: .status.activeSessions
       name: Sessions
       type: integer
@@ -204,6 +207,22 @@ spec:
                   type: string
                 type: array
                 x-kubernetes-list-type: set
+              checks:
+                description: |-
+                  checks is the latest CI result on the default branch. Only Containers with a
+                  Standard have checks.
+                properties:
+                  commit:
+                    description: commit is the SHA the checks ran on.
+                    type: string
+                  state:
+                    description: state is pending, success, failure or error; empty
+                      until a check reports.
+                    type: string
+                  url:
+                    description: url links to the check run.
+                    type: string
+                type: object
               conditions:
                 description: 'conditions: ReferencesResolved, ChoicesValid, RepositoryCreated
                   and Scaffolded.'

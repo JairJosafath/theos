@@ -98,6 +98,34 @@ var _ = Describe("Container Standard", func() {
 		Expect(string(files["AGENTS.md"].Data)).To(Equal("Rules for orders-api, checked by python-strict\n"))
 	})
 
+	It("protects main and reports its checks when the Container has a Standard", func() {
+		ns := newProjectNamespace()
+		createFactory(ns)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+		plain := newContainer(ns, "orders-worker", "webshop-core", c4v1alpha1.ContainerTypeService)
+		mustCreate(newSystem(ns, "webshop-core"), newStandard(ns, "python-strict", "python-fastapi"), container, plain)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-worker"), plain)).To(Succeed())
+			g.Expect(plain.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		}).Should(Succeed())
+		Expect(gitFake.protectedBranches(ns, "orders-api")).To(Equal([]string{"main"}))
+		Expect(gitFake.protectedBranches(ns, "orders-worker")).To(BeEmpty())
+
+		gitFake.setChecks(ns, "orders-api", "main", "success")
+		// Checks are polled; nudge the Container rather than wait a minute.
+		Expect(patch(container, func() { container.Annotations = map[string]string{c4v1alpha1.AnnotationRetry: "checks"} })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			g.Expect(container.Status.Checks).NotTo(BeNil())
+			g.Expect(container.Status.Checks.State).To(Equal("success"))
+		}).Should(Succeed())
+		Expect(plain.Status.Checks).To(BeNil())
+	})
+
 	It("is adopted by the Project, like the other catalog entries", func() {
 		ns := newProjectNamespace()
 		standard := newStandard(ns, "python-strict", "python-fastapi")

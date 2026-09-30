@@ -108,6 +108,9 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		if len(commits) == 1 && parseErr == nil && info.Container == container.Namespace+"/"+container.Name {
 			// An earlier attempt pushed but didn't get to record it.
 			log.Info("Found initial commit from an earlier attempt", "url", repo.WebURL)
+			if err := r.protect(gitCtx, provider, repo, container); err != nil {
+				return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
+			}
 			return r.ready(ctx, container, status, info.ScaffoldedFrom, info.Relationships,
 				"Found the initial commit from an earlier attempt")
 		}
@@ -154,6 +157,9 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	message := scaffold.CommitMessage(in, result.ScaffoldedFrom, res.use.Relationships)
 	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	if _, err := provider.PushInitialCommit(gitCtx, repo, result.Files, message, author); err != nil {
+		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
+	}
+	if err := r.protect(gitCtx, provider, repo, container); err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
@@ -241,4 +247,17 @@ func appliedStatus(relationships []model.AppliedRelationship) ([]string, []c4v1a
 		}
 	}
 	return names, connectors
+}
+
+// protect makes the default branch take changes only through pull requests with
+// passing checks, when the Container has a Standard to bring those checks.
+func (r *ContainerReconciler) protect(ctx context.Context, provider gitprovider.Provider,
+	repo gitprovider.Repository, container *c4v1alpha1.Container) error {
+	if !model.Protected(container.Spec.StandardRef != nil) {
+		return nil
+	}
+	if err := provider.ProtectBranch(ctx, repo, gitprovider.DefaultBranch, model.CheckContexts); err != nil {
+		return fmt.Errorf("protecting %s: %w", gitprovider.DefaultBranch, err)
+	}
+	return nil
 }

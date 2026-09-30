@@ -1,0 +1,215 @@
+package gitprovider
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+)
+
+// agentGitea is a small stateful Gitea for the agent calls. It records every
+// request and the JSON bodies it received.
+type agentGitea struct {
+	t        *testing.T
+	mu       sync.Mutex
+	calls    []string
+	bodies   map[string]map[string]any
+	users    map[string]bool
+	rules    map[string]bool
+	pulls    []giteaPull
+	statuses string
+}
+
+func newAgentGitea(t *testing.T) (*agentGitea, Provider) {
+	t.Helper()
+	g := &agentGitea{t: t, bodies: map[string]map[string]any{}, users: map[string]bool{}, rules: map[string]bool{}}
+	srv := httptest.NewServer(g)
+	t.Cleanup(srv.Close)
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "toolbox", Credentials: Credentials{Username: "c4admin", Token: "admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return g, p
+}
+
+func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	call := r.Method + " " + r.URL.Path
+	g.calls = append(g.calls, call)
+	var body map[string]any
+	if data, _ := io.ReadAll(r.Body); len(data) > 0 {
+		_ = json.Unmarshal(data, &body)
+		g.bodies[call] = body
+	}
+	user, _, basic := r.BasicAuth()
+	reply := func(status int, v any) {
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(v)
+	}
+	repo := "/api/v1/repos/toolbox/photo-editor"
+	switch {
+	case call == "POST "+repo+"/branch_protections":
+		if g.rules["main"] {
+			reply(http.StatusForbidden, map[string]string{"message": "Branch protection already exist"})
+			return
+		}
+		g.rules["main"] = true
+		reply(http.StatusCreated, map[string]string{})
+	case call == "PATCH "+repo+"/branch_protections/main":
+		reply(http.StatusOK, map[string]string{})
+	case strings.HasPrefix(call, "GET "+repo+"/commits/"):
+		_, _ = io.WriteString(w, g.statuses)
+	case call == "GET /api/v1/users/photo-editor-agent":
+		if !g.users["photo-editor-agent"] {
+			reply(http.StatusNotFound, map[string]string{"message": "user does not exist"})
+			return
+		}
+		reply(http.StatusOK, map[string]string{"login": "photo-editor-agent"})
+	case call == "POST /api/v1/admin/users":
+		g.users[body["username"].(string)] = true
+		reply(http.StatusCreated, map[string]string{})
+	case call == "PATCH /api/v1/admin/users/photo-editor-agent":
+		reply(http.StatusOK, map[string]string{})
+	case call == "PUT "+repo+"/collaborators/photo-editor-agent":
+		w.WriteHeader(http.StatusNoContent)
+	case strings.HasPrefix(call, "DELETE /api/v1/users/photo-editor-agent/tokens/"):
+		if !basic || user != "photo-editor-agent" {
+			g.t.Errorf("%s without the bot's basic auth", call)
+		}
+		w.WriteHeader(http.StatusNotFound)
+	case call == "POST /api/v1/users/photo-editor-agent/tokens":
+		if !basic || user != "photo-editor-agent" {
+			g.t.Errorf("%s without the bot's basic auth", call)
+		}
+		reply(http.StatusCreated, map[string]string{"sha1": "b0t-t0ken"})
+	case call == "POST "+repo+"/pulls":
+		for _, p := range g.pulls {
+			if p.Head.Ref == body["head"] {
+				reply(http.StatusConflict, map[string]string{"message": "pull request already exists"})
+				return
+			}
+		}
+		p := giteaPull{Number: len(g.pulls) + 1, HTMLURL: "http://gitea/toolbox/photo-editor/pulls/1", State: "open"}
+		p.Head.Ref, p.Head.SHA = body["head"].(string), "abc123"
+		g.pulls = append(g.pulls, p)
+		reply(http.StatusCreated, p)
+	case call == "GET "+repo+"/pulls":
+		reply(http.StatusOK, g.pulls)
+	case call == "GET "+repo+"/pulls/1":
+		reply(http.StatusOK, g.pulls[0])
+	case call == "POST "+repo+"/issues/1/comments":
+		reply(http.StatusCreated, map[string]string{})
+	case call == "POST "+repo+"/pulls/1/merge":
+		g.pulls[0].Merged = true
+		w.WriteHeader(http.StatusOK)
+	case call == "POST "+repo+"/pulls/2/merge":
+		reply(http.StatusMethodNotAllowed, map[string]string{"message": "Please try again later"})
+	default:
+		g.t.Errorf("unexpected call %s", call)
+		http.NotFound(w, r)
+	}
+}
+
+func TestProtectBranchCreatesThenUpdates(t *testing.T) {
+	g, p := newAgentGitea(t)
+	repo := p.Repository("photo-editor")
+	for range 2 {
+		if err := p.ProtectBranch(context.Background(), repo, "main", []string{"check*"}); err != nil {
+			t.Fatalf("ProtectBranch() error = %v", err)
+		}
+	}
+	rule := g.bodies["POST /api/v1/repos/toolbox/photo-editor/branch_protections"]
+	if rule["enable_push"] != false || rule["enable_status_check"] != true || rule["rule_name"] != "main" {
+		t.Errorf("rule = %v", rule)
+	}
+	if last := g.calls[len(g.calls)-1]; last != "PATCH /api/v1/repos/toolbox/photo-editor/branch_protections/main" {
+		t.Errorf("second call = %s, want the update", last)
+	}
+}
+
+func TestCombinedStatus(t *testing.T) {
+	tests := []struct {
+		name, body string
+		want       CheckStatus
+	}{
+		{"no checks yet", `{"state":"pending","sha":"abc","total_count":0,"statuses":[]}`, CheckStatus{Commit: "abc"}},
+		{"failing check", `{"state":"failure","sha":"abc","total_count":2,"statuses":[` +
+			`{"status":"success","target_url":"http://g/runs/1"},{"status":"failure","target_url":"http://g/runs/2"}]}`,
+			CheckStatus{Commit: "abc", State: CheckFailure, URL: "http://g/runs/2"}},
+		{"passing", `{"state":"success","sha":"abc","total_count":1,"statuses":[{"status":"success","target_url":"http://g/runs/3"}]}`,
+			CheckStatus{Commit: "abc", State: CheckSuccess, URL: "http://g/runs/3"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g, p := newAgentGitea(t)
+			g.statuses = tt.body
+			got, err := p.CombinedStatus(context.Background(), p.Repository("photo-editor"), "main")
+			if err != nil {
+				t.Fatalf("CombinedStatus() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("CombinedStatus() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEnsureAgentAccess(t *testing.T) {
+	g, p := newAgentGitea(t)
+	repo := p.Repository("photo-editor")
+	for i := range 2 {
+		creds, err := p.EnsureAgentAccess(context.Background(), repo, "photo-editor-agent")
+		if err != nil {
+			t.Fatalf("EnsureAgentAccess() #%d error = %v", i, err)
+		}
+		if creds != (Credentials{Username: "photo-editor-agent", Token: "b0t-t0ken"}) {
+			t.Errorf("creds = %+v", creds)
+		}
+	}
+	created := g.bodies["POST /api/v1/admin/users"]
+	if created["restricted"] != true || created["must_change_password"] != false {
+		t.Errorf("new user = %v, want restricted and no password change", created)
+	}
+	if collab := g.bodies["PUT /api/v1/repos/toolbox/photo-editor/collaborators/photo-editor-agent"]; collab["permission"] != "write" {
+		t.Errorf("collaborator = %v", collab)
+	}
+	if !strings.Contains(strings.Join(g.calls, "\n"), "PATCH /api/v1/admin/users/photo-editor-agent") {
+		t.Error("the second call did not reset the existing user's password")
+	}
+}
+
+func TestPullRequests(t *testing.T) {
+	g, p := newAgentGitea(t)
+	ctx := context.Background()
+	repo := p.Repository("photo-editor")
+
+	pr, err := p.OpenPullRequest(ctx, repo, "task/add-crop", "main", "Add crop", "body")
+	if err != nil || pr.Number != 1 || pr.HeadSHA != "abc123" {
+		t.Fatalf("OpenPullRequest() = %+v, %v", pr, err)
+	}
+	again, err := p.OpenPullRequest(ctx, repo, "task/add-crop", "main", "Add crop", "body")
+	if err != nil || again.Number != 1 {
+		t.Fatalf("second OpenPullRequest() = %+v, %v; want the open one", again, err)
+	}
+	if err := p.CommentPullRequest(ctx, repo, 1, "Looks good"); err != nil {
+		t.Fatalf("CommentPullRequest() error = %v", err)
+	}
+	if err := p.MergePullRequest(ctx, repo, 1, "Add crop", "Task add-crop"); err != nil {
+		t.Fatalf("MergePullRequest() error = %v", err)
+	}
+	if merge := g.bodies["POST /api/v1/repos/toolbox/photo-editor/pulls/1/merge"]; merge["Do"] != "squash" || merge["delete_branch_after_merge"] != true {
+		t.Errorf("merge = %v", merge)
+	}
+	got, err := p.GetPullRequest(ctx, repo, 1)
+	if err != nil || !got.Merged {
+		t.Errorf("GetPullRequest() = %+v, %v; want merged", got, err)
+	}
+	if err := p.MergePullRequest(ctx, repo, 2, "x", "y"); err == nil || !strings.Contains(err.Error(), "HTTP 405") {
+		t.Errorf("MergePullRequest() of an unmergeable PR error = %v", err)
+	}
+}

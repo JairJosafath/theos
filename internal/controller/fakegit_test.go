@@ -24,6 +24,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -42,6 +43,7 @@ type fakeGit struct {
 	pushes    int
 	histories map[string]int // History calls per owner/name
 	hangs     map[string]chan struct{}
+	agent     *fakeAgentState
 }
 
 type fakeRepo struct {
@@ -215,4 +217,164 @@ func (p *fakeProvider) PushInitialCommit(_ context.Context, repo gitprovider.Rep
 	r.commits = append(r.commits, gitprovider.Commit{Hash: hash, Message: message})
 	r.files = files
 	return hash, nil
+}
+
+// fakeAgentState is what the fake host keeps for the agent loop: protected
+// branches, check states, bot users and pull requests, per owner/name.
+type fakeAgentState struct {
+	protected map[string][]string                   // owner/name -> branches
+	checks    map[string]gitprovider.CheckStatus    // owner/name@ref
+	agents    map[string]string                     // owner/name -> bot user
+	pulls     map[string][]*gitprovider.PullRequest // owner/name
+	comments  map[string][]string                   // owner/name#number
+	branches  map[string]string                     // owner/name@branch -> head sha
+}
+
+func (g *fakeGit) agentState() *fakeAgentState {
+	if g.agent == nil {
+		g.agent = &fakeAgentState{
+			protected: map[string][]string{}, checks: map[string]gitprovider.CheckStatus{},
+			agents: map[string]string{}, pulls: map[string][]*gitprovider.PullRequest{},
+			comments: map[string][]string{}, branches: map[string]string{},
+		}
+	}
+	return g.agent
+}
+
+// setChecks sets the combined check state of ref, a branch name or a commit.
+func (g *fakeGit) setChecks(owner, name, ref, state string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.agentState().checks[owner+"/"+name+"@"+ref] = gitprovider.CheckStatus{
+		Commit: ref, State: state, URL: "http://gitea/" + owner + "/" + name + "/actions/runs/1",
+	}
+}
+
+// pushBranch records a branch head, as the sandbox's push would.
+func (g *fakeGit) pushBranch(owner, name, branch, sha string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.agentState().branches[owner+"/"+name+"@"+branch] = sha
+}
+
+func (g *fakeGit) protectedBranches(owner, name string) []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.agentState().protected[owner+"/"+name]
+}
+
+func (g *fakeGit) pullRequests(owner, name string) []gitprovider.PullRequest {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var out []gitprovider.PullRequest
+	for _, p := range g.agentState().pulls[owner+"/"+name] {
+		out = append(out, *p)
+	}
+	return out
+}
+
+func (g *fakeGit) pullComments(owner, name string, number int) []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.agentState().comments[fmt.Sprintf("%s/%s#%d", owner, name, number)]
+}
+
+func (p *fakeProvider) Repository(name string) gitprovider.Repository {
+	web := strings.TrimSuffix(p.cfg.URL, "/") + "/" + path.Join(p.cfg.Owner, name)
+	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git"}
+}
+
+func (p *fakeProvider) ProtectBranch(_ context.Context, repo gitprovider.Repository, branch string, _ []string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	s := p.git.agentState()
+	key := repo.Owner + "/" + repo.Name
+	if !slices.Contains(s.protected[key], branch) {
+		s.protected[key] = append(s.protected[key], branch)
+	}
+	return nil
+}
+
+func (p *fakeProvider) CombinedStatus(_ context.Context, repo gitprovider.Repository, ref string) (gitprovider.CheckStatus, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	s := p.git.agentState()
+	if status, ok := s.checks[repo.Owner+"/"+repo.Name+"@"+ref]; ok {
+		return status, nil
+	}
+	return gitprovider.CheckStatus{Commit: ref}, nil
+}
+
+func (p *fakeProvider) EnsureAgentAccess(_ context.Context, repo gitprovider.Repository, user string) (gitprovider.Credentials, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	p.git.agentState().agents[repo.Owner+"/"+repo.Name] = user
+	return gitprovider.Credentials{Username: user, Token: "b0t-" + user}, nil
+}
+
+func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repository, head, _, _, _ string) (gitprovider.PullRequest, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	s := p.git.agentState()
+	key := repo.Owner + "/" + repo.Name
+	sha, ok := s.branches[key+"@"+head]
+	if !ok {
+		return gitprovider.PullRequest{}, fmt.Errorf("branch %s does not exist", head)
+	}
+	for _, pr := range s.pulls[key] {
+		if pr.Head == head && pr.State == "open" {
+			pr.HeadSHA = sha
+			return *pr, nil
+		}
+	}
+	pr := &gitprovider.PullRequest{Number: len(s.pulls[key]) + 1, Head: head, HeadSHA: sha, State: "open"}
+	pr.URL = fmt.Sprintf("%s/pulls/%d", strings.TrimSuffix(p.cfg.URL, "/")+"/"+key, pr.Number)
+	s.pulls[key] = append(s.pulls[key], pr)
+	return *pr, nil
+}
+
+func (p *fakeProvider) pull(repo gitprovider.Repository, number int) (*gitprovider.PullRequest, error) {
+	s := p.git.agentState()
+	key := repo.Owner + "/" + repo.Name
+	if number < 1 || number > len(s.pulls[key]) {
+		return nil, fmt.Errorf("pull request %d of %s not found", number, key)
+	}
+	pr := s.pulls[key][number-1]
+	if sha, ok := s.branches[key+"@"+pr.Head]; ok && !pr.Merged {
+		pr.HeadSHA = sha
+	}
+	return pr, nil
+}
+
+func (p *fakeProvider) GetPullRequest(_ context.Context, repo gitprovider.Repository, number int) (gitprovider.PullRequest, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	pr, err := p.pull(repo, number)
+	if err != nil {
+		return gitprovider.PullRequest{}, err
+	}
+	return *pr, nil
+}
+
+func (p *fakeProvider) CommentPullRequest(_ context.Context, repo gitprovider.Repository, number int, body string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	key := fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)
+	s := p.git.agentState()
+	s.comments[key] = append(s.comments[key], body)
+	return nil
+}
+
+func (p *fakeProvider) MergePullRequest(_ context.Context, repo gitprovider.Repository, number int, _, _ string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	pr, err := p.pull(repo, number)
+	if err != nil {
+		return err
+	}
+	if pr.Merged {
+		return fmt.Errorf("pull request %d is merged already", number)
+	}
+	pr.Merged, pr.State = true, "closed"
+	return nil
 }
