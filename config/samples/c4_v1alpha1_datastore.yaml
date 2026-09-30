@@ -1,9 +1,0 @@
-apiVersion: c4.factory.io/v1alpha1
-kind: DataStore
-metadata:
-  labels:
-    app.kubernetes.io/name: c4-factory
-    app.kubernetes.io/managed-by: kustomize
-  name: datastore-sample
-spec:
-  # TODO(user): Add fields here

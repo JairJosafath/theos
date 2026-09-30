@@ -83,3 +83,12 @@ gitea-forward: ## Forward Gitea to http://localhost:3000 (Ctrl-C to stop).
 .PHONY: cluster-delete
 cluster-delete: ## Delete the Kind cluster and everything in it.
 	$(KIND) delete cluster --name '$(KIND_CLUSTER)'
+
+.PHONY: test-gitea
+test-gitea: ## Run the gitprovider integration test against the seeded Gitea.
+	@$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea 3000:3000 >/dev/null 2>&1 & pf=$$!; \
+	trap 'kill $$pf' EXIT; sleep 2; \
+	C4_GITEA_URL=http://localhost:3000 \
+	C4_GITEA_USERNAME="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d)" \
+	C4_GITEA_TOKEN="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.token}' | base64 -d)" \
+	go test -count=1 -v ./internal/gitprovider/ -run Integration
