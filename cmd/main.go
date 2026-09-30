@@ -252,6 +252,15 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "session")
 		os.Exit(1)
 	}
+	if err := (&controller.TaskReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		APIReader: mgr.GetAPIReader(),
+		Git:       gitprovider.Client{},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "task")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

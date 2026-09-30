@@ -3,6 +3,7 @@ package agentrunner
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,9 +17,7 @@ func env(overrides map[string]string) func(string) string {
 		EnvGoal: "Add crop", EnvContainer: "photo-editor", EnvProject: "toolbox", EnvGitUsername: "bot",
 		EnvGitToken: "t0k", EnvTask: "add-crop",
 	}
-	for k, v := range overrides {
-		base[k] = v
-	}
+	maps.Copy(base, overrides)
 	return func(k string) string { return base[k] }
 }
 

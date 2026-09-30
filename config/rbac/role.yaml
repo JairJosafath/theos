@@ -7,9 +7,20 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - secrets
+  - pods
   verbs:
   - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - get
+  - patch
+  - update
 - apiGroups:
   - ""
   resources:
@@ -20,6 +31,16 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - agents.x-k8s.io
+  resources:
+  - sandboxes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
   - watch
 - apiGroups:
   - c4.factory.io
@@ -47,6 +68,7 @@ rules:
   - relationships
   - sessions
   - softwaresystems
+  - tasks
   verbs:
   - create
   - delete
@@ -64,6 +86,7 @@ rules:
   - relationships/finalizers
   - sessions/finalizers
   - softwaresystems/finalizers
+  - tasks/finalizers
   verbs:
   - update
 - apiGroups:
@@ -75,6 +98,7 @@ rules:
   - relationships/status
   - sessions/status
   - softwaresystems/status
+  - tasks/status
   verbs:
   - get
   - patch

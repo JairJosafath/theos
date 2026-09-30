@@ -242,6 +242,8 @@ func (g *fakeGit) agentState() *fakeAgentState {
 }
 
 // setChecks sets the combined check state of ref, a branch name or a commit.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) setChecks(owner, name, ref, state string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -266,8 +268,9 @@ func (g *fakeGit) protectedBranches(owner, name string) []string {
 func (g *fakeGit) pullRequests(owner, name string) []gitprovider.PullRequest {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	var out []gitprovider.PullRequest
-	for _, p := range g.agentState().pulls[owner+"/"+name] {
+	pulls := g.agentState().pulls[owner+"/"+name]
+	out := make([]gitprovider.PullRequest, 0, len(pulls))
+	for _, p := range pulls {
 		out = append(out, *p)
 	}
 	return out
