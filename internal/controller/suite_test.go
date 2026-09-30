@@ -17,20 +17,28 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
@@ -38,6 +46,9 @@ import (
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
+
+// testStaleAfter is the Session Stale window in tests, much shorter than in production.
+const testStaleAfter = 3 * time.Second
 
 var (
 	ctx       context.Context
@@ -83,7 +94,65 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	By("installing the admission policy")
+	Expect(applyManifests(ctx, filepath.Join("..", "..", "config", "policy", "project_name_policy.yaml"))).To(Succeed())
+
+	By("starting the manager with every reconciler")
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme:  scheme.Scheme,
+		Metrics: metricsserver.Options{BindAddress: "0"},
+	})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
+	Expect(setupReconcilers(mgr)).To(Succeed())
+	go func() {
+		defer GinkgoRecover()
+		Expect(mgr.Start(ctx)).To(Succeed())
+	}()
 })
+
+// setupReconcilers registers every reconciler the way cmd/main.go does.
+func setupReconcilers(mgr ctrl.Manager) error {
+	c, s := mgr.GetClient(), mgr.GetScheme()
+	for _, r := range []interface{ SetupWithManager(ctrl.Manager) error }{
+		&ProjectReconciler{Client: c, Scheme: s},
+		&SoftwareSystemReconciler{Client: c, Scheme: s},
+		&ContainerReconciler{Client: c, Scheme: s},
+		&DataStoreReconciler{Client: c, Scheme: s},
+		&RelationshipReconciler{Client: c, Scheme: s},
+		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
+	} {
+		if err := r.SetupWithManager(mgr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyManifests creates every object in a multi-document YAML file.
+func applyManifests(ctx context.Context, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	decoder := utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 4096)
+	for {
+		var obj unstructured.Unstructured
+		if err := decoder.Decode(&obj.Object); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		if len(obj.Object) == 0 {
+			continue
+		}
+		if err := k8sClient.Create(ctx, &obj); err != nil {
+			return err
+		}
+	}
+}
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
