@@ -1,0 +1,11 @@
+# The webshop story: a customer uses webshop-core, whose orders-api service reads
+# and writes the orders-db DataStore. Needs `make gitea seed` first, for the
+# template repositories and Secret gitea-credentials.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: webshop
+resources:
+- namespace.yaml
+- project.yaml
+- factory.yaml
+- story.yaml

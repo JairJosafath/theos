@@ -1,0 +1,8 @@
+# One Project per namespace, named after it.
+apiVersion: c4.factory.io/v1alpha1
+kind: Project
+metadata:
+  name: webshop
+spec:
+  displayName: Webshop
+  description: An online shop where customers browse, order and reorder.

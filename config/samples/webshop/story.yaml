@@ -1,0 +1,77 @@
+# Who uses what, and what it is made of.
+apiVersion: c4.factory.io/v1alpha1
+kind: Person
+metadata:
+  name: customer
+spec:
+  displayName: Customer
+  description: Someone who buys from the shop.
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: webshop-core
+spec:
+  displayName: Webshop Core
+  description: Catalog, cart and ordering
+  needs:
+  - Customers can reorder in two clicks
+  kpis:
+  - Checkout conversion
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: orders-api
+spec:
+  softwareSystemRef:
+    name: webshop-core
+  displayName: Orders API
+  description: Takes and tracks orders.
+  type: service
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: python-fastapi
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: DataStore
+metadata:
+  name: orders-db
+spec:
+  softwareSystemRef:
+    name: webshop-core
+  displayName: Orders DB
+  description: Orders and their lines.
+  connectorRef:
+    name: postgres
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: customer-uses-webshop-core
+spec:
+  source:
+    kind: Person
+    name: customer
+  target:
+    kind: SoftwareSystem
+    name: webshop-core
+  description: Browses, orders and reorders
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: orders-api-to-orders-db
+spec:
+  source:
+    kind: Container
+    name: orders-api
+  target:
+    kind: DataStore
+    name: orders-db
+  description: Reads and writes orders

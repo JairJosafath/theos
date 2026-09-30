@@ -1,15 +1,5 @@
 ## Append samples of your project ##
+# The webshop story from docs/design.md. Apply with: make sample
 resources:
-- c4_v1alpha1_project.yaml
-- c4_v1alpha1_softwaresystem.yaml
-- c4_v1alpha1_container.yaml
-- c4_v1alpha1_datastore.yaml
-- c4_v1alpha1_relationship.yaml
-- c4_v1alpha1_session.yaml
-- c4_v1alpha1_person.yaml
-- c4_v1alpha1_gitprovider.yaml
-- c4_v1alpha1_framework.yaml
-- c4_v1alpha1_compute.yaml
-- c4_v1alpha1_deployment.yaml
-- c4_v1alpha1_connector.yaml
+- webshop
 # +kubebuilder:scaffold:manifestskustomizesamples
