@@ -22,10 +22,31 @@ cluster: ## Create the Kind cluster (hack/kind.yaml) if it does not exist.
 		$(KIND) create cluster --name '$(KIND_CLUSTER)' --config hack/kind.yaml --wait 120s; \
 	fi
 
+GITEA_ADMIN ?= c4admin
+GITEA_ADMIN_EMAIL ?= c4admin@c4.factory.io
+
 .PHONY: gitea
-gitea: ## Install Gitea (config/gitea) and wait until it is ready.
+gitea: ## Install Gitea (config/gitea) with a generated admin password, and wait until it is ready.
+	$(TESTENV_KUBECTL) create namespace gitea --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -
+	@# The admin password is random, made once per cluster, and never written to the
+	@# repository. Delete Secret gitea/gitea-admin and run this again to rotate it.
+	@if ! $(TESTENV_KUBECTL) -n gitea get secret gitea-admin >/dev/null 2>&1; then \
+		$(TESTENV_KUBECTL) -n gitea create secret generic gitea-admin \
+			--from-literal=username='$(GITEA_ADMIN)' --from-literal=email='$(GITEA_ADMIN_EMAIL)' \
+			--from-literal=password="$$(head -c 24 /dev/urandom | base64 | tr -d '\n')" && \
+		$(TESTENV_KUBECTL) -n gitea label secret gitea-admin app.kubernetes.io/part-of=c4factory-testenv && \
+		if $(TESTENV_KUBECTL) -n gitea get deployment gitea >/dev/null 2>&1; then \
+			echo "Restarting Gitea so its admin takes the new password"; \
+			$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea; \
+		fi; \
+	fi
 	$(TESTENV_KUBECTL) apply -k config/gitea
 	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea --timeout=300s
+
+.PHONY: gitea-admin
+gitea-admin: ## Print the Gitea admin's username and generated password, for signing in.
+	@echo "Username: $$($(TESTENV_KUBECTL) -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)"
+	@echo "Password: $$($(TESTENV_KUBECTL) -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)"
 
 .PHONY: seed
 seed: ## Seed Gitea: orgs, tagged template repos, Secret gitea-credentials.

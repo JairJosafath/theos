@@ -1,0 +1,110 @@
+# Gitea, rootless image, one replica. The init container prepares app.ini,
+# migrates the database and makes sure the admin from Secret gitea-admin exists
+# with that password; all of it is safe to repeat on every pod start. `make gitea`
+# creates that Secret with a generated password; it is never in the repository.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  labels:
+    app.kubernetes.io/name: gitea
+spec:
+  replicas: 1
+  # SQLite on a ReadWriteOnce volume: never run two pods at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitea
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitea
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: setup
+          image: gitea/gitea:1.27.3-rootless
+          # Same image, env and volume as the main container, so the CLI sees
+          # the exact app.ini the server will use.
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              # Writes app.ini on first start, then applies GITEA__* env vars.
+              /usr/local/bin/docker-setup.sh
+              gitea migrate
+              if gitea admin user list --admin | awk 'NR > 1 { print $2 }' | grep -qx "$ADMIN_USERNAME"; then
+                echo "Admin $ADMIN_USERNAME exists; syncing its password with Secret gitea-admin"
+                gitea admin user change-password --username "$ADMIN_USERNAME" \
+                  --password "$ADMIN_PASSWORD" --must-change-password=false
+              else
+                echo "Creating admin $ADMIN_USERNAME"
+                gitea admin user create --admin --username "$ADMIN_USERNAME" \
+                  --password "$ADMIN_PASSWORD" --email "$ADMIN_EMAIL" --must-change-password=false
+              fi
+          envFrom:
+            - configMapRef:
+                name: gitea-env
+          env:
+            - name: GITEA_APP_INI
+              value: /var/lib/gitea/custom/conf/app.ini
+            - name: ADMIN_USERNAME
+              valueFrom: {secretKeyRef: {name: gitea-admin, key: username}}
+            - name: ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: gitea-admin, key: password}}
+            - name: ADMIN_EMAIL
+              valueFrom: {secretKeyRef: {name: gitea-admin, key: email}}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/gitea
+      containers:
+        - name: gitea
+          image: gitea/gitea:1.27.3-rootless
+          envFrom:
+            - configMapRef:
+                name: gitea-env
+          env:
+            # app.ini lives on the volume, so the secrets Gitea generates into it
+            # on first start survive restarts.
+            - name: GITEA_APP_INI
+              value: /var/lib/gitea/custom/conf/app.ini
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet: {path: /api/healthz, port: http}
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /api/healthz, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/gitea
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitea-data
