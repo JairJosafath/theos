@@ -1,0 +1,45 @@
+# Binaries and tools downloaded by the Makefile
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test output
+*.test
+*.out
+cover.out
+coverage/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editors and OS
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Node (the UI)
+node_modules/
+ui/dist/
+
+# Python (the templates)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Local secrets
+.env
+*.local.yaml
