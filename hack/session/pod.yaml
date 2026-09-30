@@ -1,0 +1,50 @@
+# The test Session from docs/design.md: a pod that clones orders-api from Gitea
+# and runs the Session client under the project's c4-session ServiceAccount,
+# the way a devcontainer would. `make session` runs it; `make session-kill`
+# kills the client abruptly, as a crashed devcontainer would.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: session-orders-api
+  namespace: webshop
+  labels:
+    app.kubernetes.io/name: c4session-test
+spec:
+  serviceAccountName: c4-session
+  restartPolicy: Never
+  # The pause container becomes PID 1, so the client is an ordinary process that
+  # `make session-kill` can SIGKILL. A deleted pod still sends it SIGTERM.
+  shareProcessNamespace: true
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+    - name: clone
+      image: c4factory/c4session:dev
+      imagePullPolicy: IfNotPresent
+      command: [git, clone, --depth=1, "http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api.git", /work/orders-api]
+      volumeMounts:
+        - {name: work, mountPath: /work}
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: [ALL]}
+  containers:
+    - name: client
+      image: c4factory/c4session:dev
+      imagePullPolicy: IfNotPresent
+      # c4session finds .c4factory.yaml in the working directory.
+      workingDir: /work/orders-api
+      args: [run, --actor=agent, "--summary=Adding order validation"]
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {memory: 64Mi}
+      volumeMounts:
+        - {name: work, mountPath: /work}
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: [ALL]}
+  volumes:
+    - name: work
+      emptyDir: {}

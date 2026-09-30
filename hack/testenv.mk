@@ -100,3 +100,20 @@ kind-load: ## Load the operator image $(IMG) into the Kind cluster.
 .PHONY: sample
 sample: ## Apply the webshop story (config/samples/webshop).
 	$(TESTENV_KUBECTL) apply -k config/samples
+
+SESSION_IMG ?= c4factory/c4session:dev
+
+.PHONY: session-image
+session-image: ## Build the Session client image and load it into the Kind cluster.
+	$(CONTAINER_TOOL) build -t $(SESSION_IMG) -f hack/session/Dockerfile .
+	$(KIND) load docker-image $(SESSION_IMG) --name '$(KIND_CLUSTER)'
+
+.PHONY: session
+session: session-image ## Run the test Session: a pod that clones orders-api and runs c4session.
+	$(TESTENV_KUBECTL) -n webshop delete pod session-orders-api --ignore-not-found --wait=true
+	$(TESTENV_KUBECTL) apply -f hack/session/pod.yaml
+	$(TESTENV_KUBECTL) -n webshop wait pod/session-orders-api --for=condition=Ready --timeout=120s
+
+.PHONY: session-kill
+session-kill: ## Kill the test Session's client abruptly, as a crashed devcontainer would.
+	$(TESTENV_KUBECTL) -n webshop exec session-orders-api -c client -- pkill -KILL c4session
