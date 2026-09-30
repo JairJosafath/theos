@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -51,6 +52,7 @@ type ProjectReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/finalizers,verbs=update
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=people;gitproviders;frameworks;standards;computes;deployments;connectors;agents,verbs=get;list;watch;update;patch
 
 // Reconcile adopts the Project's direct children and updates the roll-up.
@@ -76,6 +78,9 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 	if err := r.ensureSessionAccess(ctx, &project); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.ensureAgentNetwork(ctx, &project); err != nil {
 		return ctrl.Result{}, err
 	}
 	if err := r.rollUp(ctx, &project, status); err != nil {
@@ -194,9 +199,10 @@ func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Watches(&c4v1alpha1.Person{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.SoftwareSystem{}, toProject, createOrDelete()).
-		Watches(&c4v1alpha1.GitProvider{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.GitProvider{}, toProject, specChanged()).
 		Watches(&c4v1alpha1.Framework{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Compute{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Deployment{}, toProject, createOrDelete()).

@@ -253,3 +253,13 @@ var CheckContexts = []string{"check*"}
 // checks: only a Standard brings CI, so only a Container with one has checks to
 // require.
 func Protected(hasStandard bool) bool { return hasStandard }
+
+// ClusterNamespace returns the namespace of an in-cluster service address, such
+// as "gitea" for http://gitea.gitea.svc.cluster.local:3000.
+func ClusterNamespace(host string) (string, bool) {
+	labels := strings.Split(host, ".")
+	if len(labels) >= 3 && labels[2] == "svc" {
+		return labels[1], true
+	}
+	return "", false
+}

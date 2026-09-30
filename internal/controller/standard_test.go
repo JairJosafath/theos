@@ -19,6 +19,7 @@ package controller
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -139,5 +140,23 @@ var _ = Describe("Container Standard", func() {
 			g.Expect(agent.OwnerReferences).To(ContainElement(HaveField("Kind", "Project")))
 			g.Expect(agent.Spec.MaxRounds).To(Equal(int32(3)))
 		}).Should(Succeed())
+	})
+})
+
+var _ = Describe("Agent network fence", func() {
+	It("gives each project a NetworkPolicy for its agent sandboxes", func() {
+		ns := newProjectNamespace()
+		createFactory(ns)
+		var policy networkingv1.NetworkPolicy
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, AgentNetworkPolicyName), &policy)).To(Succeed())
+			g.Expect(policy.Spec.Egress).To(HaveLen(3))
+		}).Should(Succeed())
+		Expect(policy.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue(LabelAgentSandbox, "true"))
+		Expect(policy.Spec.Ingress).To(BeEmpty())
+		Expect(policy.Spec.Egress[1].To[0].IPBlock.Except).To(ContainElement("10.0.0.0/8"))
+		Expect(policy.Spec.Egress[2].To[0].NamespaceSelector.MatchLabels).
+			To(HaveKeyWithValue("kubernetes.io/metadata.name", "gitea"))
+		Expect(policy.OwnerReferences).To(ContainElement(HaveField("Kind", "Project")))
 	})
 })

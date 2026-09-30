@@ -209,3 +209,22 @@ func TestCheckStandard(t *testing.T) {
 		})
 	}
 }
+
+func TestClusterNamespace(t *testing.T) {
+	tests := []struct {
+		host string
+		want string
+		ok   bool
+	}{
+		{"gitea.gitea.svc.cluster.local", "gitea", true},
+		{"gitea.git-host.svc", "git-host", true},
+		{"gitea.example.com", "", false},
+		{"localhost", "", false},
+	}
+	for _, tt := range tests {
+		got, ok := ClusterNamespace(tt.host)
+		if got != tt.want || ok != tt.ok {
+			t.Errorf("ClusterNamespace(%q) = %q, %v; want %q, %v", tt.host, got, ok, tt.want, tt.ok)
+		}
+	}
+}
