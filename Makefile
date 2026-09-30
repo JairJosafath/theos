@@ -1,5 +1,6 @@
-# Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+# Image URL to use all building/pushing image targets. The dev tag is loaded
+# straight into the Kind cluster by `make deploy`, never pushed.
+IMG ?= c4factory/operator:dev
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 
@@ -169,7 +170,15 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	if [ -n "$$out" ]; then echo "$$out" | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -; else echo "No CRDs to delete; skipping."; fi
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: manifests kustomize docker-build kind-load ## Build the operator, load it into the Kind cluster and deploy it there.
+	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+	"$(KUSTOMIZE)" build config/default | $(TESTENV_KUBECTL) apply -f -
+	@# Same tag, new image: restart so the pods pick it up.
+	$(TESTENV_KUBECTL) -n c4-factory-system rollout restart deployment/c4-factory-controller-manager
+	$(TESTENV_KUBECTL) -n c4-factory-system rollout status deployment/c4-factory-controller-manager --timeout=180s
+
+.PHONY: deploy-manifests
+deploy-manifests: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config, without building.
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply -f -
 

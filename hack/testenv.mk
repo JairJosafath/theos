@@ -92,3 +92,11 @@ test-gitea: ## Run the gitprovider integration test against the seeded Gitea.
 	C4_GITEA_USERNAME="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d)" \
 	C4_GITEA_TOKEN="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.token}' | base64 -d)" \
 	go test -count=1 -v ./internal/gitprovider/ -run Integration
+
+.PHONY: kind-load
+kind-load: ## Load the operator image $(IMG) into the Kind cluster.
+	$(KIND) load docker-image $(IMG) --name '$(KIND_CLUSTER)'
+
+.PHONY: sample
+sample: ## Apply the webshop story (config/samples/webshop).
+	$(TESTENV_KUBECTL) apply -k config/samples
