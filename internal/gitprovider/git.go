@@ -129,7 +129,9 @@ func readTree(root billy.Filesystem) (scaffold.Tree, error) {
 	return tree, nil
 }
 
-// history returns up to limit commits on the default branch, newest first.
+// history returns up to limit commits on the default branch, newest first. When
+// the default branch is missing it reads another branch, so history anywhere
+// counts.
 func history(ctx context.Context, repoURL string, creds *Credentials, limit int) ([]Commit, error) {
 	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{Name: remoteName, URLs: []string{repoURL}})
 	refs, err := remote.ListContext(ctx, &git.ListOptions{Auth: auth(creds)})
@@ -139,8 +141,8 @@ func history(ctx context.Context, repoURL string, creds *Credentials, limit int)
 	if err != nil {
 		return nil, fmt.Errorf("list refs of %s: %w", repoURL, err)
 	}
-	branch := plumbing.NewBranchReferenceName(defaultBranch)
-	if !slices.ContainsFunc(refs, func(r *plumbing.Reference) bool { return r.Name() == branch }) {
+	branch, ok := historyBranch(refs)
+	if !ok {
 		return nil, nil
 	}
 
@@ -177,6 +179,25 @@ func history(ctx context.Context, repoURL string, creds *Credentials, limit int)
 		commits = append(commits, Commit{Hash: c.Hash.String(), Message: c.Message})
 	}
 	return commits, nil
+}
+
+// historyBranch picks the branch history reads: the default branch, or else the
+// first other branch by name. It reports false when there are no branches.
+func historyBranch(refs []*plumbing.Reference) (plumbing.ReferenceName, bool) {
+	var branches []plumbing.ReferenceName
+	for _, r := range refs {
+		if r.Name().IsBranch() {
+			branches = append(branches, r.Name())
+		}
+	}
+	if len(branches) == 0 {
+		return "", false
+	}
+	if main := plumbing.NewBranchReferenceName(defaultBranch); slices.Contains(branches, main) {
+		return main, true
+	}
+	slices.Sort(branches)
+	return branches[0], true
 }
 
 // pushInitialCommit commits files in a fresh repository and pushes the default

@@ -58,8 +58,9 @@ type Signature struct {
 type Provider interface {
 	// EnsureRepository creates owner/name if it doesn't exist, and returns it.
 	EnsureRepository(ctx context.Context, name, description string) (Repository, error)
-	// History returns up to limit commits on the default branch, newest first.
-	// An empty repository has none.
+	// History returns up to limit commits on the default branch, newest first, or
+	// on another branch when the default one is missing. An empty repository has
+	// none.
 	History(ctx context.Context, repo Repository, limit int) ([]Commit, error)
 	// PushInitialCommit pushes files as the first commit on the default branch.
 	// It fails, without force, if the branch already exists.

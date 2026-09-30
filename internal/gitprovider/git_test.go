@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
@@ -152,6 +153,52 @@ func TestHistoryAndInitialCommit(t *testing.T) {
 	}
 	if string(tree["a.txt"].Data) != "a" || !tree["dir/run.sh"].Executable {
 		t.Errorf("round trip lost content or modes: %+v", tree)
+	}
+}
+
+// A repository whose history is on another branch isn't empty, so the operator
+// mustn't scaffold into it.
+func TestHistoryOnAnotherBranch(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "repo.git")
+	if _, err := git.PlainInitWithOptions(dir, &git.PlainInitOptions{
+		Bare:        true,
+		InitOptions: git.InitOptions{DefaultBranch: plumbing.NewBranchReferenceName("master")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clone := t.TempDir()
+	local, err := git.PlainInitWithOptions(clone, &git.PlainInitOptions{
+		InitOptions: git.InitOptions{DefaultBranch: plumbing.NewBranchReferenceName("master")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clone, "README.md"), []byte("# theirs\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wt, _ := local.Worktree()
+	if _, err := wt.Add("README.md"); err != nil {
+		t.Fatal(err)
+	}
+	sig := &object.Signature{Name: "Someone", Email: "someone@example.com", When: testAuthor.When}
+	hash, err := wt.Commit("Their commit", &git.CommitOptions{Author: sig})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{dir}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := local.Push(&git.PushOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	commits, err := history(ctx, dir, nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 1 || commits[0].Hash != hash.String() {
+		t.Fatalf("history() = %+v, want their commit %s on master", commits, hash)
 	}
 }
 
