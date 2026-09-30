@@ -6,10 +6,11 @@ ARG BASE_IMAGE=golang:1.26
 FROM ${BASE_IMAGE} AS builder
 WORKDIR /workspace
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 # The root .dockerignore lets only Go sources in.
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags=-s -o c4session ./cmd/c4session
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath -ldflags=-s -o c4session ./cmd/c4session
 
 FROM alpine:3.24.2
 RUN apk add --no-cache git
