@@ -64,8 +64,8 @@ var _ = Describe("Relationship", func() {
 		mustCreate(newSystem(ns, "webshop-core"))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, rel.Name), rel)).To(Succeed())
-			g.Expect(condition(rel.Status.Conditions, c4v1alpha1.ConditionReferencesResolved).Status).
-				To(Equal(metav1.ConditionTrue))
+			g.Expect(condition(rel.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)).
+				To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 	})
 
@@ -107,8 +107,8 @@ var _ = Describe("DataStore", func() {
 			Spec: newCatalogSpec("http://gitea:3000/templates/postgres", "v1.1.0", c4v1alpha1.ContainerTypeService)})
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-db"), store)).To(Succeed())
-			g.Expect(condition(store.Status.Conditions, c4v1alpha1.ConditionReferencesResolved).Status).
-				To(Equal(metav1.ConditionTrue))
+			g.Expect(condition(store.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)).
+				To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 	})
 })

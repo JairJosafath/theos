@@ -83,8 +83,8 @@ var _ = Describe("Project", func() {
 			g.Expect(project.Status.SoftwareSystems).To(BeEquivalentTo(1))
 			g.Expect(project.Status.Containers).To(BeEquivalentTo(2))
 			g.Expect(project.Status.Summary).To(Equal("0 of 2 containers Ready, 0 active sessions"))
-			g.Expect(condition(project.Status.Conditions, ConditionNameMatchesNamespace).Status).
-				To(Equal(metav1.ConditionTrue))
+			g.Expect(condition(project.Status.Conditions, ConditionNameMatchesNamespace)).
+				To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 	})
 })
