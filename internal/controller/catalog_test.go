@@ -19,6 +19,7 @@ package controller
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -32,6 +33,10 @@ func createFactory(ns string) {
 	GinkgoHelper()
 	service, worker, job := c4v1alpha1.ContainerTypeService, c4v1alpha1.ContainerTypeWorker, c4v1alpha1.ContainerTypeJob
 	mustCreate(
+		&corev1.Secret{
+			ObjectMeta: objectMeta(ns, "gitea-credentials"),
+			StringData: map[string]string{"username": "c4admin", "token": "t0ken"},
+		},
 		&c4v1alpha1.GitProvider{
 			ObjectMeta: objectMeta(ns, "gitea"),
 			Spec: c4v1alpha1.GitProviderSpec{

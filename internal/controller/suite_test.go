@@ -51,6 +51,8 @@ import (
 const testStaleAfter = 3 * time.Second
 
 var (
+	// gitFake is the Git host every test scaffolds into.
+	gitFake   *fakeGit
 	ctx       context.Context
 	cancel    context.CancelFunc
 	testEnv   *envtest.Environment
@@ -104,6 +106,8 @@ var _ = BeforeSuite(func() {
 		Metrics: metricsserver.Options{BindAddress: "0"},
 	})
 	Expect(err).NotTo(HaveOccurred())
+	gitFake, err = newFakeGit(filepath.Join("..", "..", "templates"))
+	Expect(err).NotTo(HaveOccurred())
 	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
 	Expect(setupReconcilers(mgr)).To(Succeed())
 	go func() {
@@ -118,7 +122,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 	for _, r := range []interface{ SetupWithManager(ctrl.Manager) error }{
 		&ProjectReconciler{Client: c, Scheme: s},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
-		&ContainerReconciler{Client: c, Scheme: s},
+		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
