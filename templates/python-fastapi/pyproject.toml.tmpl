@@ -1,0 +1,31 @@
+[project]
+name = "{{ .Container }}"
+version = "0.1.0"
+description = {{ printf "%q" .DisplayName }}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.140",
+    "uvicorn[standard]>=0.50",
+{{- if has .Connectors "postgres" }}
+    "psycopg[binary]>=3.3",
+{{- end }}
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13",
+    "pytest>=9.0",
+    "ruff>=0.16",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

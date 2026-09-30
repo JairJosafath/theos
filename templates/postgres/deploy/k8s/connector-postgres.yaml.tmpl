@@ -1,0 +1,14 @@
+# Connection settings for the {{ .Container }} database, loaded by the Deployment
+# through envFrom. Provisioning the database is out of scope for C4 Factory (use
+# Crossplane, an operator or a managed service), so point DATABASE_URL at the
+# database you provision. Keep the password out of this file: put it in a Secret
+# and expose it as PGPASSWORD, which psycopg reads.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Container }}-postgres
+  labels:
+    app.kubernetes.io/name: {{ .Container }}
+    app.kubernetes.io/part-of: {{ .SoftwareSystem }}
+data:
+  DATABASE_URL: postgresql://{{ snake .Container }}@{{ .Container }}-postgres:5432/{{ snake .Container }}
