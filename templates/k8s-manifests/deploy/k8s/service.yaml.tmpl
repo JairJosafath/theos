@@ -1,0 +1,16 @@
+{{- if eq .Type "service" -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Container }}
+  labels:
+    app.kubernetes.io/name: {{ .Container }}
+    app.kubernetes.io/part-of: {{ .SoftwareSystem }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Container }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- end }}

@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Container }}
+  labels:
+    app.kubernetes.io/name: {{ .Container }}
+    app.kubernetes.io/part-of: {{ .SoftwareSystem }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Container }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Container }}
+        app.kubernetes.io/part-of: {{ .SoftwareSystem }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          # Built from the Dockerfile; override it in kustomization.yaml.
+          image: {{ .Container }}:dev
+          ports:
+            - name: http
+              containerPort: 8000
+{{- if .Connectors }}
+          # Connection settings, one ConfigMap per Connector.
+          envFrom:
+{{- range .Connectors }}
+            - configMapRef:
+                name: {{ $.Container }}-{{ . }}
+{{- end }}
+{{- end }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]

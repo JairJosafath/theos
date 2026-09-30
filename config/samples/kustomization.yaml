@@ -1,0 +1,5 @@
+## Append samples of your project ##
+# The webshop story from docs/design.md. Apply with: make sample
+resources:
+- webshop
+# +kubebuilder:scaffold:manifestskustomizesamples

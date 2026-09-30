@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: c4-factory-ui
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+spec:
+  selector:
+    app.kubernetes.io/name: c4-factory-ui
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP

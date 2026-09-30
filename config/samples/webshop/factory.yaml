@@ -1,0 +1,60 @@
+# Where repositories go, and the catalog Containers pick from. Templates are
+# pinned to tags pushed by the seed job (templates/versions.txt).
+apiVersion: c4.factory.io/v1alpha1
+kind: GitProvider
+metadata:
+  name: gitea
+spec:
+  provider: gitea
+  url: http://gitea.gitea.svc.cluster.local:3000
+  owner: webshop
+  credentialsSecretRef:
+    name: gitea-credentials
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Framework
+metadata:
+  name: python-fastapi
+spec:
+  displayName: Python, FastAPI (uv)
+  description: A uv project with FastAPI, ruff and pytest.
+  supportedTypes: [service]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/python-fastapi
+    ref: v1.2.1
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Compute
+metadata:
+  name: small
+spec:
+  displayName: Small
+  description: 50m CPU and 64Mi requested, 250m and 256Mi at most.
+  supportedTypes: [service, worker, job]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/small
+    ref: v1.0.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Deployment
+metadata:
+  name: k8s-manifests
+spec:
+  displayName: Kubernetes manifests
+  description: A Dockerfile and plain Kubernetes manifests, built with kustomize.
+  supportedTypes: [service, worker]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/k8s-manifests
+    ref: v1.1.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Connector
+metadata:
+  name: postgres
+spec:
+  displayName: PostgreSQL
+  description: A Postgres service in the devcontainer and connection settings.
+  supportedTypes: [service, worker, job]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/postgres
+    ref: v1.1.0

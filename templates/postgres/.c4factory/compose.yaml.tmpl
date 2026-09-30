@@ -1,0 +1,29 @@
+# Postgres for local development and tests. The operator writes this file to
+# .devcontainer/compose.postgres.yaml; Docker Compose merges it with compose.yaml,
+# which defines the `app` service the devcontainer runs in.
+#
+# There is no password to keep: Postgres accepts the connections it receives and
+# publishes no port, so only the services of this compose project reach it.
+services:
+  app:
+    environment:
+      DATABASE_URL: postgresql://postgres@postgres:5432/{{ snake .Container }}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: {{ snake .Container }}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d {{ snake .Container }}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  postgres-data:

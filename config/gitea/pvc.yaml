@@ -1,0 +1,12 @@
+# Repositories, the SQLite database and app.ini. Kind's default `standard`
+# StorageClass (local-path) backs it with a directory on the node.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Gi

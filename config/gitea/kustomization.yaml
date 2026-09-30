@@ -1,0 +1,22 @@
+# Gitea for the test environment: `make gitea`, which creates Secret gitea-admin
+# with a generated password and then runs kubectl apply -k config/gitea.
+# One container, SQLite on a small volume, reachable in the cluster at
+# http://gitea.gitea.svc.cluster.local:3000/ and on the laptop via `make gitea-forward`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gitea
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: c4factory-testenv
+    includeTemplates: true
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+# Gitea settings as GITEA__section__KEY variables. The name gets a content hash,
+# so changing gitea.env rolls the Deployment.
+configMapGenerator:
+  - name: gitea-env
+    envs:
+      - gitea.env

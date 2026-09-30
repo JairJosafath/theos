@@ -1,0 +1,23 @@
+# Compute "small": resources for the container `app`. A strategic-merge patch,
+# applied through `patches` in kustomization.yaml.
+{{- if eq .Type "job" }}
+apiVersion: batch/v1
+kind: Job
+{{- else }}
+apiVersion: apps/v1
+kind: Deployment
+{{- end }}
+metadata:
+  name: {{ .Container }}
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

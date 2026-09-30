@@ -1,0 +1,26 @@
+# A Project is the whole story of one namespace, so it must be named after it.
+# The Project reconciler also refuses a mismatched Project, as a fallback.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: project-name-equals-namespace
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["c4.factory.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE"]
+        resources: ["projects"]
+  validations:
+    - expression: "object.metadata.name == object.metadata.namespace"
+      messageExpression: "'a Project must be named after its namespace: want ' + object.metadata.namespace + ', got ' + object.metadata.name"
+      reason: Invalid
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: project-name-equals-namespace
+spec:
+  policyName: project-name-equals-namespace
+  validationActions: [Deny]

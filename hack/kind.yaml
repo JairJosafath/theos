@@ -1,0 +1,9 @@
+# Kind cluster for the C4 Factory test environment: `make cluster`.
+# One node runs everything (Gitea, the operator, the sample and a test Session),
+# which keeps the footprint small on a laptop. Gitea is reached with
+# `make gitea-forward`, so no host ports are mapped here.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: c4factory
+nodes:
+  - role: control-plane

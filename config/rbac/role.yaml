@@ -1,0 +1,91 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - c4.factory.io
+  resources:
+  - computes
+  - connectors
+  - deployments
+  - frameworks
+  - gitproviders
+  - people
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - c4.factory.io
+  resources:
+  - containers
+  - datastores
+  - projects
+  - relationships
+  - sessions
+  - softwaresystems
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - c4.factory.io
+  resources:
+  - containers/finalizers
+  - datastores/finalizers
+  - projects/finalizers
+  - relationships/finalizers
+  - sessions/finalizers
+  - softwaresystems/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - c4.factory.io
+  resources:
+  - containers/status
+  - datastores/status
+  - projects/status
+  - relationships/status
+  - sessions/status
+  - softwaresystems/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch

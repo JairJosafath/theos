@@ -1,0 +1,55 @@
+name: Tests
+
+# Unit and envtest suites. They read the Go code, the generated CRDs, the admission
+# policy and the templates (the fake Git host serves them), so only documentation,
+# the UI and the Kind-only parts of the test environment are left out.
+on:
+  push:
+    branches: [main]
+    paths: &paths
+      - '**'
+      - '!**/*.md'
+      - '!docs/**'
+      - '!ui/**'
+      - '!config/ui/**'
+      - '!config/samples/**'
+      - '!test/e2e/**'
+      - '!.golangci.yml'
+      - '!.custom-gcl.yml'
+      - '!hack/**'
+      - hack/boilerplate.go.txt
+      - '!.devcontainer/**'
+      - '!.github/**'
+      - .github/workflows/test.yml
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+# A newer push to a pull request replaces the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  test:
+    permissions:
+      contents: read
+    name: Run on Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Running Tests
+        run: |
+          go mod tidy
+          make test

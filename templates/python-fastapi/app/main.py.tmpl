@@ -1,0 +1,34 @@
+"""{{ .DisplayName }}: the {{ .Container }} {{ .Type }} of {{ .SoftwareSystem }}."""
+{{ if has .Connectors "postgres" }}
+import os
+
+from fastapi import FastAPI, Response
+{{- else }}
+from fastapi import FastAPI
+{{- end }}
+
+CONTAINER = "{{ .Container }}"
+SOFTWARE_SYSTEM = "{{ .SoftwareSystem }}"
+
+app = FastAPI(title={{ printf "%q" .DisplayName }})
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"container": CONTAINER, "softwareSystem": SOFTWARE_SYSTEM}
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+{{- if has .Connectors "postgres" }}
+
+
+@app.get("/readyz")
+def readyz(response: Response) -> dict[str, bool]:
+    """Ready once DATABASE_URL is set. It does not connect to the database."""
+    configured = bool(os.environ.get("DATABASE_URL"))
+    if not configured:
+        response.status_code = 503
+    return {"databaseConfigured": configured}
+{{- end }}

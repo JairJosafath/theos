@@ -9,22 +9,30 @@ one Git repository per Container from pinned templates, then only reports. Read
 ## Project Structure
 
 ```
-cmd/main.go                        Manager entry (registers controllers)
-cmd/c4session/                     Session client, a small Go CLI run in devcontainers
+cmd/main.go                        Manager entry (registers controllers, Session feature flags)
+cmd/c4session/                     Session client CLI, run in devcontainers
 api/v1alpha1/*_types.go            CRD schemas for all twelve kinds (+kubebuilder markers)
+api/v1alpha1/shared_types.go       Refs, Container types, condition names and labels
 api/v1alpha1/zz_generated.*        Auto-generated (DO NOT EDIT)
 internal/controller/*              Reconcilers: read resources, call rules, write status
-internal/model/                    Pure business rules: types, compatibility, relationships
-internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity file
-internal/gitprovider/              GitProvider interface and the Gitea implementation
+internal/model/                    Pure business rules: choices, relationships, roll-up, staleness
+internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity, commit trailers
+internal/gitprovider/              GitProvider interface and the Gitea implementation (REST + go-git)
+internal/sessionclient/            The Session client's logic: register, heartbeat, delete
+features/src/c4session/            The c4session devcontainer feature, embedded by the operator
 config/crd/bases/*                 Generated CRDs (DO NOT EDIT)
 config/rbac/role.yaml              Generated RBAC (DO NOT EDIT)
 config/policy/                     ValidatingAdmissionPolicy (Project name equals namespace)
+config/gitea/                      Gitea for the test environment
 config/samples/webshop/            The sample story (edit these)
+config/ui/                         The read-only UI's Deployment and read-only RBAC
 templates/<name>/                  Template repositories, pushed and tagged into Gitea by the seed job
-hack/                              Scripts behind the Make targets (cluster, Gitea, seed)
-test/e2e/                          End-to-end tests against the Kind cluster
-ui/                                Read-only UI
+templates/versions.txt             The tag each template is released at
+hack/testenv.mk                    Make targets for the Kind test environment
+hack/seed/                         The seed job image and manifests
+hack/session/                      The Session client image and the test Session pod
+test/e2e/                          End-to-end tests against the Kind cluster (make e2e)
+ui/                                Read-only UI (React + a GET-only proxy)
 docs/                              Design, architecture, plans and screenshots
 Makefile                           Build, test, cluster and deploy commands
 PROJECT                            Kubebuilder metadata, auto-generated (DO NOT EDIT)
@@ -134,15 +142,23 @@ later, create all types together with
 ## Testing & Development
 
 ```bash
-make test              # Unit and envtest tests (real K8s API + etcd, no cluster needed)
-make run               # Run the operator locally against the current kubeconfig context
+make test                # Unit and envtest tests (real K8s API + etcd, no cluster needed)
+make check               # manifests, generate, fmt, vet, lint and test
 make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
-make deploy sample     # Build and install the operator, apply the webshop sample
-make e2e               # All of the above, then check the result
+make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
+make session             # Run the test Session pod; make session-kill kills its client
+make test-gitea          # gitprovider against the seeded Gitea
+make e2e                 # All of the above, then check every milestone in Kind
 ```
 
-Controller tests use **Ginkgo + Gomega** (BDD style). Check `suite_test.go` for setup.
-Business-rule tests use the standard `testing` package with table tests.
+Controller tests use **Ginkgo + Gomega** (BDD style) with the real manager and every
+reconciler; see `internal/controller/suite_test.go`. A fake Git host serves the real
+`templates/`, so envtest also proves the templates render together. Business-rule tests
+use the standard `testing` package with table tests. In tests, write with merge patches
+(`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
+
+`make run` runs the operator on your machine, but it can't reach Gitea's in-cluster
+address; use `make deploy` for anything that scaffolds.
 
 ## Deployment Workflow
 
@@ -151,15 +167,15 @@ Business-rule tests use the standard `testing` package with table tests.
 make manifests generate
 
 # 2. Build, load into Kind, deploy
-make deploy            # builds the image, kind-loads it into the c4factory cluster, applies config/default
+make deploy            # builds c4factory/operator:dev, kind-loads it, applies config/default, restarts
 
 # 3. Try it
-make sample            # or: kubectl apply -k config/samples/webshop/
-kubectl get projects,softwaresystems,containers,datastores,relationships,sessions -n webshop
+make sample            # the webshop story
+kubectl get c4 -n webshop
 
 # 4. Debug
 kubectl logs -n c4-factory-system deployment/c4-factory-controller-manager -c manager -f
-kubectl port-forward -n gitea svc/gitea 3000:3000   # then open http://localhost:3000
+make gitea-forward     # then open http://localhost:3000
 ```
 
 ### API Design

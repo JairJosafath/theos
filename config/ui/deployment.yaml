@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: c4-factory-ui
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: c4-factory-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: c4-factory-ui
+    spec:
+      serviceAccountName: c4-factory-ui
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: ui
+        image: c4factory/ui:dev
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: PORT
+          value: "8080"
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 10m
+            memory: 48Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL

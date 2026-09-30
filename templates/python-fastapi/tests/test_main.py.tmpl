@@ -1,0 +1,39 @@
+{{- if has .Connectors "postgres" -}}
+import pytest
+{{ end -}}
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+
+def test_root_names_container_and_system() -> None:
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {
+        "container": "{{ .Container }}",
+        "softwareSystem": "{{ .SoftwareSystem }}",
+    }
+
+
+def test_healthz() -> None:
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+{{- if has .Connectors "postgres" }}
+
+
+def test_readyz_with_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres@localhost:5432/test")
+    response = client.get("/readyz")
+    assert response.status_code == 200
+    assert response.json() == {"databaseConfigured": True}
+
+
+def test_readyz_without_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    response = client.get("/readyz")
+    assert response.status_code == 503
+    assert response.json() == {"databaseConfigured": False}
+{{- end }}

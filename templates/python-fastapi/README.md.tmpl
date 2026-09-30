@@ -1,0 +1,43 @@
+# {{ .DisplayName }}
+
+`{{ .Container }}` is a {{ .Type }} in the {{ .SoftwareSystem }} software system
+(project `{{ .Project }}`). C4 Factory scaffolded it once; from here on the code is yours.
+
+It is a [uv](https://docs.astral.sh/uv/) project with [FastAPI](https://fastapi.tiangolo.com/),
+[ruff](https://docs.astral.sh/ruff/) and [pytest](https://docs.pytest.org/).
+
+## Run it
+
+Open the repository in its devcontainer (`.devcontainer/`), which installs uv and runs
+`uv sync` for you. Anywhere else, [install uv](https://docs.astral.sh/uv/getting-started/installation/) first.
+
+```sh
+uv sync                                   # create .venv from pyproject.toml and uv.lock
+uv run uvicorn app.main:app --reload      # http://localhost:8000, API docs at /docs
+```
+
+Commit the `uv.lock` that `uv sync` writes, so every build resolves the same versions.
+
+## Check it
+
+```sh
+uv run ruff check           # lint
+uv run ruff format --check  # formatting
+uv run pytest               # tests
+```
+
+## Endpoints
+
+- `GET /` returns the container and software system names.
+- `GET /healthz` returns `{"status": "ok"}` while the process is up.
+{{- if has .Connectors "postgres" }}
+- `GET /readyz` returns 200 once `DATABASE_URL` is set, 503 before. It does not connect
+  to the database.
+{{- end }}
+{{- if .Connectors }}
+
+## Connectors
+{{ range .Connectors }}
+- {{ . }}
+{{- end }}
+{{- end }}
