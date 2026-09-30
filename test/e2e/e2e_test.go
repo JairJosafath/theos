@@ -1,6 +1,3 @@
-//go:build e2e
-// +build e2e
-
 /*
 Copyright 2026.
 
@@ -22,318 +19,387 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+	"net/http"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/test/utils"
 )
 
-// namespace where the project is deployed in
-const namespace = "c4-factory-system"
+const webshop = "webshop"
 
-// serviceAccountName created for the project
-const serviceAccountName = "c4-factory-controller-manager"
-
-// metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "c4-factory-controller-manager-metrics-service"
-
-// metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
-const metricsRoleBindingName = "c4-factory-metrics-binding"
-
-var _ = Describe("Manager", Ordered, func() {
-	var controllerPodName string
-
-	// Before running the tests, set up the environment by creating the namespace,
-	// enforce the restricted security policy to the namespace, installing CRDs,
-	// and deploying the controller.
-	BeforeAll(func() {
-		By("creating manager namespace")
-		cmd := exec.Command("kubectl", "create", "ns", namespace)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
-
-		By("labeling the namespace to enforce the restricted security policy")
-		cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
-			"pod-security.kubernetes.io/enforce=restricted")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
-
-		By("installing CRDs")
-		cmd = exec.Command("make", "install")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
-
-		By("deploying the controller-manager")
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
-	})
-
-	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
-	// and deleting the namespace.
-	AfterAll(func() {
-		By("cleaning up the curl pod for metrics")
-		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
-		_, _ = utils.Run(cmd)
-
-		By("undeploying the controller-manager")
-		cmd = exec.Command("make", "undeploy")
-		_, _ = utils.Run(cmd)
-
-		By("uninstalling CRDs")
-		cmd = exec.Command("make", "uninstall")
-		_, _ = utils.Run(cmd)
-
-		By("removing manager namespace")
-		cmd = exec.Command("kubectl", "delete", "ns", namespace)
-		_, _ = utils.Run(cmd)
-	})
-
-	// After each test, check for failures and collect logs, events,
-	// and pod descriptions for debugging.
-	AfterEach(func() {
-		specReport := CurrentSpecReport()
-		if specReport.Failed() {
-			By("Fetching controller manager pod logs")
-			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-			controllerLogs, err := utils.Run(cmd)
-			if err == nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", controllerLogs)
-			} else {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get Controller logs: %s", err)
+// Ordered keeps the milestones in sequence; ContinueOnFailure still runs the rest
+// when one fails, so a run shows every milestone's state.
+var _ = Describe("C4 Factory", Ordered, ContinueOnFailure, func() {
+	Context("milestone 1: test environment", func() {
+		It("has the four template repositories, tagged", func() {
+			for name, tag := range map[string]string{
+				"python-fastapi": "v1.2.0", "small": "v1.0.0", "k8s-manifests": "v1.0.0", "postgres": "v1.1.0",
+			} {
+				var tags []struct {
+					Name string `json:"name"`
+				}
+				giteaGet("/api/v1/repos/templates/"+name+"/tags", &tags)
+				Expect(tags).To(ContainElement(HaveField("Name", tag)), name)
 			}
-
-			By("Fetching Kubernetes events")
-			cmd = exec.Command("kubectl", "get", "events", "-n", namespace, "--sort-by=.lastTimestamp")
-			eventsOutput, err := utils.Run(cmd)
-			if err == nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Kubernetes events:\n%s", eventsOutput)
-			} else {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get Kubernetes events: %s", err)
-			}
-
-			By("Fetching curl-metrics logs")
-			cmd = exec.Command("kubectl", "logs", "curl-metrics", "-n", namespace)
-			metricsOutput, err := utils.Run(cmd)
-			if err == nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Metrics logs:\n %s", metricsOutput)
-			} else {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get curl-metrics logs: %s", err)
-			}
-
-			By("Fetching controller manager pod description")
-			cmd = exec.Command("kubectl", "describe", "pod", controllerPodName, "-n", namespace)
-			podDescription, err := utils.Run(cmd)
-			if err == nil {
-				fmt.Println("Pod description:\n", podDescription)
-			} else {
-				fmt.Println("Failed to describe controller pod")
-			}
-		}
-	})
-
-	SetDefaultEventuallyTimeout(2 * time.Minute)
-	SetDefaultEventuallyPollingInterval(time.Second)
-
-	Context("Manager", func() {
-		It("should run successfully", func() {
-			By("validating that the controller-manager pod is running as expected")
-			verifyControllerUp := func(g Gomega) {
-				By("getting the name of the controller-manager pod")
-				cmd := exec.Command("kubectl", "get",
-					"pods", "-l", "control-plane=controller-manager",
-					"-o", "go-template={{ range .items }}"+
-						"{{ if not .metadata.deletionTimestamp }}"+
-						"{{ .metadata.name }}"+
-						"{{ \"\\n\" }}{{ end }}{{ end }}",
-					"-n", namespace,
-				)
-
-				podOutput, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve controller-manager pod information")
-				podNames := utils.GetNonEmptyLines(podOutput)
-				g.Expect(podNames).To(HaveLen(1), "expected 1 controller pod running")
-				controllerPodName = podNames[0]
-				g.Expect(controllerPodName).To(ContainSubstring("controller-manager"))
-
-				By("validating the pod's status")
-				cmd = exec.Command("kubectl", "get",
-					"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
-					"-n", namespace,
-				)
-				output, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("Running"), "Incorrect controller-manager pod status")
-			}
-			Eventually(verifyControllerUp).Should(Succeed())
 		})
 
-		It("should ensure the metrics endpoint is serving metrics", func() {
-			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
-			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
-				"--clusterrole=c4-factory-metrics-reader",
-				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
-			)
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterRoleBinding")
+		It("has the gitea-credentials Secret in webshop", func() {
+			Expect(giteaToken).NotTo(BeEmpty())
+		})
+	})
 
-			By("validating that the metrics service is available")
-			cmd = exec.Command("kubectl", "get", "service", metricsServiceName, "-n", namespace)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Metrics service should exist")
-
-			By("getting the service account token")
-			token, err := serviceAccountToken()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(token).NotTo(BeEmpty())
-
-			By("ensuring the controller pod is ready")
-			verifyControllerPodReady := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "pod", controllerPodName, "-n", namespace,
-					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
-				output, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("True"), "Controller pod not ready")
-			}
-			Eventually(verifyControllerPodReady, 3*time.Minute, time.Second).Should(Succeed())
-
-			By("verifying that the controller manager is serving the metrics server")
-			verifyMetricsServerStarted := func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
-				output, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring("Serving metrics server"),
-					"Metrics server not yet started")
-			}
-			Eventually(verifyMetricsServerStarted, 3*time.Minute, time.Second).Should(Succeed())
-
-			// +kubebuilder:scaffold:e2e-metrics-webhooks-readiness
-
-			By("creating the curl-metrics pod to access the metrics endpoint")
-			cmd = exec.Command("kubectl", "run", "curl-metrics", "--restart=Never",
-				"--namespace", namespace,
-				"--image=curlimages/curl:latest",
-				"--overrides",
-				fmt.Sprintf(`{
-					"spec": {
-						"containers": [{
-							"name": "curl",
-							"image": "curlimages/curl:latest",
-							"command": ["/bin/sh", "-c"],
-							"args": [
-								"for i in $(seq 1 30); do curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics && exit 0 || sleep 2; done; exit 1"
-							],
-							"securityContext": {
-								"readOnlyRootFilesystem": true,
-								"allowPrivilegeEscalation": false,
-								"capabilities": {
-									"drop": ["ALL"]
-								},
-								"runAsNonRoot": true,
-								"runAsUser": 1000,
-								"seccompProfile": {
-									"type": "RuntimeDefault"
-								}
-							}
-						}],
-						"serviceAccountName": "%s"
-					}
-				}`, token, metricsServiceName, namespace, serviceAccountName))
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create curl-metrics pod")
-
-			By("waiting for the curl-metrics pod to complete.")
-			verifyCurlUp := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "pods", "curl-metrics",
-					"-o", "jsonpath={.status.phase}",
-					"-n", namespace)
-				output, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("Succeeded"), "curl pod in wrong status")
-			}
-			Eventually(verifyCurlUp, 5*time.Minute).Should(Succeed())
-
-			By("getting the metrics by checking curl-metrics logs")
-			verifyMetricsAvailable := func(g Gomega) {
-				metricsOutput, err := getMetricsOutput()
-				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-				g.Expect(metricsOutput).NotTo(BeEmpty())
-				g.Expect(metricsOutput).To(ContainSubstring("< HTTP/1.1 200 OK"))
-			}
-			Eventually(verifyMetricsAvailable, 2*time.Minute).Should(Succeed())
+	Context("milestone 2: story model", func() {
+		It("builds the webshop tree from parent refs", func() {
+			var project c4v1alpha1.Project
+			var system c4v1alpha1.SoftwareSystem
+			var container c4v1alpha1.Container
+			var store c4v1alpha1.DataStore
+			var person c4v1alpha1.Person
+			var rel c4v1alpha1.Relationship
+			Eventually(func(g Gomega) {
+				g.Expect(k8s.Get(ctx, key(webshop, webshop), &project)).To(Succeed())
+				g.Expect(k8s.Get(ctx, key(webshop, "webshop-core"), &system)).To(Succeed())
+				g.Expect(k8s.Get(ctx, key(webshop, "orders-api"), &container)).To(Succeed())
+				g.Expect(k8s.Get(ctx, key(webshop, "orders-db"), &store)).To(Succeed())
+				g.Expect(k8s.Get(ctx, key(webshop, "customer"), &person)).To(Succeed())
+				g.Expect(k8s.Get(ctx, key(webshop, "orders-api-to-orders-db"), &rel)).To(Succeed())
+				g.Expect(metav1.IsControlledBy(&system, &project)).To(BeTrue())
+				g.Expect(metav1.IsControlledBy(&person, &project)).To(BeTrue())
+				g.Expect(metav1.IsControlledBy(&container, &system)).To(BeTrue())
+				g.Expect(metav1.IsControlledBy(&store, &system)).To(BeTrue())
+				g.Expect(metav1.IsControlledBy(&rel, &container)).To(BeTrue())
+				g.Expect(container.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelSoftwareSystem, "webshop-core"))
+			}).WithTimeout(time.Minute).Should(Succeed())
 		})
 
-		// +kubebuilder:scaffold:e2e-webhooks-checks
+		It("rejects a Project not named after its namespace", func() {
+			ns := newNamespace("e2e-policy")
+			err := k8s.Create(ctx, &c4v1alpha1.Project{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "webshop"}})
+			Expect(err).To(MatchError(ContainSubstring("a Project must be named after its namespace")))
+		})
 
-		// TODO: Customize the e2e test suite with scenarios specific to your project.
-		// Consider applying sample/CR(s) and check their status and/or verifying
-		// the reconciliation by using the metrics, i.e.:
-		// metricsOutput, err := getMetricsOutput()
-		// Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-		// Expect(metricsOutput).To(ContainSubstring(
-		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
-		//    strings.ToLower(<Kind>),
-		// ))
+		It("cascades when a SoftwareSystem is deleted", func() {
+			ns := newNamespace("e2e-cascade")
+			system := &c4v1alpha1.SoftwareSystem{ObjectMeta: objMeta(ns, "doomed")}
+			container := &c4v1alpha1.Container{ObjectMeta: objMeta(ns, "doomed-api"), Spec: c4v1alpha1.ContainerSpec{
+				SoftwareSystemRef: ref("doomed"), Type: c4v1alpha1.ContainerTypeService,
+				GitProviderRef: ref("none"), FrameworkRef: ref("none"),
+			}}
+			store := &c4v1alpha1.DataStore{ObjectMeta: objMeta(ns, "doomed-db"), Spec: c4v1alpha1.DataStoreSpec{
+				SoftwareSystemRef: ref("doomed"), ConnectorRef: ref("none"),
+			}}
+			rel := &c4v1alpha1.Relationship{ObjectMeta: objMeta(ns, "doomed-link"), Spec: c4v1alpha1.RelationshipSpec{
+				Source: c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementContainer, Name: "doomed-api"},
+				Target: c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementDataStore, Name: "doomed-db"},
+			}}
+			session := &c4v1alpha1.Session{ObjectMeta: objMeta(ns, "doomed-session"), Spec: c4v1alpha1.SessionSpec{
+				ContainerRef: ref("doomed-api"), Actor: c4v1alpha1.ActorHuman,
+			}}
+			for _, obj := range []client.Object{
+				&c4v1alpha1.Project{ObjectMeta: objMeta(ns, ns)}, system, container, store, rel, session,
+			} {
+				Expect(k8s.Create(ctx, obj)).To(Succeed())
+			}
+			children := []client.Object{container, store, rel, session}
+			Eventually(func(g Gomega) {
+				for _, obj := range children {
+					g.Expect(k8s.Get(ctx, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
+					g.Expect(metav1.GetControllerOf(obj)).NotTo(BeNil(), "%T %s not adopted yet", obj, obj.GetName())
+				}
+			}).WithTimeout(time.Minute).Should(Succeed())
+
+			Expect(k8s.Delete(ctx, system)).To(Succeed())
+			Eventually(func(g Gomega) {
+				for _, obj := range children {
+					err := k8s.Get(ctx, client.ObjectKeyFromObject(obj), obj)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "%T %s still exists", obj, obj.GetName())
+				}
+			}).WithTimeout(time.Minute).Should(Succeed())
+		})
+	})
+
+	Context("milestone 3: catalog and GitProvider", func() {
+		It("fails a static-site Container that uses python-fastapi, with a clear message", func() {
+			ns := newNamespace("e2e-catalog")
+			kubectl("apply", "-n", ns, "-f", "config/samples/webshop/factory.yaml")
+			Expect(k8s.Create(ctx, &corev1.Secret{ObjectMeta: objMeta(ns, "gitea-credentials"),
+				StringData: map[string]string{"username": "nobody", "token": "unused"}})).To(Succeed())
+			for _, obj := range []client.Object{
+				&c4v1alpha1.Project{ObjectMeta: objMeta(ns, ns)},
+				&c4v1alpha1.SoftwareSystem{ObjectMeta: objMeta(ns, "webshop-core")},
+				&c4v1alpha1.Container{ObjectMeta: objMeta(ns, "storefront"), Spec: c4v1alpha1.ContainerSpec{
+					SoftwareSystemRef: ref("webshop-core"), Type: c4v1alpha1.ContainerTypeStaticSite,
+					GitProviderRef: ref("gitea"), FrameworkRef: ref("python-fastapi"),
+				}},
+			} {
+				Expect(k8s.Create(ctx, obj)).To(Succeed())
+			}
+			Eventually(func(g Gomega) {
+				var c c4v1alpha1.Container
+				g.Expect(k8s.Get(ctx, key(ns, "storefront"), &c)).To(Succeed())
+				g.Expect(c.Status.Phase).To(Equal(c4v1alpha1.ContainerFailed))
+				cond := meta.FindStatusCondition(c.Status.Conditions, c4v1alpha1.ConditionChoicesValid)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(cond.Message).To(Equal("python-fastapi does not support static-site"))
+			}).WithTimeout(time.Minute).Should(Succeed())
+		})
+	})
+
+	Context("milestone 4: scaffolding", func() {
+		It("has scaffolded orders-api into Gitea, once", func() {
+			var container c4v1alpha1.Container
+			Eventually(func(g Gomega) {
+				g.Expect(k8s.Get(ctx, key(webshop, "orders-api"), &container)).To(Succeed())
+				g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			}).WithTimeout(3 * time.Minute).Should(Succeed())
+			Expect(container.Status.RepositoryURL).To(Equal("http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api"))
+			Expect(container.Status.ScaffoldedFrom).To(Equal([]string{
+				"python-fastapi@v1.2.0", "small@v1.0.0", "k8s-manifests@v1.0.0", "postgres@v1.1.0",
+			}))
+			Expect(commitsOf("orders-api")).To(HaveLen(1))
+
+			By("a repeat reconcile changing nothing")
+			before := container.Status.DeepCopy()
+			poke(&container)
+			Consistently(func(g Gomega) {
+				g.Expect(k8s.Get(ctx, key(webshop, "orders-api"), &container)).To(Succeed())
+				g.Expect(container.Status.Phase).To(Equal(before.Phase))
+				g.Expect(container.Status.ScaffoldedFrom).To(Equal(before.ScaffoldedFrom))
+				g.Expect(container.Status.Conditions).To(Equal(before.Conditions))
+			}).WithTimeout(10 * time.Second).WithPolling(time.Second).Should(Succeed())
+			Expect(commitsOf("orders-api")).To(HaveLen(1))
+		})
+
+		It("scaffolds a fresh Container with every layer and the Session feature", func() {
+			ns := newNamespace("e2e-scaffold")
+			name := "e2e-api-" + rand.String(5)
+			DeferCleanup(func() { giteaDelete("/api/v1/repos/webshop/" + name) })
+			kubectl("apply", "-n", ns, "-f", "config/samples/webshop/factory.yaml")
+			copySecret(webshop, ns, "gitea-credentials")
+			for _, obj := range []client.Object{
+				&c4v1alpha1.Project{ObjectMeta: objMeta(ns, ns)},
+				&c4v1alpha1.SoftwareSystem{ObjectMeta: objMeta(ns, "webshop-core")},
+				&c4v1alpha1.DataStore{ObjectMeta: objMeta(ns, "orders-db"), Spec: c4v1alpha1.DataStoreSpec{
+					SoftwareSystemRef: ref("webshop-core"), ConnectorRef: ref("postgres"),
+				}},
+				&c4v1alpha1.DataStore{ObjectMeta: objMeta(ns, "audit-db"), Spec: c4v1alpha1.DataStoreSpec{
+					SoftwareSystemRef: ref("webshop-core"), ConnectorRef: ref("postgres"),
+				}},
+				&c4v1alpha1.Relationship{ObjectMeta: objMeta(ns, name+"-to-orders-db"), Spec: c4v1alpha1.RelationshipSpec{
+					Source: c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementContainer, Name: name},
+					Target: c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementDataStore, Name: "orders-db"},
+				}},
+				&c4v1alpha1.Container{ObjectMeta: objMeta(ns, name), Spec: c4v1alpha1.ContainerSpec{
+					SoftwareSystemRef: ref("webshop-core"), DisplayName: "E2E API", Type: c4v1alpha1.ContainerTypeService,
+					GitProviderRef: ref("gitea"), FrameworkRef: ref("python-fastapi"),
+					ComputeRef: refPtr("small"), DeploymentRef: refPtr("k8s-manifests"),
+				}},
+			} {
+				Expect(k8s.Create(ctx, obj)).To(Succeed())
+			}
+			Eventually(func(g Gomega) {
+				var c c4v1alpha1.Container
+				g.Expect(k8s.Get(ctx, key(ns, name), &c)).To(Succeed())
+				g.Expect(c.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			}).WithTimeout(3 * time.Minute).Should(Succeed())
+
+			By("pushing the uv project, the manifests and a devcontainer with Postgres and the Session client")
+			files := filesOf(name)
+			Expect(files).To(ContainElements(
+				".c4factory.yaml", "pyproject.toml", "app/main.py", "tests/test_main.py", "Dockerfile",
+				"deploy/k8s/kustomization.yaml", "deploy/k8s/compute.yaml", "deploy/k8s/connector-postgres.yaml",
+				".devcontainer/devcontainer.json", ".devcontainer/compose.yaml", ".devcontainer/compose.postgres.yaml",
+				".devcontainer/c4session/install.sh", ".devcontainer/c4session/devcontainer-feature.json",
+			))
+			Expect(files).NotTo(ContainElement(HavePrefix(".c4factory/")))
+			commits := commitsOf(name)
+			Expect(commits).To(HaveLen(1))
+			Expect(commits[0]).To(ContainSubstring("C4-Factory-Container: " + ns + "/" + name))
+
+			By("marking a Relationship added after scaffolding as not applied")
+			late := &c4v1alpha1.Relationship{ObjectMeta: objMeta(ns, name+"-to-audit-db"), Spec: c4v1alpha1.RelationshipSpec{
+				Source: c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementContainer, Name: name},
+				Target: c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementDataStore, Name: "audit-db"},
+			}}
+			Expect(k8s.Create(ctx, late)).To(Succeed())
+			Eventually(func(g Gomega) {
+				g.Expect(k8s.Get(ctx, client.ObjectKeyFromObject(late), late)).To(Succeed())
+				cond := meta.FindStatusCondition(late.Status.Conditions, c4v1alpha1.ConditionApplied)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonAddedAfterScaffold))
+			}).WithTimeout(time.Minute).Should(Succeed())
+			Expect(commitsOf(name)).To(HaveLen(1))
+		})
+	})
+
+	Context("milestone 5: sessions", func() {
+		BeforeEach(func() {
+			kubectl("-n", webshop, "delete", "pod", "session-orders-api", "--ignore-not-found", "--wait=true")
+			kubectl("-n", webshop, "delete", "sessions", "--all", "--wait=true")
+		})
+
+		It("registers the test pod's Session and deletes it when the pod stops", func() {
+			startSessionPod()
+			name := activeSession()
+			kubectl("-n", webshop, "delete", "pod", "session-orders-api", "--wait=true")
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8s.Get(ctx, key(webshop, name), &c4v1alpha1.Session{}))
+			}).WithTimeout(30 * time.Second).Should(BeTrue())
+		})
+
+		It("marks the Session Stale after the client is killed", func() {
+			startSessionPod()
+			name := activeSession()
+			kubectl("-n", webshop, "exec", "session-orders-api", "-c", "client", "--", "pkill", "-KILL", "c4session")
+			Eventually(func(g Gomega) {
+				var s c4v1alpha1.Session
+				g.Expect(k8s.Get(ctx, key(webshop, name), &s)).To(Succeed())
+				g.Expect(s.Status.Phase).To(Equal(c4v1alpha1.SessionStale))
+				var c c4v1alpha1.Container
+				g.Expect(k8s.Get(ctx, key(webshop, "orders-api"), &c)).To(Succeed())
+				g.Expect(c.Status.ActiveSessions).To(BeZero())
+			}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+		})
 	})
 })
 
-// serviceAccountToken returns a token for the specified service account in the given namespace.
-// It uses the Kubernetes TokenRequest API to generate a token by directly sending a request
-// and parsing the resulting token from the API response.
-func serviceAccountToken() (string, error) {
-	const tokenRequestRawString = `{
-		"apiVersion": "authentication.k8s.io/v1",
-		"kind": "TokenRequest"
-	}`
-
-	By("creating temporary file to store the token request")
-	secretName := fmt.Sprintf("%s-token-request", serviceAccountName)
-	tokenRequestFile := filepath.Join("/tmp", secretName)
-	err := os.WriteFile(tokenRequestFile, []byte(tokenRequestRawString), os.FileMode(0o644))
-	if err != nil {
-		return "", err
-	}
-
-	var out string
-	verifyTokenCreation := func(g Gomega) {
-		By("executing kubectl command to create the token")
-		cmd := exec.Command("kubectl", "create", "--raw", fmt.Sprintf(
-			"/api/v1/namespaces/%s/serviceaccounts/%s/token",
-			namespace,
-			serviceAccountName,
-		), "-f", tokenRequestFile)
-
-		output, err := cmd.CombinedOutput()
-		g.Expect(err).NotTo(HaveOccurred())
-
-		By("parsing the JSON output to extract the token")
-		var token tokenRequest
-		err = json.Unmarshal(output, &token)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		out = token.Status.Token
-	}
-	Eventually(verifyTokenCreation).Should(Succeed())
-
-	return out, err
+func key(ns, name string) types.NamespacedName {
+	return types.NamespacedName{Namespace: ns, Name: name}
 }
 
-// getMetricsOutput retrieves and returns the logs from the curl pod used to access the metrics endpoint.
-func getMetricsOutput() (string, error) {
-	By("getting the curl-metrics logs")
-	cmd := exec.Command("kubectl", "logs", "curl-metrics", "-n", namespace)
-	return utils.Run(cmd)
+func objMeta(ns, name string) metav1.ObjectMeta { return metav1.ObjectMeta{Namespace: ns, Name: name} }
+
+func ref(name string) c4v1alpha1.LocalRef { return c4v1alpha1.LocalRef{Name: name} }
+
+func refPtr(name string) *c4v1alpha1.LocalRef { return &c4v1alpha1.LocalRef{Name: name} }
+
+// newNamespace creates a namespace for one spec and deletes it afterwards.
+func newNamespace(prefix string) string {
+	GinkgoHelper()
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: prefix + "-"}}
+	Expect(k8s.Create(ctx, ns)).To(Succeed())
+	DeferCleanup(func() { _ = k8s.Delete(ctx, ns) })
+	return ns.Name
 }
 
-// tokenRequest is a simplified representation of the Kubernetes TokenRequest API response,
-// containing only the token field that we need to extract.
-type tokenRequest struct {
-	Status struct {
-		Token string `json:"token"`
-	} `json:"status"`
+func kubectl(args ...string) string {
+	GinkgoHelper()
+	out, err := utils.Run(exec.Command("kubectl", append([]string{"--context", kubeCtx}, args...)...))
+	Expect(err).NotTo(HaveOccurred())
+	return out
+}
+
+func copySecret(from, to, name string) {
+	GinkgoHelper()
+	var secret corev1.Secret
+	Expect(k8s.Get(ctx, key(from, name), &secret)).To(Succeed())
+	Expect(k8s.Create(ctx, &corev1.Secret{ObjectMeta: objMeta(to, name), Data: secret.Data})).To(Succeed())
+}
+
+// poke changes an annotation, which makes the operator reconcile the object.
+func poke(obj client.Object) {
+	GinkgoHelper()
+	patch := fmt.Sprintf(`{"metadata":{"annotations":{"e2e.c4.factory.io/poke":%q}}}`, time.Now().Format(time.RFC3339Nano))
+	Expect(k8s.Patch(ctx, obj, client.RawPatch(types.MergePatchType, []byte(patch)))).To(Succeed())
+}
+
+func startSessionPod() {
+	GinkgoHelper()
+	kubectl("apply", "-f", "hack/session/pod.yaml")
+	kubectl("-n", webshop, "wait", "pod/session-orders-api", "--for=condition=Ready", "--timeout=120s")
+}
+
+// activeSession waits for the test pod's Session to be Active on orders-api.
+func activeSession() string {
+	GinkgoHelper()
+	var name string
+	Eventually(func(g Gomega) {
+		var list c4v1alpha1.SessionList
+		g.Expect(k8s.List(ctx, &list, client.InNamespace(webshop))).To(Succeed())
+		g.Expect(list.Items).To(HaveLen(1))
+		s := list.Items[0]
+		g.Expect(s.Spec.ContainerRef.Name).To(Equal("orders-api"))
+		g.Expect(s.Spec.Actor).To(Equal(c4v1alpha1.ActorAgent))
+		g.Expect(s.Status.Phase).To(Equal(c4v1alpha1.SessionActive))
+		var c c4v1alpha1.Container
+		g.Expect(k8s.Get(ctx, key(webshop, "orders-api"), &c)).To(Succeed())
+		g.Expect(c.Status.ActiveSessions).To(BeEquivalentTo(1))
+		name = s.Name
+	}).WithTimeout(time.Minute).Should(Succeed())
+	return name
+}
+
+func giteaRequest(method, path string) *http.Response {
+	GinkgoHelper()
+	req, err := http.NewRequestWithContext(ctx, method, giteaURL+path, nil)
+	Expect(err).NotTo(HaveOccurred())
+	req.Header.Set("Authorization", "token "+giteaToken)
+	resp, err := http.DefaultClient.Do(req)
+	Expect(err).NotTo(HaveOccurred())
+	return resp
+}
+
+// giteaGet reads a Gitea API path into into. Right after a push the API can still
+// report a repository as empty (409) for a moment, so it retries briefly.
+func giteaGet(path string, into any) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		resp := giteaRequest(http.MethodGet, path)
+		defer func() { _ = resp.Body.Close() }()
+		g.Expect(resp.StatusCode).To(Equal(http.StatusOK), path)
+		g.Expect(json.NewDecoder(resp.Body).Decode(into)).To(Succeed())
+	}).WithTimeout(15 * time.Second).WithPolling(500 * time.Millisecond).Should(Succeed())
+}
+
+func giteaDelete(path string) {
+	resp := giteaRequest(http.MethodDelete, path)
+	_ = resp.Body.Close()
+}
+
+// commitsOf returns the commit messages on the default branch of webshop/<repo>.
+func commitsOf(repo string) []string {
+	GinkgoHelper()
+	var commits []struct {
+		Commit struct {
+			Message string `json:"message"`
+		} `json:"commit"`
+	}
+	giteaGet(fmt.Sprintf("/api/v1/repos/webshop/%s/commits?limit=10", repo), &commits)
+	out := make([]string, 0, len(commits))
+	for _, c := range commits {
+		out = append(out, c.Commit.Message)
+	}
+	return out
+}
+
+// filesOf lists every file on the default branch of webshop/<repo>.
+func filesOf(repo string) []string {
+	GinkgoHelper()
+	var tree struct {
+		Tree []struct {
+			Path string `json:"path"`
+			Type string `json:"type"`
+		} `json:"tree"`
+	}
+	giteaGet(fmt.Sprintf("/api/v1/repos/webshop/%s/git/trees/main?recursive=1&per_page=1000", repo), &tree)
+	var files []string
+	for _, e := range tree.Tree {
+		if e.Type == "blob" {
+			files = append(files, e.Path)
+		}
+	}
+	return files
 }
