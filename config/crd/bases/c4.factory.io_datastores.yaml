@@ -57,6 +57,7 @@ spec:
                 description: |-
                   connectorRef names the Connector catalog entry. A Relationship from a
                   Container to this DataStore adds that Connector to the Container's scaffold.
+                  It can't change, since a scaffold that applied it already has it.
                 properties:
                   name:
                     description: name of the referenced object.
@@ -66,6 +67,9 @@ spec:
                 required:
                 - name
                 type: object
+                x-kubernetes-validations:
+                - message: connectorRef is immutable
+                  rule: self == oldSelf
               description:
                 description: description says what is stored.
                 maxLength: 1000

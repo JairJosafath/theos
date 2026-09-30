@@ -28,7 +28,9 @@ type RelationshipSpec struct {
 	// +required
 	Source ElementRef `json:"source"`
 
-	// target is the element the link points to.
+	// target is the element the link points to. It can't change: whether a link
+	// was applied is recorded by name, so point elsewhere with a new Relationship.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="target is immutable"
 	// +required
 	Target ElementRef `json:"target"`
 

@@ -39,6 +39,8 @@ type DataStoreSpec struct {
 
 	// connectorRef names the Connector catalog entry. A Relationship from a
 	// Container to this DataStore adds that Connector to the Container's scaffold.
+	// It can't change, since a scaffold that applied it already has it.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="connectorRef is immutable"
 	// +required
 	ConnectorRef LocalRef `json:"connectorRef"`
 }

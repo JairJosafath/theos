@@ -43,6 +43,18 @@ var _ = Describe("Relationship", func() {
 			To(MatchError(ContainSubstring("source is immutable")))
 	})
 
+	// Applied is decided by name, so a retargeted link would keep reporting a
+	// Connector that isn't in the scaffold.
+	It("keeps its target for life", func() {
+		ns := newProjectNamespace()
+		rel := newRelationship(ns, "orders-api-to-orders-db",
+			element(c4v1alpha1.ElementContainer, "orders-api"),
+			element(c4v1alpha1.ElementDataStore, "orders-db"))
+		mustCreate(rel)
+		Expect(patch(rel, func() { rel.Spec.Target.Name = "cache-db" })).
+			To(MatchError(ContainSubstring("target is immutable")))
+	})
+
 	It("is owned by its source and tells the story", func() {
 		ns := newProjectNamespace()
 		person := newPerson(ns, "customer")
@@ -89,6 +101,14 @@ var _ = Describe("Relationship", func() {
 })
 
 var _ = Describe("DataStore", func() {
+	It("keeps its Connector for life", func() {
+		ns := newProjectNamespace()
+		store := newOrdersDB(ns)
+		mustCreate(store)
+		Expect(patch(store, func() { store.Spec.ConnectorRef.Name = "redis" })).
+			To(MatchError(ContainSubstring("connectorRef is immutable")))
+	})
+
 	It("is a child of its SoftwareSystem and resolves its Connector", func() {
 		ns := newProjectNamespace()
 		system := newSystem(ns, "webshop-core")

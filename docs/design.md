@@ -152,6 +152,7 @@ Two rules keep this safe to retry. Every file belongs to exactly one layer, so t
 - **Container to DataStore:** applies that DataStore's Connector at scaffold time.
 - **Everything else** (Person to SoftwareSystem, Container to Container): story only in v1.
 - **Added after scaffolding:** not applied, by design. The Relationship shows `Applied=False` with reason `AddedAfterScaffold`, so the gap is visible.
+- **Fixed ends:** a Relationship's source and target, and a DataStore's Connector, can't change, so `Applied` keeps meaning what the scaffold holds. To point a link elsewhere, create a new Relationship.
 
 ### Sessions
 

@@ -91,7 +91,9 @@ spec:
                 - message: source is immutable
                   rule: self == oldSelf
               target:
-                description: target is the element the link points to.
+                description: |-
+                  target is the element the link points to. It can't change: whether a link
+                  was applied is recorded by name, so point elsewhere with a new Relationship.
                 properties:
                   kind:
                     description: kind of the element.
@@ -110,6 +112,9 @@ spec:
                 - kind
                 - name
                 type: object
+                x-kubernetes-validations:
+                - message: target is immutable
+                  rule: self == oldSelf
             required:
             - source
             - target
