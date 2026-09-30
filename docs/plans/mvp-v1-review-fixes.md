@@ -54,3 +54,25 @@ All eight steps are done, each with a spec that failed first. Along the way:
   never move.
 - **The screenshots in [results.md](../results.md)** predate these fixes and show
   the earlier template versions.
+
+## Secrets and CI
+
+GitGuardian flagged three hardcoded secrets in the PR, and CI ran every workflow
+twice on each push. Before merging:
+
+1. **No commit holds a secret.** Each fix is folded into the commit that
+   introduced the problem, and the branch is force-pushed:
+   - `make gitea` generates the Gitea admin password for each cluster into
+     Secret `gitea/gitea-admin`; no password is committed.
+   - The devcontainer Postgres has no password. It accepts the connections it
+     receives and publishes no port, so only the devcontainer's compose services
+     reach it.
+   - `hack/seed/seed.sh` checks that its credentials are set in a loop, not with
+     the line GitGuardian read as a password (it never held a value).
+2. **CI runs what a change needs, once.** Each workflow has path filters, runs on
+   pull requests and on pushes to `main` (not on every branch push as well), and
+   a newer push cancels the older run on the same branch.
+
+Done when GitGuardian passes on the rewritten branch, a fresh cluster seeds with a
+generated password, a devcontainer's Postgres accepts the app without one, and CI
+skips workflows a change can't affect.
