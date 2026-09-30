@@ -118,21 +118,22 @@ const (
 
 // Condition reasons.
 const (
-	ReasonResolved           = "Resolved"
-	ReasonNotFound           = "NotFound"
-	ReasonValid              = "Valid"
-	ReasonUnsupportedType    = "UnsupportedType"
-	ReasonCreated            = "Created"
-	ReasonScaffolding        = "Scaffolding"
-	ReasonScaffolded         = "Scaffolded"
-	ReasonFailed             = "Failed"
-	ReasonGitError           = "GitError"
-	ReasonForeignCommits     = "ForeignCommits"
-	ReasonLayerConflict      = "LayerConflict"
-	ReasonUnpinnedRef        = "UnpinnedRef"
-	ReasonWaiting            = "WaitingForScaffold"
-	ReasonAppliedAtScaffold  = "AppliedAtScaffold"
-	ReasonAddedAfterScaffold = "AddedAfterScaffold"
+	ReasonResolved             = "Resolved"
+	ReasonNotFound             = "NotFound"
+	ReasonValid                = "Valid"
+	ReasonUnsupportedType      = "UnsupportedType"
+	ReasonUnsupportedFramework = "UnsupportedFramework"
+	ReasonCreated              = "Created"
+	ReasonScaffolding          = "Scaffolding"
+	ReasonScaffolded           = "Scaffolded"
+	ReasonFailed               = "Failed"
+	ReasonGitError             = "GitError"
+	ReasonForeignCommits       = "ForeignCommits"
+	ReasonLayerConflict        = "LayerConflict"
+	ReasonUnpinnedRef          = "UnpinnedRef"
+	ReasonWaiting              = "WaitingForScaffold"
+	ReasonAppliedAtScaffold    = "AppliedAtScaffold"
+	ReasonAddedAfterScaffold   = "AddedAfterScaffold"
 )
 
 // Labels the operator sets so a resource can be found by its ancestors.

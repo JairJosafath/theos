@@ -41,7 +41,7 @@ import (
 const ConditionNameMatchesNamespace = "NameMatchesNamespace"
 
 // ProjectReconciler adopts the kinds a Project owns directly (Person,
-// SoftwareSystem, GitProvider and the catalog entries), gives the namespace the
+// SoftwareSystem, GitProvider, the catalog entries and Agents), gives the namespace the
 // Session client's ServiceAccount, and rolls up status.
 type ProjectReconciler struct {
 	client.Client
@@ -51,7 +51,7 @@ type ProjectReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/finalizers,verbs=update
-// +kubebuilder:rbac:groups=c4.factory.io,resources=people;gitproviders;frameworks;computes;deployments;connectors,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=people;gitproviders;frameworks;standards;computes;deployments;connectors;agents,verbs=get;list;watch;update;patch
 
 // Reconcile adopts the Project's direct children and updates the roll-up.
 func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -92,9 +92,11 @@ func (r *ProjectReconciler) adoptChildren(ctx context.Context, project *c4v1alph
 		&c4v1alpha1.SoftwareSystemList{},
 		&c4v1alpha1.GitProviderList{},
 		&c4v1alpha1.FrameworkList{},
+		&c4v1alpha1.StandardList{},
 		&c4v1alpha1.ComputeList{},
 		&c4v1alpha1.DeploymentList{},
 		&c4v1alpha1.ConnectorList{},
+		&c4v1alpha1.AgentList{},
 	}
 	labels := projectLabels(project.Namespace)
 	for _, list := range lists {
@@ -199,6 +201,8 @@ func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.Compute{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Deployment{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Connector{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.Standard{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.Agent{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Container{}, toProject, containerPhaseChanges()).
 		Watches(&c4v1alpha1.Session{}, toProject, sessionPhaseChanges()).
 		Named("project").

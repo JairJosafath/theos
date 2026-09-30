@@ -24,6 +24,7 @@ const (
 // Catalog sides, in the order their layers are rendered.
 const (
 	SideFramework  = "Framework"
+	SideStandard   = "Standard"
 	SideCompute    = "Compute"
 	SideDeployment = "Deployment"
 	SideConnector  = "Connector"
@@ -37,6 +38,8 @@ type CatalogEntry struct {
 	SupportedTypes []string
 	TemplateURL    string
 	TemplateRef    string
+	// SupportedFrameworks lists the Frameworks a Standard fits; empty for other sides.
+	SupportedFrameworks []string
 }
 
 // Supports reports whether the entry lists the Container type.
@@ -80,6 +83,25 @@ func CheckChoices(containerType string, entries []CatalogEntry) error {
 		return nil
 	}
 	return &ChoiceError{Type: containerType, Unsupported: unsupported}
+}
+
+// FitError says a Standard does not fit the Container's Framework.
+type FitError struct {
+	Standard  string
+	Framework string
+}
+
+func (e *FitError) Error() string {
+	return fmt.Sprintf("%s does not support %s", e.Standard, e.Framework)
+}
+
+// CheckStandard returns a *FitError when a Standard does not list the Container's
+// Framework. A Container without a Standard fits.
+func CheckStandard(framework string, standard *CatalogEntry) error {
+	if standard == nil || slices.Contains(standard.SupportedFrameworks, framework) {
+		return nil
+	}
+	return &FitError{Standard: standard.Name, Framework: framework}
 }
 
 // Element kinds a Relationship can connect, mirroring the API.

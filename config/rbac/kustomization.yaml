@@ -22,6 +22,12 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the c4-factory itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- agent_admin_role.yaml
+- agent_editor_role.yaml
+- agent_viewer_role.yaml
+- standard_admin_role.yaml
+- standard_editor_role.yaml
+- standard_viewer_role.yaml
 - connector_admin_role.yaml
 - connector_editor_role.yaml
 - connector_viewer_role.yaml

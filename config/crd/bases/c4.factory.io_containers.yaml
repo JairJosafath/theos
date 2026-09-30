@@ -131,6 +131,19 @@ spec:
                 x-kubernetes-validations:
                 - message: softwareSystemRef is immutable
                   rule: self == oldSelf
+              standardRef:
+                description: |-
+                  standardRef names the Standard catalog entry: coding rules, checks and CI. It
+                  must list the Framework.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
               type:
                 description: type is the shape of the application. Every catalog entry
                   used must support it.

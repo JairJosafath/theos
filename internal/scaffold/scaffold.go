@@ -39,9 +39,10 @@ type Input struct {
 	Container      string
 	DisplayName    string
 	Type           string
-	// Framework, Compute and Deployment name the chosen catalog entries. Compute
-	// and Deployment are empty when the Container doesn't pick one.
+	// Framework, Standard, Compute and Deployment name the chosen catalog entries.
+	// Standard, Compute and Deployment are empty when the Container doesn't pick one.
 	Framework  string
+	Standard   string
 	Compute    string
 	Deployment string
 	// Connectors are the unique Connector names, sorted.
@@ -89,9 +90,10 @@ const (
 
 var sideOrder = map[string]int{
 	model.SideFramework:  0,
-	model.SideCompute:    1,
-	model.SideDeployment: 2,
-	model.SideConnector:  3,
+	model.SideStandard:   1,
+	model.SideCompute:    2,
+	model.SideDeployment: 3,
+	model.SideConnector:  4,
 }
 
 // ConflictError reports a path written by two owners.
@@ -118,7 +120,7 @@ func (e *TemplateError) Error() string {
 func (e *TemplateError) Unwrap() error { return e.Err }
 
 // Build renders the layers into one repository tree. Layers must come in the
-// fixed order Framework, Compute, Deployment, then each Connector, with exactly one
+// fixed order Framework, Standard, Compute, Deployment, then each Connector, with exactly one
 // Framework, and the Connector layers must match in.Connectors.
 func Build(in Input, layers []Layer, opts Options) (Result, error) {
 	if err := checkLayers(in, layers); err != nil {
@@ -176,7 +178,7 @@ func checkLayers(in Input, layers []Layer) error {
 			return fmt.Errorf("layer %s has unknown side %q", layer.Name, layer.Side)
 		}
 		if order < last || (order == last && layer.Side != model.SideConnector) {
-			return fmt.Errorf("layer %s (%s) is out of order: want Framework, Compute, Deployment, then Connectors",
+			return fmt.Errorf("layer %s (%s) is out of order: want Framework, Standard, Compute, Deployment, then Connectors",
 				layer.Name, layer.Side)
 		}
 		last = order

@@ -49,6 +49,11 @@ type ContainerSpec struct {
 	// +required
 	FrameworkRef LocalRef `json:"frameworkRef"`
 
+	// standardRef names the Standard catalog entry: coding rules, checks and CI. It
+	// must list the Framework.
+	// +optional
+	StandardRef *LocalRef `json:"standardRef,omitempty"`
+
 	// computeRef names the Compute catalog entry: resource sizing.
 	// +optional
 	ComputeRef *LocalRef `json:"computeRef,omitempty"`

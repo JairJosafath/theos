@@ -24,12 +24,14 @@ rules:
 - apiGroups:
   - c4.factory.io
   resources:
+  - agents
   - computes
   - connectors
   - deployments
   - frameworks
   - gitproviders
   - people
+  - standards
   verbs:
   - get
   - list

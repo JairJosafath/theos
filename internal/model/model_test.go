@@ -178,3 +178,34 @@ func TestAppliedRelationship(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckStandard(t *testing.T) {
+	standard := CatalogEntry{Side: SideStandard, Name: "flutter-standard", SupportedFrameworks: []string{"flutter-app"}}
+	tests := []struct {
+		name      string
+		framework string
+		standard  *CatalogEntry
+		want      string
+	}{
+		{"no standard", "python-fastapi", nil, ""},
+		{"listed framework", "flutter-app", &standard, ""},
+		{"unlisted framework", "python-fastapi", &standard, "flutter-standard does not support python-fastapi"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckStandard(tt.framework, tt.standard)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("CheckStandard() = %v, want nil", err)
+				}
+				return
+			}
+			if _, ok := errors.AsType[*FitError](err); !ok {
+				t.Fatalf("CheckStandard() = %v, want *FitError", err)
+			}
+			if err.Error() != tt.want {
+				t.Errorf("message = %q, want %q", err.Error(), tt.want)
+			}
+		})
+	}
+}

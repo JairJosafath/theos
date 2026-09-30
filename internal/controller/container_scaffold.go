@@ -133,6 +133,9 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		Framework:      container.Spec.FrameworkRef.Name,
 		Connectors:     res.use.Connectors,
 	}
+	if container.Spec.StandardRef != nil {
+		in.Standard = container.Spec.StandardRef.Name
+	}
 	if container.Spec.ComputeRef != nil {
 		in.Compute = container.Spec.ComputeRef.Name
 	}
