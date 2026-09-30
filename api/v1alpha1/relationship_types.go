@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package v1alpha1
 
 import (
@@ -21,38 +20,27 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// RelationshipSpec defines the desired state of Relationship
+// RelationshipSpec defines the desired state of Relationship.
+// +kubebuilder:validation:XValidation:rule="!(self.source.kind == self.target.kind && self.source.name == self.target.name)",message="a Relationship cannot point to itself"
 type RelationshipSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// source is the element the link starts from, and its owner. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="source is immutable"
+	// +required
+	Source ElementRef `json:"source"`
 
-	// foo is an example field of Relationship. Edit relationship_types.go to remove/update
+	// target is the element the link points to.
+	// +required
+	Target ElementRef `json:"target"`
+
+	// description says what the link is, such as "Reads and writes orders".
+	// +kubebuilder:validation:MaxLength=200
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // RelationshipStatus defines the observed state of Relationship.
 type RelationshipStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the Relationship resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// conditions: ReferencesResolved, and Applied for a Container to DataStore link.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,8 +49,15 @@ type RelationshipStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,categories=c4,shortName=rel
+// +kubebuilder:printcolumn:name="Source",type=string,JSONPath=".spec.source.name"
+// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=".spec.target.name"
+// +kubebuilder:printcolumn:name="Description",type=string,JSONPath=".spec.description"
+// +kubebuilder:printcolumn:name="Applied",type=string,JSONPath=".status.conditions[?(@.type=='Applied')].status"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// Relationship is the Schema for the relationships API
+// Relationship is a directed link between two elements, owned by its source.
+// Only a Container to DataStore link changes a scaffold; the rest tell the story.
 type Relationship struct {
 	metav1.TypeMeta `json:",inline"`
 

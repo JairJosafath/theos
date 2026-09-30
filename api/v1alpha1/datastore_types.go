@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package v1alpha1
 
 import (
@@ -21,38 +20,32 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// DataStoreSpec defines the desired state of DataStore
+// DataStoreSpec defines the desired state of DataStore.
 type DataStoreSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// softwareSystemRef names the SoftwareSystem this DataStore belongs to. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="softwareSystemRef is immutable"
+	// +required
+	SoftwareSystemRef LocalRef `json:"softwareSystemRef"`
 
-	// foo is an example field of DataStore. Edit datastore_types.go to remove/update
+	// displayName is a human-friendly name, such as "Orders DB".
+	// +kubebuilder:validation:MaxLength=100
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+
+	// description says what is stored.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Description string `json:"description,omitempty"`
+
+	// connectorRef names the Connector catalog entry. A Relationship from a
+	// Container to this DataStore adds that Connector to the Container's scaffold.
+	// +required
+	ConnectorRef LocalRef `json:"connectorRef"`
 }
 
 // DataStoreStatus defines the observed state of DataStore.
 type DataStoreStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the DataStore resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// conditions: ReferencesResolved.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,8 +54,13 @@ type DataStoreStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:printcolumn:name="Connector",type=string,JSONPath=".spec.connectorRef.name"
+// +kubebuilder:printcolumn:name="Resolved",type=string,JSONPath=".status.conditions[?(@.type=='ReferencesResolved')].status"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// DataStore is the Schema for the datastores API
+// DataStore is a database or storage, backed by a Connector. It is owned by its
+// SoftwareSystem. The factory only scaffolds for it; provisioning is left to other tools.
 type DataStore struct {
 	metav1.TypeMeta `json:",inline"`
 

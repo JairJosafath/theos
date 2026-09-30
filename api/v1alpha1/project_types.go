@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package v1alpha1
 
 import (
@@ -21,38 +20,42 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// ProjectSpec defines the desired state of Project
+// ProjectSpec defines the desired state of Project.
 type ProjectSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of Project. Edit project_types.go to remove/update
+	// displayName is a human-friendly name for the story.
+	// +kubebuilder:validation:MaxLength=100
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+
+	// description tells what the project is about.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Description string `json:"description,omitempty"`
 }
 
-// ProjectStatus defines the observed state of Project.
+// ProjectStatus rolls up the state of everything in the project.
 type ProjectStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// softwareSystems is the number of SoftwareSystems in the project.
+	// +optional
+	SoftwareSystems int32 `json:"softwareSystems"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// containers is the number of Containers in the project.
+	// +optional
+	Containers int32 `json:"containers"`
 
-	// conditions represent the current state of the Project resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// readyContainers is the number of Containers in phase Ready.
+	// +optional
+	ReadyContainers int32 `json:"readyContainers"`
+
+	// activeSessions is the number of Active Sessions across all Containers.
+	// +optional
+	ActiveSessions int32 `json:"activeSessions"`
+
+	// summary is a one-line roll-up, such as "3 of 4 containers Ready, 2 active sessions".
+	// +optional
+	Summary string `json:"summary,omitempty"`
+
+	// conditions represent the current state of the Project.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,8 +64,14 @@ type ProjectStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:printcolumn:name="Systems",type=integer,JSONPath=".status.softwareSystems"
+// +kubebuilder:printcolumn:name="Containers",type=integer,JSONPath=".status.containers"
+// +kubebuilder:printcolumn:name="Ready",type=integer,JSONPath=".status.readyContainers"
+// +kubebuilder:printcolumn:name="Sessions",type=integer,JSONPath=".status.activeSessions"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// Project is the Schema for the projects API
+// Project is the whole story, one per namespace. Its name equals the namespace.
 type Project struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -71,7 +80,7 @@ type Project struct {
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// spec defines the desired state of Project
-	// +required
+	// +optional
 	Spec ProjectSpec `json:"spec"`
 
 	// status defines the observed state of Project

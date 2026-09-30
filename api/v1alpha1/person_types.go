@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package v1alpha1
 
 import (
@@ -21,48 +20,25 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// PersonSpec defines the desired state of Person
+// PersonSpec defines the desired state of Person.
 type PersonSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of Person. Edit person_types.go to remove/update
+	// displayName is a human-friendly name, such as "Customer".
+	// +kubebuilder:validation:MaxLength=100
 	// +optional
-	Foo *string `json:"foo,omitempty"`
-}
+	DisplayName string `json:"displayName,omitempty"`
 
-// PersonStatus defines the observed state of Person.
-type PersonStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the Person resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
+	// description says who this is and what they want.
+	// +kubebuilder:validation:MaxLength=1000
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// Person is the Schema for the people API
+// Person is a user, role or stakeholder in the story. It is owned by the Project.
 type Person struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -71,12 +47,8 @@ type Person struct {
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// spec defines the desired state of Person
-	// +required
-	Spec PersonSpec `json:"spec"`
-
-	// status defines the observed state of Person
 	// +optional
-	Status PersonStatus `json:"status,omitzero"`
+	Spec PersonSpec `json:"spec"`
 }
 
 // +kubebuilder:object:root=true

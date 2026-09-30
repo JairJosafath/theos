@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package v1alpha1
 
 import (
@@ -21,48 +20,46 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// GitProviderKind is the kind of Git hosting. Gitea is the only one in v1.
+// +kubebuilder:validation:Enum=gitea
+type GitProviderKind string
 
-// GitProviderSpec defines the desired state of GitProvider
+// Git provider kinds.
+const (
+	GitProviderGitea GitProviderKind = "gitea"
+)
+
+// GitProviderSpec defines where Container repositories are created.
 type GitProviderSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of GitProvider. Edit gitprovider_types.go to remove/update
+	// provider is the kind of Git hosting.
+	// +kubebuilder:default=gitea
 	// +optional
-	Foo *string `json:"foo,omitempty"`
-}
+	Provider GitProviderKind `json:"provider,omitempty"`
 
-// GitProviderStatus defines the observed state of GitProvider.
-type GitProviderStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// url is the base address of the Git host, such as http://gitea.gitea.svc.cluster.local:3000.
+	// +kubebuilder:validation:Pattern=`^https?://`
+	// +required
+	URL string `json:"url"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// owner is the organization that holds Container repositories.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=100
+	// +required
+	Owner string `json:"owner"`
 
-	// conditions represent the current state of the GitProvider resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// credentialsSecretRef names a Secret with keys "username" and "token".
+	// +required
+	CredentialsSecretRef LocalRef `json:"credentialsSecretRef"`
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=".spec.provider"
+// +kubebuilder:printcolumn:name="URL",type=string,JSONPath=".spec.url"
+// +kubebuilder:printcolumn:name="Owner",type=string,JSONPath=".spec.owner"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// GitProvider is the Schema for the gitproviders API
+// GitProvider is where repositories are created, with credentials. Owned by the Project.
 type GitProvider struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -73,10 +70,6 @@ type GitProvider struct {
 	// spec defines the desired state of GitProvider
 	// +required
 	Spec GitProviderSpec `json:"spec"`
-
-	// status defines the observed state of GitProvider
-	// +optional
-	Status GitProviderStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true

@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package v1alpha1
 
 import (
@@ -21,38 +20,85 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// ContainerSpec defines the desired state of Container
+// ContainerSpec defines the desired state of Container.
 type ContainerSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// softwareSystemRef names the SoftwareSystem this Container belongs to. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="softwareSystemRef is immutable"
+	// +required
+	SoftwareSystemRef LocalRef `json:"softwareSystemRef"`
 
-	// foo is an example field of Container. Edit container_types.go to remove/update
+	// displayName is a human-friendly name, such as "Orders API".
+	// +kubebuilder:validation:MaxLength=100
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+
+	// description says what the application does.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Description string `json:"description,omitempty"`
+
+	// type is the shape of the application. Every catalog entry used must support it.
+	// +required
+	Type ContainerType `json:"type"`
+
+	// gitProviderRef names the GitProvider that hosts the repository.
+	// +required
+	GitProviderRef LocalRef `json:"gitProviderRef"`
+
+	// frameworkRef names the Framework catalog entry: language, framework and tooling.
+	// +required
+	FrameworkRef LocalRef `json:"frameworkRef"`
+
+	// computeRef names the Compute catalog entry: resource sizing.
+	// +optional
+	ComputeRef *LocalRef `json:"computeRef,omitempty"`
+
+	// deploymentRef names the Deployment catalog entry: how the application ships.
+	// +optional
+	DeploymentRef *LocalRef `json:"deploymentRef,omitempty"`
 }
+
+// ContainerPhase is a one-word summary of where the Container is in scaffolding.
+// +kubebuilder:validation:Enum=Pending;Scaffolding;Ready;Failed
+type ContainerPhase string
+
+// Container phases.
+const (
+	ContainerPending     ContainerPhase = "Pending"
+	ContainerScaffolding ContainerPhase = "Scaffolding"
+	ContainerReady       ContainerPhase = "Ready"
+	ContainerFailed      ContainerPhase = "Failed"
+)
 
 // ContainerStatus defines the observed state of Container.
 type ContainerStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// phase is Pending, Scaffolding, then Ready or Failed.
+	// +optional
+	Phase ContainerPhase `json:"phase,omitempty"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// repositoryURL is the web address of the scaffolded repository.
+	// +optional
+	RepositoryURL string `json:"repositoryURL,omitempty"`
 
-	// conditions represent the current state of the Container resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// scaffoldedFrom lists the templates used, as name@ref, in layer order.
+	// +listType=atomic
+	// +optional
+	ScaffoldedFrom []string `json:"scaffoldedFrom,omitempty"`
+
+	// appliedRelationships lists the Relationships whose Connectors were part of the scaffold.
+	// +listType=set
+	// +optional
+	AppliedRelationships []string `json:"appliedRelationships,omitempty"`
+
+	// activeSessions is the number of Active Sessions on this Container.
+	// +optional
+	ActiveSessions int32 `json:"activeSessions"`
+
+	// observedGeneration is the spec generation the status reflects.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// conditions: ReferencesResolved, ChoicesValid, RepositoryCreated and Scaffolded.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,8 +107,15 @@ type ContainerStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Sessions",type=integer,JSONPath=".status.activeSessions"
+// +kubebuilder:printcolumn:name="Repository",type=string,JSONPath=".status.repositoryURL",priority=1
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// Container is the Schema for the containers API
+// Container is an application with its own repository. It is owned by its
+// SoftwareSystem and scaffolded exactly once.
 type Container struct {
 	metav1.TypeMeta `json:",inline"`
 

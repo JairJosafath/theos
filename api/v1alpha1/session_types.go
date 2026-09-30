@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package v1alpha1
 
 import (
@@ -21,48 +20,69 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// Actor says who is at work in a Session.
+// +kubebuilder:validation:Enum=agent;human
+type Actor string
 
-// SessionSpec defines the desired state of Session
+// Actors.
+const (
+	ActorAgent Actor = "agent"
+	ActorHuman Actor = "human"
+)
+
+// SessionSpec defines the desired state of Session.
 type SessionSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// containerRef names the Container being worked on. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="containerRef is immutable"
+	// +required
+	ContainerRef LocalRef `json:"containerRef"`
 
-	// foo is an example field of Session. Edit session_types.go to remove/update
+	// actor is agent or human. Both are equal in the model.
+	// +required
+	Actor Actor `json:"actor"`
+
+	// summary is a one-line description of the work, such as "Adding order validation".
+	// +kubebuilder:validation:MaxLength=200
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Summary string `json:"summary,omitempty"`
 }
 
-// SessionStatus defines the observed state of Session.
+// SessionPhase is Active while heartbeats arrive and Stale when they stop.
+// +kubebuilder:validation:Enum=Active;Stale
+type SessionPhase string
+
+// Session phases.
+const (
+	SessionActive SessionPhase = "Active"
+	SessionStale  SessionPhase = "Stale"
+)
+
+// SessionStatus is written by the client. The operator only marks it Stale.
 type SessionStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the Session resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
+	// phase is Active or Stale.
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Phase SessionPhase `json:"phase,omitempty"`
+
+	// lastHeartbeat is when the client last reported in.
+	// +optional
+	LastHeartbeat *metav1.Time `json:"lastHeartbeat,omitempty"`
+
+	// openInEditor is a link to the devcontainer, set only when it is reachable.
+	// +optional
+	OpenInEditor string `json:"openInEditor,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:printcolumn:name="Container",type=string,JSONPath=".spec.containerRef.name"
+// +kubebuilder:printcolumn:name="Actor",type=string,JSONPath=".spec.actor"
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Summary",type=string,JSONPath=".spec.summary"
+// +kubebuilder:printcolumn:name="Heartbeat",type=date,JSONPath=".status.lastHeartbeat"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// Session is the Schema for the sessions API
+// Session is an agent or human at work in a devcontainer, owned by its Container.
 type Session struct {
 	metav1.TypeMeta `json:",inline"`
 
