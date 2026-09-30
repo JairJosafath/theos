@@ -181,7 +181,8 @@ func metaItems(list client.ObjectList) ([]client.Object, error) {
 
 // SetupWithManager sets up the controller with the Manager. Anything in the
 // namespace can change the adoption or the roll-up, so it all maps to the Project
-// named after the namespace.
+// named after the namespace. Only what adoption and the roll-up read passes:
+// creations and deletions, and a Container or Session changing phase.
 func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	toProject := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
 		return []reconcile.Request{requestFor(obj.GetNamespace(), obj.GetNamespace())}
@@ -191,14 +192,14 @@ func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
-		Watches(&c4v1alpha1.Person{}, toProject).
-		Watches(&c4v1alpha1.SoftwareSystem{}, toProject).
-		Watches(&c4v1alpha1.GitProvider{}, toProject).
-		Watches(&c4v1alpha1.Framework{}, toProject).
-		Watches(&c4v1alpha1.Compute{}, toProject).
-		Watches(&c4v1alpha1.Deployment{}, toProject).
-		Watches(&c4v1alpha1.Connector{}, toProject).
-		Watches(&c4v1alpha1.Container{}, toProject).
+		Watches(&c4v1alpha1.Person{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.SoftwareSystem{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.GitProvider{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.Framework{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.Compute{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.Deployment{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.Connector{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.Container{}, toProject, containerPhaseChanges()).
 		Watches(&c4v1alpha1.Session{}, toProject, sessionPhaseChanges()).
 		Named("project").
 		Complete(r)

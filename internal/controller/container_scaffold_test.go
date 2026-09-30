@@ -246,6 +246,20 @@ var _ = Describe("Container scaffolding", func() {
 		Consistently(func() int { return gitFake.historyCount(ns, "orders-api") }, "2s").Should(Equal(reads))
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerFailed))
+
+		By("not trying again when a DataStore or catalog entry changes only status or metadata")
+		var db c4v1alpha1.DataStore
+		Expect(k8sClient.Get(ctx, key(ns, "orders-db"), &db)).To(Succeed())
+		Expect(patch(&db, func() { metav1.SetMetaDataLabel(&db.ObjectMeta, "example.com/touched", "yes") })).To(Succeed())
+		orig := db.DeepCopy()
+		db.Status.Conditions = append(db.Status.Conditions, metav1.Condition{
+			Type: "Touched", Status: metav1.ConditionTrue, Reason: "Test", LastTransitionTime: metav1.Now(),
+		})
+		Expect(k8sClient.Status().Patch(ctx, &db, client.MergeFrom(orig))).To(Succeed())
+		var framework c4v1alpha1.Framework
+		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
+		Expect(patch(&framework, func() { metav1.SetMetaDataLabel(&framework.ObjectMeta, "example.com/touched", "yes") })).To(Succeed())
+		Consistently(func() int { return gitFake.historyCount(ns, "orders-api") }, "2s").Should(Equal(reads))
 	})
 
 	It("stays Ready when its SoftwareSystem goes missing", func() {
