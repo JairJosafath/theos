@@ -41,6 +41,7 @@ type fakeGit struct {
 	repos     map[string]*fakeRepo     // owner/name
 	pushes    int
 	histories map[string]int // History calls per owner/name
+	hangs     map[string]chan struct{}
 }
 
 type fakeRepo struct {
@@ -49,7 +50,8 @@ type fakeRepo struct {
 }
 
 func newFakeGit(templatesDir string) (*fakeGit, error) {
-	g := &fakeGit{templates: map[string]scaffold.Tree{}, repos: map[string]*fakeRepo{}, histories: map[string]int{}}
+	g := &fakeGit{templates: map[string]scaffold.Tree{}, repos: map[string]*fakeRepo{},
+		histories: map[string]int{}, hangs: map[string]chan struct{}{}}
 	versions, err := os.Open(filepath.Join(templatesDir, "versions.txt"))
 	if err != nil {
 		return nil, err
@@ -112,6 +114,22 @@ func (g *fakeGit) clearRepo(owner, name string) {
 	g.repos[owner+"/"+name] = &fakeRepo{}
 }
 
+// hang makes reading a repository's history wait until the caller gives up, as
+// an unresponsive host would, until release is called.
+func (g *fakeGit) hang(owner, name string) (release func()) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	ch := make(chan struct{})
+	g.hangs[owner+"/"+name] = ch
+	return sync.OnceFunc(func() { close(ch) })
+}
+
+func (g *fakeGit) hanging(key string) <-chan struct{} {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.hangs[key]
+}
+
 // historyCount is how often the operator has read a repository's history.
 func (g *fakeGit) historyCount(owner, name string) int {
 	g.mu.Lock()
@@ -161,7 +179,14 @@ func (p *fakeProvider) EnsureRepository(_ context.Context, name, _ string) (gitp
 	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git"}, nil
 }
 
-func (p *fakeProvider) History(_ context.Context, repo gitprovider.Repository, limit int) ([]gitprovider.Commit, error) {
+func (p *fakeProvider) History(ctx context.Context, repo gitprovider.Repository, limit int) ([]gitprovider.Commit, error) {
+	if released := p.git.hanging(repo.Owner + "/" + repo.Name); released != nil {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-released:
+		}
+	}
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	p.git.histories[repo.Owner+"/"+repo.Name]++

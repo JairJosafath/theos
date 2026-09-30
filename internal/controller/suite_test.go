@@ -51,6 +51,9 @@ import (
 // testStaleAfter is the Session Stale window in tests, much shorter than in production.
 const testStaleAfter = 3 * time.Second
 
+// testScaffoldTimeout bounds a scaffold attempt in tests; the fake Git host answers at once.
+const testScaffoldTimeout = 3 * time.Second
+
 var (
 	// gitFake is the Git host every test scaffolds into.
 	gitFake   *fakeGit
@@ -131,7 +134,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&ProjectReconciler{Client: c, Scheme: s},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
-			ScaffoldOptions: sessionFeature},
+			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},

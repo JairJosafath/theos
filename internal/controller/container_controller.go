@@ -49,6 +49,8 @@ type ContainerReconciler struct {
 	Git GitClient
 	// ScaffoldOptions configure the parts of a scaffold the operator owns.
 	ScaffoldOptions scaffold.Options
+	// ScaffoldTimeout bounds the Git calls of one scaffold attempt; zero means two minutes.
+	ScaffoldTimeout time.Duration
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete

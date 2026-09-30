@@ -228,6 +228,24 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(gitFake.historyCount(ns, "orders-api")).To(Equal(reads))
 	})
 
+	It("records a Git host that runs out of time, and tries again", func() {
+		ns := newProjectNamespace()
+		release := gitFake.hang(ns, "orders-api")
+		DeferCleanup(release)
+		createWebshop(ns)
+
+		Eventually(func(g Gomega) {
+			var container c4v1alpha1.Container
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
+			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+			g.Expect(cond).To(HaveField("Reason", c4v1alpha1.ReasonGitError))
+			g.Expect(cond.Message).To(ContainSubstring("deadline exceeded"))
+		}).Should(Succeed())
+
+		release()
+		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+	})
+
 	It("tries a Failed Container again when the retry annotation changes", func() {
 		ns := newProjectNamespace()
 		gitFake.seedRepo(ns, "orders-api", "Initial commit\n")

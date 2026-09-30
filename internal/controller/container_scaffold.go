@@ -38,8 +38,15 @@ type GitClient interface {
 	FetchTemplate(ctx context.Context, url, ref string, creds *gitprovider.Credentials) (scaffold.Tree, error)
 }
 
-// scaffoldTimeout bounds one attempt at creating and filling a repository.
-const scaffoldTimeout = 2 * time.Minute
+// defaultScaffoldTimeout bounds one attempt at creating and filling a repository.
+const defaultScaffoldTimeout = 2 * time.Minute
+
+func (r *ContainerReconciler) scaffoldTimeout() time.Duration {
+	if r.ScaffoldTimeout > 0 {
+		return r.ScaffoldTimeout
+	}
+	return defaultScaffoldTimeout
+}
 
 // scaffold creates the Container's repository and pushes the single initial
 // commit. It is safe to retry: an empty repository gets the commit, one holding
@@ -68,7 +75,8 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, scaffoldTimeout)
+	// Git calls get a deadline of their own, so the status writes after them still land.
+	gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
 	defer cancel()
 
 	provider, err := r.Git.Provider(gitprovider.Config{
@@ -82,7 +90,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 			fmt.Sprintf("GitProvider %s: %v", res.provider.Name, err))
 	}
 
-	repo, err := provider.EnsureRepository(ctx, container.Name, repoDescription(container))
+	repo, err := provider.EnsureRepository(gitCtx, container.Name, repoDescription(container))
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionRepositoryCreated, err)
 	}
@@ -90,7 +98,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	r.condition(container, status, c4v1alpha1.ConditionRepositoryCreated, metav1.ConditionTrue,
 		c4v1alpha1.ReasonCreated, "Repository "+repo.WebURL)
 
-	commits, err := provider.History(ctx, repo, 2)
+	commits, err := provider.History(gitCtx, repo, 2)
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
@@ -107,7 +115,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 				repo.WebURL))
 	}
 
-	layers, err := r.fetchLayers(ctx, res)
+	layers, err := r.fetchLayers(gitCtx, res)
 	if errors.Is(err, gitprovider.ErrUnpinnedRef) {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonUnpinnedRef, err.Error())
 	}
@@ -134,7 +142,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 
 	message := scaffold.CommitMessage(in, result.ScaffoldedFrom, res.use.Relationships)
 	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
-	if _, err := provider.PushInitialCommit(ctx, repo, result.Files, message, author); err != nil {
+	if _, err := provider.PushInitialCommit(gitCtx, repo, result.Files, message, author); err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
