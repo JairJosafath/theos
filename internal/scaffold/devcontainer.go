@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -77,11 +78,15 @@ func assembleDevcontainer(in Input, layers []Layer, opts Options) (Tree, error) 
 		out[devcontainerDir+"compose.yaml"] = File{Data: []byte(appCompose(image))}
 	}
 
-	data, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
+	// People read and edit this file, so keep "&&" as it is rather than \u0026.
+	var data bytes.Buffer
+	enc := json.NewEncoder(&data)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(settings); err != nil {
 		return nil, err
 	}
-	out[devcontainerDir+"devcontainer.json"] = File{Data: append(data, '\n')}
+	out[devcontainerDir+"devcontainer.json"] = File{Data: data.Bytes()}
 
 	for _, p := range opts.DevcontainerFiles.Paths() {
 		target := devcontainerDir + p

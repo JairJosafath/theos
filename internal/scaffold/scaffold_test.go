@@ -33,7 +33,7 @@ func webshopLayers() []Layer {
 		{Side: model.SideFramework, Name: "python-fastapi", Ref: "v1.2.0", Files: tree(
 			"pyproject.toml.tmpl", `name = "{{ .Container }}"{{ if has .Connectors "postgres" }} # psycopg{{ end }}`,
 			"app/main.py", "print('{{ not a template }}')",
-			".c4factory/devcontainer.json", `{"image": "python:3.12", "features": {"ghcr.io/x/uv:1": {}}}`,
+			".c4factory/devcontainer.json", `{"image": "python:3.12", "features": {"ghcr.io/x/uv:1": {}}, "postCreateCommand": "a && b"}`,
 			".c4factory/README.md", "about the template",
 		)},
 		{Side: model.SideCompute, Name: "small", Ref: "v1.0.0", Files: tree(
@@ -267,6 +267,9 @@ func TestDevcontainerWithConnectorsUsesCompose(t *testing.T) {
 	}
 	if _, ok := features["./c4session"]; !ok {
 		t.Error("session feature missing")
+	}
+	if !strings.Contains(string(res.Files[".devcontainer/devcontainer.json"].Data), `"a && b"`) {
+		t.Error("devcontainer.json escapes & for HTML; people read this file")
 	}
 	if !strings.Contains(string(res.Files[".devcontainer/compose.yaml"].Data), "image: python:3.12") {
 		t.Error("compose.yaml doesn't carry the Framework image")
