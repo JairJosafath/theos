@@ -34,7 +34,7 @@ spec:
   supportedFrameworks: [flutter-app]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/flutter-standard
-    ref: v1.0.0
+    ref: v1.1.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Deployment

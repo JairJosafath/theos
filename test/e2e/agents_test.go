@@ -43,7 +43,7 @@ var _ = Describe("Agent factory", Ordered, ContinueOnFailure, func() {
 			for _, c := range list.Items {
 				g.Expect(c.Status.Phase).To(Equal(c4v1alpha1.ContainerReady), c.Name)
 				g.Expect(c.Status.ScaffoldedFrom).To(Equal(
-					[]string{"flutter-app@v1.0.0", "flutter-standard@v1.0.0", "android-release@v1.1.0"}), c.Name)
+					[]string{"flutter-app@v1.0.0", "flutter-standard@v1.1.0", "android-release@v1.1.0"}), c.Name)
 			}
 		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 

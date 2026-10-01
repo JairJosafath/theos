@@ -73,6 +73,11 @@ testWidgets('meets a11y guidelines', (tester) async {
       How: Android dev option "Don't keep activities", background, return.
 - [ ] Settings and user data survive reinstall via Auto Backup (don't exclude
       them without reason). [App_Data_Backup]
+- [ ] **Secrets never leave the device in a backup**: passwords, Wi-Fi keys,
+      tokens and scanned or typed credentials are excluded with
+      `android:dataExtractionRules` (Android 12+) and `android:fullBackupContent`,
+      or the app sets `android:allowBackup="false"` when all its data is
+      sensitive. A test reads the manifest and checks it. [App_Data_Backup]
 
 ## Robustness and performance
 

@@ -3,5 +3,5 @@ small v1.0.0
 k8s-manifests v1.1.0
 postgres v1.1.0
 flutter-app v1.0.0
-flutter-standard v1.0.0
+flutter-standard v1.1.0
 android-release v1.1.0
