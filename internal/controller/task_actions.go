@@ -244,7 +244,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 			_ = provider.CommentPullRequest(gitCtx, repo, pr.Number, "Review: approved.\n\n"+status.Review.Summary)
 		}
 		if err := provider.MergePullRequest(gitCtx, repo, pr.Number, pullTitle(task),
-			fmt.Sprintf("Task %s, round %d.", task.Name, status.Round)); err != nil {
+			mergeMessage(task, status, container)); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -325,4 +325,12 @@ func firstLine(s string) string {
 		line = line[:69] + "..."
 	}
 	return line
+}
+
+// mergeMessage credits the agent's bot user as co-author: the squash commit is
+// authored by the operator's Git user, who only merged.
+func mergeMessage(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, container *c4v1alpha1.Container) string {
+	bot := model.AgentUsername(container.Namespace, container.Name)
+	return fmt.Sprintf("Task %s, round %d.\n\nCo-authored-by: %s <%s@agents.c4.factory.io>",
+		task.Name, status.Round, bot, bot)
 }

@@ -42,5 +42,5 @@ third-party plugin's behaviour. That is the point of an agent reviewer next to C
 | Creating the agent's Git Secret through the cache needed RBAC the operator doesn't have; envtest runs as admin, so only Kind showed it | The Secret is written without the cache. |
 | A sandbox got the Task's round from before the step: round 1 ran as round 0 | Sandboxes take the step's status; envtest checks their environment. |
 | Agents can't build an APK on the slim image, so native plugin wiring is untested until a release | Open. Options: an on-demand APK build job, or let the reviewer ask for `make build` on the release runner. |
-| Squash merges are authored by the operator's Git user, not the agent | Open: credit the bot as co-author in the merge message. |
+| Squash merges are authored by the operator's Git user, not the agent | The merge message credits the agent's bot user with a Co-authored-by trailer. |
 | The Claude token is readable inside the sandbox | Open: inject it at the egress (Agent Substrate) later. |
