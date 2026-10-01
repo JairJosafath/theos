@@ -6,11 +6,13 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   componentState,
+  addSample,
   componentsFromEnv,
   createHealthHandler,
   DEFAULT_COMPONENTS,
   maxSandboxesFromArgs,
   parseQuantity,
+  sampleOf,
   summarizeHealth,
   summarizePod,
 } from '../health.mjs'
@@ -302,5 +304,62 @@ describe('createHealthHandler', () => {
     })()
     assert.equal(health.state, 'unknown')
     assert.deepEqual(health.errors, ['/api/v1/pods: 403 forbidden'])
+  })
+})
+
+describe('history', () => {
+  const sample = (iso, apiMs = 5) => ({ at: iso, apiMs })
+
+  it('keeps one sample per gap and an hour of them', () => {
+    let history = []
+    history = addSample(history, sample('2026-10-01T12:00:00Z'))
+    history = addSample(history, sample('2026-10-01T12:00:05Z'))
+    assert.equal(history.length, 1, 'too soon after the last one')
+    history = addSample(history, sample('2026-10-01T12:00:15Z'))
+    history = addSample(history, sample('2026-10-01T13:00:10Z'))
+    assert.deepEqual(
+      history.map((s) => s.at),
+      ['2026-10-01T12:00:15Z', '2026-10-01T13:00:10Z'],
+    )
+  })
+
+  it('samples the node, CI and the agents', () => {
+    const health = summarizeHealth({
+      components: DEFAULT_COMPONENTS.filter((c) => c.key === 'runner'),
+      pods: [
+        pod('gitea', 'runner-1', { 'app.kubernetes.io/name': 'gitea-runner' }),
+        pod('toolbox', 'sb', { 'c4.factory.io/agent-sandbox': 'true', 'c4.factory.io/task': 't' }),
+      ],
+      podMetrics: [
+        { metadata: { namespace: 'gitea', name: 'runner-1' }, containers: [{ usage: { cpu: '4', memory: '1Gi' } }] },
+        { metadata: { namespace: 'toolbox', name: 'sb' }, containers: [{ usage: { cpu: '2500m', memory: '2Gi' } }] },
+      ],
+      nodes: [node],
+      nodeMetrics: [{ metadata: { name: 'c4factory-control-plane' }, usage: { cpu: '7', memory: '8Gi' } }],
+      now: NOW,
+    })
+    assert.deepEqual(sampleOf(health, 1234.4, true), {
+      at: '2026-10-01T12:00:00.000Z',
+      apiMs: 1234,
+      apiFailed: true,
+      cpuMilli: 7000,
+      memoryBytes: 8 * 2 ** 30,
+      ciCpuMilli: 4000,
+      agentCpuMilli: 2500,
+    })
+  })
+
+  it('comes with every answer and grows with time', async () => {
+    let clock = NOW
+    const health = createHealthHandler({
+      getJson: async (path) =>
+        path === '/api/v1/nodes' ? { status: 200, body: { items: [node] } } : { status: 200, body: { items: [] } },
+      now: () => clock,
+    })
+    assert.equal((await health()).history.length, 1)
+    clock += 20_000
+    const later = await health()
+    assert.equal(later.history.length, 2)
+    assert.equal(typeof later.history[1].apiMs, 'number')
   })
 })

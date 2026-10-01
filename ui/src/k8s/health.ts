@@ -41,6 +41,19 @@ export interface NodeHealth {
   memoryBytes?: number
 }
 
+/** One point of the last hour, sampled by the UI server every 15 s. */
+export interface HealthSample {
+  at: string
+  /** How long the API server took to list the nodes. */
+  apiMs: number
+  /** The API server did not answer at all (timeout or error). */
+  apiFailed?: boolean
+  cpuMilli?: number
+  memoryBytes?: number
+  ciCpuMilli?: number
+  agentCpuMilli?: number
+}
+
 export interface FactoryHealth {
   generatedAt: string
   state: 'ok' | 'degraded' | 'down' | 'unknown'
@@ -50,6 +63,8 @@ export interface FactoryHealth {
   components: ComponentHealth[]
   agents: { maxSandboxes: number; sandboxes: (PodHealth & { task: string })[] }
   errors: string[]
+  /** The last hour, oldest first; absent from older servers. */
+  history?: HealthSample[]
 }
 
 export const HEALTH_POLL_MS = 10_000

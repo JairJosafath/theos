@@ -7,6 +7,7 @@ import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../k
 import { findCondition, type Agent, type Task } from '../k8s/types'
 import { plural, timeAgo } from '../model/describe'
 import {
+  API_STALL_MS,
   attention,
   boardColumns,
   COLUMNS,
@@ -559,6 +560,7 @@ function HealthPanel({ health, loaded, now }: { health?: FactoryHealth; loaded: 
           {health.nodes.map((node) => (
             <NodeUsage key={node.name} node={node} metrics={health.metrics} />
           ))}
+          <HistoryCharts health={health} now={now} />
           <ul className="components">
             {health.components.map((c) => (
               <ComponentRow key={c.key} component={c} now={now} />
@@ -737,4 +739,130 @@ function SlotsPanel({
       )}
     </div>
   )
+}
+
+const HOUR_MS = 60 * 60_000
+
+interface Series {
+  label: string
+  className: string
+  values: { t: number; v: number | undefined }[]
+}
+
+/** A small line chart of the last hour. Points without a value break the line. */
+function Sparkline({
+  title,
+  series,
+  max,
+  now,
+  summary,
+  marks = [],
+}: {
+  title: string
+  series: Series[]
+  max: number
+  now: number
+  summary: string
+  marks?: { t: number; className: string }[]
+}) {
+  const width = 300
+  const height = 44
+  const x = (t: number) => ((t - (now - HOUR_MS)) / HOUR_MS) * width
+  const y = (v: number) => height - 2 - (Math.min(v, max) / max) * (height - 4)
+  const paths = series.map((s) => {
+    let d = ''
+    let open = false
+    for (const { t, v } of s.values) {
+      if (v === undefined) {
+        open = false
+        continue
+      }
+      d += `${open ? 'L' : 'M'}${x(t).toFixed(1)},${y(v).toFixed(1)}`
+      open = true
+    }
+    return { ...s, d }
+  })
+  return (
+    <figure className="spark">
+      <figcaption className="meter-head">
+        <span>{title}</span>
+        <span className="muted">{summary}</span>
+      </figcaption>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${title}: ${summary}`}>
+        <line className="spark-base" x1="0" x2={width} y1={height - 1} y2={height - 1} />
+        {paths.map((p) => (p.d ? <path key={p.label} className={`spark-line ${p.className}`} d={p.d} /> : null))}
+        {marks.map((m, i) => (
+          <line key={i} className={`spark-mark ${m.className}`} x1={x(m.t)} x2={x(m.t)} y1="0" y2={height} />
+        ))}
+      </svg>
+      {series.length > 1 ? (
+        <div className="spark-legend">
+          {series.map((s) => (
+            <span key={s.label} className={s.className}>
+              <span className="spark-key" aria-hidden="true" />
+              {s.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </figure>
+  )
+}
+
+/** The last hour of the API server's response time, CPU and memory. */
+function HistoryCharts({ health, now }: { health: FactoryHealth; now: number }) {
+  const history = health.history ?? []
+  if (history.length < 2) {
+    return <p className="panel-note">The last hour fills in here: the UI samples the factory every 15 seconds.</p>
+  }
+  const points = history.map((s) => ({ ...s, t: Date.parse(s.at) }))
+  const node = health.nodes[0]
+  const latest = points[points.length - 1]
+  const worstApi = Math.max(...points.map((p) => p.apiMs))
+  const stalls = points.filter((p) => p.apiFailed || p.apiMs >= API_STALL_MS)
+  return (
+    <div className="history">
+      <h3 className="section-title">Last hour</h3>
+      <Sparkline
+        title="API server response"
+        summary={`now ${formatMs(latest.apiMs)} · worst ${formatMs(worstApi)}`}
+        max={Math.max(1000, worstApi)}
+        now={now}
+        series={[{ label: 'API', className: 'spark-api', values: points.map((p) => ({ t: p.t, v: p.apiMs })) }]}
+        marks={stalls.map((p) => ({ t: p.t, className: 'spark-stall' }))}
+      />
+      {health.metrics && node ? (
+        <>
+          <Sparkline
+            title="CPU"
+            summary={`of ${formatCpu(node.cpuAllocatableMilli)}`}
+            max={node.cpuAllocatableMilli}
+            now={now}
+            series={[
+              { label: 'node', className: 'spark-node', values: points.map((p) => ({ t: p.t, v: p.cpuMilli })) },
+              { label: 'CI', className: 'spark-ci', values: points.map((p) => ({ t: p.t, v: p.ciCpuMilli })) },
+              {
+                label: 'agents',
+                className: 'spark-agents',
+                values: points.map((p) => ({ t: p.t, v: p.agentCpuMilli ?? 0 })),
+              },
+            ]}
+          />
+          <Sparkline
+            title="Memory"
+            summary={`now ${formatBytes(latest.memoryBytes)} of ${formatBytes(node.memoryAllocatableBytes)}`}
+            max={node.memoryAllocatableBytes}
+            now={now}
+            series={[
+              { label: 'node', className: 'spark-node', values: points.map((p) => ({ t: p.t, v: p.memoryBytes })) },
+            ]}
+          />
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function formatMs(ms: number): string {
+  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`
 }

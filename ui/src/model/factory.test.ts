@@ -7,6 +7,7 @@ import {
   currentStage,
   factoryStats,
   formatDuration,
+  recentStall,
   slotQueue,
   taskSegments,
   timeByStage,
@@ -279,5 +280,38 @@ describe('timelineSteps', () => {
       ['checks', 10, []],
     ])
     expect(steps[1].current).toBe(true)
+  })
+})
+
+describe('recentStall', () => {
+  it('finds the worst stall in the last 15 minutes', () => {
+    const history = [
+      { at: at(-30), apiMs: 9000 },
+      { at: at(-10), apiMs: 6000 },
+      { at: at(-5), apiMs: 10000, apiFailed: true },
+      { at: at(-1), apiMs: 12 },
+    ]
+    expect(recentStall(history, T0)).toEqual({ at: at(-5), apiMs: 10000, failed: true })
+    expect(recentStall([{ at: at(-1), apiMs: 40 }], T0)).toBeUndefined()
+  })
+
+  it('is on the attention list', () => {
+    const items = attention({
+      tasks: [],
+      containers: [],
+      sessions: [],
+      health: {
+        generatedAt: at(0),
+        state: 'ok',
+        metrics: false,
+        nodes: [],
+        components: [],
+        agents: { maxSandboxes: 1, sandboxes: [] },
+        errors: [],
+        history: [{ at: at(-3), apiMs: 8000 }],
+      },
+      now: T0,
+    })
+    expect(items.map((i) => i.title)).toEqual(['The API server stalled for 8 s 3 min ago'])
   })
 })

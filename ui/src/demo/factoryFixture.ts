@@ -229,8 +229,8 @@ export function demoHealth(now: number): FactoryHealth {
         pressure: [],
         cpuAllocatableMilli: 12000,
         memoryAllocatableBytes: 14.7 * 2 ** 30,
-        cpuMilli: 3420,
-        memoryBytes: 9.8 * 2 ** 30,
+        cpuMilli: 1370,
+        memoryBytes: 4.2 * 2 ** 30,
       },
     ],
     components: [
@@ -323,5 +323,33 @@ export function demoHealth(now: number): FactoryHealth {
       sandboxes: [{ ...pod('toolbox', 'audio-cutter-v1-r2-review-a1', 1200, 2150), task: 'audio-cutter-v1' }],
     },
     errors: [],
+    history: demoHistory(now),
   }
+}
+
+/**
+ * An hour sampled every 15 s: quiet, then CI and an agent sandbox running at
+ * once 40 to 30 minutes ago, when the API server stalled, then the review now.
+ */
+function demoHistory(now: number) {
+  const samples = []
+  for (let i = 240; i >= 0; i--) {
+    const minutesAgo = i / 4
+    const busy = minutesAgo <= 40 && minutesAgo >= 30
+    const review = minutesAgo <= 4
+    const wave = Math.sin(i / 3) * 0.5 + 0.5
+    const ci = busy ? 4200 + wave * 2500 : minutesAgo < 9 && minutesAgo > 4 ? 1800 : 5
+    const agent = busy ? 3600 + wave * 1800 : review ? 1200 : 0
+    const stall = busy && minutesAgo > 33 && minutesAgo < 35
+    samples.push({
+      at: new Date(now - minutesAgo * MIN).toISOString(),
+      apiMs: stall ? 10_000 : busy ? 300 + Math.round(wave * 2600) : 9 + Math.round(wave * 12),
+      ...(stall && i % 2 ? { apiFailed: true } : {}),
+      cpuMilli: Math.round(160 + ci + agent),
+      memoryBytes: Math.round((1.9 + (busy ? 6.5 : 0) + (review ? 2.2 : 0) + wave * 0.2) * 2 ** 30),
+      ciCpuMilli: Math.round(ci),
+      agentCpuMilli: Math.round(agent),
+    })
+  }
+  return samples
 }

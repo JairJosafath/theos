@@ -322,45 +322,93 @@ export function componentsFromEnv(env = process.env, log = () => {}) {
   return DEFAULT_COMPONENTS
 }
 
+/** How long the history reaches back, and the least time between two samples. */
+export const HISTORY_MS = 60 * 60_000
+export const SAMPLE_GAP_MS = 14_000
+
+/**
+ * One point of the factory's recent history: how long the API server took to
+ * answer (a stalling API server is what restarts controllers on a small
+ * cluster), the node's CPU and memory, and what CI and the agents used.
+ */
+export function sampleOf(health, apiMs, apiFailed) {
+  const node = health.nodes[0]
+  const runner = health.components.find((c) => c.key === 'runner')
+  const sum = (pods, field) => {
+    const values = pods.map((p) => p[field]).filter((v) => v !== undefined)
+    return values.length ? values.reduce((a, b) => a + b, 0) : undefined
+  }
+  return {
+    at: health.generatedAt,
+    apiMs: Math.round(apiMs),
+    ...(apiFailed ? { apiFailed: true } : {}),
+    ...(node?.cpuMilli !== undefined ? { cpuMilli: node.cpuMilli } : {}),
+    ...(node?.memoryBytes !== undefined ? { memoryBytes: node.memoryBytes } : {}),
+    ...(runner && sum(runner.pods, 'cpuMilli') !== undefined ? { ciCpuMilli: sum(runner.pods, 'cpuMilli') } : {}),
+    ...(sum(health.agents.sandboxes, 'cpuMilli') !== undefined
+      ? { agentCpuMilli: sum(health.agents.sandboxes, 'cpuMilli') }
+      : {}),
+  }
+}
+
+/** Adds a sample unless the last one is too recent, and drops those older than HISTORY_MS. */
+export function addSample(history, sample, { keepMs = HISTORY_MS, gapMs = SAMPLE_GAP_MS } = {}) {
+  const at = Date.parse(sample.at)
+  const last = history[history.length - 1]
+  if (last && at - Date.parse(last.at) < gapMs) return history
+  return [...history.filter((s) => at - Date.parse(s.at) <= keepMs), sample]
+}
+
 /**
  * Answers GET /factory/health. getJson(path) reads one API path and resolves to
- * { status, body }.
+ * { status, body }. With sampleEveryMs, it also reads the health in the
+ * background, so the history covers the time nobody was looking.
  */
-export function createHealthHandler({ getJson, components = DEFAULT_COMPONENTS, cacheMs = CACHE_MS, now = Date.now }) {
+export function createHealthHandler({
+  getJson,
+  components = DEFAULT_COMPONENTS,
+  cacheMs = CACHE_MS,
+  now = Date.now,
+  sampleEveryMs = 0,
+}) {
   let cached = { at: -Infinity, value: undefined }
   let inFlight
+  let history = []
 
   async function load() {
     const errors = []
-    const list = async (path, { optional = false } = {}) => {
+    let apiMs = 0
+    let apiFailed = false
+    const list = async (path, { optional = false, timed = false } = {}) => {
+      const started = performance.now()
       try {
         const { status, body } = await getJson(path)
+        if (timed) apiMs = performance.now() - started
         if (status === 200) return body?.items ?? []
         // metrics.k8s.io answers 404 or 503 when metrics-server is missing or starting.
         if (!optional) errors.push(`${path}: ${status} ${body?.message ?? ''}`.trim())
       } catch (err) {
+        if (timed) {
+          apiMs = performance.now() - started
+          apiFailed = true
+        }
         if (!optional) errors.push(`${path}: ${err.message}`)
       }
       return null
     }
     const [pods, nodes, podMetrics, nodeMetrics] = await Promise.all([
       list('/api/v1/pods'),
-      list('/api/v1/nodes'),
+      // The node list is small and served by the API server itself: its time is the API's latency.
+      list('/api/v1/nodes', { timed: true }),
       list('/apis/metrics.k8s.io/v1beta1/pods', { optional: true }),
       list('/apis/metrics.k8s.io/v1beta1/nodes', { optional: true }),
     ])
-    return summarizeHealth({
-      components,
-      pods,
-      nodes,
-      podMetrics,
-      nodeMetrics,
-      now: now(),
-      errors,
-    })
+    const health = summarizeHealth({ components, pods, nodes, podMetrics, nodeMetrics, now: now(), errors })
+    history = addSample(history, sampleOf(health, apiMs, apiFailed))
+    return { ...health, history }
   }
 
-  return async function health() {
+  async function health() {
     if (now() - cached.at < cacheMs) return cached.value
     inFlight ??= load().finally(() => {
       inFlight = undefined
@@ -369,4 +417,10 @@ export function createHealthHandler({ getJson, components = DEFAULT_COMPONENTS, 
     cached = { at: now(), value }
     return value
   }
+
+  if (sampleEveryMs > 0) {
+    // unref: the sampler never keeps the process alive on its own.
+    setInterval(() => health().catch(() => {}), sampleEveryMs).unref()
+  }
+  return health
 }

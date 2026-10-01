@@ -4,7 +4,7 @@
 //   GET /healthz          200 "ok"
 //   GET /k8s/<api path>   the Kubernetes API, as-is: lists, gets, single watches
 //   GET /k8s-watch?...    several watches over one response (see watchMany)
-//   GET /factory/health   the factory's components, node and agent sandboxes, summarized (health.mjs)
+//   GET /factory/health   the factory's components, node, agent sandboxes and last hour, summarized (health.mjs)
 //   GET /...              files from dist/
 //
 // Read-only by construction: only GET reaches the API, only under
@@ -288,8 +288,9 @@ export function createApiHandler({
   upstream = resolveUpstream(),
   log = (msg) => console.log(msg),
   components = componentsFromEnv(process.env, log),
+  sampleEveryMs = 0,
 } = {}) {
-  const health = createHealthHandler({ getJson: (apiPath) => getJson(upstream, apiPath), components })
+  const health = createHealthHandler({ getJson: (apiPath) => getJson(upstream, apiPath), components, sampleEveryMs })
   return (req, res) => {
     let url
     try {
@@ -400,7 +401,9 @@ export function createServer(options = {}) {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const port = Number(process.env.PORT || 8080)
   const upstream = resolveUpstream()
-  const server = createServer({ upstream })
+  // The health history is sampled in the background, every 15 s by default.
+  const sampleEveryMs = Number(process.env.FACTORY_SAMPLE_SECONDS ?? 15) * 1000
+  const server = createServer({ upstream, sampleEveryMs })
   server.listen(port, () => {
     console.log(`C4 Factory UI on http://localhost:${port} (Kubernetes API: ${upstream.url.origin}, ${upstream.mode})`)
   })

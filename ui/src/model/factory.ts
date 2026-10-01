@@ -301,6 +301,15 @@ export function attention(input: {
         items.push({ level: 'warning', title: `${c.name} is unsteady`, detail: `${c.role}. ${why}` })
       }
     }
+    const stall = recentStall(health.history, now)
+    if (stall) {
+      items.push({
+        level: 'warning',
+        title: `The API server ${stall.failed ? 'did not answer' : 'stalled'} for ${formatDuration(stall.apiMs)} ${timeAgoShort(stall.at, now)}`,
+        detail:
+          'Controllers that miss their lease renewal restart, and pushes and CI can fail. Usually CI and an agent sandbox were busy at once; see CPU below.',
+      })
+    }
     for (const error of health.errors) {
       items.push({ level: 'warning', title: 'Could not read part of the factory', detail: error })
     }
@@ -424,4 +433,22 @@ export function timelineSteps(segments: Segment[]): Step[] {
     })
   }
   return steps
+}
+
+/** An API server slower than this stalls controllers' lease renewals. */
+export const API_STALL_MS = 5_000
+
+/** The worst API stall in the last `withinMs`, if any. */
+export function recentStall(
+  history: { at: string; apiMs: number; apiFailed?: boolean }[] | undefined,
+  now: number,
+  withinMs = 15 * 60_000,
+): { at: string; apiMs: number; failed: boolean } | undefined {
+  let worst: { at: string; apiMs: number; failed: boolean } | undefined
+  for (const s of history ?? []) {
+    const t = Date.parse(s.at)
+    if (now - t > withinMs || (s.apiMs < API_STALL_MS && !s.apiFailed)) continue
+    if (!worst || s.apiMs > worst.apiMs) worst = { at: s.at, apiMs: s.apiMs, failed: Boolean(s.apiFailed) }
+  }
+  return worst
 }
