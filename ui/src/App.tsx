@@ -3,16 +3,21 @@
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { Diagram } from './components/Diagram'
+import { FactoryPage } from './components/Factory'
 import { LogoMark, WarningIcon } from './components/icons'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
-import { DemoProjectsSource, DemoStorySource } from './demo/demoSource'
+import { DemoFactorySource, DemoHealthSource, DemoProjectsSource, DemoStorySource } from './demo/demoSource'
+import { HealthSource, type FactoryHealth } from './k8s/health'
 import { WatchMux } from './k8s/mux'
 import {
+  emptyFactory,
   emptyStory,
+  LiveFactorySource,
   LiveProjectsSource,
   LiveStorySource,
   type Api,
   type Connection,
+  type FactoryData,
   type Problem,
   type Snapshot,
   type Source,
@@ -29,11 +34,11 @@ import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForP
  */
 const API: Api = { baseUrl: 'k8s', mux: new WatchMux({ url: 'k8s-watch' }) }
 
-/** A source with nothing in it, for when no project is selected yet. */
-class NoStory implements Source<StoryData> {
-  private readonly snapshot: Snapshot<StoryData> = {
-    data: emptyStory(''),
-    connection: { phase: 'connecting', loaded: false, problems: [] },
+/** A source with nothing in it: for a view that is not shown, or no project yet. */
+class Idle<T> implements Source<T> {
+  private readonly snapshot: Snapshot<T>
+  constructor(data: T) {
+    this.snapshot = { data, connection: { phase: 'connecting', loaded: false, problems: [] } }
   }
   subscribe() {
     return () => undefined
@@ -44,7 +49,9 @@ class NoStory implements Source<StoryData> {
   start() {}
   stop() {}
 }
-const NO_STORY = new NoStory()
+const NO_STORY = new Idle<StoryData>(emptyStory(''))
+const NO_FACTORY = new Idle<FactoryData>(emptyFactory())
+const NO_HEALTH = new Idle<FactoryHealth | undefined>(undefined)
 
 const MemoDiagram = memo(Diagram)
 
@@ -68,17 +75,29 @@ export default function App() {
     [projects.data],
   )
   const namespace = url.project ?? sortedProjects[0]?.metadata.namespace
+  const factoryView = url.view === 'factory'
 
+  // Only the view on screen watches the cluster.
   const storySource = useMemo<Source<StoryData>>(() => {
-    if (!namespace) return NO_STORY
+    if (!namespace || factoryView) return NO_STORY
     return demo ? new DemoStorySource() : new LiveStorySource(namespace, API)
-  }, [namespace, demo])
+  }, [namespace, demo, factoryView])
+  const factorySource = useMemo<Source<FactoryData>>(() => {
+    if (!factoryView) return NO_FACTORY
+    return demo ? new DemoFactorySource() : new LiveFactorySource(API)
+  }, [demo, factoryView])
+  const healthSource = useMemo<Source<FactoryHealth | undefined>>(() => {
+    if (!factoryView) return NO_HEALTH
+    return demo ? new DemoHealthSource() : new HealthSource()
+  }, [demo, factoryView])
+  const factory = useSource(factorySource)
+  const health = useSource(healthSource)
   const story = useSource(storySource)
   const data = story.data
 
   const systems = useMemo(() => systemsForPicker(data), [data])
   const systemName = url.system && systems.some((s) => s.name === url.system) ? url.system : systems[0]?.name
-  const view: View = url.view
+  const view: Exclude<View, 'factory'> = url.view === 'containers' ? 'containers' : 'context'
 
   const contextDiagram = useMemo(() => buildContextDiagram(data), [data])
   const containerDiagram = useMemo(
@@ -105,11 +124,21 @@ export default function App() {
   )
 
   const project = data.project
-  const pageTitle = project ? `${titleOf(project)}${demo ? ' (demo)' : ''} · C4 Factory` : 'C4 Factory'
+  const pageTitle = factoryView
+    ? `The factory${demo ? ' (demo)' : ''} · C4 Factory`
+    : project
+      ? `${titleOf(project)}${demo ? ' (demo)' : ''} · C4 Factory`
+      : 'C4 Factory'
   useEffect(() => {
     document.title = pageTitle
   }, [pageTitle])
-  const connection = demo ? projects.connection : mergeConnections(projects.connection, story.connection)
+  const connection = factoryView
+    ? demo
+      ? factory.connection
+      : mergeConnections(factory.connection, health.connection)
+    : demo
+      ? projects.connection
+      : mergeConnections(projects.connection, story.connection)
   const noProjects = !demo && projects.connection.loaded && sortedProjects.length === 0
   const systemTitle = systems.find((s) => s.name === systemName)?.title
 
@@ -119,11 +148,29 @@ export default function App() {
         <div className="brand">
           <LogoMark size={22} />
           <span className="brand-name">C4 Factory</span>
-          <span className="brand-sub">Story viewer · read-only</span>
+          <span className="brand-sub">read-only</span>
         </div>
+        <nav className="modes" aria-label="Mode">
+          <button
+            type="button"
+            className="mode"
+            aria-current={factoryView ? undefined : 'page'}
+            onClick={() => setUrl({ view: 'context', task: undefined })}
+          >
+            Story
+          </button>
+          <button
+            type="button"
+            className="mode"
+            aria-current={factoryView ? 'page' : undefined}
+            onClick={() => setUrl({ view: 'factory' })}
+          >
+            Factory
+          </button>
+        </nav>
         <div className="topbar-right">
           <ConnectionStatus connection={connection} />
-          {sortedProjects.length > 0 ? (
+          {sortedProjects.length > 0 && !factoryView ? (
             <label className="picker">
               <span className="picker-label">Project</span>
               <select
@@ -151,7 +198,17 @@ export default function App() {
       ) : null}
       <ProblemsBanner problems={connection.problems} />
 
-      {noProjects ? (
+      {factoryView ? (
+        <FactoryPage
+          data={factory.data}
+          loaded={factory.connection.loaded}
+          health={health.data}
+          healthLoaded={health.connection.loaded}
+          now={now}
+          selectedTask={url.task}
+          onSelectTask={(task) => setUrl({ view: 'factory', task }, true)}
+        />
+      ) : noProjects ? (
         <EmptyProjects />
       ) : (
         <>

@@ -1731,6 +1731,473 @@ p {
   justify-self: start;
 }
 
+/* ------------------------------------------------------------------ modes */
+
+.modes {
+  display: inline-flex;
+  gap: 2px;
+  margin-right: auto;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.mode {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.mode[aria-current='page'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-xs);
+}
+
+.mode:focus-visible,
+.task-card:focus-visible,
+.link-button:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ factory */
+
+/* Each stage of a Task has a tone: the board, timelines and legends share them. */
+.stage-queued {
+  --stage: var(--unknown);
+}
+.stage-slot {
+  --stage: var(--waiting);
+}
+.stage-implement {
+  --stage: var(--agent);
+}
+.stage-checks {
+  --stage: var(--progress);
+}
+.stage-review {
+  --stage: var(--human);
+}
+.stage-done {
+  --stage: var(--ok);
+}
+
+.stage-swatch {
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--stage, var(--unknown));
+}
+
+.stat-sub-waiting {
+  color: var(--waiting);
+}
+
+.stat-sub-muted {
+  color: var(--text-3);
+}
+
+.factory-main {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.placeholder.small {
+  min-height: 0;
+  margin-top: 8px;
+  padding: 16px;
+  font-size: 13px;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  align-items: start;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.board-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.board-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px 4px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+
+.board-count {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-card {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 9px 10px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--stage, var(--border));
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.task-card:hover {
+  border-color: var(--border-strong);
+  border-left-color: var(--stage, var(--border-strong));
+}
+
+.task-card.is-selected {
+  outline: 2px solid var(--select);
+  outline-offset: 1px;
+}
+
+.task-card.is-failed {
+  border-left-color: var(--error);
+}
+
+.task-card-name {
+  font-size: 13px;
+  font-weight: 620;
+  overflow-wrap: anywhere;
+}
+
+.task-card-sub,
+.task-card-time {
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.task-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.task-round {
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-timeline {
+  display: flex;
+  gap: 1px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+
+.mini-seg {
+  min-width: 2px;
+  background: var(--stage);
+}
+
+.stage-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--surface-2);
+}
+
+.stage-bar-seg {
+  flex-basis: 0;
+  min-width: 3px;
+  background: var(--stage);
+}
+
+/* A width wins over flex-grow for the totals bar, which sets one. */
+.stage-bar-seg[style*='width'] {
+  flex: none;
+}
+
+.is-current {
+  animation: blink 1.6s ease-in-out infinite;
+}
+
+.stage-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 16px;
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+.stage-legend dt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-2);
+}
+
+.stage-legend dd {
+  margin: 2px 0 0 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.attention {
+  border-color: color-mix(in srgb, var(--waiting) 35%, var(--border));
+}
+
+.attention .panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--waiting);
+}
+
+.attention-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attention-item {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13.5px;
+}
+
+.attention-item .badge-dot {
+  background: var(--tone);
+  transform: translateY(-1px);
+}
+
+.attention-detail {
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--link);
+  text-align: left;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.goal-more {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.goal-more summary {
+  color: var(--text-2);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.pre {
+  max-height: 320px;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.timeline {
+  display: grid;
+  gap: 0;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 10px;
+  padding-bottom: 12px;
+  font-size: 13px;
+}
+
+/* The line between dots. */
+.timeline-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  bottom: 0;
+  left: 5px;
+  width: 2px;
+  background: var(--border);
+}
+
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--stage, var(--tone));
+}
+
+.timeline-step.tone-error .timeline-dot {
+  background: var(--error);
+}
+
+.timeline-msg {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.timeline-at {
+  display: block;
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.node-usage {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.node-usage-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.meter-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.meter-track {
+  height: 8px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--tone);
+}
+
+.components {
+  display: grid;
+  gap: 2px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.component {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+.component .badge-dot {
+  background: var(--tone);
+  transform: translateY(-1px);
+}
+
+.component-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 550;
+}
+
+.component-sub {
+  font-size: 12px;
+}
+
+.component-usage {
+  display: grid;
+  justify-items: end;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.slot-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+ul.slot-list {
+  padding-left: 0;
+  list-style: none;
+}
+
 /* ------------------------------------------------------------------ responsive */
 
 @media (max-width: 1180px) {
@@ -1746,6 +2213,10 @@ p {
 @media (max-width: 640px) {
   :root {
     --gutter: 14px;
+  }
+
+  .board {
+    grid-template-columns: repeat(6, minmax(140px, 1fr));
   }
 
   .brand-sub,

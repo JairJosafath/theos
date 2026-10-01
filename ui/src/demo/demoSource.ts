@@ -1,8 +1,10 @@
 // Demo mode's data source: the fixture, kept "alive" by moving the heartbeat of
 // Active sessions forward every 30 seconds, as a real Session client would.
 
-import type { Connection, Snapshot, Source, StoryData } from '../k8s/sources'
+import type { FactoryHealth } from '../k8s/health'
+import type { Connection, FactoryData, Snapshot, Source, StoryData } from '../k8s/sources'
 import type { Project } from '../k8s/types'
+import { demoFactory, demoHealth } from './factoryFixture'
 import { demoStory } from './fixture'
 
 const DEMO_CONNECTION: Connection = { phase: 'demo', loaded: true, problems: [] }
@@ -67,5 +69,17 @@ export class DemoProjectsSource extends StaticSource<Project[]> {
   constructor(now = Date.now()) {
     const project = demoStory(now).project
     super(project ? [project] : [])
+  }
+}
+
+export class DemoFactorySource extends StaticSource<FactoryData> {
+  constructor(now = Date.now()) {
+    super(demoFactory(now))
+  }
+}
+
+export class DemoHealthSource extends StaticSource<FactoryHealth | undefined> {
+  constructor(now = Date.now()) {
+    super(demoHealth(now))
   }
 }

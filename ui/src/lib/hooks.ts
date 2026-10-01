@@ -23,22 +23,27 @@ export function useNow(intervalMs = 1000): number {
   return now
 }
 
-export type View = 'context' | 'containers'
+export type View = 'context' | 'containers' | 'factory'
 
 export interface UrlState {
   demo: boolean
   project?: string
   view: View
   system?: string
+  /** The Task selected in the factory view, as namespace/name. */
+  task?: string
 }
+
+const VIEWS: View[] = ['context', 'containers', 'factory']
 
 function readUrl(): UrlState {
   const params = new URLSearchParams(window.location.search)
   return {
     demo: params.get('demo') === '1',
     project: params.get('project') || undefined,
-    view: params.get('view') === 'containers' ? 'containers' : 'context',
+    view: VIEWS.includes(params.get('view') as View) ? (params.get('view') as View) : 'context',
     system: params.get('system') || undefined,
+    task: params.get('task') || undefined,
   }
 }
 
@@ -61,6 +66,7 @@ export function useUrlState(): [UrlState, (next: Partial<UrlState>, replace?: bo
     if (merged.project) params.set('project', merged.project)
     if (merged.view !== 'context') params.set('view', merged.view)
     if (merged.system && merged.view === 'containers') params.set('system', merged.system)
+    if (merged.task && merged.view === 'factory') params.set('task', merged.task)
     const query = params.toString()
     const url = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
     if (url !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
