@@ -211,10 +211,38 @@ enforces.
   is a need on the Pocket Tools SoftwareSystem in `config/samples/toolbox`; the
   agents get the needs with every Task.
 
+## v3: watching the factory
+
+Settled on 1 October 2026; the plan is
+[plans/factory-monitoring.md](plans/factory-monitoring.md) and what it found is in
+[results-v3.md](results-v3.md).
+
+The factory runs whole Task loops on its own, so it needs to be seen and run
+without kubectl, and cheaply: it lives on a laptop.
+
+- **A Task keeps its timeline.** `status.history` gets an entry whenever the
+  phase, round or Progressing reason changes (the newest 64), so where a Task's
+  time went stays readable after it ends. A Task waiting for an agent slot says
+  `WaitingForSlot`.
+- **The UI has a Factory view** next to the story, across all projects: component
+  health with CPU and memory, the last hour, the Tasks on a board by stage with
+  their timelines, where the time goes, agent slots, and what needs a look.
+- **The UI server reads the factory's health itself** (`GET /factory/health`):
+  pods, nodes and metrics-server, summarized; pod specs never reach the browser,
+  which still reads only `c4.factory.io`. It samples every 15 seconds and keeps
+  an hour in memory, including its own API round trip.
+- **No Prometheus or Grafana.** Process data lives in the resources, live usage
+  comes from metrics-server (about 30 MiB), and the last hour from the UI server.
+- **Lifecycle targets:** `make down` stops the Kind node, `make up` brings it back
+  and gets pods out of back-off, `make doctor` checks every part.
+- **Checks work in memory.** CI jobs and, with `--sandbox-workspace-memory`,
+  agent sandboxes write their builds to memory-backed volumes: on the disk, they
+  stalled etcd and with it the whole control plane.
+
 ## Out of scope for v1
 
 - **Shipping.** No builds, registries or rollouts; existing tools pick up the scaffolded files.
-- **Runtime health.** Reading back from ArgoCD or monitoring comes later.
+- **Runtime health of the apps.** Reading back from ArgoCD or monitoring comes later. (The factory watches its own health since v3.)
 - **Existing repositories and monorepos.** New work only, one repository per Container.
 - **Component and Code levels.** Dropped until Containers work end to end.
 - **Template updates.** Scaffolding happens once; no pull requests to existing repositories.

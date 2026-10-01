@@ -39,7 +39,8 @@ every scaffolded repository.
 
 The UI in `ui/` is a separate program. Its server proxies only GET requests to the
 Kubernetes API, so it is read-only by construction; it shares nothing with the Go code
-but the resource shapes.
+but the resource shapes. For the Factory view it also reads pods, nodes and
+metrics-server itself (`ui/health.mjs`) and sends the browser only a summary.
 
 `make lint` enforces the rows marked "must not import" with golangci-lint's
 `depguard`, so a wrong import fails the build rather than a review.
@@ -111,3 +112,20 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
 The operator never branches on a Container type: `internal/controller/typeneutral_test.go`
 fails when controller, scaffold or runner code names one. Everything type-specific
 lives in the catalog's templates.
+
+## Flow of the factory's health
+
+1. Every 15 seconds, and when a browser asks for `GET /factory/health`,
+   `ui/health.mjs` lists the pods, the nodes and their metrics, timing the node
+   list as the API server's response time. Answers are cached for 5 seconds.
+2. It matches pods to the factory's components by namespace and labels
+   (`DEFAULT_COMPONENTS`, overridable with `FACTORY_COMPONENTS`), finds the agent
+   sandboxes by their label, and reads the operator's `--max-agent-sandboxes`.
+3. It returns states, restarts, usage and the last hour of samples, never a pod
+   spec.
+4. The browser combines that with the Tasks, Agents, Containers and Sessions it
+   watches (`src/model/factory.ts`): the board, each Task's timeline from
+   `status.history`, the time per stage and the "Needs a look" list.
+
+The Task controller writes `status.history` in `writeStatus`, through
+`model.RecordTransition`.

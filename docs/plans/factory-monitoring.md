@@ -82,3 +82,14 @@ Each step is one or more small commits with tests.
   timelines (Tasks that ran before step 1 have no history and say so), live
   component health and usage, and a screenshot is in `docs/screenshots/`.
 - A stand-in Task run after the change shows its full timeline.
+
+## Outcome (1 October 2026)
+
+Done, with every "Done when" checked in Kind; see [results-v3.md](../results-v3.md).
+Watching the factory found its worst problem on the first day: Flutter checks
+writing to the disk etcd uses stalled the API server for up to 24 s. CI and
+sandbox work now happen in memory. Added along the way, beyond the steps above:
+the last hour of health samples (the plan had only live figures, which could not
+show the stalls), retries for clones and pushes, and fixes for Agent Sandbox's
+leader election and Gitea's liveness check. Step 6 set no new requests or
+limits: the problem was I/O, not CPU or memory.

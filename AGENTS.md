@@ -30,6 +30,8 @@ config/samples/webshop/            The sample story (edit these)
 config/samples/toolbox/            The agent factory story: six tool apps, Agents and Tasks
 config/runner/                     The Gitea CI runner for Container repositories
 config/ui/                         The read-only UI's Deployment and read-only RBAC
+config/metrics-server/             metrics-server for Kind (CPU and memory for the UI and kubectl top)
+config/agent-sandbox/              Agent Sandbox for Kind, without leader election
 templates/<name>/                  Template repositories, pushed and tagged into Gitea by the seed job
 templates/versions.txt             The tag each template is released at
 hack/testenv.mk                    Make targets for the Kind test environment
@@ -162,6 +164,8 @@ make toolchain-android runner-android  # Optional: the 20 GB release runner for 
 make toolbox             # The toolbox story; then kubectl apply -k config/samples/toolbox/tasks
 make claude-secret CLAUDE_TOKEN=...  # The real agent's token, from `claude setup-token`
 make e2e                 # All of the above, then check every milestone in Kind
+make down / make up       # Stop the factory to free the machine; bring it back healthy
+make doctor              # Check every part of the factory and say what is wrong
 ```
 
 Controller tests use **Ginkgo + Gomega** (BDD style) with the real manager and every

@@ -13,6 +13,12 @@ never used kubectl can read the story in a browser.
   plain words; click for everything.
 - **Who's working right now**: the Sessions per Container, agent or human, Active
   or Stale, with the age of the last heartbeat.
+- **The factory** (`?view=factory`, the _Factory_ switch in the top bar), across
+  all projects: whether each part of the factory is healthy, with restarts, CPU
+  and memory; the node's usage and the last hour (API server response, CPU,
+  memory); the Tasks on a board by stage, each with its timeline; where the
+  time goes across Tasks; the agent slots and who waits for one; and a list of
+  what needs a look. Select a Task for its goal, rounds, timeline and feedback.
 
 Everything updates as the resources change: the browser lists each kind, then
 watches it.
@@ -38,8 +44,9 @@ with every state: containers Pending, Scaffolding, Ready and Failed, agent and
 human Sessions, a Stale one, and a Relationship added after scaffolding. It needs
 no cluster and is clearly labelled as demo data.
 
-Other query parameters: `project=<namespace>`, `view=containers` and
-`system=<name>`, so any view can be bookmarked.
+Other query parameters: `project=<namespace>`, `view=containers` or
+`view=factory`, `system=<name>` and `task=<namespace>/<name>`, so any view can
+be bookmarked. `?demo=1&view=factory` shows the factory view with every state.
 
 ## Read-only by construction
 
@@ -52,7 +59,21 @@ operator. Three layers keep it that way:
    methods) or 403 (other paths). It drops the browser's own headers (cookies,
    `Authorization`, impersonation) and adds its own credentials.
 3. In the cluster, the ServiceAccount's ClusterRole allows only `get`, `list` and
-   `watch` on the `c4.factory.io` resources.
+   `watch` on the `c4.factory.io` resources, plus `get` and `list` on pods,
+   nodes and `metrics.k8s.io` for the health summary below. No Secrets, no
+   writes.
+
+### The factory's health
+
+`GET /factory/health` is answered by [health.mjs](health.mjs), not proxied: the
+server lists pods, nodes and metrics-server's figures itself and sends only a
+summary (component states, restarts, CPU and memory, agent slots and sandboxes,
+the last hour), never a pod spec. It samples every 15 seconds in the background
+(`FACTORY_SAMPLE_SECONDS`; 0 turns it off) and keeps an hour in memory, timing
+its own API calls as the API server's response time. Components are found by
+namespace and labels; `FACTORY_COMPONENTS` (a JSON list of `{key, name,
+namespace, selector, optional}`) replaces the built-in list. Without
+metrics-server (`make metrics-server`) the view shows states but no figures.
 
 `server.mjs` has no dependencies. Its upstream is `K8S_API` if set (for example
 `http://127.0.0.1:8001` for a `kubectl proxy`), otherwise the in-cluster API with
@@ -77,13 +98,16 @@ a single watch.
 
 ```
 server.mjs              static files + GET-only gateway to the Kubernetes API (/k8s, /k8s-watch)
+health.mjs              the factory's health summary and last hour (/factory/health)
 src/k8s/types.ts        the CRD shapes, mirroring api/v1alpha1
 src/k8s/watch.ts        list-then-watch: NDJSON events, reconnect with backoff, relist on 410
 src/k8s/mux.ts          many watches over one connection
 src/k8s/sources.ts      one watcher per kind, combined into a story snapshot
+src/k8s/health.ts       polls /factory/health while the factory view is open
 src/model/story.ts      resources -> diagram model (boxes, arrows, roll-ups)
 src/model/layout.ts     a small layered layout and edge routing
 src/model/describe.ts   plain-language wording for phases, conditions and times
+src/model/factory.ts    the factory view: stages, timelines, stats, what needs a look
 src/demo/               the demo fixture
 src/components/         the diagram, cards and side panels
 ```
