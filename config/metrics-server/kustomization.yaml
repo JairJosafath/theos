@@ -1,0 +1,31 @@
+# metrics-server for the Kind test environment: live CPU and memory for the
+# factory view in the UI and for `kubectl top`. About 30 MiB; the alternative,
+# Prometheus and Grafana, would cost more than the rest of the factory.
+#   make metrics-server
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.9.0/components.yaml
+patches:
+- target:
+    kind: Deployment
+    name: metrics-server
+    namespace: kube-system
+  patch: |-
+    # Kind's kubelets serve self-signed certificates.
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: --kubelet-insecure-tls
+    # Scrape every 30 s instead of 15: the UI polls every 10 s anyway, and
+    # fresher numbers aren't worth the CPU on a laptop.
+    - op: test
+      path: /spec/template/spec/containers/0/args/4
+      value: --metric-resolution=15s
+    - op: replace
+      path: /spec/template/spec/containers/0/args/4
+      value: --metric-resolution=30s
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests: {cpu: 20m, memory: 40Mi}
+        limits: {memory: 100Mi}

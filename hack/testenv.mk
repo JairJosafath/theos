@@ -173,3 +173,8 @@ claude-secret: ## Store a Claude token for agents: make claude-secret CLAUDE_TOK
 .PHONY: toolbox
 toolbox: ## Apply the toolbox story: offline tool apps built by agents (config/samples/toolbox).
 	$(TESTENV_KUBECTL) apply -k config/samples/toolbox
+
+.PHONY: metrics-server
+metrics-server: ## Install metrics-server (config/metrics-server): live CPU and memory for the UI's factory view.
+	$(TESTENV_KUBECTL) apply -k config/metrics-server
+	$(TESTENV_KUBECTL) -n kube-system rollout status deployment/metrics-server --timeout=180s
