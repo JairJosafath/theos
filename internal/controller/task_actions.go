@@ -176,7 +176,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	sandbox, err := buildSandbox(sandboxRun{
 		task: task, status: status, container: container, agent: agent, name: name, role: role,
 		repoURL: repo.CloneURL, gitSecret: gitSecret, context: r.taskContext(ctx, container),
-		protectedPaths: protected,
+		protectedPaths: protected, workspaceMemory: r.WorkspaceMemory,
 	}, r.Scheme, r.now())
 	if err != nil {
 		return ctrl.Result{}, err

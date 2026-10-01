@@ -63,6 +63,9 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
+          # Agents' checks write a lot; in memory they don't stall etcd on the
+          # Kind node's disk (docs/results-v3.md).
+          - --sandbox-workspace-memory=3Gi
         image: controller:latest
         name: manager
         ports:

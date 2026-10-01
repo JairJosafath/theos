@@ -25,6 +25,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -74,6 +75,8 @@ type sandboxRun struct {
 	context   string
 	// protectedPaths are the paths the agent must not change.
 	protectedPaths []string
+	// workspaceMemory, when set, puts the workspace in memory, up to this size.
+	workspaceMemory *resource.Quantity
 }
 
 // buildSandbox returns the Sandbox for one run, owned by the Task. Its pod has no
@@ -119,6 +122,12 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		c4v1alpha1.LabelProject:   task.Namespace,
 		LabelAgentSandbox:         "true",
 	}
+	workspace := &corev1.EmptyDirVolumeSource{}
+	if run.workspaceMemory != nil {
+		// Checks write a lot; on a small cluster, the disk they share with etcd stalls
+		// the API server. The size counts against the agent's memory limit.
+		workspace.Medium, workspace.SizeLimit = corev1.StorageMediumMemory, run.workspaceMemory
+	}
 	pod := corev1.PodSpec{
 		RestartPolicy:                corev1.RestartPolicyNever,
 		AutomountServiceAccountToken: &no,
@@ -134,7 +143,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 			VolumeMounts:             []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace"}},
 		}},
-		Volumes: []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}},
+		Volumes: []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: workspace}}},
 	}
 	podMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&pod)
 	if err != nil {

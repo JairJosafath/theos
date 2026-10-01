@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -74,6 +75,9 @@ type TaskReconciler struct {
 	// MaxSandboxes caps the agent sandboxes running at once, across all projects;
 	// zero means no cap. Agents and their checks are heavy.
 	MaxSandboxes int
+	// WorkspaceMemory, when set, gives each sandbox a workspace in memory of up to
+	// this size instead of on the node's disk.
+	WorkspaceMemory *resource.Quantity
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create;update;patch;delete
