@@ -1,0 +1,22 @@
+# The fence, enforced by the Git host (2026-10-01, image-shrink in Kind)
+
+The rules on main after a Task start (GET /repos/toolbox/image-shrink/branch_protections):
+  enable_push: false
+  enable_merge_whitelist: true, merge_whitelist_usernames: [c4admin]
+  protected_file_patterns: .c4factory.yaml;.devcontainer/**;.editorconfig;.gitea/**;AGENTS.md;Makefile;analysis_options.yaml;docs/style/**
+  status_check_contexts: [check*]
+Tag protection: v* -> [c4admin]
+
+Probes with the image-shrink bot user's token, while Task stand-in-fence was in review:
+
+1. Bot merges the Task's pull request #4 itself (checks green)
+   -> HTTP 405 {"message":"User not allowed to merge PR"}
+
+2. Bot creates release tag v9.9.9
+   -> HTTP 422 {"message":"user not allowed to create protected tag"}
+
+3. Bot pushes a branch whose Makefile turns `make check` into `true`; a pull
+   request (#6) from it passes CI (checks: success); the operator's user merges
+   -> HTTP 405 {"message":"Changed protected files"}, merged: false
+
+The probe pull requests were closed and their branches deleted.
