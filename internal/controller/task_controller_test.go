@@ -121,6 +121,7 @@ var _ = Describe("Task", func() {
 		env := containers[0].(map[string]any)["env"]
 		Expect(env).To(ContainElements(
 			map[string]any{"name": "C4_ROUND", "value": "1"},
+			map[string]any{"name": "C4_MAX_ROUNDS", "value": "3"},
 			map[string]any{"name": "C4_BRANCH", "value": "task/add-crop"},
 			map[string]any{"name": "C4_ROLE", "value": "implement"},
 		))
@@ -168,7 +169,11 @@ var _ = Describe("Task", func() {
 			&agentrunner.Result{Role: "implement", Commit: "sha-r2", Summary: "Tested it."}, "")
 		gitFake.setChecks(ns, "orders-api", "sha-r2", "success")
 		Eventually(func(g Gomega) {
-			sandboxExists(g, ns, "add-crop-r2-review-a1")
+			review := sandboxExists(g, ns, "add-crop-r2-review-a1")
+			containers, _, _ := unstructured.NestedSlice(review.Object, "spec", "podTemplate", "spec", "containers")
+			g.Expect(containers[0].(map[string]any)["env"]).To(ContainElement(
+				And(HaveKeyWithValue("name", "C4_FEEDBACK"), HaveKeyWithValue("value", ContainSubstring("Test an empty image.")))),
+				"the reviewer checks the last round's feedback was addressed")
 		}).Should(Succeed())
 		finishSandbox(ns, "add-crop-r2-review-a1", "add-crop",
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Complete and tested."}, "")

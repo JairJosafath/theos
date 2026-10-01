@@ -52,6 +52,13 @@ func ReviewPrompt(job Job) string {
 		fmt.Fprintf(&b, "\nWhat the application is for:\n%s\n", job.Context)
 	}
 	fmt.Fprintf(&b, "\nThe change under review should achieve this goal:\n%s\n", job.Goal)
+	if job.Feedback != "" {
+		fmt.Fprintf(&b, "\nThis is round %d. The previous round was sent back with this feedback; check each point was addressed:\n%s\n",
+			job.Round, job.Feedback)
+	}
+	if job.MaxRounds > 0 && job.Round >= job.MaxRounds {
+		b.WriteString("\nThis is the last round: asking for changes fails the task and nothing is merged.\n")
+	}
 	fmt.Fprintf(&b, `
 The change is on the current branch, %[1]s. See it with: git diff origin/%[2]s...HEAD
 Read AGENTS.md and docs/style/ for the rules the code must follow. You may read
@@ -62,6 +69,12 @@ Approve only if you would merge the change as it is:
 - it is correct, handles empty and bad input, and has tests for its behaviour;
 - it follows AGENTS.md and the style digests;
 - it fits what the application is for.
+
+Report every required change now: each round is reviewed afresh, and a change
+found late costs a whole round. Require changes only for what would ship a
+defect: the goal not met, a bug or crash, lost data, a privacy or security gap,
+behaviour without tests, or a rule broken in a way users or maintainers would
+notice. Put smaller points after "Non-blocking:" in the summary and approve.
 
 End your reply with one line of JSON and nothing after it:
 {"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>"}

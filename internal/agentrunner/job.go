@@ -33,6 +33,7 @@ const (
 	EnvContainer    = "C4_CONTAINER"
 	EnvTask         = "C4_TASK"
 	EnvRound        = "C4_ROUND"
+	EnvMaxRounds    = "C4_MAX_ROUNDS"
 	EnvGitUsername  = "C4_GIT_USERNAME"
 	EnvGitToken     = "C4_GIT_TOKEN"
 	EnvCheckCommand = "C4_CHECK_COMMAND"
@@ -53,6 +54,8 @@ type Job struct {
 	Container string
 	Task      string
 	Round     int
+	// MaxRounds is the last round the Task gets; 0 when unknown.
+	MaxRounds int
 	Username  string
 	Token     string
 	// CheckCommand is the quality contract, run in the repository after the agent.
@@ -91,6 +94,11 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		return Job{}, fmt.Errorf("%s=%q is not a round number", EnvRound, round)
 	}
 	job.Round = n
+	if last := getenv(EnvMaxRounds); last != "" {
+		if job.MaxRounds, err = strconv.Atoi(last); err != nil || job.MaxRounds < 0 {
+			return Job{}, fmt.Errorf("%s=%q is not a round number", EnvMaxRounds, last)
+		}
+	}
 
 	var missing []string
 	for name, value := range map[string]string{

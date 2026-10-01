@@ -92,10 +92,12 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		{Name: agentrunner.EnvContainer, Value: run.container.Name},
 		{Name: agentrunner.EnvTask, Value: task.Name},
 		{Name: agentrunner.EnvRound, Value: strconv.Itoa(int(run.status.Round))},
+		{Name: agentrunner.EnvMaxRounds, Value: strconv.Itoa(int(agent.Spec.MaxRounds))},
 		secretEnv(agentrunner.EnvGitUsername, run.gitSecret, "username"),
 		secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
 	}
-	if run.role == model.RoleImplementer && run.status.Feedback != "" {
+	// The reviewer gets the feedback too, to check it was addressed.
+	if run.status.Feedback != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvFeedback, Value: run.status.Feedback})
 	}
 	env = append(env, agent.Spec.Env...)

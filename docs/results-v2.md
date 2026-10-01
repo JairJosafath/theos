@@ -14,6 +14,7 @@ about the platform, and what changed because of it. Evidence is in
 | `bg-eraser-v1` | Claude Code | 3 | Merged |
 | `doc-scanner-v1` | Claude Code | 2 | Merged |
 | `photo-editor-v1` | Claude Code | 3 | Merged |
+| `qr-scanner-v1` | Claude Code | 4 (the limit in the sample) | Failed: each fresh reviewer found new points; the last round asked for an auto-backup exclusion and two style fixes |
 
 ### image-shrink-v1, round by round
 
@@ -51,3 +52,5 @@ third-party plugin's behaviour. That is the point of an agent reviewer next to C
 | A Task in the middle of its rounds kept taking the one agent slot while others waited | Tasks queue for a slot and the longest waiter goes first (`model.HasSlotTurn`, `status.slotWaitSince`). Sandboxes are counted live from the API server. (The commit says two sandboxes ran at once; that was a misreading: the second Task was only *Implementing* while waiting for a slot. Counting live closes the cache-lag risk anyway.) |
 | A widget test passed in the agent's sandbox and failed in CI (flaky), and the agent got only a link it can't open | The operator reads the failed CI job's log and passes the failing tests, analyzer findings and errors as feedback (`model.CheckFailures`). |
 | The operator restarted 12 times in 100 minutes: with CI and an agent running, the single-node API server stalled past the 10 s lease renewal and the manager exited ("leader election lost"). Idempotent steps meant no Task broke | The lease lasts a minute by default (`--leader-elect-lease-duration`), renewed within 40 s. |
+| A Task failed after four rounds although every round fixed what was asked: each review starts afresh, didn't know the round or what was asked before, and blocked on style points as hard as on bugs | The reviewer gets the round, the limit and the previous feedback (`C4_MAX_ROUNDS`, `C4_FEEDBACK`). It reports everything at once, blocks only on defects, lists the rest as non-blocking, and knows when "changes" fails the Task. |
+| The Standard told apps to keep user data in Auto Backup, with no exception for secrets: QR scan history with Wi-Fi passwords would go to the cloud | flutter-standard v1.1.0 requires excluding secrets from backups, with a manifest test. Scaffold-once means only new Containers get it. |

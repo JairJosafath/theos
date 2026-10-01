@@ -38,6 +38,7 @@ func TestJobFromEnv(t *testing.T) {
 		{"missing values", map[string]string{EnvGoal: "", EnvGitToken: ""}, "missing C4_GIT_TOKEN, C4_GOAL"},
 		{"unknown role", map[string]string{EnvRole: "deploy"}, `C4_ROLE="deploy"`},
 		{"bad round", map[string]string{EnvRound: "zero"}, "not a round number"},
+		{"bad round limit", map[string]string{EnvMaxRounds: "-1"}, "not a round number"},
 		{"branch is the base", map[string]string{EnvBranch: "main"}, "must not be the base"},
 	}
 	for _, tt := range tests {
@@ -61,10 +62,18 @@ func TestPrompts(t *testing.T) {
 		}
 	}
 	review := ReviewPrompt(job)
-	for _, want := range []string{"Add crop", "git diff origin/main...HEAD", `"verdict"`, "do not change files"} {
+	for _, want := range []string{"Add crop", "git diff origin/main...HEAD", `"verdict"`, "do not change files",
+		"Handle an empty image.", "check each point was addressed", "Non-blocking:"} {
 		if !strings.Contains(review, want) {
 			t.Errorf("review prompt lacks %q", want)
 		}
+	}
+	if strings.Contains(review, "last round") {
+		t.Error("review prompt says round 2 of an unknown limit is the last")
+	}
+	job.MaxRounds = 2
+	if !strings.Contains(ReviewPrompt(job), "This is the last round") {
+		t.Error("review prompt of the last round doesn't say so")
 	}
 	if strings.Contains(review, "t0k") || strings.Contains(implement, "t0k") {
 		t.Error("a prompt contains the Git token")
