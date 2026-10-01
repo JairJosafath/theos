@@ -69,6 +69,7 @@ func main() {
 	var enableHTTP2 bool
 	var sessionStaleAfter time.Duration
 	var maxAgentSandboxes int
+	var leaseDuration time.Duration
 	var sessionFeature, sessionBinaryURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
@@ -96,6 +97,10 @@ func main() {
 	flag.IntVar(&maxAgentSandboxes, "max-agent-sandboxes", 1,
 		"How many agent sandboxes may run at once, across all projects; 0 means no limit. "+
 			"Each runs an agent and its checks, which is heavy on a small cluster.")
+	flag.DurationVar(&leaseDuration, "leader-elect-lease-duration", time.Minute,
+		"How long the leader's lease lasts. It renews within two thirds of that, retrying every twelfth. "+
+			"The client default of 15s ends the manager whenever the API server stalls for 10s, which a "+
+			"busy single-node cluster does while agents and CI run.")
 	flag.DurationVar(&sessionStaleAfter, "session-stale-after", model.DefaultStaleAfter,
 		"How long a Session may go without a heartbeat before it is marked Stale.")
 	flag.StringVar(&sessionFeature, "session-feature", features.SessionFeatureLocal,
@@ -176,6 +181,7 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	renewDeadline, retryPeriod := leaseDuration*2/3, leaseDuration/12
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
@@ -183,6 +189,9 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "81ad068e.factory.io",
+		LeaseDuration:          &leaseDuration,
+		RenewDeadline:          &renewDeadline,
+		RetryPeriod:            &retryPeriod,
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
