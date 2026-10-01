@@ -24,9 +24,10 @@ import {
   taskKey,
   taskSegments,
   timeByStage,
+  timelineSteps,
   type Attention,
-  type Segment,
   type Stage,
+  type Step,
 } from '../model/factory'
 import { CheckIcon, CrossIcon, ExternalLinkIcon, WarningIcon } from './icons'
 
@@ -466,8 +467,8 @@ function TaskPanel({ task, agent, now, onClose }: { task: Task; agent?: Agent; n
               .join(' · ')}
           </p>
           <ol className="timeline">
-            {segments.map((s, i) => (
-              <TimelineStep key={i} segment={s} now={now} />
+            {timelineSteps(segments).map((s, i) => (
+              <TimelineStep key={i} step={s} now={now} />
             ))}
             {isFinal(task.status?.phase) ? (
               <li className={`timeline-step stage-done ${task.status?.phase === 'Merged' ? 'tone-ok' : 'tone-error'}`}>
@@ -515,7 +516,7 @@ function firstLine(text: string): string {
   return line.length > 120 ? `${line.slice(0, 119)}…` : line
 }
 
-function TimelineStep({ segment, now }: { segment: Segment; now: number }) {
+function TimelineStep({ step: segment, now }: { step: Step; now: number }) {
   return (
     <li className={`timeline-step stage-${segment.stage}${segment.current ? ' is-current' : ''}`}>
       <span className="timeline-dot" aria-hidden="true" />
@@ -526,7 +527,11 @@ function TimelineStep({ segment, now }: { segment: Segment; now: number }) {
           · round {segment.round} · {formatDuration(segment.end - segment.start)}
           {segment.current ? ' so far' : ''}
         </span>
-        {segment.message ? <p className="timeline-msg">{segment.message}</p> : null}
+        {segment.messages.map((m) => (
+          <p key={m} className="timeline-msg">
+            {m}
+          </p>
+        ))}
         <time className="timeline-at" dateTime={new Date(segment.start).toISOString()}>
           {timeAgo(new Date(segment.start).toISOString(), now)}
         </time>

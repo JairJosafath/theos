@@ -10,6 +10,7 @@ import {
   slotQueue,
   taskSegments,
   timeByStage,
+  timelineSteps,
 } from './factory'
 
 const T0 = Date.parse('2026-10-01T12:00:00Z')
@@ -256,4 +257,27 @@ describe('formatDuration', () => {
     [120 * 60_000, '2 h'],
     [76 * 60 * 60_000, '3 d 4 h'],
   ])('formats %d ms as %s', (ms, want) => expect(formatDuration(ms)).toBe(want))
+})
+
+describe('timelineSteps', () => {
+  it('joins steps of the same stage and round', () => {
+    const steps = timelineSteps(
+      taskSegments(
+        task('t', {
+          phase: 'Checking',
+          history: [
+            { ...step(0, 'Implementing', 1, 'Running'), message: 'Starting round 1' },
+            { ...step(1, 'Implementing', 1, 'Waiting'), message: 'The agent is working on round 1' },
+            step(20, 'Checking', 1, 'Checking'),
+          ],
+        }),
+        T0 + 30 * 60_000,
+      ),
+    )
+    expect(steps.map((s) => [s.stage, (s.end - s.start) / 60_000, s.messages])).toEqual([
+      ['implement', 20, ['Starting round 1', 'The agent is working on round 1']],
+      ['checks', 10, []],
+    ])
+    expect(steps[1].current).toBe(true)
+  })
 })

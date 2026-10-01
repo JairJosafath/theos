@@ -392,3 +392,36 @@ export function percent(part: number | undefined, whole: number | undefined): nu
   if (part === undefined || !whole) return undefined
   return Math.min(100, Math.round((part / whole) * 100))
 }
+
+/** A timeline row: consecutive segments of one stage and round, with their messages. */
+export interface Step {
+  stage: Stage
+  round: number
+  start: number
+  end: number
+  current: boolean
+  messages: string[]
+}
+
+/** Joins consecutive segments of the same stage and round, such as "Running" and then "Waiting". */
+export function timelineSteps(segments: Segment[]): Step[] {
+  const steps: Step[] = []
+  for (const s of segments) {
+    const last = steps[steps.length - 1]
+    if (last && last.stage === s.stage && last.round === s.round) {
+      last.end = s.end
+      last.current = s.current
+      if (s.message && !last.messages.includes(s.message)) last.messages.push(s.message)
+      continue
+    }
+    steps.push({
+      stage: s.stage,
+      round: s.round,
+      start: s.start,
+      end: s.end,
+      current: s.current,
+      messages: s.message ? [s.message] : [],
+    })
+  }
+  return steps
+}
