@@ -93,6 +93,9 @@ spec:
             httpGet: {path: /api/healthz, port: http}
             initialDelaySeconds: 30
             periodSeconds: 10
+            # Its health check reads SQLite: under a disk stall one second is too
+            # little, and each restart takes Git away from CI and agents.
+            timeoutSeconds: 5
             failureThreshold: 6
           resources:
             requests: {cpu: 50m, memory: 128Mi}
