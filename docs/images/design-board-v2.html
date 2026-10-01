@@ -91,8 +91,8 @@
       <ul>
         <li>No Kubernetes credentials: no ServiceAccount token; results go out as the pod's termination message.</li>
         <li>Git as a restricted bot user, write access to its own repository only.</li>
-        <li>No pushes to main: merge needs green <code>check*</code> and an approving review.</li>
-        <li>Can't touch <code>.devcontainer/</code>, <code>.gitea/</code> or <code>.c4factory.yaml</code>.</li>
+        <li>No pushes to main. Only the operator merges, only the reviewed commit, after green <code>check*</code> and an approving review.</li>
+        <li>Gitea refuses changes to <code>.gitea/</code>, <code>.devcontainer/</code>, <code>.c4factory.yaml</code> and the Standard's protected files; <code>v*</code> release tags are the operator's. Probed: all refused.</li>
         <li>NetworkPolicy: DNS, Gitea and public HTTPS only.</li>
         <li>A deadline on every run, one sandbox at a time, fair queue for the slot.</li>
       </ul>
@@ -124,6 +124,7 @@
       <ul>
         <li>Agents can't build an APK on the slim image; native wiring is only tested at release.</li>
         <li>The Claude token is readable inside the sandbox (later: inject at the egress).</li>
+        <li>The agent's code runs on a shared CI runner in host mode.</li>
         <li>Serial throughput: one agent slot on a laptop.</li>
       </ul>
     </section>
