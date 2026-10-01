@@ -116,8 +116,14 @@ var _ = Describe("Task", func() {
 		spec, _, _ := unstructured.NestedMap(sandbox.Object, "spec", "podTemplate", "spec")
 		Expect(spec["automountServiceAccountToken"]).To(BeFalse())
 		Expect(spec["restartPolicy"]).To(Equal("Never"))
-		env, _, _ := unstructured.NestedSlice(sandbox.Object, "spec", "podTemplate", "spec", "containers")
-		Expect(env).To(HaveLen(1))
+		containers, _, _ := unstructured.NestedSlice(sandbox.Object, "spec", "podTemplate", "spec", "containers")
+		Expect(containers).To(HaveLen(1))
+		env := containers[0].(map[string]any)["env"]
+		Expect(env).To(ContainElements(
+			map[string]any{"name": "C4_ROUND", "value": "1"},
+			map[string]any{"name": "C4_BRANCH", "value": "task/add-crop"},
+			map[string]any{"name": "C4_ROLE", "value": "implement"},
+		))
 		Expect(sandbox.GetOwnerReferences()).To(ContainElement(HaveField("Kind", "Task")))
 		var secret corev1.Secret
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())

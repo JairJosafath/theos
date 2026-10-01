@@ -61,7 +61,9 @@ func newSandbox() *unstructured.Unstructured {
 
 // sandboxRun is everything one sandbox run needs.
 type sandboxRun struct {
-	task      *c4v1alpha1.Task
+	task *c4v1alpha1.Task
+	// status is the Task's status as this step leaves it, not as it was read.
+	status    *c4v1alpha1.TaskStatus
 	container *c4v1alpha1.Container
 	agent     *c4v1alpha1.Agent
 	name      string
@@ -82,19 +84,19 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	env := []corev1.EnvVar{
 		{Name: agentrunner.EnvRole, Value: run.role},
 		{Name: agentrunner.EnvRepoURL, Value: run.repoURL},
-		{Name: agentrunner.EnvBranch, Value: task.Status.Branch},
+		{Name: agentrunner.EnvBranch, Value: run.status.Branch},
 		{Name: agentrunner.EnvBase, Value: "main"},
 		{Name: agentrunner.EnvGoal, Value: task.Spec.Goal},
 		{Name: agentrunner.EnvContext, Value: run.context},
 		{Name: agentrunner.EnvProject, Value: task.Namespace},
 		{Name: agentrunner.EnvContainer, Value: run.container.Name},
 		{Name: agentrunner.EnvTask, Value: task.Name},
-		{Name: agentrunner.EnvRound, Value: strconv.Itoa(int(task.Status.Round))},
+		{Name: agentrunner.EnvRound, Value: strconv.Itoa(int(run.status.Round))},
 		secretEnv(agentrunner.EnvGitUsername, run.gitSecret, "username"),
 		secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
 	}
-	if run.role == model.RoleImplementer && task.Status.Feedback != "" {
-		env = append(env, corev1.EnvVar{Name: agentrunner.EnvFeedback, Value: task.Status.Feedback})
+	if run.role == model.RoleImplementer && run.status.Feedback != "" {
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvFeedback, Value: run.status.Feedback})
 	}
 	env = append(env, agent.Spec.Env...)
 	var envFrom []corev1.EnvFromSource

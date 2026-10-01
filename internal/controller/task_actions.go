@@ -159,7 +159,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	}
 	name := sandboxName(task, status, role)
 	sandbox, err := buildSandbox(sandboxRun{
-		task: task, container: container, agent: agent, name: name, role: role,
+		task: task, status: status, container: container, agent: agent, name: name, role: role,
 		repoURL: repo.CloneURL, gitSecret: gitSecret, context: r.taskContext(ctx, container),
 	}, r.Scheme, r.now())
 	if err != nil {
