@@ -10,6 +10,7 @@ about the platform, and what changed because of it. Evidence is in
 | --- | --- | --- | --- |
 | `stand-in-loop` on image-shrink | stand-in | 2 (changes asked once, by design) | Merged |
 | `image-shrink-v1` | Claude Code | 3 | Merged |
+| `audio-cutter-v1` | Claude Code | 3 (round 2 failed CI on a flaky widget test) | Merged |
 
 ### image-shrink-v1, round by round
 

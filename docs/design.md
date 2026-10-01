@@ -174,6 +174,8 @@ In v1, the client authenticates with a per-namespace ServiceAccount that may onl
 
 ## v2: agents build the apps
 
+![The v2 board: the Task loop, the new kinds, the fence and the toolbox apps](images/design-board-v2.png)
+
 Settled step by step on 30 September 2026; the full design is
 [superpowers/specs/2026-09-30-agent-factory-design.md](superpowers/specs/2026-09-30-agent-factory-design.md)
 and the plan [plans/agent-factory.md](plans/agent-factory.md).
