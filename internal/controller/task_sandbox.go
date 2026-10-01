@@ -46,6 +46,8 @@ const (
 	LabelTask = "c4.factory.io/task"
 	// LabelAgentSandbox marks agent pods; the project's NetworkPolicy selects it.
 	LabelAgentSandbox = "c4.factory.io/agent-sandbox"
+	// agentSandboxValue is the value of LabelAgentSandbox.
+	agentSandboxValue = "true"
 )
 
 // sandboxGrace is how long a sandbox object outlives its pod's deadline.

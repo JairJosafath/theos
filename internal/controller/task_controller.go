@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -52,6 +53,8 @@ const (
 	defaultChecksRecheck = 15 * time.Second
 	// taskSecretRecheck: Secrets are read uncached, so not watched.
 	taskSecretRecheck = 15 * time.Second
+	// slotRecheck: a Task waiting for a free agent slot looks again.
+	slotRecheck = 20 * time.Second
 )
 
 // TaskReconciler drives a Task through its rounds: an agent implements in a
@@ -67,6 +70,9 @@ type TaskReconciler struct {
 	Now func() time.Time
 	// ChecksRecheck is how often a Checking Task reads its checks; zero means 15 seconds.
 	ChecksRecheck time.Duration
+	// MaxSandboxes caps the agent sandboxes running at once, across all projects;
+	// zero means no cap. Agents and their checks are heavy.
+	MaxSandboxes int
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create;update;patch;delete
@@ -133,6 +139,10 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err != nil {
 		return result, err
 	}
+	if facts.NoFreeSlot && step.Action == model.ActionWait {
+		// Sandboxes of other Tasks don't wake this one; look again.
+		result.RequeueAfter = slotRecheck
+	}
 	return result, r.writeStatus(ctx, &task, status)
 }
 
@@ -149,6 +159,14 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	}
 	if status.PhaseChangedAt != nil {
 		facts.InPhase = r.now().Sub(status.PhaseChangedAt.Time)
+	}
+	if r.MaxSandboxes > 0 {
+		sandboxes := &unstructured.UnstructuredList{}
+		sandboxes.SetGroupVersionKind(SandboxGVK.GroupVersion().WithKind("SandboxList"))
+		if err := r.List(ctx, sandboxes, client.MatchingLabels{LabelAgentSandbox: agentSandboxValue}); err != nil {
+			return facts, err
+		}
+		facts.NoFreeSlot = len(sandboxes.Items) >= r.MaxSandboxes
 	}
 	if facts.MaxRounds == 0 {
 		facts.MaxRounds = 3

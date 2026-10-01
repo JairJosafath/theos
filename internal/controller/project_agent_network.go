@@ -87,7 +87,7 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
 		policy.Labels = projectLabels(project.Namespace)
 		policy.Spec = networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{LabelAgentSandbox: "true"}},
+			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{LabelAgentSandbox: agentSandboxValue}},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
 			Egress:      egress,
 		}

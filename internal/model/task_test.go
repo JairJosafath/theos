@@ -67,6 +67,12 @@ func TestNextTaskStep(t *testing.T) {
 			ReviewAttempts: 2, Run: done(RunResult{Error: "the reviewer gave no JSON verdict"})},
 			want: ActionFail, message: "The reviewer failed 3 times"},
 
+		{name: "waits for a free agent slot to start", facts: TaskFacts{Phase: TaskPending, ContainerReady: true,
+			Round: 1, MaxRounds: 3, NoFreeSlot: true}, want: ActionWait, message: "Waiting for a free agent slot"},
+		{name: "waits for a free slot to review", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
+			Checks: "success", NoFreeSlot: true}, want: ActionWait, message: "free agent slot"},
+		{name: "a full house does not stop a running round", facts: TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, NoFreeSlot: true, Run: done(RunResult{Commit: "abc"})}, want: ActionOpenPR},
 		{name: "merged is final", facts: TaskFacts{Phase: TaskMerged}, want: ActionNone},
 		{name: "failed is final", facts: TaskFacts{Phase: TaskFailed}, want: ActionNone},
 	}

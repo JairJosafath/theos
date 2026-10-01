@@ -68,6 +68,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var sessionStaleAfter time.Duration
+	var maxAgentSandboxes int
 	var sessionFeature, sessionBinaryURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
@@ -92,6 +93,9 @@ func main() {
 	opts := zap.Options{
 		Development: true,
 	}
+	flag.IntVar(&maxAgentSandboxes, "max-agent-sandboxes", 1,
+		"How many agent sandboxes may run at once, across all projects; 0 means no limit. "+
+			"Each runs an agent and its checks, which is heavy on a small cluster.")
 	flag.DurationVar(&sessionStaleAfter, "session-stale-after", model.DefaultStaleAfter,
 		"How long a Session may go without a heartbeat before it is marked Stale.")
 	flag.StringVar(&sessionFeature, "session-feature", features.SessionFeatureLocal,
@@ -253,10 +257,11 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.TaskReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		APIReader: mgr.GetAPIReader(),
-		Git:       gitprovider.Client{},
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		APIReader:    mgr.GetAPIReader(),
+		Git:          gitprovider.Client{},
+		MaxSandboxes: maxAgentSandboxes,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
 		os.Exit(1)

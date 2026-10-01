@@ -74,6 +74,8 @@ type TaskFacts struct {
 	ReviewAttempts int
 	// InPhase is how long the Task has been in its current phase.
 	InPhase time.Duration
+	// NoFreeSlot means the operator already runs as many agent sandboxes as it may.
+	NoFreeSlot bool
 }
 
 // ChecksTimeout is how long a Task waits for CI to report before it fails. CI that
@@ -104,8 +106,17 @@ type TaskStep struct {
 	Message  string
 }
 
-// NextTaskStep decides what happens next to a Task.
+// NextTaskStep decides what happens next to a Task. Starting a sandbox waits
+// for a free agent slot.
 func NextTaskStep(f TaskFacts) TaskStep {
+	step := nextTaskStep(f)
+	if f.NoFreeSlot && (step.Action == ActionStartImplement || step.Action == ActionStartReview) {
+		return TaskStep{Action: ActionWait, Message: "Waiting for a free agent slot"}
+	}
+	return step
+}
+
+func nextTaskStep(f TaskFacts) TaskStep {
 	switch f.Phase {
 	case "", TaskPending:
 		switch {
