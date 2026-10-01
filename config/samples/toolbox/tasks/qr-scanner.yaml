@@ -1,7 +1,9 @@
+# v1 failed after four rounds (see docs/results-v2.md); v2 runs the same goal
+# with the converging reviewer.
 apiVersion: c4.factory.io/v1alpha1
 kind: Task
 metadata:
-  name: qr-scanner-v1
+  name: qr-scanner-v2
   namespace: toolbox
 spec:
   containerRef: {name: qr-scanner}
