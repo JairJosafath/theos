@@ -20,3 +20,8 @@ Probes with the image-shrink bot user's token, while Task stand-in-fence was in 
    -> HTTP 405 {"message":"Changed protected files"}, merged: false
 
 The probe pull requests were closed and their branches deleted.
+
+And the operator still merges reviewed work, pinned to the reviewed commit:
+
+NAME             CONTAINER      PHASE    ROUND   CHECKS    REVIEW    AGE
+stand-in-fence   image-shrink   Merged   2       success   approve   4m57s
