@@ -117,6 +117,10 @@ type TaskStatus struct {
 	// +optional
 	Sandbox string `json:"sandbox,omitempty"`
 
+	// phaseChangedAt is when the Task entered its current phase.
+	// +optional
+	PhaseChangedAt *metav1.Time `json:"phaseChangedAt,omitempty"`
+
 	// completedAt is when the Task was Merged or Failed.
 	// +optional
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`

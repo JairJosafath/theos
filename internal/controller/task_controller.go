@@ -147,6 +147,9 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		ContainerReady: container.Status.Phase == c4v1alpha1.ContainerReady,
 		ReviewAttempts: int(status.ReviewAttempts),
 	}
+	if status.PhaseChangedAt != nil {
+		facts.InPhase = r.now().Sub(status.PhaseChangedAt.Time)
+	}
 	if facts.MaxRounds == 0 {
 		facts.MaxRounds = 3
 	}
@@ -223,6 +226,10 @@ func (r *TaskReconciler) progress(task *c4v1alpha1.Task, status *c4v1alpha1.Task
 
 func (r *TaskReconciler) writeStatus(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) error {
 	status.ObservedGeneration = task.Generation
+	if status.Phase != task.Status.Phase || status.PhaseChangedAt == nil {
+		now := metav1.NewTime(r.now())
+		status.PhaseChangedAt = &now
+	}
 	if equality.Semantic.DeepEqual(&task.Status, status) {
 		return nil
 	}

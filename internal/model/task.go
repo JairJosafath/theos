@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Task phases, mirroring the API.
@@ -71,7 +72,13 @@ type TaskFacts struct {
 	ChecksURL string
 	// ReviewAttempts counts reviewer runs without a verdict in this round.
 	ReviewAttempts int
+	// InPhase is how long the Task has been in its current phase.
+	InPhase time.Duration
 }
+
+// ChecksTimeout is how long a Task waits for CI to report before it fails. CI that
+// never reports is a broken runner, not the agent's fault, so it costs no round.
+const ChecksTimeout = 30 * time.Minute
 
 // TaskAction is what the operator does next.
 type TaskAction string
@@ -130,6 +137,10 @@ func NextTaskStep(f TaskFacts) TaskStep {
 		case "failure", "error":
 			return roundFailed(f, fmt.Sprintf("The CI checks failed (%s). Run the check command, find the failure and fix it.",
 				orUnknown(f.ChecksURL)))
+		}
+		if f.InPhase > ChecksTimeout {
+			return TaskStep{Action: ActionFail, Message: fmt.Sprintf(
+				"No CI result after %s; check that a runner for the repository is online", ChecksTimeout)}
 		}
 		return TaskStep{Action: ActionWait, Message: "Waiting for checks"}
 

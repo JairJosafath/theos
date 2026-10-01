@@ -3,6 +3,7 @@ package model
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNextTaskStep(t *testing.T) {
@@ -44,6 +45,8 @@ func TestNextTaskStep(t *testing.T) {
 			want: ActionWait, message: "Waiting for checks"},
 		{name: "waits for checks to start", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3},
 			want: ActionWait},
+		{name: "gives up on checks that never report", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
+			Checks: "pending", InPhase: 31 * time.Minute}, want: ActionFail, message: "No CI result after 30m0s"},
 		{name: "green checks start the review", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
 			Checks: "success"}, want: ActionStartReview},
 		{name: "red checks send it back", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,

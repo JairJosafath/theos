@@ -1381,6 +1381,10 @@ func (in *TaskStatus) DeepCopyInto(out *TaskStatus) {
 		*out = new(TaskReview)
 		**out = **in
 	}
+	if in.PhaseChangedAt != nil {
+		in, out := &in.PhaseChangedAt, &out.PhaseChangedAt
+		*out = (*in).DeepCopy()
+	}
 	if in.CompletedAt != nil {
 		in, out := &in.CompletedAt, &out.CompletedAt
 		*out = (*in).DeepCopy()

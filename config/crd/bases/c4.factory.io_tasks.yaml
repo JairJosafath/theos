@@ -220,6 +220,10 @@ spec:
                 - Merged
                 - Failed
                 type: string
+              phaseChangedAt:
+                description: phaseChangedAt is when the Task entered its current phase.
+                format: date-time
+                type: string
               pullRequest:
                 description: pullRequest is the number of the pull request, and pullRequestURL
                   its address.
