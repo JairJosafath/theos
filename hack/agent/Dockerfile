@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# The agent image: c4agent and Claude Code on the Flutter toolchain, so the agent
+# The agent image: c4agent and Claude Code on the slim Flutter toolchain, so the agent
 # checks its work with exactly the tools CI uses. Tasks run it in an Agent Sandbox.
 # Build from the repository root: docker build -f hack/agent/Dockerfile .
 FROM golang:1.26 AS build
@@ -10,7 +10,8 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -o /c4agent ./cmd/c4agent
 
-FROM c4factory/flutter:3.47.5
+ARG BASE=c4factory/flutter:3.47.5-slim
+FROM ${BASE}
 ARG CLAUDE_CODE_VERSION=2.1.286
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && npm cache clean --force
 COPY --from=build /c4agent /usr/local/bin/c4agent

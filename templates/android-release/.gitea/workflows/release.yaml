@@ -1,6 +1,8 @@
 # Builds a signed release APK when a version tag (v1.2.3) is pushed and attaches
 # it to a Gitea release of that tag. The keystore comes from the organization's
 # Actions secrets, which C4 Factory's seed job creates.
+# It needs the Android SDK, so it runs on a runner labelled flutter-android (the
+# full toolchain image: make runner-android), not on the slim check runner.
 name: release
 
 on:
@@ -9,7 +11,7 @@ on:
 
 jobs:
   release:
-    runs-on: flutter
+    runs-on: flutter-android
     env:
       ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

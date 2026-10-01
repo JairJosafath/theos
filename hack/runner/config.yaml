@@ -3,11 +3,9 @@ log:
   level: info
 runner:
   file: /data/.runner
-  # One job at a time: Gradle builds need most of the node's memory.
+  # One job at a time: Flutter checks and Gradle builds are heavy.
   capacity: 1
   timeout: 1h
-  labels:
-    - "flutter:host"
 cache:
   enabled: false
 host:

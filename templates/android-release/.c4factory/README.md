@@ -8,7 +8,8 @@ release page.
 - **Writes:** `.gitea/workflows/release.yaml`
 - **Needs:** Actions secrets `ANDROID_KEYSTORE_B64` (base64 of a JKS keystore),
   `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS` on the organization, which the
-  seed job creates; a runner labelled `flutter`. The Framework's Gradle file must
+  seed job creates; a runner labelled `flutter-android` (the full toolchain image with
+  the Android SDK; `make runner-android`). The Framework's Gradle file must
   read `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and
   `ANDROID_KEY_PASSWORD`, as flutter-app's does.
 - **Release:** `git tag v0.1.0 && git push origin v0.1.0`, or create the tag in Gitea.

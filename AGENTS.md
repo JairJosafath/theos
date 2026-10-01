@@ -35,7 +35,8 @@ templates/versions.txt             The tag each template is released at
 hack/testenv.mk                    Make targets for the Kind test environment
 hack/seed/                         The seed job image and manifests
 hack/session/                      The Session client image and the test Session pod
-hack/toolchain/                    The Flutter toolchain image CI, agents and devcontainers share
+hack/toolchain-slim/               The slim Flutter toolchain (no Android SDK) for CI checks and agents
+hack/toolchain/                    The full Flutter toolchain with the Android SDK, for releases and devcontainers
 hack/runner/, hack/agent/          The CI runner and agent images, built on the toolchain
 hack/render/                       Renders templates locally, the way the operator scaffolds
 test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox)
@@ -156,7 +157,8 @@ make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
 make test-gitea          # gitprovider against the seeded Gitea
-make toolchain runner agent-sandbox agent-image  # CI runner, Agent Sandbox, agent image
+make toolchain runner agent-sandbox agent-image  # Slim toolchain, CI runner, Agent Sandbox, agent image
+make toolchain-android runner-android  # Optional: the 20 GB release runner for signed APKs
 make toolbox             # The toolbox story; then kubectl apply -k config/samples/toolbox/tasks
 make claude-secret CLAUDE_TOKEN=...  # The real agent's token, from `claude setup-token`
 make e2e                 # All of the above, then check every milestone in Kind

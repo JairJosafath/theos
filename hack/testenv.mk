@@ -122,12 +122,25 @@ session-kill: ## Kill the test Session's client abruptly, as a crashed devcontai
 
 AGENT_SANDBOX_VERSION ?= v1.0.4
 FLUTTER_IMG ?= c4factory/flutter:3.47.5
+FLUTTER_SLIM_IMG ?= c4factory/flutter:3.47.5-slim
 RUNNER_IMG ?= c4factory/gitea-runner:dev
+RUNNER_ANDROID_IMG ?= c4factory/gitea-runner-android:dev
 AGENT_IMG ?= c4factory/agent-flutter:dev
 
 .PHONY: toolchain
-toolchain: ## Build the Flutter toolchain image (hack/toolchain); slow the first time.
+toolchain: ## Build the slim Flutter toolchain (no Android SDK) that CI checks and agents use.
+	$(CONTAINER_TOOL) build -t $(FLUTTER_SLIM_IMG) hack/toolchain-slim
+
+.PHONY: toolchain-android
+toolchain-android: ## Build the full Flutter toolchain with the Android SDK (about 20 GB), for releases.
 	$(CONTAINER_TOOL) build -t $(FLUTTER_IMG) hack/toolchain
+
+.PHONY: runner-android
+runner-android: ## Build the release runner on the full toolchain and run it (label flutter-android).
+	$(CONTAINER_TOOL) build -t $(RUNNER_ANDROID_IMG) --build-arg BASE=$(FLUTTER_IMG) -f hack/runner/Dockerfile .
+	$(KIND) load docker-image $(RUNNER_ANDROID_IMG) --name '$(KIND_CLUSTER)'
+	$(TESTENV_KUBECTL) apply -f config/runner/android.yaml
+	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-android --timeout=600s
 
 .PHONY: runner
 runner: ## Build the CI runner, load it into Kind and run it in namespace gitea.

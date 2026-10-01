@@ -1,0 +1,42 @@
+# The release runner: the Gitea runner on the full toolchain with the Android SDK,
+# labelled flutter-android, for android-release workflows. `make runner-android`
+# builds it (about 20 GB) and applies this; it is not part of config/runner.
+# It registers with the token the seed Job stores in Secret gitea/gitea-runner.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-runner-android
+  namespace: gitea
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitea-runner-android
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitea-runner-android
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: runner
+          image: c4factory/gitea-runner-android:dev
+          imagePullPolicy: Never
+          env:
+            - name: GITEA_INSTANCE
+              value: http://gitea.gitea.svc.cluster.local:3000
+            - name: RUNNER_TOKEN
+              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+            - name: RUNNER_LABELS
+              value: flutter-android:host
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {memory: 6Gi}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}

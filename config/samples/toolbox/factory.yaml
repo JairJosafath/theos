@@ -46,7 +46,7 @@ spec:
   supportedTypes: [mobile-app]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/android-release
-    ref: v1.0.0
+    ref: v1.1.0
 ---
 # Claude Code on the Flutter toolchain. Needs Secret claude-credentials with
 # CLAUDE_CODE_OAUTH_TOKEN: make claude-secret CLAUDE_TOKEN=...
