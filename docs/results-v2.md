@@ -15,6 +15,7 @@ about the platform, and what changed because of it. Evidence is in
 | `doc-scanner-v1` | Claude Code | 2 | Merged |
 | `photo-editor-v1` | Claude Code | 3 | Merged |
 | `qr-scanner-v1` | Claude Code | 4 (the limit in the sample) | Failed: each fresh reviewer found new points; the last round asked for an auto-backup exclusion and two style fixes |
+| `qr-scanner-v2` (same goal, converging reviewer) | Claude Code | 1 | Merged; the reviewer listed the backup exclusion as non-blocking, so it became a follow-up Task |
 
 ### image-shrink-v1, round by round
 
@@ -54,3 +55,4 @@ third-party plugin's behaviour. That is the point of an agent reviewer next to C
 | The operator restarted 12 times in 100 minutes: with CI and an agent running, the single-node API server stalled past the 10 s lease renewal and the manager exited ("leader election lost"). Idempotent steps meant no Task broke | The lease lasts a minute by default (`--leader-elect-lease-duration`), renewed within 40 s. |
 | A Task failed after four rounds although every round fixed what was asked: each review starts afresh, didn't know the round or what was asked before, and blocked on style points as hard as on bugs | The reviewer gets the round, the limit and the previous feedback (`C4_MAX_ROUNDS`, `C4_FEEDBACK`). It reports everything at once, blocks only on defects, lists the rest as non-blocking, and knows when "changes" fails the Task. |
 | The Standard told apps to keep user data in Auto Backup, with no exception for secrets: QR scan history with Wi-Fi passwords would go to the cloud | flutter-standard v1.1.0 requires excluding secrets from backups, with a manifest test. Scaffold-once means only new Containers get it. |
+| With the converging reviewer, qr-scanner-v2 merged in one round, but the backup exclusion for Wi-Fi passwords, a privacy point, went into "Non-blocking". The repository still has flutter-standard v1.0.0, which says to keep user data in backups, and the reviewer followed it | Follow-up Task `qr-scanner-backup`. The lesson: the reviewer's bar is only as good as the Standard in the repository; scaffold-once means a Standard fix needs follow-up Tasks for existing apps. |
