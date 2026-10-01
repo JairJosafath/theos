@@ -16,6 +16,7 @@ about the platform, and what changed because of it. Evidence is in
 | `photo-editor-v1` | Claude Code | 3 | Merged |
 | `qr-scanner-v1` | Claude Code | 4 (the limit in the sample) | Failed: each fresh reviewer found new points; the last round asked for an auto-backup exclusion and two style fixes |
 | `qr-scanner-v2` (same goal, converging reviewer) | Claude Code | 1 | Merged; the reviewer listed the backup exclusion as non-blocking, so it became a follow-up Task |
+| `qr-scanner-backup` (follow-up) | Claude Code | 1 | Merged |
 
 ### image-shrink-v1, round by round
 
