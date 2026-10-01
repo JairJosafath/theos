@@ -188,19 +188,29 @@ func (r *TaskReconciler) ensureAgentGit(ctx context.Context, container *c4v1alph
 	if err != nil && !apierrors.IsNotFound(err) {
 		return "", err
 	}
+	found := err == nil
 	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	creds, err := provider.EnsureAgentAccess(gitCtx, repo, model.AgentUsername(container.Namespace, container.Name))
 	if err != nil {
 		return "", err
 	}
-	secret = corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: container.Namespace, Name: name}}
-	_, err = controllerutil.CreateOrPatch(ctx, r.Client, &secret, func() error {
-		secret.Labels = map[string]string{c4v1alpha1.LabelProject: container.Namespace,
-			c4v1alpha1.LabelContainer: container.Name}
-		secret.Data = map[string][]byte{"username": []byte(creds.Username), "token": []byte(creds.Token)}
-		return controllerutil.SetControllerReference(container, &secret, r.Scheme)
-	})
+	// Written without reading through the cache: the operator doesn't watch Secrets.
+	desired := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: container.Namespace, Name: name, Labels: map[string]string{
+			c4v1alpha1.LabelProject: container.Namespace, c4v1alpha1.LabelContainer: container.Name}},
+		Data: map[string][]byte{"username": []byte(creds.Username), "token": []byte(creds.Token)},
+	}
+	if err := controllerutil.SetControllerReference(container, &desired, r.Scheme); err != nil {
+		return "", err
+	}
+	if found {
+		orig := secret.DeepCopy()
+		secret.Labels, secret.Data, secret.OwnerReferences = desired.Labels, desired.Data, desired.OwnerReferences
+		err = r.Patch(ctx, &secret, client.MergeFrom(orig))
+	} else {
+		err = r.Create(ctx, &desired)
+	}
 	if err != nil {
 		return "", err
 	}
