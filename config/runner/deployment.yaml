@@ -34,6 +34,18 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: work
+              mountPath: /data/work
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: data
           emptyDir: {}
+        # Jobs' checkouts and Flutter's build and test output live in memory: on
+        # the disk they wrote about 70 MB/s, which stalled etcd on the same disk for
+        # up to 25 s and with it the API server (seen in the UI's factory view).
+        # Both count against the memory limit above.
+        - name: work
+          emptyDir: {medium: Memory, sizeLimit: 3Gi}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 1Gi}
