@@ -5,7 +5,7 @@ import { useMemo } from 'react'
 import type { FactoryData } from '../k8s/sources'
 import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../k8s/health'
 import { findCondition, type Agent, type Task } from '../k8s/types'
-import { timeAgo } from '../model/describe'
+import { plural, timeAgo } from '../model/describe'
 import {
   attention,
   boardColumns,
@@ -646,7 +646,7 @@ function ComponentRow({ component, now }: { component: ComponentHealth; now: num
         {component.pods.length ? (
           <div className="component-sub muted">
             {component.pods.filter((p) => p.ready).length}/{component.pods.length} ready
-            {restarts ? ` · ${restarts} restarts` : ''}
+            {restarts ? ` · ${plural(restarts, 'restart')}` : ''}
             {recent ? ` · last ${timeAgo(recent.at, now)}` : ''}
           </div>
         ) : null}
