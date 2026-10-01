@@ -177,6 +177,8 @@ export const RESOURCES = {
   sessions: 'sessions',
   frameworks: 'frameworks',
   connectors: 'connectors',
+  tasks: 'tasks',
+  agents: 'agents',
 } as const
 
 /** API path of a c4.factory.io resource, in one namespace or across all of them. */
@@ -188,4 +190,59 @@ export function resourcePath(plural: string, namespace?: string): string {
 /** The condition of the given type, if the object has reported it. */
 export function findCondition(conditions: Condition[] | undefined, type: string): Condition | undefined {
   return conditions?.find((c) => c.type === type)
+}
+
+export type TaskPhase = 'Pending' | 'Implementing' | 'Checking' | 'Reviewing' | 'Merged' | 'Failed'
+
+/** One step in a Task's timeline: from `at` on, the Task was in phase and round, for reason. */
+export interface TaskTransition {
+  at: string
+  phase: TaskPhase
+  round?: number
+  reason?: string
+  message?: string
+}
+
+export interface CheckStatus {
+  commit?: string
+  /** pending, success, failure or error. */
+  state?: string
+  url?: string
+}
+
+export interface Task extends K8sObject {
+  spec: {
+    containerRef: LocalRef
+    agentRef: LocalRef
+    goal: string
+  }
+  status?: {
+    phase?: TaskPhase
+    round?: number
+    reviewAttempts?: number
+    branch?: string
+    commit?: string
+    pullRequest?: number
+    pullRequestURL?: string
+    checks?: CheckStatus
+    review?: { verdict?: string; summary?: string }
+    summary?: string
+    feedback?: string
+    sandbox?: string
+    slotWaitSince?: string
+    phaseChangedAt?: string
+    completedAt?: string
+    history?: TaskTransition[]
+    conditions?: Condition[]
+  }
+}
+
+export interface Agent extends K8sObject {
+  spec: {
+    displayName?: string
+    description?: string
+    image: string
+    maxRounds?: number
+    timeoutMinutes?: number
+  }
 }

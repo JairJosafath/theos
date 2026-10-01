@@ -5,6 +5,7 @@
 import {
   RESOURCES,
   resourcePath,
+  type Agent,
   type CatalogEntry,
   type Container,
   type DataStore,
@@ -14,6 +15,7 @@ import {
   type Relationship,
   type Session,
   type SoftwareSystem,
+  type Task,
 } from './types'
 import type { WatchMux } from './mux'
 import { ApiError, ResourceWatcher, type WatchState } from './watch'
@@ -213,5 +215,44 @@ export class LiveProjectsSource extends WatchingSource<Project[]> {
 
   protected build(): Project[] {
     return this.items<Project>(0)
+  }
+}
+
+/** Everything the factory view needs, across all projects. */
+export interface FactoryData {
+  projects: Project[]
+  tasks: Task[]
+  agents: Agent[]
+  containers: Container[]
+  sessions: Session[]
+}
+
+export function emptyFactory(): FactoryData {
+  return { projects: [], tasks: [], agents: [], containers: [], sessions: [] }
+}
+
+/** Watches the work of the factory in every namespace: Tasks, Agents, Containers and Sessions. */
+export class LiveFactorySource extends WatchingSource<FactoryData> {
+  constructor(api: Api) {
+    super(
+      [
+        { what: 'projects', watcher: watcher(api, RESOURCES.projects) },
+        { what: 'tasks', watcher: watcher(api, RESOURCES.tasks) },
+        { what: 'agents', watcher: watcher(api, RESOURCES.agents), optional: true },
+        { what: 'containers', watcher: watcher(api, RESOURCES.containers) },
+        { what: 'sessions', watcher: watcher(api, RESOURCES.sessions) },
+      ],
+      emptyFactory(),
+    )
+  }
+
+  protected build(): FactoryData {
+    return {
+      projects: this.items<Project>(0),
+      tasks: this.items<Task>(1),
+      agents: this.items<Agent>(2),
+      containers: this.items<Container>(3),
+      sessions: this.items<Session>(4),
+    }
   }
 }
