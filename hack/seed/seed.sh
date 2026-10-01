@@ -132,6 +132,13 @@ seed_template() {
   fi
   local empty
   empty=$(jq -r .empty <<<"$BODY")
+  # A template's workflows are for the Containers scaffolded from it, not for the
+  # template repository itself.
+  if [[ $(jq -r .has_actions <<<"$BODY") != false ]]; then
+    api PATCH "/repos/$repo" '{"has_actions": false}'
+    expect "Turning off Actions in $repo" 200
+    log "Turned off Actions in $repo"
+  fi
 
   api GET "/repos/$repo/tags/$version"
   if [[ $STATUS == 200 ]]; then
