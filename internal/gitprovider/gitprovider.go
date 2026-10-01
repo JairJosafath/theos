@@ -71,9 +71,12 @@ type Provider interface {
 	// Repository returns the addresses of name in the owner organization, without
 	// calling the host.
 	Repository(name string) Repository
-	// ProtectBranch makes branch accept changes only through pull requests whose
-	// status checks matching statusContexts pass. It is safe to repeat.
-	ProtectBranch(ctx context.Context, repo Repository, branch string, statusContexts []string) error
+	// ProtectBranch makes branch accept changes only through pull requests that
+	// pass rule, merged by the provider's own user. It is safe to repeat.
+	ProtectBranch(ctx context.Context, repo Repository, branch string, rule BranchRule) error
+	// ProtectTags lets only the provider's own user push tags matching pattern.
+	// It is safe to repeat.
+	ProtectTags(ctx context.Context, repo Repository, pattern string) error
 	// CombinedStatus returns the combined state of the checks on ref.
 	CombinedStatus(ctx context.Context, repo Repository, ref string) (CheckStatus, error)
 	// CheckLog returns the log of the CI job a check status links to.
@@ -88,8 +91,17 @@ type Provider interface {
 	GetPullRequest(ctx context.Context, repo Repository, number int) (PullRequest, error)
 	// CommentPullRequest adds a comment to a pull request.
 	CommentPullRequest(ctx context.Context, repo Repository, number int, body string) error
-	// MergePullRequest squashes a pull request into its base and deletes its branch.
-	MergePullRequest(ctx context.Context, repo Repository, number int, title, message string) error
+	// MergePullRequest squashes a pull request into its base and deletes its
+	// branch, provided its head is still headSHA.
+	MergePullRequest(ctx context.Context, repo Repository, number int, headSHA, title, message string) error
+}
+
+// BranchRule is what a protected branch requires of a pull request.
+type BranchRule struct {
+	// StatusContexts are glob patterns of the status checks that must pass.
+	StatusContexts []string
+	// ProtectedPaths may not change: a file path, or a directory ending in "/".
+	ProtectedPaths []string
 }
 
 // Client builds Providers and fetches templates. It is what the operator uses;

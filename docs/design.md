@@ -201,7 +201,9 @@ enforces.
   `maxRounds`. One Task works on a Container at a time.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
-  repository only, and `main` takes no pushes; a per-project NetworkPolicy allows
+  repository only; `main` takes no pushes, only the operator merges (the reviewed
+  commit only), and the Git host refuses changes to the platform's and the
+  Standard's protected files and keeps `v*` tags to the operator; a per-project NetworkPolicy allows
   only DNS, the Git host and public HTTPS; each run has a deadline. The Claude token
   is readable inside the sandbox; Agent Substrate's egress credential injection is
   the later fix.

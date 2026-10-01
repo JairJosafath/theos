@@ -31,6 +31,16 @@ type StandardSpec struct {
 	// +listType=set
 	// +required
 	SupportedFrameworks []string `json:"supportedFrameworks"`
+
+	// protectedPaths are the Standard's files that agents must not change, such as
+	// the check contract and lint configuration: a file path, or a directory ending
+	// in "/". The Git host refuses to merge pull requests that change them, next to
+	// the paths the platform always protects (.gitea/, .devcontainer/, .c4factory.yaml).
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:Pattern=`^[^/*?\[\]][^*?\[\]]*$`
+	// +listType=set
+	// +optional
+	ProtectedPaths []string `json:"protectedPaths,omitempty"`
 }
 
 // +kubebuilder:object:root=true

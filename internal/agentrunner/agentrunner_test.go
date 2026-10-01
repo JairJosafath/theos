@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -60,6 +61,9 @@ func TestPrompts(t *testing.T) {
 		if !strings.Contains(implement, want) {
 			t.Errorf("implement prompt lacks %q", want)
 		}
+	}
+	if got, _ := JobFromEnv(env(map[string]string{EnvProtectedPaths: "Makefile, docs/style/,"})); !slices.Equal(got.ProtectedPaths, []string{"Makefile", "docs/style/"}) {
+		t.Errorf("ProtectedPaths = %v", got.ProtectedPaths)
 	}
 	review := ReviewPrompt(job)
 	for _, want := range []string{"Add crop", "git diff origin/main...HEAD", `"verdict"`, "do not change files",
@@ -153,6 +157,9 @@ func bareRepo(t *testing.T, files map[string]string) string {
 	return "file://" + bare
 }
 
+// branchHead returns the head of branch in the repository at repoURL.
+//
+//nolint:unparam // reads any branch, though the tests use one
 func branchHead(t *testing.T, repoURL, branch string) string {
 	t.Helper()
 	out, err := exec.Command("git", "ls-remote", repoURL, "refs/heads/"+branch).Output()
@@ -219,8 +226,20 @@ func TestRunImplementFailures(t *testing.T) {
 	t.Run("protected path", func(t *testing.T) {
 		url := bareRepo(t, map[string]string{".gitea/workflows/check.yaml": "on: push\n"})
 		got := Run(ctx, testJob(t, url, RoleImplement, 1), editAgent{path: ".gitea/workflows/check.yaml"}, t.TempDir())
-		if !strings.Contains(got.Error, ".gitea/workflows/check.yaml, which belong to the platform") {
+		if !strings.Contains(got.Error, ".gitea/workflows/check.yaml, which the platform and the Standard protect") {
 			t.Errorf("Error = %q", got.Error)
+		}
+	})
+	t.Run("path the Standard protects", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"Makefile": "check:\n"})
+		job := testJob(t, url, RoleImplement, 1)
+		job.ProtectedPaths = []string{"Makefile"}
+		got := Run(ctx, job, editAgent{path: "Makefile"}, t.TempDir())
+		if !strings.Contains(got.Error, "touches Makefile") {
+			t.Errorf("Error = %q", got.Error)
+		}
+		if branchHead(t, url, "task/add-crop") != "" {
+			t.Error("a change to a protected path was pushed")
 		}
 	})
 	t.Run("check keeps failing", func(t *testing.T) {

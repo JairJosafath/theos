@@ -53,7 +53,9 @@ func readyContainer(ns string) {
 	createFactory(ns)
 	container := newContainer(ns, name, "webshop-core", c4v1alpha1.ContainerTypeService)
 	container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
-	mustCreate(newSystem(ns, "webshop-core"), newStandard(ns, "python-strict", "python-fastapi"), container)
+	standard := newStandard(ns, "python-strict", "python-fastapi")
+	standard.Spec.ProtectedPaths = []string{"Makefile", "ruff.toml"}
+	mustCreate(newSystem(ns, "webshop-core"), standard, container)
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, key(ns, name), container)).To(Succeed())
 		g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
@@ -125,6 +127,12 @@ var _ = Describe("Task", func() {
 			map[string]any{"name": "C4_BRANCH", "value": "task/add-crop"},
 			map[string]any{"name": "C4_ROLE", "value": "implement"},
 		))
+		Expect(env).To(ContainElement(map[string]any{"name": "C4_PROTECTED_PATHS",
+			"value": ".c4factory.yaml,.devcontainer/,.gitea/,Makefile,ruff.toml"}))
+		rule, tags := gitFake.branchRule(ns, "orders-api")
+		Expect(rule.ProtectedPaths).To(Equal([]string{".c4factory.yaml", ".devcontainer/", ".gitea/", "Makefile", "ruff.toml"}),
+			"the Git host refuses changes to the Standard's and the platform's files")
+		Expect(tags).To(Equal([]string{"v*"}), "only the operator tags releases")
 		Expect(sandbox.GetOwnerReferences()).To(ContainElement(HaveField("Kind", "Task")))
 		var secret corev1.Secret
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())
@@ -219,6 +227,42 @@ var _ = Describe("Task", func() {
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Message).To(ContainSubstring("ended without a result: OOMKilled"))
 		}).Should(Succeed())
+	})
+
+	It("fails when its pull request is closed without merging", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 2), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
+		gitFake.closePull(ns, "orders-api", 1)
+		finishSandbox(ns, "add-crop-r1-review-a1", "add-crop",
+			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Fine."}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).
+				To(HaveField("Reason", "PullRequestClosed"))
+		}).Should(Succeed())
+		Expect(gitFake.pullComments(ns, "orders-api", 1)).To(BeEmpty(), "no approval on a closed pull request")
+	})
+
+	It("refuses a Container whose default branch isn't protected", func() {
+		ns := newProjectNamespace()
+		createFactory(ns)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		mustCreate(newSystem(ns, "webshop-core"), container, newAgent(ns, 1), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).
+				To(HaveField("Message", ContainSubstring("has no Standard")))
+		}).Should(Succeed())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "add-crop-r1-implement"), newSandbox()))).To(BeTrue())
 	})
 
 	It("waits for its Container, and for earlier Tasks on it", func() {

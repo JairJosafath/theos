@@ -3,6 +3,7 @@ package gitprovider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,7 @@ type agentGitea struct {
 	rules    map[string]bool
 	pulls    []giteaPull
 	statuses string
+	tagRules []map[string]any
 }
 
 func newAgentGitea(t *testing.T) (*agentGitea, Provider) {
@@ -61,6 +63,13 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.rules["main"] = true
 		reply(http.StatusCreated, map[string]string{})
 	case call == "PATCH "+repo+"/branch_protections/main":
+		reply(http.StatusOK, map[string]string{})
+	case call == "GET "+repo+"/tag_protections":
+		reply(http.StatusOK, g.tagRules)
+	case call == "POST "+repo+"/tag_protections":
+		g.tagRules = append(g.tagRules, map[string]any{"id": 7, "name_pattern": body["name_pattern"]})
+		reply(http.StatusCreated, map[string]string{})
+	case call == "PATCH "+repo+"/tag_protections/7":
 		reply(http.StatusOK, map[string]string{})
 	case call == "GET "+repo+"/actions/jobs/27/logs":
 		_, _ = io.WriteString(w, "make: *** [Makefile:21: test] Error 1\n")
@@ -121,7 +130,8 @@ func TestProtectBranchCreatesThenUpdates(t *testing.T) {
 	g, p := newAgentGitea(t)
 	repo := p.Repository("photo-editor")
 	for range 2 {
-		if err := p.ProtectBranch(context.Background(), repo, "main", []string{"check*"}); err != nil {
+		rule := BranchRule{StatusContexts: []string{"check*"}, ProtectedPaths: []string{".gitea/", "Makefile"}}
+		if err := p.ProtectBranch(context.Background(), repo, "main", rule); err != nil {
 			t.Fatalf("ProtectBranch() error = %v", err)
 		}
 	}
@@ -129,7 +139,30 @@ func TestProtectBranchCreatesThenUpdates(t *testing.T) {
 	if rule["enable_push"] != false || rule["enable_status_check"] != true || rule["rule_name"] != "main" {
 		t.Errorf("rule = %v", rule)
 	}
+	if rule["enable_merge_whitelist"] != true || fmt.Sprint(rule["merge_whitelist_usernames"]) != "[c4admin]" {
+		t.Errorf("rule = %v, want only the operator's user to merge", rule)
+	}
+	if rule["protected_file_patterns"] != ".gitea/**;Makefile" {
+		t.Errorf("protected_file_patterns = %v", rule["protected_file_patterns"])
+	}
 	if last := g.calls[len(g.calls)-1]; last != "PATCH /api/v1/repos/toolbox/photo-editor/branch_protections/main" {
+		t.Errorf("second call = %s, want the update", last)
+	}
+}
+
+func TestProtectTagsCreatesThenUpdates(t *testing.T) {
+	g, p := newAgentGitea(t)
+	repo := p.Repository("photo-editor")
+	for range 2 {
+		if err := p.ProtectTags(context.Background(), repo, "v*"); err != nil {
+			t.Fatalf("ProtectTags() error = %v", err)
+		}
+	}
+	created := g.bodies["POST /api/v1/repos/toolbox/photo-editor/tag_protections"]
+	if created["name_pattern"] != "v*" || fmt.Sprint(created["whitelist_usernames"]) != "[c4admin]" {
+		t.Errorf("tag rule = %v", created)
+	}
+	if last := g.calls[len(g.calls)-1]; last != "PATCH /api/v1/repos/toolbox/photo-editor/tag_protections/7" {
 		t.Errorf("second call = %s, want the update", last)
 	}
 }
@@ -201,17 +234,17 @@ func TestPullRequests(t *testing.T) {
 	if err := p.CommentPullRequest(ctx, repo, 1, "Looks good"); err != nil {
 		t.Fatalf("CommentPullRequest() error = %v", err)
 	}
-	if err := p.MergePullRequest(ctx, repo, 1, "Add crop", "Task add-crop"); err != nil {
+	if err := p.MergePullRequest(ctx, repo, 1, "abc123", "Add crop", "Task add-crop"); err != nil {
 		t.Fatalf("MergePullRequest() error = %v", err)
 	}
-	if merge := g.bodies["POST /api/v1/repos/toolbox/photo-editor/pulls/1/merge"]; merge["Do"] != "squash" || merge["delete_branch_after_merge"] != true {
+	if merge := g.bodies["POST /api/v1/repos/toolbox/photo-editor/pulls/1/merge"]; merge["Do"] != "squash" || merge["delete_branch_after_merge"] != true || merge["head_commit_id"] != "abc123" {
 		t.Errorf("merge = %v", merge)
 	}
 	got, err := p.GetPullRequest(ctx, repo, 1)
 	if err != nil || !got.Merged {
 		t.Errorf("GetPullRequest() = %+v, %v; want merged", got, err)
 	}
-	if err := p.MergePullRequest(ctx, repo, 2, "x", "y"); err == nil || !strings.Contains(err.Error(), "HTTP 405") {
+	if err := p.MergePullRequest(ctx, repo, 2, "def456", "x", "y"); err == nil || !strings.Contains(err.Error(), "HTTP 405") {
 		t.Errorf("MergePullRequest() of an unmergeable PR error = %v", err)
 	}
 }

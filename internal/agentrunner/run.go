@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // Result is what one sandbox run reports. It travels in the pod's termination
@@ -59,10 +61,6 @@ func shorten(s string, n int) string {
 	}
 	return s[:n] + "…"
 }
-
-// protectedPaths belong to the operator and the Standard's CI; an agent must not
-// change them.
-var protectedPaths = []string{".devcontainer/", ".c4factory.yaml", ".gitea/"}
 
 // checkFixAttempts is how often the agent is sent back when the check fails.
 const checkFixAttempts = 2
@@ -125,8 +123,8 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, result Result
 		result.Error = err.Error()
 		return result
 	}
-	if touched := touchedProtected(changed); len(touched) > 0 {
-		result.Error = fmt.Sprintf("the change touches %s, which belong to the platform; leave them as they are",
+	if touched := model.TouchedPaths(changed, model.AgentProtectedPaths(job.ProtectedPaths)); len(touched) > 0 {
+		result.Error = fmt.Sprintf("the change touches %s, which the platform and the Standard protect; leave them as they are",
 			strings.Join(touched, ", "))
 		return result
 	}
@@ -173,19 +171,6 @@ func runCheck(ctx context.Context, job Job, dir string) (string, error) {
 		return err.Error(), err
 	}
 	return out.String(), err
-}
-
-func touchedProtected(paths []string) []string {
-	var out []string
-	for _, p := range paths {
-		for _, protected := range protectedPaths {
-			if p == protected || strings.HasPrefix(p, protected) {
-				out = append(out, p)
-				break
-			}
-		}
-	}
-	return out
 }
 
 func firstLine(s string) string {

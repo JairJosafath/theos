@@ -17,13 +17,16 @@ func TestNextTaskStep(t *testing.T) {
 		// feedback and message must contain these.
 		feedback, message string
 	}{
-		{name: "waits for the Container", facts: TaskFacts{Phase: TaskPending, Round: 1, MaxRounds: 3},
+		{name: "waits for the Container", facts: TaskFacts{Phase: TaskPending, Protected: true, Round: 1, MaxRounds: 3},
 			want: ActionWait, message: "Waiting for Container photo-editor to be Ready"},
-		{name: "waits behind an earlier Task", facts: TaskFacts{Phase: TaskPending, ContainerReady: true,
+		{name: "waits behind an earlier Task", facts: TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true,
 			BlockedBy: "add-crop", Round: 1, MaxRounds: 3}, want: ActionWait, message: "Waiting for Task add-crop"},
-		{name: "starts when the Container is Ready", facts: TaskFacts{Phase: TaskPending, ContainerReady: true,
+		{name: "starts when the Container is Ready", facts: TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true,
 			Round: 1, MaxRounds: 3}, want: ActionStartImplement},
-		{name: "a new Task starts pending", facts: TaskFacts{ContainerReady: true, MaxRounds: 3}, want: ActionStartImplement},
+		{name: "a new Task starts pending", facts: TaskFacts{Protected: true, ContainerReady: true, MaxRounds: 3},
+			want: ActionStartImplement},
+		{name: "fails on a Container without protection", facts: TaskFacts{Phase: TaskPending, ContainerReady: true,
+			Container: "photo-editor", MaxRounds: 3}, want: ActionFail, message: "photo-editor has no Standard"},
 
 		{name: "restarts a lost implement sandbox", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3},
 			want: ActionStartImplement},
@@ -70,7 +73,7 @@ func TestNextTaskStep(t *testing.T) {
 			ReviewAttempts: 2, Run: done(RunResult{Error: "the reviewer gave no JSON verdict"})},
 			want: ActionFail, message: "The reviewer failed 3 times"},
 
-		{name: "waits for a free agent slot to start", facts: TaskFacts{Phase: TaskPending, ContainerReady: true,
+		{name: "waits for a free agent slot to start", facts: TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true,
 			Round: 1, MaxRounds: 3, NoFreeSlot: true}, want: ActionWait, message: "Waiting for a free agent slot"},
 		{name: "waits for a free slot to review", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
 			Checks: "success", NoFreeSlot: true}, want: ActionWait, message: "free agent slot"},
@@ -95,6 +98,26 @@ func TestNextTaskStep(t *testing.T) {
 				t.Errorf("Message = %q, want it to contain %q", got.Message, tt.message)
 			}
 		})
+	}
+}
+
+func TestNextTaskStepQueuesOnlyForSlots(t *testing.T) {
+	tests := []struct {
+		name  string
+		facts TaskFacts
+		want  bool
+	}{
+		{"would start", TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true, NoFreeSlot: true}, true},
+		{"would review", TaskFacts{Phase: TaskChecking, Round: 1, Checks: "success", NoFreeSlot: true}, true},
+		{"blocked by another Task", TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true,
+			BlockedBy: "add-crop", NoFreeSlot: true}, false},
+		{"waiting for checks", TaskFacts{Phase: TaskChecking, Round: 1, NoFreeSlot: true}, false},
+		{"free slot", TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true}, false},
+	}
+	for _, tt := range tests {
+		if got := NextTaskStep(tt.facts).SlotWait; got != tt.want {
+			t.Errorf("%s: SlotWait = %v, want %v", tt.name, got, tt.want)
+		}
 	}
 }
 

@@ -254,6 +254,37 @@ var CheckContexts = []string{"check*"}
 // require.
 func Protected(hasStandard bool) bool { return hasStandard }
 
+// PlatformProtectedPaths belong to the operator and the Standard's CI: no agent
+// may change them, whatever the Standard. A path ending in "/" is a directory.
+var PlatformProtectedPaths = []string{".c4factory.yaml", ".devcontainer/", ".gitea/"}
+
+// ReleaseTags is the tag pattern that releases a Container; only the operator's
+// Git user may push such tags, since release jobs hold the signing keys.
+const ReleaseTags = "v*"
+
+// AgentProtectedPaths returns the paths agents may not change in a Container: the
+// platform's and its Standard's, sorted and without duplicates.
+func AgentProtectedPaths(standard []string) []string {
+	out := slices.Concat(PlatformProtectedPaths, standard)
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// TouchedPaths returns the changed paths that fall under a protected path: equal
+// to a file, or inside a directory ending in "/".
+func TouchedPaths(changed, protected []string) []string {
+	var out []string
+	for _, p := range changed {
+		for _, prot := range protected {
+			if p == prot || (strings.HasSuffix(prot, "/") && strings.HasPrefix(p, prot)) {
+				out = append(out, p)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // ClusterNamespace returns the namespace of an in-cluster service address, such
 // as "gitea" for http://gitea.gitea.svc.cluster.local:3000.
 func ClusterNamespace(host string) (string, bool) {

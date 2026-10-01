@@ -43,13 +43,23 @@ const agentTokenName = "c4factory-agent"
 
 // ProtectBranch makes branch accept changes only through pull requests whose
 // status checks matching statusContexts (glob patterns) pass.
-func (g *gitea) ProtectBranch(ctx context.Context, repo Repository, branch string, statusContexts []string) error {
+func (g *gitea) ProtectBranch(ctx context.Context, repo Repository, branch string, rule BranchRule) error {
+	patterns := make([]string, 0, len(rule.ProtectedPaths))
+	for _, p := range rule.ProtectedPaths {
+		if strings.HasSuffix(p, "/") {
+			p += "**"
+		}
+		patterns = append(patterns, p)
+	}
 	body, _ := json.Marshal(map[string]any{
-		"rule_name":                branch,
-		"enable_push":              false,
-		"enable_status_check":      true,
-		"status_check_contexts":    statusContexts,
-		"block_on_outdated_branch": false,
+		"rule_name":                 branch,
+		"enable_push":               false,
+		"enable_status_check":       true,
+		"status_check_contexts":     rule.StatusContexts,
+		"block_on_outdated_branch":  false,
+		"enable_merge_whitelist":    true,
+		"merge_whitelist_usernames": []string{g.creds.Username},
+		"protected_file_patterns":   strings.Join(patterns, ";"),
 	})
 	base := "/api/v1/repos/" + repoPath(repo) + "/branch_protections"
 	status, data, err := g.do(ctx, http.MethodPost, base, body)
@@ -70,6 +80,40 @@ func (g *gitea) ProtectBranch(ctx context.Context, repo Repository, branch strin
 		}
 	}
 	return fmt.Errorf("gitea: protecting %s of %s failed (HTTP %d): %s", branch, repoPath(repo), status, apiMessage(data))
+}
+
+// ProtectTags lets only the provider's user push tags matching pattern.
+func (g *gitea) ProtectTags(ctx context.Context, repo Repository, pattern string) error {
+	base := "/api/v1/repos/" + repoPath(repo) + "/tag_protections"
+	status, data, err := g.do(ctx, http.MethodGet, base, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("gitea: listing tag protections of %s failed (HTTP %d): %s", repoPath(repo), status, apiMessage(data))
+	}
+	var rules []struct {
+		ID          int64  `json:"id"`
+		NamePattern string `json:"name_pattern"`
+	}
+	if err := json.Unmarshal(data, &rules); err != nil {
+		return fmt.Errorf("gitea: reading tag protections of %s: %w", repoPath(repo), err)
+	}
+	body, _ := json.Marshal(map[string]any{"name_pattern": pattern, "whitelist_usernames": []string{g.creds.Username}})
+	method, path, want := http.MethodPost, base, http.StatusCreated
+	for _, r := range rules {
+		if r.NamePattern == pattern {
+			method, path, want = http.MethodPatch, base+"/"+strconv.FormatInt(r.ID, 10), http.StatusOK
+		}
+	}
+	status, data, err = g.do(ctx, method, path, body)
+	if err != nil {
+		return err
+	}
+	if status != want {
+		return fmt.Errorf("gitea: protecting tags %s of %s failed (HTTP %d): %s", pattern, repoPath(repo), status, apiMessage(data))
+	}
+	return nil
 }
 
 // CombinedStatus returns the combined state of the checks on ref.
@@ -268,9 +312,10 @@ func (g *gitea) CommentPullRequest(ctx context.Context, repo Repository, number 
 }
 
 // MergePullRequest squashes a pull request into its base and deletes its branch.
-func (g *gitea) MergePullRequest(ctx context.Context, repo Repository, number int, title, message string) error {
+func (g *gitea) MergePullRequest(ctx context.Context, repo Repository, number int, headSHA, title, message string) error {
 	payload, _ := json.Marshal(map[string]any{
 		"Do":                        "squash",
+		"head_commit_id":            headSHA,
 		"merge_title_field":         title,
 		"merge_message_field":       message,
 		"delete_branch_after_merge": true,

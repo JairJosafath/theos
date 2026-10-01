@@ -147,10 +147,14 @@ What an agent can reach, and what it can't:
 | --- | --- |
 | Kubernetes | No ServiceAccount token in the sandbox. Results go out through the termination message only. |
 | Git | A per-Container bot user in Gitea, a collaborator on that one repository only. Its token lives in a Secret owned by the Container. |
-| `main` | Branch protection: no direct pushes, required status check `check`. Only the operator merges. |
+| `main` | Branch protection: no direct pushes, required status check `check`, and only the operator's Git user may merge, and only the reviewed commit (`head_commit_id`). The Git host enforces this, not the sandbox. |
+| Protected files | The Git host refuses to merge changes to `.gitea/`, `.devcontainer/`, `.c4factory.yaml` and the Standard's `protectedPaths` (its Makefile, lint config, agent guide). c4agent refuses them earlier, so honest rounds never get that far. Applied at scaffold and again at every Task start, so older repositories catch up. |
+| Release tags | Only the operator's Git user may push `v*` tags, since release jobs hold the signing keys. |
+| Unprotected repositories | A Task on a Container without a Standard fails at once: no checks means no protection. |
 | Network | A NetworkPolicy on sandbox pods allows DNS, Gitea, and HTTPS to addresses outside the cluster. The Kubernetes API and other in-cluster services are unreachable. |
 | Claude token | A Secret the user creates (`make claude-secret CLAUDE_TOKEN=...`). The agent can read it inside its sandbox; later, an egress proxy that injects it (Agent Substrate's approach) can close that. |
 | Time | Each sandbox has a `shutdownTime` (default 45 minutes). |
+| CI runner | Open: the agent's code runs `make check` on a shared runner in host mode, which can see the runner's own files and the cluster network. Later: ephemeral job containers, a runner per project, and a NetworkPolicy. |
 
 ## CI and the quality contract
 

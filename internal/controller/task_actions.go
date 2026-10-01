@@ -143,6 +143,17 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	// Bring the Git host's rules up to date before an agent gets access: older
+	// repositories were protected with fewer of them.
+	protectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := protectRepository(protectCtx, r.Client, provider, repo, container); err != nil {
+		return ctrl.Result{}, err
+	}
+	protected, err := protectedPaths(ctx, r.Client, container)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	gitSecret, err := r.ensureAgentGit(ctx, container, provider, repo)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -161,6 +172,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	sandbox, err := buildSandbox(sandboxRun{
 		task: task, status: status, container: container, agent: agent, name: name, role: role,
 		repoURL: repo.CloneURL, gitSecret: gitSecret, context: r.taskContext(ctx, container),
+		protectedPaths: protected,
 	}, r.Scheme, r.now())
 	if err != nil {
 		return ctrl.Result{}, err
@@ -232,6 +244,14 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	if !pr.Merged && pr.State == "closed" {
+		if err := r.endRun(ctx, task, status); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, "PullRequestClosed",
+			"Pull request "+status.PullRequestURL+" was closed without merging")
+		return ctrl.Result{}, nil
+	}
 	if !pr.Merged {
 		if pr.HeadSHA != "" && pr.HeadSHA != status.Commit {
 			// Someone pushed after the review: check and review that commit instead.
@@ -240,12 +260,14 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 				"The branch moved after the review; checking "+pr.HeadSHA)
 			return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
 		}
-		if status.Review != nil && status.Review.Summary != "" {
-			_ = provider.CommentPullRequest(gitCtx, repo, pr.Number, "Review: approved.\n\n"+status.Review.Summary)
-		}
-		if err := provider.MergePullRequest(gitCtx, repo, pr.Number, pullTitle(task),
+		// Merge only the reviewed commit; a push since then makes the merge fail.
+		if err := provider.MergePullRequest(gitCtx, repo, pr.Number, status.Commit, pullTitle(task),
 			mergeMessage(task, status, container)); err != nil {
 			return ctrl.Result{}, err
+		}
+		// After the merge, so a merge that keeps failing doesn't repeat the comment.
+		if status.Review != nil && status.Review.Summary != "" {
+			_ = provider.CommentPullRequest(gitCtx, repo, pr.Number, "Review: approved.\n\n"+status.Review.Summary)
 		}
 	}
 	if err := r.endRun(ctx, task, status); err != nil {

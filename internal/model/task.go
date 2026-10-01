@@ -65,6 +65,9 @@ type TaskFacts struct {
 	MaxRounds int
 	// ContainerReady means the repository is scaffolded.
 	ContainerReady bool
+	// Protected means the Container's default branch is protected (see Protected):
+	// agents work only where the Git host enforces checks and review.
+	Protected bool
 	// BlockedBy names an earlier Task on the same Container that is still active.
 	BlockedBy string
 	Run       RunState
@@ -107,6 +110,9 @@ type TaskStep struct {
 	Action   TaskAction
 	Feedback string
 	Message  string
+	// SlotWait means the Task would start a sandbox but waits for a free slot;
+	// only such Tasks queue for one (see HasSlotTurn).
+	SlotWait bool
 }
 
 // NextTaskStep decides what happens next to a Task. Starting a sandbox waits
@@ -114,7 +120,7 @@ type TaskStep struct {
 func NextTaskStep(f TaskFacts) TaskStep {
 	step := nextTaskStep(f)
 	if f.NoFreeSlot && (step.Action == ActionStartImplement || step.Action == ActionStartReview) {
-		return TaskStep{Action: ActionWait, Message: "Waiting for a free agent slot"}
+		return TaskStep{Action: ActionWait, Message: "Waiting for a free agent slot", SlotWait: true}
 	}
 	return step
 }
@@ -123,6 +129,9 @@ func nextTaskStep(f TaskFacts) TaskStep {
 	switch f.Phase {
 	case "", TaskPending:
 		switch {
+		case !f.Protected:
+			return TaskStep{Action: ActionFail, Message: fmt.Sprintf("Container %s has no Standard, so its default "+
+				"branch has no checks to protect it; agents work only on protected repositories", f.Container)}
 		case !f.ContainerReady:
 			return TaskStep{Action: ActionWait, Message: fmt.Sprintf("Waiting for Container %s to be Ready", f.Container)}
 		case f.BlockedBy != "":

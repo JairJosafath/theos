@@ -139,15 +139,16 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err != nil {
 		return result, err
 	}
-	switch {
-	case facts.NoFreeSlot && step.Action == model.ActionWait:
+	if step.SlotWait {
 		// Queue for a slot. Sandboxes of other Tasks don't wake this one; look again.
 		if status.SlotWaitSince == nil {
 			now := metav1.NewTime(r.now())
 			status.SlotWaitSince = &now
 		}
 		result.RequeueAfter = slotRecheck
-	case step.Action == model.ActionStartImplement || step.Action == model.ActionStartReview:
+	} else {
+		// Only a Task that would start a sandbox holds a place in the queue: one
+		// waiting for anything else must not keep others from the slot.
 		status.SlotWaitSince = nil
 	}
 	return result, r.writeStatus(ctx, &task, status)
@@ -162,6 +163,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		Round:          int(status.Round),
 		MaxRounds:      int(agent.Spec.MaxRounds),
 		ContainerReady: container.Status.Phase == c4v1alpha1.ContainerReady,
+		Protected:      model.Protected(container.Spec.StandardRef != nil),
 		ReviewAttempts: int(status.ReviewAttempts),
 	}
 	if status.PhaseChangedAt != nil {

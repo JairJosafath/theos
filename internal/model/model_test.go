@@ -228,3 +228,32 @@ func TestClusterNamespace(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentProtectedPaths(t *testing.T) {
+	got := AgentProtectedPaths([]string{"Makefile", ".gitea/", "docs/style/"})
+	want := []string{".c4factory.yaml", ".devcontainer/", ".gitea/", "Makefile", "docs/style/"}
+	if !slices.Equal(got, want) {
+		t.Errorf("AgentProtectedPaths() = %v, want %v", got, want)
+	}
+	if !slices.Equal(AgentProtectedPaths(nil), PlatformProtectedPaths) {
+		t.Errorf("AgentProtectedPaths(nil) = %v, want the platform's", AgentProtectedPaths(nil))
+	}
+}
+
+func TestTouchedPaths(t *testing.T) {
+	protected := []string{".gitea/", "Makefile"}
+	tests := []struct {
+		changed []string
+		want    []string
+	}{
+		{[]string{"lib/main.dart", "README.md"}, nil},
+		{[]string{".gitea/workflows/check.yaml", "lib/a.dart"}, []string{".gitea/workflows/check.yaml"}},
+		{[]string{"Makefile"}, []string{"Makefile"}},
+		{[]string{"Makefile.local", "tools/Makefile", ".gitea"}, nil},
+	}
+	for _, tt := range tests {
+		if got := TouchedPaths(tt.changed, protected); !slices.Equal(got, tt.want) {
+			t.Errorf("TouchedPaths(%v) = %v, want %v", tt.changed, got, tt.want)
+		}
+	}
+}

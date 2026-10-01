@@ -38,6 +38,8 @@ const (
 	EnvGitToken     = "C4_GIT_TOKEN"
 	EnvCheckCommand = "C4_CHECK_COMMAND"
 	EnvContext      = "C4_CONTEXT"
+	// EnvProtectedPaths lists the Standard's protected paths, comma-separated.
+	EnvProtectedPaths = "C4_PROTECTED_PATHS"
 )
 
 // Job is one sandbox run: implement a goal on a branch, or review that branch.
@@ -60,6 +62,9 @@ type Job struct {
 	Token     string
 	// CheckCommand is the quality contract, run in the repository after the agent.
 	CheckCommand []string
+	// ProtectedPaths are the Standard's paths the agent must not change, next to
+	// the platform's.
+	ProtectedPaths []string
 }
 
 // JobFromEnv reads a Job from environment variables.
@@ -80,6 +85,11 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 	}
 	if job.Base == "" {
 		job.Base = "main"
+	}
+	for p := range strings.SplitSeq(getenv(EnvProtectedPaths), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			job.ProtectedPaths = append(job.ProtectedPaths, p)
+		}
 	}
 	job.CheckCommand = strings.Fields(getenv(EnvCheckCommand))
 	if len(job.CheckCommand) == 0 {

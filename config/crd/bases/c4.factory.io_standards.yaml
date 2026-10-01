@@ -66,6 +66,18 @@ spec:
                 description: displayName is a human-friendly name.
                 maxLength: 100
                 type: string
+              protectedPaths:
+                description: |-
+                  protectedPaths are the Standard's files that agents must not change, such as
+                  the check contract and lint configuration: a file path, or a directory ending
+                  in "/". The Git host refuses to merge pull requests that change them, next to
+                  the paths the platform always protects (.gitea/, .devcontainer/, .c4factory.yaml).
+                items:
+                  pattern: ^[^/*?\[\]][^*?\[\]]*$
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
               supportedFrameworks:
                 description: supportedFrameworks lists the Frameworks, by name, whose
                   code this Standard can check.

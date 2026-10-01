@@ -223,6 +223,8 @@ func (p *fakeProvider) PushInitialCommit(_ context.Context, repo gitprovider.Rep
 // branches, check states, bot users and pull requests, per owner/name.
 type fakeAgentState struct {
 	protected map[string][]string                   // owner/name -> branches
+	rules     map[string]gitprovider.BranchRule     // owner/name -> rule of the default branch
+	tags      map[string][]string                   // owner/name -> protected tag patterns
 	checks    map[string]gitprovider.CheckStatus    // owner/name@ref
 	agents    map[string]string                     // owner/name -> bot user
 	pulls     map[string][]*gitprovider.PullRequest // owner/name
@@ -235,6 +237,7 @@ func (g *fakeGit) agentState() *fakeAgentState {
 	if g.agent == nil {
 		g.agent = &fakeAgentState{
 			protected: map[string][]string{}, checks: map[string]gitprovider.CheckStatus{},
+			rules: map[string]gitprovider.BranchRule{}, tags: map[string][]string{},
 			agents: map[string]string{}, pulls: map[string][]*gitprovider.PullRequest{},
 			comments: map[string][]string{}, branches: map[string]string{},
 		}
@@ -254,6 +257,8 @@ func (g *fakeGit) setChecks(owner, name, ref, state string) {
 }
 
 // pushBranch records a branch head, as the sandbox's push would.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) pushBranch(owner, name, branch, sha string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -264,6 +269,25 @@ func (g *fakeGit) protectedBranches(owner, name string) []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.agentState().protected[owner+"/"+name]
+}
+
+// branchRule returns the default branch's rule and the protected tag patterns.
+func (g *fakeGit) branchRule(owner, name string) (gitprovider.BranchRule, []string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := g.agentState()
+	return s.rules[owner+"/"+name], s.tags[owner+"/"+name]
+}
+
+// closePull closes a pull request without merging it, as a person might.
+func (g *fakeGit) closePull(owner, name string, number int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, pr := range g.agentState().pulls[owner+"/"+name] {
+		if pr.Number == number {
+			pr.State = "closed"
+		}
+	}
 }
 
 func (g *fakeGit) pullRequests(owner, name string) []gitprovider.PullRequest {
@@ -288,13 +312,26 @@ func (p *fakeProvider) Repository(name string) gitprovider.Repository {
 	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git"}
 }
 
-func (p *fakeProvider) ProtectBranch(_ context.Context, repo gitprovider.Repository, branch string, _ []string) error {
+func (p *fakeProvider) ProtectBranch(_ context.Context, repo gitprovider.Repository, branch string,
+	rule gitprovider.BranchRule) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	s := p.git.agentState()
 	key := repo.Owner + "/" + repo.Name
 	if !slices.Contains(s.protected[key], branch) {
 		s.protected[key] = append(s.protected[key], branch)
+	}
+	s.rules[key] = rule
+	return nil
+}
+
+func (p *fakeProvider) ProtectTags(_ context.Context, repo gitprovider.Repository, pattern string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	s := p.git.agentState()
+	key := repo.Owner + "/" + repo.Name
+	if !slices.Contains(s.tags[key], pattern) {
+		s.tags[key] = append(s.tags[key], pattern)
 	}
 	return nil
 }
@@ -369,7 +406,8 @@ func (p *fakeProvider) CommentPullRequest(_ context.Context, repo gitprovider.Re
 	return nil
 }
 
-func (p *fakeProvider) MergePullRequest(_ context.Context, repo gitprovider.Repository, number int, _, _ string) error {
+func (p *fakeProvider) MergePullRequest(_ context.Context, repo gitprovider.Repository, number int,
+	headSHA, _, _ string) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	pr, err := p.pull(repo, number)
@@ -378,6 +416,9 @@ func (p *fakeProvider) MergePullRequest(_ context.Context, repo gitprovider.Repo
 	}
 	if pr.Merged {
 		return fmt.Errorf("pull request %d is merged already", number)
+	}
+	if pr.HeadSHA != headSHA {
+		return fmt.Errorf("pull request %d moved to %s since %s", number, pr.HeadSHA, headSHA)
 	}
 	pr.Merged, pr.State = true, "closed"
 	return nil

@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -71,6 +72,8 @@ type sandboxRun struct {
 	repoURL   string
 	gitSecret string
 	context   string
+	// protectedPaths are the paths the agent must not change.
+	protectedPaths []string
 }
 
 // buildSandbox returns the Sandbox for one run, owned by the Task. Its pod has no
@@ -93,6 +96,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		{Name: agentrunner.EnvTask, Value: task.Name},
 		{Name: agentrunner.EnvRound, Value: strconv.Itoa(int(run.status.Round))},
 		{Name: agentrunner.EnvMaxRounds, Value: strconv.Itoa(int(agent.Spec.MaxRounds))},
+		{Name: agentrunner.EnvProtectedPaths, Value: strings.Join(run.protectedPaths, ",")},
 		secretEnv(agentrunner.EnvGitUsername, run.gitSecret, "username"),
 		secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
 	}

@@ -32,6 +32,8 @@ spec:
   description: Strict lints, the agent guide, style digests and the make check CI.
   supportedTypes: [mobile-app]
   supportedFrameworks: [flutter-app]
+  # The quality contract: agents fix the code, not the rules it is checked by.
+  protectedPaths: [AGENTS.md, Makefile, analysis_options.yaml, .editorconfig, docs/style/]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/flutter-standard
     ref: v1.1.0
