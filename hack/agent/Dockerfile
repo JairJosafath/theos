@@ -2,6 +2,7 @@
 # The agent image: c4agent and Claude Code on the slim Flutter toolchain, so the agent
 # checks its work with exactly the tools CI uses. Tasks run it in an Agent Sandbox.
 # Build from the repository root: docker build -f hack/agent/Dockerfile .
+ARG BASE=c4factory/flutter:3.47.5-slim
 FROM golang:1.26 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -10,7 +11,6 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -o /c4agent ./cmd/c4agent
 
-ARG BASE=c4factory/flutter:3.47.5-slim
 FROM ${BASE}
 ARG CLAUDE_CODE_VERSION=2.1.286
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && npm cache clean --force
