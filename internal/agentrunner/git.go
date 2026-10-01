@@ -28,7 +28,10 @@ func clone(ctx context.Context, job Job, dir string) (*repo, error) {
 		remote.User = url.UserPassword(job.Username, job.Token)
 	}
 	r := &repo{dir: dir, secret: job.Token}
-	if _, err := r.git(ctx, "", "clone", "--quiet", "--no-tags", remote.String(), dir); err != nil {
+	if err := retryTransient(ctx, networkRetryDelays, func() error {
+		_, err := r.git(ctx, "", "clone", "--quiet", "--no-tags", remote.String(), dir)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	for _, kv := range [][2]string{
@@ -39,9 +42,18 @@ func clone(ctx context.Context, job Job, dir string) (*repo, error) {
 			return nil, err
 		}
 	}
-	if _, err := r.git(ctx, dir, "ls-remote", "--exit-code", "--heads", "origin", job.Branch); err == nil {
+	err = retryTransient(ctx, networkRetryDelays, func() error {
+		_, err := r.git(ctx, dir, "ls-remote", "--exit-code", "--heads", "origin", job.Branch)
+		return err
+	})
+	switch {
+	case err == nil:
 		_, err = r.git(ctx, dir, "checkout", "--quiet", "-b", job.Branch, "origin/"+job.Branch)
 		return r, err
+	case transientGitError(err):
+		// Not knowing whether the branch exists is not the same as its absence:
+		// starting over from the base would lose the earlier rounds.
+		return nil, err
 	}
 	_, err = r.git(ctx, dir, "checkout", "--quiet", "-b", job.Branch, "origin/"+job.Base)
 	return r, err
@@ -75,8 +87,10 @@ func (r *repo) changedPaths(ctx context.Context, from, to string) ([]string, err
 }
 
 func (r *repo) push(ctx context.Context, branch string) error {
-	_, err := r.git(ctx, r.dir, "push", "--quiet", "origin", "HEAD:refs/heads/"+branch)
-	return err
+	return retryTransient(ctx, networkRetryDelays, func() error {
+		_, err := r.git(ctx, r.dir, "push", "--quiet", "origin", "HEAD:refs/heads/"+branch)
+		return err
+	})
 }
 
 func (r *repo) git(ctx context.Context, dir string, args ...string) (string, error) {
