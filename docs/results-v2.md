@@ -13,6 +13,7 @@ about the platform, and what changed because of it. Evidence is in
 | `audio-cutter-v1` | Claude Code | 3 (round 2 failed CI on a flaky widget test) | Merged |
 | `bg-eraser-v1` | Claude Code | 3 | Merged |
 | `doc-scanner-v1` | Claude Code | 2 | Merged |
+| `photo-editor-v1` | Claude Code | 3 | Merged |
 
 ### image-shrink-v1, round by round
 
