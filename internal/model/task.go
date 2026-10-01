@@ -203,10 +203,33 @@ func nextTaskStep(f TaskFacts) TaskStep {
 func roundFailed(f TaskFacts, feedback string) TaskStep {
 	if f.Round < f.MaxRounds {
 		return TaskStep{Action: ActionRetry, Feedback: feedback,
-			Message: fmt.Sprintf("Round %d was not accepted; starting round %d", f.Round, f.Round+1)}
+			Message: fmt.Sprintf("Round %d was not accepted (%s); starting round %d", f.Round, gist(feedback), f.Round+1)}
 	}
 	return TaskStep{Action: ActionFail, Feedback: feedback,
 		Message: fmt.Sprintf("Failed after %d rounds: %s", f.Round, feedback)}
+}
+
+// gist is the start of some feedback, for a one-line message: its first line,
+// joined with the next when it only introduces it ("The reviewer asked for
+// changes:"), at most 120 characters.
+func gist(feedback string) string {
+	var lines []string
+	for line := range strings.SplitSeq(feedback, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return "no reason given"
+	}
+	out := lines[0]
+	if strings.HasSuffix(out, ":") && len(lines) > 1 {
+		out += " " + lines[1]
+	}
+	if runes := []rune(out); len(runes) > 120 {
+		out = string(runes[:119]) + "…"
+	}
+	return out
 }
 
 // TaskRef is a Task as the queue on its Container sees it.
