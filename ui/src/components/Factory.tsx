@@ -105,7 +105,7 @@ export function FactoryPage({ data, loaded, health, healthLoaded, now, selectedT
                 </p>
               </div>
             </div>
-            {!loaded ? (
+            {!loaded && !data.tasks.length ? (
               <div className="placeholder">Loading the Tasks…</div>
             ) : !data.tasks.length ? (
               <div className="placeholder">No Tasks yet. They show up here as soon as one is created.</div>

@@ -120,7 +120,6 @@ session-kill: ## Kill the test Session's client abruptly, as a crashed devcontai
 
 ##@ Agents
 
-AGENT_SANDBOX_VERSION ?= v1.0.4
 FLUTTER_IMG ?= c4factory/flutter:3.47.5
 FLUTTER_SLIM_IMG ?= c4factory/flutter:3.47.5-slim
 RUNNER_IMG ?= c4factory/gitea-runner:dev
@@ -156,8 +155,8 @@ agent-image: ## Build the agent image (c4agent + Claude Code + Flutter) and load
 	$(KIND) load docker-image $(AGENT_IMG) --name '$(KIND_CLUSTER)'
 
 .PHONY: agent-sandbox
-agent-sandbox: ## Install Agent Sandbox $(AGENT_SANDBOX_VERSION), which runs the agents.
-	$(TESTENV_KUBECTL) apply --server-side -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/$(AGENT_SANDBOX_VERSION)/sandbox.yaml
+agent-sandbox: ## Install Agent Sandbox (config/agent-sandbox, v1.0.4), which runs the agents.
+	$(TESTENV_KUBECTL) apply --server-side -k config/agent-sandbox
 	$(TESTENV_KUBECTL) -n agent-sandbox-system rollout status deployment --timeout=300s
 
 CLAUDE_NAMESPACE ?= toolbox
