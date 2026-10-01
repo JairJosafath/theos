@@ -81,6 +81,27 @@ describe('server.mjs', () => {
     assert.equal(await res.text(), 'ok\n')
   })
 
+  it('answers /factory/health with a summary read by the server itself', async () => {
+    seen.length = 0
+    const res = await fetch(`${base}/factory/health`, { headers: { authorization: 'Bearer from-the-browser' } })
+    assert.equal(res.status, 200)
+    const health = await res.json()
+    assert.ok(Array.isArray(health.components) && health.components.length > 0)
+    assert.equal(typeof health.agents.maxSandboxes, 'number')
+    assert.deepEqual(seen.map((r) => r.url).sort(), [
+      '/api/v1/nodes',
+      '/api/v1/pods',
+      '/apis/metrics.k8s.io/v1beta1/nodes',
+      '/apis/metrics.k8s.io/v1beta1/pods',
+    ])
+    assert.ok(seen.every((r) => r.method === 'GET' && !r.headers.authorization))
+  })
+
+  it('refuses other methods on /factory/health', async () => {
+    const res = await fetch(`${base}/factory/health`, { method: 'POST' })
+    assert.equal(res.status, 405)
+  })
+
   it('proxies GET to the API with path and query, and without client credentials', async () => {
     seen.length = 0
     const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers?limit=5`, {

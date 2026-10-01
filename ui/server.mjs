@@ -4,6 +4,7 @@
 //   GET /healthz          200 "ok"
 //   GET /k8s/<api path>   the Kubernetes API, as-is: lists, gets, single watches
 //   GET /k8s-watch?...    several watches over one response (see watchMany)
+//   GET /factory/health   the factory's components, node and agent sandboxes, summarized (health.mjs)
 //   GET /...              files from dist/
 //
 // Read-only by construction: only GET reaches the API, only under
@@ -24,6 +25,7 @@ import http from 'node:http'
 import https from 'node:https'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { componentsFromEnv, createHealthHandler } from './health.mjs'
 
 const SERVICE_ACCOUNT_DIR = '/var/run/secrets/kubernetes.io/serviceaccount'
 
@@ -122,6 +124,35 @@ function upstreamRequest(upstream, apiPath, search, onResponse) {
   if (token) headers.authorization = `Bearer ${token}`
   const client = target.protocol === 'https:' ? https : http
   return client.request(target, { method: 'GET', headers, ca: upstream.ca }, onResponse)
+}
+
+/** Most bytes getJson reads; a cluster-wide pod list on a small cluster is far less. */
+const MAX_JSON_BYTES = 32 * 1024 * 1024
+
+/**
+ * Reads one API path for the server itself (not for the browser, so not limited
+ * to c4.factory.io). Resolves to { status, body }.
+ */
+function getJson(upstream, apiPath) {
+  return new Promise((resolve, reject) => {
+    const req = upstreamRequest(upstream, apiPath, '', (upstreamRes) => {
+      const chunks = []
+      let size = 0
+      upstreamRes.on('data', (chunk) => {
+        size += chunk.length
+        if (size > MAX_JSON_BYTES)
+          return req.destroy(new Error(`${apiPath} answered more than ${MAX_JSON_BYTES} bytes`))
+        chunks.push(chunk)
+      })
+      upstreamRes.on('end', () =>
+        resolve({ status: upstreamRes.statusCode ?? 502, body: parseJson(Buffer.concat(chunks).toString('utf8')) }),
+      )
+      upstreamRes.on('error', reject)
+    })
+    req.setTimeout(10_000, () => req.destroy(new Error(`${apiPath} took longer than 10 s`)))
+    req.on('error', reject)
+    req.end()
+  })
 }
 
 /** Proxies one GET request to the Kubernetes API and streams the answer back. */
@@ -253,13 +284,38 @@ function parseJson(text) {
  * Returns a function that answers a request and returns true, or returns false
  * when the request is not for the API.
  */
-export function createApiHandler({ upstream = resolveUpstream(), log = (msg) => console.log(msg) } = {}) {
+export function createApiHandler({
+  upstream = resolveUpstream(),
+  log = (msg) => console.log(msg),
+  components = componentsFromEnv(process.env, log),
+} = {}) {
+  const health = createHealthHandler({ getJson: (apiPath) => getJson(upstream, apiPath), components })
   return (req, res) => {
     let url
     try {
       url = new URL(req.url ?? '/', 'http://localhost')
     } catch {
       send(res, 400, 'Bad Request\n')
+      return true
+    }
+    if (url.pathname === '/factory/health') {
+      if (req.method !== 'GET') {
+        sendStatus(res, 405, 'MethodNotAllowed', 'The C4 Factory UI is read-only: only GET is allowed', {
+          allow: 'GET',
+        })
+        return true
+      }
+      health().then(
+        (value) =>
+          send(res, 200, `${JSON.stringify(value)}\n`, {
+            'content-type': 'application/json',
+            'cache-control': 'no-store',
+          }),
+        (err) => {
+          log(`Health check failed: ${err.message}`)
+          sendStatus(res, 502, 'BadGateway', `Could not read the factory's health: ${err.message}`)
+        },
+      )
       return true
     }
     const isProxy = url.pathname === '/k8s' || url.pathname.startsWith('/k8s/')
