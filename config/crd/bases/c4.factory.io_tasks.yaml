@@ -254,6 +254,12 @@ spec:
               sandbox:
                 description: sandbox names the Sandbox running now, if any.
                 type: string
+              slotWaitSince:
+                description: |-
+                  slotWaitSince is when the Task started waiting for a free agent slot; the
+                  longest waiter gets the next one.
+                format: date-time
+                type: string
               summary:
                 description: summary is the implementing agent's account of its latest
                   round.

@@ -139,9 +139,16 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err != nil {
 		return result, err
 	}
-	if facts.NoFreeSlot && step.Action == model.ActionWait {
-		// Sandboxes of other Tasks don't wake this one; look again.
+	switch {
+	case facts.NoFreeSlot && step.Action == model.ActionWait:
+		// Queue for a slot. Sandboxes of other Tasks don't wake this one; look again.
+		if status.SlotWaitSince == nil {
+			now := metav1.NewTime(r.now())
+			status.SlotWaitSince = &now
+		}
 		result.RequeueAfter = slotRecheck
+	case step.Action == model.ActionStartImplement || step.Action == model.ActionStartReview:
+		status.SlotWaitSince = nil
 	}
 	return result, r.writeStatus(ctx, &task, status)
 }
@@ -163,10 +170,22 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	if r.MaxSandboxes > 0 {
 		sandboxes := &unstructured.UnstructuredList{}
 		sandboxes.SetGroupVersionKind(SandboxGVK.GroupVersion().WithKind("SandboxList"))
-		if err := r.List(ctx, sandboxes, client.MatchingLabels{LabelAgentSandbox: agentSandboxValue}); err != nil {
+		// Counted live: the cache may not have the sandbox started a moment ago.
+		if err := r.APIReader.List(ctx, sandboxes, client.MatchingLabels{LabelAgentSandbox: agentSandboxValue}); err != nil {
 			return facts, err
 		}
-		facts.NoFreeSlot = len(sandboxes.Items) >= r.MaxSandboxes
+		var tasks c4v1alpha1.TaskList
+		if err := r.List(ctx, &tasks); err != nil {
+			return facts, err
+		}
+		var waiting []model.SlotWaiter
+		for _, t := range tasks.Items {
+			if t.Status.SlotWaitSince != nil && !isFinal(t.Status.Phase) {
+				waiting = append(waiting, model.SlotWaiter{Name: t.Namespace + "/" + t.Name, Since: t.Status.SlotWaitSince.Time})
+			}
+		}
+		free := r.MaxSandboxes - len(sandboxes.Items)
+		facts.NoFreeSlot = !model.HasSlotTurn(task.Namespace+"/"+task.Name, r.now(), waiting, free)
 	}
 	if facts.MaxRounds == 0 {
 		facts.MaxRounds = 3

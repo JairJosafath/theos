@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -268,4 +269,35 @@ func orUnknown(s string) string {
 		return "unknown reason"
 	}
 	return s
+}
+
+// SlotWaiter is a Task waiting for an agent slot, and since when.
+type SlotWaiter struct {
+	Name  string // namespace/name
+	Since time.Time
+}
+
+// HasSlotTurn reports whether task may take one of the free agent slots: the
+// longest-waiting Tasks go first, ties by name, so a busy Task can't starve the
+// others. A Task not waiting yet joins the queue at now.
+func HasSlotTurn(task string, now time.Time, waiting []SlotWaiter, free int) bool {
+	if free <= 0 {
+		return false
+	}
+	queue := slices.Clone(waiting)
+	if !slices.ContainsFunc(queue, func(w SlotWaiter) bool { return w.Name == task }) {
+		queue = append(queue, SlotWaiter{Name: task, Since: now})
+	}
+	slices.SortFunc(queue, func(a, b SlotWaiter) int {
+		if c := a.Since.Compare(b.Since); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	for i, w := range queue {
+		if w.Name == task {
+			return i < free
+		}
+	}
+	return false
 }

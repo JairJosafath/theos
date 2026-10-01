@@ -137,3 +137,31 @@ func TestSandboxName(t *testing.T) {
 		t.Errorf("SandboxName() = %q is longer than 63", long)
 	}
 }
+
+func TestHasSlotTurn(t *testing.T) {
+	t0 := time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC)
+	waiting := []SlotWaiter{
+		{Name: "toolbox/bg-eraser", Since: t0},
+		{Name: "toolbox/doc-scanner", Since: t0.Add(time.Minute)},
+	}
+	tests := []struct {
+		name string
+		task string
+		free int
+		want bool
+	}{
+		{"the longest waiter goes first", "toolbox/bg-eraser", 1, true},
+		{"later waiters wait", "toolbox/doc-scanner", 1, false},
+		{"a newcomer joins at the back", "toolbox/audio-cutter", 1, false},
+		{"two slots take two waiters", "toolbox/doc-scanner", 2, true},
+		{"no free slot, no turn", "toolbox/bg-eraser", 0, false},
+		{"an empty queue lets a newcomer start", "toolbox/audio-cutter", 3, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HasSlotTurn(tt.task, t0.Add(time.Hour), waiting, tt.free); got != tt.want {
+				t.Errorf("HasSlotTurn(%s, free %d) = %v, want %v", tt.task, tt.free, got, tt.want)
+			}
+		})
+	}
+}

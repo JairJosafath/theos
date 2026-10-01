@@ -117,6 +117,11 @@ type TaskStatus struct {
 	// +optional
 	Sandbox string `json:"sandbox,omitempty"`
 
+	// slotWaitSince is when the Task started waiting for a free agent slot; the
+	// longest waiter gets the next one.
+	// +optional
+	SlotWaitSince *metav1.Time `json:"slotWaitSince,omitempty"`
+
 	// phaseChangedAt is when the Task entered its current phase.
 	// +optional
 	PhaseChangedAt *metav1.Time `json:"phaseChangedAt,omitempty"`
