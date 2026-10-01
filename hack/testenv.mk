@@ -178,3 +178,19 @@ toolbox: ## Apply the toolbox story: offline tool apps built by agents (config/s
 metrics-server: ## Install metrics-server (config/metrics-server): live CPU and memory for the UI's factory view.
 	$(TESTENV_KUBECTL) apply -k config/metrics-server
 	$(TESTENV_KUBECTL) -n kube-system rollout status deployment/metrics-server --timeout=180s
+
+##@ Factory lifecycle
+
+.PHONY: up
+up: ## Bring a stopped factory back: Docker, the Kind node, pods left in back-off; then make doctor.
+	KIND_CLUSTER=$(KIND_CLUSTER) hack/up.sh
+
+.PHONY: down
+down: ## Stop the factory to free the machine (the Kind node keeps its state; make up resumes).
+	@active=$$($(TESTENV_KUBECTL) get tasks.c4.factory.io -A -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' 2>/dev/null | grep -cvE '^(Merged|Failed|)$$' || true); \
+	if [ "$${active:-0}" -gt 0 ]; then echo "Note: $$active Task(s) still active; they pick up where they were after make up"; fi
+	$(CONTAINER_TOOL) stop $(KIND_CLUSTER)-control-plane
+
+.PHONY: doctor
+doctor: ## Check every part of the factory and say what is wrong.
+	@KIND_CLUSTER=$(KIND_CLUSTER) hack/doctor.sh
