@@ -51,6 +51,9 @@ func TestNextTaskStep(t *testing.T) {
 			Checks: "success"}, want: ActionStartReview},
 		{name: "red checks send it back", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
 			Checks: "failure", ChecksURL: "http://gitea/runs/4"}, want: ActionRetry, feedback: "http://gitea/runs/4"},
+		{name: "red checks pass on what failed", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
+			Checks: "failure", ChecksLog: "x\n❌ test/a_test.dart: A (failed)\nExpected: 1\n"}, want: ActionRetry,
+			feedback: "What failed in CI:\n❌ test/a_test.dart: A (failed)\nExpected: 1"},
 
 		{name: "waits for the reviewer", facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: running},
 			want: ActionWait},
@@ -163,5 +166,35 @@ func TestHasSlotTurn(t *testing.T) {
 				t.Errorf("HasSlotTurn(%s, free %d) = %v, want %v", tt.task, tt.free, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCheckFailures(t *testing.T) {
+	log := strings.Join([]string{
+		"2026-10-01T13:40:01.1Z + very_good_analysis 11.0.0",
+		"2026-10-01T13:40:02.1Z ✅ test/a_test.dart: A works",
+		"2026-10-01T13:40:03.1Z ::group::❌ test/recorder_page_test.dart: RecorderPage shows the stop button (failed)",
+		"2026-10-01T13:40:03.2Z ══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞══",
+		"2026-10-01T13:40:03.3Z Expected: exactly one matching candidate",
+		"2026-10-01T13:40:03.4Z   Actual: _TextWidgetFinder:<Found 0 widgets>",
+		"2026-10-01T13:40:03.5Z ::endgroup::",
+		"2026-10-01T13:40:04.1Z ✅ test/b_test.dart: B works",
+		"2026-10-01T13:40:05.1Z    info • Unnecessary cast • lib/x.dart:3:5 • unnecessary_cast",
+		"2026-10-01T13:40:06.1Z make: *** [Makefile:21: test] Error 1",
+	}, "\n")
+	got := CheckFailures(log)
+	for _, want := range []string{"RecorderPage shows the stop button (failed)", "Expected: exactly one",
+		"Actual: _TextWidgetFinder", "info • Unnecessary cast", "make: *** [Makefile:21: test]"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("CheckFailures() lacks %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"very_good_analysis", "A works", "B works", "2026-10-01T"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("CheckFailures() has %q:\n%s", unwanted, got)
+		}
+	}
+	if long := CheckFailures(strings.Repeat("error • x\n", 2000)); len(long) > maxCheckExcerpt+10 {
+		t.Errorf("CheckFailures() of a long log = %d bytes", len(long))
 	}
 }

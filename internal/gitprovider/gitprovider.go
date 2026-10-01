@@ -76,6 +76,8 @@ type Provider interface {
 	ProtectBranch(ctx context.Context, repo Repository, branch string, statusContexts []string) error
 	// CombinedStatus returns the combined state of the checks on ref.
 	CombinedStatus(ctx context.Context, repo Repository, ref string) (CheckStatus, error)
+	// CheckLog returns the log of the CI job a check status links to.
+	CheckLog(ctx context.Context, repo Repository, checkURL string) (string, error)
 	// EnsureAgentAccess makes user a bot that can write to repo only, and returns
 	// a fresh token for it.
 	EnsureAgentAccess(ctx context.Context, repo Repository, user string) (Credentials, error)

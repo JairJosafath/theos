@@ -228,6 +228,7 @@ type fakeAgentState struct {
 	pulls     map[string][]*gitprovider.PullRequest // owner/name
 	comments  map[string][]string                   // owner/name#number
 	branches  map[string]string                     // owner/name@branch -> head sha
+	log       string                                // served for every CI job
 }
 
 func (g *fakeGit) agentState() *fakeAgentState {
@@ -380,4 +381,17 @@ func (p *fakeProvider) MergePullRequest(_ context.Context, repo gitprovider.Repo
 	}
 	pr.Merged, pr.State = true, "closed"
 	return nil
+}
+
+// setCheckLog sets the log the fake host serves for every CI job.
+func (g *fakeGit) setCheckLog(log string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.agentState().log = log
+}
+
+func (p *fakeProvider) CheckLog(_ context.Context, _ gitprovider.Repository, _ string) (string, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	return p.git.agentState().log, nil
 }

@@ -71,6 +71,8 @@ type TaskFacts struct {
 	// Checks is the CI state on the round's commit, and ChecksURL where to see it.
 	Checks    string
 	ChecksURL string
+	// ChecksLog is the failed CI job's log, when it could be read.
+	ChecksLog string
 	// ReviewAttempts counts reviewer runs without a verdict in this round.
 	ReviewAttempts int
 	// InPhase is how long the Task has been in its current phase.
@@ -147,8 +149,13 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		case "success":
 			return TaskStep{Action: ActionStartReview, Message: "Checks passed; starting the review"}
 		case "failure", "error":
-			return roundFailed(f, fmt.Sprintf("The CI checks failed (%s). Run the check command, find the failure and fix it.",
-				orUnknown(f.ChecksURL)))
+			feedback := fmt.Sprintf("The CI checks failed (%s). Run the check command, find the failure and fix it.",
+				orUnknown(f.ChecksURL))
+			if excerpt := CheckFailures(f.ChecksLog); excerpt != "" {
+				feedback += " A test that passes for you but fails in CI is flaky: make it deterministic." +
+					"\nWhat failed in CI:\n" + excerpt
+			}
+			return roundFailed(f, feedback)
 		}
 		if f.InPhase > ChecksTimeout {
 			return TaskStep{Action: ActionFail, Message: fmt.Sprintf(
@@ -300,4 +307,67 @@ func HasSlotTurn(task string, now time.Time, waiting []SlotWaiter, free int) boo
 		}
 	}
 	return false
+}
+
+// maxCheckExcerpt bounds the CI log excerpt sent to the agent.
+const maxCheckExcerpt = 4000
+
+// CheckFailures picks the lines of a CI log that say what failed: failed tests,
+// analyzer findings, exceptions and make errors, with a little context after a
+// failed test. The agent can't open the CI log from its sandbox, so this is what
+// it gets instead.
+func CheckFailures(log string) string {
+	lines := strings.Split(log, "\n")
+	var out []string
+	size := 0
+	add := func(line string) bool {
+		if size+len(line)+1 > maxCheckExcerpt {
+			out = append(out, "…")
+			return false
+		}
+		out = append(out, line)
+		size += len(line) + 1
+		return true
+	}
+	for i := 0; i < len(lines); i++ {
+		line := stripLogPrefix(lines[i])
+		if !isFailureLine(line) {
+			continue
+		}
+		if !add(line) {
+			break
+		}
+		// A failed test is followed by its exception and expectation.
+		if strings.Contains(line, "(failed)") || strings.Contains(line, "EXCEPTION CAUGHT") {
+			for j := i + 1; j < len(lines) && j <= i+12; j++ {
+				next := stripLogPrefix(lines[j])
+				if strings.HasPrefix(next, "✅") || strings.HasPrefix(next, "::endgroup::") {
+					break
+				}
+				if strings.TrimSpace(next) != "" && !add(next) {
+					return strings.Join(out, "\n")
+				}
+				i = j
+			}
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func isFailureLine(line string) bool {
+	for _, marker := range []string{"❌", "(failed)", "error •", "warning •", "info •", "make: ***",
+		"EXCEPTION CAUGHT", "Expected:", "Actual:", "Some tests failed", "Error:"} {
+		if strings.Contains(line, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripLogPrefix removes the timestamp a CI runner puts before each line.
+func stripLogPrefix(line string) string {
+	if t, rest, ok := strings.Cut(line, " "); ok && len(t) > 20 && t[4] == '-' && strings.Contains(t, "T") {
+		return rest
+	}
+	return line
 }

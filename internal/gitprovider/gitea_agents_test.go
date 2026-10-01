@@ -62,6 +62,8 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(http.StatusCreated, map[string]string{})
 	case call == "PATCH "+repo+"/branch_protections/main":
 		reply(http.StatusOK, map[string]string{})
+	case call == "GET "+repo+"/actions/jobs/27/logs":
+		_, _ = io.WriteString(w, "make: *** [Makefile:21: test] Error 1\n")
 	case strings.HasPrefix(call, "GET "+repo+"/commits/"):
 		_, _ = io.WriteString(w, g.statuses)
 	case call == "GET /api/v1/users/photo-editor-agent":
@@ -211,5 +213,17 @@ func TestPullRequests(t *testing.T) {
 	}
 	if err := p.MergePullRequest(ctx, repo, 2, "x", "y"); err == nil || !strings.Contains(err.Error(), "HTTP 405") {
 		t.Errorf("MergePullRequest() of an unmergeable PR error = %v", err)
+	}
+}
+
+func TestCheckLog(t *testing.T) {
+	_, p := newAgentGitea(t)
+	repo := p.Repository("photo-editor")
+	log, err := p.CheckLog(context.Background(), repo, "/toolbox/photo-editor/actions/runs/27/jobs/27")
+	if err != nil || !strings.Contains(log, "make: ***") {
+		t.Fatalf("CheckLog() = %q, %v", log, err)
+	}
+	if _, err := p.CheckLog(context.Background(), repo, "http://gitea/toolbox/photo-editor/actions/runs/27"); err == nil {
+		t.Error("CheckLog() accepted a link without a job")
 	}
 }

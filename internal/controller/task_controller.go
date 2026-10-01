@@ -226,6 +226,12 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		}
 		status.Checks = &c4v1alpha1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
 		facts.Checks, facts.ChecksURL = checks.State, checks.URL
+		if checks.State == gitprovider.CheckFailure || checks.State == gitprovider.CheckError {
+			// Best effort: without the log the agent still gets the link.
+			if log, err := provider.CheckLog(gitCtx, provider.Repository(container.Name), checks.URL); err == nil {
+				facts.ChecksLog = log
+			}
+		}
 	}
 	return facts, nil
 }

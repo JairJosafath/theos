@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // Check states, as Gitea's combined commit status reports them. An empty state
@@ -295,4 +296,23 @@ func randomSecret() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// CheckLog returns the log of the CI job a check status links to, such as
+// /toolbox/app/actions/runs/27/jobs/27.
+func (g *gitea) CheckLog(ctx context.Context, repo Repository, checkURL string) (string, error) {
+	_, job, ok := strings.Cut(checkURL, "/jobs/")
+	job = strings.Trim(job, "/")
+	if !ok || job == "" || strings.Contains(job, "/") {
+		return "", fmt.Errorf("gitea: %q does not link to a CI job", checkURL)
+	}
+	status, data, err := g.do(ctx, http.MethodGet,
+		"/api/v1/repos/"+repoPath(repo)+"/actions/jobs/"+url.PathEscape(job)+"/logs", nil)
+	if err != nil {
+		return "", err
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("gitea: reading the log of job %s failed (HTTP %d): %s", job, status, apiMessage(data))
+	}
+	return string(data), nil
 }
