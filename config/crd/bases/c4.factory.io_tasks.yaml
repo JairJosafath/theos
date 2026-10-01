@@ -203,6 +203,50 @@ spec:
                   feedback is what the next round must address: review findings, failed
                   checks or the reason the last round failed.
                 type: string
+              history:
+                description: |-
+                  history is the Task's timeline, oldest first: an entry each time its phase,
+                  round or Progressing reason changed. The newest 64 are kept.
+                items:
+                  description: |-
+                    TaskTransition is one step in a Task's timeline: from at on, the Task was in
+                    phase and round, for reason.
+                  properties:
+                    at:
+                      description: at is when the step began.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message says more, in up to 200 characters.
+                      maxLength: 1024
+                      type: string
+                    phase:
+                      description: phase is the Task's phase from then on.
+                      enum:
+                      - Pending
+                      - Implementing
+                      - Checking
+                      - Reviewing
+                      - Merged
+                      - Failed
+                      type: string
+                    reason:
+                      description: |-
+                        reason is the Progressing condition's reason, such as Running,
+                        WaitingForSlot or Checking.
+                      maxLength: 128
+                      type: string
+                    round:
+                      description: round is the implement round.
+                      format: int32
+                      type: integer
+                  required:
+                  - at
+                  - phase
+                  type: object
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: atomic
               observedGeneration:
                 description: observedGeneration is the spec generation the status
                   reflects.

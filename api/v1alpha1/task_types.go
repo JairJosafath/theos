@@ -66,6 +66,33 @@ type TaskReview struct {
 	Summary string `json:"summary,omitempty"`
 }
 
+// TaskTransition is one step in a Task's timeline: from at on, the Task was in
+// phase and round, for reason.
+type TaskTransition struct {
+	// at is when the step began.
+	// +required
+	At metav1.Time `json:"at"`
+
+	// phase is the Task's phase from then on.
+	// +required
+	Phase TaskPhase `json:"phase"`
+
+	// round is the implement round.
+	// +optional
+	Round int32 `json:"round,omitempty"`
+
+	// reason is the Progressing condition's reason, such as Running,
+	// WaitingForSlot or Checking.
+	// +kubebuilder:validation:MaxLength=128
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// message says more, in up to 200 characters.
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
 // TaskStatus defines the observed state of Task.
 type TaskStatus struct {
 	// phase is Pending, then Implementing, Checking and Reviewing each round, then
@@ -129,6 +156,13 @@ type TaskStatus struct {
 	// completedAt is when the Task was Merged or Failed.
 	// +optional
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+
+	// history is the Task's timeline, oldest first: an entry each time its phase,
+	// round or Progressing reason changed. The newest 64 are kept.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=64
+	// +optional
+	History []TaskTransition `json:"history,omitempty"`
 
 	// observedGeneration is the spec generation the status reflects.
 	// +optional

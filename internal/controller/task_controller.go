@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -275,6 +276,7 @@ func (r *TaskReconciler) writeStatus(ctx context.Context, task *c4v1alpha1.Task,
 		now := metav1.NewTime(r.now())
 		status.PhaseChangedAt = &now
 	}
+	status.History = recordTransition(status, r.now())
 	if equality.Semantic.DeepEqual(&task.Status, status) {
 		return nil
 	}
@@ -282,6 +284,30 @@ func (r *TaskReconciler) writeStatus(ctx context.Context, task *c4v1alpha1.Task,
 	task.Status = *status
 	// A stale write fails with a conflict and the Task is reconciled again.
 	return r.Status().Patch(ctx, task, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{}))
+}
+
+// recordTransition adds the Task's current phase, round and Progressing reason to
+// its timeline when they changed.
+func recordTransition(status *c4v1alpha1.TaskStatus, now time.Time) []c4v1alpha1.TaskTransition {
+	next := model.Transition{At: now, Phase: string(status.Phase), Round: int(status.Round)}
+	if cond := meta.FindStatusCondition(status.Conditions, ConditionProgressing); cond != nil {
+		next.Reason, next.Message = cond.Reason, cond.Message
+	}
+	history := make([]model.Transition, 0, len(status.History))
+	for _, tr := range status.History {
+		history = append(history, model.Transition{At: tr.At.Time, Phase: string(tr.Phase), Round: int(tr.Round),
+			Reason: tr.Reason, Message: tr.Message})
+	}
+	recorded, added := model.RecordTransition(history, next)
+	if !added {
+		return status.History
+	}
+	out := make([]c4v1alpha1.TaskTransition, 0, len(recorded))
+	for _, tr := range recorded {
+		out = append(out, c4v1alpha1.TaskTransition{At: metav1.NewTime(tr.At), Phase: c4v1alpha1.TaskPhase(tr.Phase),
+			Round: int32(tr.Round), Reason: tr.Reason, Message: tr.Message})
+	}
+	return out
 }
 
 // taskContext says what the application is for, from its SoftwareSystem and

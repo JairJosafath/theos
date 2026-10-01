@@ -41,7 +41,11 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 	log := logf.FromContext(ctx)
 	switch step.Action {
 	case model.ActionWait:
-		r.progress(task, status, metav1.ConditionTrue, "Waiting", step.Message)
+		reason := "Waiting"
+		if step.SlotWait {
+			reason = "WaitingForSlot"
+		}
+		r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
 		if status.Phase == c4v1alpha1.TaskChecking {
 			return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
 		}

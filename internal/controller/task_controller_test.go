@@ -18,6 +18,7 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -195,6 +196,17 @@ var _ = Describe("Task", func() {
 		}).Should(Succeed())
 		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "add-crop-r2-review-a1"), newSandbox()))).To(BeTrue())
+
+		By("keeping its timeline")
+		var steps []string
+		for _, tr := range getTask(Default, ns, "add-crop").Status.History {
+			step := fmt.Sprintf("%s r%d", tr.Phase, tr.Round)
+			if len(steps) == 0 || steps[len(steps)-1] != step {
+				steps = append(steps, step)
+			}
+		}
+		Expect(steps).To(Equal([]string{"Implementing r1", "Checking r1", "Reviewing r1",
+			"Implementing r2", "Checking r2", "Reviewing r2", "Merged r2"}))
 	})
 
 	It("sends failed checks back to the implementer", func() {
