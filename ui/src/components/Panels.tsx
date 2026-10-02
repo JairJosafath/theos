@@ -4,7 +4,7 @@
 import type { StoryData } from '../k8s/sources'
 import type { Condition, ContainerPhase } from '../k8s/types'
 import { describeContainerPhase, plural, splitTemplateRef } from '../model/describe'
-import { crewDoing, issueList, type CrewSummary } from '../model/factory'
+import { crewDoing, issueList, type ActiveCrewTask, type CrewSummary } from '../model/factory'
 import { linksOf, type ContainerNode, type DiagramNode, type Link } from '../model/story'
 import { AgentName, ConditionList, CrewPhaseBadge, PhaseBadge, SessionRow } from './bits'
 import { AgentIcon, ArrowRightIcon, CrossIcon, ExternalLinkIcon, HumanIcon, WarningIcon } from './icons'
@@ -189,7 +189,10 @@ function CrewDetails({ crew }: { crew: CrewSummary }) {
       <div className="crew-line">
         <p>
           <AgentName role={crew.implementer} /> implements, <AgentName role={crew.reviewer} /> reviews;{' '}
-          {crew.active ? `working on ${crew.active.headline ?? crew.active.name}` : crewDoing(crew)}.
+          {crew.active.length
+            ? `working on ${crew.active.map((a) => a.headline ?? a.name).join('; ')}`
+            : crewDoing(crew)}
+          .
         </p>
         <p className="crew-line-meta">
           <CrewPhaseBadge phase={crew.phase} />
@@ -259,7 +262,17 @@ function LinkRow({ link }: { link: Link }) {
 }
 
 /** Who is working on what right now, grouped by container. */
-export function SessionsPanel({ containers, now, scope }: { containers: ContainerNode[]; now: number; scope: string }) {
+export function SessionsPanel({
+  containers,
+  tasks,
+  now,
+  scope,
+}: {
+  containers: ContainerNode[]
+  tasks: ActiveCrewTask[]
+  now: number
+  scope: string
+}) {
   const withSessions = containers.filter((c) => c.sessions.length)
   const all = withSessions.flatMap((c) => c.sessions)
   const active = all.filter((s) => s.status?.phase === 'Active').length
@@ -269,8 +282,39 @@ export function SessionsPanel({ containers, now, scope }: { containers: Containe
       <h2 className="panel-title small-title">Who&apos;s working right now</h2>
       <p className="panel-caption">
         People and AI agents working in a devcontainer on {scope}. Each checks in every 30 seconds; after 2 minutes of
-        silence a session turns stale.
+        silence a session turns stale. Crews&apos; Tasks that run now are listed too.
       </p>
+      {tasks.length ? (
+        <div className="session-group">
+          <div className="session-group-head">
+            <span className="session-group-title">Crew Tasks</span>
+          </div>
+          <ul className="sessions">
+            {tasks.map((t) => (
+              <li key={t.key} className="session session-compact">
+                <span className="session-avatar session-avatar-agent">
+                  <AgentIcon size={14} title="Agent" />
+                </span>
+                <span className="session-body">
+                  <span className="session-summary">
+                    {t.issue ? `#${t.issue}` : t.name}
+                    {t.issueTitle ? ` ${t.issueTitle}` : ''}
+                  </span>
+                  <span className="session-meta">
+                    <AgentName role={t.agent} />
+                    {t.phase ? (
+                      <>
+                        <span className="sep">·</span>
+                        {t.phase}
+                      </>
+                    ) : null}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {all.length ? (
         <>
           <p className="counts">
@@ -292,9 +336,11 @@ export function SessionsPanel({ containers, now, scope }: { containers: Containe
           ))}
         </>
       ) : (
-        <p className="muted small">
-          Nobody is working right now. When someone opens a devcontainer, they show up here.
-        </p>
+        !tasks.length && (
+          <p className="muted small">
+            Nobody is working right now. When someone opens a devcontainer, they show up here.
+          </p>
+        )
       )}
     </section>
   )

@@ -26,6 +26,7 @@ import {
 import type { Project } from './k8s/types'
 import { useNow, useSource, useUrlState, type View } from './lib/hooks'
 import { plural, titleOf } from './model/describe'
+import { activeCrewTasks } from './model/factory'
 import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker } from './model/story'
 
 /**
@@ -121,6 +122,17 @@ export default function App() {
   const sessionContainers = useMemo(
     () => containerNodes(data, view === 'containers' ? systemName : undefined),
     [data, view, systemName],
+  )
+
+  const crewTasks = useMemo(
+    () =>
+      activeCrewTasks(
+        data.crews,
+        data.tasks,
+        data.agents,
+        sessionContainers.map((c) => c.name),
+      ),
+    [data, sessionContainers],
   )
 
   const project = data.project
@@ -296,6 +308,7 @@ export default function App() {
               ) : null}
               <SessionsPanel
                 containers={sessionContainers}
+                tasks={crewTasks}
                 now={now}
                 scope={view === 'containers' && systemTitle ? systemTitle : project ? titleOf(project) : 'this project'}
               />

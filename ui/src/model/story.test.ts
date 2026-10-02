@@ -267,7 +267,7 @@ describe('crews', () => {
           implementer: { name: 'claude-implementer' },
           reviewer: { name: 'claude-reviewer' },
         },
-        status: { phase: 'Working', activeTask: 'orders-api-4', ready: [5], waiting: [6, 7] },
+        status: { phase: 'Working', activeTasks: ['orders-api-4'], ready: [5], waiting: [6, 7] },
       },
       {
         metadata: meta('z-second'),
@@ -291,7 +291,7 @@ describe('crews', () => {
       phase: 'Working',
       implementer: { name: 'claude-implementer', model: 'claude-sonnet-5-5' },
       reviewer: { name: 'claude-reviewer', model: 'claude-opus-5-5' },
-      active: { issue: 4, headline: '#4 Validate orders' },
+      active: [{ issue: 4, headline: '#4 Validate orders' }],
       ready: [5],
       waiting: [6, 7],
     })
@@ -339,7 +339,7 @@ describe('the CEL Lens demo', () => {
   it('draws a command-line tool and an editor extension, each with its Crew', () => {
     const d = buildContainerDiagram(demoCelLens(NOW), 'cel-lens')!
     const containers = d.nodes.filter((n): n is ContainerNode => n.role === 'container')
-    expect(containers.map((c) => [c.name, c.typeLabel, c.crew?.active?.issue, c.crew?.paused])).toEqual([
+    expect(containers.map((c) => [c.name, c.typeLabel, c.crew?.active[0]?.issue, c.crew?.paused])).toEqual([
       ['cel-language-server', 'command-line tool', 4, false],
       ['vscode-extension', 'editor extension', 2, true],
     ])

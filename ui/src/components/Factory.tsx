@@ -412,7 +412,13 @@ function CrewCard({
       ) : null}
       {crew.paused ? (
         <p className="crew-note tone-waiting">
-          Paused: picks up no new issues{crew.active ? '; the current Task runs to its end' : ''}.
+          Paused: picks up no new issues
+          {crew.active.length > 1
+            ? '; the current Tasks run to their end'
+            : crew.active.length
+              ? '; the current Task runs to its end'
+              : ''}
+          .
         </p>
       ) : null}
       <dl className="facts crew-facts">
@@ -426,15 +432,26 @@ function CrewCard({
         </dd>
         <dt>Now</dt>
         <dd>
-          {crew.active ? (
-            <button
-              type="button"
-              className="link-button crew-active"
-              onClick={() => onSelectTask(crew.active!.key)}
-              title={crew.active.name}
-            >
-              {crew.active.headline ?? crew.active.name}
-            </button>
+          {crew.active.length ? (
+            <>
+              {crew.active.map((a) => (
+                <div key={a.key}>
+                  <button
+                    type="button"
+                    className="link-button crew-active"
+                    onClick={() => onSelectTask(a.key)}
+                    title={a.name}
+                  >
+                    {a.headline ?? a.name}
+                  </button>
+                </div>
+              ))}
+              {crew.parallel > 1 ? (
+                <span className="muted small">
+                  {crew.active.length} of {crew.parallel} places busy
+                </span>
+              ) : null}
+            </>
           ) : (
             <span className="muted">{crewDoing(crew)}</span>
           )}

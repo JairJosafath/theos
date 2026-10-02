@@ -487,8 +487,10 @@ export interface CrewSummary {
   notReady?: { reason?: string; message?: string }
   implementer: AgentRole
   reviewer: AgentRole
-  /** The Task working on the Container now. */
-  active?: { name: string; key: string; issue?: number; headline?: string; found: boolean }
+  /** spec.parallel: how many Tasks it runs at once (1 when unset). */
+  parallel: number
+  /** The Tasks working on the Container now, one per place in use. */
+  active: { name: string; key: string; issue?: number; headline?: string; found: boolean }[]
   /** Ready issues in pick-up order, and ready ones blocked by open dependencies. */
   ready: number[]
   waiting: number[]
@@ -498,10 +500,6 @@ export interface CrewSummary {
 export function crewSummary(crew: Crew, agents: Agent[], tasks: Task[]): CrewSummary {
   const namespace = crew.metadata.namespace ?? ''
   const readyCondition = findCondition(crew.status?.conditions, 'Ready')
-  const activeName = crew.status?.activeTask
-  const activeTask = activeName
-    ? tasks.find((t) => t.metadata.name === activeName && (t.metadata.namespace ?? '') === namespace)
-    : undefined
   return {
     key: `${namespace}/${crew.metadata.name}`,
     namespace,
@@ -517,15 +515,17 @@ export function crewSummary(crew: Crew, agents: Agent[], tasks: Task[]): CrewSum
         : undefined,
     implementer: agentRole(agents, namespace, crew.spec.implementer.name),
     reviewer: agentRole(agents, namespace, crew.spec.reviewer.name),
-    active: activeName
-      ? {
-          name: activeName,
-          key: `${namespace}/${activeName}`,
-          issue: activeTask?.spec.issue || undefined,
-          headline: activeTask ? taskHeadline(activeTask).text : undefined,
-          found: Boolean(activeTask),
-        }
-      : undefined,
+    parallel: crew.spec.parallel || 1,
+    active: (crew.status?.activeTasks ?? []).map((name) => {
+      const task = tasks.find((t) => t.metadata.name === name && (t.metadata.namespace ?? '') === namespace)
+      return {
+        name,
+        key: `${namespace}/${name}`,
+        issue: task?.spec.issue || undefined,
+        headline: task ? taskHeadline(task).text : undefined,
+        found: Boolean(task),
+      }
+    }),
     ready: crew.status?.ready ?? [],
     waiting: crew.status?.waiting ?? [],
     lastPolled: crew.status?.lastPolled,
@@ -541,7 +541,7 @@ export function crewSummaries(crews: Crew[], agents: Agent[], tasks: Task[]): Cr
 
 /** What a Crew is doing, in a few words: "working on #4", "paused", "no ready issues". */
 export function crewDoing(crew: CrewSummary): string {
-  if (crew.active) return `working on ${crew.active.issue ? `#${crew.active.issue}` : crew.active.name}`
+  if (crew.active.length) return `working on ${crew.active.map((a) => (a.issue ? `#${a.issue}` : a.name)).join(', ')}`
   if (crew.notReady) return 'can’t pick up issues'
   if (crew.paused || crew.phase === 'Paused') return 'paused'
   if (crew.phase === 'Idle') {
@@ -639,4 +639,44 @@ export function recentStall(
     if (!worst || s.apiMs > worst.apiMs) worst = { at: s.at, apiMs: s.apiMs, failed: Boolean(s.apiFailed) }
   }
   return worst
+}
+
+/** A Crew's running Task as the "who's working" panel shows it: who works on it now, with their model. */
+export interface ActiveCrewTask {
+  /** namespace/name */
+  key: string
+  name: string
+  crew: string
+  container: string
+  issue?: number
+  issueTitle?: string
+  phase?: TaskPhase
+  /** The implementer while the Task implements, the reviewer while it reviews. */
+  agent: AgentRole
+}
+
+/** The running Tasks of the Crews of the given Containers, by Container and then issue. */
+export function activeCrewTasks(crews: Crew[], tasks: Task[], agents: Agent[], containers: string[]): ActiveCrewTask[] {
+  const inScope = new Set(containers)
+  const found: ActiveCrewTask[] = []
+  for (const crew of crews) {
+    const namespace = crew.metadata.namespace ?? ''
+    if (!inScope.has(crew.spec.containerRef.name)) continue
+    for (const name of crew.status?.activeTasks ?? []) {
+      const task = tasks.find((t) => t.metadata.name === name && (t.metadata.namespace ?? '') === namespace)
+      if (!task) continue
+      const roles = taskRoles(task, agents)
+      found.push({
+        key: `${namespace}/${name}`,
+        name,
+        crew: crew.metadata.name,
+        container: crew.spec.containerRef.name,
+        issue: task.spec.issue || undefined,
+        issueTitle: task.status?.issueTitle?.trim() || undefined,
+        phase: task.status?.phase,
+        agent: task.status?.phase === 'Reviewing' ? roles.reviewer : roles.implementer,
+      })
+    }
+  }
+  return found.sort((a, b) => a.container.localeCompare(b.container) || (a.issue ?? 0) - (b.issue ?? 0))
 }

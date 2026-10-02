@@ -3,6 +3,7 @@ import { demoFactory, demoHealth } from '../demo/factoryFixture'
 import type { FactoryHealth } from '../k8s/health'
 import type { Agent, Container, Crew, Session, Task, TaskTransition } from '../k8s/types'
 import {
+  activeCrewTasks,
   agentBackAt,
   agentRole,
   attention,
@@ -462,7 +463,7 @@ describe('crewSummary', () => {
     { displayName: 'Language server crew' },
     {
       phase: 'Working',
-      activeTask: 'cel-language-server-3',
+      activeTasks: ['cel-language-server-3'],
       ready: [5],
       waiting: [6, 7],
       lastPolled: at(-1),
@@ -491,13 +492,16 @@ describe('crewSummary', () => {
         found: true,
       },
       reviewer: { name: 'claude-reviewer', title: 'Claude Code, Opus', model: 'claude-opus-5-5', found: true },
-      active: {
-        name: 'cel-language-server-3',
-        key: 'cel-lens/cel-language-server-3',
-        issue: 3,
-        headline: '#3 Map positions inside YAML scalars',
-        found: true,
-      },
+      parallel: 1,
+      active: [
+        {
+          name: 'cel-language-server-3',
+          key: 'cel-lens/cel-language-server-3',
+          issue: 3,
+          headline: '#3 Map positions inside YAML scalars',
+          found: true,
+        },
+      ],
       ready: [5],
       waiting: [6, 7],
       lastPolled: at(-1),
@@ -507,19 +511,36 @@ describe('crewSummary', () => {
 
   it('keeps the active Task by name before it is seen', () => {
     const summary = crewSummary(working, agents, [])
-    expect(summary.active).toEqual({
-      name: 'cel-language-server-3',
-      key: 'cel-lens/cel-language-server-3',
-      issue: undefined,
-      headline: undefined,
-      found: false,
-    })
+    expect(summary.active).toEqual([
+      {
+        name: 'cel-language-server-3',
+        key: 'cel-lens/cel-language-server-3',
+        issue: undefined,
+        headline: undefined,
+        found: false,
+      },
+    ])
     expect(crewDoing(summary)).toBe('working on cel-language-server-3')
+  })
+
+  it('lists every active Task of a parallel Crew', () => {
+    const parallel = crew(
+      'cel-language-server',
+      { parallel: 2 },
+      { phase: 'Working', activeTasks: ['cel-language-server-3', 'cel-language-server-4'] },
+    )
+    const four = { ...issueTask(), metadata: { ...issueTask().metadata, name: 'cel-language-server-4' } }
+    four.spec.issue = 4
+    const summary = crewSummary(parallel, agents, [issueTask(), four])
+    expect(summary.parallel).toBe(2)
+    expect(summary.active.map((a) => a.issue)).toEqual([3, 4])
+    expect(crewDoing(summary)).toBe('working on #3, #4')
+    expect(crewSummary(crew('x', { parallel: 0 }), agents, []).parallel).toBe(1)
   })
 
   it('marks a Crew that is paused or not Ready', () => {
     const paused = crewSummary(crew('vscode-extension', { paused: true }, { phase: 'Paused' }), agents, [])
-    expect(paused).toMatchObject({ paused: true, notReady: undefined, active: undefined, ready: [], waiting: [] })
+    expect(paused).toMatchObject({ paused: true, notReady: undefined, active: [], parallel: 1, ready: [], waiting: [] })
     expect(crewDoing(paused)).toBe('paused')
 
     const blocked = crewSummary(
@@ -649,14 +670,18 @@ describe('the demo', () => {
     expect(crews[0]).toMatchObject({
       implementer: { model: 'claude-sonnet-5-5' },
       reviewer: { model: 'claude-opus-5-5' },
-      active: { issue: 4, found: true },
+      parallel: 2,
+      active: [
+        { issue: 4, found: true },
+        { issue: 5, found: true },
+      ],
     })
   })
 
   it('has issue Tasks in several phases, with follow-ups and an agent wait', () => {
     const issueTasks = data.tasks.filter((t) => t.spec.issue)
     expect(new Set(issueTasks.map((t) => t.status?.phase))).toEqual(
-      new Set(['Merged', 'Failed', 'Implementing', 'Checking']),
+      new Set(['Merged', 'Failed', 'Implementing', 'Reviewing', 'Checking']),
     )
     expect(issueTasks.some((t) => followUpLinks(t).length)).toBe(true)
     expect(issueTasks.filter((t) => agentBackAt(t) !== undefined).map((t) => t.metadata.name)).toEqual([
@@ -670,5 +695,38 @@ describe('the demo', () => {
       expect.stringMatching(/^Task cel-lens\/cel-language-server-4 is waiting for the agent until /),
     )
     expect(titles).toContain('Crew webshop/catalog-api can’t pick up issues')
+  })
+})
+
+describe('activeCrewTasks', () => {
+  const working = crew(
+    'cel-language-server',
+    {},
+    { phase: 'Working', activeTasks: ['cel-language-server-4', 'cel-language-server-3', 'gone'] },
+  )
+  const issue = (n: number, status: Task['status']): Task => {
+    const t = issueTask(status)
+    t.metadata.name = `cel-language-server-${n}`
+    t.spec.issue = n
+    return t
+  }
+  const tasks = [
+    issue(3, { phase: 'Implementing', issueTitle: 'Map positions' }),
+    issue(4, { phase: 'Reviewing', issueTitle: 'Report diagnostics' }),
+    issue(2, { phase: 'Merged' }),
+  ]
+
+  it('names the implementer while implementing and the reviewer while reviewing', () => {
+    const found = activeCrewTasks([working], tasks, agents, ['cel-language-server'])
+    expect(found.map((t) => [t.issue, t.issueTitle, t.phase, t.agent.name, t.agent.model])).toEqual([
+      [3, 'Map positions', 'Implementing', 'claude-implementer', 'claude-sonnet-5-5'],
+      [4, 'Report diagnostics', 'Reviewing', 'claude-reviewer', 'claude-opus-5-5'],
+    ])
+  })
+
+  it('skips Tasks that are not active or not seen, and Containers out of scope', () => {
+    expect(activeCrewTasks([working], tasks, agents, ['other'])).toEqual([])
+    expect(activeCrewTasks([working], [], agents, ['cel-language-server'])).toEqual([])
+    expect(activeCrewTasks([crew('cel-language-server')], tasks, agents, ['cel-language-server'])).toEqual([])
   })
 })

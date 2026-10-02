@@ -271,6 +271,22 @@ export function demoCelLens(now: number): StoryData {
         step(6, 'Implementing', 2, 'AgentUnavailable', unavailable),
       ],
     }),
+    task(server, 5, 'Report diagnostics with the position of the failing expression', 12, {
+      phase: 'Reviewing',
+      round: 1,
+      checks: { state: 'success' },
+      commit: '2b7c4d9',
+      summary: 'Publishes a diagnostic per failing CEL expression, positioned on its YAML node.',
+      ...pr(server, 6),
+      conditions: [
+        cond('Progressing', 'True', 'Reviewing', 'Checks passed; the reviewer is reading the change', at(2)),
+      ],
+      history: [
+        step(12, 'Implementing', 1, 'Running', 'Starting round 1'),
+        step(5, 'Checking', 1, 'Checking', 'The agent pushed 2b7c4d9; waiting for checks'),
+        step(2, 'Reviewing', 1, 'Running', 'Checks passed; starting the review'),
+      ],
+    }),
     task(extension, 1, 'Start the language server for YAML files', 120, {
       ...merged(95),
       round: 1,
@@ -305,6 +321,7 @@ export function demoCelLens(now: number): StoryData {
     description: string,
     paused: boolean,
     status: Crew['status'],
+    parallel = 1,
   ): Crew => ({
     apiVersion: API_VERSION,
     kind: 'Crew',
@@ -316,21 +333,37 @@ export function demoCelLens(now: number): StoryData {
       implementer: { name: 'claude-implementer' },
       reviewer: { name: 'claude-reviewer' },
       ...(paused ? { paused } : {}),
+      ...(parallel > 1 ? { parallel } : {}),
     },
     status: { lastPolled: at(0.5), ...status },
   })
   const crews: Crew[] = [
-    crew('cel-language-server', 'Language server crew', 'Builds the server issue by issue.', false, {
-      phase: 'Working',
-      activeTask: 'cel-language-server-4',
-      ready: [5],
-      waiting: [6, 7, 8, 9, 10, 11],
-      conditions: [cond('Ready', 'True', 'Working', 'Task cel-language-server-4 is working on issue #4', at(29))],
-    }),
+    crew(
+      'cel-language-server',
+      'Language server crew',
+      'Builds the server issue by issue.',
+      false,
+      {
+        phase: 'Working',
+        activeTasks: ['cel-language-server-4', 'cel-language-server-5'],
+        ready: [],
+        waiting: [6, 7, 8, 9, 10, 11],
+        conditions: [
+          cond(
+            'Ready',
+            'True',
+            'Working',
+            'Tasks cel-language-server-4 and cel-language-server-5 are working on issues #4 and #5',
+            at(29),
+          ),
+        ],
+      },
+      2,
+    ),
     // Paused by a person who wants to see the highlighting first: the Task in CI runs to its end.
     crew('vscode-extension', 'VS Code extension crew', 'Builds the extension issue by issue.', true, {
       phase: 'Working',
-      activeTask: 'vscode-extension-2',
+      activeTasks: ['vscode-extension-2'],
       ready: [3],
       waiting: [4, 5],
       conditions: [cond('Ready', 'True', 'Working', 'Task vscode-extension-2 is working on issue #2', at(25))],

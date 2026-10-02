@@ -272,7 +272,7 @@ export interface Agent extends K8sObject {
 
 export type CrewPhase = 'Waiting' | 'Idle' | 'Working' | 'Paused'
 
-/** Who works on a Container's issues: one Task at a time, lowest ready issue first. */
+/** Who works on a Container's issues: up to spec.parallel Tasks at a time, lowest ready issue first. */
 export interface Crew extends K8sObject {
   spec: {
     containerRef: LocalRef
@@ -282,10 +282,13 @@ export interface Crew extends K8sObject {
     reviewer: LocalRef
     /** Stops picking up new issues; a Task already started runs to its end. */
     paused?: boolean
+    /** How many Tasks run at once; 1 when unset. */
+    parallel?: number
   }
   status?: {
     phase?: CrewPhase
-    activeTask?: string
+    /** Names of the Crew's running Tasks, in its namespace. */
+    activeTasks?: string[]
     /** Ready issues the Crew can start, in pick-up order. */
     ready?: number[]
     /** Ready issues blocked by open dependencies. */
