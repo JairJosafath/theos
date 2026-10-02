@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 )
 
@@ -18,6 +19,8 @@ type Issue struct {
 	State  string
 	Labels []string
 	URL    string
+	// Milestone is the ID of the issue's milestone, or 0 when it has none.
+	Milestone int64
 }
 
 // Label is a label a repository should have.
@@ -79,12 +82,13 @@ type giteaMilestone struct {
 }
 
 type giteaIssue struct {
-	Number     int          `json:"number"`
-	Title      string       `json:"title"`
-	Body       string       `json:"body"`
-	State      string       `json:"state"`
-	HTMLURL    string       `json:"html_url"`
-	Labels     []giteaLabel `json:"labels"`
+	Number     int             `json:"number"`
+	Title      string          `json:"title"`
+	Body       string          `json:"body"`
+	State      string          `json:"state"`
+	HTMLURL    string          `json:"html_url"`
+	Labels     []giteaLabel    `json:"labels"`
+	Milestone  *giteaMilestone `json:"milestone"`
 	Repository struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
@@ -95,7 +99,11 @@ func (i giteaIssue) issue() Issue {
 	for _, l := range i.Labels {
 		labels = append(labels, l.Name)
 	}
-	return Issue{Number: i.Number, Title: i.Title, Body: i.Body, State: i.State, Labels: labels, URL: i.HTMLURL}
+	out := Issue{Number: i.Number, Title: i.Title, Body: i.Body, State: i.State, Labels: labels, URL: i.HTMLURL}
+	if i.Milestone != nil {
+		out.Milestone = i.Milestone.ID
+	}
+	return out
 }
 
 func issuePath(repo Repository, number int) string {
@@ -244,6 +252,33 @@ func (g *gitea) OpenBlockers(ctx context.Context, repo Repository, number int) (
 		open = append(open, ref)
 	}
 	return open, nil
+}
+
+// AddIssueDependency makes issue number depend on issue blocker of the same
+// repository. It is safe to repeat.
+func (g *gitea) AddIssueDependency(ctx context.Context, repo Repository, number, blocker int) error {
+	path := issuePath(repo, number) + "/dependencies"
+	status, data, err := g.do(ctx, http.MethodGet, path+"?limit=50", nil)
+	if err != nil {
+		return err
+	}
+	var deps []giteaIssue
+	if status != http.StatusOK || json.Unmarshal(data, &deps) != nil {
+		return fmt.Errorf("gitea: reading the dependencies of issue %d of %s failed (HTTP %d): %s",
+			number, repoPath(repo), status, apiMessage(data))
+	}
+	if slices.ContainsFunc(deps, func(d giteaIssue) bool { return d.Number == blocker }) {
+		return nil
+	}
+	payload, _ := json.Marshal(map[string]any{"owner": repo.Owner, "repo": repo.Name, "index": blocker})
+	status, data, err = g.do(ctx, http.MethodPost, path, payload)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusCreated {
+		return fmt.Errorf("gitea: making issue %d depend on %d failed (HTTP %d): %s", number, blocker, status, apiMessage(data))
+	}
+	return nil
 }
 
 // AddIssueLabel adds a label to an issue by name. An exclusive scoped label

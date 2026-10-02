@@ -94,6 +94,13 @@ type Provider interface {
 	// MergePullRequest squashes a pull request into its base and deletes its
 	// branch, provided its head is still headSHA.
 	MergePullRequest(ctx context.Context, repo Repository, number int, headSHA, title, message string) error
+	// ForceMergePullRequest is MergePullRequest as the provider's admin user,
+	// overriding the branch protection's merge restrictions.
+	ForceMergePullRequest(ctx context.Context, repo Repository, number int, headSHA, title, message string) error
+	// PullRequestFiles returns the paths a pull request changes.
+	PullRequestFiles(ctx context.Context, repo Repository, number int) ([]string, error)
+	// ClosePullRequest closes a pull request without merging it.
+	ClosePullRequest(ctx context.Context, repo Repository, number int) error
 	// ReviewPullRequest posts a review of commit: ReviewApprove,
 	// ReviewRequestChanges or ReviewComment, with body.
 	ReviewPullRequest(ctx context.Context, repo Repository, number int, commit, event, body string) error
@@ -111,6 +118,9 @@ type Provider interface {
 	// OpenBlockers returns the open issues an issue depends on: "#3" in the same
 	// repository, "owner/name#3" in another.
 	OpenBlockers(ctx context.Context, repo Repository, number int) ([]string, error)
+	// AddIssueDependency makes issue number depend on issue blocker of the same
+	// repository. It is safe to repeat.
+	AddIssueDependency(ctx context.Context, repo Repository, number, blocker int) error
 	// AddIssueLabel adds a label to an issue by name. An exclusive scoped label
 	// replaces the issue's other labels of its scope.
 	AddIssueLabel(ctx context.Context, repo Repository, number int, label string) error

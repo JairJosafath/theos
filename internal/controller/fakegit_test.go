@@ -233,6 +233,8 @@ type fakeAgentState struct {
 	branches  map[string]string                     // owner/name@branch -> head sha
 	authors   map[string]string                     // owner/name#number -> who opened it
 	log       string                                // served for every CI job
+	files     map[string][]string                   // owner/name#number -> paths the pull request changes
+	forced    map[string][]int                      // owner/name -> pull requests force-merged
 }
 
 func (g *fakeGit) agentState() *fakeAgentState {
@@ -242,6 +244,7 @@ func (g *fakeGit) agentState() *fakeAgentState {
 			rules: map[string]gitprovider.BranchRule{}, tags: map[string][]string{},
 			agents: map[string]string{}, pulls: map[string][]*gitprovider.PullRequest{},
 			comments: map[string][]string{}, branches: map[string]string{}, authors: map[string]string{},
+			files: map[string][]string{}, forced: map[string][]int{},
 		}
 	}
 	return g.agent
@@ -404,10 +407,23 @@ func (p *fakeProvider) CommentPullRequest(_ context.Context, repo gitprovider.Re
 	return nil
 }
 
+// MergePullRequest refuses a pull request that changes a protected path, as Gitea does.
 func (p *fakeProvider) MergePullRequest(_ context.Context, repo gitprovider.Repository, number int,
 	headSHA, _, _ string) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
+	return p.merge(repo, number, headSHA, false)
+}
+
+// ForceMergePullRequest merges whatever the pull request changes, and records it.
+func (p *fakeProvider) ForceMergePullRequest(_ context.Context, repo gitprovider.Repository, number int,
+	headSHA, _, _ string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	return p.merge(repo, number, headSHA, true)
+}
+
+func (p *fakeProvider) merge(repo gitprovider.Repository, number int, headSHA string, force bool) error {
 	pr, err := p.pull(repo, number)
 	if err != nil {
 		return err
@@ -418,7 +434,60 @@ func (p *fakeProvider) MergePullRequest(_ context.Context, repo gitprovider.Repo
 	if pr.HeadSHA != headSHA {
 		return fmt.Errorf("pull request %d moved to %s since %s", number, pr.HeadSHA, headSHA)
 	}
+	s := p.git.agentState()
+	key := repo.Owner + "/" + repo.Name
+	if force {
+		s.forced[key] = append(s.forced[key], number)
+	} else if touchesProtected(s.files[fmt.Sprintf("%s#%d", key, number)], s.rules[key].ProtectedPaths) {
+		return fmt.Errorf("pull request %d changes protected files", number)
+	}
 	pr.Merged, pr.State = true, "closed"
+	return nil
+}
+
+func touchesProtected(files, protected []string) bool {
+	return slices.ContainsFunc(files, func(f string) bool {
+		return slices.ContainsFunc(protected, func(p string) bool {
+			return f == p || strings.HasSuffix(p, "/") && strings.HasPrefix(f, p)
+		})
+	})
+}
+
+// setPullFiles sets the paths a pull request changes.
+//
+//nolint:unused // used by the Standard change tests of the next tasks
+func (g *fakeGit) setPullFiles(owner, name string, number int, files ...string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.agentState().files[fmt.Sprintf("%s/%s#%d", owner, name, number)] = files
+}
+
+// forcedMerges lists the pull requests merged with ForceMergePullRequest.
+//
+//nolint:unused // used by the Standard change tests of the next tasks
+func (g *fakeGit) forcedMerges(owner, name string) []int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return slices.Clone(g.agentState().forced[owner+"/"+name])
+}
+
+func (p *fakeProvider) PullRequestFiles(_ context.Context, repo gitprovider.Repository, number int) ([]string, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	if _, err := p.pull(repo, number); err != nil {
+		return nil, err
+	}
+	return slices.Clone(p.git.agentState().files[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)]), nil
+}
+
+func (p *fakeProvider) ClosePullRequest(_ context.Context, repo gitprovider.Repository, number int) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	pr, err := p.pull(repo, number)
+	if err != nil {
+		return err
+	}
+	pr.State = "closed"
 	return nil
 }
 

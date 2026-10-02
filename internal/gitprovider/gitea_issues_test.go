@@ -25,6 +25,7 @@ type issueHost struct {
 	issues     map[int]*hostIssue
 	reviews    []map[string]string
 	comments   map[int][]string
+	depPosts   []map[string]any
 }
 
 type hostIssue struct {
@@ -195,6 +196,18 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		if i := issue(w, r); i != nil {
 			reply(w, http.StatusOK, i.deps)
 		}
+	})
+	mux.HandleFunc("POST "+repo+"/issues/{n}/dependencies", func(w http.ResponseWriter, r *http.Request) {
+		i := issue(w, r)
+		if i == nil {
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		h.depPosts = append(h.depPosts, body)
+		blocker, _ := body["index"].(float64)
+		i.deps = append(i.deps, giteaIssue{Number: int(blocker), State: "open"})
+		reply(w, http.StatusCreated, i.giteaIssue)
 	})
 	mux.HandleFunc("POST "+repo+"/pulls/{n}/reviews", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
@@ -367,5 +380,39 @@ func TestReviewPullRequest(t *testing.T) {
 	want := []map[string]string{{"event": "REQUEST_CHANGES", "body": "Test it", "commit_id": "abc", "pull": "4"}}
 	if err != nil || !reflect.DeepEqual(h.reviews, want) {
 		t.Errorf("ReviewPullRequest() = %v, reviews %v", err, h.reviews)
+	}
+}
+
+func TestAddIssueDependency(t *testing.T) {
+	h, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	h.issues[4] = &hostIssue{giteaIssue: giteaIssue{Number: 4, State: "open"}}
+	if err := p.AddIssueDependency(ctx, repo, 4, 31); err != nil {
+		t.Fatalf("AddIssueDependency() error = %v", err)
+	}
+	want := []map[string]any{{"owner": "webshop", "repo": "orders-api", "index": float64(31)}}
+	if !reflect.DeepEqual(h.depPosts, want) {
+		t.Fatalf("dependency POSTs = %v, want %v", h.depPosts, want)
+	}
+	if err := p.AddIssueDependency(ctx, repo, 4, 31); err != nil {
+		t.Fatalf("second AddIssueDependency() error = %v", err)
+	}
+	if len(h.depPosts) != 1 {
+		t.Errorf("the second call posted again: %v", h.depPosts)
+	}
+}
+
+func TestGetIssueMilestone(t *testing.T) {
+	h, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	h.issues[1] = &hostIssue{giteaIssue: giteaIssue{Number: 1, State: "open", Milestone: &giteaMilestone{ID: 5}}}
+	h.issues[2] = &hostIssue{giteaIssue: giteaIssue{Number: 2, State: "open"}}
+	if got, err := p.GetIssue(ctx, repo, 1); err != nil || got.Milestone != 5 {
+		t.Errorf("GetIssue(1) milestone = %d, %v; want 5", got.Milestone, err)
+	}
+	if got, err := p.GetIssue(ctx, repo, 2); err != nil || got.Milestone != 0 {
+		t.Errorf("GetIssue(2) milestone = %d, %v; want 0", got.Milestone, err)
 	}
 }

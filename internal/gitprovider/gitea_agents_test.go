@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -24,6 +25,8 @@ type agentGitea struct {
 	pulls    []giteaPull
 	statuses string
 	tagRules []map[string]any
+	// fileQueries are the raw queries of the pull request files calls.
+	fileQueries []string
 }
 
 func newAgentGitea(t *testing.T) (*agentGitea, Provider) {
@@ -36,6 +39,32 @@ func newAgentGitea(t *testing.T) (*agentGitea, Provider) {
 		t.Fatal(err)
 	}
 	return g, p
+}
+
+// serveGatedPull serves pull request 7: its files, closing and merging.
+func (g *agentGitea) serveGatedPull(w http.ResponseWriter, r *http.Request, call string) {
+	switch {
+	case strings.HasPrefix(call, "GET ") && strings.HasSuffix(call, "/files"):
+		g.fileQueries = append(g.fileQueries, r.URL.RawQuery)
+		var files []map[string]string
+		count := 50
+		if r.URL.Query().Get("page") == "2" {
+			count = 3
+		}
+		for i := 0; i < count; i++ {
+			files = append(files, map[string]string{"filename": fmt.Sprintf("f%s-%d", r.URL.Query().Get("page"), i)})
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(files)
+	case strings.HasPrefix(call, "PATCH "):
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, "{}")
+	case strings.HasPrefix(call, "POST ") && strings.HasSuffix(call, "/merge"):
+		w.WriteHeader(http.StatusOK)
+	default:
+		g.t.Errorf("unexpected call %s", call)
+		http.NotFound(w, r)
+	}
 }
 
 func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +142,8 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(http.StatusOK, g.pulls)
 	case call == "GET "+repo+"/pulls/1":
 		reply(http.StatusOK, g.pulls[0])
+	case strings.Contains(call, "/pulls/7"):
+		g.serveGatedPull(w, r, call)
 	case call == "POST "+repo+"/issues/1/comments":
 		reply(http.StatusCreated, map[string]string{})
 	case call == "POST "+repo+"/pulls/1/merge":
@@ -258,5 +289,38 @@ func TestCheckLog(t *testing.T) {
 	}
 	if _, err := p.CheckLog(context.Background(), repo, "http://gitea/toolbox/photo-editor/actions/runs/27"); err == nil {
 		t.Error("CheckLog() accepted a link without a job")
+	}
+}
+
+func TestPullRequestFiles(t *testing.T) {
+	g, p := newAgentGitea(t)
+	files, err := p.PullRequestFiles(context.Background(), p.Repository("photo-editor"), 7)
+	if err != nil || len(files) != 53 || files[0] != "f1-0" || files[52] != "f2-2" {
+		t.Fatalf("PullRequestFiles() = %d files, %v", len(files), err)
+	}
+	if want := []string{"page=1&limit=50", "page=2&limit=50"}; !reflect.DeepEqual(g.fileQueries, want) {
+		t.Errorf("queries = %v, want %v", g.fileQueries, want)
+	}
+}
+
+func TestClosePullRequest(t *testing.T) {
+	g, p := newAgentGitea(t)
+	if err := p.ClosePullRequest(context.Background(), p.Repository("photo-editor"), 7); err != nil {
+		t.Fatalf("ClosePullRequest() error = %v", err)
+	}
+	if got := g.bodies["PATCH /api/v1/repos/toolbox/photo-editor/pulls/7"]; got["state"] != "closed" {
+		t.Errorf("body = %v", got)
+	}
+}
+
+func TestForceMergePullRequest(t *testing.T) {
+	g, p := newAgentGitea(t)
+	if err := p.ForceMergePullRequest(context.Background(), p.Repository("photo-editor"), 7, "abc", "Add Makefile", "Task x"); err != nil {
+		t.Fatalf("ForceMergePullRequest() error = %v", err)
+	}
+	merge := g.bodies["POST /api/v1/repos/toolbox/photo-editor/pulls/7/merge"]
+	if merge["force_merge"] != true || merge["Do"] != "squash" || merge["head_commit_id"] != "abc" ||
+		merge["merge_title_field"] != "Add Makefile" || merge["delete_branch_after_merge"] != true {
+		t.Errorf("merge = %v", merge)
 	}
 }

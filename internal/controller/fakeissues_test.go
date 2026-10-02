@@ -182,7 +182,39 @@ func (p *fakeProvider) GetIssue(_ context.Context, repo gitprovider.Repository, 
 	if err != nil {
 		return gitprovider.Issue{}, err
 	}
-	return i.Issue, nil
+	out := i.Issue
+	if i.milestone != "" {
+		out.Milestone = int64(slices.Index(p.git.issueState().milestones[repo.Owner+"/"+repo.Name], i.milestone) + 1)
+	}
+	return out, nil
+}
+
+// AddIssueDependency makes an issue depend on another of the same repository.
+func (p *fakeProvider) AddIssueDependency(_ context.Context, repo gitprovider.Repository, number, blocker int) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	i, err := p.issueOf(repo, number)
+	if err != nil {
+		return err
+	}
+	if ref := fmt.Sprintf("#%d", blocker); !slices.Contains(i.blockers, ref) {
+		i.blockers = append(i.blockers, ref)
+	}
+	return nil
+}
+
+// setIssueMilestone puts an issue in the milestone titled title, creating it if needed.
+//
+//nolint:unused // used by the Standard change tests of the next tasks
+func (g *fakeGit) setIssueMilestone(owner, name string, number int, title string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := g.issueState()
+	key := owner + "/" + name
+	if !slices.Contains(s.milestones[key], title) {
+		s.milestones[key] = append(s.milestones[key], title)
+	}
+	s.find(key, number).milestone = title
 }
 
 func (p *fakeProvider) OpenBlockers(_ context.Context, repo gitprovider.Repository, number int) ([]string, error) {

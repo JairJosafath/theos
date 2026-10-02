@@ -308,13 +308,27 @@ func (g *gitea) CommentPullRequest(ctx context.Context, repo Repository, number 
 
 // MergePullRequest squashes a pull request into its base and deletes its branch.
 func (g *gitea) MergePullRequest(ctx context.Context, repo Repository, number int, headSHA, title, message string) error {
-	payload, _ := json.Marshal(map[string]any{
+	return g.merge(ctx, repo, number, headSHA, title, message, false)
+}
+
+// ForceMergePullRequest is MergePullRequest overriding the branch protection,
+// which the admin user may do.
+func (g *gitea) ForceMergePullRequest(ctx context.Context, repo Repository, number int, headSHA, title, message string) error {
+	return g.merge(ctx, repo, number, headSHA, title, message, true)
+}
+
+func (g *gitea) merge(ctx context.Context, repo Repository, number int, headSHA, title, message string, force bool) error {
+	body := map[string]any{
 		"Do":                        "squash",
 		"head_commit_id":            headSHA,
 		"merge_title_field":         title,
 		"merge_message_field":       message,
 		"delete_branch_after_merge": true,
-	})
+	}
+	if force {
+		body["force_merge"] = true
+	}
+	payload, _ := json.Marshal(body)
 	status, data, err := g.do(ctx, http.MethodPost,
 		"/api/v1/repos/"+repoPath(repo)+"/pulls/"+strconv.Itoa(number)+"/merge", payload)
 	if err != nil {
@@ -322,6 +336,47 @@ func (g *gitea) MergePullRequest(ctx context.Context, repo Repository, number in
 	}
 	if status != http.StatusOK {
 		return fmt.Errorf("gitea: merging pull request %d failed (HTTP %d): %s", number, status, apiMessage(data))
+	}
+	return nil
+}
+
+// PullRequestFiles returns the paths a pull request changes.
+func (g *gitea) PullRequestFiles(ctx context.Context, repo Repository, number int) ([]string, error) {
+	var out []string
+	for page := 1; page <= maxIssuePages; page++ {
+		status, data, err := g.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/repos/%s/pulls/%d/files?page=%d&limit=%d",
+			repoPath(repo), number, page, issuePageSize), nil)
+		if err != nil {
+			return nil, err
+		}
+		var files []struct {
+			Filename string `json:"filename"`
+		}
+		if status != http.StatusOK || json.Unmarshal(data, &files) != nil {
+			return nil, fmt.Errorf("gitea: listing the files of pull request %d of %s failed (HTTP %d): %s",
+				number, repoPath(repo), status, apiMessage(data))
+		}
+		for _, f := range files {
+			out = append(out, f.Filename)
+		}
+		if len(files) < issuePageSize {
+			break
+		}
+	}
+	return out, nil
+}
+
+// ClosePullRequest closes a pull request without merging it.
+func (g *gitea) ClosePullRequest(ctx context.Context, repo Repository, number int) error {
+	payload, _ := json.Marshal(struct {
+		State string `json:"state"`
+	}{"closed"})
+	status, data, err := g.do(ctx, http.MethodPatch, "/api/v1/repos/"+repoPath(repo)+"/pulls/"+strconv.Itoa(number), payload)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK && status != http.StatusCreated {
+		return fmt.Errorf("gitea: closing pull request %d of %s failed (HTTP %d): %s", number, repoPath(repo), status, apiMessage(data))
 	}
 	return nil
 }
