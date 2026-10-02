@@ -1,0 +1,157 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/model"
+)
+
+// A Standard change: the implementer needed protected files changed, pushed that
+// change to a proposal branch, and the operator files it as an issue of its own,
+// which a gated Task runs. The proposing Task is Blocked until it merges.
+
+// defaultStandardChangeRecheck: the Git host doesn't call back when the change's
+// issue closes.
+const defaultStandardChangeRecheck = time.Minute
+
+// propose files the implementer's proposal as a Standard change issue, authored
+// by the operator, which blocks the Task's issue; the Task is Blocked until it
+// merges. A repeated step reuses the issue it filed before.
+func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container, step model.TaskStep) (ctrl.Result, error) {
+	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox)
+	if err != nil || run.Result == nil || run.Result.Proposal == nil {
+		return ctrl.Result{}, fmt.Errorf("reading the proposal of %s: %v", status.Sandbox, err)
+	}
+	proposal := *run.Result.Proposal
+	provider, repo, err := r.gitRepo(ctx, container)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	n := int(task.Spec.Issue)
+	waiting, err := provider.GetIssue(gitCtx, repo, n)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	skip := 0
+	if status.StandardChange != nil {
+		skip = int(status.StandardChange.Issue)
+	}
+	filed, isNew, err := fileStandardChange(gitCtx, provider, repo, task, proposal, waiting.Milestone, skip)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	notes := []error{provider.AddIssueDependency(gitCtx, repo, n, filed.Number)}
+	if isNew {
+		// Said once: a repeated step finds the issue, and the comment, already there.
+		notes = append(notes, provider.CommentIssue(gitCtx, repo, n, fmt.Sprintf(
+			"Task `%s` needs a Standard change to %s, filed as #%d, which blocks this issue.",
+			task.Name, quotePaths(proposal.Paths), filed.Number)))
+	}
+	logNotes(ctx, task, notes)
+
+	if err := r.endRun(ctx, task, status); err != nil {
+		return ctrl.Result{}, err
+	}
+	count := int32(1)
+	if status.StandardChange != nil {
+		count = status.StandardChange.Count + 1
+	}
+	status.Commit, status.Summary = run.Result.Commit, run.Result.Summary
+	status.StandardChange = &c4v1alpha1.TaskStandardChange{Issue: int32(filed.Number), IssueURL: filed.URL,
+		Paths: proposal.Paths, Branch: proposal.Branch, Count: count}
+	status.Phase = c4v1alpha1.TaskBlocked
+	r.progress(task, status, metav1.ConditionTrue, "WaitingForStandardChange", step.Message)
+	logf.FromContext(ctx).Info("Filed a Standard change", "issue", filed.Number, "paths", proposal.Paths)
+	return ctrl.Result{}, nil // the status write triggers the next step
+}
+
+// fileStandardChange returns the open Standard change issue filed for the
+// proposal's branch, other than the one numbered skip, or files it: labelled
+// kind/standard-change and status/ready, in the waiting issue's milestone. isNew
+// says it was filed now.
+func fileStandardChange(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	task *c4v1alpha1.Task, proposal model.Proposal, milestone int64, skip int) (gitprovider.Issue, bool, error) {
+	if err := provider.EnsureLabels(ctx, repo, standardChangeLabels()); err != nil {
+		return gitprovider.Issue{}, false, err
+	}
+	open, err := provider.ListIssues(ctx, repo, model.LabelStandardChange)
+	if err != nil {
+		return gitprovider.Issue{}, false, err
+	}
+	if found, ok := standardChangeToReuse(open, proposal.Branch, skip); ok {
+		return found, false, nil
+	}
+	title, body := model.StandardChangeIssue(int(task.Spec.Issue), task.Name, proposal)
+	filed, err := provider.CreateIssue(ctx, repo, title, body, []string{model.LabelStandardChange, model.LabelReady},
+		milestone)
+	return filed, err == nil, err
+}
+
+// standardChangeToReuse finds the issue filed for branch among issues: the first
+// with the branch's marker on a line of its own, other than the one numbered skip,
+// the change the Task waited on before.
+func standardChangeToReuse(issues []gitprovider.Issue, branch string, skip int) (gitprovider.Issue, bool) {
+	for _, issue := range issues {
+		if issue.Number != skip && model.HasProposalMarker(issue.Body, branch) {
+			return issue, true
+		}
+	}
+	return gitprovider.Issue{}, false
+}
+
+// standardChangeLabels are the factory's issue labels and the Standard change's,
+// for the Git host.
+func standardChangeLabels() []gitprovider.Label {
+	l := model.StandardChangeLabel()
+	return append(issueLabels(),
+		gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+}
+
+// standardChangeFacts are what the Task's status says of its Standard changes:
+// how many it filed, and the one it waits for.
+func standardChangeFacts(status *c4v1alpha1.TaskStatus) (int, model.ChangeFacts) {
+	change := status.StandardChange
+	if change == nil {
+		return 0, model.ChangeFacts{}
+	}
+	return int(change.Count), model.ChangeFacts{Issue: int(change.Issue), Paths: change.Paths}
+}
+
+func quotePaths(paths []string) string {
+	return "`" + strings.Join(paths, "`, `") + "`"
+}
+
+func (r *TaskReconciler) standardChangeRecheck() time.Duration {
+	if r.StandardChangeRecheck > 0 {
+		return r.StandardChangeRecheck
+	}
+	return defaultStandardChangeRecheck
+}

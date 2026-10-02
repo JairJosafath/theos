@@ -91,6 +91,18 @@ func ProposalMarker(branch string) string {
 	return "<!-- c4factory:standard-change " + branch + " -->"
 }
 
+// HasProposalMarker reports whether body carries branch's marker on a line of its
+// own, as StandardChangeIssue writes it.
+func HasProposalMarker(body, branch string) bool {
+	marker := ProposalMarker(branch)
+	for line := range strings.SplitSeq(body, "\n") {
+		if strings.TrimSpace(line) == marker {
+			return true
+		}
+	}
+	return false
+}
+
 const reasonPrefix = "Standard change:"
 
 // ProposalReason takes the reason from an agent's summary: everything after the
@@ -121,6 +133,8 @@ func StandardChangeIssue(issue int, task string, p Proposal) (title, body string
 	fmt.Fprintf(&b, "- [ ] %s change as proposed on `origin/%s`, and nothing else\n", joinAnd(quoted), p.Branch)
 	b.WriteString("- [ ] The change weakens no check: no target, test, lint rule or CI job is removed or skipped\n")
 	b.WriteString("- [ ] `main` works with this change alone\n\n")
-	b.WriteString(ProposalMarker(p.Branch) + "\n")
-	return title, b.String()
+	// The agent wrote the reason and named the paths: no comment of theirs may pass
+	// for a marker, so the operator never takes this issue for another branch's.
+	body = strings.ReplaceAll(b.String(), "<!--", "&lt;!--") + ProposalMarker(p.Branch) + "\n"
+	return title, body
 }

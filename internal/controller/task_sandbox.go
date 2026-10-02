@@ -83,6 +83,11 @@ type sandboxRun struct {
 	related map[string]string
 	// protectedPaths are the paths the agent must not change.
 	protectedPaths []string
+	// allowedPaths are the protected paths a Standard change lets this Task
+	// change, and nothing else; from spec.allowedProtectedPaths, for both roles.
+	allowedPaths []string
+	// resumed means the implementer resumes after the Task's Standard change merged.
+	resumed bool
 	// workspaceMemory, when set, puts the workspace in memory, up to this size.
 	workspaceMemory *resource.Quantity
 }
@@ -117,6 +122,12 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	}
 	if task.Spec.Issue > 0 {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvIssue, Value: strconv.Itoa(int(task.Spec.Issue))})
+	}
+	if len(run.allowedPaths) > 0 {
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvAllowedPaths, Value: strings.Join(run.allowedPaths, ",")})
+	}
+	if run.resumed {
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvResumed, Value: "true"})
 	}
 	if related := relatedEnv(run.related); related != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvRelated, Value: related})
@@ -244,6 +255,7 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 		if term.Message != "" && json.Unmarshal([]byte(term.Message), &result) == nil {
 			state.Result = &model.RunResult{
 				Commit: result.Commit, Summary: result.Summary, Verdict: result.Verdict, Error: result.Error,
+				Proposal: result.Proposal, Empty: result.Empty,
 				FollowUps: result.FollowUps, Unavailable: result.Unavailable,
 			}
 			if result.RetryAt != nil {

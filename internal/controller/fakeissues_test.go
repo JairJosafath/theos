@@ -68,7 +68,7 @@ func (g *fakeGit) addIssue(owner, name, title, body string, labels []string, blo
 	return n
 }
 
-// issue returns a copy of an issue, with its assignees and comments.
+// issue returns a copy of an issue, with its blockers, assignees and comments.
 //
 //nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) issue(owner, name string, number int) fakeIssue {
@@ -79,7 +79,7 @@ func (g *fakeGit) issue(owner, name string, number int) fakeIssue {
 		return fakeIssue{}
 	}
 	out := *i
-	out.Labels, out.comments = slices.Clone(i.Labels), slices.Clone(i.comments)
+	out.Labels, out.comments, out.blockers = slices.Clone(i.Labels), slices.Clone(i.comments), slices.Clone(i.blockers)
 	return out
 }
 
@@ -204,8 +204,6 @@ func (p *fakeProvider) AddIssueDependency(_ context.Context, repo gitprovider.Re
 }
 
 // setIssueMilestone puts an issue in the milestone titled title, creating it if needed.
-//
-//nolint:unused // used by the Standard change tests of the next tasks
 func (g *fakeGit) setIssueMilestone(owner, name string, number int, title string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

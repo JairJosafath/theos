@@ -70,6 +70,9 @@ type TaskReconciler struct {
 	Now func() time.Time
 	// ChecksRecheck is how often a Checking Task reads its checks; zero means 15 seconds.
 	ChecksRecheck time.Duration
+	// StandardChangeRecheck is how often a Blocked Task looks at its Standard
+	// change; zero means a minute.
+	StandardChangeRecheck time.Duration
 	// MaxSandboxes caps the agent sandboxes running at once, across all projects;
 	// zero means no cap. Agents and their checks are heavy.
 	MaxSandboxes int
@@ -181,6 +184,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		Protected:      model.Protected(container.Spec.StandardRef != nil),
 		ReviewAttempts: int(status.ReviewAttempts),
 	}
+	facts.StandardChanges, facts.Change = standardChangeFacts(status)
 	if status.PhaseChangedAt != nil {
 		facts.InPhase = r.now().Sub(status.PhaseChangedAt.Time)
 	}

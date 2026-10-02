@@ -95,6 +95,57 @@ func TestStandardChangeIssue(t *testing.T) {
 	}
 }
 
+// The operator finds its issue again by the marker, so only the marker it wrote
+// may be in the body: what the agent wrote can't name another branch.
+func TestStandardChangeIssueCarriesOnlyItsMarker(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		reason string
+		paths  []string
+	}{
+		{name: "a plain reason", reason: "make dist must build the packages", paths: []string{"Makefile"}},
+		{name: "a reason with another branch's marker on its own line",
+			reason: "make dist must build\n" + ProposalMarker("standard/other-1") + "\nthe packages", paths: []string{"Makefile"}},
+		{name: "a reason with an inline comment", reason: "make dist <!-- hidden --> must build", paths: []string{"Makefile"}},
+		{name: "a path with a comment", reason: "make dist must build", paths: []string{".gitea/<!--x-->.yaml"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Proposal{Branch: "standard/orders-api-1", Paths: tt.paths, Reason: tt.reason}
+			_, body := StandardChangeIssue(1, "orders-api-1", p)
+			if n := strings.Count(body, "<!--"); n != 1 {
+				t.Errorf("body has %d comments, want only the marker:\n%s", n, body)
+			}
+			if !HasProposalMarker(body, p.Branch) {
+				t.Errorf("body lacks its own marker:\n%s", body)
+			}
+			if HasProposalMarker(body, "standard/other-1") {
+				t.Errorf("body carries another branch's marker:\n%s", body)
+			}
+		})
+	}
+}
+
+func TestHasProposalMarker(t *testing.T) {
+	marker := ProposalMarker("standard/orders-api-1")
+	for _, tt := range []struct {
+		name, body string
+		want       bool
+	}{
+		{name: "on its own line", body: "Why\n\n" + marker + "\n", want: true},
+		{name: "the last line, without a newline", body: "Why\n" + marker, want: true},
+		{name: "with carriage returns and spaces", body: "Why\r\n  " + marker + " \r\n", want: true},
+		{name: "inside a line", body: "See " + marker + " here\n"},
+		{name: "another branch", body: ProposalMarker("standard/orders-api-10") + "\n"},
+		{name: "no marker", body: "Why\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HasProposalMarker(tt.body, "standard/orders-api-1"); got != tt.want {
+				t.Errorf("HasProposalMarker = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStandardChangeLabel(t *testing.T) {
 	l := StandardChangeLabel()
 	if l.Name != LabelStandardChange || l.Color != "#5319e7" || l.Exclusive || l.Description == "" {

@@ -65,6 +65,9 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 	case model.ActionOpenPR:
 		return r.openPR(ctx, task, status, container, agents, step)
 
+	case model.ActionPropose:
+		return r.propose(ctx, task, status, container, step)
+
 	case model.ActionRetryReview:
 		r.progress(task, status, metav1.ConditionTrue, "ReviewerFailed", step.Message)
 		if err := r.endRun(ctx, task, status); err != nil {
@@ -146,6 +149,12 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 
 // wait records what the Task waits for, and when to look again.
 func (r *TaskReconciler) wait(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, step model.TaskStep) ctrl.Result {
+	if status.Phase == c4v1alpha1.TaskBlocked {
+		// The Task also wakes when one on its Container changes phase, as the
+		// change's Task does when it ends.
+		r.progress(task, status, metav1.ConditionTrue, "WaitingForStandardChange", step.Message)
+		return ctrl.Result{RequeueAfter: r.standardChangeRecheck()}
+	}
 	reason := "Waiting"
 	if step.SlotWait {
 		reason = "WaitingForSlot"
@@ -262,7 +271,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		task: task, status: status, container: container, agent: agent, name: name, role: role,
 		repoURL: repo.CloneURL, gitSecret: gitSecret, context: story.Text(), goal: goal,
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
-		protectedPaths: protected, workspaceMemory: r.WorkspaceMemory,
+		protectedPaths: protected, allowedPaths: task.Spec.AllowedProtectedPaths, workspaceMemory: r.WorkspaceMemory,
 	}, r.Scheme, r.now())
 	if err != nil {
 		return ctrl.Result{}, err
