@@ -96,13 +96,14 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   rc=$?
   mins=$((($(date +%s) - t0) / 60))
 
-  if jq -e .result "$out.json" >/dev/null 2>&1; then
+  if [ -s "$out.json" ] && jq -e .result "$out.json" >/dev/null 2>&1; then
     jq -r .result "$out.json" >"$out.md"
     log "session $i end: exit $rc after ${mins}m, $(jq -r '"\(.num_turns) turns, error \(.is_error)"' "$out.json"); account in $out.md"
   else
     log "session $i end: exit $rc after ${mins}m, no result; see $out.err"
   fi
   [ "$rc" = 124 ] && log "session $i hit the $SESSION_TIMEOUT timeout"
+  [ "$rc" = 143 ] && log "session $i was killed (SIGTERM)"
 
   if [ "$(git log -1 --format=%H -- docs/handoffs/)" = "$before" ]; then
     log "session $i wrote no new handoff; stopping (claude --resume $id to see why)"
