@@ -114,7 +114,7 @@ func (r *repo) commitAll(ctx context.Context, message string) error {
 // changedPaths lists the paths the work branch changes, as its pull request
 // shows them: since it forked from the base, without what it merged from there.
 func (r *repo) changedPaths(ctx context.Context, base string) ([]string, error) {
-	out, err := r.git(ctx, r.dir, "diff", "--name-only", "origin/"+base+"...HEAD")
+	out, err := r.git(ctx, r.dir, "diff", "--name-only", "--no-renames", "origin/"+base+"...HEAD")
 	if err != nil {
 		return nil, err
 	}

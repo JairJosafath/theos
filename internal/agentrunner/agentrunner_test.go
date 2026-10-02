@@ -714,6 +714,12 @@ func TestResultEncodeKeepsTheProposal(t *testing.T) {
 	}
 	r := Result{Role: RoleImplement, Commit: strings.Repeat("a", 40), Summary: strings.Repeat("s", 10<<10),
 		Proposal: &model.Proposal{Branch: "standard/add-crop", Paths: paths, Reason: strings.Repeat("r", 10<<10)}}
+	short := Result{Role: RoleImplement, Summary: strings.Repeat("s", 5000),
+		Proposal: &model.Proposal{Branch: "standard/add-crop", Paths: []string{"Makefile"}, Reason: strings.Repeat("r", 500)}}
+	var kept Result
+	if err := json.Unmarshal(short.Encode(), &kept); err != nil || kept.Proposal == nil || kept.Proposal.Reason != strings.Repeat("r", 500) {
+		t.Errorf("a 500-byte Reason beside a 5000-byte summary = %+v, %v", kept.Proposal, err)
+	}
 	data := r.Encode()
 	if len(data) > MaxResultBytes {
 		t.Fatalf("Encode() = %d bytes, want at most %d", len(data), MaxResultBytes)
@@ -725,6 +731,9 @@ func TestResultEncodeKeepsTheProposal(t *testing.T) {
 	if back.Proposal == nil || back.Proposal.Branch != "standard/add-crop" || !slices.Equal(back.Proposal.Paths, paths) {
 		t.Errorf("decoded proposal = %+v", back.Proposal)
 	}
+	if len(back.Proposal.Reason) < 500 {
+		t.Errorf("decoded Reason = %d bytes, want it kept next to a long summary", len(back.Proposal.Reason))
+	}
 	if len(r.Proposal.Reason) != 10<<10 {
 		t.Error("Encode() changed the caller's proposal")
 	}
@@ -735,4 +744,36 @@ func TestResultEncodeTerminatesWhenTheProposalCannotFit(t *testing.T) {
 	if len(r.Encode()) == 0 {
 		t.Error("Encode() returned nothing")
 	}
+}
+
+type renameAgent struct{ from, to string }
+
+func (a renameAgent) Run(_ context.Context, dir, _ string) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, a.to)), 0o755); err != nil {
+		return "", err
+	}
+	return "Standard change: move the build", os.Rename(filepath.Join(dir, a.from), filepath.Join(dir, a.to))
+}
+
+func TestRunImplementSeesARenamedProtectedFile(t *testing.T) {
+	ctx := context.Background()
+	t.Run("proposed", func(t *testing.T) {
+		url := standardRepo(t)
+		got := Run(ctx, standardJob(t, url), renameAgent{"Makefile", "src/build.mk"}, t.TempDir())
+		if got.Error != "" || got.Proposal == nil || !slices.Equal(got.Proposal.Paths, []string{"Makefile"}) {
+			t.Fatalf("Run() = %+v, proposal %+v", got, got.Proposal)
+		}
+		if fileIn(t, cloneTask(t, url), "Makefile") != "check:\n" {
+			t.Error("the task branch lost the protected file")
+		}
+	})
+	t.Run("refused without an issue", func(t *testing.T) {
+		url := standardRepo(t)
+		job := standardJob(t, url)
+		job.Issue = 0
+		got := Run(ctx, job, renameAgent{"Makefile", "src/build.mk"}, t.TempDir())
+		if !strings.Contains(got.Error, "touches Makefile") || branchHead(t, url, "task/add-crop") != "" {
+			t.Errorf("Run() = %+v", got)
+		}
+	})
 }

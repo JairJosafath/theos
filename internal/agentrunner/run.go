@@ -69,12 +69,12 @@ func (r Result) Encode() []byte {
 			return data
 		}
 		switch {
-		case r.Proposal != nil && len(r.Proposal.Reason) > 200:
-			r.Proposal.Reason = shorten(r.Proposal.Reason, len(r.Proposal.Reason)-(len(data)-MaxResultBytes)-16)
 		case len(r.Summary) > 200:
 			r.Summary = shorten(r.Summary, len(r.Summary)-(len(data)-MaxResultBytes)-16)
 		case len(r.Error) > 200:
 			r.Error = shorten(r.Error, len(r.Error)-(len(data)-MaxResultBytes)-16)
+		case r.Proposal != nil && len(r.Proposal.Reason) > 200:
+			r.Proposal.Reason = shorten(r.Proposal.Reason, len(r.Proposal.Reason)-(len(data)-MaxResultBytes)-16)
 		case len(r.FollowUps) > 0:
 			// Escaping can make even short follow-ups too long; the verdict matters more.
 			r.FollowUps = r.FollowUps[:len(r.FollowUps)-1]
