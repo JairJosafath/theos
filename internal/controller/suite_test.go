@@ -136,7 +136,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 	for _, r := range []interface{ SetupWithManager(ctrl.Manager) error }{
 		&ProjectReconciler{Client: c, Scheme: s},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
-		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
+		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},

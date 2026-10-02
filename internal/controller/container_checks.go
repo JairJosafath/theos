@@ -30,9 +30,16 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// checksRecheck is how often a Ready Container reads its checks again. The Git
-// host doesn't call back, so this is polled.
-const checksRecheck = time.Minute
+// defaultContainerChecksRecheck is how often a Ready Container reads its checks
+// again. The Git host doesn't call back, so this is polled.
+const defaultContainerChecksRecheck = time.Minute
+
+func (r *ContainerReconciler) checksRecheck() time.Duration {
+	if r.ChecksRecheck > 0 {
+		return r.ChecksRecheck
+	}
+	return defaultContainerChecksRecheck
+}
 
 // refreshChecks reads the latest CI result on the default branch into status.
 // A Git error keeps the last known result: checks are a report, not a step.
@@ -54,7 +61,7 @@ func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1
 	if err != nil {
 		logf.FromContext(ctx).Info("Could not read checks", "error", err.Error())
 	}
-	return ctrl.Result{RequeueAfter: checksRecheck}
+	return ctrl.Result{RequeueAfter: r.checksRecheck()}
 }
 
 // providerFor returns the Provider for a GitProvider in namespace ns, with its

@@ -194,7 +194,9 @@ func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.C
 	status.AppliedRelationships, status.AppliedConnectors = appliedStatus(relationships)
 	r.condition(container, status, c4v1alpha1.ConditionScaffolded, metav1.ConditionTrue,
 		c4v1alpha1.ReasonScaffolded, message)
-	return ctrl.Result{}, r.writeStatus(ctx, container, status)
+	// The scaffold's push starts CI; read its result like every later reconcile
+	// does. A status write alone doesn't reconcile the Container again.
+	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.writeStatus(ctx, container, status)
 }
 
 // fail stops the Container with a reason a person has to act on.

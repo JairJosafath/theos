@@ -116,9 +116,9 @@ var _ = Describe("Container Standard", func() {
 		Expect(gitFake.protectedBranches(ns, "orders-api")).To(Equal([]string{"main"}))
 		Expect(gitFake.protectedBranches(ns, "orders-worker")).To(BeEmpty())
 
+		// Checks are polled, from the scaffold on, with nothing else touching the
+		// Container (a nudge here once hid that polling never started).
 		gitFake.setChecks(ns, "orders-api", "main", "success")
-		// Checks are polled; nudge the Container rather than wait a minute.
-		Expect(patch(container, func() { container.Annotations = map[string]string{c4v1alpha1.AnnotationRetry: "checks"} })).To(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.Checks).NotTo(BeNil())

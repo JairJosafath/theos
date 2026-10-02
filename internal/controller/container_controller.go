@@ -52,6 +52,8 @@ type ContainerReconciler struct {
 	ScaffoldOptions scaffold.Options
 	// ScaffoldTimeout bounds the Git calls of one scaffold attempt; zero means two minutes.
 	ScaffoldTimeout time.Duration
+	// ChecksRecheck is how often a Ready Container reads its checks; zero means a minute.
+	ChecksRecheck time.Duration
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
