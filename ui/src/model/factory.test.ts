@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { FactoryHealth } from '../k8s/health'
-import type { Container, Session, Task, TaskTransition } from '../k8s/types'
+import type { Agent, Container, Session, Task, TaskTransition } from '../k8s/types'
 import {
+  agentBackAt,
+  agentRole,
   attention,
   boardColumns,
   currentStage,
   factoryStats,
+  followUpLinks,
+  formatClock,
   formatDuration,
   recentStall,
   slotQueue,
+  taskHeadline,
+  taskRoles,
   taskSegments,
   timeByStage,
   timelineSteps,
@@ -24,6 +30,41 @@ function task(name: string, status: Task['status'] = {}, created = at(0)): Task 
     status,
   }
 }
+
+/** A Task a Crew started from issue 3 of cel-language-server. */
+function issueTask(status: Task['status'] = {}): Task {
+  return {
+    metadata: {
+      name: 'cel-language-server-3',
+      namespace: 'cel-lens',
+      creationTimestamp: at(0),
+      labels: { 'c4.factory.io/crew': 'cel-language-server', 'c4.factory.io/issue': '3' },
+    },
+    spec: {
+      containerRef: { name: 'cel-language-server' },
+      agentRef: { name: 'claude-implementer' },
+      reviewerRef: { name: 'claude-reviewer' },
+      issue: 3,
+    },
+    status,
+  }
+}
+
+function agent(name: string, spec: Partial<Agent['spec']> = {}, namespace = 'cel-lens'): Agent {
+  return { metadata: { name, namespace }, spec: { image: 'c4factory/agent-go:dev', ...spec } }
+}
+
+const agents = [
+  agent('claude-implementer', {
+    displayName: 'Claude Code, Sonnet',
+    harness: 'claude-code',
+    model: 'claude-sonnet-5-5',
+  }),
+  agent('claude-reviewer', { displayName: 'Claude Code, Opus', model: 'claude-opus-5-5' }),
+  agent('stand-in', { harness: 'stand-in' }),
+  agent('claude', { displayName: 'Claude Code' }),
+  agent('claude-implementer', { model: 'claude-haiku-5-5' }, 'elsewhere'),
+]
 
 const step = (min: number, phase: TaskTransition['phase'], round: number, reason: string): TaskTransition => ({
   at: at(min),
@@ -247,6 +288,113 @@ describe('attention', () => {
   it('forgets failures older than a day', () => {
     const old = task('old', { phase: 'Failed', completedAt: at(0) })
     expect(attention({ tasks: [old], containers: [], sessions: [], now: T0 + 25 * 60 * 60_000 })).toEqual([])
+  })
+})
+
+describe('taskHeadline', () => {
+  it('names the issue with its title, linking to it', () => {
+    const t = issueTask({
+      issueTitle: 'Map positions inside YAML scalars',
+      issueURL: 'http://gitea/cel-lens/x/issues/3',
+    })
+    expect(taskHeadline(t)).toEqual({
+      text: '#3 Map positions inside YAML scalars',
+      issue: 3,
+      url: 'http://gitea/cel-lens/x/issues/3',
+    })
+  })
+
+  it('names the issue by number before the operator has read it', () => {
+    expect(taskHeadline(issueTask())).toEqual({ text: 'Issue #3', issue: 3, url: undefined })
+  })
+
+  it("takes a goal's first line", () => {
+    const t = task('t')
+    t.spec.goal = 'Build version 1 of Image Shrink\n- Pick photos'
+    expect(taskHeadline(t)).toEqual({ text: 'Build version 1 of Image Shrink' })
+  })
+})
+
+describe('taskRoles', () => {
+  it('names the implementer and the reviewer with their models', () => {
+    const { implementer, reviewer } = taskRoles(issueTask(), agents)
+    expect(implementer).toEqual({
+      name: 'claude-implementer',
+      title: 'Claude Code, Sonnet',
+      model: 'claude-sonnet-5-5',
+      found: true,
+    })
+    expect(reviewer).toMatchObject({ title: 'Claude Code, Opus', model: 'claude-opus-5-5' })
+  })
+
+  it('lets the implementer review when no reviewer is named', () => {
+    const t = task('t')
+    t.metadata.namespace = 'cel-lens'
+    t.spec.agentRef = { name: 'claude' }
+    const { implementer, reviewer } = taskRoles(t, agents)
+    expect(reviewer).toEqual(implementer)
+    // No model: the harness's default.
+    expect(reviewer).toEqual({ name: 'claude', title: 'Claude Code', model: undefined, found: true })
+  })
+
+  it("says stand-in for the scripted agent, and keeps a missing Agent's name", () => {
+    expect(agentRole(agents, 'cel-lens', 'stand-in').model).toBe('stand-in')
+    expect(agentRole(agents, 'cel-lens', 'gone')).toEqual({ name: 'gone', title: 'gone', found: false })
+  })
+
+  it("looks in the Task's own namespace", () => {
+    expect(agentRole(agents, 'elsewhere', 'claude-implementer').model).toBe('claude-haiku-5-5')
+  })
+})
+
+describe('agentBackAt', () => {
+  const waiting = (status: Task['status']) =>
+    issueTask({
+      phase: 'Implementing',
+      round: 2,
+      agentBackAt: at(38),
+      conditions: [{ type: 'Progressing', status: 'True', reason: 'AgentUnavailable', message: 'Usage limit' }],
+      ...status,
+    })
+
+  it('says when the agent is tried again', () => {
+    expect(agentBackAt(waiting({}))).toBe(T0 + 38 * 60_000)
+  })
+
+  it('is undefined once the Task does something else, or is done', () => {
+    const slot = waiting({
+      conditions: [{ type: 'Progressing', status: 'True', reason: 'WaitingForSlot', message: '' }],
+    })
+    expect(agentBackAt(slot)).toBeUndefined()
+    expect(agentBackAt(waiting({ phase: 'Failed' }))).toBeUndefined()
+    expect(agentBackAt(task('t'))).toBeUndefined()
+  })
+})
+
+describe('followUpLinks', () => {
+  it('labels issue addresses by number', () => {
+    const t = issueTask({
+      followUps: ['http://gitea/cel-lens/cel-language-server/issues/15', 'http://gitea/somewhere/else'],
+    })
+    expect(followUpLinks(t)).toEqual([
+      { url: 'http://gitea/cel-lens/cel-language-server/issues/15', label: '#15' },
+      { url: 'http://gitea/somewhere/else', label: 'http://gitea/somewhere/else' },
+    ])
+    expect(followUpLinks(task('t'))).toEqual([])
+  })
+})
+
+describe('formatClock', () => {
+  // Local times, as the browser shows them.
+  const now = new Date(2026, 9, 2, 12, 0).getTime()
+
+  it('shows a time today as hours and minutes', () => {
+    expect(formatClock(new Date(2026, 9, 2, 15, 4).getTime(), now)).toBe('15:04')
+    expect(formatClock(new Date(2026, 9, 2, 9, 5).getTime(), now)).toBe('09:05')
+  })
+
+  it('adds the weekday on another day', () => {
+    expect(formatClock(new Date(2026, 9, 3, 3, 0).getTime(), now)).toBe('Sat 03:00')
   })
 })
 

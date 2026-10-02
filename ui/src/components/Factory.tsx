@@ -4,16 +4,19 @@
 import { useMemo } from 'react'
 import type { FactoryData } from '../k8s/sources'
 import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../k8s/health'
-import { findCondition, type Agent, type Task } from '../k8s/types'
+import { findCondition, LABEL_CREW, type Agent, type Task } from '../k8s/types'
 import { plural, timeAgo } from '../model/describe'
 import {
+  agentBackAt,
   API_STALL_MS,
   attention,
   boardColumns,
   COLUMNS,
   currentStage,
   factoryStats,
+  followUpLinks,
   formatBytes,
+  formatClock,
   formatCpu,
   formatDuration,
   isFinal,
@@ -22,10 +25,13 @@ import {
   slotQueue,
   STAGES,
   stageSince,
+  taskHeadline,
   taskKey,
+  taskRoles,
   taskSegments,
   timeByStage,
   timelineSteps,
+  type AgentRole,
   type Attention,
   type Stage,
   type Step,
@@ -141,7 +147,13 @@ export function FactoryPage({ data, loaded, health, healthLoaded, now, selectedT
 
         <aside className="side">
           {selected ? (
-            <TaskPanel task={selected} agent={agentOf(selected)} now={now} onClose={() => onSelectTask(undefined)} />
+            <TaskPanel
+              task={selected}
+              agent={agentOf(selected)}
+              roles={taskRoles(selected, data.agents)}
+              now={now}
+              onClose={() => onSelectTask(undefined)}
+            />
           ) : null}
           <HealthPanel health={health} loaded={healthLoaded} now={now} />
           <SlotsPanel tasks={data.tasks} health={health} now={now} onSelectTask={onSelectTask} />
@@ -257,6 +269,8 @@ function TaskCard({
   const phase = task.status?.phase
   const since = stageSince(task)
   const maxRounds = agent?.spec.maxRounds
+  const headline = taskHeadline(task)
+  const back = agentBackAt(task)
   return (
     <button
       type="button"
@@ -265,6 +279,7 @@ function TaskCard({
       onClick={onSelect}
     >
       <span className="task-card-name">{task.metadata.name}</span>
+      {headline.issue ? <span className="task-card-issue">{headline.text}</span> : null}
       <span className="task-card-sub">
         {task.metadata.namespace} · {task.spec.containerRef.name}
       </span>
@@ -280,6 +295,11 @@ function TaskCard({
         </span>
         {!isFinal(phase) ? <ChecksPill state={task.status?.checks?.state} /> : null}
         {!isFinal(phase) ? <VerdictPill verdict={task.status?.review?.verdict} /> : null}
+        {back !== undefined ? (
+          <span className="badge badge-sm badge-waiting" title="Waiting for the agent: its service is unavailable">
+            agent back {formatClock(back, now)}
+          </span>
+        ) : null}
       </span>
       <span className="task-card-time">
         {isFinal(phase)
@@ -369,12 +389,38 @@ function TimePanel({ stats }: { stats: ReturnType<typeof factoryStats> }) {
   )
 }
 
-function TaskPanel({ task, agent, now, onClose }: { task: Task; agent?: Agent; now: number; onClose: () => void }) {
+/** An Agent's name with the model it runs, such as "Claude Code, Sonnet (implementer) claude-sonnet-5-5". */
+function AgentName({ role }: { role: AgentRole }) {
+  return (
+    <>
+      <span title={role.found ? role.name : `Agent ${role.name} was not found`}>{role.title}</span>
+      {role.model ? <span className="model">{role.model}</span> : null}
+    </>
+  )
+}
+
+function TaskPanel({
+  task,
+  agent,
+  roles,
+  now,
+  onClose,
+}: {
+  task: Task
+  agent?: Agent
+  roles: { implementer: AgentRole; reviewer: AgentRole }
+  now: number
+  onClose: () => void
+}) {
   const segments = taskSegments(task, now)
   const progressing = findCondition(task.status?.conditions, 'Progressing')
   const stage = currentStage(task)
-  const [goalTitle, ...goalRest] = (task.spec.goal ?? '').split('\n')
+  const headline = taskHeadline(task)
+  const goalRest = headline.issue ? '' : (task.spec.goal ?? '').split('\n').slice(1).join('\n').trim()
   const byStage = timeByStage(segments)
+  const back = agentBackAt(task)
+  const followUps = followUpLinks(task)
+  const crew = task.metadata.labels?.[LABEL_CREW]
   return (
     <div className="panel task-panel">
       <div className="panel-head">
@@ -387,12 +433,18 @@ function TaskPanel({ task, agent, now, onClose }: { task: Task; agent?: Agent; n
         </button>
       </div>
       <p className="panel-text">
-        <strong>{goalTitle}</strong>
+        {headline.url ? (
+          <a href={headline.url} target="_blank" rel="noreferrer" className="headline-link">
+            {headline.text} <ExternalLinkIcon size={12} />
+          </a>
+        ) : (
+          <strong>{headline.text}</strong>
+        )}
       </p>
-      {goalRest.join('\n').trim() ? (
+      {goalRest ? (
         <details className="goal-more">
           <summary>The whole goal</summary>
-          <pre className="pre">{goalRest.join('\n').trim()}</pre>
+          <pre className="pre">{goalRest}</pre>
         </details>
       ) : null}
       {progressing?.message ? (
@@ -404,8 +456,31 @@ function TaskPanel({ task, agent, now, onClose }: { task: Task; agent?: Agent; n
       <dl className="facts">
         <dt>Container</dt>
         <dd className="mono">{task.spec.containerRef.name}</dd>
-        <dt>Agent</dt>
-        <dd>{agent?.spec.displayName ?? task.spec.agentRef.name}</dd>
+        {crew ? (
+          <>
+            <dt>Crew</dt>
+            <dd className="mono">{crew}</dd>
+          </>
+        ) : null}
+        <dt>Implements</dt>
+        <dd>
+          <AgentName role={roles.implementer} />
+        </dd>
+        <dt>Reviews</dt>
+        <dd>
+          <AgentName role={roles.reviewer} />
+        </dd>
+        {back !== undefined ? (
+          <>
+            <dt>Agent back</dt>
+            <dd>
+              at {formatClock(back, now)}
+              <span className="muted">
+                {back > now ? ` · in ${formatDuration(back - now)}` : ' · any moment'}; waiting costs no round
+              </span>
+            </dd>
+          </>
+        ) : null}
         <dt>Round</dt>
         <dd>
           {task.status?.round ?? 0}
@@ -444,6 +519,21 @@ function TaskPanel({ task, agent, now, onClose }: { task: Task; agent?: Agent; n
             <dt>Review</dt>
             <dd>
               <VerdictPill verdict={task.status.review.verdict} />
+            </dd>
+          </>
+        ) : null}
+        {followUps.length ? (
+          <>
+            <dt>Follow-ups</dt>
+            <dd>
+              <span className="follow-ups">
+                {followUps.map((f) => (
+                  <a key={f.url} href={f.url} target="_blank" rel="noreferrer" title={f.url}>
+                    {f.label} <ExternalLinkIcon size={11} />
+                  </a>
+                ))}
+              </span>
+              <span className="muted"> proposed from the review</span>
             </dd>
           </>
         ) : null}

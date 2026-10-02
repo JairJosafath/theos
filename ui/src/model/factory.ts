@@ -2,7 +2,7 @@
 // their time goes, and what needs attention. Plain functions over resources and
 // the /factory/health summary, so they are tested without React.
 
-import type { Container, Session, Task, TaskPhase, TaskTransition } from '../k8s/types'
+import type { Agent, Container, Session, Task, TaskPhase, TaskTransition } from '../k8s/types'
 import { findCondition } from '../k8s/types'
 import type { FactoryHealth } from '../k8s/health'
 
@@ -124,6 +124,74 @@ export function stageSince(task: Task): number | undefined {
 
 export function taskKey(task: Task): string {
   return `${task.metadata.namespace ?? ''}/${task.metadata.name}`
+}
+
+/** What a Task works on, in one line. */
+export interface Headline {
+  /** "#3 Map positions inside YAML scalars" for an issue, else the goal's first line. */
+  text: string
+  /** The issue's number and address, for a Task made from an issue. */
+  issue?: number
+  url?: string
+}
+
+export function taskHeadline(task: Task): Headline {
+  const issue = task.spec.issue
+  if (issue) {
+    // The title arrives once the operator has read the issue.
+    const title = task.status?.issueTitle?.trim()
+    return { text: title ? `#${issue} ${title}` : `Issue #${issue}`, issue, url: task.status?.issueURL || undefined }
+  }
+  return { text: (task.spec.goal ?? '').split('\n')[0].trim() }
+}
+
+/** An Agent in a role, as the views show it: its name and the model it runs. */
+export interface AgentRole {
+  /** metadata.name, from the reference. */
+  name: string
+  /** displayName, or the name. */
+  title: string
+  /** spec.model; "stand-in" for the scripted agent; undefined for the harness's default model. */
+  model?: string
+  /** False when the Agent could not be found: then only its name is known. */
+  found: boolean
+}
+
+/** The Agent a reference names, in the namespace of the object that refers to it. */
+export function agentRole(agents: Agent[], namespace: string | undefined, name: string): AgentRole {
+  const agent = agents.find(
+    (a) => a.metadata.name === name && (!namespace || !a.metadata.namespace || a.metadata.namespace === namespace),
+  )
+  if (!agent) return { name, title: name, found: false }
+  const model = agent.spec.model?.trim() || (agent.spec.harness === 'stand-in' ? 'stand-in' : undefined)
+  return { name, title: agent.spec.displayName?.trim() || name, model, found: true }
+}
+
+/** Who implements a Task, and who reviews it: its reviewerRef, or else the implementer. */
+export function taskRoles(task: Task, agents: Agent[]): { implementer: AgentRole; reviewer: AgentRole } {
+  const namespace = task.metadata.namespace
+  return {
+    implementer: agentRole(agents, namespace, task.spec.agentRef.name),
+    reviewer: agentRole(agents, namespace, (task.spec.reviewerRef ?? task.spec.agentRef).name),
+  }
+}
+
+/**
+ * When a Task tries its agent again, while it waits for an unavailable one (a
+ * usage limit, an overloaded service): undefined when it isn't waiting for that.
+ */
+export function agentBackAt(task: Task): number | undefined {
+  if (isFinal(task.status?.phase)) return undefined
+  if (findCondition(task.status?.conditions, 'Progressing')?.reason !== 'AgentUnavailable') return undefined
+  return time(task.status?.agentBackAt)
+}
+
+/** The issues filed from a Task's review on merge, as links: "#15" when the address ends in an issue number. */
+export function followUpLinks(task: Task): { url: string; label: string }[] {
+  return (task.status?.followUps ?? []).map((url) => {
+    const number = /\/issues\/(\d+)\/?$/.exec(url)?.[1]
+    return { url, label: number ? `#${number}` : url }
+  })
 }
 
 export type Column = Stage | 'done'
@@ -376,6 +444,14 @@ export function formatDuration(ms: number): string {
   if (h < 24) return m % 60 ? `${h} h ${m % 60} min` : `${h} h`
   const d = Math.floor(h / 24)
   return h % 24 ? `${d} d ${h % 24} h` : `${d} d`
+}
+
+/** A time of day, "15:04"; with the weekday when it isn't today, "Fri 03:00". */
+export function formatClock(t: number, now: number): string {
+  const d = new Date(t)
+  const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  if (d.toDateString() === new Date(now).toDateString()) return clock
+  return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${clock}`
 }
 
 function timeAgoShort(iso: string | undefined, now: number): string {
