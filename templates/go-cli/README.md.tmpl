@@ -1,0 +1,37 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` command of {{ .SoftwareSystem }}, in project {{ .Project }}: a
+Go command-line program, scaffolded by C4 Factory.
+
+## Develop
+
+Open the repository in its devcontainer, which has Go 1.26 and golangci-lint.
+
+```sh
+go run . --help      # run it
+go test ./...        # test it
+{{- if .Standard }}
+make check           # what CI runs: tidy, format, vet, lint, test with -race
+make build           # bin/{{ .Container }}, versioned with git describe
+make dist            # release binaries for Linux, macOS and Windows in dist/
+make help            # every target
+{{- else }}
+go build -o bin/{{ .Container }} .
+{{- end }}
+```
+
+`{{ .Container }} --version` prints the version the binary was built with: the
+`-ldflags "-X main.version=..."` of the build, or `dev`.
+
+## Layout
+
+- `main.go` is the command: it parses the command line and calls into
+  `internal/`. Its `run` function returns the exit code instead of exiting, so
+  `main_test.go` tests the whole program.
+- `internal/` holds the packages, one purpose each; `internal/doc.go` explains
+  the rules.
+- Tests sit next to the code; fixtures and golden files in `testdata/`.
+{{- if .Standard }}
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}

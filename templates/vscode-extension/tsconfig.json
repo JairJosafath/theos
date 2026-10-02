@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    // esbuild bundles; tsc only type-checks.
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    // engines.vscode ^1.100.0 runs Node 20, which has all of ES2023.
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "types": ["node", "vscode"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "test", "vitest.config.mts"]
+}
