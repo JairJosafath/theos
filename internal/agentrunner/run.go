@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/JairJosafath/c4factory/internal/model"

@@ -19,6 +19,8 @@ const (
 	TypeJob        = "job"
 	TypeWorker     = "worker"
 	TypeMobileApp  = "mobile-app"
+	TypeCLI        = "cli"
+	TypeExtension  = "extension"
 )
 
 // Catalog sides, in the order their layers are rendered.
