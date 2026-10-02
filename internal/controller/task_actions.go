@@ -97,6 +97,9 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		status.Feedback = step.Feedback
 		status.ReviewAttempts = 0
 		status.Checks = nil
+		if status.StandardChange != nil {
+			status.StandardChange.ResumedRound = 0 // only the first run after a resume skips the empty-branch guard
+		}
 		status.Phase = c4v1alpha1.TaskImplementing
 		r.progress(task, status, metav1.ConditionTrue, "ResolvingConflicts", step.Message)
 		log.Info("Sent an approved Task back to resolve conflicts", "round", status.Round)

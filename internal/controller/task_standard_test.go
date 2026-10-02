@@ -321,6 +321,46 @@ var _ = Describe("Task with a Standard change", func() {
 		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
+	It("counts only the first run after the resume as resumed, not a conflict-resolution run", func() {
+		ns := newProjectNamespace()
+		_, m := blockedBesideChange(ns, 2)
+		mergeChange(ns, 1)
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.StandardChange).To(PointTo(HaveField("ResumedRound", int32(1))))
+			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement")).To(ContainElement(
+				map[string]any{"name": "C4_RESUMED", "value": "true"}))
+		}).Should(Succeed(), fmt.Sprintf("resumed after Standard change #%d", m))
+
+		By("the resumed run changing the branch, so a pull request is opened and reviewed")
+		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-implement")})).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(sandboxExists(g, ns, "orders-api-1-r1-implement").GetDeletionTimestamp()).To(BeNil())
+		}).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-r1")
+		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Uses the dist target."}, "")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }).Should(Succeed())
+
+		By("sending the approved, conflicting change back to resolve conflicts")
+		pulls := gitFake.pullRequests(ns, "orders-api")
+		gitFake.conflict(ns, "orders-api", pulls[len(pulls)-1].Number, true)
+		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+			&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Good."}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ResolvingConflicts")))
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.StandardChange).To(PointTo(HaveField("ResumedRound", int32(0))))
+		}).Should(Succeed())
+		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-implement")})).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(sandboxExists(g, ns, "orders-api-1-r1-implement").GetDeletionTimestamp()).To(BeNil())
+			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement")).NotTo(ContainElement(
+				map[string]any{"name": "C4_RESUMED", "value": "true"}))
+		}).Should(Succeed())
+	})
+
 	It("fails when its Standard change fails", func() {
 		ns := newProjectNamespace()
 		n, m := blockedBesideChange(ns, 1)
