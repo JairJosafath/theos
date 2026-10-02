@@ -48,6 +48,8 @@ issue closed with a comment.
 | **With four sandboxes the API stalled for up to 10 s again**, and the scheduler and controller-manager crash-looped (104 restarts), so two sandbox pods sat `Pending` for 5 minutes | The Factory view: "The API server did not answer for 11 s". CPU stayed under 4.2 of 12 cores and memory under 6.7 GiB, but etcd logged 83 disk syncs over 1 s in 25 minutes, up to 7 s; they lost their 15 s leases | `hack/kind.yaml`: etcd runs with `--unsafe-no-fsync`, and both hold 60 s leases with a 40 s renew deadline; applied to the running cluster by editing its static pod manifests. Since then: no slow syncs, requests under 2 s with Tasks only, and no restarts. A test cluster can lose its newest writes in a hard crash; Gitea's repositories are on their own volume |
 | The Story view's "Working now" said 0 while three Crew Tasks were at work | The tile beside the panel that listed them ([evidence](screenshots/v4-parallel-story.png), after the fix) | It counts active Sessions and the Tasks the project's Crews are on |
 | The agent never saw why Go CI failed: the CI log excerpt in its feedback knew only Flutter's output | cel-language-server #8's round 1 failed on a timing test, but the feedback held only `make: *** [Makefile:41: test] Error 1`; the implementer guessed and fixed a different test | The excerpt also picks Go test failures with their log lines, panics, data races, compiler, vet and linter findings, and Vitest, tsc, ESLint and pytest failures. On the real log it gives the test, its message, the package and the make line |
+| An acceptance criterion that needs a protected file fails the Task: the implementer stops, as its guide says, but "no changes" in the last round is a failure | cel-language-server #24 asked for `make bench`; the Standard owns the Makefile. Rounds 1 and 2 said so, the reviewer held the criterion, round 3 made no changes and the Task failed | The criterion was corrected and the issue re-readied; the new Task merged in one round. Open: an agent has no "blocked, a person must act" outcome, so a blocked Task spends rounds |
+| Reviewers' follow-ups piled up beside the release's issues (37 open), so the backlog looked endless | The user: "I fear that we will not ever complete the app" | Each repository has a `v0.1.0` milestone with a fixed scope and a `Later` milestone outside any release. The operator files follow-ups in `Later`, creating it if needed (`61c8cb2`) |
 
 ## The CEL Lens run
 
@@ -125,3 +127,17 @@ promoted the reviewer's follow-up #24 and widened it to all three single-sample
 timing tests, blocked by #8. The Crew started it next to #9 (hover) as soon as
 #8 merged. Until then, three of the four slots had been idle: the server's M2
 issues form a chain, and the extension Crew had nothing ready.
+
+Then #24 failed. Its criterion asked for a `make bench` target, but the Go
+Standard protects the Makefile. The implementer said so in rounds 1 and 2, the
+reviewer rightly would not pass a README that documented a missing target, and
+round 3 made no changes, which fails a Task in its last round. The criterion was
+the issue author's mistake. Corrected and readied again, #24 merged in one
+round from `main`; the work of the failed Task was redone.
+
+To make the end visible, both repositories now have a `v0.1.0` milestone with a
+fixed scope (the server's #11 and #24; the extension's #4) and a `Later`
+milestone for everything else. M2 closed when #10 merged at 15:35 in one round, and the
+server's `v0.1.0` milestone closed at 16:20, when #11 (user docs, two rounds)
+and #24 had merged. What is left of the first release: a person tags the server
+`v0.1.0`, the extension's #4 bundles it, and a person tags the extension.
