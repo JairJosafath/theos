@@ -48,7 +48,8 @@ issue closed with a comment.
 | **With four sandboxes the API stalled for up to 10 s again**, and the scheduler and controller-manager crash-looped (104 restarts), so two sandbox pods sat `Pending` for 5 minutes | The Factory view: "The API server did not answer for 11 s". CPU stayed under 4.2 of 12 cores and memory under 6.7 GiB, but etcd logged 83 disk syncs over 1 s in 25 minutes, up to 7 s; they lost their 15 s leases | `hack/kind.yaml`: etcd runs with `--unsafe-no-fsync`, and both hold 60 s leases with a 40 s renew deadline; applied to the running cluster by editing its static pod manifests. Since then: no slow syncs, requests under 2 s with Tasks only, and no restarts. A test cluster can lose its newest writes in a hard crash; Gitea's repositories are on their own volume |
 | The Story view's "Working now" said 0 while three Crew Tasks were at work | The tile beside the panel that listed them ([evidence](screenshots/v4-parallel-story.png), after the fix) | It counts active Sessions and the Tasks the project's Crews are on |
 | The agent never saw why Go CI failed: the CI log excerpt in its feedback knew only Flutter's output | cel-language-server #8's round 1 failed on a timing test, but the feedback held only `make: *** [Makefile:41: test] Error 1`; the implementer guessed and fixed a different test | The excerpt also picks Go test failures with their log lines, panics, data races, compiler, vet and linter findings, and Vitest, tsc, ESLint and pytest failures. On the real log it gives the test, its message, the package and the make line |
-| An acceptance criterion that needs a protected file fails the Task: the implementer stops, as its guide says, but "no changes" in the last round is a failure | cel-language-server #24 asked for `make bench`; the Standard owns the Makefile. Rounds 1 and 2 said so, the reviewer held the criterion, round 3 made no changes and the Task failed | The criterion was corrected and the issue re-readied; the new Task merged in one round. Open: an agent has no "blocked, a person must act" outcome, so a blocked Task spends rounds |
+| An acceptance criterion that needs a protected file fails the Task: the implementer stops, as its guide says, but "no changes" in the last round is a failure | cel-language-server #24 asked for `make bench`; the Standard owns the Makefile. Rounds 1 and 2 said so, the reviewer held the criterion, round 3 made no changes and the Task failed | The criterion was corrected and the issue re-readied; the new Task merged in one round. It happened again with vscode-extension #4, whose criterion was right: `make dist` must build the platform packages. A person's Makefile hook unblocked it. Open: an agent has no "blocked, a person must act" outcome, so a blocked Task spends rounds |
+| Gitea dropped out of its Service mid-upload, failing the server's first release job | Run of the `v0.1.0` tag: the upload of 48 MB binaries broke off; the readiness probe's 1 s default timed out under load | Readiness probe 5 s timeout, 6 failures (`1c5e8c4`); the release was deleted, tagged again, and run 36 succeeded |
 | Reviewers' follow-ups piled up beside the release's issues (37 open), so the backlog looked endless | The user: "I fear that we will not ever complete the app" | Each repository has a `v0.1.0` milestone with a fixed scope and a `Later` milestone outside any release. The operator files follow-ups in `Later`, creating it if needed (`61c8cb2`) |
 
 ## The CEL Lens run
@@ -141,3 +142,20 @@ milestone for everything else. M2 closed when #10 merged at 15:35 in one round, 
 server's `v0.1.0` milestone closed at 16:20, when #11 (user docs, two rounds)
 and #24 had merged. What is left of the first release: a person tags the server
 `v0.1.0`, the extension's #4 bundles it, and a person tags the extension.
+
+**Fourth part, the release.** A person tagged the server `v0.1.0` at `694085f`.
+The first release job failed halfway through its upload: Gitea's readiness probe
+(1 s timeout) took Gitea out of its Service during the 48 MB uploads (see the
+finding above). After the probe fix the release and tag were deleted, the same
+commit tagged again, and run 36 attached six binaries and `SHA256SUMS`.
+
+The extension's #4 (one `.vsix` per platform, server bundled) then failed the
+way #24 did. Its goal says `make dist` builds the packages, since the release
+workflow runs `make dist`, but the Standard owns the Makefile. The implementer
+wrote `scripts/dist.mjs` behind `npm run dist`, fixed every other review point
+in round 2, and said it was blocked on the Makefile. The reviewer, rightly,
+still required `make dist` to build the packages, and round 3 made no changes.
+This time the criterion was right; what was missing was a person's edit. A
+person added a hook to the Makefile, so `make dist` also runs the project's
+`npm run dist` when there is one (vscode-extension PR #30), and #4 is to be
+readied again on top of it.
