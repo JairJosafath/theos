@@ -36,6 +36,8 @@ yourself.
 - Use `vscode.workspace.fs` and `Uri`s for workspace files, so remote and
   virtual workspaces work; `node:fs` only for the extension's own files. [review]
 - Support multi-root workspaces: no single "the workspace folder". [review]
+- VS Code 1.100, the oldest `engines.vscode` allows, runs extensions on Node 20,
+  while `@types/node` describes Node 24: use no Node API newer than Node 20. [review]
 - Logs go to a `LogOutputChannel` named after the extension, never the
   console. [lint: no-console]
 
