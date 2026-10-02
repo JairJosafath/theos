@@ -118,8 +118,13 @@ Branch `feat/issue-driven-factory`, draft PR #9. The hand-off commit is pushed.
   `.relay/stop` exists (the relay removes it when started again). Log:
   `.relay/relay.log`; session 1's transcript: `claude --resume
   8d080485-11a4-449f-800e-3e4741e2f783`.
-- Server #27 was implementing round 1 at shutdown; the Kind node was stopped
-  mid-round, so check #27 after `docker start c4factory-control-plane`.
+- Server #27: the shutdown killed its round-1 agent and the operator counted it
+  as a failed round ("claude failed: signal: killed"), so it went on to round 2
+  after the restart. Factory gap to file as a GitHub issue: an agent killed by
+  the infrastructure (restart, eviction) should rerun the same round, not spend one.
+- After a PC restart the devcontainer's dockerd can lose a race with containerd
+  ("failed to get containerd plugins"); re-run `/usr/local/share/docker-init.sh`.
+  The Kind node then restarts by itself.
 
 ## References
 
