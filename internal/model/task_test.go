@@ -262,3 +262,15 @@ func TestNextTaskStepAgentUnavailable(t *testing.T) {
 		t.Errorf("NextTaskStep() = %+v, want no slot wait", got)
 	}
 }
+
+func TestNextTaskStepConflicts(t *testing.T) {
+	approved := RunState{Started: true, Done: true, Result: &RunResult{Verdict: VerdictApprove, Summary: "Good."}}
+	got := NextTaskStep(TaskFacts{Phase: TaskReviewing, Round: 3, MaxRounds: 3, Run: approved, Conflicted: true})
+	if got.Action != ActionResolveConflicts || !strings.Contains(got.Feedback, "Merge main into your branch") ||
+		!strings.Contains(got.Message, "round 3 resolves them") {
+		t.Errorf("NextTaskStep() = %+v, want the implementer to resolve the conflicts in the same round", got)
+	}
+	if got := NextTaskStep(TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: approved}); got.Action != ActionMerge {
+		t.Errorf("NextTaskStep() = %+v, want a merge without conflicts", got)
+	}
+}

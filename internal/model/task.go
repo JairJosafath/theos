@@ -102,7 +102,16 @@ type TaskFacts struct {
 	// AgentBackIn is how long until an unavailable agent is tried again; zero or
 	// less means now.
 	AgentBackIn time.Duration
+	// Conflicted means the pull request can no longer merge: main moved since
+	// the branch was made, with changes that conflict.
+	Conflicted bool
 }
+
+// ConflictFeedback is what the implementer is told when its approved change no
+// longer merges.
+const ConflictFeedback = "Your change was approved, but another change merged into main first and now " +
+	"conflicts with yours. Merge main into your branch, resolve every conflict so both changes keep " +
+	"working, and make sure the check command passes. Change nothing else."
 
 // AgentRetryDelay is how long a Task waits for an unavailable agent that didn't
 // say when it is back.
@@ -125,6 +134,9 @@ const (
 	ActionRetryReview    TaskAction = "RetryReview"
 	ActionMerge          TaskAction = "Merge"
 	ActionRetry          TaskAction = "Retry"
+	// ActionResolveConflicts sends an approved change back to the implementer, in
+	// the same round, to merge main and resolve the conflicts.
+	ActionResolveConflicts TaskAction = "ResolveConflicts"
 	// ActionAgentUnavailable ends the run and tries the same step again later.
 	ActionAgentUnavailable TaskAction = "AgentUnavailable"
 	ActionFail             TaskAction = "Fail"
@@ -226,6 +238,11 @@ func nextTaskStep(f TaskFacts) TaskStep {
 			}
 			return TaskStep{Action: ActionFail,
 				Message: fmt.Sprintf("The reviewer failed %d times: %s", maxReviewAttempts, orUnknown(reason))}
+		}
+		if f.Run.Result.Verdict == VerdictApprove && f.Conflicted {
+			// Not the agent's fault: another change merged first. It costs no round.
+			return TaskStep{Action: ActionResolveConflicts, Feedback: ConflictFeedback, Message: fmt.Sprintf(
+				"Approved, but main moved and the pull request conflicts with it; round %d resolves them", f.Round)}
 		}
 		if f.Run.Result.Verdict == VerdictApprove {
 			return TaskStep{Action: ActionMerge, Message: "Approved; merging"}

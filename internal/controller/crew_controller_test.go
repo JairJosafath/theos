@@ -17,8 +17,11 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -84,7 +87,7 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Labels).To(HaveKeyWithValue(LabelCrew, "orders-api"))
 			crew := getCrew(g, ns)
 			g.Expect(crew.Status.Phase).To(Equal(c4v1alpha1.CrewWorking))
-			g.Expect(crew.Status.ActiveTask).To(Equal("orders-api-3"))
+			g.Expect(crew.Status.ActiveTasks).To(Equal([]string{"orders-api-3"}))
 			g.Expect(crew.Status.Waiting).To(Equal([]int32{int32(blocked)}))
 			g.Expect(crew.OwnerReferences).To(ContainElement(HaveField("Kind", "Container")))
 		}).Should(Succeed())
@@ -181,6 +184,75 @@ var _ = Describe("Crew", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1-2").Spec.Issue).To(Equal(int32(n)))
 		}).Should(Succeed())
+	})
+
+	It("works on several issues at once, each on its own branch", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 2)
+		first := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		second := gitFake.addIssue(ns, "orders-api", "Report invalid orders", clearIssue, []string{model.LabelReady})
+		gitFake.addIssue(ns, "orders-api", "Price orders", clearIssue, []string{model.LabelReady})
+		crew := newCrew(ns)
+		crew.Spec.Parallel = 2
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, fmt.Sprintf("orders-api-%d-r1-implement", first))
+			sandboxExists(g, ns, fmt.Sprintf("orders-api-%d-r1-implement", second))
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.ActiveTasks).To(ConsistOf("orders-api-1", "orders-api-2"))
+			g.Expect(crew.Status.Ready).To(Equal([]int32{3}), "the third waits for a free place")
+		}).Should(Succeed())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-3"), &c4v1alpha1.Task{}))).To(BeTrue())
+	})
+
+	It("sends an approved change that conflicts with main back to its implementer, in the same round", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 2)
+		n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		mustCreate(newCrew(ns))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }, "30s").Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement", Commit: "sha-1"}, "")
+		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }, "30s").Should(Succeed())
+
+		By("finding the pull request conflicts once approved")
+		pr := gitFake.pullRequests(ns, "orders-api")[0]
+		gitFake.conflict(ns, "orders-api", pr.Number, true)
+		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Good."}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Round).To(Equal(int32(1)), "a conflict with another change costs no round")
+			g.Expect(task.Status.Feedback).To(ContainSubstring("Merge main into your branch"))
+			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ResolvingConflicts")))
+		}, "30s").Should(Succeed())
+		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+
+		By("merging once the implementer merged main")
+		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-implement")})).To(Succeed())
+		Eventually(func(g Gomega) {
+			sandbox := sandboxExists(g, ns, "orders-api-1-r1-implement")
+			g.Expect(sandbox.GetDeletionTimestamp()).To(BeNil())
+		}, "30s").Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-2")
+		gitFake.conflict(ns, "orders-api", pr.Number, false)
+		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement", Commit: "sha-2"}, "")
+		gitFake.setChecks(ns, "orders-api", "sha-2", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }, "30s").Should(Succeed())
+		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-review-a1")})).To(Succeed())
+		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Conflicts resolved."}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+		}, "30s").Should(Succeed())
+		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
 	It("starts nothing while paused", func() {

@@ -29,8 +29,11 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
-    - jsonPath: .status.activeTask
-      name: Task
+    - jsonPath: .spec.parallel
+      name: Parallel
+      type: integer
+    - jsonPath: .status.activeTasks
+      name: Tasks
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -41,7 +44,8 @@ spec:
         description: |-
           Crew is the team of Agents that works on a Container's issues: it picks up
           issues labelled ready, in order and once their dependencies are closed, and
-          starts a Task for each, one at a time. It is owned by its Container.
+          starts a Task for each, up to spec.parallel at once. It is owned by its
+          Container.
         properties:
           apiVersion:
             description: |-
@@ -98,6 +102,16 @@ spec:
                 required:
                 - name
                 type: object
+              parallel:
+                default: 1
+                description: |-
+                  parallel is how many issues the Crew works on at once, each in its own Task
+                  and branch. A change that conflicts with one merged before it goes back to
+                  its implementer to merge main, without costing a round.
+                format: int32
+                maximum: 5
+                minimum: 1
+                type: integer
               paused:
                 description: |-
                   paused stops the Crew from picking up new issues. A Task already started
@@ -124,10 +138,14 @@ spec:
           status:
             description: status defines the observed state of Crew
             properties:
-              activeTask:
-                description: activeTask names the Task working on the Container now,
-                  if any.
-                type: string
+              activeTasks:
+                description: activeTasks names the Tasks working on the Container
+                  now.
+                items:
+                  type: string
+                maxItems: 10
+                type: array
+                x-kubernetes-list-type: atomic
               conditions:
                 description: 'conditions: Ready says whether the Crew can pick up
                   issues, and why not.'
@@ -207,8 +225,8 @@ spec:
                 - Paused
                 type: string
               ready:
-                description: ready lists the ready issues the Crew can start, in pick-up
-                  order.
+                description: ready lists the ready issues waiting for a free place,
+                  in pick-up order.
                 items:
                   format: int32
                   type: integer

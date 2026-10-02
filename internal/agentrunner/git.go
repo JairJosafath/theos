@@ -15,6 +15,10 @@ type repo struct {
 	dir string
 	// secret is removed from error messages.
 	secret string
+	// start is the work branch's head before this run: the base for a new branch.
+	start string
+	// conflicts are the files merging the base left in conflict, for the agent.
+	conflicts []string
 }
 
 // clone checks out the job's branch, or starts it from the base when it doesn't
@@ -49,15 +53,44 @@ func clone(ctx context.Context, job Job, dir string) (*repo, error) {
 	})
 	switch {
 	case err == nil:
-		_, err = r.git(ctx, dir, "checkout", "--quiet", "-b", job.Branch, "origin/"+job.Branch)
-		return r, err
+		if _, err := r.git(ctx, dir, "checkout", "--quiet", "-b", job.Branch, "origin/"+job.Branch); err != nil {
+			return nil, err
+		}
+		if r.start, err = r.head(ctx); err != nil {
+			return nil, err
+		}
+		if job.Role == RoleImplement {
+			// Other changes may have merged since the last round: start from them.
+			return r, r.mergeBase(ctx, job.Base)
+		}
+		return r, nil
 	case transientGitError(err):
 		// Not knowing whether the branch exists is not the same as its absence:
 		// starting over from the base would lose the earlier rounds.
 		return nil, err
 	}
-	_, err = r.git(ctx, dir, "checkout", "--quiet", "-b", job.Branch, "origin/"+job.Base)
+	if _, err := r.git(ctx, dir, "checkout", "--quiet", "-b", job.Branch, "origin/"+job.Base); err != nil {
+		return nil, err
+	}
+	r.start, err = r.head(ctx)
 	return r, err
+}
+
+// mergeBase merges the base branch into the work branch. Conflicts stay in the
+// working tree, listed in r.conflicts, for the agent to resolve.
+func (r *repo) mergeBase(ctx context.Context, base string) error {
+	_, mergeErr := r.git(ctx, r.dir, "merge", "--quiet", "--no-edit", "origin/"+base)
+	if mergeErr == nil {
+		return nil
+	}
+	out, err := r.git(ctx, r.dir, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return err
+	}
+	if r.conflicts = strings.Fields(out); len(r.conflicts) == 0 {
+		return mergeErr
+	}
+	return nil
 }
 
 func (r *repo) head(ctx context.Context) (string, error) {
@@ -78,9 +111,10 @@ func (r *repo) commitAll(ctx context.Context, message string) error {
 	return err
 }
 
-// changedPaths lists the paths that differ between two commits.
-func (r *repo) changedPaths(ctx context.Context, from, to string) ([]string, error) {
-	out, err := r.git(ctx, r.dir, "diff", "--name-only", from, to)
+// changedPaths lists the paths the work branch changes, as its pull request
+// shows them: since it forked from the base, without what it merged from there.
+func (r *repo) changedPaths(ctx context.Context, base string) ([]string, error) {
+	out, err := r.git(ctx, r.dir, "diff", "--name-only", "origin/"+base+"...HEAD")
 	if err != nil {
 		return nil, err
 	}

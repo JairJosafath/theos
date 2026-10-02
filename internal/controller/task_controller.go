@@ -188,30 +188,18 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		facts.AgentBackIn = status.AgentBackAt.Sub(r.now())
 	}
 	if r.MaxSandboxes > 0 {
-		sandboxes := &unstructured.UnstructuredList{}
-		sandboxes.SetGroupVersionKind(SandboxGVK.GroupVersion().WithKind("SandboxList"))
-		// Counted live: the cache may not have the sandbox started a moment ago.
-		if err := r.APIReader.List(ctx, sandboxes, client.MatchingLabels{LabelAgentSandbox: agentSandboxValue}); err != nil {
+		noSlot, err := r.noFreeSlot(ctx, task)
+		if err != nil {
 			return facts, err
 		}
-		var tasks c4v1alpha1.TaskList
-		if err := r.List(ctx, &tasks); err != nil {
-			return facts, err
-		}
-		var waiting []model.SlotWaiter
-		for _, t := range tasks.Items {
-			if t.Status.SlotWaitSince != nil && !isFinal(t.Status.Phase) {
-				waiting = append(waiting, model.SlotWaiter{Name: t.Namespace + "/" + t.Name, Since: t.Status.SlotWaitSince.Time})
-			}
-		}
-		free := r.MaxSandboxes - len(sandboxes.Items)
-		facts.NoFreeSlot = !model.HasSlotTurn(task.Namespace+"/"+task.Name, r.now(), waiting, free)
+		facts.NoFreeSlot = noSlot
 	}
 	if facts.MaxRounds == 0 {
 		facts.MaxRounds = 3
 	}
 
-	if status.Phase == c4v1alpha1.TaskPending {
+	// A Crew's Tasks leave their concurrency to the Crew; others take turns.
+	if status.Phase == c4v1alpha1.TaskPending && task.Labels[LabelCrew] == "" {
 		var tasks c4v1alpha1.TaskList
 		if err := r.List(ctx, &tasks, client.InNamespace(task.Namespace),
 			client.MatchingFields{indexTaskContainer: container.Name}); err != nil {
@@ -231,6 +219,15 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 			return facts, err
 		}
 		facts.Run = run
+	}
+
+	if run := facts.Run; status.Phase == c4v1alpha1.TaskReviewing && run.Done && run.Result != nil &&
+		run.Result.Verdict == model.VerdictApprove && status.PullRequest > 0 {
+		conflicted, err := r.conflicted(ctx, container, status)
+		if err != nil {
+			return facts, err
+		}
+		facts.Conflicted = conflicted
 	}
 
 	if status.Phase == c4v1alpha1.TaskChecking && status.Commit != "" {
@@ -254,6 +251,46 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		}
 	}
 	return facts, nil
+}
+
+// noFreeSlot reports whether the Task must wait for an agent slot: all are taken,
+// or a Task that has waited longer goes first.
+func (r *TaskReconciler) noFreeSlot(ctx context.Context, task *c4v1alpha1.Task) (bool, error) {
+	sandboxes := &unstructured.UnstructuredList{}
+	sandboxes.SetGroupVersionKind(SandboxGVK.GroupVersion().WithKind("SandboxList"))
+	// Counted live: the cache may not have the sandbox started a moment ago.
+	if err := r.APIReader.List(ctx, sandboxes, client.MatchingLabels{LabelAgentSandbox: agentSandboxValue}); err != nil {
+		return false, err
+	}
+	var tasks c4v1alpha1.TaskList
+	if err := r.List(ctx, &tasks); err != nil {
+		return false, err
+	}
+	var waiting []model.SlotWaiter
+	for _, t := range tasks.Items {
+		if t.Status.SlotWaitSince != nil && !isFinal(t.Status.Phase) {
+			waiting = append(waiting, model.SlotWaiter{Name: t.Namespace + "/" + t.Name, Since: t.Status.SlotWaitSince.Time})
+		}
+	}
+	free := r.MaxSandboxes - len(sandboxes.Items)
+	return !model.HasSlotTurn(task.Namespace+"/"+task.Name, r.now(), waiting, free), nil
+}
+
+// conflicted reports whether the Task's pull request can no longer merge
+// because main moved with conflicting changes.
+func (r *TaskReconciler) conflicted(ctx context.Context, container *c4v1alpha1.Container,
+	status *c4v1alpha1.TaskStatus) (bool, error) {
+	provider, repo, err := r.gitRepo(ctx, container)
+	if err != nil {
+		return false, err
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
+	if err != nil {
+		return false, err
+	}
+	return pr.State == "open" && !pr.Merged && !pr.Mergeable, nil
 }
 
 // runRole is the role of the sandbox a phase waits on.

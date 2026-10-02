@@ -472,3 +472,63 @@ func TestUnavailableResetInThePast(t *testing.T) {
 		t.Errorf("unavailable() = %v, %v; want unavailable, back now", down, back)
 	}
 }
+
+// pushToMain commits a file straight to main of the repository at repoURL, as a
+// merge of another change would.
+func pushToMain(t *testing.T, repoURL, path, data string) {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("clone", "--quiet", repoURL, ".")
+	if err := os.WriteFile(filepath.Join(dir, path), []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "--all")
+	run("commit", "--quiet", "-m", "Another change")
+	run("push", "--quiet", "origin", "main")
+}
+
+func TestRunImplementMergesMain(t *testing.T) {
+	ctx := context.Background()
+	t.Run("cleanly", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		Run(ctx, testJob(t, url, RoleImplement, 1), FakeAgent{Role: RoleImplement, Round: 1}, t.TempDir())
+		pushToMain(t, url, "OTHER.md", "merged first\n")
+		got := Run(ctx, testJob(t, url, RoleImplement, 2), FakeAgent{Role: RoleImplement, Round: 2}, t.TempDir())
+		if got.Error != "" {
+			t.Fatalf("round 2 = %+v", got)
+		}
+		dir := t.TempDir()
+		if out, err := exec.Command("git", "clone", "--quiet", "--branch", "task/add-crop", url, dir).CombinedOutput(); err != nil {
+			t.Fatalf("clone: %v: %s", err, out)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "OTHER.md")); err != nil {
+			t.Errorf("the branch lacks main's change: %v", err)
+		}
+	})
+	t.Run("with conflicts the agent resolves", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		Run(ctx, testJob(t, url, RoleImplement, 1), editAgent{path: "README.md"}, t.TempDir())
+		pushToMain(t, url, "README.md", "main's line\n")
+		agent := &promptAgent{reply: "resolved", edit: "README.md"}
+		got := Run(ctx, testJob(t, url, RoleImplement, 2), agent, t.TempDir())
+		if got.Error != "" || got.Commit == "" {
+			t.Fatalf("round 2 = %+v", got)
+		}
+		if !strings.Contains(agent.prompt, "conflicts in README.md") {
+			t.Errorf("prompt doesn't name the conflicts:\n%s", agent.prompt)
+		}
+		out, err := exec.Command("git", "--git-dir", strings.TrimPrefix(url, "file://"), "log", "--format=%P", "-1", "task/add-crop").Output()
+		if err != nil || len(strings.Fields(string(out))) != 2 {
+			t.Errorf("the branch head is not a merge commit: %q, %v", out, err)
+		}
+	})
+}

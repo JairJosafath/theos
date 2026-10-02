@@ -63,6 +63,8 @@ type CrewTask struct {
 type CrewFacts struct {
 	Paused         bool
 	ContainerReady bool
+	// Parallel is how many Tasks the Crew may run at once; less than 1 means 1.
+	Parallel int
 	// Tasks are all Tasks on the Container.
 	Tasks []CrewTask
 	// Issues are the open issues labelled ready.
@@ -93,24 +95,44 @@ type IssueRejection struct {
 
 // CrewStep is what a Crew does next, and what its status shows.
 type CrewStep struct {
-	Phase   string
-	Active  string
-	Ready   []int
+	Phase string
+	// Active are the Tasks working on the Container, before this step's starts.
+	Active []string
+	// Ready are the ready issues still waiting for a free place, in pick-up order.
+	Ready []int
+	// Waiting are the ready issues blocked by open dependencies.
 	Waiting []int
-	// Start is the Task to create, if any.
-	Start *IssueStart
+	// Start are the Tasks to create.
+	Start []IssueStart
 	// NotReady are issues to hand back to a person.
 	NotReady []IssueRejection
 	Message  string
 }
 
-// NextCrewStep decides what a Crew does: it starts one Task at a time, for the
-// lowest-numbered ready issue whose dependencies are closed.
+// NextCrewStep decides what a Crew does: it keeps up to Parallel Tasks working,
+// starting them for the lowest-numbered ready issues whose dependencies are
+// closed, one Task per issue.
 func NextCrewStep(container string, f CrewFacts) CrewStep {
 	var step CrewStep
+	working := map[int]bool{}
+	var activeIssues []int
+	for _, t := range f.Tasks {
+		if !t.Final {
+			step.Active = append(step.Active, t.Name)
+			if t.Issue > 0 {
+				working[t.Issue] = true
+				activeIssues = append(activeIssues, t.Issue)
+			}
+		}
+	}
 	issues := slices.Clone(f.Issues)
 	slices.SortFunc(issues, func(a, b Issue) int { return a.Number - b.Number })
+	var candidates []int
 	for _, issue := range issues {
+		if working[issue.Number] {
+			// Taken a moment ago; its label changes when its Task starts.
+			continue
+		}
 		if reason := MissingAcceptanceCriteria(issue.Body); reason != "" {
 			step.NotReady = append(step.NotReady, IssueRejection{Issue: issue.Number, Reason: reason})
 			continue
@@ -137,35 +159,31 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 		case len(issue.OpenBlockers) > 0:
 			step.Waiting = append(step.Waiting, issue.Number)
 		default:
-			step.Ready = append(step.Ready, issue.Number)
+			candidates = append(candidates, issue.Number)
 		}
 	}
 
-	for _, t := range f.Tasks {
-		if !t.Final {
-			step.Phase, step.Active = CrewWorking, t.Name
-			step.Message = "Task " + t.Name + " is working"
-			if t.Issue > 0 {
-				step.Message += " on issue #" + strconv.Itoa(t.Issue)
-			}
-			// Issues are handed back only while the Crew could act on them.
-			step.NotReady = nil
-			return step
-		}
-	}
 	switch {
 	case f.Paused:
-		step.Phase, step.Message, step.NotReady = CrewPaused, "Paused; not picking up issues", nil
-	case !f.ContainerReady:
-		step.Phase, step.NotReady = CrewWaiting, nil
-		step.Message = fmt.Sprintf("Waiting for Container %s to be Ready", container)
-	case len(step.Ready) == 0:
-		step.Phase, step.Message = CrewIdle, "No ready issues"
-		if n := len(step.Waiting); n > 0 {
-			step.Message += fmt.Sprintf("; %d %s on open dependencies", n, plural(n, "waits", "wait"))
+		step.Phase, step.Ready, step.NotReady = CrewPaused, candidates, nil
+		step.Message = "Paused; not picking up issues"
+		if len(step.Active) > 0 {
+			step.Message += "; " + workingMessage(step.Active, activeIssues) + " until done"
 		}
-	default:
-		issue := step.Ready[0]
+		return step
+	case !f.ContainerReady:
+		step.Phase, step.Ready, step.NotReady = CrewWaiting, candidates, nil
+		step.Message = fmt.Sprintf("Waiting for Container %s to be Ready", container)
+		return step
+	}
+
+	free := max(f.Parallel, 1) - len(step.Active)
+	var started []string
+	for _, issue := range candidates {
+		if free <= 0 {
+			step.Ready = append(step.Ready, issue)
+			continue
+		}
 		attempt := 1
 		for _, t := range f.Tasks {
 			if t.Issue == issue {
@@ -173,10 +191,40 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			}
 		}
 		name := IssueTaskName(container, issue, attempt)
-		step.Phase, step.Start = CrewWorking, &IssueStart{Issue: issue, Task: name, Attempt: attempt}
-		step.Message = fmt.Sprintf("Starting Task %s for issue #%d", name, issue)
+		step.Start = append(step.Start, IssueStart{Issue: issue, Task: name, Attempt: attempt})
+		started = append(started, fmt.Sprintf("Task %s for issue #%d", name, issue))
+		free--
+	}
+
+	switch {
+	case len(started) > 0:
+		step.Phase, step.Message = CrewWorking, "Starting "+strings.Join(started, " and ")
+	case len(step.Active) > 0:
+		step.Phase, step.Message = CrewWorking, workingMessage(step.Active, activeIssues)
+		if n := len(step.Ready); n > 0 {
+			step.Message += fmt.Sprintf("; %d ready %s %s for a free place", n, plural(n, "issue", "issues"),
+				plural(n, "waits", "wait"))
+		}
+	default:
+		step.Phase, step.Message = CrewIdle, "No ready issues"
+		if n := len(step.Waiting); n > 0 {
+			step.Message += fmt.Sprintf("; %d %s on open dependencies", n, plural(n, "waits", "wait"))
+		}
 	}
 	return step
+}
+
+// workingMessage says which Tasks work, and on which issues.
+func workingMessage(tasks []string, issues []int) string {
+	msg := plural(len(tasks), "Task ", "Tasks ") + joinAnd(tasks) + plural(len(tasks), " is working", " are working")
+	if len(issues) > 0 {
+		refs := make([]string, 0, len(issues))
+		for _, n := range issues {
+			refs = append(refs, "#"+strconv.Itoa(n))
+		}
+		msg += " on " + plural(len(issues), "issue ", "issues ") + joinAnd(refs)
+	}
+	return msg
 }
 
 var (

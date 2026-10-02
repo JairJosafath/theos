@@ -53,21 +53,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 	log := logf.FromContext(ctx)
 	switch step.Action {
 	case model.ActionWait:
-		reason := "Waiting"
-		if step.SlotWait {
-			reason = "WaitingForSlot"
-		}
-		if status.AgentBackAt != nil && status.AgentBackAt.After(r.now()) && !step.SlotWait {
-			reason = "AgentUnavailable"
-		}
-		r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
-		if status.Phase == c4v1alpha1.TaskChecking {
-			return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
-		}
-		if reason == "AgentUnavailable" {
-			return ctrl.Result{RequeueAfter: status.AgentBackAt.Sub(r.now())}, nil
-		}
-		return ctrl.Result{}, nil
+		return r.wait(task, status, step), nil
 
 	case model.ActionStartImplement, model.ActionStartReview:
 		role := model.RoleImplementer
@@ -77,28 +63,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		return r.startRun(ctx, task, status, container, agents, role, step.Message)
 
 	case model.ActionOpenPR:
-		provider, repo, err := r.agentGitRepo(ctx, container)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox)
-		if err != nil || run.Result == nil {
-			return ctrl.Result{}, fmt.Errorf("reading the implement result of %s: %v", status.Sandbox, err)
-		}
-		gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		pr, err := provider.OpenPullRequest(gitCtx, repo, status.Branch, gitprovider.DefaultBranch,
-			pullTitle(task, status), pullBody(task, agents, status.Round, run.Result.Summary))
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		log.Info("Opened pull request", "url", pr.URL, "commit", run.Result.Commit, "round", status.Round)
-		status.Commit, status.Summary = run.Result.Commit, run.Result.Summary
-		status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
-		status.Checks = nil
-		status.Phase = c4v1alpha1.TaskChecking
-		r.progress(task, status, metav1.ConditionTrue, "Checking", step.Message+"; waiting for checks")
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
+		return r.openPR(ctx, task, status, container, agents, step)
 
 	case model.ActionRetryReview:
 		r.progress(task, status, metav1.ConditionTrue, "ReviewerFailed", step.Message)
@@ -110,6 +75,21 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 
 	case model.ActionMerge:
 		return r.merge(ctx, task, status, container, agents, step)
+
+	case model.ActionResolveConflicts:
+		review := r.reviewFrom(ctx, task, status)
+		r.comment(ctx, task, status, container, step.Message+".")
+		if err := r.endRun(ctx, task, status); err != nil {
+			return ctrl.Result{}, err
+		}
+		status.Review = review
+		status.Feedback = step.Feedback
+		status.ReviewAttempts = 0
+		status.Checks = nil
+		status.Phase = c4v1alpha1.TaskImplementing
+		r.progress(task, status, metav1.ConditionTrue, "ResolvingConflicts", step.Message)
+		log.Info("Sent an approved Task back to resolve conflicts", "round", status.Round)
+		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionAgentUnavailable:
 		if err := r.endRun(ctx, task, status); err != nil {
@@ -162,6 +142,53 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		return ctrl.Result{}, nil
 	}
 	return ctrl.Result{}, nil
+}
+
+// wait records what the Task waits for, and when to look again.
+func (r *TaskReconciler) wait(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, step model.TaskStep) ctrl.Result {
+	reason := "Waiting"
+	if step.SlotWait {
+		reason = "WaitingForSlot"
+	}
+	if status.AgentBackAt != nil && status.AgentBackAt.After(r.now()) && !step.SlotWait {
+		reason = "AgentUnavailable"
+	}
+	r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
+	if status.Phase == c4v1alpha1.TaskChecking {
+		return ctrl.Result{RequeueAfter: r.checksRecheck()}
+	}
+	if reason == "AgentUnavailable" {
+		return ctrl.Result{RequeueAfter: status.AgentBackAt.Sub(r.now())}
+	}
+	return ctrl.Result{}
+}
+
+// openPR opens the round's pull request as the agent bot, and moves on to the checks.
+func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	provider, repo, err := r.agentGitRepo(ctx, container)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox)
+	if err != nil || run.Result == nil {
+		return ctrl.Result{}, fmt.Errorf("reading the implement result of %s: %v", status.Sandbox, err)
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	pr, err := provider.OpenPullRequest(gitCtx, repo, status.Branch, gitprovider.DefaultBranch,
+		pullTitle(task, status), pullBody(task, agents, status.Round, run.Result.Summary))
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	log.Info("Opened pull request", "url", pr.URL, "commit", run.Result.Commit, "round", status.Round)
+	status.Commit, status.Summary = run.Result.Commit, run.Result.Summary
+	status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
+	status.Checks = nil
+	status.Phase = c4v1alpha1.TaskChecking
+	r.progress(task, status, metav1.ConditionTrue, "Checking", step.Message+"; waiting for checks")
+	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
 }
 
 // startRun creates the sandbox for this round's role, after making sure the

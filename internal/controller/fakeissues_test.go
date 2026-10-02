@@ -270,3 +270,14 @@ func (g *fakeGit) pullAuthor(owner, name string, number int) string {
 	defer g.mu.Unlock()
 	return g.agentState().authors[fmt.Sprintf("%s/%s#%d", owner, name, number)]
 }
+
+// conflict makes a pull request conflict with its base, or merge cleanly again.
+func (g *fakeGit) conflict(owner, name string, number int, conflicted bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, pr := range g.agentState().pulls[owner+"/"+name] {
+		if pr.Number == number {
+			pr.Mergeable = !conflicted
+		}
+	}
+}

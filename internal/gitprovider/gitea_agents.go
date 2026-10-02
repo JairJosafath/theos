@@ -36,6 +36,8 @@ type PullRequest struct {
 	HeadSHA string
 	State   string
 	Merged  bool
+	// Mergeable is false while the pull request conflicts with its base.
+	Mergeable bool
 }
 
 // agentTokenName is the name of the access token made for an agent bot user.
@@ -235,18 +237,20 @@ func (g *gitea) EnsureAgentAccess(ctx context.Context, repo Repository, user str
 }
 
 type giteaPull struct {
-	Number  int    `json:"number"`
-	HTMLURL string `json:"html_url"`
-	State   string `json:"state"`
-	Merged  bool   `json:"merged"`
-	Head    struct {
+	Number    int    `json:"number"`
+	HTMLURL   string `json:"html_url"`
+	State     string `json:"state"`
+	Merged    bool   `json:"merged"`
+	Mergeable bool   `json:"mergeable"`
+	Head      struct {
 		Ref string `json:"ref"`
 		SHA string `json:"sha"`
 	} `json:"head"`
 }
 
 func (p giteaPull) pullRequest() PullRequest {
-	return PullRequest{Number: p.Number, URL: p.HTMLURL, Head: p.Head.Ref, HeadSHA: p.Head.SHA, State: p.State, Merged: p.Merged}
+	return PullRequest{Number: p.Number, URL: p.HTMLURL, Head: p.Head.Ref, HeadSHA: p.Head.SHA, State: p.State,
+		Merged: p.Merged, Mergeable: p.Mergeable}
 }
 
 // OpenPullRequest opens a pull request from head into base, or returns the open

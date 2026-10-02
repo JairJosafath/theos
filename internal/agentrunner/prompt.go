@@ -29,6 +29,8 @@ type Workspace struct {
 	Guide string
 	// Related are the related Containers' repositories, cloned read-only.
 	Related []RelatedRepo
+	// Conflicts are the files merging the base into the branch left in conflict.
+	Conflicts []string
 }
 
 // RelatedRepo is a related Container's repository: where it was cloned, or why
@@ -53,6 +55,11 @@ func ImplementPrompt(job Job, ws Workspace) string {
 	if job.Feedback != "" {
 		fmt.Fprintf(&b, "\nThis is round %d. The previous round was not accepted. Address all of this feedback:\n%s\n",
 			job.Round, job.Feedback)
+	}
+	if len(ws.Conflicts) > 0 {
+		fmt.Fprintf(&b, "\nOther changes merged into %s since your last round, and merging them into your branch "+
+			"left conflicts in %s. Resolve them first, keeping what both sides need, then finish the merge "+
+			"(git add, git commit).\n", job.Base, strings.Join(ws.Conflicts, ", "))
 	}
 	writeGuide(&b, ws, RoleImplement)
 	writeRelated(&b, ws)

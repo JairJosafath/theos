@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -52,7 +53,8 @@ const ConditionReady = "Ready"
 const defaultCrewPoll = time.Minute
 
 // CrewReconciler picks up a Container's ready issues and starts a Task for each,
-// one at a time, lowest number first, once their dependencies are closed.
+// up to the Crew's parallel limit, lowest number first, once their dependencies
+// are closed.
 type CrewReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -112,7 +114,8 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 	}
 
-	facts := model.CrewFacts{Paused: crew.Spec.Paused, ContainerReady: container.Status.Phase == c4v1alpha1.ContainerReady}
+	facts := model.CrewFacts{Paused: crew.Spec.Paused, Parallel: int(crew.Spec.Parallel),
+		ContainerReady: container.Status.Phase == c4v1alpha1.ContainerReady}
 	// Read live: a Task created a moment ago must count, or the Crew starts two.
 	var tasks c4v1alpha1.TaskList
 	if err := r.APIReader.List(ctx, &tasks, client.InNamespace(crew.Namespace)); err != nil {
@@ -160,7 +163,8 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 		cancel()
 	}
-	if s := step.Start; s != nil {
+	status.ActiveTasks = slices.Clone(step.Active)
+	for _, s := range step.Start {
 		task := &c4v1alpha1.Task{
 			ObjectMeta: metav1.ObjectMeta{Namespace: crew.Namespace, Name: s.Task, Labels: map[string]string{
 				LabelCrew: crew.Name, LabelIssue: strconv.Itoa(s.Issue)}},
@@ -175,9 +179,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			return ctrl.Result{}, err
 		}
 		log.Info("Started Task for issue", "task", s.Task, "issue", s.Issue, "attempt", s.Attempt)
-		status.ActiveTask = s.Task
-	} else {
-		status.ActiveTask = step.Active
+		status.ActiveTasks = append(status.ActiveTasks, s.Task)
 	}
 
 	status.Phase = c4v1alpha1.CrewPhase(step.Phase)

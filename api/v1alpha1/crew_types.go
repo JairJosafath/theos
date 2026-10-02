@@ -53,6 +53,15 @@ type CrewSpec struct {
 	// runs to its end.
 	// +optional
 	Paused bool `json:"paused,omitempty"`
+
+	// parallel is how many issues the Crew works on at once, each in its own Task
+	// and branch. A change that conflicts with one merged before it goes back to
+	// its implementer to merge main, without costing a round.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=5
+	// +kubebuilder:default=1
+	// +optional
+	Parallel int32 `json:"parallel,omitempty"`
 }
 
 // CrewPhase says what a Crew is doing.
@@ -78,11 +87,13 @@ type CrewStatus struct {
 	// +optional
 	Phase CrewPhase `json:"phase,omitempty"`
 
-	// activeTask names the Task working on the Container now, if any.
+	// activeTasks names the Tasks working on the Container now.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=10
 	// +optional
-	ActiveTask string `json:"activeTask,omitempty"`
+	ActiveTasks []string `json:"activeTasks,omitempty"`
 
-	// ready lists the ready issues the Crew can start, in pick-up order.
+	// ready lists the ready issues waiting for a free place, in pick-up order.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=100
 	// +optional
@@ -116,12 +127,14 @@ type CrewStatus struct {
 // +kubebuilder:printcolumn:name="Implementer",type=string,JSONPath=".spec.implementer.name"
 // +kubebuilder:printcolumn:name="Reviewer",type=string,JSONPath=".spec.reviewer.name"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
-// +kubebuilder:printcolumn:name="Task",type=string,JSONPath=".status.activeTask"
+// +kubebuilder:printcolumn:name="Parallel",type=integer,JSONPath=".spec.parallel"
+// +kubebuilder:printcolumn:name="Tasks",type=string,JSONPath=".status.activeTasks"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // Crew is the team of Agents that works on a Container's issues: it picks up
 // issues labelled ready, in order and once their dependencies are closed, and
-// starts a Task for each, one at a time. It is owned by its Container.
+// starts a Task for each, up to spec.parallel at once. It is owned by its
+// Container.
 type Crew struct {
 	metav1.TypeMeta `json:",inline"`
 

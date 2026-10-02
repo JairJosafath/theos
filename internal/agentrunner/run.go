@@ -97,7 +97,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		result.Error = err.Error()
 		return result
 	}
-	ws := Workspace{Guide: r.showBase(ctx, job.Base, roleGuides[job.Role])}
+	ws := Workspace{Guide: r.showBase(ctx, job.Base, roleGuides[job.Role]), Conflicts: r.conflicts}
 	ws.Related = cloneRelated(ctx, job, filepath.Join(filepath.Dir(dir), "related"))
 	if job.Role == RoleReview {
 		return review(ctx, job, agent, r, ws, result)
@@ -106,11 +106,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 }
 
 func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, result Result) Result {
-	start, err := r.head(ctx)
-	if err != nil {
-		result.Error = err.Error()
-		return result
-	}
+	start := r.start
 	summary, err := agent.Run(ctx, r.dir, ImplementPrompt(job, ws))
 	result.Summary = summary
 	if err != nil {
@@ -141,7 +137,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		result.Error = "the agent made no changes"
 		return result
 	}
-	changed, err := r.changedPaths(ctx, start, head)
+	changed, err := r.changedPaths(ctx, job.Base)
 	if err != nil {
 		result.Error = err.Error()
 		return result

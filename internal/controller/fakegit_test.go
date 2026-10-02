@@ -292,6 +292,7 @@ func (g *fakeGit) closePull(owner, name string, number int) {
 	}
 }
 
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) pullRequests(owner, name string) []gitprovider.PullRequest {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -364,7 +365,7 @@ func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repos
 			return *pr, nil
 		}
 	}
-	pr := &gitprovider.PullRequest{Number: len(s.pulls[key]) + 1, Head: head, HeadSHA: sha, State: "open"}
+	pr := &gitprovider.PullRequest{Number: len(s.pulls[key]) + 1, Head: head, HeadSHA: sha, State: "open", Mergeable: true}
 	pr.URL = fmt.Sprintf("%s/pulls/%d", strings.TrimSuffix(p.cfg.URL, "/")+"/"+key, pr.Number)
 	s.pulls[key] = append(s.pulls[key], pr)
 	s.authors[fmt.Sprintf("%s#%d", key, pr.Number)] = p.cfg.Credentials.Username
