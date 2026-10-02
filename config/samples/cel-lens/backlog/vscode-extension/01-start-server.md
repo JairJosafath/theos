@@ -36,3 +36,5 @@ the server path.
 
 - Add `vscode-languageclient` (the `node` entry point) as a dependency; esbuild
   bundles it.
+- Replace the template's example `sayHello` command and its greeting module;
+  they were only there to show the layout.

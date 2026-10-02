@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-# The agent image: c4agent and Claude Code on the slim Flutter toolchain, so the agent
+# The agent image: c4agent and Claude Code on a toolchain image (BASE: the slim
+# Flutter one by default, or hack/toolchain-go), so the agent
 # checks its work with exactly the tools CI uses. Tasks run it in an Agent Sandbox.
 # Build from the repository root: docker build -f hack/agent/Dockerfile .
 ARG BASE=c4factory/flutter:3.47.5-slim
