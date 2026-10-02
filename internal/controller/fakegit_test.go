@@ -231,6 +231,7 @@ type fakeAgentState struct {
 	pulls     map[string][]*gitprovider.PullRequest // owner/name
 	comments  map[string][]string                   // owner/name#number
 	branches  map[string]string                     // owner/name@branch -> head sha
+	authors   map[string]string                     // owner/name#number -> who opened it
 	log       string                                // served for every CI job
 }
 
@@ -240,7 +241,7 @@ func (g *fakeGit) agentState() *fakeAgentState {
 			protected: map[string][]string{}, checks: map[string]gitprovider.CheckStatus{},
 			rules: map[string]gitprovider.BranchRule{}, tags: map[string][]string{},
 			agents: map[string]string{}, pulls: map[string][]*gitprovider.PullRequest{},
-			comments: map[string][]string{}, branches: map[string]string{},
+			comments: map[string][]string{}, branches: map[string]string{}, authors: map[string]string{},
 		}
 	}
 	return g.agent
@@ -366,6 +367,7 @@ func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repos
 	pr := &gitprovider.PullRequest{Number: len(s.pulls[key]) + 1, Head: head, HeadSHA: sha, State: "open"}
 	pr.URL = fmt.Sprintf("%s/pulls/%d", strings.TrimSuffix(p.cfg.URL, "/")+"/"+key, pr.Number)
 	s.pulls[key] = append(s.pulls[key], pr)
+	s.authors[fmt.Sprintf("%s#%d", key, pr.Number)] = p.cfg.Credentials.Username
 	return *pr, nil
 }
 

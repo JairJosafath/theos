@@ -121,11 +121,15 @@ func (p *fakeProvider) issueOf(repo gitprovider.Repository, number int) (*fakeIs
 	return i, nil
 }
 
+// ReviewPullRequest refuses a review by the pull request's author, as Gitea does.
 func (p *fakeProvider) ReviewPullRequest(_ context.Context, repo gitprovider.Repository, number int,
 	commit, event, body string) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	key := fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)
+	if p.git.agentState().authors[key] == p.cfg.Credentials.Username {
+		return fmt.Errorf("review %s: approve your own pull is not allowed", key)
+	}
 	s := p.git.issueState()
 	s.reviews[key] = append(s.reviews[key], fakeReview{Event: event, Body: body, Commit: commit})
 	return nil
@@ -258,4 +262,11 @@ func (p *fakeProvider) CreateIssue(_ context.Context, repo gitprovider.Repositor
 func (g *fakeGit) labelIssue(owner, name string, number int, label string) error {
 	p := &fakeProvider{git: g}
 	return p.AddIssueLabel(context.Background(), gitprovider.Repository{Owner: owner, Name: name}, number, label)
+}
+
+// pullAuthor is who opened a pull request.
+func (g *fakeGit) pullAuthor(owner, name string, number int) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.agentState().authors[fmt.Sprintf("%s/%s#%d", owner, name, number)]
 }

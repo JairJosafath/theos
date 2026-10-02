@@ -77,7 +77,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		return r.startRun(ctx, task, status, container, agents, role, step.Message)
 
 	case model.ActionOpenPR:
-		provider, repo, err := r.gitRepo(ctx, container)
+		provider, repo, err := r.agentGitRepo(ctx, container)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -451,4 +451,30 @@ func mergeMessage(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, containe
 	bot := model.AgentUsername(container.Namespace, container.Name)
 	return fmt.Sprintf("Task %s, round %d.\n\nCo-authored-by: %s <%s@agents.c4.factory.io>",
 		task.Name, status.Round, bot, bot)
+}
+
+// agentGitRepo is the Container's repository as its agent bot sees it. The
+// implementer's pull requests are opened as the bot: they are its work, and the
+// Git host refuses a review of one's own pull request, so the operator's user
+// could not review them otherwise.
+func (r *TaskReconciler) agentGitRepo(ctx context.Context, container *c4v1alpha1.Container) (gitprovider.Provider,
+	gitprovider.Repository, error) {
+	var gp c4v1alpha1.GitProvider
+	if err := r.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: container.Spec.GitProviderRef.Name},
+		&gp); err != nil {
+		return nil, gitprovider.Repository{}, fmt.Errorf("GitProvider %s: %w", container.Spec.GitProviderRef.Name, err)
+	}
+	var secret corev1.Secret
+	if err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: container.Name + "-agent-git"},
+		&secret); err != nil {
+		return nil, gitprovider.Repository{}, fmt.Errorf("agent Git access of %s: %w", container.Name, err)
+	}
+	provider, err := r.Git.Provider(gitprovider.Config{
+		Kind: string(gp.Spec.Provider), URL: gp.Spec.URL, Owner: gp.Spec.Owner,
+		Credentials: gitprovider.Credentials{Username: string(secret.Data["username"]), Token: string(secret.Data["token"])},
+	})
+	if err != nil {
+		return nil, gitprovider.Repository{}, err
+	}
+	return provider, provider.Repository(container.Name), nil
 }

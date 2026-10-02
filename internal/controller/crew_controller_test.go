@@ -125,6 +125,8 @@ var _ = Describe("Crew", func() {
 				To(ContainElement(map[string]any{"name": "C4_MODEL", "value": "claude-opus-5-5"}))
 		}).Should(Succeed())
 		pr := gitFake.pullRequests(ns, "orders-api")[0]
+		Expect(gitFake.pullAuthor(ns, "orders-api", pr.Number)).To(Equal(ns+"-orders-api-agent"),
+			"the implementer opens its pull request, so the operator may review it")
 		finishSandbox(ns, "orders-api-3-r1-review-a1", "orders-api-3", &agentrunner.Result{Role: "review",
 			Verdict: "approve", Summary: "Every criterion met.", FollowUps: []model.FollowUp{
 				{Title: "Validate addresses", Body: "Postcodes are not checked."}}}, "")
