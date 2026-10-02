@@ -1,0 +1,14 @@
+// Command warm imports the Kubernetes CEL libraries CEL Lens builds on, so the
+// toolchain image can compile them once into its build cache.
+package main
+
+import (
+	_ "k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel"
+	_ "k8s.io/apiserver/pkg/admission/plugin/policy/mutating"
+	_ "k8s.io/apiserver/pkg/admission/plugin/policy/validating"
+	_ "k8s.io/apiserver/pkg/cel/environment"
+	_ "k8s.io/apiserver/pkg/cel/openapi/resolver"
+	_ "k8s.io/client-go/openapi"
+)
+
+func main() {}

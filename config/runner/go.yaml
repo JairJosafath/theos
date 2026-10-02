@@ -1,0 +1,56 @@
+# The Go and Node runner: the Gitea runner on the Go and Node toolchain
+# (hack/toolchain-go), labelled go, for Containers written in Go or TypeScript.
+# `make runner-go` builds it and applies this; it is not part of config/runner.
+# It registers with the token the seed Job stores in Secret gitea/gitea-runner.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-runner-go
+  namespace: gitea
+  labels:
+    app.kubernetes.io/part-of: c4factory-testenv
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitea-runner-go
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitea-runner-go
+        app.kubernetes.io/part-of: c4factory-testenv
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: runner
+          image: c4factory/gitea-runner-go:dev
+          imagePullPolicy: Never
+          env:
+            - name: GITEA_INSTANCE
+              value: http://gitea.gitea.svc.cluster.local:3000
+            - name: RUNNER_TOKEN
+              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+            - name: RUNNER_LABELS
+              value: go:host
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {memory: 6Gi}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: work
+              mountPath: /data/work
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir: {}
+        # Checkouts and test output in memory, as for the Flutter runner: disk
+        # writes stall etcd on a laptop. The Kubernetes libraries' build cache is
+        # warm in the image, so jobs compile only their own packages.
+        - name: work
+          emptyDir: {medium: Memory, sizeLimit: 2Gi}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 1Gi}

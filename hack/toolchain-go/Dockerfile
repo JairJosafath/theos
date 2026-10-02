@@ -21,12 +21,19 @@ RUN curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${G
       | tar -xz -C /usr/local/bin --strip-components=1 "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint" \
  && golangci-lint version
 
-# Warm the module cache with the Kubernetes libraries CEL Lens builds on: they are
-# large, and every CI job and agent run would download them again.
-RUN mkdir /tmp/warm && cd /tmp/warm && go mod init warm >/dev/null 2>&1 \
- && go get k8s.io/apiserver@v0.37.0 k8s.io/apiextensions-apiserver@v0.37.0 k8s.io/client-go@v0.37.0 \
- && cd / && rm -rf /tmp/warm /root/.cache/go-build \
- && chmod -R a+rX /go/pkg/mod
-
 ENV GOTOOLCHAIN=local \
-    GOFLAGS=-modcacherw
+    GOFLAGS=-modcacherw \
+    GOCACHE=/root/.cache/go-build \
+    GOLANGCI_LINT_CACHE=/root/.cache/golangci-lint
+
+# Warm the module and build caches with the Kubernetes CEL libraries CEL Lens
+# builds on. Cold, they take about 7 minutes and 3 GB to compile (half of it for
+# -race), and every agent sandbox starts cold; CI and agents only compile their
+# own packages on top. The cache layer is read-only to them: new entries go to
+# the container's own layer.
+COPY warm /tmp/warm/
+RUN cd /tmp/warm \
+ && go get k8s.io/apiserver@v0.37.0 k8s.io/apiextensions-apiserver@v0.37.0 k8s.io/client-go@v0.37.0 \
+ && go build ./... && go build -race ./... && go vet ./... \
+ && cd / && rm -rf /tmp/warm \
+ && chmod -R a+rX /go/pkg/mod /root/.cache
