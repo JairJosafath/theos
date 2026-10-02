@@ -47,6 +47,27 @@ type giteaLabel struct {
 	Name string `json:"name"`
 }
 
+// Request bodies of the issue API.
+type (
+	giteaLabelOption struct {
+		Name        string `json:"name"`
+		Color       string `json:"color"`
+		Description string `json:"description"`
+		Exclusive   bool   `json:"exclusive"`
+	}
+	giteaIssueLabels struct {
+		Labels []string `json:"labels"`
+	}
+	giteaComment struct {
+		Body string `json:"body"`
+	}
+	giteaNewIssue struct {
+		Title  string  `json:"title"`
+		Body   string  `json:"body"`
+		Labels []int64 `json:"labels"`
+	}
+)
+
 type giteaIssue struct {
 	Number     int          `json:"number"`
 	Title      string       `json:"title"`
@@ -81,9 +102,7 @@ func (g *gitea) EnsureLabels(ctx context.Context, repo Repository, labels []Labe
 		if _, ok := existing[l.Name]; ok {
 			continue
 		}
-		payload, _ := json.Marshal(map[string]any{
-			"name": l.Name, "color": l.Color, "description": l.Description, "exclusive": l.Exclusive,
-		})
+		payload, _ := json.Marshal(giteaLabelOption(l))
 		status, data, err := g.do(ctx, http.MethodPost, "/api/v1/repos/"+repoPath(repo)+"/labels", payload)
 		if err != nil {
 			return err
@@ -185,7 +204,7 @@ func (g *gitea) OpenBlockers(ctx context.Context, repo Repository, number int) (
 // AddIssueLabel adds a label to an issue by name. An exclusive scoped label
 // replaces the issue's other labels of its scope.
 func (g *gitea) AddIssueLabel(ctx context.Context, repo Repository, number int, label string) error {
-	payload, _ := json.Marshal(map[string]any{"labels": []string{label}})
+	payload, _ := json.Marshal(giteaIssueLabels{Labels: []string{label}})
 	status, data, err := g.do(ctx, http.MethodPost, issuePath(repo, number)+"/labels", payload)
 	if err != nil {
 		return err
@@ -232,7 +251,7 @@ func (g *gitea) issueLabels(ctx context.Context, repo Repository, number int) ([
 
 // CommentIssue adds a comment to an issue or a pull request.
 func (g *gitea) CommentIssue(ctx context.Context, repo Repository, number int, body string) error {
-	payload, _ := json.Marshal(map[string]string{"body": body})
+	payload, _ := json.Marshal(giteaComment{Body: body})
 	status, data, err := g.do(ctx, http.MethodPost, issuePath(repo, number)+"/comments", payload)
 	if err != nil {
 		return err
@@ -281,7 +300,7 @@ func (g *gitea) CreateIssue(ctx context.Context, repo Repository, title, body st
 			ids = append(ids, id)
 		}
 	}
-	payload, _ := json.Marshal(map[string]any{"title": title, "body": body, "labels": ids})
+	payload, _ := json.Marshal(giteaNewIssue{Title: title, Body: body, Labels: ids})
 	status, data, err := g.do(ctx, http.MethodPost, "/api/v1/repos/"+repoPath(repo)+"/issues", payload)
 	if err != nil {
 		return Issue{}, err
@@ -296,7 +315,11 @@ func (g *gitea) CreateIssue(ctx context.Context, repo Repository, title, body st
 // ReviewPullRequest posts a review of commit: ReviewApprove, ReviewRequestChanges
 // or ReviewComment, with body.
 func (g *gitea) ReviewPullRequest(ctx context.Context, repo Repository, number int, commit, event, body string) error {
-	payload, _ := json.Marshal(map[string]string{"event": event, "body": body, "commit_id": commit})
+	payload, _ := json.Marshal(struct {
+		Event    string `json:"event"`
+		Body     string `json:"body"`
+		CommitID string `json:"commit_id"`
+	}{event, body, commit})
 	status, data, err := g.do(ctx, http.MethodPost,
 		"/api/v1/repos/"+repoPath(repo)+"/pulls/"+strconv.Itoa(number)+"/reviews", payload)
 	if err != nil {

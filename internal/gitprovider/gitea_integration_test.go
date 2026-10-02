@@ -69,6 +69,19 @@ func TestGiteaIntegration(t *testing.T) {
 			t.Fatalf("History() = %v, %v; want the initial commit", commits, err)
 		}
 	})
+}
+
+// TestGiteaIssuesIntegration runs the issue flow against the seeded Gitea, like
+// TestGiteaIntegration.
+func TestGiteaIssuesIntegration(t *testing.T) {
+	base := os.Getenv("C4_GITEA_URL")
+	if base == "" {
+		t.Skip("C4_GITEA_URL not set")
+	}
+	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	client := Client{}
 
 	t.Run("labels, links and closes issues", func(t *testing.T) {
 		p, err := client.Provider(Config{URL: base, Owner: "webshop", Credentials: creds})
