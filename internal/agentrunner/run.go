@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"slices"
 	"unicode/utf8"
 
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -25,14 +27,27 @@ type Result struct {
 	Verdict string `json:"verdict,omitempty"`
 	// Error says why the run failed. Feedback for the next round when set.
 	Error string `json:"error,omitempty"`
+	// FollowUps are the reviewer's suggestions for later work.
+	FollowUps []model.FollowUp `json:"followUps,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
 const MaxResultBytes = 4000
 
+// Follow-ups share the termination message with the verdict, so they stay short.
+const (
+	maxFollowUpTitle = 100
+	maxFollowUpBody  = 400
+)
+
 // Encode returns the Result as JSON of at most MaxResultBytes, shortening the
-// summary and error when needed.
+// follow-ups, summary and error when needed.
 func (r Result) Encode() []byte {
+	r.FollowUps = slices.Clone(r.FollowUps)
+	for i := range r.FollowUps {
+		r.FollowUps[i].Title = shorten(r.FollowUps[i].Title, maxFollowUpTitle)
+		r.FollowUps[i].Body = shorten(r.FollowUps[i].Body, maxFollowUpBody)
+	}
 	for {
 		data, _ := json.Marshal(r)
 		if len(data) <= MaxResultBytes {
@@ -43,6 +58,9 @@ func (r Result) Encode() []byte {
 			r.Summary = shorten(r.Summary, len(r.Summary)-(len(data)-MaxResultBytes)-16)
 		case len(r.Error) > 200:
 			r.Error = shorten(r.Error, len(r.Error)-(len(data)-MaxResultBytes)-16)
+		case len(r.FollowUps) > 0:
+			// Escaping can make even short follow-ups too long; the verdict matters more.
+			r.FollowUps = r.FollowUps[:len(r.FollowUps)-1]
 		default:
 			r.Summary, r.Error = shorten(r.Summary, 100), shorten(r.Error, 100)
 		}
@@ -74,19 +92,21 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		result.Error = err.Error()
 		return result
 	}
+	ws := Workspace{Guide: r.showBase(ctx, job.Base, roleGuides[job.Role])}
+	ws.Related = cloneRelated(ctx, job, filepath.Join(filepath.Dir(dir), "related"))
 	if job.Role == RoleReview {
-		return review(ctx, job, agent, r, result)
+		return review(ctx, job, agent, r, ws, result)
 	}
-	return implement(ctx, job, agent, r, result)
+	return implement(ctx, job, agent, r, ws, result)
 }
 
-func implement(ctx context.Context, job Job, agent Agent, r *repo, result Result) Result {
+func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, result Result) Result {
 	start, err := r.head(ctx)
 	if err != nil {
 		result.Error = err.Error()
 		return result
 	}
-	summary, err := agent.Run(ctx, r.dir, ImplementPrompt(job))
+	summary, err := agent.Run(ctx, r.dir, ImplementPrompt(job, ws))
 	result.Summary = summary
 	if err != nil {
 		result.Error = err.Error()
@@ -141,22 +161,24 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, result Result
 	return result
 }
 
-func review(ctx context.Context, job Job, agent Agent, r *repo, result Result) Result {
+func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, result Result) Result {
 	head, err := r.head(ctx)
 	if err != nil {
 		result.Error = err.Error()
 		return result
 	}
 	result.Commit = head
-	output, err := agent.Run(ctx, r.dir, ReviewPrompt(job))
+	output, err := agent.Run(ctx, r.dir, ReviewPrompt(job, ws))
 	if err != nil {
 		result.Error = err.Error()
 		return result
 	}
-	result.Verdict, result.Summary, err = ParseVerdict(output)
+	verdict, err := ParseVerdict(output)
 	if err != nil {
 		result.Error = err.Error()
+		return result
 	}
+	result.Verdict, result.Summary, result.FollowUps = verdict.Verdict, verdict.Summary, verdict.FollowUps
 	return result
 }
 

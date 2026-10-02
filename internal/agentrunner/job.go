@@ -40,6 +40,20 @@ const (
 	EnvContext      = "C4_CONTEXT"
 	// EnvProtectedPaths lists the Standard's protected paths, comma-separated.
 	EnvProtectedPaths = "C4_PROTECTED_PATHS"
+	// EnvIssue is the number of the issue the goal comes from, if any.
+	EnvIssue = "C4_ISSUE"
+	// EnvHarness and EnvModel say which agent program runs, with which model.
+	EnvHarness = "C4_HARNESS"
+	EnvModel   = "C4_MODEL"
+	// EnvRelated lists the repositories of related Containers, as
+	// name=url pairs, comma-separated. They are cloned read-only.
+	EnvRelated = "C4_RELATED"
+)
+
+// Harnesses: the agent programs c4agent can run.
+const (
+	HarnessClaudeCode = "claude-code"
+	HarnessStandIn    = "stand-in"
 )
 
 // Job is one sandbox run: implement a goal on a branch, or review that branch.
@@ -65,6 +79,13 @@ type Job struct {
 	// ProtectedPaths are the Standard's paths the agent must not change, next to
 	// the platform's.
 	ProtectedPaths []string
+	// Issue is the issue the goal comes from; 0 for a written goal.
+	Issue int
+	// Harness is the agent program, and Model the model it uses (empty: its default).
+	Harness string
+	Model   string
+	// Related are the repositories of related Containers, by Container name.
+	Related map[string]string
 }
 
 // JobFromEnv reads a Job from environment variables.
@@ -82,6 +103,8 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		Task:      getenv(EnvTask),
 		Username:  getenv(EnvGitUsername),
 		Token:     getenv(EnvGitToken),
+		Harness:   getenv(EnvHarness),
+		Model:     getenv(EnvModel),
 	}
 	if job.Base == "" {
 		job.Base = "main"
@@ -90,6 +113,32 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		if p = strings.TrimSpace(p); p != "" {
 			job.ProtectedPaths = append(job.ProtectedPaths, p)
 		}
+	}
+	if job.Harness == "" {
+		job.Harness = HarnessClaudeCode
+	}
+	if job.Harness != HarnessClaudeCode && job.Harness != HarnessStandIn {
+		return Job{}, fmt.Errorf("%s=%q: want %s or %s", EnvHarness, job.Harness, HarnessClaudeCode, HarnessStandIn)
+	}
+	if issue := getenv(EnvIssue); issue != "" {
+		n, err := strconv.Atoi(issue)
+		if err != nil || n < 1 {
+			return Job{}, fmt.Errorf("%s=%q is not an issue number", EnvIssue, issue)
+		}
+		job.Issue = n
+	}
+	for pair := range strings.SplitSeq(getenv(EnvRelated), ",") {
+		if pair = strings.TrimSpace(pair); pair == "" {
+			continue
+		}
+		name, repoURL, ok := strings.Cut(pair, "=")
+		if !ok || name == "" || repoURL == "" {
+			return Job{}, fmt.Errorf("%s: %q is not name=url", EnvRelated, pair)
+		}
+		if job.Related == nil {
+			job.Related = map[string]string{}
+		}
+		job.Related[name] = repoURL
 	}
 	job.CheckCommand = strings.Fields(getenv(EnvCheckCommand))
 	if len(job.CheckCommand) == 0 {

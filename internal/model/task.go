@@ -43,7 +43,19 @@ type RunResult struct {
 	Summary string
 	Verdict string
 	Error   string
+	// FollowUps are the reviewer's suggestions for later work.
+	FollowUps []FollowUp
 }
+
+// FollowUp is work a reviewer suggests for later, outside the change it reviewed:
+// an issue for a person to triage.
+type FollowUp struct {
+	Title string `json:"title"`
+	Body  string `json:"body,omitempty"`
+}
+
+// MaxFollowUps is how many follow-ups one review may file.
+const MaxFollowUps = 3
 
 // RunState is the sandbox for the Task's current phase and round.
 type RunState struct {

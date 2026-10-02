@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -107,4 +108,44 @@ func (r *repo) git(ctx context.Context, dir string, args ...string) (string, err
 		return "", fmt.Errorf("git %s: %v: %s", args[0], err, msg)
 	}
 	return stdout.String(), nil
+}
+
+// showBase returns a file as it is on the base branch, or "" when it isn't there.
+func (r *repo) showBase(ctx context.Context, base, path string) string {
+	if path == "" {
+		return ""
+	}
+	out, err := r.git(ctx, r.dir, "show", "origin/"+base+":"+path)
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
+// cloneRelated clones the related Containers' repositories into root, one folder
+// each, shallow and without a remote: they are for reading. A repository that
+// can't be cloned is reported, not fatal.
+func cloneRelated(ctx context.Context, job Job, root string) []RelatedRepo {
+	names := make([]string, 0, len(job.Related))
+	for name := range job.Related {
+		names = append(names, name)
+	}
+	related := make([]RelatedRepo, 0, len(names))
+	for _, name := range sortedCopy(names) {
+		dir := filepath.Join(root, name)
+		r := &repo{dir: dir, secret: job.Token}
+		err := retryTransient(ctx, networkRetryDelays, func() error {
+			_, err := r.git(ctx, "", "clone", "--quiet", "--depth", "1", "--no-tags", job.Related[name], dir)
+			return err
+		})
+		if err == nil {
+			_, err = r.git(ctx, dir, "remote", "remove", "origin")
+		}
+		if err != nil {
+			related = append(related, RelatedRepo{Name: name, Error: shorten(err.Error(), 200)})
+			continue
+		}
+		related = append(related, RelatedRepo{Name: name, Dir: dir})
+	}
+	return related
 }

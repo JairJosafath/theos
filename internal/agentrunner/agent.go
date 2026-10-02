@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -23,6 +24,8 @@ type ClaudeAgent struct {
 	Command []string
 	// Env is added to the agent's environment.
 	Env []string
+	// Model is passed with --model; empty leaves the CLI's default.
+	Model string
 }
 
 // DefaultClaudeCommand runs Claude Code once, headless, with JSON output.
@@ -35,6 +38,9 @@ func (a ClaudeAgent) Run(ctx context.Context, dir, prompt string) (string, error
 	command := a.Command
 	if len(command) == 0 {
 		command = DefaultClaudeCommand
+	}
+	if a.Model != "" {
+		command = append(slices.Clone(command), "--model", a.Model)
 	}
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 	cmd.Dir = dir

@@ -64,14 +64,15 @@ func run(ctx context.Context, workdir string) agentrunner.Result {
 	return agentrunner.Run(ctx, job, agentFor(job), workdir)
 }
 
-// agentFor picks the agent: the stand-in when C4AGENT_FAKE is set, else Claude
-// Code, or the command in C4AGENT_COMMAND.
+// agentFor picks the agent: the stand-in for the stand-in harness (or when
+// C4AGENT_FAKE is set), else Claude Code with the job's model, or the command in
+// C4AGENT_COMMAND.
 func agentFor(job agentrunner.Job) agentrunner.Agent {
-	if fake := os.Getenv("C4AGENT_FAKE"); fake != "" {
+	if job.Harness == agentrunner.HarnessStandIn || os.Getenv("C4AGENT_FAKE") != "" {
 		changesFirst, _ := strconv.ParseBool(os.Getenv("C4AGENT_FAKE_CHANGES_FIRST"))
 		return agentrunner.FakeAgent{Role: job.Role, Round: job.Round, ChangesFirst: changesFirst}
 	}
-	agent := agentrunner.ClaudeAgent{}
+	agent := agentrunner.ClaudeAgent{Model: job.Model}
 	if command := strings.Fields(os.Getenv("C4AGENT_COMMAND")); len(command) > 0 {
 		agent.Command = command
 	}

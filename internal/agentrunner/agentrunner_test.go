@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 func env(overrides map[string]string) func(string) string {
@@ -55,7 +57,7 @@ func TestJobFromEnv(t *testing.T) {
 func TestPrompts(t *testing.T) {
 	job, _ := JobFromEnv(env(map[string]string{EnvFeedback: "Handle an empty image.", EnvRound: "2",
 		EnvContext: "Pocket Tools: works fully offline"}))
-	implement := ImplementPrompt(job)
+	implement := ImplementPrompt(job, Workspace{})
 	for _, want := range []string{"Add crop", "Handle an empty image.", "round 2", "AGENTS.md", `"make check"`,
 		"task/add-crop", "works fully offline"} {
 		if !strings.Contains(implement, want) {
@@ -65,7 +67,7 @@ func TestPrompts(t *testing.T) {
 	if got, _ := JobFromEnv(env(map[string]string{EnvProtectedPaths: "Makefile, docs/style/,"})); !slices.Equal(got.ProtectedPaths, []string{"Makefile", "docs/style/"}) {
 		t.Errorf("ProtectedPaths = %v", got.ProtectedPaths)
 	}
-	review := ReviewPrompt(job)
+	review := ReviewPrompt(job, Workspace{})
 	for _, want := range []string{"Add crop", "git diff origin/main...HEAD", `"verdict"`, "do not change files",
 		"Handle an empty image.", "check each point was addressed", "Non-blocking:"} {
 		if !strings.Contains(review, want) {
@@ -76,7 +78,7 @@ func TestPrompts(t *testing.T) {
 		t.Error("review prompt says round 2 of an unknown limit is the last")
 	}
 	job.MaxRounds = 2
-	if !strings.Contains(ReviewPrompt(job), "This is the last round") {
+	if !strings.Contains(ReviewPrompt(job, Workspace{}), "This is the last round") {
 		t.Error("review prompt of the last round doesn't say so")
 	}
 	if strings.Contains(review, "t0k") || strings.Contains(implement, "t0k") {
@@ -97,15 +99,15 @@ func TestParseVerdict(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			verdict, summary, err := ParseVerdict(tt.output)
+			v, err := ParseVerdict(tt.output)
 			if tt.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.err) {
 					t.Fatalf("ParseVerdict() error = %v, want %q", err, tt.err)
 				}
 				return
 			}
-			if err != nil || verdict != tt.verdict || summary != tt.summary {
-				t.Errorf("ParseVerdict() = %q, %q, %v", verdict, summary, err)
+			if err != nil || v.Verdict != tt.verdict || v.Summary != tt.summary {
+				t.Errorf("ParseVerdict() = %+v, %v", v, err)
 			}
 		})
 	}
@@ -292,4 +294,132 @@ type countingAgent struct{ calls int }
 func (a *countingAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	a.calls++
 	return "tried", os.WriteFile(filepath.Join(dir, "attempt.txt"), []byte(strings.Repeat("x", a.calls)), 0o644)
+}
+
+func TestJobFromEnvIssueAndRoles(t *testing.T) {
+	job, err := JobFromEnv(env(map[string]string{EnvIssue: "3", EnvModel: "claude-opus-5-5", EnvHarness: HarnessStandIn,
+		EnvRelated: "vscode-extension=http://gitea/cel-lens/vscode-extension.git, server=http://gitea/cel-lens/server.git"}))
+	if err != nil {
+		t.Fatalf("JobFromEnv() error = %v", err)
+	}
+	want := map[string]string{"vscode-extension": "http://gitea/cel-lens/vscode-extension.git", "server": "http://gitea/cel-lens/server.git"}
+	if job.Issue != 3 || job.Model != "claude-opus-5-5" || job.Harness != HarnessStandIn || !maps.Equal(job.Related, want) {
+		t.Errorf("job = issue %d, model %q, harness %q, related %v", job.Issue, job.Model, job.Harness, job.Related)
+	}
+	for _, bad := range []map[string]string{{EnvIssue: "three"}, {EnvRelated: "no-url"}, {EnvHarness: "copilot"}} {
+		if _, err := JobFromEnv(env(bad)); err == nil {
+			t.Errorf("JobFromEnv(%v) succeeded", bad)
+		}
+	}
+}
+
+func TestIssuePrompts(t *testing.T) {
+	job, _ := JobFromEnv(env(map[string]string{EnvIssue: "3", EnvGoal: "Issue #3: Locate CEL\n\n## Acceptance criteria\n- [ ] finds rules",
+		EnvProtectedPaths: "Makefile,docs/agents/"}))
+	ws := Workspace{Guide: "Write the failing test first.", Related: []RelatedRepo{{Name: "vscode-extension", Dir: "/workspace/related/vscode-extension"}}}
+	implement := ImplementPrompt(job, ws)
+	for _, want := range []string{"issue #3", "- [ ] finds rules", "every acceptance criterion", "Write the failing test first.",
+		"docs/agents/implementer.md", "/workspace/related/vscode-extension", "Makefile, docs/agents/"} {
+		if !strings.Contains(implement, want) {
+			t.Errorf("implement prompt lacks %q", want)
+		}
+	}
+	ws.Guide = "Check the criteria first."
+	review := ReviewPrompt(job, ws)
+	for _, want := range []string{"issue #3", "each acceptance criterion", "Check the criteria first.", "docs/agents/reviewer.md",
+		`"followUps"`, "/workspace/related/vscode-extension"} {
+		if !strings.Contains(review, want) {
+			t.Errorf("review prompt lacks %q", want)
+		}
+	}
+	plain, _ := JobFromEnv(env(nil))
+	if strings.Contains(ImplementPrompt(plain, Workspace{}), "acceptance criterion") {
+		t.Error("a Task with a written goal is asked about acceptance criteria")
+	}
+}
+
+func TestParseVerdictFollowUps(t *testing.T) {
+	out := `{"verdict": "approve", "summary": "Good.", "followUps": [{"title": "Cache schemas", "body": "Parse once."},` +
+		`{"title": " ", "body": "no title"}, {"title": "B", "body": ""}, {"title": "C"}, {"title": "D"}]}`
+	v, err := ParseVerdict(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []model.FollowUp{{Title: "Cache schemas", Body: "Parse once."}, {Title: "B"}, {Title: "C"}}
+	if v.Verdict != VerdictApprove || !slices.Equal(v.FollowUps, want) {
+		t.Errorf("ParseVerdict() = %+v, want follow-ups %v (untitled dropped, three at most)", v, want)
+	}
+}
+
+func TestResultEncodeKeepsFollowUpsShort(t *testing.T) {
+	r := Result{Role: RoleReview, Verdict: VerdictApprove, Summary: strings.Repeat("s", 3000),
+		FollowUps: []model.FollowUp{{Title: strings.Repeat("t", 300), Body: strings.Repeat("b", 2000)},
+			{Title: "Two", Body: strings.Repeat("b", 2000)}, {Title: "Three", Body: strings.Repeat("b", 2000)}}}
+	data := r.Encode()
+	var back Result
+	if err := json.Unmarshal(data, &back); err != nil || len(data) > MaxResultBytes {
+		t.Fatalf("Encode() = %d bytes, %v", len(data), err)
+	}
+	if len(back.FollowUps) != 3 || back.Verdict != VerdictApprove {
+		t.Errorf("Encode() lost follow-ups or the verdict: %+v", back)
+	}
+}
+
+func TestRoleGuideComesFromTheBase(t *testing.T) {
+	url := bareRepo(t, map[string]string{"docs/agents/reviewer.md": "Review strictly.\n", "docs/agents/implementer.md": "Test first.\n"})
+	ctx := context.Background()
+	// The implementer rewrites the reviewer's guide on its branch; the review must not see it.
+	if got := Run(ctx, testJob(t, url, RoleImplement, 1), editAgent{path: "docs/agents/reviewer.md"}, t.TempDir()); got.Commit == "" {
+		t.Fatalf("implement = %+v", got)
+	}
+	agent := &promptAgent{reply: `{"verdict": "approve", "summary": "ok"}`}
+	Run(ctx, testJob(t, url, RoleReview, 1), agent, t.TempDir())
+	if !strings.Contains(agent.prompt, "Review strictly.") || strings.Contains(agent.prompt, "changed") {
+		t.Errorf("review prompt has the branch's guide, not main's:\n%s", agent.prompt)
+	}
+}
+
+func TestRunClonesRelatedRepositories(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "server\n"})
+	related := bareRepo(t, map[string]string{"package.json": "{}\n"})
+	job := testJob(t, url, RoleImplement, 1)
+	job.Related = map[string]string{"vscode-extension": related, "gone": "file:///nonexistent/repo.git"}
+	root := t.TempDir()
+	agent := &promptAgent{reply: "done", edit: "x.txt"}
+	if got := Run(context.Background(), job, agent, filepath.Join(root, "repo")); got.Error != "" {
+		t.Fatalf("Run() = %+v", got)
+	}
+	dir := filepath.Join(root, "related", "vscode-extension")
+	if _, err := os.Stat(filepath.Join(dir, "package.json")); err != nil {
+		t.Errorf("related repository not cloned: %v", err)
+	}
+	if out, _ := exec.Command("git", "-C", dir, "remote").Output(); strings.TrimSpace(string(out)) != "" {
+		t.Errorf("related clone keeps remote %q; it must not be pushable", out)
+	}
+	if !strings.Contains(agent.prompt, dir) || !strings.Contains(agent.prompt, "gone (could not be cloned") {
+		t.Errorf("prompt doesn't list the related repositories:\n%s", agent.prompt)
+	}
+}
+
+// promptAgent records the prompt of its first run and answers reply.
+type promptAgent struct {
+	prompt, reply, edit string
+}
+
+func (a *promptAgent) Run(_ context.Context, dir, prompt string) (string, error) {
+	if a.prompt == "" {
+		a.prompt = prompt
+	}
+	if a.edit != "" {
+		return a.reply, os.WriteFile(filepath.Join(dir, a.edit), []byte("edit\n"), 0o644)
+	}
+	return a.reply, nil
+}
+
+func TestClaudeAgentPassesTheModel(t *testing.T) {
+	// "echo" stands in for the CLI: its output shows the arguments it got.
+	out, err := ClaudeAgent{Command: []string{"echo", "-p"}, Model: "claude-sonnet-5-5"}.Run(context.Background(), t.TempDir(), "")
+	if err != nil || out != "-p --model claude-sonnet-5-5" {
+		t.Errorf("Run() = %q, %v", out, err)
+	}
 }
