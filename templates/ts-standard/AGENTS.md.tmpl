@@ -23,12 +23,13 @@ passing and a review. Never commit red.
 4. Make the smallest change that meets every criterion. One concern per commit.
 5. `make check`, then commit with a Conventional Commit message
    (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`).
-6. Protected files change only through a Standard change (see your role guide), never
-   in a normal pull request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to
-   the platform. `Makefile`, `eslint.config.mjs`, `.prettierrc.json`,
-   `.prettierignore`, `.editorconfig`, `AGENTS.md`, `docs/style/` and
-   `docs/agents/` belong to the Standard. `tsconfig.json` and
-   `vitest.config.mts` decide what the checks check: don't loosen them.
+6. `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` never change. Other protected files
+   change only through a Standard change (see your role guide), never in a normal pull
+   request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
+   `Makefile`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
+   `.editorconfig`, `AGENTS.md`, `docs/style/` and `docs/agents/` belong to the
+   Standard. `tsconfig.json` and `vitest.config.mts` decide what the checks check: don't
+   loosen them.
 
 ## Lints
 
