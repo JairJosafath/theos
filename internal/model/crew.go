@@ -56,6 +56,9 @@ type Issue struct {
 	Body   string
 	// OpenBlockers are the open issues this one depends on, as "#3" or "owner/repo#3".
 	OpenBlockers []string
+	// StandardChange is set for an issue labelled kind/standard-change. Only such an
+	// issue may start with an allowance, and only once a Task names it.
+	StandardChange bool
 }
 
 // CrewTask is a Task on the Crew's Container.
@@ -66,6 +69,18 @@ type CrewTask struct {
 	// Final means Merged or Failed; Failed tells which.
 	Final  bool
 	Failed bool
+	// Blocked means the Task waits on a Standard change; it keeps its issue but
+	// takes no place from Parallel.
+	Blocked bool
+	// StandardChange is the Standard change issue the Task filed, from its status.
+	StandardChange *IssueChange
+}
+
+// IssueChange is a Standard change issue a Task filed, and the protected paths it
+// proposes to change.
+type IssueChange struct {
+	Issue int
+	Paths []string
 }
 
 // CrewFacts is everything a Crew's next step depends on.
@@ -93,6 +108,9 @@ type IssueStart struct {
 	Issue   int
 	Task    string
 	Attempt int
+	// AllowedPaths are the protected paths the Task may change; set only for a
+	// Standard change issue a Task named.
+	AllowedPaths []string
 }
 
 // IssueRejection is a ready issue that agents must not take, and why: it goes
@@ -137,6 +155,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	issues := slices.Clone(f.Issues)
 	slices.SortFunc(issues, func(a, b Issue) int { return a.Number - b.Number })
 	var candidates []int
+	allowances := map[int][]string{}
 	for _, issue := range issues {
 		if working[issue.Number] {
 			// Taken a moment ago; its label changes when its Task starts.
@@ -157,6 +176,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			}
 			tried = append(tried, t.Name)
 		}
+		allowance := standardAllowance(f.Tasks, issue)
 		switch {
 		case merged != "":
 			step.NotReady = append(step.NotReady, IssueRejection{Issue: issue.Number, Reason: fmt.Sprintf(
@@ -165,10 +185,13 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			step.NotReady = append(step.NotReady, IssueRejection{Issue: issue.Number, Reason: fmt.Sprintf(
 				"Agents tried this issue %d times (Tasks %s) and failed each time; it needs a person: split it, "+
 					"clarify it, or do it by hand", len(tried), strings.Join(tried, ", "))})
-		case len(issue.OpenBlockers) > 0:
+		case len(issue.OpenBlockers) > 0, issue.StandardChange && len(allowance) == 0:
+			// A Standard change waits until a Task's status names it, so it never
+			// starts without its allowance.
 			step.Waiting = append(step.Waiting, issue.Number)
 		default:
 			candidates = append(candidates, issue.Number)
+			allowances[issue.Number] = allowance
 		}
 	}
 
@@ -186,7 +209,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 		return step
 	}
 
-	free := max(f.Parallel, 1) - len(step.Active)
+	free := max(f.Parallel, 1) - (len(step.Active) - blockedTasks(f.Tasks))
 	var started []string
 	for _, issue := range candidates {
 		if free <= 0 {
@@ -200,7 +223,8 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			}
 		}
 		name := IssueTaskName(container, issue, attempt)
-		step.Start = append(step.Start, IssueStart{Issue: issue, Task: name, Attempt: attempt})
+		step.Start = append(step.Start, IssueStart{Issue: issue, Task: name, Attempt: attempt,
+			AllowedPaths: allowances[issue]})
 		started = append(started, fmt.Sprintf("Task %s for issue #%d", name, issue))
 		free--
 	}
@@ -221,6 +245,37 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 		}
 	}
 	return step
+}
+
+// blockedTasks counts the Tasks that wait on a Standard change; they take no place.
+func blockedTasks(tasks []CrewTask) int {
+	n := 0
+	for _, t := range tasks {
+		if t.Blocked && !t.Final {
+			n++
+		}
+	}
+	return n
+}
+
+// standardAllowance is the protected paths a Standard change issue may change:
+// those the first Task (by name) that filed it proposed, minus the paths no agent
+// may touch. A label alone grants nothing; nil when no Task names the issue.
+func standardAllowance(tasks []CrewTask, issue Issue) []string {
+	if !issue.StandardChange {
+		return nil
+	}
+	var filer *CrewTask
+	for i, t := range tasks {
+		if t.StandardChange != nil && t.StandardChange.Issue == issue.Number &&
+			(filer == nil || t.Name < filer.Name) {
+			filer = &tasks[i]
+		}
+	}
+	if filer == nil {
+		return nil
+	}
+	return EligibleAllowance(filer.StandardChange.Paths)
 }
 
 // workingMessage says which Tasks work, and on which issues.

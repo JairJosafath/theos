@@ -39,6 +39,9 @@ func TestNextCrewStep(t *testing.T) {
 	start := func(issue int, task string, attempt int) []IssueStart {
 		return []IssueStart{{Issue: issue, Task: task, Attempt: attempt}}
 	}
+	filer := CrewTask{Name: "cel-ls-1", Issue: 1, Blocked: true,
+		StandardChange: &IssueChange{Issue: 2, Paths: []string{"Makefile", "AGENTS.md"}}}
+	change := Issue{Number: 2, Body: criteria, StandardChange: true}
 	tests := []struct {
 		name  string
 		facts CrewFacts
@@ -105,6 +108,28 @@ func TestNextCrewStep(t *testing.T) {
 					"with a checklist (\"- [ ] ...\"), so a reviewer could not tell when it is done. Add one, " +
 					"then label it status/ready again."}},
 				Message: "Task cel-ls-1 is working on issue #1; 1 ready issue waits for a free place"}},
+		{name: "a blocked Task leaves its place free, so its Standard change runs with the allowance", facts: CrewFacts{
+			ContainerReady: true, Parallel: 1, Tasks: []CrewTask{filer}, Issues: []Issue{change}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-1"},
+				Start:   []IssueStart{{Issue: 2, Task: "cel-ls-2", Attempt: 1, AllowedPaths: []string{"Makefile"}}},
+				Message: "Starting Task cel-ls-2 for issue #2"}},
+		{name: "a Task that is not blocked still takes the place", facts: CrewFacts{ContainerReady: true, Parallel: 1,
+			Tasks: []CrewTask{{Name: "cel-ls-1", Issue: 1}}, Issues: []Issue{ready(3)}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-1"}, Ready: []int{3},
+				Message: "Task cel-ls-1 is working on issue #1; 1 ready issue waits for a free place"}},
+		{name: "a Standard change waits until a Task names it", facts: CrewFacts{ContainerReady: true, Parallel: 1,
+			Issues: []Issue{change}},
+			want: CrewStep{Phase: CrewIdle, Waiting: []int{2}, Message: "No ready issues; 1 waits on open dependencies"}},
+		{name: "a failed filing Task still grants its allowance", facts: CrewFacts{ContainerReady: true, Parallel: 1,
+			Tasks:  []CrewTask{{Name: "cel-ls-1", Issue: 1, Final: true, Failed: true, StandardChange: filer.StandardChange}},
+			Issues: []Issue{change}},
+			want: CrewStep{Phase: CrewWorking,
+				Start:   []IssueStart{{Issue: 2, Task: "cel-ls-2", Attempt: 1, AllowedPaths: []string{"Makefile"}}},
+				Message: "Starting Task cel-ls-2 for issue #2"}},
+		{name: "a status alone grants nothing without the label", facts: CrewFacts{ContainerReady: true, Parallel: 1,
+			Tasks: []CrewTask{filer}, Issues: []Issue{{Number: 2, Body: criteria}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-1"},
+				Start: start(2, "cel-ls-2", 1), Message: "Starting Task cel-ls-2 for issue #2"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
