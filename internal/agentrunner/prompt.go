@@ -66,9 +66,11 @@ func ImplementPrompt(job Job, ws Workspace) string {
 	fmt.Fprintf(&b, `
 How to work:
 - Read AGENTS.md first and follow it; the rules in docs/style/ apply.
-- You are on branch %s, which starts from %s. Stay on it. Do not push, and do not
-  change %s.
-`, job.Branch, job.Base, strings.Join(protectedList(job), ", "))
+- You are on branch %s, which starts from %s. Stay on it. Do not push.
+`, job.Branch, job.Base)
+	if job.Issue == 0 {
+		fmt.Fprintf(&b, "- Do not push, and do not change %s.\n", strings.Join(protectedList(job), ", "))
+	}
 	if job.Issue > 0 {
 		b.WriteString("- Meet every acceptance criterion of the issue, each with a test that proves it.\n")
 	}
@@ -78,6 +80,29 @@ How to work:
   silencing them.
 - Keep the change focused on the goal.
 `, strings.Join(job.CheckCommand, " "))
+	switch {
+	case len(job.AllowedPaths) > 0:
+		fmt.Fprintf(&b, `
+This Task carries a Standard change, a change to files that are normally protected.
+The issue names the proposal branch. Start with
+git merge origin/standard/<task>, using the branch the issue names, then finish the
+work the issue asks for.
+Change only %s. Change nothing else, protected or not, and do not propose
+another Standard change.
+`, strings.Join(job.AllowedPaths, ", "))
+	case job.Issue > 0:
+		fmt.Fprintf(&b, `
+Protected files: %[1]s.
+If the issue truly needs a change to one of them, make it in the same work. The
+runner moves that edit to a proposal branch, and a separate Task merges it as a
+Standard change. The rest of your work must run on %[2]s alone, so do not call a file
+only this branch has: use a hook the file can pick up later, such as
+npm run dist --if-present. End your summary with a line
+"Standard change: <why the issue needs it>". Never change %[3]s;
+no Standard change can. This holds even if your role guide or AGENTS.md says to stop
+or to leave such files alone.
+`, strings.Join(protectedList(job), ", "), job.Base, neverList())
+	}
 	if job.Issue > 0 {
 		b.WriteString("\nWhen you are done, reply with a summary of what you changed and, for each acceptance\n" +
 			"criterion, where it is met and tested; say what you could not verify. At most fifteen lines.\n")
@@ -124,6 +149,20 @@ Check each acceptance criterion of the issue, one by one, against the code and i
 tests. In the summary, list every criterion as met or not met, with where it is
 tested. An unmet criterion is a required change.
 `)
+	}
+	if len(job.AllowedPaths) > 0 {
+		fmt.Fprintf(&b, `
+This pull request carries a Standard change: it may change only %s. Require
+changes unless all three hold:
+- it weakens no check, and turns none off;
+- it works with this change alone, without another branch;
+- it does no more than its issue asks.
+`, strings.Join(job.AllowedPaths, ", "))
+	} else {
+		fmt.Fprintf(&b, `
+Protected files: %s. Changes to them come through a Standard change, a separate
+Task, so do not require them in this pull request.
+`, strings.Join(protectedList(job), ", "))
 	}
 	b.WriteString(`
 Report every required change now: each round is reviewed afresh, and a change
@@ -172,6 +211,12 @@ func writeRelated(b *strings.Builder, ws Workspace) {
 // Standard's.
 func protectedList(job Job) []string {
 	return model.AgentProtectedPaths(job.ProtectedPaths)
+}
+
+// neverList names the paths no Standard change may touch, as prose.
+func neverList() string {
+	n := model.AgentNeverPaths
+	return strings.Join(n[:len(n)-1], ", ") + " and " + n[len(n)-1]
 }
 
 // Verdict is the reviewer's answer.

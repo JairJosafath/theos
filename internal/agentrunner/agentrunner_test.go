@@ -808,3 +808,40 @@ func TestRunImplementResumed(t *testing.T) {
 		}
 	})
 }
+
+func TestStandardChangePrompts(t *testing.T) {
+	issue := Job{Container: "c", Project: "p", Issue: 4, Goal: "Issue #4", Branch: "task/x", Base: "main",
+		ProtectedPaths: []string{"AGENTS.md", "Makefile"}, CheckCommand: []string{"make", "check"}}
+	goal := issue
+	goal.Issue = 0
+	gated := issue
+	gated.AllowedPaths = []string{"Makefile"}
+	cases := []struct {
+		name   string
+		prompt string
+		want   []string
+		not    []string
+	}{
+		{"implement issue", ImplementPrompt(issue, Workspace{}), []string{"Standard change:", "on main alone", "hook",
+			"AGENTS.md, docs/agents/ and .c4factory.yaml", "even if your role guide or AGENTS.md says to stop"}, nil},
+		{"implement goal", ImplementPrompt(goal, Workspace{}), []string{"do not change"}, []string{"Standard change:"}},
+		{"implement gated", ImplementPrompt(gated, Workspace{}), []string{"Change only Makefile", "git merge origin/standard/",
+			"proposal branch"}, []string{"Standard change:"}},
+		{"review issue", ReviewPrompt(issue, Workspace{}), []string{"Makefile", "a Standard change"},
+			[]string{"weakens no check"}},
+		{"review gated", ReviewPrompt(gated, Workspace{}), []string{"weakens no check", "works with this change alone",
+			"no more than its issue asks"}, nil},
+	}
+	for _, c := range cases {
+		for _, w := range c.want {
+			if !strings.Contains(c.prompt, w) {
+				t.Errorf("%s prompt lacks %q", c.name, w)
+			}
+		}
+		for _, w := range c.not {
+			if strings.Contains(c.prompt, w) {
+				t.Errorf("%s prompt contains %q", c.name, w)
+			}
+		}
+	}
+}
