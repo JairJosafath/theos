@@ -20,10 +20,12 @@ Branch `feat/issue-driven-factory`, draft PR #9. The hand-off commit is pushed.
   - Done by relay session 1 (headless) and reviewed: Task 9 `d0d2aa2`, Task 10
     `01f8f8a` (see the ledger for their rulings and minors).
   - **Task 11 interrupted**: its implementer (opus) was mid-work when the user
-    shut the PC down. Its uncommitted edits stay in the tree and are backed up
-    as branch `wip/standard-change-task-11`. Next session: read the ledger's
-    Task 11 rulings, then re-dispatch Task 11 telling the implementer a prior
-    attempt was interrupted and its edits are in the tree to keep or redo.
+    shut the PC down. Its unfinished edits are commit `6446a5c` (wip,
+    unreviewed, may not compile). Next session: read the ledger's Task 11
+    rulings, then re-dispatch Task 11 telling the implementer a prior attempt
+    was interrupted and `6446a5c` holds its edits to keep or redo; review the
+    task from BASE `01f8f8a`. (Branch `wip/standard-change-task-11` on GitHub
+    is an older backup of the same edits; delete it when Task 11 lands.)
   - Not started: Tasks 12–18.
 - `fa1899f` hack/relay.sh: chains headless sessions overnight from the newest
   handoff (the user runs it; auto mode refuses me launching it). AGENTS.md now
@@ -90,7 +92,7 @@ Branch `feat/issue-driven-factory`, draft PR #9. The hand-off commit is pushed.
 
 1. Load `superpowers:subagent-driven-development`; run its `scripts/sdd-workspace
    docs/plans/standard-change.md`; read the ledger tail.
-2. Task 11: `git status` (the interrupted edits), `scripts/task-brief
+2. Task 11: `git show --stat 6446a5c` (the interrupted edits), `scripts/task-brief
    docs/plans/standard-change.md 11`, BASE `01f8f8a`, re-dispatch the
    implementer (opus) with the Task 11 notes above and the ledger's Task 11
    rulings, then a reviewer (opus).
