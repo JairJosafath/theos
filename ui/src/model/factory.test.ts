@@ -288,6 +288,61 @@ describe('attention', () => {
     expect(items[1].detail).toBe('Failed after 4 rounds')
   })
 
+  it('lists Tasks waiting for the agent instead of calling them stuck', () => {
+    const now = new Date(2026, 9, 2, 14, 0).getTime()
+    const waiting = issueTask({
+      phase: 'Implementing',
+      round: 2,
+      agentBackAt: new Date(2026, 9, 2, 15, 4).toISOString(),
+      history: [{ at: new Date(now - 5 * 60 * 60_000).toISOString(), phase: 'Implementing', round: 2 }],
+      conditions: [
+        {
+          type: 'Progressing',
+          status: 'True',
+          reason: 'AgentUnavailable',
+          message: 'The agent hit a usage limit; trying again at 2026-10-02T13:04:00Z',
+        },
+      ],
+    })
+    const items = attention({ tasks: [waiting], containers: [], sessions: [], now })
+    expect(items).toEqual([
+      {
+        level: 'warning',
+        title: 'Task cel-lens/cel-language-server-3 is waiting for the agent until 15:04',
+        detail: 'The agent hit a usage limit; trying again at 2026-10-02T13:04:00Z',
+        task: 'cel-lens/cel-language-server-3',
+      },
+    ])
+  })
+
+  it('lists Crews whose Ready condition is False, with its message', () => {
+    const blocked = crew(
+      'vscode-extension',
+      {},
+      {
+        phase: 'Waiting',
+        conditions: [
+          {
+            type: 'Ready',
+            status: 'False',
+            reason: 'ContainerNotReady',
+            message: 'Waiting for Container vscode-extension to be Ready',
+          },
+        ],
+      },
+    )
+    const fine = crew('cel-language-server', {}, { phase: 'Idle', conditions: [{ type: 'Ready', status: 'True' }] })
+    const paused = crew('paused', { paused: true }, { phase: 'Paused' })
+    const items = attention({ tasks: [], containers: [], sessions: [], crews: [fine, blocked, paused], now: T0 })
+    expect(items).toEqual([
+      {
+        level: 'warning',
+        title: 'Crew cel-lens/vscode-extension can’t pick up issues',
+        detail: 'Waiting for Container vscode-extension to be Ready',
+      },
+    ])
+  })
+
   it('forgets failures older than a day', () => {
     const old = task('old', { phase: 'Failed', completedAt: at(0) })
     expect(attention({ tasks: [old], containers: [], sessions: [], now: T0 + 25 * 60 * 60_000 })).toEqual([])

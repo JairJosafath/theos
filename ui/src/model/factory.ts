@@ -328,10 +328,11 @@ export function attention(input: {
   tasks: Task[]
   containers: Container[]
   sessions: Session[]
+  crews?: Crew[]
   health?: FactoryHealth
   now: number
 }): Attention[] {
-  const { tasks, containers, sessions, health, now } = input
+  const { tasks, containers, sessions, crews = [], health, now } = input
   const items: Attention[] = []
 
   if (health) {
@@ -394,6 +395,16 @@ export function attention(input: {
     })
   }
 
+  for (const crew of crews) {
+    const ready = findCondition(crew.status?.conditions, 'Ready')
+    if (ready?.status !== 'False') continue
+    items.push({
+      level: 'warning',
+      title: `Crew ${crew.metadata.namespace}/${crew.metadata.name} can’t pick up issues`,
+      detail: ready.message?.trim() || 'Its Ready condition is False.',
+    })
+  }
+
   for (const task of tasks) {
     const key = taskKey(task)
     if (task.status?.phase === 'Failed') {
@@ -409,6 +420,19 @@ export function attention(input: {
       continue
     }
     if (isFinal(task.status?.phase)) continue
+    // Waiting for an unavailable agent costs no round, and says when it ends.
+    const back = agentBackAt(task)
+    if (back !== undefined) {
+      items.push({
+        level: 'warning',
+        title: `Task ${key} is waiting for the agent until ${formatClock(back, now)}`,
+        detail:
+          findCondition(task.status?.conditions, 'Progressing')?.message ??
+          'Its agent’s service is unavailable: a usage limit, an overload or refused credentials.',
+        task: key,
+      })
+      continue
+    }
     const stage = currentStage(task) as Stage
     const since = stageSince(task)
     if (since !== undefined && now - since > STUCK_AFTER_MS[stage]) {

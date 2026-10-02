@@ -57,7 +57,15 @@ export function FactoryPage({ data, loaded, health, healthLoaded, now, selectedT
   const stats = useMemo(() => factoryStats(data.tasks, now), [data.tasks, now])
   const columns = useMemo(() => boardColumns(data.tasks), [data.tasks])
   const items = useMemo(
-    () => attention({ tasks: data.tasks, containers: data.containers, sessions: data.sessions, health, now }),
+    () =>
+      attention({
+        tasks: data.tasks,
+        containers: data.containers,
+        sessions: data.sessions,
+        crews: data.crews,
+        health,
+        now,
+      }),
     [data, health, now],
   )
   const agents = useMemo(
