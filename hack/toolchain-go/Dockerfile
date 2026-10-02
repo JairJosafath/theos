@@ -31,8 +31,8 @@ ENV GOTOOLCHAIN=local \
 # -race), and every agent sandbox starts cold; CI and agents only compile their
 # own packages on top. The cache layer is read-only to them: new entries go to
 # the container's own layer.
-COPY warm /tmp/warm/
-RUN cd /tmp/warm \
+COPY warm.go.txt /tmp/warm/main.go
+RUN cd /tmp/warm && go mod init warm >/dev/null 2>&1 \
  && go get k8s.io/apiserver@v0.37.0 k8s.io/apiextensions-apiserver@v0.37.0 k8s.io/client-go@v0.37.0 \
  && go build ./... && go build -race ./... && go vet ./... \
  && cd / && rm -rf /tmp/warm \

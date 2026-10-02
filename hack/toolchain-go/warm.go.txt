@@ -1,4 +1,5 @@
-// Command warm imports the Kubernetes CEL libraries CEL Lens builds on, so the
+// Command warm (copied into the toolchain image as main.go; it is not part of
+// the operator's module) imports the Kubernetes CEL libraries CEL Lens builds on, so the
 // toolchain image can compile them once into its build cache.
 package main
 

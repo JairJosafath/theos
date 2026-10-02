@@ -5,3 +5,6 @@
 !features/src/**
 !go.mod
 !go.sum
+
+# Local agent worktrees (Claude Code) are not part of any image.
+.claude/
