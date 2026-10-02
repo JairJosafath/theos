@@ -1,14 +1,16 @@
 // Small building blocks shared by the cards and panels.
 
-import type { Condition, ContainerPhase, Session } from '../k8s/types'
+import type { Condition, ContainerPhase, CrewPhase, Session } from '../k8s/types'
 import {
   describeCondition,
   describeContainerPhase,
+  describeCrewPhase,
   describeSessionPhase,
   splitWords,
   timeAgo,
   type Tone,
 } from '../model/describe'
+import type { AgentRole } from '../model/factory'
 import { AgentIcon, CheckIcon, ClockIcon, CrossIcon, HumanIcon, QuestionIcon } from './icons'
 
 export function PhaseBadge({ phase, size = 'md' }: { phase: ContainerPhase | undefined; size?: 'sm' | 'md' }) {
@@ -17,6 +19,26 @@ export function PhaseBadge({ phase, size = 'md' }: { phase: ContainerPhase | und
     <span className={`badge badge-${info.tone} badge-${size}`} title={info.explanation}>
       <span className="badge-dot" aria-hidden="true" />
       {info.label}
+    </span>
+  )
+}
+
+export function CrewPhaseBadge({ phase }: { phase: CrewPhase | undefined }) {
+  const info = describeCrewPhase(phase)
+  return (
+    <span className={`badge badge-${info.tone} badge-sm`} title={info.explanation}>
+      <span className="badge-dot" aria-hidden="true" />
+      {info.label}
+    </span>
+  )
+}
+
+/** An Agent's name with the model it runs, such as "Claude Code, Sonnet" claude-sonnet-5-5. */
+export function AgentName({ role }: { role: AgentRole }) {
+  return (
+    <span className="agent-name">
+      <span title={role.found ? role.name : `Agent ${role.name} was not found`}>{role.title}</span>
+      {role.model ? <span className="model">{role.model}</span> : null}
     </span>
   )
 }

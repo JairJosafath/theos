@@ -1,7 +1,7 @@
 // Plain-language wording for newcomers: phases, conditions, times and names.
 // Nothing here assumes the reader knows Kubernetes.
 
-import type { Condition, ContainerPhase, ContainerType, SessionPhase } from '../k8s/types'
+import type { Condition, ContainerPhase, ContainerType, CrewPhase, SessionPhase } from '../k8s/types'
 
 /** displayName first; fall back to the stable metadata.name. */
 export function titleOf(obj: { metadata: { name: string }; spec?: { displayName?: string } }): string {
@@ -41,6 +41,26 @@ export function describeContainerPhase(phase: ContainerPhase | undefined): Phase
         tone: 'unknown',
         explanation: 'The factory has not reported on this container yet.',
       }
+  }
+}
+
+/** The Crew phase as a badge label, colour tone and one-line explanation. */
+export function describeCrewPhase(phase: CrewPhase | undefined): PhaseInfo {
+  switch (phase) {
+    case 'Working':
+      return { label: 'Working', tone: 'progress', explanation: 'A Task works on one of its issues.' }
+    case 'Idle':
+      return { label: 'Idle', tone: 'ok', explanation: 'No issue is ready to pick up.' }
+    case 'Paused':
+      return { label: 'Paused', tone: 'waiting', explanation: 'Paused: it picks up no new issues.' }
+    case 'Waiting':
+      return {
+        label: 'Waiting',
+        tone: 'waiting',
+        explanation: 'It can not pick up issues yet; its Ready check says why.',
+      }
+    default:
+      return { label: 'No status yet', tone: 'unknown', explanation: 'The factory has not reported on this crew yet.' }
   }
 }
 

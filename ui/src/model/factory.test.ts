@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { FactoryHealth } from '../k8s/health'
-import type { Agent, Container, Session, Task, TaskTransition } from '../k8s/types'
+import type { Agent, Container, Crew, Session, Task, TaskTransition } from '../k8s/types'
 import {
   agentBackAt,
   agentRole,
   attention,
   boardColumns,
+  crewDoing,
+  crewSummaries,
+  crewSummary,
   currentStage,
   factoryStats,
   followUpLinks,
@@ -381,6 +384,118 @@ describe('followUpLinks', () => {
       { url: 'http://gitea/somewhere/else', label: 'http://gitea/somewhere/else' },
     ])
     expect(followUpLinks(task('t'))).toEqual([])
+  })
+})
+
+function crew(name: string, spec: Partial<Crew['spec']> = {}, status: Crew['status'] = {}): Crew {
+  return {
+    metadata: { name, namespace: 'cel-lens' },
+    spec: {
+      containerRef: { name },
+      implementer: { name: 'claude-implementer' },
+      reviewer: { name: 'claude-reviewer' },
+      ...spec,
+    },
+    status,
+  }
+}
+
+describe('crewSummary', () => {
+  const working = crew(
+    'cel-language-server',
+    { displayName: 'Language server crew' },
+    {
+      phase: 'Working',
+      activeTask: 'cel-language-server-3',
+      ready: [5],
+      waiting: [6, 7],
+      lastPolled: at(-1),
+      conditions: [
+        { type: 'Ready', status: 'True', reason: 'Working', message: 'Task cel-language-server-3 is working' },
+      ],
+    },
+  )
+
+  it('names its Agents with their models, and the issue it works on', () => {
+    const tasks = [issueTask({ issueTitle: 'Map positions inside YAML scalars' })]
+    expect(crewSummary(working, agents, tasks)).toEqual({
+      key: 'cel-lens/cel-language-server',
+      namespace: 'cel-lens',
+      name: 'cel-language-server',
+      title: 'Language server crew',
+      description: undefined,
+      container: 'cel-language-server',
+      phase: 'Working',
+      paused: false,
+      notReady: undefined,
+      implementer: {
+        name: 'claude-implementer',
+        title: 'Claude Code, Sonnet',
+        model: 'claude-sonnet-5-5',
+        found: true,
+      },
+      reviewer: { name: 'claude-reviewer', title: 'Claude Code, Opus', model: 'claude-opus-5-5', found: true },
+      active: {
+        name: 'cel-language-server-3',
+        key: 'cel-lens/cel-language-server-3',
+        issue: 3,
+        headline: '#3 Map positions inside YAML scalars',
+        found: true,
+      },
+      ready: [5],
+      waiting: [6, 7],
+      lastPolled: at(-1),
+    })
+    expect(crewDoing(crewSummary(working, agents, tasks))).toBe('working on #3')
+  })
+
+  it('keeps the active Task by name before it is seen', () => {
+    const summary = crewSummary(working, agents, [])
+    expect(summary.active).toEqual({
+      name: 'cel-language-server-3',
+      key: 'cel-lens/cel-language-server-3',
+      issue: undefined,
+      headline: undefined,
+      found: false,
+    })
+    expect(crewDoing(summary)).toBe('working on cel-language-server-3')
+  })
+
+  it('marks a Crew that is paused or not Ready', () => {
+    const paused = crewSummary(crew('vscode-extension', { paused: true }, { phase: 'Paused' }), agents, [])
+    expect(paused).toMatchObject({ paused: true, notReady: undefined, active: undefined, ready: [], waiting: [] })
+    expect(crewDoing(paused)).toBe('paused')
+
+    const blocked = crewSummary(
+      crew(
+        'vscode-extension',
+        { reviewer: { name: 'gone' } },
+        {
+          phase: 'Waiting',
+          conditions: [{ type: 'Ready', status: 'False', reason: 'AgentNotFound', message: 'Agent gone not found' }],
+        },
+      ),
+      agents,
+      [],
+    )
+    expect(blocked.notReady).toEqual({ reason: 'AgentNotFound', message: 'Agent gone not found' })
+    expect(blocked.reviewer).toEqual({ name: 'gone', title: 'gone', found: false })
+    expect(crewDoing(blocked)).toBe('can’t pick up issues')
+  })
+
+  it('says why an idle Crew has nothing to do', () => {
+    const idle = (waiting: number[]) => crewSummary(crew('x', {}, { phase: 'Idle', waiting }), agents, [])
+    expect(crewDoing(idle([]))).toBe('no ready issues')
+    expect(crewDoing(idle([4]))).toBe('no ready issues; 1 waits on open dependencies')
+    expect(crewDoing(idle([4, 5]))).toBe('no ready issues; 2 wait on open dependencies')
+    expect(crewDoing(crewSummary(crew('x'), agents, []))).toBe('not started yet')
+  })
+
+  it('sorts Crews by project, then by title', () => {
+    const other = crew('a-crew')
+    other.metadata.namespace = 'zz'
+    const names = crewSummaries([other, crew('vscode-extension'), working], agents, []).map((c) => c.key)
+    expect(names).toEqual(['cel-lens/cel-language-server', 'cel-lens/vscode-extension', 'zz/a-crew'])
   })
 })
 

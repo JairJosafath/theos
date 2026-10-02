@@ -3,6 +3,7 @@ import {
   describeCondition,
   describeContainerPhase,
   describeContainerType,
+  describeCrewPhase,
   splitTemplateRef,
   splitWords,
   timeAgo,
@@ -79,6 +80,14 @@ describe('small helpers', () => {
   it('has a badge for every phase, including none yet', () => {
     expect(describeContainerPhase('Failed').tone).toBe('error')
     expect(describeContainerPhase(undefined).label).toBe('No status yet')
+  })
+
+  it('has a badge for every Crew phase', () => {
+    expect(describeCrewPhase('Working')).toMatchObject({ label: 'Working', tone: 'progress' })
+    expect(describeCrewPhase('Idle').tone).toBe('ok')
+    expect(describeCrewPhase('Paused').tone).toBe('waiting')
+    expect(describeCrewPhase('Waiting').explanation).toMatch(/Ready check/)
+    expect(describeCrewPhase(undefined).label).toBe('No status yet')
   })
 
   it('splits identifiers and template refs', () => {

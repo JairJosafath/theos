@@ -6,12 +6,15 @@ import type { FactoryData } from '../k8s/sources'
 import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../k8s/health'
 import { findCondition, LABEL_CREW, type Agent, type Task } from '../k8s/types'
 import { plural, timeAgo } from '../model/describe'
+import { AgentName, CrewPhaseBadge } from './bits'
 import {
   agentBackAt,
   API_STALL_MS,
   attention,
   boardColumns,
   COLUMNS,
+  crewDoing,
+  crewSummaries,
   currentStage,
   factoryStats,
   followUpLinks,
@@ -20,6 +23,7 @@ import {
   formatCpu,
   formatDuration,
   isFinal,
+  issueList,
   percent,
   runningTasks,
   slotQueue,
@@ -33,6 +37,7 @@ import {
   timelineSteps,
   type AgentRole,
   type Attention,
+  type CrewSummary,
   type Stage,
   type Step,
 } from '../model/factory'
@@ -60,6 +65,7 @@ export function FactoryPage({ data, loaded, health, healthLoaded, now, selectedT
     [data.agents],
   )
   const agentOf = (t: Task) => agents.get(`${t.metadata.namespace}/${t.spec.agentRef.name}`)
+  const crews = useMemo(() => crewSummaries(data.crews, data.agents, data.tasks), [data])
   const selected = data.tasks.find((t) => taskKey(t) === selectedTask)
   const running = runningTasks(data.tasks)
   const maxSlots = health?.agents.maxSandboxes
@@ -141,6 +147,8 @@ export function FactoryPage({ data, loaded, health, healthLoaded, now, selectedT
               </div>
             )}
           </div>
+
+          <CrewsPanel crews={crews} loaded={loaded} now={now} onSelectTask={onSelectTask} />
 
           <TimePanel stats={stats} />
         </section>
@@ -332,6 +340,115 @@ function MiniTimeline({ task, now }: { task: Task; now: number }) {
   )
 }
 
+function CrewsPanel({
+  crews,
+  loaded,
+  now,
+  onSelectTask,
+}: {
+  crews: CrewSummary[]
+  loaded: boolean
+  now: number
+  onSelectTask: (key: string) => void
+}) {
+  return (
+    <div className="panel">
+      <h2 className="panel-title">Crews</h2>
+      <p className="panel-caption">
+        A Crew picks up its Container’s ready issues one at a time, lowest number first, once their dependencies are
+        closed. One Agent implements, another reviews.
+      </p>
+      {crews.length ? (
+        <ul className="crews">
+          {crews.map((crew) => (
+            <CrewCard key={crew.key} crew={crew} now={now} onSelectTask={onSelectTask} />
+          ))}
+        </ul>
+      ) : (
+        <div className="placeholder small">
+          {loaded ? 'No Crews yet: Tasks are only started by hand.' : 'Loading the Crews…'}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CrewCard({
+  crew,
+  now,
+  onSelectTask,
+}: {
+  crew: CrewSummary
+  now: number
+  onSelectTask: (key: string) => void
+}) {
+  const tone = crew.notReady ? 'error' : crew.paused ? 'waiting' : undefined
+  return (
+    <li className={`crew-card${tone ? ` tone-${tone}` : ''}`}>
+      <div className="crew-head">
+        <span className="crew-title">{crew.title}</span>
+        <CrewPhaseBadge phase={crew.phase} />
+        {crew.paused && crew.phase !== 'Paused' ? (
+          <span className="badge badge-sm badge-waiting" title="spec.paused is set">
+            Paused
+          </span>
+        ) : null}
+      </div>
+      <div className="crew-sub">
+        {crew.namespace} · <span className="mono">{crew.container}</span>
+      </div>
+      {crew.notReady ? (
+        <p className="crew-note tone-error">
+          <WarningIcon size={13} /> {crew.notReady.message ?? 'It can’t pick up issues.'}
+        </p>
+      ) : null}
+      {crew.paused ? (
+        <p className="crew-note tone-waiting">
+          Paused: picks up no new issues{crew.active ? '; the current Task runs to its end' : ''}.
+        </p>
+      ) : null}
+      <dl className="facts crew-facts">
+        <dt>Implements</dt>
+        <dd>
+          <AgentName role={crew.implementer} />
+        </dd>
+        <dt>Reviews</dt>
+        <dd>
+          <AgentName role={crew.reviewer} />
+        </dd>
+        <dt>Working on</dt>
+        <dd>
+          {crew.active ? (
+            <button
+              type="button"
+              className="link-button crew-active"
+              onClick={() => onSelectTask(crew.active!.key)}
+              title={crew.active.name}
+            >
+              {crew.active.headline ?? crew.active.name}
+            </button>
+          ) : (
+            <span className="muted">{crewDoing(crew)}</span>
+          )}
+        </dd>
+        <dt>Issues</dt>
+        <dd>
+          <span title={crew.ready.length ? `Ready: ${issueList(crew.ready)}` : undefined}>
+            {crew.ready.length} ready
+          </span>
+          <span className="muted"> · </span>
+          <span title={crew.waiting.length ? `Waiting: ${issueList(crew.waiting)}` : undefined}>
+            {crew.waiting.length} waiting on dependencies
+          </span>
+        </dd>
+      </dl>
+      <div className="crew-time">
+        {crew.lastPolled ? `Read the issues ${timeAgo(crew.lastPolled, now)}` : 'Has not read the issues yet'}
+      </div>
+    </li>
+  )
+}
+
 function TimePanel({ stats }: { stats: ReturnType<typeof factoryStats> }) {
   const total = STAGES.reduce((n, s) => n + stats.timeByStage[s.key], 0)
   return (
@@ -386,16 +503,6 @@ function TimePanel({ stats }: { stats: ReturnType<typeof factoryStats> }) {
         </dd>
       </dl>
     </div>
-  )
-}
-
-/** An Agent's name with the model it runs, such as "Claude Code, Sonnet (implementer) claude-sonnet-5-5". */
-function AgentName({ role }: { role: AgentRole }) {
-  return (
-    <>
-      <span title={role.found ? role.name : `Agent ${role.name} was not found`}>{role.title}</span>
-      {role.model ? <span className="model">{role.model}</span> : null}
-    </>
   )
 }
 

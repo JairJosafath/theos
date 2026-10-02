@@ -2,8 +2,9 @@
 // their time goes, and what needs attention. Plain functions over resources and
 // the /factory/health summary, so they are tested without React.
 
-import type { Agent, Container, Session, Task, TaskPhase, TaskTransition } from '../k8s/types'
+import type { Agent, Container, Crew, CrewPhase, Session, Task, TaskPhase, TaskTransition } from '../k8s/types'
 import { findCondition } from '../k8s/types'
+import { plural, titleOf } from './describe'
 import type { FactoryHealth } from '../k8s/health'
 
 /** Where a Task's time goes. Each timeline step falls in one stage. */
@@ -444,6 +445,93 @@ export function formatDuration(ms: number): string {
   if (h < 24) return m % 60 ? `${h} h ${m % 60} min` : `${h} h`
   const d = Math.floor(h / 24)
   return h % 24 ? `${d} d ${h % 24} h` : `${d} d`
+}
+
+/** A Crew as the views show it: who implements and reviews, and what it is doing. */
+export interface CrewSummary {
+  /** namespace/name */
+  key: string
+  namespace: string
+  name: string
+  title: string
+  description?: string
+  container: string
+  phase?: CrewPhase
+  /** spec.paused: it picks up no new issues, though a Task already started runs to its end. */
+  paused: boolean
+  /** Set when the Ready condition is False: the Crew can't pick up issues, and why. */
+  notReady?: { reason?: string; message?: string }
+  implementer: AgentRole
+  reviewer: AgentRole
+  /** The Task working on the Container now. */
+  active?: { name: string; key: string; issue?: number; headline?: string; found: boolean }
+  /** Ready issues in pick-up order, and ready ones blocked by open dependencies. */
+  ready: number[]
+  waiting: number[]
+  lastPolled?: string
+}
+
+export function crewSummary(crew: Crew, agents: Agent[], tasks: Task[]): CrewSummary {
+  const namespace = crew.metadata.namespace ?? ''
+  const readyCondition = findCondition(crew.status?.conditions, 'Ready')
+  const activeName = crew.status?.activeTask
+  const activeTask = activeName
+    ? tasks.find((t) => t.metadata.name === activeName && (t.metadata.namespace ?? '') === namespace)
+    : undefined
+  return {
+    key: `${namespace}/${crew.metadata.name}`,
+    namespace,
+    name: crew.metadata.name,
+    title: titleOf(crew),
+    description: crew.spec.description?.trim() || undefined,
+    container: crew.spec.containerRef.name,
+    phase: crew.status?.phase,
+    paused: Boolean(crew.spec.paused),
+    notReady:
+      readyCondition?.status === 'False'
+        ? { reason: readyCondition.reason, message: readyCondition.message?.trim() || undefined }
+        : undefined,
+    implementer: agentRole(agents, namespace, crew.spec.implementer.name),
+    reviewer: agentRole(agents, namespace, crew.spec.reviewer.name),
+    active: activeName
+      ? {
+          name: activeName,
+          key: `${namespace}/${activeName}`,
+          issue: activeTask?.spec.issue || undefined,
+          headline: activeTask ? taskHeadline(activeTask).text : undefined,
+          found: Boolean(activeTask),
+        }
+      : undefined,
+    ready: crew.status?.ready ?? [],
+    waiting: crew.status?.waiting ?? [],
+    lastPolled: crew.status?.lastPolled,
+  }
+}
+
+/** Every Crew, by project and then by name. */
+export function crewSummaries(crews: Crew[], agents: Agent[], tasks: Task[]): CrewSummary[] {
+  return crews
+    .map((c) => crewSummary(c, agents, tasks))
+    .sort((a, b) => a.namespace.localeCompare(b.namespace) || a.title.localeCompare(b.title))
+}
+
+/** What a Crew is doing, in a few words: "working on #4", "paused", "no ready issues". */
+export function crewDoing(crew: CrewSummary): string {
+  if (crew.active) return `working on ${crew.active.issue ? `#${crew.active.issue}` : crew.active.name}`
+  if (crew.notReady) return 'can’t pick up issues'
+  if (crew.paused || crew.phase === 'Paused') return 'paused'
+  if (crew.phase === 'Idle') {
+    return crew.waiting.length
+      ? `no ready issues; ${plural(crew.waiting.length, 'waits', 'wait')} on open dependencies`
+      : 'no ready issues'
+  }
+  if (crew.phase === 'Waiting') return 'waiting'
+  return 'not started yet'
+}
+
+/** "#5, #6": issue numbers as a list. */
+export function issueList(numbers: number[]): string {
+  return numbers.map((n) => `#${n}`).join(', ')
 }
 
 /** A time of day, "15:04"; with the weekday when it isn't today, "Fri 03:00". */

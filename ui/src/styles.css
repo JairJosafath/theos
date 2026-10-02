@@ -1920,6 +1920,79 @@ p {
   white-space: nowrap;
 }
 
+.agent-name {
+  overflow-wrap: anywhere;
+}
+
+/* Crews: one card each; a paused or not-Ready one is marked by its edge and a note. */
+.crews {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crew-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px 11px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--tone, var(--border));
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.crew-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.crew-title {
+  margin-right: auto;
+  font-size: 13.5px;
+  font-weight: 620;
+  overflow-wrap: anywhere;
+}
+
+.crew-sub,
+.crew-time {
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.crew-note {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin-top: 4px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--tone-bg);
+  color: var(--tone);
+  font-size: 12.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.crew-facts {
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin-top: 8px;
+  font-size: 12.5px;
+}
+
+.crew-active {
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
 .headline-link {
   font-weight: 600;
   overflow-wrap: anywhere;
