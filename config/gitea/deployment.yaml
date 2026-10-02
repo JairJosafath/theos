@@ -88,7 +88,10 @@ spec:
           readinessProbe:
             httpGet: {path: /api/healthz, port: http}
             periodSeconds: 5
-            failureThreshold: 3
+            # Not ready takes Gitea out of its Service, which cuts off CI, agents and
+            # the operator: a release upload of 48 MB files did that within 15 s.
+            timeoutSeconds: 5
+            failureThreshold: 6
           livenessProbe:
             httpGet: {path: /api/healthz, port: http}
             initialDelaySeconds: 30
