@@ -254,6 +254,53 @@ describe('sessions', () => {
   })
 })
 
+describe('crews', () => {
+  it("gives a Container its Crew, with the Crew's Agents and the issue it works on", () => {
+    const data = sampleStory()
+    const meta = (name: string) => ({ name, namespace: 'webshop' })
+    data.crews = [
+      {
+        metadata: meta('orders-api'),
+        spec: {
+          containerRef: { name: 'orders-api' },
+          implementer: { name: 'claude-implementer' },
+          reviewer: { name: 'claude-reviewer' },
+        },
+        status: { phase: 'Working', activeTask: 'orders-api-4', ready: [5], waiting: [6, 7] },
+      },
+      {
+        metadata: meta('z-second'),
+        spec: { containerRef: { name: 'orders-api' }, implementer: { name: 'x' }, reviewer: { name: 'y' } },
+      },
+    ]
+    data.agents = [
+      { metadata: meta('claude-implementer'), spec: { image: 'agent', model: 'claude-sonnet-5-5' } },
+      { metadata: meta('claude-reviewer'), spec: { image: 'agent', model: 'claude-opus-5-5' } },
+    ]
+    data.tasks = [
+      {
+        metadata: meta('orders-api-4'),
+        spec: { containerRef: { name: 'orders-api' }, agentRef: { name: 'claude-implementer' }, issue: 4 },
+        status: { issueTitle: 'Validate orders' },
+      },
+    ]
+    const [api] = containerNodes(data, 'webshop-core')
+    expect(api.crew).toMatchObject({
+      name: 'orders-api',
+      phase: 'Working',
+      implementer: { name: 'claude-implementer', model: 'claude-sonnet-5-5' },
+      reviewer: { name: 'claude-reviewer', model: 'claude-opus-5-5' },
+      active: { issue: 4, headline: '#4 Validate orders' },
+      ready: [5],
+      waiting: [6, 7],
+    })
+  })
+
+  it('leaves a Container without a Crew alone', () => {
+    expect(containerNodes(sampleStory(), 'webshop-core')[0].crew).toBeUndefined()
+  })
+})
+
 describe('linksOf and systemsForPicker', () => {
   it('lists links both ways with their Applied condition', () => {
     const links = linksOf(demoStory(NOW), 'DataStore', 'cart-cache')

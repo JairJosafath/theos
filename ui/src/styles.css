@@ -1981,6 +1981,22 @@ p {
   overflow-wrap: anywhere;
 }
 
+/* A Container's Crew, in the story view's details panel. */
+.crew-line {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.crew-line-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
 .crew-facts {
   grid-template-columns: 84px minmax(0, 1fr);
   gap: 6px 10px;

@@ -4,8 +4,9 @@
 import type { StoryData } from '../k8s/sources'
 import type { Condition, ContainerPhase } from '../k8s/types'
 import { describeContainerPhase, plural, splitTemplateRef } from '../model/describe'
+import { crewDoing, issueList, type CrewSummary } from '../model/factory'
 import { linksOf, type ContainerNode, type DiagramNode, type Link } from '../model/story'
-import { ConditionList, PhaseBadge, SessionRow } from './bits'
+import { AgentName, ConditionList, CrewPhaseBadge, PhaseBadge, SessionRow } from './bits'
 import { AgentIcon, ArrowRightIcon, CrossIcon, ExternalLinkIcon, HumanIcon, WarningIcon } from './icons'
 
 const KIND_LABEL: Record<DiagramNode['role'], string> = {
@@ -160,6 +161,8 @@ function ContainerDetails({ node, now }: { node: ContainerNode; now: number }) {
       <h3 className="section-title">Checks</h3>
       <ConditionList conditions={node.conditions} empty="The factory has not checked this container yet." />
 
+      {node.crew ? <CrewDetails crew={node.crew} /> : null}
+
       <h3 className="section-title">
         Sessions <span className="section-hint">{plural(node.activeSessions, 'active session')}</span>
       </h3>
@@ -172,6 +175,43 @@ function ContainerDetails({ node, now }: { node: ContainerNode; now: number }) {
       ) : (
         <p className="muted small">Nobody is working on it right now.</p>
       )}
+    </>
+  )
+}
+
+/** Who picks up the Container's issues: "<implementer> implements, <reviewer> reviews; working on #4". */
+function CrewDetails({ crew }: { crew: CrewSummary }) {
+  return (
+    <>
+      <h3 className="section-title">
+        Crew <span className="section-hint">picks up its ready issues</span>
+      </h3>
+      <div className="crew-line">
+        <p>
+          <AgentName role={crew.implementer} /> implements, <AgentName role={crew.reviewer} /> reviews;{' '}
+          {crew.active ? `working on ${crew.active.headline ?? crew.active.name}` : crewDoing(crew)}.
+        </p>
+        <p className="crew-line-meta">
+          <CrewPhaseBadge phase={crew.phase} />
+          {crew.paused && crew.phase !== 'Paused' ? (
+            <span className="badge badge-sm badge-waiting" title="Picks up no new issues">
+              Paused
+            </span>
+          ) : null}
+          <span className="muted">
+            <span title={crew.ready.length ? issueList(crew.ready) : undefined}>{crew.ready.length} ready</span>
+            {' · '}
+            <span title={crew.waiting.length ? issueList(crew.waiting) : undefined}>
+              {crew.waiting.length} waiting on dependencies
+            </span>
+          </span>
+        </p>
+        {crew.notReady ? (
+          <p className="crew-note tone-error">
+            <WarningIcon size={13} /> {crew.notReady.message ?? 'It can’t pick up issues.'}
+          </p>
+        ) : null}
+      </div>
     </>
   )
 }
