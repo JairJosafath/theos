@@ -41,10 +41,12 @@ issue closed with a comment.
 | A freshly scaffolded Container never read its CI result | cel-language-server showed no checks while its run had passed in 38 s | Finishing a scaffold schedules the first read. The envtest spec used to nudge the Container with an annotation, which hid it |
 | Compiling the Kubernetes CEL libraries cold takes about 7 minutes and 2.9 GB (half for `-race`); every agent sandbox starts cold | Measured in the toolchain image with a program importing the libraries | The toolchain image ships the build cache warm (image 5.8 GB). CI on a scaffolded repository took 38 s |
 | A usage limit would cost a round, so a Crew would burn its rounds and hand back every issue in turn | Found while planning a run of many hours | `unavailable` results keep the round; the Task waits until the reported reset (or 15 minutes) and tries the same step again |
-| Loading a 6 GB image into Kind restarted Gitea | Gitea's restart count while `make runner-go` loaded its image | Open: build and load the big images rarely, never while Tasks run |
+| Loading a 6 GB image into Kind restarted Gitea | Gitea's restart count while `make runner-go` loaded its image | Open: build and load the big images rarely, never while Tasks run. Loading even the UI image still stalls etcd (16 s), but with the longer leases below nothing restarted |
 | Local agent worktrees inside the repository broke `controller-gen` and Docker builds | I/O errors from a worktree's `node_modules` | `.claude/` is ignored by Git and every image's build context |
 | A Go fuzz test took 11 of the node's 12 cores in one sandbox | `kubectl top` while a cel-language-server Task ran its tests | Sandboxes had no CPU limit. The sample Agents have one now: implementer 4 cores, reviewer 2 |
 | A Task could read the pod of an earlier sandbox with the same name as its new run's result | A conflict round reuses its round's sandbox names. The envtest spec for it timed out in the full suite: within one second the Task reread the old implement result and merged off the old review | The operator told pods apart by creation time, which counts whole seconds. It now reads only the pod its sandbox controls, as Agent Sandbox sets the owner |
+| **With four sandboxes the API stalled for up to 10 s again**, and the scheduler and controller-manager crash-looped (104 restarts), so two sandbox pods sat `Pending` for 5 minutes | The Factory view: "The API server did not answer for 11 s". CPU stayed under 4.2 of 12 cores and memory under 6.7 GiB, but etcd logged 83 disk syncs over 1 s in 25 minutes, up to 7 s; they lost their 15 s leases | `hack/kind.yaml`: etcd runs with `--unsafe-no-fsync`, and both hold 60 s leases with a 40 s renew deadline; applied to the running cluster by editing its static pod manifests. Since then: no slow syncs, requests under 2 s with Tasks only, and no restarts. A test cluster can lose its newest writes in a hard crash; Gitea's repositories are on their own volume |
+| The Story view's "Working now" said 0 while three Crew Tasks were at work | The tile beside the panel that listed them ([evidence](screenshots/v4-parallel-story.png), after the fix) | It counts active Sessions and the Tasks the project's Crews are on |
 
 ## The CEL Lens run
 
@@ -72,4 +74,35 @@ Where vscode-extension stands: #4 (platform packages) waits as `status/proposed`
 until the server has releases, and the rest of its backlog is reviewer
 follow-ups, also proposed. Promoting them is a person's decision.
 
-**Second part, two Tasks per Crew.** To be filled in.
+**Second part, two Tasks per Crew.** With four agent slots and `parallel: 2`, the
+Crews merged six issues between 12:40 and 13:46: the server's #5, #6 and #7, and
+the extension's #7, #8 and #15. To give the extension Crew work, a person
+promoted #7, #8 and #15 from the reviewers' follow-ups, with acceptance criteria
+that split #8 and #15 by test so they would not do the same work. All but the
+server's #7 took one round. The extension's Tasks took 8 to 11 minutes each; the
+server's took 24 to 65, longer because Go builds, and #5 lost 5 minutes to the
+stall below. Each time a Task merged, the Crew started the next ready issue at
+once (#6 when #5 merged, #8 when #7 merged).
+
+A conflict, and how it resolved ([evidence](screenshots/v4-parallel-conflict.txt)):
+the server's #6 (a `check` command) merged at 13:33 while #7 (`serve --stdio`)
+was in its second review. The reviewer approved, but the pull request now
+conflicted with `main`, so the Task stayed in round 2 with reason
+`ResolvingConflicts`. The implementer merged `main`, resolved `main.go` and
+`main_test.go` by keeping both commands, and named the conflicts in its account.
+Checks passed in 15 s, the reviewer approved again, and it merged 10 minutes
+after the conflict, without spending a round. The extension's #8 and #15 touch
+the same test file but did not conflict: #15 started after #8 had merged.
+
+The reviewer caught another real defect: in #7's first round, one malformed
+header line put the JSON-RPC reader out of step for good, so every later
+message failed. It reproduced this with a crafted stream and named the test to
+add; round 2 skips the body after a bad header.
+
+Four sandboxes fit. In the samples the UI kept (12:40 to 12:59 and 13:40 to
+13:51; it loses its history when it restarts), the node used at most 4.1 of 12
+cores and 6.7 GiB. With four implementers running the host still had 9.9 GB
+available, and a watch for less than 1.5 GB never fired. The disk was the limit,
+not CPU or memory: see the stalls in the findings above. The Story view showed the work as
+it happened ([evidence](screenshots/v4-parallel-story.png),
+[Factory view](screenshots/v4-parallel-factory.png)).
