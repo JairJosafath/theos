@@ -61,6 +61,8 @@ const CONTAINER_TYPES: Record<ContainerType, string> = {
   job: 'job',
   worker: 'worker',
   'mobile-app': 'mobile app',
+  cli: 'command-line tool',
+  extension: 'editor extension',
 }
 
 /** The Container type in words, such as "static site". */

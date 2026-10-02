@@ -63,7 +63,7 @@ export interface ElementRef {
   name: string
 }
 
-export type ContainerType = 'static-site' | 'service' | 'job' | 'worker' | 'mobile-app'
+export type ContainerType = 'static-site' | 'service' | 'job' | 'worker' | 'mobile-app' | 'cli' | 'extension'
 export type ContainerPhase = 'Pending' | 'Scaffolding' | 'Ready' | 'Failed'
 export type SessionPhase = 'Active' | 'Stale'
 export type Actor = 'agent' | 'human'
@@ -109,6 +109,7 @@ export interface Container extends K8sObject {
     type: ContainerType
     gitProviderRef: LocalRef
     frameworkRef: LocalRef
+    standardRef?: LocalRef
     computeRef?: LocalRef
     deploymentRef?: LocalRef
   }
@@ -179,6 +180,7 @@ export const RESOURCES = {
   connectors: 'connectors',
   tasks: 'tasks',
   agents: 'agents',
+  crews: 'crews',
 } as const
 
 /** API path of a c4.factory.io resource, in one namespace or across all of them. */
@@ -210,16 +212,29 @@ export interface CheckStatus {
   url?: string
 }
 
+/** Labels on the Tasks a Crew starts: the Crew's name, and the issue number. */
+export const LABEL_CREW = 'c4.factory.io/crew'
+export const LABEL_ISSUE = 'c4.factory.io/issue'
+
 export interface Task extends K8sObject {
   spec: {
     containerRef: LocalRef
+    /** Implements the goal, and reviews it when there is no reviewerRef. */
     agentRef: LocalRef
-    goal: string
+    reviewerRef?: LocalRef
+    /** A Task has either a goal or an issue of its Container's repository. */
+    goal?: string
+    issue?: number
   }
   status?: {
     phase?: TaskPhase
     round?: number
     reviewAttempts?: number
+    /** spec.issue's title when the Task last read it, and where the issue is. */
+    issueTitle?: string
+    issueURL?: string
+    /** The issues filed from the reviewer's suggestions on merge, as URLs. */
+    followUps?: string[]
     branch?: string
     commit?: string
     pullRequest?: number
@@ -229,6 +244,8 @@ export interface Task extends K8sObject {
     summary?: string
     feedback?: string
     sandbox?: string
+    /** When an unavailable agent is tried again; Progressing's reason is then AgentUnavailable. */
+    agentBackAt?: string
     slotWaitSince?: string
     phaseChangedAt?: string
     completedAt?: string
@@ -237,12 +254,45 @@ export interface Task extends K8sObject {
   }
 }
 
+export type AgentHarness = 'claude-code' | 'stand-in'
+
 export interface Agent extends K8sObject {
   spec: {
     displayName?: string
     description?: string
     image: string
+    /** The agent program; the API server defaults it to claude-code. */
+    harness?: AgentHarness
+    /** Such as claude-sonnet-5-5; empty means the harness's default. */
+    model?: string
     maxRounds?: number
     timeoutMinutes?: number
+  }
+}
+
+export type CrewPhase = 'Waiting' | 'Idle' | 'Working' | 'Paused'
+
+/** Who works on a Container's issues: one Task at a time, lowest ready issue first. */
+export interface Crew extends K8sObject {
+  spec: {
+    containerRef: LocalRef
+    displayName?: string
+    description?: string
+    implementer: LocalRef
+    reviewer: LocalRef
+    /** Stops picking up new issues; a Task already started runs to its end. */
+    paused?: boolean
+  }
+  status?: {
+    phase?: CrewPhase
+    activeTask?: string
+    /** Ready issues the Crew can start, in pick-up order. */
+    ready?: number[]
+    /** Ready issues blocked by open dependencies. */
+    waiting?: number[]
+    lastPolled?: string
+    observedGeneration?: number
+    /** Ready: whether the Crew can pick up issues, and why not. */
+    conditions?: Condition[]
   }
 }

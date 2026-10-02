@@ -8,6 +8,7 @@ import {
   type Agent,
   type CatalogEntry,
   type Container,
+  type Crew,
   type DataStore,
   type K8sObject,
   type Person,
@@ -33,6 +34,10 @@ export interface StoryData {
   /** Catalog entries, used only for display names. Optional: may stay empty. */
   frameworks: CatalogEntry[]
   connectors: CatalogEntry[]
+  /** Who works on each Container's issues, with their Agents and Tasks. Optional: may stay empty. */
+  crews: Crew[]
+  agents: Agent[]
+  tasks: Task[]
 }
 
 export interface Problem {
@@ -73,6 +78,9 @@ export function emptyStory(namespace: string): StoryData {
     sessions: [],
     frameworks: [],
     connectors: [],
+    crews: [],
+    agents: [],
+    tasks: [],
   }
 }
 
@@ -83,8 +91,8 @@ export function combineConnection(
   const required = states.filter((s) => !s.optional)
   const problems: Problem[] = []
   for (const { what, state, optional } of states) {
-    // Optional kinds (the catalog) only add display names, so a failure there
-    // is not worth alarming anyone about.
+    // Optional kinds (the catalog, Agents, Crews) only add details, so a
+    // failure there is not worth alarming anyone about.
     if (state.error && !optional) {
       problems.push({
         what,
@@ -183,6 +191,9 @@ export class LiveStorySource extends WatchingSource<StoryData> {
         { what: 'sessions', watcher: watcher(api, RESOURCES.sessions, namespace) },
         { what: 'frameworks', watcher: watcher(api, RESOURCES.frameworks, namespace), optional: true },
         { what: 'connectors', watcher: watcher(api, RESOURCES.connectors, namespace), optional: true },
+        { what: 'crews', watcher: watcher(api, RESOURCES.crews, namespace), optional: true },
+        { what: 'agents', watcher: watcher(api, RESOURCES.agents, namespace), optional: true },
+        { what: 'tasks', watcher: watcher(api, RESOURCES.tasks, namespace), optional: true },
       ],
       emptyStory(namespace),
     )
@@ -203,6 +214,9 @@ export class LiveStorySource extends WatchingSource<StoryData> {
       sessions: this.items<Session>(6),
       frameworks: this.items<CatalogEntry>(7),
       connectors: this.items<CatalogEntry>(8),
+      crews: this.items<Crew>(9),
+      agents: this.items<Agent>(10),
+      tasks: this.items<Task>(11),
     }
   }
 }
@@ -225,13 +239,14 @@ export interface FactoryData {
   agents: Agent[]
   containers: Container[]
   sessions: Session[]
+  crews: Crew[]
 }
 
 export function emptyFactory(): FactoryData {
-  return { projects: [], tasks: [], agents: [], containers: [], sessions: [] }
+  return { projects: [], tasks: [], agents: [], containers: [], sessions: [], crews: [] }
 }
 
-/** Watches the work of the factory in every namespace: Tasks, Agents, Containers and Sessions. */
+/** Watches the work of the factory in every namespace: Tasks, Agents, Containers, Sessions and Crews. */
 export class LiveFactorySource extends WatchingSource<FactoryData> {
   constructor(api: Api) {
     super(
@@ -241,6 +256,8 @@ export class LiveFactorySource extends WatchingSource<FactoryData> {
         { what: 'agents', watcher: watcher(api, RESOURCES.agents), optional: true },
         { what: 'containers', watcher: watcher(api, RESOURCES.containers) },
         { what: 'sessions', watcher: watcher(api, RESOURCES.sessions) },
+        // Optional, so a cluster without the Crew kind still shows its Tasks.
+        { what: 'crews', watcher: watcher(api, RESOURCES.crews), optional: true },
       ],
       emptyFactory(),
     )
@@ -253,6 +270,7 @@ export class LiveFactorySource extends WatchingSource<FactoryData> {
       agents: this.items<Agent>(2),
       containers: this.items<Container>(3),
       sessions: this.items<Session>(4),
+      crews: this.items<Crew>(5),
     }
   }
 }

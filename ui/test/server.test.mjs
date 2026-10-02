@@ -129,6 +129,18 @@ describe('server.mjs', () => {
     assert.equal(res.headers.get('www-authenticate'), null)
   })
 
+  it('reads the factory kinds across namespaces: Tasks, Agents and Crews', async () => {
+    for (const plural of ['tasks', 'agents', 'crews']) {
+      seen.length = 0
+      const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1alpha1/${plural}`)
+      assert.equal(res.status, 200)
+      assert.deepEqual(
+        seen.map((r) => [r.method, r.url]),
+        [['GET', `/apis/c4.factory.io/v1alpha1/${plural}`]],
+      )
+    }
+  })
+
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']) {
     it(`rejects ${method} under /k8s/ with 405 and never calls the API`, async () => {
       seen.length = 0

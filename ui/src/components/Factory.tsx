@@ -373,7 +373,7 @@ function TaskPanel({ task, agent, now, onClose }: { task: Task; agent?: Agent; n
   const segments = taskSegments(task, now)
   const progressing = findCondition(task.status?.conditions, 'Progressing')
   const stage = currentStage(task)
-  const [goalTitle, ...goalRest] = task.spec.goal.split('\n')
+  const [goalTitle, ...goalRest] = (task.spec.goal ?? '').split('\n')
   const byStage = timeByStage(segments)
   return (
     <div className="panel task-panel">

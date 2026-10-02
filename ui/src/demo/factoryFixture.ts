@@ -195,6 +195,7 @@ export function demoFactory(now: number): FactoryData {
     agents,
     containers: story.containers,
     sessions: story.sessions,
+    crews: [],
   }
 }
 

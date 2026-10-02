@@ -386,5 +386,8 @@ export function demoStory(now: number): StoryData {
     sessions,
     frameworks,
     connectors,
+    crews: [],
+    agents: [],
+    tasks: [],
   }
 }

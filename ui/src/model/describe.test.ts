@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { describeCondition, describeContainerPhase, splitTemplateRef, splitWords, timeAgo, titleOf } from './describe'
+import {
+  describeCondition,
+  describeContainerPhase,
+  describeContainerType,
+  splitTemplateRef,
+  splitWords,
+  timeAgo,
+  titleOf,
+} from './describe'
 
 describe('timeAgo', () => {
   const now = Date.parse('2026-09-30T12:00:00Z')
@@ -58,6 +66,14 @@ describe('small helpers', () => {
     expect(titleOf({ metadata: { name: 'orders-api' }, spec: { displayName: 'Orders API' } })).toBe('Orders API')
     expect(titleOf({ metadata: { name: 'orders-api' }, spec: { displayName: '  ' } })).toBe('orders-api')
     expect(titleOf({ metadata: { name: 'orders-api' } })).toBe('orders-api')
+  })
+
+  it('names every Container type in words, and passes unknown ones through', () => {
+    expect(describeContainerType('static-site')).toBe('static site')
+    expect(describeContainerType('cli')).toBe('command-line tool')
+    expect(describeContainerType('extension')).toBe('editor extension')
+    expect(describeContainerType('plugin')).toBe('plugin')
+    expect(describeContainerType(undefined)).toBe('unknown type')
   })
 
   it('has a badge for every phase, including none yet', () => {
