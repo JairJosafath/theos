@@ -123,8 +123,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	for _, t := range tasks.Items {
 		if t.Spec.ContainerRef.Name == container.Name {
-			facts.Tasks = append(facts.Tasks, model.CrewTask{Name: t.Name, Issue: int(t.Spec.Issue),
-				Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1alpha1.TaskFailed})
+			facts.Tasks = append(facts.Tasks, crewTask(&t))
 		}
 	}
 
@@ -173,12 +172,15 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 				AgentRef:     crew.Spec.Implementer,
 				ReviewerRef:  &c4v1alpha1.LocalRef{Name: crew.Spec.Reviewer.Name},
 				Issue:        int32(s.Issue),
+				// Set only for a Standard change, from the Task that filed it.
+				AllowedProtectedPaths: s.AllowedPaths,
 			},
 		}
 		if err := r.Create(ctx, task); err != nil && !apierrors.IsAlreadyExists(err) {
 			return ctrl.Result{}, err
 		}
-		log.Info("Started Task for issue", "task", s.Task, "issue", s.Issue, "attempt", s.Attempt)
+		log.Info("Started Task for issue", "task", s.Task, "issue", s.Issue, "attempt", s.Attempt,
+			"allowedPaths", s.AllowedPaths)
 		status.ActiveTasks = append(status.ActiveTasks, s.Task)
 	}
 
@@ -197,7 +199,20 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 }
 
-// readyIssues reads the open issues labelled ready and what blocks each.
+// crewTask is what a Crew reads of a Task: its issue, whether it ended or waits on
+// a Standard change, and the Standard change it filed, which alone grants an
+// allowance.
+func crewTask(t *c4v1alpha1.Task) model.CrewTask {
+	out := model.CrewTask{Name: t.Name, Issue: int(t.Spec.Issue), Final: isFinal(t.Status.Phase),
+		Failed: t.Status.Phase == c4v1alpha1.TaskFailed, Blocked: t.Status.Phase == c4v1alpha1.TaskBlocked}
+	if change := t.Status.StandardChange; change != nil {
+		out.StandardChange = &model.IssueChange{Issue: int(change.Issue), Paths: slices.Clone(change.Paths)}
+	}
+	return out
+}
+
+// readyIssues reads the open issues labelled ready, what blocks each, and which
+// are Standard changes.
 func readyIssues(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository) ([]model.Issue, error) {
 	if err := provider.EnsureLabels(ctx, repo, issueLabels()); err != nil {
 		return nil, err
@@ -212,7 +227,8 @@ func readyIssues(ctx context.Context, provider gitprovider.Provider, repo gitpro
 		if err != nil {
 			return nil, fmt.Errorf("issue #%d: %w", i.Number, err)
 		}
-		out = append(out, model.Issue{Number: i.Number, Title: i.Title, Body: i.Body, OpenBlockers: blockers})
+		out = append(out, model.Issue{Number: i.Number, Title: i.Title, Body: i.Body, OpenBlockers: blockers,
+			StandardChange: slices.Contains(i.Labels, model.LabelStandardChange)})
 	}
 	return out, nil
 }

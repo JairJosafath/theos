@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
@@ -159,6 +160,57 @@ var _ = Describe("Task with a Standard change", func() {
 		}).Should(Succeed())
 		Expect(standardChangeIssues(ns)).To(Equal([]int{filed}))
 		Expect(gitFake.issue(ns, "orders-api", n).blockers).To(ContainElement(fmt.Sprintf("#%d", filed)))
+	})
+})
+
+var _ = Describe("Crew with a Standard change", func() {
+	It("runs a Standard change beside the Task it blocks, with its allowance", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 2)
+		n := gitFake.addIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
+		crew := newCrew(ns)
+		crew.Spec.Parallel = 1
+		mustCreate(crew)
+		Eventually(func(g Gomega) {
+			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement")).
+				NotTo(ContainElement(HaveKeyWithValue("name", "C4_ALLOWED_PATHS")), "an ordinary issue is ungated")
+		}).Should(Succeed())
+		Expect(getTask(Default, ns, "orders-api-1").Spec.AllowedProtectedPaths).To(BeEmpty())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		finishWithProposal(ns)
+
+		m := n + 1 // the Standard change the Task files
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+			gated := getTask(g, ns, "orders-api-2")
+			g.Expect(gated.Spec.Issue).To(Equal(int32(m)))
+			g.Expect(gated.Spec.AllowedProtectedPaths).To(Equal([]string{"Makefile"}))
+			g.Expect(gated.Labels).To(HaveKeyWithValue(LabelCrew, "orders-api"))
+			g.Expect(sandboxEnv(g, ns, "orders-api-2-r1-implement")).
+				To(ContainElement(map[string]any{"name": "C4_ALLOWED_PATHS", "value": "Makefile"}))
+			g.Expect(getCrew(g, ns).Status.ActiveTasks).To(ConsistOf("orders-api-1", "orders-api-2"))
+		}).Should(Succeed())
+	})
+
+	It("leaves a kind/standard-change issue no Task filed waiting", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		n := gitFake.addIssue(ns, "orders-api", "Standard change for #9: Makefile", clearIssue,
+			[]string{model.LabelReady, model.LabelStandardChange})
+		mustCreate(newCrew(ns))
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.Waiting).To(ContainElement(int32(n)))
+			g.Expect(crew.Status.Ready).To(BeEmpty())
+			g.Expect(crew.Status.ActiveTasks).To(BeEmpty())
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			var tasks c4v1alpha1.TaskList
+			g.Expect(k8sClient.List(ctx, &tasks, client.InNamespace(ns))).To(Succeed())
+			g.Expect(tasks.Items).To(BeEmpty())
+		}, "3s").Should(Succeed())
 	})
 })
 
