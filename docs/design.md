@@ -204,7 +204,8 @@ enforces.
   its termination message; a per-Container Gitea bot user can write to that one
   repository only; `main` takes no pushes, only the operator merges (the reviewed
   commit only), and the Git host refuses changes to the platform's and the
-  Standard's protected files and keeps `v*` tags to the operator; a per-project NetworkPolicy allows
+  Standard's protected files (only the operator's gated merge of a Standard change
+  passes, after its own checks) and keeps `v*` tags to the operator; a per-project NetworkPolicy allows
   only DNS, the Git host and public HTTPS; each run has a deadline. The Claude token
   is readable inside the sandbox; Agent Substrate's egress credential injection is
   the later fix.
@@ -280,6 +281,12 @@ model and context it needs.
 - **Waiting is not failing.** A usage limit, an overloaded API or rejected
   credentials don't cost a round: the Task waits (`AgentUnavailable`) and tries
   the same step again.
+- **A protected file without a person.** An issue that needs a protected file, such
+  as the Makefile or a CI workflow, gets its own gated Task: the operator files a
+  `kind/standard-change` issue, the waiting Task is `Blocked`, and the operator
+  merges the reviewed change itself. The agents' rules and `.c4factory.yaml` stay
+  out of reach. See
+  [superpowers/specs/2026-10-02-standard-change-design.md](superpowers/specs/2026-10-02-standard-change-design.md).
 - **New shapes, same operator.** Container types `cli` and `extension`; templates
   `go-cli`, `go-standard`, `vscode-extension`, `ts-standard` and `gitea-release`;
   a Go and Node toolchain whose image ships a warm build cache, a CI runner

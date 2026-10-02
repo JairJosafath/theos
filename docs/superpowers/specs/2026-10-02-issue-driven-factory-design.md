@@ -184,6 +184,9 @@ status/proposed ──(a person triages)──► status/ready
                     merged: issue closed with a comment; follow-ups filed as status/proposed
                             in the Later milestone, outside any release
                     failed: status/needs-human with the reason; relabel ready to try again (3 tries)
+                    needs a protected file: the operator files a kind/standard-change issue,
+                            status/ready, that blocks this one; the Task is Blocked until it merges,
+                            then resumes (see the standard-change design)
 ```
 
 ### Roles

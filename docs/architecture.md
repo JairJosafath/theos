@@ -125,6 +125,35 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    with an optimistic lock, so a stale write is retried rather than repeating a
    step. Notes on the Git host (labels, comments, reviews) are logged when they
    fail; they never decide a step.
+6. **A Standard change.** After a round the runner splits the agent's commits:
+   edits to eligible protected paths (the Makefile, `.gitea/`, lint config,
+   `docs/style/`, `.devcontainer/`; never `AGENTS.md`, `docs/agents/` or
+   `.c4factory.yaml`) go to a proposal branch `standard/<task>` and are reverted
+   on the Task branch; an ineligible path fails the round. The result carries the
+   proposal (branch, paths, reason).
+7. **`Blocked`.** The controller files a `kind/standard-change` issue as the
+   operator (with an acceptance checklist, the paths and the branch), makes it
+   block the Task's issue in Gitea, records `status.standardChange` and sets the
+   phase `Blocked`. A `Blocked` Task runs no agent and spends no round. A third
+   Standard change fails the Task ("more than two").
+8. **Resume.** When a Task on the change's issue has reached `Merged`, the
+   `Blocked` Task goes back to `Implementing` in the same round, and the runner
+   merges `main` in. If the change closed unmerged or failed, the Task fails with
+   that reason. If the branch then equals `main`, the Task ends `Merged` with
+   reason `DoneByStandardChange` and the operator closes the issue.
+9. **Gated merge.** The Crew gives the change's Task `spec.allowedProtectedPaths`,
+   copied from the waiting Task's status; a label alone grants nothing. The
+   runner allows exactly those paths. Gitea's protected-file rule blocks the
+   normal merge, so the operator checks CI, the approval and every changed path
+   itself, then merges with Gitea's admin `force_merge`. CI still pending: it
+   waits until the review run ends, then refuses (reason `GatedMergeRefused`); no
+   reviewer run is spent on a CI wait. A pull request too large to list (1000+
+   files) is refused too. The gated implementer's prompt overrides old guides:
+   Containers on Standard v1.0.0 have guides that say "stop", and
+   `flutter-standard` ships none and its `AGENTS.md` says "Leave .devcontainer/,
+   .c4factory.yaml and .gitea/ alone"; the prompt says to follow it instead. Only
+   `go-standard` and `ts-standard` (v1.1.0) ship guides that describe Standard
+   changes.
 
 ## Flow of one Crew
 
@@ -135,10 +164,13 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    issues labelled `status/ready`, and reads each one's open dependencies.
 3. `internal/model.NextCrewStep` decides: issues without an acceptance criteria
    checklist, already merged, or tried three times go back to a person; issues
-   with open dependencies wait; while a Task works on the Container nothing
-   starts; otherwise the lowest-numbered ready issue gets a Task
+   with open dependencies wait; up to `parallel` Tasks work on the Container at
+   once, and `Blocked` Tasks don't count, so a Crew can't fill its slots with
+   Tasks that wait; otherwise the lowest-numbered ready issues get a Task
    `<container>-<issue>` (with `-<attempt>` from the second try), with the Crew's
-   implementer and reviewer.
+   implementer and reviewer. For a `kind/standard-change` issue it sets the
+   Task's `spec.allowedProtectedPaths` from the filing Task's
+   `status.standardChange`, leaving out any ineligible path.
 4. The controller labels the handed-back issues `status/needs-human` with the
    reason, creates the Task, and writes the Crew's phase, active Task and its
    ready and waiting issues.
