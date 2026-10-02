@@ -1,0 +1,94 @@
+# Agent guide
+
+This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` command of {{ .SoftwareSystem }}: one Go
+program, scaffolded by C4 Factory with the `{{ .Standard }}` Standard. Build it to the
+rules below. What the program is for, and what it must never do, is in the issue
+you were given and the system's needs: follow those.
+
+## The one rule
+
+`make check` must pass before every commit. It checks that `go.mod` is tidy and
+the code is formatted (gofumpt, goimports), then runs `go vet`, golangci-lint with
+`.golangci.yml` and `go test -race`. CI runs the same command, and nothing reaches
+`main` without it passing and a review. Never commit red.
+
+## Workflow
+
+1. Read the issue, its acceptance criteria, and your role guide:
+   `docs/agents/implementer.md` or `docs/agents/reviewer.md`.
+2. Read the code you are about to change and match it.
+3. Write a failing test first: one per acceptance criterion, or one that shows the bug.
+4. Make the smallest change that meets every criterion. One concern per commit.
+5. `make check`, then commit with a Conventional Commit message
+   (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`).
+6. Leave `.devcontainer/`, `.c4factory.yaml` and `.gitea/` alone: they belong to
+   the platform. `Makefile`, `.golangci.yml`, `.editorconfig`, `AGENTS.md`,
+   `docs/style/` and `docs/agents/` belong to the Standard.
+
+## Lints
+
+- Fix every finding; don't silence it. A `//nolint:<linter> // <why>` is a last
+  resort for a false positive: one linter, one reason (nolintlint enforces both).
+- `make fmt` formats; never hand-format.
+- Add modules with `go get`, then `go mod tidy`. Prefer the standard library; then
+  few, maintained, well-known modules with a licence that fits.
+
+## Review rules (lint can't check these)
+
+1. **Packages:** `main.go` only parses arguments, wires packages together and
+   maps errors to exit codes. Everything else lives in `internal/<name>/`, one
+   purpose per package, named for what it provides; never `util`, `common`,
+   `helpers`. Dependencies point one way; no import cycles. Unexported by default.
+2. **Errors:** wrap with what was being done and the input,
+   `fmt.Errorf("read %s: %w", path, err)`; `%w` when callers may inspect it.
+   Sentinels (`ErrX`) or types (`XError`) for errors callers branch on, checked
+   with `errors.Is`/`As`. Handle an error once: return it or log it, never both.
+   Never panic in library code or on bad input; a panic is a bug report.
+3. **Context:** `ctx context.Context` first in anything that blocks, does I/O or
+   can be cancelled; never stored in a struct. Long work checks `ctx.Err()` and
+   returns it.
+4. **Goroutines:** every goroutine has an owner that stops it (context or closed
+   channel) and waits for it (`wg.Go`, `errgroup`). No goroutine outlives the call
+   or the server that started it; tests prove it with `-race` and no leaks.
+5. **Interfaces:** defined where they are used, with the one to three methods
+   that user needs. Accept interfaces, return concrete types. No interface
+   before a second implementation or a test needs one.
+6. **Zero values:** make them useful (`var b Builder` works) and say so in the
+   doc comment; constructors only when a zero value can't work.
+7. **No global state:** no mutable package variables, no `init()` side effects.
+   Flags are parsed in `main` and passed down; inject writers, file systems and
+   clocks.
+8. **Tests:** table tests with `t.Run` and named cases; `t.Parallel()` where
+   cases share nothing mutable. Messages read `Func(in) = got, want want`. Golden
+   files live in `testdata/` and are rewritten with `go test ./... -update`;
+   review every golden diff. No `time.Sleep` to wait; no assertion libraries.
+   Test behaviour through the package's API.
+9. **Docs:** every exported name and package has a doc comment (revive
+   `exported` checks it is there; you check it says something). Document units,
+   nil and empty cases, concurrency safety, what must be closed, which errors
+   come back.
+10. **Performance:** when the issue or the system's needs state a budget, a
+    `BenchmarkX` (`for b.Loop()`) on realistic input measures it, and the pull
+    request gives the numbers. No optimisation without a measurement.
+11. **Input:** empty, malformed, huge and cancelled input never crash; error
+    messages say what was wrong and where (`file:line:col`).
+12. **The command line:** results to stdout, diagnostics to stderr; exit 0 on
+    success, 1 on failure, 2 on bad usage; `--help` and `--version` work; never
+    prompt unless the issue asks for it.
+13. **Names:** short and clear in context, no stutter (`report.Writer`), no
+    `Get` prefix, initialisms in one case (`URL`, `ID`).
+14. **No dead code:** no commented-out code, speculative options or "for later"
+    features; no TODO without an issue number.
+
+## Style guides
+
+Offline digests (read the one for what you are touching):
+
+- `docs/style/go.md`: Effective Go, Code Review Comments, Google's Go style and
+  the Go Proverbs, each rule marked [lint] or [review]
+- `docs/style/principles.md`: cross-language principles, with sources
+- `docs/style/SOURCES.md`: every source URL, with the date it was read
+
+Online (canonical): https://go.dev/doc/effective_go ·
+https://go.dev/wiki/CodeReviewComments · https://google.github.io/styleguide/go/ ·
+https://go.dev/doc/comment · https://go-proverbs.github.io/
