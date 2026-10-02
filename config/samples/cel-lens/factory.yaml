@@ -96,9 +96,11 @@ spec:
     name: claude-credentials
   maxRounds: 3
   timeoutMinutes: 90
+  # Four sandboxes share the Kind node: a CPU limit keeps one agent's fuzz test
+  # from taking every core.
   resources:
     requests: {cpu: "1", memory: 2Gi}
-    limits: {memory: 6Gi}
+    limits: {cpu: "4", memory: 6Gi}
 ---
 # The reviewer: a stronger model, which judges each acceptance criterion.
 apiVersion: c4.factory.io/v1alpha1
@@ -117,7 +119,7 @@ spec:
   timeoutMinutes: 45
   resources:
     requests: {cpu: 500m, memory: 1Gi}
-    limits: {memory: 4Gi}
+    limits: {cpu: "2", memory: 4Gi}
 ---
 # A stand-in that makes a scripted change and approves it: proves the issue loop
 # without spending tokens.
