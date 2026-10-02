@@ -1,12 +1,17 @@
 package controller
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 )
@@ -49,6 +54,52 @@ func TestBuildSandboxWorkspace(t *testing.T) {
 			}
 			if tt.memory != nil && (dir.SizeLimit == nil || !dir.SizeLimit.Equal(*tt.memory)) {
 				t.Errorf("size limit %v, want %v", dir.SizeLimit, tt.memory)
+			}
+		})
+	}
+}
+
+func TestRunStateReadsOnlyItsSandboxsPod(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	scheme.AddKnownTypeWithName(SandboxGVK, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(SandboxGVK.GroupVersion().WithKind("SandboxList"), &unstructured.UnstructuredList{})
+	created := metav1.NewTime(time.Now().Truncate(time.Second))
+	for _, tt := range []struct {
+		name     string
+		podOwner types.UID
+		wantDone bool
+	}{
+		{name: "the pod this sandbox started", podOwner: "sandbox-2", wantDone: true},
+		// A conflict round starts a sandbox with the name of an earlier one, maybe
+		// in the same second; its pod is not collected yet.
+		{name: "the pod of an earlier sandbox with this name", podOwner: "sandbox-1"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sandbox := newSandbox()
+			sandbox.SetNamespace("toolbox")
+			sandbox.SetName("add-crop-r1-implement")
+			sandbox.SetUID("sandbox-2")
+			sandbox.SetCreationTimestamp(created)
+			owner := *metav1.NewControllerRef(sandbox, SandboxGVK)
+			owner.UID = tt.podOwner
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "toolbox", Name: "add-crop-r1-implement",
+					CreationTimestamp: created, OwnerReferences: []metav1.OwnerReference{owner}},
+				Status: corev1.PodStatus{Phase: corev1.PodSucceeded, ContainerStatuses: []corev1.ContainerStatus{{
+					Name: "agent", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+						Reason: "Completed", Message: `{"role":"implement","commit":"sha-2"}`}},
+				}}},
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, pod).Build()
+			state, err := runState(context.Background(), c, "toolbox", "add-crop-r1-implement")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !state.Started || state.Done != tt.wantDone {
+				t.Fatalf("started %v, done %v; want started, done %v", state.Started, state.Done, tt.wantDone)
 			}
 		})
 	}

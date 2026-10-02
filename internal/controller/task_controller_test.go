@@ -78,13 +78,17 @@ func sandboxExists(g Gomega, ns, name string) *unstructured.Unstructured {
 	return sandbox
 }
 
-// finishSandbox plays Agent Sandbox and c4agent: it creates the sandbox's pod and
-// ends it with result as termination message, or with reason and no message.
+// finishSandbox plays Agent Sandbox and c4agent: it creates the sandbox's pod,
+// owned by the sandbox, and ends it with result as termination message, or with
+// reason and no message.
 func finishSandbox(ns, name, task string, result *agentrunner.Result, reason string) {
 	GinkgoHelper()
+	sandbox := newSandbox()
+	Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed())
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name, Labels: map[string]string{LabelTask: task}},
-		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "agent", Image: "agent"}}},
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name, Labels: map[string]string{LabelTask: task},
+			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "agent", Image: "agent"}}},
 	}
 	Expect(k8sClient.Create(ctx, pod)).To(Succeed())
 	terminated := &corev1.ContainerStateTerminated{Reason: reason, ExitCode: 0}

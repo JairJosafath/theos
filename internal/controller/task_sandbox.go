@@ -225,8 +225,9 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 	if err != nil {
 		return state, err
 	}
-	if pod.CreationTimestamp.Before(new(sandbox.GetCreationTimestamp())) {
-		// A pod of an earlier sandbox with this name, not yet collected: not this run's.
+	if !metav1.IsControlledBy(&pod, sandbox) {
+		// A pod of an earlier sandbox with this name, not yet collected: not this
+		// run's. Creation times can't tell: they count whole seconds.
 		return state, nil
 	}
 	if pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
