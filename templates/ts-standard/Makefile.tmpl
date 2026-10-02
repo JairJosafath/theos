@@ -1,0 +1,61 @@
+# The quality contract of this repository. CI runs `make check` on every pull
+# request; agents and people run it before every commit. `make help` lists the
+# targets.
+
+NAME := {{ .Container }}
+BIN := node_modules/.bin
+# The extension's version is the one in package.json. A release passes its tag,
+# which must match: make dist VERSION=v1.2.3
+PACKAGE_VERSION := $(shell node -p "require('./package.json').version")
+VERSION ?= v$(PACKAGE_VERSION)
+# vsce builds the bundle with package.json's vscode:prepublish script. No
+# dependencies to add (esbuild bundled them), no licence or repository prompts.
+VSCE := $(BIN)/vsce package --no-dependencies --skip-license --allow-missing-repository
+
+.DEFAULT_GOAL := help
+.PHONY: help check deps fmt fmt-check lint typecheck test build package-check dist release-version clean
+
+help: ## List the targets.
+	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+check: deps fmt-check lint typecheck test package-check ## Everything CI checks.
+
+deps: ## Install the exact packages in package-lock.json.
+	npm ci --no-audit --no-fund
+
+fmt: ## Format every file with Prettier.
+	$(BIN)/prettier --write .
+
+fmt-check: ## Fail when a file is not formatted.
+	$(BIN)/prettier --check .
+
+lint: ## Lint with eslint.config.mjs, failing on any finding.
+	$(BIN)/eslint --max-warnings 0 .
+
+typecheck: ## Type-check with tsconfig.json.
+	$(BIN)/tsc --noEmit
+
+test: ## Run the unit tests.
+	$(BIN)/vitest run
+
+build: ## Bundle the extension into out/, minified.
+	node esbuild.mjs --production
+
+package-check: ## Fail when the extension does not package.
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		$(VSCE) --out "$$tmp/$(NAME).vsix"
+
+dist: release-version deps ## Package dist/{{ .Container }}-<version>.vsix for a release.
+	rm -rf dist
+	mkdir -p dist
+	$(VSCE) --out dist/$(NAME)-$(PACKAGE_VERSION).vsix
+
+release-version: # Fail when VERSION is not package.json's version.
+	@if [ "$(VERSION)" != "v$(PACKAGE_VERSION)" ]; then \
+		echo "Tag $(VERSION) does not match version $(PACKAGE_VERSION) in package.json." >&2; \
+		echo "Set \"version\": \"$(VERSION:v%=%)\" there, add its CHANGELOG.md entry, then tag again." >&2; \
+		exit 1; \
+	fi
+
+clean: ## Remove build output.
+	rm -rf out dist

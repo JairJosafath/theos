@@ -1,0 +1,9 @@
+# Prettier also skips what .gitignore lists (node_modules/, out/, dist/).
+
+# Written by the platform, which agents can't change.
+.c4factory.yaml
+.devcontainer/
+.gitea/
+
+# Written by npm.
+package-lock.json
