@@ -52,7 +52,7 @@ gitea-admin: ## Print the Gitea admin's username and generated password, for sig
 seed: ## Seed Gitea: orgs, tagged template repos, Secret gitea-credentials.
 	$(CONTAINER_TOOL) build -t $(SEED_IMG) -f hack/seed/Dockerfile .
 	$(KIND) load docker-image $(SEED_IMG) --name '$(KIND_CLUSTER)'
-	for ns in webshop toolbox; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -; done
+	for ns in webshop toolbox cel-lens; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -; done
 	$(TESTENV_KUBECTL) apply -f hack/seed/rbac.yaml
 	@# Foreground: the old pods are gone before the new Job starts.
 	$(TESTENV_KUBECTL) -n gitea delete job seed --ignore-not-found --cascade=foreground --wait=true
@@ -87,7 +87,7 @@ cluster-delete: ## Delete the Kind cluster and everything in it.
 .PHONY: test-gitea
 test-gitea: ## Run the gitprovider integration test against the seeded Gitea.
 	@$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea 3000:3000 >/dev/null 2>&1 & pf=$$!; \
-	trap 'kill $$pf' EXIT; sleep 2; \
+	trap 'kill $$pf 2>/dev/null || true' EXIT; sleep 2; \
 	C4_GITEA_URL=http://localhost:3000 \
 	C4_GITEA_USERNAME="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d)" \
 	C4_GITEA_TOKEN="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.token}' | base64 -d)" \
