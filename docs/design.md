@@ -199,16 +199,16 @@ enforces.
   branch `task/<name>`; opens a pull request; waits for CI; runs the Agent again as
   reviewer; and squash-merges on approval. Failed checks, requested changes or a
   failed run start the next round with that feedback, up to the Agent's
-  `maxRounds`. One Task works on a Container at a time.
+  `maxRounds`. The Container's Crew decides how many Tasks run at once.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
   repository only; `main` takes no pushes, only the operator merges (the reviewed
   commit only), and the Git host refuses changes to the platform's and the
   Standard's protected files (only the operator's gated merge of a Standard change
-  passes, after its own checks) and keeps `v*` tags to the operator; a per-project NetworkPolicy allows
-  only DNS, the Git host and public HTTPS; each run has a deadline. The Claude token
-  is readable inside the sandbox; Agent Substrate's egress credential injection is
-  the later fix.
+  passes, after its own checks) and keeps `v*` tags to the operator; a per-project
+  NetworkPolicy allows only DNS, the Git host and public HTTPS; each run has a
+  deadline. The Claude token is readable inside the sandbox; Agent Substrate's
+  egress credential injection is the later fix.
 - **App values are needs, not platform rules.** "Works offline, no login, no ads"
   is a need on the Pocket Tools SoftwareSystem in `config/samples/toolbox`; the
   agents get the needs with every Task.
@@ -264,8 +264,9 @@ model and context it needs.
   notes.
 - **A Crew per Container picks up the work.** It names the implementer and the
   reviewer Agents, polls the repository's `status/ready` issues, waits for their
-  Gitea dependencies (also across repositories) to close, and starts one Task at a
-  time, lowest number first, up to three tries per issue. Milestones group the
+  Gitea dependencies (also across repositories) to close, and starts up to `parallel`
+  Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
+  first, up to three tries per issue. Milestones group the
   backlog; Gitea 1.27 has no API for project boards.
 - **Roles get their own model and guide.** Agents have a `harness` and a `model`;
   CEL Lens pairs a Sonnet implementer with an Opus reviewer. A Standard ships
