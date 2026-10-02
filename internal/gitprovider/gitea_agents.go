@@ -340,10 +340,16 @@ func (g *gitea) merge(ctx context.Context, repo Repository, number int, headSHA,
 	return nil
 }
 
-// PullRequestFiles returns the paths a pull request changes.
+// PullRequestFiles returns the paths a pull request changes. A list longer than
+// maxIssuePages pages is an error, not cut short: the caller may be checking
+// every path.
 func (g *gitea) PullRequestFiles(ctx context.Context, repo Repository, number int) ([]string, error) {
 	var out []string
-	for page := 1; page <= maxIssuePages; page++ {
+	for page := 1; ; page++ {
+		if page > maxIssuePages {
+			return nil, fmt.Errorf("gitea: pull request %d of %s changes %d files or more, more than one list reads",
+				number, repoPath(repo), maxIssuePages*issuePageSize)
+		}
 		status, data, err := g.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/repos/%s/pulls/%d/files?page=%d&limit=%d",
 			repoPath(repo), number, page, issuePageSize), nil)
 		if err != nil {
@@ -360,10 +366,9 @@ func (g *gitea) PullRequestFiles(ctx context.Context, repo Repository, number in
 			out = append(out, f.Filename)
 		}
 		if len(files) < issuePageSize {
-			break
+			return out, nil
 		}
 	}
-	return out, nil
 }
 
 // ClosePullRequest closes a pull request without merging it.

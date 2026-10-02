@@ -454,8 +454,6 @@ func touchesProtected(files, protected []string) bool {
 }
 
 // setPullFiles sets the paths a pull request changes.
-//
-//nolint:unused // used by the Standard change tests of the next tasks
 func (g *fakeGit) setPullFiles(owner, name string, number int, files ...string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -463,8 +461,6 @@ func (g *fakeGit) setPullFiles(owner, name string, number int, files ...string) 
 }
 
 // forcedMerges lists the pull requests merged with ForceMergePullRequest.
-//
-//nolint:unused // used by the Standard change tests of the next tasks
 func (g *fakeGit) forcedMerges(owner, name string) []int {
 	g.mu.Lock()
 	defer g.mu.Unlock()

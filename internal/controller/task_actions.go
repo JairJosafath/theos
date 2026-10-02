@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -134,15 +135,8 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		if review := r.reviewFrom(ctx, task, status); review != nil {
 			status.Review = review
 		}
-		r.comment(ctx, task, status, container, "The Task failed. "+step.Message)
-		if err := r.endRun(ctx, task, status); err != nil {
-			return ctrl.Result{}, err
-		}
 		status.Feedback = step.Feedback
-		r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, "Failed", step.Message)
-		r.handBack(ctx, task, container, step.Message)
-		log.Info("Failed Task", "message", step.Message)
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.fail(ctx, task, status, container, "Failed", step.Message)
 	}
 	return ctrl.Result{}, nil
 }
@@ -360,13 +354,18 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 				"The branch moved after the review; checking "+pr.HeadSHA)
 			return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
 		}
-		if status.Review != nil {
-			r.review(ctx, task, status, container, agents.reviewer, gitprovider.ReviewApprove, status.Review.Summary)
+		refusal, err := r.mergeReviewed(gitCtx, provider, repo, task, status, container, agents.reviewer)
+		if errors.Is(err, errChecksPending) {
+			r.progress(task, status, metav1.ConditionTrue, "WaitingForChecks",
+				"Approved; CI runs again on "+status.Commit+", merging once it passes")
+			return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
 		}
-		// Merge only the reviewed commit; a push since then makes the merge fail.
-		if err := provider.MergePullRequest(gitCtx, repo, pr.Number, status.Commit, pullTitle(task, status),
-			mergeMessage(task, status, container)); err != nil {
+		if err != nil {
 			return ctrl.Result{}, err
+		}
+		if refusal != "" {
+			return ctrl.Result{}, r.fail(ctx, task, status, container, "GatedMergeRefused",
+				"The gated merge was refused: "+refusal)
 		}
 	}
 	if err := r.endRun(ctx, task, status); err != nil {
@@ -382,6 +381,28 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 	r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, "Merged", step.Message)
 	logf.FromContext(ctx).Info("Merged Task", "url", status.PullRequestURL, "round", status.Round)
 	return ctrl.Result{}, nil
+}
+
+// mergeReviewed squashes the reviewed commit into main, posting the reviewer's
+// approval; a push since the review makes the merge fail. A Standard change goes
+// through gatedMerge, which may refuse it.
+func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider gitprovider.Provider,
+	repo gitprovider.Repository, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container, reviewer *c4v1alpha1.Agent) (refusal string, err error) {
+	if len(task.Spec.AllowedProtectedPaths) > 0 {
+		return r.gatedMerge(ctx, provider, repo, task, status, container, reviewer)
+	}
+	r.approve(ctx, task, status, container, reviewer)
+	return "", provider.MergePullRequest(ctx, repo, int(status.PullRequest), status.Commit, pullTitle(task, status),
+		mergeMessage(task, status, container))
+}
+
+// approve posts the reviewer's approval of the round's commit.
+func (r *TaskReconciler) approve(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container, reviewer *c4v1alpha1.Agent) {
+	if status.Review != nil {
+		r.review(ctx, task, status, container, reviewer, gitprovider.ReviewApprove, status.Review.Summary)
+	}
 }
 
 // reviewFrom reads the verdict of the current review sandbox, if any.
@@ -429,6 +450,20 @@ func (r *TaskReconciler) finish(task *c4v1alpha1.Task, status *c4v1alpha1.TaskSt
 	status.Phase, status.CompletedAt = phase, &now
 	r.progress(task, status, metav1.ConditionFalse, reason, message)
 	setCondition(&status.Conditions, task.Generation, ConditionSucceeded, succeeded, reason, message)
+}
+
+// fail ends the run and fails the Task for reason, saying why on its pull request
+// and handing its issue back to a person.
+func (r *TaskReconciler) fail(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container, reason, message string) error {
+	r.comment(ctx, task, status, container, "The Task failed. "+message)
+	if err := r.endRun(ctx, task, status); err != nil {
+		return err
+	}
+	r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, reason, message)
+	r.handBack(ctx, task, container, message)
+	logf.FromContext(ctx).Info("Failed Task", "reason", reason, "message", message)
+	return nil
 }
 
 // comment adds a note to the Task's pull request, if it has one. The pull request

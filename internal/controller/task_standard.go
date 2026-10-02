@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -154,4 +155,46 @@ func (r *TaskReconciler) standardChangeRecheck() time.Duration {
 		return r.StandardChangeRecheck
 	}
 	return defaultStandardChangeRecheck
+}
+
+// errChecksPending: CI runs again on the reviewed commit, and the gated merge
+// waits for its result.
+var errChecksPending = errors.New("CI runs again on the reviewed commit")
+
+// gatedMerge merges a Standard change's pull request past the protected-file
+// rule, as the Git host's admin, once CI passed on the reviewed commit, the
+// reviewer approved and every path it changes is allowed. Otherwise it says why
+// not and tries no merge. CI still running is errChecksPending, and a list of
+// changed paths it can't read in full is an error. The reviewer's approval is
+// posted with the merge only.
+func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, container *c4v1alpha1.Container,
+	reviewer *c4v1alpha1.Agent) (refusal string, err error) {
+	checks, err := provider.CombinedStatus(ctx, repo, status.Commit)
+	if err != nil {
+		return "", err
+	}
+	if checks.State == gitprovider.CheckPending {
+		return "", errChecksPending
+	}
+	n := int(status.PullRequest)
+	changed, err := provider.PullRequestFiles(ctx, repo, n)
+	if err != nil {
+		return "", err // never merge a path nobody checked
+	}
+	verdict := ""
+	if status.Review != nil {
+		verdict = status.Review.Verdict
+	}
+	if why := model.GatedMergeRefusal(checks.State, verdict, changed, task.Spec.AllowedProtectedPaths); why != "" {
+		return why, nil
+	}
+	r.approve(ctx, task, status, container, reviewer)
+	if err := provider.ForceMergePullRequest(ctx, repo, n, status.Commit, pullTitle(task, status),
+		mergeMessage(task, status, container)); err != nil {
+		return "", err
+	}
+	logf.FromContext(ctx).Info("Merged a Standard change with the admin override", "url", status.PullRequestURL,
+		"paths", changed)
+	return "", nil
 }

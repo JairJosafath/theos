@@ -17,14 +17,18 @@ limitations under the License.
 package controller
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -213,6 +217,172 @@ var _ = Describe("Crew with a Standard change", func() {
 		}, "3s").Should(Succeed())
 	})
 })
+
+// gatedTaskInReview creates the Standard change Task orders-api-1, allowed the
+// Makefile, for a new issue, and runs its round up to the review of pull request
+// 1, which changes files. It returns the issue.
+func gatedTaskInReview(ns string, files ...string) int {
+	GinkgoHelper()
+	readyContainer(ns)
+	crewAgents(ns, 2)
+	n := gitFake.addIssue(ns, "orders-api", "Standard change for #9: Makefile", clearIssue,
+		[]string{model.LabelStandardChange, model.LabelReady})
+	task := newTask(ns, "orders-api-1", "")
+	task.Spec.Issue = int32(n)
+	task.Spec.ReviewerRef = &c4v1alpha1.LocalRef{Name: "reviewer"}
+	task.Spec.AllowedProtectedPaths = []string{"Makefile"}
+	mustCreate(task)
+	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
+	gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
+		&agentrunner.Result{Role: "implement", Commit: "sha-1", Summary: "Added the dist target."}, "")
+	Eventually(func(g Gomega) {
+		g.Expect(getTask(g, ns, "orders-api-1").Status.PullRequest).To(Equal(int32(1)))
+	}).Should(Succeed())
+	gitFake.setPullFiles(ns, "orders-api", 1, files...)
+	gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }).Should(Succeed())
+	return n
+}
+
+func approveGated(ns string) {
+	GinkgoHelper()
+	finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+		&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Only the dist target."}, "")
+}
+
+var _ = Describe("Task with a gated merge", func() {
+	It("force-merges a Standard change after checking CI, the approval and every path", func() {
+		ns := newProjectNamespace()
+		n := gatedTaskInReview(ns, "Makefile")
+
+		By("waiting, neither refusing nor merging, while CI runs again on the reviewed commit")
+		gitFake.setChecks(ns, "orders-api", "sha-1", "pending")
+		approveGated(ns)
+		Eventually(func(g Gomega) {
+			g.Expect(condition(getTask(g, ns, "orders-api-1").Status.Conditions, ConditionProgressing).Reason).
+				To(Equal("WaitingForChecks"))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(BeNil())
+			g.Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+		}, "2s").Should(Succeed())
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.reviews(ns, "orders-api", 1)).To(BeEmpty(), "the approval is posted once, with the merge")
+
+		By("merging past the protected-file rule once CI passed")
+		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionTrue), "Reason": Equal("Merged")})))
+		}).Should(Succeed())
+		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
+		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
+		Expect(gitFake.reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", gitprovider.ReviewApprove),
+			HaveField("Commit", "sha-1"))))
+	})
+
+	It("refuses a Standard change that touches a path it may not", func() {
+		ns := newProjectNamespace()
+		n := gatedTaskInReview(ns, "Makefile", "README.md")
+		approveGated(ns)
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Sandbox).To(BeEmpty())
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("GatedMergeRefused"),
+				"Message": ContainSubstring("README.md")})))
+		}).Should(Succeed())
+		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.reviews(ns, "orders-api", 1)).To(BeEmpty(), "a refused change gets no approval")
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-review-a1"), newSandbox()))).To(BeTrue())
+
+		By("handing the issue back")
+		issue := gitFake.issue(ns, "orders-api", n)
+		Expect(issue.State).To(Equal("open"))
+		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
+		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
+			ContainSubstring("README.md"))))
+	})
+})
+
+// gateProvider is a Git host for gatedMerge's checks alone; any other call panics.
+type gateProvider struct {
+	gitprovider.Provider
+	checks   string
+	files    []string
+	filesErr error
+	merges   int
+}
+
+func (p *gateProvider) CombinedStatus(_ context.Context, _ gitprovider.Repository, ref string) (gitprovider.CheckStatus,
+	error) {
+	return gitprovider.CheckStatus{Commit: ref, State: p.checks}, nil
+}
+
+func (p *gateProvider) PullRequestFiles(_ context.Context, _ gitprovider.Repository, _ int) ([]string, error) {
+	return p.files, p.filesErr
+}
+
+func (p *gateProvider) ForceMergePullRequest(_ context.Context, _ gitprovider.Repository, _ int, _, _, _ string) error {
+	p.merges++
+	return nil
+}
+
+func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
+	makefile := []string{"Makefile"}
+	approved := &c4v1alpha1.TaskReview{Verdict: model.VerdictApprove}
+	for _, tt := range []struct {
+		name     string
+		provider gateProvider
+		review   *c4v1alpha1.TaskReview
+		pending  bool
+		refusal  string // in the refusal, if any
+		err      string // in the error, if any
+	}{
+		{name: "waits while CI runs", provider: gateProvider{checks: "pending", files: makefile}, review: approved,
+			pending: true},
+		{name: "refuses failed CI", provider: gateProvider{checks: "failure", files: makefile}, review: approved,
+			refusal: "CI is failure"},
+		{name: "refuses CI that never reported", provider: gateProvider{files: makefile}, review: approved,
+			refusal: "CI is unknown"},
+		{name: "fails on a file list it could not read", review: approved,
+			provider: gateProvider{checks: "success", filesErr: errors.New("1000 files or more")}, err: "1000 files"},
+		{name: "refuses a path outside the allowance", review: approved,
+			provider: gateProvider{checks: "success", files: []string{"Makefile", "README.md"}}, refusal: "README.md"},
+		{name: "refuses without the reviewer's approval", provider: gateProvider{checks: "success", files: makefile},
+			refusal: "verdict"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p := tt.provider
+			task := &c4v1alpha1.Task{Spec: c4v1alpha1.TaskSpec{Issue: 2, AllowedProtectedPaths: makefile}}
+			status := &c4v1alpha1.TaskStatus{Commit: "sha-1", PullRequest: 1, Review: tt.review}
+			refusal, err := (&TaskReconciler{}).gatedMerge(context.Background(), &p, gitprovider.Repository{}, task,
+				status, &c4v1alpha1.Container{}, nil)
+			if p.merges != 0 {
+				t.Errorf("merged %d times, want none", p.merges)
+			}
+			switch {
+			case tt.pending && !errors.Is(err, errChecksPending):
+				t.Errorf("gatedMerge() error = %v, want errChecksPending", err)
+			case tt.err != "" && (err == nil || !strings.Contains(err.Error(), tt.err)):
+				t.Errorf("gatedMerge() error = %v, want one with %q", err, tt.err)
+			case !tt.pending && tt.err == "" && err != nil:
+				t.Errorf("gatedMerge() error = %v", err)
+			}
+			if !strings.Contains(refusal, tt.refusal) || (tt.refusal == "") != (refusal == "") {
+				t.Errorf("gatedMerge() refusal = %q, want one with %q", refusal, tt.refusal)
+			}
+		})
+	}
+}
 
 func TestStandardChangeToReuse(t *testing.T) {
 	const branch = "standard/orders-api-1"

@@ -27,6 +27,8 @@ type agentGitea struct {
 	tagRules []map[string]any
 	// fileQueries are the raw queries of the pull request files calls.
 	fileQueries []string
+	// manyFiles fills every page of pull request 7's files.
+	manyFiles bool
 }
 
 func newAgentGitea(t *testing.T) (*agentGitea, Provider) {
@@ -48,7 +50,7 @@ func (g *agentGitea) serveGatedPull(w http.ResponseWriter, r *http.Request, call
 		g.fileQueries = append(g.fileQueries, r.URL.RawQuery)
 		var files []map[string]string
 		count := 50
-		if r.URL.Query().Get("page") == "2" {
+		if r.URL.Query().Get("page") == "2" && !g.manyFiles {
 			count = 3
 		}
 		for i := 0; i < count; i++ {
@@ -300,6 +302,18 @@ func TestPullRequestFiles(t *testing.T) {
 	}
 	if want := []string{"page=1&limit=50", "page=2&limit=50"}; !reflect.DeepEqual(g.fileQueries, want) {
 		t.Errorf("queries = %v, want %v", g.fileQueries, want)
+	}
+}
+
+func TestPullRequestFilesFailsClosed(t *testing.T) {
+	g, p := newAgentGitea(t)
+	g.manyFiles = true
+	files, err := p.PullRequestFiles(context.Background(), p.Repository("photo-editor"), 7)
+	if err == nil || !strings.Contains(err.Error(), "1000 files or more") || files != nil {
+		t.Fatalf("PullRequestFiles() = %d files, %v; want an error, not a list cut short", len(files), err)
+	}
+	if len(g.fileQueries) != maxIssuePages {
+		t.Errorf("read %d pages, want %d", len(g.fileQueries), maxIssuePages)
 	}
 }
 
