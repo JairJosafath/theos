@@ -29,6 +29,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
 
 // newAgent returns the Agent "claude" with the given number of rounds.
@@ -170,7 +171,9 @@ var _ = Describe("Task", func() {
 			g.Expect(task.Status.Review).To(HaveField("Verdict", "changes"))
 			sandboxExists(g, ns, "add-crop-r2-implement")
 		}).Should(Succeed())
-		Expect(gitFake.pullComments(ns, "orders-api", 1)).To(ContainElement(ContainSubstring("Test an empty image.")))
+		Expect(gitFake.reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", gitprovider.ReviewRequestChanges),
+			HaveField("Commit", "sha-r1"), HaveField("Body", ContainSubstring("Test an empty image.")))),
+			"the reviewer's verdict is a review in the Git host")
 
 		By("merging the approved second round")
 		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r2")
@@ -260,7 +263,7 @@ var _ = Describe("Task", func() {
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).
 				To(HaveField("Reason", "PullRequestClosed"))
 		}).Should(Succeed())
-		Expect(gitFake.pullComments(ns, "orders-api", 1)).To(BeEmpty(), "no approval on a closed pull request")
+		Expect(gitFake.reviews(ns, "orders-api", 1)).To(BeEmpty(), "no approval on a closed pull request")
 	})
 
 	It("refuses a Container whose default branch isn't protected", func() {

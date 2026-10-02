@@ -65,6 +65,12 @@ func SetupIndexes(ctx context.Context, mgr manager.Manager) error {
 		}); err != nil {
 		return err
 	}
+	if err := indexer.IndexField(ctx, &c4v1alpha1.Crew{}, indexContainer,
+		func(o client.Object) []string {
+			return []string{o.(*c4v1alpha1.Crew).Spec.ContainerRef.Name}
+		}); err != nil {
+		return err
+	}
 	if err := indexer.IndexField(ctx, &c4v1alpha1.Task{}, indexTaskContainer,
 		func(o client.Object) []string {
 			return []string{o.(*c4v1alpha1.Task).Spec.ContainerRef.Name}

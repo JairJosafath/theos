@@ -142,6 +142,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
 		&TaskReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second},
+		&CrewReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, PollInterval: time.Second},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

@@ -18,8 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -132,6 +130,18 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	agents := taskAgents{implementer: &agent, reviewer: &agent}
+	if ref := task.Spec.ReviewerRef; ref != nil {
+		agents.reviewer = &c4v1alpha1.Agent{}
+		err = r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: ref.Name}, agents.reviewer)
+		if apierrors.IsNotFound(err) {
+			r.progress(&task, status, metav1.ConditionFalse, "AgentNotFound", "Agent "+ref.Name+" not found")
+			return ctrl.Result{}, r.writeStatus(ctx, &task, status)
+		}
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	facts, err := r.facts(ctx, &task, status, &container, &agent)
 	if err != nil {
@@ -140,7 +150,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	step := model.NextTaskStep(facts)
 	logf.FromContext(ctx).V(1).Info("Took Task step", "phase", status.Phase, "round", status.Round,
 		"action", step.Action, "message", step.Message)
-	result, err := r.apply(ctx, &task, status, &container, &agent, step)
+	result, err := r.apply(ctx, &task, status, &container, agents, step)
 	if err != nil {
 		return result, err
 	}
@@ -314,36 +324,6 @@ func recordTransition(status *c4v1alpha1.TaskStatus, now time.Time) []c4v1alpha1
 	return out
 }
 
-// taskContext says what the application is for, from its SoftwareSystem and
-// Container, for the agents' prompts.
-func (r *TaskReconciler) taskContext(ctx context.Context, container *c4v1alpha1.Container) string {
-	var b strings.Builder
-	var system c4v1alpha1.SoftwareSystem
-	if err := r.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: container.Spec.SoftwareSystemRef.Name},
-		&system); err == nil {
-		fmt.Fprintf(&b, "System: %s", orName(system.Spec.DisplayName, system.Name))
-		if system.Spec.Description != "" {
-			fmt.Fprintf(&b, " — %s", system.Spec.Description)
-		}
-		b.WriteString("\n")
-		for _, need := range system.Spec.Needs {
-			fmt.Fprintf(&b, "Need: %s\n", need)
-		}
-	}
-	fmt.Fprintf(&b, "Application: %s (%s)", orName(container.Spec.DisplayName, container.Name), container.Spec.Type)
-	if container.Spec.Description != "" {
-		fmt.Fprintf(&b, " — %s", container.Spec.Description)
-	}
-	return b.String()
-}
-
-func orName(display, name string) string {
-	if display != "" {
-		return display
-	}
-	return name
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// A Task's pods are its sandboxes' pods; they carry the Task's name.
@@ -392,7 +372,9 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}
 				var reqs []reconcile.Request
 				for _, t := range tasks.Items {
-					if t.Spec.AgentRef.Name == obj.GetName() && !isFinal(t.Status.Phase) {
+					uses := t.Spec.AgentRef.Name == obj.GetName() ||
+						t.Spec.ReviewerRef != nil && t.Spec.ReviewerRef.Name == obj.GetName()
+					if uses && !isFinal(t.Status.Phase) {
 						reqs = append(reqs, requestFor(t.Namespace, t.Name))
 					}
 				}

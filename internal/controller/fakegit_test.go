@@ -44,6 +44,7 @@ type fakeGit struct {
 	histories map[string]int // History calls per owner/name
 	hangs     map[string]chan struct{}
 	agent     *fakeAgentState
+	issues    *fakeIssueState
 }
 
 type fakeRepo struct {
@@ -299,12 +300,6 @@ func (g *fakeGit) pullRequests(owner, name string) []gitprovider.PullRequest {
 		out = append(out, *p)
 	}
 	return out
-}
-
-func (g *fakeGit) pullComments(owner, name string, number int) []string {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.agentState().comments[fmt.Sprintf("%s/%s#%d", owner, name, number)]
 }
 
 func (p *fakeProvider) Repository(name string) gitprovider.Repository {

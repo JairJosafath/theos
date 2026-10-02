@@ -107,6 +107,14 @@ rules:
   - patch
   - update
 - apiGroups:
+  - c4.factory.io
+  resources:
+  - persons
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - networking.k8s.io
   resources:
   - networkpolicies

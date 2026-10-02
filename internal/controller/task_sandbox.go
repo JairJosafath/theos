@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -73,6 +75,12 @@ type sandboxRun struct {
 	repoURL   string
 	gitSecret string
 	context   string
+	// goal is the written goal, or the issue's title and body as read now.
+	goal string
+	// maxRounds is the Task's round limit, from its implementing Agent.
+	maxRounds int32
+	// related are the related Containers' repositories, by Container name.
+	related map[string]string
 	// protectedPaths are the paths the agent must not change.
 	protectedPaths []string
 	// workspaceMemory, when set, puts the workspace in memory, up to this size.
@@ -92,16 +100,26 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		{Name: agentrunner.EnvRepoURL, Value: run.repoURL},
 		{Name: agentrunner.EnvBranch, Value: run.status.Branch},
 		{Name: agentrunner.EnvBase, Value: "main"},
-		{Name: agentrunner.EnvGoal, Value: task.Spec.Goal},
+		{Name: agentrunner.EnvGoal, Value: run.goal},
 		{Name: agentrunner.EnvContext, Value: run.context},
 		{Name: agentrunner.EnvProject, Value: task.Namespace},
 		{Name: agentrunner.EnvContainer, Value: run.container.Name},
 		{Name: agentrunner.EnvTask, Value: task.Name},
 		{Name: agentrunner.EnvRound, Value: strconv.Itoa(int(run.status.Round))},
-		{Name: agentrunner.EnvMaxRounds, Value: strconv.Itoa(int(agent.Spec.MaxRounds))},
+		{Name: agentrunner.EnvMaxRounds, Value: strconv.Itoa(int(run.maxRounds))},
+		{Name: agentrunner.EnvHarness, Value: harness(agent)},
 		{Name: agentrunner.EnvProtectedPaths, Value: strings.Join(run.protectedPaths, ",")},
 		secretEnv(agentrunner.EnvGitUsername, run.gitSecret, "username"),
 		secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
+	}
+	if agent.Spec.Model != "" {
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvModel, Value: agent.Spec.Model})
+	}
+	if task.Spec.Issue > 0 {
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvIssue, Value: strconv.Itoa(int(task.Spec.Issue))})
+	}
+	if related := relatedEnv(run.related); related != "" {
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvRelated, Value: related})
 	}
 	// The reviewer gets the feedback too, to check it was addressed.
 	if run.status.Feedback != "" {
@@ -221,6 +239,7 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 		if term.Message != "" && json.Unmarshal([]byte(term.Message), &result) == nil {
 			state.Result = &model.RunResult{
 				Commit: result.Commit, Summary: result.Summary, Verdict: result.Verdict, Error: result.Error,
+				FollowUps: result.FollowUps,
 			}
 			return state, nil
 		}
@@ -241,4 +260,21 @@ func sandboxExpired(sandbox *unstructured.Unstructured) bool {
 		}
 	}
 	return false
+}
+
+// harness is the Agent's harness, claude-code when unset.
+func harness(agent *c4v1alpha1.Agent) string {
+	if agent.Spec.Harness == "" {
+		return string(c4v1alpha1.HarnessClaudeCode)
+	}
+	return string(agent.Spec.Harness)
+}
+
+// relatedEnv lists repositories as name=url pairs, sorted by name.
+func relatedEnv(repos map[string]string) string {
+	pairs := make([]string, 0, len(repos))
+	for _, name := range slices.Sorted(maps.Keys(repos)) {
+		pairs = append(pairs, name+"="+repos[name])
+	}
+	return strings.Join(pairs, ",")
 }

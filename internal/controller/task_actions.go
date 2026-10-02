@@ -35,9 +35,21 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
+// taskAgents are the Agents of a Task's roles; one Agent may play both.
+type taskAgents struct {
+	implementer, reviewer *c4v1alpha1.Agent
+}
+
+func (a taskAgents) forRole(role string) *c4v1alpha1.Agent {
+	if role == model.RoleReviewer {
+		return a.reviewer
+	}
+	return a.implementer
+}
+
 // apply does one step and records it in status.
 func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, agent *c4v1alpha1.Agent, step model.TaskStep) (ctrl.Result, error) {
+	container *c4v1alpha1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	switch step.Action {
 	case model.ActionWait:
@@ -56,7 +68,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		if step.Action == model.ActionStartReview {
 			role = model.RoleReviewer
 		}
-		return r.startRun(ctx, task, status, container, agent, role, step.Message)
+		return r.startRun(ctx, task, status, container, agents, role, step.Message)
 
 	case model.ActionOpenPR:
 		provider, repo, err := r.gitRepo(ctx, container)
@@ -70,7 +82,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		pr, err := provider.OpenPullRequest(gitCtx, repo, status.Branch, gitprovider.DefaultBranch,
-			pullTitle(task), pullBody(task))
+			pullTitle(task, status), pullBody(task, agents, status.Round, run.Result.Summary))
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -91,11 +103,15 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionMerge:
-		return r.merge(ctx, task, status, container, step)
+		return r.merge(ctx, task, status, container, agents, step)
 
 	case model.ActionRetry:
 		review := r.reviewFrom(ctx, task, status)
-		r.comment(ctx, task, status, container, fmt.Sprintf("Round %d was not accepted.\n\n%s", status.Round, step.Feedback))
+		if review != nil && review.Verdict == model.VerdictChanges && status.Phase == c4v1alpha1.TaskReviewing {
+			r.review(ctx, task, status, container, agents.reviewer, gitprovider.ReviewRequestChanges, review.Summary)
+		} else {
+			r.comment(ctx, task, status, container, fmt.Sprintf("Round %d was not accepted.\n\n%s", status.Round, step.Feedback))
+		}
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -121,6 +137,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		}
 		status.Feedback = step.Feedback
 		r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, "Failed", step.Message)
+		r.handBack(ctx, task, container, step.Message)
 		log.Info("Failed Task", "message", step.Message)
 		return ctrl.Result{}, nil
 	}
@@ -130,7 +147,8 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 // startRun creates the sandbox for this round's role, after making sure the
 // Container's agent Git access and the Agent's credentials exist.
 func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, agent *c4v1alpha1.Agent, role, message string) (ctrl.Result, error) {
+	container *c4v1alpha1.Container, agents taskAgents, role, message string) (ctrl.Result, error) {
+	agent := agents.forRole(role)
 	if ref := agent.Spec.CredentialsSecretRef; ref != nil {
 		var secret corev1.Secret
 		err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: ref.Name}, &secret)
@@ -163,6 +181,25 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		return ctrl.Result{}, err
 	}
 
+	goal := task.Spec.Goal
+	if task.Spec.Issue > 0 {
+		// Read before every run: a person may have clarified the issue since.
+		issue, err := provider.GetIssue(protectCtx, repo, int(task.Spec.Issue))
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if issue.State == "closed" {
+			r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, "IssueClosed",
+				fmt.Sprintf("Issue #%d was closed before the Task finished", issue.Number))
+			return ctrl.Result{}, nil
+		}
+		status.IssueTitle, status.IssueURL = issue.Title, issue.URL
+		goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
+		if status.Round == 0 {
+			r.announce(protectCtx, provider, repo, task, container, agents)
+		}
+	}
+
 	if status.Round == 0 {
 		status.Round = 1
 	}
@@ -173,9 +210,11 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		status.Phase = c4v1alpha1.TaskReviewing
 	}
 	name := sandboxName(task, status, role)
+	story := c4Context(ctx, r.Client, container)
 	sandbox, err := buildSandbox(sandboxRun{
 		task: task, status: status, container: container, agent: agent, name: name, role: role,
-		repoURL: repo.CloneURL, gitSecret: gitSecret, context: r.taskContext(ctx, container),
+		repoURL: repo.CloneURL, gitSecret: gitSecret, context: story.Text(), goal: goal,
+		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
 		protectedPaths: protected, workspaceMemory: r.WorkspaceMemory,
 	}, r.Scheme, r.now())
 	if err != nil {
@@ -236,11 +275,12 @@ func (r *TaskReconciler) ensureAgentGit(ctx context.Context, container *c4v1alph
 
 // merge squashes the approved pull request into main.
 func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, step model.TaskStep) (ctrl.Result, error) {
+	container *c4v1alpha1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	reviewRun := r.reviewRun(ctx, task, status)
 	status.Review = r.reviewFrom(ctx, task, status)
 	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -264,18 +304,24 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 				"The branch moved after the review; checking "+pr.HeadSHA)
 			return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
 		}
+		if status.Review != nil {
+			r.review(ctx, task, status, container, agents.reviewer, gitprovider.ReviewApprove, status.Review.Summary)
+		}
 		// Merge only the reviewed commit; a push since then makes the merge fail.
-		if err := provider.MergePullRequest(gitCtx, repo, pr.Number, status.Commit, pullTitle(task),
+		if err := provider.MergePullRequest(gitCtx, repo, pr.Number, status.Commit, pullTitle(task, status),
 			mergeMessage(task, status, container)); err != nil {
 			return ctrl.Result{}, err
-		}
-		// After the merge, so a merge that keeps failing doesn't repeat the comment.
-		if status.Review != nil && status.Review.Summary != "" {
-			_ = provider.CommentPullRequest(gitCtx, repo, pr.Number, "Review: approved.\n\n"+status.Review.Summary)
 		}
 	}
 	if err := r.endRun(ctx, task, status); err != nil {
 		return ctrl.Result{}, err
+	}
+	if task.Spec.Issue > 0 {
+		var followUps []model.FollowUp
+		if reviewRun != nil {
+			followUps = reviewRun.FollowUps
+		}
+		status.FollowUps = r.closeIssue(gitCtx, provider, repo, task, status, agents.reviewer, followUps)
 	}
 	r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, "Merged", step.Message)
 	logf.FromContext(ctx).Info("Merged Task", "url", status.PullRequestURL, "round", status.Round)
@@ -285,14 +331,24 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 // reviewFrom reads the verdict of the current review sandbox, if any.
 func (r *TaskReconciler) reviewFrom(ctx context.Context, task *c4v1alpha1.Task,
 	status *c4v1alpha1.TaskStatus) *c4v1alpha1.TaskReview {
-	if status.Phase != c4v1alpha1.TaskReviewing || status.Sandbox == "" {
+	run := r.reviewRun(ctx, task, status)
+	if run == nil {
 		return status.Review
+	}
+	return &c4v1alpha1.TaskReview{Verdict: run.Verdict, Summary: run.Summary}
+}
+
+// reviewRun reads the current review sandbox's result, if it gave a verdict.
+func (r *TaskReconciler) reviewRun(ctx context.Context, task *c4v1alpha1.Task,
+	status *c4v1alpha1.TaskStatus) *model.RunResult {
+	if status.Phase != c4v1alpha1.TaskReviewing || status.Sandbox == "" {
+		return nil
 	}
 	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox)
 	if err != nil || run.Result == nil || run.Result.Verdict == "" {
-		return status.Review
+		return nil
 	}
-	return &c4v1alpha1.TaskReview{Verdict: run.Result.Verdict, Summary: run.Result.Summary}
+	return run.Result
 }
 
 // endRun deletes the current sandbox, once its result is in status.
@@ -337,12 +393,28 @@ func (r *TaskReconciler) comment(ctx context.Context, task *c4v1alpha1.Task, sta
 	}
 }
 
-func pullTitle(task *c4v1alpha1.Task) string {
+func pullTitle(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) string {
+	if task.Spec.Issue > 0 && status.IssueTitle != "" {
+		return firstLine(status.IssueTitle)
+	}
 	return firstLine(task.Spec.Goal)
 }
 
-func pullBody(task *c4v1alpha1.Task) string {
-	return fmt.Sprintf("Task `%s`, done by Agent `%s`.\n\n## Goal\n\n%s\n", task.Name, task.Spec.AgentRef.Name, task.Spec.Goal)
+func pullBody(task *c4v1alpha1.Task, agents taskAgents, round int32, summary string) string {
+	var b strings.Builder
+	if task.Spec.Issue > 0 {
+		// Gitea links the issue, and closes it on merge.
+		fmt.Fprintf(&b, "Closes #%d.\n\n", task.Spec.Issue)
+	}
+	fmt.Fprintf(&b, "Task `%s`: implemented by %s, reviewed by %s.\n", task.Name,
+		agentName(agents.implementer), agentName(agents.reviewer))
+	if task.Spec.Issue == 0 {
+		fmt.Fprintf(&b, "\n## Goal\n\n%s\n", task.Spec.Goal)
+	}
+	if summary = strings.TrimSpace(summary); summary != "" {
+		fmt.Fprintf(&b, "\n## Summary of round %d\n\n%s\n", round, summary)
+	}
+	return b.String()
 }
 
 func firstLine(s string) string {
