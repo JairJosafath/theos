@@ -36,7 +36,7 @@ spec:
   protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/go-standard
-    ref: v1.0.0
+    ref: v1.1.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Framework
@@ -65,7 +65,7 @@ spec:
     docs/style/, docs/agents/, tsconfig.json, vitest.config.mts]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/ts-standard
-    ref: v1.0.0
+    ref: v1.1.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Deployment

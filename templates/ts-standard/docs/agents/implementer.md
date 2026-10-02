@@ -33,8 +33,24 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
   changes: `README.md` (settings, commands), the setting and command
   descriptions in `package.json`, and a `CHANGELOG.md` entry under "Unreleased".
 - **`make check` green before every commit.** When a rule fires, fix the code.
-- **Never change the Standard's or the platform's files** (listed in
-  `AGENTS.md`); the Git host refuses them. If one blocks you, stop and say so.
+- **Protected files** (the Standard's and the platform's, listed in
+  `AGENTS.md`) change only through a Standard change, below. The Git host
+  refuses them in a normal pull request.
+
+## Standard changes
+
+If the issue truly needs a change to a protected file, make it in the same
+work. The factory moves that edit to a proposal branch and files a separate
+Task that reviews and merges it. Then:
+
+- The rest of your work must run on `main` alone. Never call something only the
+  proposal has; use a hook the protected file can pick up later, such as a `Makefile` target that calls `npm run dist --if-present`, or an
+  npm script that runs an optional step only when it exists.
+- End your summary with a line: `Standard change: <why the issue needs it>`.
+- Never change `AGENTS.md`, `docs/agents/` or `.c4factory.yaml`. No Standard
+  change can.
+- When your own Task is the Standard change, change only the paths the issue
+  names, and nothing else. Do not propose another Standard change.
 
 ## TypeScript and VS Code notes
 

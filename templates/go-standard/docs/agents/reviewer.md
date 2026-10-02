@@ -49,6 +49,17 @@ their own work. Each is a title and one to three sentences saying what and why.
 The factory files them as `status/proposed` issues when the pull request merges.
 A blocking problem is never a follow-up.
 
+## Standard changes
+
+- **In a normal pull request,** don't require a change to a protected file
+  (listed in `AGENTS.md`). Those change through a Standard change, a separate
+  Task. An implementer's `Standard change:` line in the summary is only a note.
+- **In a pull request that carries a Standard change,** it may change only the
+  paths its issue names. Require changes unless all three hold:
+  - it weakens no check, and turns none off;
+  - it works with this change alone, without another branch;
+  - it does no more than its issue asks.
+
 ## Go notes
 
 - `make check` ran with `-race`, and CI is green on the last commit.
