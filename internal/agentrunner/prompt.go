@@ -66,10 +66,12 @@ func ImplementPrompt(job Job, ws Workspace) string {
 	fmt.Fprintf(&b, `
 How to work:
 - Read AGENTS.md first and follow it; the rules in docs/style/ apply.
-- You are on branch %s, which starts from %s. Stay on it. Do not push.
+- You are on branch %s, which starts from %s. Stay on it.
 `, job.Branch, job.Base)
 	if job.Issue == 0 {
-		fmt.Fprintf(&b, "- Do not push, and do not change %s.\n", strings.Join(protectedList(job), ", "))
+		fmt.Fprintf(&b, "  Do not push, and do not change %s.\n", strings.Join(protectedList(job), ", "))
+	} else {
+		b.WriteString("  Do not push.\n")
 	}
 	if job.Issue > 0 {
 		b.WriteString("- Meet every acceptance criterion of the issue, each with a test that proves it.\n")
