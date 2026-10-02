@@ -278,13 +278,19 @@ func TouchedPaths(changed, protected []string) []string {
 	var out []string
 	for _, p := range changed {
 		for _, prot := range protected {
-			if p == prot || (strings.HasSuffix(prot, "/") && strings.HasPrefix(p, prot)) {
+			if covers(prot, p) {
 				out = append(out, p)
 				break
 			}
 		}
 	}
 	return out
+}
+
+// covers reports whether path is the protected file or inside the protected
+// directory (a path ending in "/").
+func covers(prot, path string) bool {
+	return path == prot || (strings.HasSuffix(prot, "/") && strings.HasPrefix(path, prot))
 }
 
 // ClusterNamespace returns the namespace of an in-cluster service address, such
