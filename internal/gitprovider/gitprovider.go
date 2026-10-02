@@ -94,6 +94,32 @@ type Provider interface {
 	// MergePullRequest squashes a pull request into its base and deletes its
 	// branch, provided its head is still headSHA.
 	MergePullRequest(ctx context.Context, repo Repository, number int, headSHA, title, message string) error
+	// ReviewPullRequest posts a review of commit: ReviewApprove,
+	// ReviewRequestChanges or ReviewComment, with body.
+	ReviewPullRequest(ctx context.Context, repo Repository, number int, commit, event, body string) error
+
+	// EnsureLabels creates the labels repo doesn't have yet. It is safe to repeat.
+	EnsureLabels(ctx context.Context, repo Repository, labels []Label) error
+	// ListIssues returns the open issues of repo labelled label, without pull requests.
+	ListIssues(ctx context.Context, repo Repository, label string) ([]Issue, error)
+	// GetIssue reads one issue.
+	GetIssue(ctx context.Context, repo Repository, number int) (Issue, error)
+	// OpenBlockers returns the open issues an issue depends on: "#3" in the same
+	// repository, "owner/name#3" in another.
+	OpenBlockers(ctx context.Context, repo Repository, number int) ([]string, error)
+	// AddIssueLabel adds a label to an issue by name. An exclusive scoped label
+	// replaces the issue's other labels of its scope.
+	AddIssueLabel(ctx context.Context, repo Repository, number int, label string) error
+	// RemoveIssueLabel removes a label from an issue, if it has it.
+	RemoveIssueLabel(ctx context.Context, repo Repository, number int, label string) error
+	// CommentIssue adds a comment to an issue or a pull request.
+	CommentIssue(ctx context.Context, repo Repository, number int, body string) error
+	// CloseIssue closes an issue.
+	CloseIssue(ctx context.Context, repo Repository, number int) error
+	// AssignIssue makes users the issue's assignees.
+	AssignIssue(ctx context.Context, repo Repository, number int, users []string) error
+	// CreateIssue files an issue with labels, which must exist in the repository.
+	CreateIssue(ctx context.Context, repo Repository, title, body string, labels []string) (Issue, error)
 }
 
 // BranchRule is what a protected branch requires of a pull request.

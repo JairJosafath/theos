@@ -299,16 +299,7 @@ func (g *gitea) GetPullRequest(ctx context.Context, repo Repository, number int)
 
 // CommentPullRequest adds a comment to a pull request.
 func (g *gitea) CommentPullRequest(ctx context.Context, repo Repository, number int, body string) error {
-	payload, _ := json.Marshal(map[string]string{"body": body})
-	status, data, err := g.do(ctx, http.MethodPost,
-		"/api/v1/repos/"+repoPath(repo)+"/issues/"+strconv.Itoa(number)+"/comments", payload)
-	if err != nil {
-		return err
-	}
-	if status != http.StatusCreated {
-		return fmt.Errorf("gitea: commenting on pull request %d failed (HTTP %d): %s", number, status, apiMessage(data))
-	}
-	return nil
+	return g.CommentIssue(ctx, repo, number, body)
 }
 
 // MergePullRequest squashes a pull request into its base and deletes its branch.
