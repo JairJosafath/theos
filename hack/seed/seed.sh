@@ -24,8 +24,9 @@ PROJECTS=${PROJECTS:-${PROJECT:-webshop}}
 CREDENTIALS_SECRET=${CREDENTIALS_SECRET:-gitea-credentials}
 # Enough to create repositories in an organization and push to them over HTTP;
 # read:user lets the operator (and this script) check the token with GET /user;
-# write:admin lets the operator make each Container's agent bot user.
-TOKEN_SCOPES=${TOKEN_SCOPES:-write:admin,write:organization,write:repository,read:user}
+# write:admin lets the operator make each Container's agent bot user; write:issue
+# lets it label, comment on and close issues, and comment on pull requests.
+TOKEN_SCOPES=${TOKEN_SCOPES:-write:admin,write:issue,write:organization,write:repository,read:user}
 RUNNER_SECRET=${RUNNER_SECRET:-gitea-runner}
 RUNNER_NAMESPACE=${RUNNER_NAMESPACE:-gitea}
 
