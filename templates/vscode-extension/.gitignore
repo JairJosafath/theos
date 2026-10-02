@@ -1,0 +1,7 @@
+node_modules/
+# The bundle (npm run build) and the release (make dist)
+/out/
+/dist/
+*.vsix
+# VS Code's integration test downloads
+/.vscode-test/
