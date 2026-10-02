@@ -43,6 +43,11 @@ missing)
 esac
 
 section "Cluster"
+if ! kubectl config get-contexts "kind-$CLUSTER" >/dev/null 2>&1; then
+  bad "No kubeconfig context kind-$CLUSTER (a rebuilt devcontainer loses it)"
+  hint "make up restores it (kind export kubeconfig --name $CLUSTER)"
+  exit 1
+fi
 if ! "${KUBECTL[@]}" get --raw /readyz >/dev/null 2>&1; then
   bad "The Kubernetes API does not answer"
   hint "It takes a minute after a start; make up waits for it"

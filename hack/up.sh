@@ -52,6 +52,12 @@ if [[ "$state" != running ]]; then
   docker start "$NODE" >/dev/null
 fi
 
+# A rebuilt devcontainer has a fresh home directory, without the kubeconfig.
+if ! kubectl config get-contexts "kind-${CLUSTER}" >/dev/null 2>&1; then
+  say "Restoring the kubeconfig for kind-${CLUSTER}"
+  kind export kubeconfig --name "$CLUSTER" >/dev/null
+fi
+
 say "Waiting for the Kubernetes API"
 wait_for 180 "the API" "${KUBECTL[@]}" get --raw /readyz
 
