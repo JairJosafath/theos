@@ -38,7 +38,7 @@ The product: **CEL Lens**, rich CEL language support in Kubernetes YAML.
 | 1 | Product | CEL Lens: a language server for CEL inside Kubernetes YAML, and a VS Code extension that runs it |
 | 2 | Finding CEL | By content: a document's `apiVersion` and `kind` say which fields hold CEL and what is in scope. No file name suffix or marker needed for known kinds. A comment marker for other YAML is a later issue |
 | 3 | Fidelity | The server uses Kubernetes' own CEL libraries (`k8s.io/apiserver`, `k8s.io/apiextensions-apiserver`) and Kubernetes' published OpenAPI schemas, embedded, so it reports what the API server would, offline |
-| 4 | Containers | Two: `language-server` (Go, type `cli`) and `vscode-extension` (TypeScript, type `extension`), joined by LSP over stdio. Any LSP editor can reuse the server; a third Container has no job |
+| 4 | Containers | Two: `cel-language-server` (Go, type `cli`) and `vscode-extension` (TypeScript, type `extension`), joined by LSP over stdio. Any LSP editor can reuse the server; a third Container has no job |
 | 5 | Types | Add `cli` and `extension` to the Container types. The operator still never branches on a type |
 | 6 | The work | Gitea issues. A Task takes its goal from an issue (`spec.issue`) or, as before, from `spec.goal` |
 | 7 | Ready | An issue is ready when it is labelled `status/ready`, its dependencies are closed, and it has an "Acceptance criteria" checklist. Without the checklist it gets `status/needs-human` and a comment, before any agent runs |
@@ -81,7 +81,7 @@ spec:
   - Time to a correct expression
 ---
 kind: Container
-metadata: {name: language-server}
+metadata: {name: cel-language-server}
 spec:
   displayName: CEL language server
   description: Finds CEL in Kubernetes YAML and checks, completes and explains it over LSP; also a CLI that checks files in CI.
@@ -101,10 +101,10 @@ spec:
   deploymentRef: {name: gitea-release}
 ---
 kind: Relationship
-metadata: {name: vscode-extension-to-language-server}
+metadata: {name: vscode-extension-to-cel-language-server}
 spec:
   source: {kind: Container, name: vscode-extension}
-  target: {kind: Container, name: language-server}
+  target: {kind: Container, name: cel-language-server}
   description: Starts `cel-language-server serve --stdio` and speaks LSP 3.17 with it
 ```
 
@@ -150,23 +150,23 @@ spec:
 ---
 kind: Task
 spec:
-  containerRef: {name: language-server}
+  containerRef: {name: cel-language-server}
   agentRef: {name: claude-implementer}
   reviewerRef: {name: claude-reviewer}   # new, optional: defaults to agentRef
   issue: 3                               # new: exactly one of goal and issue
 status:
   issueTitle: Map CEL positions inside YAML scalars   # new
-  issueURL: http://gitea.../language-server/issues/3  # new
+  issueURL: http://gitea.../cel-language-server/issues/3  # new
 ---
 kind: Crew                       # new, owned by its Container
-metadata: {name: language-server}
+metadata: {name: cel-language-server}
 spec:
-  containerRef: {name: language-server}
+  containerRef: {name: cel-language-server}
   implementer: {name: claude-implementer}
   reviewer: {name: claude-reviewer}
   paused: false                  # stop picking up new issues
 status:
-  activeTask: language-server-3
+  activeTask: cel-language-server-3
   ready: [4]                     # ready issues, in pick-up order
   waiting: [5, 6]                # ready, but blocked by open dependencies
   conditions: [Ready]
@@ -226,10 +226,10 @@ tests (with `-race` for Go), and for the extension a packaging dry run.
 Filed from `config/samples/cel-lens/backlog/` by `make cel-lens-backlog`, with
 milestones, labels and dependencies, so a fresh cluster gets the same plan.
 
-- **M1 Diagnostics** (language-server): locate CEL in YAML; positions inside YAML
+- **M1 Diagnostics** (cel-language-server): locate CEL in YAML; positions inside YAML
   scalars; embedded Kubernetes schemas; policy environments; CRD rule environments;
   the `check` command; the LSP server with diagnostics.
-- **M2 Completion and hover** (language-server): completion; hover; docs for the
+- **M2 Completion and hover** (cel-language-server): completion; hover; docs for the
   Kubernetes libraries.
 - **M3 VS Code** (vscode-extension): start the server; highlight CEL in YAML;
   settings and status; bundle the server.
