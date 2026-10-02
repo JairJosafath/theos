@@ -9,23 +9,23 @@ check in unless the user shows concern (memory `work-autonomously`).
 
 ## Where it stands
 
-Branch `feat/issue-driven-factory`, draft PR #9, pushed to `a73381f` (a subagent
-pushed although told not to; harmless).
+Branch `feat/issue-driven-factory`, draft PR #9, everything pushed (`40ca13d`).
+Tree clean, no subagents running.
 
 - Plan docs/plans/standard-change.md, 18 tasks, run as subagent-driven development.
   - Done and reviewed: Task 1 `91c7bd2` (spike: outcome A, force_merge), Task 2
     `05a722b`, Task 3 `fc4df4e`, Task 4 `ea757da`, Task 5 `6753696`+`8ef1a03`
-    (one fix round), Task 6 `a73381f`.
-  - **In flight: Task 7** (API types, CEL, CRD), implementer dispatched at base
-    `a73381f`. The tree had uncommitted `api/`, `config/crd/` and
-    `internal/controller/task_standard_test.go` changes when this was written.
-  - Not started: Tasks 8–18.
+    (one fix round), Task 6 `a73381f`, Task 7 `40ca13d` (API: `Blocked`,
+    `allowedProtectedPaths` with CEL, `status.standardChange`).
+  - Not started: Tasks 8–18. Next is Task 8 (gitprovider: milestone, dependency,
+    PR files, closing and force-merging).
 - `b3d9c32` ci: the e2e workflow runs only on demand (user: "e2e tests are overkill,
   and keep failing in gh runners, skip those for now"). Memory `skip-e2e`.
 - CEL Lens release plan (user approved, applied in Gitea): milestones server v0.1.1,
   v0.2.0, v0.3.0 and extension v0.2.0; 28 issues got "Acceptance criteria";
   server #55 closed. Merged since: extension #16 #18 #19 #24 #25 #26 (its whole
-  v0.1.0 batch except #4), server #17. Server #16 is in round 3.
+  v0.1.0 batch except #4), server #17. Server #16 is implementing round 3 of 3
+  (if it fails, the Crew asks a person: read its history before readying v0.2.0).
 
 ## Live thread
 
@@ -56,7 +56,7 @@ pushed although told not to; harmless).
   Go agents building the server (k8s deps) plus `make check` in the devcontainer.
   Likely the Windows host disk (Defender scanning the vhdx, or host drive full);
   told the user what to check. Mitigation: server Crew `parallel: 1`. Watch
-  `cat /proc/pressure/io` (avg300 was 20% at hand-off).
+  `cat /proc/pressure/io` (avg300 28% at hand-off, while server #16 builds).
 - Reviewers' follow-ups land as `status/proposed` in `Later` (first live check of
   `61c8cb2`: 3 server, 10 extension today).
 
@@ -75,10 +75,8 @@ pushed although told not to; harmless).
 
 1. Load `superpowers:subagent-driven-development`; run its `scripts/sdd-workspace
    docs/plans/standard-change.md`; read the ledger tail.
-2. Task 7: if `git log a73381f..` shows `feat(api): Task phase Blocked…` and
-   `task-7-report.md` exists, build `scripts/review-package … a73381f HEAD` and
-   dispatch the reviewer (sonnet). If the tree is dirty with no commit, the
-   implementer died: `git stash` its work, re-dispatch Task 7 fresh.
+2. Task 8: `scripts/task-brief docs/plans/standard-change.md 8`, record BASE
+   (`40ca13d`), dispatch the implementer (sonnet), then a reviewer.
 3. Tasks 8–18, one implementer then one reviewer each; sonnet for mechanical work,
    opus for controller integration (Tasks 9–12) and their reviews; never Fable.
    Hand over paths, ask for replies under 15 lines.
