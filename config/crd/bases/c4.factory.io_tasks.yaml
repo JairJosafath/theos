@@ -86,6 +86,25 @@ spec:
                 x-kubernetes-validations:
                 - message: agentRef is immutable
                   rule: self == oldSelf
+              allowedProtectedPaths:
+                description: |-
+                  allowedProtectedPaths are Standard-protected files, other than AGENTS.md,
+                  docs/agents/ and .c4factory.yaml, that this Task may change. The agent
+                  still proposes them, and the change goes through its own review. It needs
+                  an issue, and it can't change.
+                items:
+                  maxLength: 256
+                  type: string
+                maxItems: 20
+                type: array
+                x-kubernetes-list-type: atomic
+                x-kubernetes-validations:
+                - message: allowedProtectedPaths may not include AGENTS.md, docs/agents/
+                    or .c4factory.yaml
+                  rule: self.all(p, p != 'AGENTS.md' && p != '.c4factory.yaml' &&
+                    p != 'docs/agents' && !p.startsWith('docs/agents/'))
+                - message: allowedProtectedPaths is immutable
+                  rule: self == oldSelf
               containerRef:
                 description: containerRef names the Container to work on. It can't
                   change.
@@ -148,6 +167,10 @@ spec:
               rule: has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)
             - message: reviewerRef is immutable
               rule: has(self.reviewerRef) == has(oldSelf.reviewerRef)
+            - message: allowedProtectedPaths needs an issue
+              rule: '!has(self.allowedProtectedPaths) || has(self.issue)'
+            - message: allowedProtectedPaths is immutable
+              rule: has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)
           status:
             description: status defines the observed state of Task
             properties:
@@ -278,6 +301,7 @@ spec:
                       - Implementing
                       - Checking
                       - Reviewing
+                      - Blocked
                       - Merged
                       - Failed
                       type: string
@@ -313,12 +337,13 @@ spec:
               phase:
                 description: |-
                   phase is Pending, then Implementing, Checking and Reviewing each round, then
-                  Merged or Failed.
+                  Merged or Failed. Blocked means the Task waits for a Standard change.
                 enum:
                 - Pending
                 - Implementing
                 - Checking
                 - Reviewing
+                - Blocked
                 - Merged
                 - Failed
                 type: string
@@ -362,6 +387,42 @@ spec:
                   longest waiter gets the next one.
                 format: date-time
                 type: string
+              standardChange:
+                description: standardChange is the Standard change the Task waits
+                  for while Blocked.
+                properties:
+                  branch:
+                    description: branch is where the change is made.
+                    type: string
+                  count:
+                    description: count is how many Standard changes this Task has
+                      proposed.
+                    format: int32
+                    type: integer
+                  issue:
+                    description: issue is the number of the issue filed for the change.
+                    format: int32
+                    type: integer
+                  issueURL:
+                    description: issueURL is where to find the issue.
+                    type: string
+                  paths:
+                    description: paths are the protected files the proposal changes.
+                    items:
+                      type: string
+                    maxItems: 20
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  resumedRound:
+                    description: resumedRound is the round the Task resumed in after
+                      the change merged.
+                    format: int32
+                    type: integer
+                required:
+                - count
+                - issue
+                - paths
+                type: object
               summary:
                 description: summary is the implementing agent's account of its latest
                   round.

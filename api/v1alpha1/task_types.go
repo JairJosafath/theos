@@ -26,6 +26,8 @@ import (
 // +kubebuilder:validation:XValidation:rule="has(self.goal) != has(self.issue)",message="set exactly one of goal and issue"
 // +kubebuilder:validation:XValidation:rule="has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)",message="goal and issue are immutable; create a new Task"
 // +kubebuilder:validation:XValidation:rule="has(self.reviewerRef) == has(oldSelf.reviewerRef)",message="reviewerRef is immutable"
+// +kubebuilder:validation:XValidation:rule="!has(self.allowedProtectedPaths) || has(self.issue)",message="allowedProtectedPaths needs an issue"
+// +kubebuilder:validation:XValidation:rule="has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)",message="allowedProtectedPaths is immutable"
 type TaskSpec struct {
 	// containerRef names the Container to work on. It can't change.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="containerRef is immutable"
@@ -58,10 +60,22 @@ type TaskSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="issue is immutable; create a new Task"
 	// +optional
 	Issue int32 `json:"issue,omitempty"`
+
+	// allowedProtectedPaths are Standard-protected files, other than AGENTS.md,
+	// docs/agents/ and .c4factory.yaml, that this Task may change. The agent
+	// still proposes them, and the change goes through its own review. It needs
+	// an issue, and it can't change.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="self.all(p, p != 'AGENTS.md' && p != '.c4factory.yaml' && p != 'docs/agents' && !p.startsWith('docs/agents/'))",message="allowedProtectedPaths may not include AGENTS.md, docs/agents/ or .c4factory.yaml"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="allowedProtectedPaths is immutable"
+	// +optional
+	AllowedProtectedPaths []string `json:"allowedProtectedPaths,omitempty"`
 }
 
 // TaskPhase is where a Task is in its rounds.
-// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;Merged;Failed
+// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;Blocked;Merged;Failed
 type TaskPhase string
 
 // Task phases.
@@ -70,6 +84,7 @@ const (
 	TaskImplementing TaskPhase = "Implementing"
 	TaskChecking     TaskPhase = "Checking"
 	TaskReviewing    TaskPhase = "Reviewing"
+	TaskBlocked      TaskPhase = "Blocked"
 	TaskMerged       TaskPhase = "Merged"
 	TaskFailed       TaskPhase = "Failed"
 )
@@ -112,10 +127,40 @@ type TaskTransition struct {
 	Message string `json:"message,omitempty"`
 }
 
+// TaskStandardChange is the Standard change a Task proposed: the protected files
+// it wants changed, and where that change is being reviewed.
+type TaskStandardChange struct {
+	// issue is the number of the issue filed for the change.
+	// +required
+	Issue int32 `json:"issue"`
+
+	// issueURL is where to find the issue.
+	// +optional
+	IssueURL string `json:"issueURL,omitempty"`
+
+	// paths are the protected files the proposal changes.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +required
+	Paths []string `json:"paths"`
+
+	// branch is where the change is made.
+	// +optional
+	Branch string `json:"branch,omitempty"`
+
+	// count is how many Standard changes this Task has proposed.
+	// +required
+	Count int32 `json:"count"`
+
+	// resumedRound is the round the Task resumed in after the change merged.
+	// +optional
+	ResumedRound int32 `json:"resumedRound,omitempty"`
+}
+
 // TaskStatus defines the observed state of Task.
 type TaskStatus struct {
 	// phase is Pending, then Implementing, Checking and Reviewing each round, then
-	// Merged or Failed.
+	// Merged or Failed. Blocked means the Task waits for a Standard change.
 	// +optional
 	Phase TaskPhase `json:"phase,omitempty"`
 
@@ -172,6 +217,10 @@ type TaskStatus struct {
 	// checks or the reason the last round failed.
 	// +optional
 	Feedback string `json:"feedback,omitempty"`
+
+	// standardChange is the Standard change the Task waits for while Blocked.
+	// +optional
+	StandardChange *TaskStandardChange `json:"standardChange,omitempty"`
 
 	// sandbox names the Sandbox running now, if any.
 	// +optional
