@@ -166,11 +166,13 @@ var errChecksPending = errors.New("CI runs again on the reviewed commit")
 // reviewer approved and every path it changes is allowed. Otherwise it says why
 // not and tries no merge. CI still running is errChecksPending, and a list of
 // changed paths it can't read in full is an error. The reviewer's approval is
-// posted with the merge only.
+// posted with the merge only, so waiting for CI posts it once.
 func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
 	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, container *c4v1alpha1.Container,
 	reviewer *c4v1alpha1.Agent) (refusal string, err error) {
-	checks, err := provider.CombinedStatus(ctx, repo, status.Commit)
+	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	checks, err := provider.CombinedStatus(gitCtx, repo, status.Commit)
 	if err != nil {
 		return "", err
 	}
@@ -178,7 +180,7 @@ func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Pr
 		return "", errChecksPending
 	}
 	n := int(status.PullRequest)
-	changed, err := provider.PullRequestFiles(ctx, repo, n)
+	changed, err := provider.PullRequestFiles(gitCtx, repo, n)
 	if err != nil {
 		return "", err // never merge a path nobody checked
 	}
@@ -190,7 +192,7 @@ func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Pr
 		return why, nil
 	}
 	r.approve(ctx, task, status, container, reviewer)
-	if err := provider.ForceMergePullRequest(ctx, repo, n, status.Commit, pullTitle(task, status),
+	if err := provider.ForceMergePullRequest(gitCtx, repo, n, status.Commit, pullTitle(task, status),
 		mergeMessage(task, status, container)); err != nil {
 		return "", err
 	}

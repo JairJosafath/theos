@@ -354,7 +354,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 				"The branch moved after the review; checking "+pr.HeadSHA)
 			return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
 		}
-		refusal, err := r.mergeReviewed(gitCtx, provider, repo, task, status, container, agents.reviewer)
+		refusal, err := r.mergeReviewed(ctx, provider, repo, task, status, container, agents.reviewer)
 		if errors.Is(err, errChecksPending) {
 			r.progress(task, status, metav1.ConditionTrue, "WaitingForChecks",
 				"Approved; CI runs again on "+status.Commit+", merging once it passes")
@@ -385,7 +385,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 
 // mergeReviewed squashes the reviewed commit into main, posting the reviewer's
 // approval; a push since the review makes the merge fail. A Standard change goes
-// through gatedMerge, which may refuse it.
+// through gatedMerge, which may refuse it or wait for CI.
 func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider gitprovider.Provider,
 	repo gitprovider.Repository, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
 	container *c4v1alpha1.Container, reviewer *c4v1alpha1.Agent) (refusal string, err error) {
@@ -393,8 +393,10 @@ func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider gitprovider
 		return r.gatedMerge(ctx, provider, repo, task, status, container, reviewer)
 	}
 	r.approve(ctx, task, status, container, reviewer)
-	return "", provider.MergePullRequest(ctx, repo, int(status.PullRequest), status.Commit, pullTitle(task, status),
-		mergeMessage(task, status, container))
+	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return "", provider.MergePullRequest(gitCtx, repo, int(status.PullRequest), status.Commit,
+		pullTitle(task, status), mergeMessage(task, status, container))
 }
 
 // approve posts the reviewer's approval of the round's commit.

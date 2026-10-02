@@ -90,6 +90,9 @@ func (g *fakeGit) setBlockers(owner, name string, number int, blockers ...string
 	g.issueState().find(owner+"/"+name, number).blockers = blockers
 }
 
+// reviews lists the reviews posted on a pull request.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) reviews(owner, name string, number int) []fakeReview {
 	g.mu.Lock()
 	defer g.mu.Unlock()

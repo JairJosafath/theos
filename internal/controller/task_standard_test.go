@@ -245,6 +245,7 @@ func gatedTaskInReview(ns string, files ...string) int {
 	return n
 }
 
+// approveGated has the reviewer approve round 1 of orders-api-1.
 func approveGated(ns string) {
 	GinkgoHelper()
 	finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
