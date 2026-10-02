@@ -91,23 +91,56 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
 1. `internal/controller` reads the Task live (not from the cache: steps have side
    effects), adopts it under its Container, and gathers the facts: is the
    Container Ready, is an earlier Task still active on it, what did the current
-   sandbox report, what do the checks say.
+   sandbox report, what do the checks say, and whether an unavailable agent's
+   wait (`status.agentBackAt`) is over.
 2. `internal/model.NextTaskStep` turns the facts into one step: wait, start the
-   implementer or reviewer, open the pull request, merge, next round, or fail.
+   implementer or reviewer, open the pull request, merge, next round, wait for an
+   unavailable agent, or fail.
 3. To start a run, the controller makes sure the Container's agent bot user exists
    (`gitprovider.EnsureAgentAccess`, token in Secret `<container>-agent-git`) and
-   creates an Agent Sandbox `Sandbox` owned by the Task. Its pod mounts no
-   ServiceAccount token; the project's NetworkPolicy lets it reach only DNS, the Git
-   host and public HTTPS.
+   creates an Agent Sandbox `Sandbox` owned by the Task, with the role's Agent
+   (`spec.agentRef` implements, `spec.reviewerRef` reviews) and its harness and
+   model. Its pod mounts no ServiceAccount token; the project's NetworkPolicy lets
+   it reach only DNS, the Git host and public HTTPS. A Task with `spec.issue`
+   reads the issue before every run and passes it as the goal; on its first run
+   it labels the issue `status/in-progress`, assigns the bot and comments.
+   `c4Context` gives the agent the Container's place in the story: the system's
+   needs and KPIs, its users, each Relationship, and the related Containers'
+   repositories.
 4. In the pod, `cmd/c4agent` reads its job from the environment, and
-   `internal/agentrunner` clones with the bot's token, runs the agent, runs
-   `make check` and sends the agent back while it fails, pushes the branch, and
-   writes one JSON `Result` to the termination message. A reviewer run answers
-   with a JSON verdict instead.
-5. The controller reads the result from the pod status, opens the pull request,
-   polls the combined commit status until CI is done, runs the reviewer, and
-   squash-merges on approval. Status is patched with an optimistic lock, so a
-   stale write is retried rather than repeating a step.
+   `internal/agentrunner` clones with the bot's token, clones the related
+   repositories read-only, reads the role guide (`docs/agents/<role>.md`) from the
+   base branch, runs the agent, runs `make check` and sends the agent back while
+   it fails, pushes the branch, and writes one JSON `Result` to the termination
+   message. A reviewer run answers with a JSON verdict and up to three follow-ups
+   instead. A usage limit, an overload or rejected credentials come back as
+   `unavailable`: the Task keeps its round and tries again later.
+5. The controller reads the result from the pod status, opens the pull request as
+   the agent bot (Gitea refuses a review of one's own pull request), polls the
+   combined commit status until CI is done, runs the reviewer, posts its verdict
+   as a pull request review, and squash-merges on approval. For an issue it then
+   comments, files the follow-ups as `status/proposed` issues and closes it; a
+   failed Task hands the issue back with `status/needs-human`. Status is patched
+   with an optimistic lock, so a stale write is retried rather than repeating a
+   step. Notes on the Git host (labels, comments, reviews) are logged when they
+   fail; they never decide a step.
+
+## Flow of one Crew
+
+1. Every minute, and when a Task on its Container changes phase or the Container
+   turns Ready, `internal/controller` reads the Crew, adopts it under its
+   Container, checks its Agents exist, and lists the Container's Tasks live.
+2. Through `gitprovider` it makes sure the status labels exist, lists the open
+   issues labelled `status/ready`, and reads each one's open dependencies.
+3. `internal/model.NextCrewStep` decides: issues without an acceptance criteria
+   checklist, already merged, or tried three times go back to a person; issues
+   with open dependencies wait; while a Task works on the Container nothing
+   starts; otherwise the lowest-numbered ready issue gets a Task
+   `<container>-<issue>` (with `-<attempt>` from the second try), with the Crew's
+   implementer and reviewer.
+4. The controller labels the handed-back issues `status/needs-human` with the
+   reason, creates the Task, and writes the Crew's phase, active Task and its
+   ready and waiting issues.
 
 The operator never branches on a Container type: `internal/controller/typeneutral_test.go`
 fails when controller, scaffold or runner code names one. Everything type-specific

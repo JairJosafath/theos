@@ -12,7 +12,7 @@ one Git repository per Container from pinned templates, then only reports. Read
 cmd/main.go                        Manager entry (registers controllers, Session feature flags)
 cmd/c4session/                     Session client CLI, run in devcontainers
 cmd/c4agent/                       Task runner, run in agent sandboxes
-api/v1alpha1/*_types.go            CRD schemas for all fifteen kinds (+kubebuilder markers)
+api/v1alpha1/*_types.go            CRD schemas for all sixteen kinds (+kubebuilder markers)
 api/v1alpha1/shared_types.go       Refs, Container types, condition names and labels
 api/v1alpha1/zz_generated.*        Auto-generated (DO NOT EDIT)
 internal/controller/*              Reconcilers: read resources, call rules, write status
@@ -28,6 +28,7 @@ config/policy/                     ValidatingAdmissionPolicy (Project name equal
 config/gitea/                      Gitea for the test environment
 config/samples/webshop/            The sample story (edit these)
 config/samples/toolbox/            The agent factory story: six tool apps, Agents and Tasks
+config/samples/cel-lens/           CEL Lens: two Containers, Crews, and the backlog filed as Gitea issues
 config/runner/                     The Gitea CI runner for Container repositories
 config/ui/                         The read-only UI's Deployment and read-only RBAC
 config/metrics-server/             metrics-server for Kind (CPU and memory for the UI and kubectl top)
@@ -39,6 +40,8 @@ hack/seed/                         The seed job image and manifests
 hack/session/                      The Session client image and the test Session pod
 hack/toolchain-slim/               The slim Flutter toolchain (no Android SDK) for CI checks and agents
 hack/toolchain/                    The full Flutter toolchain with the Android SDK, for releases and devcontainers
+hack/toolchain-go/                 The Go and Node toolchain, with a warm build cache, for Go and TypeScript Containers
+hack/backlog/                      Files a backlog of Markdown issues into Gitea, with labels, milestones and dependencies
 hack/runner/, hack/agent/          The CI runner and agent images, built on the toolchain
 hack/render/                       Renders templates locally, the way the operator scaffolds
 test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox)
@@ -162,7 +165,10 @@ make test-gitea          # gitprovider against the seeded Gitea
 make toolchain runner agent-sandbox agent-image  # Slim toolchain, CI runner, Agent Sandbox, agent image
 make toolchain-android runner-android  # Optional: the 20 GB release runner for signed APKs
 make toolbox             # The toolbox story; then kubectl apply -k config/samples/toolbox/tasks
+make toolchain-go runner-go agent-image-go  # Go and Node toolchain, CI runner (label go) and agent image
+make cel-lens cel-lens-backlog  # The CEL Lens story and its issues; then kubectl apply -k config/samples/cel-lens/crews
 make claude-secret CLAUDE_TOKEN=...  # The real agent's token, from `claude setup-token`
+make claude-secret-copy FROM=toolbox TO=cel-lens  # Reuse that Secret in another project
 make e2e                 # All of the above, then check every milestone in Kind
 make down / make up       # Stop the factory to free the machine; bring it back healthy
 make doctor              # Check every part of the factory and say what is wrong

@@ -37,7 +37,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 
 ## The model
 
-Fifteen namespaced kinds in `c4.factory.io/v1alpha1`: six tell the story, two track work (Session and, since v2, Task), and seven configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
+Sixteen namespaced kinds in `c4.factory.io/v1alpha1`: six tell the story, three track work (Session, Task since v2, and Crew since v4), and seven configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
 
 &#91;embedded content: ownership tree · 9 boxes, 1 relationship\]
 
@@ -57,6 +57,7 @@ Solid arrows mean "owns": deleting a parent deletes its children. The dashed Rel
 | Standard (v2) | Project | none | Catalog entry: coding rules, checks and CI, rendered right after the Framework it fits |
 | Agent (v2) | Project | none | Who does Tasks: an image with the agent CLI and toolchain, credentials and limits |
 | Task (v2) | Container | `spec.containerRef` | A goal for a Container, implemented, checked, reviewed and merged by agents |
+| Crew (v4) | Container | `spec.containerRef` | The Agents that implement and review a Container's issues, and pick up the ready ones |
 
 The story kinds, abbreviated:
 
@@ -238,6 +239,50 @@ without kubectl, and cheaply: it lives on a laptop.
 - **Checks work in memory.** CI jobs and, with `--sandbox-workspace-memory`,
   agent sandboxes write their builds to memory-backed volumes: on the disk, they
   stalled etcd and with it the whole control plane.
+
+## v4: issues, crews and roles
+
+Decided on 2 October 2026 while building CEL Lens; the full design is
+[superpowers/specs/2026-10-02-issue-driven-factory-design.md](superpowers/specs/2026-10-02-issue-driven-factory-design.md),
+the plan [plans/issue-driven-factory.md](plans/issue-driven-factory.md), and what
+the run found [results-v4.md](results-v4.md).
+
+v2's apps were built one Task per app, and their quality was only "ok for
+testing". v4 makes the work smaller and clearer, and gives each role the agent,
+model and context it needs.
+
+- **Issues are the work.** A Task can take its goal from an issue of its
+  Container's repository (`spec.issue`). The operator reads it before every run,
+  labels it `status/in-progress`, comments who works on it, opens a pull request
+  that closes it, and closes it on merge; a failed Task hands it back with
+  `status/needs-human` and the reason. The `status/*` labels are exclusive, so an
+  issue is in one state at a time.
+- **Ready means clear.** An issue needs an "Acceptance criteria" checklist before
+  an agent gets it; without one it goes back to a person before any tokens are
+  spent. The Standards' issue templates ask for context, goal, criteria, scope and
+  notes.
+- **A Crew per Container picks up the work.** It names the implementer and the
+  reviewer Agents, polls the repository's `status/ready` issues, waits for their
+  Gitea dependencies (also across repositories) to close, and starts one Task at a
+  time, lowest number first, up to three tries per issue. Milestones group the
+  backlog; Gitea 1.27 has no API for project boards.
+- **Roles get their own model and guide.** Agents have a `harness` and a `model`;
+  CEL Lens pairs a Sonnet implementer with an Opus reviewer. A Standard ships
+  `docs/agents/implementer.md` and `reviewer.md`, read from the base branch so a
+  change can't rewrite its own review. The reviewer reports each acceptance
+  criterion, posts its verdict as a pull request review, and may name up to three
+  follow-ups, which become `status/proposed` issues.
+- **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
+  users, the Container's Relationships, and read-only clones of the related
+  Containers' repositories: the VS Code extension's agent reads the server it
+  starts.
+- **Waiting is not failing.** A usage limit, an overloaded API or rejected
+  credentials don't cost a round: the Task waits (`AgentUnavailable`) and tries
+  the same step again.
+- **New shapes, same operator.** Container types `cli` and `extension`; templates
+  `go-cli`, `go-standard`, `vscode-extension`, `ts-standard` and `gitea-release`;
+  a Go and Node toolchain whose image ships a warm build cache, a CI runner
+  labelled `go`, and two agent sandboxes at once.
 
 ## Out of scope for v1
 
