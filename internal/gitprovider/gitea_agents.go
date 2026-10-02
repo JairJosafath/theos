@@ -341,14 +341,14 @@ func (g *gitea) merge(ctx context.Context, repo Repository, number int, headSHA,
 }
 
 // PullRequestFiles returns the paths a pull request changes. A list that fills
-// all maxIssuePages pages is an error, not cut short: the caller may be checking
-// every path.
+// all maxIssuePages pages is ErrTooManyFiles, not cut short: the caller may be
+// checking every path.
 func (g *gitea) PullRequestFiles(ctx context.Context, repo Repository, number int) ([]string, error) {
 	var out []string
 	for page := 1; ; page++ {
 		if page > maxIssuePages {
-			return nil, fmt.Errorf("gitea: pull request %d of %s changes %d files or more, too many to read in full",
-				number, repoPath(repo), maxIssuePages*issuePageSize)
+			return nil, fmt.Errorf("gitea: pull request %d of %s changes %d files or more: %w",
+				number, repoPath(repo), maxIssuePages*issuePageSize, ErrTooManyFiles)
 		}
 		status, data, err := g.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/repos/%s/pulls/%d/files?page=%d&limit=%d",
 			repoPath(repo), number, page, issuePageSize), nil)

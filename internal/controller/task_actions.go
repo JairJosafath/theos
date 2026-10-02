@@ -131,6 +131,10 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		log.Info("Started next round of Task", "round", status.Round, "feedback", firstLine(step.Feedback))
 		return ctrl.Result{}, nil // the status write triggers the next step
 
+	case model.ActionRefuseMerge:
+		return ctrl.Result{}, r.fail(ctx, task, status, container, "GatedMergeRefused",
+			"The gated merge was refused: "+step.Message)
+
 	case model.ActionFail:
 		if review := r.reviewFrom(ctx, task, status); review != nil {
 			status.Review = review
@@ -356,6 +360,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 		}
 		refusal, err := r.mergeReviewed(ctx, provider, repo, task, status, container, agents.reviewer)
 		if errors.Is(err, errChecksPending) {
+			// Waits while the review run lasts; if it ends first, the merge is refused.
 			r.progress(task, status, metav1.ConditionTrue, "WaitingForChecks",
 				"Approved; CI runs again on "+status.Commit+", merging once it passes")
 			return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil

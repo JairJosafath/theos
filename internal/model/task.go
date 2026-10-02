@@ -112,6 +112,9 @@ type TaskFacts struct {
 	// Conflicted means the pull request can no longer merge: main moved since
 	// the branch was made, with changes that conflict.
 	Conflicted bool
+	// MergeWaitsForChecks means the reviewer approved a Standard change whose
+	// gated merge waits for CI, which runs again on the reviewed commit.
+	MergeWaitsForChecks bool
 	// StandardChanges counts the Standard changes filed so far for the Task.
 	StandardChanges int
 	// Resumed means this implement run is the first after a Standard change merged.
@@ -243,7 +246,10 @@ const (
 	ActionResolveConflicts TaskAction = "ResolveConflicts"
 	// ActionAgentUnavailable ends the run and tries the same step again later.
 	ActionAgentUnavailable TaskAction = "AgentUnavailable"
-	ActionFail             TaskAction = "Fail"
+	// ActionRefuseMerge fails a Standard change whose gated merge is refused, and
+	// hands its issue back.
+	ActionRefuseMerge TaskAction = "RefuseMerge"
+	ActionFail        TaskAction = "Fail"
 )
 
 // TaskStep is the next action, with the feedback for the next round when the
@@ -336,15 +342,7 @@ func nextTaskStep(f TaskFacts) TaskStep {
 			return agentUnavailable(f)
 		}
 		if f.Run.Result == nil || f.Run.Result.Error != "" || f.Run.Result.Verdict == "" {
-			reason := f.Run.Failure
-			if f.Run.Result != nil {
-				reason = f.Run.Result.Error
-			}
-			if f.ReviewAttempts+1 < maxReviewAttempts {
-				return TaskStep{Action: ActionRetryReview, Message: "The reviewer gave no verdict: " + orUnknown(reason)}
-			}
-			return TaskStep{Action: ActionFail,
-				Message: fmt.Sprintf("The reviewer failed %d times: %s", maxReviewAttempts, orUnknown(reason))}
+			return noVerdictStep(f)
 		}
 		if f.Run.Result.Verdict == VerdictApprove && f.Conflicted {
 			// Not the agent's fault: another change merged first. It costs no round.
@@ -357,6 +355,27 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		return roundFailed(f, "The reviewer asked for changes:\n"+f.Run.Result.Summary)
 	}
 	return TaskStep{Action: ActionNone}
+}
+
+// noVerdictStep decides what follows a review run that ended without a verdict:
+// another run, up to maxReviewAttempts. A run that ends while the approved
+// change's merge waits for CI, its sandbox expired, can no longer vouch for the
+// change: the merge is refused, and no reviewer run is spent on a CI wait.
+func noVerdictStep(f TaskFacts) TaskStep {
+	reason := f.Run.Failure
+	if f.Run.Result != nil {
+		reason = f.Run.Result.Error
+	}
+	if f.MergeWaitsForChecks {
+		return TaskStep{Action: ActionRefuseMerge, Message: fmt.Sprintf(
+			"CI is still pending on the reviewed commit, and the review run that approved it ended (%s)",
+			orUnknown(reason))}
+	}
+	if f.ReviewAttempts+1 < maxReviewAttempts {
+		return TaskStep{Action: ActionRetryReview, Message: "The reviewer gave no verdict: " + orUnknown(reason)}
+	}
+	return TaskStep{Action: ActionFail,
+		Message: fmt.Sprintf("The reviewer failed %d times: %s", maxReviewAttempts, orUnknown(reason))}
 }
 
 // implementedStep decides what follows a finished implement run that reported

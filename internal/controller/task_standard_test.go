@@ -23,12 +23,15 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -252,6 +255,20 @@ func approveGated(ns string) {
 		&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Only the dist target."}, "")
 }
 
+// expireSandbox plays Agent Sandbox at a sandbox's shutdown time: it marks the
+// sandbox expired and deletes its pod, and with it the run's result.
+func expireSandbox(ns, name string) {
+	GinkgoHelper()
+	sandbox := newSandbox()
+	Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed())
+	Expect(unstructured.SetNestedSlice(sandbox.Object, []any{map[string]any{
+		"type": "Ready", "status": "False", "reason": "SandboxExpired", "message": "the sandbox expired",
+		"lastTransitionTime": time.Now().UTC().Format(time.RFC3339)}}, "status", "conditions")).To(Succeed())
+	Expect(k8sClient.Status().Update(ctx, sandbox)).To(Succeed())
+	Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name}},
+		client.GracePeriodSeconds(0))).To(Succeed())
+}
+
 var _ = Describe("Task with a gated merge", func() {
 	It("force-merges a Standard change after checking CI, the approval and every path", func() {
 		ns := newProjectNamespace()
@@ -286,6 +303,35 @@ var _ = Describe("Task with a gated merge", func() {
 		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
 		Expect(gitFake.reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", gitprovider.ReviewApprove),
 			HaveField("Commit", "sha-1"))))
+	})
+
+	It("refuses the merge, not reviews again, when the review expires while CI is pending", func() {
+		ns := newProjectNamespace()
+		n := gatedTaskInReview(ns, "Makefile")
+		gitFake.setChecks(ns, "orders-api", "sha-1", "pending")
+		approveGated(ns)
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(condition(task.Status.Conditions, ConditionProgressing).Reason).To(Equal("WaitingForChecks"))
+			g.Expect(task.Status.Checks).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Commit": Equal("sha-1"), "State": Equal("pending")})))
+		}).Should(Succeed())
+
+		By("expiring the review sandbox, with CI still pending")
+		expireSandbox(ns, "orders-api-1-r1-review-a1")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("GatedMergeRefused"),
+				"Message": ContainSubstring("CI is still pending on the reviewed commit")})))
+			g.Expect(task.Status.ReviewAttempts).To(BeZero(), "no reviewer run is spent on a CI wait")
+		}).Should(Succeed())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-review-a2"), newSandbox()))).
+			To(BeTrue(), "no second reviewer run")
+		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
 	})
 
 	It("refuses a Standard change that touches a path it may not", func() {
@@ -354,8 +400,11 @@ func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 			refusal: "CI is failure"},
 		{name: "refuses CI that never reported", provider: gateProvider{files: makefile}, review: approved,
 			refusal: "CI is unknown"},
-		{name: "fails on a file list it could not read", review: approved,
-			provider: gateProvider{checks: "success", filesErr: errors.New("1000 files or more")}, err: "1000 files"},
+		{name: "fails, to retry, on a file list it could not read", review: approved,
+			provider: gateProvider{checks: "success", filesErr: errors.New("connection refused")}, err: "connection refused"},
+		{name: "refuses a change too large to check every path", review: approved,
+			provider: gateProvider{checks: "success", filesErr: fmt.Errorf("pull request 1 changes 1000 files or more: %w",
+				gitprovider.ErrTooManyFiles)}, refusal: "1000 files or more"},
 		{name: "refuses a path outside the allowance", review: approved,
 			provider: gateProvider{checks: "success", files: []string{"Makefile", "README.md"}}, refusal: "README.md"},
 		{name: "refuses without the reviewer's approval", provider: gateProvider{checks: "success", files: makefile},
@@ -369,6 +418,9 @@ func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 				status, &c4v1alpha1.Container{}, nil)
 			if p.merges != 0 {
 				t.Errorf("merged %d times, want none", p.merges)
+			}
+			if got := status.Checks; got == nil || got.Commit != "sha-1" || got.State != p.checks {
+				t.Errorf("status.checks = %+v, want CI's %q on sha-1 recorded", got, p.checks)
 			}
 			switch {
 			case tt.pending && !errors.Is(err, errChecksPending):

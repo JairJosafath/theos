@@ -461,6 +461,8 @@ func (g *fakeGit) setPullFiles(owner, name string, number int, files ...string) 
 }
 
 // forcedMerges lists the pull requests merged with ForceMergePullRequest.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) forcedMerges(owner, name string) []int {
 	g.mu.Lock()
 	defer g.mu.Unlock()

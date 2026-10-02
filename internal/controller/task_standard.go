@@ -161,12 +161,22 @@ func (r *TaskReconciler) standardChangeRecheck() time.Duration {
 // waits for its result.
 var errChecksPending = errors.New("CI runs again on the reviewed commit")
 
+// mergeWaitsForChecks reports whether the Task's gated merge waits for CI on the
+// reviewed commit: gatedMerge found it pending there. The wait lasts only as long
+// as the approving review run, whose result the merge step reads.
+func mergeWaitsForChecks(status *c4v1alpha1.TaskStatus) bool {
+	checks := status.Checks
+	return status.Phase == c4v1alpha1.TaskReviewing && checks != nil && checks.State == gitprovider.CheckPending &&
+		checks.Commit == status.Commit
+}
+
 // gatedMerge merges a Standard change's pull request past the protected-file
 // rule, as the Git host's admin, once CI passed on the reviewed commit, the
 // reviewer approved and every path it changes is allowed. Otherwise it says why
-// not and tries no merge. CI still running is errChecksPending, and a list of
-// changed paths it can't read in full is an error. The reviewer's approval is
-// posted with the merge only, so waiting for CI posts it once.
+// not and tries no merge. It records CI's state in status.checks. CI still
+// running is errChecksPending; a list of changed paths too long to read in full
+// is a refusal, and one it can't read for now an error. The reviewer's approval
+// is posted with the merge only, so waiting for CI posts it once.
 func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
 	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, container *c4v1alpha1.Container,
 	reviewer *c4v1alpha1.Agent) (refusal string, err error) {
@@ -176,11 +186,16 @@ func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Pr
 	if err != nil {
 		return "", err
 	}
+	// Recorded for mergeWaitsForChecks too: a wait is bounded by the review run.
+	status.Checks = &c4v1alpha1.CheckStatus{Commit: status.Commit, State: checks.State, URL: checks.URL}
 	if checks.State == gitprovider.CheckPending {
 		return "", errChecksPending
 	}
 	n := int(status.PullRequest)
 	changed, err := provider.PullRequestFiles(gitCtx, repo, n)
+	if errors.Is(err, gitprovider.ErrTooManyFiles) {
+		return "not every changed path can be checked: " + err.Error(), nil
+	}
 	if err != nil {
 		return "", err // never merge a path nobody checked
 	}

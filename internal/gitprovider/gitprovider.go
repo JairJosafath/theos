@@ -98,7 +98,7 @@ type Provider interface {
 	// overriding the branch protection's merge restrictions.
 	ForceMergePullRequest(ctx context.Context, repo Repository, number int, headSHA, title, message string) error
 	// PullRequestFiles returns every path a pull request changes, or an error
-	// when it can't read them all.
+	// when it can't read them all: ErrTooManyFiles when there are too many.
 	PullRequestFiles(ctx context.Context, repo Repository, number int) ([]string, error)
 	// ClosePullRequest closes a pull request without merging it.
 	ClosePullRequest(ctx context.Context, repo Repository, number int) error
@@ -173,6 +173,10 @@ func (c Client) httpClient() *http.Client {
 // ErrUnpinnedRef means a template ref is a branch or doesn't exist. Templates
 // must be pinned to a tag or a full commit SHA.
 var ErrUnpinnedRef = errors.New("template ref is not a tag or commit")
+
+// ErrTooManyFiles means a pull request changes more files than the provider
+// can list in full; no retry reads them all.
+var ErrTooManyFiles = errors.New("too many changed files to list in full")
 
 // SameHost reports whether two URLs point at the same host, so a Git provider's
 // credentials can be reused for a template on it.

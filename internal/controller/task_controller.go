@@ -183,6 +183,8 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		ContainerReady: container.Status.Phase == c4v1alpha1.ContainerReady,
 		Protected:      model.Protected(container.Spec.StandardRef != nil),
 		ReviewAttempts: int(status.ReviewAttempts),
+
+		MergeWaitsForChecks: mergeWaitsForChecks(status),
 	}
 	facts.StandardChanges, facts.Change = standardChangeFacts(status)
 	if status.PhaseChangedAt != nil {

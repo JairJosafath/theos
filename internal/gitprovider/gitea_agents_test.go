@@ -3,6 +3,7 @@ package gitprovider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -309,8 +310,8 @@ func TestPullRequestFilesFailsClosed(t *testing.T) {
 	g, p := newAgentGitea(t)
 	g.manyFiles = true
 	files, err := p.PullRequestFiles(context.Background(), p.Repository("photo-editor"), 7)
-	if err == nil || !strings.Contains(err.Error(), "1000 files or more") || files != nil {
-		t.Fatalf("PullRequestFiles() = %d files, %v; want an error, not a list cut short", len(files), err)
+	if !errors.Is(err, ErrTooManyFiles) || !strings.Contains(err.Error(), "1000 files or more") || files != nil {
+		t.Fatalf("PullRequestFiles() = %d files, %v; want ErrTooManyFiles, not a list cut short", len(files), err)
 	}
 	if len(g.fileQueries) != maxIssuePages {
 		t.Errorf("read %d pages, want %d", len(g.fileQueries), maxIssuePages)
