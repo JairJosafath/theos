@@ -159,9 +159,22 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		result.Error = err.Error()
 		return result
 	}
-	if head == start {
+	if head == start && !job.Resumed {
 		result.Error = "the agent made no changes"
 		return result
+	}
+	if job.Resumed {
+		// The Standard change may have done the whole issue: nothing is left
+		// beyond main, which a merge commit can hide from the head comparison.
+		same, err := r.sameTreeAsBase(ctx, job.Base)
+		if err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		if same {
+			result.Empty = true
+			return result
+		}
 	}
 	changed, err := r.changedPaths(ctx, job.Base)
 	if err != nil {

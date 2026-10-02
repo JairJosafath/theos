@@ -777,3 +777,34 @@ func TestRunImplementSeesARenamedProtectedFile(t *testing.T) {
 		}
 	})
 }
+
+func TestRunImplementResumed(t *testing.T) {
+	ctx := context.Background()
+	roundOne := func(t *testing.T, url string) {
+		first := Run(ctx, testJob(t, url, RoleImplement, 1), FakeAgent{Role: RoleImplement, Round: 1}, t.TempDir())
+		if first.Error != "" || first.Commit == "" {
+			t.Fatalf("round 1 = %+v", first)
+		}
+	}
+	t.Run("branch equals main", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		roundOne(t, url)
+		pushToMain(t, url, "STAND-IN.md", "Round 1 of the stand-in agent.\n")
+		job := testJob(t, url, RoleImplement, 1)
+		job.Resumed = true
+		got := Run(ctx, job, FakeAgent{NoChange: true}, t.TempDir())
+		if got.Error != "" || !got.Empty || got.Commit != "" {
+			t.Errorf("Run() = %+v, want Empty with no error and no commit", got)
+		}
+	})
+	t.Run("work left, nothing new", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		roundOne(t, url)
+		job := testJob(t, url, RoleImplement, 2)
+		job.Resumed = true
+		got := Run(ctx, job, FakeAgent{NoChange: true}, t.TempDir())
+		if got.Error != "" || got.Empty || got.Commit != branchHead(t, url, "task/add-crop") {
+			t.Errorf("Run() = %+v, want the branch head and no Empty", got)
+		}
+	})
+}

@@ -3,6 +3,7 @@ package agentrunner
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os/exec"
@@ -119,6 +120,22 @@ func (r *repo) changedPaths(ctx context.Context, base string) ([]string, error) 
 		return nil, err
 	}
 	return strings.Fields(out), nil
+}
+
+// sameTreeAsBase reports whether HEAD's files equal the base branch's, which
+// says the work branch adds nothing even when its commits differ.
+func (r *repo) sameTreeAsBase(ctx context.Context, base string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "diff", "--quiet", "origin/"+base, "HEAD")
+	cmd.Dir = r.dir
+	err := cmd.Run()
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &exit) && exit.ExitCode() == 1:
+		return false, nil
+	}
+	return false, fmt.Errorf("git diff origin/%s HEAD: %w", base, err)
 }
 
 // proposeBranch pushes a branch from origin/<base> that holds paths as the work
