@@ -1509,6 +1509,10 @@ func (in *TaskStatus) DeepCopyInto(out *TaskStatus) {
 		*out = new(TaskReview)
 		**out = **in
 	}
+	if in.AgentBackAt != nil {
+		in, out := &in.AgentBackAt, &out.AgentBackAt
+		*out = (*in).DeepCopy()
+	}
 	if in.SlotWaitSince != nil {
 		in, out := &in.SlotWaitSince, &out.SlotWaitSince
 		*out = (*in).DeepCopy()

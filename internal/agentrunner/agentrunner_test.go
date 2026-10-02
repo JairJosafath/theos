@@ -3,6 +3,7 @@ package agentrunner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -421,5 +423,52 @@ func TestClaudeAgentPassesTheModel(t *testing.T) {
 	out, err := ClaudeAgent{Command: []string{"echo", "-p"}, Model: "claude-sonnet-5-5"}.Run(context.Background(), t.TempDir(), "")
 	if err != nil || out != "-p --model claude-sonnet-5-5" {
 		t.Errorf("Run() = %q, %v", out, err)
+	}
+}
+
+func TestUnavailable(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name, output string
+		want         bool
+		retryAt      time.Time
+	}{
+		{"usage limit with its reset", "claude ended with an error: Claude AI usage limit reached|1790953200", true,
+			time.Unix(1790953200, 0).UTC()},
+		{"a limit in words", "claude ended with an error: You've hit your limit · resets 3pm (UTC)", true, time.Time{}},
+		{"overloaded", "claude ended with an error: API Error: 529 {\"type\":\"overloaded_error\"}", true, time.Time{}},
+		{"rate limited", "API Error: 429 {\"error\":{\"type\":\"rate_limit_error\"}}", true, time.Time{}},
+		{"bad credentials", "Invalid API key · Please run /login", true, time.Time{}},
+		{"an expired token", `{"type":"authentication_error","message":"OAuth token has expired"}`, true, time.Time{}},
+		{"the agent's own failure", "claude ended with error_max_turns: stopped after 200 turns", false, time.Time{}},
+		{"a test named after a limit", "FAIL TestRateLimiter (0.01s)", false, time.Time{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, retryAt := unavailable(tt.output, now)
+			if got != tt.want || !retryAt.Equal(tt.retryAt) {
+				t.Errorf("unavailable() = %v, %v; want %v, %v", got, retryAt, tt.want, tt.retryAt)
+			}
+		})
+	}
+}
+
+func TestRunReportsAnUnavailableAgent(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	agent := failingAgent{err: errors.New("claude ended with an error: Claude AI usage limit reached|4102444800")}
+	got := Run(context.Background(), testJob(t, url, RoleImplement, 1), agent, t.TempDir())
+	if !got.Unavailable || got.RetryAt == nil || got.RetryAt.Unix() != 4102444800 {
+		t.Errorf("Run() = %+v, want an unavailable agent back at its reset", got)
+	}
+}
+
+type failingAgent struct{ err error }
+
+func (a failingAgent) Run(context.Context, string, string) (string, error) { return "", a.err }
+
+func TestUnavailableResetInThePast(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	if down, back := unavailable("usage limit reached|1759417200", now); !down || !back.IsZero() {
+		t.Errorf("unavailable() = %v, %v; want unavailable, back now", down, back)
 	}
 }

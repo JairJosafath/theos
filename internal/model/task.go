@@ -45,6 +45,11 @@ type RunResult struct {
 	Error   string
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []FollowUp
+	// Unavailable means the agent's service couldn't work: a usage limit, an
+	// overload or bad credentials. It is not the agent's fault and costs no round.
+	Unavailable bool
+	// RetryAt is when the service said it is back; zero when it didn't say.
+	RetryAt time.Time
 }
 
 // FollowUp is work a reviewer suggests for later, outside the change it reviewed:
@@ -94,7 +99,14 @@ type TaskFacts struct {
 	InPhase time.Duration
 	// NoFreeSlot means the operator already runs as many agent sandboxes as it may.
 	NoFreeSlot bool
+	// AgentBackIn is how long until an unavailable agent is tried again; zero or
+	// less means now.
+	AgentBackIn time.Duration
 }
+
+// AgentRetryDelay is how long a Task waits for an unavailable agent that didn't
+// say when it is back.
+const AgentRetryDelay = 15 * time.Minute
 
 // ChecksTimeout is how long a Task waits for CI to report before it fails. CI that
 // never reports is a broken runner, not the agent's fault, so it costs no round.
@@ -113,7 +125,9 @@ const (
 	ActionRetryReview    TaskAction = "RetryReview"
 	ActionMerge          TaskAction = "Merge"
 	ActionRetry          TaskAction = "Retry"
-	ActionFail           TaskAction = "Fail"
+	// ActionAgentUnavailable ends the run and tries the same step again later.
+	ActionAgentUnavailable TaskAction = "AgentUnavailable"
+	ActionFail             TaskAction = "Fail"
 )
 
 // TaskStep is the next action, with the feedback for the next round when the
@@ -125,12 +139,19 @@ type TaskStep struct {
 	// SlotWait means the Task would start a sandbox but waits for a free slot;
 	// only such Tasks queue for one (see HasSlotTurn).
 	SlotWait bool
+	// RetryAt is when to try an unavailable agent again; zero means the default delay.
+	RetryAt time.Time
 }
 
 // NextTaskStep decides what happens next to a Task. Starting a sandbox waits
 // for a free agent slot.
 func NextTaskStep(f TaskFacts) TaskStep {
 	step := nextTaskStep(f)
+	starts := step.Action == ActionStartImplement || step.Action == ActionStartReview
+	if starts && f.AgentBackIn > 0 {
+		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("The agent is unavailable; trying again in %s",
+			f.AgentBackIn.Round(time.Second))}
+	}
 	if f.NoFreeSlot && (step.Action == ActionStartImplement || step.Action == ActionStartReview) {
 		return TaskStep{Action: ActionWait, Message: "Waiting for a free agent slot", SlotWait: true}
 	}
@@ -160,6 +181,8 @@ func nextTaskStep(f TaskFacts) TaskStep {
 			return TaskStep{Action: ActionWait, Message: fmt.Sprintf("The agent is working on round %d", f.Round)}
 		case f.Run.Result == nil:
 			return roundFailed(f, "The agent's sandbox ended without a result: "+orUnknown(f.Run.Failure))
+		case f.Run.Result.Unavailable:
+			return agentUnavailable(f)
 		case f.Run.Result.Error != "":
 			return roundFailed(f, f.Run.Result.Error)
 		}
@@ -190,6 +213,8 @@ func nextTaskStep(f TaskFacts) TaskStep {
 			return TaskStep{Action: ActionStartReview, Message: "Starting the review"}
 		case !f.Run.Done:
 			return TaskStep{Action: ActionWait, Message: "The reviewer is reviewing"}
+		case f.Run.Result != nil && f.Run.Result.Unavailable:
+			return agentUnavailable(f)
 		}
 		if f.Run.Result == nil || f.Run.Result.Error != "" || f.Run.Result.Verdict == "" {
 			reason := f.Run.Failure
@@ -208,6 +233,12 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		return roundFailed(f, "The reviewer asked for changes:\n"+f.Run.Result.Summary)
 	}
 	return TaskStep{Action: ActionNone}
+}
+
+// agentUnavailable keeps the round and waits for the agent's service to be back.
+func agentUnavailable(f TaskFacts) TaskStep {
+	return TaskStep{Action: ActionAgentUnavailable, RetryAt: f.Run.Result.RetryAt, Message: fmt.Sprintf(
+		"The agent is unavailable (%s); round %d waits for it", gist(f.Run.Result.Error), f.Round)}
 }
 
 // roundFailed sends the Task into its next round with feedback, or fails it after

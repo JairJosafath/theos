@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -29,6 +30,10 @@ type Result struct {
 	Error string `json:"error,omitempty"`
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []model.FollowUp `json:"followUps,omitempty"`
+	// Unavailable means the agent's service couldn't work (a limit, an overload,
+	// bad credentials); RetryAt is when it said it is back.
+	Unavailable bool       `json:"unavailable,omitempty"`
+	RetryAt     *time.Time `json:"retryAt,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
@@ -109,8 +114,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	summary, err := agent.Run(ctx, r.dir, ImplementPrompt(job, ws))
 	result.Summary = summary
 	if err != nil {
-		result.Error = err.Error()
-		return result
+		return agentFailed(result, err)
 	}
 
 	checkOutput, checkErr := runCheck(ctx, job, r.dir)
@@ -118,8 +122,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		prompt := fmt.Sprintf("%q fails. Fix every failure, then run it again until it passes. Output:\n%s",
 			strings.Join(job.CheckCommand, " "), tail(checkOutput, 6000))
 		if _, err := agent.Run(ctx, r.dir, prompt); err != nil {
-			result.Error = err.Error()
-			return result
+			return agentFailed(result, err)
 		}
 		checkOutput, checkErr = runCheck(ctx, job, r.dir)
 	}
@@ -170,8 +173,7 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, re
 	result.Commit = head
 	output, err := agent.Run(ctx, r.dir, ReviewPrompt(job, ws))
 	if err != nil {
-		result.Error = err.Error()
-		return result
+		return agentFailed(result, err)
 	}
 	verdict, err := ParseVerdict(output)
 	if err != nil {
@@ -179,6 +181,19 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, re
 		return result
 	}
 	result.Verdict, result.Summary, result.FollowUps = verdict.Verdict, verdict.Summary, verdict.FollowUps
+	return result
+}
+
+// agentFailed reports an agent run that failed, telling an unavailable service
+// (which costs no round) from the agent's own failure.
+func agentFailed(result Result, err error) Result {
+	result.Error = err.Error()
+	if down, back := unavailable(result.Error, time.Now()); down {
+		result.Unavailable = true
+		if !back.IsZero() {
+			result.RetryAt = &back
+		}
+	}
 	return result
 }
 

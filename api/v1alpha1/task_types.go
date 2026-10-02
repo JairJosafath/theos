@@ -177,6 +177,11 @@ type TaskStatus struct {
 	// +optional
 	Sandbox string `json:"sandbox,omitempty"`
 
+	// agentBackAt is when to try an unavailable agent again: its service hit a
+	// usage limit, was overloaded or refused the credentials. Waiting costs no round.
+	// +optional
+	AgentBackAt *metav1.Time `json:"agentBackAt,omitempty"`
+
 	// slotWaitSince is when the Task started waiting for a free agent slot; the
 	// longest waiter gets the next one.
 	// +optional

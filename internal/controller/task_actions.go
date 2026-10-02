@@ -57,9 +57,15 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		if step.SlotWait {
 			reason = "WaitingForSlot"
 		}
+		if status.AgentBackAt != nil && status.AgentBackAt.After(r.now()) && !step.SlotWait {
+			reason = "AgentUnavailable"
+		}
 		r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
 		if status.Phase == c4v1alpha1.TaskChecking {
 			return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+		}
+		if reason == "AgentUnavailable" {
+			return ctrl.Result{RequeueAfter: status.AgentBackAt.Sub(r.now())}, nil
 		}
 		return ctrl.Result{}, nil
 
@@ -104,6 +110,20 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 
 	case model.ActionMerge:
 		return r.merge(ctx, task, status, container, agents, step)
+
+	case model.ActionAgentUnavailable:
+		if err := r.endRun(ctx, task, status); err != nil {
+			return ctrl.Result{}, err
+		}
+		back := step.RetryAt
+		if now := r.now(); !back.After(now) {
+			back = now.Add(model.AgentRetryDelay)
+		}
+		status.AgentBackAt = &metav1.Time{Time: back}
+		r.progress(task, status, metav1.ConditionTrue, "AgentUnavailable",
+			fmt.Sprintf("%s; trying again at %s", step.Message, back.UTC().Format(time.RFC3339)))
+		log.Info("Agent unavailable; Task waits", "until", back, "message", step.Message)
+		return ctrl.Result{RequeueAfter: back.Sub(r.now())}, nil
 
 	case model.ActionRetry:
 		review := r.reviewFrom(ctx, task, status)
@@ -223,7 +243,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	if err := r.Create(ctx, sandbox); err != nil && !apierrors.IsAlreadyExists(err) {
 		return ctrl.Result{}, err
 	}
-	status.Sandbox = name
+	status.Sandbox, status.AgentBackAt = name, nil
 	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", message, name))
 	logf.FromContext(ctx).Info("Started agent sandbox", "sandbox", name, "role", role, "round", status.Round)
 	return ctrl.Result{}, nil

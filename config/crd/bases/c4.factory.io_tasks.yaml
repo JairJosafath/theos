@@ -151,6 +151,12 @@ spec:
           status:
             description: status defines the observed state of Task
             properties:
+              agentBackAt:
+                description: |-
+                  agentBackAt is when to try an unavailable agent again: its service hit a
+                  usage limit, was overloaded or refused the credentials. Waiting costs no round.
+                format: date-time
+                type: string
               branch:
                 description: branch is where the agent works.
                 type: string

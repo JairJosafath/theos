@@ -184,6 +184,9 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	if status.PhaseChangedAt != nil {
 		facts.InPhase = r.now().Sub(status.PhaseChangedAt.Time)
 	}
+	if status.AgentBackAt != nil {
+		facts.AgentBackIn = status.AgentBackAt.Sub(r.now())
+	}
 	if r.MaxSandboxes > 0 {
 		sandboxes := &unstructured.UnstructuredList{}
 		sandboxes.SetGroupVersionKind(SandboxGVK.GroupVersion().WithKind("SandboxList"))

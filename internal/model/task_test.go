@@ -225,3 +225,40 @@ func TestCheckFailures(t *testing.T) {
 		t.Errorf("CheckFailures() of a long log = %d bytes", len(long))
 	}
 }
+
+func TestNextTaskStepAgentUnavailable(t *testing.T) {
+	back := time.Date(2026, 10, 2, 15, 0, 0, 0, time.UTC)
+	unavailable := RunState{Started: true, Done: true, Result: &RunResult{Unavailable: true, RetryAt: back,
+		Error: "usage limit reached"}}
+	tests := []struct {
+		name    string
+		facts   TaskFacts
+		want    TaskAction
+		message string
+	}{
+		{"an implementer without its model keeps the round", TaskFacts{Phase: TaskImplementing, Round: 3, MaxRounds: 3,
+			Run: unavailable}, ActionAgentUnavailable, "The agent is unavailable (usage limit reached); round 3 waits for it"},
+		{"so does a reviewer", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: unavailable},
+			ActionAgentUnavailable, "round 1 waits"},
+		{"waits before starting again", TaskFacts{Phase: TaskImplementing, Round: 2, MaxRounds: 3,
+			AgentBackIn: 10 * time.Minute}, ActionWait, "The agent is unavailable; trying again in 10m0s"},
+		{"starts again when the time has come", TaskFacts{Phase: TaskReviewing, Round: 2, MaxRounds: 3},
+			ActionStartReview, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextTaskStep(tt.facts)
+			if got.Action != tt.want || !strings.Contains(got.Message, tt.message) {
+				t.Errorf("NextTaskStep() = %+v, want %s with %q", got, tt.want, tt.message)
+			}
+			if got.Action == ActionAgentUnavailable && !got.RetryAt.Equal(back) {
+				t.Errorf("RetryAt = %v, want %v", got.RetryAt, back)
+			}
+		})
+	}
+	// An unavailable agent doesn't queue for a slot it can't use.
+	if got := NextTaskStep(TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, AgentBackIn: time.Minute,
+		NoFreeSlot: true}); got.SlotWait {
+		t.Errorf("NextTaskStep() = %+v, want no slot wait", got)
+	}
+}

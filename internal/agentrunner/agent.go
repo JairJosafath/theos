@@ -8,8 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Agent does the work in a checked-out repository and answers in text.
@@ -115,4 +118,26 @@ func orDefault(s, def string) string {
 		return def
 	}
 	return s
+}
+
+// unavailableSigns are what Claude Code and the API say when the service, not the
+// agent, can't go on: usage and rate limits, overload, and bad credentials.
+var unavailableSigns = regexp.MustCompile(`(?i)usage limit|limit reached|hit your limit|rate_limit_error|` +
+	`api error: 429|api error: 529|overloaded_error|authentication_error|invalid api key|/login|oauth token has expired`)
+
+// resetEpoch is the reset time Claude Code puts after a usage limit: "...|1759417200".
+var resetEpoch = regexp.MustCompile(`limit reached\|(\d{10})`)
+
+// unavailable reports whether output says the agent's service is unavailable,
+// and when it is back, if it said; a reset in the past means now.
+func unavailable(output string, now time.Time) (bool, time.Time) {
+	if !unavailableSigns.MatchString(output) {
+		return false, time.Time{}
+	}
+	if m := resetEpoch.FindStringSubmatch(output); m != nil {
+		if epoch, err := strconv.ParseInt(m[1], 10, 64); err == nil && time.Unix(epoch, 0).After(now) {
+			return true, time.Unix(epoch, 0).UTC()
+		}
+	}
+	return true, time.Time{}
 }

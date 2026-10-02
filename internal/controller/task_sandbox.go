@@ -225,6 +225,10 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 	if err != nil {
 		return state, err
 	}
+	if pod.CreationTimestamp.Before(new(sandbox.GetCreationTimestamp())) {
+		// A pod of an earlier sandbox with this name, not yet collected: not this run's.
+		return state, nil
+	}
 	if pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
 		return state, nil
 	}
@@ -239,7 +243,10 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 		if term.Message != "" && json.Unmarshal([]byte(term.Message), &result) == nil {
 			state.Result = &model.RunResult{
 				Commit: result.Commit, Summary: result.Summary, Verdict: result.Verdict, Error: result.Error,
-				FollowUps: result.FollowUps,
+				FollowUps: result.FollowUps, Unavailable: result.Unavailable,
+			}
+			if result.RetryAt != nil {
+				state.Result.RetryAt = *result.RetryAt
 			}
 			return state, nil
 		}

@@ -19,6 +19,7 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -321,5 +322,33 @@ var _ = Describe("Task", func() {
 		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "claude-credentials"),
 			StringData: map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "x"}})
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }, "30s").Should(Succeed())
+	})
+})
+
+var _ = Describe("Task with an unavailable agent", func() {
+	It("keeps its round and tries the same step again later", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 1), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		back := time.Now().Add(3 * time.Second).UTC()
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement",
+			Error: "claude ended with an error: usage limit reached", Unavailable: true, RetryAt: &back}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Round).To(Equal(int32(1)), "a usage limit costs no round")
+			g.Expect(task.Status.AgentBackAt).NotTo(BeNil())
+			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).To(HaveField("Reason", "AgentUnavailable"))
+		}).Should(Succeed())
+		// Agent Sandbox would collect the old pod with its sandbox.
+		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "add-crop-r1-implement")})).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, "add-crop-r1-implement")
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.AgentBackAt).To(BeNil())
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+		}, "20s").Should(Succeed())
 	})
 })
