@@ -108,5 +108,10 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 - **Hand off before the context gets big**, or when work stops mid-way: the
   `handoff` skill writes the in-flight state to `docs/handoffs/`, and the next
   session starts by reading it. A handoff is deleted when its work lands.
+- **Hand off between tasks, never inside one.** Finish the task in flight (its
+  implementation and review) first; after a task, past about 100k tokens, hand
+  off instead of starting the next.
+- **Overnight, `hack/relay.sh`** runs headless sessions one after another from
+  the newest handoff; its log is `.relay/relay.log`.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?
