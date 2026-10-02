@@ -32,6 +32,9 @@ function fakeApi() {
     'sessions',
     'frameworks',
     'connectors',
+    'crews',
+    'agents',
+    'tasks',
   ]
   for (const k of kinds) {
     store.set(k, new Map())

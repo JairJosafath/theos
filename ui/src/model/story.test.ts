@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { demoCelLens } from '../demo/celLensFixture'
 import { demoStory } from '../demo/fixture'
 import { emptyStory, type StoryData } from '../k8s/sources'
 import type { Relationship } from '../k8s/types'
@@ -331,5 +332,17 @@ describe('linksOf for a system', () => {
       'out payment-provider via Orders API',
       'in shop-manager',
     ])
+  })
+})
+
+describe('the CEL Lens demo', () => {
+  it('draws a command-line tool and an editor extension, each with its Crew', () => {
+    const d = buildContainerDiagram(demoCelLens(NOW), 'cel-lens')!
+    const containers = d.nodes.filter((n): n is ContainerNode => n.role === 'container')
+    expect(containers.map((c) => [c.name, c.typeLabel, c.crew?.active?.issue, c.crew?.paused])).toEqual([
+      ['cel-language-server', 'command-line tool', 4, false],
+      ['vscode-extension', 'editor extension', 2, true],
+    ])
+    expect(d.edges.map((e) => e.id)).toContain('Container/vscode-extension->Container/cel-language-server')
   })
 })

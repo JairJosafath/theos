@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { demoFactory, demoHealth } from '../demo/factoryFixture'
 import type { FactoryHealth } from '../k8s/health'
 import type { Agent, Container, Crew, Session, Task, TaskTransition } from '../k8s/types'
 import {
@@ -631,5 +632,43 @@ describe('recentStall', () => {
       now: T0,
     })
     expect(items.map((i) => i.title)).toEqual(['The API server stalled for 8 s 3 min ago'])
+  })
+})
+
+describe('the demo', () => {
+  const data = demoFactory(T0)
+  const crews = crewSummaries(data.crews, data.agents, data.tasks)
+
+  it('has Crews working, paused and not Ready, with Sonnet and Opus', () => {
+    expect(crews.map((c) => [c.key, c.phase, c.paused, Boolean(c.notReady)])).toEqual([
+      ['cel-lens/cel-language-server', 'Working', false, false],
+      ['cel-lens/vscode-extension', 'Working', true, false],
+      ['webshop/catalog-api', 'Waiting', false, true],
+      ['webshop/orders-api', 'Paused', true, false],
+    ])
+    expect(crews[0]).toMatchObject({
+      implementer: { model: 'claude-sonnet-5-5' },
+      reviewer: { model: 'claude-opus-5-5' },
+      active: { issue: 4, found: true },
+    })
+  })
+
+  it('has issue Tasks in several phases, with follow-ups and an agent wait', () => {
+    const issueTasks = data.tasks.filter((t) => t.spec.issue)
+    expect(new Set(issueTasks.map((t) => t.status?.phase))).toEqual(
+      new Set(['Merged', 'Failed', 'Implementing', 'Checking']),
+    )
+    expect(issueTasks.some((t) => followUpLinks(t).length)).toBe(true)
+    expect(issueTasks.filter((t) => agentBackAt(t) !== undefined).map((t) => t.metadata.name)).toEqual([
+      'cel-language-server-4',
+    ])
+  })
+
+  it('needs a look at the agent wait and the Crew that is not Ready', () => {
+    const titles = attention({ ...data, health: demoHealth(T0), now: T0 }).map((i) => i.title)
+    expect(titles).toContainEqual(
+      expect.stringMatching(/^Task cel-lens\/cel-language-server-4 is waiting for the agent until /),
+    )
+    expect(titles).toContain('Crew webshop/catalog-api can’t pick up issues')
   })
 })

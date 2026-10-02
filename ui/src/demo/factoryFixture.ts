@@ -1,10 +1,12 @@
-// The factory view's demo: Tasks in every stage across two projects, one that
+// The factory view's demo: Tasks in every stage across three projects, one that
 // ran before timelines, a component that just restarted, and an agent slot in
-// use with another Task waiting for it. Times are relative to `now`.
+// use with another Task waiting for it; CEL Lens adds issue Tasks and Crews in
+// every state. Times are relative to `now`.
 
 import type { FactoryHealth, PodHealth } from '../k8s/health'
 import type { FactoryData } from '../k8s/sources'
 import type { Agent, Project, Task, TaskPhase, TaskTransition } from '../k8s/types'
+import { demoCelLens } from './celLensFixture'
 import { demoStory } from './fixture'
 
 const MIN = 60_000
@@ -44,6 +46,7 @@ export function demoFactory(now: number): FactoryData {
   })
 
   const story = demoStory(now)
+  const celLens = demoCelLens(now)
   const toolbox: Project = {
     metadata: { name: 'toolbox', namespace: 'toolbox', creationTimestamp: at(600) },
     spec: { displayName: 'Pocket Tools', description: 'Offline tool apps, built by agents' },
@@ -56,12 +59,15 @@ export function demoFactory(now: number): FactoryData {
     },
     {
       metadata: { name: 'stand-in', namespace: 'toolbox' },
-      spec: { displayName: 'Stand-in agent', image: 'c4factory/agent-flutter:dev', maxRounds: 2 },
+      spec: {
+        displayName: 'Stand-in agent',
+        image: 'c4factory/agent-flutter:dev',
+        harness: 'stand-in',
+        maxRounds: 2,
+      },
     },
-    {
-      metadata: { name: 'claude', namespace: 'webshop' },
-      spec: { displayName: 'Claude Code (Python)', image: 'c4factory/agent-python:dev', maxRounds: 3 },
-    },
+    ...story.agents,
+    ...celLens.agents,
   ]
 
   const tasks: Task[] = [
@@ -190,12 +196,12 @@ export function demoFactory(now: number): FactoryData {
   ]
 
   return {
-    projects: [story.project!, toolbox],
-    tasks,
+    projects: [story.project!, toolbox, celLens.project!],
+    tasks: [...tasks, ...celLens.tasks],
     agents,
-    containers: story.containers,
-    sessions: story.sessions,
-    crews: [],
+    containers: [...story.containers, ...celLens.containers],
+    sessions: [...story.sessions, ...celLens.sessions],
+    crews: [...story.crews, ...celLens.crews],
   }
 }
 

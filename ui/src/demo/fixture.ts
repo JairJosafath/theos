@@ -1,13 +1,17 @@
 // The webshop story with every state the UI can show: containers in all four
-// phases, a failed type check, agent and human Sessions (one Stale), and a
-// Relationship added after scaffolding. Used by demo mode (?demo=1), so the whole
-// UI can be seen and screenshotted without writing to a cluster.
+// phases, a failed type check, agent and human Sessions (one Stale), a
+// Relationship added after scaffolding, a paused Crew and one that waits for its
+// Container. Used by demo mode (?demo=1), so the whole UI can be seen and
+// screenshotted without writing to a cluster. CEL Lens (celLensFixture.ts) is
+// the second demo project.
 
 import type { StoryData } from '../k8s/sources'
 import type {
+  Agent,
   CatalogEntry,
   Condition,
   Container,
+  Crew,
   DataStore,
   Person,
   Project,
@@ -369,6 +373,44 @@ export function demoStory(now: number): StoryData {
     session('orders-api-p9w4t', 'orders-api', 'agent', 'Writing the API reference', 'Stale', 6 * 60 + 5),
   ]
 
+  const agents: Agent[] = [
+    {
+      apiVersion: API_VERSION,
+      kind: 'Agent',
+      metadata: meta('claude', created),
+      // No model: Claude Code's default.
+      spec: { displayName: 'Claude Code (Python)', image: 'c4factory/agent-python:dev', maxRounds: 3 },
+    },
+  ]
+
+  const crew = (name: string, displayName: string, paused: boolean, status: Crew['status']): Crew => ({
+    apiVersion: API_VERSION,
+    kind: 'Crew',
+    metadata: meta(name, created),
+    spec: {
+      containerRef: { name },
+      displayName,
+      implementer: { name: 'claude' },
+      reviewer: { name: 'claude' },
+      ...(paused ? { paused } : {}),
+    },
+    status,
+  })
+  const crews: Crew[] = [
+    crew('orders-api', 'Orders API crew', true, {
+      phase: 'Paused',
+      ready: [12, 14],
+      lastPolled: ago(40),
+      conditions: [cond('Ready', 'True', 'Paused', 'Paused; not picking up issues', ago(3600))],
+    }),
+    crew('catalog-api', 'Catalog API crew', false, {
+      phase: 'Waiting',
+      conditions: [
+        cond('Ready', 'False', 'ContainerNotReady', 'Waiting for Container catalog-api to be Ready', ago(600)),
+      ],
+    }),
+  ]
+
   const frameworks = [catalog('Framework', 'python-fastapi', 'Python, FastAPI (uv)', ['service'], 'v1.2.1', created)]
   const connectors = [
     catalog('Connector', 'postgres', 'PostgreSQL', ['service', 'worker', 'job'], 'v1.1.0', created),
@@ -386,8 +428,8 @@ export function demoStory(now: number): StoryData {
     sessions,
     frameworks,
     connectors,
-    crews: [],
-    agents: [],
+    crews,
+    agents,
     tasks: [],
   }
 }

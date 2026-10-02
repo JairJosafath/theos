@@ -80,7 +80,7 @@ export default function App() {
   // Only the view on screen watches the cluster.
   const storySource = useMemo<Source<StoryData>>(() => {
     if (!namespace || factoryView) return NO_STORY
-    return demo ? new DemoStorySource() : new LiveStorySource(namespace, API)
+    return demo ? new DemoStorySource(namespace) : new LiveStorySource(namespace, API)
   }, [namespace, demo, factoryView])
   const factorySource = useMemo<Source<FactoryData>>(() => {
     if (!factoryView) return NO_FACTORY
