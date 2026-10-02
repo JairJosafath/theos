@@ -47,6 +47,7 @@ issue closed with a comment.
 | A Task could read the pod of an earlier sandbox with the same name as its new run's result | A conflict round reuses its round's sandbox names. The envtest spec for it timed out in the full suite: within one second the Task reread the old implement result and merged off the old review | The operator told pods apart by creation time, which counts whole seconds. It now reads only the pod its sandbox controls, as Agent Sandbox sets the owner |
 | **With four sandboxes the API stalled for up to 10 s again**, and the scheduler and controller-manager crash-looped (104 restarts), so two sandbox pods sat `Pending` for 5 minutes | The Factory view: "The API server did not answer for 11 s". CPU stayed under 4.2 of 12 cores and memory under 6.7 GiB, but etcd logged 83 disk syncs over 1 s in 25 minutes, up to 7 s; they lost their 15 s leases | `hack/kind.yaml`: etcd runs with `--unsafe-no-fsync`, and both hold 60 s leases with a 40 s renew deadline; applied to the running cluster by editing its static pod manifests. Since then: no slow syncs, requests under 2 s with Tasks only, and no restarts. A test cluster can lose its newest writes in a hard crash; Gitea's repositories are on their own volume |
 | The Story view's "Working now" said 0 while three Crew Tasks were at work | The tile beside the panel that listed them ([evidence](screenshots/v4-parallel-story.png), after the fix) | It counts active Sessions and the Tasks the project's Crews are on |
+| The agent never saw why Go CI failed: the CI log excerpt in its feedback knew only Flutter's output | cel-language-server #8's round 1 failed on a timing test, but the feedback held only `make: *** [Makefile:41: test] Error 1`; the implementer guessed and fixed a different test | The excerpt also picks Go test failures with their log lines, panics, data races, compiler, vet and linter findings, and Vitest, tsc, ESLint and pytest failures. On the real log it gives the test, its message, the package and the make line |
 
 ## The CEL Lens run
 
@@ -106,3 +107,21 @@ available, and a watch for less than 1.5 GB never fired. The disk was the limit,
 not CPU or memory: see the stalls in the findings above. The Story view showed the work as
 it happened ([evidence](screenshots/v4-parallel-story.png),
 [Factory view](screenshots/v4-parallel-factory.png)).
+
+**Third part, M2: a misleading CI failure.** Issue #8 (completion) took three
+rounds, 13:46 to 14:40. Round 1 failed CI on `TestLargeFileLatency`, a test from
+#7 that times one change against 500 ms: 520 ms on CI, passing locally. The
+implementer's feedback held only the `make` error line (see the finding above),
+so it guessed. It made a different timing test take the fastest of five, and
+said so plainly: "I'm assuming the cause is a timing test, which I haven't
+confirmed." This time CI passed by luck. The reviewer did not let it through:
+it named the test and its 520 ms line, measured it at 256 to 358 ms under
+`-race` on 2 CPUs depending on what ran alongside, and asked for a fix. Round 3
+took 5 minutes and merged.
+
+The root cause is the backlog, not the agents: #7 and #8 ask for wall-clock
+bounds "on CI", on a runner that shares the node with four sandboxes. A person
+promoted the reviewer's follow-up #24 and widened it to all three single-sample
+timing tests, blocked by #8. The Crew started it next to #9 (hover) as soon as
+#8 merged. Until then, three of the four slots had been idle: the server's M2
+issues form a chain, and the extension Crew had nothing ready.
