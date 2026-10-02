@@ -36,10 +36,6 @@ Branch `feat/issue-driven-factory`, draft PR #9, pushed through `0a734f1`.
     refuses `GatedMergeRefused`; no reviewer run is spent on a CI wait.
   - e2e: dropped (memory `skip-e2e`); `make check` + the live Kind check remain.
 - Carry into dispatches (deferred findings):
-  - Task 9: neutralise `<!-- c4factory:standard-change … -->` in the agent's
-    Reason before the operator relies on the marker to find its issue
-    (standard.go:176). F5: the reuse search skips `status.standardChange.issue`.
-    F8: convert `StandardChangeLabel()` to `gitprovider.Label` in task_standard.go.
   - Task 12's deferred minors (ledger, "Task 12: minor (deferred)") go to the
     final review: notes before the status write, failing from Blocked clears
     `status.feedback`, a closed waiting issue unnoticed while Blocked,
