@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -28,6 +29,11 @@ type Result struct {
 	Verdict string `json:"verdict,omitempty"`
 	// Error says why the run failed. Feedback for the next round when set.
 	Error string `json:"error,omitempty"`
+	// Proposal is the Standard change the agent asks for: its branch, paths and
+	// reason. The patch itself stays in Git.
+	Proposal *model.Proposal `json:"proposal,omitempty"`
+	// Empty is set when the round leaves nothing for the Task branch.
+	Empty bool `json:"empty,omitempty"`
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []model.FollowUp `json:"followUps,omitempty"`
 	// Unavailable means the agent's service couldn't work (a limit, an overload,
@@ -46,19 +52,25 @@ const (
 )
 
 // Encode returns the Result as JSON of at most MaxResultBytes, shortening the
-// follow-ups, summary and error when needed.
+// follow-ups, the proposal's reason, the summary and the error when needed.
 func (r Result) Encode() []byte {
 	r.FollowUps = slices.Clone(r.FollowUps)
 	for i := range r.FollowUps {
 		r.FollowUps[i].Title = shorten(r.FollowUps[i].Title, maxFollowUpTitle)
 		r.FollowUps[i].Body = shorten(r.FollowUps[i].Body, maxFollowUpBody)
 	}
-	for {
+	if r.Proposal != nil {
+		p := *r.Proposal
+		r.Proposal = &p
+	}
+	for stage := 0; ; {
 		data, _ := json.Marshal(r)
 		if len(data) <= MaxResultBytes {
 			return data
 		}
 		switch {
+		case r.Proposal != nil && len(r.Proposal.Reason) > 200:
+			r.Proposal.Reason = shorten(r.Proposal.Reason, len(r.Proposal.Reason)-(len(data)-MaxResultBytes)-16)
 		case len(r.Summary) > 200:
 			r.Summary = shorten(r.Summary, len(r.Summary)-(len(data)-MaxResultBytes)-16)
 		case len(r.Error) > 200:
@@ -66,8 +78,22 @@ func (r Result) Encode() []byte {
 		case len(r.FollowUps) > 0:
 			// Escaping can make even short follow-ups too long; the verdict matters more.
 			r.FollowUps = r.FollowUps[:len(r.FollowUps)-1]
-		default:
+		case stage == 0:
+			stage++
 			r.Summary, r.Error = shorten(r.Summary, 100), shorten(r.Error, 100)
+			if r.Proposal != nil {
+				r.Proposal.Reason = shorten(r.Proposal.Reason, 100)
+			}
+		case stage == 1:
+			stage++
+			r.Summary, r.Error = "", ""
+			if r.Proposal != nil {
+				r.Proposal.Reason = ""
+			}
+		default:
+			// Only the branch and paths are left; the caller refuses a proposal
+			// whose paths don't fit, so this cannot happen from implement.
+			return data
 		}
 	}
 }
@@ -142,10 +168,34 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		result.Error = err.Error()
 		return result
 	}
-	if touched := model.TouchedPaths(changed, model.AgentProtectedPaths(job.ProtectedPaths)); len(touched) > 0 {
-		result.Error = fmt.Sprintf("the change touches %s, which the platform and the Standard protect; leave them as they are",
-			strings.Join(touched, ", "))
+	split := model.SplitChange(changed, model.AgentProtectedPaths(job.ProtectedPaths), job.AllowedPaths, job.Issue > 0)
+	if err := checkSplit(job, split); err != nil {
+		result.Error = err.Error()
 		return result
+	}
+	if len(split.Proposal) > 0 {
+		reason := shorten(model.ProposalReason(summary), maxProposalReason)
+		proposal := model.Proposal{Branch: model.ProposalBranch(job.Task), Paths: split.Proposal}
+		if err := proposalFits(result, head, proposal); err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		proposal.Reason = reason
+		if checkErr == nil {
+			if err := r.proposeBranch(ctx, job.Base, proposal.Branch, proposal.Paths, message); err != nil {
+				result.Error = err.Error()
+				return result
+			}
+			result.Proposal = &proposal
+		}
+		if err := r.restorePaths(ctx, job.Base, proposal.Paths, "Leave "+strings.Join(proposal.Paths, ", ")+" to the Standard change\n\nTask "+job.Task+", round "+strconv.Itoa(job.Round)+"."); err != nil {
+			result.Proposal, result.Error = nil, err.Error()
+			return result
+		}
+		if head, err = r.head(ctx); err != nil {
+			result.Proposal, result.Error = nil, err.Error()
+			return result
+		}
 	}
 	// Push even when the check fails, so the next round continues from here.
 	if err := r.push(ctx, job.Branch); err != nil {
@@ -156,8 +206,50 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	if checkErr != nil {
 		result.Error = fmt.Sprintf("%q still fails after %d attempts to fix it:\n%s",
 			strings.Join(job.CheckCommand, " "), checkFixAttempts, tail(checkOutput, 2500))
+		if len(split.Proposal) > 0 {
+			result.Error += fmt.Sprintf("\nYour change to %s was not kept: a Standard change is filed only when the check passes with it. Make it again.",
+				strings.Join(split.Proposal, ", "))
+		}
 	}
 	return result
+}
+
+// maxProposalReason keeps a proposal's reason short enough for the result.
+const maxProposalReason = 1000
+
+// maxProposalPathBytes is the longest path a proposal may carry.
+const maxProposalPathBytes = 256
+
+// checkSplit fails a round whose change has paths nobody may change, or a
+// proposal too large to travel in the result.
+func checkSplit(job Job, split model.ChangeSplit) error {
+	if len(split.Refused) > 0 {
+		if len(job.AllowedPaths) > 0 {
+			return fmt.Errorf("the change touches %s; this Task may change only %s",
+				strings.Join(split.Refused, ", "), strings.Join(job.AllowedPaths, ", "))
+		}
+		return fmt.Errorf("the change touches %s, which the platform and the Standard protect; leave them as they are",
+			strings.Join(split.Refused, ", "))
+	}
+	if n := len(split.Proposal); n > model.MaxProposalPaths {
+		return fmt.Errorf("the Standard change touches %d protected files; at most %d go in one", n, model.MaxProposalPaths)
+	}
+	return nil
+}
+
+// proposalFits refuses a proposal whose branch and paths alone would not fit the
+// result with room left for the summary and the error.
+func proposalFits(result Result, head string, p model.Proposal) error {
+	for _, path := range p.Paths {
+		if len(path) > maxProposalPathBytes {
+			return fmt.Errorf("the Standard change names a path of %d bytes; at most %d fit", len(path), maxProposalPathBytes)
+		}
+	}
+	result.Commit, result.Proposal, result.Summary, result.Error = head, &p, "", ""
+	if data, _ := json.Marshal(result); len(data) > MaxResultBytes-1000 {
+		return errors.New("the Standard change names too many or too long paths to report; split it into smaller changes")
+	}
+	return nil
 }
 
 func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, result Result) Result {

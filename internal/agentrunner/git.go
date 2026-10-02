@@ -121,6 +121,69 @@ func (r *repo) changedPaths(ctx context.Context, base string) ([]string, error) 
 	return strings.Fields(out), nil
 }
 
+// proposeBranch pushes a branch from origin/<base> that holds paths as the work
+// head has them (removed where the head deleted them), in one commit, then goes
+// back to the work branch.
+func (r *repo) proposeBranch(ctx context.Context, base, branch string, paths []string, message string) error {
+	head, err := r.head(ctx)
+	if err != nil {
+		return err
+	}
+	work, err := r.git(ctx, r.dir, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return err
+	}
+	work = strings.TrimSpace(work)
+	if _, err := r.git(ctx, r.dir, "checkout", "--quiet", "-B", branch, "origin/"+base); err != nil {
+		return err
+	}
+	for _, p := range paths {
+		if _, err := r.git(ctx, r.dir, "cat-file", "-e", head+":"+p); err == nil {
+			_, err = r.git(ctx, r.dir, "checkout", head, "--", p)
+			if err != nil {
+				return err
+			}
+		} else if _, err := r.git(ctx, r.dir, "rm", "--quiet", "--force", "--ignore-unmatch", "--", p); err != nil {
+			return err
+		}
+	}
+	if err := r.commitStaged(ctx, message); err != nil {
+		return err
+	}
+	if err := retryTransient(ctx, networkRetryDelays, func() error {
+		_, err := r.git(ctx, r.dir, "push", "--quiet", "--force", "origin", "HEAD:refs/heads/"+branch)
+		return err
+	}); err != nil {
+		return err
+	}
+	_, err = r.git(ctx, r.dir, "checkout", "--quiet", work)
+	return err
+}
+
+// restorePaths puts each path back as origin/<base> has it (removed when the base
+// lacks it), in one commit.
+func (r *repo) restorePaths(ctx context.Context, base string, paths []string, message string) error {
+	for _, p := range paths {
+		if _, err := r.git(ctx, r.dir, "cat-file", "-e", "origin/"+base+":"+p); err == nil {
+			if _, err := r.git(ctx, r.dir, "checkout", "origin/"+base, "--", p); err != nil {
+				return err
+			}
+		} else if _, err := r.git(ctx, r.dir, "rm", "--quiet", "--force", "--ignore-unmatch", "--", p); err != nil {
+			return err
+		}
+	}
+	return r.commitStaged(ctx, message)
+}
+
+// commitStaged commits the index, if it differs from HEAD.
+func (r *repo) commitStaged(ctx context.Context, message string) error {
+	if _, err := r.git(ctx, r.dir, "diff", "--cached", "--quiet"); err == nil {
+		return nil
+	}
+	_, err := r.git(ctx, r.dir, "commit", "--quiet", "--no-verify", "-m", message)
+	return err
+}
+
 func (r *repo) push(ctx context.Context, branch string) error {
 	return retryTransient(ctx, networkRetryDelays, func() error {
 		_, err := r.git(ctx, r.dir, "push", "--quiet", "origin", "HEAD:refs/heads/"+branch)

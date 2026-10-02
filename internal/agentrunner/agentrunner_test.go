@@ -45,6 +45,7 @@ func TestJobFromEnv(t *testing.T) {
 		{"bad round", map[string]string{EnvRound: "zero"}, "not a round number"},
 		{"bad round limit", map[string]string{EnvMaxRounds: "-1"}, "not a round number"},
 		{"branch is the base", map[string]string{EnvBranch: "main"}, "must not be the base"},
+		{"bad resumed", map[string]string{EnvResumed: "maybe"}, "C4_RESUMED"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -53,6 +54,17 @@ func TestJobFromEnv(t *testing.T) {
 				t.Errorf("JobFromEnv() error = %v, want it to contain %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestJobFromEnvStandardChange(t *testing.T) {
+	got, err := JobFromEnv(env(map[string]string{EnvAllowedPaths: "Makefile, .gitea/", EnvResumed: "true"}))
+	if err != nil || !slices.Equal(got.AllowedPaths, []string{"Makefile", ".gitea/"}) || !got.Resumed {
+		t.Errorf("JobFromEnv() = %v, %v, %v", got.AllowedPaths, got.Resumed, err)
+	}
+	got, err = JobFromEnv(env(nil))
+	if err != nil || got.AllowedPaths != nil || got.Resumed {
+		t.Errorf("defaults = %v, %v, %v", got.AllowedPaths, got.Resumed, err)
 	}
 }
 
@@ -531,4 +543,196 @@ func TestRunImplementMergesMain(t *testing.T) {
 			t.Errorf("the branch head is not a merge commit: %q, %v", out, err)
 		}
 	})
+}
+
+// filesAgent writes each file and returns summary.
+type filesAgent struct {
+	files   map[string]string
+	summary string
+}
+
+func (a filesAgent) Run(_ context.Context, dir, _ string) (string, error) {
+	for name, data := range a.files {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			return "", err
+		}
+	}
+	return a.summary, nil
+}
+
+// cloneTask clones the Task branch of the repository and returns the directory.
+func cloneTask(t *testing.T, url string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if out, err := exec.Command("git", "clone", "--quiet", "--branch", "task/add-crop", url, dir).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v: %s", err, out)
+	}
+	return dir
+}
+
+func fileIn(t *testing.T, dir, name string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return "<" + err.Error() + ">"
+	}
+	return string(data)
+}
+
+func standardJob(t *testing.T, url string, check ...string) Job {
+	t.Helper()
+	job := testJob(t, url, RoleImplement, 1, check...)
+	job.Issue = 4
+	job.ProtectedPaths = []string{"Makefile"}
+	return job
+}
+
+func standardRepo(t *testing.T) string {
+	t.Helper()
+	return bareRepo(t, map[string]string{"Makefile": "check:\n", "README.md": "hi\n"})
+}
+
+func TestRunImplementProposesAStandardChange(t *testing.T) {
+	ctx := context.Background()
+	summary := "Done.\nStandard change: make dist must build the packages"
+	t.Run("with other work", func(t *testing.T) {
+		url := standardRepo(t)
+		agent := filesAgent{files: map[string]string{"Makefile": "check:\n\techo more\n", "src.txt": "x\n"}, summary: summary}
+		got := Run(ctx, standardJob(t, url), agent, t.TempDir())
+		want := model.Proposal{Branch: "standard/add-crop", Paths: []string{"Makefile"}, Reason: "make dist must build the packages"}
+		if got.Error != "" || got.Proposal == nil || !slices.Equal(got.Proposal.Paths, want.Paths) ||
+			got.Proposal.Branch != want.Branch || got.Proposal.Reason != want.Reason {
+			t.Fatalf("Run() = %+v, proposal %+v", got, got.Proposal)
+		}
+		out, err := exec.Command("git", "--git-dir", strings.TrimPrefix(url, "file://"), "diff", "--name-only", "main", "standard/add-crop").Output()
+		if err != nil || string(out) != "Makefile\n" {
+			t.Errorf("proposal diff = %q, %v", out, err)
+		}
+		dir := cloneTask(t, url)
+		if fileIn(t, dir, "src.txt") != "x\n" || fileIn(t, dir, "Makefile") != "check:\n" {
+			t.Errorf("task branch: src.txt = %q, Makefile = %q", fileIn(t, dir, "src.txt"), fileIn(t, dir, "Makefile"))
+		}
+		if got.Commit != branchHead(t, url, "task/add-crop") {
+			t.Errorf("Commit = %q, want the task branch head", got.Commit)
+		}
+	})
+	t.Run("nothing else to do", func(t *testing.T) {
+		url := standardRepo(t)
+		agent := filesAgent{files: map[string]string{"Makefile": "check:\n\techo more\n"}, summary: summary}
+		got := Run(ctx, standardJob(t, url), agent, t.TempDir())
+		if got.Error != "" || got.Proposal == nil || got.Commit != branchHead(t, url, "task/add-crop") {
+			t.Fatalf("Run() = %+v", got)
+		}
+		if fileIn(t, cloneTask(t, url), "Makefile") != "check:\n" {
+			t.Error("the task branch carries the protected edit")
+		}
+	})
+}
+
+func TestRunImplementRefusesTheAgentsRules(t *testing.T) {
+	url := bareRepo(t, map[string]string{"AGENTS.md": "rules\n", "README.md": "hi\n"})
+	job := standardJob(t, url)
+	job.ProtectedPaths = []string{"AGENTS.md"}
+	got := Run(context.Background(), job, filesAgent{files: map[string]string{"AGENTS.md": "mine\n"}, summary: "Standard change: x"}, t.TempDir())
+	if !strings.Contains(got.Error, "AGENTS.md") || got.Proposal != nil {
+		t.Errorf("Run() = %+v", got)
+	}
+	if branchHead(t, url, "task/add-crop") != "" || branchHead(t, url, "standard/add-crop") != "" {
+		t.Error("something was pushed")
+	}
+}
+
+func TestRunImplementGated(t *testing.T) {
+	ctx := context.Background()
+	t.Run("inside the allowance", func(t *testing.T) {
+		url := standardRepo(t)
+		job := standardJob(t, url)
+		job.AllowedPaths = []string{"Makefile"}
+		got := Run(ctx, job, filesAgent{files: map[string]string{"Makefile": "check:\n\tgo test\n"}, summary: "Done."}, t.TempDir())
+		if got.Error != "" || got.Proposal != nil {
+			t.Fatalf("Run() = %+v", got)
+		}
+		if fileIn(t, cloneTask(t, url), "Makefile") != "check:\n\tgo test\n" {
+			t.Error("the allowed change is missing from the task branch")
+		}
+		if branchHead(t, url, "standard/add-crop") != "" {
+			t.Error("a proposal branch was pushed")
+		}
+	})
+	t.Run("outside the allowance", func(t *testing.T) {
+		url := standardRepo(t)
+		job := standardJob(t, url)
+		job.AllowedPaths = []string{"Makefile"}
+		agent := filesAgent{files: map[string]string{"Makefile": "check:\n\tgo test\n", "README.md": "changed\n"}, summary: "Done."}
+		got := Run(ctx, job, agent, t.TempDir())
+		if !strings.Contains(got.Error, "this Task may change only Makefile") {
+			t.Errorf("Error = %q", got.Error)
+		}
+		if branchHead(t, url, "task/add-crop") != "" {
+			t.Error("a refused change was pushed")
+		}
+	})
+}
+
+func TestRunImplementKeepsNoProtectedEditWhenTheCheckFails(t *testing.T) {
+	url := standardRepo(t)
+	agent := filesAgent{files: map[string]string{"Makefile": "check:\n\techo more\n", "src.txt": "x\n"}, summary: "Standard change: needed"}
+	got := Run(context.Background(), standardJob(t, url, "sh", "-c", "exit 1"), agent, t.TempDir())
+	if !strings.Contains(got.Error, "still fails") || !strings.Contains(got.Error, "was not kept") || got.Proposal != nil {
+		t.Errorf("Run() = %+v", got)
+	}
+	if branchHead(t, url, "standard/add-crop") != "" {
+		t.Error("a proposal was pushed although the check failed")
+	}
+	dir := cloneTask(t, url)
+	if fileIn(t, dir, "Makefile") != "check:\n" || fileIn(t, dir, "src.txt") != "x\n" {
+		t.Errorf("task branch: Makefile = %q, src.txt = %q", fileIn(t, dir, "Makefile"), fileIn(t, dir, "src.txt"))
+	}
+}
+
+func TestRunImplementRefusesAProposalThatDoesNotFit(t *testing.T) {
+	url := standardRepo(t)
+	job := standardJob(t, url)
+	long := strings.Repeat("d", 200) + "/" + strings.Repeat("f", 100)
+	job.ProtectedPaths = []string{strings.Repeat("d", 200) + "/"}
+	got := Run(context.Background(), job, filesAgent{files: map[string]string{long: "x\n"}, summary: "Standard change: x"}, t.TempDir())
+	if !strings.Contains(got.Error, "at most 256") || got.Proposal != nil {
+		t.Errorf("Run() = %+v", got)
+	}
+	if branchHead(t, url, "task/add-crop") != "" {
+		t.Error("a refused proposal was pushed")
+	}
+}
+
+func TestResultEncodeKeepsTheProposal(t *testing.T) {
+	paths := make([]string, 0, 20)
+	for i := range 20 {
+		paths = append(paths, "docs/protected/file-"+strings.Repeat("a", i)+".md")
+	}
+	r := Result{Role: RoleImplement, Commit: strings.Repeat("a", 40), Summary: strings.Repeat("s", 10<<10),
+		Proposal: &model.Proposal{Branch: "standard/add-crop", Paths: paths, Reason: strings.Repeat("r", 10<<10)}}
+	data := r.Encode()
+	if len(data) > MaxResultBytes {
+		t.Fatalf("Encode() = %d bytes, want at most %d", len(data), MaxResultBytes)
+	}
+	var back Result
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Proposal == nil || back.Proposal.Branch != "standard/add-crop" || !slices.Equal(back.Proposal.Paths, paths) {
+		t.Errorf("decoded proposal = %+v", back.Proposal)
+	}
+	if len(r.Proposal.Reason) != 10<<10 {
+		t.Error("Encode() changed the caller's proposal")
+	}
+}
+
+func TestResultEncodeTerminatesWhenTheProposalCannotFit(t *testing.T) {
+	r := Result{Role: RoleImplement, Proposal: &model.Proposal{Branch: "b", Paths: []string{strings.Repeat("p", 5000)}}}
+	if len(r.Encode()) == 0 {
+		t.Error("Encode() returned nothing")
+	}
 }

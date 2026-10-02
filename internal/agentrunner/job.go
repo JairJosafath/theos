@@ -40,6 +40,11 @@ const (
 	EnvContext      = "C4_CONTEXT"
 	// EnvProtectedPaths lists the Standard's protected paths, comma-separated.
 	EnvProtectedPaths = "C4_PROTECTED_PATHS"
+	// EnvAllowedPaths lists the protected paths an approved Standard change lets
+	// this Task change, comma-separated.
+	EnvAllowedPaths = "C4_ALLOWED_PATHS"
+	// EnvResumed is "true" when the Task resumes after its Standard change merged.
+	EnvResumed = "C4_RESUMED"
 	// EnvIssue is the number of the issue the goal comes from, if any.
 	EnvIssue = "C4_ISSUE"
 	// EnvHarness and EnvModel say which agent program runs, with which model.
@@ -79,6 +84,10 @@ type Job struct {
 	// ProtectedPaths are the Standard's paths the agent must not change, next to
 	// the platform's.
 	ProtectedPaths []string
+	// AllowedPaths gate the Task: when set, it may change only these paths.
+	AllowedPaths []string
+	// Resumed is true when the Task resumes after its Standard change merged.
+	Resumed bool
 	// Issue is the issue the goal comes from; 0 for a written goal.
 	Issue int
 	// Harness is the agent program, and Model the model it uses (empty: its default).
@@ -109,9 +118,12 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 	if job.Base == "" {
 		job.Base = "main"
 	}
-	for p := range strings.SplitSeq(getenv(EnvProtectedPaths), ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			job.ProtectedPaths = append(job.ProtectedPaths, p)
+	job.ProtectedPaths = splitList(getenv(EnvProtectedPaths))
+	job.AllowedPaths = splitList(getenv(EnvAllowedPaths))
+	if resumed := getenv(EnvResumed); resumed != "" {
+		var err error
+		if job.Resumed, err = strconv.ParseBool(resumed); err != nil {
+			return Job{}, fmt.Errorf("%s=%q is not true or false", EnvResumed, resumed)
 		}
 	}
 	if job.Harness == "" {
@@ -178,4 +190,15 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		return Job{}, errors.New("the work branch must not be the base branch")
 	}
 	return job, nil
+}
+
+// splitList splits a comma-separated list, trimming blanks and dropping empties.
+func splitList(s string) []string {
+	var out []string
+	for p := range strings.SplitSeq(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
