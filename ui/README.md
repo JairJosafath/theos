@@ -10,15 +10,19 @@ never used kubectl can read the story in a browser.
   a dashed boundary, with the People and other systems they are linked with
   around it. Each Container shows its phase, repository, the templates it was
   started from and who is working on it. Hover for its checks (conditions) in
-  plain words; click for everything.
+  plain words; click for everything, including its Crew: who implements and who
+  reviews its issues, with their models, and the issue they work on.
 - **Who's working right now**: the Sessions per Container, agent or human, Active
   or Stale, with the age of the last heartbeat.
 - **The factory** (`?view=factory`, the _Factory_ switch in the top bar), across
   all projects: whether each part of the factory is healthy, with restarts, CPU
   and memory; the node's usage and the last hour (API server response, CPU,
-  memory); the Tasks on a board by stage, each with its timeline; where the
-  time goes across Tasks; the agent slots and who waits for one; and a list of
-  what needs a look. Select a Task for its goal, rounds, timeline and feedback.
+  memory); the Tasks on a board by stage, each with its timeline; the Crews,
+  each with its Agents and their models, the Task it works on and its ready and
+  waiting issues; where the time goes across Tasks; the agent slots and who
+  waits for one; and a list of what needs a look, such as a Task waiting for an
+  unavailable agent or a Crew that can't pick up issues. Select a Task for its
+  issue or goal, its Agents, rounds, timeline, feedback and follow-up issues.
 
 Everything updates as the resources change: the browser lists each kind, then
 watches it.
@@ -41,8 +45,10 @@ Without make: `npm ci`, then `kubectl proxy --port 8001` in one terminal and
 **Demo mode:** add `?demo=1` to the address (for example
 <http://localhost:5173/?demo=1>) to see a built-in version of the webshop story
 with every state: containers Pending, Scaffolding, Ready and Failed, agent and
-human Sessions, a Stale one, and a Relationship added after scaffolding. It needs
-no cluster and is clearly labelled as demo data.
+human Sessions, a Stale one, a Relationship added after scaffolding, and a paused
+Crew and one waiting for its Container. Pick the CEL Lens project for Crews at
+work on issues (`?demo=1&project=cel-lens&view=containers`). It needs no cluster
+and is clearly labelled as demo data.
 
 Other query parameters: `project=<namespace>`, `view=containers` or
 `view=factory`, `system=<name>` and `task=<namespace>/<name>`, so any view can
@@ -83,7 +89,7 @@ behaves the same way.
 
 ### One connection for all watches
 
-A page watches about ten kinds, and browsers open at most six HTTP/1.1
+A page watches about a dozen kinds, and browsers open at most six HTTP/1.1
 connections per host: with one request per watch, some watches would wait
 forever and those kinds would silently stop updating. So the watchers share a
 `WatchMux` ([src/k8s/mux.ts](src/k8s/mux.ts)): watches started together go out
@@ -107,7 +113,7 @@ src/k8s/health.ts       polls /factory/health while the factory view is open
 src/model/story.ts      resources -> diagram model (boxes, arrows, roll-ups)
 src/model/layout.ts     a small layered layout and edge routing
 src/model/describe.ts   plain-language wording for phases, conditions and times
-src/model/factory.ts    the factory view: stages, timelines, stats, what needs a look
+src/model/factory.ts    the factory view: stages, timelines, stats, Crews, what needs a look
 src/demo/               the demo fixture
 src/components/         the diagram, cards and side panels
 ```
