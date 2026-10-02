@@ -18,6 +18,7 @@ import {
   currentStage,
   factoryStats,
   followUpLinks,
+  standardChangeLink,
   formatBytes,
   formatClock,
   formatCpu,
@@ -552,6 +553,7 @@ function TaskPanel({
   const byStage = timeByStage(segments)
   const back = agentBackAt(task)
   const followUps = followUpLinks(task)
+  const standardChange = standardChangeLink(task)
   const crew = task.metadata.labels?.[LABEL_CREW]
   return (
     <div className="panel task-panel">
@@ -651,6 +653,22 @@ function TaskPanel({
             <dt>Review</dt>
             <dd>
               <VerdictPill verdict={task.status.review.verdict} />
+            </dd>
+          </>
+        ) : null}
+        {standardChange ? (
+          <>
+            <dt>Blocked on</dt>
+            <dd>
+              <span className="muted">Waits on </span>
+              {standardChange.url ? (
+                <a href={standardChange.url} target="_blank" rel="noreferrer" title={standardChange.url}>
+                  {standardChange.label} <ExternalLinkIcon size={11} />
+                </a>
+              ) : (
+                standardChange.label
+              )}
+              <span className="muted"> ({standardChange.paths.join(', ')})</span>
             </dd>
           </>
         ) : null}

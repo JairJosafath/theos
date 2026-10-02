@@ -194,7 +194,7 @@ export function findCondition(conditions: Condition[] | undefined, type: string)
   return conditions?.find((c) => c.type === type)
 }
 
-export type TaskPhase = 'Pending' | 'Implementing' | 'Checking' | 'Reviewing' | 'Merged' | 'Failed'
+export type TaskPhase = 'Pending' | 'Implementing' | 'Checking' | 'Reviewing' | 'Blocked' | 'Merged' | 'Failed'
 
 /** One step in a Task's timeline: from `at` on, the Task was in phase and round, for reason. */
 export interface TaskTransition {
@@ -225,6 +225,8 @@ export interface Task extends K8sObject {
     /** A Task has either a goal or an issue of its Container's repository. */
     goal?: string
     issue?: number
+    /** The protected paths a gated Task may change. */
+    allowedProtectedPaths?: string[]
   }
   status?: {
     phase?: TaskPhase
@@ -235,6 +237,15 @@ export interface Task extends K8sObject {
     issueURL?: string
     /** The issues filed from the reviewer's suggestions on merge, as URLs. */
     followUps?: string[]
+    /** The Standard change the Task waits for while Blocked. */
+    standardChange?: {
+      issue: number
+      issueURL?: string
+      paths: string[]
+      branch?: string
+      count: number
+      resumedRound?: number
+    }
     branch?: string
     commit?: string
     pullRequest?: number

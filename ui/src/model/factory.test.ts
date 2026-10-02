@@ -14,6 +14,8 @@ import {
   currentStage,
   factoryStats,
   followUpLinks,
+  stageOf,
+  standardChangeLink,
   formatClock,
   formatDuration,
   recentStall,
@@ -132,6 +134,7 @@ describe('timeByStage', () => {
     const totals = timeByStage(taskSegments(merged, T0))
     expect(Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, v / 60_000]))).toEqual({
       queued: 0,
+      blocked: 0,
       slot: 5,
       implement: 35,
       checks: 15,
@@ -728,5 +731,21 @@ describe('activeCrewTasks', () => {
     expect(activeCrewTasks([working], tasks, agents, ['other'])).toEqual([])
     expect(activeCrewTasks([working], [], agents, ['cel-language-server'])).toEqual([])
     expect(activeCrewTasks([crew('cel-language-server')], tasks, agents, ['cel-language-server'])).toEqual([])
+  })
+})
+
+describe('Blocked Tasks', () => {
+  it('shows a Blocked Task in its own column, with the issue it waits on', () => {
+    const change = {
+      issue: 31,
+      issueURL: 'http://gitea/cel-lens/vscode-extension/issues/31',
+      paths: ['Makefile'],
+      count: 1,
+    }
+    const blocked = task('blocked-task', { phase: 'Blocked', standardChange: change })
+    expect(stageOf({ phase: 'Blocked' })).toBe('blocked')
+    expect(boardColumns([blocked]).blocked).toEqual([blocked])
+    expect(standardChangeLink(blocked)).toEqual({ label: '#31', url: change.issueURL, paths: ['Makefile'] })
+    expect(standardChangeLink({ ...blocked, status: { ...blocked.status, phase: 'Implementing' } })).toBeUndefined()
   })
 })

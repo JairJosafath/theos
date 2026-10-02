@@ -1785,6 +1785,9 @@ p {
 .stage-review {
   --stage: var(--human);
 }
+.stage-blocked {
+  --stage: var(--warn);
+}
 .stage-done {
   --stage: var(--ok);
 }

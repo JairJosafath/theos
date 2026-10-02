@@ -8,7 +8,7 @@ import { plural, titleOf } from './describe'
 import type { FactoryHealth } from '../k8s/health'
 
 /** Where a Task's time goes. Each timeline step falls in one stage. */
-export type Stage = 'queued' | 'slot' | 'implement' | 'checks' | 'review'
+export type Stage = 'queued' | 'slot' | 'implement' | 'checks' | 'review' | 'blocked'
 
 export const STAGES: { key: Stage; label: string; doing: string; explanation: string }[] = [
   {
@@ -31,6 +31,12 @@ export const STAGES: { key: Stage; label: string; doing: string; explanation: st
   },
   { key: 'checks', label: 'CI checks', doing: 'waiting for CI', explanation: 'CI runs make check on the pull request' },
   { key: 'review', label: 'Reviewing', doing: 'in review', explanation: 'An agent reviews the pull request' },
+  {
+    key: 'blocked',
+    label: 'Blocked',
+    doing: 'waiting on a Standard change',
+    explanation: 'Waits for the Standard change it filed to merge',
+  },
 ]
 
 export function isFinal(phase: TaskPhase | undefined): boolean {
@@ -49,6 +55,8 @@ export function stageOf(step: Pick<TaskTransition, 'phase' | 'reason'>): Stage |
       return 'checks'
     case 'Reviewing':
       return 'review'
+    case 'Blocked':
+      return 'blocked'
     default:
       return undefined
   }
@@ -102,7 +110,7 @@ export function taskSegments(task: Task, now: number): Segment[] {
 
 /** Time per stage, summed over segments. */
 export function timeByStage(segments: Segment[]): Record<Stage, number> {
-  const totals: Record<Stage, number> = { queued: 0, slot: 0, implement: 0, checks: 0, review: 0 }
+  const totals: Record<Stage, number> = { queued: 0, slot: 0, implement: 0, checks: 0, review: 0, blocked: 0 }
   for (const s of segments) totals[s.stage] += s.end - s.start
   return totals
 }
@@ -195,6 +203,13 @@ export function followUpLinks(task: Task): { url: string; label: string }[] {
   })
 }
 
+/** The Standard change a Blocked Task waits on: its issue, and the protected paths it asks for. */
+export function standardChangeLink(task: Task): { label: string; url?: string; paths: string[] } | undefined {
+  const change = task.status?.standardChange
+  if (task.status?.phase !== 'Blocked' || !change) return undefined
+  return { label: `#${change.issue}`, url: change.issueURL, paths: change.paths }
+}
+
 export type Column = Stage | 'done'
 
 export const COLUMNS: { key: Column; label: string }[] = [
@@ -203,6 +218,7 @@ export const COLUMNS: { key: Column; label: string }[] = [
   { key: 'implement', label: 'Implementing' },
   { key: 'checks', label: 'CI checks' },
   { key: 'review', label: 'Reviewing' },
+  { key: 'blocked', label: 'Blocked' },
   { key: 'done', label: 'Done' },
 ]
 
@@ -211,7 +227,15 @@ export const COLUMNS: { key: Column; label: string }[] = [
  * Tasks newest first, at most `doneLimit` of them.
  */
 export function boardColumns(tasks: Task[], doneLimit = 8): Record<Column, Task[]> {
-  const columns: Record<Column, Task[]> = { queued: [], slot: [], implement: [], checks: [], review: [], done: [] }
+  const columns: Record<Column, Task[]> = {
+    queued: [],
+    slot: [],
+    implement: [],
+    checks: [],
+    review: [],
+    blocked: [],
+    done: [],
+  }
   for (const task of tasks) columns[currentStage(task)].push(task)
   for (const key of Object.keys(columns) as Column[]) {
     if (key === 'done') continue
@@ -274,7 +298,7 @@ export function factoryStats(tasks: Task[], now: number): FactoryStats {
       return start !== undefined && end !== undefined ? end - start : undefined
     })
     .filter((v): v is number => v !== undefined)
-  const totals: Record<Stage, number> = { queued: 0, slot: 0, implement: 0, checks: 0, review: 0 }
+  const totals: Record<Stage, number> = { queued: 0, slot: 0, implement: 0, checks: 0, review: 0, blocked: 0 }
   let withTimeline = 0
   for (const task of tasks) {
     const segments = taskSegments(task, now)
@@ -307,6 +331,8 @@ export const STUCK_AFTER_MS: Record<Stage, number> = {
   // The operator fails a Task after 30 minutes without a CI result.
   checks: 30 * 60_000,
   review: 60 * 60_000,
+  // It waits for a person or agent to merge the Standard change.
+  blocked: 24 * 60 * 60_000,
 }
 
 /** Failed Tasks stay on the attention list this long. */
