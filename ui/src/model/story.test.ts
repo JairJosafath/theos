@@ -10,6 +10,7 @@ import {
   linksOf,
   sessionsOf,
   systemsForPicker,
+  workingNow,
   type ContainerNode,
   type SystemNode,
 } from './story'
@@ -344,5 +345,13 @@ describe('the CEL Lens demo', () => {
       ['vscode-extension', 'editor extension', 2, true],
     ])
     expect(d.edges.map((e) => e.id)).toContain('Container/vscode-extension->Container/cel-language-server')
+  })
+})
+
+describe('workingNow', () => {
+  it('counts active Sessions and the Tasks that Crews are working on', () => {
+    expect(workingNow(demoCelLens(NOW))).toBe(3)
+    expect(workingNow(demoStory(NOW))).toBe(2)
+    expect(workingNow(sampleStory())).toBe(0)
   })
 })

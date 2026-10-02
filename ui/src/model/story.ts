@@ -19,7 +19,7 @@ import {
   type Session,
 } from '../k8s/types'
 import { describeContainerType, plural, titleOf } from './describe'
-import { crewSummary, type CrewSummary } from './factory'
+import { activeCrewTasks, crewSummary, type CrewSummary } from './factory'
 
 export type NodeRole = 'person' | 'system' | 'external-system' | 'container' | 'datastore'
 
@@ -256,6 +256,13 @@ export function crewOf(crews: Crew[], container: string): Crew | undefined {
   return crews
     .filter((c) => c.spec.containerRef?.name === container)
     .sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))[0]
+}
+
+/** How many work on the project now: active Sessions, and the Tasks its Crews are on. */
+export function workingNow(data: StoryData): number {
+  const sessions = data.sessions.filter((s) => s.status?.phase === 'Active').length
+  const containers = data.containers.map((c) => c.metadata.name)
+  return sessions + activeCrewTasks(data.crews, data.tasks, data.agents, containers).length
 }
 
 /** Sessions on one Container: Active first, then the most recent heartbeat. */

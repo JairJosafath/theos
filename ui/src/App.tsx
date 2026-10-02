@@ -27,7 +27,7 @@ import type { Project } from './k8s/types'
 import { useNow, useSource, useUrlState, type View } from './lib/hooks'
 import { plural, titleOf } from './model/describe'
 import { activeCrewTasks } from './model/factory'
-import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker } from './model/story'
+import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker, workingNow } from './model/story'
 
 /**
  * Where the Kubernetes API is proxied, relative to the page (see server.mjs).
@@ -392,7 +392,7 @@ function ProblemsBanner({ problems }: { problems: Problem[] }) {
 function ProjectHeader({ data, namespace, loaded }: { data: StoryData; namespace?: string; loaded: boolean }) {
   const project = data.project
   const ready = data.containers.filter((c) => c.status?.phase === 'Ready').length
-  const active = data.sessions.filter((s) => s.status?.phase === 'Active').length
+  const active = workingNow(data)
   const summary = project?.status?.summary?.trim()
   return (
     <section className="hero">
