@@ -20,6 +20,9 @@ spec:
     - jsonPath: .spec.containerRef.name
       name: Container
       type: string
+    - jsonPath: .spec.issue
+      name: Issue
+      type: integer
     - jsonPath: .status.phase
       name: Phase
       type: string
@@ -68,8 +71,9 @@ spec:
             description: spec defines the goal, the Container and the Agent
             properties:
               agentRef:
-                description: agentRef names the Agent that does the work and the review.
-                  It can't change.
+                description: |-
+                  agentRef names the Agent that implements the goal, and reviews it when no
+                  reviewerRef is set. It can't change.
                 properties:
                   name:
                     description: name of the referenced object.
@@ -106,11 +110,44 @@ spec:
                 x-kubernetes-validations:
                 - message: goal is immutable; create a new Task
                   rule: self == oldSelf
+              issue:
+                description: |-
+                  issue is the number of an issue in the Container's repository whose title
+                  and body are the goal. The operator reads it before each run, labels it with
+                  the Task's progress, and closes it when the Task merges. It can't change.
+                format: int32
+                minimum: 1
+                type: integer
+                x-kubernetes-validations:
+                - message: issue is immutable; create a new Task
+                  rule: self == oldSelf
+              reviewerRef:
+                description: |-
+                  reviewerRef names the Agent that reviews each round, so the review can use
+                  another model than the work. It can't change.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: reviewerRef is immutable
+                  rule: self == oldSelf
             required:
             - agentRef
             - containerRef
-            - goal
             type: object
+            x-kubernetes-validations:
+            - message: set exactly one of goal and issue
+              rule: has(self.goal) != has(self.issue)
+            - message: goal and issue are immutable; create a new Task
+              rule: has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)
+            - message: reviewerRef is immutable
+              rule: has(self.reviewerRef) == has(oldSelf.reviewerRef)
           status:
             description: status defines the observed state of Task
             properties:
@@ -203,6 +240,14 @@ spec:
                   feedback is what the next round must address: review findings, failed
                   checks or the reason the last round failed.
                 type: string
+              followUps:
+                description: followUps are the issues filed from the reviewer's suggestions
+                  on merge.
+                items:
+                  type: string
+                maxItems: 3
+                type: array
+                x-kubernetes-list-type: atomic
               history:
                 description: |-
                   history is the Task's timeline, oldest first: an entry each time its phase,
@@ -247,6 +292,13 @@ spec:
                 maxItems: 64
                 type: array
                 x-kubernetes-list-type: atomic
+              issueTitle:
+                description: |-
+                  issueTitle is the title of spec.issue when the Task last read it, and
+                  issueURL where to find the issue.
+                type: string
+              issueURL:
+                type: string
               observedGeneration:
                 description: observedGeneration is the spec generation the status
                   reflects.

@@ -156,6 +156,8 @@ spec:
                 - job
                 - worker
                 - mobile-app
+                - cli
+                - extension
                 type: string
             required:
             - frameworkRef

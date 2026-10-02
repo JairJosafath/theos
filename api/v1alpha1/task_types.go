@@ -21,24 +21,43 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// TaskSpec is a goal for one Container, done by an Agent.
+// TaskSpec is a goal for one Container, done by an Agent: written here, or in an
+// issue of the Container's repository.
+// +kubebuilder:validation:XValidation:rule="has(self.goal) != has(self.issue)",message="set exactly one of goal and issue"
+// +kubebuilder:validation:XValidation:rule="has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)",message="goal and issue are immutable; create a new Task"
+// +kubebuilder:validation:XValidation:rule="has(self.reviewerRef) == has(oldSelf.reviewerRef)",message="reviewerRef is immutable"
 type TaskSpec struct {
 	// containerRef names the Container to work on. It can't change.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="containerRef is immutable"
 	// +required
 	ContainerRef LocalRef `json:"containerRef"`
 
-	// agentRef names the Agent that does the work and the review. It can't change.
+	// agentRef names the Agent that implements the goal, and reviews it when no
+	// reviewerRef is set. It can't change.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="agentRef is immutable"
 	// +required
 	AgentRef LocalRef `json:"agentRef"`
+
+	// reviewerRef names the Agent that reviews each round, so the review can use
+	// another model than the work. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="reviewerRef is immutable"
+	// +optional
+	ReviewerRef *LocalRef `json:"reviewerRef,omitempty"`
 
 	// goal says what the change must achieve, in plain words. It can't change.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=8000
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="goal is immutable; create a new Task"
-	// +required
-	Goal string `json:"goal"`
+	// +optional
+	Goal string `json:"goal,omitempty"`
+
+	// issue is the number of an issue in the Container's repository whose title
+	// and body are the goal. The operator reads it before each run, labels it with
+	// the Task's progress, and closes it when the Task merges. It can't change.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="issue is immutable; create a new Task"
+	// +optional
+	Issue int32 `json:"issue,omitempty"`
 }
 
 // TaskPhase is where a Task is in its rounds.
@@ -107,6 +126,20 @@ type TaskStatus struct {
 	// reviewAttempts counts reviewer runs in this round that gave no verdict.
 	// +optional
 	ReviewAttempts int32 `json:"reviewAttempts,omitempty"`
+
+	// issueTitle is the title of spec.issue when the Task last read it, and
+	// issueURL where to find the issue.
+	// +optional
+	IssueTitle string `json:"issueTitle,omitempty"`
+
+	// +optional
+	IssueURL string `json:"issueURL,omitempty"`
+
+	// followUps are the issues filed from the reviewer's suggestions on merge.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=3
+	// +optional
+	FollowUps []string `json:"followUps,omitempty"`
 
 	// branch is where the agent works.
 	// +optional
@@ -179,6 +212,7 @@ type TaskStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4
 // +kubebuilder:printcolumn:name="Container",type=string,JSONPath=".spec.containerRef.name"
+// +kubebuilder:printcolumn:name="Issue",type=integer,JSONPath=".spec.issue"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Round",type=integer,JSONPath=".status.round"
 // +kubebuilder:printcolumn:name="Checks",type=string,JSONPath=".status.checks.state"

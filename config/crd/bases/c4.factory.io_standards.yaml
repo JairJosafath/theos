@@ -98,6 +98,8 @@ spec:
                   - job
                   - worker
                   - mobile-app
+                  - cli
+                  - extension
                   type: string
                 minItems: 1
                 type: array

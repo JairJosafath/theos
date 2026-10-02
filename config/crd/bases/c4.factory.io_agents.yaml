@@ -21,6 +21,12 @@ spec:
     - jsonPath: .spec.displayName
       name: Display Name
       type: string
+    - jsonPath: .spec.harness
+      name: Harness
+      type: string
+    - jsonPath: .spec.model
+      name: Model
+      type: string
     - jsonPath: .spec.image
       name: Image
       type: string
@@ -241,6 +247,15 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
+              harness:
+                default: claude-code
+                description: |-
+                  harness is the agent program c4agent runs: claude-code (Claude Code, headless)
+                  or stand-in (a scripted change and review, for tests and demos).
+                enum:
+                - claude-code
+                - stand-in
+                type: string
               image:
                 description: image runs c4agent, the agent CLI and the toolchain of
                   the Containers it works on.
@@ -255,6 +270,13 @@ spec:
                 maximum: 10
                 minimum: 1
                 type: integer
+              model:
+                description: |-
+                  model is the model the harness uses, such as claude-sonnet-5-5; empty means
+                  the harness's default. Pick it for the role: a strong model reviews.
+                maxLength: 100
+                pattern: ^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]*$
+                type: string
               resources:
                 description: resources for the sandbox's container.
                 properties:

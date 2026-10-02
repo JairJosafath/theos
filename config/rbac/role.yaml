@@ -63,6 +63,7 @@ rules:
   - c4.factory.io
   resources:
   - containers
+  - crews
   - datastores
   - projects
   - relationships
@@ -81,6 +82,7 @@ rules:
   - c4.factory.io
   resources:
   - containers/finalizers
+  - crews/finalizers
   - datastores/finalizers
   - projects/finalizers
   - relationships/finalizers
@@ -93,6 +95,7 @@ rules:
   - c4.factory.io
   resources:
   - containers/status
+  - crews/status
   - datastores/status
   - projects/status
   - relationships/status

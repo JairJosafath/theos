@@ -47,3 +47,4 @@ __pycache__/
 # Kubebuilder
 Dockerfile.cross
 !vendor/**/zz_generated.*
+/.claude/worktrees/

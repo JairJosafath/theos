@@ -39,6 +39,20 @@ type AgentSpec struct {
 	// +required
 	Image string `json:"image"`
 
+	// harness is the agent program c4agent runs: claude-code (Claude Code, headless)
+	// or stand-in (a scripted change and review, for tests and demos).
+	// +kubebuilder:validation:Enum=claude-code;stand-in
+	// +kubebuilder:default=claude-code
+	// +optional
+	Harness AgentHarness `json:"harness,omitempty"`
+
+	// model is the model the harness uses, such as claude-sonnet-5-5; empty means
+	// the harness's default. Pick it for the role: a strong model reviews.
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]*$`
+	// +optional
+	Model string `json:"model,omitempty"`
+
 	// credentialsSecretRef names the Secret with the agent's model credentials, such
 	// as CLAUDE_CODE_OAUTH_TOKEN. Every key becomes an environment variable.
 	// +optional
@@ -69,9 +83,20 @@ type AgentSpec struct {
 	Env []corev1.EnvVar `json:"env,omitempty"`
 }
 
+// AgentHarness is the agent program an Agent runs.
+type AgentHarness string
+
+// Agent harnesses.
+const (
+	HarnessClaudeCode AgentHarness = "claude-code"
+	HarnessStandIn    AgentHarness = "stand-in"
+)
+
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=c4;c4catalog
 // +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"
+// +kubebuilder:printcolumn:name="Harness",type=string,JSONPath=".spec.harness"
+// +kubebuilder:printcolumn:name="Model",type=string,JSONPath=".spec.model"
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=".spec.image"
 // +kubebuilder:printcolumn:name="Rounds",type=integer,JSONPath=".spec.maxRounds"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
