@@ -197,29 +197,123 @@ func TestHasSlotTurn(t *testing.T) {
 }
 
 func TestCheckFailures(t *testing.T) {
-	log := strings.Join([]string{
-		"2026-10-01T13:40:01.1Z + very_good_analysis 11.0.0",
-		"2026-10-01T13:40:02.1Z ✅ test/a_test.dart: A works",
-		"2026-10-01T13:40:03.1Z ::group::❌ test/recorder_page_test.dart: RecorderPage shows the stop button (failed)",
-		"2026-10-01T13:40:03.2Z ══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞══",
-		"2026-10-01T13:40:03.3Z Expected: exactly one matching candidate",
-		"2026-10-01T13:40:03.4Z   Actual: _TextWidgetFinder:<Found 0 widgets>",
-		"2026-10-01T13:40:03.5Z ::endgroup::",
-		"2026-10-01T13:40:04.1Z ✅ test/b_test.dart: B works",
-		"2026-10-01T13:40:05.1Z    info • Unnecessary cast • lib/x.dart:3:5 • unnecessary_cast",
-		"2026-10-01T13:40:06.1Z make: *** [Makefile:21: test] Error 1",
-	}, "\n")
-	got := CheckFailures(log)
-	for _, want := range []string{"RecorderPage shows the stop button (failed)", "Expected: exactly one",
-		"Actual: _TextWidgetFinder", "info • Unnecessary cast", "make: *** [Makefile:21: test]"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("CheckFailures() lacks %q:\n%s", want, got)
+	stamp := func(lines ...string) string {
+		for i, l := range lines {
+			lines[i] = "2026-10-01T13:40:01.1234567Z " + l
 		}
+		return strings.Join(lines, "\n")
 	}
-	for _, unwanted := range []string{"very_good_analysis", "A works", "B works", "2026-10-01T"} {
-		if strings.Contains(got, unwanted) {
-			t.Errorf("CheckFailures() has %q:\n%s", unwanted, got)
-		}
+	tests := []struct {
+		name           string
+		log            string
+		want, unwanted []string
+	}{
+		{
+			name: "flutter",
+			log: stamp(
+				"+ very_good_analysis 11.0.0",
+				"✅ test/a_test.dart: A works",
+				"::group::❌ test/recorder_page_test.dart: RecorderPage shows the stop button (failed)",
+				"══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞══",
+				"Expected: exactly one matching candidate",
+				"  Actual: _TextWidgetFinder:<Found 0 widgets>",
+				"::endgroup::",
+				"✅ test/b_test.dart: B works",
+				"   info • Unnecessary cast • lib/x.dart:3:5 • unnecessary_cast",
+				"make: *** [Makefile:21: test] Error 1",
+			),
+			want: []string{"RecorderPage shows the stop button (failed)", "Expected: exactly one",
+				"Actual: _TextWidgetFinder", "info • Unnecessary cast", "make: *** [Makefile:21: test]"},
+			unwanted: []string{"very_good_analysis", "A works", "B works", "2026-10-01T"},
+		},
+		{
+			name: "go test",
+			log: stamp(
+				"go test -race -count=1 ./...",
+				"ok  \texample.local/app/internal/check\t1.240s",
+				"=== RUN   TestLargeFileLatency",
+				"--- FAIL: TestLargeFileLatency (1.17s)",
+				"    server_test.go:385: diagnostics arrived 520.021451ms after the change, want within 500ms",
+				"=== RUN   TestTable",
+				"    --- FAIL: TestTable/empty (0.00s)",
+				"        table_test.go:40: got 1, want 0",
+				"FAIL",
+				"FAIL\texample.local/app/internal/server\t2.702s",
+				"panic: runtime error: index out of range [3] with length 3",
+				"",
+				"goroutine 7 [running]:",
+				"example.local/app/internal/x.f(...)",
+				"WARNING: DATA RACE",
+				"Write at 0x00c000126000 by goroutine 8:",
+				"make: *** [Makefile:41: test] Error 1",
+			),
+			want: []string{"--- FAIL: TestLargeFileLatency (1.17s)", "server_test.go:385: diagnostics arrived 520",
+				"--- FAIL: TestTable/empty", "table_test.go:40: got 1, want 0", "FAIL\texample.local/app/internal/server",
+				"panic: runtime error: index out of range", "goroutine 7 [running]:", "WARNING: DATA RACE",
+				"Write at 0x00c000126000 by goroutine 8:", "make: *** [Makefile:41: test]"},
+			unwanted: []string{"internal/check", "=== RUN", "go test -race"},
+		},
+		{
+			name: "go build, vet and lint",
+			log: stamp(
+				"go vet ./...",
+				"# example.local/app/internal/server",
+				"internal/server/server.go:12:3: undefined: foo",
+				"golangci-lint run",
+				"internal/check/check.go:30:9: Error return value of `f.Close` is not checked (errcheck)",
+				"\tf.Close()",
+				"1 issues:",
+			),
+			want: []string{"internal/server/server.go:12:3: undefined: foo",
+				"internal/check/check.go:30:9: Error return value"},
+			unwanted: []string{"go vet ./...", "golangci-lint run"},
+		},
+		{
+			name: "vitest, tsc and eslint",
+			log: stamp(
+				" ✓ src/ok.test.ts (3 tests) 4ms",
+				" × src/server.test.ts > findServer > prefers the setting 3ms",
+				" FAIL  src/server.test.ts > findServer > prefers the setting",
+				"AssertionError: expected '/usr/bin/cel' to be '/opt/cel' // Object.is equality",
+				" ❯ src/server.test.ts:42:17",
+				"⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
+				" Test Files  1 failed | 1 passed (2)",
+				"src/extension.ts(10,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+				"/workspace/src/extension.ts",
+				"  3:7  error  'x' is assigned a value but never used  @typescript-eslint/no-unused-vars",
+				"✖ 1 problem (1 error, 0 warnings)",
+			),
+			want: []string{"× src/server.test.ts > findServer > prefers the setting",
+				"FAIL  src/server.test.ts > findServer > prefers the setting", "AssertionError: expected '/usr/bin/cel'",
+				"❯ src/server.test.ts:42:17", "Test Files  1 failed", "error TS2322", "3:7  error  'x' is assigned",
+				"✖ 1 problem"},
+			unwanted: []string{"src/ok.test.ts"},
+		},
+		{
+			name: "pytest",
+			log: stamp(
+				"tests/test_ok.py::test_ok PASSED",
+				"E       assert 1 == 2",
+				"FAILED tests/test_api.py::test_create - assert 1 == 2",
+			),
+			want:     []string{"E       assert 1 == 2", "FAILED tests/test_api.py::test_create"},
+			unwanted: []string{"test_ok"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CheckFailures(tt.log)
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("CheckFailures() lacks %q:\n%s", want, got)
+				}
+			}
+			for _, unwanted := range tt.unwanted {
+				if strings.Contains(got, unwanted) {
+					t.Errorf("CheckFailures() has %q:\n%s", unwanted, got)
+				}
+			}
+		})
 	}
 	if long := CheckFailures(strings.Repeat("error • x\n", 2000)); len(long) > maxCheckExcerpt+10 {
 		t.Errorf("CheckFailures() of a long log = %d bytes", len(long))
