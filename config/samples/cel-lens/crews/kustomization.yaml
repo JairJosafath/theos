@@ -1,0 +1,7 @@
+# The Crews that work on the CEL Lens issues: Sonnet implements, Opus reviews.
+# Apply after the backlog is filed: kubectl apply -k config/samples/cel-lens/crews
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cel-lens
+resources:
+- crews.yaml

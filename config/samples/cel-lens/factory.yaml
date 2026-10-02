@@ -1,0 +1,134 @@
+# Where repositories go, the Go and TypeScript catalog, and the Agents. Templates
+# are pinned to the tags the seed job pushes (templates/versions.txt).
+apiVersion: c4.factory.io/v1alpha1
+kind: GitProvider
+metadata:
+  name: gitea
+spec:
+  provider: gitea
+  url: http://gitea.gitea.svc.cluster.local:3000
+  owner: cel-lens
+  credentialsSecretRef:
+    name: gitea-credentials
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Framework
+metadata:
+  name: go-cli
+spec:
+  displayName: Go command-line program
+  description: A Go program with a testable entry point, internal packages and a version flag.
+  supportedTypes: [cli]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/go-cli
+    ref: v1.0.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Standard
+metadata:
+  name: go-standard
+spec:
+  displayName: Go quality standard
+  description: Strict golangci-lint, gofumpt, race-checked tests, role guides for agents and the make check CI.
+  supportedTypes: [cli]
+  supportedFrameworks: [go-cli]
+  # The quality contract: agents fix the code, not the rules it is checked by.
+  protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/go-standard
+    ref: v1.0.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Framework
+metadata:
+  name: vscode-extension
+spec:
+  displayName: VS Code extension (TypeScript)
+  description: A VS Code extension in strict TypeScript, bundled with esbuild, unit-tested without VS Code.
+  supportedTypes: [extension]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/vscode-extension
+    ref: v1.0.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Standard
+metadata:
+  name: ts-standard
+spec:
+  displayName: TypeScript quality standard
+  description: typescript-eslint strict, Prettier, vitest, a packaging check, role guides for agents and the make check CI.
+  supportedTypes: [extension]
+  supportedFrameworks: [vscode-extension]
+  protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/ts-standard
+    ref: v1.0.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Deployment
+metadata:
+  name: gitea-release
+spec:
+  displayName: Release files on a Gitea release
+  description: On a version tag, CI runs make dist and attaches the files in dist/ to the release.
+  supportedTypes: [cli, extension]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/gitea-release
+    ref: v1.0.0
+---
+# The implementer: Claude Code with Sonnet, on the Go and Node toolchain. Needs
+# Secret claude-credentials with CLAUDE_CODE_OAUTH_TOKEN (make claude-secret
+# CLAUDE_NAMESPACE=cel-lens CLAUDE_TOKEN=...).
+apiVersion: c4.factory.io/v1alpha1
+kind: Agent
+metadata:
+  name: claude-implementer
+spec:
+  displayName: Claude Code, Sonnet (implementer)
+  description: Implements one issue at a time, test first, until make check passes.
+  image: c4factory/agent-go:dev
+  harness: claude-code
+  model: claude-sonnet-5-5
+  credentialsSecretRef:
+    name: claude-credentials
+  maxRounds: 3
+  timeoutMinutes: 90
+  resources:
+    requests: {cpu: "1", memory: 2Gi}
+    limits: {memory: 6Gi}
+---
+# The reviewer: a stronger model, which judges each acceptance criterion.
+apiVersion: c4.factory.io/v1alpha1
+kind: Agent
+metadata:
+  name: claude-reviewer
+spec:
+  displayName: Claude Code, Opus (reviewer)
+  description: Reviews each round against the issue's acceptance criteria and the Standard's checklist.
+  image: c4factory/agent-go:dev
+  harness: claude-code
+  model: claude-opus-5-5
+  credentialsSecretRef:
+    name: claude-credentials
+  maxRounds: 3
+  timeoutMinutes: 45
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {memory: 4Gi}
+---
+# A stand-in that makes a scripted change and approves it: proves the issue loop
+# without spending tokens.
+apiVersion: c4.factory.io/v1alpha1
+kind: Agent
+metadata:
+  name: stand-in
+spec:
+  displayName: Stand-in agent
+  description: Adds a line to STAND-IN.md; asks for changes once, then approves.
+  image: c4factory/agent-go:dev
+  harness: stand-in
+  maxRounds: 2
+  timeoutMinutes: 15
+  env:
+    - name: C4AGENT_FAKE_CHANGES_FIRST
+      value: "true"

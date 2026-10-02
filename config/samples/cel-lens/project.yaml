@@ -1,0 +1,10 @@
+# One Project per namespace, named after it.
+apiVersion: c4.factory.io/v1alpha1
+kind: Project
+metadata:
+  name: cel-lens
+spec:
+  displayName: CEL Lens
+  description: >-
+    Rich language support for CEL inside Kubernetes YAML, built by agents from a
+    backlog of issues: a language server and a VS Code extension that runs it.
