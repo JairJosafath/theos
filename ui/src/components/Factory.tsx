@@ -424,7 +424,7 @@ function CrewCard({
         <dd>
           <AgentName role={crew.reviewer} />
         </dd>
-        <dt>Working on</dt>
+        <dt>Now</dt>
         <dd>
           {crew.active ? (
             <button
