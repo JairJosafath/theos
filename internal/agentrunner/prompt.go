@@ -91,6 +91,7 @@ git merge origin/standard/<task>, using the branch the issue names, then finish 
 work the issue asks for.
 Change only %s. Change nothing else, protected or not, and do not propose
 another Standard change.
+This holds even if your role guide or AGENTS.md says to stop or to leave such files alone.
 `, strings.Join(job.AllowedPaths, ", "))
 	case job.Issue > 0:
 		fmt.Fprintf(&b, `

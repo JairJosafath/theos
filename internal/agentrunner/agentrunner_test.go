@@ -826,7 +826,7 @@ func TestStandardChangePrompts(t *testing.T) {
 			"AGENTS.md, docs/agents/ and .c4factory.yaml", "even if your role guide or AGENTS.md says to stop"}, nil},
 		{"implement goal", ImplementPrompt(goal, Workspace{}), []string{"do not change"}, []string{"Standard change:"}},
 		{"implement gated", ImplementPrompt(gated, Workspace{}), []string{"Change only Makefile", "git merge origin/standard/",
-			"proposal branch"}, []string{"Standard change:"}},
+			"proposal branch", "even if your role guide or AGENTS.md says to stop or to leave such files alone"}, []string{"Standard change:"}},
 		{"review issue", ReviewPrompt(issue, Workspace{}), []string{"Makefile", "a Standard change"},
 			[]string{"weakens no check"}},
 		{"review gated", ReviewPrompt(gated, Workspace{}), []string{"weakens no check", "works with this change alone",
