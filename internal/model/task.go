@@ -17,8 +17,10 @@ const (
 	TaskImplementing = "Implementing"
 	TaskChecking     = "Checking"
 	TaskReviewing    = "Reviewing"
-	TaskMerged       = "Merged"
-	TaskFailed       = "Failed"
+	// TaskBlocked waits for a Standard change that the Task's change needs.
+	TaskBlocked = "Blocked"
+	TaskMerged  = "Merged"
+	TaskFailed  = "Failed"
 )
 
 // Roles an agent plays in a Task round, as the runner names them.
@@ -44,6 +46,10 @@ type RunResult struct {
 	Summary string
 	Verdict string
 	Error   string
+	// Proposal is a Standard change the agent asks for, besides its own change.
+	Proposal *Proposal
+	// Empty means a resumed branch equals the base: the Standard change did it all.
+	Empty bool
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []FollowUp
 	// Unavailable means the agent's service couldn't work: a usage limit, an
@@ -106,6 +112,96 @@ type TaskFacts struct {
 	// Conflicted means the pull request can no longer merge: main moved since
 	// the branch was made, with changes that conflict.
 	Conflicted bool
+	// StandardChanges counts the Standard changes filed so far for the Task.
+	StandardChanges int
+	// Resumed means this implement run is the first after a Standard change merged.
+	Resumed bool
+	// Change is the Standard change a Blocked Task waits for.
+	Change ChangeFacts
+	// Feedback is the round's feedback, status.feedback.
+	Feedback string
+}
+
+// ChangeFacts is the Standard change a Task waits for.
+type ChangeFacts struct {
+	Issue  int
+	Paths  []string
+	Merged bool
+	// Failed says why the change will not merge; empty while it still may.
+	Failed string
+}
+
+// ChangeTask is a Task that works on a Standard change's issue.
+type ChangeTask struct {
+	Name string
+	// Final means the Task has ended, Failed that it ended in failure.
+	Final, Failed bool
+	Message       string
+}
+
+// StandardChangeOutcome reads the Tasks on a Standard change's issue. Any merged
+// Task means the change merged; any active one means it is pending, even when the
+// issue is closed, since the gated merge closes the issue in the same reconcile
+// that sets Merged. Otherwise the last failed Task fails it, and a closed issue
+// with no Task at all was closed without a merge.
+func StandardChangeOutcome(issue int, tasks []ChangeTask, issueClosed bool) (merged bool, failed string) {
+	var last *ChangeTask
+	active := false
+	for i, t := range tasks {
+		switch {
+		case t.Final && !t.Failed:
+			return true, ""
+		case !t.Final:
+			active = true
+		default:
+			last = &tasks[i]
+		}
+	}
+	switch {
+	case active:
+		return false, ""
+	case last != nil:
+		return false, fmt.Sprintf("Task %s failed: %s", last.Name, last.Message)
+	case issueClosed:
+		return false, fmt.Sprintf("issue #%d was closed without a merge", issue)
+	}
+	return false, ""
+}
+
+// ResumeFeedback is what the implementer is told when its Standard change merged:
+// carry on with the change, now that the protected files are in main.
+func ResumeFeedback(issue int, paths []string, earlier string) string {
+	out := fmt.Sprintf("Standard change #%d (%s) has merged into main. Merge main into your branch and "+
+		"finish the change; do not edit those files again.", issue, joinAnd(paths))
+	if earlier != "" {
+		out += "\n\n" + earlier
+	}
+	return out
+}
+
+// GatedMergeRefusal says why a Standard change's pull request may not merge, or ""
+// when it may: CI is green, the reviewer approved, and the change is not empty and
+// stays inside the allowed paths.
+func GatedMergeRefusal(checks, verdict string, changed, allowed []string) string {
+	if checks != "success" {
+		return fmt.Sprintf("CI is %s, not success", orUnknown(checks))
+	}
+	if verdict != VerdictApprove {
+		return fmt.Sprintf("the reviewer's verdict is %q, not %q", verdict, VerdictApprove)
+	}
+	if len(changed) == 0 {
+		return "the change changes nothing"
+	}
+	var outside []string
+	for _, p := range changed {
+		if !coveredByAny(allowed, p) {
+			outside = append(outside, p)
+		}
+	}
+	if len(outside) > 0 {
+		return fmt.Sprintf("the change touches %s, outside the allowed paths", joinAnd(outside))
+	}
+	return ""
 }
 
 // ConflictFeedback is what the implementer is told when its approved change no
@@ -135,6 +231,13 @@ const (
 	ActionRetryReview    TaskAction = "RetryReview"
 	ActionMerge          TaskAction = "Merge"
 	ActionRetry          TaskAction = "Retry"
+	// ActionPropose files the agent's proposal as a Standard change and blocks the Task.
+	ActionPropose TaskAction = "Propose"
+	// ActionResume puts a Blocked Task back to work once its Standard change merged.
+	ActionResume TaskAction = "Resume"
+	// ActionDoneByStandardChange ends a resumed Task whose branch has nothing
+	// beyond main: the Standard change did the whole issue.
+	ActionDoneByStandardChange TaskAction = "DoneByStandardChange"
 	// ActionResolveConflicts sends an approved change back to the implementer, in
 	// the same round, to merge main and resolve the conflicts.
 	ActionResolveConflicts TaskAction = "ResolveConflicts"
@@ -199,7 +302,10 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		case f.Run.Result.Error != "":
 			return roundFailed(f, f.Run.Result.Error)
 		}
-		return TaskStep{Action: ActionOpenPR, Message: "The agent pushed " + short(f.Run.Result.Commit)}
+		return implementedStep(f)
+
+	case TaskBlocked:
+		return blockedStep(f)
 
 	case TaskChecking:
 		switch f.Checks {
@@ -251,6 +357,40 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		return roundFailed(f, "The reviewer asked for changes:\n"+f.Run.Result.Summary)
 	}
 	return TaskStep{Action: ActionNone}
+}
+
+// implementedStep decides what follows a finished implement run that reported
+// neither an error nor an outage.
+func implementedStep(f TaskFacts) TaskStep {
+	res := f.Run.Result
+	if p := res.Proposal; p != nil {
+		if f.StandardChanges >= MaxStandardChanges {
+			return TaskStep{Action: ActionFail, Message: fmt.Sprintf("The change needs a third Standard change (%s); "+
+				"more than two Standard changes need a person", joinAnd(p.Paths))}
+		}
+		return TaskStep{Action: ActionPropose,
+			Message: fmt.Sprintf("The change needs a Standard change to %s; filing it", joinAnd(p.Paths))}
+	}
+	if f.Resumed && res.Empty {
+		return TaskStep{Action: ActionDoneByStandardChange, Message: fmt.Sprintf(
+			"Standard change #%d did the whole issue: the branch has nothing beyond main", f.Change.Issue)}
+	}
+	return TaskStep{Action: ActionOpenPR, Message: "The agent pushed " + short(res.Commit)}
+}
+
+// blockedStep waits for the Standard change a Task needs, then resumes or fails it.
+func blockedStep(f TaskFacts) TaskStep {
+	c := f.Change
+	switch {
+	case c.Merged:
+		return TaskStep{Action: ActionResume, Feedback: ResumeFeedback(c.Issue, c.Paths, f.Feedback),
+			Message: fmt.Sprintf("Standard change #%d merged; round %d goes on", c.Issue, f.Round)}
+	case c.Failed != "":
+		return TaskStep{Action: ActionFail,
+			Message: fmt.Sprintf("Standard change #%d will not merge: %s", c.Issue, c.Failed)}
+	}
+	return TaskStep{Action: ActionWait,
+		Message: fmt.Sprintf("Waiting for Standard change #%d (%s)", c.Issue, joinAnd(c.Paths))}
 }
 
 // agentUnavailable keeps the round and waits for the agent's service to be back.

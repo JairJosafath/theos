@@ -9,6 +9,7 @@ import (
 func TestNextTaskStep(t *testing.T) {
 	done := func(r RunResult) RunState { return RunState{Started: true, Done: true, Result: &r} }
 	running := RunState{Started: true}
+	prop := &Proposal{Branch: "standard/t", Paths: []string{"Makefile"}}
 
 	tests := []struct {
 		name  string
@@ -83,6 +84,34 @@ func TestNextTaskStep(t *testing.T) {
 			Checks: "success", NoFreeSlot: true}, want: ActionWait, message: "free agent slot"},
 		{name: "a full house does not stop a running round", facts: TaskFacts{Phase: TaskImplementing, Round: 1,
 			MaxRounds: 3, NoFreeSlot: true, Run: done(RunResult{Commit: "abc"})}, want: ActionOpenPR},
+
+		{name: "a proposal files a Standard change", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: done(RunResult{Commit: "c", Proposal: prop})}, want: ActionPropose, message: "Standard change to Makefile"},
+		{name: "a second proposal is still filed", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			StandardChanges: 1, Run: done(RunResult{Commit: "c", Proposal: prop})}, want: ActionPropose},
+		{name: "a third proposal fails the Task", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			StandardChanges: 2, Run: done(RunResult{Commit: "c", Proposal: prop})},
+			want: ActionFail, message: "more than two Standard changes"},
+		{name: "an error beats a proposal", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: done(RunResult{Error: "boom", Proposal: prop})}, want: ActionRetry},
+		{name: "an empty resume is done by the Standard change", facts: TaskFacts{Phase: TaskImplementing, Resumed: true,
+			Change: ChangeFacts{Issue: 31}, Run: done(RunResult{Empty: true})},
+			want: ActionDoneByStandardChange, message: "#31"},
+		{name: "empty counts only on a resume", facts: TaskFacts{Phase: TaskImplementing,
+			Run: done(RunResult{Commit: "c", Empty: true})}, want: ActionOpenPR},
+		{name: "blocked waits for the Standard change", facts: TaskFacts{Phase: TaskBlocked,
+			Change: ChangeFacts{Issue: 31, Paths: []string{"Makefile"}}},
+			want: ActionWait, message: "Waiting for Standard change #31 (Makefile)"},
+		{name: "a merged Standard change resumes the Task", facts: TaskFacts{Phase: TaskBlocked, Round: 3, MaxRounds: 3,
+			Feedback: "- fix x", Change: ChangeFacts{Issue: 31, Paths: []string{"Makefile"}, Merged: true}},
+			want: ActionResume, feedback: "- fix x", message: "Standard change #31 merged; round 3 goes on"},
+		{name: "a failed Standard change fails the Task", facts: TaskFacts{Phase: TaskBlocked,
+			Change: ChangeFacts{Issue: 31, Failed: "Task x-31 failed: Failed after 3 rounds"}},
+			want: ActionFail, message: "Standard change #31 will not merge: Task x-31 failed"},
+		{name: "a full house does not stop a resume", facts: TaskFacts{Phase: TaskBlocked, NoFreeSlot: true,
+			AgentBackIn: time.Hour, Change: ChangeFacts{Issue: 31, Merged: true}}, want: ActionResume},
+		{name: "a full house does not make blocked a slot wait", facts: TaskFacts{Phase: TaskBlocked, NoFreeSlot: true,
+			Change: ChangeFacts{Issue: 31}}, want: ActionWait, message: "Waiting for Standard change #31"},
 		{name: "merged is final", facts: TaskFacts{Phase: TaskMerged}, want: ActionNone},
 		{name: "failed is final", facts: TaskFacts{Phase: TaskFailed}, want: ActionNone},
 	}
@@ -366,5 +395,98 @@ func TestNextTaskStepConflicts(t *testing.T) {
 	}
 	if got := NextTaskStep(TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: approved}); got.Action != ActionMerge {
 		t.Errorf("NextTaskStep() = %+v, want a merge without conflicts", got)
+	}
+}
+
+func TestNextTaskStepBlockedSlotWait(t *testing.T) {
+	got := NextTaskStep(TaskFacts{Phase: TaskBlocked, NoFreeSlot: true, Change: ChangeFacts{Issue: 31}})
+	if got.SlotWait {
+		t.Errorf("a blocked Task must not queue for a slot: %+v", got)
+	}
+	got = NextTaskStep(TaskFacts{Phase: TaskBlocked, NoFreeSlot: true, AgentBackIn: time.Hour,
+		Change: ChangeFacts{Issue: 31, Merged: true}})
+	if got.SlotWait || got.Action != ActionResume {
+		t.Errorf("a resume is not a start: %+v", got)
+	}
+}
+
+func TestResumeFeedbackInStep(t *testing.T) {
+	got := NextTaskStep(TaskFacts{Phase: TaskBlocked, Round: 3, MaxRounds: 3, Feedback: "- fix x",
+		Change: ChangeFacts{Issue: 31, Paths: []string{"Makefile"}, Merged: true}})
+	for _, want := range []string{"#31", "Makefile", "- fix x"} {
+		if !strings.Contains(got.Feedback, want) {
+			t.Errorf("Feedback = %q, want it to contain %q", got.Feedback, want)
+		}
+	}
+}
+
+func TestStandardChangeOutcome(t *testing.T) {
+	tests := []struct {
+		name       string
+		tasks      []ChangeTask
+		closed     bool
+		wantMerged bool
+		wantFailed string
+	}{
+		{name: "no tasks, open"},
+		// The gated merge closes the issue in the reconcile that sets Merged, so the
+		// issue can read closed before any Task says Merged: wait, don't fail.
+		{name: "closed while the Task is still active", tasks: []ChangeTask{{Name: "x-31"}}, closed: true},
+		{name: "merged", tasks: []ChangeTask{{Name: "x-31", Final: true}}, closed: true, wantMerged: true},
+		{name: "failed", tasks: []ChangeTask{{Name: "x-31", Final: true, Failed: true, Message: "Failed after 3 rounds"}},
+			wantFailed: "Task x-31 failed: Failed after 3 rounds"},
+		{name: "failed, then retried", tasks: []ChangeTask{{Name: "x-31", Final: true, Failed: true, Message: "m"},
+			{Name: "x-31-2"}}},
+		{name: "failed, then merged", tasks: []ChangeTask{{Name: "x-31", Final: true, Failed: true, Message: "m"},
+			{Name: "x-31-2", Final: true}}, wantMerged: true},
+		{name: "closed without any Task", closed: true, wantFailed: "issue #31 was closed without a merge"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			merged, failed := StandardChangeOutcome(31, tt.tasks, tt.closed)
+			if merged != tt.wantMerged || failed != tt.wantFailed {
+				t.Errorf("StandardChangeOutcome() = %v, %q; want %v, %q", merged, failed, tt.wantMerged, tt.wantFailed)
+			}
+		})
+	}
+}
+
+func TestResumeFeedback(t *testing.T) {
+	got := ResumeFeedback(31, []string{"Makefile"}, "")
+	for _, want := range []string{"#31", "Makefile", "merged into main"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ResumeFeedback() = %q, want it to contain %q", got, want)
+		}
+	}
+	got = ResumeFeedback(31, []string{"Makefile"}, "The reviewer asked for changes:\n- fix x")
+	if !strings.Contains(got, "- fix x") {
+		t.Errorf("ResumeFeedback() = %q, want the earlier feedback", got)
+	}
+}
+
+func TestGatedMergeRefusal(t *testing.T) {
+	mk := []string{"Makefile"}
+	tests := []struct {
+		name             string
+		checks, verdict  string
+		changed, allowed []string
+		want             string // substring; "" means merge
+	}{
+		{name: "merges", checks: "success", verdict: VerdictApprove, changed: mk, allowed: mk},
+		{name: "a directory allowance", checks: "success", verdict: VerdictApprove,
+			changed: []string{".gitea/workflows/release.yaml"}, allowed: []string{".gitea/"}},
+		{name: "red CI", checks: "failure", verdict: VerdictApprove, changed: mk, allowed: mk, want: "CI"},
+		{name: "no verdict", checks: "success", verdict: VerdictChanges, changed: mk, allowed: mk, want: "approve"},
+		{name: "outside the allowance", checks: "success", verdict: VerdictApprove,
+			changed: []string{"Makefile", "README.md"}, allowed: mk, want: "README.md"},
+		{name: "empty change", checks: "success", verdict: VerdictApprove, allowed: mk, want: "changes nothing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GatedMergeRefusal(tt.checks, tt.verdict, tt.changed, tt.allowed)
+			if tt.want == "" && got != "" || !strings.Contains(got, tt.want) {
+				t.Errorf("GatedMergeRefusal() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
