@@ -212,10 +212,10 @@ The operator builds the context from the model, not from the prompt author:
 
 | Template | Kind | For | Writes |
 | --- | --- | --- | --- |
-| `go-cli` | Framework | `cli` | `go.mod`, `cmd/<container>/`, `internal/`, README, devcontainer base |
+| `go-cli` | Framework | `cli` | `go.mod`, `main.go` with a testable `run`, `internal/`, README, devcontainer base |
 | `go-standard` | Standard | `go-cli` | `.golangci.yml` (strict v2 config), `Makefile` (`check`, `build`, `dist`), `AGENTS.md`, `docs/style/`, `docs/agents/`, issue and PR templates, CI |
-| `vscode-extension` | Framework | `extension` | `package.json`, `src/extension.ts`, esbuild bundle, `.vscodeignore`, README, CHANGELOG |
-| `ts-standard` | Standard | `vscode-extension` | `eslint.config.mjs` (typescript-eslint strict), Prettier, strict `tsconfig`, vitest, `Makefile`, `AGENTS.md`, `docs/style/`, `docs/agents/`, issue and PR templates, CI |
+| `vscode-extension` | Framework | `extension` | `package.json` and lockfile, `src/extension.ts`, strict `tsconfig.json`, vitest config with a `vscode` stand-in, esbuild bundle into `out/`, `.vscodeignore`, README, CHANGELOG |
+| `ts-standard` | Standard | `vscode-extension` | `eslint.config.mjs` (typescript-eslint strict), Prettier, `Makefile` (with a packaging check), `AGENTS.md`, `docs/style/`, `docs/agents/`, issue and PR templates, CI |
 | `gitea-release` | Deployment | `cli`, `extension` | `.gitea/workflows/release.yaml`: `make dist` on a `v*` tag, assets attached to the release |
 
 Each Standard's `make check` is the whole contract: format, lint, type check,

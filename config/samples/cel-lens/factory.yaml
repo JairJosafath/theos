@@ -59,7 +59,10 @@ spec:
   description: typescript-eslint strict, Prettier, vitest, a packaging check, role guides for agents and the make check CI.
   supportedTypes: [extension]
   supportedFrameworks: [vscode-extension]
-  protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
+  # tsconfig.json and vitest.config.mts are the Framework's, but they decide what the
+  # type check and the tests cover.
+  protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig,
+    docs/style/, docs/agents/, tsconfig.json, vitest.config.mts]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/ts-standard
     ref: v1.0.0
