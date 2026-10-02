@@ -324,6 +324,12 @@ func (g *fakeGit) labelIssue(owner, name string, number int, label string) error
 	return p.AddIssueLabel(context.Background(), gitprovider.Repository{Owner: owner, Name: name}, number, label)
 }
 
+// closeIssue closes an issue, as a person would in the Git host.
+func (g *fakeGit) closeIssue(owner, name string, number int) error {
+	p := &fakeProvider{git: g}
+	return p.CloseIssue(context.Background(), gitprovider.Repository{Owner: owner, Name: name}, number)
+}
+
 // pullAuthor is who opened a pull request.
 func (g *fakeGit) pullAuthor(owner, name string, number int) string {
 	g.mu.Lock()

@@ -462,10 +462,14 @@ func TestStandardChangeOutcome(t *testing.T) {
 
 func TestResumeFeedback(t *testing.T) {
 	got := ResumeFeedback(31, []string{"Makefile"}, "")
-	for _, want := range []string{"#31", "Makefile", "merged into main"} {
+	for _, want := range []string{"#31", "Makefile", "merged into main", "takes another Standard change"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("ResumeFeedback() = %q, want it to contain %q", got, want)
 		}
+	}
+	// A second Standard change is allowed: the feedback must not forbid one.
+	if strings.Contains(got, "do not edit") {
+		t.Errorf("ResumeFeedback() = %q, forbids editing the files again", got)
 	}
 	got = ResumeFeedback(31, []string{"Makefile"}, "The reviewer asked for changes:\n- fix x")
 	if !strings.Contains(got, "- fix x") {

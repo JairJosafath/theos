@@ -185,8 +185,15 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		ReviewAttempts: int(status.ReviewAttempts),
 
 		MergeWaitsForChecks: mergeWaitsForChecks(status),
+		StandardChanges:     standardChangeCount(status),
+		Resumed:             resumedRun(status),
+		Feedback:            status.Feedback,
 	}
-	facts.StandardChanges, facts.Change = standardChangeFacts(status)
+	change, err := r.changeFacts(ctx, task, status, container)
+	if err != nil {
+		return facts, err
+	}
+	facts.Change = change
 	if status.PhaseChangedAt != nil {
 		facts.InPhase = r.now().Sub(status.PhaseChangedAt.Time)
 	}

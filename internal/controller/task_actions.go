@@ -69,6 +69,13 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 	case model.ActionPropose:
 		return r.propose(ctx, task, status, container, step)
 
+	case model.ActionResume:
+		r.resume(ctx, task, status, container, step)
+		return ctrl.Result{}, nil // the status write triggers the next step
+
+	case model.ActionDoneByStandardChange:
+		return ctrl.Result{}, r.doneByStandardChange(ctx, task, status, container, step)
+
 	case model.ActionRetryReview:
 		r.progress(task, status, metav1.ConditionTrue, "ReviewerFailed", step.Message)
 		if err := r.endRun(ctx, task, status); err != nil {
@@ -242,7 +249,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		if issue.State == "closed" {
+		if issue.State == stateClosed {
 			r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, "IssueClosed",
 				fmt.Sprintf("Issue #%d was closed before the Task finished", issue.Number))
 			return ctrl.Result{}, nil
@@ -269,7 +276,8 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		task: task, status: status, container: container, agent: agent, name: name, role: role,
 		repoURL: repo.CloneURL, gitSecret: gitSecret, context: story.Text(), goal: goal,
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
-		protectedPaths: protected, allowedPaths: task.Spec.AllowedProtectedPaths, workspaceMemory: r.WorkspaceMemory,
+		protectedPaths: protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
+		workspaceMemory: r.WorkspaceMemory,
 	}, r.Scheme, r.now())
 	if err != nil {
 		return ctrl.Result{}, err
@@ -342,7 +350,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !pr.Merged && pr.State == "closed" {
+	if !pr.Merged && pr.State == stateClosed {
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}

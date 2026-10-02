@@ -168,7 +168,241 @@ var _ = Describe("Task with a Standard change", func() {
 		Expect(standardChangeIssues(ns)).To(Equal([]int{filed}))
 		Expect(gitFake.issue(ns, "orders-api", n).blockers).To(ContainElement(fmt.Sprintf("#%d", filed)))
 	})
+
+	It("fails, filing nothing, when its issue was closed during the round", func() {
+		ns := newProjectNamespace()
+		n := proposingTask(ns)
+		Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
+		finishWithProposal(ns)
+
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Sandbox).To(BeEmpty())
+			g.Expect(task.Status.StandardChange).To(BeNil())
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("IssueClosed"),
+				"Message": Equal(fmt.Sprintf("Issue #%d was closed before the Task finished", n))})))
+		}).Should(Succeed())
+		Expect(standardChangeIssues(ns)).To(BeEmpty())
+		Expect(gitFake.issue(ns, "orders-api", n).blockers).To(BeEmpty())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement"), newSandbox()))).To(BeTrue())
+	})
+
+	It("fails a Task with a goal that proposes, filing nothing", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "orders-api-1", "Package it"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		finishWithProposal(ns)
+
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Sandbox).To(BeEmpty())
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("Failed"),
+				"Message": And(ContainSubstring("only an issue's Task can propose"), ContainSubstring("Makefile"))})))
+		}).Should(Succeed())
+		Expect(standardChangeIssues(ns)).To(BeEmpty())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement"), newSandbox()))).To(BeTrue())
+	})
+
+	It("fails when its Standard change is closed without a merge", func() {
+		// No Crew: it would start the change within its poll.
+		ns := newProjectNamespace()
+		n := proposingTask(ns)
+		finishWithProposal(ns)
+		m := n + 1 // the Standard change the Task files
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+		}).Should(Succeed())
+
+		Expect(gitFake.closeIssue(ns, "orders-api", m)).To(Succeed())
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("Failed"),
+				"Message": And(ContainSubstring(fmt.Sprintf("Standard change #%d will not merge", m)),
+					ContainSubstring("closed without a merge"))})))
+		}).Should(Succeed())
+		issue := gitFake.issue(ns, "orders-api", n)
+		Expect(issue.State).To(Equal("open"))
+		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
+		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
+			ContainSubstring("closed without a merge"))))
+	})
+
+	It("resumes when its Standard change merges, and ends when that did the whole issue", func() {
+		ns := newProjectNamespace()
+		n, m := blockedBesideChange(ns, 2)
+		mergeChange(ns, 1)
+		Expect(gitFake.issue(ns, "orders-api", m).State).To(Equal("closed"))
+
+		By("resuming the round it was in, told the change merged")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(task.Status.Feedback).To(ContainSubstring(fmt.Sprintf("#%d", m)))
+			g.Expect(task.Status.StandardChange).To(PointTo(HaveField("ResumedRound", int32(1))))
+			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "Resumed")))
+		}).Should(Succeed())
+		Expect(gitFake.issue(ns, "orders-api", n).comments).
+			To(ContainElement(ContainSubstring(fmt.Sprintf("Standard change #%d merged", m))))
+
+		By("ending it Merged when the resumed run finds the branch equals main")
+		finishResumed(ns, 1)
+		var task *c4v1alpha1.Task
+		Eventually(func(g Gomega) {
+			task = getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Sandbox).To(BeEmpty())
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionTrue), "Reason": Equal("DoneByStandardChange"),
+				"Message": ContainSubstring(fmt.Sprintf("Standard change #%d did the whole issue", m))})))
+		}).Should(Succeed())
+		issue := gitFake.issue(ns, "orders-api", n)
+		Expect(issue.State).To(Equal("closed"))
+		Expect(issue.Labels).NotTo(ContainElement(model.LabelInProgress))
+		Expect(issue.comments).To(ContainElement(fmt.Sprintf(
+			"Done by Standard change #%d (%s): with it merged, this issue needed nothing more.", m,
+			task.Status.StandardChange.IssueURL)))
+		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1), "the resumed Task opened no pull request")
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement"), newSandbox()))).To(BeTrue())
+	})
+
+	It("closes its pull request when its Standard change did the whole issue", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 2)
+		n := gitFake.addIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
+		crew := newCrew(ns)
+		crew.Spec.Parallel = 1
+		mustCreate(crew)
+
+		By("opening a pull request in round 1, whose checks fail")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
+			&agentrunner.Result{Role: "implement", Commit: "sha-1", Summary: "Wrote scripts/dist.mjs."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.PullRequest).To(Equal(int32(1)))
+		}).Should(Succeed())
+		gitFake.setChecks(ns, "orders-api", "sha-1", "failure")
+
+		By("proposing a Standard change in round 2")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r2-implement") }).Should(Succeed())
+		p := makefileProposal
+		finishSandbox(ns, "orders-api-1-r2-implement", "orders-api-1", &agentrunner.Result{Role: "implement",
+			Commit: "sha-1", Summary: "make dist needs the Makefile.", Proposal: &p}, "")
+		m := n + 1
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+			g.Expect(getTask(g, ns, "orders-api-2").Spec.Issue).To(Equal(int32(m)))
+			sandboxExists(g, ns, "orders-api-2-r1-implement")
+		}).Should(Succeed())
+		mergeChange(ns, 2)
+
+		By("closing the round's pull request, unmerged, once the change did the whole issue")
+		finishResumed(ns, 2)
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded).Reason).To(Equal("DoneByStandardChange"))
+		}).Should(Succeed())
+		pulls := gitFake.pullRequests(ns, "orders-api")
+		Expect(pulls).To(HaveLen(2))
+		Expect(pulls[0]).To(And(HaveField("State", "closed"), HaveField("Merged", false)))
+		Expect(pulls[1].Merged).To(BeTrue(), "the Standard change")
+		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
+	})
+
+	It("fails when its Standard change fails", func() {
+		ns := newProjectNamespace()
+		n, m := blockedBesideChange(ns, 1)
+		finishSandbox(ns, "orders-api-2-r1-implement", "orders-api-2",
+			&agentrunner.Result{Role: "implement", Error: "make dist fails on a clean checkout"}, "")
+
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-2").Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Sandbox).To(BeEmpty())
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("Failed"),
+				"Message": And(ContainSubstring(fmt.Sprintf("Standard change #%d will not merge", m)),
+					ContainSubstring("Task orders-api-2 failed"), ContainSubstring("make dist fails"))})))
+		}).Should(Succeed())
+		issue := gitFake.issue(ns, "orders-api", n)
+		Expect(issue.State).To(Equal("open"))
+		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
+		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
+			ContainSubstring("will not merge"))))
+	})
 })
+
+// blockedBesideChange runs a Crew whose Task orders-api-1 proposes a Standard
+// change in round 1, its Agents allowed rounds rounds, and waits until the Crew
+// runs the change as orders-api-2. It returns the issue and the change's.
+func blockedBesideChange(ns string, rounds int32) (n, m int) {
+	GinkgoHelper()
+	readyContainer(ns)
+	crewAgents(ns, rounds)
+	n = gitFake.addIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
+	crew := newCrew(ns)
+	crew.Spec.Parallel = 1
+	mustCreate(crew)
+	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
+	gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+	finishWithProposal(ns)
+	m = n + 1 // the Standard change the Task files
+	Eventually(func(g Gomega) {
+		g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+		g.Expect(getTask(g, ns, "orders-api-2").Spec.Issue).To(Equal(int32(m)))
+		sandboxExists(g, ns, "orders-api-2-r1-implement")
+	}).Should(Succeed())
+	return n, m
+}
+
+// mergeChange drives the Crew's Standard change Task orders-api-2 through its
+// gated merge: its pull request, number pr, changes the Makefile, CI passes and
+// the reviewer approves.
+func mergeChange(ns string, pr int) {
+	GinkgoHelper()
+	gitFake.pushBranch(ns, "orders-api", "task/orders-api-2", "sha-change")
+	finishSandbox(ns, "orders-api-2-r1-implement", "orders-api-2",
+		&agentrunner.Result{Role: "implement", Commit: "sha-change", Summary: "Added the dist target."}, "")
+	Eventually(func(g Gomega) {
+		g.Expect(getTask(g, ns, "orders-api-2").Status.PullRequest).To(Equal(int32(pr)))
+	}).Should(Succeed())
+	gitFake.setPullFiles(ns, "orders-api", pr, "Makefile")
+	gitFake.setChecks(ns, "orders-api", "sha-change", "success")
+	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-2-r1-review-a1") }).Should(Succeed())
+	finishSandbox(ns, "orders-api-2-r1-review-a1", "orders-api-2",
+		&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Only the dist target."}, "")
+	Eventually(func(g Gomega) {
+		g.Expect(getTask(g, ns, "orders-api-2").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+	}).Should(Succeed())
+	Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{pr}))
+}
+
+// finishResumed has the resumed implement run of orders-api-1 in round find its
+// branch equal to main: the Standard change did the whole issue.
+func finishResumed(ns string, round int) {
+	GinkgoHelper()
+	name := fmt.Sprintf("orders-api-1-r%d-implement", round)
+	// The pod of the run that proposed is still there: envtest collects no garbage.
+	Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, name)})).To(Succeed())
+	Eventually(func(g Gomega) {
+		g.Expect(sandboxExists(g, ns, name).GetDeletionTimestamp()).To(BeNil())
+		g.Expect(sandboxEnv(g, ns, name)).To(ContainElement(map[string]any{"name": "C4_RESUMED", "value": "true"}))
+	}).Should(Succeed())
+	finishSandbox(ns, name, "orders-api-1", &agentrunner.Result{Role: "implement", Empty: true}, "")
+}
 
 var _ = Describe("Crew with a Standard change", func() {
 	It("runs a Standard change beside the Task it blocks, with its allowance", func() {
@@ -464,6 +698,34 @@ func TestStandardChangeToReuse(t *testing.T) {
 			}
 			if tt.want != 0 && (!ok || got.Number != tt.want) {
 				t.Errorf("reuses #%d (%v), want #%d", got.Number, ok, tt.want)
+			}
+		})
+	}
+}
+
+func TestResumedRun(t *testing.T) {
+	resumedIn := func(round int32) *c4v1alpha1.TaskStandardChange {
+		return &c4v1alpha1.TaskStandardChange{Issue: 2, Count: 1, ResumedRound: round}
+	}
+	for _, tt := range []struct {
+		name   string
+		status c4v1alpha1.TaskStatus
+		want   bool
+	}{
+		{name: "an implement run of the round it resumed in", want: true,
+			status: c4v1alpha1.TaskStatus{Phase: c4v1alpha1.TaskImplementing, Round: 2, StandardChange: resumedIn(2)}},
+		{name: "not the next round", status: c4v1alpha1.TaskStatus{Phase: c4v1alpha1.TaskImplementing, Round: 3,
+			StandardChange: resumedIn(2)}},
+		{name: "not a review", status: c4v1alpha1.TaskStatus{Phase: c4v1alpha1.TaskReviewing, Round: 2,
+			StandardChange: resumedIn(2)}},
+		{name: "not before it resumed", status: c4v1alpha1.TaskStatus{
+			Phase: c4v1alpha1.TaskImplementing, Round: 1, StandardChange: resumedIn(0)}},
+		{name: "not without a Standard change", status: c4v1alpha1.TaskStatus{Phase: c4v1alpha1.TaskImplementing,
+			Round: 1}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resumedRun(&tt.status); got != tt.want {
+				t.Errorf("resumedRun() = %v, want %v", got, tt.want)
 			}
 		})
 	}

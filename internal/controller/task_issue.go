@@ -33,6 +33,9 @@ import (
 // how it went, pull requests carry the reviews. None of it decides what the Task
 // does next, so a failed note is logged and the Task goes on.
 
+// stateClosed is the state of a closed issue or pull request on the Git host.
+const stateClosed = "closed"
+
 // agentName is how comments name an Agent: its name, and its model when set.
 func agentName(agent *c4v1alpha1.Agent) string {
 	if agent.Spec.Model == "" {
@@ -104,12 +107,20 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Pr
 	if len(filed) > 0 {
 		comment += "\n\nThe reviewer suggested follow-ups, filed as " + model.LabelProposed + ":\n- " + strings.Join(filed, "\n- ")
 	}
-	notes = append(notes,
-		provider.CommentIssue(ctx, repo, n, comment),
-		provider.RemoveIssueLabel(ctx, repo, n, model.LabelInProgress),
-		provider.CloseIssue(ctx, repo, n))
+	notes = append(notes, endIssue(ctx, provider, repo, n, comment)...)
 	logNotes(ctx, task, notes)
 	return filed
+}
+
+// endIssue says on an issue how its Task ended, takes it out of progress and
+// closes it. It returns the notes' errors.
+func endIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, n int,
+	comment string) []error {
+	return []error{
+		provider.CommentIssue(ctx, repo, n, comment),
+		provider.RemoveIssueLabel(ctx, repo, n, model.LabelInProgress),
+		provider.CloseIssue(ctx, repo, n),
+	}
 }
 
 // handBack gives a failed Task's issue back to a person, saying why.

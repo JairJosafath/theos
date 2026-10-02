@@ -117,15 +117,18 @@ type TaskFacts struct {
 	MergeWaitsForChecks bool
 	// StandardChanges counts the Standard changes filed so far for the Task.
 	StandardChanges int
-	// Resumed means this implement run is the first after a Standard change merged.
+	// Resumed means this implement run is in the round the Task resumed in after
+	// its Standard change merged.
 	Resumed bool
-	// Change is the Standard change a Blocked Task waits for.
+	// Change is the Standard change the Task filed last. Its issue and paths come
+	// from status in every phase: the resumed run's DoneByStandardChange names it.
+	// Merged and Failed are read only while the Task is Blocked on it.
 	Change ChangeFacts
 	// Feedback is the round's feedback, status.feedback.
 	Feedback string
 }
 
-// ChangeFacts is the Standard change a Task waits for.
+// ChangeFacts is a Standard change a Task filed.
 type ChangeFacts struct {
 	Issue  int
 	Paths  []string
@@ -172,10 +175,12 @@ func StandardChangeOutcome(issue int, tasks []ChangeTask, issueClosed bool) (mer
 }
 
 // ResumeFeedback is what the implementer is told when its Standard change merged:
-// carry on with the change, now that the protected files are in main.
+// carry on with the change, now that the protected files are in main. The
+// earlier feedback of the round follows.
 func ResumeFeedback(issue int, paths []string, earlier string) string {
 	out := fmt.Sprintf("Standard change #%d (%s) has merged into main. Merge main into your branch and "+
-		"finish the change; do not edit those files again.", issue, joinAnd(paths))
+		"finish the change. Those files are in main now; changing them again takes another Standard change.",
+		issue, joinAnd(paths))
 	if earlier != "" {
 		out += "\n\n" + earlier
 	}
