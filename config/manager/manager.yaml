@@ -66,6 +66,9 @@ spec:
           # Agents' checks write a lot; in memory they don't stall etcd on the
           # Kind node's disk (docs/results-v3.md).
           - --sandbox-workspace-memory=3Gi
+          # Two agents at once: one per Crew of a two-Container project. v3 found
+          # disk I/O, not CPU, was the limit, and moved it to memory.
+          - --max-agent-sandboxes=2
         image: controller:latest
         name: manager
         ports:
