@@ -119,8 +119,9 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    the agent bot (Gitea refuses a review of one's own pull request), polls the
    combined commit status until CI is done, runs the reviewer, posts its verdict
    as a pull request review, and squash-merges on approval. For an issue it then
-   comments, files the follow-ups as `status/proposed` issues and closes it; a
-   failed Task hands the issue back with `status/needs-human`. Status is patched
+   comments, files the follow-ups as `status/proposed` issues in the Later
+   milestone, outside any release, and closes it; a failed Task hands the issue
+   back with `status/needs-human`. Status is patched
    with an optimistic lock, so a stale write is retried rather than repeating a
    step. Notes on the Git host (labels, comments, reviews) are logged when they
    fail; they never decide a step.

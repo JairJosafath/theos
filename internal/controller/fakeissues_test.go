@@ -33,6 +33,8 @@ type fakeIssue struct {
 	blockers  []string
 	assignees []string
 	comments  []string
+	// milestone is the title of the milestone the issue was filed in.
+	milestone string
 }
 
 type fakeReview struct {
@@ -40,15 +42,16 @@ type fakeReview struct {
 }
 
 type fakeIssueState struct {
-	issues  map[string][]*fakeIssue // owner/name, by number - 1
-	labels  map[string][]string     // owner/name
-	reviews map[string][]fakeReview // owner/name#number
+	issues     map[string][]*fakeIssue // owner/name, by number - 1
+	labels     map[string][]string     // owner/name
+	milestones map[string][]string     // owner/name, titles by ID - 1
+	reviews    map[string][]fakeReview // owner/name#number
 }
 
 func (g *fakeGit) issueState() *fakeIssueState {
 	if g.issues == nil {
 		g.issues = &fakeIssueState{issues: map[string][]*fakeIssue{}, labels: map[string][]string{},
-			reviews: map[string][]fakeReview{}}
+			milestones: map[string][]string{}, reviews: map[string][]fakeReview{}}
 	}
 	return g.issues
 }
@@ -148,6 +151,18 @@ func (p *fakeProvider) EnsureLabels(_ context.Context, repo gitprovider.Reposito
 	return nil
 }
 
+func (p *fakeProvider) EnsureMilestone(_ context.Context, repo gitprovider.Repository, title, _ string) (int64, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	s := p.git.issueState()
+	key := repo.Owner + "/" + repo.Name
+	if i := slices.Index(s.milestones[key], title); i >= 0 {
+		return int64(i + 1), nil
+	}
+	s.milestones[key] = append(s.milestones[key], title)
+	return int64(len(s.milestones[key])), nil
+}
+
 func (p *fakeProvider) ListIssues(_ context.Context, repo gitprovider.Repository, label string) ([]gitprovider.Issue, error) {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
@@ -244,17 +259,29 @@ func (p *fakeProvider) AssignIssue(_ context.Context, repo gitprovider.Repositor
 }
 
 func (p *fakeProvider) CreateIssue(_ context.Context, repo gitprovider.Repository, title, body string,
-	labels []string) (gitprovider.Issue, error) {
+	labels []string, milestone int64) (gitprovider.Issue, error) {
 	p.git.mu.Lock()
 	s := p.git.issueState()
+	key := repo.Owner + "/" + repo.Name
 	for _, l := range labels {
-		if !slices.Contains(s.labels[repo.Owner+"/"+repo.Name], l) {
+		if !slices.Contains(s.labels[key], l) {
 			p.git.mu.Unlock()
 			return gitprovider.Issue{}, fmt.Errorf("no label %s", l)
 		}
 	}
+	var milestoneTitle string
+	if milestone != 0 {
+		if milestone < 0 || milestone > int64(len(s.milestones[key])) {
+			p.git.mu.Unlock()
+			return gitprovider.Issue{}, fmt.Errorf("no milestone %d", milestone)
+		}
+		milestoneTitle = s.milestones[key][milestone-1]
+	}
 	p.git.mu.Unlock()
 	n := p.git.addIssue(repo.Owner, repo.Name, title, body, labels)
+	p.git.mu.Lock()
+	s.find(key, n).milestone = milestoneTitle
+	p.git.mu.Unlock()
 	return p.GetIssue(context.Background(), repo, n)
 }
 

@@ -100,6 +100,10 @@ type Provider interface {
 
 	// EnsureLabels creates the labels repo doesn't have yet. It is safe to repeat.
 	EnsureLabels(ctx context.Context, repo Repository, labels []Label) error
+	// EnsureMilestone returns the ID of repo's milestone titled title, open or
+	// closed, and creates it, open and with description, if there is none. It
+	// leaves an existing milestone as it is, and is safe to repeat.
+	EnsureMilestone(ctx context.Context, repo Repository, title, description string) (int64, error)
 	// ListIssues returns the open issues of repo labelled label, without pull requests.
 	ListIssues(ctx context.Context, repo Repository, label string) ([]Issue, error)
 	// GetIssue reads one issue.
@@ -118,8 +122,9 @@ type Provider interface {
 	CloseIssue(ctx context.Context, repo Repository, number int) error
 	// AssignIssue makes users the issue's assignees.
 	AssignIssue(ctx context.Context, repo Repository, number int, users []string) error
-	// CreateIssue files an issue with labels, which must exist in the repository.
-	CreateIssue(ctx context.Context, repo Repository, title, body string, labels []string) (Issue, error)
+	// CreateIssue files an issue with labels, which must exist in the repository,
+	// in the milestone with ID milestone, or in none when it is 0.
+	CreateIssue(ctx context.Context, repo Repository, title, body string, labels []string, milestone int64) (Issue, error)
 }
 
 // BranchRule is what a protected branch requires of a pull request.

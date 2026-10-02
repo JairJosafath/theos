@@ -13,22 +13,33 @@ import (
 	"testing"
 )
 
-// issueHost is an in-memory Gitea with labels, issues, dependencies and reviews,
-// for repository webshop/orders-api. Exclusive scoped labels replace their
-// siblings, as in Gitea.
+// issueHost is an in-memory Gitea with labels, milestones, issues, dependencies
+// and reviews, for repository webshop/orders-api. Exclusive scoped labels replace
+// their siblings, and milestone lists show only open ones unless asked for all,
+// as in Gitea.
 type issueHost struct {
-	mu       sync.Mutex
-	labels   []giteaLabel
-	scoped   map[int64]bool
-	issues   map[int]*hostIssue
-	reviews  []map[string]string
-	comments map[int][]string
+	mu         sync.Mutex
+	labels     []giteaLabel
+	scoped     map[int64]bool
+	milestones []hostMilestone
+	issues     map[int]*hostIssue
+	reviews    []map[string]string
+	comments   map[int][]string
 }
 
 type hostIssue struct {
 	giteaIssue
 	assignees []string
 	deps      []giteaIssue
+	// milestone is the milestone the issue was filed with; nil when the request had none.
+	milestone *int64
+}
+
+type hostMilestone struct {
+	ID          int64  `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	State       string `json:"state"`
 }
 
 func newIssueHost(t *testing.T) (*issueHost, Provider) {
@@ -62,6 +73,22 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		h.scoped[l.ID] = body.Exclusive
 		reply(w, http.StatusCreated, l)
 	})
+	mux.HandleFunc("GET "+repo+"/milestones", func(w http.ResponseWriter, r *http.Request) {
+		out := []hostMilestone{}
+		for _, m := range h.milestones {
+			if r.URL.Query().Get("state") == "all" || m.State == "open" {
+				out = append(out, m)
+			}
+		}
+		reply(w, http.StatusOK, out)
+	})
+	mux.HandleFunc("POST "+repo+"/milestones", func(w http.ResponseWriter, r *http.Request) {
+		var m hostMilestone
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		m.ID, m.State = int64(len(h.milestones)+1), "open"
+		h.milestones = append(h.milestones, m)
+		reply(w, http.StatusCreated, m)
+	})
 	mux.HandleFunc("GET "+repo+"/issues", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("type") != "issues" || r.URL.Query().Get("state") != "open" {
 			t.Errorf("list query = %s", r.URL.RawQuery)
@@ -78,14 +105,15 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 	})
 	mux.HandleFunc("POST "+repo+"/issues", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Title  string  `json:"title"`
-			Body   string  `json:"body"`
-			Labels []int64 `json:"labels"`
+			Title     string  `json:"title"`
+			Body      string  `json:"body"`
+			Labels    []int64 `json:"labels"`
+			Milestone *int64  `json:"milestone"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		n := len(h.issues) + 1
 		i := &hostIssue{giteaIssue: giteaIssue{Number: n, Title: body.Title, Body: body.Body, State: "open",
-			HTMLURL: "http://gitea/webshop/orders-api/issues/" + strconv.Itoa(n)}}
+			HTMLURL: "http://gitea/webshop/orders-api/issues/" + strconv.Itoa(n)}, milestone: body.Milestone}
 		for _, id := range body.Labels {
 			i.Labels = append(i.Labels, h.labels[id-1])
 		}
@@ -204,17 +232,18 @@ func TestIssues(t *testing.T) {
 		t.Fatalf("labels = %v, want each once", h.labels)
 	}
 
-	first, err := p.CreateIssue(ctx, repo, "Validate orders", "## Acceptance criteria\n- [ ] it validates", []string{"status/ready", "kind/bug"})
+	first, err := p.CreateIssue(ctx, repo, "Validate orders", "## Acceptance criteria\n- [ ] it validates",
+		[]string{"status/ready", "kind/bug"}, 0)
 	if err != nil {
 		t.Fatalf("CreateIssue() error = %v", err)
 	}
 	if first.Number != 1 || !reflect.DeepEqual(first.Labels, []string{"status/ready", "kind/bug"}) {
 		t.Errorf("CreateIssue() = %+v", first)
 	}
-	if _, err := p.CreateIssue(ctx, repo, "Other", "", []string{"no/such"}); err == nil {
+	if _, err := p.CreateIssue(ctx, repo, "Other", "", []string{"no/such"}, 0); err == nil {
 		t.Error("CreateIssue() with an unknown label succeeded")
 	}
-	if _, err := p.CreateIssue(ctx, repo, "Unlabelled", "body", nil); err != nil {
+	if _, err := p.CreateIssue(ctx, repo, "Unlabelled", "body", nil, 0); err != nil {
 		t.Fatalf("CreateIssue() without labels error = %v", err)
 	}
 
@@ -258,11 +287,64 @@ func TestIssues(t *testing.T) {
 	}
 }
 
+func TestEnsureMilestone(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("creates the milestone once", func(t *testing.T) {
+		h, p := newIssueHost(t)
+		repo := p.Repository("orders-api")
+		first, err := p.EnsureMilestone(ctx, repo, "Later", "Not part of any release")
+		if err != nil {
+			t.Fatalf("EnsureMilestone() error = %v", err)
+		}
+		again, err := p.EnsureMilestone(ctx, repo, "Later", "Not part of any release")
+		if err != nil {
+			t.Fatalf("EnsureMilestone() again error = %v", err)
+		}
+		want := []hostMilestone{{ID: first, Title: "Later", Description: "Not part of any release", State: "open"}}
+		if first == 0 || again != first || !reflect.DeepEqual(h.milestones, want) {
+			t.Errorf("EnsureMilestone() = %d, then %d; milestones %+v, want %+v", first, again, h.milestones, want)
+		}
+	})
+
+	t.Run("finds a closed milestone by its exact title, without creating or reopening it", func(t *testing.T) {
+		h, p := newIssueHost(t)
+		h.milestones = []hostMilestone{
+			{ID: 1, Title: "Later release", State: "open"},
+			{ID: 2, Title: "later", State: "open"},
+			{ID: 3, Title: "Later", Description: "Someday", State: "closed"},
+		}
+		want := slices.Clone(h.milestones)
+		got, err := p.EnsureMilestone(ctx, p.Repository("orders-api"), "Later", "Not part of any release")
+		if err != nil || got != 3 || !reflect.DeepEqual(h.milestones, want) {
+			t.Errorf("EnsureMilestone() = %d, %v; milestones %+v, want 3 and them unchanged", got, err, h.milestones)
+		}
+	})
+}
+
+func TestCreateIssueMilestone(t *testing.T) {
+	h, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	if _, err := p.CreateIssue(ctx, repo, "Validate addresses", "body", nil, 3); err != nil {
+		t.Fatalf("CreateIssue() with a milestone error = %v", err)
+	}
+	if _, err := p.CreateIssue(ctx, repo, "Validate orders", "body", nil, 0); err != nil {
+		t.Fatalf("CreateIssue() without a milestone error = %v", err)
+	}
+	if m := h.issues[1].milestone; m == nil || *m != 3 {
+		t.Errorf("issue 1 filed with milestone %v, want 3", m)
+	}
+	if m := h.issues[2].milestone; m != nil {
+		t.Errorf("issue 2 filed with milestone %d, want none sent", *m)
+	}
+}
+
 func TestOpenBlockers(t *testing.T) {
 	h, p := newIssueHost(t)
 	ctx := context.Background()
 	repo := p.Repository("orders-api")
-	if _, err := p.CreateIssue(ctx, repo, "Blocked", "", nil); err != nil {
+	if _, err := p.CreateIssue(ctx, repo, "Blocked", "", nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	dep := func(repo string, n int, state string) giteaIssue {

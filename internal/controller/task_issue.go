@@ -74,20 +74,27 @@ func (r *TaskReconciler) review(ctx context.Context, task *c4v1alpha1.Task, stat
 }
 
 // closeIssue reports the merge on the issue, files the reviewer's follow-ups as
-// proposed issues, and closes it. It returns the follow-ups' addresses.
+// proposed issues in the Later milestone, outside any release, and closes it. It
+// returns the follow-ups' addresses.
 func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
 	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, reviewer *c4v1alpha1.Agent, followUps []model.FollowUp) []string {
 	n := int(task.Spec.Issue)
 	var filed []string
 	var notes []error
+	var milestone int64
 	if len(followUps) > 0 {
-		notes = append(notes, provider.EnsureLabels(ctx, repo, issueLabels()))
+		var err error
+		milestone, err = provider.EnsureMilestone(ctx, repo, model.FollowUpMilestone, model.FollowUpMilestoneDescription)
+		if err != nil {
+			milestone = 0 // file them without it
+		}
+		notes = append(notes, provider.EnsureLabels(ctx, repo, issueLabels()), err)
 	}
 	for _, f := range followUps {
 		body := fmt.Sprintf("%s\n\n---\nSuggested by %s while reviewing %s for #%d (Task `%s`). To have agents do it, "+
 			"add an \"Acceptance criteria\" checklist and label it %s.", strings.TrimSpace(f.Body), agentName(reviewer),
 			status.PullRequestURL, n, task.Name, model.LabelReady)
-		issue, err := provider.CreateIssue(ctx, repo, f.Title, body, []string{model.LabelProposed})
+		issue, err := provider.CreateIssue(ctx, repo, f.Title, body, []string{model.LabelProposed}, milestone)
 		notes = append(notes, err)
 		if err == nil {
 			filed = append(filed, issue.URL)

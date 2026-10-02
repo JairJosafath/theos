@@ -271,7 +271,8 @@ model and context it needs.
   `docs/agents/implementer.md` and `reviewer.md`, read from the base branch so a
   change can't rewrite its own review. The reviewer reports each acceptance
   criterion, posts its verdict as a pull request review, and may name up to three
-  follow-ups, which become `status/proposed` issues.
+  follow-ups, which become `status/proposed` issues in the Later milestone,
+  outside any release.
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the VS Code extension's agent reads the server it

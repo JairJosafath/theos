@@ -36,6 +36,15 @@ func StatusLabels() []IssueLabel {
 	}
 }
 
+// FollowUpMilestone is the milestone the factory files reviewers' follow-ups in,
+// so they never look like release work. It is created with the description when
+// a repository doesn't have it yet.
+const (
+	FollowUpMilestone            = "Later"
+	FollowUpMilestoneDescription = "Not part of any release: reviewers' follow-ups and ideas. A person moves an issue " +
+		"into a release milestone, with acceptance criteria, before marking it ready."
+)
+
 // MaxIssueAttempts is how many Tasks a Crew starts for one issue before it asks a
 // person: an issue that failed three times needs splitting or clarifying.
 const MaxIssueAttempts = 3

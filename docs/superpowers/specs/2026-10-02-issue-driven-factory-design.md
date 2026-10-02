@@ -48,7 +48,7 @@ The product: **CEL Lens**, rich CEL language support in Kubernetes YAML.
 | 11 | Role guides | A Standard ships `docs/agents/implementer.md` and `docs/agents/reviewer.md`; c4agent reads them from the base branch, so a change under review can't rewrite its own review |
 | 12 | C4 context | Agents get the system's needs, the Container, its Relationships with their descriptions, and a read-only clone of every related Container's repository |
 | 13 | Reviews in Gitea | Each verdict is posted as a pull request review (approve or request changes) naming the reviewer Agent and model |
-| 14 | Follow-ups | The reviewer may name up to three follow-ups; the operator files them as `status/proposed` issues on merge |
+| 14 | Follow-ups | The reviewer may name up to three follow-ups; the operator files them as `status/proposed` issues on merge, in the Later milestone, outside any release |
 | 15 | Project boards | Gitea 1.27 has no API for projects, so the backlog uses milestones, labels and issue dependencies, which it does have |
 | 16 | Toolchain | One Go and Node toolchain image for both Containers' CI, agents and devcontainers; a second runner labelled `go` |
 | 17 | Releases | One `gitea-release` Deployment template: on a `v*` tag, CI runs `make dist` and attaches `dist/*` to the Gitea release |
@@ -182,6 +182,7 @@ status/proposed ──(a person triages)──► status/ready
                                             │ implement ─► PR "Closes #n" ─► CI ─► review (Gitea review)
                                             ▼
                     merged: issue closed with a comment; follow-ups filed as status/proposed
+                            in the Later milestone, outside any release
                     failed: status/needs-human with the reason; relabel ready to try again (3 tries)
 ```
 

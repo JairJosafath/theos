@@ -102,11 +102,11 @@ func TestGiteaIssuesIntegration(t *testing.T) {
 		if err := p.EnsureLabels(ctx, repo, labels); err != nil {
 			t.Fatalf("EnsureLabels() again: %v", err)
 		}
-		blocker, err := p.CreateIssue(ctx, repo, "First", "body", nil)
+		blocker, err := p.CreateIssue(ctx, repo, "First", "body", nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		blocked, err := p.CreateIssue(ctx, repo, "Second", "body", []string{"status/ready"})
+		blocked, err := p.CreateIssue(ctx, repo, "Second", "body", []string{"status/ready"}, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

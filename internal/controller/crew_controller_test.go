@@ -155,6 +155,7 @@ var _ = Describe("Crew", func() {
 		}
 		Expect(followUp).NotTo(BeNil())
 		Expect(followUp.Labels).To(Equal([]string{model.LabelProposed}))
+		Expect(followUp.milestone).To(Equal("Later"), "follow-ups are filed outside any release")
 		Expect(followUp.Body).To(ContainSubstring("Postcodes are not checked."))
 
 		By("starting the blocked issue once its dependency is closed")
