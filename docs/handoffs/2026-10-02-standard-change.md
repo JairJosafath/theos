@@ -17,8 +17,14 @@ Branch `feat/issue-driven-factory`, draft PR #9. The hand-off commit is pushed.
     (gitprovider: `Issue.Milestone`, `AddIssueDependency`, `PullRequestFiles`,
     `ClosePullRequest`, `ForceMergePullRequest`; fakes `setPullFiles`,
     `setIssueMilestone`, `forcedMerges`, stricter fake merge).
-  - Not started: Tasks 9–18. Next is Task 9 (controller: propose — file the
-    Standard change issue, `Blocked`, `status.standardChange`).
+  - Done by relay session 1 (headless) and reviewed: Task 9 `d0d2aa2`, Task 10
+    `01f8f8a` (see the ledger for their rulings and minors).
+  - **Task 11 interrupted**: its implementer (opus) was mid-work when the user
+    shut the PC down. Its uncommitted edits stay in the tree and are backed up
+    as branch `wip/standard-change-task-11`. Next session: read the ledger's
+    Task 11 rulings, then re-dispatch Task 11 telling the implementer a prior
+    attempt was interrupted and its edits are in the tree to keep or redo.
+  - Not started: Tasks 12–18.
 - `fa1899f` hack/relay.sh: chains headless sessions overnight from the newest
   handoff (the user runs it; auto mode refuses me launching it). AGENTS.md now
   says: hand off between tasks, never inside one; past ~100k after a task, hand off.
@@ -72,10 +78,10 @@ Branch `feat/issue-driven-factory`, draft PR #9. The hand-off commit is pushed.
   full autonomy; release plan approved ("go! release plan is good"); skip e2e;
   never Fable; hand off between tasks; keep a log of session management (the
   relay's `.relay/relay.log`, and this ledger).
-- The user paused both Crews at ~20:30 to give the PC a rest, "before you go
-  full auto mode". Mine: if this session was started by `hack/relay.sh`, the
-  user chose full auto — unpause both Crews (server `parallel: 1` while I/O
-  avg300 > 15%). In an interactive session, ask before unpausing.
+- **Only the user unpauses the Crews.** The user paused both at ~20:30 to rest
+  the PC. My earlier rule "a relay start means full auto, unpause" was wrong:
+  relay session 1 unpaused them against the user's wish (server #27 started);
+  I paused them again. Never unpause unless the user says so in this session.
 - Open, mine: tag extension v0.1.0 (as c4admin) when #4 merges. Task 18 (close
   PR #30 unmerged, ready #4) and the tag may be refused by auto mode — if so,
   leave it open in the handoff for the user, citing their approval.
@@ -84,10 +90,11 @@ Branch `feat/issue-driven-factory`, draft PR #9. The hand-off commit is pushed.
 
 1. Load `superpowers:subagent-driven-development`; run its `scripts/sdd-workspace
    docs/plans/standard-change.md`; read the ledger tail.
-2. Task 9: `scripts/task-brief docs/plans/standard-change.md 9`, record BASE
-   (`git rev-parse HEAD`), dispatch the implementer (opus) with the Task 9 notes
-   above, then a reviewer (opus).
-3. Tasks 10–18, one implementer then one reviewer each, finishing each task
+2. Task 11: `git status` (the interrupted edits), `scripts/task-brief
+   docs/plans/standard-change.md 11`, BASE `01f8f8a`, re-dispatch the
+   implementer (opus) with the Task 11 notes above and the ledger's Task 11
+   rulings, then a reviewer (opus).
+3. Tasks 12–18, one implementer then one reviewer each, finishing each task
    (fix rounds included) before handing off.
 4. Final whole-branch review (opus) with the ledger's deferred minors; no e2e.
 5. Factory: server v0.3.0 (#46 #53 #57) after Standard changes deploy (Task 17);
@@ -105,7 +112,12 @@ Branch `feat/issue-driven-factory`, draft PR #9. The hand-off commit is pushed.
   contains `/`, use `curl -u`), `cel-lens/gitea-credentials`, `cel-lens/*-agent-git`.
 - No port-forwards of mine. The user runs `make ui-forward` (8080) and
   `make gitea-forward` (3000).
-- Relay log (if the user started it): `.relay/relay.log`, `.relay/session-*.md`.
+- Relay: the user started it at 20:19; session 1 ran 20:32 until shutdown.
+  `.relay/stop` exists (the relay removes it when started again). Log:
+  `.relay/relay.log`; session 1's transcript: `claude --resume
+  8d080485-11a4-449f-800e-3e4741e2f783`.
+- Server #27 was implementing round 1 at shutdown; the Kind node was stopped
+  mid-round, so check #27 after `docker start c4factory-control-plane`.
 
 ## References
 
