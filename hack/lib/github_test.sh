@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label),
-# against a stubbed GitHub and a throwaway repository with two worktrees.
+# Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label)
+# and for close keeping the claim when the close fails, against a stubbed GitHub and a throwaway repository with two worktrees.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 unset C4_CLUSTER # the light devcontainer sets it; each test sets its own
@@ -23,6 +23,7 @@ gh_api() {
     */issues/50/labels*) printf 'needs/cluster\nstatus/in-progress\n' ;;
     */issues/51/labels*) printf 'status/in-progress\n' ;;
     */issues/60) echo '{"number":60,"title":"Deploy","labels":[{"name":"needs/cluster"},{"name":"kind/feature"}]}' ;;
+    */issues/71) return 1 ;; # closing #71 fails
     */issues/61) echo '{"number":61,"title":"Docs","labels":[{"name":"kind/docs"}]}' ;;
     */issues/*/comments*)
       if [[ " $* " == *" POST "* ]]; then touch "$T/posted"; echo 999; return; fi
@@ -69,4 +70,11 @@ t0=$(date +%s)
 gh_take 61 >/dev/null 2>&1
 check "take waits for another checkout's take" "$(( $(date +%s) - t0 >= 1 ))" 1
 wait
+rm -rf "$T"/{main,wt2,wt3}/.relay
+claim "$T/main" 71 "$(date +%s)"
+echo landed | gh_close 71 - >/dev/null 2>&1; check "close fails" $? 1
+check "close fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 71
+claim "$T/main" 72 "$(date +%s)"
+echo landed | gh_close 72 - >/dev/null 2>&1; check "close" $? 0
+check "close, claim released" "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" released
 exit $fail
