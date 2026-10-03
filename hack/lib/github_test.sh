@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label)
-# for close keeping the claim when the close fails, and for take releasing a claim on a closed issue, against a stubbed GitHub and a throwaway repository with two worktrees.
+# for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 unset C4_CLUSTER # the light devcontainer sets it; each test sets its own
@@ -36,7 +36,7 @@ gh_api() {
       echo '{"id":1,"updated_at":"'"$now"'","body":"<!-- c4-claim -->\n**heron-73** works on this issue"}' |
         { [ -e "$T/hold74" ] && sed 's/heron-73/heron-74/' || cat; } ;;
     */issues/comments*) echo '[[]]' ;;
-    */issues\?state=open*) echo '[[{"number":60,"title":"Deploy","html_url":"u60","body":"","labels":[{"name":"needs/cluster"},{"name":"status/ready"}]},{"number":61,"title":"Docs","html_url":"u61","body":"","labels":[{"name":"status/ready"}]}]]' ;;
+    */issues\?state=open*) [ -n "${OPEN:-}" ] && { echo "$OPEN"; return; }; echo '[[{"number":60,"title":"Deploy","html_url":"u60","body":"","labels":[{"name":"needs/cluster"},{"name":"status/ready"}]},{"number":61,"title":"Docs","html_url":"u61","body":"","labels":[{"name":"status/ready"}]}]]' ;;
     *) return 0 ;;
   esac
 }
@@ -93,4 +93,18 @@ touch "$T/hold74"; claim "$T/main" 74 "$(date +%s)"
 gh_take 61 >/dev/null 2>&1; check "take, own claim on an open issue" $? 1
 check "take, open issue's claim kept" "$(jq .issue "$T/main/.relay/claim")" 74
 rm -f "$T/hold74"
+
+# Pick order: an in-progress issue nobody holds, else ready + urgent, else
+# ready, oldest first; proposed and needs-human issues are never picked, nor
+# ones that depend on an open issue.
+rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
+issues() { jq -c '[[.[] | {number: .[0], title: "t", html_url: "u", body: (.[2] // ""), labels: (.[1] | map({name: .}))}]]'; }
+all='[[80, ["status/needs-human"]], [81, ["status/proposed"]], [82, ["status/ready"]],
+  [83, ["status/ready", "priority/urgent"], "Depends on #81"], [84, ["status/ready", "priority/urgent"]],
+  [85, ["status/in-progress"]]]'
+check "pick, in-progress first" "$(OPEN=$(issues <<<"$all") gh_pick | cut -f1,4)" "85	in-progress"
+check "pick, then ready + urgent" "$(OPEN=$(jq 'map(select(.[0] != 85))' <<<"$all" | issues) gh_pick | cut -f1,4)" "84	ready-urgent"
+check "pick, then ready" "$(OPEN=$(jq 'map(select(.[0] < 83))' <<<"$all" | issues) gh_pick | cut -f1,4)" "82	ready"
+OPEN=$(jq 'map(select(.[0] < 82))' <<<"$all" | issues) gh_pick >/dev/null
+check "pick, only proposed and needs-human" $? 1
 exit $fail
