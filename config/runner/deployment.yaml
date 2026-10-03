@@ -28,9 +28,11 @@ spec:
               value: http://gitea.gitea.svc.cluster.local:3000
             - name: RUNNER_TOKEN
               valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+          # A job takes at most 4 of the node's cores, so a build can't starve etcd,
+          # the API server and Gitea: docs/dev/testenv.md, "CPU on the cluster device".
           resources:
             requests: {cpu: 500m, memory: 1Gi}
-            limits: {memory: 6Gi}
+            limits: {cpu: "4", memory: 6Gi}
           volumeMounts:
             - name: data
               mountPath: /data
