@@ -64,9 +64,12 @@ spec:
     name: claude-credentials
   maxRounds: 4
   timeoutMinutes: 90
+  # A CPU limit keeps a Flutter or Gradle build from taking every core of the
+  # Kind node. A Task reviews each round after implementing it, so the
+  # implementer's 4 serves both roles.
   resources:
     requests: {cpu: "1", memory: 2Gi}
-    limits: {memory: 6Gi}
+    limits: {cpu: "4", memory: 6Gi}
 ---
 # A stand-in that makes a scripted change and approves it: proves the loop
 # without spending tokens.
@@ -80,6 +83,10 @@ spec:
   image: c4factory/agent-flutter:dev
   maxRounds: 2
   timeoutMinutes: 15
+  # Its implement rounds still run make check, a Flutter build.
+  resources:
+    requests: {cpu: "1"}
+    limits: {cpu: "4"}
   env:
     - name: C4AGENT_FAKE
       value: "1"
