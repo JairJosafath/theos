@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Runs once after the dev container is created. Safe to run again.
+# The light container (lite/, C4_CLUSTER=none) skips the Dev Container CLI.
 set -euo pipefail
 
 step() { printf '\n==> %s\n' "$1"; }
@@ -18,14 +19,16 @@ if ! command -v uv >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/uv" ]; then
 fi
 
 step "Dev Container CLI, for testing scaffolded devcontainers and the Session client"
-if ! command -v devcontainer >/dev/null 2>&1; then
+if [ "${C4_CLUSTER:-}" = none ]; then
+  echo "skipped: no Docker here (C4_CLUSTER=none)"
+elif ! command -v devcontainer >/dev/null 2>&1; then
   npm install -g @devcontainers/cli
 fi
 
-step "fzf, for fuzzy history search"
-if ! command -v fzf >/dev/null 2>&1; then
+step "fzf, for fuzzy history search, and jq, for hack/lib/github.sh"
+if ! command -v fzf >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
   sudo apt-get update -qq
-  sudo apt-get install -y -qq fzf
+  sudo apt-get install -y -qq fzf jq
 fi
 
 step "Volumes"
@@ -76,11 +79,15 @@ step "Versions"
 set +e
 go version
 kubebuilder version
-kind version
-kubectl version --client
-helm version --short
 uv --version
 node --version
-devcontainer --version
+if [ "${C4_CLUSTER:-}" = none ]; then
+  echo "C4_CLUSTER=none: no Kind cluster on this device"
+else
+  kind version
+  kubectl version --client
+  helm version --short
+  devcontainer --version
+fi
 echo
 echo "Ready. Open a new terminal to get the zsh setup."

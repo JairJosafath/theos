@@ -19,6 +19,12 @@
 # workers and devices; the worker picks once more and stops if there is still
 # nothing. After each session it runs `make backup-releases` if that target exists.
 #
+# Issues that need the Kind cluster carry needs/cluster. On a device without
+# one, C4_CLUSTER=none (the light devcontainer sets it): the workers skip those
+# issues, and a session that finds its issue needs the cluster lands what it
+# can, labels it and hands it back for a device with one. On a device with the
+# cluster, one checkout at a time works a needs/cluster issue.
+#
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-9); workers already running are left alone
 #   RELAY_DRY_RUN=1 hack/relay.sh  print the issue and prompt the next session would get; change nothing
@@ -64,7 +70,21 @@ GH_CLAIM_FILE="$GH_PENDING_DIR/claim"
 # prompt N TITLE URL HOW NAME BRANCH: the headless session's prompt for issue
 # N, worked by agent NAME on BRANCH.
 prompt() {
-  local n=$1 title=$2 url=$3 how=$4 name=$5 branch=$6 start
+  local n=$1 title=$2 url=$3 how=$4 name=$5 branch=$6 start cluster
+  if [ "${C4_CLUSTER:-}" = none ]; then
+    cluster="- This device has no Kind cluster (C4_CLUSTER=none): no deploys,
+  factory-ops, Crews or make e2e; make check works (envtest needs no cluster).
+  If the issue turns out to need the cluster, land what you can (the code pull
+  request, with unit and envtest tests), label it
+  (\`hack/lib/github.sh label $n needs/cluster\`) and hand off with what is
+  left (deploy and verify): a device with the cluster takes it from there."
+  else
+    cluster="- This device's Kind cluster is shared by its checkouts, one
+  needs/cluster issue at a time. If the issue needs the cluster and lacks the
+  label, add it before you use the cluster
+  (\`hack/lib/github.sh label $n needs/cluster\`); exit 4 means another
+  checkout holds the cluster: land what needs no cluster and hand off."
+  fi
   if [ "$how" = in-progress ]; then
     start="A session worked on it before you: continue from its newest handoff comment."
   else
@@ -111,9 +131,10 @@ Rules for this headless run:
     request, commit SHAs). The relay then picks the next issue.
   - Stuck without the user: \`hack/lib/github.sh status $n needs-human\` and a
     comment saying why and what you need. The relay then picks the next issue.
+$cluster
 - Work you find outside #$n: file it with
   \`hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>\`; don't
-  start it.
+  start it; add needs/cluster to its labels if it needs the cluster.
 - End your turn with a short account of what you did and what is next; it is
   the relay's log of your session.
 EOF
@@ -300,7 +321,7 @@ if [ -z "$DRY_RUN" ]; then
   flock -n 9 || { log "another worker $K holds the lock; exiting"; exit 1; }
 fi
 gh_token 2>/dev/null || { log "no GitHub token; stopping"; exit 1; }
-log "worker $K started: pid $$${DRY_RUN:+, dry run}, worktree $WT, HEAD $(git rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
+log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, HEAD $(git rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
 # Workers started together would all race for the same first issue.
 [ -n "$DRY_RUN" ] || sleep $(((K - 1) * 20))
 

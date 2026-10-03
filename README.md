@@ -58,6 +58,37 @@ devcontainer with Postgres, pushed as one commit. The repositories are public; t
 in, `make gitea-admin` prints the admin password, which `make gitea` generates for
 each cluster.
 
+## A device without the cluster
+
+The Kind cluster wants about 32 GB of disk. A device with less can still work the
+factory's issues in the light dev container,
+[`.devcontainer/lite`](.devcontainer/lite/devcontainer.json): Go, Node, git, the
+GitHub CLI and Claude Code, without Docker, Kind, kubectl or Helm, and with
+`C4_CLUSTER=none` set.
+
+- **It can** build and test the operator (`make check`: envtest runs a local API
+  server, no cluster), change scripts, templates and docs, and run the relay.
+- **It can't** deploy, run Crews, `make e2e`, or check anything in Gitea.
+
+Issues whose work or "Done when" needs the cluster carry the label `needs/cluster`;
+whoever files an issue sets it. With `C4_CLUSTER=none`, `hack/lib/github.sh pick`
+skips them and `take` refuses them. A session that finds mid-way that its issue
+needs the cluster lands what it can (the code pull request, with unit and envtest
+tests), labels the issue `needs/cluster` and hands off with what is left; a device
+with the cluster takes it from there. On that device one checkout at a time works a
+`needs/cluster` issue: the cluster is shared.
+
+To set one up:
+
+1. Clone `JairJosafath/c4factory`, open it in VS Code, run "Dev Containers: Reopen in
+   Container" and choose **C4 Factory (lite, no cluster)**. Sign in to GitHub in VS
+   Code: the git credential helper gives `hack/lib/github.sh` its token.
+2. Run `claude` once to log in, and check that `echo $C4_CLUSTER` prints `none`.
+3. `hack/relay.sh`; the log is in `.relay/relay-1.log`, `touch .relay/stop` stops it.
+
+The container empties Go's build cache on start when it has grown past 4 GB
+(`hack/trim-go-cache.sh`, `C4_GOCACHE_MAX_GB`); the full container does the same.
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) for the project layout and the rules for changing it.

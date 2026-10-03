@@ -24,6 +24,14 @@ commands). It reads the token from the git credential helper and never prints it
   One status at a time: `hack/lib/github.sh status N <status>` swaps it.
 - `priority/urgent` goes before other ready issues. `kind/bug|feature|chore|docs|improvement`
   says what it is. `source/evaluator` marks issues filed by `hack/evaluate.sh`.
+- `needs/cluster`: the work or its "Done when" needs the Kind cluster
+  (deploys, factory-ops, Crews, e2e). Set it when you file such an issue, or
+  `hack/lib/github.sh label N needs/cluster` when you find out mid-way. On a
+  device without a cluster (`C4_CLUSTER=none`) `pick` skips these and `take`
+  refuses them: land what you can there (code, unit and envtest tests), label
+  the issue and hand off with what is left. On a device with one, one checkout
+  at a time works a `needs/cluster` issue; `take` and `label` exit 4 while
+  another holds it.
 
 ## Pick one up
 
