@@ -37,9 +37,10 @@ DRY_RUN=${RELAY_DRY_RUN:-}
 # shellcheck source=hack/lib/github.sh
 . "$REPO/hack/lib/github.sh"
 
-# prompt N TITLE URL HOW: the headless session's prompt for issue N.
+# prompt N TITLE URL HOW NAME BRANCH: the headless session's prompt for issue
+# N, worked by agent NAME on BRANCH.
 prompt() {
-  local n=$1 title=$2 url=$3 how=$4 start
+  local n=$1 title=$2 url=$3 how=$4 name=$5 branch=$6 start
   if [ "$how" = in-progress ]; then
     start="A session worked on it before you: continue from its newest handoff comment."
   else
@@ -48,8 +49,9 @@ prompt() {
   cat <<EOF
 You run headless, started by hack/relay.sh while the user sleeps; no person is
 watching and nobody can answer a question. Your work is GitHub issue #$n on
-$C4_GITHUB_REPO, "$title" ($url), and only that issue. The relay has labeled it
-status/in-progress. $start
+$C4_GITHUB_REPO, "$title" ($url), and only that issue. The relay has claimed
+it for you and labeled it status/in-progress: you are $name, and the issue's
+branch is $branch. $start
 Start with \`hack/lib/github.sh show $n\`: it prints the issue, its newest
 handoff comment and the comments after it. Follow AGENTS.md, the handoff skill
 and the memories.
@@ -68,10 +70,13 @@ Rules for this headless run:
   move on to other work or hand off.
 - If an action is refused (permissions, auto mode), don't retry it: write it in
   the handoff under Decisions as open, for the user, and carry on.
-- Work on a branch from an up-to-date main (\`git switch main && git pull\`,
-  then \`git switch -c <kind>/<short-name>\`), or on the branch the handoff
-  names; never commit on main. Push it before you hand off, so the SHAs you
-  name exist on the remote.
+- Work on $branch, never on main: \`git fetch origin\`, then
+  \`git switch $branch\` if origin has it (an earlier agent pushed it), else
+  \`git switch -c $branch origin/main\`. Push after every commit.
+- Sign your work as $name: an \`Agent: $name\` trailer on every commit, an
+  \`Agent: $name\` line in the pull request body and in your handoff.
+- If a tool call's hook says your claim was taken over, do what it says (push
+  to $branch-$name, comment that branch on #$n) and end the session.
 - End the session in one of three ways; the relay reads which from the issue:
   - Hand off: the handoff skill posts a handoff comment on #$n
     (\`hack/lib/github.sh handoff $n FILE\`). The next session continues #$n.
@@ -260,7 +265,7 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
     log "would claim #$ISSUE ($HOW) for session $id: $TITLE, $URL"
     log "would start session $i: claude -p --permission-mode auto --model opus --session-id $id, with this prompt:"
     echo "-----"
-    prompt "$ISSUE" "$TITLE" "$URL" "$HOW"
+    prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "<name>" "<branch>"
     echo "-----"
     backup
     exit 0
@@ -280,7 +285,7 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   log "session $i start: id $id, $name on #$ISSUE ($HOW) $TITLE, branch $branch, HEAD $(git rev-parse --short HEAD)"
   t0=$(date +%s)
   timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
-    --session-id "$id" --output-format json "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW")" \
+    --session-id "$id" --output-format json "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")" \
     >"$out.json" 2>"$out.err"
   rc=$?
   mins=$((($(date +%s) - t0) / 60))
