@@ -15,7 +15,8 @@ says what to check.
    and timeouts; concurrent use; every error handled.
 3. **Tests.** They test behaviour through the package's API, would fail without
    the change, cover the edge cases above, and are deterministic: no sleeps, no
-   order dependence, no network, clean under `-race`.
+   wall-clock bounds, no order dependence, no network, clean under `-race`.
+   Timing logic is tested with an injected clock or a channel.
 4. **Design.** Package boundaries and layering (`AGENTS.md` rule 1); names; no
    dead code; no speculative generality (unused options, an interface with one
    implementation and no fake, config nobody sets); the change stays in the
@@ -24,7 +25,7 @@ says what to check.
    files, response bodies, goroutines and timers released on every path; no
    panic on input.
 6. **Performance.** Budgets from the issue or the system's needs, measured by a
-   benchmark; no work that grows badly with input size, such as re-reading a
+   benchmark, never by a test with a time bound; no work that grows badly with input size, such as re-reading a
    whole document on every change.
 7. **Docs and DX.** README, `--help` and doc comments match the behaviour; error
    messages tell a user what was wrong, where, and what to do.
