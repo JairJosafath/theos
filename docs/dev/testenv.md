@@ -67,7 +67,8 @@ hack/lib/github.sh labels          # create the status/priority/kind/source labe
 RELAY_DRY_RUN=1 hack/relay.sh      # the issue and prompt the next headless session would get
 hack/relay.sh                      # headless sessions one after another, overnight (billed)
 hack/relay.sh --workers 2          # two relay workers side by side, each in its own worktree (no-cluster devices)
-touch .relay/stop                  # stop every worker after its current session
+hack/relay-watch.sh --workers 2    # keep the relay ready: start it within a minute of an issue becoming ready
+touch .relay/stop                  # stop the watch, and every worker after its current session
 ```
 
 The relay picks the oldest `status/in-progress` issue nobody holds, else the
@@ -86,6 +87,17 @@ more. After each session it runs `make backup-releases` if the target exists.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
+
+The relay stops when no issue is ready, so an issue marked ready or handed back
+later waits until someone starts it again. `hack/relay-watch.sh` stays up
+instead: every minute it asks `pick` (which changes nothing) and, when there is
+an issue and a worker is free, runs `hack/relay.sh --workers N`, which leaves
+running workers alone. Asking first keeps the relay's logs free of a worker that
+starts, finds nothing and stops every minute. On the device with the cluster it
+also starts the relay every 30 minutes, so a worker can run the evaluator when
+it is due. It logs only changes, to `.relay/watch.log`, pulls main every 5
+minutes and restarts itself when that changed its code.
+`hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked.
 
 ### Memory on the cluster device
 

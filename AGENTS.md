@@ -139,6 +139,8 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 - **Overnight, `hack/relay.sh [--workers N]`** runs headless sessions, each on
   the in-progress or next ready issue; worker k works in the worktree
   `.claude/worktrees/relay-k` and logs to `.relay/relay-k.log`.
+  `hack/relay-watch.sh [--workers N]` keeps it ready, starting it within a
+  minute of an issue becoming ready.
 - **On the cluster device, memory is the limit.** Check `free -g` before a
   heavy job (`make check`, image builds, `make deploy`), never run two at once,
   and build a nested devcontainer only on a device without the cluster;
