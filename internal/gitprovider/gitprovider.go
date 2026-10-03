@@ -104,6 +104,8 @@ type Provider interface {
 	PullRequestFiles(ctx context.Context, repo Repository, number int) ([]string, error)
 	// ClosePullRequest closes a pull request without merging it.
 	ClosePullRequest(ctx context.Context, repo Repository, number int) error
+	// DeleteBranch deletes branch; a branch already gone is no error.
+	DeleteBranch(ctx context.Context, repo Repository, branch string) error
 	// ReviewPullRequest posts a review of commit: ReviewApprove,
 	// ReviewRequestChanges or ReviewComment, with body.
 	ReviewPullRequest(ctx context.Context, repo Repository, number int, commit, event, body string) error

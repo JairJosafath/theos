@@ -496,6 +496,23 @@ func (p *fakeProvider) ClosePullRequest(_ context.Context, repo gitprovider.Repo
 	return nil
 }
 
+func (p *fakeProvider) DeleteBranch(_ context.Context, repo gitprovider.Repository, branch string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	delete(p.git.agentState().branches, repo.Owner+"/"+repo.Name+"@"+branch)
+	return nil
+}
+
+// hasBranch reports whether the fake host has branch in owner/name.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) hasBranch(owner, name, branch string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	_, ok := g.agentState().branches[owner+"/"+name+"@"+branch]
+	return ok
+}
+
 // setCheckLog sets the log the fake host serves for every CI job.
 func (g *fakeGit) setCheckLog(log string) {
 	g.mu.Lock()

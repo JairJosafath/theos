@@ -141,7 +141,8 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    `Blocked` Task goes back to `Implementing` in the same round, and the runner
    merges `main` in. If the change closed unmerged or failed, the Task fails with
    that reason. If the branch then equals `main`, the Task ends `Merged` with
-   reason `DoneByStandardChange` and the operator closes the issue.
+   reason `DoneByStandardChange` and the operator closes the issue. Once the
+   change merged or will not, the operator deletes the proposal branch.
 9. **Gated merge.** The Crew gives the change's Task `spec.allowedProtectedPaths`,
    copied from the waiting Task's status; a label alone grants nothing. The
    runner allows exactly those paths. Gitea's protected-file rule blocks the

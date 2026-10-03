@@ -362,3 +362,32 @@ func TestForceMergePullRequest(t *testing.T) {
 		t.Errorf("merge = %v", merge)
 	}
 }
+
+func TestDeleteBranch(t *testing.T) {
+	for _, tc := range []struct {
+		status  int
+		wantErr bool
+	}{
+		{http.StatusNoContent, false},
+		{http.StatusNotFound, false}, // already gone
+		{http.StatusForbidden, true},
+	} {
+		var call string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			call = r.Method + " " + r.URL.EscapedPath()
+			w.WriteHeader(tc.status)
+		}))
+		p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "toolbox", Credentials: Credentials{Username: "c4admin", Token: "admin"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = p.DeleteBranch(context.Background(), p.Repository("photo-editor"), "standard/photo-editor-4-1")
+		srv.Close()
+		if (err != nil) != tc.wantErr {
+			t.Errorf("HTTP %d: DeleteBranch() error = %v, want error %v", tc.status, err, tc.wantErr)
+		}
+		if want := "DELETE /api/v1/repos/toolbox/photo-editor/branches/standard/photo-editor-4-1"; call != want {
+			t.Errorf("call = %q, want %q", call, want)
+		}
+	}
+}

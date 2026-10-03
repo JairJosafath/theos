@@ -87,6 +87,7 @@ var makefileProposal = model.Proposal{Branch: "standard/orders-api-1", Paths: []
 func finishWithProposal(ns string) {
 	GinkgoHelper()
 	p := makefileProposal
+	gitFake.pushBranch(ns, "orders-api", p.Branch, "sha-proposal") // as the runner does
 	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement",
 		Commit: "sha-1", Summary: "Wrote scripts/dist.mjs.", Proposal: &p}, "")
 }
@@ -259,6 +260,7 @@ var _ = Describe("Task with a Standard change", func() {
 		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
 		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
 			ContainSubstring("closed without a merge"))))
+		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeFalse())
 	})
 
 	It("resumes when its Standard change merges, and ends when that did the whole issue", func() {
@@ -278,6 +280,7 @@ var _ = Describe("Task with a Standard change", func() {
 		}).Should(Succeed())
 		Expect(gitFake.issue(ns, "orders-api", n).comments).
 			To(ContainElement(ContainSubstring(fmt.Sprintf("Standard change #%d merged", m))))
+		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeFalse(), "the proposal is merged")
 
 		By("ending it Merged when the resumed run finds the branch equals main")
 		finishResumed(ns, 1)
@@ -408,6 +411,7 @@ var _ = Describe("Task with a Standard change", func() {
 		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
 		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
 			ContainSubstring("will not merge"))))
+		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeFalse())
 	})
 })
 
@@ -431,6 +435,7 @@ func blockedBesideChange(ns string, rounds int32) (n, m int) {
 		g.Expect(getTask(g, ns, "orders-api-2").Spec.Issue).To(Equal(int32(m)))
 		sandboxExists(g, ns, "orders-api-2-r1-implement")
 	}).Should(Succeed())
+	Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeTrue(), "the change still reads it")
 	return n, m
 }
 
