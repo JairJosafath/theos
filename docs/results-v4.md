@@ -215,3 +215,17 @@ description) and completion of `object.` (`apiVersion, kind, metadata, spec,
 status`); `check` reported the same two errors and exited 1
 (`docs/screenshots/v4-extension-smoke.txt`). What remains is the extension inside
 a real VS Code.
+
+**Seventh part, releases in order.** With two server releases ready, the Crew
+started `cel-language-server-44` (v0.2.0) ahead of v0.1.1's three fixes: it picked
+by issue number alone (the finding above). The operator now works releases one at
+a time, ordered by the milestones' due dates, which were set for the purpose
+(v0.1.1 4 October, v0.2.0 6 October, v0.3.0 8 October; dates order the work,
+they promise nothing). #44 was already in its second round and merges before
+v0.1.1's fixes, so it moved to v0.1.1, whose tag will hold it. After the deploy
+the Crew listed v0.1.1's #58 #59 #60 as ready and v0.2.0's as waiting "for release
+v0.1.1", and v0.3.0 (#46 #53 #57, #46 blocking #57) could be readied at once
+instead of waiting for a person at each release boundary
+(`docs/screenshots/v4-release-order.txt`). The extension's v0.2.0 milestone closed
+when `vscode-extension-62` (version 0.2.0, dated changelog, one `### Added` under
+0.1.0) merged in one round; its tag waits for a person, like v0.1.0's.
