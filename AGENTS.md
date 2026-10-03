@@ -139,5 +139,9 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 - **Overnight, `hack/relay.sh [--workers N]`** runs headless sessions, each on
   the in-progress or next ready issue; worker k works in the worktree
   `.claude/worktrees/relay-k` and logs to `.relay/relay-k.log`.
+- **On the cluster device, memory is the limit.** Check `free -g` before a
+  heavy job (`make check`, image builds, `make deploy`), never run two at once,
+  and build a nested devcontainer only on a device without the cluster;
+  [docs/dev/testenv.md](docs/dev/testenv.md) has the numbers.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?

@@ -66,7 +66,7 @@ hack/lib/github.sh claims          # who holds which issue, with heartbeat age a
 hack/lib/github.sh labels          # create the status/priority/kind/source labels (safe to repeat)
 RELAY_DRY_RUN=1 hack/relay.sh      # the issue and prompt the next headless session would get
 hack/relay.sh                      # headless sessions one after another, overnight (billed)
-hack/relay.sh --workers 2          # two relay workers side by side, each in its own worktree
+hack/relay.sh --workers 2          # two relay workers side by side, each in its own worktree (no-cluster devices)
 touch .relay/stop                  # stop every worker after its current session
 ```
 
@@ -86,3 +86,24 @@ more. After each session it runs `make backup-releases` if the target exists.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
+
+### Memory on the cluster device
+
+The device with the Kind cluster has 14.7 GiB; the Kind node takes about 4.5
+with a Crew's agent sandboxes running, and one `make check` (Go builds,
+envtest, golangci-lint) 2 to 3 GiB at its peak. Four sessions and a nested
+devcontainer build on it stalled every task for minutes and took down VS Code
+and every Claude session with it (#57). So:
+
+- There, the relay runs at most `RELAY_MAX_WORKERS` workers (default 1), counting
+  those already running; `--workers N` above it refuses to start.
+- On every device, a worker waits before each pick until `MemAvailable` is at
+  least `RELAY_MIN_MEM_GIB` (default 4) and the last session start across
+  workers is `RELAY_ADMIT_GAP` seconds old (default 300), and stops after
+  `RELAY_MEM_WAIT` seconds (default 3600) without headroom. It logs the wait.
+- Sessions check `free -g` before a heavy job (`make check`, image builds,
+  `make deploy`), never run two at once, and build a second devcontainer only
+  on a device without the cluster.
+
+`hack/relay_test.sh` tests the cap and the wait against a faked
+`/proc/meminfo` (`RELAY_MEMINFO`).

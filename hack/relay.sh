@@ -33,6 +33,12 @@
 #
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-9); workers already running are left alone
+#
+# On the device with the Kind cluster (C4_CLUSTER not none), memory is the
+# limit: at most RELAY_MAX_WORKERS workers run (default 1). On every device a
+# worker waits before each pick until MemAvailable is at least RELAY_MIN_MEM_GIB
+# (default 4) and the last session start is RELAY_ADMIT_GAP seconds old
+# (default 300), and stops after waiting RELAY_MEM_WAIT seconds (default 3600).
 #   RELAY_DRY_RUN=1 hack/relay.sh  print the issue and prompt the next session would get; change nothing
 #   touch .relay/stop              stop every worker after its current session
 #
@@ -62,6 +68,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 [[ $WORKERS =~ ^[1-9]$ ]] || { echo "relay: --workers takes 1 to 9" >&2; exit 64; }
+MAX_WORKERS=${RELAY_MAX_WORKERS:-1}
+MIN_MEM_GIB=${RELAY_MIN_MEM_GIB:-4}
+ADMIT_GAP=${RELAY_ADMIT_GAP:-300}  # seconds between session starts across workers
+MEM_WAIT=${RELAY_MEM_WAIT:-3600}   # seconds a worker waits for headroom before it stops
+MEM_POLL=${RELAY_MEM_POLL:-60}
+MEMINFO=${RELAY_MEMINFO:-/proc/meminfo}
 
 K=${C4_RELAY_WORKER:-1}
 WT="$REPO/.claude/worktrees/relay-$K"
@@ -324,8 +336,78 @@ outcome() {
   if [ -n "$latest" ] && [ "$latest" != "$before" ]; then echo handed-off; else echo nothing; fi
 }
 
+# running_workers: how many workers hold their lock now.
+running_workers() {
+  local k n=0
+  for k in 1 2 3 4 5 6 7 8 9; do
+    [ -e "$DIR/lock-$k" ] && ! flock -n "$DIR/lock-$k" true && n=$((n + 1))
+  done
+  echo "$n"
+}
+
+# cap N: on the device with the Kind cluster, memory is the limit (a session's
+# make check takes 2 to 3 GiB next to the cluster's 4.5), so the workers
+# running and those `--workers N` would start stay at most RELAY_MAX_WORKERS
+# (default 1). Exit 1, with the reason on stderr, when N would pass it.
+cap() {
+  local n=$1 k running new=0
+  [ "${C4_CLUSTER:-}" = none ] && return 0
+  running=$(running_workers)
+  for k in $(seq 1 "$n"); do
+    { [ -e "$DIR/lock-$k" ] && ! flock -n "$DIR/lock-$k" true; } || new=$((new + 1))
+  done
+  [ $((running + new)) -le "$MAX_WORKERS" ] && return 0
+  echo "relay: this device runs the Kind cluster, and memory is its limit: at most $MAX_WORKERS worker(s) (RELAY_MAX_WORKERS raises it on purpose); $running running, --workers $n would start $new more" >&2
+  return 1
+}
+
+# mem_gib: MemAvailable in whole GiB, from RELAY_MEMINFO (default /proc/meminfo).
+mem_gib() {
+  awk '/^MemAvailable:/ { print int($2 / 1048576); found = 1 } END { exit !found }' "$MEMINFO"
+}
+
+# admit: wait until the device has headroom for one more session: MemAvailable
+# at least RELAY_MIN_MEM_GIB, and the last session start across workers at
+# least RELAY_ADMIT_GAP seconds ago, so one session's build shows in memory
+# before the next starts. Polls every RELAY_MEM_POLL seconds; exit 1 when the
+# stop file appears or the wait passes RELAY_MEM_WAIT.
+admit() {
+  local t0 mem last now waited=
+  t0=$(date +%s)
+  while :; do
+    mem=$(mem_gib) || { log "could not read MemAvailable from $MEMINFO; starting anyway"; return 0; }
+    now=$(date +%s)
+    exec 8>"$DIR/admit.lock"
+    flock 8
+    last=$(stat -c %Y "$DIR/admitted" 2>/dev/null || echo 0)
+    if [ "$mem" -ge "$MIN_MEM_GIB" ] && [ $((now - last)) -ge "$ADMIT_GAP" ]; then
+      [ -n "$DRY_RUN" ] || touch "$DIR/admitted"
+      exec 8>&-
+      [ -n "$waited" ] && log "headroom: ${mem} GiB available after $(((now - t0) / 60))m; starting"
+      return 0
+    fi
+    exec 8>&-
+    if [ -z "$waited" ]; then
+      if [ "$mem" -lt "$MIN_MEM_GIB" ]; then
+        log "waiting for headroom: ${mem} GiB available, a session needs ${MIN_MEM_GIB} (RELAY_MIN_MEM_GIB)"
+      else
+        log "waiting: a session started $((now - last))s ago, and sessions start at least ${ADMIT_GAP}s apart (RELAY_ADMIT_GAP)"
+      fi
+      waited=1
+    fi
+    [ -n "$DRY_RUN" ] && return 1
+    [ -e "$STOP" ] && { log "stop file found while waiting for headroom"; return 1; }
+    [ $((now - t0)) -ge "$MEM_WAIT" ] && { log "no headroom after $((MEM_WAIT / 60))m (${mem} GiB available)"; return 1; }
+    sleep "$MEM_POLL"
+  done
+}
+
+# Sourced (hack/relay_test.sh): the functions only.
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
+
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
+[ "${C4_RELAY_CHILD:-}" = 1 ] || cap "$WORKERS" || exit 1
 
 # Started from a terminal: start the workers that aren't running, detached,
 # and return. The token is read here, where the git credential helper answers;
@@ -371,6 +453,7 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   fi
   flush || { log "GitHub can't be reached; stopping"; break; }
 
+  admit || { log "stopping"; break; }
   pick
   rc=$?
   if [ "$rc" = 1 ] && evaluate; then
