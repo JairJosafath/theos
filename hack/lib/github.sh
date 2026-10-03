@@ -575,13 +575,15 @@ gh_flush() {
   return $rc
 }
 
-# gh_close N FILE: comment what landed, then close N as completed.
+# gh_close N FILE: comment what landed, close N as completed, then release the
+# claim. Closing comes first: if it fails, the claim stays live, so pick does
+# not offer the open, in-progress issue again as abandoned work.
 gh_close() {
   local n=${1:?usage: close N FILE}
   gh_comment "$n" "${2:--}" || return 1
-  gh_release_for "$n" finished
   gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
-    -f state=closed -f state_reason=completed --jq '"closed #\(.number)"'
+    -f state=closed -f state_reason=completed --jq '"closed #\(.number)"' || return 1
+  gh_release_for "$n" finished
 }
 
 # gh_create TITLE FILE LABEL...: file an issue and print its number. An open
