@@ -201,3 +201,16 @@ readied; `vscode-extension-51` merged it in one round, the reviewer confirming
 was refused to the session by auto mode, so `v0.1.0` at `4540ec5` waits for a
 person. The release job runs on the `go` CI runner; the optional Release runner is
 for Android only.
+
+**The packages, tried without a GUI.** "Nobody has tried a `.vsix`" was half
+closed the same night. `make dist VERSION=v0.1.0` at `4540ec5`, outside the
+cluster with `server.json` pointed at a port-forward, built the five `.vsix`, each
+marked with its `TargetPlatform` and holding its own server binary at the path
+`src/server_path.ts` looks up. The server unzipped from the linux-x64 package, still
+executable, reported `v0.1.0`; a small LSP client over stdio opened a
+ValidatingAdmissionPolicy and got diagnostics on exactly the two broken
+expressions, schema-aware hover (`replicas: int` with the Deployment field's
+description) and completion of `object.` (`apiVersion, kind, metadata, spec,
+status`); `check` reported the same two errors and exited 1
+(`docs/screenshots/v4-extension-smoke.txt`). What remains is the extension inside
+a real VS Code.
