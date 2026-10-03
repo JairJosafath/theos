@@ -69,7 +69,8 @@ GitHub CLI and Claude Code, without Docker, Kind, kubectl or Helm, and with
 - **It can** build and test the operator (`make check`: envtest runs a local API
   server, no cluster), change scripts, templates and docs, and run the relay.
 - **It can't** deploy, run Crews, `make e2e`, check anything in Gitea, or run the
-  evaluator (it reads the cluster), so its relay stops when no issue is ready.
+  evaluator (it reads the cluster), so its relay stops when no issue is ready;
+  `hack/relay-watch.sh` starts it again when one is.
 
 Issues whose work or "Done when" needs the cluster carry the label `needs/cluster`;
 whoever files an issue sets it. With `C4_CLUSTER=none`, `hack/lib/github.sh pick`
@@ -87,7 +88,9 @@ To set one up:
    `git fetch` still asks for a username, run `gh auth login` and then
    `gh auth setup-git` in the container.
 2. Run `claude` once to log in, and check that `echo $C4_CLUSTER` prints `none`.
-3. `hack/relay.sh`; the log is in `.relay/relay-1.log`, `touch .relay/stop` stops it.
+3. `hack/relay.sh`, or `hack/relay-watch.sh` to keep it ready for new issues; the
+   logs are in `.relay/relay-1.log` and `.relay/watch.log`, `touch .relay/stop`
+   stops it.
 
 The container empties Go's build cache on start when it has grown past 4 GB
 (`hack/trim-go-cache.sh`, `C4_GOCACHE_MAX_GB`); the full container does the same.
