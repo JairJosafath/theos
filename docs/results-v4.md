@@ -51,6 +51,7 @@ issue closed with a comment.
 | An acceptance criterion that needs a protected file fails the Task: the implementer stops, as its guide says, but "no changes" in the last round is a failure | cel-language-server #24 asked for `make bench`; the Standard owns the Makefile. Rounds 1 and 2 said so, the reviewer held the criterion, round 3 made no changes and the Task failed | The criterion was corrected and the issue re-readied; the new Task merged in one round. It happened again with vscode-extension #4, whose criterion was right: `make dist` must build the platform packages. A person's Makefile hook unblocked it. Open: an agent has no "blocked, a person must act" outcome, so a blocked Task spends rounds |
 | Gitea dropped out of its Service mid-upload, failing the server's first release job | Run of the `v0.1.0` tag: the upload of 48 MB binaries broke off; the readiness probe's 1 s default timed out under load | Readiness probe 5 s timeout, 6 failures (`1c5e8c4`); the release was deleted, tagged again, and run 36 succeeded |
 | Reviewers' follow-ups piled up beside the release's issues (37 open), so the backlog looked endless | The user: "I fear that we will not ever complete the app" | Each repository has a `v0.1.0` milestone with a fixed scope and a `Later` milestone outside any release. The operator files follow-ups in `Later`, creating it if needed (`61c8cb2`) |
+| A merged issue stayed open, so the Crew asked a person to close it | vscode-extension #19: PR #35 merged, follow-up #41 filed, but no "Merged in" comment and no close; the Crew labelled it `status/needs-human` | One 30 s context covered the merge and every issue call; Gitea under load answered #41's creation late and the comment and close failed on the spent context. Each issue call has its own time now (`c86c77d`); #19 was closed by hand |
 
 ## The CEL Lens run
 
@@ -188,3 +189,15 @@ stay on its own branch, so the proposal branch kept the bare `--if-present` form
 (the merged `Makefile` is right). And nobody has tried a `.vsix` in a real VS Code.
 The reviewer filed two follow-ups as `status/proposed` (#49, publishing the
 packages from a release workflow; #50, a package for win32-arm64).
+
+**Sixth part, ready to tag.** On 3 October the fix wave was deployed (Crews
+paused for 9 minutes while `cel-language-server-37` finished). The extension's
+`v0.1.0` milestone still held #19, whose PR had merged but whose issue never
+closed (the finding above), and the superseded PR #29; both were closed by hand.
+`make release-version` refuses a tag that differs from `package.json`, which
+still said `0.0.1`, so #51 (version `0.1.0` and a dated changelog) was filed and
+readied; `vscode-extension-51` merged it in one round, the reviewer confirming
+`make dist VERSION=v0.1.0` built five `.vsix` named with `0.1.0`. The tag itself
+was refused to the session by auto mode, so `v0.1.0` at `4540ec5` waits for a
+person. The release job runs on the `go` CI runner; the optional Release runner is
+for Android only.
