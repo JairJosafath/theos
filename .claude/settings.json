@@ -10,6 +10,18 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/hack/pull.sh || true",
+            "timeout": 90
+          }
+        ]
+      }
     ]
   }
 }
