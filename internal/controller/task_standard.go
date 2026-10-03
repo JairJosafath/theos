@@ -47,7 +47,8 @@ const defaultStandardChangeRecheck = time.Minute
 // propose files the implementer's proposal as a Standard change issue, authored
 // by the operator, which blocks the Task's issue; the Task is Blocked until it
 // merges. A repeated step reuses the issue it filed before. A Task without an
-// issue, or whose issue a person closed during the round, fails instead.
+// issue or a Crew, or whose issue a person closed during the round, fails
+// instead.
 func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
 	container *c4v1alpha1.Container, step model.TaskStep) (ctrl.Result, error) {
 	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox)
@@ -59,10 +60,18 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, sta
 	}
 	proposal := *run.Result.Proposal
 	n := int(task.Spec.Issue)
-	if n == 0 {
+	switch {
+	case n == 0:
 		// The runner proposes for an issue only: a goal has no issue to block.
 		return ctrl.Result{}, r.fail(ctx, task, status, container, "Failed", fmt.Sprintf(
 			"The change needs a Standard change to %s, but only an issue's Task can propose one",
+			quotePaths(proposal.Paths)))
+	case task.Labels[LabelCrew] == "":
+		// Only a Crew runs the change and grants its allowance: without one, the
+		// Task would wait on it forever.
+		return ctrl.Result{}, r.fail(ctx, task, status, container, "Failed", fmt.Sprintf(
+			"The change needs a Standard change to %s, but only a Crew's Task can propose one, "+
+				"since only a Crew runs it; make the change by hand or leave the issue to a Crew",
 			quotePaths(proposal.Paths)))
 	}
 	provider, repo, err := r.gitRepo(ctx, container)

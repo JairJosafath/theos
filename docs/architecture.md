@@ -135,7 +135,8 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    operator (with an acceptance checklist, the paths and the branch), makes it
    block the Task's issue in Gitea, records `status.standardChange` and sets the
    phase `Blocked`. A `Blocked` Task runs no agent and spends no round. A third
-   Standard change fails the Task ("more than two").
+   Standard change fails the Task ("more than two"), and so does a proposal from
+   a Task with a goal or one no Crew started: only a Crew runs the change.
 8. **Resume.** When a Task on the change's issue has reached `Merged`, the
    `Blocked` Task goes back to `Implementing` in the same round, and the runner
    merges `main` in. If the change closed unmerged or failed, the Task fails with

@@ -73,6 +73,7 @@ func proposingTask(ns string) int {
 	gitFake.setIssueMilestone(ns, "orders-api", n, "v0.1.0")
 	task := newTask(ns, "orders-api-1", "")
 	task.Spec.Issue = int32(n)
+	task.Labels = map[string]string{LabelCrew: "orders-api"} // only a Crew's Task may propose
 	mustCreate(task)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
 	gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
@@ -207,6 +208,31 @@ var _ = Describe("Task with a Standard change", func() {
 		}).Should(Succeed())
 		Expect(standardChangeIssues(ns)).To(BeEmpty())
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement"), newSandbox()))).To(BeTrue())
+	})
+
+	It("fails an issue Task no Crew started that proposes, filing nothing", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3))
+		n := gitFake.addIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
+		task := newTask(ns, "orders-api-1", "")
+		task.Spec.Issue = int32(n)
+		mustCreate(task)
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		finishWithProposal(ns)
+
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Sandbox).To(BeEmpty())
+			g.Expect(task.Status.StandardChange).To(BeNil())
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("Failed"),
+				"Message": And(ContainSubstring("only a Crew's Task can propose"), ContainSubstring("Makefile"))})))
+		}).Should(Succeed())
+		Expect(standardChangeIssues(ns)).To(BeEmpty())
+		Expect(gitFake.issue(ns, "orders-api", n).blockers).To(BeEmpty())
 	})
 
 	It("fails when its Standard change is closed without a merge", func() {
