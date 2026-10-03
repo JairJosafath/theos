@@ -1,0 +1,165 @@
+Parallel agents step 5 (#27): needs/cluster and devices without a cluster.
+The cluster device's half of the "Done when" check, 2026-10-03 08:08-08:46 UTC,
+by heron-27. The light device's half, run in .devcontainer/lite on the second
+PC (host 1aba59e9ec44) at 08:35-08:41, is in parallel-agents-lite-device.md.
+
+Devices
+- cluster device: host e68e918e5f86, the Kind cluster c4factory, C4_CLUSTER unset.
+- device without a cluster: host 36fc77da978f, the second PC before it was
+  reopened in the light container: the full devcontainer (kubectl, kind,
+  docker and helm installed, no cluster created) with relay workers started
+  with C4_CLUSTER=none (otter-44, otter-45 and otter-13 ran in relay-3).
+
+Throwaway issues
+- #44 unlabelled, urgent: report the device's toolchain.
+- #45 unlabelled, urgent: report the Kind cluster's nodes. Needs the cluster
+  without saying so: the device without one should label it and hand it back.
+- #46 needs/cluster, urgent (so it ranks first): report the operator's pod.
+
+Result
+- The relay with C4_CLUSTER=none took only unlabelled issues: #44 (08:14:59Z),
+  #45 (08:15:42Z), then the user's #13 (08:16:31Z). Each time it passed over
+  #14 (needs/cluster), which was in progress and unclaimed from 08:12:36Z and
+  so ranked first. #46 was already held by then (otter-46 took it at 08:13:56Z);
+  with C4_CLUSTER=none, pick offered #13 over the urgent #46 and take 46 exited 4
+  (section 1). Meanwhile this device worked #14 (heron-14), then #46 (otter-46).
+- #45: the session without a cluster added needs/cluster and handed it back
+  (08:16Z); it was finished on the cluster device by heron-45 (08:18Z).
+- Two checkouts on the cluster device never held a needs/cluster issue at once:
+  take exited 4 twice, once against heron-14 (#14) and once against otter-46 (#46).
+- The light devcontainer (.devcontainer/lite) also builds from scratch here, in
+  Docker-in-Docker (12 min), sets C4_CLUSTER=none, has no kubectl, kind,
+  docker or helm, and passes make check (16 min, cold caches; section 5).
+
+== 1. Before: heron-14 holds #14 (needs/cluster) in /workspaces/c4factory ==
+
+$ date -u
+Sat Oct  3 08:08:42 UTC 2026
+
+$ hack/lib/github.sh claims
+#10	otter-10	live	36fc77da978f	heartbeat 2m ago	fix/10-an-agent-killed-by-the-infrastructure
+#11	otter-11	live	36fc77da978f	heartbeat 2m ago	fix/11-standard-change-proposal-branches-are
+#14	heron-14	live	e68e918e5f86	heartbeat 8m ago	chore/14-keep-the-cel-lens-releases-moving
+#27	heron-27	live	e68e918e5f86	heartbeat 1m ago	feat/27-parallel-agents-5-5-needs-cluster-and
+
+# cluster device, second checkout (.claude/worktrees/cluster-27, C4_CLUSTER unset)
+$ hack/lib/github.sh pick
+13	A gated Task's reviewer asks for the proposal branch to be fixed too	https://github.com/JairJosafath/c4factory/issues/13	ready
+exit 0
+$ hack/lib/github.sh take 46
+github: #46 needs the Kind cluster, and heron-14 (#14, /workspaces/c4factory) already works a needs/cluster issue on this device
+exit 4
+
+# light device (.claude/worktrees/light-27, C4_CLUSTER=none)
+$ C4_CLUSTER=none hack/lib/github.sh pick
+13	A gated Task's reviewer asks for the proposal branch to be fixed too	https://github.com/JairJosafath/c4factory/issues/13	ready
+exit 0
+$ C4_CLUSTER=none hack/lib/github.sh take 46
+github: #46 needs the Kind cluster (needs/cluster) and this device has none (C4_CLUSTER=none)
+exit 4
+
+== 2. Timeline: state, status labels and claim (name, live, host), one line per change ==
+
+08:10:41Z #14 open status/in-progress,needs/cluster heron-14 live e68e918e5f86
+08:10:41Z #44 open status/ready unclaimed
+08:10:41Z #45 open status/ready unclaimed
+08:10:41Z #46 open status/ready,needs/cluster unclaimed
+08:12:52Z #14 open status/in-progress,needs/cluster unclaimed
+08:15:06Z #44 open status/ready otter-44 live 36fc77da978f
+08:15:06Z #46 open status/in-progress,needs/cluster otter-46 live e68e918e5f86
+08:16:11Z #44 closed status/in-progress unclaimed
+08:16:11Z #45 open status/in-progress otter-45 live 36fc77da978f
+08:17:17Z #45 open status/in-progress,needs/cluster unclaimed
+08:18:29Z #45 open status/in-progress,needs/cluster heron-45 live e68e918e5f86
+08:18:29Z #46 closed status/in-progress,needs/cluster unclaimed
+08:19:17Z #14 open status/in-progress,needs/cluster
+08:19:18Z #44 closed status/in-progress
+08:19:19Z #45 closed status/in-progress,needs/cluster
+08:19:20Z #46 closed status/in-progress,needs/cluster
+
+== 3. Cluster device: #46, the refusal while it is held, then #45 ==
+
+$ hack/lib/github.sh take 46   # cluster device, checkout .claude/worktrees/cluster-27
+otter-46	chore/46-relay-check-for-27-report-the-operator-s
+
+$ date -u
+Sat Oct  3 08:17:41 UTC 2026
+$ hack/lib/github.sh claims
+#10	otter-10	live	36fc77da978f	heartbeat 11m ago	fix/10-an-agent-killed-by-the-infrastructure
+#11	otter-11	live	36fc77da978f	heartbeat 11m ago	fix/11-standard-change-proposal-branches-are
+#13	otter-13	live	36fc77da978f	heartbeat 1m ago	fix/13-a-gated-task-s-reviewer-asks-for-the
+#27	heron-27	live	e68e918e5f86	heartbeat 10m ago	feat/27-parallel-agents-5-5-needs-cluster-and
+#46	otter-46	live	e68e918e5f86	heartbeat 3m ago	chore/46-relay-check-for-27-report-the-operator-s
+
+# cluster device, a third checkout (.claude/worktrees/second-27, no claim) while otter-46 holds the cluster
+$ hack/lib/github.sh pick
+35	Relay keeps the github.sh it started with, so it hands out issues other devices claim	https://github.com/JairJosafath/c4factory/issues/35	ready
+exit 0
+$ hack/lib/github.sh take 45
+github: #45 needs the Kind cluster, and otter-46 (#46, /workspaces/c4factory/.claude/worktrees/cluster-27) already works a needs/cluster issue on this device
+exit 4
+
+$ hack/lib/github.sh close 46 FILE   # cluster-27
+https://github.com/JairJosafath/c4factory/issues/46#issuecomment-5967108112
+closed #46
+exit 0
+$ hack/lib/github.sh take 45   # cluster-27, now that the cluster is free
+heron-45	chore/45-relay-check-for-27-report-the-kind
+exit 0
+https://github.com/JairJosafath/c4factory/issues/45#issuecomment-5967111612
+closed #45
+
+== 4. The comments ==
+
+#44 toolchain report, otter-44 on 36fc77da978f (relay-3): C4_CLUSTER=none;
+  go1.26.8, node v24.21.0, gh 2.102.0, claude 2.1.288; kubectl, kind, docker
+  and helm all present. https://github.com/JairJosafath/c4factory/issues/44
+#45 hand-back by otter-45 on 36fc77da978f: "kubeconfig has no contexts",
+  labeled needs/cluster, handed off with the steps for a device with the
+  cluster; finished by heron-45 on e68e918e5f86 (kubectl get nodes: 1 Ready
+  node, 18 pods). https://github.com/JairJosafath/c4factory/issues/45
+#46 report by otter-46 on e68e918e5f86: c4-factory-controller-manager 1/1
+  Running. https://github.com/JairJosafath/c4factory/issues/46
+
+== 5. The light devcontainer, built on the cluster device ==
+
+Built in Docker-in-Docker from a fresh clone of main
+(4449071), with the Dev Container CLI:
+
+$ devcontainer up --workspace-folder lite-ws --config lite-ws/.devcontainer/lite/devcontainer.json
+08:17:26Z -> 08:29:41Z (735 s, first build), outcome success.
+postCreateCommand (.devcontainer/post-create.sh): ran; "Dev Container CLI ...
+skipped: no Docker here (C4_CLUSTER=none)"; last line "C4_CLUSTER=none: no Kind
+cluster on this device". postStartCommand (hack/trim-go-cache.sh): ran.
+
+$ devcontainer exec ... bash -lc '...'
+C4_CLUSTER=none
+vscode
+go version go1.26.8 linux/amd64
+v24.21.0
+git version 2.55.0
+gh version 2.102.0 (2026-09-30)
+2.1.288 (Claude Code)
+jq-1.6
+flock from util-linux 2.38.1
+kubectl: not installed
+kind: not installed
+docker: not installed
+helm: not installed
+overlay        1007G  176G  781G  19% /
+/usr/bin/make
+/go/bin/golangci-lint
+/usr/local/bin/kubebuilder
+
+$ devcontainer exec ... make check
+08:30:12Z -> 08:45:54Z, exit 0 (cold caches: modules, envtest binaries and the
+custom golangci-lint were all downloaded or built). golangci-lint: 0 issues.
+ok  	github.com/JairJosafath/c4factory/features	0.005s	coverage: 92.0% of statements
+ok  	github.com/JairJosafath/c4factory/internal/agentrunner	116.489s	coverage: 87.2% of statements
+ok  	github.com/JairJosafath/c4factory/internal/controller	105.637s	coverage: 83.8% of statements
+ok  	github.com/JairJosafath/c4factory/internal/gitprovider	1.036s	coverage: 79.3% of statements
+ok  	github.com/JairJosafath/c4factory/internal/model	0.015s	coverage: 97.9% of statements
+ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.010s	coverage: 91.1% of statements
+ok  	github.com/JairJosafath/c4factory/internal/sessionclient	23.898s	coverage: 73.2% of statements
+
+Go build cache during make check: 2.1G (trim-go-cache.sh empties it past 4 GB).
