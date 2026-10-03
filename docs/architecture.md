@@ -176,7 +176,9 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    `<container>-<issue>` (with `-<attempt>` from the second try), with the Crew's
    implementer and reviewer. For a `kind/standard-change` issue it sets the
    Task's `spec.allowedProtectedPaths` from the filing Task's
-   `status.standardChange`, leaving out any ineligible path.
+   `status.standardChange`, leaving out any ineligible path; such an issue
+   starts before the other ready issues, so the `Blocked` Task's branch doesn't
+   age behind the backlog.
 4. The controller labels the handed-back issues `status/needs-human` with the
    reason, creates the Task, and writes the Crew's phase, active Task and its
    ready and waiting issues.

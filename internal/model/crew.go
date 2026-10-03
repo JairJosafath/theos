@@ -138,7 +138,7 @@ type CrewStep struct {
 
 // NextCrewStep decides what a Crew does: it keeps up to Parallel Tasks working,
 // starting them for the lowest-numbered ready issues whose dependencies are
-// closed, one Task per issue.
+// closed, one Task per issue. A Standard change a Task waits on starts first.
 func NextCrewStep(container string, f CrewFacts) CrewStep {
 	var step CrewStep
 	working := map[int]bool{}
@@ -194,6 +194,11 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			allowances[issue.Number] = allowance
 		}
 	}
+	// A Standard change with its allowance goes first: a Blocked Task waits on
+	// it, and that Task's branch ages behind every older ready issue otherwise.
+	slices.SortStableFunc(candidates, func(a, b int) int {
+		return withoutAllowance(allowances, a) - withoutAllowance(allowances, b)
+	})
 
 	switch {
 	case f.Paused:
@@ -245,6 +250,14 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 		}
 	}
 	return step
+}
+
+// withoutAllowance sorts an issue that has an allowance (0) before one without (1).
+func withoutAllowance(allowances map[int][]string, issue int) int {
+	if len(allowances[issue]) > 0 {
+		return 0
+	}
+	return 1
 }
 
 // blockedTasks counts the Tasks that wait on a Standard change; they take no place.

@@ -266,7 +266,8 @@ model and context it needs.
   reviewer Agents, polls the repository's `status/ready` issues, waits for their
   Gitea dependencies (also across repositories) to close, and starts up to `parallel`
   Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
-  first, up to three tries per issue. Milestones group the
+  first after the Standard changes that `Blocked` Tasks wait on, up to three
+  tries per issue. Milestones group the
   backlog; Gitea 1.27 has no API for project boards.
 - **Roles get their own model and guide.** Agents have a `harness` and a `model`;
   CEL Lens pairs a Sonnet implementer with an Opus reviewer. A Standard ships
