@@ -44,6 +44,9 @@ __pycache__/
 .env
 *.local.yaml
 
+# The relay's log, session accounts and handoffs not yet posted to GitHub
+/.relay/
+
 # Kubebuilder
 Dockerfile.cross
 !vendor/**/zz_generated.*
