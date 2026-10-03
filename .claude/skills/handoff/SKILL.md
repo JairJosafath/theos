@@ -51,8 +51,9 @@ commands). It reads the token from the git credential helper and never prints it
 ## While you work
 
 - **Your name** is the one `take` printed (`jq -r .name .relay/claim` reads it
-  again). Sign your traces with it: every commit ends with an
-  `Agent: otter-23` trailer (next to the `Co-Authored-By` line), the pull
+  again). Sign your traces with it: every commit message ends with an
+  `Agent: otter-23` trailer, in the trailer block with `Co-Authored-By`
+  (`Agent: otter-23` on the line above it, no blank line between), the pull
   request body has an `Agent: otter-23` line, and so does your handoff (its
   **Agent:** section). No `@` in front: GitHub would read it as a mention.
 - **One agent per checkout.** The claim lives in this checkout's `.relay/claim`.
@@ -65,7 +66,8 @@ commands). It reads the token from the git credential helper and never prints it
 - **Lost claim.** A hook beats your claim's heartbeat after tool calls. If it
   says you no longer hold the issue (your session slept past the 2-hour lease
   and another agent took over), stop working on it: push what you have to
-  `BRANCH-NAME` (`git push origin HEAD:refs/heads/BRANCH-NAME`), comment that
+  the issue's branch with your name appended, e.g.
+  `git push origin HEAD:refs/heads/feat/23-claims-otter-23`, comment that
   branch on the issue (`hack/lib/github.sh comment N -`) so the new owner can
   take what it needs, and stop. Don't push to the issue's branch any more, and
   don't take the issue back.
