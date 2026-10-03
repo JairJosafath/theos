@@ -134,6 +134,10 @@ spec:
   harness: stand-in
   maxRounds: 2
   timeoutMinutes: 15
+  # Its implement rounds still run make check, the Go build and tests.
+  resources:
+    requests: {cpu: "1"}
+    limits: {cpu: "4"}
   env:
     - name: C4AGENT_FAKE_CHANGES_FIRST
       value: "true"

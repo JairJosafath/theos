@@ -156,6 +156,10 @@ hold its own:
   Go 1.25 and later set `GOMAXPROCS` from the limit, so Go builds and tests
   run 4 threads; Node and Gradle still see 12 cores and the kernel throttles
   them to 4.
+- **An Agent without a separate reviewer takes the implementer's values**,
+  like the toolbox's `claude`: a Task reviews each round after implementing
+  it, never beside it. So do the stand-ins: they write no code, but their
+  implement rounds still run `make check`.
 - **Gitea requests 500m**, a runner's share. On a busy node each pod gets CPU
   in proportion to its request; at 50m Gitea got a tenth of a runner's share,
   and its liveness probe restarted it just before that release (#17). It
