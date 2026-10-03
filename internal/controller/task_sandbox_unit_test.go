@@ -108,6 +108,62 @@ func TestRunStateReadsOnlyItsSandboxsPod(t *testing.T) {
 	}
 }
 
+func TestRunStateTellsAnInterruptedRun(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	scheme.AddKnownTypeWithName(SandboxGVK, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(SandboxGVK.GroupVersion().WithKind("SandboxList"), &unstructured.UnstructuredList{})
+	disrupted := []corev1.PodCondition{{Type: corev1.DisruptionTarget, Status: corev1.ConditionTrue,
+		Reason: "TerminationByKubelet"}}
+	for _, tt := range []struct {
+		name        string
+		reason      string
+		conditions  []corev1.PodCondition
+		term        corev1.ContainerStateTerminated
+		interrupted bool
+	}{
+		{name: "c4agent told to stop", term: corev1.ContainerStateTerminated{Reason: "Completed",
+			Message: `{"role":"implement","error":"claude failed: signal: killed","interrupted":true}`},
+			interrupted: true},
+		{name: "the agent killed on its own", term: corev1.ContainerStateTerminated{Reason: "Completed",
+			Message: `{"role":"implement","error":"claude failed: signal: killed"}`}},
+		{name: "an evicted pod", reason: "Evicted", term: corev1.ContainerStateTerminated{Reason: "Error",
+			ExitCode: 137}, interrupted: true},
+		{name: "a pod ended by a node shutdown", conditions: disrupted,
+			term: corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 143}, interrupted: true},
+		{name: "a container lost across a node restart",
+			term: corev1.ContainerStateTerminated{Reason: "ContainerStatusUnknown", ExitCode: 137}, interrupted: true},
+		{name: "an out-of-memory kill", term: corev1.ContainerStateTerminated{Reason: "OOMKilled", ExitCode: 137}},
+		{name: "an out-of-memory kill, then evicted", reason: "Evicted",
+			term: corev1.ContainerStateTerminated{Reason: "OOMKilled", ExitCode: 137}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sandbox := newSandbox()
+			sandbox.SetNamespace("toolbox")
+			sandbox.SetName("add-crop-r1-implement")
+			sandbox.SetUID("sandbox-1")
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "toolbox", Name: "add-crop-r1-implement",
+					OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
+				Status: corev1.PodStatus{Phase: corev1.PodFailed, Reason: tt.reason, Conditions: tt.conditions,
+					ContainerStatuses: []corev1.ContainerStatus{{
+						Name: "agent", State: corev1.ContainerState{Terminated: &tt.term},
+					}}},
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, pod).Build()
+			state, err := runState(context.Background(), c, "toolbox", "add-crop-r1-implement")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !state.Done || state.Interrupted != tt.interrupted {
+				t.Errorf("runState() = %+v, want done, interrupted %v", state, tt.interrupted)
+			}
+		})
+	}
+}
+
 func TestBuildSandboxStandardChangeEnv(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := c4v1alpha1.AddToScheme(scheme); err != nil {

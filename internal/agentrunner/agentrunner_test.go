@@ -474,6 +474,33 @@ func TestRunReportsAnUnavailableAgent(t *testing.T) {
 	}
 }
 
+func TestRunReportsAnInterruptedRun(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	ctx, cancel := context.WithCancel(context.Background())
+	got := Run(ctx, testJob(t, url, RoleImplement, 1), killedAgent{stop: cancel}, t.TempDir())
+	if !got.Interrupted || got.Unavailable || got.Error != "claude failed: signal: killed" {
+		t.Errorf("Run() = %+v, want an interrupted run", got)
+	}
+}
+
+func TestRunKilledWithoutStopIsTheAgentsFailure(t *testing.T) {
+	// An out-of-memory kill: the agent dies, but nobody told c4agent to stop.
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	got := Run(context.Background(), testJob(t, url, RoleImplement, 1),
+		failingAgent{err: errors.New("claude failed: signal: killed")}, t.TempDir())
+	if got.Interrupted || got.Error == "" {
+		t.Errorf("Run() = %+v, want a failed run that is not interrupted", got)
+	}
+}
+
+// killedAgent is an agent killed because c4agent was told to stop.
+type killedAgent struct{ stop context.CancelFunc }
+
+func (a killedAgent) Run(context.Context, string, string) (string, error) {
+	a.stop()
+	return "", errors.New("claude failed: signal: killed")
+}
+
 type failingAgent struct{ err error }
 
 func (a failingAgent) Run(context.Context, string, string) (string, error) { return "", a.err }

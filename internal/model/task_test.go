@@ -358,6 +358,41 @@ func TestCheckFailures(t *testing.T) {
 	}
 }
 
+func TestNextTaskStepInterrupted(t *testing.T) {
+	killed := RunState{Started: true, Done: true, Interrupted: true,
+		Result: &RunResult{Error: "claude failed: signal: killed"}}
+	evicted := RunState{Started: true, Done: true, Interrupted: true, Failure: "Evicted"}
+	oom := RunState{Started: true, Done: true, Failure: "OOMKilled (exit code 137)"}
+	tests := []struct {
+		name    string
+		facts   TaskFacts
+		want    TaskAction
+		message string
+	}{
+		{"a killed implementer reruns its round", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: killed}, ActionRerun,
+			"The run was interrupted (claude failed: signal: killed); round 1 runs again (rerun 1 of 2)"},
+		{"even in the last round", TaskFacts{Phase: TaskImplementing, Round: 3, MaxRounds: 3, Reruns: 1,
+			Run: evicted}, ActionRerun, "(Evicted); round 3 runs again (rerun 2 of 2)"},
+		{"an interrupted reviewer reruns too", TaskFacts{Phase: TaskReviewing, Round: 2, MaxRounds: 3,
+			Run: evicted}, ActionRerun, "round 2 runs again"},
+		{"past the cap the round is spent", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Reruns: 2,
+			Run: killed}, ActionRetry, "claude failed: signal: killed"},
+		{"past the cap the reviewer runs again", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Reruns: 2,
+			Run: evicted}, ActionRetryReview, "Evicted"},
+		{"an out-of-memory kill is the agent's", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: oom}, ActionRetry, "OOMKilled"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextTaskStep(tt.facts)
+			if got.Action != tt.want || !strings.Contains(got.Message, tt.message) {
+				t.Errorf("NextTaskStep() = %+v, want %s with %q", got, tt.want, tt.message)
+			}
+		})
+	}
+}
+
 func TestNextTaskStepAgentUnavailable(t *testing.T) {
 	back := time.Date(2026, 10, 2, 15, 0, 0, 0, time.UTC)
 	unavailable := RunState{Started: true, Done: true, Result: &RunResult{Unavailable: true, RetryAt: back,

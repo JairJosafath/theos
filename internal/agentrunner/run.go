@@ -40,6 +40,10 @@ type Result struct {
 	// bad credentials); RetryAt is when it said it is back.
 	Unavailable bool       `json:"unavailable,omitempty"`
 	RetryAt     *time.Time `json:"retryAt,omitempty"`
+	// Interrupted means c4agent was told to stop (SIGTERM: a node shutdown, an
+	// eviction, a preemption) before the run finished: the infrastructure ended
+	// it, not the agent.
+	Interrupted bool `json:"interrupted,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
@@ -115,8 +119,18 @@ func shorten(s string, n int) string {
 const checkFixAttempts = 2
 
 // Run does one job in dir and reports the outcome. Failures of the work itself
-// are in Result.Error; the run as such does not fail.
+// are in Result.Error; the run as such does not fail. A run that fails after ctx
+// was cancelled is Interrupted: c4agent was told to stop, and the kill of the
+// agent that follows is not the agent's failure.
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
+	result := run(ctx, job, agent, dir)
+	if result.Error != "" && !result.Unavailable && ctx.Err() != nil {
+		result.Interrupted = true
+	}
+	return result
+}
+
+func run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	result := Result{Role: job.Role}
 	r, err := clone(ctx, job, dir)
 	if err != nil {

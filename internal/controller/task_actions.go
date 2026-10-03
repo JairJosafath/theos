@@ -105,6 +105,15 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		log.Info("Sent an approved Task back to resolve conflicts", "round", status.Round)
 		return ctrl.Result{}, nil // the status write triggers the next step
 
+	case model.ActionRerun:
+		if err := r.endRun(ctx, task, status); err != nil {
+			return ctrl.Result{}, err
+		}
+		status.Reruns++
+		r.progress(task, status, metav1.ConditionTrue, "Interrupted", step.Message)
+		log.Info("Rerunning an interrupted run", "round", status.Round, "reruns", status.Reruns)
+		return ctrl.Result{}, nil // the status write triggers the next step
+
 	case model.ActionAgentUnavailable:
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
@@ -135,6 +144,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		status.Round++
 		status.Feedback = step.Feedback
 		status.ReviewAttempts = 0
+		status.Reruns = 0
 		status.Checks = nil
 		status.Phase = c4v1alpha1.TaskImplementing
 		r.progress(task, status, metav1.ConditionTrue, "NextRound", step.Message)

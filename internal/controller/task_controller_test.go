@@ -31,6 +31,7 @@ import (
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // newAgent returns the Agent "claude" with the given number of rounds.
@@ -326,6 +327,35 @@ var _ = Describe("Task", func() {
 		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "claude-credentials"),
 			StringData: map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "x"}})
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }, "30s").Should(Succeed())
+	})
+})
+
+var _ = Describe("Task with an interrupted run", func() {
+	It("reruns the same round, up to MaxReruns times, then spends it", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		killed := &agentrunner.Result{Role: "implement", Error: "claude failed: signal: killed", Interrupted: true}
+		for rerun := 1; rerun <= model.MaxReruns+1; rerun++ {
+			Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }, "20s").Should(Succeed())
+			finishSandbox(ns, "add-crop-r1-implement", "add-crop", killed, "")
+			if rerun > model.MaxReruns {
+				break
+			}
+			Eventually(func(g Gomega) {
+				task := getTask(g, ns, "add-crop")
+				g.Expect(task.Status.Reruns).To(Equal(int32(rerun)))
+				g.Expect(task.Status.Round).To(Equal(int32(1)), "an interrupted run costs no round")
+			}).Should(Succeed())
+			// Agent Sandbox would collect the old pod with its sandbox.
+			Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "add-crop-r1-implement")})).To(Succeed())
+		}
+
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Round).To(Equal(int32(2)), "past the cap the round is spent")
+			g.Expect(task.Status.Reruns).To(BeZero())
+		}).Should(Succeed())
 	})
 })
 
