@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 const criteria = "## Goal\n\nDo it.\n\n## Acceptance criteria\n\n- [ ] It works\n"
@@ -42,6 +43,12 @@ func TestNextCrewStep(t *testing.T) {
 	filer := CrewTask{Name: "cel-ls-1", Issue: 1, Blocked: true,
 		StandardChange: &IssueChange{Issue: 2, Paths: []string{"Makefile", "AGENTS.md"}}}
 	change := Issue{Number: 2, Body: criteria, StandardChange: true}
+	v011 := &Release{Title: "v0.1.1", Due: time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)}
+	v020 := &Release{Title: "v0.2.0", Due: time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)}
+	in := func(release *Release, issue Issue) Issue {
+		issue.Release = release
+		return issue
+	}
 	tests := []struct {
 		name  string
 		facts CrewFacts
@@ -138,6 +145,67 @@ func TestNextCrewStep(t *testing.T) {
 			Tasks: []CrewTask{filer}, Issues: []Issue{{Number: 2, Body: criteria}}},
 			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-1"},
 				Start: start(2, "cel-ls-2", 1), Message: "Starting Task cel-ls-2 for issue #2"}},
+		{name: "a later release waits while an earlier one has a ready issue", facts: CrewFacts{ContainerReady: true,
+			Parallel: 2, Issues: []Issue{in(v020, ready(44)), in(v011, ready(58))}},
+			want: CrewStep{Phase: CrewWorking, Waiting: []int{44},
+				Start: start(58, "cel-ls-58", 1), Message: "Starting Task cel-ls-58 for issue #58"}},
+		{name: "a later release waits while a Task works on an earlier one", facts: CrewFacts{ContainerReady: true,
+			Parallel: 2, Issues: []Issue{in(v020, ready(45))},
+			Tasks: []CrewTask{{Name: "cel-ls-60", Issue: 60, Release: v011}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-60"}, Waiting: []int{45},
+				Message: "Task cel-ls-60 is working on issue #60; 1 ready issue waits for release v0.1.1"}},
+		{name: "an earlier release waiting on dependencies holds back a later one", facts: CrewFacts{
+			ContainerReady: true, Issues: []Issue{in(v020, ready(6)), in(v011, ready(5, "#4"))}},
+			want: CrewStep{Phase: CrewIdle, Waiting: []int{5, 6},
+				Message: "No ready issues; 1 waits on open dependencies; 1 waits for release v0.1.1"}},
+		{name: "a later release starts once the earlier one has no work left", facts: CrewFacts{ContainerReady: true,
+			Issues: []Issue{in(v020, ready(45))},
+			Tasks:  []CrewTask{{Name: "cel-ls-60", Issue: 60, Final: true, Release: v011}}},
+			want: CrewStep{Phase: CrewWorking, Start: start(45, "cel-ls-45", 1),
+				Message: "Starting Task cel-ls-45 for issue #45"}},
+		{name: "a Task on a later release keeps running while an earlier one starts", facts: CrewFacts{
+			ContainerReady: true, Parallel: 2, Issues: []Issue{in(v011, ready(58)), in(v020, ready(45))},
+			Tasks: []CrewTask{{Name: "cel-ls-44", Issue: 44, Release: v020}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-44"}, Waiting: []int{45},
+				Start: start(58, "cel-ls-58", 1), Message: "Starting Task cel-ls-58 for issue #58"}},
+		{name: "issues outside a release come after every release", facts: CrewFacts{ContainerReady: true,
+			Parallel: 2, Issues: []Issue{ready(3), in(v011, ready(9))}},
+			want: CrewStep{Phase: CrewWorking, Waiting: []int{3},
+				Start: start(9, "cel-ls-9", 1), Message: "Starting Task cel-ls-9 for issue #9"}},
+		{name: "releases go by due date, then title", facts: CrewFacts{ContainerReady: true, Parallel: 3,
+			Issues: []Issue{
+				in(&Release{Title: "v0.9.0", Due: v020.Due}, ready(1)),
+				in(&Release{Title: "v1.0.0", Due: v011.Due}, ready(2)),
+				in(&Release{Title: "v0.9.9", Due: v011.Due}, ready(3)),
+			}},
+			want: CrewStep{Phase: CrewWorking, Waiting: []int{1, 2},
+				Start: start(3, "cel-ls-3", 1), Message: "Starting Task cel-ls-3 for issue #3"}},
+		{name: "issues outside a release go by number when no release has work", facts: CrewFacts{
+			ContainerReady: true, Parallel: 2, Issues: []Issue{ready(8), ready(7)},
+			Tasks: []CrewTask{{Name: "cel-ls-60", Issue: 60, Final: true, Release: v011}}},
+			want: CrewStep{Phase: CrewWorking,
+				Start:   []IssueStart{{Issue: 7, Task: "cel-ls-7", Attempt: 1}, {Issue: 8, Task: "cel-ls-8", Attempt: 1}},
+				Message: "Starting Task cel-ls-7 for issue #7 and Task cel-ls-8 for issue #8"}},
+		{name: "a blocker in a later release starts, so the earlier one doesn't wait for ever", facts: CrewFacts{
+			ContainerReady: true, Parallel: 2, Issues: []Issue{in(v011, ready(5, "#6")), in(v020, ready(6)), in(v020, ready(7))}},
+			want: CrewStep{Phase: CrewWorking, Waiting: []int{5, 7},
+				Start: start(6, "cel-ls-6", 1), Message: "Starting Task cel-ls-6 for issue #6"}},
+		{name: "so does a blocker's blocker", facts: CrewFacts{ContainerReady: true, Parallel: 2,
+			Issues: []Issue{in(v011, ready(5, "#6")), in(v020, ready(6, "#8")), in(v020, ready(7)), ready(8)}},
+			want: CrewStep{Phase: CrewWorking, Waiting: []int{5, 6, 7},
+				Start: start(8, "cel-ls-8", 1), Message: "Starting Task cel-ls-8 for issue #8"}},
+		{name: "a Standard change with its allowance starts whatever its release", facts: CrewFacts{
+			ContainerReady: true, Parallel: 1,
+			Issues: []Issue{in(v011, ready(59)), in(v020, Issue{Number: 70, Body: criteria, StandardChange: true})},
+			Tasks: []CrewTask{{Name: "cel-ls-58", Issue: 58, Blocked: true, Release: v011,
+				StandardChange: &IssueChange{Issue: 70, Paths: []string{"Makefile"}}}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-58"}, Ready: []int{59},
+				Start:   []IssueStart{{Issue: 70, Task: "cel-ls-70", Attempt: 1, AllowedPaths: []string{"Makefile"}}},
+				Message: "Starting Task cel-ls-70 for issue #70"}},
+		{name: "paused, a later release still shows as waiting", facts: CrewFacts{Paused: true, ContainerReady: true,
+			Issues: []Issue{in(v011, ready(58)), in(v020, ready(44))}},
+			want: CrewStep{Phase: CrewPaused, Ready: []int{58}, Waiting: []int{44},
+				Message: "Paused; not picking up issues"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

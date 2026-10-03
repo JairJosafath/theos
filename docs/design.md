@@ -269,6 +269,15 @@ model and context it needs.
   first after the Standard changes that `Blocked` Tasks wait on, up to three
   tries per issue. Milestones group the
   backlog; Gitea 1.27 has no API for project boards.
+- **Releases go one at a time.** A milestone with a due date is a release. The
+  Crew starts only the ready issues of the release due first that still has work
+  (a ready issue, or a Task working on one of its issues); later releases wait,
+  so each release's tag holds only its own issues. Issues in an undated
+  milestone, or in none, come after every release. Two kinds start whatever
+  their release, or something would wait for ever: a Standard change a Task
+  waits on, and an issue the current release's issues depend on. An issue handed
+  back to a person (`status/needs-human`) no longer holds its release, so the
+  factory keeps working. Running Tasks are never stopped.
 - **Roles get their own model and guide.** Agents have a `harness` and a `model`;
   CEL Lens pairs a Sonnet implementer with an Opus reviewer. A Standard ships
   `docs/agents/implementer.md` and `reviewer.md`, read from the base branch so a

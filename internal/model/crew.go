@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Issue labels the factory reads and writes. They share the exclusive scope
@@ -59,6 +60,15 @@ type Issue struct {
 	// StandardChange is set for an issue labelled kind/standard-change. Only such an
 	// issue may start with an allowance, and only once a Task names it.
 	StandardChange bool
+	// Release is the issue's milestone when it has a due date; nil otherwise.
+	Release *Release
+}
+
+// Release is a milestone with a due date. A Crew works releases one at a time,
+// the one due first first; issues outside a release come after every release.
+type Release struct {
+	Title string
+	Due   time.Time
 }
 
 // CrewTask is a Task on the Crew's Container.
@@ -74,6 +84,8 @@ type CrewTask struct {
 	Blocked bool
 	// StandardChange is the Standard change issue the Task filed, from its status.
 	StandardChange *IssueChange
+	// Release is the release of the Task's issue; nil when it has none.
+	Release *Release
 }
 
 // IssueChange is a Standard change issue a Task filed, and the protected paths it
@@ -200,6 +212,15 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 		return withoutAllowance(allowances, a) - withoutAllowance(allowances, b)
 	})
 
+	// Releases go one at a time, so a release's tag holds only its own issues:
+	// a later release's ready issues wait while an earlier one has work.
+	onDependencies := len(step.Waiting)
+	candidates, held, current := holdLaterReleases(f.Tasks, issues, candidates, step.Waiting, allowances)
+	if len(held) > 0 {
+		step.Waiting = append(step.Waiting, held...)
+		slices.Sort(step.Waiting)
+	}
+
 	switch {
 	case f.Paused:
 		step.Phase, step.Ready, step.NotReady = CrewPaused, candidates, nil
@@ -243,13 +264,119 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			step.Message += fmt.Sprintf("; %d ready %s %s for a free place", n, plural(n, "issue", "issues"),
 				plural(n, "waits", "wait"))
 		}
+		step.Message += heldMessage(held, current, "ready "+plural(len(held), "issue ", "issues "))
 	default:
 		step.Phase, step.Message = CrewIdle, "No ready issues"
-		if n := len(step.Waiting); n > 0 {
+		if n := onDependencies; n > 0 {
 			step.Message += fmt.Sprintf("; %d %s on open dependencies", n, plural(n, "waits", "wait"))
 		}
+		step.Message += heldMessage(held, current, "")
 	}
 	return step
+}
+
+// holdLaterReleases keeps the candidates of the current release and holds back
+// those of later ones, so a release's tag holds only its own issues. A Standard
+// change with its allowance, and an issue the current release waits on, are
+// never held: a Task or the release would wait on them for ever.
+func holdLaterReleases(tasks []CrewTask, issues []Issue, candidates, waiting []int,
+	allowances map[int][]string) (kept, held []int, current *Release) {
+	current = currentRelease(tasks, issues, candidates, waiting)
+	needed := neededBy(issues, waiting, current)
+	release := map[int]*Release{}
+	for _, issue := range issues {
+		release[issue.Number] = issue.Release
+	}
+	for _, n := range candidates {
+		if compareReleases(release[n], current) > 0 && !needed[n] && len(allowances[n]) == 0 {
+			held = append(held, n)
+		} else {
+			kept = append(kept, n)
+		}
+	}
+	return kept, held, current
+}
+
+// neededBy is every issue of this repository that the current release's waiting
+// issues wait on, directly or through other waiting issues.
+func neededBy(issues []Issue, waiting []int, current *Release) map[int]bool {
+	byNumber := map[int]Issue{}
+	for _, issue := range issues {
+		byNumber[issue.Number] = issue
+	}
+	var queue []int
+	for _, n := range waiting {
+		if compareReleases(byNumber[n].Release, current) == 0 {
+			queue = append(queue, n)
+		}
+	}
+	needed := map[int]bool{}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		for _, ref := range byNumber[n].OpenBlockers {
+			blocker, err := strconv.Atoi(strings.TrimPrefix(ref, "#"))
+			if !strings.HasPrefix(ref, "#") || err != nil || needed[blocker] {
+				continue // another repository's issue, which this Crew doesn't start
+			}
+			needed[blocker] = true
+			if slices.Contains(waiting, blocker) {
+				queue = append(queue, blocker)
+			}
+		}
+	}
+	return needed
+}
+
+// heldMessage tells how many ready issues wait for the current release; noun
+// goes between the count and the verb.
+func heldMessage(held []int, current *Release, noun string) string {
+	n := len(held)
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("; %d %s%s for release %s", n, noun, plural(n, "waits", "wait"), current.Title)
+}
+
+// currentRelease is the release a Crew works on: the first, in release order, that
+// has a ready issue (startable or waiting on dependencies) or an active Task. It
+// is nil when that is no release, or when nothing has work.
+func currentRelease(tasks []CrewTask, issues []Issue, candidates, waiting []int) *Release {
+	var current *Release
+	found := false
+	consider := func(r *Release) {
+		if !found || compareReleases(r, current) < 0 {
+			current, found = r, true
+		}
+	}
+	for _, t := range tasks {
+		if !t.Final {
+			consider(t.Release)
+		}
+	}
+	for _, issue := range issues {
+		if slices.Contains(candidates, issue.Number) || slices.Contains(waiting, issue.Number) {
+			consider(issue.Release)
+		}
+	}
+	return current
+}
+
+// compareReleases orders releases by due date, then title; nil, outside any
+// release, comes last.
+func compareReleases(a, b *Release) int {
+	switch {
+	case a == nil && b == nil:
+		return 0
+	case a == nil:
+		return 1
+	case b == nil:
+		return -1
+	}
+	if c := a.Due.Compare(b.Due); c != 0 {
+		return c
+	}
+	return strings.Compare(a.Title, b.Title)
 }
 
 // withoutAllowance sorts an issue that has an allowance (0) before one without (1).

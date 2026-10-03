@@ -234,7 +234,9 @@ spec:
                 type: array
                 x-kubernetes-list-type: atomic
               waiting:
-                description: waiting lists the ready issues blocked by open dependencies.
+                description: |-
+                  waiting lists the ready issues that wait: on open dependencies, or for an
+                  earlier release (a milestone due sooner) to have no work left.
                 items:
                   format: int32
                   type: integer

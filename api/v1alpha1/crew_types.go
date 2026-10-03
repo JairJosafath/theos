@@ -99,7 +99,8 @@ type CrewStatus struct {
 	// +optional
 	Ready []int32 `json:"ready,omitempty"`
 
-	// waiting lists the ready issues blocked by open dependencies.
+	// waiting lists the ready issues that wait: on open dependencies, or for an
+	// earlier release (a milestone due sooner) to have no work left.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=100
 	// +optional

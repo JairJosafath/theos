@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
@@ -219,6 +220,15 @@ func (g *fakeGit) setIssueMilestone(owner, name string, number int, title string
 		s.milestones[key] = append(s.milestones[key], title)
 	}
 	s.find(key, number).milestone = title
+}
+
+// setIssueRelease puts an issue in the milestone titled title, due on due.
+func (g *fakeGit) setIssueRelease(owner, name string, number int, title string, due time.Time) {
+	g.setIssueMilestone(owner, name, number, title)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	i := g.issueState().find(owner+"/"+name, number)
+	i.MilestoneTitle, i.MilestoneDue = title, due
 }
 
 func (p *fakeProvider) OpenBlockers(_ context.Context, repo gitprovider.Repository, number int) ([]string, error) {

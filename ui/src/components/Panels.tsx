@@ -204,9 +204,7 @@ function CrewDetails({ crew }: { crew: CrewSummary }) {
           <span className="muted">
             <span title={crew.ready.length ? issueList(crew.ready) : undefined}>{crew.ready.length} ready</span>
             {' · '}
-            <span title={crew.waiting.length ? issueList(crew.waiting) : undefined}>
-              {crew.waiting.length} waiting on dependencies
-            </span>
+            <span title={crew.waiting.length ? issueList(crew.waiting) : undefined}>{crew.waiting.length} waiting</span>
           </span>
         </p>
         {crew.notReady ? (

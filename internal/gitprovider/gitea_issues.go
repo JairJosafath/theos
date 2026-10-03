@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"time"
 )
 
 // Issue is an issue on a repository.
@@ -21,6 +22,10 @@ type Issue struct {
 	URL    string
 	// Milestone is the ID of the issue's milestone, or 0 when it has none.
 	Milestone int64
+	// MilestoneTitle is the milestone's title; MilestoneDue its due date, zero when
+	// it has none.
+	MilestoneTitle string
+	MilestoneDue   time.Time
 }
 
 // Label is a label a repository should have.
@@ -77,8 +82,9 @@ type (
 )
 
 type giteaMilestone struct {
-	ID    int64  `json:"id"`
-	Title string `json:"title"`
+	ID    int64      `json:"id"`
+	Title string     `json:"title"`
+	DueOn *time.Time `json:"due_on"`
 }
 
 type giteaIssue struct {
@@ -100,8 +106,11 @@ func (i giteaIssue) issue() Issue {
 		labels = append(labels, l.Name)
 	}
 	out := Issue{Number: i.Number, Title: i.Title, Body: i.Body, State: i.State, Labels: labels, URL: i.HTMLURL}
-	if i.Milestone != nil {
-		out.Milestone = i.Milestone.ID
+	if m := i.Milestone; m != nil {
+		out.Milestone, out.MilestoneTitle = m.ID, m.Title
+		if m.DueOn != nil {
+			out.MilestoneDue = *m.DueOn
+		}
 	}
 	return out
 }

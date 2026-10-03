@@ -464,7 +464,7 @@ function CrewCard({
           </span>
           <span className="muted"> · </span>
           <span title={crew.waiting.length ? `Waiting: ${issueList(crew.waiting)}` : undefined}>
-            {crew.waiting.length} waiting on dependencies
+            {crew.waiting.length} waiting
           </span>
         </dd>
       </dl>

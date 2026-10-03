@@ -138,6 +138,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		repo = provider.Repository(container.Name)
 		gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 		facts.Issues, err = readyIssues(gitCtx, provider, repo)
+		if err == nil {
+			err = taskReleases(gitCtx, provider, repo, facts.Tasks, facts.Issues)
+		}
 		cancel()
 		if err != nil {
 			log.Error(err, "Failed to read the ready issues", "container", container.Name)
@@ -228,9 +231,39 @@ func readyIssues(ctx context.Context, provider gitprovider.Provider, repo gitpro
 			return nil, fmt.Errorf("issue #%d: %w", i.Number, err)
 		}
 		out = append(out, model.Issue{Number: i.Number, Title: i.Title, Body: i.Body, OpenBlockers: blockers,
-			StandardChange: slices.Contains(i.Labels, model.LabelStandardChange)})
+			StandardChange: slices.Contains(i.Labels, model.LabelStandardChange), Release: release(i)})
 	}
 	return out, nil
+}
+
+// taskReleases sets the release of each active Task's issue, so that a release
+// with work in progress holds back the later ones.
+func taskReleases(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	tasks []model.CrewTask, ready []model.Issue) error {
+	for i, t := range tasks {
+		if t.Final || t.Issue == 0 {
+			continue
+		}
+		// A Task created a moment ago may still find its issue labelled ready.
+		if j := slices.IndexFunc(ready, func(issue model.Issue) bool { return issue.Number == t.Issue }); j >= 0 {
+			tasks[i].Release = ready[j].Release
+			continue
+		}
+		issue, err := provider.GetIssue(ctx, repo, t.Issue)
+		if err != nil {
+			return fmt.Errorf("issue #%d of Task %s: %w", t.Issue, t.Name, err)
+		}
+		tasks[i].Release = release(issue)
+	}
+	return nil
+}
+
+// release is an issue's milestone as a release; nil when it has no due date.
+func release(issue gitprovider.Issue) *model.Release {
+	if issue.MilestoneDue.IsZero() {
+		return nil
+	}
+	return &model.Release{Title: issue.MilestoneTitle, Due: issue.MilestoneDue}
 }
 
 func (r *CrewReconciler) wait(crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus, reason, message string) {

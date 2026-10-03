@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -206,6 +207,39 @@ var _ = Describe("Crew", func() {
 			g.Expect(crew.Status.Ready).To(Equal([]int32{3}), "the third waits for a free place")
 		}).Should(Succeed())
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-3"), &c4v1alpha1.Task{}))).To(BeTrue())
+	})
+
+	It("finishes one release before it starts the next", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		later := gitFake.addIssue(ns, "orders-api", "Price orders", clearIssue, []string{model.LabelReady})
+		sooner := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		gitFake.setIssueRelease(ns, "orders-api", later, "v0.2.0", time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
+		gitFake.setIssueRelease(ns, "orders-api", sooner, "v0.1.1", time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC))
+		crew := newCrew(ns)
+		crew.Spec.Parallel = 2
+		mustCreate(crew)
+
+		By("starting only the release due first, and holding the next while its issue is in progress")
+		task := fmt.Sprintf("orders-api-%d", sooner)
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.issue(ns, "orders-api", sooner).Labels).To(Equal([]string{model.LabelInProgress}))
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.ActiveTasks).To(Equal([]string{task}))
+			g.Expect(crew.Status.Waiting).To(Equal([]int32{int32(later)}))
+			g.Expect(condition(crew.Status.Conditions, ConditionReady).Message).
+				To(ContainSubstring("1 ready issue waits for release v0.1.1"))
+		}).Should(Succeed())
+		Consistently(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, fmt.Sprintf("orders-api-%d", later)), &c4v1alpha1.Task{}))
+		}, 3*time.Second).Should(BeTrue(), "the next release waits while the first one's issue is in progress")
+
+		By("starting the next release once the first has no work left")
+		finishSandbox(ns, task+"-r1-implement", task, nil, "OOMKilled")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, fmt.Sprintf("orders-api-%d", later)).Spec.Issue).To(Equal(int32(later)))
+		}).Should(Succeed())
 	})
 
 	It("sends an approved change that conflicts with main back to its implementer, in the same round", func() {

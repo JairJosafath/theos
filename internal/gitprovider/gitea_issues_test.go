@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // issueHost is an in-memory Gitea with labels, milestones, issues, dependencies
@@ -414,5 +415,31 @@ func TestGetIssueMilestone(t *testing.T) {
 	}
 	if got, err := p.GetIssue(ctx, repo, 2); err != nil || got.Milestone != 0 {
 		t.Errorf("GetIssue(2) milestone = %d, %v; want 0", got.Milestone, err)
+	}
+}
+
+func TestIssueMilestone(t *testing.T) {
+	tests := []struct {
+		name, milestone string
+		want            Issue
+	}{
+		{"none", `null`, Issue{}},
+		{"undated", `{"id": 9, "title": "v0.1.1", "due_on": null}`, Issue{Milestone: 9, MilestoneTitle: "v0.1.1"}},
+		{"due", `{"id": 12, "title": "v0.2.0", "due_on": "2026-10-12T23:59:59Z"}`,
+			Issue{Milestone: 12, MilestoneTitle: "v0.2.0", MilestoneDue: time.Date(2026, 10, 12, 23, 59, 59, 0, time.UTC)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var i giteaIssue
+			if err := json.Unmarshal([]byte(`{"number": 3, "milestone": `+tt.milestone+`}`), &i); err != nil {
+				t.Fatal(err)
+			}
+			got := i.issue()
+			if got.Milestone != tt.want.Milestone || got.MilestoneTitle != tt.want.MilestoneTitle ||
+				!got.MilestoneDue.Equal(tt.want.MilestoneDue) {
+				t.Errorf("issue() milestone = %d %q %v, want %d %q %v", got.Milestone, got.MilestoneTitle,
+					got.MilestoneDue, tt.want.Milestone, tt.want.MilestoneTitle, tt.want.MilestoneDue)
+			}
+		})
 	}
 }
