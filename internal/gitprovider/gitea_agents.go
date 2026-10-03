@@ -399,6 +399,23 @@ func (g *gitea) ClosePullRequest(ctx context.Context, repo Repository, number in
 	return nil
 }
 
+func (g *gitea) DeleteBranch(ctx context.Context, repo Repository, branch string) error {
+	// Gitea takes the branch's slashes as they are; each segment is escaped.
+	segments := strings.Split(branch, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	status, data, err := g.do(ctx, http.MethodDelete,
+		"/api/v1/repos/"+repoPath(repo)+"/branches/"+strings.Join(segments, "/"), nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusNoContent && status != http.StatusNotFound {
+		return fmt.Errorf("gitea: deleting branch %s of %s failed (HTTP %d): %s", branch, repoPath(repo), status, apiMessage(data))
+	}
+	return nil
+}
+
 func repoPath(repo Repository) string {
 	return url.PathEscape(repo.Owner) + "/" + url.PathEscape(repo.Name)
 }

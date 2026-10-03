@@ -239,13 +239,15 @@ func (r *TaskReconciler) resume(ctx context.Context, task *c4v1alpha1.Task, stat
 	container *c4v1alpha1.Container, step model.TaskStep) {
 	change := status.StandardChange
 	provider, repo, err := r.gitRepo(ctx, container)
+	notes := []error{err}
 	if err == nil {
 		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
-		err = provider.CommentIssue(gitCtx, repo, int(task.Spec.Issue), fmt.Sprintf(
-			"Standard change #%d merged; Task `%s` goes on with round %d.", change.Issue, task.Name, status.Round))
+		notes = []error{provider.CommentIssue(gitCtx, repo, int(task.Spec.Issue), fmt.Sprintf(
+			"Standard change #%d merged; Task `%s` goes on with round %d.", change.Issue, task.Name, status.Round)),
+			deleteProposal(gitCtx, provider, repo, change)}
 		cancel()
 	}
-	logNotes(ctx, task, []error{err})
+	logNotes(ctx, task, notes)
 	change.ResumedRound = status.Round
 	status.Feedback = step.Feedback
 	status.Checks = nil
@@ -275,6 +277,7 @@ func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1alp
 		notes = append(notes, provider.ClosePullRequest(gitCtx, repo, int(status.PullRequest)))
 	}
 	change := status.StandardChange
+	notes = append(notes, deleteProposal(gitCtx, provider, repo, change))
 	notes = append(notes, r.endIssue(ctx, provider, repo, int(task.Spec.Issue), fmt.Sprintf(
 		"Done by Standard change #%d (%s): with it merged, this issue needed nothing more.",
 		change.Issue, change.IssueURL))...)
@@ -282,6 +285,32 @@ func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1alp
 	r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, "DoneByStandardChange", step.Message)
 	logf.FromContext(ctx).Info("Merged Task done by its Standard change", "issue", change.Issue)
 	return nil
+}
+
+// deleteProposal deletes the proposal branch of the Task's Standard change:
+// nothing reads it once the change merged or will not.
+func deleteProposal(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	change *c4v1alpha1.TaskStandardChange) error {
+	if change == nil || change.Branch == "" {
+		return nil
+	}
+	return provider.DeleteBranch(ctx, repo, change.Branch)
+}
+
+// dropProposal deletes the proposal branch of a Task that fails while Blocked on
+// its Standard change.
+func (r *TaskReconciler) dropProposal(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container) {
+	if status.Phase != c4v1alpha1.TaskBlocked || status.StandardChange == nil {
+		return
+	}
+	provider, repo, err := r.gitRepo(ctx, container)
+	if err == nil {
+		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+		err = deleteProposal(gitCtx, provider, repo, status.StandardChange)
+		cancel()
+	}
+	logNotes(ctx, task, []error{err})
 }
 
 func quotePaths(paths []string) string {
