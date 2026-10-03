@@ -224,8 +224,8 @@ gitea() {
 relay() {
   [ -d "$RELAY_DIR" ] || { fail "no relay directory at $RELAY_DIR"; return; }
   {
-    echo "## relay.log in window"
-    awk -v s="${SINCE:0:19}" 'substr($1, 1, 19) >= s' "$RELAY_DIR/relay.log" 2>/dev/null | cut -c1-220 | tail -40
+    echo "## relay logs in window"
+    awk -v s="${SINCE:0:19}" 'substr($1, 1, 19) >= s' "$RELAY_DIR"/relay*.log 2>/dev/null | sort | cut -c1-220 | tail -40
     echo "## evaluate.log (last 5)"
     tail -5 "$RELAY_DIR/evaluate.log" 2>/dev/null
     echo "## session accounts in window (file, turns, minutes, USD, error)"

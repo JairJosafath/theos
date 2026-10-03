@@ -131,7 +131,8 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 - **Hand off between tasks, never inside one.** Finish the task in flight (its
   implementation and review) first; after a task, past about 100k tokens, hand
   off instead of starting the next.
-- **Overnight, `hack/relay.sh`** runs headless sessions one after another, each
-  on the in-progress or next ready issue; its log is `.relay/relay.log`.
+- **Overnight, `hack/relay.sh [--workers N]`** runs headless sessions, each on
+  the in-progress or next ready issue; worker k works in the worktree
+  `.claude/worktrees/relay-k` and logs to `.relay/relay-k.log`.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?

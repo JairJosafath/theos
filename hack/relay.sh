@@ -1,41 +1,65 @@
 #!/usr/bin/env bash
-# Relay: runs fresh headless Claude sessions one after another on the factory's
-# own GitHub issues (JairJosafath/c4factory), so work carries on overnight
-# without a person starting each session. Sessions never run in parallel. Each
-# session works one issue and hands off through a comment on it (the handoff
-# skill); hack/lib/github.sh has the GitHub helpers. Product work stays in
-# Gitea, where the Crews work it.
+# Relay: runs fresh headless Claude sessions on the factory's own GitHub issues
+# (JairJosafath/c4factory), so work carries on overnight without a person
+# starting each session. Each session works one issue and hands off through a
+# comment on it (the handoff skill); hack/lib/github.sh has the GitHub helpers.
+# Product work stays in Gitea, where the Crews work it.
 #
-# Each round picks an issue (hack/lib/github.sh pick: an in-progress one nobody
-# holds, else the oldest ready + urgent one, else the oldest ready one) and
-# claims it (take); when another agent claims it first, it picks again, up to 5
-# times. With nothing ready, hack/evaluate.sh (if present) runs at most once every
-# 6 hours to file issues; the relay picks once more and stops if there is still
+# It runs N workers side by side (docs/plans/parallel-agents.md). Worker k runs
+# from this checkout and starts its sessions, one after another, in its own git
+# worktree .claude/worktrees/relay-k, switched to each issue's branch; the
+# worktree's .relay/ holds its claim. Each round picks an issue
+# (hack/lib/github.sh pick: an in-progress one nobody holds, else the oldest
+# ready + urgent one, else the oldest ready one) and claims it (take); when
+# another agent claims it first, it picks again, up to 5 times. Claims keep the
+# workers and hand-started sessions off each other's issues. A session that ends
+# still holding its claim gets it released. With nothing ready, hack/evaluate.sh
+# (if present) runs when the newest evaluation on the "Factory evaluations"
+# issue is 6 hours old, under a claim on that issue, so it runs once across
+# workers and devices; the worker picks once more and stops if there is still
 # nothing. After each session it runs `make backup-releases` if that target exists.
 #
-#   hack/relay.sh                  wait for the running session to hand off or close its issue, then start
-#   hack/relay.sh --now            start right away
+#   hack/relay.sh                  start one worker
+#   hack/relay.sh --workers N      start N workers (1-9); workers already running are left alone
 #   RELAY_DRY_RUN=1 hack/relay.sh  print the issue and prompt the next session would get; change nothing
-#   touch .relay/stop              stop after the current session, or while waiting
+#   touch .relay/stop              stop every worker after its current session
 #
-# Log: .relay/relay.log, one line per event. Each session's closing account is in
-# .relay/session-<n>-<time>.md; open a whole session with `claude --resume <id>`.
+# Log: .relay/relay-<k>.log, one line per event. Each session's closing account is
+# in .relay/session-<k>-<n>-<time>.md; open a whole session with `claude --resume <id>`
+# from the worker's worktree.
 set -uo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 DIR="$REPO/.relay"
-LOG="$DIR/relay.log"
 STOP="$DIR/stop"
 MAX_SESSIONS=${MAX_SESSIONS:-8}
 SESSION_TIMEOUT=${SESSION_TIMEOUT:-6h}
-EVALUATE="$REPO/hack/evaluate.sh"
-EVALUATE_STAMP="$DIR/evaluate.last"
+EVALUATIONS_TITLE="Factory evaluations"
 EVALUATE_EVERY=${EVALUATE_EVERY:-21600} # seconds: 6 hours
 DRY_RUN=${RELAY_DRY_RUN:-}
 [ "$DRY_RUN" = 0 ] && DRY_RUN=
 
+WORKERS=1
+while [ $# -gt 0 ]; do
+  case $1 in
+    --workers) WORKERS=${2:-}; shift 2 || shift ;;
+    --workers=*) WORKERS=${1#*=}; shift ;;
+    --now) shift ;; # the relay no longer waits for a handoff; kept for old habits
+    *) echo "usage: hack/relay.sh [--workers N]" >&2; exit 64 ;;
+  esac
+done
+[[ $WORKERS =~ ^[1-9]$ ]] || { echo "relay: --workers takes 1 to 9" >&2; exit 64; }
+
+K=${C4_RELAY_WORKER:-1}
+WT="$REPO/.claude/worktrees/relay-$K"
+LOG="$DIR/relay-$K.log"
+
 # shellcheck source=hack/lib/github.sh
 . "$REPO/hack/lib/github.sh"
+# The worker's claim and unposted handoffs live in its worktree, where its
+# sessions' hack/lib/github.sh and heartbeat hook look for them.
+GH_PENDING_DIR="$WT/.relay"
+GH_CLAIM_FILE="$GH_PENDING_DIR/claim"
 
 # prompt N TITLE URL HOW NAME BRANCH: the headless session's prompt for issue
 # N, worked by agent NAME on BRANCH.
@@ -51,7 +75,8 @@ You run headless, started by hack/relay.sh while the user sleeps; no person is
 watching and nobody can answer a question. Your work is GitHub issue #$n on
 $C4_GITHUB_REPO, "$title" ($url), and only that issue. The relay has claimed
 it for you and labeled it status/in-progress: you are $name, and the issue's
-branch is $branch. $start
+branch is $branch, checked out in this worktree, relay-$K. Other agents work
+other issues at the same time in other checkouts; stay in this one. $start
 Start with \`hack/lib/github.sh show $n\`: it prints the issue, its newest
 handoff comment and the comments after it. Follow AGENTS.md, the handoff skill
 and the memories.
@@ -70,9 +95,9 @@ Rules for this headless run:
   move on to other work or hand off.
 - If an action is refused (permissions, auto mode), don't retry it: write it in
   the handoff under Decisions as open, for the user, and carry on.
-- Work on $branch, never on main: \`git fetch origin\`, then
-  \`git switch $branch\` if origin has it (an earlier agent pushed it), else
-  \`git switch -c $branch origin/main\`. Push after every commit.
+- Work on $branch, never on main; the relay has switched this worktree to it
+  (from origin if an earlier agent pushed it, else from origin/main). Push
+  after every commit: \`git push -u origin HEAD\`.
 - Sign your work as $name: an \`Agent: $name\` trailer on every commit, an
   \`Agent: $name\` line in the pull request body and in your handoff.
 - If a tool call's hook says your claim was taken over, do what it says (push
@@ -102,20 +127,20 @@ log() {
   fi
 }
 
-# flush: post the handoffs kept in .relay/ while GitHub was away, before any
-# session reads the issues. Exit 1 if some are still unposted.
+# flush: post the handoffs the worker's sessions kept while GitHub was away,
+# before any session reads the issues. Exit 1 if some are still unposted.
 flush() {
   local out
-  compgen -G "$DIR/pending-handoff-*.md" >/dev/null || return 0
+  compgen -G "$GH_PENDING_DIR/pending-handoff-*.md" >/dev/null || return 0
   if [ -n "$DRY_RUN" ]; then
-    log "would post the pending handoffs: $(cd "$DIR" && echo pending-handoff-*.md)"
+    log "would post the pending handoffs: $(cd "$GH_PENDING_DIR" && echo pending-handoff-*.md)"
     return 0
   fi
   if out=$(gh_flush 2>&1); then
     log "${out//$'\n'/; }"
     return 0
   fi
-  log "could not post the pending handoffs in $DIR: ${out//$'\n'/; }"
+  log "could not post the pending handoffs in $GH_PENDING_DIR: ${out//$'\n'/; }"
   return 1
 }
 
@@ -130,35 +155,89 @@ pick() {
   IFS=$'\t' read -r ISSUE TITLE URL HOW <<<"$row"
 }
 
-# evaluate: run hack/evaluate.sh if it exists and hasn't run in the last 6
-# hours. Exit 1 when it didn't run.
+# evaluate: run hack/evaluate.sh if the newest evaluation on the "Factory
+# evaluations" issue is at least 6 hours old, under a claim on that issue so
+# no other worker or device evaluates at the same time. Exit 1 when it didn't run.
 evaluate() {
-  local last age out rc t0
-  if [ ! -x "$EVALUATE" ]; then
+  local issue last age out rc t0
+  if [ ! -x "$REPO/hack/evaluate.sh" ]; then
     log "no issue ready, and hack/evaluate.sh is missing or not executable"
     return 1
   fi
-  last=$(cat "$EVALUATE_STAMP" 2>/dev/null) || last=0
-  [[ $last =~ ^[0-9]+$ ]] || last=0
-  age=$(($(date +%s) - last))
-  if [ "$age" -lt "$EVALUATE_EVERY" ]; then
-    log "no issue ready; the evaluator ran $((age / 60))m ago and runs at most every $((EVALUATE_EVERY / 60))m"
-    return 1
+  issue=$(gh_api --paginate "repos/$C4_GITHUB_REPO/issues?state=open&per_page=100" \
+    --jq ".[] | select((.pull_request | not) and .title == \"$EVALUATIONS_TITLE\") | .number" |
+    head -1) || { log "no issue ready; could not look for the $EVALUATIONS_TITLE issue"; return 1; }
+  if [ -n "$issue" ]; then
+    last=$(gh_comments "$issue" | jq -r '[.[] | select(.body | contains("<!-- factory-evaluator"))] | last | .created_at // empty') ||
+      { log "no issue ready; could not read #$issue's evaluations"; return 1; }
+    if [ -n "$last" ]; then
+      age=$(($(date +%s) - $(date -d "$last" +%s)))
+      if [ "$age" -lt "$EVALUATE_EVERY" ]; then
+        log "no issue ready; the newest evaluation on #$issue is $((age / 60))m old, and the evaluator runs at most every $((EVALUATE_EVERY / 60))m"
+        return 1
+      fi
+    fi
   fi
   if [ -n "$DRY_RUN" ]; then
-    log "no issue ready; would run hack/evaluate.sh, then pick once more"
+    log "no issue ready; would claim #${issue:-?} and run hack/evaluate.sh, then pick once more"
     return 1
   fi
-  date +%s >"$EVALUATE_STAMP"
+  if [ -n "$issue" ]; then
+    GH_TAKE_KEEP_STATUS=1 gh_take "$issue" >/dev/null 2>>"$LOG"
+    rc=$?
+    [ "$rc" = 4 ] && { log "no issue ready; another agent is evaluating (#$issue is claimed)"; return 1; }
+    [ "$rc" = 0 ] || { log "no issue ready; could not claim #$issue to evaluate (exit $rc)"; return 1; }
+  fi
+  if ! git -C "$WT" switch -q --detach origin/main 2>>"$LOG"; then
+    log "could not switch $WT to origin/main to evaluate"
+    gh_release "relay could not prepare its worktree" >/dev/null 2>>"$LOG"
+    return 1
+  fi
   out="$DIR/evaluate-$(date +%Y%m%d-%H%M%S).out"
-  log "no issue ready; running hack/evaluate.sh, output in $out"
+  log "no issue ready; running hack/evaluate.sh in relay-$K, output in $out"
   t0=$(date +%s)
-  timeout "$SESSION_TIMEOUT" "$EVALUATE" >"$out" 2>&1
+  (cd "$WT" && RELAY_DIR="$DIR" timeout "$SESSION_TIMEOUT" hack/evaluate.sh) >"$out" 2>&1
   rc=$?
   log "evaluator end: exit $rc after $((($(date +%s) - t0) / 60))m"
+  gh_release evaluated >/dev/null 2>>"$LOG"
 }
 
-# backup: run `make backup-releases` if the Makefile has that target.
+# worktree: create the worker's worktree if it is missing, fetch, and stash
+# whatever a dead session left uncommitted in it, so nothing is lost.
+worktree() {
+  git -C "$REPO" fetch -q origin 2>>"$LOG" || { log "git fetch failed"; return 1; }
+  if [ ! -e "$WT/.git" ]; then
+    git -C "$REPO" worktree add -q --detach "$WT" origin/main 2>>"$LOG" || return 1
+    log "created the worktree $WT"
+  fi
+  mkdir -p "$GH_PENDING_DIR"
+  [ -e "$GH_PENDING_DIR/.gitignore" ] || echo '*' >"$GH_PENDING_DIR/.gitignore"
+  if [ -n "$(git -C "$WT" status --porcelain)" ]; then
+    git -C "$WT" stash push -q -u -m "relay-$K: left uncommitted on $(git -C "$WT" rev-parse --abbrev-ref HEAD), $(date -Is)" 2>>"$LOG" ||
+      return 1
+    log "stashed uncommitted changes left in $WT (git -C $WT stash list)"
+  fi
+}
+
+# switch_branch BRANCH: switch the worktree to BRANCH: the local branch
+# (fast-forwarded to origin's), else origin's, else a new one from origin/main.
+switch_branch() {
+  local b=$1 g=(git -C "$WT")
+  if "${g[@]}" show-ref -q --verify "refs/heads/$b"; then
+    "${g[@]}" switch -q --ignore-other-worktrees "$b" 2>>"$LOG" || return 1
+    if "${g[@]}" show-ref -q --verify "refs/remotes/origin/$b"; then
+      "${g[@]}" merge -q --ff-only "origin/$b" 2>>"$LOG" ||
+        log "local $b and origin/$b have diverged; the session sorts it out"
+    fi
+  elif "${g[@]}" show-ref -q --verify "refs/remotes/origin/$b"; then
+    "${g[@]}" switch -q -c "$b" --track "origin/$b" 2>>"$LOG"
+  else
+    "${g[@]}" switch -q -c "$b" --no-track origin/main 2>>"$LOG"
+  fi
+}
+
+# backup: run `make backup-releases` if the Makefile has that target and no
+# other worker is running it.
 backup() {
   local out="$DIR/backup-releases.out"
   make -n backup-releases >/dev/null 2>&1 || return 0
@@ -166,24 +245,11 @@ backup() {
     log "would run make backup-releases after the session"
     return 0
   fi
-  if timeout 30m make backup-releases >"$out" 2>&1; then
+  if flock -n "$DIR/backup.lock" timeout 30m make backup-releases >"$out" 2>&1; then
     log "backup-releases: done"
   else
     log "backup-releases: failed with exit $?; see $out"
   fi
-}
-
-# handed_off_since TIME: a handoff comment was posted or kept, or an issue
-# closed, at or after TIME (UTC, 2006-01-02T15:04:05Z).
-handed_off_since() {
-  local since=$1 json
-  compgen -G "$DIR/pending-handoff-*.md" >/dev/null && return 0
-  json=$(gh_api "repos/$C4_GITHUB_REPO/issues/comments?since=$since&per_page=100") || return 1
-  jq -e --arg s "$since" --arg m "$GH_HANDOFF_MARKER" \
-    'any(.[]; .created_at >= $s and (.body | sub("^\\s+"; "") | startswith($m)))' <<<"$json" >/dev/null &&
-    return 0
-  json=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=closed&since=$since&per_page=100") || return 1
-  jq -e --arg s "$since" 'any(.[]; (.pull_request | not) and .closed_at >= $s)' <<<"$json" >/dev/null
 }
 
 # handoff_id N: the id of N's newest handoff comment, or nothing.
@@ -210,44 +276,42 @@ outcome() {
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
 
-# Started from a terminal: check no relay runs, then detach and return. The
-# token is read here, where the git credential helper answers; the detached
-# relay and its sessions inherit it in the environment.
+# Started from a terminal: start the workers that aren't running, detached,
+# and return. The token is read here, where the git credential helper answers;
+# the workers and their sessions inherit it in the environment.
 if [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; then
-  if ! flock -n "$DIR/lock" true; then
-    echo "a relay is already running; see $LOG" >&2
-    exit 1
-  fi
   gh_token || exit 1
-  C4_RELAY_CHILD=1 setsid nohup bash "$0" "$@" >>"$DIR/relay.out" 2>&1 </dev/null &
-  echo "relay started (pid $!)"
-  echo "  log:  tail -f $LOG"
-  echo "  stop: touch $STOP"
+  rm -f "$STOP"
+  for k in $(seq 1 "$WORKERS"); do
+    if ! flock -n "$DIR/lock-$k" true; then
+      echo "worker $k is already running; see $DIR/relay-$k.log"
+      continue
+    fi
+    C4_RELAY_CHILD=1 C4_RELAY_WORKER=$k setsid nohup bash "$0" >>"$DIR/relay-$k.out" 2>&1 </dev/null &
+    echo "worker $k started (pid $!): tail -f $DIR/relay-$k.log"
+  done
+  echo "stop: touch $STOP"
   exit 0
 fi
 
 cd "$REPO" || exit 1
 if [ -z "$DRY_RUN" ]; then
-  exec 9>"$DIR/lock"
-  flock -n 9 || { log "another relay holds the lock; exiting"; exit 1; }
-  rm -f "$STOP"
+  exec 9>"$DIR/lock-$K"
+  flock -n 9 || { log "another worker $K holds the lock; exiting"; exit 1; }
 fi
 gh_token 2>/dev/null || { log "no GitHub token; stopping"; exit 1; }
-log "relay started: pid $$, mode ${DRY_RUN:+dry run, }${1:-wait}, HEAD $(git rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
-
-if [ -z "$DRY_RUN" ] && [ "${1:-}" != --now ]; then
-  since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  log "waiting for a handoff comment or a closed issue after $since"
-  until handed_off_since "$since"; do
-    [ -e "$STOP" ] && { log "stopped while waiting"; exit 0; }
-    sleep 60
-  done
-  log "handoff seen; starting in 2 minutes"
-  sleep 120 # let the handing-off session finish its last message
-fi
+log "worker $K started: pid $$${DRY_RUN:+, dry run}, worktree $WT, HEAD $(git rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
+# Workers started together would all race for the same first issue.
+[ -n "$DRY_RUN" ] || sleep $(((K - 1) * 20))
 
 for i in $(seq 1 "$MAX_SESSIONS"); do
   [ -e "$STOP" ] && { log "stop file found; stopping"; break; }
+  if [ -z "$DRY_RUN" ]; then
+    worktree || { log "could not prepare the worktree $WT; stopping"; break; }
+    if [ "$i" = 1 ] && gh_claim_read; then
+      log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
+    fi
+  fi
   flush || { log "GitHub can't be reached; stopping"; break; }
 
   pick
@@ -263,7 +327,7 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   id=$(cat /proc/sys/kernel/random/uuid)
   if [ -n "$DRY_RUN" ]; then
     log "would claim #$ISSUE ($HOW) for session $id: $TITLE, $URL"
-    log "would start session $i: claude -p --permission-mode auto --model opus --session-id $id, with this prompt:"
+    log "would switch $WT to the issue's branch and start session $i there: claude -p --permission-mode auto --model opus --session-id $id, with this prompt:"
     echo "-----"
     prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "<name>" "<branch>"
     echo "-----"
@@ -280,12 +344,21 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   done
   [ "$rc" = 0 ] || { log "could not claim an issue (exit $rc); stopping"; break; }
   IFS=$'\t' read -r name branch <<<"$claim"
-  before=$(handoff_id "$ISSUE") || { log "could not read #$ISSUE's handoffs; stopping"; break; }
-  out="$DIR/session-$i-$(date +%Y%m%d-%H%M%S)"
-  log "session $i start: id $id, $name on #$ISSUE ($HOW) $TITLE, branch $branch, HEAD $(git rev-parse --short HEAD)"
+  if ! switch_branch "$branch"; then
+    log "could not switch $WT to $branch; releasing #$ISSUE and stopping"
+    gh_release "relay could not prepare its worktree" >/dev/null 2>>"$LOG"
+    break
+  fi
+  before=$(handoff_id "$ISSUE") || {
+    log "could not read #$ISSUE's handoffs; stopping"
+    gh_release "relay could not read the issue" >/dev/null 2>>"$LOG"
+    break
+  }
+  out="$DIR/session-$K-$i-$(date +%Y%m%d-%H%M%S)"
+  log "session $i start: id $id, $name on #$ISSUE ($HOW) $TITLE, branch $branch, HEAD $(git -C "$WT" rev-parse --short HEAD)"
   t0=$(date +%s)
-  timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
-    --session-id "$id" --output-format json "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")" \
+  (cd "$WT" && timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+    --session-id "$id" --output-format json "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")") \
     >"$out.json" 2>"$out.err"
   rc=$?
   mins=$((($(date +%s) - t0) / 60))
@@ -301,15 +374,28 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
 
   backup
   flush || { log "GitHub can't be reached; stopping"; break; }
-  result=$(outcome "$ISSUE" "$before") || { log "could not read #$ISSUE after session $i; stopping"; break; }
+  result=$(outcome "$ISSUE" "$before") || result=unknown
+  if gh_claim_read; then
+    case $result in
+      closed) reason=finished ;;
+      handed-off) reason="handed off" ;;
+      *) reason="session ended without a handoff" ;;
+    esac
+    if released=$(gh_release "$reason" 2>&1); then
+      log "${released//$'\n'/; }"
+    else
+      log "could not release the claim on #$ISSUE; it expires after $C4_LEASE_TTL: ${released//$'\n'/; }"
+    fi
+  fi
   case $result in
     closed) log "session $i closed #$ISSUE" ;;
     needs-human) log "session $i left #$ISSUE waiting for the user (status/needs-human)" ;;
     handed-off) log "session $i handed off #$ISSUE" ;;
+    unknown) log "could not read #$ISSUE after session $i; stopping"; break ;;
     *)
-      log "session $i left no handoff on #$ISSUE; stopping (claude --resume $id to see why)"
+      log "session $i left no handoff on #$ISSUE; stopping (claude --resume $id in $WT to see why)"
       break
       ;;
   esac
 done
-log "relay finished"
+log "worker $K finished"
