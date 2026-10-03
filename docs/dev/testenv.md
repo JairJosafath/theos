@@ -65,17 +65,24 @@ hack/lib/github.sh take 14         # claim it for this checkout; prints the agen
 hack/lib/github.sh claims          # who holds which issue, with heartbeat age and branch
 hack/lib/github.sh labels          # create the status/priority/kind/source labels (safe to repeat)
 RELAY_DRY_RUN=1 hack/relay.sh      # the issue and prompt the next headless session would get
-hack/relay.sh --now                # headless sessions one after another, overnight (billed)
-touch .relay/stop                  # stop the relay after the current session
+hack/relay.sh                      # headless sessions one after another, overnight (billed)
+hack/relay.sh --workers 2          # two relay workers side by side, each in its own worktree
+touch .relay/stop                  # stop every worker after its current session
 ```
 
 The relay picks the oldest `status/in-progress` issue nobody holds, else the
 oldest `status/ready` + `priority/urgent` one, else the oldest `status/ready`
 one, skipping issues with a live claim or an open `Depends on #M`, and claims
-it (see [docs/plans/parallel-agents.md](../plans/parallel-agents.md)). It
-stops when a session leaves no handoff comment and doesn't close the issue or set
-`status/needs-human`. With nothing ready it runs `hack/evaluate.sh` at most every
-6 hours, then picks once more. After each session it runs `make backup-releases`
-if the target exists. Its log is `.relay/relay.log`, with one account per session
-next to it. A handoff that couldn't reach GitHub waits in
-`.relay/pending-handoff-<issue>.md`, and the next run posts it first.
+it (see [docs/plans/parallel-agents.md](../plans/parallel-agents.md)). Worker
+k runs its sessions in the git worktree `.claude/worktrees/relay-k`, switched
+to the issue's branch; uncommitted changes a dead session left there are
+stashed, not dropped. Claims keep workers and hand-started sessions off each
+other's issues, so the relay starts right away. A session that ends still
+holding its claim gets it released; a worker stops when a session leaves no
+handoff comment and doesn't close the issue or set `status/needs-human`. With
+nothing ready a worker claims the "Factory evaluations" issue and runs
+`hack/evaluate.sh` if its newest evaluation is 6 hours old, then picks once
+more. After each session it runs `make backup-releases` if the target exists.
+Worker k logs to `.relay/relay-k.log`, with one account per session next to
+it. A handoff that couldn't reach GitHub waits in the worktree's
+`.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.

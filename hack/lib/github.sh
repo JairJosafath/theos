@@ -298,7 +298,8 @@ gh_branch_name() {
 # gh_take N: claim N for this checkout and print NAME BRANCH (tab-separated).
 # A claim this checkout already holds on N is printed again. Exit 4: someone
 # else holds N, or won the race to it; exit 1: this checkout holds another
-# issue, or GitHub could not be asked.
+# issue, or GitHub could not be asked. GH_TAKE_KEEP_STATUS=1 leaves N's status
+# label alone (the evaluator's claim on "Factory evaluations").
 gh_take() {
   local n=${1:?usage: take N} ttl c_issue c_id c_name c_branch rc issue all holder used w name branch stale id winner
   ttl=$(gh_ttl) || return 1
@@ -371,7 +372,8 @@ gh_take() {
   jq -n --argjson n "$n" --argjson id "$id" --arg name "$name" --arg branch "$branch" \
     --argjson labels "$(jq -c '[.labels[].name]' <<<"$issue")" --argjson beat "$(date +%s)" \
     '{issue: $n, id: $id, name: $name, branch: $branch, labels: $labels, beat: $beat}' >"$GH_CLAIM_FILE"
-  gh_set_status "$n" in-progress || echo "github: claimed #$n but could not label it status/in-progress" >&2
+  [ -n "${GH_TAKE_KEEP_STATUS:-}" ] ||
+    gh_set_status "$n" in-progress || echo "github: claimed #$n but could not label it status/in-progress" >&2
   printf '%s\t%s\n' "$name" "$branch"
 }
 
