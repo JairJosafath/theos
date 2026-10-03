@@ -220,7 +220,11 @@ the extension host opened the same policy. The extension activated on YAML, star
 its bundled server, and VS Code showed squiggles and Problems entries on exactly the
 two broken expressions, the schema hover on `replicas` and the five `object.`
 completions; "CEL Lens: Restart Server" brought the diagnostics back
-(`docs/screenshots/v4-extension-vscode.png` and `.txt`). That package bundles
+(`docs/screenshots/v4-extension-vscode.png` and `.txt`). With the mouse driven by
+`xdotool`, the status bar item showed "CEL Lens: running" and its tooltip; the
+tooltip's Show Output link opened the CEL Lens channel, and its Restart Server link
+restarted the server (`v4-extension-statusbar-*.png`), which answers the
+extension's #58 once by hand. That package bundles
 server v0.1.0, the only server tag: a later server release reaches users through
 an extension release that bumps `server.json`.
 

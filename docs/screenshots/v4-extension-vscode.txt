@@ -49,3 +49,17 @@ After CEL Lens: Restart Server, diagnostics (2)
 #   cel-language-server v0.1.0
 # The extension's server.json pins v0.1.0, the server's only tag so far; a later
 # server release reaches users through an extension release that bumps server.json.
+
+# The status bar item, with the real mouse (03:03 UTC, same VS Code and package).
+# xdotool hovered "CEL Lens: running" and clicked each link in its tooltip; a
+# screenshot followed each step.
+#
+#   Hover (v4-extension-statusbar-hover.png): the item shows a check icon and
+#   "CEL Lens: running"; its tooltip reads "The CEL language server is running.
+#   Click to open the output." with the links "Show Output · Restart Server".
+#   Click "Show Output": the Output panel opens on the "CEL Lens" channel.
+#   Click "Restart Server" (v4-extension-statusbar-restart.png): the channel shows
+#     2026-10-03 03:03:39.864 [info] Using cel-language-server from the bundled: .../server/linux-x64/cel-language-server
+#     2026-10-03 03:03:53.036 [info] Using cel-language-server from the bundled: .../server/linux-x64/cel-language-server
+#     2026-10-03 03:03:53.052 [info] Server process exited successfully
+#   and the item says "CEL Lens: running" again, with both diagnostics back.
