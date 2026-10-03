@@ -65,9 +65,10 @@ For a Ready Container whose `spec.standardRef` names a Standard:
 6. **The Standard moves again** while an update is open: close it, delete its
    branch and plan towards the new ref.
 
-The condition `StandardUpdated` reports it: `UpToDate`, `Updated` (with the paths
-left out, if any), `Updating`, `ChecksFailed`, `UpdateClosed`, `UpdateRefused`,
-`AddedAfterScaffold`, or `GitError` (retried at the next recheck).
+The condition `StandardUpdated` reports it: `UpToDate` (naming the paths the last
+update left out, if any), `Updating`, `ChecksFailed`, `UpdateClosed`,
+`UpdateRefused`, `AddedAfterScaffold`, `NotFound`, `UnpinnedRef`, `Failed` (the
+template doesn't render), or `GitError` (retried at the next recheck).
 
 ## Steps
 

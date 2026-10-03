@@ -127,24 +127,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 
-	in := scaffold.Input{
-		Project:        container.Namespace,
-		SoftwareSystem: container.Spec.SoftwareSystemRef.Name,
-		Container:      container.Name,
-		DisplayName:    container.Spec.DisplayName,
-		Type:           string(container.Spec.Type),
-		Framework:      container.Spec.FrameworkRef.Name,
-		Connectors:     res.use.Connectors,
-	}
-	if container.Spec.StandardRef != nil {
-		in.Standard = container.Spec.StandardRef.Name
-	}
-	if container.Spec.ComputeRef != nil {
-		in.Compute = container.Spec.ComputeRef.Name
-	}
-	if container.Spec.DeploymentRef != nil {
-		in.Deployment = container.Spec.DeploymentRef.Name
-	}
+	in := scaffoldInput(container, res.use.Connectors)
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
 	if err != nil {
 		reason := c4v1alpha1.ReasonFailed
@@ -223,6 +206,30 @@ func (r *ContainerReconciler) retry(ctx context.Context, container *c4v1alpha1.C
 func (r *ContainerReconciler) condition(container *c4v1alpha1.Container, status *c4v1alpha1.ContainerStatus,
 	condType string, s metav1.ConditionStatus, reason, message string) {
 	setCondition(&status.Conditions, container.Generation, condType, s, reason, message)
+}
+
+// scaffoldInput is what every template of the Container renders with.
+// connectors are the unique Connector names, sorted.
+func scaffoldInput(container *c4v1alpha1.Container, connectors []string) scaffold.Input {
+	in := scaffold.Input{
+		Project:        container.Namespace,
+		SoftwareSystem: container.Spec.SoftwareSystemRef.Name,
+		Container:      container.Name,
+		DisplayName:    container.Spec.DisplayName,
+		Type:           string(container.Spec.Type),
+		Framework:      container.Spec.FrameworkRef.Name,
+		Connectors:     connectors,
+	}
+	if container.Spec.StandardRef != nil {
+		in.Standard = container.Spec.StandardRef.Name
+	}
+	if container.Spec.ComputeRef != nil {
+		in.Compute = container.Spec.ComputeRef.Name
+	}
+	if container.Spec.DeploymentRef != nil {
+		in.Deployment = container.Spec.DeploymentRef.Name
+	}
+	return in
 }
 
 func repoDescription(container *c4v1alpha1.Container) string {

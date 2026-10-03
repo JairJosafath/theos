@@ -365,6 +365,8 @@ func (g *fakeGit) pullAuthor(owner, name string, number int) string {
 }
 
 // conflict makes a pull request conflict with its base, or merge cleanly again.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) conflict(owner, name string, number int, conflicted bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

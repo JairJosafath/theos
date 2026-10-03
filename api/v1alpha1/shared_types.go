@@ -116,6 +116,9 @@ const (
 	ConditionScaffolded = "Scaffolded"
 	// ConditionApplied is True when a Relationship's Connector was part of the scaffold.
 	ConditionApplied = "Applied"
+	// ConditionStandardUpdated is True when a Container's Standard files are at
+	// its Standard's ref.
+	ConditionStandardUpdated = "StandardUpdated"
 )
 
 // Condition reasons.
@@ -136,6 +139,11 @@ const (
 	ReasonWaiting              = "WaitingForScaffold"
 	ReasonAppliedAtScaffold    = "AppliedAtScaffold"
 	ReasonAddedAfterScaffold   = "AddedAfterScaffold"
+	ReasonUpToDate             = "UpToDate"
+	ReasonUpdating             = "Updating"
+	ReasonChecksFailed         = "ChecksFailed"
+	ReasonUpdateClosed         = "UpdateClosed"
+	ReasonUpdateRefused        = "UpdateRefused"
 )
 
 // Labels the operator sets so a resource can be found by its ancestors.

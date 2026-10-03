@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -41,6 +42,7 @@ type fakeGit struct {
 	templates map[string]scaffold.Tree // url@ref
 	repos     map[string]*fakeRepo     // owner/name
 	pushes    int
+	shas      int            // commits made other than the initial ones
 	histories map[string]int // History calls per owner/name
 	hangs     map[string]chan struct{}
 	agent     *fakeAgentState
@@ -49,7 +51,9 @@ type fakeGit struct {
 
 type fakeRepo struct {
 	commits []gitprovider.Commit // oldest first
-	files   scaffold.Tree
+	// files is main's tree. It is replaced, never changed in place, so a test
+	// can keep reading the tree it got.
+	files scaffold.Tree
 }
 
 func newFakeGit(templatesDir string) (*fakeGit, error) {
@@ -220,6 +224,113 @@ func (p *fakeProvider) PushInitialCommit(_ context.Context, repo gitprovider.Rep
 	return hash, nil
 }
 
+// newSHA returns a fresh commit SHA, unlike the initial commits' ones.
+func (g *fakeGit) newSHA() string {
+	g.shas++
+	return fmt.Sprintf("5a%038d", g.shas)
+}
+
+// ReadFiles reads main, the only branch whose files the fake keeps.
+func (p *fakeProvider) ReadFiles(_ context.Context, repo gitprovider.Repository, branch string,
+	paths []string) (scaffold.Tree, string, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	r := p.git.repos[repo.Owner+"/"+repo.Name]
+	if branch != gitprovider.DefaultBranch {
+		return nil, "", fmt.Errorf("the fake reads %s only, not %s", gitprovider.DefaultBranch, branch)
+	}
+	if r == nil || len(r.commits) == 0 {
+		return nil, "", fmt.Errorf("clone %s at %s: branch not found", repo.CloneURL, branch)
+	}
+	files := scaffold.Tree{}
+	for _, filePath := range paths {
+		if f, ok := r.files[filePath]; ok {
+			files[filePath] = f
+		}
+	}
+	return files, r.commits[len(r.commits)-1].Hash, nil
+}
+
+// PushBranch records branch with what its commit changes on main, which a
+// forced merge of its pull request applies. base must be a commit of main.
+func (p *fakeProvider) PushBranch(_ context.Context, repo gitprovider.Repository, base, branch string,
+	files scaffold.Tree, removes []string, _ string, _ gitprovider.Signature) (string, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	key := repo.Owner + "/" + repo.Name
+	r := p.git.repos[key]
+	if r == nil || !slices.ContainsFunc(r.commits, func(c gitprovider.Commit) bool { return c.Hash == base }) {
+		return "", fmt.Errorf("find base %s on %s of %s: not found", base, gitprovider.DefaultBranch, key)
+	}
+	edits := map[string]*scaffold.File{}
+	for _, filePath := range removes {
+		if _, ok := r.files[filePath]; ok {
+			edits[filePath] = nil
+		}
+	}
+	for filePath, f := range files {
+		if cur, ok := r.files[filePath]; !ok || cur.Executable != f.Executable || string(cur.Data) != string(f.Data) {
+			edits[filePath] = &f
+		}
+	}
+	if len(edits) == 0 {
+		return "", fmt.Errorf("push %s: %w", branch, gitprovider.ErrEmptyChange)
+	}
+	sha := p.git.newSHA()
+	s := p.git.agentState()
+	s.branches[key+"@"+branch] = sha
+	s.edits[key+"@"+branch] = edits
+	return sha, nil
+}
+
+// mainFiles returns main's tree in owner/name.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) mainFiles(owner, name string) scaffold.Tree {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.repos[owner+"/"+name].files
+}
+
+// mainHead returns the newest commit on main in owner/name.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) mainHead(owner, name string) gitprovider.Commit {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	commits := g.repos[owner+"/"+name].commits
+	return commits[len(commits)-1]
+}
+
+// commitToMain writes files to main as one commit, as a person's merged change would.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) commitToMain(owner, name string, files scaffold.Tree) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	edits := map[string]*scaffold.File{}
+	for filePath, f := range files {
+		edits[filePath] = &f
+	}
+	g.applyToMain(owner+"/"+name, edits, "A person's change")
+}
+
+// applyToMain makes one commit on main of owner/name that writes, or with nil
+// removes, each path of edits.
+func (g *fakeGit) applyToMain(key string, edits map[string]*scaffold.File, message string) {
+	r := g.repos[key]
+	files := maps.Clone(r.files)
+	for filePath, f := range edits {
+		if f == nil {
+			delete(files, filePath)
+		} else {
+			files[filePath] = *f
+		}
+	}
+	r.files = files
+	r.commits = append(r.commits, gitprovider.Commit{Hash: g.newSHA(), Message: message})
+}
+
 // fakeAgentState is what the fake host keeps for the agent loop: protected
 // branches, check states, bot users and pull requests, per owner/name.
 type fakeAgentState struct {
@@ -235,6 +346,9 @@ type fakeAgentState struct {
 	log       string                                // served for every CI job
 	files     map[string][]string                   // owner/name#number -> paths the pull request changes
 	forced    map[string][]int                      // owner/name -> pull requests force-merged
+	// edits are what the commit PushBranch made on a branch changes on main,
+	// by owner/name@branch: a path's new file, or nil when it removes it.
+	edits map[string]map[string]*scaffold.File
 }
 
 func (g *fakeGit) agentState() *fakeAgentState {
@@ -245,6 +359,7 @@ func (g *fakeGit) agentState() *fakeAgentState {
 			agents: map[string]string{}, pulls: map[string][]*gitprovider.PullRequest{},
 			comments: map[string][]string{}, branches: map[string]string{}, authors: map[string]string{},
 			files: map[string][]string{}, forced: map[string][]int{},
+			edits: map[string]map[string]*scaffold.File{},
 		}
 	}
 	return g.agent
@@ -275,6 +390,7 @@ func (g *fakeGit) pushBranch(owner, name, branch, sha string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.agentState().branches[owner+"/"+name+"@"+branch] = sha
+	delete(g.agentState().edits, owner+"/"+name+"@"+branch)
 }
 
 func (g *fakeGit) protectedBranches(owner, name string) []string {
@@ -416,21 +532,24 @@ func (p *fakeProvider) CommentPullRequest(_ context.Context, repo gitprovider.Re
 
 // MergePullRequest refuses a pull request that changes a protected path, as Gitea does.
 func (p *fakeProvider) MergePullRequest(_ context.Context, repo gitprovider.Repository, number int,
-	headSHA, _, _ string) error {
+	headSHA, title, message string) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
-	return p.merge(repo, number, headSHA, false)
+	return p.merge(repo, number, headSHA, title, message, false)
 }
 
 // ForceMergePullRequest merges whatever the pull request changes, and records it.
 func (p *fakeProvider) ForceMergePullRequest(_ context.Context, repo gitprovider.Repository, number int,
-	headSHA, _, _ string) error {
+	headSHA, title, message string) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
-	return p.merge(repo, number, headSHA, true)
+	return p.merge(repo, number, headSHA, title, message, true)
 }
 
-func (p *fakeProvider) merge(repo gitprovider.Repository, number int, headSHA string, force bool) error {
+// merge merges a pull request. One from a branch PushBranch made squashes its
+// changes onto main as one commit and deletes the branch.
+func (p *fakeProvider) merge(repo gitprovider.Repository, number int, headSHA, title, message string,
+	force bool) error {
 	pr, err := p.pull(repo, number)
 	if err != nil {
 		return err
@@ -449,6 +568,11 @@ func (p *fakeProvider) merge(repo gitprovider.Repository, number int, headSHA st
 		return fmt.Errorf("pull request %d changes protected files", number)
 	}
 	pr.Merged, pr.State = true, "closed"
+	if edits, ok := s.edits[key+"@"+pr.Head]; ok {
+		p.git.applyToMain(key, edits, title+"\n\n"+message)
+		delete(s.edits, key+"@"+pr.Head)
+		delete(s.branches, key+"@"+pr.Head)
+	}
 	return nil
 }
 
@@ -479,10 +603,16 @@ func (g *fakeGit) forcedMerges(owner, name string) []int {
 func (p *fakeProvider) PullRequestFiles(_ context.Context, repo gitprovider.Repository, number int) ([]string, error) {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
-	if _, err := p.pull(repo, number); err != nil {
+	pr, err := p.pull(repo, number)
+	if err != nil {
 		return nil, err
 	}
-	return slices.Clone(p.git.agentState().files[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)]), nil
+	s := p.git.agentState()
+	if files, ok := s.files[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)]; ok {
+		return slices.Clone(files), nil
+	}
+	// A pull request from a branch PushBranch made changes what its commit does.
+	return slices.Sorted(maps.Keys(s.edits[repo.Owner+"/"+repo.Name+"@"+pr.Head])), nil
 }
 
 func (p *fakeProvider) ClosePullRequest(_ context.Context, repo gitprovider.Repository, number int) error {
@@ -500,6 +630,7 @@ func (p *fakeProvider) DeleteBranch(_ context.Context, repo gitprovider.Reposito
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	delete(p.git.agentState().branches, repo.Owner+"/"+repo.Name+"@"+branch)
+	delete(p.git.agentState().edits, repo.Owner+"/"+repo.Name+"@"+branch)
 	return nil
 }
 

@@ -68,21 +68,41 @@ func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1
 // credentials read straight from the API server.
 func providerFor(ctx context.Context, c client.Client, apiReader client.Reader, git GitClient,
 	ns, name string) (gitprovider.Provider, error) {
+	access, err := gitAccessFor(ctx, c, apiReader, git, ns, name)
+	return access.provider, err
+}
+
+// gitAccess is a GitProvider, its credentials and the Provider built from them.
+type gitAccess struct {
+	gitProvider *c4v1alpha1.GitProvider
+	creds       gitprovider.Credentials
+	provider    gitprovider.Provider
+}
+
+// gitAccessFor reads a GitProvider in namespace ns and its credentials, straight
+// from the API server, and builds its Provider.
+func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader, git GitClient,
+	ns, name string) (gitAccess, error) {
 	var provider c4v1alpha1.GitProvider
 	if err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &provider); err != nil {
-		return nil, fmt.Errorf("GitProvider %s: %w", name, err)
+		return gitAccess{}, fmt.Errorf("GitProvider %s: %w", name, err)
 	}
 	creds, found, err := readCredentials(ctx, apiReader, &provider)
 	if err != nil {
-		return nil, err
+		return gitAccess{}, err
 	}
 	if !found {
-		return nil, fmt.Errorf("secret %s of GitProvider %s not found", provider.Spec.CredentialsSecretRef.Name, name)
+		return gitAccess{}, fmt.Errorf("secret %s of GitProvider %s not found",
+			provider.Spec.CredentialsSecretRef.Name, name)
 	}
-	return git.Provider(gitprovider.Config{
+	p, err := git.Provider(gitprovider.Config{
 		Kind:        string(provider.Spec.Provider),
 		URL:         provider.Spec.URL,
 		Owner:       provider.Spec.Owner,
 		Credentials: creds,
 	})
+	if err != nil {
+		return gitAccess{}, err
+	}
+	return gitAccess{gitProvider: &provider, creds: creds, provider: p}, nil
 }
