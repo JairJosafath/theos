@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label)
-# and for close keeping the claim when the close fails, against a stubbed GitHub and a throwaway repository with two worktrees.
+# for close keeping the claim when the close fails, and for take releasing a claim on a closed issue, against a stubbed GitHub and a throwaway repository with two worktrees.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 unset C4_CLUSTER # the light devcontainer sets it; each test sets its own
@@ -24,11 +24,17 @@ gh_api() {
     */issues/51/labels*) printf 'status/in-progress\n' ;;
     */issues/60) echo '{"number":60,"title":"Deploy","labels":[{"name":"needs/cluster"},{"name":"kind/feature"}]}' ;;
     */issues/71) return 1 ;; # closing #71 fails
+    */issues/73) echo closed ;; # --jq .state, as take asks
+    */issues/74) echo open ;;
     */issues/61) echo '{"number":61,"title":"Docs","labels":[{"name":"kind/docs"}]}' ;;
     */issues/*/comments*)
       if [[ " $* " == *" POST "* ]]; then touch "$T/posted"; echo 999; return; fi
       [ -e "$T/posted" ] || { echo '[[]]'; return; }
       echo "[[{\"id\":999,\"created_at\":\"$now\",\"updated_at\":\"$now\",\"html_url\":\"u\",\"user\":{\"login\":\"x\"},\"body\":\"<!-- c4-claim -->\\n**otter-6x** works on this issue\"}]]" ;;
+    */issues/comments/1) # the claim() comment: heron-73 and heron-74 still hold theirs
+      if [[ " $* " == *" PATCH "* ]]; then cat >"$T/edited"; return; fi
+      echo '{"id":1,"updated_at":"'"$now"'","body":"<!-- c4-claim -->\n**heron-73** works on this issue"}' |
+        { [ -e "$T/hold74" ] && sed 's/heron-73/heron-74/' || cat; } ;;
     */issues/comments*) echo '[[]]' ;;
     */issues\?state=open*) echo '[[{"number":60,"title":"Deploy","html_url":"u60","body":"","labels":[{"name":"needs/cluster"},{"name":"status/ready"}]},{"number":61,"title":"Docs","html_url":"u61","body":"","labels":[{"name":"status/ready"}]}]]' ;;
     *) return 0 ;;
@@ -77,4 +83,14 @@ check "close fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 71
 claim "$T/main" 72 "$(date +%s)"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close" $? 0
 check "close, claim released" "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" released
+rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
+claim "$T/main" 73 "$(date +%s)"
+gh_take 61 >/dev/null 2>&1; check "take, own claim on a closed issue" $? 0
+check "take, closed issue's claim released" "$(jq -r .body "$T/edited" | grep -c 'heron-73\*\* released this issue: finished')" 1
+check "take, new claim" "$(jq .issue "$T/main/.relay/claim")" 61
+rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
+touch "$T/hold74"; claim "$T/main" 74 "$(date +%s)"
+gh_take 61 >/dev/null 2>&1; check "take, own claim on an open issue" $? 1
+check "take, open issue's claim kept" "$(jq .issue "$T/main/.relay/claim")" 74
+rm -f "$T/hold74"
 exit $fail
