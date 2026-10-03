@@ -561,17 +561,22 @@ func approveGated(ns string) {
 }
 
 // expireSandbox plays Agent Sandbox at a sandbox's shutdown time: it marks the
-// sandbox expired and deletes its pod, and with it the run's result.
-func expireSandbox(ns, name string) {
+// sandbox expired and deletes its pod, if any, and with it the run's result.
+// After an outage of the whole cluster it notices that time late, once the
+// cluster is back.
+func expireSandbox(ns, name string, outage time.Duration) {
 	GinkgoHelper()
 	sandbox := newSandbox()
 	Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed())
+	shutdown, _, _ := unstructured.NestedString(sandbox.Object, "spec", "shutdownTime")
+	at, err := time.Parse(time.RFC3339, shutdown)
+	Expect(err).NotTo(HaveOccurred())
 	Expect(unstructured.SetNestedSlice(sandbox.Object, []any{map[string]any{
 		"type": "Ready", "status": "False", "reason": "SandboxExpired", "message": "the sandbox expired",
-		"lastTransitionTime": time.Now().UTC().Format(time.RFC3339)}}, "status", "conditions")).To(Succeed())
+		"lastTransitionTime": at.Add(outage).Format(time.RFC3339)}}, "status", "conditions")).To(Succeed())
 	Expect(k8sClient.Status().Update(ctx, sandbox)).To(Succeed())
-	Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name}},
-		client.GracePeriodSeconds(0))).To(Succeed())
+	Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: ns, Name: name}}, client.GracePeriodSeconds(0)))).To(Succeed())
 }
 
 var _ = Describe("Task with a gated merge", func() {
@@ -623,7 +628,7 @@ var _ = Describe("Task with a gated merge", func() {
 		}).Should(Succeed())
 
 		By("expiring the review sandbox, with CI still pending")
-		expireSandbox(ns, "orders-api-1-r1-review-a1")
+		expireSandbox(ns, "orders-api-1-r1-review-a1", 0)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
 			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))

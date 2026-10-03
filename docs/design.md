@@ -298,10 +298,12 @@ model and context it needs.
 - **Waiting is not failing.** A usage limit, an overloaded API or rejected
   credentials don't cost a round: the Task waits (`AgentUnavailable`) and tries
   the same step again. Neither does a run the infrastructure ended (a node
-  shutdown or restart, an eviction, a preemption): it runs again in the same
-  round (`Interrupted`, then `status.reruns`), at most twice per round, so a
-  run that is cut short every time still spends rounds. An out-of-memory kill
-  is the agent's run failing, not an interruption.
+  shutdown or restart, an eviction, a preemption, a cluster outage that lasted
+  past its sandbox's shutdown time): it runs again in the same round
+  (`Interrupted`, then `status.reruns`), at most twice per round, so a run that
+  is cut short every time still spends rounds. An out-of-memory kill, or a run
+  that ran out its time while the cluster ran, is the agent's run failing, not
+  an interruption.
 - **A protected file without a person.** An issue that needs a protected file, such
   as the Makefile or a CI workflow, gets its own gated Task: the operator files a
   `kind/standard-change` issue, the waiting Task is `Blocked`, and the operator

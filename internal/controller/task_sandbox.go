@@ -227,8 +227,13 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 
 	var pod corev1.Pod
 	err = c.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &pod)
+	expired, missed := sandboxExpiry(sandbox)
 	if apierrors.IsNotFound(err) {
-		if sandboxExpired(sandbox) {
+		switch {
+		case missed:
+			state.Done, state.Interrupted = true, true
+			state.Failure = "the cluster was down at the sandbox's shutdown time"
+		case expired:
 			state.Done, state.Failure = true, "the sandbox reached its shutdown time"
 		}
 		return state, nil
@@ -248,8 +253,9 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 	state.Failure = pod.Status.Reason
 	state.Interrupted = podDisrupted(&pod)
 	// Its own deadline or its sandbox's shutdown time ends a run that took too
-	// long: the run's failure, though c4agent sees the same SIGTERM.
-	ownLimit := pod.Status.Reason == "DeadlineExceeded" || sandboxExpired(sandbox)
+	// long: the run's failure, though c4agent sees the same SIGTERM. A shutdown
+	// time the cluster was down for is not the run's limit.
+	ownLimit := pod.Status.Reason == "DeadlineExceeded" || expired && !missed
 	for _, cs := range pod.Status.ContainerStatuses {
 		term := cs.State.Terminated
 		if cs.Name != "agent" || term == nil {
@@ -297,15 +303,28 @@ func podDisrupted(pod *corev1.Pod) bool {
 	return false
 }
 
-func sandboxExpired(sandbox *unstructured.Unstructured) bool {
+// sandboxExpiry reports whether Agent Sandbox found the sandbox past its
+// shutdown time, and whether it found that so late that the cluster was down at
+// that time (model.MissedShutdown): the Ready condition turns to SandboxExpired
+// when Agent Sandbox notices.
+func sandboxExpiry(sandbox *unstructured.Unstructured) (expired, missed bool) {
 	conds, _, _ := unstructured.NestedSlice(sandbox.Object, "status", "conditions")
 	for _, c := range conds {
 		cond, ok := c.(map[string]any)
-		if ok && cond["type"] == "Ready" && cond["reason"] == "SandboxExpired" {
-			return true
+		if !ok || cond["type"] != "Ready" || cond["reason"] != "SandboxExpired" {
+			continue
 		}
+		shutdown, _, _ := unstructured.NestedString(sandbox.Object, "spec", "shutdownTime")
+		noticed, _ := cond["lastTransitionTime"].(string)
+		return true, model.MissedShutdown(parseTime(shutdown), parseTime(noticed))
 	}
-	return false
+	return false, false
+}
+
+// parseTime reads an RFC 3339 time; the zero time when it can't.
+func parseTime(s string) time.Time {
+	t, _ := time.Parse(time.RFC3339, s)
+	return t
 }
 
 // harness is the Agent's harness, claude-code when unset.
