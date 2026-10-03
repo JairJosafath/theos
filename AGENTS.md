@@ -97,6 +97,10 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   commit once its checks are green. No long-lived or stacked branches: each plan
   step lands on its own and leaves main working, with new behaviour off until
   the step that turns it on.
+- **Main keeps itself current.** `hack/pull.sh` fast-forwards local main when
+  that is safe and never touches a branch or uncommitted work. VS Code runs it
+  every 5 minutes, Claude Code at session start, the relay before each session;
+  run it yourself before you branch or pick an issue.
 - **Show, don't claim.** When a milestone is done, save evidence (test output,
   `kubectl get` output, UI or Gitea screenshots) in `docs/screenshots/`.
 - **Report honestly.** If a check fails or a step is skipped, say so in the commit or

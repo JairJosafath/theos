@@ -25,6 +25,12 @@
 # can, labels it and hands it back for a device with one. On a device with the
 # cluster, one checkout at a time works a needs/cluster issue.
 #
+# Workers load their code once, from this checkout. Before each pick a worker
+# runs hack/pull.sh here, and when that changed hack/relay.sh or
+# hack/lib/github.sh it restarts itself on the new code, so a relay that runs
+# for hours never picks by stale rules. RELAY_PULL=0 turns this off, to try relay
+# changes from a branch.
+#
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-9); workers already running are left alone
 #   RELAY_DRY_RUN=1 hack/relay.sh  print the issue and prompt the next session would get; change nothing
@@ -44,6 +50,7 @@ EVALUATIONS_TITLE="Factory evaluations"
 EVALUATE_EVERY=${EVALUATE_EVERY:-21600} # seconds: 6 hours
 DRY_RUN=${RELAY_DRY_RUN:-}
 [ "$DRY_RUN" = 0 ] && DRY_RUN=
+PULL=${RELAY_PULL:-1}
 
 WORKERS=1
 while [ $# -gt 0 ]; do
@@ -244,6 +251,25 @@ worktree() {
   fi
 }
 
+# code_sum: a checksum of the relay's own code, to see whether a pull changed it.
+code_sum() {
+  cat "$REPO/hack/relay.sh" "$REPO/hack/lib/github.sh" 2>/dev/null | cksum
+}
+
+# update LEFT: run hack/pull.sh in this checkout, and restart the worker with
+# LEFT sessions when that changed the relay's code.
+update() {
+  local left=$1 out
+  [ "$PULL" = 0 ] && return 0
+  out=$("$REPO/hack/pull.sh" 2>&1)
+  [ -n "$out" ] && log "${out//$'\n'/; }"
+  [ "$(code_sum)" = "$CODE_SUM" ] && return 0
+  [ -e "$STOP" ] && { log "stop file found; stopping"; exit 0; }
+  log "the relay's code changed (HEAD $(git rev-parse --short HEAD)); restarting with $left sessions left"
+  # The new worker keeps this one's lock on fd 9.
+  exec env MAX_SESSIONS="$left" C4_RELAY_RESTART=1 bash "$REPO/hack/relay.sh"
+}
+
 # switch_branch BRANCH: switch the worktree to BRANCH: the local branch
 # (fast-forwarded to origin's), else origin's, else a new one from origin/main.
 switch_branch() {
@@ -321,17 +347,23 @@ fi
 
 cd "$REPO" || exit 1
 if [ -z "$DRY_RUN" ]; then
-  exec 9>"$DIR/lock-$K"
-  flock -n 9 || { log "another worker $K holds the lock; exiting"; exit 1; }
+  if [ "${C4_RELAY_RESTART:-}" = 1 ]; then
+    flock -n 9 || { log "restarted without the lock of worker $K; exiting"; exit 1; }
+  else
+    exec 9>"$DIR/lock-$K"
+    flock -n 9 || { log "another worker $K holds the lock; exiting"; exit 1; }
+  fi
 fi
+CODE_SUM=$(code_sum)
 gh_token 2>/dev/null || { log "no GitHub token; stopping"; exit 1; }
 log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, HEAD $(git rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
 # Workers started together would all race for the same first issue.
-[ -n "$DRY_RUN" ] || sleep $(((K - 1) * 20))
+[ -n "$DRY_RUN" ] || [ "${C4_RELAY_RESTART:-}" = 1 ] || sleep $(((K - 1) * 20))
 
 for i in $(seq 1 "$MAX_SESSIONS"); do
   [ -e "$STOP" ] && { log "stop file found; stopping"; break; }
   if [ -z "$DRY_RUN" ]; then
+    update $((MAX_SESSIONS - i + 1))
     worktree || { log "could not prepare the worktree $WT; stopping"; break; }
     if [ "$i" = 1 ] && gh_claim_read; then
       log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"

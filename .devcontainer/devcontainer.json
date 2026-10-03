@@ -60,7 +60,11 @@
 			"settings": {
 				"terminal.integrated.defaultProfile.linux": "zsh",
 				"go.toolsManagement.autoUpdate": true,
-				"[go]": { "editor.formatOnSave": true }
+				"[go]": { "editor.formatOnSave": true },
+				// Keep main current: fetch in the background, and let the "Pull main"
+				// task in .vscode/tasks.json start when the folder opens.
+				"git.autofetch": true,
+				"task.allowAutomaticTasks": "on"
 			}
 		}
 	},

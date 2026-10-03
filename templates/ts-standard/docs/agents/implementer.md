@@ -63,8 +63,15 @@ Task that reviews and merges it. Then:
   which also packages the `.vsix`.
 - New settings and commands go in `package.json`'s `contributes` with defaults
   and descriptions, and in the README.
-- A budget in the issue or the needs gets a test or benchmark on realistic
-  input; put the numbers in the summary.
+- Tests never measure time: no real timers or `setTimeout` waits, no bounds
+  such as "responds within 500 ms" on `performance.now()` or `Date.now()`.
+  They pass in your sandbox and fail on the shared CI runner.
+- A budget in the issue or the needs ("within 200 ms", "fast on a 10,000-line
+  file") gets a vitest `bench` on realistic input, not a test; put the numbers
+  and the input size in the summary.
+- Timing logic (debounce, timeouts, retries) is tested with fake timers
+  (`vi.useFakeTimers()`, then `vi.advanceTimersByTime`), or by awaiting the
+  event it fires.
 - You can't open VS Code here. Say which behaviour needs a person to try in a
   real editor.
 
