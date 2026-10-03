@@ -30,6 +30,8 @@ type agentGitea struct {
 	fileQueries []string
 	// manyFiles fills every page of pull request 7's files.
 	manyFiles bool
+	// files, if set, is pull request 7's one page of files.
+	files string
 }
 
 func newAgentGitea(t *testing.T) (*agentGitea, Provider) {
@@ -49,6 +51,11 @@ func (g *agentGitea) serveGatedPull(w http.ResponseWriter, r *http.Request, call
 	switch {
 	case strings.HasPrefix(call, "GET ") && strings.HasSuffix(call, "/files"):
 		g.fileQueries = append(g.fileQueries, r.URL.RawQuery)
+		if g.files != "" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, g.files)
+			return
+		}
 		var files []map[string]string
 		count := 50
 		if r.URL.Query().Get("page") == "2" && !g.manyFiles {
@@ -307,6 +314,18 @@ func TestPullRequestFiles(t *testing.T) {
 	}
 	if want := []string{"page=1&limit=50", "page=2&limit=50"}; !reflect.DeepEqual(g.fileQueries, want) {
 		t.Errorf("queries = %v, want %v", g.fileQueries, want)
+	}
+}
+
+func TestPullRequestFilesNamesBothPathsOfARename(t *testing.T) {
+	g, p := newAgentGitea(t)
+	g.files = `[{"filename":".gitea/workflows/release.yaml","previous_filename":".gitea/workflows/check.yaml",` +
+		`"status":"renamed"},{"filename":"Makefile","status":"changed"},` +
+		`{"filename":"README.md","previous_filename":"README.md","status":"changed"}]`
+	files, err := p.PullRequestFiles(context.Background(), p.Repository("photo-editor"), 7)
+	want := []string{".gitea/workflows/release.yaml", ".gitea/workflows/check.yaml", "Makefile", "README.md"}
+	if err != nil || !reflect.DeepEqual(files, want) {
+		t.Fatalf("PullRequestFiles() = %q, %v; want %q", files, err, want)
 	}
 }
 

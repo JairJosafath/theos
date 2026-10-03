@@ -98,8 +98,9 @@ type Provider interface {
 	// ForceMergePullRequest is MergePullRequest as the provider's admin user,
 	// overriding the branch protection's merge restrictions.
 	ForceMergePullRequest(ctx context.Context, repo Repository, number int, headSHA, title, message string) error
-	// PullRequestFiles returns every path a pull request changes, or an error
-	// when it can't read them all: ErrTooManyFiles when there are too many.
+	// PullRequestFiles returns every path a pull request changes, a renamed
+	// file's old path too, or an error when it can't read them all:
+	// ErrTooManyFiles when there are too many.
 	PullRequestFiles(ctx context.Context, repo Repository, number int) ([]string, error)
 	// ClosePullRequest closes a pull request without merging it.
 	ClosePullRequest(ctx context.Context, repo Repository, number int) error

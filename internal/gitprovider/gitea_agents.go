@@ -349,9 +349,9 @@ func (g *gitea) merge(ctx context.Context, repo Repository, number int, headSHA,
 	return nil
 }
 
-// PullRequestFiles returns the paths a pull request changes. A list that fills
-// all maxIssuePages pages is ErrTooManyFiles, not cut short: the caller may be
-// checking every path.
+// PullRequestFiles returns the paths a pull request changes, both the old and the
+// new path of a renamed file. A list that fills all maxIssuePages pages is
+// ErrTooManyFiles, not cut short: the caller may be checking every path.
 func (g *gitea) PullRequestFiles(ctx context.Context, repo Repository, number int) ([]string, error) {
 	var out []string
 	for page := 1; ; page++ {
@@ -365,7 +365,8 @@ func (g *gitea) PullRequestFiles(ctx context.Context, repo Repository, number in
 			return nil, err
 		}
 		var files []struct {
-			Filename string `json:"filename"`
+			Filename         string `json:"filename"`
+			PreviousFilename string `json:"previous_filename"`
 		}
 		if status != http.StatusOK || json.Unmarshal(data, &files) != nil {
 			return nil, fmt.Errorf("gitea: listing the files of pull request %d of %s failed (HTTP %d): %s",
@@ -373,6 +374,9 @@ func (g *gitea) PullRequestFiles(ctx context.Context, repo Repository, number in
 		}
 		for _, f := range files {
 			out = append(out, f.Filename)
+			if f.PreviousFilename != "" && f.PreviousFilename != f.Filename {
+				out = append(out, f.PreviousFilename) // a rename deletes its old path
+			}
 		}
 		if len(files) < issuePageSize {
 			return out, nil
