@@ -87,9 +87,11 @@ log "evaluation start: id $id, model $MODEL, HEAD $(git rev-parse --short HEAD)"
 echo "evaluation started (session $id); log: $LOG"
 t0=$(date +%s)
 rc=0
+# The prompt goes on stdin: --add-dir takes several directories and would
+# swallow a prompt argument after it.
 timeout "$TIMEOUT" claude -p --permission-mode auto --model "$MODEL" \
   --session-id "$id" --output-format json --max-budget-usd "$BUDGET" \
-  --add-dir "$RELAY_DIR" "$PROMPT" >"$out.json" 2>"$out.err" || rc=$?
+  --add-dir "$RELAY_DIR" <<<"$PROMPT" >"$out.json" 2>"$out.err" || rc=$?
 mins=$((($(date +%s) - t0) / 60))
 
 if [ -s "$out.json" ] && jq -e .result "$out.json" >/dev/null 2>&1; then
