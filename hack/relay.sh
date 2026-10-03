@@ -502,7 +502,7 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   out="$DIR/session-$K-$i-$(date +%Y%m%d-%H%M%S)"
   log "session $i start: id $id, $name on #$ISSUE ($HOW) $TITLE, branch $branch, HEAD $(git -C "$WT" rev-parse --short HEAD)"
   t0=$(date +%s)
-  (cd "$WT" && timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+  (cd "$WT" && C4_HEADLESS=1 timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
     --session-id "$id" --output-format json "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")") \
     >"$out.json" 2>"$out.err"
   rc=$?

@@ -117,9 +117,19 @@ and every Claude session with it (#57). So:
 - Sessions check `free -g` before a heavy job (`make check`, image builds,
   `make deploy`), never run two at once, and build a second devcontainer only
   on a device without the cluster.
+- A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
+  before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
+  `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;
+  `docker build`). Below `RELAY_MIN_MEM_GIB` it asks the user before the job
+  runs, naming the processes with the most memory and the Kind node. A
+  headless session (`C4_HEADLESS=1`, set by the relay and the evaluator) gets
+  that warning in its context and the job runs, since in `claude -p` a
+  question nobody can answer blocks the command. Other commands cost one
+  `bash` and nothing more.
 
 `hack/relay_test.sh` tests the cap and the wait against a faked
-`/proc/meminfo` (`RELAY_MEMINFO`).
+`/proc/meminfo` (`RELAY_MEMINFO`), and `hack/heavy-guard_test.sh` the hook,
+with `ps` and `docker` faked too.
 
 ### CPU on the cluster device
 
