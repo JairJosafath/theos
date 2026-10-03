@@ -1,9 +1,11 @@
 package model
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestSplitChange(t *testing.T) {
@@ -92,6 +94,48 @@ func TestStandardChangeIssue(t *testing.T) {
 	p.Paths = []string{"Makefile", ".gitea/workflows/release.yaml"}
 	if title, _ := StandardChangeIssue(4, "vscode-extension-4-2", p); title != "Standard change for #4: Makefile and .gitea/workflows/release.yaml" {
 		t.Errorf("two-path title = %q", title)
+	}
+}
+
+// The Git host stores at most 255 bytes of title: a long list of paths becomes the
+// first path and how many more, and the body keeps them all.
+func TestStandardChangeIssueTitleFits(t *testing.T) {
+	long := strings.Repeat("d/", 127) + "x" // 255 bytes, under the 256-byte path cap
+	many := make([]string, 20)
+	for i := range many {
+		many[i] = fmt.Sprintf(".gitea/workflows/release-%02d.yaml", i)
+	}
+	tests := []struct {
+		name  string
+		paths []string
+		want  string // "" means the whole title is checked by its length alone
+	}{
+		{name: "short list in full", paths: []string{"Makefile", ".gitea/"},
+			want: "Standard change for #4: Makefile and .gitea/"},
+		{name: "many paths: the first and how many more", paths: many,
+			want: "Standard change for #4: .gitea/workflows/release-00.yaml and 19 more"},
+		{name: "one long path, cut", paths: []string{long}},
+		{name: "a long first path and more, cut", paths: []string{long, "Makefile"}},
+		{name: "a cut never splits a character", paths: []string{strings.Repeat("é", 120) + "/x", "Makefile"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			title, body := StandardChangeIssue(4, "t", Proposal{Branch: "standard/t", Paths: tt.paths, Reason: "r"})
+			if len(title) > 255 || !utf8.ValidString(title) || !strings.HasPrefix(title, "Standard change for #4: ") {
+				t.Errorf("title = %q (%d bytes), want a valid one of at most 255", title, len(title))
+			}
+			if tt.want != "" && title != tt.want {
+				t.Errorf("title = %q, want %q", title, tt.want)
+			}
+			if n := len(tt.paths) - 1; tt.want == "" && n > 0 && !strings.HasSuffix(title, fmt.Sprintf(" and %d more", n)) {
+				t.Errorf("title = %q, want it to count the other paths", title)
+			}
+			for _, p := range tt.paths {
+				if !strings.Contains(body, "`"+p+"`") {
+					t.Errorf("body lacks %q", p)
+				}
+			}
+		})
 	}
 }
 

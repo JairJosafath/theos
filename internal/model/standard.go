@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // AgentNeverPaths are the protected paths no agent may change, even through a
@@ -117,6 +118,32 @@ func ProposalReason(summary string) string {
 	return strings.TrimSpace(summary)
 }
 
+// maxIssueTitle is the longest issue title, in bytes, the Git host stores.
+const maxIssueTitle = 255
+
+// standardChangeTitle names a Standard change issue by the issue that waits on it
+// and the paths it changes. A list too long for a title becomes the first path
+// and how many more, cut short if it must be; the body lists them all.
+func standardChangeTitle(issue int, paths []string) string {
+	prefix := fmt.Sprintf("Standard change for #%d: ", issue)
+	if title := prefix + joinAnd(paths); len(title) <= maxIssueTitle || len(paths) == 0 {
+		return title
+	}
+	first, more := paths[0], ""
+	if n := len(paths) - 1; n > 0 {
+		more = fmt.Sprintf(" and %d more", n)
+	}
+	if room := maxIssueTitle - len(prefix) - len(more); len(first) > room {
+		const ellipsis = "…"
+		cut := room - len(ellipsis)
+		for cut > 0 && !utf8.RuneStart(first[cut]) {
+			cut--
+		}
+		first = first[:cut] + ellipsis
+	}
+	return prefix + first + more
+}
+
 // StandardChangeIssue renders the issue that asks a person to review a Task's
 // proposal for the issue that waits on it.
 func StandardChangeIssue(issue int, task string, p Proposal) (title, body string) {
@@ -124,7 +151,7 @@ func StandardChangeIssue(issue int, task string, p Proposal) (title, body string
 	for i, path := range p.Paths {
 		quoted[i] = "`" + path + "`"
 	}
-	title = fmt.Sprintf("Standard change for #%d: %s", issue, joinAnd(p.Paths))
+	title = standardChangeTitle(issue, p.Paths)
 	var b strings.Builder
 	fmt.Fprintf(&b, "Task `%s` needs protected files changed for #%d, which waits on this issue.\n\n", task, issue)
 	fmt.Fprintf(&b, "## Why\n\n%s\n\n", p.Reason)
