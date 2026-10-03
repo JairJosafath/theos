@@ -258,3 +258,26 @@ a free place, v0.3.0's #46 and #53 waiting "for release v0.2.0" and #57 on #46: 
 release boundary passed without a person. The extension's v0.2.0 milestone closed
 when `vscode-extension-62` (version 0.2.0, dated changelog, one `### Added` under
 0.1.0) merged in one round; its tag waits for a person, like v0.1.0's.
+
+**Eighth part, a release overtaken.** v0.2.0's own issues merged in order: #45 in
+its second round at 04:25 (`2fbe8c2`), #49 in one at 05:19 (`6246061`), #50 in two
+at 06:09 (`694db57`). Its last issue, #99 (release only the linux/amd64 binary),
+failed when the gated merge refused its Standard change #104, whose push check had
+been skipped (#29), and went to `needs-human`. A `needs-human` issue frees its
+release, so the Crew went on to v0.3.0 without a person: #46 at 06:23 (`727d4a0`),
+#53 at 06:38 (`ba0a349`), then #57 after its own Standard change #115 (`dec69b0`)
+at 07:57 (`e07e047`), each in one round. A person closed #104 as superseded and
+readied #99 again. Its second Task, `cel-language-server-99-2`, waits on the
+fresh Standard change #120, which was being reviewed at 08:00. So v0.3.0 finished
+before v0.2.0, and main holds both: v0.2.0's tag needs a decision that the
+release order alone doesn't make. Meanwhile a relay worker on the second device,
+which has no cluster, was given #14, found no Kind cluster there and reported
+the factory lost. The cluster was running on the first device all along. #14 now
+carries `needs/cluster`, so a device without a cluster skips it (#27). At 08:01 a
+person tagged the extension: `v0.1.0` at `4540ec5`, whose release run attached
+the five platform `.vsix` files, and `v0.2.0` at `ef9b73e`, which attached only
+the linux-x64 one (#64). Both milestones are closed, and the source zips are in
+`backups/cel-lens/vscode-extension/`. To bring server v0.1.1 to users, the
+extension got a v0.2.1 milestone with #68 (bundle server v0.1.1) and #69 (version
+0.2.1 and a dated changelog, blocked by #68). The Crew started
+`vscode-extension-68` within a minute.
