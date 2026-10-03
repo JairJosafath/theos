@@ -256,3 +256,10 @@ endef
 
 include hack/testenv.mk
 include hack/ui.mk
+
+PROJECT ?= cel-lens
+PUSH ?= 1
+
+.PHONY: backup-releases
+backup-releases: ## Zip every release tag of Gitea org PROJECT into backups/ and commit it (PUSH=0 skips the push).
+	PROJECT=$(PROJECT) PUSH=$(PUSH) hack/backup-releases.sh
