@@ -196,3 +196,117 @@ func TestStandardChangeLabel(t *testing.T) {
 		t.Errorf("StandardChangeLabel = %+v", l)
 	}
 }
+
+func TestStandardUpdateNames(t *testing.T) {
+	for _, tt := range []struct{ name, ref, want string }{
+		{"go-standard", "v1.1.1", "standard-update/go-standard-v1.1.1"},
+		{"go-standard", "release/v1.1.1+build_2", "standard-update/go-standard-release-v1.1.1-build_2"},
+		{"go-standard", "0a1b2c3d", "standard-update/go-standard-0a1b2c3d"},
+		{"go-standard", "v1~é", "standard-update/go-standard-v1--"},
+	} {
+		if got := StandardUpdateBranch(tt.name, tt.ref); got != tt.want {
+			t.Errorf("StandardUpdateBranch(%q, %q) = %q, want %q", tt.name, tt.ref, got, tt.want)
+		}
+	}
+	if got := StandardUpdateTitle("go-standard", "v1.1.1"); got != "Update the Standard go-standard to v1.1.1" {
+		t.Errorf("StandardUpdateTitle = %q", got)
+	}
+}
+
+func TestStandardUpdateBody(t *testing.T) {
+	paths := []string{"AGENTS.md", "docs/agents/implementer.md"}
+	closing := "The operator merges this pull request itself once CI passes. " +
+		"Close it to drop the update until the Standard's ref changes again."
+	for _, tt := range []struct {
+		name    string
+		leftOut []string
+	}{
+		{name: "everything planned"},
+		{name: "some files left out", leftOut: []string{"Makefile", "docs/style/go.md"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			body := StandardUpdateBody("go-standard", "v1.0.0", "v1.1.1", paths, tt.leftOut)
+			for _, want := range []string{"`go-standard`", "`v1.0.0`", "`v1.1.1`", "## Files",
+				"- `AGENTS.md`\n", "- `docs/agents/implementer.md`\n", closing} {
+				if !strings.Contains(body, want) {
+					t.Errorf("body lacks %q:\n%s", want, body)
+				}
+			}
+			if got := strings.Contains(body, "## Left out"); got != (len(tt.leftOut) > 0) {
+				t.Errorf("body has a Left out section = %v, want %v:\n%s", got, len(tt.leftOut) > 0, body)
+			}
+			for _, p := range tt.leftOut {
+				if _, after, _ := strings.Cut(body, "## Left out"); !strings.Contains(after, "- `"+p+"`\n") {
+					t.Errorf("Left out section lacks %q:\n%s", p, body)
+				}
+			}
+			if !strings.HasSuffix(body, closing+"\n") {
+				t.Errorf("body doesn't end with the closing line:\n%s", body)
+			}
+		})
+	}
+}
+
+func TestStandardUpdateRefusal(t *testing.T) {
+	planned := []string{"AGENTS.md", "docs/agents/implementer.md"}
+	ci := map[string]string{"check / check (pull_request)": "success"}
+	tests := []struct {
+		name             string
+		checks           string
+		contexts         map[string]string
+		changed, planned []string
+		want             string // "" means merge
+	}{
+		{name: "merges", checks: "success", contexts: ci, changed: planned, planned: planned},
+		{name: "part of the plan", checks: "success", contexts: ci, changed: planned[:1], planned: planned},
+		{name: "a skipped push check", checks: "success", changed: planned, planned: planned,
+			contexts: map[string]string{"check / check (pull_request)": "success", "check / check (push)": "skipped"}},
+		{name: "CI pending", checks: "pending", contexts: ci, changed: planned, planned: planned,
+			want: "CI is pending, not success"},
+		{name: "CI failed", checks: "failure", contexts: ci, changed: planned, planned: planned,
+			want: "CI is failure, not success"},
+		{name: "no CI yet", contexts: ci, changed: planned, planned: planned,
+			want: "CI is unknown reason, not success"},
+		{name: "check context missing", checks: "success", changed: planned, planned: planned,
+			contexts: map[string]string{"CI / check (pull_request)": "success"},
+			want:     `no passing check matches "check*", which main requires`},
+		{name: "a required check not passed", checks: "success", changed: planned, planned: planned,
+			contexts: map[string]string{"check / check (pull_request)": "success", "check / lint (pull_request)": "pending"},
+			want:     `no passing check matches "check*", which main requires`},
+		{name: "empty change", checks: "success", contexts: ci, planned: planned,
+			want: "the change changes nothing"},
+		{name: "a path outside the plan", checks: "success", contexts: ci, planned: planned,
+			changed: []string{"AGENTS.md", "README.md", "src/main.go"},
+			want:    "the pull request changes README.md and src/main.go, which the update did not plan"},
+		{name: "a planned directory covers nothing", checks: "success", contexts: ci, planned: []string{"docs/agents/"},
+			changed: []string{"docs/agents/implementer.md"},
+			want:    "the pull request changes docs/agents/implementer.md, which the update did not plan"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := StandardUpdateRefusal(tt.checks, tt.contexts, tt.changed, tt.planned); got != tt.want {
+				t.Errorf("StandardUpdateRefusal() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScaffoldedRef(t *testing.T) {
+	from := []string{"go-gin@v1.2.0", "go-standard-strict@v2.0.0", "go-standard@v1.0.0", "postgres@v1.1.0"}
+	for _, tt := range []struct {
+		name string
+		from []string
+		want string
+	}{
+		{name: "go-standard", from: from, want: "v1.0.0"},
+		{name: "go-gin", from: from, want: "v1.2.0"},
+		{name: "go-standard-strict", from: from, want: "v2.0.0"},
+		{name: "go", from: from},
+		{name: "ts-standard", from: from},
+		{name: "go-standard"},
+	} {
+		if got := ScaffoldedRef(tt.from, tt.name); got != tt.want {
+			t.Errorf("ScaffoldedRef(%v, %q) = %q, want %q", tt.from, tt.name, got, tt.want)
+		}
+	}
+}

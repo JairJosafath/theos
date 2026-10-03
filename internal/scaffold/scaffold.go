@@ -131,14 +131,11 @@ func Build(in Input, layers []Layer, opts Options) (Result, error) {
 	owner := map[string]string{}
 	result := Result{Files: out}
 	for _, layer := range layers {
-		files, err := renderLayer(in, layer)
+		files, err := RenderLayer(in, layer)
 		if err != nil {
 			return Result{}, err
 		}
 		for _, p := range files.Paths() {
-			if isOperatorPath(p) {
-				return Result{}, &ConflictError{Path: p, Owners: [2]string{layer.Name, operatorOwner}}
-			}
 			if first, taken := owner[p]; taken {
 				return Result{}, &ConflictError{Path: p, Owners: [2]string{first, layer.Name}}
 			}

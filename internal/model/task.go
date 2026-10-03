@@ -219,14 +219,8 @@ func ResumeFeedback(issue int, paths []string, earlier string) string {
 // approved, and the change is not empty and stays inside the allowed paths.
 // contexts is the state of each check on the commit by its context.
 func GatedMergeRefusal(checks string, contexts map[string]string, verdict string, changed, allowed []string) string {
-	if checks != checkSuccess {
-		return fmt.Sprintf("CI is %s, not success", orUnknown(checks))
-	}
-	if missing := UnpassedChecks(contexts); len(missing) > 0 {
-		for i, m := range missing {
-			missing[i] = strconv.Quote(m)
-		}
-		return fmt.Sprintf("no passing check matches %s, which main requires", joinAnd(missing))
+	if refusal := checksRefusal(checks, contexts); refusal != "" {
+		return refusal
 	}
 	if verdict != VerdictApprove {
 		return fmt.Sprintf("the reviewer's verdict is %q, not %q", verdict, VerdictApprove)
@@ -242,6 +236,22 @@ func GatedMergeRefusal(checks string, contexts map[string]string, verdict string
 	}
 	if len(outside) > 0 {
 		return fmt.Sprintf("the change touches %s, outside the allowed paths", joinAnd(outside))
+	}
+	return ""
+}
+
+// checksRefusal says why a commit's checks don't let a merge that overrides
+// main's protection through, or "" when CI is green and every check main
+// requires passed.
+func checksRefusal(checks string, contexts map[string]string) string {
+	if checks != checkSuccess {
+		return fmt.Sprintf("CI is %s, not success", orUnknown(checks))
+	}
+	if missing := UnpassedChecks(contexts); len(missing) > 0 {
+		for i, m := range missing {
+			missing[i] = strconv.Quote(m)
+		}
+		return fmt.Sprintf("no passing check matches %s, which main requires", joinAnd(missing))
 	}
 	return ""
 }
