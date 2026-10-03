@@ -490,6 +490,8 @@ func TestGatedMergeRefusal(t *testing.T) {
 		{name: "merges", checks: "success", contexts: ci, verdict: VerdictApprove, changed: mk, allowed: mk},
 		{name: "a directory allowance", checks: "success", contexts: ci, verdict: VerdictApprove,
 			changed: []string{".gitea/workflows/release.yaml"}, allowed: []string{".gitea/"}},
+		{name: "a skipped push check", checks: "success", verdict: VerdictApprove, changed: mk, allowed: mk,
+			contexts: map[string]string{"check / check (pull_request)": "success", "check / check (push)": "skipped"}},
 		{name: "red CI", checks: "failure", contexts: ci, verdict: VerdictApprove, changed: mk, allowed: mk, want: "CI"},
 		{name: "check context missing", checks: "success", verdict: VerdictApprove, changed: mk, allowed: mk,
 			contexts: map[string]string{"CI / check (pull_request)": "success"}, want: `"check*"`},
