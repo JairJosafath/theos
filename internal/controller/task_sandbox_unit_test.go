@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -162,6 +163,74 @@ func TestRunStateTellsAnInterruptedRun(t *testing.T) {
 			}
 			if !state.Done || state.Interrupted != tt.interrupted {
 				t.Errorf("runState() = %+v, want done, interrupted %v", state, tt.interrupted)
+			}
+		})
+	}
+}
+
+func TestRunStateTellsAClusterOutage(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	scheme.AddKnownTypeWithName(SandboxGVK, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(SandboxGVK.GroupVersion().WithKind("SandboxList"), &unstructured.UnstructuredList{})
+	shutdown := time.Date(2026, 10, 3, 9, 58, 49, 0, time.UTC)
+	onTime, late := shutdown.Add(2*time.Second), shutdown.Add(7*time.Hour)
+	lost := &corev1.ContainerStateTerminated{Reason: "ContainerStatusUnknown", ExitCode: 137}
+	for _, tt := range []struct {
+		name        string
+		expired     time.Time
+		reason      string
+		term        *corev1.ContainerStateTerminated // nil: the pod is gone
+		interrupted bool
+		failure     string
+	}{
+		{name: "the pod gone at the shutdown time", expired: onTime,
+			failure: "the sandbox reached its shutdown time"},
+		// The cluster was down at the shutdown time; Agent Sandbox noticed it, and
+		// deleted the pod, once the cluster was back.
+		{name: "the pod gone in an outage past the shutdown time", expired: late, interrupted: true,
+			failure: "the cluster was down at the sandbox's shutdown time"},
+		{name: "a container lost at the shutdown time", expired: onTime, term: lost,
+			failure: "ContainerStatusUnknown (exit code 137)"},
+		{name: "a container lost in an outage past the shutdown time", expired: late, term: lost, interrupted: true,
+			failure: "ContainerStatusUnknown (exit code 137)"},
+		{name: "c4agent stopped by Agent Sandbox after an outage", expired: late,
+			term: &corev1.ContainerStateTerminated{Reason: "Completed",
+				Message: `{"role":"review","error":"claude failed: signal: terminated","interrupted":true}`},
+			interrupted: true},
+		{name: "the pod's deadline before an outage", expired: late, reason: "DeadlineExceeded",
+			term:    &corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 143},
+			failure: "Error (exit code 143)"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sandbox := newSandbox()
+			sandbox.SetNamespace("toolbox")
+			sandbox.SetName("add-crop-r1-review-a1")
+			sandbox.SetUID("sandbox-1")
+			sandbox.Object["spec"] = map[string]any{"shutdownTime": shutdown.Format(time.RFC3339)}
+			sandbox.Object["status"] = map[string]any{"conditions": []any{map[string]any{
+				"type": "Ready", "status": "False", "reason": "SandboxExpired",
+				"lastTransitionTime": tt.expired.Format(time.RFC3339)}}}
+			objects := []client.Object{sandbox}
+			if tt.term != nil {
+				objects = append(objects, &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "toolbox", Name: "add-crop-r1-review-a1",
+						OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
+					Status: corev1.PodStatus{Phase: corev1.PodFailed, Reason: tt.reason,
+						ContainerStatuses: []corev1.ContainerStatus{{
+							Name: "agent", State: corev1.ContainerState{Terminated: tt.term},
+						}}},
+				})
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			state, err := runState(context.Background(), c, "toolbox", "add-crop-r1-review-a1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !state.Done || state.Interrupted != tt.interrupted || tt.failure != "" && state.Failure != tt.failure {
+				t.Errorf("runState() = %+v, want done, interrupted %v, failure %q", state, tt.interrupted, tt.failure)
 			}
 		})
 	}

@@ -404,6 +404,32 @@ func TestNextTaskStepInterrupted(t *testing.T) {
 	}
 }
 
+func TestMissedShutdown(t *testing.T) {
+	shutdown := time.Date(2026, 10, 3, 9, 58, 49, 0, time.UTC)
+	tests := []struct {
+		name    string
+		noticed time.Time
+		want    bool
+	}{
+		{"noticed at the shutdown time", shutdown, false},
+		{"noticed a little late", shutdown.Add(ShutdownSlack), false},
+		{"noticed after the cluster came back", shutdown.Add(7 * time.Hour), true},
+		{"noticed just past the slack", shutdown.Add(ShutdownSlack + time.Second), true},
+		{"the condition changed before the shutdown time", shutdown.Add(-10 * time.Minute), false},
+		{"no time noticed", time.Time{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MissedShutdown(shutdown, tt.noticed); got != tt.want {
+				t.Errorf("MissedShutdown(%v, %v) = %v, want %v", shutdown, tt.noticed, got, tt.want)
+			}
+		})
+	}
+	if MissedShutdown(time.Time{}, shutdown) {
+		t.Error("MissedShutdown() without a shutdown time = true, want false")
+	}
+}
+
 func TestNextTaskStepAgentUnavailable(t *testing.T) {
 	back := time.Date(2026, 10, 2, 15, 0, 0, 0, time.UTC)
 	unavailable := RunState{Started: true, Done: true, Result: &RunResult{Unavailable: true, RetryAt: back,

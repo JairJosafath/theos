@@ -80,9 +80,24 @@ type RunState struct {
 	// Failure says why a pod ended without a result, such as OOMKilled.
 	Failure string
 	// Interrupted means the infrastructure ended the run (a node shutdown or
-	// restart, an eviction, a preemption), not the agent: an out-of-memory kill
-	// is the agent's.
+	// restart, an eviction, a preemption, a cluster outage), not the agent: an
+	// out-of-memory kill is the agent's.
 	Interrupted bool
+}
+
+// ShutdownSlack is how late Agent Sandbox may notice a sandbox's shutdown time
+// while the cluster runs; it notices within seconds.
+const ShutdownSlack = 2 * time.Minute
+
+// MissedShutdown reports whether Agent Sandbox noticed a sandbox's shutdown time
+// so late that the cluster was down at it. Its pod's deadline comes earlier and
+// ends a run that takes too long while the operator watches, so a pod lost in
+// that outage didn't run out its time: the outage ended it, not the agent. One
+// that did, its pod ended at the deadline while only the control plane was down
+// and deleted before the operator saw it, gets a free rerun too; MaxReruns caps
+// that.
+func MissedShutdown(shutdown, noticed time.Time) bool {
+	return !shutdown.IsZero() && !noticed.IsZero() && noticed.Sub(shutdown) > ShutdownSlack
 }
 
 // MaxReruns is how often a round's runs are rerun for free after the

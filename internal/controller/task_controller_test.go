@@ -357,6 +357,37 @@ var _ = Describe("Task with an interrupted run", func() {
 			g.Expect(task.Status.Reruns).To(BeZero())
 		}).Should(Succeed())
 	})
+
+	It("reruns a review lost in a cluster outage, but spends one that ran out its time", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }, "20s").Should(Succeed())
+
+		By("rerunning the review whose pod an outage past its shutdown time took")
+		expireSandbox(ns, "add-crop-r1-review-a1", 7*time.Hour)
+		rerun := model.SandboxName("add-crop", 1, model.RoleReviewer, 1, 1)
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, rerun)
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Reruns).To(Equal(int32(1)))
+			g.Expect(task.Status.ReviewAttempts).To(BeZero(), "an outage costs no review attempt")
+		}, "20s").Should(Succeed())
+
+		By("spending an attempt on a review that ran out its time")
+		expireSandbox(ns, rerun, 0)
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, model.SandboxName("add-crop", 1, model.RoleReviewer, 2, 1))
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.ReviewAttempts).To(Equal(int32(1)))
+			g.Expect(task.Status.Reruns).To(Equal(int32(1)))
+		}, "20s").Should(Succeed())
+	})
 })
 
 var _ = Describe("Task with an unavailable agent", func() {
