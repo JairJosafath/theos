@@ -137,7 +137,7 @@ Fields stay minimal on purpose. Metadata such as `displayName` and `description`
 
 ## How it works
 
-A Container is scaffolded exactly once, from the catalog entries it picks and the DataStores it points to. After that, the factory only reports.
+A Container is scaffolded exactly once, from the catalog entries it picks and the DataStores it points to. After that, the factory reports, and carries only its Standard's updates to it (since v4, [A Standard's fixes reach its Containers](#v4-issues-crews-and-roles)).
 
 ### Scaffolding a Container
 
@@ -310,6 +310,22 @@ model and context it needs.
   merges the reviewed change itself. The agents' rules and `.c4factory.yaml` stay
   out of reach. See
   [superpowers/specs/2026-10-02-standard-change-design.md](superpowers/specs/2026-10-02-standard-change-design.md).
+- **A Standard's fixes reach its Containers.** Bumping a Standard's pinned `ref`
+  updates every Ready Container that uses it. The operator renders the Standard
+  at the Container's ref and at the new one, and opens a pull request of its own
+  with the difference: the new render of each file the repository still holds
+  as the old ref rendered it, and the removal of files the new ref no longer
+  renders. A file the repository changed since (a Standard change, or a person)
+  is left out and named in the pull request; a person brings it up to date by
+  hand. No agent takes part: the update is the template's own content, reviewed
+  here where the template changed, and it reaches the agents' rules, which
+  agents never change. The operator merges it as admin once CI passes on it,
+  with every check `main` requires, and it changes only the planned files.
+  Closing the pull request drops the update until the Standard's ref changes
+  again. `status.standard` records the ref the Standard's files are at and the
+  update in flight, the condition `StandardUpdated` how it went;
+  `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
+  [plans/standard-update.md](plans/standard-update.md).
 - **New shapes, same operator.** Container types `cli` and `extension`; templates
   `go-cli`, `go-standard`, `vscode-extension`, `ts-standard` and `gitea-release`;
   a Go and Node toolchain whose image ships a warm build cache, a CI runner

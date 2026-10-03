@@ -139,4 +139,5 @@ Evidence goes into `docs/results-v4.md` and `docs/screenshots/`.
 
 - Blocks of any other kind (a missing secret, an unclear issue): they still
   fail the Task and hand the issue back.
-- Updating existing Containers' guides: they keep their pinned template.
+- Updating existing Containers' guides: they keep their pinned template. (Since
+  #65 a bump of the Standard's `ref` updates them; see `docs/design.md`.)

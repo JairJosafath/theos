@@ -6,16 +6,19 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
@@ -268,4 +271,267 @@ func pushInitialCommit(ctx context.Context, repoURL string, creds *Credentials, 
 		return "", fmt.Errorf("push %s: %w", repoURL, err)
 	}
 	return hash.String(), nil
+}
+
+// readFiles returns branch's copy of those of paths it has, and the commit it
+// read them at. A path that is no regular file there, missing or a directory,
+// is left out.
+func readFiles(ctx context.Context, repoURL string, creds *Credentials, branch string,
+	paths []string) (scaffold.Tree, string, error) {
+	repo, err := git.CloneContext(ctx, memory.NewStorage(), nil, &git.CloneOptions{
+		URL:           repoURL,
+		Auth:          auth(creds),
+		ReferenceName: plumbing.NewBranchReferenceName(branch),
+		SingleBranch:  true,
+		Depth:         1,
+		NoCheckout:    true,
+		Tags:          git.NoTags,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("clone %s at %s: %w", repoURL, branch, err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return nil, "", err
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return nil, "", err
+	}
+	root, err := commit.Tree()
+	if err != nil {
+		return nil, "", err
+	}
+	files := scaffold.Tree{}
+	for _, p := range paths {
+		f, ok, err := treeFile(repo, root, p)
+		if err != nil {
+			return nil, "", fmt.Errorf("read %s at %s in %s: %w", p, branch, repoURL, err)
+		}
+		if ok {
+			files[p] = f
+		}
+	}
+	return files, head.Hash().String(), nil
+}
+
+// treeFile reads the regular file at p in tree, executable bit included. It
+// reports false when tree has none there: nothing, a directory, a symlink or a
+// submodule.
+func treeFile(repo *git.Repository, tree *object.Tree, p string) (scaffold.File, bool, error) {
+	names := strings.Split(p, "/")
+	for _, dir := range names[:len(names)-1] {
+		e, ok := treeEntry(tree, dir)
+		if !ok || e.Mode != filemode.Dir {
+			return scaffold.File{}, false, nil
+		}
+		var err error
+		if tree, err = repo.TreeObject(e.Hash); err != nil {
+			return scaffold.File{}, false, err
+		}
+	}
+	e, ok := treeEntry(tree, names[len(names)-1])
+	if !ok || !e.Mode.IsFile() || e.Mode == filemode.Symlink {
+		return scaffold.File{}, false, nil
+	}
+	blob, err := repo.BlobObject(e.Hash)
+	if err != nil {
+		return scaffold.File{}, false, err
+	}
+	r, err := blob.Reader()
+	if err != nil {
+		return scaffold.File{}, false, err
+	}
+	data, err := io.ReadAll(r)
+	_ = r.Close()
+	if err != nil {
+		return scaffold.File{}, false, err
+	}
+	return scaffold.File{Data: data, Executable: e.Mode == filemode.Executable}, true, nil
+}
+
+// treeEntry returns tree's entry called name, if it has one.
+func treeEntry(tree *object.Tree, name string) (object.TreeEntry, bool) {
+	i := slices.IndexFunc(tree.Entries, func(e object.TreeEntry) bool { return e.Name == name })
+	if i < 0 {
+		return object.TreeEntry{}, false
+	}
+	return tree.Entries[i], true
+}
+
+// pushBranch commits files, and the removal of removes, on top of commit base of
+// the default branch, and force-pushes the commit as branch. The commit's tree is
+// base's with only those paths changed. A change that leaves base as it is fails
+// with ErrEmptyChange and pushes nothing.
+func pushBranch(ctx context.Context, repoURL string, creds *Credentials, base, branch string, files scaffold.Tree,
+	removes []string, message string, author Signature) (string, error) {
+	if branch == defaultBranch {
+		return "", fmt.Errorf("won't force-push the default branch %s of %s", defaultBranch, repoURL)
+	}
+	if !commitSHA.MatchString(base) {
+		return "", fmt.Errorf("base %q is not a full commit SHA", base)
+	}
+	// A path mapped to nil is removed; files win over removes.
+	edits := map[string]*scaffold.File{}
+	for _, p := range removes {
+		edits[p] = nil
+	}
+	for p, f := range files {
+		edits[p] = &f
+	}
+	for p := range edits {
+		if !fs.ValidPath(p) || p == "." {
+			return "", fmt.Errorf("invalid path %q", p)
+		}
+	}
+
+	// Not shallow, so base is there even when the default branch moved on since.
+	repo, err := git.CloneContext(ctx, memory.NewStorage(), nil, &git.CloneOptions{
+		URL:           repoURL,
+		Auth:          auth(creds),
+		ReferenceName: plumbing.NewBranchReferenceName(defaultBranch),
+		SingleBranch:  true,
+		NoCheckout:    true,
+		Tags:          git.NoTags,
+	})
+	if err != nil {
+		return "", fmt.Errorf("clone %s: %w", repoURL, err)
+	}
+	parent, err := repo.CommitObject(plumbing.NewHash(base))
+	if err != nil {
+		return "", fmt.Errorf("find base %s on %s of %s: %w", base, defaultBranch, repoURL, err)
+	}
+	baseTree, err := parent.Tree()
+	if err != nil {
+		return "", err
+	}
+	tree, _, err := editTree(repo, baseTree, edits)
+	if err != nil {
+		return "", err
+	}
+	if tree == baseTree.Hash {
+		return "", fmt.Errorf("%w: %s on %s of %s", ErrEmptyChange, branch, base, repoURL)
+	}
+	sig := object.Signature{Name: author.Name, Email: author.Email, When: author.When}
+	hash, err := storeObject(repo, &object.Commit{
+		Author:       sig,
+		Committer:    sig,
+		Message:      message,
+		TreeHash:     tree,
+		ParentHashes: []plumbing.Hash{parent.Hash},
+	})
+	if err != nil {
+		return "", err
+	}
+	ref := plumbing.NewBranchReferenceName(branch)
+	if err := repo.Storer.SetReference(plumbing.NewHashReference(ref, hash)); err != nil {
+		return "", err
+	}
+	err = repo.PushContext(ctx, &git.PushOptions{
+		RemoteName: remoteName,
+		Auth:       auth(creds),
+		RefSpecs:   []config.RefSpec{config.RefSpec("+" + ref + ":" + ref)},
+	})
+	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return "", fmt.Errorf("push %s to %s: %w", branch, repoURL, err)
+	}
+	return hash.String(), nil
+}
+
+// editTree stores tree with edits applied: a path mapped to a file is written,
+// one mapped to nil removed. It returns the new tree's hash and whether it is
+// empty. tree is nil for a directory that isn't there yet. Removing a path that
+// is no file in tree changes nothing.
+func editTree(repo *git.Repository, tree *object.Tree, edits map[string]*scaffold.File) (plumbing.Hash, bool, error) {
+	entries := map[string]object.TreeEntry{}
+	if tree != nil {
+		for _, e := range tree.Entries {
+			entries[e.Name] = e
+		}
+	}
+	dirs := map[string]map[string]*scaffold.File{}
+	for p, f := range edits {
+		if dir, rest, nested := strings.Cut(p, "/"); nested {
+			if dirs[dir] == nil {
+				dirs[dir] = map[string]*scaffold.File{}
+			}
+			dirs[dir][rest] = f
+			continue
+		}
+		if f == nil {
+			if e, ok := entries[p]; ok && e.Mode != filemode.Dir {
+				delete(entries, p)
+			}
+			continue
+		}
+		hash, err := storeBlob(repo, f.Data)
+		if err != nil {
+			return plumbing.ZeroHash, false, err
+		}
+		mode := filemode.Regular
+		if f.Executable {
+			mode = filemode.Executable
+		}
+		entries[p] = object.TreeEntry{Name: p, Mode: mode, Hash: hash}
+	}
+	for dir, inner := range dirs {
+		var sub *object.Tree
+		if e, ok := entries[dir]; ok && e.Mode == filemode.Dir {
+			var err error
+			if sub, err = repo.TreeObject(e.Hash); err != nil {
+				return plumbing.ZeroHash, false, err
+			}
+		}
+		hash, empty, err := editTree(repo, sub, inner)
+		if err != nil {
+			return plumbing.ZeroHash, false, err
+		}
+		switch {
+		case !empty:
+			entries[dir] = object.TreeEntry{Name: dir, Mode: filemode.Dir, Hash: hash}
+		case sub != nil:
+			delete(entries, dir) // Git keeps no empty directories.
+		}
+	}
+	sorted := slices.SortedFunc(maps.Values(entries), func(a, b object.TreeEntry) int {
+		return strings.Compare(treeSortName(a), treeSortName(b))
+	})
+	hash, err := storeObject(repo, &object.Tree{Entries: sorted})
+	return hash, len(sorted) == 0, err
+}
+
+// treeSortName is what Git sorts a tree entry by: its name, with a trailing
+// slash for a directory.
+func treeSortName(e object.TreeEntry) string {
+	if e.Mode == filemode.Dir {
+		return e.Name + "/"
+	}
+	return e.Name
+}
+
+// storeBlob stores data as a blob in repo and returns its hash.
+func storeBlob(repo *git.Repository, data []byte) (plumbing.Hash, error) {
+	obj := repo.Storer.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	w, err := obj.Writer()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+	if _, err := w.Write(data); err != nil {
+		_ = w.Close()
+		return plumbing.ZeroHash, err
+	}
+	if err := w.Close(); err != nil {
+		return plumbing.ZeroHash, err
+	}
+	return repo.Storer.SetEncodedObject(obj)
+}
+
+// storeObject stores a tree or commit in repo and returns its hash.
+func storeObject(repo *git.Repository, o object.Object) (plumbing.Hash, error) {
+	obj := repo.Storer.NewEncodedObject()
+	if err := o.Encode(obj); err != nil {
+		return plumbing.ZeroHash, err
+	}
+	return repo.Storer.SetEncodedObject(obj)
 }

@@ -165,3 +165,83 @@ func StandardChangeIssue(issue int, task string, p Proposal) (title, body string
 	body = strings.ReplaceAll(b.String(), "<!--", "&lt;!--") + ProposalMarker(p.Branch) + "\n"
 	return title, body
 }
+
+// StandardUpdateBranch is the branch that updates a Container to ref of the
+// Standard name: "standard-update/<name>-<ref>", where every character of ref
+// outside [A-Za-z0-9._-] becomes "-".
+func StandardUpdateBranch(name, ref string) string {
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			return r
+		}
+		return '-'
+	}, ref)
+	return "standard-update/" + name + "-" + safe
+}
+
+// StandardUpdateTitle is the title of that update's pull request and commit:
+// "Update the Standard <name> to <ref>".
+func StandardUpdateTitle(name, ref string) string {
+	return "Update the Standard " + name + " to " + ref
+}
+
+// StandardUpdateBody is that pull request's description.
+func StandardUpdateBody(name, from, to string, paths, leftOut []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "The operator opened this pull request to bring the files of the Standard `%s` from `%s` to `%s`.\n\n",
+		name, from, to)
+	if len(paths) > 0 {
+		b.WriteString("## Files\n\n")
+		writeCodeList(&b, paths)
+	}
+	if len(leftOut) > 0 {
+		fmt.Fprintf(&b, "## Left out\n\nThese files changed in the repository since `%s`, so the update leaves them "+
+			"out; a person brings them up to date by hand:\n\n", from)
+		writeCodeList(&b, leftOut)
+	}
+	b.WriteString("The operator merges this pull request itself once CI passes. " +
+		"Close it to drop the update until the Standard's ref changes again.\n")
+	return b.String()
+}
+
+// writeCodeList writes items as a Markdown list in code font, then a blank line.
+func writeCodeList(b *strings.Builder, items []string) {
+	for _, item := range items {
+		fmt.Fprintf(b, "- `%s`\n", item)
+	}
+	b.WriteString("\n")
+}
+
+// StandardUpdateRefusal says why a Standard update's pull request may not merge,
+// or "" when it may: CI is green, every check main's protection requires
+// passed, and it changes something and only the planned paths.
+func StandardUpdateRefusal(checks string, contexts map[string]string, changed, planned []string) string {
+	if refusal := checksRefusal(checks, contexts); refusal != "" {
+		return refusal
+	}
+	if len(changed) == 0 {
+		return "the change changes nothing"
+	}
+	var outside []string
+	for _, p := range changed {
+		if !slices.Contains(planned, p) {
+			outside = append(outside, p)
+		}
+	}
+	if len(outside) > 0 {
+		return fmt.Sprintf("the pull request changes %s, which the update did not plan", joinAnd(outside))
+	}
+	return ""
+}
+
+// ScaffoldedRef returns the ref the catalog entry name was scaffolded at, from
+// scaffoldedFrom's "<name>@<ref>" entries, or "" when it wasn't part of it.
+func ScaffoldedRef(scaffoldedFrom []string, name string) string {
+	for _, pinned := range scaffoldedFrom {
+		if entry, ref, ok := strings.Cut(pinned, "@"); ok && entry == name {
+			return ref
+		}
+	}
+	return ""
+}

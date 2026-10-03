@@ -25,6 +25,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -114,6 +115,11 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
 			metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
 		result := r.refreshChecks(ctx, &container, status)
+		if container.Spec.StandardRef != nil {
+			r.updateStandard(ctx, &container, status)
+		} else {
+			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
+		}
 		return result, r.writeStatus(ctx, &container, status)
 	}
 
@@ -211,6 +217,22 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return reqs
 	})
+	// A Standard changing its spec also moves the Ready Containers on it to its
+	// new ref.
+	standardContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		var containers c4v1alpha1.ContainerList
+		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace())); err != nil {
+			return nil
+		}
+		var reqs []reconcile.Request
+		for _, c := range containers.Items {
+			if c.Status.Phase != c4v1alpha1.ContainerReady ||
+				c.Spec.StandardRef != nil && c.Spec.StandardRef.Name == obj.GetName() {
+				reqs = append(reqs, requestFor(c.Namespace, c.Name))
+			}
+		}
+		return reqs
+	})
 	sourceContainer := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
 		rel, ok := obj.(*c4v1alpha1.Relationship)
 		if !ok || rel.Spec.Source.Kind != c4v1alpha1.ElementContainer {
@@ -225,7 +247,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.Relationship{}, sourceContainer).
 		Watches(&c4v1alpha1.GitProvider{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Framework{}, waitingContainers, specChanged()).
-		Watches(&c4v1alpha1.Standard{}, waitingContainers, specChanged()).
+		Watches(&c4v1alpha1.Standard{}, standardContainers, specChanged()).
 		Watches(&c4v1alpha1.Compute{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Deployment{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Connector{}, waitingContainers, specChanged()).

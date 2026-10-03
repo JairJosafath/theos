@@ -68,6 +68,15 @@ type Provider interface {
 	// PushInitialCommit pushes files as the first commit on the default branch.
 	// It fails, without force, if the branch already exists.
 	PushInitialCommit(ctx context.Context, repo Repository, files scaffold.Tree, message string, author Signature) (string, error)
+	// ReadFiles returns branch's copy of those of paths it has, and the commit it
+	// read them at. A path it doesn't have is left out, not an error.
+	ReadFiles(ctx context.Context, repo Repository, branch string, paths []string) (scaffold.Tree, string, error)
+	// PushBranch commits files, and the removal of removes, on top of commit base
+	// of the default branch, and force-pushes the commit as branch, creating or
+	// replacing it. author is the commit's author and committer. It returns the
+	// commit's SHA.
+	PushBranch(ctx context.Context, repo Repository, base, branch string, files scaffold.Tree, removes []string,
+		message string, author Signature) (string, error)
 	// Repository returns the addresses of name in the owner organization, without
 	// calling the host.
 	Repository(name string) Repository
@@ -181,6 +190,10 @@ var ErrUnpinnedRef = errors.New("template ref is not a tag or commit")
 // ErrTooManyFiles means a pull request changes more files than the provider
 // can list in full; no retry reads them all.
 var ErrTooManyFiles = errors.New("too many changed files to list in full")
+
+// ErrEmptyChange means a commit would leave its base as it is: every file it
+// writes is already there as it is, and no file it removes is. Nothing is pushed.
+var ErrEmptyChange = errors.New("the change leaves its base as it is")
 
 // SameHost reports whether two URLs point at the same host, so a Git provider's
 // credentials can be reused for a template on it.

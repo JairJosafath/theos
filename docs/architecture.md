@@ -73,6 +73,32 @@ metrics-server itself (`ui/health.mjs`) and sends the browser only a summary.
 6. `internal/controller` writes `Ready`, `repositoryURL`, `scaffoldedFrom` and
    `appliedRelationships` with `appliedConnectors` (what each Relationship added).
 
+## Flow of a Standard update
+
+A Ready Container with a Standard follows its Standard's `spec.template.ref`, one
+step per reconcile (`internal/controller/container_standard.go`); the minute
+recheck polls the pull request, and a Standard's spec change enqueues its
+Containers at once.
+
+1. `internal/controller` takes the ref the Container's Standard files are at from
+   `status.standard`, or before the first update from `scaffoldedFrom`
+   (`model.ScaffoldedRef`). It compares it with the Standard's ref.
+2. `internal/gitprovider` fetches the template at both refs; `internal/scaffold`
+   renders each with the scaffold's input (`RenderLayer`); `gitprovider` reads
+   `main`'s copy of every path either render has (`ReadFiles`).
+3. `internal/scaffold.PlanUpdate` decides by whole files what to write, remove
+   and leave out. Nothing to write: the controller records the new ref.
+4. `internal/gitprovider` pushes one commit onto the `main` commit it read
+   (`PushBranch`, branch `model.StandardUpdateBranch`) and opens a pull request
+   with `model`'s title and body. The controller records it in
+   `status.standard.update`.
+5. Each later reconcile reads the pull request: merged, closed, conflicting,
+   pushed to by someone else, or waiting for CI. Once CI is green,
+   `model.StandardUpdateRefusal` checks the required checks and the paths, and
+   `gitprovider` merges it as admin (`ForceMergePullRequest`). The controller
+   moves `status.standard.ref` and reports each step in the condition
+   `StandardUpdated`.
+
 ## Flow of one Session
 
 1. The c4session feature installs the client in the devcontainer and runs

@@ -90,6 +90,68 @@ type AppliedConnector struct {
 	Connector string `json:"connector"`
 }
 
+// ContainerStandardStatus says which ref of its Standard the Container's
+// Standard files are at, and the update in flight.
+type ContainerStandardStatus struct {
+	// name is the Standard's name.
+	// +required
+	Name string `json:"name"`
+
+	// ref is the Standard's template ref the repository's Standard files are at:
+	// the scaffold's, then each merged update's.
+	// +required
+	Ref string `json:"ref"`
+
+	// leftOut are the files the last update left out, because the repository had
+	// changed them since; a person brings them up to date.
+	// +listType=atomic
+	// +optional
+	LeftOut []string `json:"leftOut,omitempty"`
+
+	// update is the Standard update in flight, or the last one, stopped.
+	// +optional
+	Update *StandardUpdateStatus `json:"update,omitempty"`
+}
+
+// StandardUpdateStatus is one Standard update: a pull request the operator
+// opened to bring the Standard's files to another ref.
+type StandardUpdateStatus struct {
+	// ref is the Standard's template ref the update brings the files to.
+	// +required
+	Ref string `json:"ref"`
+
+	// branch is the update's branch, and commit the one commit on it.
+	// +optional
+	Branch string `json:"branch,omitempty"`
+
+	// +optional
+	Commit string `json:"commit,omitempty"`
+
+	// pullRequest is the number of the update's pull request, and pullRequestURL
+	// its address.
+	// +optional
+	PullRequest int32 `json:"pullRequest,omitempty"`
+
+	// +optional
+	PullRequestURL string `json:"pullRequestURL,omitempty"`
+
+	// paths are the files the update writes or removes.
+	// +listType=atomic
+	// +optional
+	Paths []string `json:"paths,omitempty"`
+
+	// leftOut are the files the update leaves out, because the repository
+	// changed them since the Standard's files were last rendered.
+	// +listType=atomic
+	// +optional
+	LeftOut []string `json:"leftOut,omitempty"`
+
+	// stopped is why the update stopped without merging, such as UpdateClosed;
+	// a stopped update waits for the Standard's ref to change.
+	// +optional
+	Stopped string `json:"stopped,omitempty"`
+}
+
 // ContainerStatus defines the observed state of Container.
 type ContainerStatus struct {
 	// phase is Pending, Scaffolding, then Ready or Failed.
@@ -123,6 +185,12 @@ type ContainerStatus struct {
 	// +optional
 	Checks *CheckStatus `json:"checks,omitempty"`
 
+	// standard says which ref of its Standard the repository's Standard files are
+	// at, and the update in flight. Only a Ready Container with a Standard that
+	// was part of its scaffold has it.
+	// +optional
+	Standard *ContainerStandardStatus `json:"standard,omitempty"`
+
 	// activeSessions is the number of Active Sessions on this Container.
 	// +optional
 	ActiveSessions int32 `json:"activeSessions"`
@@ -131,7 +199,8 @@ type ContainerStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// conditions: ReferencesResolved, ChoicesValid, RepositoryCreated and Scaffolded.
+	// conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
+	// and, for a Container with a Standard, StandardUpdated.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

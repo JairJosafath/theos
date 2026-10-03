@@ -226,8 +226,9 @@ spec:
                     type: string
                 type: object
               conditions:
-                description: 'conditions: ReferencesResolved, ChoicesValid, RepositoryCreated
-                  and Scaffolded.'
+                description: |-
+                  conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
+                  and, for a Container with a Standard, StandardUpdated.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -309,6 +310,76 @@ spec:
                   type: string
                 type: array
                 x-kubernetes-list-type: atomic
+              standard:
+                description: |-
+                  standard says which ref of its Standard the repository's Standard files are
+                  at, and the update in flight. Only a Ready Container with a Standard that
+                  was part of its scaffold has it.
+                properties:
+                  leftOut:
+                    description: |-
+                      leftOut are the files the last update left out, because the repository had
+                      changed them since; a person brings them up to date.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  name:
+                    description: name is the Standard's name.
+                    type: string
+                  ref:
+                    description: |-
+                      ref is the Standard's template ref the repository's Standard files are at:
+                      the scaffold's, then each merged update's.
+                    type: string
+                  update:
+                    description: update is the Standard update in flight, or the last
+                      one, stopped.
+                    properties:
+                      branch:
+                        description: branch is the update's branch, and commit the
+                          one commit on it.
+                        type: string
+                      commit:
+                        type: string
+                      leftOut:
+                        description: |-
+                          leftOut are the files the update leaves out, because the repository
+                          changed them since the Standard's files were last rendered.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      paths:
+                        description: paths are the files the update writes or removes.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      pullRequest:
+                        description: |-
+                          pullRequest is the number of the update's pull request, and pullRequestURL
+                          its address.
+                        format: int32
+                        type: integer
+                      pullRequestURL:
+                        type: string
+                      ref:
+                        description: ref is the Standard's template ref the update
+                          brings the files to.
+                        type: string
+                      stopped:
+                        description: |-
+                          stopped is why the update stopped without merging, such as UpdateClosed;
+                          a stopped update waits for the Standard's ref to change.
+                        type: string
+                    required:
+                    - ref
+                    type: object
+                required:
+                - name
+                - ref
+                type: object
             type: object
         required:
         - spec
