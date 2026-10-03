@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/hack/lib/github.sh beat",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

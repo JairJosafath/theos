@@ -50,6 +50,8 @@ __pycache__/
 # Kubebuilder
 Dockerfile.cross
 !vendor/**/zz_generated.*
-# Claude Code: share the project skills, keep the rest (worktrees, locks) local.
+# Claude Code: share the project skills and settings (the heartbeat hook), keep
+# the rest (worktrees, locks, settings.local.json) local.
 /.claude/*
 !/.claude/skills/
+!/.claude/settings.json
