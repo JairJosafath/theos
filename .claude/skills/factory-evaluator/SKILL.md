@@ -119,6 +119,10 @@ The metrics (`metrics.json`, over Tasks finished in the window or still active):
 | `relay.sessions.usd`, `maintenanceUsdPerMerged` | relay sessions' cost, and that cost per merged issue |
 | `agentCost` | always null: the agent runner drops Claude Code's cost; say "not recorded" |
 
+A deploy in the window starts a new operator pod and loses the earlier log, so the
+error counts cover only the time since then. Say so, and read the Crews'
+conditions and the Tasks' histories for what the log would have shown.
+
 Compare each with the previous evaluation's metrics. Then look for the patterns
 below; these are where the useful findings usually are:
 
@@ -196,6 +200,10 @@ Labels: `source/evaluator`, one of `kind/bug`, `kind/improvement`, `kind/chore`,
 gh issue create -R JairJosafath/c4factory --title '<problem>' --body-file "$OUT/issue-1.md" \
   --label source/evaluator --label kind/bug --label status/ready
 ```
+
+When the cause is not known yet, say so under Scope, and make the first criterion
+the measurement that finds it and records it in the issue. Then the issue is a
+problem with a test, not an open-ended "investigate".
 
 Don't file app features, "investigate X" without a concrete problem, or more than
 five. Fewer good issues beat five weak ones; filing none is fine.
