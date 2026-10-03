@@ -83,7 +83,9 @@ To set one up:
 
 1. Clone `JairJosafath/c4factory`, open it in VS Code, run "Dev Containers: Reopen in
    Container" and choose **C4 Factory (lite, no cluster)**. Sign in to GitHub in VS
-   Code: the git credential helper gives `hack/lib/github.sh` its token.
+   Code: the git credential helper gives `hack/lib/github.sh` its token. If
+   `git fetch` still asks for a username, run `gh auth login` and then
+   `gh auth setup-git` in the container.
 2. Run `claude` once to log in, and check that `echo $C4_CLUSTER` prints `none`.
 3. `hack/relay.sh`; the log is in `.relay/relay-1.log`, `touch .relay/stop` stops it.
 
