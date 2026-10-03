@@ -147,9 +147,10 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    runner allows exactly those paths. Gitea's protected-file rule blocks the
    normal merge, so the operator checks CI, the approval and every changed path
    (a rename's old path too) itself, then merges with Gitea's admin
-   `force_merge`. CI passes only if each required `check*` context reported
-   success, as branch protection requires, so a renamed workflow or job is
-   refused. CI still pending: it
+   `force_merge`. CI passes only if each required `check*` pattern has a
+   matching context that succeeded and every other match succeeded too or was
+   skipped (a push run off main), as branch protection requires, so a renamed
+   workflow or job is refused. CI still pending: it
    waits until the review run ends, then refuses (reason `GatedMergeRefused`); no
    reviewer run is spent on a CI wait. A pull request too large to list (1000+
    files) is refused too. A gated change may touch only its allowed paths, so

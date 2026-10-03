@@ -258,6 +258,32 @@ func TestTouchedPaths(t *testing.T) {
 	}
 }
 
+func TestUnpassedChecks(t *testing.T) {
+	const pr, push = "check / check (pull_request)", "check / check (push)"
+	tests := []struct {
+		name     string
+		contexts map[string]string
+		want     []string
+	}{
+		{name: "a passing check", contexts: map[string]string{pr: "success"}},
+		{name: "a skipped push check next to a passing one", contexts: map[string]string{pr: "success", push: "skipped"}},
+		{name: "only skipped checks", contexts: map[string]string{pr: "skipped", push: "skipped"}, want: []string{"check*"}},
+		{name: "no checks", want: []string{"check*"}},
+		{name: "no check matches", contexts: map[string]string{"CI / check (pull_request)": "success"}, want: []string{"check*"}},
+		{name: "a pending match", contexts: map[string]string{pr: "success", push: "pending"}, want: []string{"check*"}},
+		{name: "a failed match", contexts: map[string]string{pr: "success", push: "failure"}, want: []string{"check*"}},
+		{name: "an errored match", contexts: map[string]string{pr: "error", push: "skipped"}, want: []string{"check*"}},
+		{name: "a warning match", contexts: map[string]string{pr: "success", push: "warning"}, want: []string{"check*"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := UnpassedChecks(tt.contexts); !slices.Equal(got, tt.want) {
+				t.Errorf("UnpassedChecks(%v) = %v, want %v", tt.contexts, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMatchGlob(t *testing.T) {
 	tests := []struct {
 		pattern, s string

@@ -254,15 +254,20 @@ var CheckContexts = []string{"check*"}
 // checkSuccess is the state of a check, or of all of a commit's checks, that passed.
 const checkSuccess = "success"
 
+// checkSkipped is the state of a check that did not run, such as a workflow's
+// push run off main.
+const checkSkipped = "skipped"
+
 // UnpassedChecks returns the CheckContexts patterns that contexts, the state of
 // each check on a commit by its context, does not pass, the way branch protection
-// reads them: no check matches the pattern, or one that matches has not succeeded.
+// reads them: no check that ran matches the pattern, or one that matches has not
+// succeeded. A skipped check neither passes nor fails a pattern.
 func UnpassedChecks(contexts map[string]string) []string {
 	var out []string
 	for _, pattern := range CheckContexts {
 		matched, passed := false, true
 		for context, state := range contexts {
-			if matchGlob(pattern, context) {
+			if state != checkSkipped && matchGlob(pattern, context) {
 				matched, passed = true, passed && state == checkSuccess
 			}
 		}
