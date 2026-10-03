@@ -297,8 +297,9 @@ func mergeWaitsForChecks(status *c4v1alpha1.TaskStatus) bool {
 }
 
 // gatedMerge merges a Standard change's pull request past the protected-file
-// rule, as the Git host's admin, once CI passed on the reviewed commit, the
-// reviewer approved and every path it changes is allowed. Otherwise it says why
+// rule, as the Git host's admin, once CI passed on the reviewed commit (every
+// check main requires among it), the reviewer approved and every path it changes
+// is allowed. Otherwise it says why
 // not and tries no merge. It records CI's state in status.checks. CI still
 // running is errChecksPending; a list of changed paths too long to read in full
 // is a refusal, and one it can't read for now an error. The reviewer's approval
@@ -329,7 +330,8 @@ func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Pr
 	if status.Review != nil {
 		verdict = status.Review.Verdict
 	}
-	if why := model.GatedMergeRefusal(checks.State, verdict, changed, task.Spec.AllowedProtectedPaths); why != "" {
+	if why := model.GatedMergeRefusal(checks.State, checks.Contexts, verdict, changed,
+		task.Spec.AllowedProtectedPaths); why != "" {
 		return why, nil
 	}
 	r.approve(ctx, task, status, container, reviewer)

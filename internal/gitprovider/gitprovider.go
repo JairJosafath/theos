@@ -77,7 +77,8 @@ type Provider interface {
 	// ProtectTags lets only the provider's own user push tags matching pattern.
 	// It is safe to repeat.
 	ProtectTags(ctx context.Context, repo Repository, pattern string) error
-	// CombinedStatus returns the combined state of the checks on ref.
+	// CombinedStatus returns the combined state of the checks on ref, and the
+	// latest state of each check by its context.
 	CombinedStatus(ctx context.Context, repo Repository, ref string) (CheckStatus, error)
 	// CheckLog returns the log of the CI job a check status links to.
 	CheckLog(ctx context.Context, repo Repository, checkURL string) (string, error)

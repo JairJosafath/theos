@@ -257,3 +257,24 @@ func TestTouchedPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchGlob(t *testing.T) {
+	tests := []struct {
+		pattern, s string
+		want       bool
+	}{
+		{"check*", "check / check (pull_request)", true},
+		{"check*", "check", true},
+		{"check*", "CI / check (pull_request)", false},
+		{"*check*", "CI / check (pull_request)", true},
+		{"check / *(push)", "check / check (pull_request)", false},
+		{"a*a", "a", false},
+		{"check", "check", true},
+		{"check", "checks", false},
+	}
+	for _, tt := range tests {
+		if got := matchGlob(tt.pattern, tt.s); got != tt.want {
+			t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
+		}
+	}
+}

@@ -479,24 +479,35 @@ func TestResumeFeedback(t *testing.T) {
 
 func TestGatedMergeRefusal(t *testing.T) {
 	mk := []string{"Makefile"}
+	ci := map[string]string{"check / check (pull_request)": "success"}
 	tests := []struct {
 		name             string
 		checks, verdict  string
+		contexts         map[string]string
 		changed, allowed []string
 		want             string // substring; "" means merge
 	}{
-		{name: "merges", checks: "success", verdict: VerdictApprove, changed: mk, allowed: mk},
-		{name: "a directory allowance", checks: "success", verdict: VerdictApprove,
+		{name: "merges", checks: "success", contexts: ci, verdict: VerdictApprove, changed: mk, allowed: mk},
+		{name: "a directory allowance", checks: "success", contexts: ci, verdict: VerdictApprove,
 			changed: []string{".gitea/workflows/release.yaml"}, allowed: []string{".gitea/"}},
-		{name: "red CI", checks: "failure", verdict: VerdictApprove, changed: mk, allowed: mk, want: "CI"},
-		{name: "no verdict", checks: "success", verdict: VerdictChanges, changed: mk, allowed: mk, want: "approve"},
-		{name: "outside the allowance", checks: "success", verdict: VerdictApprove,
+		{name: "red CI", checks: "failure", contexts: ci, verdict: VerdictApprove, changed: mk, allowed: mk, want: "CI"},
+		{name: "check context missing", checks: "success", verdict: VerdictApprove, changed: mk, allowed: mk,
+			contexts: map[string]string{"CI / check (pull_request)": "success"}, want: `"check*"`},
+		{name: "no check context at all", checks: "success", verdict: VerdictApprove, changed: mk, allowed: mk,
+			want: `"check*"`},
+		{name: "a required check not passed", checks: "success", verdict: VerdictApprove, changed: mk, allowed: mk,
+			contexts: map[string]string{"check / check (pull_request)": "success", "check / lint (pull_request)": "pending"},
+			want:     `"check*"`},
+		{name: "no verdict", checks: "success", contexts: ci, verdict: VerdictChanges, changed: mk, allowed: mk,
+			want: "approve"},
+		{name: "outside the allowance", checks: "success", contexts: ci, verdict: VerdictApprove,
 			changed: []string{"Makefile", "README.md"}, allowed: mk, want: "README.md"},
-		{name: "empty change", checks: "success", verdict: VerdictApprove, allowed: mk, want: "changes nothing"},
+		{name: "empty change", checks: "success", contexts: ci, verdict: VerdictApprove, allowed: mk,
+			want: "changes nothing"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GatedMergeRefusal(tt.checks, tt.verdict, tt.changed, tt.allowed)
+			got := GatedMergeRefusal(tt.checks, tt.contexts, tt.verdict, tt.changed, tt.allowed)
 			if tt.want == "" && got != "" || !strings.Contains(got, tt.want) {
 				t.Errorf("GatedMergeRefusal() = %q, want %q", got, tt.want)
 			}

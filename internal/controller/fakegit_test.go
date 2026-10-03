@@ -250,14 +250,21 @@ func (g *fakeGit) agentState() *fakeAgentState {
 	return g.agent
 }
 
-// setChecks sets the combined check state of ref, a branch name or a commit.
+// setChecks sets the combined check state of ref, a branch name or a commit, as a
+// Standard's CI reports it: one check, under the context main requires.
 //
 //nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) setChecks(owner, name, ref, state string) {
+	g.setCheckContexts(owner, name, ref, state, map[string]string{"check / check (pull_request)": state})
+}
+
+// setCheckContexts sets the combined check state of ref and the state of each
+// check by its context.
+func (g *fakeGit) setCheckContexts(owner, name, ref, state string, contexts map[string]string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.agentState().checks[owner+"/"+name+"@"+ref] = gitprovider.CheckStatus{
-		Commit: ref, State: state, URL: "http://gitea/" + owner + "/" + name + "/actions/runs/1",
+		Commit: ref, State: state, URL: "http://gitea/" + owner + "/" + name + "/actions/runs/1", Contexts: contexts,
 	}
 }
 

@@ -26,6 +26,9 @@ type CheckStatus struct {
 	Commit string
 	State  string
 	URL    string
+	// Contexts is the state of each check by its context, such as
+	// "check / check (pull_request)".
+	Contexts map[string]string
 }
 
 // PullRequest is a pull request on a repository.
@@ -118,7 +121,8 @@ func (g *gitea) ProtectTags(ctx context.Context, repo Repository, pattern string
 	return nil
 }
 
-// CombinedStatus returns the combined state of the checks on ref.
+// CombinedStatus returns the combined state of the checks on ref, and the latest
+// state of each check by its context.
 func (g *gitea) CombinedStatus(ctx context.Context, repo Repository, ref string) (CheckStatus, error) {
 	status, data, err := g.do(ctx, http.MethodGet,
 		"/api/v1/repos/"+repoPath(repo)+"/commits/"+url.PathEscape(ref)+"/status", nil)
@@ -136,6 +140,7 @@ func (g *gitea) CombinedStatus(ctx context.Context, repo Repository, ref string)
 		Statuses   []struct {
 			Status    string `json:"status"`
 			TargetURL string `json:"target_url"`
+			Context   string `json:"context"`
 		} `json:"statuses"`
 	}
 	if err := json.Unmarshal(data, &combined); err != nil {
@@ -146,6 +151,10 @@ func (g *gitea) CombinedStatus(ctx context.Context, repo Repository, ref string)
 		return out, nil
 	}
 	out.State = combined.State
+	out.Contexts = make(map[string]string, len(combined.Statuses))
+	for _, s := range combined.Statuses {
+		out.Contexts[s.Context] = s.Status
+	}
 	// Point at the check that decided the state, else the first one.
 	out.URL = combined.Statuses[0].TargetURL
 	for _, s := range combined.Statuses {

@@ -608,6 +608,25 @@ var _ = Describe("Task with a gated merge", func() {
 		Expect(gitFake.issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
 	})
 
+	It("refuses a Standard change whose CI no longer reports the check main requires", func() {
+		ns := newProjectNamespace()
+		n := gatedTaskInReview(ns, "Makefile")
+		By("renaming the workflow, so CI passes under a context main's protection doesn't require")
+		gitFake.setCheckContexts(ns, "orders-api", "sha-1", "success",
+			map[string]string{"CI / check (pull_request)": "success"})
+		approveGated(ns)
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("GatedMergeRefused"),
+				"Message": ContainSubstring(`no passing check matches "check*"`)})))
+		}).Should(Succeed())
+		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
+	})
+
 	It("refuses a Standard change that touches a path it may not", func() {
 		ns := newProjectNamespace()
 		n := gatedTaskInReview(ns, "Makefile", "README.md")
@@ -638,6 +657,7 @@ var _ = Describe("Task with a gated merge", func() {
 type gateProvider struct {
 	gitprovider.Provider
 	checks   string
+	contexts map[string]string // nil means one "check / check (pull_request)" in the checks' state
 	files    []string
 	filesErr error
 	merges   int
@@ -645,7 +665,11 @@ type gateProvider struct {
 
 func (p *gateProvider) CombinedStatus(_ context.Context, _ gitprovider.Repository, ref string) (gitprovider.CheckStatus,
 	error) {
-	return gitprovider.CheckStatus{Commit: ref, State: p.checks}, nil
+	contexts := p.contexts
+	if contexts == nil {
+		contexts = map[string]string{"check / check (pull_request)": p.checks}
+	}
+	return gitprovider.CheckStatus{Commit: ref, State: p.checks, Contexts: contexts}, nil
 }
 
 func (p *gateProvider) PullRequestFiles(_ context.Context, _ gitprovider.Repository, _ int) ([]string, error) {
@@ -674,6 +698,8 @@ func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 			refusal: "CI is failure"},
 		{name: "refuses CI that never reported", provider: gateProvider{files: makefile}, review: approved,
 			refusal: "CI is unknown"},
+		{name: "refuses CI without the check main requires", review: approved, provider: gateProvider{checks: "success",
+			contexts: map[string]string{"CI / check (pull_request)": "success"}, files: makefile}, refusal: `"check*"`},
 		{name: "fails, to retry, on a file list it could not read", review: approved,
 			provider: gateProvider{checks: "success", filesErr: errors.New("connection refused")}, err: "connection refused"},
 		{name: "refuses a change too large to check every path", review: approved,

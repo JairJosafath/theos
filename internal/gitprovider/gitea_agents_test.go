@@ -208,10 +208,14 @@ func TestCombinedStatus(t *testing.T) {
 	}{
 		{"no checks yet", `{"state":"pending","sha":"abc","total_count":0,"statuses":[]}`, CheckStatus{Commit: "abc"}},
 		{"failing check", `{"state":"failure","sha":"abc","total_count":2,"statuses":[` +
-			`{"status":"success","target_url":"http://g/runs/1"},{"status":"failure","target_url":"http://g/runs/2"}]}`,
-			CheckStatus{Commit: "abc", State: CheckFailure, URL: "http://g/runs/2"}},
-		{"passing", `{"state":"success","sha":"abc","total_count":1,"statuses":[{"status":"success","target_url":"http://g/runs/3"}]}`,
-			CheckStatus{Commit: "abc", State: CheckSuccess, URL: "http://g/runs/3"}},
+			`{"status":"success","target_url":"http://g/runs/1","context":"check / lint (pull_request)"},` +
+			`{"status":"failure","target_url":"http://g/runs/2","context":"check / check (pull_request)"}]}`,
+			CheckStatus{Commit: "abc", State: CheckFailure, URL: "http://g/runs/2", Contexts: map[string]string{
+				"check / lint (pull_request)": CheckSuccess, "check / check (pull_request)": CheckFailure}}},
+		{"passing", `{"state":"success","sha":"abc","total_count":1,"statuses":[` +
+			`{"status":"success","target_url":"http://g/runs/3","context":"check / check (pull_request)"}]}`,
+			CheckStatus{Commit: "abc", State: CheckSuccess, URL: "http://g/runs/3",
+				Contexts: map[string]string{"check / check (pull_request)": CheckSuccess}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -221,7 +225,7 @@ func TestCombinedStatus(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CombinedStatus() error = %v", err)
 			}
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("CombinedStatus() = %+v, want %+v", got, tt.want)
 			}
 		})

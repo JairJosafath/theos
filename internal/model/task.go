@@ -188,11 +188,19 @@ func ResumeFeedback(issue int, paths []string, earlier string) string {
 }
 
 // GatedMergeRefusal says why a Standard change's pull request may not merge, or ""
-// when it may: CI is green, the reviewer approved, and the change is not empty and
-// stays inside the allowed paths.
-func GatedMergeRefusal(checks, verdict string, changed, allowed []string) string {
-	if checks != "success" {
+// when it may: CI is green, every check main's protection requires passed (the
+// merge overrides that protection, so it must not be laxer), the reviewer
+// approved, and the change is not empty and stays inside the allowed paths.
+// contexts is the state of each check on the commit by its context.
+func GatedMergeRefusal(checks string, contexts map[string]string, verdict string, changed, allowed []string) string {
+	if checks != checkSuccess {
 		return fmt.Sprintf("CI is %s, not success", orUnknown(checks))
+	}
+	if missing := UnpassedChecks(contexts); len(missing) > 0 {
+		for i, m := range missing {
+			missing[i] = strconv.Quote(m)
+		}
+		return fmt.Sprintf("no passing check matches %s, which main requires", joinAnd(missing))
 	}
 	if verdict != VerdictApprove {
 		return fmt.Sprintf("the reviewer's verdict is %q, not %q", verdict, VerdictApprove)
@@ -320,7 +328,7 @@ func nextTaskStep(f TaskFacts) TaskStep {
 
 	case TaskChecking:
 		switch f.Checks {
-		case "success":
+		case checkSuccess:
 			return TaskStep{Action: ActionStartReview, Message: "Checks passed; starting the review"}
 		case "failure", "error":
 			feedback := fmt.Sprintf("The CI checks failed (%s). Run the check command, find the failure and fix it.",

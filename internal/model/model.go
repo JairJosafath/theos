@@ -251,6 +251,49 @@ func joinAnd(items []string) string {
 // patterns, such as "check / check (pull_request)".
 var CheckContexts = []string{"check*"}
 
+// checkSuccess is the state of a check, or of all of a commit's checks, that passed.
+const checkSuccess = "success"
+
+// UnpassedChecks returns the CheckContexts patterns that contexts, the state of
+// each check on a commit by its context, does not pass, the way branch protection
+// reads them: no check matches the pattern, or one that matches has not succeeded.
+func UnpassedChecks(contexts map[string]string) []string {
+	var out []string
+	for _, pattern := range CheckContexts {
+		matched, passed := false, true
+		for context, state := range contexts {
+			if matchGlob(pattern, context) {
+				matched, passed = true, passed && state == checkSuccess
+			}
+		}
+		if !matched || !passed {
+			out = append(out, pattern)
+		}
+	}
+	return out
+}
+
+// matchGlob reports whether s matches pattern, in which * stands for any run of
+// characters, slashes included, as in the Git host's status check patterns.
+func matchGlob(pattern, s string) bool {
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return pattern == s
+	}
+	if !strings.HasPrefix(s, parts[0]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+	for _, part := range parts[1 : len(parts)-1] {
+		i := strings.Index(s, part)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(part):]
+	}
+	return strings.HasSuffix(s, parts[len(parts)-1])
+}
+
 // Protected reports whether a Container's default branch is protected by required
 // checks: only a Standard brings CI, so only a Container with one has checks to
 // require.
