@@ -11,7 +11,8 @@
 #   hack/lib/github.sh show N            issue N, its newest handoff comment and the comments after it
 #   hack/lib/github.sh take N            claim N for this checkout and swap it to status/in-progress;
 #                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it,
-#                                        or it needs the cluster and this device can't give it one now
+#                                        or it needs the cluster and this device can't give it one now.
+#                                        This checkout's claim on a closed issue is released first
 #   hack/lib/github.sh release [REASON]  release this checkout's claim (default reason: released)
 #   hack/lib/github.sh claims            the live and stale claims on open issues
 #   hack/lib/github.sh beat              refresh this checkout's claim heartbeat, at most every 15
@@ -328,12 +329,13 @@ gh_device_locked() {
 gh_take() { gh_device_locked gh_take_locked "$@"; }
 
 # gh_take_locked N: claim N for this checkout and print NAME BRANCH (tab-separated).
-# A claim this checkout already holds on N is printed again. Exit 4: someone
+# A claim this checkout already holds on N is printed again; one it holds on a
+# closed issue is released first. Exit 4: someone
 # else holds N, or won the race to it; exit 1: this checkout holds another
 # issue, or GitHub could not be asked. GH_TAKE_KEEP_STATUS=1 leaves N's status
 # label alone (the evaluator's claim on "Factory evaluations").
 gh_take_locked() {
-  local n=${1:?usage: take N} ttl c_issue c_id c_name c_branch rc issue all holder used w name branch stale id winner
+  local n=${1:?usage: take N} ttl c_issue c_id c_name c_branch rc state issue all holder used w name branch stale id winner
   ttl=$(gh_ttl) || return 1
   if gh_claim_read; then
     gh_claim_held >/dev/null
@@ -344,8 +346,13 @@ gh_take_locked() {
         printf '%s\t%s\n' "$c_name" "$c_branch"
         return 0
       fi
-      echo "github: this checkout holds #$c_issue as $c_name; release it (hack/lib/github.sh release) or take #$n from another worktree" >&2
-      return 1
+      # A merged pull request saying "Closes #N" closes N but leaves its claim.
+      state=$(gh_api "repos/$C4_GITHUB_REPO/issues/$c_issue" --jq .state) || return 1
+      if [ "$state" != closed ]; then
+        echo "github: this checkout holds #$c_issue as $c_name; release it (hack/lib/github.sh release) or take #$n from another worktree" >&2
+        return 1
+      fi
+      gh_release finished >&2 || return 1
     fi
     rm -f "$GH_CLAIM_FILE"
   fi

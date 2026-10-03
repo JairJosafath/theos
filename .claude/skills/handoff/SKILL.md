@@ -111,7 +111,8 @@ commands). It reads the token from the git credential helper and never prints it
 - **Landed:** the work's pull request to main says `Closes #N` and is merged
   (merge commit) once its checks are green; GitHub then closes N. If N is still
   open, `hack/lib/github.sh close N FILE`, FILE saying what landed: pull
-  request, commit SHAs, evidence.
+  request, commit SHAs, evidence. If GitHub closed it, the claim stays live
+  until the next `take` in this checkout, which releases it as finished.
 - **Can't go on without the user:** `hack/lib/github.sh status N needs-human`,
   and a comment (or a handoff) saying why and what you need.
 - **Follow-up found on the way:** `hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>`.
