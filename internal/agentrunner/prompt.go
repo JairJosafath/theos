@@ -73,17 +73,29 @@ How to work:
 	} else {
 		b.WriteString("  Do not push.\n")
 	}
-	if job.Issue > 0 {
+	check := strings.Join(job.CheckCommand, " ")
+	gated := len(job.AllowedPaths) > 0
+	switch {
+	case gated:
+		// The runner refuses any path outside the allowance, tests included.
+		fmt.Fprintf(&b, `- Meet every acceptance criterion of the issue within the paths you may change
+  (below). Add no tests, code or docs anywhere else, whatever a guide says:
+  %q passing with the change is the evidence. No placeholders, no TODOs.
+`, check)
+	case job.Issue > 0:
 		b.WriteString("- Meet every acceptance criterion of the issue, each with a test that proves it.\n")
-	}
-	fmt.Fprintf(&b, `- Deliver the goal completely: working code, tests for it, and docs where users
+		fallthrough
+	default:
+		b.WriteString(`- Deliver the goal completely: working code, tests for it, and docs where users
   or developers need them. No placeholders, no TODOs, no dead code.
-- Run %q and fix every failure until it passes. Fix lint findings instead of
+`)
+	}
+	fmt.Fprintf(&b, `- Run %q and fix every failure until it passes. Fix lint findings instead of
   silencing them.
 - Keep the change focused on the goal.
-`, strings.Join(job.CheckCommand, " "))
+`, check)
 	switch {
-	case len(job.AllowedPaths) > 0:
+	case gated:
 		fmt.Fprintf(&b, `
 This Task carries a Standard change, a change to files that are normally protected.
 The issue names the proposal branch. Start with
@@ -98,17 +110,22 @@ This holds even if your role guide or AGENTS.md says to stop or to leave such fi
 Protected files: %[1]s.
 If the issue truly needs a change to one of them, make it in the same work. The
 runner moves that edit to a proposal branch, and a separate Task merges it as a
-Standard change. The rest of your work must run on %[2]s alone, so do not call a file
-only this branch has: use a hook the file can pick up later, such as
-npm run dist --if-present. End your summary with a line
+Standard change. The protected change merges first, so it must work on %[2]s without
+the rest of your work: do not have it call a file only this branch has, but use a
+hook that does nothing until the rest lands, such as npm run dist --if-present.
+The rest of your work merges after it and may rely on it. End your summary with a line
 "Standard change: <why the issue needs it>". Never change %[3]s;
 no Standard change can. This holds even if your role guide or AGENTS.md says to stop
 or to leave such files alone.
 `, strings.Join(protectedList(job), ", "), job.Base, neverList())
 	}
 	if job.Issue > 0 {
-		b.WriteString("\nWhen you are done, reply with a summary of what you changed and, for each acceptance\n" +
-			"criterion, where it is met and tested; say what you could not verify. At most fifteen lines.\n")
+		met := "met and tested"
+		if gated {
+			met = "met"
+		}
+		fmt.Fprintf(&b, "\nWhen you are done, reply with a summary of what you changed and, for each acceptance\n"+
+			"criterion, where it is %s; say what you could not verify. At most fifteen lines.\n", met)
 	} else {
 		b.WriteString("\nWhen you are done, reply with a summary of what you changed, at most ten lines.\n")
 	}
@@ -135,6 +152,15 @@ func ReviewPrompt(job Job, ws Workspace) string {
 	}
 	writeGuide(&b, ws, RoleReview)
 	writeRelated(&b, ws)
+	check := strings.Join(job.CheckCommand, " ")
+	// A gated change may touch only its allowed paths, so it can add no tests:
+	// the reviewer asks for none.
+	gated := len(job.AllowedPaths) > 0
+	hasTests, andTests, whereMet, untested := ", and has tests for its behaviour", " and its tests", "tested",
+		"behaviour without tests, "
+	if gated {
+		hasTests, andTests, whereMet, untested = "", "", "met", ""
+	}
 	fmt.Fprintf(&b, `
 The change is on the current branch, %[1]s. See it with: git diff origin/%[2]s...HEAD
 Read AGENTS.md and docs/style/ for the rules the code must follow. You may read
@@ -142,38 +168,40 @@ and run anything in the repository, including %[3]q, but do not change files.
 
 Approve only if you would merge the change as it is:
 - it achieves the goal completely, with nothing stubbed or left out;
-- it is correct, handles empty and bad input, and has tests for its behaviour;
+- it is correct, handles empty and bad input%[4]s;
 - it follows AGENTS.md and the style digests;
 - it fits what the application is for.
-`, job.Branch, job.Base, strings.Join(job.CheckCommand, " "))
+`, job.Branch, job.Base, check, hasTests)
 	if job.Issue > 0 {
-		b.WriteString(`
-Check each acceptance criterion of the issue, one by one, against the code and its
-tests. In the summary, list every criterion as met or not met, with where it is
-tested. An unmet criterion is a required change.
-`)
-	}
-	if len(job.AllowedPaths) > 0 {
 		fmt.Fprintf(&b, `
-This pull request carries a Standard change: it may change only %s. Require
-changes unless all three hold:
-- it weakens no check, and turns none off;
-- it works with this change alone, without another branch;
+Check each acceptance criterion of the issue, one by one, against the code%s.
+In the summary, list every criterion as met or not met, with where it is %s.
+An unmet criterion is a required change.
+`, andTests, whereMet)
+	}
+	if gated {
+		fmt.Fprintf(&b, `
+This pull request carries a Standard change: it may change only %[1]s, so do
+not require tests, code or docs anywhere else, whatever a guide says. %[2]q passing
+with the change, and these three checks, decide. Require changes unless all three hold:
+- it weakens no check: no target, test, lint rule or CI job removed or skipped;
+- %[3]s works with this change alone, without another branch;
 - it does no more than its issue asks.
-`, strings.Join(job.AllowedPaths, ", "))
+`, strings.Join(job.AllowedPaths, ", "), check, job.Base)
 	} else {
 		fmt.Fprintf(&b, `
 Protected files: %s. Changes to them come through a Standard change, a separate
 Task, so do not require them in this pull request.
 `, strings.Join(protectedList(job), ", "))
 	}
-	b.WriteString(`
+	fmt.Fprintf(&b, `
 Report every required change now: each round is reviewed afresh, and a change
 found late costs a whole round. Require changes only for what would ship a
 defect: the goal not met, a bug or crash, lost data, a privacy or security gap,
-behaviour without tests, or a rule broken in a way users or maintainers would
-notice. Put smaller points after "Non-blocking:" in the summary and approve.
-
+%sor a rule broken in a way users or maintainers would notice. Put smaller
+points after "Non-blocking:" in the summary and approve.
+`, untested)
+	b.WriteString(`
 Work worth doing later that is outside this change can go in "followUps": up to
 three, each a title and a few sentences a person can turn into an issue. Never
 use a follow-up for something this change must fix.

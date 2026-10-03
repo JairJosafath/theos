@@ -151,7 +151,10 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    refused. CI still pending: it
    waits until the review run ends, then refuses (reason `GatedMergeRefused`); no
    reviewer run is spent on a CI wait. A pull request too large to list (1000+
-   files) is refused too. The gated implementer's prompt overrides old guides:
+   files) is refused too. A gated change may touch only its allowed paths, so
+   neither its implementer nor its reviewer is asked for tests; the check
+   command passing and the reviewer's three checks decide. The gated
+   implementer's prompt overrides old guides:
    Containers on Standard v1.0.0 have guides that say "stop", and
    `flutter-standard` ships none and its `AGENTS.md` says "Leave .devcontainer/,
    .c4factory.yaml and .gitea/ alone"; the prompt says to follow it instead. Only
