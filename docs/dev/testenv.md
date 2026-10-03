@@ -61,14 +61,18 @@ with the token from the git credential helper.
 ```bash
 hack/lib/github.sh pick            # the issue to work next
 hack/lib/github.sh show 14         # an issue, its newest handoff comment and what came after
+hack/lib/github.sh take 14         # claim it for this checkout; prints the agent's name and branch
+hack/lib/github.sh claims          # who holds which issue, with heartbeat age and branch
 hack/lib/github.sh labels          # create the status/priority/kind/source labels (safe to repeat)
 RELAY_DRY_RUN=1 hack/relay.sh      # the issue and prompt the next headless session would get
 hack/relay.sh --now                # headless sessions one after another, overnight (billed)
 touch .relay/stop                  # stop the relay after the current session
 ```
 
-The relay picks an open `status/in-progress` issue, else the oldest
-`status/ready` + `priority/urgent` one, else the oldest `status/ready` one, and
+The relay picks the oldest `status/in-progress` issue nobody holds, else the
+oldest `status/ready` + `priority/urgent` one, else the oldest `status/ready`
+one, skipping issues with a live claim or an open `Depends on #M`, and claims
+it (see [docs/plans/parallel-agents.md](../plans/parallel-agents.md)). It
 stops when a session leaves no handoff comment and doesn't close the issue or set
 `status/needs-human`. With nothing ready it runs `hack/evaluate.sh` at most every
 6 hours, then picks once more. After each session it runs `make backup-releases`

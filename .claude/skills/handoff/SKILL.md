@@ -29,10 +29,15 @@ commands). It reads the token from the git credential helper and never prints it
 
 1. `hack/lib/github.sh flush` posts any handoff kept in `.relay/` while GitHub
    was away.
-2. No issue named? `hack/lib/github.sh pick`: the open in-progress issue, else
-   the oldest ready + urgent one, else the oldest ready one.
-3. `hack/lib/github.sh take N` swaps it to in-progress and comments that a
-   session took it. `hack/relay.sh` has already done this for its sessions.
+2. No issue named? `hack/lib/github.sh pick`: the oldest in-progress issue
+   nobody holds, else the oldest ready + urgent one, else the oldest ready one.
+   It skips issues another agent claims and issues whose `Depends on #M` is open.
+3. `hack/lib/github.sh take N` claims it for this checkout (a comment naming
+   you, e.g. `otter-23`, your host, branch and session) and swaps it to
+   in-progress; it prints your name and branch. Exit 4: another agent holds it,
+   so pick again. `hack/relay.sh` has already done this for its sessions.
+   `handoff`, `close` and `status N needs-human` release the claim;
+   `hack/lib/github.sh claims` shows who holds what.
 4. `hack/lib/github.sh show N` prints the issue, its newest handoff comment and
    the comments after it (the user may have steered there). Check "Where it
    stands" against `git log` and the cluster, then do the first next step.

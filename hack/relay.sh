@@ -6,9 +6,10 @@
 # skill); hack/lib/github.sh has the GitHub helpers. Product work stays in
 # Gitea, where the Crews work it.
 #
-# Each round picks an issue: an open status/in-progress one (continue it), else
-# the oldest status/ready + priority/urgent one, else the oldest status/ready
-# one. With nothing ready, hack/evaluate.sh (if present) runs at most once every
+# Each round picks an issue (hack/lib/github.sh pick: an in-progress one nobody
+# holds, else the oldest ready + urgent one, else the oldest ready one) and
+# claims it (take); when another agent claims it first, it picks again, up to 5
+# times. With nothing ready, hack/evaluate.sh (if present) runs at most once every
 # 6 hours to file issues; the relay picks once more and stops if there is still
 # nothing. After each session it runs `make backup-releases` if that target exists.
 #
@@ -255,10 +256,8 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   [ "$rc" = 0 ] || { log "could not ask GitHub for the next issue; stopping"; break; }
 
   id=$(cat /proc/sys/kernel/random/uuid)
-  who="Relay session $i (\`claude --resume $id\`), started $(date -u +%Y-%m-%dT%H:%MZ) at HEAD $(git rev-parse --short HEAD) on $(git branch --show-current),"
   if [ -n "$DRY_RUN" ]; then
-    log "would take #$ISSUE ($HOW): $TITLE, $URL"
-    log "would comment on #$ISSUE: $who $([ "$HOW" = in-progress ] && echo continues || echo took) ..."
+    log "would claim #$ISSUE ($HOW) for session $id: $TITLE, $URL"
     log "would start session $i: claude -p --permission-mode auto --model opus --session-id $id, with this prompt:"
     echo "-----"
     prompt "$ISSUE" "$TITLE" "$URL" "$HOW"
@@ -267,10 +266,18 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
     exit 0
   fi
 
+  for try in 1 2 3 4 5; do
+    claim=$(C4_SESSION_ID=$id gh_take "$ISSUE" 2>>"$LOG")
+    rc=$?
+    [ "$rc" = 4 ] || break
+    log "#$ISSUE is claimed by another agent (try $try); picking again"
+    pick || break
+  done
+  [ "$rc" = 0 ] || { log "could not claim an issue (exit $rc); stopping"; break; }
+  IFS=$'\t' read -r name branch <<<"$claim"
   before=$(handoff_id "$ISSUE") || { log "could not read #$ISSUE's handoffs; stopping"; break; }
-  gh_take "$ISSUE" "$who" 2>>"$LOG" || { log "could not take #$ISSUE; stopping"; break; }
   out="$DIR/session-$i-$(date +%Y%m%d-%H%M%S)"
-  log "session $i start: id $id, #$ISSUE ($HOW) $TITLE, HEAD $(git rev-parse --short HEAD)"
+  log "session $i start: id $id, $name on #$ISSUE ($HOW) $TITLE, branch $branch, HEAD $(git rev-parse --short HEAD)"
   t0=$(date +%s)
   timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
     --session-id "$id" --output-format json "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW")" \
