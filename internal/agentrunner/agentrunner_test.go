@@ -874,7 +874,9 @@ func TestStandardChangePrompts(t *testing.T) {
 		{"review issue", ReviewPrompt(issue, Workspace{}), []string{"Makefile", "a Standard change",
 			"has tests for its behaviour", "where it is tested", "behaviour without tests"}, []string{"weakens no check"}},
 		{"review gated", ReviewPrompt(gated, Workspace{}), []string{"weakens no check", "works with this change alone",
-			"no more than its issue asks", "do not require tests", `"make check" passing with the change`},
+			"no more than its issue asks", "do not require tests", `"make check" passing with the change`,
+			"The proposal branch named in the issue was only the starting point", "is never merged",
+			"Judge task/x alone", "never ask for the proposal branch to be changed"},
 			[]string{"has tests for its behaviour", "where it is tested", "behaviour without tests"}},
 	}
 	for _, c := range cases {
