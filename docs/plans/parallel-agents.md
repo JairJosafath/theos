@@ -159,3 +159,10 @@ Each step is one pull request to main and leaves the single-relay flow working.
   three or more ready issues. No issue is taken twice, `claims` shows each with
   a fresh heartbeat, and killing a worker hands its issue to another after the
   TTL. The log and the `claims` output are saved in `docs/screenshots/`.
+- Step 5: a relay with `C4_CLUSTER=none` takes only issues without
+  `needs/cluster` while the cluster device works one; an issue it hands back
+  with the label is finished on the cluster device; two checkouts on one device
+  never both hold a `needs/cluster` issue; and the light devcontainer builds
+  and passes `make check`. Evidence:
+  `docs/screenshots/parallel-agents-lite-device.md` and
+  `docs/screenshots/parallel-agents-cluster-device.txt`.
