@@ -197,10 +197,13 @@ func TestAgentUsername(t *testing.T) {
 }
 
 func TestSandboxName(t *testing.T) {
-	if got := SandboxName("add-crop", 2, RoleReviewer, 1); got != "add-crop-r2-review-a1" {
+	if got := SandboxName("add-crop", 2, RoleReviewer, 1, 0); got != "add-crop-r2-review-a1" {
 		t.Errorf("SandboxName() = %q", got)
 	}
-	long := SandboxName(strings.Repeat("x", 80), 10, RoleImplementer, 0)
+	if got := SandboxName("add-crop", 1, RoleImplementer, 1, 2); got != "add-crop-r1-implement-x2" {
+		t.Errorf("SandboxName() of a rerun = %q", got)
+	}
+	long := SandboxName(strings.Repeat("x", 80), 10, RoleImplementer, 0, 2)
 	if len(long) > 63 {
 		t.Errorf("SandboxName() = %q is longer than 63", long)
 	}
@@ -355,6 +358,49 @@ func TestCheckFailures(t *testing.T) {
 	}
 	if long := CheckFailures(strings.Repeat("error • x\n", 2000)); len(long) > maxCheckExcerpt+10 {
 		t.Errorf("CheckFailures() of a long log = %d bytes", len(long))
+	}
+}
+
+func TestNextTaskStepInterrupted(t *testing.T) {
+	killed := RunState{Started: true, Done: true, Interrupted: true,
+		Result: &RunResult{Error: "claude failed: signal: killed"}}
+	evicted := RunState{Started: true, Done: true, Interrupted: true, Failure: "Evicted"}
+	oom := RunState{Started: true, Done: true, Failure: "OOMKilled (exit code 137)"}
+	tests := []struct {
+		name    string
+		facts   TaskFacts
+		want    TaskAction
+		message string
+	}{
+		{"a killed implementer reruns its round", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: killed}, ActionRerun,
+			"The run was interrupted (claude failed: signal: killed); round 1 runs again (rerun 1 of 2)"},
+		{"even in the last round", TaskFacts{Phase: TaskImplementing, Round: 3, MaxRounds: 3, Reruns: 1,
+			Run: evicted}, ActionRerun, "(Evicted); round 3 runs again (rerun 2 of 2)"},
+		{"an interrupted reviewer reruns too", TaskFacts{Phase: TaskReviewing, Round: 2, MaxRounds: 3,
+			Run: evicted}, ActionRerun, "round 2 runs again"},
+		{"past the cap the round is spent", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Reruns: 2,
+			Run: killed}, ActionRetry, "claude failed: signal: killed"},
+		{"past the cap the reviewer runs again", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Reruns: 2,
+			Run: evicted}, ActionRetryReview, "Evicted"},
+		{"an out-of-memory kill is the agent's", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: oom}, ActionRetry, "OOMKilled"},
+		{"a pushed commit stands though the node then shut down", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Run: RunState{Started: true, Done: true, Interrupted: true,
+				Result: &RunResult{Commit: "abc1234"}}}, ActionOpenPR, ""},
+		{"so does a verdict", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: RunState{Started: true,
+			Done: true, Interrupted: true, Result: &RunResult{Verdict: VerdictApprove}}}, ActionMerge, ""},
+		{"an unavailable agent waits", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: RunState{Started: true, Done: true, Interrupted: true,
+				Result: &RunResult{Error: "usage limit reached", Unavailable: true}}}, ActionAgentUnavailable, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextTaskStep(tt.facts)
+			if got.Action != tt.want || !strings.Contains(got.Message, tt.message) {
+				t.Errorf("NextTaskStep() = %+v, want %s with %q", got, tt.want, tt.message)
+			}
+		})
 	}
 }
 

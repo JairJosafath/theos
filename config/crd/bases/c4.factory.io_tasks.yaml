@@ -358,6 +358,13 @@ spec:
                 type: integer
               pullRequestURL:
                 type: string
+              reruns:
+                description: |-
+                  reruns counts the runs in this round that the infrastructure interrupted
+                  (a node shutdown, an eviction, a preemption) and that ran again without
+                  spending the round.
+                format: int32
+                type: integer
               review:
                 description: review is the reviewer's latest verdict.
                 properties:

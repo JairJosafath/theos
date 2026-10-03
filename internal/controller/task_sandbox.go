@@ -246,6 +246,10 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 	}
 	state.Done = true
 	state.Failure = pod.Status.Reason
+	state.Interrupted = podDisrupted(&pod)
+	// Its own deadline or its sandbox's shutdown time ends a run that took too
+	// long: the run's failure, though c4agent sees the same SIGTERM.
+	ownLimit := pod.Status.Reason == "DeadlineExceeded" || sandboxExpired(sandbox)
 	for _, cs := range pod.Status.ContainerStatuses {
 		term := cs.State.Terminated
 		if cs.Name != "agent" || term == nil {
@@ -258,17 +262,39 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 				Proposal: result.Proposal, Empty: result.Empty,
 				FollowUps: result.FollowUps, Unavailable: result.Unavailable,
 			}
+			state.Interrupted = (state.Interrupted || result.Interrupted) && !ownLimit
 			if result.RetryAt != nil {
 				state.Result.RetryAt = *result.RetryAt
 			}
 			return state, nil
 		}
 		state.Failure = term.Reason
+		// A container the kubelet lost across a node restart.
+		state.Interrupted = state.Interrupted || term.Reason == "ContainerStatusUnknown"
+		if term.Reason == "OOMKilled" || ownLimit {
+			state.Interrupted = false
+		}
 		if term.ExitCode != 0 {
 			state.Failure += " (exit code " + strconv.Itoa(int(term.ExitCode)) + ")"
 		}
 	}
 	return state, nil
+}
+
+// podDisrupted reports whether the infrastructure ended the pod: a node
+// shutdown, an eviction or a preemption, which Kubernetes marks with the
+// DisruptionTarget condition or the pod's reason.
+func podDisrupted(pod *corev1.Pod) bool {
+	switch pod.Status.Reason {
+	case "Evicted", "Preempting", "Terminated", "NodeShutdown", "Shutdown", "NodeLost":
+		return true
+	}
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.DisruptionTarget && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 func sandboxExpired(sandbox *unstructured.Unstructured) bool {

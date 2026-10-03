@@ -172,6 +172,12 @@ type TaskStatus struct {
 	// +optional
 	ReviewAttempts int32 `json:"reviewAttempts,omitempty"`
 
+	// reruns counts the runs in this round that the infrastructure interrupted
+	// (a node shutdown, an eviction, a preemption) and that ran again without
+	// spending the round.
+	// +optional
+	Reruns int32 `json:"reruns,omitempty"`
+
 	// issueTitle is the title of spec.issue when the Task last read it, and
 	// issueURL where to find the issue.
 	// +optional

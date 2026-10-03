@@ -79,7 +79,16 @@ type RunState struct {
 	Result *RunResult
 	// Failure says why a pod ended without a result, such as OOMKilled.
 	Failure string
+	// Interrupted means the infrastructure ended the run (a node shutdown or
+	// restart, an eviction, a preemption), not the agent: an out-of-memory kill
+	// is the agent's.
+	Interrupted bool
 }
+
+// MaxReruns is how often a round's runs are rerun for free after the
+// infrastructure interrupted them. The cap keeps a run that is interrupted every
+// time, which may be the run's own doing, from looping forever.
+const MaxReruns = 2
 
 // TaskFacts is everything the next step of a Task depends on.
 type TaskFacts struct {
@@ -102,6 +111,8 @@ type TaskFacts struct {
 	ChecksLog string
 	// ReviewAttempts counts reviewer runs without a verdict in this round.
 	ReviewAttempts int
+	// Reruns counts the free reruns of interrupted runs in this round.
+	Reruns int
 	// InPhase is how long the Task has been in its current phase.
 	InPhase time.Duration
 	// NoFreeSlot means the operator already runs as many agent sandboxes as it may.
@@ -259,6 +270,9 @@ const (
 	ActionResolveConflicts TaskAction = "ResolveConflicts"
 	// ActionAgentUnavailable ends the run and tries the same step again later.
 	ActionAgentUnavailable TaskAction = "AgentUnavailable"
+	// ActionRerun ends a run the infrastructure interrupted and runs the same
+	// step again, in the same round.
+	ActionRerun TaskAction = "Rerun"
 	// ActionRefuseMerge fails a Standard change whose gated merge is refused, and
 	// hands its issue back.
 	ActionRefuseMerge TaskAction = "RefuseMerge"
@@ -309,19 +323,7 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		return TaskStep{Action: ActionStartImplement, Message: "Starting round 1"}
 
 	case TaskImplementing:
-		switch {
-		case !f.Run.Started:
-			return TaskStep{Action: ActionStartImplement, Message: fmt.Sprintf("Starting round %d", f.Round)}
-		case !f.Run.Done:
-			return TaskStep{Action: ActionWait, Message: fmt.Sprintf("The agent is working on round %d", f.Round)}
-		case f.Run.Result == nil:
-			return roundFailed(f, "The agent's sandbox ended without a result: "+orUnknown(f.Run.Failure))
-		case f.Run.Result.Unavailable:
-			return agentUnavailable(f)
-		case f.Run.Result.Error != "":
-			return roundFailed(f, f.Run.Result.Error)
-		}
-		return implementedStep(f)
+		return implementingStep(f)
 
 	case TaskBlocked:
 		return blockedStep(f)
@@ -346,28 +348,54 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		return TaskStep{Action: ActionWait, Message: "Waiting for checks"}
 
 	case TaskReviewing:
-		switch {
-		case !f.Run.Started:
-			return TaskStep{Action: ActionStartReview, Message: "Starting the review"}
-		case !f.Run.Done:
-			return TaskStep{Action: ActionWait, Message: "The reviewer is reviewing"}
-		case f.Run.Result != nil && f.Run.Result.Unavailable:
-			return agentUnavailable(f)
-		}
-		if f.Run.Result == nil || f.Run.Result.Error != "" || f.Run.Result.Verdict == "" {
-			return noVerdictStep(f)
-		}
-		if f.Run.Result.Verdict == VerdictApprove && f.Conflicted {
-			// Not the agent's fault: another change merged first. It costs no round.
-			return TaskStep{Action: ActionResolveConflicts, Feedback: ConflictFeedback, Message: fmt.Sprintf(
-				"Approved, but main moved and the pull request conflicts with it; round %d resolves them", f.Round)}
-		}
-		if f.Run.Result.Verdict == VerdictApprove {
-			return TaskStep{Action: ActionMerge, Message: "Approved; merging"}
-		}
-		return roundFailed(f, "The reviewer asked for changes:\n"+f.Run.Result.Summary)
+		return reviewingStep(f)
 	}
 	return TaskStep{Action: ActionNone}
+}
+
+// implementingStep decides what follows in the Implementing phase.
+func implementingStep(f TaskFacts) TaskStep {
+	switch {
+	case !f.Run.Started:
+		return TaskStep{Action: ActionStartImplement, Message: fmt.Sprintf("Starting round %d", f.Round)}
+	case !f.Run.Done:
+		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("The agent is working on round %d", f.Round)}
+	case interrupted(f.Run) && f.Reruns < MaxReruns:
+		return rerun(f)
+	case f.Run.Result == nil:
+		return roundFailed(f, "The agent's sandbox ended without a result: "+orUnknown(f.Run.Failure))
+	case f.Run.Result.Unavailable:
+		return agentUnavailable(f)
+	case f.Run.Result.Error != "":
+		return roundFailed(f, f.Run.Result.Error)
+	}
+	return implementedStep(f)
+}
+
+// reviewingStep decides what follows in the Reviewing phase.
+func reviewingStep(f TaskFacts) TaskStep {
+	switch {
+	case !f.Run.Started:
+		return TaskStep{Action: ActionStartReview, Message: "Starting the review"}
+	case !f.Run.Done:
+		return TaskStep{Action: ActionWait, Message: "The reviewer is reviewing"}
+	case interrupted(f.Run) && f.Reruns < MaxReruns:
+		return rerun(f)
+	case f.Run.Result != nil && f.Run.Result.Unavailable:
+		return agentUnavailable(f)
+	}
+	if f.Run.Result == nil || f.Run.Result.Error != "" || f.Run.Result.Verdict == "" {
+		return noVerdictStep(f)
+	}
+	if f.Run.Result.Verdict == VerdictApprove && f.Conflicted {
+		// Not the agent's fault: another change merged first. It costs no round.
+		return TaskStep{Action: ActionResolveConflicts, Feedback: ConflictFeedback, Message: fmt.Sprintf(
+			"Approved, but main moved and the pull request conflicts with it; round %d resolves them", f.Round)}
+	}
+	if f.Run.Result.Verdict == VerdictApprove {
+		return TaskStep{Action: ActionMerge, Message: "Approved; merging"}
+	}
+	return roundFailed(f, "The reviewer asked for changes:\n"+f.Run.Result.Summary)
 }
 
 // noVerdictStep decides what follows a review run that ended without a verdict:
@@ -429,6 +457,24 @@ func blockedStep(f TaskFacts) TaskStep {
 func agentUnavailable(f TaskFacts) TaskStep {
 	return TaskStep{Action: ActionAgentUnavailable, RetryAt: f.Run.Result.RetryAt, Message: fmt.Sprintf(
 		"The agent is unavailable (%s); round %d waits for it", gist(f.Run.Result.Error), f.Round)}
+}
+
+// interrupted reports whether the infrastructure ended a run before it finished:
+// a run that reported its outcome, or an unavailable agent, is not rerun however
+// its pod ended.
+func interrupted(run RunState) bool {
+	return run.Interrupted && (run.Result == nil || run.Result.Error != "" && !run.Result.Unavailable)
+}
+
+// rerun runs the step of an interrupted run again, without spending the round.
+func rerun(f TaskFacts) TaskStep {
+	reason := f.Run.Failure
+	if f.Run.Result != nil {
+		reason = f.Run.Result.Error
+	}
+	return TaskStep{Action: ActionRerun, Message: fmt.Sprintf(
+		"The run was interrupted (%s); round %d runs again (rerun %d of %d)",
+		gist(orUnknown(reason)), f.Round, f.Reruns+1, MaxReruns)}
 }
 
 // roundFailed sends the Task into its next round with feedback, or fails it after
@@ -512,12 +558,17 @@ func AgentUsername(project, container string) string {
 	return strings.TrimRight(name[:maxUsername-len(suffix)], "-") + suffix
 }
 
-// SandboxName names the sandbox of one run: task, round, role and, for reviews,
-// the attempt. It fits a DNS label.
-func SandboxName(task string, round int, role string, attempt int) string {
+// SandboxName names the sandbox of one run: task, round, role, for reviews the
+// attempt, and the rerun after an interruption, if any. A rerun gets a name of
+// its own, so the sandbox it replaces, still being deleted, is never read as its
+// own. It fits a DNS label.
+func SandboxName(task string, round int, role string, attempt, rerun int) string {
 	suffix := "-r" + strconv.Itoa(round) + "-" + role
 	if role == RoleReviewer {
 		suffix += "-a" + strconv.Itoa(attempt)
+	}
+	if rerun > 0 {
+		suffix += "-x" + strconv.Itoa(rerun)
 	}
 	if len(task)+len(suffix) > 63 {
 		sum := sha256.Sum256([]byte(task))
