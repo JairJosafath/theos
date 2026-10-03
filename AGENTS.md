@@ -16,7 +16,7 @@ task. Read the rest when the task needs it:
 | change API types, reconcilers or log lines | [docs/dev/api-and-controllers.md](docs/dev/api-and-controllers.md) |
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
-| continue work someone left in flight | the open `status/in-progress` GitHub issue and its newest handoff comment (the `handoff` skill) |
+| take an issue, or continue work someone left in flight | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
 | evaluate how the factory runs | `hack/evaluate.sh`, the `factory-evaluator` skill |
 | work on a milestone | its plan in [docs/plans/](docs/plans/) and its results file |
 
@@ -90,8 +90,9 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   Finish one, including its "Done when" check in the Kind cluster, before starting the next.
 - **Test the rules where they live.** Table tests for `internal/model` and
   `internal/scaffold`, envtest for controllers, `make e2e` for the whole loop.
-- **Small pull requests to main.** Branch from an up-to-date main for each issue
-  or plan step (`<kind>/<short-name>`), open a pull request to main whose body
+- **Small pull requests to main.** One branch per issue or plan step, the one
+  `take` names (`<type>/<N>-<slug>`, from an up-to-date main), pushed after
+  every commit; open a pull request to main whose body
   says `Closes #N` for the GitHub issue it finishes, and merge it with a merge
   commit once its checks are green. No long-lived or stacked branches: each plan
   step lands on its own and leaves main working, with new behaviour off until
@@ -111,6 +112,13 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   `hack/lib/github.sh` reads and writes them. Product work stays in Gitea with
   the Crews.
 - **One issue, plan step or fix per session.** Start the next one fresh.
+- **Agents work in parallel.** Take an issue with `hack/lib/github.sh take N`
+  before working it; it names you (`otter-23`). Sign commits with an
+  `Agent: otter-23` trailer and say it in the pull request and handoff. One
+  agent per checkout: a second one on the device uses a git worktree. If the
+  heartbeat hook says your claim was taken over, push to `<branch>-<name>`,
+  comment that on the issue and stop. A step that waits on another issue says
+  `Depends on #M` in its body. The `handoff` skill has the details.
 - **Read on demand.** Open the docs in the table above when the task needs them,
   not up front. Read files in parts, not whole.
 - **Delegate broad searches** to a subagent; it returns the conclusion, not the
