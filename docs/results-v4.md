@@ -281,3 +281,35 @@ the linux-x64 one (#64). Both milestones are closed, and the source zips are in
 extension got a v0.2.1 milestone with #68 (bundle server v0.1.1) and #69 (version
 0.2.1 and a dated changelog, blocked by #68). The Crew started
 `vscode-extension-68` within a minute.
+
+**Ninth part, the releases caught up.** The extension's #68 and #69 each merged in
+one round, and a person tagged `v0.2.1` at `8190a01`: its release run attached the
+one linux-x64 `.vsix`, the milestone closed and the source zip went to `backups/`.
+On the server, Standard change #120 (the Makefile's `PLATFORMS` line) merged at
+08:28 (PR #122, `ab9ecc3`), but `cel-language-server-99-2` merged only at 17:21, in
+its first round (PR #124, `1cedb81`); its reviewer filed #125 (check that the
+opt-in platforms still cross-compile) under Later. The user settled the v0.2.0
+question with the recommended option: `v0.2.0` at `694db57`, which holds every
+v0.2.0 feature except #99, with #99 and #120 moved to v0.3.0. Its release run
+attached all six binaries, the last release to do so, and milestone v0.2.0 closed.
+At 18:26 a person tagged `v0.3.0` at `1cedb81`, #99's merge, so the tag holds v0.3.0's
+work and nothing of v0.4.0's. Its release run took about two minutes and attached
+only `cel-language-server_linux_amd64` and `SHA256SUMS`. Milestone v0.3.0 closed,
+and both new tags' source zips are in `backups/`.
+
+One rule held seven issues: an issue without an "Acceptance criteria" checklist
+goes to `needs-human` instead of to an agent. Six reviewer follow-ups that a person
+had moved from Later into the server's v0.4.0 were held, and so was the extension's
+#72 (bundle server v0.2.0, release v0.2.2), filed by a person with a plain
+description and held at 17:47. Each went on once a person wrote the checklist
+(factory #73 proposes catching it when the issue is written). The
+server Crew merged #18 at 17:59 (`ea774c9`) and had #20 in review by 18:10, with
+#65, #66 and #71 ready behind it. #72 got its checklist and a milestone v0.2.2 at
+18:28, and the extension Crew merged it in one round four minutes later (PR #73,
+`b7a3814`): version 0.2.2, `server.json` on v0.2.0, a dated changelog, with its
+reviewer checking that the bundled binary reports v0.2.0. A person tagged `v0.2.2`
+at `b7a3814`; its release run attached the one linux-x64 `.vsix`, and by 18:34 its
+milestone was closed and its source zip backed up. Users now get server v0.2.0
+through the extension, and v0.3.0 changes only how the server is packaged, so
+nothing reaches users late. The server's v0.4.0 goes on without a person until
+its tag.
