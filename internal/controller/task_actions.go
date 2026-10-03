@@ -290,7 +290,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		repoURL: repo.CloneURL, gitSecret: gitSecret, context: story.Text(), goal: goal,
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
 		protectedPaths: protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
-		workspaceMemory: r.WorkspaceMemory,
+		workspaceMemory: r.WorkspaceMemory, goCache: r.SandboxGoCache,
 	}, r.Scheme, r.now())
 	if err != nil {
 		return ctrl.Result{}, err

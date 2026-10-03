@@ -28,12 +28,16 @@ ENV GOTOOLCHAIN=local \
 
 # Warm the module and build caches with the Kubernetes CEL libraries CEL Lens
 # builds on. Cold, they take about 7 minutes and 3 GB to compile (half of it for
-# -race), and every agent sandbox starts cold; CI and agents only compile their
-# own packages on top. The cache layer is read-only to them: new entries go to
-# the container's own layer.
+# -race); CI and agents only compile their own packages on top. Pods don't
+# write here: c4-go-cache copies it into the node's caches once.
 COPY warm.go.txt /tmp/warm/main.go
 RUN cd /tmp/warm && go mod init warm >/dev/null 2>&1 \
  && go get k8s.io/apiserver@v0.37.0 k8s.io/apiextensions-apiserver@v0.37.0 k8s.io/client-go@v0.37.0 \
  && go build ./... && go build -race ./... && go vet ./... \
  && cd / && rm -rf /tmp/warm \
  && chmod -R a+rX /go/pkg/mod /root/.cache
+
+# Readies the build caches the Kind node keeps between pods, seeded from the
+# warm one above: agent sandboxes run it in an init container, the go runner on
+# start and hourly (docs/architecture.md, "Go build caches").
+COPY --chmod=0755 go-cache.sh /usr/local/bin/c4-go-cache

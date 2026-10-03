@@ -70,6 +70,10 @@ spec:
           # disk I/O, not CPU, was the limit, and moved it to memory; the sample
           # Agents cap CPU so one agent's tests can't take every core.
           - --max-agent-sandboxes=4
+          # Sandboxes share a Go build cache on the node, so a round, its reviewer
+          # and the next Task don't compile again what an earlier one did. CI's
+          # cache is a sibling no sandbox mounts (config/runner/go.yaml).
+          - --sandbox-go-cache=/var/cache/c4factory/go/sandbox
         image: controller:latest
         name: manager
         ports:

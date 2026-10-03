@@ -84,6 +84,9 @@ type TaskReconciler struct {
 	// WorkspaceMemory, when set, gives each sandbox a workspace in memory of up to
 	// this size instead of on the node's disk.
 	WorkspaceMemory *resource.Quantity
+	// SandboxGoCache, when set, is a directory on the node that sandboxes share as
+	// their Go build cache.
+	SandboxGoCache string
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create;update;patch;delete
