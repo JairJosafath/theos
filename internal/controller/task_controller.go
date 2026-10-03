@@ -51,6 +51,8 @@ const (
 const (
 	// defaultChecksRecheck: CI runs on the Git host, which doesn't call back.
 	defaultChecksRecheck = 15 * time.Second
+	// defaultGitTimeout: how long the operator waits on a Git host at a time.
+	defaultGitTimeout = 30 * time.Second
 	// taskSecretRecheck: Secrets are read uncached, so not watched.
 	taskSecretRecheck = 15 * time.Second
 	// slotRecheck: a Task waiting for a free agent slot looks again.
@@ -73,6 +75,9 @@ type TaskReconciler struct {
 	// StandardChangeRecheck is how often a Blocked Task looks at its Standard
 	// change; zero means a minute.
 	StandardChangeRecheck time.Duration
+	// GitTimeout is how long the operator waits on a Git host at a time; zero
+	// means 30 seconds.
+	GitTimeout time.Duration
 	// MaxSandboxes caps the agent sandboxes running at once, across all projects;
 	// zero means no cap. Agents and their checks are heavy.
 	MaxSandboxes int
@@ -248,7 +253,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		if err != nil {
 			return facts, err
 		}
-		gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 		defer cancel()
 		checks, err := provider.CombinedStatus(gitCtx, provider.Repository(container.Name), status.Commit)
 		if err != nil {
@@ -297,7 +302,7 @@ func (r *TaskReconciler) conflicted(ctx context.Context, container *c4v1alpha1.C
 	if err != nil {
 		return false, err
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
 	if err != nil {
@@ -445,6 +450,13 @@ func (r *TaskReconciler) gitRepo(ctx context.Context, container *c4v1alpha1.Cont
 		return nil, gitprovider.Repository{}, err
 	}
 	return provider, provider.Repository(container.Name), nil
+}
+
+func (r *TaskReconciler) gitTimeout() time.Duration {
+	if r.GitTimeout > 0 {
+		return r.GitTimeout
+	}
+	return defaultGitTimeout
 }
 
 func (r *TaskReconciler) checksRecheck() time.Duration {

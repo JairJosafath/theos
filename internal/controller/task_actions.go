@@ -192,7 +192,7 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 	if err != nil || run.Result == nil {
 		return ctrl.Result{}, fmt.Errorf("reading the implement result of %s: %v", status.Sandbox, err)
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	pr, err := provider.OpenPullRequest(gitCtx, repo, status.Branch, gitprovider.DefaultBranch,
 		pullTitle(task, status), pullBody(task, agents, status.Round, run.Result.Summary))
@@ -231,7 +231,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	}
 	// Bring the Git host's rules up to date before an agent gets access: older
 	// repositories were protected with fewer of them.
-	protectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	protectCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	if err := protectRepository(protectCtx, r.Client, provider, repo, container); err != nil {
 		return ctrl.Result{}, err
@@ -309,7 +309,7 @@ func (r *TaskReconciler) ensureAgentGit(ctx context.Context, container *c4v1alph
 		return "", err
 	}
 	found := err == nil
-	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	creds, err := provider.EnsureAgentAccess(gitCtx, repo, model.AgentUsername(container.Namespace, container.Name))
 	if err != nil {
@@ -347,7 +347,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 	}
 	reviewRun := r.reviewRun(ctx, task, status)
 	status.Review = r.reviewFrom(ctx, task, status)
-	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
 	if err != nil {
@@ -392,7 +392,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 		if reviewRun != nil {
 			followUps = reviewRun.FollowUps
 		}
-		status.FollowUps = r.closeIssue(gitCtx, provider, repo, task, status, agents.reviewer, followUps)
+		status.FollowUps = r.closeIssue(ctx, provider, repo, task, status, agents.reviewer, followUps)
 	}
 	r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, "Merged", step.Message)
 	logf.FromContext(ctx).Info("Merged Task", "url", status.PullRequestURL, "round", status.Round)
@@ -409,7 +409,7 @@ func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider gitprovider
 		return r.gatedMerge(ctx, provider, repo, task, status, container, reviewer)
 	}
 	r.approve(ctx, task, status, container, reviewer)
-	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	return "", provider.MergePullRequest(gitCtx, repo, int(status.PullRequest), status.Commit,
 		pullTitle(task, status), mergeMessage(task, status, container))
@@ -493,7 +493,7 @@ func (r *TaskReconciler) comment(ctx context.Context, task *c4v1alpha1.Task, sta
 	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err == nil {
-		gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 		err = provider.CommentPullRequest(gitCtx, repo, int(status.PullRequest), body)
 		cancel()
 	}

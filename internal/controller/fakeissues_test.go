@@ -46,6 +46,9 @@ type fakeIssueState struct {
 	labels     map[string][]string     // owner/name
 	milestones map[string][]string     // owner/name, titles by ID - 1
 	reviews    map[string][]fakeReview // owner/name#number
+	// late makes CreateIssue file the issue but answer only once the caller has
+	// given up, as a host under load does.
+	late bool
 }
 
 func (g *fakeGit) issueState() *fakeIssueState {
@@ -247,7 +250,10 @@ func (p *fakeProvider) AddIssueLabel(_ context.Context, repo gitprovider.Reposit
 	return nil
 }
 
-func (p *fakeProvider) RemoveIssueLabel(_ context.Context, repo gitprovider.Repository, number int, label string) error {
+func (p *fakeProvider) RemoveIssueLabel(ctx context.Context, repo gitprovider.Repository, number int, label string) error {
+	if err := ctx.Err(); err != nil {
+		return err // a request on a spent context fails, as over HTTP
+	}
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	i, err := p.issueOf(repo, number)
@@ -258,7 +264,10 @@ func (p *fakeProvider) RemoveIssueLabel(_ context.Context, repo gitprovider.Repo
 	return nil
 }
 
-func (p *fakeProvider) CommentIssue(_ context.Context, repo gitprovider.Repository, number int, body string) error {
+func (p *fakeProvider) CommentIssue(ctx context.Context, repo gitprovider.Repository, number int, body string) error {
+	if err := ctx.Err(); err != nil {
+		return err // a request on a spent context fails, as over HTTP
+	}
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	i, err := p.issueOf(repo, number)
@@ -269,7 +278,10 @@ func (p *fakeProvider) CommentIssue(_ context.Context, repo gitprovider.Reposito
 	return nil
 }
 
-func (p *fakeProvider) CloseIssue(_ context.Context, repo gitprovider.Repository, number int) error {
+func (p *fakeProvider) CloseIssue(ctx context.Context, repo gitprovider.Repository, number int) error {
+	if err := ctx.Err(); err != nil {
+		return err // a request on a spent context fails, as over HTTP
+	}
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	i, err := p.issueOf(repo, number)
@@ -291,7 +303,7 @@ func (p *fakeProvider) AssignIssue(_ context.Context, repo gitprovider.Repositor
 	return nil
 }
 
-func (p *fakeProvider) CreateIssue(_ context.Context, repo gitprovider.Repository, title, body string,
+func (p *fakeProvider) CreateIssue(ctx context.Context, repo gitprovider.Repository, title, body string,
 	labels []string, milestone int64) (gitprovider.Issue, error) {
 	p.git.mu.Lock()
 	s := p.git.issueState()
@@ -314,7 +326,12 @@ func (p *fakeProvider) CreateIssue(_ context.Context, repo gitprovider.Repositor
 	n := p.git.addIssue(repo.Owner, repo.Name, title, body, labels)
 	p.git.mu.Lock()
 	s.find(key, n).milestone = milestoneTitle
+	late := s.late
 	p.git.mu.Unlock()
+	if late {
+		<-ctx.Done()
+		return gitprovider.Issue{}, ctx.Err()
+	}
 	return p.GetIssue(context.Background(), repo, n)
 }
 

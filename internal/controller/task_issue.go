@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -68,7 +67,7 @@ func (r *TaskReconciler) review(ctx context.Context, task *c4v1alpha1.Task, stat
 	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err == nil {
-		gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 		body := fmt.Sprintf("Review by %s, round %d.\n\n%s", agentName(reviewer), status.Round, summary)
 		err = provider.ReviewPullRequest(gitCtx, repo, int(status.PullRequest), status.Commit, event, body)
 		cancel()
@@ -86,18 +85,26 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Pr
 	var notes []error
 	var milestone int64
 	if len(followUps) > 0 {
-		var err error
-		milestone, err = provider.EnsureMilestone(ctx, repo, model.FollowUpMilestone, model.FollowUpMilestoneDescription)
+		err := r.gitCall(ctx, func(ctx context.Context) (err error) {
+			milestone, err = provider.EnsureMilestone(ctx, repo, model.FollowUpMilestone, model.FollowUpMilestoneDescription)
+			return err
+		})
 		if err != nil {
 			milestone = 0 // file them without it
 		}
-		notes = append(notes, provider.EnsureLabels(ctx, repo, issueLabels()), err)
+		notes = append(notes, r.gitCall(ctx, func(ctx context.Context) error {
+			return provider.EnsureLabels(ctx, repo, issueLabels())
+		}), err)
 	}
 	for _, f := range followUps {
 		body := fmt.Sprintf("%s\n\n---\nSuggested by %s while reviewing %s for #%d (Task `%s`). To have agents do it, "+
 			"add an \"Acceptance criteria\" checklist and label it %s.", strings.TrimSpace(f.Body), agentName(reviewer),
 			status.PullRequestURL, n, task.Name, model.LabelReady)
-		issue, err := provider.CreateIssue(ctx, repo, f.Title, body, []string{model.LabelProposed}, milestone)
+		var issue gitprovider.Issue
+		err := r.gitCall(ctx, func(ctx context.Context) (err error) {
+			issue, err = provider.CreateIssue(ctx, repo, f.Title, body, []string{model.LabelProposed}, milestone)
+			return err
+		})
 		notes = append(notes, err)
 		if err == nil {
 			filed = append(filed, issue.URL)
@@ -107,19 +114,21 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Pr
 	if len(filed) > 0 {
 		comment += "\n\nThe reviewer suggested follow-ups, filed as " + model.LabelProposed + ":\n- " + strings.Join(filed, "\n- ")
 	}
-	notes = append(notes, endIssue(ctx, provider, repo, n, comment)...)
+	notes = append(notes, r.endIssue(ctx, provider, repo, n, comment)...)
 	logNotes(ctx, task, notes)
 	return filed
 }
 
 // endIssue says on an issue how its Task ended, takes it out of progress and
 // closes it. It returns the notes' errors.
-func endIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, n int,
+func (r *TaskReconciler) endIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, n int,
 	comment string) []error {
 	return []error{
-		provider.CommentIssue(ctx, repo, n, comment),
-		provider.RemoveIssueLabel(ctx, repo, n, model.LabelInProgress),
-		provider.CloseIssue(ctx, repo, n),
+		r.gitCall(ctx, func(ctx context.Context) error { return provider.CommentIssue(ctx, repo, n, comment) }),
+		r.gitCall(ctx, func(ctx context.Context) error {
+			return provider.RemoveIssueLabel(ctx, repo, n, model.LabelInProgress)
+		}),
+		r.gitCall(ctx, func(ctx context.Context) error { return provider.CloseIssue(ctx, repo, n) }),
 	}
 }
 
@@ -133,16 +142,22 @@ func (r *TaskReconciler) handBack(ctx context.Context, task *c4v1alpha1.Task, co
 		logNotes(ctx, task, []error{err})
 		return
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 	n := int(task.Spec.Issue)
+	comment := fmt.Sprintf("Task `%s` failed: %s\n\nTo try again, clarify or split the issue and label it %s; "+
+		"a Crew tries an issue up to %d times.", task.Name, why, model.LabelReady, model.MaxIssueAttempts)
 	logNotes(ctx, task, []error{
-		provider.EnsureLabels(gitCtx, repo, issueLabels()),
-		provider.AddIssueLabel(gitCtx, repo, n, model.LabelNeedsHuman),
-		provider.CommentIssue(gitCtx, repo, n, fmt.Sprintf("Task `%s` failed: %s\n\nTo try again, clarify or split "+
-			"the issue and label it %s; a Crew tries an issue up to %d times.", task.Name, why, model.LabelReady,
-			model.MaxIssueAttempts)),
+		r.gitCall(ctx, func(ctx context.Context) error { return provider.EnsureLabels(ctx, repo, issueLabels()) }),
+		r.gitCall(ctx, func(ctx context.Context) error { return provider.AddIssueLabel(ctx, repo, n, model.LabelNeedsHuman) }),
+		r.gitCall(ctx, func(ctx context.Context) error { return provider.CommentIssue(ctx, repo, n, comment) }),
 	})
+}
+
+// gitCall makes one call to the Git host in its own time, so that a slow call
+// doesn't use up the time of the calls after it.
+func (r *TaskReconciler) gitCall(ctx context.Context, call func(context.Context) error) error {
+	callCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	return call(callCtx)
 }
 
 // issueLabels are the factory's issue labels, for the Git host.

@@ -78,7 +78,7 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, sta
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	waiting, err := provider.GetIssue(gitCtx, repo, n)
 	if err != nil {
@@ -213,7 +213,7 @@ func (r *TaskReconciler) changeFacts(ctx context.Context, task *c4v1alpha1.Task,
 	if err != nil {
 		return facts, err
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	issue, err := provider.GetIssue(gitCtx, repo, facts.Issue)
 	if err != nil {
@@ -237,7 +237,7 @@ func (r *TaskReconciler) resume(ctx context.Context, task *c4v1alpha1.Task, stat
 	change := status.StandardChange
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err == nil {
-		gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 		err = provider.CommentIssue(gitCtx, repo, int(task.Spec.Issue), fmt.Sprintf(
 			"Standard change #%d merged; Task `%s` goes on with round %d.", change.Issue, task.Name, status.Round))
 		cancel()
@@ -265,14 +265,14 @@ func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1alp
 	if err := r.endRun(ctx, task, status); err != nil {
 		return err
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	var notes []error
 	if status.PullRequest > 0 {
 		notes = append(notes, provider.ClosePullRequest(gitCtx, repo, int(status.PullRequest)))
 	}
 	change := status.StandardChange
-	notes = append(notes, endIssue(gitCtx, provider, repo, int(task.Spec.Issue), fmt.Sprintf(
+	notes = append(notes, r.endIssue(ctx, provider, repo, int(task.Spec.Issue), fmt.Sprintf(
 		"Done by Standard change #%d (%s): with it merged, this issue needed nothing more.",
 		change.Issue, change.IssueURL))...)
 	logNotes(ctx, task, notes)
@@ -316,7 +316,7 @@ func mergeWaitsForChecks(status *c4v1alpha1.TaskStatus) bool {
 func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
 	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, container *c4v1alpha1.Container,
 	reviewer *c4v1alpha1.Agent) (refusal string, err error) {
-	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	checks, err := provider.CombinedStatus(gitCtx, repo, status.Commit)
 	if err != nil {
