@@ -63,6 +63,82 @@ func TestBuildSandboxWorkspace(t *testing.T) {
 	}
 }
 
+func TestBuildSandboxGoCache(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name  string
+		cache string
+	}{
+		{name: "none by default"},
+		{name: "the node's shared cache when set", cache: "/var/cache/c4factory/go/sandbox"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta("toolbox", "claude")}
+			agent.Spec.Image = "c4factory/agent-go:dev"
+			agent.Spec.Env = []corev1.EnvVar{{Name: "GOCACHE", Value: "/agent/own"}}
+			run := sandboxRun{
+				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("toolbox", "add-crop")},
+				status:    &c4v1alpha1.TaskStatus{Round: 1},
+				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("toolbox", "image-shrink")},
+				agent:     agent,
+				name:      "add-crop-r1-implement", role: "implement",
+				goCache: tt.cache,
+			}
+			sandbox, err := buildSandbox(run, scheme, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var pod corev1.PodSpec
+			spec := sandbox.Object["spec"].(map[string]any)["podTemplate"].(map[string]any)["spec"].(map[string]any)
+			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(spec, &pod); err != nil {
+				t.Fatal(err)
+			}
+			var hostPaths []string
+			for _, v := range pod.Volumes {
+				if v.HostPath != nil {
+					hostPaths = append(hostPaths, v.HostPath.Path)
+				}
+			}
+			env := map[string][]string{}
+			for _, e := range pod.Containers[0].Env {
+				env[e.Name] = append(env[e.Name], e.Value)
+			}
+			if tt.cache == "" {
+				if len(hostPaths) != 0 || len(pod.InitContainers) != 0 || len(pod.Containers[0].VolumeMounts) != 1 {
+					t.Fatalf("host paths %v, init containers %d, mounts %v; want none", hostPaths,
+						len(pod.InitContainers), pod.Containers[0].VolumeMounts)
+				}
+				return
+			}
+			if !reflect.DeepEqual(hostPaths, []string{tt.cache}) {
+				t.Errorf("host paths %v, want only %q", hostPaths, tt.cache)
+			}
+			want := corev1.VolumeMount{Name: goCacheVolume, MountPath: goCacheMount}
+			if mounts := pod.Containers[0].VolumeMounts; len(mounts) != 2 || !reflect.DeepEqual(mounts[1], want) {
+				t.Errorf("agent mounts %v, want the workspace and %v", mounts, want)
+			}
+			// The Agent's own setting comes last, so it wins.
+			if got := env["GOCACHE"]; !reflect.DeepEqual(got, []string{"/cache/go/build", "/agent/own"}) {
+				t.Errorf("GOCACHE %v, want the shared cache, then the Agent's own", got)
+			}
+			if got := env["GOLANGCI_LINT_CACHE"]; !reflect.DeepEqual(got, []string{"/cache/go/golangci-lint"}) {
+				t.Errorf("GOLANGCI_LINT_CACHE %v", got)
+			}
+			if len(pod.InitContainers) != 1 {
+				t.Fatalf("init containers %v, want the cache's", pod.InitContainers)
+			}
+			init := pod.InitContainers[0]
+			if init.Image != agent.Spec.Image || !reflect.DeepEqual(init.VolumeMounts, []corev1.VolumeMount{want}) ||
+				!reflect.DeepEqual(init.Command, []string{"sh", "-c", goCachePrepShell}) {
+				t.Errorf("init container %+v, want c4-go-cache in the agent's image with only the cache", init)
+			}
+		})
+	}
+}
+
 func TestRunStateReadsOnlyItsSandboxsPod(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {

@@ -1,0 +1,57 @@
+Issue #72, the local half of the evidence, by otter-72 on host codespaces-84490a (4 CPUs, no Kind cluster).
+The toolchain-go image as built from this branch (c4-go-cache in it), each "pod" a fresh
+docker run --rm --cpus 4; the shared cache a host directory standing in for the node's hostPath.
+The work: this repository's go build ./..., go vet ./... and go test -run '^$' (test compiles).
+Not yet shown: timings of real Tasks and CI jobs in Kind (see the issue's handoff).
+
+== Result ==
+Sat Oct  3 18:48:45 UTC 2026
+A cold sandbox, no shared cache (today): build, vet and test compiles 77s
+c4-go-cache: seeded /cache/go from /root/.cache (2 GB)
+B first pod on an empty shared cache: init container (c4-go-cache) 14s
+B first pod on an empty shared cache: build, vet and test compiles 66s
+C second pod, same code (reviewer, CI rerun): init container (c4-go-cache) 0s
+C second pod, same code (reviewer, CI rerun): build, vet and test compiles 8s
+D third pod, one package changed (next round): init container (c4-go-cache) 1s
+D third pod, one package changed (next round): build, vet and test compiles 14s
+shared cache size: 3.2G
+
+== The script ==
+#!/usr/bin/env bash
+# Times the Go build work of a check in fresh containers of the toolchain-go
+# image, as fresh sandbox pods would: without the shared cache (today), then
+# twice on one shared cache directory standing in for the node's hostPath, then
+# once more after a one-package change (a later round). The work is this repo's
+# go build, go vet and test compiles (go test -run '^$'); tests aren't run, as
+# the cache only saves compiling.
+set -euo pipefail
+S=$(cd "$(dirname "$0")" && pwd)
+IMG=c4factory/toolchain-go:cache-test
+SRC=$S/src
+CACHE=$S/node-cache
+rm -rf "$SRC" "$CACHE"
+mkdir -p "$CACHE"
+git -C /workspaces/c4factory archive HEAD | (mkdir -p "$SRC" && tar -x -C "$SRC")
+
+work='cd /src && go build ./... && go vet ./... && go test -count=1 -run "^\$" $(go list ./... | grep -v /e2e) >/dev/null'
+pod() { # NAME SHARED(yes|no)
+  local mounts=(-v "$SRC:/src" -v /go/pkg/mod:/go/pkg/mod:ro) env=(-e GOFLAGS="-modcacherw -buildvcs=false")
+  if [ "$2" = yes ]; then
+    mounts+=(-v "$CACHE:/cache/go")
+    local t0=$SECONDS
+    docker run --rm --cpus 4 "${mounts[@]}" "$IMG" c4-go-cache /cache/go
+    echo "$1: init container (c4-go-cache) $((SECONDS - t0))s"
+    env+=(-e GOCACHE=/cache/go/build -e GOLANGCI_LINT_CACHE=/cache/go/golangci-lint)
+  fi
+  local t1=$SECONDS
+  docker run --rm --cpus 4 "${mounts[@]}" "${env[@]}" "$IMG" sh -c "$work"
+  echo "$1: build, vet and test compiles $((SECONDS - t1))s"
+}
+
+date -u
+pod "A cold sandbox, no shared cache (today)" no
+pod "B first pod on an empty shared cache" yes
+pod "C second pod, same code (reviewer, CI rerun)" yes
+printf '\n// Changed by a later round.\nfunc laterRound() int { return 1 }\n' >>"$SRC/internal/model/task.go"
+pod "D third pod, one package changed (next round)" yes
+echo "shared cache size: $(du -sh "$CACHE" | cut -f1)"

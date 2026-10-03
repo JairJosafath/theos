@@ -90,7 +90,18 @@ type sandboxRun struct {
 	resumed bool
 	// workspaceMemory, when set, puts the workspace in memory, up to this size.
 	workspaceMemory *resource.Quantity
+	// goCache, when set, is the directory on the node of the Go build cache the
+	// sandboxes share.
+	goCache string
 }
+
+// Where a sandbox mounts the shared Go build cache, and the variables pointing
+// Go and golangci-lint at it. c4-go-cache (hack/toolchain-go) lays it out.
+const (
+	goCacheMount     = "/cache/go"
+	goCacheVolume    = "go-cache"
+	goCachePrepShell = "command -v c4-go-cache >/dev/null || exit 0; exec c4-go-cache " + goCacheMount
+)
 
 // buildSandbox returns the Sandbox for one run, owned by the Task. Its pod has no
 // ServiceAccount token: it reports through its termination message.
@@ -136,6 +147,11 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	if run.status.Feedback != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvFeedback, Value: run.status.Feedback})
 	}
+	if run.goCache != "" {
+		env = append(env,
+			corev1.EnvVar{Name: "GOCACHE", Value: goCacheMount + "/build"},
+			corev1.EnvVar{Name: "GOLANGCI_LINT_CACHE", Value: goCacheMount + "/golangci-lint"})
+	}
 	env = append(env, agent.Spec.Env...)
 	var envFrom []corev1.EnvFromSource
 	if ref := agent.Spec.CredentialsSecretRef; ref != nil {
@@ -157,11 +173,36 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		// the API server. The size counts against the agent's memory limit.
 		workspace.Medium, workspace.SizeLimit = corev1.StorageMediumMemory, run.workspaceMemory
 	}
+	mounts := []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace"}}
+	volumes := []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: workspace}}}
+	var initContainers []corev1.Container
+	if run.goCache != "" {
+		// Compiled packages outlive the pod, so the next round, reviewer and Task
+		// don't compile them again. CI keeps its own cache that no sandbox can
+		// reach: Go trusts what it reads from a cache, and agents run untrusted code.
+		dirOrCreate := corev1.HostPathDirectoryOrCreate
+		mount := corev1.VolumeMount{Name: goCacheVolume, MountPath: goCacheMount}
+		mounts = append(mounts, mount)
+		volumes = append(volumes, corev1.Volume{Name: goCacheVolume, VolumeSource: corev1.VolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{Path: run.goCache, Type: &dirOrCreate},
+		}})
+		// Seeds the cache from the image's warm one and bounds its size; an image
+		// without Go has no c4-go-cache, and skips it.
+		initContainers = append(initContainers, corev1.Container{
+			Name:            goCacheVolume,
+			Image:           agent.Spec.Image,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"sh", "-c", goCachePrepShell},
+			Resources:       agent.Spec.Resources,
+			VolumeMounts:    []corev1.VolumeMount{mount},
+		})
+	}
 	pod := corev1.PodSpec{
 		RestartPolicy:                corev1.RestartPolicyNever,
 		AutomountServiceAccountToken: &no,
 		EnableServiceLinks:           &no,
 		ActiveDeadlineSeconds:        &deadline,
+		InitContainers:               initContainers,
 		Containers: []corev1.Container{{
 			Name:                     "agent",
 			Image:                    agent.Spec.Image,
@@ -170,9 +211,9 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			EnvFrom:                  envFrom,
 			Resources:                agent.Spec.Resources,
 			TerminationMessagePolicy: corev1.TerminationMessageReadFile,
-			VolumeMounts:             []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace"}},
+			VolumeMounts:             mounts,
 		}},
-		Volumes: []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: workspace}}},
+		Volumes: volumes,
 	}
 	podMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&pod)
 	if err != nil {

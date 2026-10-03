@@ -2,6 +2,26 @@
 # (hack/toolchain-go), labelled go, for Containers written in Go or TypeScript.
 # `make runner-go` builds it and applies this; it is not part of config/runner.
 # It registers with the token the seed Job stores in Secret gitea/gitea-runner.
+#
+# Jobs keep their Go build cache on the node (/var/cache/c4factory/go/ci), so a
+# job compiles only what changed since the last. Only this runner mounts it:
+# Go trusts what it reads from its cache, and agent sandboxes, which run
+# untrusted code, share a sibling of their own (the operator's
+# --sandbox-go-cache). c4-go-cache (hack/toolchain-go) seeds it from the image's
+# warm cache and keeps it under 8 GB.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitea-runner-go-env
+  namespace: gitea
+  labels:
+    app.kubernetes.io/part-of: c4factory-testenv
+data:
+  # Read by the runner for every job (env_file in hack/runner/config.yaml).
+  job.env: |
+    GOCACHE=/cache/go/build
+    GOLANGCI_LINT_CACHE=/cache/go/golangci-lint
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,6 +43,14 @@ spec:
         app.kubernetes.io/part-of: c4factory-testenv
     spec:
       automountServiceAccountToken: false
+      initContainers:
+        - name: go-cache
+          image: c4factory/gitea-runner-go:dev
+          imagePullPolicy: Never
+          command: [c4-go-cache, /cache/go]
+          volumeMounts:
+            - name: go-cache
+              mountPath: /cache/go
       containers:
         - name: runner
           image: c4factory/gitea-runner-go:dev
@@ -46,13 +74,32 @@ spec:
               mountPath: /data/work
             - name: tmp
               mountPath: /tmp
+            - name: go-cache
+              mountPath: /cache/go
+            - name: job-env
+              mountPath: /etc/gitea-runner/job.env
+              subPath: job.env
+        # Keeps the cache under its bound between jobs; Go drops nothing for five days.
+        - name: go-cache-trim
+          image: c4factory/gitea-runner-go:dev
+          imagePullPolicy: Never
+          command: [sh, -c, "while sleep 3600; do c4-go-cache /cache/go; done"]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          volumeMounts:
+            - name: go-cache
+              mountPath: /cache/go
       volumes:
         - name: data
           emptyDir: {}
         # Checkouts and test output in memory, as for the Flutter runner: disk
-        # writes stall etcd on a laptop. The Kubernetes libraries' build cache is
-        # warm in the image, so jobs compile only their own packages.
+        # writes stall etcd on a laptop. The build cache is on the node (above).
         - name: work
           emptyDir: {medium: Memory, sizeLimit: 2Gi}
         - name: tmp
           emptyDir: {medium: Memory, sizeLimit: 1Gi}
+        - name: go-cache
+          hostPath: {path: /var/cache/c4factory/go/ci, type: DirectoryOrCreate}
+        - name: job-env
+          configMap: {name: gitea-runner-go-env}

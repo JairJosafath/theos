@@ -164,6 +164,32 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    `go-standard` and `ts-standard` (v1.1.0 and later) ship guides that describe Standard
    changes.
 
+## Go build caches
+
+A Go Task runs `make check` three or four times a round: the agent while it
+works, `internal/agentrunner` after it, CI on the `go` runner and the reviewer.
+Two caches on the Kind node's disk keep compiled packages between pods, so
+each run compiles only what changed:
+
+| Cache | Node directory | Mounted by | Set up by |
+| --- | --- | --- | --- |
+| sandboxes | `/var/cache/c4factory/go/sandbox`, the operator's `--sandbox-go-cache` | every agent sandbox, at `/cache/go`, with `GOCACHE` and `GOLANGCI_LINT_CACHE` pointing into it | an init container in the agent's image |
+| CI | `/var/cache/c4factory/go/ci` | only the `go` runner (`config/runner/go.yaml`); jobs get the variables from the runner's `env_file` | an init container, and a sidecar hourly |
+
+- **CI's cache is its own.** Go doesn't check what it reads from a cache, so a
+  sandbox that could write CI's cache could plant a compiled package that CI,
+  the gate, then trusts. No sandbox mounts it. The sandbox cache is shared by
+  all projects: a sandbox's checks are not the gate.
+- **`c4-go-cache DIR`** (`hack/toolchain-go/go-cache.sh`, in the toolchain-go
+  image) seeds an empty cache from the image's warm one (the Kubernetes CEL
+  libraries, about 3 GB) and keeps it under 8 GB: it drops entries unused for a
+  day, then all of them, and seeds again. It deletes entry files only, under a
+  lock, so a build running at the same time sees a miss, not an error. An agent
+  image without Go has no `c4-go-cache`, and its init container exits at once.
+- hostPath, not a PVC: one node, one directory per cache, and no project
+  namespace enforces Pod Security. Remove the flag, or the runner's volume, to
+  go back to cold builds.
+
 ## Flow of one Crew
 
 1. Every minute, and when a Task on its Container changes phase or the Container

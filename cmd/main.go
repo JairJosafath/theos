@@ -72,6 +72,7 @@ func main() {
 	var maxAgentSandboxes int
 	var leaseDuration time.Duration
 	var workspaceMemory string
+	var sandboxGoCache string
 	var sessionFeature, sessionBinaryURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
@@ -103,6 +104,10 @@ func main() {
 		"When set, such as 3Gi, each agent sandbox's workspace is in memory, up to this size, instead of "+
 			"on the node's disk; it counts against the Agent's memory limit. On a small cluster, checks "+
 			"writing to the disk etcd uses stall the API server.")
+	flag.StringVar(&sandboxGoCache, "sandbox-go-cache", "",
+		"When set, a directory on the node, such as /var/cache/c4factory/go/sandbox, that agent sandboxes "+
+			"share as their Go and golangci-lint build cache, so a round doesn't compile what an earlier one did. "+
+			"Never the CI runner's cache: agents run untrusted code, and Go trusts its cache.")
 	flag.DurationVar(&leaseDuration, "leader-elect-lease-duration", time.Minute,
 		"How long the leader's lease lasts. It renews within two thirds of that, retrying every twelfth. "+
 			"The client default of 15s ends the manager whenever the API server stalls for 10s, which a "+
@@ -288,6 +293,7 @@ func main() {
 		Git:             gitprovider.Client{},
 		MaxSandboxes:    maxAgentSandboxes,
 		WorkspaceMemory: workspaceQuantity,
+		SandboxGoCache:  sandboxGoCache,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
 		os.Exit(1)
