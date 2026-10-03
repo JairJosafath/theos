@@ -14,17 +14,19 @@
 set -uo pipefail
 
 IFS= read -r -d '' input
-jobs='(make([[:space:]][^;&|]*)?[[:space:]](check|test|test-e2e|e2e|lint|lint-fix|docker-build|deploy)|devcontainer[[:space:]]+up|docker[[:space:]]+(buildx[[:space:]]+)?build)'
-sep='(^|[;&|(]|[[:space:]])'
-end='([;&|)]|[[:space:]]|$)'
-# First on the raw JSON, with builtins only: JSON's quotes and escapes (\n,
-# \t, \") count as separators between commands too, so it misses no heavy
-# job, and every other command goes without a subprocess.
-raw_sep='(^|[;&|("ntr]|[[:space:]])'
-raw_end='([;&|)"\]|[[:space:]]|$)'
-[[ $input =~ $raw_sep$jobs$raw_end ]] || exit 0
+# First a loose match on the raw JSON, with builtins only: it lets through
+# every command the exact match below finds, and the rest go without a
+# subprocess.
+loose='make.*(check|test|e2e|lint|build|deploy)|devcontainer.*up|docker.*build'
+[[ $input =~ $loose ]] || exit 0
 
+# A heavy job: one command, its words on one line, continued lines joined.
+nl=$'\n'
+jobs="(make([[:blank:]][^;&|$nl]*)?[[:blank:]](check|test|test-e2e|e2e|lint|lint-fix|docker-build|deploy)|devcontainer[[:blank:]]+up|docker[[:blank:]]+((buildx|compose|image)[[:blank:]]+)?build)"
+sep='(^|[;&|(/]|[[:space:]])'
+end='([;&|)<>]|[[:space:]]|$)'
 cmd=$(jq -r '.tool_input.command // empty' <<<"$input" 2>/dev/null) || exit 0
+cmd=${cmd//$'\\\n'/ }
 [[ $cmd =~ $sep$jobs$end ]] || exit 0
 job=${BASH_REMATCH[2]}
 
@@ -33,9 +35,10 @@ min=${RELAY_MIN_MEM_GIB:-4}
 avail=$(awk '/^MemAvailable:/ { print $2; found = 1 } END { exit !found }' "${RELAY_MEMINFO:-/proc/meminfo}" 2>/dev/null) || exit 0
 [ "$avail" -ge $((min * 1048576)) ] && exit 0
 
-# The five command names with the most resident memory, summed over their processes.
-top=$(ps -eo rss=,comm= 2>/dev/null | awk '
-  { kb = $1; $1 = ""; c = substr($0, 2); sum[c] += kb; n[c]++ }
+# The five programs with the most resident memory, summed over their
+# processes; named by the command line, since node renames its main thread.
+top=$(ps -eo rss=,args= 2>/dev/null | awk '
+  { c = $2; sub(".*/", "", c); sum[c] += $1; n[c]++ }
   END { for (c in sum) printf "%d\t%s\t%d\n", sum[c], c, n[c] }' |
   sort -rn | head -5 | awk -F'\t' '
   { printf "%s%s%s %.1f GiB", (NR > 1 ? ", " : ""), $2, ($3 > 1 ? " (" $3 ")" : ""), $1 / 1048576 }')

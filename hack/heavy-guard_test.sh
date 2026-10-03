@@ -5,7 +5,7 @@
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 HOOK="$(cd "$(dirname "$0")" && pwd)/heavy-guard.sh"
-export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4
+export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 CALLED=$T/called
 unset C4_HEADLESS KIND_CLUSTER
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
@@ -18,18 +18,22 @@ hook() {
 }
 decision() { jq -r '.hookSpecificOutput.permissionDecision // "none"' "$T/out" 2>/dev/null; }
 
+# $T/spy holds commands that only note they ran; $T/bin fakes ps and docker.
 mkdir -p "$T/bin" "$T/spy"
-for c in jq awk ps docker cat; do printf '#!/bin/sh\necho %s >>"%s"\nexit 1\n' $c "$T/called" >"$T/spy/$c"; chmod +x "$T/spy/$c"; done
+for c in jq awk ps docker cat; do printf '#!/bin/sh\necho %s >>"$CALLED"\nexit 1\n' $c >"$T/spy/$c"; done
 cat >"$T/bin/ps" <<'EOF'
 #!/bin/sh
-printf '%s\n' ' 1200000 claude' ' 1100000 claude' ' 900000 claude' ' 300000 bash' ' 2500000 golangci-lint' ' 400000 node' \
-  ' 350000 tmux: server' '  1000 sleep'
+echo ps >>"$CALLED"
+printf '%s\n' ' 1200000 /usr/local/bin/claude -p' ' 1100000 claude' ' 900000 claude --resume 1' ' 300000 bash' \
+  ' 2500000 /go/bin/golangci-lint run' ' 400000 /vscode/node --max-old-space-size=4096' ' 350000 tmux new -s x' \
+  '  1000 sleep 30'
 EOF
 cat >"$T/bin/docker" <<'EOF'
 #!/bin/sh
+echo docker >>"$CALLED"
 [ "$1 $2" = "stats --no-stream" ] && [ "$5" = c4factory-control-plane ] && echo '4.4GiB / 14.7GiB'
 EOF
-chmod +x "$T/bin/ps" "$T/bin/docker"
+chmod +x "$T"/spy/* "$T"/bin/*
 PATH=$T/bin:$PATH
 
 # Light commands cost one bash: no subprocess, no file read, no output.
@@ -48,15 +52,20 @@ hook "git log --oneline" "before make check"
 check "heavy words only in the description: silent" "$(cat "$T/out")" ""
 hook 'grep -n "make test" docs/dev/testenv.md'
 check "heavy words quoted: silent" "$(cat "$T/out")" ""
+hook $'make generate\ngo test ./...'
+check "make and a heavy word on different lines: silent" "$(cat "$T/out")" ""
 
 # Heavy jobs ask when headroom is low.
 for c in "make check" "make -j4 test" "cd hack && make lint" "make lint-fix" "make docker-build IMG=x:dev" \
   "make deploy" "make test-e2e" "make manifests generate check" "devcontainer up --workspace-folder ." \
-  "docker build -t x ." "docker buildx build ." "(make test; echo done)" $'git pull\nmake check'; do
+  "docker build -t x ." "docker buildx build ." "docker compose build" "docker image build ." \
+  "(make test; echo done)" "make check>log" "/usr/bin/make check" \
+  $'git pull\nmake check' $'make check\ngit push' $'make\tcheck' $'make -j4 \\\n  check'; do
   hook "$c"
-  check "low, $c: asks" "$(decision)" ask
+  check "low, ${c//$'\n'/\\n}: asks" "$(decision)" ask
 done
 hook "make check"
+check "ask: exits 0" $? 0
 reason=$(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out")
 case $reason in *"1.0 GiB available"*) r=yes ;; *) r=no ;; esac
 check "reason: names the headroom" $r yes
@@ -64,7 +73,7 @@ case $reason in *RELAY_MIN_MEM_GIB*) r=yes ;; *) r=no ;; esac
 check "reason: names the threshold" $r yes
 case $reason in *"make check"*) r=yes ;; *) r=no ;; esac
 check "reason: names the job" $r yes
-case $reason in *"claude (3) 3.1 GiB, golangci-lint 2.4 GiB, node 0.4 GiB, tmux: server 0.3 GiB, bash 0.3 GiB"*) r=yes ;; *) r=no ;; esac
+case $reason in *"claude (3) 3.1 GiB, golangci-lint 2.4 GiB, node 0.4 GiB, tmux 0.3 GiB, bash 0.3 GiB"*) r=yes ;; *) r=no ;; esac
 check "reason: names the top processes" $r yes
 case $reason in *sleep*) r=yes ;; *) r=no ;; esac
 check "reason: only the top five" $r no
@@ -73,9 +82,10 @@ check "reason: names the Kind node" $r yes
 KIND_CLUSTER=other hook "make check"
 case $(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out") in *"Kind node"*) r=yes ;; *) r=no ;; esac
 check "reason: no Kind node running" $r no
-rm "$T/bin/docker"
+mv "$T/bin/docker" "$T/docker"
 hook "make check"
 check "no docker: still asks" "$(decision)" ask
+mv "$T/docker" "$T/bin/docker"
 
 # A headless session gets the warning in its context; nobody could answer a question.
 C4_HEADLESS=1 hook "make check"
@@ -85,8 +95,10 @@ check "headless: warns" $r yes
 
 # Enough headroom, or no way to read it: silent.
 meminfo 8
+rm -f "$T/called"
 hook "make check"
 check "headroom: silent" "$(cat "$T/out")" ""
+check "headroom: looks no further" "$(cat "$T/called" 2>/dev/null)" ""
 meminfo 3
 RELAY_MIN_MEM_GIB=2 hook "make check"
 check "headroom under a lower threshold: silent" "$(cat "$T/out")" ""
