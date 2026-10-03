@@ -103,6 +103,17 @@ func (g *gitea) PushInitialCommit(ctx context.Context, repo Repository, files sc
 	return pushInitialCommit(ctx, repo.CloneURL, &g.creds, files, message, author)
 }
 
+// ReadFiles reads paths from branch over Git, at the commit it is at now.
+func (g *gitea) ReadFiles(ctx context.Context, repo Repository, branch string, paths []string) (scaffold.Tree, string, error) {
+	return readFiles(ctx, repo.CloneURL, &g.creds, branch, paths)
+}
+
+// PushBranch builds one commit on base over Git and force-pushes it as branch.
+func (g *gitea) PushBranch(ctx context.Context, repo Repository, base, branch string, files scaffold.Tree,
+	removes []string, message string, author Signature) (string, error) {
+	return pushBranch(ctx, repo.CloneURL, &g.creds, base, branch, files, removes, message, author)
+}
+
 func (g *gitea) do(ctx context.Context, method, path string, body []byte) (int, []byte, error) {
 	var reader io.Reader
 	if body != nil {
