@@ -12,12 +12,14 @@ import {
   findCondition,
   type Condition,
   type ContainerPhase,
+  type Crew,
   type ElementKind,
   type ElementRef,
   type Relationship,
   type Session,
 } from '../k8s/types'
 import { describeContainerType, plural, titleOf } from './describe'
+import { activeCrewTasks, crewSummary, type CrewSummary } from './factory'
 
 export type NodeRole = 'person' | 'system' | 'external-system' | 'container' | 'datastore'
 
@@ -59,6 +61,8 @@ export interface ContainerNode extends NodeBase {
   /** Sessions on this Container: Active first, then most recent heartbeat. */
   sessions: Session[]
   activeSessions: number
+  /** The Crew that picks up its issues, if it has one. */
+  crew?: CrewSummary
 }
 
 export interface DataStoreNode extends NodeBase {
@@ -201,6 +205,7 @@ class StoryIndex {
       .map((c) => {
         const framework = this.data.frameworks.find((f) => f.metadata.name === c.spec.frameworkRef?.name)
         const sessions = sessionsOf(this.data.sessions, c.metadata.name)
+        const crew = crewOf(this.data.crews, c.metadata.name)
         return {
           id: elementId('Container', c.metadata.name),
           kind: 'Container',
@@ -220,6 +225,7 @@ class StoryIndex {
           // the badge and the session list never disagree while the operator
           // catches up.
           activeSessions: sessions.filter((s) => s.status?.phase === 'Active').length,
+          crew: crew ? crewSummary(crew, this.data.agents, this.data.tasks) : undefined,
         }
       })
   }
@@ -243,6 +249,20 @@ class StoryIndex {
         }
       })
   }
+}
+
+/** The Crew of one Container; should there be several, the first by name. */
+export function crewOf(crews: Crew[], container: string): Crew | undefined {
+  return crews
+    .filter((c) => c.spec.containerRef?.name === container)
+    .sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))[0]
+}
+
+/** How many work on the project now: active Sessions, and the Tasks its Crews are on. */
+export function workingNow(data: StoryData): number {
+  const sessions = data.sessions.filter((s) => s.status?.phase === 'Active').length
+  const containers = data.containers.map((c) => c.metadata.name)
+  return sessions + activeCrewTasks(data.crews, data.tasks, data.agents, containers).length
 }
 
 /** Sessions on one Container: Active first, then the most recent heartbeat. */

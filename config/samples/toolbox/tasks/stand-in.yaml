@@ -1,0 +1,11 @@
+# Proves the Task loop without spending tokens: the stand-in agent adds a line,
+# the stand-in reviewer asks for changes once, then approves and it merges.
+apiVersion: c4.factory.io/v1alpha1
+kind: Task
+metadata:
+  name: stand-in-loop
+  namespace: toolbox
+spec:
+  containerRef: {name: image-shrink}
+  agentRef: {name: stand-in}
+  goal: Prove the Task loop with the stand-in agent.

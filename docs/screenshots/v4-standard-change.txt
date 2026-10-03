@@ -1,0 +1,70 @@
+# #4 through a Standard change, no person acting (2026-10-03)
+
+$ kubectl -n cel-lens get tasks | grep -E "NAME|4-2|-46 "
+NAME                       CONTAINER             ISSUE   PHASE          ROUND   CHECKS    REVIEW    AGE
+cel-language-server-24-2   cel-language-server   24      Merged         1       success   approve   9h
+vscode-extension-4-2       vscode-extension      4       Merged         2       success   approve   55m
+vscode-extension-46        vscode-extension      46      Merged         2       success   approve   50m
+
+$ kubectl -n cel-lens get task vscode-extension-4-2  (status.history; created 2026-10-03T00:06:54Z)
+2026-10-03T00:06:55Z round 1 Implementing Running
+2026-10-03T00:11:45Z round 1 Blocked WaitingForStandardChange
+2026-10-03T00:17:50Z round 1 Implementing Resumed
+2026-10-03T00:17:50Z round 1 Implementing Running
+2026-10-03T00:18:52Z round 1 Checking Checking
+2026-10-03T00:19:09Z round 1 Reviewing Running
+2026-10-03T00:22:46Z round 2 Implementing NextRound
+2026-10-03T00:22:47Z round 2 Implementing Running
+2026-10-03T00:27:05Z round 2 Checking Checking
+2026-10-03T00:29:38Z round 2 Reviewing Running
+2026-10-03T00:30:30Z round 2 Merged Merged
+
+$ kubectl -n cel-lens get task vscode-extension-46  (status.history; created 2026-10-03T00:11:46Z)
+2026-10-03T00:11:48Z round 1 Implementing Running
+2026-10-03T00:12:35Z round 1 Checking Checking
+2026-10-03T00:14:31Z round 1 Reviewing Running
+2026-10-03T00:15:05Z round 2 Implementing NextRound
+2026-10-03T00:15:06Z round 2 Implementing Running
+2026-10-03T00:16:09Z round 2 Checking Checking
+2026-10-03T00:16:40Z round 2 Reviewing Running
+2026-10-03T00:17:49Z round 2 Merged Merged
+
+$ kubectl -n cel-lens get task vscode-extension-4-2 -o jsonpath={.status.standardChange}
+{"branch":"standard/vscode-extension-4-2","count":1,"issue":46,"issueURL":"http://gitea.gitea.svc.cluster.local:3000/cel-lens/vscode-extension/issues/46","paths":["Makefile"],"resumedRound":1}
+
+$ kubectl -n cel-lens get task vscode-extension-46 -o jsonpath={.spec.allowedProtectedPaths}
+["Makefile"]
+
+# Gitea API: issues 46, 4, 49, 50 (state, labels)
+{"number":46,"title":"Standard change for #4: Makefile","state":"closed","labels":["kind/standard-change"]}
+{"number":4,"title":"Bundle the server in platform-specific packages","state":"closed","labels":["kind/feature"]}
+{"number":49,"title":"Publish the platform .vsix files from a release workflow","state":"open","labels":["status/proposed"]}
+{"number":50,"title":"Cover win32-arm64 with a platform package","state":"open","labels":["status/proposed"]}
+
+# Gitea API: merged pull requests and their files
+PR 47
+{"number":47,"state":"closed","merged":true,"title":"Standard change for #4: Makefile"}
+Makefile +6 -2
+PR 48
+{"number":48,"state":"closed","merged":true,"title":"Bundle the server in platform-specific packages"}
+.gitignore +3 -0
+.vscodeignore +1 -0
+CHANGELOG.md +6 -0
+README.md +20 -13
+package.json +1 -0
+scripts/dist.mjs +90 -0
+server.json +4 -0
+src/readme.test.ts +2 -0
+src/server_release.test.ts +129 -0
+src/server_release.ts +115 -0
+
+# throwaway Job: clone main, npm ci, make dist, ls -l dist/ (Job deleted afterwards)
+6bb7281 Bundle the server in platform-specific packages
+87b9f7a Standard change for #4: Makefile
+4f331eb Restart the server when the first workspace folder changes
+total 78744
+-rw-r--r-- 1 root root 15399519 Oct  3 01:00 vscode-extension-darwin-arm64-0.0.1.vsix
+-rw-r--r-- 1 root root 16869857 Oct  3 01:00 vscode-extension-darwin-x64-0.0.1.vsix
+-rw-r--r-- 1 root root 14762584 Oct  3 01:00 vscode-extension-linux-arm64-0.0.1.vsix
+-rw-r--r-- 1 root root 16604653 Oct  3 01:00 vscode-extension-linux-x64-0.0.1.vsix
+-rw-r--r-- 1 root root 16990145 Oct  3 01:00 vscode-extension-win32-x64-0.0.1.vsix

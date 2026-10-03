@@ -108,6 +108,9 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		if len(commits) == 1 && parseErr == nil && info.Container == container.Namespace+"/"+container.Name {
 			// An earlier attempt pushed but didn't get to record it.
 			log.Info("Found initial commit from an earlier attempt", "url", repo.WebURL)
+			if err := protectRepository(gitCtx, r.Client, provider, repo, container); err != nil {
+				return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
+			}
 			return r.ready(ctx, container, status, info.ScaffoldedFrom, info.Relationships,
 				"Found the initial commit from an earlier attempt")
 		}
@@ -133,6 +136,9 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		Framework:      container.Spec.FrameworkRef.Name,
 		Connectors:     res.use.Connectors,
 	}
+	if container.Spec.StandardRef != nil {
+		in.Standard = container.Spec.StandardRef.Name
+	}
 	if container.Spec.ComputeRef != nil {
 		in.Compute = container.Spec.ComputeRef.Name
 	}
@@ -151,6 +157,9 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	message := scaffold.CommitMessage(in, result.ScaffoldedFrom, res.use.Relationships)
 	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	if _, err := provider.PushInitialCommit(gitCtx, repo, result.Files, message, author); err != nil {
+		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
+	}
+	if err := protectRepository(gitCtx, r.Client, provider, repo, container); err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
@@ -185,7 +194,9 @@ func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.C
 	status.AppliedRelationships, status.AppliedConnectors = appliedStatus(relationships)
 	r.condition(container, status, c4v1alpha1.ConditionScaffolded, metav1.ConditionTrue,
 		c4v1alpha1.ReasonScaffolded, message)
-	return ctrl.Result{}, r.writeStatus(ctx, container, status)
+	// The scaffold's push starts CI; read its result like every later reconcile
+	// does. A status write alone doesn't reconcile the Container again.
+	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.writeStatus(ctx, container, status)
 }
 
 // fail stops the Container with a reason a person has to act on.

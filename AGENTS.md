@@ -6,47 +6,25 @@ one Git repository per Container from pinned templates, then only reports. Read
 [docs/design.md](docs/design.md) for the what and why, and
 [docs/architecture.md](docs/architecture.md) for where code goes.
 
-## Project Structure
+This file is loaded into every session, so it holds only what is true for every
+task. Read the rest when the task needs it:
 
-```
-cmd/main.go                        Manager entry (registers controllers, Session feature flags)
-cmd/c4session/                     Session client CLI, run in devcontainers
-api/v1alpha1/*_types.go            CRD schemas for all twelve kinds (+kubebuilder markers)
-api/v1alpha1/shared_types.go       Refs, Container types, condition names and labels
-api/v1alpha1/zz_generated.*        Auto-generated (DO NOT EDIT)
-internal/controller/*              Reconcilers: read resources, call rules, write status
-internal/model/                    Pure business rules: choices, relationships, roll-up, staleness
-internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity, commit trailers
-internal/gitprovider/              GitProvider interface and the Gitea implementation (REST + go-git)
-internal/sessionclient/            The Session client's logic: register, heartbeat, delete
-features/src/c4session/            The c4session devcontainer feature, embedded by the operator
-config/crd/bases/*                 Generated CRDs (DO NOT EDIT)
-config/rbac/role.yaml              Generated RBAC (DO NOT EDIT)
-config/policy/                     ValidatingAdmissionPolicy (Project name equals namespace)
-config/gitea/                      Gitea for the test environment
-config/samples/webshop/            The sample story (edit these)
-config/ui/                         The read-only UI's Deployment and read-only RBAC
-templates/<name>/                  Template repositories, pushed and tagged into Gitea by the seed job
-templates/versions.txt             The tag each template is released at
-hack/testenv.mk                    Make targets for the Kind test environment
-hack/seed/                         The seed job image and manifests
-hack/session/                      The Session client image and the test Session pod
-test/e2e/                          End-to-end tests against the Kind cluster (make e2e)
-ui/                                Read-only UI (React + a GET-only proxy)
-docs/                              Design, architecture, plans and screenshots
-Makefile                           Build, test, cluster and deploy commands
-PROJECT                            Kubebuilder metadata, auto-generated (DO NOT EDIT)
-```
-
-The project uses the **single-group layout**: one group, `c4`, with domain
-`factory.io`. Do not convert it to multi-group.
+| When you | Read |
+| --- | --- |
+| change what the factory does | [docs/design.md](docs/design.md): the spec |
+| add or move code | [docs/architecture.md](docs/architecture.md) and [docs/dev/structure.md](docs/dev/structure.md) |
+| change API types, reconcilers or log lines | [docs/dev/api-and-controllers.md](docs/dev/api-and-controllers.md) |
+| run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
+| watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
+| continue work someone left in flight | the open `status/in-progress` GitHub issue and its newest handoff comment (the `handoff` skill) |
+| evaluate how the factory runs | `hack/evaluate.sh`, the `factory-evaluator` skill |
+| work on a milestone | its plan in [docs/plans/](docs/plans/) and its results file |
 
 ## Project Architecture
 
-Read `docs/architecture.md` before adding code. Business rules live in
-`internal/model` and `internal/scaffold` and must not import Kubernetes,
-controller-runtime, `net/http` or `api/`; `make lint` enforces the layering.
-Run `make check` before finishing a change.
+Business rules live in `internal/model` and `internal/scaffold` and must not
+import Kubernetes, controller-runtime, `net/http` or `api/`; `make lint` enforces
+the layering. Run `make check` before finishing a change.
 
 ## Critical Rules
 
@@ -117,146 +95,29 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
 - **Report honestly.** If a check fails or a step is skipped, say so in the commit or
   PR with the output.
 
-## CLI Commands Cheat Sheet
+## Working in Sessions
 
-### Create API (a new kind in this project)
-```bash
-kubebuilder create api --group c4 --version v1alpha1 --kind <Kind> --resource --controller
-```
+Quality drops as a session's context grows, long before the window is full.
+Treat about 140k tokens as the limit, and keep each session to one piece of work.
 
-Catalog kinds (Framework, Compute, Deployment, Connector) and GitProvider have no
-reconciler of their own in v1; create them with `--controller=false`.
-
-### Controller for Core Kubernetes Types
-```bash
-kubebuilder create api --group core --version v1 --kind Pod \
-  --controller=true --resource=false
-```
-
-### Webhooks
-v1 has no webhooks by design: CEL rules and a ValidatingAdmissionPolicy cover
-validation, and the operator checks compatibility after creation. If one is added
-later, create all types together with
-`kubebuilder create webhook --group c4 --version v1alpha1 --kind <Kind> --defaulting --programmatic-validation`.
-
-## Testing & Development
-
-```bash
-make test                # Unit and envtest tests (real K8s API + etcd, no cluster needed)
-make check               # manifests, generate, fmt, vet, lint and test
-make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
-make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
-make session             # Run the test Session pod; make session-kill kills its client
-make test-gitea          # gitprovider against the seeded Gitea
-make e2e                 # All of the above, then check every milestone in Kind
-```
-
-Controller tests use **Ginkgo + Gomega** (BDD style) with the real manager and every
-reconciler; see `internal/controller/suite_test.go`. A fake Git host serves the real
-`templates/`, so envtest also proves the templates render together. Business-rule tests
-use the standard `testing` package with table tests. In tests, write with merge patches
-(`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
-
-`make run` runs the operator on your machine, but it can't reach Gitea's in-cluster
-address; use `make deploy` for anything that scaffolds.
-
-## Deployment Workflow
-
-```bash
-# 1. Regenerate manifests
-make manifests generate
-
-# 2. Build, load into Kind, deploy
-make deploy            # builds c4factory/operator:dev, kind-loads it, applies config/default, restarts
-
-# 3. Try it
-make sample            # the webshop story
-kubectl get c4 -n webshop
-
-# 4. Debug
-kubectl logs -n c4-factory-system deployment/c4-factory-controller-manager -c manager -f
-make gitea-forward     # then open http://localhost:3000
-```
-
-### API Design
-
-**Key markers for** `api/v1alpha1/*_types.go`:
-
-```go
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced
-// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
-
-// On fields:
-// +kubebuilder:validation:Required
-// +kubebuilder:validation:Enum=static-site;service;job;worker
-// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="softwareSystemRef is immutable"
-// +kubebuilder:default="value"
-```
-
-- **Use** `metav1.Condition` for status (not custom string fields). Phases are a
-  convenience on top of conditions.
-- **Use predefined types**: `metav1.Time` instead of `string` for dates
-- **Follow K8s API conventions**: Standard field names (`spec`, `status`, `metadata`)
-- **Keep fields minimal.** `displayName` and `description` on every story kind;
-  `metadata.name` is the stable id.
-
-### Controller Design
-
-**RBAC markers in** `internal/controller/*_controller.go`:
-
-```go
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
-```
-
-**Implementation rules:**
-- **Idempotent reconciliation**: Safe to run multiple times; a repeat reconcile of a
-  `Ready` Container changes nothing
-- **Re-fetch before updates**: `r.Get(ctx, req.NamespacedName, obj)` before `r.Update` to avoid conflicts
-- **Structured logging**: `log := log.FromContext(ctx); log.Info("msg", "key", val)`
-- **Owner references**: Enable automatic garbage collection (`SetControllerReference`)
-- **Watch secondary resources**: Use `.Owns()` or `.Watches()`, not just `RequeueAfter`
-- **Thin reconcilers**: Decisions about types, layers and files belong in
-  `internal/model` and `internal/scaffold`, not in the controller
-
-### Logging
-
-**Follow Kubernetes logging message style guidelines:**
-
-- Start from a capital letter
-- Do not end the message with a period
-- Active voice: subject present (`"Deployment could not create Pod"`) or omitted (`"Could not create Pod"`)
-- Past tense: `"Could not delete Pod"` not `"Cannot delete Pod"`
-- Specify object type: `"Created repository"` not `"Created"`
-- Balanced key-value pairs
-
-```go
-log.Info("Starting reconciliation")
-log.Info("Created repository", "url", repoURL)
-log.Error(err, "Failed to push initial commit", "container", name)
-```
-
-**Reference:** https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md#message-style-guidelines
-
-## References
-
-### Essential Reading
-- **Kubebuilder Book**: https://book.kubebuilder.io
-- **controller-runtime FAQ**: https://github.com/kubernetes-sigs/controller-runtime/blob/main/FAQ.md
-- **Good Practices**: https://book.kubebuilder.io/reference/good-practices.html
-- **C4 model**: https://c4model.com
-
-### API Design & Implementation
-- **API Conventions**: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md
-- **CEL validation rules**: https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#validation-rules
-- **ValidatingAdmissionPolicy**: https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/
-- **Markers Reference**: https://book.kubebuilder.io/reference/markers.html
-
-### Tools & Libraries
-- **controller-runtime**: https://github.com/kubernetes-sigs/controller-runtime
-- **Gitea API**: https://docs.gitea.com/development/api-usage
-- **Dev Container features**: https://containers.dev/implementors/features/
+- **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
+  piece of work, labeled `status/*`, `priority/urgent`, `kind/*`;
+  `hack/lib/github.sh` reads and writes them. Product work stays in Gitea with
+  the Crews.
+- **One issue, plan step or fix per session.** Start the next one fresh.
+- **Read on demand.** Open the docs in the table above when the task needs them,
+  not up front. Read files in parts, not whole.
+- **Delegate broad searches** to a subagent; it returns the conclusion, not the
+  file dumps. Keep large outputs out of the context: filter with `jq`, `grep`,
+  `tail`, `--tail=N`, and summary flags.
+- **Hand off before the context gets big**, or when work stops mid-way: the
+  `handoff` skill posts the in-flight state as a comment on the issue, and the
+  next session starts by reading the newest one. Close the issue when its work
+  lands.
+- **Hand off between tasks, never inside one.** Finish the task in flight (its
+  implementation and review) first; after a task, past about 100k tokens, hand
+  off instead of starting the next.
+- **Overnight, `hack/relay.sh`** runs headless sessions one after another, each
+  on the in-progress or next ready issue; its log is `.relay/relay.log`.
+- **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
+  is it true next month?

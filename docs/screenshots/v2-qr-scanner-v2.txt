@@ -1,0 +1,16 @@
+# qr-scanner-v2 merged by agents (2026-10-01T17:28:51Z)
+
+NAME            CONTAINER    PHASE    ROUND   CHECKS    REVIEW    AGE
+qr-scanner-v2   qr-scanner   Merged   1       success   approve   20m
+
+Last review: Meets the goal; make check passes (116 tests). Release manifest removes INTERNET, with a test. The camera is requested only when scanning starts, with denial handling and a way to the settings. Live scan covers the required formats, with torch and zoom; gallery scan, result parsing (URL with confirmation, Wi-Fi, contact, text), copy/share, local history (delete, clear all) and the generator (save/share PNG) are all present and tested. Layers, immutability, Result handling, restoration and accessibility follow AGENTS.md. Non-blocking: consider android:allowBackup="false" so the scan history stays off cloud backup; the scan result itself is not restored after process death but is kept in history.
+
+Agent summary: QR Scanner v1 is built and committed on `task/qr-scanner-v2`, and `make check` passes (format, analyze, 116 tests). I could not run the app or an Android build here because there is no Android SDK. The camera, gallery picker, share sheet and save dialog are untested on a device. Only the Dart side is tested, with fakes standing in for the platform.
+
+- **Scan:** a live camera screen for QR, EAN/UPC, Code 128, DataMatrix and PDF417, with torch, zoom and scan-from-gallery. The camera permission is asked only when you press "Scan with the camera". A denial shows an explanation with "Open settings" and "Try again".
+- **Results:** a link is shown in full and opened only after you confirm. Wi-Fi shows the network, security and password with copy. Contacts (vCard/MECARD) and plain text are shown too. Copy and share work on all of them.
+- **History:** newest first, stored on the phone. Delete one entry or clear all (with confirmation).
+- **Create:** text, link and Wi-Fi codes, with save as PNG (system file dialog) or share.
+- **Android:** the main manifest has `CAMERA` only. A new `android/app/src/release/AndroidManifest.xml` strips `INTERNET` from release builds, and a test guards it. I couldn't check the final merged manifest without the SDK. The bundled ML Kit model means scanning needs no download.
+- **Packages added:** `mobile_scanner`, `qr_flutter`, `shared_preferences`, `share_plus`, `url_launcher`, `permission_handler` (only to open settings) and `file_picker`. `shared_preferences_platform_interface` is a dev dependency for tests.
+- **Tests:** the README now covers features, privacy and licences. Tests cover parsing, repository, view models, a screen test with an accessibility check for each screen, restoration and the manifest.

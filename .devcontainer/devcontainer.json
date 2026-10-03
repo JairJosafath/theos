@@ -38,9 +38,10 @@
 	"postCreateCommand": "bash .devcontainer/post-create.sh",
 
 	// Gitea, once you run: kubectl port-forward -n gitea svc/gitea 3000:3000
-	"forwardPorts": [3000],
+	"forwardPorts": [3000, 8080],
 	"portsAttributes": {
-		"3000": { "label": "Gitea", "onAutoForward": "silent" }
+		"3000": { "label": "Gitea", "onAutoForward": "silent" },
+		"8080": { "label": "C4 Factory UI", "onAutoForward": "silent" }
 	},
 
 	// Kind, Gitea and Go builds together want some room.

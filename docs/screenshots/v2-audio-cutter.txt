@@ -1,0 +1,14 @@
+# audio-cutter-v1 merged by agents (2026-10-01T15:12:52Z)
+
+NAME              CONTAINER      PHASE    ROUND   CHECKS    REVIEW    AGE
+audio-cutter-v1   audio-cutter   Merged   3       success   approve   153m
+
+Last review: make check passes (152 tests). All v1 features are implemented: picker import of mp3/m4a/wav/ogg/flac, waveform with draggable and accessible handles, play selection, trim/cut, fades, export to mp3/m4a/wav, save and share, and recording with a runtime mic permission feeding the same editor. The release manifest removes INTERNET, with a test. Layering, Result-based errors, isolate-based analysis, draft restoration, disposal and tests follow AGENTS.md. Minor non-blocking notes: silent files are rejected as empty, and the two 48 dp handles can overlap on short selections of long clips.
+
+Agent summary: I couldn't reproduce the CI failure, so the fix is a likely cause rather than a confirmed one. I haven't seen the CI job log.
+
+- **What I ran:** `make check` passes locally, including in a fresh clone of the branch. Format, analyze and all 152 tests pass. Three more test runs with `--concurrency=1` also passed.
+- **Likely cause:** the editor and recorder widget tests waited a fixed 50–100 ms of real time for file-system work. That would pass on this machine and could fail on a slower CI runner.
+- **Change:** I added `test/testing/real_async.dart` with a `tapAndAwait` helper. It polls for up to about 5 seconds until the expected text appears, and both page tests now use it instead of the fixed sleeps.
+- **Result:** `make check` is green after the change and I committed it as `test: wait for file-system work by polling instead of fixed sleeps`. Nothing was pushed.
+- **If CI still fails:** the job log for run 27 will show which test or step it was.

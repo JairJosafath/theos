@@ -37,7 +37,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 
 ## The model
 
-Twelve namespaced kinds in `c4.factory.io/v1alpha1`: six tell the story, one tracks work, and five configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
+Sixteen namespaced kinds in `c4.factory.io/v1alpha1`: six tell the story, three track work (Session, Task since v2, and Crew since v4), and seven configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
 
 &#91;embedded content: ownership tree · 9 boxes, 1 relationship\]
 
@@ -54,6 +54,10 @@ Solid arrows mean "owns": deleting a parent deletes its children. The dashed Rel
 | Session | Container | `spec.containerRef` | An agent or human at work in a devcontainer |
 | GitProvider | Project | none | Where repositories are created, with credentials |
 | Framework, Compute, Deployment, Connector | Project | none | Catalog entries: a pinned template plus the Container types it supports |
+| Standard (v2) | Project | none | Catalog entry: coding rules, checks and CI, rendered right after the Framework it fits |
+| Agent (v2) | Project | none | Who does Tasks: an image with the agent CLI and toolchain, credentials and limits |
+| Task (v2) | Container | `spec.containerRef` | A goal for a Container, implemented, checked, reviewed and merged by agents |
+| Crew (v4) | Container | `spec.containerRef` | The Agents that implement and review a Container's issues, and pick up the ready ones |
 
 The story kinds, abbreviated:
 
@@ -169,10 +173,146 @@ In v1, the client authenticates with a per-namespace ServiceAccount that may onl
 - **Roll-up:** SoftwareSystem and Project show counts, such as "3 of 4 containers Ready, 2 active sessions".
 - **kubectl:** printer columns (Type, Phase, Sessions, Age) make `kubectl get containers` a quick text view.
 
+## v2: agents build the apps
+
+![The v2 board: the Task loop, the new kinds, the fence and the toolbox apps](images/design-board-v2.png)
+
+Settled step by step on 30 September 2026; the full design is
+[superpowers/specs/2026-09-30-agent-factory-design.md](superpowers/specs/2026-09-30-agent-factory-design.md)
+and the plan [plans/agent-factory.md](plans/agent-factory.md).
+
+Agents build complete apps when asked, and stay inside their workspace while they
+do. Quality does not come from trusting the agent but from what the platform
+enforces.
+
+- **A new Container type, `mobile-app`.** The operator never branches on a type;
+  a test keeps it that way. A later `function` type (AWS serverless) is one enum
+  value plus templates.
+- **Standard: the rules as a layer.** Lint and format config, `AGENTS.md`, offline
+  style digests, the `make check` contract and its CI workflow, rendered right after
+  the Framework it lists. A Container with a Standard gets `main` protected by
+  required checks at scaffold time, and `status.checks` reports CI on `main`.
+- **CI in Gitea.** Gitea Actions with a runner in the cluster on the same toolchain
+  image the agents and devcontainers use.
+- **Task: a goal for a Container.** The operator runs the Agent in an
+  [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox), which works on
+  branch `task/<name>`; opens a pull request; waits for CI; runs the Agent again as
+  reviewer; and squash-merges on approval. Failed checks, requested changes or a
+  failed run start the next round with that feedback, up to the Agent's
+  `maxRounds`. The Container's Crew decides how many Tasks run at once.
+- **The fence.** The sandbox pod has no ServiceAccount token and reports through
+  its termination message; a per-Container Gitea bot user can write to that one
+  repository only; `main` takes no pushes, only the operator merges (the reviewed
+  commit only), and the Git host refuses changes to the platform's and the
+  Standard's protected files (only the operator's gated merge of a Standard change
+  passes, after its own checks) and keeps `v*` tags to the operator; a per-project
+  NetworkPolicy allows only DNS, the Git host and public HTTPS; each run has a
+  deadline. The Claude token is readable inside the sandbox; Agent Substrate's
+  egress credential injection is the later fix.
+- **App values are needs, not platform rules.** "Works offline, no login, no ads"
+  is a need on the Pocket Tools SoftwareSystem in `config/samples/toolbox`; the
+  agents get the needs with every Task.
+
+## v3: watching the factory
+
+Settled on 1 October 2026; the plan is
+[plans/factory-monitoring.md](plans/factory-monitoring.md) and what it found is in
+[results-v3.md](results-v3.md).
+
+The factory runs whole Task loops on its own, so it needs to be seen and run
+without kubectl, and cheaply: it lives on a laptop.
+
+- **A Task keeps its timeline.** `status.history` gets an entry whenever the
+  phase, round or Progressing reason changes (the newest 64), so where a Task's
+  time went stays readable after it ends. A Task waiting for an agent slot says
+  `WaitingForSlot`.
+- **The UI has a Factory view** next to the story, across all projects: component
+  health with CPU and memory, the last hour, the Tasks on a board by stage with
+  their timelines, where the time goes, agent slots, and what needs a look.
+- **The UI server reads the factory's health itself** (`GET /factory/health`):
+  pods, nodes and metrics-server, summarized; pod specs never reach the browser,
+  which still reads only `c4.factory.io`. It samples every 15 seconds and keeps
+  an hour in memory, including its own API round trip.
+- **No Prometheus or Grafana.** Process data lives in the resources, live usage
+  comes from metrics-server (about 30 MiB), and the last hour from the UI server.
+- **Lifecycle targets:** `make down` stops the Kind node, `make up` brings it back
+  and gets pods out of back-off, `make doctor` checks every part.
+- **Checks work in memory.** CI jobs and, with `--sandbox-workspace-memory`,
+  agent sandboxes write their builds to memory-backed volumes: on the disk, they
+  stalled etcd and with it the whole control plane.
+
+## v4: issues, crews and roles
+
+Decided on 2 October 2026 while building CEL Lens; the full design is
+[superpowers/specs/2026-10-02-issue-driven-factory-design.md](superpowers/specs/2026-10-02-issue-driven-factory-design.md),
+the plan [plans/issue-driven-factory.md](plans/issue-driven-factory.md), and what
+the run found [results-v4.md](results-v4.md).
+
+v2's apps were built one Task per app, and their quality was only "ok for
+testing". v4 makes the work smaller and clearer, and gives each role the agent,
+model and context it needs.
+
+- **Issues are the work.** A Task can take its goal from an issue of its
+  Container's repository (`spec.issue`). The operator reads it before every run,
+  labels it `status/in-progress`, comments who works on it, opens a pull request
+  that closes it, and closes it on merge; a failed Task hands it back with
+  `status/needs-human` and the reason. The `status/*` labels are exclusive, so an
+  issue is in one state at a time.
+- **Ready means clear.** An issue needs an "Acceptance criteria" checklist before
+  an agent gets it; without one it goes back to a person before any tokens are
+  spent. The Standards' issue templates ask for context, goal, criteria, scope and
+  notes.
+- **A Crew per Container picks up the work.** It names the implementer and the
+  reviewer Agents, polls the repository's `status/ready` issues, waits for their
+  Gitea dependencies (also across repositories) to close, and starts up to `parallel`
+  Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
+  first after the Standard changes that `Blocked` Tasks wait on, up to three
+  tries per issue. Milestones group the
+  backlog; Gitea 1.27 has no API for project boards.
+- **Releases go one at a time.** A milestone with a due date is a release. The
+  Crew starts only the ready issues of the release due first that still has work
+  (a ready issue, or a Task working on one of its issues); later releases wait,
+  so each release's tag holds only its own issues. Issues in an undated
+  milestone, or in none, come after every release. Two kinds start whatever
+  their release, or something would wait for ever: a Standard change a Task
+  waits on, and an issue the current release's issues depend on. An issue handed
+  back to a person (`status/needs-human`) no longer holds its release, so the
+  factory keeps working. Running Tasks are never stopped.
+- **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
+  it picked up at once: the Crew starts it on its next poll, before every other
+  issue, whatever its release, even when every place is taken (once running, it
+  counts towards `parallel`). It still waits for its open dependencies, and a
+  paused Crew starts nothing. A Standard change filed for an urgent issue is
+  urgent too. The operator keeps the label in every repository it polls.
+- **Roles get their own model and guide.** Agents have a `harness` and a `model`;
+  CEL Lens pairs a Sonnet implementer with an Opus reviewer. A Standard ships
+  `docs/agents/implementer.md` and `reviewer.md`, read from the base branch so a
+  change can't rewrite its own review. The reviewer reports each acceptance
+  criterion, posts its verdict as a pull request review, and may name up to three
+  follow-ups, which become `status/proposed` issues in the Later milestone,
+  outside any release.
+- **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
+  users, the Container's Relationships, and read-only clones of the related
+  Containers' repositories: the VS Code extension's agent reads the server it
+  starts.
+- **Waiting is not failing.** A usage limit, an overloaded API or rejected
+  credentials don't cost a round: the Task waits (`AgentUnavailable`) and tries
+  the same step again.
+- **A protected file without a person.** An issue that needs a protected file, such
+  as the Makefile or a CI workflow, gets its own gated Task: the operator files a
+  `kind/standard-change` issue, the waiting Task is `Blocked`, and the operator
+  merges the reviewed change itself. The agents' rules and `.c4factory.yaml` stay
+  out of reach. See
+  [superpowers/specs/2026-10-02-standard-change-design.md](superpowers/specs/2026-10-02-standard-change-design.md).
+- **New shapes, same operator.** Container types `cli` and `extension`; templates
+  `go-cli`, `go-standard`, `vscode-extension`, `ts-standard` and `gitea-release`;
+  a Go and Node toolchain whose image ships a warm build cache, a CI runner
+  labelled `go`, and two agent sandboxes at once.
+
 ## Out of scope for v1
 
 - **Shipping.** No builds, registries or rollouts; existing tools pick up the scaffolded files.
-- **Runtime health.** Reading back from ArgoCD or monitoring comes later.
+- **Runtime health of the apps.** Reading back from ArgoCD or monitoring comes later. (The factory watches its own health since v3.)
 - **Existing repositories and monorepos.** New work only, one repository per Container.
 - **Component and Code levels.** Dropped until Containers work end to end.
 - **Template updates.** Scaffolding happens once; no pull requests to existing repositories.

@@ -4,7 +4,7 @@
 # next to this file instead of the root .dockerignore (which only lets Go in):
 #   docker build -f hack/seed/Dockerfile -t c4factory/seed:dev .
 FROM alpine:3.24.2
-RUN apk add --no-cache bash ca-certificates curl git jq kubectl
+RUN apk add --no-cache bash ca-certificates curl git jq kubectl openssl
 COPY --chmod=0755 hack/seed/seed.sh /usr/local/bin/seed
 COPY templates/ /templates/
 ENV HOME=/tmp TEMPLATES_DIR=/templates

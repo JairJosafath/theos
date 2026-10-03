@@ -52,7 +52,7 @@ type ElementRef struct {
 }
 
 // ContainerType is the fixed list of application shapes a Container can take.
-// +kubebuilder:validation:Enum=static-site;service;job;worker
+// +kubebuilder:validation:Enum=static-site;service;job;worker;mobile-app;cli;extension
 type ContainerType string
 
 // Container types.
@@ -61,6 +61,9 @@ const (
 	ContainerTypeService    ContainerType = "service"
 	ContainerTypeJob        ContainerType = "job"
 	ContainerTypeWorker     ContainerType = "worker"
+	ContainerTypeMobileApp  ContainerType = "mobile-app"
+	ContainerTypeCLI        ContainerType = "cli"
+	ContainerTypeExtension  ContainerType = "extension"
 )
 
 // TemplateSource points to a platform-managed template repository at a pinned ref.
@@ -117,21 +120,22 @@ const (
 
 // Condition reasons.
 const (
-	ReasonResolved           = "Resolved"
-	ReasonNotFound           = "NotFound"
-	ReasonValid              = "Valid"
-	ReasonUnsupportedType    = "UnsupportedType"
-	ReasonCreated            = "Created"
-	ReasonScaffolding        = "Scaffolding"
-	ReasonScaffolded         = "Scaffolded"
-	ReasonFailed             = "Failed"
-	ReasonGitError           = "GitError"
-	ReasonForeignCommits     = "ForeignCommits"
-	ReasonLayerConflict      = "LayerConflict"
-	ReasonUnpinnedRef        = "UnpinnedRef"
-	ReasonWaiting            = "WaitingForScaffold"
-	ReasonAppliedAtScaffold  = "AppliedAtScaffold"
-	ReasonAddedAfterScaffold = "AddedAfterScaffold"
+	ReasonResolved             = "Resolved"
+	ReasonNotFound             = "NotFound"
+	ReasonValid                = "Valid"
+	ReasonUnsupportedType      = "UnsupportedType"
+	ReasonUnsupportedFramework = "UnsupportedFramework"
+	ReasonCreated              = "Created"
+	ReasonScaffolding          = "Scaffolding"
+	ReasonScaffolded           = "Scaffolded"
+	ReasonFailed               = "Failed"
+	ReasonGitError             = "GitError"
+	ReasonForeignCommits       = "ForeignCommits"
+	ReasonLayerConflict        = "LayerConflict"
+	ReasonUnpinnedRef          = "UnpinnedRef"
+	ReasonWaiting              = "WaitingForScaffold"
+	ReasonAppliedAtScaffold    = "AppliedAtScaffold"
+	ReasonAddedAfterScaffold   = "AddedAfterScaffold"
 )
 
 // Labels the operator sets so a resource can be found by its ancestors.
@@ -144,3 +148,18 @@ const (
 // AnnotationRetry, set or changed on a Failed Container, makes the operator try
 // to scaffold it again: after emptying its repository, for example.
 const AnnotationRetry = "c4.factory.io/retry"
+
+// CheckStatus is the combined state of the CI checks on one commit.
+type CheckStatus struct {
+	// commit is the SHA the checks ran on.
+	// +optional
+	Commit string `json:"commit,omitempty"`
+
+	// state is pending, success, failure or error; empty until a check reports.
+	// +optional
+	State string `json:"state,omitempty"`
+
+	// url links to the check run.
+	// +optional
+	URL string `json:"url,omitempty"`
+}

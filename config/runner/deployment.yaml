@@ -1,0 +1,51 @@
+# The CI runner for Container repositories (hack/runner). `make runner` builds and
+# kind-loads its image, then applies this. It registers with the token the seed
+# Job stores in Secret gitea/gitea-runner.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-runner
+  namespace: gitea
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitea-runner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitea-runner
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: runner
+          image: c4factory/gitea-runner:dev
+          imagePullPolicy: Never
+          env:
+            - name: GITEA_INSTANCE
+              value: http://gitea.gitea.svc.cluster.local:3000
+            - name: RUNNER_TOKEN
+              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {memory: 6Gi}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: work
+              mountPath: /data/work
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir: {}
+        # Jobs' checkouts and Flutter's build and test output live in memory: on
+        # the disk they wrote about 70 MB/s, which stalled etcd on the same disk for
+        # up to 25 s and with it the API server (seen in the UI's factory view).
+        # Both count against the memory limit above.
+        - name: work
+          emptyDir: {medium: Memory, sizeLimit: 3Gi}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 1Gi}

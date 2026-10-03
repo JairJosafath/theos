@@ -1,0 +1,10 @@
+# Build context for hack/agent/Dockerfile: the Go module, like the operator.
+**
+!**/*.go
+**/*_test.go
+!features/src/**
+!go.mod
+!go.sum
+
+# Local agent worktrees (Claude Code) are not part of any image.
+.claude/

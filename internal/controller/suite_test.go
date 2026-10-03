@@ -86,7 +86,10 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "config", "crd", "bases"),
+			filepath.Join("..", "..", "test", "crds", "agent-sandbox"),
+		},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -133,11 +136,14 @@ func setupReconcilers(mgr ctrl.Manager) error {
 	for _, r := range []interface{ SetupWithManager(ctrl.Manager) error }{
 		&ProjectReconciler{Client: c, Scheme: s},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
-		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
+		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
+		&TaskReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second,
+			StandardChangeRecheck: time.Second},
+		&CrewReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, PollInterval: time.Second},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

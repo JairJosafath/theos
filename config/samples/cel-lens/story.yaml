@@ -1,0 +1,93 @@
+# Who uses CEL Lens, what it is made of, and how the parts talk. Two Containers
+# because they are two programs in two languages with their own releases, joined
+# by a standard protocol: any LSP editor can reuse the server.
+apiVersion: c4.factory.io/v1alpha1
+kind: Person
+metadata:
+  name: policy-author
+spec:
+  displayName: Policy author
+  description: >-
+    A platform engineer who writes admission policies, CRD validation rules and
+    Kyverno policies in YAML, in VS Code or another LSP editor, and runs them in CI.
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: cel-lens
+spec:
+  displayName: CEL Lens
+  description: Rich language support for CEL inside Kubernetes YAML.
+  needs:
+  - Finds CEL in Kubernetes YAML by itself; known kinds need no markers, file names or settings
+  - Reports the errors the API server would report, at the right line and column
+  - Completes and explains variables, fields and functions for the place the expression is in
+  - Works offline, without a cluster or network
+  - Answers within 200 ms of a keystroke on a 1,000-line file
+  - Never gets in the way of other YAML tooling, such as schema validation
+  kpis:
+  - CEL errors caught before kubectl apply
+  - Time to a correct expression
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: policy-author-uses-cel-lens
+spec:
+  source: {kind: Person, name: policy-author}
+  target: {kind: SoftwareSystem, name: cel-lens}
+  description: Writes and checks CEL in Kubernetes YAML with
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: cel-language-server
+spec:
+  softwareSystemRef:
+    name: cel-lens
+  displayName: CEL language server
+  description: >-
+    Finds CEL in Kubernetes YAML and checks, completes and explains it with
+    Kubernetes' own CEL libraries: over LSP (serve --stdio) for editors, and as a
+    CLI (check) for CI.
+  type: cli
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: go-cli
+  standardRef:
+    name: go-standard
+  deploymentRef:
+    name: gitea-release
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: vscode-extension
+spec:
+  softwareSystemRef:
+    name: cel-lens
+  displayName: CEL Lens for VS Code
+  description: >-
+    Starts the CEL language server for YAML files, highlights CEL inside YAML,
+    and shows the server's state.
+  type: extension
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: vscode-extension
+  standardRef:
+    name: ts-standard
+  deploymentRef:
+    name: gitea-release
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: vscode-extension-to-cel-language-server
+spec:
+  source: {kind: Container, name: vscode-extension}
+  target: {kind: Container, name: cel-language-server}
+  description: >-
+    Starts `cel-language-server serve --stdio` and speaks LSP 3.17 with it over
+    stdin and stdout; the server answers only inside CEL, for yaml documents

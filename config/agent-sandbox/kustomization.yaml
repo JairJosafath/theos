@@ -1,0 +1,24 @@
+# Agent Sandbox, which runs the agents' sandboxes, for the Kind test environment.
+#   make agent-sandbox
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
+patches:
+- target:
+    kind: Deployment
+    name: agent-sandbox-controller
+    namespace: agent-sandbox-system
+  patch: |-
+    # On the single-node test cluster, the API server stalls past the 10 s lease
+    # renewal whenever a sandbox and CI start together, and the controller exits
+    # with "leader election lost": 74 restarts in a day, seen in the UI's
+    # factory view. v1.0.4 has no flag for the lease's length, and one replica
+    # needs no election. Two controllers may overlap for a moment during a
+    # rollout; a sandbox's pod has a fixed name, so they can't both create it.
+    - op: test
+      path: /spec/template/spec/containers/0/args/0
+      value: --leader-elect=true
+    - op: replace
+      path: /spec/template/spec/containers/0/args/0
+      value: --leader-elect=false

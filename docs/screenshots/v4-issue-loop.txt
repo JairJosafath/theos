@@ -1,0 +1,27 @@
+# v4: the issue loop with stand-in agents (cel-lens/loop-check), 2026-10-02T11:22Z
+
+## Tasks the Crew started
+NAME           CONTAINER    ISSUE   PHASE    ROUND   CHECKS    REVIEW    AGE
+loop-check-1   loop-check   1       Merged   2       success   approve   20m
+loop-check-2   loop-check   2       Merged   2       success   approve   19m
+loop-check-6   loop-check   6       Merged   2       success   approve   8m46s
+
+## Issues in Gitea
+{"n":6,"title":"Stand-in change with reviews in Gitea","state":"closed","labels":["kind/chore"],"assignees":["cel-lens-loop-check-agent"],"milestone":"Loop check"}
+{"n":3,"title":"Make it better","state":"open","labels":["kind/chore","status/needs-human"],"assignees":[],"milestone":null}
+{"n":2,"title":"Stand-in second change","state":"closed","labels":["kind/chore"],"assignees":["cel-lens-loop-check-agent"],"milestone":"Loop check"}
+{"n":1,"title":"Stand-in first change","state":"closed","labels":["kind/chore"],"assignees":["cel-lens-loop-check-agent"],"milestone":"Loop check"}
+
+## Comments on #1 and #3
+#1 c4admin: Task `loop-check-1` picked this up: Agent `stand-in` implements, Agent `stand-in` reviews, in up to 2 rounds.
+#1 c4admin: Merged in http://gitea.gitea.svc.cluster.local:3000/cel-lens/loop-check/pulls/4 after 2 rounds.
+#3 c4admin: This issue has no "Acceptance criteria" section with a checklist ("- [ ] ..."), so a reviewer could not tell when it is done. Add one, then label it status/ready again.
+
+## Pull request #7: author and reviews
+{"n":7,"author":"cel-lens-loop-check-agent","merged":true,"body":"Closes #6.\n\nTask `loop-check-6`: implemented by Agent `stand"}
+{"user":"c4admin","state":"REQUEST_CHANGES","body":"Review by Agent `stand-in`, round 1.  Stand-in review: add a second line."}
+{"user":"c4admin","state":"APPROVED","body":"Review by Agent `stand-in`, round 2.  Stand-in review: fine."}
+
+## Pull request #4, before the fix: no reviews (Gitea refused the operator reviewing its own pull request)
+{"n":4,"author":"c4admin","merged":true}
+0

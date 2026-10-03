@@ -9,3 +9,6 @@ templates/**/.venv
 templates/**/__pycache__
 templates/**/.pytest_cache
 templates/**/.ruff_cache
+
+# Local agent worktrees (Claude Code) are not part of any image.
+.claude/

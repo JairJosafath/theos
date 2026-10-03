@@ -17,7 +17,9 @@ limitations under the License.
 package controller
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -73,6 +75,34 @@ func containerPhaseChanges() builder.WatchesOption {
 			oldContainer, ok1 := e.ObjectOld.(*c4v1alpha1.Container)
 			newContainer, ok2 := e.ObjectNew.(*c4v1alpha1.Container)
 			return !ok1 || !ok2 || oldContainer.Status.Phase != newContainer.Status.Phase
+		},
+	})
+}
+
+// taskPhaseChanges passes a Task's creation, deletion and phase changes: a Task
+// finishing lets the next one on its Container start.
+func taskPhaseChanges() builder.WatchesOption {
+	return builder.WithPredicates(predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldTask, ok1 := e.ObjectOld.(*c4v1alpha1.Task)
+			newTask, ok2 := e.ObjectNew.(*c4v1alpha1.Task)
+			return !ok1 || !ok2 || oldTask.Status.Phase != newTask.Status.Phase
+		},
+	})
+}
+
+// podFinished passes agent pods only, and of their updates only the ones that
+// finish them: a sandbox's result is read once its pod is done.
+func podFinished() builder.WatchesOption {
+	isAgent := func(obj client.Object) bool { return obj.GetLabels()[LabelTask] != "" }
+	return builder.WithPredicates(predicate.Funcs{
+		CreateFunc:  func(e event.CreateEvent) bool { return isAgent(e.Object) },
+		DeleteFunc:  func(e event.DeleteEvent) bool { return isAgent(e.Object) },
+		GenericFunc: func(e event.GenericEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldPod, ok1 := e.ObjectOld.(*corev1.Pod)
+			newPod, ok2 := e.ObjectNew.(*corev1.Pod)
+			return ok1 && ok2 && isAgent(newPod) && oldPod.Status.Phase != newPod.Status.Phase
 		},
 	})
 }

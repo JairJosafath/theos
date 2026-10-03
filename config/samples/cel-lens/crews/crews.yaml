@@ -1,0 +1,27 @@
+apiVersion: c4.factory.io/v1alpha1
+kind: Crew
+metadata:
+  name: cel-language-server
+spec:
+  containerRef: {name: cel-language-server}
+  displayName: Language server crew
+  description: Builds the server issue by issue.
+  implementer: {name: claude-implementer}
+  reviewer: {name: claude-reviewer}
+  # Two issues at once, each on its own branch; a change that conflicts with one
+  # merged first goes back to its implementer to merge main.
+  parallel: 2
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Crew
+metadata:
+  name: vscode-extension
+spec:
+  containerRef: {name: vscode-extension}
+  displayName: VS Code extension crew
+  description: Builds the extension issue by issue.
+  implementer: {name: claude-implementer}
+  reviewer: {name: claude-reviewer}
+  # Two issues at once, each on its own branch; a change that conflicts with one
+  # merged first goes back to its implementer to merge main.
+  parallel: 2

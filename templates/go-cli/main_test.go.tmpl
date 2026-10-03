@@ -1,0 +1,71 @@
+package main
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
+
+func TestRun(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		args       []string
+		wantCode   int
+		wantStdout string // a substring of stdout; "" means stdout stays empty
+		wantStderr string // a substring of stderr; "" means stderr stays empty
+	}{
+		{
+			name:       "no arguments print the help",
+			wantCode:   exitOK,
+			wantStdout: "Usage: " + name + " [flags]",
+		},
+		{
+			name:       "help",
+			args:       []string{"--help"},
+			wantCode:   exitOK,
+			wantStdout: "-version",
+		},
+		{
+			name:       "version",
+			args:       []string{"--version"},
+			wantCode:   exitOK,
+			wantStdout: name + " dev\n",
+		},
+		{
+			name:       "unknown flag",
+			args:       []string{"--nope"},
+			wantCode:   exitUsage,
+			wantStderr: "flag provided but not defined: -nope",
+		},
+		{
+			name:       "unexpected argument",
+			args:       []string{"extra"},
+			wantCode:   exitUsage,
+			wantStderr: `unexpected argument "extra"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var stdout, stderr bytes.Buffer
+			if got := run(tt.args, &stdout, &stderr); got != tt.wantCode {
+				t.Errorf("run(%q) = %d, want %d", tt.args, got, tt.wantCode)
+			}
+			checkOutput(t, "stdout", stdout.String(), tt.wantStdout)
+			checkOutput(t, "stderr", stderr.String(), tt.wantStderr)
+		})
+	}
+}
+
+// checkOutput fails the test when got lacks want, or when want is empty and got
+// is not.
+func checkOutput(t *testing.T, stream, got, want string) {
+	t.Helper()
+	if want == "" && got != "" {
+		t.Errorf("%s = %q, want it empty", stream, got)
+	}
+	if !strings.Contains(got, want) {
+		t.Errorf("%s = %q, want it to contain %q", stream, got, want)
+	}
+}

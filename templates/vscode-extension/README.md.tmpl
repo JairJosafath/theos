@@ -1,0 +1,42 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` extension of {{ .SoftwareSystem }}, in project {{ .Project }}: a VS
+Code extension in TypeScript, bundled with esbuild, scaffolded by C4 Factory.
+
+## Use it
+
+Install the `.vsix` from a release: in VS Code, run **Extensions: Install from
+VSIX...**, or `code --install-extension {{ .Container }}-<version>.vsix`. Then run
+**{{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}: Say Hello** from the Command Palette.
+
+## Develop
+
+Open the repository in its devcontainer, which has Node 24 and the Go toolchain.
+
+```sh
+npm ci               # install the exact tools in package-lock.json
+npm run build        # bundle src/ into out/extension.js
+npm test             # unit tests with vitest; no VS Code needed
+{{- if .Standard }}
+make check           # what CI runs: format, lint, type check, test, package
+make dist            # dist/{{ .Container }}-<version>.vsix
+make help            # every target
+{{- else }}
+npm run package      # the .vsix
+{{- end }}
+```
+
+## Layout
+
+- `src/extension.ts` activates the extension: it registers commands and
+  providers and puts every registration in `context.subscriptions`.
+- `src/*.ts` are the extension's modules. Keep logic in modules that don't import
+  `vscode`, so plain unit tests cover it; tests sit next to them as `*.test.ts`.
+- `test/vscode.ts` stands in for the `vscode` module in unit tests
+  (`vitest.config.mts` points `vscode` at it).
+- `esbuild.mjs` bundles into `out/`; `.vscodeignore` keeps everything else out of
+  the `.vsix`.
+{{- if .Standard }}
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}

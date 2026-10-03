@@ -1,0 +1,82 @@
+# Lint config for agent-written Flutter app code.
+#
+# Base: very_good_analysis 11.0.0 (216 lint rules, strict-casts,
+# strict-inference, strict-raw-types). Pinned to the versioned file so a
+# package upgrade never changes the rules silently; bump both together.
+# Requires Dart SDK >= 3.13 (pubspec: `sdk: ^3.13.0`,
+# dev_dependencies: `very_good_analysis: ^11.0.0`).
+#
+# `make check` runs `flutter analyze --fatal-infos`, so every lint below
+# blocks a commit whatever its severity. The `errors:` promotions mark the
+# rules that catch real crashes and leaks, so they also show as errors in
+# editors and agent tool output.
+include: package:very_good_analysis/analysis_options.11.0.0.yaml
+
+analyzer:
+  # Restated from very_good_analysis so the strict modes stay on even if the
+  # base changes. No implicit dynamic, no implicit downcasts, no raw generics.
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+
+  errors:
+    # Kept from very_good_analysis: close_sinks has unresolved false
+    # positives. Closing StreamControllers is a [review] rule instead.
+    close_sinks: ignore
+    # Crash: using a BuildContext after an await on an unmounted widget.
+    use_build_context_synchronously: error
+    # Lost errors and races: every Future is awaited or unawaited() on purpose.
+    unawaited_futures: error
+    discarded_futures: error
+    # Leaks: an uncancelled subscription keeps the widget alive.
+    cancel_subscriptions: error
+    # Silent failure: an empty catch hides bugs.
+    empty_catches: error
+    # Only actionable diagnostics; never print user data to the system log.
+    avoid_print: error
+    # Test-only or subclass-only APIs used from app code are design bugs.
+    invalid_use_of_visible_for_testing_member: error
+    invalid_use_of_protected_member: error
+    # Kept from very_good_analysis (the base sets these; restated because a
+    # local `errors:` block is the one agents read).
+    missing_required_param: error
+    missing_return: error
+
+  # Generated code is not ours to lint. The base's excludes are restated in
+  # case the list is replaced rather than merged.
+  exclude:
+    - test/.test_coverage.dart
+    - lib/generated_plugin_registrant.dart
+    - lib/l10n/app_localizations*.dart
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    # Build output and the Android project are not Dart; flutter analyze adds
+    # these itself when they are missing, which would change this file.
+    - build/**
+    - android/**
+
+formatter:
+  # Same as very_good_analysis: the formatter adds and removes trailing commas,
+  # so agents never hand-place them. 80 columns matches
+  # lines_longer_than_80_chars.
+  page_width: 80
+  trailing_commas: automate
+
+linter:
+  rules:
+    # App code is not a published package API. Docs on every public widget
+    # constructor and field are mostly restated names, which Effective Dart
+    # and the Flutter style guide both call useless. Non-obvious behaviour,
+    # units, edge cases and ownership must still be documented ([review]).
+    # comment_references stays on, so the docs that exist stay correct.
+    public_member_api_docs: false
+
+    # Considered and left as very_good_analysis has them:
+    # - avoid_classes_with_only_static_members stays off: the Flutter style
+    #   guide groups constants in `abstract final class`es (e.g. Spacing.md).
+    # - unreachable_from_main stays off: it only checks libraries with main().
+    # - prefer_expression_function_bodies stays off: the Flutter style guide
+    #   wants braces for bodies that wrap.
+    # - Experimental rules (unnecessary_async, unsafe_variance,
+    #   avoid_futureor_void) stay off until stable; FutureOr is a [review] rule.

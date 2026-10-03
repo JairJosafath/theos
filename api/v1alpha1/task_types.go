@@ -1,0 +1,314 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package v1alpha1
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+)
+
+// TaskSpec is a goal for one Container, done by an Agent: written here, or in an
+// issue of the Container's repository.
+// +kubebuilder:validation:XValidation:rule="has(self.goal) != has(self.issue)",message="set exactly one of goal and issue"
+// +kubebuilder:validation:XValidation:rule="has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)",message="goal and issue are immutable; create a new Task"
+// +kubebuilder:validation:XValidation:rule="has(self.reviewerRef) == has(oldSelf.reviewerRef)",message="reviewerRef is immutable"
+// +kubebuilder:validation:XValidation:rule="!has(self.allowedProtectedPaths) || has(self.issue)",message="allowedProtectedPaths needs an issue"
+// +kubebuilder:validation:XValidation:rule="has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)",message="allowedProtectedPaths is immutable"
+type TaskSpec struct {
+	// containerRef names the Container to work on. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="containerRef is immutable"
+	// +required
+	ContainerRef LocalRef `json:"containerRef"`
+
+	// agentRef names the Agent that implements the goal, and reviews it when no
+	// reviewerRef is set. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="agentRef is immutable"
+	// +required
+	AgentRef LocalRef `json:"agentRef"`
+
+	// reviewerRef names the Agent that reviews each round, so the review can use
+	// another model than the work. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="reviewerRef is immutable"
+	// +optional
+	ReviewerRef *LocalRef `json:"reviewerRef,omitempty"`
+
+	// goal says what the change must achieve, in plain words. It can't change.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=8000
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="goal is immutable; create a new Task"
+	// +optional
+	Goal string `json:"goal,omitempty"`
+
+	// issue is the number of an issue in the Container's repository whose title
+	// and body are the goal. The operator reads it before each run, labels it with
+	// the Task's progress, and closes it when the Task merges. It can't change.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="issue is immutable; create a new Task"
+	// +optional
+	Issue int32 `json:"issue,omitempty"`
+
+	// allowedProtectedPaths are Standard-protected files, other than AGENTS.md,
+	// docs/agents/ and .c4factory.yaml, that this Task may change. The agent
+	// still proposes them, and the change goes through its own review. It needs
+	// an issue, and it can't change.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="self.all(p, p != 'AGENTS.md' && p != '.c4factory.yaml' && p != 'docs/agents' && !p.startsWith('docs/agents/'))",message="allowedProtectedPaths may not include AGENTS.md, docs/agents/ or .c4factory.yaml"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="allowedProtectedPaths is immutable"
+	// +optional
+	AllowedProtectedPaths []string `json:"allowedProtectedPaths,omitempty"`
+}
+
+// TaskPhase is where a Task is in its rounds.
+// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;Blocked;Merged;Failed
+type TaskPhase string
+
+// Task phases.
+const (
+	TaskPending      TaskPhase = "Pending"
+	TaskImplementing TaskPhase = "Implementing"
+	TaskChecking     TaskPhase = "Checking"
+	TaskReviewing    TaskPhase = "Reviewing"
+	TaskBlocked      TaskPhase = "Blocked"
+	TaskMerged       TaskPhase = "Merged"
+	TaskFailed       TaskPhase = "Failed"
+)
+
+// TaskReview is the reviewer's verdict on a round.
+type TaskReview struct {
+	// verdict is approve or changes.
+	// +optional
+	Verdict string `json:"verdict,omitempty"`
+
+	// summary is what the reviewer found.
+	// +optional
+	Summary string `json:"summary,omitempty"`
+}
+
+// TaskTransition is one step in a Task's timeline: from at on, the Task was in
+// phase and round, for reason.
+type TaskTransition struct {
+	// at is when the step began.
+	// +required
+	At metav1.Time `json:"at"`
+
+	// phase is the Task's phase from then on.
+	// +required
+	Phase TaskPhase `json:"phase"`
+
+	// round is the implement round.
+	// +optional
+	Round int32 `json:"round,omitempty"`
+
+	// reason is the Progressing condition's reason, such as Running,
+	// WaitingForSlot or Checking.
+	// +kubebuilder:validation:MaxLength=128
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// message says more, in up to 200 characters.
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
+// TaskStandardChange is the Standard change a Task proposed: the protected files
+// it wants changed, and where that change is being reviewed.
+type TaskStandardChange struct {
+	// issue is the number of the issue filed for the change.
+	// +required
+	Issue int32 `json:"issue"`
+
+	// issueURL is where to find the issue.
+	// +optional
+	IssueURL string `json:"issueURL,omitempty"`
+
+	// paths are the protected files the proposal changes.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +required
+	Paths []string `json:"paths"`
+
+	// branch is where the change is made.
+	// +optional
+	Branch string `json:"branch,omitempty"`
+
+	// count is how many Standard changes this Task has proposed.
+	// +required
+	Count int32 `json:"count"`
+
+	// resumedRound is the round the Task resumed in after the change merged.
+	// +optional
+	ResumedRound int32 `json:"resumedRound,omitempty"`
+}
+
+// TaskStatus defines the observed state of Task.
+type TaskStatus struct {
+	// phase is Pending, then Implementing, Checking and Reviewing each round, then
+	// Merged or Failed. Blocked means the Task waits for a Standard change.
+	// +optional
+	Phase TaskPhase `json:"phase,omitempty"`
+
+	// round is the implement round, from 1 up to the Agent's maxRounds.
+	// +optional
+	Round int32 `json:"round,omitempty"`
+
+	// reviewAttempts counts reviewer runs in this round that gave no verdict.
+	// +optional
+	ReviewAttempts int32 `json:"reviewAttempts,omitempty"`
+
+	// issueTitle is the title of spec.issue when the Task last read it, and
+	// issueURL where to find the issue.
+	// +optional
+	IssueTitle string `json:"issueTitle,omitempty"`
+
+	// +optional
+	IssueURL string `json:"issueURL,omitempty"`
+
+	// followUps are the issues filed from the reviewer's suggestions on merge.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=3
+	// +optional
+	FollowUps []string `json:"followUps,omitempty"`
+
+	// branch is where the agent works.
+	// +optional
+	Branch string `json:"branch,omitempty"`
+
+	// commit is the head of the branch the current round produced.
+	// +optional
+	Commit string `json:"commit,omitempty"`
+
+	// pullRequest is the number of the pull request, and pullRequestURL its address.
+	// +optional
+	PullRequest int32 `json:"pullRequest,omitempty"`
+
+	// +optional
+	PullRequestURL string `json:"pullRequestURL,omitempty"`
+
+	// checks is the CI result on commit.
+	// +optional
+	Checks *CheckStatus `json:"checks,omitempty"`
+
+	// review is the reviewer's latest verdict.
+	// +optional
+	Review *TaskReview `json:"review,omitempty"`
+
+	// summary is the implementing agent's account of its latest round.
+	// +optional
+	Summary string `json:"summary,omitempty"`
+
+	// feedback is what the next round must address: review findings, failed
+	// checks or the reason the last round failed.
+	// +optional
+	Feedback string `json:"feedback,omitempty"`
+
+	// standardChange is the Standard change the Task filed last: the one it
+	// waits for while Blocked. It stays after the Task resumes: it counts the
+	// changes filed, a later filing doesn't reuse its issue, and a resumed round
+	// that leaves nothing to do ends the Task as DoneByStandardChange. A Crew
+	// grants its paths to the Task that runs the change.
+	// +optional
+	StandardChange *TaskStandardChange `json:"standardChange,omitempty"`
+
+	// sandbox names the Sandbox running now, if any.
+	// +optional
+	Sandbox string `json:"sandbox,omitempty"`
+
+	// agentBackAt is when to try an unavailable agent again: its service hit a
+	// usage limit, was overloaded or refused the credentials. Waiting costs no round.
+	// +optional
+	AgentBackAt *metav1.Time `json:"agentBackAt,omitempty"`
+
+	// slotWaitSince is when the Task started waiting for a free agent slot; the
+	// longest waiter gets the next one.
+	// +optional
+	SlotWaitSince *metav1.Time `json:"slotWaitSince,omitempty"`
+
+	// phaseChangedAt is when the Task entered its current phase.
+	// +optional
+	PhaseChangedAt *metav1.Time `json:"phaseChangedAt,omitempty"`
+
+	// completedAt is when the Task was Merged or Failed.
+	// +optional
+	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+
+	// history is the Task's timeline, oldest first: an entry each time its phase,
+	// round or Progressing reason changed. The newest 64 are kept.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=64
+	// +optional
+	History []TaskTransition `json:"history,omitempty"`
+
+	// observedGeneration is the spec generation the status reflects.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// conditions: Progressing and Succeeded.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:printcolumn:name="Container",type=string,JSONPath=".spec.containerRef.name"
+// +kubebuilder:printcolumn:name="Issue",type=integer,JSONPath=".spec.issue"
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Round",type=integer,JSONPath=".status.round"
+// +kubebuilder:printcolumn:name="Checks",type=string,JSONPath=".status.checks.state"
+// +kubebuilder:printcolumn:name="Review",type=string,JSONPath=".status.review.verdict"
+// +kubebuilder:printcolumn:name="PR",type=string,JSONPath=".status.pullRequestURL",priority=1
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+
+// Task is a goal for a Container. The operator runs an Agent in a sandbox to
+// implement it on a branch, opens a pull request, waits for CI, runs the Agent
+// again as reviewer, and merges when both pass. It is owned by its Container.
+type Task struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// metadata is a standard object metadata
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitzero"`
+
+	// spec defines the goal, the Container and the Agent
+	// +required
+	Spec TaskSpec `json:"spec"`
+
+	// status defines the observed state of Task
+	// +optional
+	Status TaskStatus `json:"status,omitzero"`
+}
+
+// +kubebuilder:object:root=true
+
+// TaskList contains a list of Task
+type TaskList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitzero"`
+	Items           []Task `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, &Task{}, &TaskList{})
+		return nil
+	})
+}

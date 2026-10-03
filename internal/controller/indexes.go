@@ -31,6 +31,8 @@ const (
 	indexSoftwareSystem = ".spec.softwareSystemRef.name"
 	// indexContainer indexes Sessions by their Container.
 	indexContainer = ".spec.containerRef.name"
+	// indexTaskContainer indexes Tasks by their Container.
+	indexTaskContainer = indexContainer
 	// indexElement indexes Relationships by both ends, as "Kind/name".
 	indexElement = ".spec.elements"
 	// indexSource indexes Relationships by their source, as "Kind/name".
@@ -60,6 +62,18 @@ func SetupIndexes(ctx context.Context, mgr manager.Manager) error {
 	if err := indexer.IndexField(ctx, &c4v1alpha1.Session{}, indexContainer,
 		func(o client.Object) []string {
 			return []string{o.(*c4v1alpha1.Session).Spec.ContainerRef.Name}
+		}); err != nil {
+		return err
+	}
+	if err := indexer.IndexField(ctx, &c4v1alpha1.Crew{}, indexContainer,
+		func(o client.Object) []string {
+			return []string{o.(*c4v1alpha1.Crew).Spec.ContainerRef.Name}
+		}); err != nil {
+		return err
+	}
+	if err := indexer.IndexField(ctx, &c4v1alpha1.Task{}, indexTaskContainer,
+		func(o client.Object) []string {
+			return []string{o.(*c4v1alpha1.Task).Spec.ContainerRef.Name}
 		}); err != nil {
 		return err
 	}

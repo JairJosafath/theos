@@ -1,0 +1,73 @@
+// Command {{ .Container }} is {{ or .DisplayName .Container }}, a command-line
+// program of {{ .SoftwareSystem }}.
+//
+// Usage:
+//
+//	{{ .Container }} [flags]
+//
+// The flags are:
+//
+//	--version
+//		Print the version and exit.
+//	-h, --help
+//		Print the help and exit.
+package main
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+)
+
+// name is the program's name in messages and help, the same as its binary's.
+const name = "{{ .Container }}"
+
+// version is the release this binary was built from. make build and make dist
+// set it with -ldflags "-X main.version=..."; go run and go test leave "dev".
+var version = "dev"
+
+// Exit codes, as shells and CI read them.
+const (
+	exitOK    = 0 // success, including --help and --version
+	exitUsage = 2 // the command line was wrong
+)
+
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run is the whole program behind main: it parses args, writes results to
+// stdout and diagnostics to stderr, and returns the exit code. It never exits
+// or touches global state, so tests call it directly.
+func run(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(io.Discard) // run reports parse errors itself
+	showVersion := flags.Bool("version", false, "print the version and exit")
+
+	err := flags.Parse(args)
+	switch {
+	case errors.Is(err, flag.ErrHelp):
+		usage(stdout, flags)
+		return exitOK
+	case err != nil:
+		fmt.Fprintf(stderr, "%s: %v\nRun '%s --help' for usage.\n", name, err, name)
+		return exitUsage
+	case flags.NArg() > 0:
+		fmt.Fprintf(stderr, "%s: unexpected argument %q\nRun '%s --help' for usage.\n", name, flags.Arg(0), name)
+		return exitUsage
+	case *showVersion:
+		fmt.Fprintln(stdout, name, version)
+		return exitOK
+	}
+	usage(stdout, flags)
+	return exitOK
+}
+
+// usage writes the help text to w.
+func usage(w io.Writer, flags *flag.FlagSet) {
+	fmt.Fprintf(w, "Usage: %s [flags]\n\nFlags:\n", name)
+	flags.SetOutput(w)
+	flags.PrintDefaults()
+}

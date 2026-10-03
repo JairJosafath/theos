@@ -1,0 +1,20 @@
+apiVersion: c4.factory.io/v1alpha1
+kind: Task
+metadata:
+  name: photo-editor-v1
+  namespace: toolbox
+spec:
+  containerRef: {name: photo-editor}
+  agentRef: {name: claude}
+  goal: |
+    Build version 1 of Photo Editor: everyday photo edits without a subscription.
+    - Pick a photo from the gallery.
+    - Crop with free and fixed aspect ratios, rotate, flip.
+    - Adjust brightness, contrast, saturation and warmth; a set of filters.
+    - Add text, draw freehand, and blur or pixelate areas to hide private details.
+    - Undo and redo; nothing changes the original until export.
+    - Export at full resolution as JPEG or PNG, with an option to strip EXIF; save
+      and share.
+    Suggested packages: pro_image_editor (leave its AI hooks out), image,
+    image_picker, gal, share_plus. Keep the release manifest free of the INTERNET
+    permission.

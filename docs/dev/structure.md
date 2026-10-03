@@ -1,0 +1,51 @@
+# Project structure
+
+Where things live. Read [../architecture.md](../architecture.md) for which way
+dependencies may point.
+
+```
+cmd/main.go                        Manager entry (registers controllers, Session feature flags)
+cmd/c4session/                     Session client CLI, run in devcontainers
+cmd/c4agent/                       Task runner, run in agent sandboxes
+api/v1alpha1/*_types.go            CRD schemas for all sixteen kinds (+kubebuilder markers)
+api/v1alpha1/shared_types.go       Refs, Container types, condition names and labels
+api/v1alpha1/zz_generated.*        Auto-generated (DO NOT EDIT)
+internal/controller/*              Reconcilers: read resources, call rules, write status
+internal/model/                    Pure business rules: choices, relationships, roll-up, staleness
+internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity, commit trailers
+internal/gitprovider/              GitProvider interface and the Gitea implementation (REST + go-git)
+internal/sessionclient/            The Session client's logic: register, heartbeat, delete
+internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report
+features/src/c4session/            The c4session devcontainer feature, embedded by the operator
+config/crd/bases/*                 Generated CRDs (DO NOT EDIT)
+config/rbac/role.yaml              Generated RBAC (DO NOT EDIT)
+config/policy/                     ValidatingAdmissionPolicy (Project name equals namespace)
+config/gitea/                      Gitea for the test environment
+config/samples/webshop/            The sample story (edit these)
+config/samples/toolbox/            The agent factory story: six tool apps, Agents and Tasks
+config/samples/cel-lens/           CEL Lens: two Containers, Crews, and the backlog filed as Gitea issues
+config/runner/                     The Gitea CI runner for Container repositories
+config/ui/                         The read-only UI's Deployment and read-only RBAC
+config/metrics-server/             metrics-server for Kind (CPU and memory for the UI and kubectl top)
+config/agent-sandbox/              Agent Sandbox for Kind, without leader election
+templates/<name>/                  Template repositories, pushed and tagged into Gitea by the seed job
+templates/versions.txt             The tag each template is released at
+hack/testenv.mk                    Make targets for the Kind test environment
+hack/seed/                         The seed job image and manifests
+hack/session/                      The Session client image and the test Session pod
+hack/toolchain-slim/               The slim Flutter toolchain (no Android SDK) for CI checks and agents
+hack/toolchain/                    The full Flutter toolchain with the Android SDK, for releases and devcontainers
+hack/toolchain-go/                 The Go and Node toolchain, with a warm build cache, for Go and TypeScript Containers
+hack/backlog/                      Files a backlog of Markdown issues into Gitea, with labels, milestones and dependencies
+hack/runner/, hack/agent/          The CI runner and agent images, built on the toolchain
+hack/render/                       Renders templates locally, the way the operator scaffolds
+test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox)
+test/e2e/                          End-to-end tests against the Kind cluster (make e2e)
+ui/                                Read-only UI (React + a GET-only proxy)
+docs/                              Design, architecture, plans and screenshots
+Makefile                           Build, test, cluster and deploy commands
+PROJECT                            Kubebuilder metadata, auto-generated (DO NOT EDIT)
+```
+
+The project uses the **single-group layout**: one group, `c4`, with domain
+`factory.io`. Do not convert it to multi-group.

@@ -1,0 +1,14 @@
+# qr-scanner-backup merged by agents (2026-10-01T17:35:25Z)
+
+NAME                CONTAINER    PHASE    ROUND   CHECKS    REVIEW    AGE
+qr-scanner-backup   qr-scanner   Merged   1       success   approve   6m33s
+
+Last review: Meets the goal: dataExtractionRules (cloud-backup and device-transfer) and fullBackupContent both exclude datastore/FlutterSharedPreferences.preferences_pb, which is where SharedPreferencesAsync stores the history. Backup stays enabled so future settings are kept. A new test reads the manifests and rules files and checks the exclusions, and the README privacy notes are updated. make check passes (118 tests). Non-blocking: the test checks file contents only, so a change to the plugin's storage name would not trip it; the release-manifest assertion is mildly redundant.
+
+Agent summary: The scan history is now excluded from cloud backup and device transfer. `make check` passes (119 tests) and the change is committed on `task/qr-scanner-backup`. I didn't test a real backup or device transfer, only the manifest and rules files.
+
+- **Manifest:** `android:dataExtractionRules` (Android 12+) and `android:fullBackupContent` (older) now point to two new files. Backup stays on overall.
+- **Rules:** `res/xml/data_extraction_rules.xml` excludes the history file from both cloud backup and device transfer. `res/xml/backup_rules.xml` excludes the same file for Android 11 and older.
+- **What is excluded:** `shared_preferences` keeps the history in `datastore/FlutterSharedPreferences.preferences_pb`. That store is shared and the app has no other settings today. Any settings added later must go in a different store to stay in the backup.
+- **Test:** `test/android/backup_rules_test.dart` reads the manifests and both rules files. It checks that the manifest points to the rules, that the release manifest doesn't override them, and that all three exclusions are present.
+- **README:** the privacy notes now mention the exclusion and the settings caveat above.

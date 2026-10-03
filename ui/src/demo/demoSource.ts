@@ -1,8 +1,12 @@
-// Demo mode's data source: the fixture, kept "alive" by moving the heartbeat of
-// Active sessions forward every 30 seconds, as a real Session client would.
+// Demo mode's data source: the fixtures, kept "alive" by moving the heartbeat of
+// Active sessions forward every 30 seconds, as a real Session client would. Two
+// projects: the webshop (the default) and CEL Lens.
 
-import type { Connection, Snapshot, Source, StoryData } from '../k8s/sources'
+import type { FactoryHealth } from '../k8s/health'
+import type { Connection, FactoryData, Snapshot, Source, StoryData } from '../k8s/sources'
 import type { Project } from '../k8s/types'
+import { CEL_LENS_NAMESPACE, demoCelLens } from './celLensFixture'
+import { demoFactory, demoHealth } from './factoryFixture'
 import { demoStory } from './fixture'
 
 const DEMO_CONNECTION: Connection = { phase: 'demo', loaded: true, problems: [] }
@@ -33,8 +37,8 @@ class StaticSource<T> implements Source<T> {
 export class DemoStorySource extends StaticSource<StoryData> {
   private timer?: ReturnType<typeof setInterval>
 
-  constructor(now = Date.now()) {
-    super(demoStory(now))
+  constructor(namespace?: string, now = Date.now()) {
+    super(namespace === CEL_LENS_NAMESPACE ? demoCelLens(now) : demoStory(now))
   }
 
   start(): void {
@@ -65,7 +69,18 @@ export class DemoStorySource extends StaticSource<StoryData> {
 
 export class DemoProjectsSource extends StaticSource<Project[]> {
   constructor(now = Date.now()) {
-    const project = demoStory(now).project
-    super(project ? [project] : [])
+    super([demoStory(now).project, demoCelLens(now).project].filter((p): p is Project => Boolean(p)))
+  }
+}
+
+export class DemoFactorySource extends StaticSource<FactoryData> {
+  constructor(now = Date.now()) {
+    super(demoFactory(now))
+  }
+}
+
+export class DemoHealthSource extends StaticSource<FactoryHealth | undefined> {
+  constructor(now = Date.now()) {
+    super(demoHealth(now))
   }
 }

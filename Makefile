@@ -42,6 +42,10 @@ all: build
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
+.PHONY: evaluate
+evaluate: ## Evaluate how the factory ran (one headless session): report on GitHub, file improvement issues.
+	hack/evaluate.sh
+
 ##@ Development
 
 .PHONY: manifests
@@ -69,8 +73,8 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 KIND_CLUSTER ?= c4factory
 
 .PHONY: e2e
-e2e: cluster gitea seed deploy session-image sample ## Build the whole test environment in Kind, then check every milestone.
-	KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout 20m
+e2e: cluster metrics-server gitea seed deploy session-image sample runner agent-sandbox agent-image toolbox ## Build the whole test environment in Kind, then check every milestone.
+	KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout 90m
 
 .PHONY: test-e2e
 test-e2e: e2e ## Same as e2e.
@@ -256,3 +260,10 @@ endef
 
 include hack/testenv.mk
 include hack/ui.mk
+
+PROJECT ?= cel-lens
+PUSH ?= 1
+
+.PHONY: backup-releases
+backup-releases: ## Zip every release tag of Gitea org PROJECT into backups/ and commit it (PUSH=0 skips the push).
+	PROJECT=$(PROJECT) PUSH=$(PUSH) hack/backup-releases.sh

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { describeCondition, describeContainerPhase, splitTemplateRef, splitWords, timeAgo, titleOf } from './describe'
+import {
+  describeCondition,
+  describeContainerPhase,
+  describeContainerType,
+  describeCrewPhase,
+  splitTemplateRef,
+  splitWords,
+  timeAgo,
+  titleOf,
+} from './describe'
 
 describe('timeAgo', () => {
   const now = Date.parse('2026-09-30T12:00:00Z')
@@ -60,9 +69,25 @@ describe('small helpers', () => {
     expect(titleOf({ metadata: { name: 'orders-api' } })).toBe('orders-api')
   })
 
+  it('names every Container type in words, and passes unknown ones through', () => {
+    expect(describeContainerType('static-site')).toBe('static site')
+    expect(describeContainerType('cli')).toBe('command-line tool')
+    expect(describeContainerType('extension')).toBe('editor extension')
+    expect(describeContainerType('plugin')).toBe('plugin')
+    expect(describeContainerType(undefined)).toBe('unknown type')
+  })
+
   it('has a badge for every phase, including none yet', () => {
     expect(describeContainerPhase('Failed').tone).toBe('error')
     expect(describeContainerPhase(undefined).label).toBe('No status yet')
+  })
+
+  it('has a badge for every Crew phase', () => {
+    expect(describeCrewPhase('Working')).toMatchObject({ label: 'Working', tone: 'progress' })
+    expect(describeCrewPhase('Idle').tone).toBe('ok')
+    expect(describeCrewPhase('Paused').tone).toBe('waiting')
+    expect(describeCrewPhase('Waiting').explanation).toMatch(/Ready check/)
+    expect(describeCrewPhase(undefined).label).toBe('No status yet')
   })
 
   it('splits identifiers and template refs', () => {

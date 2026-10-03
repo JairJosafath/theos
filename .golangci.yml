@@ -71,6 +71,21 @@ linters:
               desc: adapters take plain values (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/internal/controller
               desc: adapters must not depend on controllers (docs/architecture.md)
+        runner-has-no-cluster-access:
+          files:
+            - "**/internal/agentrunner/**"
+            - "**/cmd/c4agent/**"
+          deny:
+            - pkg: k8s.io
+              desc: the sandbox runner has no Kubernetes credentials; it reports through its termination message (docs/architecture.md)
+            - pkg: sigs.k8s.io
+              desc: the sandbox runner has no Kubernetes credentials (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/api
+              desc: the runner takes plain values from its environment (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/controller
+              desc: the runner must not depend on controllers (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/gitprovider
+              desc: the runner uses git and its token only; the operator talks to the Git host API (docs/architecture.md)
         api-stands-alone:
           files:
             - "**/api/**"

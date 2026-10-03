@@ -5,8 +5,9 @@ metadata:
   labels:
     app.kubernetes.io/name: c4-factory-ui
 ---
-# Read-only access to the story, the Sessions and the catalog, in every
-# namespace (one Project per namespace, so the project picker needs them all).
+# Read-only access to the story, the Sessions, the catalog and the factory's
+# work (Agents, Tasks, Crews), in every namespace (one Project per namespace, so
+# the project picker needs them all).
 # No status subresources, no Secrets, no verbs that write.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -29,6 +30,10 @@ rules:
   - deployments
   - connectors
   - gitproviders
+  - standards
+  - agents
+  - tasks
+  - crews
   verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -41,6 +46,39 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: c4-factory-ui-reader
+subjects:
+- kind: ServiceAccount
+  name: c4-factory-ui
+  namespace: c4-factory-ui
+---
+# For GET /factory/health, read by server.mjs itself: the factory's pods and the
+# node, and their CPU and memory from metrics-server. The server sends the
+# browser only a summary (names, states, restarts, usage), never pod specs, and
+# the browser can't reach these paths through /k8s. Still no Secrets, no writes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: c4-factory-ui-health
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+rules:
+- apiGroups: [""]
+  resources: [pods, nodes]
+  verbs: [get, list]
+- apiGroups: [metrics.k8s.io]
+  resources: [pods, nodes]
+  verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: c4-factory-ui-health
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: c4-factory-ui-health
 subjects:
 - kind: ServiceAccount
   name: c4-factory-ui

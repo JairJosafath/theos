@@ -1,0 +1,34 @@
+# Releases one at a time, live (2026-10-03, operator eb34cdd)
+
+$ milestones of cel-lens/cel-language-server (due dates set the order)
+v0.1.0  due 2026-10-02T23:59:59Z  open 0  closed 2
+v0.1.1  due 2026-10-04T23:59:59Z  open 4  closed 5
+v0.2.0  due 2026-10-06T23:59:59Z  open 3  closed 4
+v0.3.0  due 2026-10-08T23:59:59Z  open 3  closed 0
+
+$ ready issues and their milestones
+#60 v0.1.1  README: Kubernetes library functions have documentation now
+#59 v0.1.1  Leave internal functions out of completion
+#58 v0.1.1  Type the iteration variables of macros over policy variables
+#50 v0.2.0  Send completion documentation as Markdown
+#49 v0.2.0  Document CEL macros with examples, including two-variable comprehensions
+#45 v0.2.0  Hover and completion across line breaks, spaced selectors and optional field selection
+#44 v0.1.1 (status/in-progress, cel-language-server-44 round 2; moved from v0.2.0, it merges before v0.1.1 ends)
+
+$ kubectl -n cel-lens get crew cel-language-server -o jsonpath=...
+phase=Working active=["cel-language-server-44"] ready=[58,59,60] waiting=[45,49,50] polled=2026-10-03T02:40:54Z
+message: Task cel-language-server-44 is working on issue #44; 3 ready issues wait for a free place; 3 ready issues wait for release v0.1.1
+
+Before the fix the same issues read: ready=[45,49,50,58,59,60] waiting=[]
+"Task cel-language-server-44 is working on issue #44; 6 ready issues wait for a free place"
+
+$ # after readying v0.3.0 (#46 #53 #57; #46 blocks #57), the next poll
+ready=[58,59,60] waiting=[45,46,49,50,53,57]
+message: Task cel-language-server-44 is working on issue #44; 3 ready issues wait for a free place; 5 ready issues wait for release v0.1.1
+
+$ # v0.1.1 done: #60 merged 03:48:01Z (PR #94, d3c9417); the next poll
+phase=Working active=["cel-language-server-45"] ready=[49,50] waiting=[46,53,57] polled=2026-10-03T03:49:03Z
+message: Task cel-language-server-45 is working on issue #45; 2 ready issues wait for a free place; 1 waits on open dependencies; 2 ready issues wait for release v0.2.0
+
+$ milestones (open/closed)
+v0.1.1 0/9   v0.2.0 3/4   v0.3.0 3/0

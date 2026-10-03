@@ -1,0 +1,12 @@
+# doc-scanner-v1 merged by agents (2026-10-01T15:52:43Z)
+
+NAME             CONTAINER     PHASE    ROUND   CHECKS    REVIEW    AGE
+doc-scanner-v1   doc-scanner   Merged   2       success   approve   178m
+
+Last review: make check passes (format, analyze, 161 tests). Fully offline with no INTERNET permission in the main manifest, and a test checks it. Camera and import go through system pickers with no permissions. Auto edge detection, corner editing, perspective warp, three filters, page reorder/rotate/delete, PDF (A4/Letter/fit) and JPEG export with save/share, and a library with rename/delete are all implemented, with heavy work in isolates. The layering, Result handling, restoration, accessibility tests and justified ignores follow AGENTS.md. No changes required.
+
+Agent summary: I fixed the first two review points and committed them. `make check` passes with 161 tests, up from 152.
+
+- **Lost camera photo:** the picker service now calls `ImagePicker.retrieveLostData`. When the library opens, the repository saves any recovered photo as a new document and the screen shows a message. A recovered photo always lands in a new document, even if the camera was opened to add a page to an existing one, because the app doesn't record which document the capture was for. Tests cover the repository, the view model and the library page.
+- **Unsaved crop corners:** the crop screen now stores its dragged corners in Flutter's restoration state and puts them back after the app is killed. Corrupt restored data is ignored. I added a widget test that drags a corner, restarts and restores the app, and checks the corner is still there when you apply. Filter and rotation changes are saved immediately by the page editor, so only the corners needed this.
+- **Item 3 (`export_page.dart:152`):** I left this unchanged. The `SizedBox` already sits inside a `const Column`, so it is const, and adding `const` fails `unnecessary_const` under `--fatal-infos`. `build()` there only reads view-model state, with no IO or parsing.

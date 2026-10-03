@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -51,13 +52,15 @@ type ContainerReconciler struct {
 	ScaffoldOptions scaffold.Options
 	// ScaffoldTimeout bounds the Git calls of one scaffold attempt; zero means two minutes.
 	ScaffoldTimeout time.Duration
+	// ChecksRecheck is how often a Ready Container reads its checks; zero means a minute.
+	ChecksRecheck time.Duration
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers/finalizers,verbs=update
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;computes;deployments;connectors,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;standards;computes;deployments;connectors,verbs=get;list;watch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
@@ -110,7 +113,8 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if status.Phase == c4v1alpha1.ContainerReady {
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
 			metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
-		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
+		result := r.refreshChecks(ctx, &container, status)
+		return result, r.writeStatus(ctx, &container, status)
 	}
 
 	res, missing, err := r.resolve(ctx, &container)
@@ -131,10 +135,18 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
 		metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
 
-	if err := model.CheckChoices(string(container.Spec.Type), res.entries); err != nil {
+	err = model.CheckChoices(string(container.Spec.Type), res.entries)
+	if err == nil {
+		err = model.CheckStandard(container.Spec.FrameworkRef.Name, res.standard)
+	}
+	if err != nil {
+		reason := c4v1alpha1.ReasonUnsupportedType
+		if _, ok := errors.AsType[*model.FitError](err); ok {
+			reason = c4v1alpha1.ReasonUnsupportedFramework
+		}
 		status.Phase = c4v1alpha1.ContainerFailed
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionChoicesValid,
-			metav1.ConditionFalse, c4v1alpha1.ReasonUnsupportedType, err.Error())
+			metav1.ConditionFalse, reason, err.Error())
 		log.Info("Rejected catalog choices", "reason", err.Error())
 		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
 	}
@@ -213,6 +225,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.Relationship{}, sourceContainer).
 		Watches(&c4v1alpha1.GitProvider{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Framework{}, waitingContainers, specChanged()).
+		Watches(&c4v1alpha1.Standard{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Compute{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Deployment{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Connector{}, waitingContainers, specChanged()).

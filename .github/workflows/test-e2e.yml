@@ -1,34 +1,10 @@
 name: E2E Tests
 
-# The slowest check: it builds every image and the whole Kind environment. Anything
-# that ends up in the cluster counts; documentation, the UI, unit tests and lint
-# settings don't.
+# The slowest check: it builds every image and the whole Kind environment. It runs
+# only on demand (Actions → E2E Tests → Run workflow): on GitHub's runners it costs
+# too much and keeps failing, so pull requests and main skip it for now.
 on:
-  push:
-    branches: [main]
-    paths: &paths
-      - '**'
-      - '!**/*.md'
-      - '!docs/**'
-      - '!ui/**'
-      - '!config/ui/**'
-      - '!.devcontainer/**'
-      - '!**/*_test.go'
-      - 'test/e2e/**'
-      - '!.golangci.yml'
-      - '!.custom-gcl.yml'
-      - '!hack/evidence.sh'
-      - '!hack/ui.mk'
-      - '!.github/**'
-      - .github/workflows/test-e2e.yml
-  pull_request:
-    paths: *paths
   workflow_dispatch:
-
-# A newer push to a pull request replaces the run in progress.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 

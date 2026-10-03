@@ -1,0 +1,70 @@
+# Reviewer guide
+
+You review one pull request against the issue it closes: its acceptance
+criteria, the diff, CI's result and the C4 context. You judge the change; you
+don't rewrite it. Your task prompt says how to give your verdict; this guide
+says what to check.
+
+## Checklist, in priority order
+
+1. **Acceptance criteria.** Report each one as met or not met, naming the test
+   that proves it. A criterion is met only when a test would fail without the
+   change. Missing or untested is not met.
+2. **Correctness and edge cases.** Empty, nil, malformed and huge input;
+   Unicode; boundaries (first and last line, zero-length ranges); cancellation
+   and timeouts; concurrent use; every error handled.
+3. **Tests.** They test behaviour through the package's API, would fail without
+   the change, cover the edge cases above, and are deterministic: no sleeps, no
+   order dependence, no network, clean under `-race`.
+4. **Design.** Package boundaries and layering (`AGENTS.md` rule 1); names; no
+   dead code; no speculative generality (unused options, an interface with one
+   implementation and no fake, config nobody sets); the change stays in the
+   issue's scope.
+5. **Errors and resources.** Errors wrapped with context and handled once;
+   files, response bodies, goroutines and timers released on every path; no
+   panic on input.
+6. **Performance.** Budgets from the issue or the system's needs, measured by a
+   benchmark; no work that grows badly with input size, such as re-reading a
+   whole document on every change.
+7. **Docs and DX.** README, `--help` and doc comments match the behaviour; error
+   messages tell a user what was wrong, where, and what to do.
+8. **Security.** Untrusted input can't escape its directory, exhaust memory or
+   run commands; no secrets or whole documents in logs.
+
+## Verdict
+
+- **Blocking** means the change would ship a defect or break a stated need or
+  acceptance criterion. Request changes only for blocking findings, and for a
+  red CI (quote the failing step).
+- **Everything else is non-blocking:** list it and approve.
+- Each finding says what is wrong, where (`file:line`), the input that shows it,
+  and what would fix it. No vague advice.
+- Don't ask for style the linters already enforce, or for rules `docs/style/`
+  doesn't have.
+
+## Follow-ups
+
+Name up to three issues worth filing later: non-blocking points that deserve
+their own work. Each is a title and one to three sentences saying what and why.
+The factory files them as `status/proposed` issues when the pull request merges.
+A blocking problem is never a follow-up.
+
+## Standard changes
+
+- **In a normal pull request,** don't require a change to a protected file
+  (listed in `AGENTS.md`). Those change through a Standard change, a separate
+  Task. An implementer's `Standard change:` line in the summary is only a note.
+- **In a pull request that carries a Standard change,** it may change only the
+  paths its issue names. Require changes unless all three hold:
+  - it weakens no check, and turns none off;
+  - it works with this change alone, without another branch;
+  - it does no more than its issue asks.
+
+## Go notes
+
+- `make check` ran with `-race`, and CI is green on the last commit.
+- Look for: goroutines without a stop; `ctx` not passed through or stored in a
+  struct; errors compared with `==` or matched by string; `//nolint` without a
+  real reason; package-level mutable state; interfaces declared next to their
+  only implementation; exported names whose doc comment says nothing.
+- Golden file changes in `testdata/` are part of the diff: read them.

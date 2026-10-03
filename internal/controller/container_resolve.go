@@ -35,9 +35,11 @@ type resolved struct {
 	provider *c4v1alpha1.GitProvider
 	// creds come from the GitProvider's credentials Secret.
 	creds gitprovider.Credentials
-	// entries are the catalog entries in layer order: Framework, Compute,
-	// Deployment, then each Connector.
+	// entries are the catalog entries in layer order: Framework, Standard,
+	// Compute, Deployment, then each Connector.
 	entries []model.CatalogEntry
+	// standard is the Standard's entry, or nil when the Container picks none.
+	standard *model.CatalogEntry
 	// use is what the Container picks up through its Relationships to DataStores.
 	use model.DataStoreUse
 }
@@ -77,6 +79,7 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1alpha1
 	}
 	sides := []sideRef{
 		{model.SideFramework, &spec.FrameworkRef, &c4v1alpha1.Framework{}},
+		{model.SideStandard, spec.StandardRef, &c4v1alpha1.Standard{}},
 		{model.SideCompute, spec.ComputeRef, &c4v1alpha1.Compute{}},
 		{model.SideDeployment, spec.DeploymentRef, &c4v1alpha1.Deployment{}},
 	}
@@ -92,7 +95,11 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1alpha1
 			missing = append(missing, s.side+" "+s.ref.Name)
 			continue
 		}
-		res.entries = append(res.entries, catalogEntry(s.side, s.obj))
+		entry := catalogEntry(s.side, s.obj)
+		res.entries = append(res.entries, entry)
+		if s.side == model.SideStandard {
+			res.standard = &entry
+		}
 	}
 
 	// Connectors come through Relationships from this Container to DataStores.
@@ -137,8 +144,13 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1alpha1
 // credentials reads a GitProvider's Secret. It goes straight to the API server
 // rather than through the cache, so the operator never caches every Secret.
 func (r *ContainerReconciler) credentials(ctx context.Context, provider *c4v1alpha1.GitProvider) (gitprovider.Credentials, bool, error) {
+	return readCredentials(ctx, r.APIReader, provider)
+}
+
+// readCredentials reads a GitProvider's Secret without caching it.
+func readCredentials(ctx context.Context, apiReader client.Reader, provider *c4v1alpha1.GitProvider) (gitprovider.Credentials, bool, error) {
 	var secret corev1.Secret
-	err := r.APIReader.Get(ctx, types.NamespacedName{
+	err := apiReader.Get(ctx, types.NamespacedName{
 		Namespace: provider.Namespace, Name: provider.Spec.CredentialsSecretRef.Name,
 	}, &secret)
 	if apierrors.IsNotFound(err) {
@@ -162,12 +174,16 @@ func (r *ContainerReconciler) lookup(ctx context.Context, ns, name string, obj c
 	return err == nil, err
 }
 
-// catalogEntry converts any of the four catalog kinds into a model.CatalogEntry.
+// catalogEntry converts any of the five catalog kinds into a model.CatalogEntry.
 func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 	var spec c4v1alpha1.CatalogEntrySpec
+	var frameworks []string
 	switch o := obj.(type) {
 	case *c4v1alpha1.Framework:
 		spec = o.Spec
+	case *c4v1alpha1.Standard:
+		spec = o.Spec.CatalogEntrySpec
+		frameworks = o.Spec.SupportedFrameworks
 	case *c4v1alpha1.Compute:
 		spec = o.Spec
 	case *c4v1alpha1.Deployment:
@@ -180,10 +196,11 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 		supported = append(supported, string(t))
 	}
 	return model.CatalogEntry{
-		Side:           side,
-		Name:           obj.GetName(),
-		SupportedTypes: supported,
-		TemplateURL:    spec.Template.URL,
-		TemplateRef:    spec.Template.Ref,
+		Side:                side,
+		Name:                obj.GetName(),
+		SupportedTypes:      supported,
+		TemplateURL:         spec.Template.URL,
+		TemplateRef:         spec.Template.Ref,
+		SupportedFrameworks: frameworks,
 	}
 }

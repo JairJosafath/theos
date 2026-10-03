@@ -1,5 +1,6 @@
-# Lets the seed Job (namespace gitea) write Secret gitea-credentials in the
-# project namespace webshop, and nothing else. `make seed` creates the namespace.
+# Lets the seed Job (namespace gitea) write Secret gitea-credentials in each
+# project namespace and Secret gitea-runner in gitea, and nothing else.
+# `make seed` creates the namespaces.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -9,10 +10,38 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  name: seed-runner-token
+  namespace: gitea
+rules:
+  # create cannot be limited by name.
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [gitea-runner]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: seed-runner-token
+  namespace: gitea
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: seed-runner-token
+subjects:
+  - kind: ServiceAccount
+    name: seed
+    namespace: gitea
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
   name: seed-credentials
   namespace: webshop
 rules:
-  # create cannot be limited by name.
   - apiGroups: [""]
     resources: [secrets]
     verbs: [create]
@@ -26,6 +55,62 @@ kind: RoleBinding
 metadata:
   name: seed-credentials
   namespace: webshop
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: seed-credentials
+subjects:
+  - kind: ServiceAccount
+    name: seed
+    namespace: gitea
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: seed-credentials
+  namespace: toolbox
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [gitea-credentials]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: seed-credentials
+  namespace: toolbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: seed-credentials
+subjects:
+  - kind: ServiceAccount
+    name: seed
+    namespace: gitea
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: seed-credentials
+  namespace: cel-lens
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [gitea-credentials]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: seed-credentials
+  namespace: cel-lens
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

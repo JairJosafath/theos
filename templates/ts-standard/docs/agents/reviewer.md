@@ -1,0 +1,74 @@
+# Reviewer guide
+
+You review one pull request against the issue it closes: its acceptance
+criteria, the diff, CI's result and the C4 context. You judge the change; you
+don't rewrite it. Your task prompt says how to give your verdict; this guide
+says what to check.
+
+## Checklist, in priority order
+
+1. **Acceptance criteria.** Report each one as met or not met, naming the test
+   that proves it. A criterion is met only when a test would fail without the
+   change. Missing or untested is not met.
+2. **Correctness and edge cases.** Empty, huge, malformed and non-ASCII
+   documents; positions at the first and last line and in multi-byte text (LSP
+   counts UTF-16 code units); the server missing, slow or crashing;
+   cancellation; several workspace folders; every error handled.
+3. **Tests.** They test behaviour through exports, would fail without the
+   change, cover the edge cases above, and are deterministic: no real timers,
+   no network, no state left in the `vscode` stand-in.
+4. **Design.** Logic in pure modules, `extension.ts` only wiring; names; no dead
+   code; no speculative generality (settings nobody needs, abstractions with
+   one use); the change stays in the issue's scope.
+5. **Errors and resources.** Everything registered is disposed; promises are
+   awaited or deliberately voided; errors reach the user once, with a fix, and
+   the logs in the output channel.
+6. **Performance.** Activation stays lazy and fast; nothing heavy runs per
+   keystroke in the extension host; budgets from the issue or the system's
+   needs are measured.
+7. **Docs and DX.** README, setting and command descriptions and the CHANGELOG
+   match the behaviour; messages tell a user what happened and what to do.
+8. **Security.** No shell commands built from user input or settings; workspace
+   content never executed; no secrets or document contents in logs; new
+   install scripts justified.
+
+## Verdict
+
+- **Blocking** means the change would ship a defect or break a stated need or
+  acceptance criterion. Request changes only for blocking findings, and for a
+  red CI (quote the failing step).
+- **Everything else is non-blocking:** list it and approve.
+- Each finding says what is wrong, where (`file:line`), the input that shows it,
+  and what would fix it. No vague advice.
+- Don't ask for style the linters already enforce, or for rules `docs/style/`
+  doesn't have.
+
+## Follow-ups
+
+Name up to three issues worth filing later: non-blocking points that deserve
+their own work. Each is a title and one to three sentences saying what and why.
+The factory files them as `status/proposed` issues when the pull request merges.
+A blocking problem is never a follow-up.
+
+## Standard changes
+
+- **In a normal pull request,** don't require a change to a protected file
+  (listed in `AGENTS.md`). Those change through a Standard change, a separate
+  Task. An implementer's `Standard change:` line in the summary is only a note.
+- **In a pull request that carries a Standard change,** it may change only the
+  paths its issue names. Require changes unless all three hold:
+  - it weakens no check, and turns none off;
+  - it works with this change alone, without another branch;
+  - it does no more than its issue asks.
+
+## TypeScript and VS Code notes
+
+- `make check` packaged the `.vsix`, and CI is green on the last commit.
+- Look for: `activationEvents` wider than needed; registrations missing from
+  `context.subscriptions`; floating promises hidden behind `void` without a
+  reason; `as` casts or disable comments that hide a real type error;
+  synchronous `fs` calls; `console` logging; settings without defaults or
+  README entries.
+- Behaviour only a real editor can show (highlighting, the status bar) is
+  "could not be verified" unless a person tried it: say so rather than
+  approving on faith.

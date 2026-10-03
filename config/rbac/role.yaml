@@ -7,9 +7,20 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - secrets
+  - pods
   verbs:
   - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - get
+  - patch
+  - update
 - apiGroups:
   - ""
   resources:
@@ -22,14 +33,26 @@ rules:
   - update
   - watch
 - apiGroups:
+  - agents.x-k8s.io
+  resources:
+  - sandboxes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
   - c4.factory.io
   resources:
+  - agents
   - computes
   - connectors
   - deployments
   - frameworks
   - gitproviders
   - people
+  - standards
   verbs:
   - get
   - list
@@ -40,11 +63,13 @@ rules:
   - c4.factory.io
   resources:
   - containers
+  - crews
   - datastores
   - projects
   - relationships
   - sessions
   - softwaresystems
+  - tasks
   verbs:
   - create
   - delete
@@ -57,26 +82,49 @@ rules:
   - c4.factory.io
   resources:
   - containers/finalizers
+  - crews/finalizers
   - datastores/finalizers
   - projects/finalizers
   - relationships/finalizers
   - sessions/finalizers
   - softwaresystems/finalizers
+  - tasks/finalizers
   verbs:
   - update
 - apiGroups:
   - c4.factory.io
   resources:
   - containers/status
+  - crews/status
   - datastores/status
   - projects/status
   - relationships/status
   - sessions/status
   - softwaresystems/status
+  - tasks/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - c4.factory.io
+  resources:
+  - persons
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - rbac.authorization.k8s.io
   resources:

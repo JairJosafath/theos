@@ -385,3 +385,63 @@ func TestCommitMessageRoundTrip(t *testing.T) {
 		t.Errorf("ParseCommitMessage(foreign) error = %v, want ErrNotOurs", err)
 	}
 }
+
+// withStandard puts a Standard layer right after the Framework.
+func withStandard(layers []Layer) []Layer {
+	standard := Layer{Side: model.SideStandard, Name: "python-standard", Ref: "v1.0.0", Files: tree(
+		"AGENTS.md.tmpl", "Rules for {{ .Container }}, checked by {{ .Standard }}",
+		"Makefile", "check:\n\ttrue\n",
+	)}
+	return append([]Layer{layers[0], standard}, layers[1:]...)
+}
+
+func TestBuildRendersStandardSecond(t *testing.T) {
+	in := ordersAPI
+	in.Standard = "python-standard"
+	result, err := Build(in, withStandard(webshopLayers()), Options{})
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	want := []string{"python-fastapi@v1.2.0", "python-standard@v1.0.0", "small@v1.0.0", "k8s-manifests@v1.0.0", "postgres@v1.1.0"}
+	if !slices.Equal(result.ScaffoldedFrom, want) {
+		t.Errorf("ScaffoldedFrom = %v, want %v", result.ScaffoldedFrom, want)
+	}
+	if got := string(result.Files["AGENTS.md"].Data); got != "Rules for orders-api, checked by python-standard" {
+		t.Errorf("AGENTS.md = %q", got)
+	}
+}
+
+func TestBuildStandardConflictsWithFramework(t *testing.T) {
+	layers := withStandard(webshopLayers())
+	layers[1].Files["pyproject.toml"] = File{Data: []byte("x")}
+	_, err := Build(ordersAPI, layers, Options{})
+	if err == nil || err.Error() != "python-fastapi and python-standard both write pyproject.toml" {
+		t.Fatalf("Build() error = %v", err)
+	}
+}
+
+func TestBuildRejectsStandardBeforeFramework(t *testing.T) {
+	layers := withStandard(webshopLayers())
+	layers[0], layers[1] = layers[1], layers[0]
+	_, err := Build(ordersAPI, layers, Options{})
+	if err == nil || !strings.Contains(err.Error(), "out of order") {
+		t.Fatalf("Build() error = %v, want out of order", err)
+	}
+}
+
+func TestDartString(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"Photo Editor", `'Photo Editor'`},
+		{"Rick's Editor", `"Rick's Editor"`},
+		{`Rick's "Editor"`, `'Rick\'s "Editor"'`},
+		{"Pay $5", `r'Pay $5'`},
+		{`Pay $5 "now" 'please'`, `'Pay \$5 "now" \'please\''`},
+		{`C:\tools`, `r'C:\tools'`},
+		{"Tab\there", `'Tab\u{9}here'`},
+	}
+	for _, tt := range tests {
+		if got := dartString(tt.in); got != tt.want {
+			t.Errorf("dartString(%q) = %s, want %s", tt.in, got, tt.want)
+		}
+	}
+}

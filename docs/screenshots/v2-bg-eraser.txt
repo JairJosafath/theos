@@ -1,0 +1,15 @@
+# bg-eraser-v1 merged by agents (2026-10-01T15:49:48Z)
+
+NAME           CONTAINER   PHASE    ROUND   CHECKS    REVIEW    AGE
+bg-eraser-v1   bg-eraser   Merged   3       success   approve   175m
+
+Last review: make check passes (98 tests). All v1 features are present: ML Kit selfie segmentation (bundled, offline), erase/restore brushes with size, zoom, pan, undo/redo, transparent/colour/blur backgrounds, and PNG/JPEG export at original resolution with save and share, with heavy work in isolates. The release manifest removes INTERNET, there is no storage permission beyond SDK 28 for gallery save, and the system picker is used. Stale preview decodes are dropped, images are disposed, export activity always resets, failures are Result-typed, drafts persist, and the layers, theming and strings follow AGENTS.md. Tests cover view model, repositories, pipeline and screens (content, empty, error, 200% text, accessibility guidelines). Optional follow-up: make the draft-save chain in the view model tolerate unexpected exceptions.
+
+Agent summary: I addressed all three review points and committed them as 33d9f3a. `make check` passes.
+
+1. **Preview failure:**
+   - **Failure and message:** I added a separate `Failure.previewFailed` and `EditorMessage.previewFailed`, so a failed preview no longer says "export failed".
+   - **Error state and retry:** The view model exposes `hasPreviewFailed` and a `retryPreview()` command. When no preview exists yet, the page shows an error view with a "Try again" button instead of a permanent spinner.
+   - **Tests:** I added view-model tests for the failed first preview, retry and `startOver`. A widget test covers the error view and retry, including accessibility guidelines. The repository test now expects `previewFailed`.
+2. **Export activity:** `save` and `share` now go through one `_exportThen` method in the view model. It resets activity to idle in a `finally`, so an `Error` thrown in the export isolate can't leave the screen stuck. I put the reset in the view model, which owns `activity`, and left `ExportRepository.export` catching only `Exception`. The error still propagates as a bug. A test with a fake that throws a `StateError` confirms activity returns to idle.
+3. **`hasEdits`:** It now also counts a non-transparent background and a non-PNG file type, alongside strokes and undone strokes. Tests cover the view model and the discard dialog after a background change.

@@ -5,5 +5,34 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: c4factory
+# The node's disk is shared with the rest of the machine (on WSL, one virtual
+# disk), and agents and CI write gigabytes to it. etcd syncing each write to it
+# took up to 7 s, so the API stalled and the scheduler and controller-manager
+# lost their 15 s leases and crash-looped, leaving sandbox pods Pending. A test
+# cluster can lose its newest writes in a hard crash: etcd skips the syncs, and
+# the leases outlast a stall. kubeadm v1beta4 takes extraArgs as a list, and a
+# patch replaces the list, so Kind's own controller-manager flag is repeated.
+kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    etcd:
+      local:
+        extraArgs:
+          - name: unsafe-no-fsync
+            value: "true"
+    controllerManager:
+      extraArgs:
+        - name: enable-hostpath-provisioner
+          value: "true"
+        - name: leader-elect-lease-duration
+          value: 60s
+        - name: leader-elect-renew-deadline
+          value: 40s
+    scheduler:
+      extraArgs:
+        - name: leader-elect-lease-duration
+          value: 60s
+        - name: leader-elect-renew-deadline
+          value: 40s
 nodes:
   - role: control-plane

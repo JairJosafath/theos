@@ -1,0 +1,102 @@
+# Agent guide
+
+This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` extension of {{ .SoftwareSystem }}: one VS
+Code extension in TypeScript, scaffolded by C4 Factory with the `{{ .Standard }}`
+Standard. Build it to the rules below. What the extension is for, and what it must
+never do, is in the issue you were given and the system's needs: follow those.
+
+## The one rule
+
+`make check` must pass before every commit. It installs the exact packages in
+`package-lock.json`, then runs Prettier (check), ESLint with `eslint.config.mjs`
+(typescript-eslint strict, no warnings allowed), `tsc` with the strict
+`tsconfig.json`, the vitest unit tests, and packages the `.vsix` to prove it
+still packages. CI runs the same command, and nothing reaches `main` without it
+passing and a review. Never commit red.
+
+## Workflow
+
+1. Read the issue, its acceptance criteria, and your role guide:
+   `docs/agents/implementer.md` or `docs/agents/reviewer.md`.
+2. Read the code you are about to change and match it.
+3. Write a failing test first: one per acceptance criterion, or one that shows the bug.
+4. Make the smallest change that meets every criterion. One concern per commit.
+5. `make check`, then commit with a Conventional Commit message
+   (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`).
+6. `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` never change. Other protected files
+   change only through a Standard change (see your role guide), never in a normal pull
+   request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
+   `Makefile`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
+   `.editorconfig`, `AGENTS.md`, `docs/style/` and `docs/agents/` belong to the
+   Standard. `tsconfig.json` and `vitest.config.mts` decide what the checks check: don't
+   loosen them.
+
+## Lints
+
+- Fix every finding; don't silence it. An `eslint-disable-next-line <rule> -- <why>`
+  is a last resort for a false positive: one rule, one reason. Never
+  `@ts-ignore`; never a file-wide disable.
+- `make fmt` formats; never hand-format.
+- Add packages with `npm install --save-exact` (`--save-dev` for tools), and
+  commit `package-lock.json`. esbuild bundles what the extension imports, so
+  `node_modules` never ships. Prefer the platform and the VS Code API; then few,
+  maintained, well-known packages with a licence that fits. A new install
+  script needs an `allowScripts` entry in `package.json`: allow it only when the
+  package can't work without it.
+
+## Review rules (lint can't check these)
+
+1. **Activation:** the narrowest activation events (`onLanguage:yaml`), never
+   `*`. `activate()` returns quickly: no synchronous I/O, no network, no work the
+   user hasn't asked for.
+2. **Disposal:** everything `activate()` creates goes into
+   `context.subscriptions`; anything created later is disposed by its owner.
+   `deactivate()` only to return asynchronous cleanup.
+3. **Never block the extension host:** no synchronous file reads on hot paths,
+   no heavy work per keystroke; analysis belongs in the language server.
+   Providers honour their `CancellationToken`.
+4. **The language client:** `vscode-languageclient` over stdio, a narrow
+   `documentSelector`, the server found in a stated order (setting, bundled,
+   `PATH`) and logged; `start()` failures shown once with the fix; a
+   `<extension>.trace.server` setting. Never redo the server's work in the client.
+5. **Settings and commands:** every setting contributed in `package.json` with
+   a default, a short description and the right scope, and listed in the
+   README; commands in Title Case under one category.
+6. **Errors users see** say what happened and what to do, with a button to the
+   fix; one notification at a time, never repeated; logs go to a
+   `LogOutputChannel`, never the console.
+7. **Types:** no `any` (narrow `unknown` at the boundary, checked at runtime when
+   the input is untrusted); no non-null assertion without a disable comment
+   saying why; no `as` to silence the compiler; exhaustive switches over unions.
+8. **Pure modules:** logic lives in modules that don't import `vscode`, tested
+   with plain vitest. Code that needs `vscode` is tested against
+   `test/vscode.ts`; extend the stand-in with `satisfies` types.
+9. **Tests:** next to the code (`foo.test.ts`), `it.each` tables, names that say
+   what is expected; no real timers, network or shared state between tests.
+10. **Performance:** when the issue or the system's needs state a budget, a test
+    or benchmark measures it on realistic input and the pull request gives the
+    numbers.
+11. **Input:** empty, huge, malformed and non-ASCII documents never crash the
+    extension; LSP positions count UTF-16 code units.
+12. **Releases:** user-visible changes get a `CHANGELOG.md` entry under
+    "Unreleased"; the version in `package.json` changes only in a release issue.
+13. **Names:** `lowerCamelCase` values, `UpperCamelCase` types, `CONSTANT_CASE`
+    module constants, acronyms as words (`HttpUrl`); files `snake_case.ts`.
+14. **No dead code:** no commented-out code, speculative options or "for later"
+    features; no TODO without an issue number.
+
+## Style guides
+
+Offline digests (read the one for what you are touching):
+
+- `docs/style/typescript.md`: Google's TypeScript style, the handbook's do's and
+  don'ts and typescript-eslint, each rule marked [lint] or [review]
+- `docs/style/vscode.md`: activation, disposal, the language client, LSP 3.17,
+  UX, bundling and tests
+- `docs/style/principles.md`: cross-language principles, with sources
+- `docs/style/SOURCES.md`: every source URL, with the date it was read
+
+Online (canonical): https://google.github.io/styleguide/tsguide.html ·
+https://typescript-eslint.io/rules/ · https://code.visualstudio.com/api/ux-guidelines/overview ·
+https://code.visualstudio.com/api/references/activation-events ·
+https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/

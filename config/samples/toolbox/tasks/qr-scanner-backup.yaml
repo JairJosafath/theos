@@ -1,0 +1,19 @@
+# A follow-up from qr-scanner-v2's review: the reviewer listed this as
+# non-blocking, but scan history holds Wi-Fi passwords. Not in the
+# kustomization: apply it after qr-scanner-v2 merges.
+apiVersion: c4.factory.io/v1alpha1
+kind: Task
+metadata:
+  name: qr-scanner-backup
+  namespace: toolbox
+spec:
+  containerRef: {name: qr-scanner}
+  agentRef: {name: claude}
+  goal: |
+    Keep the scan history out of Android backups: it can hold Wi-Fi passwords.
+    - Exclude the history store from cloud backup and device transfer with
+      android:dataExtractionRules (Android 12+) and android:fullBackupContent
+      (older versions); keep settings, if any, in the backup.
+    - Add a test that reads the release manifest and the rules files and checks
+      the exclusion.
+    - Mention it in the README's privacy notes.

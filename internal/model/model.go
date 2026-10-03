@@ -18,11 +18,15 @@ const (
 	TypeService    = "service"
 	TypeJob        = "job"
 	TypeWorker     = "worker"
+	TypeMobileApp  = "mobile-app"
+	TypeCLI        = "cli"
+	TypeExtension  = "extension"
 )
 
 // Catalog sides, in the order their layers are rendered.
 const (
 	SideFramework  = "Framework"
+	SideStandard   = "Standard"
 	SideCompute    = "Compute"
 	SideDeployment = "Deployment"
 	SideConnector  = "Connector"
@@ -36,6 +40,8 @@ type CatalogEntry struct {
 	SupportedTypes []string
 	TemplateURL    string
 	TemplateRef    string
+	// SupportedFrameworks lists the Frameworks a Standard fits; empty for other sides.
+	SupportedFrameworks []string
 }
 
 // Supports reports whether the entry lists the Container type.
@@ -79,6 +85,25 @@ func CheckChoices(containerType string, entries []CatalogEntry) error {
 		return nil
 	}
 	return &ChoiceError{Type: containerType, Unsupported: unsupported}
+}
+
+// FitError says a Standard does not fit the Container's Framework.
+type FitError struct {
+	Standard  string
+	Framework string
+}
+
+func (e *FitError) Error() string {
+	return fmt.Sprintf("%s does not support %s", e.Standard, e.Framework)
+}
+
+// CheckStandard returns a *FitError when a Standard does not list the Container's
+// Framework. A Container without a Standard fits.
+func CheckStandard(framework string, standard *CatalogEntry) error {
+	if standard == nil || slices.Contains(standard.SupportedFrameworks, framework) {
+		return nil
+	}
+	return &FitError{Standard: standard.Name, Framework: framework}
 }
 
 // Element kinds a Relationship can connect, mirroring the API.
@@ -219,4 +244,104 @@ func joinAnd(items []string) string {
 	default:
 		return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 	}
+}
+
+// CheckContexts are the status check contexts a protected default branch requires.
+// A Standard's CI must report under a context that matches one of these glob
+// patterns, such as "check / check (pull_request)".
+var CheckContexts = []string{"check*"}
+
+// checkSuccess is the state of a check, or of all of a commit's checks, that passed.
+const checkSuccess = "success"
+
+// UnpassedChecks returns the CheckContexts patterns that contexts, the state of
+// each check on a commit by its context, does not pass, the way branch protection
+// reads them: no check matches the pattern, or one that matches has not succeeded.
+func UnpassedChecks(contexts map[string]string) []string {
+	var out []string
+	for _, pattern := range CheckContexts {
+		matched, passed := false, true
+		for context, state := range contexts {
+			if matchGlob(pattern, context) {
+				matched, passed = true, passed && state == checkSuccess
+			}
+		}
+		if !matched || !passed {
+			out = append(out, pattern)
+		}
+	}
+	return out
+}
+
+// matchGlob reports whether s matches pattern, in which * stands for any run of
+// characters, slashes included, as in the Git host's status check patterns.
+func matchGlob(pattern, s string) bool {
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return pattern == s
+	}
+	if !strings.HasPrefix(s, parts[0]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+	for _, part := range parts[1 : len(parts)-1] {
+		i := strings.Index(s, part)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(part):]
+	}
+	return strings.HasSuffix(s, parts[len(parts)-1])
+}
+
+// Protected reports whether a Container's default branch is protected by required
+// checks: only a Standard brings CI, so only a Container with one has checks to
+// require.
+func Protected(hasStandard bool) bool { return hasStandard }
+
+// PlatformProtectedPaths belong to the operator and the Standard's CI: no agent
+// may change them, whatever the Standard. A path ending in "/" is a directory.
+var PlatformProtectedPaths = []string{".c4factory.yaml", ".devcontainer/", ".gitea/"}
+
+// ReleaseTags is the tag pattern that releases a Container; only the operator's
+// Git user may push such tags, since release jobs hold the signing keys.
+const ReleaseTags = "v*"
+
+// AgentProtectedPaths returns the paths agents may not change in a Container: the
+// platform's and its Standard's, sorted and without duplicates.
+func AgentProtectedPaths(standard []string) []string {
+	out := slices.Concat(PlatformProtectedPaths, standard)
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// TouchedPaths returns the changed paths that fall under a protected path: equal
+// to a file, or inside a directory ending in "/".
+func TouchedPaths(changed, protected []string) []string {
+	var out []string
+	for _, p := range changed {
+		for _, prot := range protected {
+			if covers(prot, p) {
+				out = append(out, p)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// covers reports whether path is the protected file or inside the protected
+// directory (a path ending in "/").
+func covers(prot, path string) bool {
+	return path == prot || (strings.HasSuffix(prot, "/") && strings.HasPrefix(path, prot))
+}
+
+// ClusterNamespace returns the namespace of an in-cluster service address, such
+// as "gitea" for http://gitea.gitea.svc.cluster.local:3000.
+func ClusterNamespace(host string) (string, bool) {
+	labels := strings.Split(host, ".")
+	if len(labels) >= 3 && labels[2] == "svc" {
+		return labels[1], true
+	}
+	return "", false
 }

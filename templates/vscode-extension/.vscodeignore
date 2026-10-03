@@ -1,0 +1,8 @@
+# The .vsix holds the bundle and the documents the Marketplace shows; nothing
+# else. esbuild bundles every dependency into out/extension.js.
+**
+!out/extension.js
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE*

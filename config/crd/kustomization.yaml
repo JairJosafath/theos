@@ -14,6 +14,10 @@ resources:
 - bases/c4.factory.io_computes.yaml
 - bases/c4.factory.io_deployments.yaml
 - bases/c4.factory.io_connectors.yaml
+- bases/c4.factory.io_standards.yaml
+- bases/c4.factory.io_agents.yaml
+- bases/c4.factory.io_tasks.yaml
+- bases/c4.factory.io_crews.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

@@ -1,0 +1,19 @@
+import * as vscode from 'vscode';
+
+import { greeting } from './greeting';
+
+/** The say-hello command, as contributed in package.json. */
+export const SAY_HELLO_COMMAND = '{{ .Container }}.sayHello';
+
+/**
+ * Activates the extension. VS Code calls it once, on the first activation
+ * event. Everything it registers goes into `context.subscriptions`, so VS Code
+ * disposes it when the extension deactivates; no deactivate() is needed.
+ */
+export function activate(context: Pick<vscode.ExtensionContext, 'subscriptions'>): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand(SAY_HELLO_COMMAND, async () => {
+      await vscode.window.showInformationMessage(greeting(vscode.env.appName));
+    }),
+  );
+}

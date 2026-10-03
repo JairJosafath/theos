@@ -178,3 +178,103 @@ func TestAppliedRelationship(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckStandard(t *testing.T) {
+	standard := CatalogEntry{Side: SideStandard, Name: "flutter-standard", SupportedFrameworks: []string{"flutter-app"}}
+	tests := []struct {
+		name      string
+		framework string
+		standard  *CatalogEntry
+		want      string
+	}{
+		{"no standard", "python-fastapi", nil, ""},
+		{"listed framework", "flutter-app", &standard, ""},
+		{"unlisted framework", "python-fastapi", &standard, "flutter-standard does not support python-fastapi"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckStandard(tt.framework, tt.standard)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("CheckStandard() = %v, want nil", err)
+				}
+				return
+			}
+			if _, ok := errors.AsType[*FitError](err); !ok {
+				t.Fatalf("CheckStandard() = %v, want *FitError", err)
+			}
+			if err.Error() != tt.want {
+				t.Errorf("message = %q, want %q", err.Error(), tt.want)
+			}
+		})
+	}
+}
+
+func TestClusterNamespace(t *testing.T) {
+	tests := []struct {
+		host string
+		want string
+		ok   bool
+	}{
+		{"gitea.gitea.svc.cluster.local", "gitea", true},
+		{"gitea.git-host.svc", "git-host", true},
+		{"gitea.example.com", "", false},
+		{"localhost", "", false},
+	}
+	for _, tt := range tests {
+		got, ok := ClusterNamespace(tt.host)
+		if got != tt.want || ok != tt.ok {
+			t.Errorf("ClusterNamespace(%q) = %q, %v; want %q, %v", tt.host, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
+func TestAgentProtectedPaths(t *testing.T) {
+	got := AgentProtectedPaths([]string{"Makefile", ".gitea/", "docs/style/"})
+	want := []string{".c4factory.yaml", ".devcontainer/", ".gitea/", "Makefile", "docs/style/"}
+	if !slices.Equal(got, want) {
+		t.Errorf("AgentProtectedPaths() = %v, want %v", got, want)
+	}
+	if !slices.Equal(AgentProtectedPaths(nil), PlatformProtectedPaths) {
+		t.Errorf("AgentProtectedPaths(nil) = %v, want the platform's", AgentProtectedPaths(nil))
+	}
+}
+
+func TestTouchedPaths(t *testing.T) {
+	protected := []string{".gitea/", "Makefile"}
+	tests := []struct {
+		changed []string
+		want    []string
+	}{
+		{[]string{"lib/main.dart", "README.md"}, nil},
+		{[]string{".gitea/workflows/check.yaml", "lib/a.dart"}, []string{".gitea/workflows/check.yaml"}},
+		{[]string{"Makefile"}, []string{"Makefile"}},
+		{[]string{"Makefile.local", "tools/Makefile", ".gitea"}, nil},
+	}
+	for _, tt := range tests {
+		if got := TouchedPaths(tt.changed, protected); !slices.Equal(got, tt.want) {
+			t.Errorf("TouchedPaths(%v) = %v, want %v", tt.changed, got, tt.want)
+		}
+	}
+}
+
+func TestMatchGlob(t *testing.T) {
+	tests := []struct {
+		pattern, s string
+		want       bool
+	}{
+		{"check*", "check / check (pull_request)", true},
+		{"check*", "check", true},
+		{"check*", "CI / check (pull_request)", false},
+		{"*check*", "CI / check (pull_request)", true},
+		{"check / *(push)", "check / check (pull_request)", false},
+		{"a*a", "a", false},
+		{"check", "check", true},
+		{"check", "checks", false},
+	}
+	for _, tt := range tests {
+		if got := matchGlob(tt.pattern, tt.s); got != tt.want {
+			t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
+		}
+	}
+}
