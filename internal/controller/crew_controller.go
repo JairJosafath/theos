@@ -231,7 +231,8 @@ func readyIssues(ctx context.Context, provider gitprovider.Provider, repo gitpro
 			return nil, fmt.Errorf("issue #%d: %w", i.Number, err)
 		}
 		out = append(out, model.Issue{Number: i.Number, Title: i.Title, Body: i.Body, OpenBlockers: blockers,
-			StandardChange: slices.Contains(i.Labels, model.LabelStandardChange), Release: release(i)})
+			StandardChange: slices.Contains(i.Labels, model.LabelStandardChange), Release: release(i),
+			Urgent: slices.Contains(i.Labels, model.LabelUrgent)})
 	}
 	return out, nil
 }

@@ -49,6 +49,10 @@ func TestNextCrewStep(t *testing.T) {
 		issue.Release = release
 		return issue
 	}
+	urgent := func(issue Issue) Issue {
+		issue.Urgent = true
+		return issue
+	}
 	tests := []struct {
 		name  string
 		facts CrewFacts
@@ -208,6 +212,29 @@ func TestNextCrewStep(t *testing.T) {
 			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-58"}, Ready: []int{59},
 				Start:   []IssueStart{{Issue: 70, Task: "cel-ls-70", Attempt: 1, AllowedPaths: []string{"Makefile"}}},
 				Message: "Starting Task cel-ls-70 for issue #70"}},
+		{name: "an urgent issue starts at once, even when every place is taken", facts: CrewFacts{
+			ContainerReady: true, Issues: []Issue{ready(4), urgent(ready(9))},
+			Tasks: []CrewTask{{Name: "cel-ls-3", Issue: 3}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-3"}, Ready: []int{4},
+				Start: start(9, "cel-ls-9", 1), Message: "Starting Task cel-ls-9 for urgent issue #9"}},
+		{name: "an urgent issue takes the free place first, whatever its release", facts: CrewFacts{
+			ContainerReady: true, Issues: []Issue{in(v011, ready(5)), in(v020, urgent(ready(8))), urgent(ready(12))}},
+			want: CrewStep{Phase: CrewWorking, Ready: []int{5},
+				Start:   []IssueStart{{Issue: 8, Task: "cel-ls-8", Attempt: 1}, {Issue: 12, Task: "cel-ls-12", Attempt: 1}},
+				Message: "Starting Task cel-ls-8 for urgent issue #8 and Task cel-ls-12 for urgent issue #12"}},
+		{name: "an urgent issue still waits on open dependencies", facts: CrewFacts{ContainerReady: true,
+			Issues: []Issue{urgent(ready(9, "#3"))}},
+			want: CrewStep{Phase: CrewIdle, Waiting: []int{9}, Message: "No ready issues; 1 waits on open dependencies"}},
+		{name: "an urgent Standard change starts though the other places are taken", facts: CrewFacts{
+			ContainerReady: true, Issues: []Issue{ready(4), urgent(Issue{Number: 70, Body: criteria, StandardChange: true})},
+			Tasks: []CrewTask{{Name: "cel-ls-3", Issue: 3}, {Name: "cel-ls-9", Issue: 9, Blocked: true,
+				StandardChange: &IssueChange{Issue: 70, Paths: []string{"Makefile"}}}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-3", "cel-ls-9"}, Ready: []int{4},
+				Start:   []IssueStart{{Issue: 70, Task: "cel-ls-70", Attempt: 1, AllowedPaths: []string{"Makefile"}}},
+				Message: "Starting Task cel-ls-70 for urgent issue #70"}},
+		{name: "a paused Crew starts no urgent issue", facts: CrewFacts{Paused: true, ContainerReady: true,
+			Issues: []Issue{urgent(ready(9))}},
+			want: CrewStep{Phase: CrewPaused, Ready: []int{9}, Message: "Paused; not picking up issues"}},
 		{name: "paused, a later release still shows as waiting", facts: CrewFacts{Paused: true, ContainerReady: true,
 			Issues: []Issue{in(v011, ready(58)), in(v020, ready(44))}},
 			want: CrewStep{Phase: CrewPaused, Ready: []int{58}, Waiting: []int{44},

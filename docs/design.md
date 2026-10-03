@@ -278,6 +278,12 @@ model and context it needs.
   waits on, and an issue the current release's issues depend on. An issue handed
   back to a person (`status/needs-human`) no longer holds its release, so the
   factory keeps working. Running Tasks are never stopped.
+- **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
+  it picked up at once: the Crew starts it on its next poll, before every other
+  issue, whatever its release, even when every place is taken (once running, it
+  counts towards `parallel`). It still waits for its open dependencies, and a
+  paused Crew starts nothing. A Standard change filed for an urgent issue is
+  urgent too. The operator keeps the label in every repository it polls.
 - **Roles get their own model and guide.** Agents have a `harness` and a `model`;
   CEL Lens pairs a Sonnet implementer with an Opus reviewer. A Standard ships
   `docs/agents/implementer.md` and `reviewer.md`, read from the base branch so a

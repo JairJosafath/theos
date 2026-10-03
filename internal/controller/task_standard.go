@@ -97,7 +97,7 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, sta
 	if status.StandardChange != nil {
 		skip = int(status.StandardChange.Issue)
 	}
-	filed, isNew, err := fileStandardChange(gitCtx, provider, repo, task, proposal, waiting.Milestone, skip)
+	filed, isNew, err := fileStandardChange(gitCtx, provider, repo, task, proposal, waiting, skip)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -128,10 +128,10 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, sta
 
 // fileStandardChange returns the open Standard change issue filed for the
 // proposal's branch, other than the one numbered skip, or files it: labelled
-// kind/standard-change and status/ready, in the waiting issue's milestone. isNew
-// says it was filed now.
+// kind/standard-change and status/ready, in the waiting issue's milestone, and
+// urgent when the waiting issue is. isNew says it was filed now.
 func fileStandardChange(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	task *c4v1alpha1.Task, proposal model.Proposal, milestone int64, skip int) (gitprovider.Issue, bool, error) {
+	task *c4v1alpha1.Task, proposal model.Proposal, waiting gitprovider.Issue, skip int) (gitprovider.Issue, bool, error) {
 	if err := provider.EnsureLabels(ctx, repo, standardChangeLabels()); err != nil {
 		return gitprovider.Issue{}, false, err
 	}
@@ -143,8 +143,11 @@ func fileStandardChange(ctx context.Context, provider gitprovider.Provider, repo
 		return found, false, nil
 	}
 	title, body := model.StandardChangeIssue(int(task.Spec.Issue), task.Name, proposal)
-	filed, err := provider.CreateIssue(ctx, repo, title, body, []string{model.LabelStandardChange, model.LabelReady},
-		milestone)
+	labels := []string{model.LabelStandardChange, model.LabelReady}
+	if slices.Contains(waiting.Labels, model.LabelUrgent) {
+		labels = append(labels, model.LabelUrgent)
+	}
+	filed, err := provider.CreateIssue(ctx, repo, title, body, labels, waiting.Milestone)
 	return filed, err == nil, err
 }
 

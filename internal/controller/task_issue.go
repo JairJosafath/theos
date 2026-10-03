@@ -162,7 +162,7 @@ func (r *TaskReconciler) gitCall(ctx context.Context, call func(context.Context)
 
 // issueLabels are the factory's issue labels, for the Git host.
 func issueLabels() []gitprovider.Label {
-	labels := model.StatusLabels()
+	labels := append(model.StatusLabels(), model.UrgentLabel())
 	out := make([]gitprovider.Label, 0, len(labels))
 	for _, l := range labels {
 		out = append(out, gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})

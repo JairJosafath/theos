@@ -37,6 +37,16 @@ func StatusLabels() []IssueLabel {
 	}
 }
 
+// LabelUrgent asks a Crew to pick an issue up at once: it starts before every other
+// ready issue, whatever its release, even when every place is taken.
+const LabelUrgent = "priority/urgent"
+
+// UrgentLabel is the label a person adds to have an issue picked up at once.
+func UrgentLabel() IssueLabel {
+	return IssueLabel{LabelUrgent, "#b60205",
+		"Pick up at once: starts before every other issue, whatever its release, even when the Crew is full", false}
+}
+
 // FollowUpMilestone is the milestone the factory files reviewers' follow-ups in,
 // so they never look like release work. It is created with the description when
 // a repository doesn't have it yet.
@@ -62,6 +72,8 @@ type Issue struct {
 	StandardChange bool
 	// Release is the issue's milestone when it has a due date; nil otherwise.
 	Release *Release
+	// Urgent is set for an issue labelled priority/urgent.
+	Urgent bool
 }
 
 // Release is a milestone with a due date. A Crew works releases one at a time,
@@ -150,7 +162,8 @@ type CrewStep struct {
 
 // NextCrewStep decides what a Crew does: it keeps up to Parallel Tasks working,
 // starting them for the lowest-numbered ready issues whose dependencies are
-// closed, one Task per issue. A Standard change a Task waits on starts first.
+// closed, one Task per issue. An urgent issue starts first, even beyond
+// Parallel; then a Standard change a Task waits on.
 func NextCrewStep(container string, f CrewFacts) CrewStep {
 	var step CrewStep
 	working := map[int]bool{}
@@ -168,6 +181,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	slices.SortFunc(issues, func(a, b Issue) int { return a.Number - b.Number })
 	var candidates []int
 	allowances := map[int][]string{}
+	urgent := map[int]bool{}
 	for _, issue := range issues {
 		if working[issue.Number] {
 			// Taken a moment ago; its label changes when its Task starts.
@@ -204,12 +218,14 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 		default:
 			candidates = append(candidates, issue.Number)
 			allowances[issue.Number] = allowance
+			urgent[issue.Number] = issue.Urgent
 		}
 	}
-	// A Standard change with its allowance goes first: a Blocked Task waits on
-	// it, and that Task's branch ages behind every older ready issue otherwise.
+	// An urgent issue goes first: a person asked for it at once. Then a Standard
+	// change with its allowance: a Blocked Task waits on it, and that Task's
+	// branch ages behind every older ready issue otherwise.
 	slices.SortStableFunc(candidates, func(a, b int) int {
-		return withoutAllowance(allowances, a) - withoutAllowance(allowances, b)
+		return startRank(urgent, allowances, a) - startRank(urgent, allowances, b)
 	})
 
 	// Releases go one at a time, so a release's tag holds only its own issues:
@@ -238,7 +254,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	free := max(f.Parallel, 1) - (len(step.Active) - blockedTasks(f.Tasks))
 	var started []string
 	for _, issue := range candidates {
-		if free <= 0 {
+		if free <= 0 && !urgent[issue] {
 			step.Ready = append(step.Ready, issue)
 			continue
 		}
@@ -251,7 +267,11 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 		name := IssueTaskName(container, issue, attempt)
 		step.Start = append(step.Start, IssueStart{Issue: issue, Task: name, Attempt: attempt,
 			AllowedPaths: allowances[issue]})
-		started = append(started, fmt.Sprintf("Task %s for issue #%d", name, issue))
+		kind := "issue"
+		if urgent[issue] {
+			kind = "urgent issue"
+		}
+		started = append(started, fmt.Sprintf("Task %s for %s #%d", name, kind, issue))
 		free--
 	}
 
@@ -285,17 +305,20 @@ func dependenciesMessage(n int) string {
 // holdLaterReleases keeps the candidates of the current release and holds back
 // those of later ones, so a release's tag holds only its own issues. A Standard
 // change with its allowance, and an issue the current release waits on, are
-// never held: a Task or the release would wait on them for ever.
+// never held: a Task or the release would wait on them for ever. Nor is an
+// urgent issue: a person asked for it at once.
 func holdLaterReleases(tasks []CrewTask, issues []Issue, candidates, waiting []int,
 	allowances map[int][]string) (kept, held []int, current *Release) {
 	current = currentRelease(tasks, issues, candidates, waiting)
 	needed := neededBy(issues, waiting, current)
 	release := map[int]*Release{}
+	urgent := map[int]bool{}
 	for _, issue := range issues {
 		release[issue.Number] = issue.Release
+		urgent[issue.Number] = issue.Urgent
 	}
 	for _, n := range candidates {
-		if compareReleases(release[n], current) > 0 && !needed[n] && len(allowances[n]) == 0 {
+		if compareReleases(release[n], current) > 0 && !needed[n] && len(allowances[n]) == 0 && !urgent[n] {
 			held = append(held, n)
 		} else {
 			kept = append(kept, n)
@@ -386,12 +409,16 @@ func compareReleases(a, b *Release) int {
 	return strings.Compare(a.Title, b.Title)
 }
 
-// withoutAllowance sorts an issue that has an allowance (0) before one without (1).
-func withoutAllowance(allowances map[int][]string, issue int) int {
-	if len(allowances[issue]) > 0 {
+// startRank sorts the issues a Crew may start: urgent ones (0), then those with
+// an allowance (1), then the rest (2).
+func startRank(urgent map[int]bool, allowances map[int][]string, issue int) int {
+	switch {
+	case urgent[issue]:
 		return 0
+	case len(allowances[issue]) > 0:
+		return 1
 	}
-	return 1
+	return 2
 }
 
 // blockedTasks counts the Tasks that wait on a Standard change; they take no place.
