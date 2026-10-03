@@ -213,8 +213,16 @@ ValidatingAdmissionPolicy and got diagnostics on exactly the two broken
 expressions, schema-aware hover (`replicas: int` with the Deployment field's
 description) and completion of `object.` (`apiVersion, kind, metadata, spec,
 status`); `check` reported the same two errors and exited 1
-(`docs/screenshots/v4-extension-smoke.txt`). What remains is the extension inside
-a real VS Code.
+(`docs/screenshots/v4-extension-smoke.txt`). The extension inside a real VS Code
+followed later that night: VS Code 1.140.0 desktop under Xvfb, in a throwaway
+container, installed the v0.2.0 linux-x64 `.vsix` with its own CLI, and a test in
+the extension host opened the same policy. The extension activated on YAML, started
+its bundled server, and VS Code showed squiggles and Problems entries on exactly the
+two broken expressions, the schema hover on `replicas` and the five `object.`
+completions; "CEL Lens: Restart Server" brought the diagnostics back
+(`docs/screenshots/v4-extension-vscode.png` and `.txt`). That package bundles
+server v0.1.0, the only server tag: a later server release reaches users through
+an extension release that bumps `server.json`.
 
 **Seventh part, releases in order.** With two server releases ready, the Crew
 started `cel-language-server-44` (v0.2.0) ahead of v0.1.1's three fixes: it picked

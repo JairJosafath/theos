@@ -1,0 +1,51 @@
+# The CEL Lens extension inside a real VS Code (3 October 2026, 02:57 UTC)
+#
+# Package: vscode-extension-linux-x64-0.2.0.vsix, built by `make dist VERSION=v0.2.0`
+# at cel-lens/vscode-extension 4411758 (see v4-extension-smoke.txt for the build).
+# Editor: VS Code 1.140.0 desktop (linux-x64), downloaded by @vscode/test-electron 2,
+# run under Xvfb in a throwaway node:24-bookworm container with GTK installed.
+# The .vsix was installed the way a user would, with the VS Code CLI:
+#
+#   code --extensions-dir=/tmp/vsc/ext --user-data-dir=/tmp/vsc/user \
+#        --install-extension vscode-extension-linux-x64-0.2.0.vsix
+#   Extension 'vscode-extension-linux-x64-0.2.0.vsix' was successfully installed.
+#   code ... --list-extensions --show-versions
+#   cel-lens.vscode-extension@0.2.0
+#
+# A test inside VS Code's extension host then opened policy.yaml (below), waited for
+# diagnostics and asked VS Code's own hover and completion commands
+# (vscode.executeHoverProvider, vscode.executeCompletionItemProvider), took a
+# screenshot (v4-extension-vscode.png) and ran "CEL Lens: Restart Server".
+#
+# policy.yaml, lines 13-15:
+#   - expression: "object.spec.replicas <= 5"
+#   - expression: "object.spec.replicas <= 'five'"
+#   - expression: "object.spec.replicas <="
+
+VS Code 1.140.0
+Opened policy.yaml, languageId=yaml
+Extension TypeScriptTeam.jsts-chat-features 0.0.4 active=false
+Extension ms-vscode.js-debug 1.140.0 active=false
+Extension ms-vscode.js-debug-companion 1.1.3 active=false
+Extension ms-vscode.vscode-js-profile-table 1.0.11 active=false
+Extension cel-lens.vscode-extension 0.2.0 active=true
+Diagnostics (2):
+  line 14:41-43 [cel] found no matching overload for '_<=_' applied to '(int, string)'
+  line 15:43-43 [cel] Syntax error: mismatched input '<EOF>' expecting {'[', '{', '(', '.', '-', '!', 'true', 'false', 'null', NUM_FLOAT, NUM_INT, NUM_UINT, STRING, BYTES, IDENTIFIER}
+Hover on "replicas" (line 13), 1 result(s):
+  ```cel | replicas: int | ``` | Number of desired pods. This is a pointer to distinguish between explicit zero and not specified. Defaults to 1.
+Completion after "object." (line 13), 5 item(s): apiVersion, kind, metadata, spec, status
+Screenshot: hover on replicas (line 14), Problems panel open
+Commands: celLens.showOutput, celLens.restartServer
+After CEL Lens: Restart Server, diagnostics (2)
+
+# The extension's Output channel ("CEL Lens" log in the user-data dir):
+  2026-10-03 02:56:20.357 [info] Using cel-language-server from the bundled: /tmp/vsc/ext/cel-lens.vscode-extension-0.2.0/server/linux-x64/cel-language-server
+  2026-10-03 02:56:20.840 [info] Using cel-language-server from the bundled: /tmp/vsc/ext/cel-lens.vscode-extension-0.2.0/server/linux-x64/cel-language-server
+  2026-10-03 02:56:20.845 [info] Server process exited successfully
+
+# The bundled server, run on its own:
+#   $ /tmp/vsc/ext/cel-lens.vscode-extension-0.2.0/server/linux-x64/cel-language-server --version
+#   cel-language-server v0.1.0
+# The extension's server.json pins v0.1.0, the server's only tag so far; a later
+# server release reaches users through an extension release that bumps server.json.
