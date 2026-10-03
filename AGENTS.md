@@ -114,7 +114,8 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 - **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
   piece of work, labeled `status/*`, `priority/urgent`, `kind/*`;
   `hack/lib/github.sh` reads and writes them. Product work stays in Gitea with
-  the Crews.
+  the Crews. Issues that need the Kind cluster carry `needs/cluster`; a device
+  without one sets `C4_CLUSTER=none` (the light devcontainer) and skips them.
 - **One issue, plan step or fix per session.** Start the next one fresh.
 - **Agents work in parallel.** Take an issue with `hack/lib/github.sh take N`
   before working it; it names you (`otter-23`). Sign commits with an

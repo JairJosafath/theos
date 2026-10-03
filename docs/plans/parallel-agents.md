@@ -95,10 +95,28 @@ evaluate twice; its 6-hour throttle reads that issue's newest evaluation.
 
 ### The Kind cluster
 
-Each device has one Kind cluster, shared by its checkouts. Issues that deploy
-to or change it carry `needs/cluster`, and a device works one of those at a
-time: `take` refuses one while another checkout on the device (`git worktree
-list`) holds a fresh claim on a `needs/cluster` issue.
+- **The label.** `needs/cluster` marks issues whose work or "Done when" needs
+  the Kind cluster: deploys, factory-ops, Crews, e2e. An unlabelled issue needs
+  none: code, docs and scripts, checked with `make check` (envtest needs no
+  cluster). Whoever files an issue sets it; `labels` creates it, and
+  `label N needs/cluster` adds it.
+- **One cluster issue per device.** A device with a cluster shares it between
+  its checkouts and works one `needs/cluster` issue at a time: while another
+  checkout on the device (`git worktree list`) holds a claim on one, beaten
+  within the TTL, `pick` skips them and `take` refuses them (exit 4, so the
+  relay picks again). The labels are read from GitHub, so a label added
+  mid-way counts; `label N needs/cluster` exits 4 when the cluster is already
+  in use, and the session lands what needs no cluster and hands off.
+- **Devices without a cluster.** `C4_CLUSTER=none` in the environment: `pick`
+  skips `needs/cluster` issues, `take` refuses them, and the relay prompt says
+  there is no cluster. A session that finds mid-way that its issue needs the
+  cluster lands what it can (the code pull request, with unit and envtest
+  tests), labels the issue `needs/cluster` and hands off with what is left
+  (deploy and verify); a device with the cluster takes it from there.
+- **The light devcontainer**, `.devcontainer/lite`, sets `C4_CLUSTER=none`:
+  Go, Node, git, gh and Claude Code without Docker, Kind, kubectl or Helm. It
+  and the full container empty Go's build cache on start past 4 GB.
+  The README's "A device without the cluster" says how to set one up.
 
 ### Seeing who does what
 

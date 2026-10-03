@@ -10,7 +10,8 @@
 #   hack/lib/github.sh pick              the issue to work next: NUMBER TITLE URL STATUS, tab-separated
 #   hack/lib/github.sh show N            issue N, its newest handoff comment and the comments after it
 #   hack/lib/github.sh take N            claim N for this checkout and swap it to status/in-progress;
-#                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it
+#                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it,
+#                                        or it needs the cluster and this device can't give it one now
 #   hack/lib/github.sh release [REASON]  release this checkout's claim (default reason: released)
 #   hack/lib/github.sh claims            the live and stale claims on open issues
 #   hack/lib/github.sh beat              refresh this checkout's claim heartbeat, at most every 15
@@ -19,6 +20,8 @@
 #                                        GitHub can't be reached, keep it in .relay/pending-handoff-N.md (exit 3)
 #   hack/lib/github.sh flush             post the handoffs kept in .relay/ while GitHub was away
 #   hack/lib/github.sh comment N FILE    post FILE as a comment on N
+#   hack/lib/github.sh label N LABEL...  add labels to N. Exit 4 after adding needs/cluster: another
+#                                        checkout on this device holds the cluster
 #   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, needs-human
 #                                        (needs-human releases the claim)
 #   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), release the claim, close N
@@ -31,6 +34,13 @@
 # status/ready one; issues with a live claim, or whose body says "Depends on #M"
 # while #M is open, are skipped. A handoff comment starts with the line
 # <!-- relay-handoff -->.
+#
+# The Kind cluster: issues whose work needs it carry needs/cluster. On a device
+# without one (C4_CLUSTER=none) pick skips them and take refuses them. On a
+# device with one, a single checkout works a needs/cluster issue at a time:
+# while another checkout (git worktree list) holds a claim on one, beaten within
+# C4_LEASE_TTL, pick skips them and take refuses them.
+# hack/lib/github_test.sh tests these rules against a stubbed GitHub.
 #
 # Claims (docs/plans/parallel-agents.md): taking an issue posts a comment that
 # starts with <!-- c4-claim --> and names the agent (otter-23), host, branch and
@@ -82,6 +92,7 @@ GH_LABELS=(
   'kind/docs|0075ca|Documentation'
   'kind/improvement|84b6eb|Make something that works better'
   'source/evaluator|5319e7|Filed by hack/evaluate.sh, the factory evaluator'
+  'needs/cluster|1d76db|Needs the Kind cluster: deploys, factory-ops, Crews or e2e'
 )
 
 # gh_token: export GH_TOKEN, from the git credential helper unless already set.
@@ -149,12 +160,14 @@ gh_recent_claims() {
 # STATUS being in-progress, ready-urgent or ready. Exit 1: nothing to pick;
 # exit 2: GitHub could not be asked.
 gh_pick() {
-  local ttl issues claims row
+  local ttl issues claims row nocluster=false
   ttl=$(gh_ttl) || return 2
+  if [ "${C4_CLUSTER:-}" = none ] || [ -n "$(gh_cluster_holder)" ]; then nocluster=true; fi
   issues=$(gh_api --paginate --slurp \
     "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
-  row=$(jq -r --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" "$GH_CLAIM_JQ"'
+  row=$(jq -r --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" \
+    --argjson nocluster "$nocluster" "$GH_CLAIM_JQ"'
     def has($l): .labels | any(. == $l);
     [.[][]] as $all
     | [$all[].number] as $open
@@ -163,7 +176,8 @@ gh_pick() {
         | select(.number as $n | $taken | any(. == $n) | not)
         | select([(.body // "") | scan("[Dd]epends on #([0-9]+)") | .[0] | tonumber]
             | any(. as $d | $open | any(. == $d)) | not)
-        | {number, title, html_url, labels: [.labels[].name]}] as $free
+        | {number, title, html_url, labels: [.labels[].name]}
+        | select($nocluster and has("needs/cluster") | not)] as $free
     | [($free[] | select(has("status/in-progress")) | . + {how: "in-progress"}),
        ($free[] | select(has("status/ready") and has("priority/urgent")) | . + {how: "ready-urgent"}),
        ($free[] | select(has("status/ready")) | . + {how: "ready"})]
@@ -295,12 +309,30 @@ gh_branch_name() {
     | "\($t)/\(.number)-\(if $slug == "" then "work" else $slug end)"'
 }
 
-# gh_take N: claim N for this checkout and print NAME BRANCH (tab-separated).
+# gh_device_locked CMD ARGS...: run CMD under a lock shared by the device's
+# checkouts (in the git common dir), so two of them can't both pass the
+# one-cluster-issue check before either has written its claim or label.
+gh_device_locked() {
+  local dir fd rc
+  dir=$(git -C "$GH_LIB_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+    { "$@"; return; }
+  exec {fd}>>"$dir/c4-take.lock"
+  flock -w 120 "$fd" || echo "github: waited 2 minutes for $dir/c4-take.lock; going on without it" >&2
+  "$@"
+  rc=$?
+  exec {fd}>&-
+  return $rc
+}
+
+# gh_take N: claim N for this checkout, under the device lock.
+gh_take() { gh_device_locked gh_take_locked "$@"; }
+
+# gh_take_locked N: claim N for this checkout and print NAME BRANCH (tab-separated).
 # A claim this checkout already holds on N is printed again. Exit 4: someone
 # else holds N, or won the race to it; exit 1: this checkout holds another
 # issue, or GitHub could not be asked. GH_TAKE_KEEP_STATUS=1 leaves N's status
 # label alone (the evaluator's claim on "Factory evaluations").
-gh_take() {
+gh_take_locked() {
   local n=${1:?usage: take N} ttl c_issue c_id c_name c_branch rc issue all holder used w name branch stale id winner
   ttl=$(gh_ttl) || return 1
   if gh_claim_read; then
@@ -319,6 +351,17 @@ gh_take() {
   fi
 
   issue=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n") || return 1
+  if jq -e '.labels | any(.name == "needs/cluster")' <<<"$issue" >/dev/null; then
+    if [ "${C4_CLUSTER:-}" = none ]; then
+      echo "github: #$n needs the Kind cluster (needs/cluster) and this device has none (C4_CLUSTER=none)" >&2
+      return 4
+    fi
+    holder=$(gh_cluster_holder)
+    if [ -n "$holder" ]; then
+      echo "github: #$n needs the Kind cluster, and $holder already works a needs/cluster issue on this device" >&2
+      return 4
+    fi
+  fi
   all=$(gh_comments "$n") || return 1
   local q=(--arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl")
 
@@ -375,6 +418,52 @@ gh_take() {
   [ -n "${GH_TAKE_KEEP_STATUS:-}" ] ||
     gh_set_status "$n" in-progress || echo "github: claimed #$n but could not label it status/in-progress" >&2
   printf '%s\t%s\n' "$name" "$branch"
+}
+
+# gh_cluster_holder: another checkout on this device (git worktree list) whose
+# claim is on a needs/cluster issue and was beaten within C4_LEASE_TTL, as
+# "otter-23 (#23, PATH)"; nothing when there is none. The labels come from
+# GitHub, else from the claim file.
+gh_cluster_holder() {
+  local ttl mine wt f issue name beat labels
+  ttl=$(gh_ttl) || return 0
+  mine=$(realpath -m "$GH_CLAIM_FILE")
+  while IFS= read -r wt; do
+    f=$wt/.relay/claim
+    [ -s "$f" ] && [ "$(realpath -m "$f")" != "$mine" ] || continue
+    IFS=$'\t' read -r issue name beat < <(jq -r '[.issue, .name, (.beat // 0)] | @tsv' "$f" 2>/dev/null)
+    [ -n "$issue" ] && [ $(($(date +%s) - ${beat:-0})) -lt "$ttl" ] || continue
+    labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$issue/labels?per_page=100" --jq '.[].name' 2>/dev/null) ||
+      labels=$(jq -r '.labels[]?' "$f")
+    grep -qxF needs/cluster <<<"$labels" || continue
+    echo "$name (#$issue, $wt)"
+    return 0
+  done < <(git -C "$GH_LIB_ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+}
+
+# gh_label N LABEL...: add LABELs to N, under the device lock. Exit 4 after
+# adding needs/cluster when another checkout on this device holds the cluster:
+# land what needs no cluster and hand off.
+gh_label() { gh_device_locked gh_label_locked "$@"; }
+
+gh_label_locked() {
+  local n=${1:?usage: label N LABEL...} holder
+  shift
+  [ $# -gt 0 ] || { echo "usage: label N LABEL..." >&2; return 64; }
+  jq -n '{labels: $ARGS.positional}' --args "$@" |
+    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
+  echo "labeled #$n: $*"
+  # This checkout's own issue: keep the claim's labels current, the fallback
+  # gh_cluster_holder reads when GitHub can't be asked.
+  if [ -s "$GH_CLAIM_FILE" ] && [ "$(jq -r .issue "$GH_CLAIM_FILE")" = "$n" ]; then
+    jq --args '.labels = ((.labels // []) + $ARGS.positional | unique)' "$@" <"$GH_CLAIM_FILE" >"$GH_CLAIM_FILE.tmp" &&
+      mv "$GH_CLAIM_FILE.tmp" "$GH_CLAIM_FILE"
+  fi
+  printf '%s\n' "$@" | grep -qxF needs/cluster && [ "${C4_CLUSTER:-}" != none ] || return 0
+  holder=$(gh_cluster_holder)
+  [ -n "$holder" ] || return 0
+  echo "github: this device's Kind cluster is in use: $holder works a needs/cluster issue; land what needs no cluster and hand off #$n" >&2
+  return 4
 }
 
 # gh_release [REASON]: release this checkout's claim; its comment then says
@@ -528,6 +617,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     handoff) gh_handoff "$@" ;;
     flush) gh_flush ;;
     comment) gh_comment "$@" ;;
+    label) gh_label "$@" ;;
     status) gh_set_status "$@" ;;
     close) gh_close "$@" ;;
     create) gh_create "$@" ;;

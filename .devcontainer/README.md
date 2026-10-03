@@ -1,12 +1,17 @@
 # Dev containers
 
-Two configurations are available. Both provide Go, Docker, kubectl, and Kind; the
-Makefile downloads any other tools it needs into `bin/`.
+Three configurations are available. The first two provide Go, Docker, kubectl, and
+Kind; the light one has no cluster. The Makefile downloads any other tools it needs
+into `bin/`.
 
 | Configuration | Base image | What it adds |
 | --- | --- | --- |
 | [`devcontainer.json`](devcontainer.json) (default) | Debian with Docker-in-Docker | Go 1.26, kubebuilder, kubectl, Helm, Kind, Node, uv, the Dev Container CLI, GitHub CLI, Claude Code, and a zsh that suggests as you type |
 | [`operator/devcontainer.json`](operator/devcontainer.json) | `golang:1.26` | Kubebuilder's scaffolded setup: [`operator/post-install.sh`](operator/post-install.sh) installs Kind, Kubebuilder, and kubectl with bash completion |
+| [`lite/devcontainer.json`](lite/devcontainer.json) | Debian, no Docker | Go, Node, git, GitHub CLI, Claude Code and the same zsh, with `C4_CLUSTER=none`: for a device with too little disk for Kind. Its relay takes only issues without `needs/cluster`; see the README, "A device without the cluster" |
+
+The default and light containers empty Go's build cache on start once it passes
+4 GB ([`hack/trim-go-cache.sh`](../hack/trim-go-cache.sh)).
 
 ## What the default container is for
 

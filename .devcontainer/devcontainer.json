@@ -36,6 +36,8 @@
 
 	// Installs kubebuilder, uv, fzf and the Dev Container CLI, and sets up zsh.
 	"postCreateCommand": "bash .devcontainer/post-create.sh",
+	// Go's build cache grows without bound across worktrees; keep it under 4 GB.
+	"postStartCommand": "bash hack/trim-go-cache.sh",
 
 	// Gitea, once you run: kubectl port-forward -n gitea svc/gitea 3000:3000
 	"forwardPorts": [3000, 8080],
