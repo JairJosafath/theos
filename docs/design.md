@@ -2,7 +2,7 @@
 
 Sep 30, 2026 · @Jeremy Jo.
 
-![The design board: story, decisions, model, scaffolding, test environment and timeline](images/design-board.png)
+[![How C4 Factory works today: describe, scaffold once, build from issues, keep current, watch, the fence and where it runs](images/how-it-works.png)](images/how-it-works.svg)
 
 ## Purpose
 
@@ -378,6 +378,8 @@ Make targets:
 Gitea keeps the cluster light: one container and SQLite, no separate database. To open a scaffolded repository in a local VS Code devcontainer, reach Gitea through `kubectl port-forward`.
 
 ## MVP v1 plan
+
+![The design board: story, decisions, model, scaffolding, test environment and timeline](images/design-board.png)
 
 Six milestones, each ending in something you can run and check in the kind cluster. Each builds only on the ones before it.
 
