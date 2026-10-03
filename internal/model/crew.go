@@ -274,6 +274,9 @@ func blockedTasks(tasks []CrewTask) int {
 // standardAllowance is the protected paths a Standard change issue may change:
 // those the first Task (by name) that filed it proposed, minus the paths no agent
 // may touch. A label alone grants nothing; nil when no Task names the issue.
+// Two filers can't occur: a Task reuses only an issue carrying its own proposal
+// branch's marker, and that branch is named after the Task, so the order by name
+// only keeps the choice stable.
 func standardAllowance(tasks []CrewTask, issue Issue) []string {
 	if !issue.StandardChange {
 		return nil

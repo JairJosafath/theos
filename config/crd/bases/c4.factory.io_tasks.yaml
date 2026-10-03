@@ -388,8 +388,12 @@ spec:
                 format: date-time
                 type: string
               standardChange:
-                description: standardChange is the Standard change the Task waits
-                  for while Blocked.
+                description: |-
+                  standardChange is the Standard change the Task filed last: the one it
+                  waits for while Blocked. It stays after the Task resumes: it counts the
+                  changes filed, a later filing doesn't reuse its issue, and a resumed round
+                  that leaves nothing to do ends the Task as DoneByStandardChange. A Crew
+                  grants its paths to the Task that runs the change.
                 properties:
                   branch:
                     description: branch is where the change is made.

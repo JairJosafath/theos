@@ -218,7 +218,11 @@ type TaskStatus struct {
 	// +optional
 	Feedback string `json:"feedback,omitempty"`
 
-	// standardChange is the Standard change the Task waits for while Blocked.
+	// standardChange is the Standard change the Task filed last: the one it
+	// waits for while Blocked. It stays after the Task resumes: it counts the
+	// changes filed, a later filing doesn't reuse its issue, and a resumed round
+	// that leaves nothing to do ends the Task as DoneByStandardChange. A Crew
+	// grants its paths to the Task that runs the change.
 	// +optional
 	StandardChange *TaskStandardChange `json:"standardChange,omitempty"`
 
