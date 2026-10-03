@@ -187,7 +187,10 @@ with the change, and these three checks, decide. Require changes unless all thre
 - it weakens no check: no target, test, lint rule or CI job removed or skipped;
 - %[3]s works with this change alone, without another branch;
 - it does no more than its issue asks.
-`, strings.Join(job.AllowedPaths, ", "), check, job.Base)
+The proposal branch named in the issue was only the starting point: %[4]s merged
+it, and the proposal branch is never merged itself. Judge %[4]s alone; never ask
+for the proposal branch to be changed.
+`, strings.Join(job.AllowedPaths, ", "), check, job.Base, job.Branch)
 	} else {
 		fmt.Fprintf(&b, `
 Protected files: %s. Changes to them come through a Standard change, a separate
