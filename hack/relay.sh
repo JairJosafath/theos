@@ -181,6 +181,10 @@ pick() {
 # no other worker or device evaluates at the same time. Exit 1 when it didn't run.
 evaluate() {
   local issue last age out rc t0
+  if [ "${C4_CLUSTER:-}" = none ]; then
+    log "no issue ready; the evaluator reads the cluster, and this device has none (C4_CLUSTER=none)"
+    return 1
+  fi
   if [ ! -x "$REPO/hack/evaluate.sh" ]; then
     log "no issue ready, and hack/evaluate.sh is missing or not executable"
     return 1

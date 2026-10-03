@@ -3,6 +3,7 @@
 # against a stubbed GitHub and a throwaway repository with two worktrees.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
+unset C4_CLUSTER # the light devcontainer sets it; each test sets its own
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 git init -q "$T/main"

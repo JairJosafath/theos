@@ -68,7 +68,8 @@ GitHub CLI and Claude Code, without Docker, Kind, kubectl or Helm, and with
 
 - **It can** build and test the operator (`make check`: envtest runs a local API
   server, no cluster), change scripts, templates and docs, and run the relay.
-- **It can't** deploy, run Crews, `make e2e`, or check anything in Gitea.
+- **It can't** deploy, run Crews, `make e2e`, check anything in Gitea, or run the
+  evaluator (it reads the cluster), so its relay stops when no issue is ready.
 
 Issues whose work or "Done when" needs the cluster carry the label `needs/cluster`;
 whoever files an issue sets it. With `C4_CLUSTER=none`, `hack/lib/github.sh pick`

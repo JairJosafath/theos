@@ -309,20 +309,23 @@ gh_branch_name() {
     | "\($t)/\(.number)-\(if $slug == "" then "work" else $slug end)"'
 }
 
-# gh_take N: gh_take_locked under a lock shared by the device's checkouts (in
-# the git common dir), so two of them can't both pass the one-cluster-issue
-# check before either has written its claim.
-gh_take() {
+# gh_device_locked CMD ARGS...: run CMD under a lock shared by the device's
+# checkouts (in the git common dir), so two of them can't both pass the
+# one-cluster-issue check before either has written its claim or label.
+gh_device_locked() {
   local dir fd rc
   dir=$(git -C "$GH_LIB_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
-    { gh_take_locked "$@"; return; }
+    { "$@"; return; }
   exec {fd}>>"$dir/c4-take.lock"
-  flock -w 120 "$fd" || echo "github: waited 2 minutes for $dir/c4-take.lock; taking without it" >&2
-  gh_take_locked "$@"
+  flock -w 120 "$fd" || echo "github: waited 2 minutes for $dir/c4-take.lock; going on without it" >&2
+  "$@"
   rc=$?
   exec {fd}>&-
   return $rc
 }
+
+# gh_take N: claim N for this checkout, under the device lock.
+gh_take() { gh_device_locked gh_take_locked "$@"; }
 
 # gh_take_locked N: claim N for this checkout and print NAME BRANCH (tab-separated).
 # A claim this checkout already holds on N is printed again. Exit 4: someone
@@ -438,16 +441,24 @@ gh_cluster_holder() {
   done < <(git -C "$GH_LIB_ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
 }
 
-# gh_label N LABEL...: add LABELs to N. Exit 4 after adding needs/cluster when
-# another checkout on this device holds the cluster: land what needs no
-# cluster and hand off.
-gh_label() {
+# gh_label N LABEL...: add LABELs to N, under the device lock. Exit 4 after
+# adding needs/cluster when another checkout on this device holds the cluster:
+# land what needs no cluster and hand off.
+gh_label() { gh_device_locked gh_label_locked "$@"; }
+
+gh_label_locked() {
   local n=${1:?usage: label N LABEL...} holder
   shift
   [ $# -gt 0 ] || { echo "usage: label N LABEL..." >&2; return 64; }
   jq -n '{labels: $ARGS.positional}' --args "$@" |
     gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
   echo "labeled #$n: $*"
+  # This checkout's own issue: keep the claim's labels current, the fallback
+  # gh_cluster_holder reads when GitHub can't be asked.
+  if [ -s "$GH_CLAIM_FILE" ] && [ "$(jq -r .issue "$GH_CLAIM_FILE")" = "$n" ]; then
+    jq --args '.labels = ((.labels // []) + $ARGS.positional | unique)' "$@" <"$GH_CLAIM_FILE" >"$GH_CLAIM_FILE.tmp" &&
+      mv "$GH_CLAIM_FILE.tmp" "$GH_CLAIM_FILE"
+  fi
   printf '%s\n' "$@" | grep -qxF needs/cluster && [ "${C4_CLUSTER:-}" != none ] || return 0
   holder=$(gh_cluster_holder)
   [ -n "$holder" ] || return 0
