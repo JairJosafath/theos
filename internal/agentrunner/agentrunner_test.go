@@ -548,10 +548,16 @@ func TestRunImplementMergesMain(t *testing.T) {
 // filesAgent writes each file and returns summary.
 type filesAgent struct {
 	files   map[string]string
+	remove  []string
 	summary string
 }
 
 func (a filesAgent) Run(_ context.Context, dir, _ string) (string, error) {
+	for _, name := range a.remove {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			return "", err
+		}
+	}
 	for name, data := range a.files {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
 			return "", err
@@ -630,6 +636,38 @@ func TestRunImplementProposesAStandardChange(t *testing.T) {
 			t.Error("the task branch carries the protected edit")
 		}
 	})
+}
+
+// A round that adds one protected file and deletes another: the proposal adds and
+// removes them as the work head has them, and the task branch restores both as
+// main has them (removing the added one).
+func TestRunImplementProposesAddedAndDeletedFiles(t *testing.T) {
+	const added, deleted = ".gitea/workflows/release.yaml", ".gitea/workflows/old.yaml"
+	url := bareRepo(t, map[string]string{"Makefile": "check:\n", ".gitea/workflows/check.yaml": "on: push\n",
+		deleted: "on: schedule\n"})
+	job := standardJob(t, url)
+	job.ProtectedPaths = []string{"Makefile", ".gitea/"}
+	agent := filesAgent{files: map[string]string{added: "on:\n  push:\n    tags: [v*]\n", "src.txt": "x\n"},
+		remove: []string{deleted}, summary: "Done.\nStandard change: releases need a workflow"}
+	got := Run(context.Background(), job, agent, t.TempDir())
+	if got.Error != "" || got.Proposal == nil || !slices.Equal(got.Proposal.Paths, []string{deleted, added}) {
+		t.Fatalf("Run() = %+v, proposal %+v", got, got.Proposal)
+	}
+	out, err := exec.Command("git", "--git-dir", strings.TrimPrefix(url, "file://"), "diff", "--no-renames",
+		"--name-status", "main", "standard/add-crop").Output()
+	if want := "D\t" + deleted + "\nA\t" + added + "\n"; err != nil || string(out) != want {
+		t.Errorf("proposal diff = %q, %v; want %q", out, err, want)
+	}
+	dir := cloneTask(t, url)
+	if _, err := os.Stat(filepath.Join(dir, added)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the task branch keeps the added %s (%v)", added, err)
+	}
+	if fileIn(t, dir, deleted) != "on: schedule\n" || fileIn(t, dir, "src.txt") != "x\n" {
+		t.Errorf("task branch: %s = %q, src.txt = %q", deleted, fileIn(t, dir, deleted), fileIn(t, dir, "src.txt"))
+	}
+	if got.Commit != branchHead(t, url, "task/add-crop") {
+		t.Errorf("Commit = %q, want the task branch head", got.Commit)
+	}
 }
 
 func TestRunImplementRefusesTheAgentsRules(t *testing.T) {
