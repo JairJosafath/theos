@@ -4,6 +4,10 @@ How the code is split, and which way dependencies may point. Read this before ad
 code. [design.md](design.md) says *what* C4 Factory does; this file says *where* the
 code for it goes.
 
+[![C4 Factory's architecture: what runs where in the Kind cluster, the code layers, and where state lives](images/architecture.png)](images/architecture.svg)
+
+The board's source is [images/architecture.excalidraw](images/architecture.excalidraw).
+
 ## Layers
 
 ```

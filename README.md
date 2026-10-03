@@ -17,6 +17,10 @@ Person ──uses──▶ SoftwareSystem ──contains──▶ Container ─�
 
 ## How it works
 
+[![How C4 Factory works: describe, scaffold once, build from issues, keep current, watch, the fence and where it runs](docs/images/how-it-works.png)](docs/images/how-it-works.svg)
+
+The board's source is [docs/images/how-it-works.excalidraw](docs/images/how-it-works.excalidraw); open it in Excalidraw to edit it. What runs where, the code layers and where state lives are on the [architecture board](docs/images/architecture.png) in [docs/architecture.md](docs/architecture.md).
+
 1. **The model lives in Kubernetes.** Each element (Project, Person, SoftwareSystem,
    Container, DataStore, Relationship) is a custom resource. Anything can write them:
    kubectl, GitOps, agents or a UI.
