@@ -89,7 +89,7 @@ t0=$(date +%s)
 rc=0
 # The prompt goes on stdin: --add-dir takes several directories and would
 # swallow a prompt argument after it.
-timeout "$TIMEOUT" claude -p --permission-mode auto --model "$MODEL" \
+C4_HEADLESS=1 timeout "$TIMEOUT" claude -p --permission-mode auto --model "$MODEL" \
   --session-id "$id" --output-format json --max-budget-usd "$BUDGET" \
   --add-dir "$RELAY_DIR" <<<"$PROMPT" >"$out.json" 2>"$out.err" || rc=$?
 mins=$((($(date +%s) - t0) / 60))
