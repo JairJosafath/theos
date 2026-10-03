@@ -154,6 +154,12 @@ func TestNextCrewStep(t *testing.T) {
 			Tasks: []CrewTask{{Name: "cel-ls-60", Issue: 60, Release: v011}}},
 			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-60"}, Waiting: []int{45},
 				Message: "Task cel-ls-60 is working on issue #60; 1 ready issue waits for release v0.1.1"}},
+		{name: "a working Crew also counts the issues on open dependencies", facts: CrewFacts{ContainerReady: true,
+			Issues: []Issue{in(v011, ready(59)), in(v011, ready(61, "#46")), in(v020, ready(45))},
+			Tasks:  []CrewTask{{Name: "cel-ls-58", Issue: 58, Release: v011}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-58"}, Ready: []int{59}, Waiting: []int{45, 61},
+				Message: "Task cel-ls-58 is working on issue #58; 1 ready issue waits for a free place; " +
+					"1 waits on open dependencies; 1 ready issue waits for release v0.1.1"}},
 		{name: "an earlier release waiting on dependencies holds back a later one", facts: CrewFacts{
 			ContainerReady: true, Issues: []Issue{in(v020, ready(6)), in(v011, ready(5, "#4"))}},
 			want: CrewStep{Phase: CrewIdle, Waiting: []int{5, 6},

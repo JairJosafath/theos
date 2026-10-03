@@ -264,15 +264,22 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			step.Message += fmt.Sprintf("; %d ready %s %s for a free place", n, plural(n, "issue", "issues"),
 				plural(n, "waits", "wait"))
 		}
+		step.Message += dependenciesMessage(onDependencies)
 		step.Message += heldMessage(held, current, "ready "+plural(len(held), "issue ", "issues "))
 	default:
 		step.Phase, step.Message = CrewIdle, "No ready issues"
-		if n := onDependencies; n > 0 {
-			step.Message += fmt.Sprintf("; %d %s on open dependencies", n, plural(n, "waits", "wait"))
-		}
+		step.Message += dependenciesMessage(onDependencies)
 		step.Message += heldMessage(held, current, "")
 	}
 	return step
+}
+
+// dependenciesMessage tells how many ready issues wait on open dependencies.
+func dependenciesMessage(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("; %d %s on open dependencies", n, plural(n, "waits", "wait"))
 }
 
 // holdLaterReleases keeps the candidates of the current release and holds back
