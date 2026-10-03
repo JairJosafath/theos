@@ -120,3 +120,33 @@ and every Claude session with it (#57). So:
 
 `hack/relay_test.sh` tests the cap and the wait against a faked
 `/proc/meminfo` (`RELAY_MEMINFO`).
+
+### CPU on the cluster device
+
+The Kind node has 12 cores and runs etcd, the API server, Gitea, the operator,
+the CI runners and the agent sandboxes together. A build without a CPU limit
+takes what it can: an uncapped fuzz test took 11 cores in a sandbox
+([results-v4](../results-v4.md)), and a `cel-language-server` release
+(`make dist`) took 8.6 in the Go runner while etcd logged 76 slow requests a
+minute and the API server failed its probes (#66). So every pod that builds
+has a CPU limit, and what must keep answering has a request large enough to
+hold its own:
+
+| Pod | CPU request | CPU limit | Set in |
+| --- | --- | --- | --- |
+| CI runners `gitea-runner`, `-go`, `-android` | 500m | 4 | `config/runner/*.yaml` |
+| Agent sandbox, implementer | 1 | 4 | the Agent, e.g. `config/samples/cel-lens/factory.yaml` |
+| Agent sandbox, reviewer | 500m | 2 | the Agent, e.g. `config/samples/cel-lens/factory.yaml` |
+| Gitea | 500m | none | `config/gitea/deployment.yaml` |
+
+- **4 cores per runner**, like the implementer: a runner takes one job at a
+  time (`capacity: 1` in `hack/runner/config.yaml`), so one job gets 4 cores.
+  A runner and a Crew's implementer and reviewer at their limits take 10 of
+  the 12 cores and leave 2 for the control plane, Gitea and the operator.
+  Go 1.25 and later set `GOMAXPROCS` from the limit, so Go builds and tests
+  run 4 threads; Node and Gradle still see 12 cores and the kernel throttles
+  them to 4.
+- **Gitea requests 500m**, a runner's share. On a busy node each pod gets CPU
+  in proportion to its request; at 50m Gitea got a tenth of a runner's share,
+  and its liveness probe restarted it just before that release (#17). It
+  stays without a limit, so it can use idle cores.
