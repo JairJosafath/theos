@@ -242,6 +242,7 @@ instead of waiting for a person at each release boundary
 round (PR #86, `5e72839`); the reviewer had sent round 1 back because hover
 renamed library types such as `kubernetes.authorization.Authorizer` to `object`.
 Within a minute the Crew started `cel-language-server-58`, the first of v0.1.1's
-fixes, with #59 and #60 ready behind it and v0.2.0 still waiting. The extension's v0.2.0 milestone closed
+fixes, with #59 and #60 ready behind it and v0.2.0 still waiting. #58 merged in
+one round at 03:11 (PR #90, `a6123db`) and #59 started the same minute. The extension's v0.2.0 milestone closed
 when `vscode-extension-62` (version 0.2.0, dated changelog, one `### Added` under
 0.1.0) merged in one round; its tag waits for a person, like v0.1.0's.
