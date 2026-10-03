@@ -67,14 +67,17 @@ Rules for this headless run:
   move on to other work or hand off.
 - If an action is refused (permissions, auto mode), don't retry it: write it in
   the handoff under Decisions as open, for the user, and carry on.
-- Commit on the current branch and push before you hand off or close, so the
-  SHAs you name exist on the remote.
+- Work on a branch from an up-to-date main (\`git switch main && git pull\`,
+  then \`git switch -c <kind>/<short-name>\`), or on the branch the handoff
+  names; never commit on main. Push it before you hand off, so the SHAs you
+  name exist on the remote.
 - End the session in one of three ways; the relay reads which from the issue:
   - Hand off: the handoff skill posts a handoff comment on #$n
     (\`hack/lib/github.sh handoff $n FILE\`). The next session continues #$n.
-  - Finished: \`hack/lib/github.sh close $n FILE\`, FILE saying what landed
-    (commit SHAs, branch). Commits land on the integration branch, so GitHub
-    won't close the issue for you. The relay then picks the next issue.
+  - Finished: open a pull request to main whose body says \`Closes #$n\`, merge
+    it with a merge commit once its checks are green, and if the issue is still
+    open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
+    request, commit SHAs). The relay then picks the next issue.
   - Stuck without the user: \`hack/lib/github.sh status $n needs-human\` and a
     comment saying why and what you need. The relay then picks the next issue.
 - Work you find outside #$n: file it with

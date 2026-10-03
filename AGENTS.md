@@ -90,6 +90,12 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   Finish one, including its "Done when" check in the Kind cluster, before starting the next.
 - **Test the rules where they live.** Table tests for `internal/model` and
   `internal/scaffold`, envtest for controllers, `make e2e` for the whole loop.
+- **Small pull requests to main.** Branch from an up-to-date main for each issue
+  or plan step (`<kind>/<short-name>`), open a pull request to main whose body
+  says `Closes #N` for the GitHub issue it finishes, and merge it with a merge
+  commit once its checks are green. No long-lived or stacked branches: each plan
+  step lands on its own and leaves main working, with new behaviour off until
+  the step that turns it on.
 - **Show, don't claim.** When a milestone is done, save evidence (test output,
   `kubectl get` output, UI or Gitea screenshots) in `docs/screenshots/`.
 - **Report honestly.** If a check fails or a step is skipped, say so in the commit or
