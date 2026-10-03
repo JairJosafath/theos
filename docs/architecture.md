@@ -160,7 +160,7 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    Containers on Standard v1.0.0 have guides that say "stop", and
    `flutter-standard` ships none and its `AGENTS.md` says "Leave .devcontainer/,
    .c4factory.yaml and .gitea/ alone"; the prompt says to follow it instead. Only
-   `go-standard` and `ts-standard` (v1.1.0) ship guides that describe Standard
+   `go-standard` and `ts-standard` (v1.1.0 and later) ship guides that describe Standard
    changes.
 
 ## Flow of one Crew

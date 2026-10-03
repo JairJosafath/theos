@@ -59,8 +59,15 @@ Task that reviews and merges it. Then:
 - Table tests with `t.Run`; golden files in `testdata/` behind an `-update`
   flag; a `FuzzX` for anything that parses untrusted input.
 - Pass `ctx` through and test that cancelling it stops the work.
-- A budget in the issue or the needs gets a `BenchmarkX` with `for b.Loop()` on
-  realistic input; put `ns/op` and the input size in the summary.
+- Unit tests never measure time: no `time.Sleep`, no wall-clock bounds such as
+  "arrives within 500ms", no best-of-N samples. They pass in your sandbox and
+  fail on the shared CI runner or under `-race`.
+- A budget in the issue or the needs ("within 200 ms", "fast on a 10,000-line
+  file") gets a `BenchmarkX` with `for b.Loop()` on realistic input, not a
+  test; put `ns/op` and the input size in the summary.
+- Timing logic (debounce, timeouts, retries) takes an injected clock or a
+  channel the test controls; the test advances it, or waits for an event, and
+  checks the outcome.
 - New modules: `go get module@version`, then `go mod tidy`; name each one and
   why in the summary. Prefer the standard library.
 

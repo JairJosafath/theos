@@ -15,8 +15,9 @@ says what to check.
    counts UTF-16 code units); the server missing, slow or crashing;
    cancellation; several workspace folders; every error handled.
 3. **Tests.** They test behaviour through exports, would fail without the
-   change, cover the edge cases above, and are deterministic: no real timers,
-   no network, no state left in the `vscode` stand-in.
+   change, cover the edge cases above, and are deterministic: no real timers
+   or real-time bounds (fake timers instead), no network, no state left in the
+   `vscode` stand-in.
 4. **Design.** Logic in pure modules, `extension.ts` only wiring; names; no dead
    code; no speculative generality (settings nobody needs, abstractions with
    one use); the change stays in the issue's scope.
@@ -25,7 +26,7 @@ says what to check.
    the logs in the output channel.
 6. **Performance.** Activation stays lazy and fast; nothing heavy runs per
    keystroke in the extension host; budgets from the issue or the system's
-   needs are measured.
+   needs are measured by a bench, never by a test with a time bound.
 7. **Docs and DX.** README, setting and command descriptions and the CHANGELOG
    match the behaviour; messages tell a user what happened and what to do.
 8. **Security.** No shell commands built from user input or settings; workspace
