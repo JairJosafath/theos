@@ -249,6 +249,12 @@ one round at 03:11 (PR #90, `a6123db`) and #59 started the same minute. #59
 under Later, and #60, v0.1.1's last issue, started the same minute. While it
 worked, the Crew message now also counted #57, waiting on #46: the Working message
 had left issues on open dependencies out, which the Idle one counted (fixed in
-`2eb3283`). The extension's v0.2.0 milestone closed
+`2eb3283`). #60 (README: the Kubernetes library functions have documentation now)
+merged in one round at 03:48 (PR #94, `d3c9417`), with a README wording proposal,
+#95, from its reviewer. That closed v0.1.1's last issue: nine closed, none open, and
+`d3c9417` on main is the commit its tag should name. The same minute the Crew
+started `cel-language-server-45`, the first of v0.2.0, with #49 and #50 waiting for
+a free place, v0.3.0's #46 and #53 waiting "for release v0.2.0" and #57 on #46: the
+release boundary passed without a person. The extension's v0.2.0 milestone closed
 when `vscode-extension-62` (version 0.2.0, dated changelog, one `### Added` under
 0.1.0) merged in one round; its tag waits for a person, like v0.1.0's.

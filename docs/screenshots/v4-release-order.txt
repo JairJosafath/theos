@@ -25,3 +25,10 @@ Before the fix the same issues read: ready=[45,49,50,58,59,60] waiting=[]
 $ # after readying v0.3.0 (#46 #53 #57; #46 blocks #57), the next poll
 ready=[58,59,60] waiting=[45,46,49,50,53,57]
 message: Task cel-language-server-44 is working on issue #44; 3 ready issues wait for a free place; 5 ready issues wait for release v0.1.1
+
+$ # v0.1.1 done: #60 merged 03:48:01Z (PR #94, d3c9417); the next poll
+phase=Working active=["cel-language-server-45"] ready=[49,50] waiting=[46,53,57] polled=2026-10-03T03:49:03Z
+message: Task cel-language-server-45 is working on issue #45; 2 ready issues wait for a free place; 1 waits on open dependencies; 2 ready issues wait for release v0.2.0
+
+$ milestones (open/closed)
+v0.1.1 0/9   v0.2.0 3/4   v0.3.0 3/0
