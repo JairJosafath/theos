@@ -17,7 +17,8 @@
 # (if present) runs when the newest evaluation on the "Factory evaluations"
 # issue is 6 hours old, under a claim on that issue, so it runs once across
 # workers and devices; the worker picks once more and stops if there is still
-# nothing. After each session it runs `make backup-releases` if that target exists.
+# nothing. After each session it runs `make backup-releases` if that target
+# exists and the device has the cluster.
 #
 # Issues that need the Kind cluster carry needs/cluster. On a device without
 # one, C4_CLUSTER=none (the light devcontainer sets it): the workers skip those
@@ -287,11 +288,15 @@ switch_branch() {
   fi
 }
 
-# backup: run `make backup-releases` if the Makefile has that target and no
-# other worker is running it.
+# backup: run `make backup-releases` if the Makefile has that target, this
+# device has the cluster and no other worker is running it.
 backup() {
   local out="$DIR/backup-releases.out"
   make -n backup-releases >/dev/null 2>&1 || return 0
+  if [ "${C4_CLUSTER:-}" = none ]; then
+    log "backup-releases: skipped; it reads Gitea in the cluster, and this device has none (C4_CLUSTER=none)"
+    return 0
+  fi
   if [ -n "$DRY_RUN" ]; then
     log "would run make backup-releases after the session"
     return 0

@@ -82,7 +82,8 @@ holding its claim gets it released; a worker stops when a session leaves no
 handoff comment and doesn't close the issue or set `status/needs-human`. With
 nothing ready a worker claims the "Factory evaluations" issue and runs
 `hack/evaluate.sh` if its newest evaluation is 6 hours old, then picks once
-more. After each session it runs `make backup-releases` if the target exists.
+more. After each session it runs `make backup-releases` if the target exists,
+except with `C4_CLUSTER=none`, where it logs the skip.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
