@@ -16,7 +16,8 @@ task. Read the rest when the task needs it:
 | change API types, reconcilers or log lines | [docs/dev/api-and-controllers.md](docs/dev/api-and-controllers.md) |
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
-| continue work someone left in flight | the newest file in [docs/handoffs/](docs/handoffs/) |
+| continue work someone left in flight | the open `status/in-progress` GitHub issue and its newest handoff comment (the `handoff` skill) |
+| evaluate how the factory runs | `hack/evaluate.sh`, the `factory-evaluator` skill |
 | work on a milestone | its plan in [docs/plans/](docs/plans/) and its results file |
 
 ## Project Architecture
@@ -99,6 +100,10 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
 Quality drops as a session's context grows, long before the window is full.
 Treat about 140k tokens as the limit, and keep each session to one piece of work.
 
+- **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
+  piece of work, labeled `status/*`, `priority/urgent`, `kind/*`;
+  `hack/lib/github.sh` reads and writes them. Product work stays in Gitea with
+  the Crews.
 - **One issue, plan step or fix per session.** Start the next one fresh.
 - **Read on demand.** Open the docs in the table above when the task needs them,
   not up front. Read files in parts, not whole.
@@ -106,12 +111,13 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   file dumps. Keep large outputs out of the context: filter with `jq`, `grep`,
   `tail`, `--tail=N`, and summary flags.
 - **Hand off before the context gets big**, or when work stops mid-way: the
-  `handoff` skill writes the in-flight state to `docs/handoffs/`, and the next
-  session starts by reading it. A handoff is deleted when its work lands.
+  `handoff` skill posts the in-flight state as a comment on the issue, and the
+  next session starts by reading the newest one. Close the issue when its work
+  lands.
 - **Hand off between tasks, never inside one.** Finish the task in flight (its
   implementation and review) first; after a task, past about 100k tokens, hand
   off instead of starting the next.
-- **Overnight, `hack/relay.sh`** runs headless sessions one after another from
-  the newest handoff; its log is `.relay/relay.log`.
+- **Overnight, `hack/relay.sh`** runs headless sessions one after another, each
+  on the in-progress or next ready issue; its log is `.relay/relay.log`.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?
