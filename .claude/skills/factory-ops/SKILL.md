@@ -48,6 +48,9 @@ curl -s -u "c4admin:$ADMIN_PW" "http://localhost:3917/api/v1/repos/ORG/REPO/pull
 Never print a password or token; read it into a variable. Browse with
 `make gitea-forward` (http://localhost:3000).
 
+After creating a release tag in Gitea, run `make backup-releases` (PUSH=0 to skip the push):
+it stores the tag's source zip in `backups/` and commits it.
+
 ## Changing the factory
 
 | Change | Do | Mind |
