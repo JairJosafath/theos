@@ -324,7 +324,7 @@ func runRole(phase c4v1alpha1.TaskPhase) string {
 }
 
 func sandboxName(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, role string) string {
-	return model.SandboxName(task.Name, int(status.Round), role, int(status.ReviewAttempts)+1)
+	return model.SandboxName(task.Name, int(status.Round), role, int(status.ReviewAttempts)+1, int(status.Reruns))
 }
 
 func isFinal(phase c4v1alpha1.TaskPhase) bool {

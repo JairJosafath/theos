@@ -247,6 +247,9 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 	state.Done = true
 	state.Failure = pod.Status.Reason
 	state.Interrupted = podDisrupted(&pod)
+	// Its own deadline or its sandbox's shutdown time ends a run that took too
+	// long: the run's failure, though c4agent sees the same SIGTERM.
+	ownLimit := pod.Status.Reason == "DeadlineExceeded" || sandboxExpired(sandbox)
 	for _, cs := range pod.Status.ContainerStatuses {
 		term := cs.State.Terminated
 		if cs.Name != "agent" || term == nil {
@@ -259,7 +262,7 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 				Proposal: result.Proposal, Empty: result.Empty,
 				FollowUps: result.FollowUps, Unavailable: result.Unavailable,
 			}
-			state.Interrupted = state.Interrupted || result.Interrupted
+			state.Interrupted = (state.Interrupted || result.Interrupted) && !ownLimit
 			if result.RetryAt != nil {
 				state.Result.RetryAt = *result.RetryAt
 			}
@@ -268,7 +271,7 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 		state.Failure = term.Reason
 		// A container the kubelet lost across a node restart.
 		state.Interrupted = state.Interrupted || term.Reason == "ContainerStatusUnknown"
-		if term.Reason == "OOMKilled" {
+		if term.Reason == "OOMKilled" || ownLimit {
 			state.Interrupted = false
 		}
 		if term.ExitCode != 0 {

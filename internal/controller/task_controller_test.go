@@ -337,8 +337,10 @@ var _ = Describe("Task with an interrupted run", func() {
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		killed := &agentrunner.Result{Role: "implement", Error: "claude failed: signal: killed", Interrupted: true}
 		for rerun := 1; rerun <= model.MaxReruns+1; rerun++ {
-			Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }, "20s").Should(Succeed())
-			finishSandbox(ns, "add-crop-r1-implement", "add-crop", killed, "")
+			// Each rerun has a sandbox of its own: add-crop-r1-implement, then -x1, -x2.
+			name := model.SandboxName("add-crop", 1, model.RoleImplementer, 1, rerun-1)
+			Eventually(func(g Gomega) { sandboxExists(g, ns, name) }, "20s").Should(Succeed())
+			finishSandbox(ns, name, "add-crop", killed, "")
 			if rerun > model.MaxReruns {
 				break
 			}
@@ -347,8 +349,6 @@ var _ = Describe("Task with an interrupted run", func() {
 				g.Expect(task.Status.Reruns).To(Equal(int32(rerun)))
 				g.Expect(task.Status.Round).To(Equal(int32(1)), "an interrupted run costs no round")
 			}).Should(Succeed())
-			// Agent Sandbox would collect the old pod with its sandbox.
-			Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "add-crop-r1-implement")})).To(Succeed())
 		}
 
 		Eventually(func(g Gomega) {

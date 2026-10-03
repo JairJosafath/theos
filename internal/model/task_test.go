@@ -197,10 +197,13 @@ func TestAgentUsername(t *testing.T) {
 }
 
 func TestSandboxName(t *testing.T) {
-	if got := SandboxName("add-crop", 2, RoleReviewer, 1); got != "add-crop-r2-review-a1" {
+	if got := SandboxName("add-crop", 2, RoleReviewer, 1, 0); got != "add-crop-r2-review-a1" {
 		t.Errorf("SandboxName() = %q", got)
 	}
-	long := SandboxName(strings.Repeat("x", 80), 10, RoleImplementer, 0)
+	if got := SandboxName("add-crop", 1, RoleImplementer, 1, 2); got != "add-crop-r1-implement-x2" {
+		t.Errorf("SandboxName() of a rerun = %q", got)
+	}
+	long := SandboxName(strings.Repeat("x", 80), 10, RoleImplementer, 0, 2)
 	if len(long) > 63 {
 		t.Errorf("SandboxName() = %q is longer than 63", long)
 	}
@@ -382,6 +385,14 @@ func TestNextTaskStepInterrupted(t *testing.T) {
 			Run: evicted}, ActionRetryReview, "Evicted"},
 		{"an out-of-memory kill is the agent's", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
 			Run: oom}, ActionRetry, "OOMKilled"},
+		{"a pushed commit stands though the node then shut down", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Run: RunState{Started: true, Done: true, Interrupted: true,
+				Result: &RunResult{Commit: "abc1234"}}}, ActionOpenPR, ""},
+		{"so does a verdict", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: RunState{Started: true,
+			Done: true, Interrupted: true, Result: &RunResult{Verdict: VerdictApprove}}}, ActionMerge, ""},
+		{"an unavailable agent waits", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: RunState{Started: true, Done: true, Interrupted: true,
+				Result: &RunResult{Error: "usage limit reached", Unavailable: true}}}, ActionAgentUnavailable, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

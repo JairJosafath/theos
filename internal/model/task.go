@@ -360,7 +360,7 @@ func implementingStep(f TaskFacts) TaskStep {
 		return TaskStep{Action: ActionStartImplement, Message: fmt.Sprintf("Starting round %d", f.Round)}
 	case !f.Run.Done:
 		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("The agent is working on round %d", f.Round)}
-	case f.Run.Interrupted && f.Reruns < MaxReruns:
+	case interrupted(f.Run) && f.Reruns < MaxReruns:
 		return rerun(f)
 	case f.Run.Result == nil:
 		return roundFailed(f, "The agent's sandbox ended without a result: "+orUnknown(f.Run.Failure))
@@ -379,7 +379,7 @@ func reviewingStep(f TaskFacts) TaskStep {
 		return TaskStep{Action: ActionStartReview, Message: "Starting the review"}
 	case !f.Run.Done:
 		return TaskStep{Action: ActionWait, Message: "The reviewer is reviewing"}
-	case f.Run.Interrupted && f.Reruns < MaxReruns:
+	case interrupted(f.Run) && f.Reruns < MaxReruns:
 		return rerun(f)
 	case f.Run.Result != nil && f.Run.Result.Unavailable:
 		return agentUnavailable(f)
@@ -457,6 +457,13 @@ func blockedStep(f TaskFacts) TaskStep {
 func agentUnavailable(f TaskFacts) TaskStep {
 	return TaskStep{Action: ActionAgentUnavailable, RetryAt: f.Run.Result.RetryAt, Message: fmt.Sprintf(
 		"The agent is unavailable (%s); round %d waits for it", gist(f.Run.Result.Error), f.Round)}
+}
+
+// interrupted reports whether the infrastructure ended a run before it finished:
+// a run that reported its outcome, or an unavailable agent, is not rerun however
+// its pod ended.
+func interrupted(run RunState) bool {
+	return run.Interrupted && (run.Result == nil || run.Result.Error != "" && !run.Result.Unavailable)
 }
 
 // rerun runs the step of an interrupted run again, without spending the round.
@@ -551,12 +558,17 @@ func AgentUsername(project, container string) string {
 	return strings.TrimRight(name[:maxUsername-len(suffix)], "-") + suffix
 }
 
-// SandboxName names the sandbox of one run: task, round, role and, for reviews,
-// the attempt. It fits a DNS label.
-func SandboxName(task string, round int, role string, attempt int) string {
+// SandboxName names the sandbox of one run: task, round, role, for reviews the
+// attempt, and the rerun after an interruption, if any. A rerun gets a name of
+// its own, so the sandbox it replaces, still being deleted, is never read as its
+// own. It fits a DNS label.
+func SandboxName(task string, round int, role string, attempt, rerun int) string {
 	suffix := "-r" + strconv.Itoa(round) + "-" + role
 	if role == RoleReviewer {
 		suffix += "-a" + strconv.Itoa(attempt)
+	}
+	if rerun > 0 {
+		suffix += "-x" + strconv.Itoa(rerun)
 	}
 	if len(task)+len(suffix) > 63 {
 		sum := sha256.Sum256([]byte(task))
