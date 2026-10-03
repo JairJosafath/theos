@@ -51,8 +51,10 @@ fix the code or propose a change to the design; don't silently diverge. Settled 
 worth repeating:
 - **The CRDs are the truth.** The UI and the Session client enforce nothing; rules
   live in CRD schemas (CEL), the admission policy and the operator.
-- **Scaffold once.** A Container is scaffolded at creation and never updated
-  afterwards. Relationships added later show `Applied=False`, reason `AddedAfterScaffold`.
+- **Scaffold once.** A Container is scaffolded at creation and never scaffolded
+  again; only its Standard's files follow a bump of the Standard's pinned `ref`,
+  through a pull request the operator opens and merges. Relationships added
+  later show `Applied=False`, reason `AddedAfterScaffold`.
 - **Every file belongs to exactly one layer.** Two layers writing the same path fail
   the Container, with the path in the message.
 - **Templates are pinned.** A template `ref` is a tag or commit, never a branch.

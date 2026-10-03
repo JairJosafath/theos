@@ -57,7 +57,7 @@ it stores the tag's source zip in `backups/` and commits it.
 | --- | --- | --- |
 | Operator code | `make deploy` | The new pod waits up to a minute for the leader lease; Tasks carry on |
 | c4agent or the agent image | `make agent-image-go` | Loads about 6 GB into Kind, which has restarted Gitea: pause the Crews and let running Tasks finish first |
-| A template | new version in `templates/versions.txt`, then `make seed` | Tags never move; only new Containers get it |
+| A template | new version in `templates/versions.txt`, then `make seed`, then bump the catalog entry's `ref` | Tags never move. A Standard's bump reaches its Ready Containers as an update pull request the operator merges (`status.standard`, condition `StandardUpdated`); other templates reach only new Containers |
 | Claude token | `make claude-secret` or `make claude-secret-copy FROM=.. TO=..` | Never print it |
 | The UI | `make ui-test ui` | |
 
