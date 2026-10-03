@@ -159,3 +159,32 @@ This time the criterion was right; what was missing was a person's edit. A
 person added a hook to the Makefile, so `make dist` also runs the project's
 `npm run dist` when there is one (vscode-extension PR #30), and #4 is to be
 readied again on top of it.
+
+**Fifth part, a Standard change.** The hook in PR #30 was never merged. The
+factory now carries a protected-file change as a Standard change, so PR #30 was
+closed unmerged and #4 was labelled `status/ready` again, the last thing a person
+did. At 00:06 `vscode-extension-4-2` started. It wrote `scripts/dist.mjs`, saw it
+needed a change to the `Makefile`, and went `Blocked` at 00:11 with
+`status.standardChange` naming the `Makefile`. The operator filed issue #46 and
+`vscode-extension-46` ran with `allowedProtectedPaths: [Makefile]`. It merged at
+00:17 (PR #47), and 4-2 resumed round 1 the same minute, reached `Merged` at 00:30
+(PR #48), 24 minutes after it started, with no person acting. Both Tasks took two
+rounds. #46's first round replaced the recipe with a bare `npm run dist
+--if-present`; the reviewer found that on `main`, which has no `dist` script, `make
+dist` then does nothing and exits 0, so the release workflow would fail. Round 2
+added a fallback to the old single `.vsix` when `package.json` has no `dist`
+script. #4's round 1 was rejected for a stale README: it still told users to
+download `vscode-extension-<version>.vsix` and the server separately. Round 2
+rewrote the Install section (and added a test for it), moved the cache decision
+into `verifiedAsset` with injected I/O, and wrote the CHANGELOG for users. The
+hook in the end is a small change in the Makefile (PR #47: six lines added, two
+removed): `make dist` runs `npm run dist` if the script exists, else the old
+packaging. The extension's `dist` script uses it, and a throwaway Job running `make
+dist` on `main` afterwards built five `.vsix` files, one per platform, each with
+the server inside (`docs/screenshots/v4-standard-change.txt`). Two things were not
+clean. The reviewer's request in #46 to correct the proposal branch
+`standard/vscode-extension-4-2` as well was not met: the implementer was told to
+stay on its own branch, so the proposal branch kept the bare `--if-present` form
+(the merged `Makefile` is right). And nobody has tried a `.vsix` in a real VS Code.
+The reviewer filed two follow-ups as `status/proposed` (#49, publishing the
+packages from a release workflow; #50, a package for win32-arm64).
