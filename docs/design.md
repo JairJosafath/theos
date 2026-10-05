@@ -289,6 +289,14 @@ model and context it needs.
   release left to a person is a Warning Event, once per reason, and the Crew's
   `Released` condition says why. A paused Crew still tags: its release's work
   is already merged.
+- **The Crew watches the release run.** It reads the CI workflow runs the last
+  release's tag started and sums them up in `status.lastRelease.run`: `Waiting`,
+  `Running`, `Failed` as soon as one ended other than success or skipped, and
+  `Succeeded` once all ended well, with `runURL` linking to the failed or newest
+  run. A run that fails is a Warning Event `ReleaseRunFailed` and the log line
+  `Release run failed`; runs that end well are a Normal Event. The Crew watches
+  until the runs succeed, so a failed run a person re-runs turns `Succeeded`.
+  Only the last release is watched, and a run that never starts is not reported.
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other
   issue, whatever its release, even when every place is taken (once running, it

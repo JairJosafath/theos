@@ -75,6 +75,9 @@ type CrewReconciler struct {
 	// heldSaid is, by Crew UID, the reason and message of the last release left
 	// to a person, so each gets one Warning.
 	heldSaid sync.Map
+	// runSaid is, by Crew UID, the tag and result of the last release run
+	// reported, so each change gets one Event.
+	runSaid sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
@@ -215,6 +218,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	case !crew.Spec.TagReleases:
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
 	case facts.ContainerReady:
+		r.watchReleaseRun(ctx, &crew, status, provider, repo)
 		r.tagRelease(ctx, &crew, status, provider, repo, containerTasks)
 	}
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)

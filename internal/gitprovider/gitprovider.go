@@ -162,6 +162,9 @@ type Provider interface {
 	// CreateTag tags commit as tag, annotated with message. It fails if the tag
 	// exists, wherever it points.
 	CreateTag(ctx context.Context, repo Repository, tag, commit, message string) error
+	// TagRuns returns the CI workflow runs a push of tag at commit started,
+	// newest first.
+	TagRuns(ctx context.Context, repo Repository, tag, commit string) ([]WorkflowRun, error)
 }
 
 // BranchRule is what a protected branch requires of a pull request.

@@ -13,15 +13,17 @@ import (
 // given with setIssueRelease; closing one and tagging are recorded per repository.
 
 type fakeReleaseState struct {
-	closed map[string][]string // owner/name, closed milestones' titles
-	tags   map[string]string   // owner/name@tag, the commit it names
+	closed map[string][]string                  // owner/name, closed milestones' titles
+	tags   map[string]string                    // owner/name@tag, the commit it names
+	runs   map[string][]gitprovider.WorkflowRun // owner/name@tag@commit, newest first
 	// closeFailures is how many CloseMilestone calls fail before one succeeds.
 	closeFailures int
 }
 
 func (g *fakeGit) releaseState() *fakeReleaseState {
 	if g.releases == nil {
-		g.releases = &fakeReleaseState{closed: map[string][]string{}, tags: map[string]string{}}
+		g.releases = &fakeReleaseState{closed: map[string][]string{}, tags: map[string]string{},
+			runs: map[string][]gitprovider.WorkflowRun{}}
 	}
 	return g.releases
 }
@@ -103,6 +105,20 @@ func (p *fakeProvider) CreateTag(_ context.Context, repo gitprovider.Repository,
 	}
 	s.tags[key] = commit
 	return nil
+}
+
+func (p *fakeProvider) TagRuns(_ context.Context, repo gitprovider.Repository, tag, commit string) (
+	[]gitprovider.WorkflowRun, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	return slices.Clone(p.git.releaseState().runs[repo.Owner+"/"+repo.Name+"@"+tag+"@"+commit]), nil
+}
+
+// setRuns sets the workflow runs a push of tag at commit started, newest first.
+func (g *fakeGit) setRuns(owner, name, tag, commit string, runs ...gitprovider.WorkflowRun) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().runs[owner+"/"+name+"@"+tag+"@"+commit] = runs
 }
 
 func (g *fakeGit) milestoneTitle(key string, id int64) (string, error) {

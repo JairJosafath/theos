@@ -2,6 +2,9 @@ package gitprovider
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -90,5 +93,47 @@ func TestTags(t *testing.T) {
 	}
 	if h.tags["v0.2.0"] != "694db57" {
 		t.Errorf("tag v0.2.0 = %s, want it left at 694db57", h.tags["v0.2.0"])
+	}
+}
+
+func TestTagRuns(t *testing.T) {
+	var queries []url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/repos/webshop/orders-api/actions/runs" {
+			http.NotFound(w, r)
+			return
+		}
+		queries = append(queries, r.URL.Query())
+		// Gitea lists newest first; the check run on main shares the tag's commit.
+		_, _ = w.Write([]byte(`{"total_count":4,"workflow_runs":[
+			{"id":9,"path":"release.yaml@refs/tags/v0.2.0","head_sha":"694db57","status":"completed","conclusion":"failure","html_url":"http://gitea/webshop/orders-api/actions/runs/9"},
+			{"id":8,"path":"notes.yaml@refs/tags/v0.2.0","head_sha":"694db57","status":"queued","conclusion":"","html_url":"http://gitea/webshop/orders-api/actions/runs/8"},
+			{"id":7,"path":"check.yaml@refs/heads/main","head_sha":"694db57","status":"completed","conclusion":"success","html_url":"http://gitea/webshop/orders-api/actions/runs/7"},
+			{"id":6,"path":"release.yaml@refs/tags/v0.2.0","head_sha":"1cedb81","status":"completed","conclusion":"success","html_url":"http://gitea/webshop/orders-api/actions/runs/6"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := p.TagRuns(context.Background(), p.Repository("orders-api"), "v0.2.0", "694db57")
+	if err != nil {
+		t.Fatalf("TagRuns() error = %v", err)
+	}
+	want := []WorkflowRun{
+		{ID: 9, Workflow: "release.yaml", Status: "completed", Conclusion: "failure",
+			URL: "http://gitea/webshop/orders-api/actions/runs/9"},
+		{ID: 8, Workflow: "notes.yaml", Status: "queued", URL: "http://gitea/webshop/orders-api/actions/runs/8"},
+	}
+	if !reflect.DeepEqual(runs, want) {
+		t.Errorf("TagRuns() = %+v, want %+v", runs, want)
+	}
+	if len(queries) != 1 || queries[0].Get("event") != "push" || queries[0].Get("head_sha") != "694db57" {
+		t.Errorf("queries = %v, want one for push runs at 694db57", queries)
+	}
+
+	if _, err := p.TagRuns(context.Background(), p.Repository("payments"), "v0.2.0", "694db57"); err == nil ||
+		!strings.Contains(err.Error(), "HTTP 404") {
+		t.Errorf("TagRuns() of a missing repository error = %v, want HTTP 404", err)
 	}
 }
