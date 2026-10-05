@@ -4,7 +4,7 @@
 filing the "prepare vX" issue: once a release's work is merged, the Crew files
 that issue in the release, its agents bump the version files and write the
 changelog, and the release is tagged at that merge. GitHub issue #117, a
-follow-up of [release-tags.md](release-tags.md) (#78).
+follow-up of [release-tags.md](../release-tags.md) (#78).
 
 **Why:** `make release-version` in the release job refuses a tag that differs
 from `package.json`, so today a person files and readies "Prepare vX" before the
