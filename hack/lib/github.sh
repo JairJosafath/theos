@@ -55,7 +55,7 @@
 # C4_LEASE_TTL. release, handoff, close and needs-human drop it too.
 # hack/lib/github_test.sh tests these rules against a stubbed GitHub.
 #
-# Claims (docs/plans/parallel-agents.md): taking an issue posts a comment that
+# Claims (docs/plans/done/parallel-agents.md): taking an issue posts a comment that
 # starts with <!-- c4-claim --> and names the agent (otter-23), host, branch and
 # session. It is live while it says "works on this issue" and was edited within
 # C4_LEASE_TTL (2h; 90m, 300s and plain seconds work too). The local half is

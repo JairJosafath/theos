@@ -21,7 +21,7 @@ bottom). TypeScript and VS Code specifics live in `typescript.md` and
   for anything used beyond a few lines. [GNU 5.4], [Kernel §4], [GoogleTS]
 - **Short names only for short scopes.** `i`, `x` are fine in a 3-line loop; if a
   local's name confuses, the function is too long. [Kernel §4], [GNU 5.4]
-- **Acronyms are words:** `HttpClient`, `celLensId`. [Rust C-CASE], [GoogleTS]
+- **Acronyms are words:** `HttpClient`, `xmlDocId`. [Rust C-CASE], [GoogleTS]
 - **Verbs for actions, nouns for values.** `startServer()` does; `serverPath` is.
   Booleans read as assertions: `isEnabled`, `hasErrors`. [LLVM naming]
 - **No `get` prefix on property-like reads**; conversions use `to...`/`as...`.

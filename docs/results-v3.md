@@ -2,7 +2,7 @@
 
 What was built to see and run the factory through its life, what watching it
 found on the first day, and what changed because of it. The plan is
-[plans/factory-monitoring.md](plans/factory-monitoring.md); evidence is in
+[plans/factory-monitoring.md](plans/done/factory-monitoring.md); evidence is in
 `docs/screenshots/v3-*`.
 
 ![The factory view, live in Kind, with a stand-in Task's timeline](screenshots/v3-factory-live.png)

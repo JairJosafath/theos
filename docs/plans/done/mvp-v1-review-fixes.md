@@ -5,7 +5,7 @@ made before it merges.
 
 ## Goal
 
-Scaffold once, and stop for good on failure, as [the design](../design.md) asks;
+Scaffold once, and stop for good on failure, as [the design](../../design.md) asks;
 close the gaps the review found in the Git provider, the renderer and the templates.
 
 ## Steps
@@ -52,7 +52,7 @@ All eight steps are done, each with a spec that failed first. Along the way:
 - **Two templates were released.** `k8s-manifests` v1.1.0 guards the Compute patch,
   and `python-fastapi` v1.2.1 lists the new template inputs in its README; tags
   never move.
-- **The screenshots in [results.md](../results.md)** predate these fixes and show
+- **The screenshots in [results.md](../../results.md)** predate these fixes and show
   the earlier template versions.
 
 ## Secrets and CI

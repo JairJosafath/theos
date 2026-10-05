@@ -22,8 +22,6 @@ config/rbac/role.yaml              Generated RBAC (DO NOT EDIT)
 config/policy/                     ValidatingAdmissionPolicy (Project name equals namespace)
 config/gitea/                      Gitea for the test environment
 config/samples/webshop/            The sample story (edit these)
-config/samples/toolbox/            The agent factory story: six tool apps, Agents and Tasks
-config/samples/cel-lens/           CEL Lens: two Containers, Crews, and the backlog filed as Gitea issues
 config/runner/                     The Gitea CI runner for Container repositories
 config/ui/                         The read-only UI's Deployment and read-only RBAC
 config/metrics-server/             metrics-server for Kind (CPU and memory for the UI and kubectl top)
@@ -35,14 +33,13 @@ hack/testenv.mk                    Make targets for the Kind test environment
 hack/dev/                          The project shell's environment and zsh setup, for ./dev
 hack/seed/                         The seed job image and manifests
 hack/session/                      The Session client image and the test Session pod
-hack/toolchain-slim/               The slim Flutter toolchain (no Android SDK) for CI checks and agents
-hack/toolchain/                    The full Flutter toolchain with the Android SDK, for releases and devcontainers
+hack/toolchain-base/               The minimal toolchain (Node, bash, git, make) for the e2e hello-world Container
 hack/toolchain-go/                 The Go and Node toolchain, with a warm build cache, for Go and TypeScript Containers
-hack/backlog/                      Files a backlog of Markdown issues into Gitea, with labels, milestones and dependencies
 hack/runner/, hack/agent/          The CI runner and agent images, built on the toolchain
 hack/render/                       Renders templates locally, the way the operator scaffolds
 test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox)
 test/e2e/                          End-to-end tests against the Kind cluster (make e2e)
+test/e2e/testdata/apps/            The e2e fixture project: one hello-world Container, Agents and Tasks
 ui/                                Read-only UI (React + a GET-only proxy)
 docs/                              Design, architecture, plans and screenshots
 Makefile                           Build, test, cluster and deploy commands

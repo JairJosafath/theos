@@ -46,7 +46,7 @@ dependency.
 ## Doc comments
 
 - Every exported name has a doc comment, a full sentence that starts with the
-  name: `// Check reports the CEL errors in doc.` [lint: revive exported]
+  name: `// Parse reads a config file and reports its errors.` [lint: revive exported]
 - Every package has one package comment, `// Package lsp serves ...`, in one
   file; a command's starts `// Command name ...`. [lint: revive package-comments]
 - Comments are sentences: capitalised, ending with a period; `// text`, not

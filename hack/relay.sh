@@ -5,7 +5,7 @@
 # comment on it (the handoff skill); hack/lib/github.sh has the GitHub helpers.
 # Product work stays in Gitea, where the Crews work it.
 #
-# It runs N workers side by side (docs/plans/parallel-agents.md). Worker k runs
+# It runs N workers side by side (docs/plans/done/parallel-agents.md). Worker k runs
 # from this checkout and starts its sessions, one after another, in its own git
 # worktree .claude/worktrees/relay-k, switched to each issue's branch; the
 # worktree's .relay/ holds its claim. Each round picks an issue

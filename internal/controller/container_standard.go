@@ -38,7 +38,7 @@ import (
 // Standard's files in the repository to the new ref, and merges it as admin
 // once CI passes. It is a report on a Ready Container, never a failure: every
 // outcome is the condition StandardUpdated and status.standard, and a Git
-// error is retried at the next recheck. See docs/plans/standard-update.md.
+// error is retried at the next recheck. See docs/plans/done/standard-update.md.
 
 // standardUpdate is one pass over a Container's Standard update.
 type standardUpdate struct {

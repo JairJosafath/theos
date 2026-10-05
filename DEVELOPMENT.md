@@ -5,8 +5,6 @@ sets the environment up when you open the folder, and everything the project
 downloads or writes lives in `.dev/` inside the checkout. Delete the folder and
 the project is gone from the machine.
 
-This replaced `.devcontainer/` (default, `operator/` and `lite/`).
-
 ## Getting started
 
 You need git, the GitHub CLI (`gh`), VS Code with the WSL extension, and Docker
@@ -60,21 +58,6 @@ The same actions are VS Code tasks (**Terminal → Run Task → Dev: …**).
 
 `hack/dev/env.sh` sets the variables that point every tool at `.dev/`, and
 `hack/dev/zshrc` is the shell configuration. Both are versioned; `.dev/` is not.
-
-## From the dev container to this setup
-
-| Dev container | Now |
-| --- | --- |
-| Features (Go, Node, kubectl, Helm, Kind, gh, Claude Code) | `./dev setup` downloads them into `.dev/`; gh stays installed on the machine |
-| `post-create.sh` (kubebuilder, uv, fzf, jq, zsh) | Also `./dev setup` |
-| `postStartCommand` (trim Go cache) | The **Dev: open** task, on every folder open |
-| `customizations.vscode` | `.vscode/settings.json` and `.vscode/extensions.json` |
-| Volumes for history and Claude login | `.dev/zsh/history` and `.dev/claude/` |
-| Docker-in-Docker | Docker Desktop on the host: Kind uses it directly |
-| `forwardPorts` 3000 and 8080 | Not needed: WSL forwards localhost to Windows. Task **Gitea: port-forward** starts the Gitea forward. |
-| `hostRequirements` | Limit WSL in `%USERPROFILE%\.wslconfig` (`memory=`, `swap=`) |
-| `lite/` | `./dev setup --lite` |
-| `operator/` (kubebuilder's own config) | Covered by the default setup |
 
 ## Worktrees
 

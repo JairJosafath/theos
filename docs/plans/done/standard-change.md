@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.x kubebuilder operator (controller-runtime, envtest, Ginkgo/Gomega), git CLI in the runner, Gitea 1.27.3 REST API, React/TypeScript UI (vitest).
 
-**Spec:** [docs/superpowers/specs/2026-10-02-standard-change-design.md](../superpowers/specs/2026-10-02-standard-change-design.md)
+**Spec:** [docs/plans/done/2026-10-02-standard-change-design.md](2026-10-02-standard-change-design.md)
 
 ## Global Constraints
 

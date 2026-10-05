@@ -1,7 +1,8 @@
 # Tests, the Kind cluster and deploying
 
 How to test and run the factory. The e2e tests run only against the dedicated
-Kind cluster `c4factory` (`make cluster`), never a real cluster.
+Kind cluster `c4factory` (`make cluster`), never a real cluster. Run `make e2e`
+only when the user explicitly asks for it; `make check` is the gate for every change.
 
 ## Testing & Development
 
@@ -12,14 +13,12 @@ make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
 make test-gitea          # gitprovider against the seeded Gitea
-make toolchain runner agent-sandbox agent-image  # Slim toolchain, CI runner, Agent Sandbox, agent image
-make toolchain-android runner-android  # Optional: the 20 GB release runner for signed APKs
-make toolbox             # The toolbox story; then kubectl apply -k config/samples/toolbox/tasks
+make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain, CI runner (label base), Agent Sandbox, agent image
+make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
 make toolchain-go runner-go agent-image-go  # Go and Node toolchain, CI runner (label go) and agent image
-make cel-lens cel-lens-backlog  # The CEL Lens story and its issues; then kubectl apply -k config/samples/cel-lens/crews
 make claude-secret CLAUDE_TOKEN=...  # The real agent's token, from `claude setup-token`
-make claude-secret-copy FROM=toolbox TO=cel-lens  # Reuse that Secret in another project
-make e2e                 # All of the above, then check every milestone in Kind
+make claude-secret-copy FROM=webshop TO=apps  # Reuse that Secret in another project
+make e2e                 # Only when the user asks: all of the above but the Go images, then check the whole loop in Kind
 make down / make up       # Stop the factory to free the machine; bring it back healthy
 make doctor              # Check every part of the factory and say what is wrong
 ```
@@ -89,7 +88,7 @@ touch .relay/stop                  # stop the watch, and every worker after its 
 The relay picks the oldest `status/in-progress` issue nobody holds, else the
 oldest `status/ready` + `priority/urgent` one, else the oldest `status/ready`
 one, skipping issues with a live claim or an open `Depends on #M`, and claims
-it (see [docs/plans/parallel-agents.md](../plans/parallel-agents.md)). Worker
+it (see [docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
 k runs its sessions in the git worktree `.claude/worktrees/relay-k`, switched
 to the issue's branch; uncommitted changes a dead session left there are
 stashed, not dropped. Claims keep workers and hand-started sessions off each
@@ -170,8 +169,6 @@ queue:
   hang, so give the command a long timeout or run it in the background. A job
   that ends, fails or is killed frees its slot within a second; its sub-makes
   don't take another. `hack/heavy-slot.sh status` shows the slots.
-- Build a devcontainer (`devcontainer up`) only on a device without the
-  cluster.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
   before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
   `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;
@@ -193,18 +190,17 @@ and the Makefile queueing its heavy goals.
 
 The Kind node has 12 cores and runs etcd, the API server, Gitea, the operator,
 the CI runners and the agent sandboxes together. A build without a CPU limit
-takes what it can: an uncapped fuzz test took 11 cores in a sandbox
-([results-v4](../results-v4.md)), and a `cel-language-server` release
-(`make dist`) took 8.6 in the Go runner while etcd logged 76 slow requests a
+takes what it can: an uncapped fuzz test took 11 cores in a sandbox, and a
+Go release build (`make dist`) took 8.6 in the Go runner while etcd logged 76 slow requests a
 minute and the API server failed its probes (#66). So every pod that builds
 has a CPU limit, and what must keep answering has a request large enough to
 hold its own:
 
 | Pod | CPU request | CPU limit | Set in |
 | --- | --- | --- | --- |
-| CI runners `gitea-runner`, `-go`, `-android` | 500m | 4 | `config/runner/*.yaml` |
-| Agent sandbox, implementer | 1 | 4 | the Agent, e.g. `config/samples/cel-lens/factory.yaml` |
-| Agent sandbox, reviewer | 500m | 2 | the Agent, e.g. `config/samples/cel-lens/factory.yaml` |
+| CI runners `gitea-runner-base`, `-go` | 500m | 4 | `config/runner/*.yaml` |
+| Agent sandbox, implementer | 1 | 4 | the Agent's `resources` |
+| Agent sandbox, reviewer | 500m | 2 | the Agent's `resources` |
 | Gitea | 500m | none | `config/gitea/deployment.yaml` |
 
 - **4 cores per runner**, like the implementer: a runner takes one job at a
@@ -212,10 +208,10 @@ hold its own:
   A runner and a Crew's implementer and reviewer at their limits take 10 of
   the 12 cores and leave 2 for the control plane, Gitea and the operator.
   Go 1.25 and later set `GOMAXPROCS` from the limit, so Go builds and tests
-  run 4 threads; Node and Gradle still see 12 cores and the kernel throttles
+  run 4 threads; Node still sees 12 cores and the kernel throttles
   them to 4.
 - **An Agent without a separate reviewer takes the implementer's values**,
-  like the toolbox's `claude`: a Task reviews each round after implementing
+  like a single `claude` Agent: a Task reviews each round after implementing
   it, never beside it. So do the stand-ins: they write no code, but their
   implement rounds still run `make check`.
 - **Gitea requests 500m**, a runner's share. On a busy node each pod gets CPU
