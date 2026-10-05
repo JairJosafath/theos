@@ -23,7 +23,7 @@ those renders. A literal in git stays in its history.
 | A token a running service issues (Gitea API tokens) | The job that talks to the service makes it and stores it with `kubectl create secret`, as `hack/seed/seed.sh` does. |
 | make targets and scripts | `head -c 24 /dev/urandom \| base64` into `kubectl create secret generic`, only when the Secret is missing (target `gitea` in `hack/testenv.mk`). |
 | A credential only the user has | The user creates the Secret; the chart takes `existingSecret`. |
-| Go tests | `token := rand.Text()` (`crypto/rand`) in the fixture; assert against `token`. |
+| Go tests | `token := rand.Text()` (`crypto/rand`, Go 1.24+) in the fixture; assert against `token`, e.g. `r.Header.Get("Authorization") == "token "+token`. |
 | UI (Node) tests | `randomBytes(18).toString('base64url')` (`node:crypto`), the same way. |
 
 The init container, for a pod that needs Secret `gitea-admin`:
@@ -52,15 +52,21 @@ spec:
           - downwardAPI: {items: [{path: namespace, fieldRef: {fieldPath: metadata.namespace}}]}
 ```
 
-Its Role, in the pod's namespace: `create` on `secrets`, and `get` on `secrets`
-with `resourceNames` listing the Secrets it makes. Rotation: delete the Secret
-and restart the pod.
+The chart renders, next to the pod, its ServiceAccount, a RoleBinding and a
+Role in the pod's namespace: `create` on `secrets` (which `resourceNames`
+cannot narrow), and `get` on `secrets` with `resourceNames` listing the Secrets
+it makes. The Secret is not in the rendered manifests, so Helm, Argo CD and
+Flux neither track nor prune it. Rotation: delete the Secret and restart the
+pod.
 
 ## When a scanner flags a pull request
 
 The finding is a credential in the repository or in what Helm renders. Fix the
-design with the table above, push, and wait for the check to pass. If the fix
-doesn't fit in the session, hand off with the finding and the fix.
+design with the table above, push, and wait for the check to pass. A flagged
+literal in a test becomes a generated value (the Go and UI rows), not a
+low-entropy placeholder. If the fix doesn't fit in the session, leave the pull
+request open and unmerged and hand off with the finding and the fix (the
+`handoff` skill).
 
 Never an ignore rule (`.gitguardian.yaml`, dashboard exclusions), a
 false-positive mark, a rename that hides the name from the detector, or a
