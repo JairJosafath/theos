@@ -12,7 +12,7 @@ func TestTransientGitError(t *testing.T) {
 		msg  string
 		want bool
 	}{
-		{"git push: exit status 128: fatal: unable to access 'http://gitea.gitea.svc:3000/toolbox/x/': " +
+		{"git push: exit status 128: fatal: unable to access 'http://gitea.gitea.svc:3000/apps/x/': " +
 			"Failed to connect to gitea.gitea.svc port 3000 after 130000 ms: Couldn't connect to server", true},
 		{"git clone: exit status 128: fatal: unable to access 'http://gitea/x/': Could not resolve host: gitea", true},
 		{"git push: exit status 128: fatal: the remote end hung up unexpectedly", true},

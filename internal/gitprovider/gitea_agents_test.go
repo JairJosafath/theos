@@ -39,7 +39,7 @@ func newAgentGitea(t *testing.T) (*agentGitea, Provider) {
 	g := &agentGitea{t: t, bodies: map[string]map[string]any{}, users: map[string]bool{}, rules: map[string]bool{}}
 	srv := httptest.NewServer(g)
 	t.Cleanup(srv.Close)
-	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "toolbox", Credentials: Credentials{Username: "c4admin", Token: "admin"}})
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "apps", Credentials: Credentials{Username: "c4admin", Token: "admin"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(v)
 	}
-	repo := "/api/v1/repos/toolbox/photo-editor"
+	repo := "/api/v1/repos/apps/photo-editor"
 	switch {
 	case call == "POST "+repo+"/branch_protections":
 		if g.rules["main"] {
@@ -144,7 +144,7 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		p := giteaPull{Number: len(g.pulls) + 1, HTMLURL: "http://gitea/toolbox/photo-editor/pulls/1", State: "open"}
+		p := giteaPull{Number: len(g.pulls) + 1, HTMLURL: "http://gitea/apps/photo-editor/pulls/1", State: "open"}
 		p.Head.Ref, p.Head.SHA = body["head"].(string), "abc123"
 		g.pulls = append(g.pulls, p)
 		reply(http.StatusCreated, p)
@@ -176,7 +176,7 @@ func TestProtectBranchCreatesThenUpdates(t *testing.T) {
 			t.Fatalf("ProtectBranch() error = %v", err)
 		}
 	}
-	rule := g.bodies["POST /api/v1/repos/toolbox/photo-editor/branch_protections"]
+	rule := g.bodies["POST /api/v1/repos/apps/photo-editor/branch_protections"]
 	if rule["enable_push"] != false || rule["enable_status_check"] != true || rule["rule_name"] != "main" {
 		t.Errorf("rule = %v", rule)
 	}
@@ -186,7 +186,7 @@ func TestProtectBranchCreatesThenUpdates(t *testing.T) {
 	if rule["protected_file_patterns"] != ".gitea/**;Makefile" {
 		t.Errorf("protected_file_patterns = %v", rule["protected_file_patterns"])
 	}
-	if last := g.calls[len(g.calls)-1]; last != "PATCH /api/v1/repos/toolbox/photo-editor/branch_protections/main" {
+	if last := g.calls[len(g.calls)-1]; last != "PATCH /api/v1/repos/apps/photo-editor/branch_protections/main" {
 		t.Errorf("second call = %s, want the update", last)
 	}
 }
@@ -199,11 +199,11 @@ func TestProtectTagsCreatesThenUpdates(t *testing.T) {
 			t.Fatalf("ProtectTags() error = %v", err)
 		}
 	}
-	created := g.bodies["POST /api/v1/repos/toolbox/photo-editor/tag_protections"]
+	created := g.bodies["POST /api/v1/repos/apps/photo-editor/tag_protections"]
 	if created["name_pattern"] != "v*" || fmt.Sprint(created["whitelist_usernames"]) != "[c4admin]" {
 		t.Errorf("tag rule = %v", created)
 	}
-	if last := g.calls[len(g.calls)-1]; last != "PATCH /api/v1/repos/toolbox/photo-editor/tag_protections/7" {
+	if last := g.calls[len(g.calls)-1]; last != "PATCH /api/v1/repos/apps/photo-editor/tag_protections/7" {
 		t.Errorf("second call = %s, want the update", last)
 	}
 }
@@ -255,7 +255,7 @@ func TestEnsureAgentAccess(t *testing.T) {
 	if created["restricted"] != true || created["must_change_password"] != false {
 		t.Errorf("new user = %v, want restricted and no password change", created)
 	}
-	if collab := g.bodies["PUT /api/v1/repos/toolbox/photo-editor/collaborators/photo-editor-agent"]; collab["permission"] != "write" {
+	if collab := g.bodies["PUT /api/v1/repos/apps/photo-editor/collaborators/photo-editor-agent"]; collab["permission"] != "write" {
 		t.Errorf("collaborator = %v", collab)
 	}
 	if !strings.Contains(strings.Join(g.calls, "\n"), "PATCH /api/v1/admin/users/photo-editor-agent") {
@@ -282,7 +282,7 @@ func TestPullRequests(t *testing.T) {
 	if err := p.MergePullRequest(ctx, repo, 1, "abc123", "Add crop", "Task add-crop"); err != nil {
 		t.Fatalf("MergePullRequest() error = %v", err)
 	}
-	if merge := g.bodies["POST /api/v1/repos/toolbox/photo-editor/pulls/1/merge"]; merge["Do"] != "squash" || merge["delete_branch_after_merge"] != true || merge["head_commit_id"] != "abc123" {
+	if merge := g.bodies["POST /api/v1/repos/apps/photo-editor/pulls/1/merge"]; merge["Do"] != "squash" || merge["delete_branch_after_merge"] != true || merge["head_commit_id"] != "abc123" {
 		t.Errorf("merge = %v", merge)
 	}
 	got, err := p.GetPullRequest(ctx, repo, 1)
@@ -297,11 +297,11 @@ func TestPullRequests(t *testing.T) {
 func TestCheckLog(t *testing.T) {
 	_, p := newAgentGitea(t)
 	repo := p.Repository("photo-editor")
-	log, err := p.CheckLog(context.Background(), repo, "/toolbox/photo-editor/actions/runs/27/jobs/27")
+	log, err := p.CheckLog(context.Background(), repo, "/apps/photo-editor/actions/runs/27/jobs/27")
 	if err != nil || !strings.Contains(log, "make: ***") {
 		t.Fatalf("CheckLog() = %q, %v", log, err)
 	}
-	if _, err := p.CheckLog(context.Background(), repo, "http://gitea/toolbox/photo-editor/actions/runs/27"); err == nil {
+	if _, err := p.CheckLog(context.Background(), repo, "http://gitea/apps/photo-editor/actions/runs/27"); err == nil {
 		t.Error("CheckLog() accepted a link without a job")
 	}
 }
@@ -346,7 +346,7 @@ func TestClosePullRequest(t *testing.T) {
 	if err := p.ClosePullRequest(context.Background(), p.Repository("photo-editor"), 7); err != nil {
 		t.Fatalf("ClosePullRequest() error = %v", err)
 	}
-	if got := g.bodies["PATCH /api/v1/repos/toolbox/photo-editor/pulls/7"]; got["state"] != "closed" {
+	if got := g.bodies["PATCH /api/v1/repos/apps/photo-editor/pulls/7"]; got["state"] != "closed" {
 		t.Errorf("body = %v", got)
 	}
 }
@@ -356,7 +356,7 @@ func TestForceMergePullRequest(t *testing.T) {
 	if err := p.ForceMergePullRequest(context.Background(), p.Repository("photo-editor"), 7, "abc", "Add Makefile", "Task x"); err != nil {
 		t.Fatalf("ForceMergePullRequest() error = %v", err)
 	}
-	merge := g.bodies["POST /api/v1/repos/toolbox/photo-editor/pulls/7/merge"]
+	merge := g.bodies["POST /api/v1/repos/apps/photo-editor/pulls/7/merge"]
 	if merge["force_merge"] != true || merge["Do"] != "squash" || merge["head_commit_id"] != "abc" ||
 		merge["merge_title_field"] != "Add Makefile" || merge["delete_branch_after_merge"] != true {
 		t.Errorf("merge = %v", merge)
@@ -377,7 +377,7 @@ func TestDeleteBranch(t *testing.T) {
 			call = r.Method + " " + r.URL.EscapedPath()
 			w.WriteHeader(tc.status)
 		}))
-		p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "toolbox", Credentials: Credentials{Username: "c4admin", Token: "admin"}})
+		p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "apps", Credentials: Credentials{Username: "c4admin", Token: "admin"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -386,7 +386,7 @@ func TestDeleteBranch(t *testing.T) {
 		if (err != nil) != tc.wantErr {
 			t.Errorf("HTTP %d: DeleteBranch() error = %v, want error %v", tc.status, err, tc.wantErr)
 		}
-		if want := "DELETE /api/v1/repos/toolbox/photo-editor/branches/standard/photo-editor-4-1"; call != want {
+		if want := "DELETE /api/v1/repos/apps/photo-editor/branches/standard/photo-editor-4-1"; call != want {
 			t.Errorf("call = %q, want %q", call, want)
 		}
 	}

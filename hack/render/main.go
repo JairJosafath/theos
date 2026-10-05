@@ -2,7 +2,7 @@
 // the operator scaffolds a Container, so a template author can run the result:
 //
 //	go run ./hack/render -out /tmp/app -type mobile-app \
-//	  Framework=flutter-app Standard=flutter-standard Deployment=android-release
+//	  Framework=go-cli Standard=go-standard Deployment=gitea-release
 package main
 
 import (
@@ -19,7 +19,7 @@ import (
 func main() {
 	out := flag.String("out", "", "folder to write the repository into (must not exist)")
 	root := flag.String("templates", "templates", "folder with the template repositories")
-	in := scaffold.Input{Project: "toolbox", SoftwareSystem: "pocket-tools"}
+	in := scaffold.Input{Project: "webshop", SoftwareSystem: "shop"}
 	flag.StringVar(&in.Container, "container", "sample-app", "Container name")
 	flag.StringVar(&in.DisplayName, "display-name", "Sample App", "Container display name")
 	flag.StringVar(&in.Type, "type", "mobile-app", "Container type")

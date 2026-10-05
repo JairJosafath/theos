@@ -47,8 +47,8 @@ var _ = Describe("Container Standard", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
 		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "flutter-strict"}
-		mustCreate(newSystem(ns, "webshop-core"), newStandard(ns, "flutter-strict", "flutter-app"), container)
+		container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "strict"}
+		mustCreate(newSystem(ns, "webshop-core"), newStandard(ns, "strict", "go-cli"), container)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
@@ -57,7 +57,7 @@ var _ = Describe("Container Standard", func() {
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUnsupportedFramework))
-			g.Expect(cond.Message).To(Equal("flutter-strict does not support python-fastapi"))
+			g.Expect(cond.Message).To(Equal("strict does not support python-fastapi"))
 		}).Should(Succeed())
 	})
 
@@ -131,7 +131,7 @@ var _ = Describe("Container Standard", func() {
 		ns := newProjectNamespace()
 		standard := newStandard(ns, "python-strict", "python-fastapi")
 		agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "claude"),
-			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-flutter:dev"}}
+			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev"}}
 		mustCreate(standard, agent)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "python-strict"), standard)).To(Succeed())

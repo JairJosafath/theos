@@ -132,11 +132,11 @@ func TestRenderLayerRefusesOperatorPaths(t *testing.T) {
 }
 
 func TestUpdateMessage(t *testing.T) {
-	in := Input{Project: "cel-lens", SoftwareSystem: "cel-lens", Container: "cel-language-server"}
+	in := Input{Project: "tools", SoftwareSystem: "tools", Container: "cel-language-server"}
 	u := Update{Files: tree("AGENTS.md", "x")}
 	want := "Update the Standard go-standard to v1.1.1\n\n" +
 		"Brings the files of go-standard from v1.0.0 to v1.1.1 for Container cel-language-server.\n\n" +
-		"C4-Factory-Container: cel-lens/cel-language-server\n" +
+		"C4-Factory-Container: tools/cel-language-server\n" +
 		"Standard-Update: go-standard@v1.0.0..v1.1.1\n"
 	if got := UpdateMessage(in, "go-standard", "v1.0.0", "v1.1.1", u); got != want {
 		t.Errorf("UpdateMessage() =\n%s\nwant\n%s", got, want)
@@ -146,7 +146,7 @@ func TestUpdateMessage(t *testing.T) {
 	want = "Update the Standard go-standard to v1.1.1\n\n" +
 		"Brings the files of go-standard from v1.0.0 to v1.1.1 for Container cel-language-server.\n" +
 		"Left out, changed in the repository since v1.0.0: Makefile and docs/style/go.md.\n\n" +
-		"C4-Factory-Container: cel-lens/cel-language-server\n" +
+		"C4-Factory-Container: tools/cel-language-server\n" +
 		"Standard-Update: go-standard@v1.0.0..v1.1.1\n"
 	if got := UpdateMessage(in, "go-standard", "v1.0.0", "v1.1.1", u); got != want {
 		t.Errorf("UpdateMessage() with paths left out =\n%s\nwant\n%s", got, want)

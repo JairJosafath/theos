@@ -37,7 +37,7 @@ import (
 // newAgent returns the Agent "claude" with the given number of rounds.
 func newAgent(ns string, rounds int32) *c4v1alpha1.Agent {
 	return &c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "claude"),
-		Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-flutter:dev", MaxRounds: rounds}}
+		Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}}
 }
 
 // newTask returns a Task on the Container orders-api.

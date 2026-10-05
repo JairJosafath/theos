@@ -3,7 +3,7 @@ log:
   level: info
 runner:
   file: /data/.runner
-  # One job at a time: Flutter checks and Gradle builds are heavy.
+  # One job at a time: builds are heavy.
   capacity: 1
   timeout: 1h
   # Extra variables for jobs, when the file exists: the go runner's build caches

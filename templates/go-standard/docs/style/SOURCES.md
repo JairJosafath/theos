@@ -1,7 +1,7 @@
 # Sources
 
 Every source read to write `docs/style/`. The Go sources were read on 2026-10-02.
-The cross-language sources were read on 2026-09-30 for flutter-standard, whose
+The cross-language sources were read on 2026-09-30 for another Standard, whose
 `principles.md` this one adapts; they were not read again. Version or date as
 shown on the page; "live" when the page shows none.
 

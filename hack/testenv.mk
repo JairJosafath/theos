@@ -52,7 +52,7 @@ gitea-admin: ## Print the Gitea admin's username and generated password, for sig
 seed: ## Seed Gitea: orgs, tagged template repos, Secret gitea-credentials.
 	$(CONTAINER_TOOL) build -t $(SEED_IMG) -f hack/seed/Dockerfile .
 	$(KIND) load docker-image $(SEED_IMG) --name '$(KIND_CLUSTER)'
-	for ns in webshop toolbox cel-lens; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -; done
+	for ns in webshop apps; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -; done
 	$(TESTENV_KUBECTL) apply -f hack/seed/rbac.yaml
 	@# Foreground: the old pods are gone before the new Job starts.
 	$(TESTENV_KUBECTL) -n gitea delete job seed --ignore-not-found --cascade=foreground --wait=true
@@ -120,42 +120,12 @@ session-kill: ## Kill the test Session's client abruptly, as a crashed devcontai
 
 ##@ Agents
 
-FLUTTER_IMG ?= c4factory/flutter:3.47.5
-FLUTTER_SLIM_IMG ?= c4factory/flutter:3.47.5-slim
-RUNNER_IMG ?= c4factory/gitea-runner:dev
-RUNNER_ANDROID_IMG ?= c4factory/gitea-runner-android:dev
-AGENT_IMG ?= c4factory/agent-flutter:dev
 GO_TOOLCHAIN_IMG ?= c4factory/go:1.26
 RUNNER_GO_IMG ?= c4factory/gitea-runner-go:dev
 AGENT_GO_IMG ?= c4factory/agent-go:dev
-
-.PHONY: toolchain
-toolchain: ## Build the slim Flutter toolchain (no Android SDK) that CI checks and agents use.
-	$(CONTAINER_TOOL) build -t $(FLUTTER_SLIM_IMG) hack/toolchain-slim
-
-.PHONY: toolchain-android
-toolchain-android: ## Build the full Flutter toolchain with the Android SDK (about 20 GB), for releases.
-	$(CONTAINER_TOOL) build -t $(FLUTTER_IMG) hack/toolchain
-
-.PHONY: runner-android
-runner-android: ## Build the release runner on the full toolchain and run it (label flutter-android).
-	$(CONTAINER_TOOL) build -t $(RUNNER_ANDROID_IMG) --build-arg BASE=$(FLUTTER_IMG) -f hack/runner/Dockerfile .
-	$(KIND) load docker-image $(RUNNER_ANDROID_IMG) --name '$(KIND_CLUSTER)'
-	$(TESTENV_KUBECTL) apply -f config/runner/android.yaml
-	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-android --timeout=600s
-
-.PHONY: runner
-runner: ## Build the CI runner, load it into Kind and run it in namespace gitea.
-	$(CONTAINER_TOOL) build -t $(RUNNER_IMG) -f hack/runner/Dockerfile .
-	$(KIND) load docker-image $(RUNNER_IMG) --name '$(KIND_CLUSTER)'
-	$(TESTENV_KUBECTL) apply -k config/runner
-	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner
-	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner --timeout=600s
-
-.PHONY: agent-image
-agent-image: ## Build the agent image (c4agent + Claude Code + Flutter) and load it into Kind.
-	$(CONTAINER_TOOL) build -t $(AGENT_IMG) -f hack/agent/Dockerfile .
-	$(KIND) load docker-image $(AGENT_IMG) --name '$(KIND_CLUSTER)'
+BASE_TOOLCHAIN_IMG ?= c4factory/base:dev
+RUNNER_BASE_IMG ?= c4factory/gitea-runner-base:dev
+AGENT_BASE_IMG ?= c4factory/agent-base:dev
 
 .PHONY: toolchain-go
 toolchain-go: ## Build the Go and Node toolchain (Go Containers, VS Code extensions), with a warm build cache.
@@ -174,12 +144,29 @@ agent-image-go: ## Build the agent image on the Go and Node toolchain and load i
 	$(CONTAINER_TOOL) build -t $(AGENT_GO_IMG) --build-arg BASE=$(GO_TOOLCHAIN_IMG) -f hack/agent/Dockerfile .
 	$(KIND) load docker-image $(AGENT_GO_IMG) --name '$(KIND_CLUSTER)'
 
+.PHONY: toolchain-base
+toolchain-base: ## Build the minimal toolchain (Node, bash, git, make) the e2e hello-world Container uses.
+	$(CONTAINER_TOOL) build -t $(BASE_TOOLCHAIN_IMG) hack/toolchain-base
+
+.PHONY: runner-base
+runner-base: ## Build the minimal CI runner (label base), load it into Kind and run it.
+	$(CONTAINER_TOOL) build -t $(RUNNER_BASE_IMG) --build-arg BASE=$(BASE_TOOLCHAIN_IMG) -f hack/runner/Dockerfile .
+	$(KIND) load docker-image $(RUNNER_BASE_IMG) --name '$(KIND_CLUSTER)'
+	$(TESTENV_KUBECTL) apply -f config/runner/base.yaml
+	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner-base
+	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-base --timeout=600s
+
+.PHONY: agent-image-base
+agent-image-base: ## Build the agent image on the minimal toolchain and load it into Kind.
+	$(CONTAINER_TOOL) build -t $(AGENT_BASE_IMG) --build-arg BASE=$(BASE_TOOLCHAIN_IMG) -f hack/agent/Dockerfile .
+	$(KIND) load docker-image $(AGENT_BASE_IMG) --name '$(KIND_CLUSTER)'
+
 .PHONY: agent-sandbox
 agent-sandbox: ## Install Agent Sandbox (config/agent-sandbox, v1.0.4), which runs the agents.
 	$(TESTENV_KUBECTL) apply --server-side -k config/agent-sandbox
 	$(TESTENV_KUBECTL) -n agent-sandbox-system rollout status deployment --timeout=300s
 
-CLAUDE_NAMESPACE ?= toolbox
+CLAUDE_NAMESPACE ?= apps
 
 .PHONY: claude-secret
 claude-secret: ## Store a Claude token for agents: make claude-secret CLAUDE_TOKEN=... (from `claude setup-token`).
@@ -189,29 +176,17 @@ claude-secret: ## Store a Claude token for agents: make claude-secret CLAUDE_TOK
 		$(TESTENV_KUBECTL) apply --server-side --field-manager=c4factory-testenv -f - >/dev/null
 	@echo "Stored Secret $(CLAUDE_NAMESPACE)/claude-credentials"
 
-.PHONY: cel-lens
-cel-lens: ## Apply the CEL Lens story: a CEL language server and VS Code extension built by agents.
-	$(TESTENV_KUBECTL) apply -k config/samples/cel-lens
-
-.PHONY: cel-lens-backlog
-cel-lens-backlog: ## File the CEL Lens backlog (config/samples/cel-lens/backlog) as Gitea issues.
-	@$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea 3911:3000 >/dev/null 2>&1 & pf=$$!; \
-	trap 'kill $$pf 2>/dev/null || true' EXIT; sleep 2; \
-	GITEA_URL=http://localhost:3911 \
-	GITEA_TOKEN="$$($(TESTENV_KUBECTL) -n cel-lens get secret gitea-credentials -o jsonpath='{.data.token}' | base64 -d)" \
-	hack/backlog/file-issues.sh cel-lens config/samples/cel-lens/backlog
-
 .PHONY: claude-secret-copy
-claude-secret-copy: ## Copy the Claude Secret between projects: make claude-secret-copy FROM=toolbox TO=cel-lens.
+claude-secret-copy: ## Copy the Claude Secret between projects: make claude-secret-copy FROM=webshop TO=apps.
 	@test -n "$(FROM)" -a -n "$(TO)" || { echo "Set FROM and TO namespaces" >&2; exit 1; }
 	@$(TESTENV_KUBECTL) -n $(FROM) get secret claude-credentials -o json | \
 		jq --arg ns "$(TO)" '{apiVersion, kind, type, data, metadata: {name: .metadata.name, namespace: $$ns}}' | \
 		$(TESTENV_KUBECTL) apply --server-side --field-manager=c4factory-testenv -f - >/dev/null
 	@echo "Copied Secret claude-credentials from $(FROM) to $(TO)"
 
-.PHONY: toolbox
-toolbox: ## Apply the toolbox story: offline tool apps built by agents (config/samples/toolbox).
-	$(TESTENV_KUBECTL) apply -k config/samples/toolbox
+.PHONY: e2e-apps
+e2e-apps: ## Apply the e2e fixture project: one hello-world Container (test/e2e/testdata/apps).
+	$(TESTENV_KUBECTL) apply -k test/e2e/testdata/apps
 
 .PHONY: metrics-server
 metrics-server: ## Install metrics-server (config/metrics-server): live CPU and memory for the UI's factory view.

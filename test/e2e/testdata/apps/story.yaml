@@ -1,0 +1,42 @@
+# Who uses what, and what it is made of: a hello-world project for the e2e agent loop.
+apiVersion: c4.factory.io/v1alpha1
+kind: Person
+metadata:
+  name: hello-user
+spec:
+  displayName: Hello user
+  description: Someone who runs the hello script.
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: hello-system
+spec:
+  displayName: Hello system
+  description: A hello-world project for the e2e agent loop.
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: hello-user-uses-hello-system
+spec:
+  source: {kind: Person, name: hello-user}
+  target: {kind: SoftwareSystem, name: hello-system}
+  description: Runs it
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: hello
+spec:
+  softwareSystemRef:
+    name: hello-system
+  displayName: Hello
+  description: A hello-world project for the e2e agent loop.
+  type: cli
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: hello
+  standardRef:
+    name: hello-standard

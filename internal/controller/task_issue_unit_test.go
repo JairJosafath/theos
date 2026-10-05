@@ -18,15 +18,15 @@ import (
 func TestCloseIssueAfterALateAnswer(t *testing.T) {
 	git := &fakeGit{repos: map[string]*fakeRepo{}, hangs: map[string]chan struct{}{}}
 	provider := &fakeProvider{git: git}
-	repo := gitprovider.Repository{Owner: "cel-lens", Name: "vscode-extension"}
+	repo := gitprovider.Repository{Owner: "tools", Name: "vscode-extension"}
 	n := git.addIssue(repo.Owner, repo.Name, "Check the README's claims", "", []string{model.LabelInProgress})
 	git.issueState().late = true
 
 	r := &TaskReconciler{GitTimeout: 50 * time.Millisecond}
-	task := &c4v1alpha1.Task{ObjectMeta: objectMeta("cel-lens", "vscode-extension-19"),
+	task := &c4v1alpha1.Task{ObjectMeta: objectMeta("tools", "vscode-extension-19"),
 		Spec: c4v1alpha1.TaskSpec{Issue: int32(n)}}
-	status := &c4v1alpha1.TaskStatus{Round: 3, PullRequestURL: "http://gitea/cel-lens/vscode-extension/pulls/35"}
-	reviewer := &c4v1alpha1.Agent{ObjectMeta: objectMeta("cel-lens", "claude-reviewer")}
+	status := &c4v1alpha1.TaskStatus{Round: 3, PullRequestURL: "http://gitea/tools/vscode-extension/pulls/35"}
+	reviewer := &c4v1alpha1.Agent{ObjectMeta: objectMeta("tools", "claude-reviewer")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 

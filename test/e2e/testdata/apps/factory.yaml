@@ -1,0 +1,61 @@
+# Where repositories go, the hello-world catalog, and the stand-in Agent that does Tasks.
+# Templates are pinned to tags pushed by the seed job (templates/versions.txt).
+apiVersion: c4.factory.io/v1alpha1
+kind: GitProvider
+metadata:
+  name: gitea
+spec:
+  provider: gitea
+  url: http://gitea.gitea.svc.cluster.local:3000
+  owner: apps
+  credentialsSecretRef:
+    name: gitea-credentials
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Framework
+metadata:
+  name: hello
+spec:
+  displayName: Hello world
+  description: A shell script that prints hello, world.
+  supportedTypes: [cli]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/hello
+    ref: v1.0.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Standard
+metadata:
+  name: hello-standard
+spec:
+  displayName: Hello world standard
+  description: A make check that runs the script, and the CI that runs it.
+  supportedTypes: [cli]
+  supportedFrameworks: [hello]
+  # The quality contract: agents fix the code, not the rules it is checked by.
+  protectedPaths: [Makefile]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/hello-standard
+    ref: v1.0.0
+---
+# A stand-in that makes a scripted change and approves it: proves the loop
+# without spending tokens.
+apiVersion: c4.factory.io/v1alpha1
+kind: Agent
+metadata:
+  name: stand-in
+spec:
+  displayName: Stand-in agent
+  description: Adds a line to STAND-IN.md; asks for changes once, then approves.
+  image: c4factory/agent-base:dev
+  maxRounds: 2
+  timeoutMinutes: 15
+  # Its implement rounds still run make check.
+  resources:
+    requests: {cpu: 100m}
+    limits: {cpu: "1"}
+  env:
+    - name: C4AGENT_FAKE
+      value: "1"
+    - name: C4AGENT_FAKE_CHANGES_FIRST
+      value: "true"

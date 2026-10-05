@@ -180,7 +180,7 @@ func TestAppliedRelationship(t *testing.T) {
 }
 
 func TestCheckStandard(t *testing.T) {
-	standard := CatalogEntry{Side: SideStandard, Name: "flutter-standard", SupportedFrameworks: []string{"flutter-app"}}
+	standard := CatalogEntry{Side: SideStandard, Name: "strict-standard", SupportedFrameworks: []string{"go-cli"}}
 	tests := []struct {
 		name      string
 		framework string
@@ -188,8 +188,8 @@ func TestCheckStandard(t *testing.T) {
 		want      string
 	}{
 		{"no standard", "python-fastapi", nil, ""},
-		{"listed framework", "flutter-app", &standard, ""},
-		{"unlisted framework", "python-fastapi", &standard, "flutter-standard does not support python-fastapi"},
+		{"listed framework", "go-cli", &standard, ""},
+		{"unlisted framework", "python-fastapi", &standard, "strict-standard does not support python-fastapi"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

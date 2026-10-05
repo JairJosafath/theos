@@ -105,8 +105,7 @@ deployment() {
 section "Factory"
 deployment c4-factory-system c4-factory-controller-manager "Operator"
 deployment gitea gitea "Gitea"
-deployment gitea gitea-runner "CI runner" "make runner"
-deployment gitea gitea-runner-android "Release runner" "optional: make runner-android"
+deployment gitea gitea-runner-base "CI runner" "make runner-base"
 deployment agent-sandbox-system agent-sandbox-controller "Agent Sandbox" "make agent-sandbox"
 deployment kube-system coredns "Cluster DNS"
 deployment kube-system metrics-server "metrics-server" "make metrics-server"
@@ -120,7 +119,7 @@ fi
 section "Projects"
 projects=$("${KUBECTL[@]}" get projects.c4.factory.io -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"\n"}{end}' 2>/dev/null)
 if [[ -z "$projects" ]]; then
-  warn "No Projects yet (make sample, make toolbox)"
+  warn "No Projects yet (make sample, make e2e-apps)"
 fi
 for ns in $projects; do
   # Each GitProvider's credentials.

@@ -33,7 +33,7 @@ spec:
             - name: GITEA_URL
               value: http://gitea.gitea.svc.cluster.local:3000
             - name: PROJECTS
-              value: webshop toolbox cel-lens
+              value: webshop apps
             - name: GITEA_USERNAME
               valueFrom: {secretKeyRef: {name: gitea-admin, key: username}}
             - name: GITEA_PASSWORD
