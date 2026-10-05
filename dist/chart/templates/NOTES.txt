@@ -15,7 +15,11 @@ Open the read-only UI on http://localhost:8080:
 {{- end }}
 {{- range .Values.gitProviders }}
 
-GitProvider {{ .name | default "git" }} in namespace {{ .namespace }} points at {{ .url }}.
+GitProvider {{ .name | default "git" }} in namespace {{ .namespace }} points at {{ .url }},
+with the token in Secret {{ .existingSecret }}. Make it if it is missing:
+
+  kubectl -n {{ .namespace }} create secret generic {{ .existingSecret }} \
+    --from-literal=username=<user> --from-literal=token=<token>
 {{- end }}
 {{- if .Values.gitea.enabled }}
 {{- $ns := include "c4-factory.giteaNamespace" . }}

@@ -365,7 +365,7 @@ release installs the whole factory:
 | Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password generated in the cluster by Gitea's pod into Secret `gitea-admin`, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
 | Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret and a GitProvider for each project in `gitea.projects`, the runners' registration token |
 | CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
-| GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`) |
+| GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values |
 
 A device installs itself only what is another project's or its own: Agent
 Sandbox (its controller and CRDs) before the chart, the namespaces of its
