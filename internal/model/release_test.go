@@ -158,7 +158,8 @@ func TestNextReleasePrepares(t *testing.T) {
 	merged := func(issue int, commit string, at int) MergedTask {
 		return MergedTask{Name: "t-" + commit, Issue: issue, Commit: commit, At: day(at)}
 	}
-	work := []MergedTask{merged(3, "c3", 5), merged(1, "c1", 3), merged(2, "c2", 4)}
+	work := make([]MergedTask, 0, 4)
+	work = append(work, merged(3, "c3", 5), merged(1, "c1", 3), merged(2, "c2", 4))
 
 	tests := []struct {
 		name  string
