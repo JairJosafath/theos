@@ -5,9 +5,7 @@
 #   3. pushes and tags each template in versions.txt that is not tagged yet;
 #   4. stores an admin access token as Secret gitea-credentials in each project's
 #      namespace;
-#   5. gives each project organization an Android signing keystore as Actions
-#      secrets, for the android-release workflow;
-#   6. stores a runner registration token as Secret gitea/gitea-runner.
+#   5. stores a runner registration token as Secret gitea/gitea-runner.
 # Every step looks before it acts, so a second run changes nothing.
 set -euo pipefail
 
@@ -211,37 +209,6 @@ ensure_credentials() {
   log "Stored the token as Secret $ns/$secret (keys username, token)"
 }
 
-# ensure_signing ORG: an Android release keystore as Actions secrets of the
-# organization, for the android-release workflow. Made once: replacing it would
-# stop updates of installed apps.
-ensure_signing() {
-  local org=$1
-  api GET "/orgs/$org/actions/secrets"
-  expect "Listing Actions secrets of $org" 200
-  if jq -e 'map(.name) | index("ANDROID_KEYSTORE_B64")' <<<"$BODY" >/dev/null; then
-    log "Organization $org has a signing keystore"
-    return
-  fi
-  local dir="$WORK/signing-$org" password
-  (umask 077 && mkdir "$dir")
-  password=$(head -c 24 /dev/urandom | base64 | tr -d '/+=\n')
-  openssl req -x509 -newkey rsa:3072 -nodes -days 10000 -subj "/CN=$org release/O=C4 Factory" \
-    -keyout "$dir/key.pem" -out "$dir/cert.pem" 2>/dev/null
-  openssl pkcs12 -export -name release -inkey "$dir/key.pem" -in "$dir/cert.pem" \
-    -out "$dir/release.p12" -passout "pass:$password"
-  local name value
-  for name in ANDROID_KEYSTORE_B64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS; do
-    case $name in
-      ANDROID_KEYSTORE_B64) value=$(base64 < "$dir/release.p12" | tr -d '\n') ;;
-      ANDROID_KEYSTORE_PASSWORD) value=$password ;;
-      ANDROID_KEY_ALIAS) value=release ;;
-    esac
-    api PUT "/orgs/$org/actions/secrets/$name" "$(jq -nc --arg d "$value" '{data: $d}')"
-    expect "Setting Actions secret $name of $org" 201 204
-  done
-  log "Created a signing keystore for $org (Actions secrets ANDROID_KEYSTORE_*)"
-}
-
 # ensure_runner_token: Secret RUNNER_SECRET in RUNNER_NAMESPACE with a registration
 # token for the CI runner (config/runner).
 ensure_runner_token() {
@@ -272,10 +239,9 @@ main() {
 
   for project in $PROJECTS; do
     ensure_credentials "$project"
-    ensure_signing "$project"
   done
   ensure_runner_token
-  log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials, signing keys and runner token stored"
+  log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials and runner token stored"
 }
 
 main "$@"

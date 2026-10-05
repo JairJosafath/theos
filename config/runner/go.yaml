@@ -1,6 +1,6 @@
 # The Go and Node runner: the Gitea runner on the Go and Node toolchain
 # (hack/toolchain-go), labelled go, for Containers written in Go or TypeScript.
-# `make runner-go` builds it and applies this; it is not part of config/runner.
+# `make runner-go` builds it and applies this, it is applied by that target alone.
 # It registers with the token the seed Job stores in Secret gitea/gitea-runner.
 #
 # Jobs keep their Go build cache on the node (/var/cache/c4factory/go/ci), so a
