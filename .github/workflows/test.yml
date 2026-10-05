@@ -2,7 +2,9 @@ name: Tests
 
 # Unit and envtest suites. They read the Go code, the generated CRDs, the admission
 # policy and the templates (the fake Git host serves them), so only documentation,
-# the UI and the Kind-only parts of the test environment are left out.
+# the UI and the Kind-only parts of the test environment are left out. On a pull
+# request the Changed step skips the tests when nothing those paths take in
+# changed since the last commit they passed on, such as a push of docs only.
 on:
   push:
     branches: [main]
@@ -22,6 +24,7 @@ on:
       - '!.vscode/**'
       - '!.github/**'
       - .github/workflows/test.yml
+      - .github/actions/changed/**
   pull_request:
     paths: *paths
   workflow_dispatch:
@@ -36,6 +39,7 @@ permissions: {}
 jobs:
   test:
     permissions:
+      actions: read
       contents: read
     name: Run on Ubuntu
     runs-on: ubuntu-latest
@@ -45,12 +49,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check what changed
+        id: changed
+        uses: ./.github/actions/changed
+
       - name: Setup Go
+        if: steps.changed.outputs.changed == 'true'
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
       - name: Running Tests
+        if: steps.changed.outputs.changed == 'true'
         run: |
           go mod tidy
           make test
