@@ -17,6 +17,12 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
+func TestMain(m *testing.M) {
+	// Failed runs wait this long for a stop that never comes.
+	stopGrace = 200 * time.Millisecond
+	os.Exit(m.Run())
+}
+
 func env(overrides map[string]string) func(string) string {
 	base := map[string]string{
 		EnvRole: RoleImplement, EnvRepoURL: "http://gitea/apps/photo-editor.git", EnvBranch: "task/add-crop",
@@ -510,6 +516,18 @@ func TestRunReportsAnInterruptedRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	got := Run(ctx, testJob(t, url, RoleImplement, 1), killedAgent{stop: cancel}, t.TempDir())
 	if !got.Interrupted || got.Unavailable || got.Error != "claude failed: signal: killed" {
+		t.Errorf("Run() = %+v, want an interrupted run", got)
+	}
+}
+
+func TestRunKilledBeforeTheStopIsInterrupted(t *testing.T) {
+	// A node restart: every process of the pod gets SIGTERM at once, and the
+	// agent dies before c4agent's own signal cancels ctx.
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	ctx, cancel := context.WithCancel(context.Background())
+	agent := killedAgent{stop: func() { time.AfterFunc(50*time.Millisecond, cancel) }}
+	got := Run(ctx, testJob(t, url, RoleImplement, 1), agent, t.TempDir())
+	if !got.Interrupted || got.Error != "claude failed: signal: killed" {
 		t.Errorf("Run() = %+v, want an interrupted run", got)
 	}
 }
