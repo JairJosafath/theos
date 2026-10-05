@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label)
+# and the cluster lease (acquire, wait, exit 4, stale lease, release on
+# handoff, close and release),
 # for flush releasing the claim of the handoff it posts,
 # for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees.
 # Run: hack/lib/github_test.sh
@@ -59,29 +61,68 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
 claim() { mkdir -p "$1/.relay"; jq -n --argjson i "$2" --argjson b "$3" '{issue:$i,id:1,name:"heron-\($i)",branch:"b",labels:[],beat:$b}' >"$1/.relay/claim"; }
 clear() { rm -rf "$T"/{main,wt2,wt3}/.relay; }
 
+# The cluster lease. as WT CMD...: run CMD as the checkout WT would.
+as() { local wt=$1; shift; GH_PENDING_DIR=$wt/.relay GH_CLAIM_FILE=$wt/.relay/claim "$@"; }
+LEASE=$T/main/.git/c4-cluster.lease
+lease() { jq -n --arg wt "$1" --argjson i "$2" --argjson b "$3" '{name:"heron-\($i)",issue:$i,worktree:$wt,beat:$b}' >"$LEASE"; }
 clear
-check "pick, cluster free" "$(gh_pick | cut -f1)" 60
-check "pick, no cluster" "$(C4_CLUSTER=none gh_pick | cut -f1)" 61
+check "lease file in the git common dir" "$(as "$T/wt2" gh_lease_file)" "$LEASE"
+as "$T/wt2" gh_cluster holder >/dev/null; check "holder, none" $? 1
 claim "$T/wt2" 50 "$(date +%s)"
-check "holder" "$(gh_cluster_holder)" "heron-50 (#50, $T/wt2)"
-check "pick, cluster busy" "$(gh_pick | cut -f1)" 61
-rm -f "$T/posted"; C4_CLUSTER= gh_take 60 >/dev/null 2>&1; check "take 60, cluster busy" $? 4
-rm -f "$T/posted"; gh_take 61 >/dev/null 2>&1; check "take 61, cluster busy" $? 0
-rm -f "$T/main/.relay/claim"
-claim "$T/wt2" 50 $(($(date +%s) - 3 * 3600))
-check "stale holder ignored" "$(gh_cluster_holder)" ""
-claim "$T/wt2" 51 "$(date +%s)"
-check "holder on unlabelled issue ignored" "$(gh_cluster_holder)" ""
-clear; claim "$T/main" 50 "$(date +%s)"
-check "own claim ignored" "$(gh_cluster_holder)" ""
-clear
+out=$(as "$T/wt2" gh_cluster acquire --wait 0); check "acquire, free" $? 0
+case $out in "cluster lease: heron-50 (#50, $T/wt2), heartbeat 0m ago;"*) r=yes ;; *) r=no ;; esac
+check "acquire names the lease" $r yes
+check "lease names agent, issue, worktree" "$(jq -c '[.name, .issue, .worktree]' "$LEASE")" "[\"heron-50\",50,\"$T/wt2\"]"
+check "holder, other checkout" "$(gh_cluster holder)" "heron-50 (#50, $T/wt2), heartbeat 0m ago"
+check "holder, this checkout" "$(as "$T/wt2" gh_cluster holder)" "heron-50 (#50, $T/wt2), heartbeat 0m ago (this checkout)"
+as "$T/wt2" gh_cluster acquire --wait 0 >/dev/null; check "acquire again, own lease" $? 0
+gh_cluster acquire --wait 0 2>"$T/err"; check "acquire, held: exit 4" $? 4
+grep -q "heron-50 (#50, $T/wt2)" "$T/err"; check "acquire, held: names the holder" $? 0
+gh_cluster acquire --wait x 2>/dev/null; check "acquire, bad wait" $? 64
+(sleep 1; as "$T/wt2" gh_cluster release >/dev/null) &
+t0=$(date +%s)
+GH_LEASE_POLL=0.2 gh_cluster acquire --wait 10s >/dev/null 2>"$T/err"; check "acquire waits for a release" $? 0
+wait
+check "acquire waited" "$(($(date +%s) - t0 >= 1))" 1
+grep -q "holds the cluster lease; waiting up to 10s" "$T/err"; check "acquire says it waits" $? 0
+check "acquire after the wait: lease is main's" "$(jq -r .worktree "$LEASE")" "$T/main"
+gh_cluster release >/dev/null; check "release" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
+lease "$T/wt2" 50 $(($(date +%s) - 3 * 3600))
+gh_cluster holder >/dev/null; check "stale lease: no holder" $? 1
+gh_cluster acquire --wait 0 >/dev/null; check "stale lease taken over" "$? $(jq -r .worktree "$LEASE")" "0 $T/main"
+lease "$T/gone" 50 "$(date +%s)"
+gh_cluster acquire --wait 0 >/dev/null; check "lease of a removed worktree taken over" "$? $(jq -r .worktree "$LEASE")" "0 $T/main"
+lease "$T/wt2" 50 "$(date +%s)"
+gh_cluster release >/dev/null; check "release leaves another checkout's lease" "$(jq -r .worktree "$LEASE")" "$T/wt2"
+lease "$T/main" 50 $(($(date +%s) - 3600))
+gh_beat; check "beat refreshes the lease" "$(($(date +%s) - $(jq .beat "$LEASE") < 5))" 1
+lease "$T/wt2" 50 $(($(date +%s) - 3600)); b=$(jq .beat "$LEASE")
+gh_beat; check "beat leaves another checkout's lease" "$(jq .beat "$LEASE")" "$b"
+
+# needs/cluster issues are picked and taken while another checkout holds the lease.
+clear; lease "$T/wt2" 50 "$(date +%s)"
+check "pick, lease held elsewhere" "$(gh_pick | cut -f1)" 60
+check "pick, no cluster" "$(C4_CLUSTER=none gh_pick | cut -f1)" 61
 rm -f "$T/posted"; C4_CLUSTER=none gh_take 60 >/dev/null 2>&1; check "take 60, no cluster" $? 4
-rm -f "$T/posted"; gh_take 60 >/dev/null 2>&1; check "take 60, cluster free" $? 0
+rm -f "$T/posted"; gh_take 60 >/dev/null 2>&1; check "take 60, lease held elsewhere" $? 0
 rm -f "$T/main/.relay/claim"
-claim "$T/wt3" 50 "$(date +%s)"
-gh_label 61 needs/cluster >/dev/null 2>&1; check "label needs/cluster, cluster busy" $? 4
+gh_label 61 needs/cluster >/dev/null 2>&1; check "label needs/cluster, lease held elsewhere" $? 0
 C4_CLUSTER=none gh_label 61 needs/cluster >/dev/null 2>&1; check "label needs/cluster, no cluster" $? 0
 gh_label 61 kind/docs >/dev/null 2>&1; check "label other" $? 0
+
+# release, handoff, close and needs-human drop this checkout's lease.
+clear; claim "$T/main" 72 "$(date +%s)"; lease "$T/main" 72 "$(date +%s)"
+echo landed | gh_close 72 - >/dev/null 2>&1; check "close drops the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
+clear; claim "$T/main" 71 "$(date +%s)"; lease "$T/main" 71 "$(date +%s)"
+echo landed | gh_close 71 - >/dev/null 2>&1; check "close fails, lease kept" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
+clear; lease "$T/main" 73 "$(date +%s)"
+echo h | gh_handoff 73 - >/dev/null 2>&1; check "handoff drops the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
+clear; lease "$T/main" 77 "$(date +%s)"
+echo h | gh_handoff 77 - >/dev/null 2>&1; check "handoff kept for later drops the lease" "$? $([ -e "$LEASE" ] && echo kept || echo gone)" "3 gone"
+clear; lease "$T/main" 73 "$(date +%s)"
+gh_release >/dev/null 2>&1; check "release without a claim drops the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
+rm -f "$LEASE" "$T/posted" "$T/edited"
+
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted"
 flock "$T/main/.git/c4-take.lock" sleep 2 &
 sleep 0.2

@@ -8,6 +8,11 @@
 # (C4_HEADLESS=1, set by hack/relay.sh) gets the warning
 # in its context instead and the job runs: in `claude -p` a question nobody
 # can answer blocks the command. Silent otherwise.
+# Before a cluster command (make deploy, sample, e2e, test-e2e, up, down) it
+# reads the cluster lease (hack/lib/github.sh cluster): while another checkout
+# holds a live one it denies the command and tells the session to run
+# `hack/lib/github.sh cluster acquire`; without a holder the command goes on
+# to the memory check, as before.
 # Other commands cost one bash, with no subprocess and no file read.
 #   RELAY_MEMINFO   file to read instead of /proc/meminfo (hack/heavy-guard_test.sh fakes it)
 #   KIND_CLUSTER    the Kind cluster whose node it names (default c4factory)
@@ -17,7 +22,7 @@ IFS= read -r -d '' input
 # First a loose match on the raw JSON, with builtins only: it lets through
 # every command the exact match below finds, and the rest go without a
 # subprocess.
-loose='make.*(check|test|e2e|lint|build|deploy)|devcontainer.*up|docker.*build'
+loose='make.*(check|test|e2e|lint|build|deploy|sample|up|down)|devcontainer.*up|docker.*build'
 [[ $input =~ $loose ]] || exit 0
 
 # A heavy job: one command, its words on one line, continued lines joined.
@@ -27,6 +32,20 @@ sep='(^|[;&|(/]|[[:space:]])'
 end='([;&|)<>]|[[:space:]]|$)'
 cmd=$(jq -r '.tool_input.command // empty' <<<"$input" 2>/dev/null) || exit 0
 cmd=${cmd//$'\\\n'/ }
+
+# A cluster command while another checkout holds the cluster lease: deny it.
+cluster="make([[:blank:]][^;&|$nl]*)?[[:blank:]](deploy|sample|e2e|test-e2e|up|down)"
+if [[ $cmd =~ $sep$cluster$end ]]; then
+  job=${BASH_REMATCH[2]}
+  # shellcheck source=hack/lib/github.sh
+  . "$(dirname "${BASH_SOURCE[0]}")/lib/github.sh"
+  if holder=$(gh_lease_holder 2>/dev/null); then
+    msg="The Kind cluster is in use: $holder holds the cluster lease, so \`make $job\` would change or stop the cluster under that session. Run \`hack/lib/github.sh cluster acquire\` first (it waits up to 30m); on exit 4, land what needs no cluster and hand off with only the cluster steps left."
+    jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $m}}'
+    exit 0
+  fi
+fi
+
 [[ $cmd =~ $sep$jobs$end ]] || exit 0
 job=${BASH_REMATCH[2]}
 

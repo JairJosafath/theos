@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Tests for hack/heavy-guard.sh, the PreToolUse hook that warns before a heavy
-# job when memory headroom is low, with a faked /proc/meminfo, ps and docker.
+# job when memory headroom is low, with a faked /proc/meminfo, ps and docker,
+# and denies a cluster command while another checkout holds the cluster lease.
 # Run: hack/heavy-guard_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 HOOK="$(cd "$(dirname "$0")" && pwd)/heavy-guard.sh"
-export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 CALLED=$T/called
+export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 CALLED=$T/called C4_CLUSTER_LEASE=$T/lease
 unset C4_HEADLESS KIND_CLUSTER
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
@@ -105,5 +106,40 @@ check "headroom under a lower threshold: silent" "$(cat "$T/out")" ""
 RELAY_MEMINFO=$T/missing hook "make check"
 check "no meminfo: allowed" $? 0
 check "no meminfo: silent" "$(cat "$T/out")" ""
+
+# A cluster command while another checkout holds a live cluster lease is
+# denied, whatever the memory; without a holder it runs as before.
+REPO=$(cd "$(dirname "$HOOK")/.." && pwd)
+meminfo 8
+mkdir -p "$T/other"
+lease() { jq -n --arg wt "$1" --argjson b "$2" '{name:"heron-50",issue:50,worktree:$wt,beat:$b}' >"$C4_CLUSTER_LEASE"; }
+lease "$T/other" "$(date +%s)"
+for c in "make deploy" "make sample" "make e2e" "make test-e2e" "make up" "make down" "cd x && make -j2 deploy IMG=y"; do
+  hook "$c"
+  check "lease held, $c: denied" "$(decision)" deny
+done
+reason=$(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out")
+case $reason in *"heron-50 (#50, $T/other)"*) r=yes ;; *) r=no ;; esac
+check "deny: names the holder" $r yes
+case $reason in *"hack/lib/github.sh cluster acquire"*) r=yes ;; *) r=no ;; esac
+check "deny: says to acquire" $r yes
+C4_HEADLESS=1 hook "make deploy"
+check "lease held, headless: denied" "$(decision)" deny
+for c in "make check" "make upgrade" "make docker-build" "git log --grep 'make deploy'"; do
+  hook "$c"
+  check "lease held, $c: not a cluster command" "$(cat "$T/out")" ""
+done
+lease "$REPO" "$(date +%s)"
+hook "make deploy"
+check "own lease: runs" "$(cat "$T/out")" ""
+lease "$T/other" $(($(date +%s) - 3 * 3600))
+hook "make deploy"
+check "stale lease: runs" "$(cat "$T/out")" ""
+rm -f "$C4_CLUSTER_LEASE"
+hook "make up"
+check "no lease: runs" "$(cat "$T/out")" ""
+meminfo 1
+hook "make deploy"
+check "no lease, low memory: asks" "$(decision)" ask
 
 exit $fail

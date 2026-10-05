@@ -13,13 +13,16 @@
 # ready + urgent one, else the oldest ready one) and claims it (take); when
 # another agent claims it first, it picks again, up to 5 times. Claims keep the
 # workers and hand-started sessions off each other's issues. A session that ends
-# still holding its claim gets it released. With nothing ready, a worker stops.
+# still holding its claim or the cluster lease gets them released. With nothing
+# ready, a worker stops.
 #
 # Issues that need the Kind cluster carry needs/cluster. On a device without
 # one, C4_CLUSTER=none (./dev setup --lite sets it): the workers skip those
 # issues, and a session that finds its issue needs the cluster lands what it
 # can, labels it and hands it back for a device with one. On a device with the
-# cluster, one checkout at a time works a needs/cluster issue.
+# cluster, any worker may work them; the checkouts share the cluster through a
+# lease (hack/lib/github.sh cluster) that a session holds only while it deploys
+# and verifies.
 #
 # Workers load their code once, from this checkout. Before each pick a worker
 # runs hack/pull.sh here, and when that changed hack/relay.sh or
@@ -92,11 +95,15 @@ prompt() {
   (\`hack/lib/github.sh label $n needs/cluster\`) and hand off with what is
   left (deploy and verify): a device with the cluster takes it from there."
   else
-    cluster="- This device's Kind cluster is shared by its checkouts, one
-  needs/cluster issue at a time. If the issue needs the cluster and lacks the
-  label, add it before you use the cluster
-  (\`hack/lib/github.sh label $n needs/cluster\`); exit 4 means another
-  checkout holds the cluster: land what needs no cluster and hand off."
+    cluster="- This device's Kind cluster is shared by its checkouts through a
+  lease. If the issue needs the cluster and lacks the label, add it
+  (\`hack/lib/github.sh label $n needs/cluster\`). Do the work that needs no
+  cluster first (code, make check, envtest); right before the first step that
+  touches the cluster, \`hack/lib/github.sh cluster acquire\`; then deploy
+  this branch's own build (\`make deploy\`), never trusting what is already
+  deployed; \`hack/lib/github.sh cluster release\` when verification is done.
+  Exit 4 from acquire means another checkout holds it: hand off with only the
+  cluster steps left."
   fi
   if [ "$how" = in-progress ]; then
     start="A session worked on it before you: continue from its newest handoff comment."
@@ -242,6 +249,14 @@ switch_branch() {
   fi
 }
 
+# drop_lease WHEN: release the cluster lease a session of this worker left
+# behind, and log it.
+drop_lease() {
+  local out
+  out=$(gh_lease_release)
+  [ -z "$out" ] || log "$out $1"
+}
+
 # handoff_id N: the id of N's newest handoff comment, or nothing.
 handoff_id() {
   local json
@@ -374,6 +389,7 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   if [ -z "$DRY_RUN" ]; then
     update $((MAX_SESSIONS - i + 1))
     worktree || { log "could not prepare the worktree $WT; stopping"; break; }
+    [ "$i" = 1 ] && drop_lease "when worker $K restarted"
     if [ "$i" = 1 ] && gh_claim_read; then
       log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
     fi
@@ -435,6 +451,7 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
 
   flush || { log "GitHub can't be reached; stopping"; break; }
   result=$(outcome "$ISSUE" "$before") || result=unknown
+  drop_lease "that session $i left behind"
   if gh_claim_read; then
     case $result in
       closed) reason=finished ;;

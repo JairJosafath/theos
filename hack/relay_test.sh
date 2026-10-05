@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tests for the relay's memory guard in hack/relay.sh: the worker cap on the
 # device with the Kind cluster, and the wait for headroom before a pick, with a
-# faked /proc/meminfo; and the flush of a kept handoff, which releases the
-# session's claim so the relay has none left to release.
+# faked /proc/meminfo; the flush of a kept handoff, which releases the
+# session's claim so the relay has none left to release; and the cluster
+# lease a session leaves behind, which the relay drops.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -61,5 +62,20 @@ grep -q "posted the pending handoff on #76: https://github.com/x/issues/76#issue
 check "flush: logs the URL and the release" $? 0
 gh_claim_read; check "flush: no claim left to release" $? 1
 grep -q "could not release" "$LOG"; check "flush: no failed release logged" $? 1
+
+# The cluster lease a session left behind is dropped and logged; another
+# checkout's is left alone.
+export C4_CLUSTER_LEASE=$T/lease
+mkdir -p "$T/other"
+lease() { jq -n --arg wt "$1" --argjson b "$(date +%s)" '{name:"otter-76",issue:76,worktree:$wt,beat:$b}' >"$C4_CLUSTER_LEASE"; }
+lease "$T/wt/.."
+drop_lease "that session 1 left behind"
+check "lease: dropped" "$([ -e "$C4_CLUSTER_LEASE" ] && echo kept || echo gone)" gone
+grep -q "released the cluster lease (otter-76, #76) that session 1 left behind$" "$LOG"; check "lease: logged" $? 0
+lease "$T/other"
+: >"$LOG"
+drop_lease "that session 1 left behind"
+check "lease: another checkout's kept" "$(jq -r .worktree "$C4_CLUSTER_LEASE")" "$T/other"
+check "lease: nothing logged" "$(cat "$LOG")" ""
 
 exit $fail
