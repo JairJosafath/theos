@@ -1,0 +1,83 @@
+{{- if .Values.ui.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "c4-factory.uiName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+---
+# The same read-only access as config/ui/rbac.yaml: the story, the Sessions, the
+# catalog and the factory's work in every namespace, and for the health view
+# pods, nodes and their metrics. No status subresources, no Secrets, no writes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-reader
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+rules:
+- apiGroups: [c4.factory.io]
+  resources:
+  - projects
+  - people
+  - softwaresystems
+  - containers
+  - datastores
+  - relationships
+  - sessions
+  - frameworks
+  - computes
+  - deployments
+  - connectors
+  - gitproviders
+  - standards
+  - agents
+  - tasks
+  - crews
+  verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-reader
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "c4-factory.uiName" . }}-reader
+subjects:
+- kind: ServiceAccount
+  name: {{ include "c4-factory.uiName" . }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-health
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: [pods, nodes]
+  verbs: [get, list]
+- apiGroups: [metrics.k8s.io]
+  resources: [pods, nodes]
+  verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-health
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "c4-factory.uiName" . }}-health
+subjects:
+- kind: ServiceAccount
+  name: {{ include "c4-factory.uiName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
