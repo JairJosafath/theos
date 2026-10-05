@@ -1,0 +1,21 @@
+name: Issue intake
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  intake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Label the issue by its source
+        run: hack/lib/github.sh intake "$ISSUE"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          C4_GITHUB_REPO: ${{ github.repository }}

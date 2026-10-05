@@ -19,7 +19,18 @@ gh_token() { :; }
 gh_api() {
   local url
   for a in "$@"; do case $a in repos/*) url=$a ;; esac; done
+  if [[ " $* " == *" --method POST "* || " $* " == *" --method DELETE "* ]]; then
+    local m=POST in=
+    [[ " $* " == *" --method DELETE "* ]] && m=DELETE
+    [[ " $* " == *" --input - "* ]] && in=" $(jq -c . </dev/stdin)"
+    echo "$m $url$in" >>"$T/calls"
+    [ "$m" = DELETE ] && return 0
+    [[ $url == */issues ]] && { echo 99; return 0; }
+  fi
   case $url in
+    */issues/9[0-9]) cat "$T/issue-${url##*/}.json" ;;
+    */labels/user%2Flaptop-2) echo '{}' ;;
+    */labels/user%2F*) return 1 ;;
     */issues/50/labels*) printf 'needs/cluster\nstatus/in-progress\n' ;;
     */issues/51/labels*) printf 'status/in-progress\n' ;;
     */issues/60) echo '{"number":60,"title":"Deploy","labels":[{"name":"needs/cluster"},{"name":"kind/feature"}]}' ;;
@@ -36,7 +47,7 @@ gh_api() {
       echo '{"id":1,"updated_at":"'"$now"'","body":"<!-- c4-claim -->\n**heron-73** works on this issue"}' |
         { [ -e "$T/hold74" ] && sed 's/heron-73/heron-74/' || cat; } ;;
     */issues/comments*) echo '[[]]' ;;
-    */issues\?state=open*) [ -n "${OPEN:-}" ] && { echo "$OPEN"; return; }; echo '[[{"number":60,"title":"Deploy","html_url":"u60","body":"","labels":[{"name":"needs/cluster"},{"name":"status/ready"}]},{"number":61,"title":"Docs","html_url":"u61","body":"","labels":[{"name":"status/ready"}]}]]' ;;
+    */issues\?state=open*) [ -e "$T/no-open" ] && return 0; [ -n "${OPEN:-}" ] && { echo "$OPEN"; return; }; echo '[[{"number":60,"title":"Deploy","html_url":"u60","body":"","labels":[{"name":"needs/cluster"},{"name":"status/ready"}]},{"number":61,"title":"Docs","html_url":"u61","body":"","labels":[{"name":"status/ready"}]}]]' ;;
     *) return 0 ;;
   esac
 }
@@ -107,4 +118,48 @@ check "pick, then ready + urgent" "$(OPEN=$(jq 'map(select(.[0] != 85))' <<<"$al
 check "pick, then ready" "$(OPEN=$(jq 'map(select(.[0] < 83))' <<<"$all" | issues) gh_pick | cut -f1,4)" "82	ready"
 OPEN=$(jq 'map(select(.[0] < 82))' <<<"$all" | issues) gh_pick >/dev/null
 check "pick, only proposed and needs-human" $? 1
+
+# Intake: labels an issue by where it came from.
+R=repos/JairJosafath/c4factory
+issue() { # N ASSOC LABELS BODY
+  jq -n --argjson n "$1" --arg a "$2" --arg b "$4" --arg l "$3" \
+    '{number: $n, author_association: $a, body: $b, labels: ($l | split(" ") | map(select(. != "") | {name: .}))}' >"$T/issue-$1.json"
+  : >"$T/calls"
+}
+calls() { cat "$T/calls"; }
+form=$'### Reported by\n\nlaptop-2\n\n### What happened\n\nCrew stalls'
+check "reporter form" "$(gh_reporter <<<"$form")" laptop-2
+check "reporter crlf" "$(gh_reporter <<<$'### Reported by  \r\n\r\nlaptop-2\r\n')" laptop-2
+check "reporter none" "$(gh_reporter <<<$'### Reported by\n\n_No response_\n')" ""
+check "reporter next heading" "$(gh_reporter <<<$'### Reported by\n\n### What happened\nx')" ""
+check "fenced heading" "$(gh_reporter <<<$'```\n### Reported by\n\nlaptop-2\n```')" ""
+check "slug" "$(gh_user_slug '  WSL_box.2 ')" wsl-box-2
+check "slug empty" "$(gh_user_slug '!!!')" ""
+check "slug long" "$(gh_user_slug "$(printf 'a%.0s' {1..39})-bbbb")" "$(printf 'a%.0s' {1..39})"
+
+issue 90 OWNER '' "$form"; gh_intake 90 >/dev/null
+check "new report" "$(calls)" "POST $R/issues/90/labels {\"labels\":[\"user/laptop-2\",\"source/user\",\"status/proposed\"]}"
+issue 91 OWNER '' "${form/laptop-2/laptop-3}"; gh_intake 91 >/dev/null
+check "new device" "$(calls | sed 's|^\(POST [^ ]*\) .*|\1|')" "POST $R/labels
+POST $R/issues/91/labels"
+check "new device labels" "$(calls | tail -1)" "POST $R/issues/91/labels {\"labels\":[\"user/laptop-3\",\"source/user\",\"status/proposed\"]}"
+issue 92 OWNER 'user/laptop-3 source/dev status/ready' "$form"; gh_intake 92 >/dev/null
+check "reporter changed" "$(calls)" "DELETE $R/issues/92/labels/user%2Flaptop-3
+DELETE $R/issues/92/labels/source%2Fdev
+POST $R/issues/92/labels {\"labels\":[\"user/laptop-2\",\"source/user\"]}"
+issue 93 OWNER '' 'Plain text'; gh_intake 93 >/dev/null
+check "dev issue" "$(calls)" "POST $R/issues/93/labels {\"labels\":[\"source/dev\",\"status/proposed\"]}"
+issue 94 OWNER 'user/laptop-2 source/user status/proposed' "$form"; gh_intake 94 >/dev/null
+check "idempotent" "$(calls)" ""
+issue 95 NONE '' "$form"; gh_intake 95 >/dev/null
+check "stranger" "$? $(calls)" "0 "
+
+: >"$T/calls"; touch "$T/no-open"
+echo x >"$T/body"
+gh_create T "$T/body" status/proposed kind/bug >/dev/null
+check "create adds source/dev" "$(calls | jq -c '.labels' <<<"$(sed 's/^POST [^ ]* //' "$T/calls")")" '["status/proposed","kind/bug","source/dev"]'
+: >"$T/calls"
+gh_create T "$T/body" source/user >/dev/null
+check "create keeps source/user" "$(sed 's/^POST [^ ]* //' "$T/calls" | jq -c .labels)" '["source/user"]'
+rm -f "$T/no-open"
 exit $fail

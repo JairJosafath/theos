@@ -29,6 +29,10 @@
 #   hack/lib/github.sh create TITLE FILE LABEL...
 #                                        file an issue, FILE as its body; prints its number. An open
 #                                        issue with the same title is left as it is.
+#   hack/lib/github.sh intake N          label issue N by where it came from: a "### Reported by" name in its
+#                                        body gives user/<name> + source/user, else source/dev; adds
+#                                        status/proposed when it has no status. Only for issues from the
+#                                        owner, members and collaborators; safe to repeat
 #
 # FILE may be - for stdin. Pickup order, oldest first: a status/in-progress
 # issue without a live claim, else a status/ready + priority/urgent one, else a
@@ -93,6 +97,8 @@ GH_LABELS=(
   'kind/docs|0075ca|Documentation'
   'kind/improvement|84b6eb|Make something that works better'
   'source/evaluator|5319e7|Filed by hack/evaluate.sh, the factory evaluator'
+  'source/dev|bfd4f2|Made while developing c4factory'
+  'source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it'
   'needs/cluster|1d76db|Needs the Kind cluster: deploys, factory-ops, Crews or e2e'
 )
 
@@ -607,8 +613,70 @@ gh_create() {
     return 0
   fi
   body=$(gh_read "$file") || return 1
+  local a has_source=
+  for a in "$@"; do [[ $a == source/* ]] && has_source=1; done
+  [ -n "$has_source" ] || set -- "$@" source/dev
   jq -n --arg t "$title" --arg b "$body" '{title: $t, body: $b, labels: $ARGS.positional}' --args "$@" |
     gh_api --method POST "repos/$C4_GITHUB_REPO/issues" --input - --jq .number
+}
+
+GH_USER_COLOR=fef2c0
+
+# gh_reporter: the name under the "### Reported by" heading of the issue body
+# on stdin, or nothing. Headings inside fenced code blocks don't count.
+gh_reporter() {
+  tr -d '\r' | awk '
+    /^```/ { fence = !fence; next }
+    fence { next }
+    want {
+      if ($0 ~ /^[ \t]*$/) next
+      if ($0 !~ /^### / && $0 !~ /^_No response_[ \t]*$/) { sub(/^[ \t]+/, ""); sub(/[ \t]+$/, ""); print }
+      exit
+    }
+    /^### Reported by *$/ { want = 1 }
+  '
+}
+
+# gh_user_slug NAME: NAME as a label-safe slug, or nothing.
+gh_user_slug() {
+  local s
+  s=$(printf '%s' "$1" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9][^a-z0-9]*/-/g; s/^-//; s/-$//')
+  s=${s:0:40}
+  printf '%s\n' "${s%-}"
+}
+
+# gh_intake N: label issue N by its source (see the usage above). Issues from
+# anyone but the owner, members and collaborators are left alone.
+gh_intake() {
+  local n=${1:?usage: intake N} issue assoc body labels name slug user_label add=() del=() l
+  issue=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n") || return 1
+  assoc=$(jq -r .author_association <<<"$issue")
+  case $assoc in OWNER | MEMBER | COLLABORATOR) ;; *) return 0 ;; esac
+  body=$(jq -r '.body // ""' <<<"$issue")
+  labels=$(jq -r '.labels[].name' <<<"$issue")
+  name=$(gh_reporter <<<"$body")
+  slug=$(gh_user_slug "$name")
+  if [ -n "$slug" ]; then
+    user_label=user/$slug
+    for l in $(grep -x 'user/.*' <<<"$labels" | grep -vxF -- "$user_label"); do del+=("$l"); done
+    grep -qxF source/dev <<<"$labels" && del+=(source/dev)
+    grep -qxF -- "$user_label" <<<"$labels" || add+=("$user_label")
+    grep -qxF source/user <<<"$labels" || add+=(source/user)
+  else
+    grep -q '^source/' <<<"$labels" || add+=(source/dev)
+  fi
+  grep -q '^status/' <<<"$labels" || add+=(status/proposed)
+  for l in "${del[@]}"; do
+    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/$n/labels/${l//\//%2F}" >/dev/null || return 1
+  done
+  [ ${#add[@]} -gt 0 ] || return 0
+  if [ -n "${user_label:-}" ] && [[ " ${add[*]} " == *" $user_label "* ]] &&
+    ! gh_api "repos/$C4_GITHUB_REPO/labels/${user_label//\//%2F}" >/dev/null 2>&1; then
+    gh_api --method POST "repos/$C4_GITHUB_REPO/labels" -f name="$user_label" -f color="$GH_USER_COLOR" \
+      -f description="Reported by the device $slug" >/dev/null || return 1
+  fi
+  jq -n '{labels: $ARGS.positional}' --args "${add[@]}" |
+    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
@@ -630,6 +698,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     status) gh_set_status "$@" ;;
     close) gh_close "$@" ;;
     create) gh_create "$@" ;;
+    intake) gh_intake "$@" ;;
     *)
       sed -n '2,/^$/{s/^# \{0,1\}//;p}' "$0"
       [ "$cmd" = help ] || exit 64

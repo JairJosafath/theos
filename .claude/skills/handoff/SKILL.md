@@ -23,7 +23,7 @@ commands). It reads the token from the git credential helper and never prints it
   `status/needs-human`: blocked on the user; the newest comment says why.
   One status at a time: `hack/lib/github.sh status N <status>` swaps it.
 - `priority/urgent` goes before other ready issues. `kind/bug|feature|chore|docs|improvement`
-  says what it is. `source/evaluator` marks issues filed by `hack/evaluate.sh`.
+  says what it is. `source/dev` or `source/user` says where an issue came from; `create` adds `source/dev`; `user/<name>` names the reporting device.
 - `needs/cluster`: the work or its "Done when" needs the Kind cluster
   (deploys, factory-ops, Crews, e2e). Set it when you file such an issue, or
   `hack/lib/github.sh label N needs/cluster` when you find out mid-way. On a
