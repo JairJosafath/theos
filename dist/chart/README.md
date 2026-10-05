@@ -118,7 +118,7 @@ you built and pushed yourself.
 | `gitea.seed.image`, `gitea.seed.waitSeconds` | the seed Job's image (default tag `Chart.appVersion`) and how long it waits for Gitea |
 | `runners.base`, `runners.go` | the CI runners: `enabled`, `image`, `resources`, `workSize`, `tmpSize`; `go.goCache` is the node directory of its Go build cache |
 | `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners; the operator's are `manager.imagePullSecrets` |
-| `gitProviders` | more GitProviders to create, below |
+| `gitProviders` | more GitProviders to create, each reading a Secret you make (`existingSecret`), below |
 | `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default) |
 | `metrics`, `prometheus`, `networkPolicy` | the generated metrics endpoint, ServiceMonitor and NetworkPolicy |
 
@@ -135,9 +135,20 @@ gitProviders:
     provider: gitea
     url: http://gitea.gitea.svc.cluster.local:3000
     owner: webshop              # the organization holding the repositories
-    username: c4factory
-    token: "..."                # or existingSecret: a Secret with username and token
+    existingSecret: git-credentials
 ```
+
+The chart renders no Secret: the token is yours, so you make the Secret, with
+keys `username` and `token`, before the install:
+
+```bash
+kubectl -n webshop create secret generic git-credentials \
+  --from-literal=username=c4factory --from-literal=token="$GIT_TOKEN"
+```
+
+`gitProviders[].token` and `username` are gone (they put the token in your
+values file and in every revision of Helm's release record); a values file
+that still sets them fails to render and says what to do.
 
 The CRDs are part of the release, so these are `post-install` and
 `post-upgrade` hooks, created once the CRDs exist. Every `helm upgrade` deletes
