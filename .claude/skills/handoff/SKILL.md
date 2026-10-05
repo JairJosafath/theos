@@ -47,7 +47,8 @@ commands). It reads the token from the git credential helper and never prints it
    this checkout, so work from your own worktree (below); release it only if
    it is a leftover of your own session.
    `hack/relay.sh` has already done this for its sessions.
-   `handoff`, `close` and `status N needs-human` release the claim;
+   `handoff`, `close`, `status N needs-human` and a `flush` that posts a kept
+   handoff release the claim;
    `hack/lib/github.sh claims` shows who holds what.
 4. Switch to the branch `take` printed: `git fetch origin`, then
    `git switch BRANCH` if `origin/BRANCH` exists (an earlier agent pushed it;
