@@ -1,12 +1,11 @@
-// The factory view's demo: Tasks in every stage across three projects, one that
-// ran before timelines, a component that just restarted, and an agent slot in
-// use with another Task waiting for it; CEL Lens adds issue Tasks and Crews in
-// every state. Times are relative to `now`.
+// The factory view's demo: the webshop's Tasks in every stage, one that ran
+// before timelines, a component that just restarted, and an agent slot in use
+// with another Task waiting for it; the story adds the Crews and their issue
+// Tasks. Times are relative to `now`.
 
 import type { FactoryHealth, PodHealth } from '../k8s/health'
 import type { FactoryData } from '../k8s/sources'
-import type { Agent, Project, Task, TaskPhase, TaskTransition } from '../k8s/types'
-import { demoCelLens } from './celLensFixture'
+import type { Task, TaskPhase, TaskTransition } from '../k8s/types'
 import { demoStory } from './fixture'
 
 const MIN = 60_000
@@ -46,115 +45,38 @@ export function demoFactory(now: number): FactoryData {
   })
 
   const story = demoStory(now)
-  const celLens = demoCelLens(now)
-  const toolbox: Project = {
-    metadata: { name: 'toolbox', namespace: 'toolbox', creationTimestamp: at(600) },
-    spec: { displayName: 'Pocket Tools', description: 'Offline tool apps, built by agents' },
-  }
 
-  const agents: Agent[] = [
-    {
-      metadata: { name: 'claude', namespace: 'toolbox' },
-      spec: { displayName: 'Claude Code (Flutter)', image: 'c4factory/agent-flutter:dev', maxRounds: 4 },
-    },
-    {
-      metadata: { name: 'stand-in', namespace: 'toolbox' },
-      spec: {
-        displayName: 'Stand-in agent',
-        image: 'c4factory/agent-flutter:dev',
-        harness: 'stand-in',
-        maxRounds: 2,
-      },
-    },
-    ...story.agents,
-    ...celLens.agents,
-  ]
-
+  // Tasks people started by hand, next to the orders-api Crew's issue Tasks.
   const tasks: Task[] = [
-    task('toolbox', 'stand-in-loop', 'image-shrink', 'stand-in', 'Prove the loop with the stand-in agent', 560, {
+    task('webshop', 'orders-api-health', 'orders-api', 'claude', 'Add a health endpoint', 170, {
       phase: 'Merged',
-      round: 2,
-      completedAt: at(557),
+      round: 1,
+      completedAt: at(166),
       review: { verdict: 'approve', summary: 'Looks fine.' },
-      ...pr('toolbox', 'image-shrink', 1),
+      ...pr('webshop', 'orders-api', 1),
     }),
-    task(
-      'toolbox',
-      'image-shrink-v1',
-      'image-shrink',
-      'claude',
-      'Build version 1 of Image Shrink: shrink photos for forms and messages.\n- Pick one or more photos\n- Three modes: by size, by dimensions, by quality',
-      190,
-      {
-        phase: 'Merged',
-        round: 3,
-        completedAt: at(118),
-        checks: { state: 'success' },
-        review: { verdict: 'approve', summary: 'Complete v1 with tests for every mode.' },
-        summary:
-          'I fixed both review points: the scaling parameters are pinned by a test, and reads run off the UI isolate.',
-        ...pr('toolbox', 'image-shrink', 3),
-        conditions: [
-          { type: 'Progressing', status: 'False', reason: 'Merged', message: 'Approved; merging' },
-          { type: 'Succeeded', status: 'True', reason: 'Merged', message: 'Approved; merging' },
-        ],
-        history: [
-          step(190, 'Implementing', 1, 'Running', 'Starting round 1 in sandbox image-shrink-v1-r1-implement'),
-          step(189, 'Implementing', 1, 'Waiting', 'The agent is working on round 1'),
-          step(166, 'Checking', 1, 'Checking', 'The agent pushed 1c2d3e4; waiting for checks'),
-          step(158, 'Reviewing', 1, 'Running', 'Checks passed; starting the review'),
-          step(149, 'Implementing', 2, 'NextRound', 'Round 1 was not accepted; starting round 2'),
-          step(137, 'Checking', 2, 'Checking', 'The agent pushed 5f6a7b8; waiting for checks'),
-          step(130, 'Reviewing', 2, 'Running', 'Checks passed; starting the review'),
-          step(124, 'Implementing', 3, 'NextRound', 'Round 2 was not accepted; starting round 3'),
-          step(121, 'Checking', 3, 'Checking', 'The agent pushed 8476b13; waiting for checks'),
-          step(120, 'Reviewing', 3, 'Running', 'Checks passed; starting the review'),
-          step(118, 'Merged', 3, 'Merged', 'Approved; merging'),
-        ],
-      },
-    ),
-    task('toolbox', 'qr-scanner-v1', 'qr-scanner', 'claude', 'Build version 1 of QR Scanner', 170, {
-      phase: 'Failed',
-      round: 4,
-      completedAt: at(40),
+    task('webshop', 'orders-validation', 'orders-api', 'claude', 'Validate orders before saving them', 160, {
+      phase: 'Merged',
+      round: 1,
+      completedAt: at(122),
       checks: { state: 'success' },
-      review: { verdict: 'changes', summary: 'Exclude the scan history from Auto Backup; two style points.' },
-      feedback: 'The reviewer asked for changes:\nExclude the scan history from Auto Backup: it holds Wi-Fi passwords.',
-      ...pr('toolbox', 'qr-scanner', 4),
-      conditions: [
-        { type: 'Progressing', status: 'False', reason: 'RoundsExhausted', message: 'Failed after 4 rounds' },
-        {
-          type: 'Succeeded',
-          status: 'False',
-          reason: 'RoundsExhausted',
-          message: 'Failed after 4 rounds: the reviewer asked for an Auto Backup exclusion',
-        },
-      ],
+      review: { verdict: 'approve', summary: 'Validation and tests are complete.' },
+      ...pr('webshop', 'orders-api', 2),
       history: [
-        step(170, 'Implementing', 1, 'WaitingForSlot', 'Waiting for a free agent slot'),
-        step(118, 'Implementing', 1, 'Running', 'Starting round 1'),
-        step(96, 'Checking', 1, 'Checking', 'Waiting for checks'),
-        step(88, 'Reviewing', 1, 'Running', 'Checks passed; starting the review'),
-        step(81, 'Implementing', 2, 'NextRound', 'Round 1 was not accepted; starting round 2'),
-        step(72, 'Checking', 2, 'Checking', 'Waiting for checks'),
-        step(66, 'Reviewing', 2, 'Running', 'Checks passed; starting the review'),
-        step(61, 'Implementing', 3, 'NextRound', 'Round 2 was not accepted; starting round 3'),
-        step(55, 'Checking', 3, 'Checking', 'Waiting for checks'),
-        step(50, 'Reviewing', 3, 'Running', 'Checks passed; starting the review'),
-        step(47, 'Implementing', 4, 'NextRound', 'Round 3 was not accepted; starting round 4'),
-        step(45, 'Checking', 4, 'Checking', 'Waiting for checks'),
-        step(43, 'Reviewing', 4, 'Running', 'Checks passed; starting the review'),
-        step(40, 'Failed', 4, 'RoundsExhausted', 'Failed after 4 rounds'),
+        step(160, 'Implementing', 1, 'Running', 'Starting round 1'),
+        step(139, 'Checking', 1, 'Checking', 'Waiting for checks'),
+        step(130, 'Reviewing', 1, 'Running', 'Checks passed; starting the review'),
+        step(122, 'Merged', 1, 'Merged', 'Approved; merging'),
       ],
     }),
-    task('toolbox', 'audio-cutter-v1', 'audio-cutter', 'claude', 'Build version 1 of Audio Cutter', 75, {
+    task('webshop', 'api-reference', 'orders-api', 'claude', 'Write the API reference', 75, {
       phase: 'Reviewing',
       round: 2,
-      sandbox: 'audio-cutter-v1-r2-review-a1',
+      sandbox: 'api-reference-r2-review-a1',
       checks: { state: 'success' },
-      review: { verdict: 'changes', summary: 'Fade-out clips the last 20 ms.' },
-      summary: 'Fixed the fade-out and added a waveform golden test.',
-      ...pr('toolbox', 'audio-cutter', 5),
+      review: { verdict: 'changes', summary: 'The refund endpoint is missing.' },
+      summary: 'Added the refund endpoint and an example for every error.',
+      ...pr('webshop', 'orders-api', 9),
       conditions: [progressing('Waiting', 'The reviewer is reviewing')],
       history: [
         step(75, 'Implementing', 1, 'WaitingForSlot', 'Waiting for a free agent slot'),
@@ -167,41 +89,27 @@ export function demoFactory(now: number): FactoryData {
         step(4, 'Reviewing', 2, 'Waiting', 'The reviewer is reviewing'),
       ],
     }),
-    task('toolbox', 'bg-eraser-v1', 'bg-eraser', 'claude', 'Build version 1 of Background Eraser', 12, {
+    task('webshop', 'cart-totals', 'orders-api', 'claude', 'Check cart totals against the catalog prices', 12, {
       phase: 'Implementing',
       round: 1,
       slotWaitSince: at(12),
       conditions: [progressing('WaitingForSlot', 'Waiting for a free agent slot')],
       history: [step(12, 'Implementing', 1, 'WaitingForSlot', 'Waiting for a free agent slot')],
     }),
-    task('toolbox', 'photo-editor-v1', 'photo-editor', 'claude', 'Build version 1 of Photo Editor', 8, {
+    task('webshop', 'catalog-seed', 'catalog-api', 'claude', 'Seed the catalog with sample products', 8, {
       phase: 'Pending',
-      conditions: [progressing('Waiting', 'Waiting for Container photo-editor to be Ready')],
-      history: [step(8, 'Pending', 0, 'Waiting', 'Waiting for Container photo-editor to be Ready')],
-    }),
-    task('webshop', 'orders-validation', 'orders-api', 'claude', 'Validate orders before saving them', 300, {
-      phase: 'Merged',
-      round: 1,
-      completedAt: at(262),
-      checks: { state: 'success' },
-      review: { verdict: 'approve', summary: 'Validation and tests are complete.' },
-      ...pr('webshop', 'orders-api', 2),
-      history: [
-        step(300, 'Implementing', 1, 'Running', 'Starting round 1'),
-        step(279, 'Checking', 1, 'Checking', 'Waiting for checks'),
-        step(270, 'Reviewing', 1, 'Running', 'Checks passed; starting the review'),
-        step(262, 'Merged', 1, 'Merged', 'Approved; merging'),
-      ],
+      conditions: [progressing('Waiting', 'Waiting for Container catalog-api to be Ready')],
+      history: [step(8, 'Pending', 0, 'Waiting', 'Waiting for Container catalog-api to be Ready')],
     }),
   ]
 
   return {
-    projects: [story.project!, toolbox, celLens.project!],
-    tasks: [...tasks, ...celLens.tasks],
-    agents,
-    containers: [...story.containers, ...celLens.containers],
-    sessions: [...story.sessions, ...celLens.sessions],
-    crews: [...story.crews, ...celLens.crews],
+    projects: [story.project!],
+    tasks: [...tasks, ...story.tasks],
+    agents: story.agents,
+    containers: story.containers,
+    sessions: story.sessions,
+    crews: story.crews,
   }
 }
 
@@ -327,7 +235,7 @@ export function demoHealth(now: number): FactoryHealth {
     ],
     agents: {
       maxSandboxes: 1,
-      sandboxes: [{ ...pod('toolbox', 'audio-cutter-v1-r2-review-a1', 1200, 2150), task: 'audio-cutter-v1' }],
+      sandboxes: [{ ...pod('webshop', 'api-reference-r2-review-a1', 1200, 2150), task: 'api-reference' }],
     },
     errors: [],
     history: demoHistory(now),

@@ -156,7 +156,7 @@ describe('summarizeHealth', () => {
     },
   )
   const gitea = pod('gitea', 'gitea-1', { 'app.kubernetes.io/name': 'gitea' })
-  const sandbox = pod('toolbox', 'image-shrink-v1-r1-implement', {
+  const sandbox = pod('apps', 'image-shrink-v1-r1-implement', {
     'c4.factory.io/agent-sandbox': 'true',
     'c4.factory.io/task': 'image-shrink-v1',
   })
@@ -194,7 +194,7 @@ describe('summarizeHealth', () => {
     assert.equal(health.agents.maxSandboxes, 2)
     assert.deepEqual(
       health.agents.sandboxes.map((s) => [s.namespace, s.task]),
-      [['toolbox', 'image-shrink-v1']],
+      [['apps', 'image-shrink-v1']],
     )
   })
 
@@ -328,11 +328,11 @@ describe('history', () => {
       components: DEFAULT_COMPONENTS.filter((c) => c.key === 'runner'),
       pods: [
         pod('gitea', 'runner-1', { 'app.kubernetes.io/name': 'gitea-runner' }),
-        pod('toolbox', 'sb', { 'c4.factory.io/agent-sandbox': 'true', 'c4.factory.io/task': 't' }),
+        pod('apps', 'sb', { 'c4.factory.io/agent-sandbox': 'true', 'c4.factory.io/task': 't' }),
       ],
       podMetrics: [
         { metadata: { namespace: 'gitea', name: 'runner-1' }, containers: [{ usage: { cpu: '4', memory: '1Gi' } }] },
-        { metadata: { namespace: 'toolbox', name: 'sb' }, containers: [{ usage: { cpu: '2500m', memory: '2Gi' } }] },
+        { metadata: { namespace: 'apps', name: 'sb' }, containers: [{ usage: { cpu: '2500m', memory: '2Gi' } }] },
       ],
       nodes: [node],
       nodeMetrics: [{ metadata: { name: 'c4factory-control-plane' }, usage: { cpu: '7', memory: '8Gi' } }],

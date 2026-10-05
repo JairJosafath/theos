@@ -32,7 +32,7 @@ const at = (min: number) => new Date(T0 + min * 60_000).toISOString()
 
 function task(name: string, status: Task['status'] = {}, created = at(0)): Task {
   return {
-    metadata: { name, namespace: 'toolbox', creationTimestamp: created },
+    metadata: { name, namespace: 'apps', creationTimestamp: created },
     spec: { containerRef: { name: 'image-shrink' }, agentRef: { name: 'claude' }, goal: 'Build it' },
     status,
   }
@@ -43,7 +43,7 @@ function issueTask(status: Task['status'] = {}): Task {
   return {
     metadata: {
       name: 'cel-language-server-3',
-      namespace: 'cel-lens',
+      namespace: 'tools',
       creationTimestamp: at(0),
       labels: { 'c4.factory.io/crew': 'cel-language-server', 'c4.factory.io/issue': '3' },
     },
@@ -57,7 +57,7 @@ function issueTask(status: Task['status'] = {}): Task {
   }
 }
 
-function agent(name: string, spec: Partial<Agent['spec']> = {}, namespace = 'cel-lens'): Agent {
+function agent(name: string, spec: Partial<Agent['spec']> = {}, namespace = 'tools'): Agent {
   return { metadata: { name, namespace }, spec: { image: 'c4factory/agent-go:dev', ...spec } }
 }
 
@@ -252,7 +252,7 @@ describe('attention', () => {
     })
     expect(items.map((i) => [i.level, i.title])).toEqual([
       ['error', 'CI runner is down'],
-      ['warning', 'Task toolbox/stuck has been waiting for CI for 45 min'],
+      ['warning', 'Task apps/stuck has been waiting for CI for 45 min'],
     ])
     expect(items[0].detail).toContain('CrashLoopBackOff')
   })
@@ -287,7 +287,7 @@ describe('attention', () => {
     const items = attention({ tasks: [failed], containers: [container], sessions: [session], now: T0 + 60_000 })
     expect(items.map((i) => i.title)).toEqual([
       'Container webshop/web failed',
-      'Task toolbox/qr-scanner-v1 failed',
+      'Task apps/qr-scanner-v1 failed',
       'Session webshop/s1 is stale',
     ])
     expect(items[1].detail).toBe('Failed after 4 rounds')
@@ -313,9 +313,9 @@ describe('attention', () => {
     expect(items).toEqual([
       {
         level: 'warning',
-        title: 'Task cel-lens/cel-language-server-3 is waiting for the agent until 15:04',
+        title: 'Task tools/cel-language-server-3 is waiting for the agent until 15:04',
         detail: 'The agent hit a usage limit; trying again at 2026-10-02T13:04:00Z',
-        task: 'cel-lens/cel-language-server-3',
+        task: 'tools/cel-language-server-3',
       },
     ])
   })
@@ -342,7 +342,7 @@ describe('attention', () => {
     expect(items).toEqual([
       {
         level: 'warning',
-        title: 'Crew cel-lens/vscode-extension can’t pick up issues',
+        title: 'Crew tools/vscode-extension can’t pick up issues',
         detail: 'Waiting for Container vscode-extension to be Ready',
       },
     ])
@@ -358,12 +358,12 @@ describe('taskHeadline', () => {
   it('names the issue with its title, linking to it', () => {
     const t = issueTask({
       issueTitle: 'Map positions inside YAML scalars',
-      issueURL: 'http://gitea/cel-lens/x/issues/3',
+      issueURL: 'http://gitea/tools/x/issues/3',
     })
     expect(taskHeadline(t)).toEqual({
       text: '#3 Map positions inside YAML scalars',
       issue: 3,
-      url: 'http://gitea/cel-lens/x/issues/3',
+      url: 'http://gitea/tools/x/issues/3',
     })
   })
 
@@ -392,7 +392,7 @@ describe('taskRoles', () => {
 
   it('lets the implementer review when no reviewer is named', () => {
     const t = task('t')
-    t.metadata.namespace = 'cel-lens'
+    t.metadata.namespace = 'tools'
     t.spec.agentRef = { name: 'claude' }
     const { implementer, reviewer } = taskRoles(t, agents)
     expect(reviewer).toEqual(implementer)
@@ -401,8 +401,8 @@ describe('taskRoles', () => {
   })
 
   it("says stand-in for the scripted agent, and keeps a missing Agent's name", () => {
-    expect(agentRole(agents, 'cel-lens', 'stand-in').model).toBe('stand-in')
-    expect(agentRole(agents, 'cel-lens', 'gone')).toEqual({ name: 'gone', title: 'gone', found: false })
+    expect(agentRole(agents, 'tools', 'stand-in').model).toBe('stand-in')
+    expect(agentRole(agents, 'tools', 'gone')).toEqual({ name: 'gone', title: 'gone', found: false })
   })
 
   it("looks in the Task's own namespace", () => {
@@ -437,10 +437,10 @@ describe('agentBackAt', () => {
 describe('followUpLinks', () => {
   it('labels issue addresses by number', () => {
     const t = issueTask({
-      followUps: ['http://gitea/cel-lens/cel-language-server/issues/15', 'http://gitea/somewhere/else'],
+      followUps: ['http://gitea/tools/cel-language-server/issues/15', 'http://gitea/somewhere/else'],
     })
     expect(followUpLinks(t)).toEqual([
-      { url: 'http://gitea/cel-lens/cel-language-server/issues/15', label: '#15' },
+      { url: 'http://gitea/tools/cel-language-server/issues/15', label: '#15' },
       { url: 'http://gitea/somewhere/else', label: 'http://gitea/somewhere/else' },
     ])
     expect(followUpLinks(task('t'))).toEqual([])
@@ -449,7 +449,7 @@ describe('followUpLinks', () => {
 
 function crew(name: string, spec: Partial<Crew['spec']> = {}, status: Crew['status'] = {}): Crew {
   return {
-    metadata: { name, namespace: 'cel-lens' },
+    metadata: { name, namespace: 'tools' },
     spec: {
       containerRef: { name },
       implementer: { name: 'claude-implementer' },
@@ -479,8 +479,8 @@ describe('crewSummary', () => {
   it('names its Agents with their models, and the issue it works on', () => {
     const tasks = [issueTask({ issueTitle: 'Map positions inside YAML scalars' })]
     expect(crewSummary(working, agents, tasks)).toEqual({
-      key: 'cel-lens/cel-language-server',
-      namespace: 'cel-lens',
+      key: 'tools/cel-language-server',
+      namespace: 'tools',
       name: 'cel-language-server',
       title: 'Language server crew',
       description: undefined,
@@ -499,7 +499,7 @@ describe('crewSummary', () => {
       active: [
         {
           name: 'cel-language-server-3',
-          key: 'cel-lens/cel-language-server-3',
+          key: 'tools/cel-language-server-3',
           issue: 3,
           headline: '#3 Map positions inside YAML scalars',
           found: true,
@@ -517,7 +517,7 @@ describe('crewSummary', () => {
     expect(summary.active).toEqual([
       {
         name: 'cel-language-server-3',
-        key: 'cel-lens/cel-language-server-3',
+        key: 'tools/cel-language-server-3',
         issue: undefined,
         headline: undefined,
         found: false,
@@ -575,7 +575,7 @@ describe('crewSummary', () => {
     const other = crew('a-crew')
     other.metadata.namespace = 'zz'
     const names = crewSummaries([other, crew('vscode-extension'), working], agents, []).map((c) => c.key)
-    expect(names).toEqual(['cel-lens/cel-language-server', 'cel-lens/vscode-extension', 'zz/a-crew'])
+    expect(names).toEqual(['tools/cel-language-server', 'tools/vscode-extension', 'zz/a-crew'])
   })
 })
 
@@ -665,18 +665,17 @@ describe('the demo', () => {
 
   it('has Crews working, paused and not Ready, with Sonnet and Opus', () => {
     expect(crews.map((c) => [c.key, c.phase, c.paused, Boolean(c.notReady)])).toEqual([
-      ['cel-lens/cel-language-server', 'Working', false, false],
-      ['cel-lens/vscode-extension', 'Working', true, false],
       ['webshop/catalog-api', 'Waiting', false, true],
-      ['webshop/orders-api', 'Paused', true, false],
+      ['webshop/orders-api', 'Working', false, false],
+      ['webshop/storefront', 'Paused', true, false],
     ])
-    expect(crews[0]).toMatchObject({
+    expect(crews[1]).toMatchObject({
       implementer: { model: 'claude-sonnet-5-5' },
       reviewer: { model: 'claude-opus-5-5' },
       parallel: 2,
       active: [
-        { issue: 4, found: true },
-        { issue: 5, found: true },
+        { issue: 14, found: true },
+        { issue: 15, found: true },
       ],
     })
   })
@@ -684,19 +683,17 @@ describe('the demo', () => {
   it('has issue Tasks in several phases, with follow-ups and an agent wait', () => {
     const issueTasks = data.tasks.filter((t) => t.spec.issue)
     expect(new Set(issueTasks.map((t) => t.status?.phase))).toEqual(
-      new Set(['Merged', 'Failed', 'Implementing', 'Reviewing', 'Checking']),
+      new Set(['Merged', 'Failed', 'Implementing', 'Checking']),
     )
     expect(issueTasks.some((t) => followUpLinks(t).length)).toBe(true)
     expect(issueTasks.filter((t) => agentBackAt(t) !== undefined).map((t) => t.metadata.name)).toEqual([
-      'cel-language-server-4',
+      'orders-api-14',
     ])
   })
 
   it('needs a look at the agent wait and the Crew that is not Ready', () => {
     const titles = attention({ ...data, health: demoHealth(T0), now: T0 }).map((i) => i.title)
-    expect(titles).toContainEqual(
-      expect.stringMatching(/^Task cel-lens\/cel-language-server-4 is waiting for the agent until /),
-    )
+    expect(titles).toContainEqual(expect.stringMatching(/^Task webshop\/orders-api-14 is waiting for the agent until /))
     expect(titles).toContain('Crew webshop/catalog-api can’t pick up issues')
   })
 })
@@ -738,7 +735,7 @@ describe('Blocked Tasks', () => {
   it('shows a Blocked Task in its own column, with the issue it waits on', () => {
     const change = {
       issue: 31,
-      issueURL: 'http://gitea/cel-lens/vscode-extension/issues/31',
+      issueURL: 'http://gitea/tools/vscode-extension/issues/31',
       paths: ['Makefile'],
       count: 1,
     }
