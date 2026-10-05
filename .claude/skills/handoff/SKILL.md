@@ -97,4 +97,5 @@ Lost claim (the heartbeat hook says so):
 - **Follow-up found:** `hack/lib/github.sh create TITLE FILE status/proposed
   kind/<kind>` (add `needs/cluster` if it needs one; a body line
   `Depends on #M` if it waits on another issue). Don't start it in this
-  session.
+  session. Write it so the relay's triage can ready it: one piece of work, a
+  checkable "Done when", and what it waits on.
