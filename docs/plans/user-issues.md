@@ -97,8 +97,9 @@ tagged `archive/product-coupled` and the tag is pushed; everything below is one
   `hack/toolchain-go/warm.go.txt`, `ui/src/demo/celLensFixture.ts` and the
   toolbox apps in `ui/src/demo/factoryFixture.ts`.
 - **webshop stays** as the one sample. `test/e2e/agents_test.go` and `make e2e`
-  stop depending on toolbox: they cover the same behaviour against webshop or a
-  minimal fixture under `test/e2e/testdata/`.
+  stop depending on toolbox: the agent loop it checks needs a Standard with CI,
+  which webshop lacks, so it runs against a minimal Flutter fixture project
+  `apps` under `test/e2e/testdata/apps/` (one Container and the stand-in Task).
 - **The evaluator:** `.claude/skills/factory-evaluator/`, `hack/evaluate.sh`,
   and the `evaluate` and `backup-releases` steps in `hack/relay.sh`. The relay
   itself stays.
@@ -139,9 +140,10 @@ tagged `archive/product-coupled` and the tag is pushed; everything below is one
 
 ### Not in this plan
 
-The Helm chart, publishing images and the chart, and a release workflow. They
-are filed as `source/dev`, `status/proposed` issues and get a plan of their
-own. Until they land, the README's install path stays the Kind one.
+The Helm chart, publishing images and the chart, a release workflow, and
+redrawing the two Excalidraw boards without product names. They are filed as
+`source/dev`, `status/proposed` issues and get a plan of their own. Until they
+land, the README's install path stays the Kind one.
 
 ## Done when
 
@@ -152,6 +154,8 @@ own. Until they land, the README's install path stays the Kind one.
   `status/proposed` within a minute; it is then closed and its label deleted.
 - Every open issue has exactly one `source/*` label.
 - `git grep -il 'cel-lens\|cel lens\|toolbox'` finds only files under
-  `docs/plans/`.
+  `docs/plans/` and the two boards in `docs/images/` (redrawn in a follow-up
+  issue; editing Excalidraw text by hand breaks their layout). Go and UI tests
+  that used `toolbox` or `cel-lens` as fixture names use neutral ones.
 - `make check` passes, and `make e2e` passes in the Kind cluster.
 - The tag `archive/product-coupled` is on GitHub.
