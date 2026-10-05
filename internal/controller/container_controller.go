@@ -244,7 +244,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&c4v1alpha1.Container{}, specOrRetry()).
 		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).
 		Watches(&c4v1alpha1.SoftwareSystem{}, systemContainers, createOrDelete()).
-		Watches(&c4v1alpha1.Relationship{}, sourceContainer).
+		Watches(&c4v1alpha1.Relationship{}, sourceContainer, specChanged()).
 		Watches(&c4v1alpha1.GitProvider{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Framework{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Standard{}, standardContainers, specChanged()).
