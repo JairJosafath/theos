@@ -65,9 +65,10 @@ person moved #99 and #120 to v0.3.0 it was done, and its newest merge is
   of its issue's milestone would go stale when a person moves an issue.
 - **How the tag is made.** Gitea's `POST /repos/{owner}/{repo}/tags` with
   `target` the commit and a message (an annotated tag), as the operator's user,
-  whom the tag protection allows. Step 5 checks that a tag made through the API
-  starts the release workflow; if it doesn't, the tag is pushed with go-git
-  instead, as `PushBranch` pushes branches.
+  whom the tag protection allows. It starts the release workflow like a pushed
+  tag: in step 5's run on Gitea 1.27.3 the API tag queued
+  `release.yaml@refs/tags/v0.1.0` with event `push`
+  (`docs/screenshots/release-tags-hello.md`), so no go-git push is needed.
 - **A paused Crew still tags.** `spec.paused` stops it picking up issues; a
   release whose work is already merged still goes out.
 - **Warnings once.** A held release sets the Crew's `Released` condition False
