@@ -150,6 +150,10 @@ check "c4factory held, this checkout leased c4factory-2: runs" "$(cat "$T/out")"
 jq -n --arg wt "$T/other" --argjson b "$(date +%s)" '{cluster:"c4factory-2",name:"heron-51",issue:51,worktree:$wt,beat:$b}' >"$LEASE2"
 hook "KIND_CLUSTER=c4factory-2 make deploy"
 check "c4factory-2 held elsewhere, deploy to it: denied" "$(decision)" deny
+hook 'KIND_CLUSTER="c4factory-2" make deploy'
+check "c4factory-2 held elsewhere, quoted name: denied" "$(decision)" deny
+hook "make deploy KIND_CLUSTER='c4factory-2'"
+check "c4factory-2 held elsewhere, single-quoted name: denied" "$(decision)" deny
 case $(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out") in *"Kind cluster c4factory-2 is in use: heron-51"*) r=yes ;; *) r=no ;; esac
 check "deny: names the cluster and its holder" $r yes
 rm -f "$LEASE2"

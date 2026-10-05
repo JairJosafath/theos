@@ -579,8 +579,10 @@ gh_kind_clusters() { "${KIND:-kind}" get clusters 2>/dev/null; }
 gh_lease_take() {
   local pool c f pick= free=() held=() exist name= issue= c_issue c_id c_name c_branch l_name l_issue l_wt l_beat
   pool=$(gh_pool) || return 64
-  pick=$(gh_lease_name)
+  # The cluster this checkout holds, while it is still in the pool (C4_CLUSTERS may have shrunk).
+  pick=$(gh_lease_name) && grep -qxF -- "$pick" <<<"$pool" || pick=
   if [ -z "$pick" ]; then
+    [ -z "$(gh_lease_name)" ] || gh_lease_release_locked >/dev/null
     for c in $pool; do
       if gh_lease_live "$c"; then held+=("$c: $(gh_lease_desc)"); else free+=("$c"); fi
     done

@@ -149,6 +149,9 @@ gh_cluster release >/dev/null
 gh_cluster acquire --wait 0 >/dev/null 2>"$T/err"; check "create fails: exit 1" $? 1
 check "create fails: lease dropped" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
 rm -f "$T/make-fails"; echo c4factory >"$T/kind-clusters"
+lease "$T/main" 50 "$(date +%s)" "$LEASE2"
+check "pool shrunk: a lease outside it is dropped for one inside" "$(C4_CLUSTERS=1 gh_cluster acquire --wait 0 2>/dev/null) $([ -e "$LEASE2" ] && echo kept || echo gone)" "c4factory gone"
+gh_cluster release >/dev/null
 
 # needs/cluster issues are picked and taken while another checkout holds the lease.
 clear; lease "$T/wt2" 50 "$(date +%s)"

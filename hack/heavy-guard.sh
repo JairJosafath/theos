@@ -45,7 +45,8 @@ if [[ $unquoted =~ $sep$cluster$end ]]; then
   # shellcheck source=hack/lib/github.sh
   . "$(dirname "${BASH_SOURCE[0]}")/lib/github.sh"
   target=${KIND_CLUSTER:-}
-  [[ $unquoted =~ (^|[[:space:]])KIND_CLUSTER=([^[:space:];&|]+) ]] && target=${BASH_REMATCH[2]}
+  # On $cmd, not $unquoted: the quotes of KIND_CLUSTER="c4factory-2" are taken off there with the name.
+  [[ $cmd =~ (^|[[:space:]])KIND_CLUSTER=[\"\']?([^\"\'[:space:]\;\&\|]+) ]] && target=${BASH_REMATCH[2]}
   [ -n "$target" ] || target=$(gh_cluster name 2>/dev/null)
   target=${target:-c4factory}
   if holder=$(gh_lease_holder "$target" 2>/dev/null); then
@@ -70,7 +71,7 @@ top=$(ps -eo rss=,args= 2>/dev/null | awk '
   END { for (c in sum) printf "%d\t%s\t%d\n", sum[c], c, n[c] }' |
   sort -rn | head -5 | awk -F'\t' '
   { printf "%s%s%s %.1f GiB", (NR > 1 ? ", " : ""), $2, ($3 > 1 ? " (" $3 ")" : ""), $1 / 1048576 }')
-node="${KIND_CLUSTER:-c4factory}-control-plane"
+node="${target:-${KIND_CLUSTER:-c4factory}}-control-plane"
 kind=
 if command -v docker >/dev/null; then
   use=$(timeout 5 docker stats --no-stream --format '{{.MemUsage}}' "$node" 2>/dev/null) &&

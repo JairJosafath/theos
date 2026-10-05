@@ -118,7 +118,10 @@ around the steps that touch it:
    cluster without being told (`hack/lib/github.sh cluster name`), and so do
    `hack/up.sh`, `hack/doctor.sh` and `hack/evidence.sh`; a Bash call doesn't
    keep exported variables, so kubectl takes `--context kind-<name>` each
-   time. Images built for a deploy are loaded into that cluster only.
+   time. Images built for a deploy are loaded into that cluster only; they
+   keep one tag (`c4factory/operator:dev`, ...) across the pool, so each build
+   and its `kind load` run under a device-wide lock (`.git/c4-image.lock`),
+   and two deploys build one after the other.
    `make gitea-forward` and `make test-gitea` use port 3000 for `c4factory`
    and 3000+K-1 for `c4factory-K` (`GITEA_PORT`), so two forwards don't
    collide; the e2e tests pick a free one.
