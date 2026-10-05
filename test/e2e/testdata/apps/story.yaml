@@ -1,44 +1,44 @@
-# Who uses what, and what it is made of: one sample Flutter app for the e2e agent loop.
+# Who uses what, and what it is made of: one sample Go command-line tool for the e2e agent loop.
 apiVersion: c4.factory.io/v1alpha1
 kind: Person
 metadata:
-  name: app-user
+  name: tool-user
 spec:
-  displayName: App user
-  description: Someone who uses the sample app.
+  displayName: Tool user
+  description: Someone who runs the sample tool.
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: SoftwareSystem
 metadata:
-  name: sample-apps
+  name: sample-tools
 spec:
-  displayName: Sample apps
-  description: A sample Flutter app for the e2e agent loop.
+  displayName: Sample tools
+  description: A sample Go command-line tool for the e2e agent loop.
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Relationship
 metadata:
-  name: app-user-uses-sample-apps
+  name: tool-user-uses-sample-tools
 spec:
-  source: {kind: Person, name: app-user}
-  target: {kind: SoftwareSystem, name: sample-apps}
-  description: Uses the app
+  source: {kind: Person, name: tool-user}
+  target: {kind: SoftwareSystem, name: sample-tools}
+  description: Runs the tool
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Container
 metadata:
-  name: image-shrink
+  name: hello-cli
 spec:
   softwareSystemRef:
-    name: sample-apps
-  displayName: Image Shrink
-  description: A sample Flutter app for the e2e agent loop.
-  type: mobile-app
+    name: sample-tools
+  displayName: Hello CLI
+  description: A sample Go command-line tool for the e2e agent loop.
+  type: cli
   gitProviderRef:
     name: gitea
   frameworkRef:
-    name: flutter-app
+    name: go-cli
   standardRef:
-    name: flutter-standard
+    name: go-standard
   deploymentRef:
-    name: android-release
+    name: gitea-release

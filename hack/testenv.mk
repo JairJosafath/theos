@@ -198,7 +198,7 @@ claude-secret-copy: ## Copy the Claude Secret between projects: make claude-secr
 	@echo "Copied Secret claude-credentials from $(FROM) to $(TO)"
 
 .PHONY: e2e-apps
-e2e-apps: ## Apply the e2e fixture project: one Flutter app (test/e2e/testdata/apps).
+e2e-apps: ## Apply the e2e fixture project: one Go command-line tool (test/e2e/testdata/apps).
 	$(TESTENV_KUBECTL) apply -k test/e2e/testdata/apps
 
 .PHONY: metrics-server

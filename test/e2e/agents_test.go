@@ -31,11 +31,11 @@ import (
 
 const apps = "apps"
 
-// The agent factory milestone: Flutter Containers scaffolded with a Standard, CI
+// The agent factory milestone: a Go Container scaffolded with a Standard, CI
 // on the protected main, and a Task that goes through two rounds to a merge with
 // the stand-in agent. `make e2e` applies test/e2e/testdata/apps first.
 var _ = Describe("Agent factory", Ordered, ContinueOnFailure, func() {
-	It("scaffolds the apps Container from the Flutter templates and protects main", func() {
+	It("scaffolds the apps Container from the Go templates and protects main", func() {
 		Eventually(func(g Gomega) {
 			var list c4v1alpha1.ContainerList
 			g.Expect(k8s.List(ctx, &list, client.InNamespace(apps))).To(Succeed())
@@ -43,7 +43,7 @@ var _ = Describe("Agent factory", Ordered, ContinueOnFailure, func() {
 			for _, c := range list.Items {
 				g.Expect(c.Status.Phase).To(Equal(c4v1alpha1.ContainerReady), c.Name)
 				g.Expect(c.Status.ScaffoldedFrom).To(Equal(
-					[]string{"flutter-app@v1.0.0", "flutter-standard@v1.1.0", "android-release@v1.1.0"}), c.Name)
+					[]string{"go-cli@v1.0.0", "go-standard@v1.1.1", "gitea-release@v1.0.0"}), c.Name)
 			}
 		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
@@ -53,7 +53,7 @@ var _ = Describe("Agent factory", Ordered, ContinueOnFailure, func() {
 			EnableStatusCheck bool     `json:"enable_status_check"`
 			Contexts          []string `json:"status_check_contexts"`
 		}
-		giteaGet("/api/v1/repos/apps/image-shrink/branch_protections", &rules)
+		giteaGet("/api/v1/repos/apps/hello-cli/branch_protections", &rules)
 		Expect(rules).To(ContainElement(And(
 			HaveField("RuleName", "main"), HaveField("EnablePush", false),
 			HaveField("EnableStatusCheck", true), HaveField("Contexts", ContainElement("check*")))))
@@ -68,7 +68,7 @@ var _ = Describe("Agent factory", Ordered, ContinueOnFailure, func() {
 	It("runs CI on main and reports it on the Container", func() {
 		Eventually(func(g Gomega) {
 			var c c4v1alpha1.Container
-			g.Expect(k8s.Get(ctx, key(apps, "image-shrink"), &c)).To(Succeed())
+			g.Expect(k8s.Get(ctx, key(apps, "hello-cli"), &c)).To(Succeed())
 			g.Expect(c.Status.Checks).NotTo(BeNil())
 			g.Expect(c.Status.Checks.State).To(Equal("success"), "checks: %+v", c.Status.Checks)
 		}).WithTimeout(15 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
@@ -90,7 +90,7 @@ var _ = Describe("Agent factory", Ordered, ContinueOnFailure, func() {
 		var file struct {
 			Content string `json:"content"`
 		}
-		giteaGet("/api/v1/repos/apps/image-shrink/contents/STAND-IN.md?ref=main", &file)
+		giteaGet("/api/v1/repos/apps/hello-cli/contents/STAND-IN.md?ref=main", &file)
 		content, err := base64.StdEncoding.DecodeString(file.Content)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(strings.Count(string(content), "stand-in agent")).To(Equal(2), string(content))
@@ -98,7 +98,7 @@ var _ = Describe("Agent factory", Ordered, ContinueOnFailure, func() {
 		var pulls []struct {
 			Merged bool `json:"merged"`
 		}
-		giteaGet("/api/v1/repos/apps/image-shrink/pulls?state=closed", &pulls)
+		giteaGet("/api/v1/repos/apps/hello-cli/pulls?state=closed", &pulls)
 		Expect(pulls).To(ContainElement(HaveField("Merged", true)))
 	})
 })
