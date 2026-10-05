@@ -175,9 +175,10 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Build the operator, load it into the Kind cluster and deploy it there.
-	@# Build and load under the image lock (hack/testenv.mk), so a deploy to
-	@# another pool cluster can't retag the image in between.
-	$(IMAGE_LOCK) $(MAKE) --no-print-directory docker-build kind-load
+	@# Build this checkout's own tag and load it as $(IMG) (hack/testenv.mk), so
+	@# another checkout's build can't take its place.
+	$(MAKE) --no-print-directory docker-build IMG=$(IMG)-$(CHECKOUT_TAG)
+	hack/kind.sh load '$(KIND_CLUSTER)' $(IMG)
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default | $(TESTENV_KUBECTL) apply -f -
 	@# Same tag, new image: restart so the pods pick it up.

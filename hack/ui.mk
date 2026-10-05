@@ -49,8 +49,7 @@ ui-serve: ui-build ## Serve ui/dist with ui/server.mjs on http://localhost:8080,
 
 .PHONY: ui
 ui: ## Build the UI image, load it into Kind and deploy config/ui.
-	$(IMAGE_LOCK) sh -c "$(CONTAINER_TOOL) build -t $(UI_IMG) ui && \
-		$(KIND) load docker-image $(UI_IMG) --name '$(KIND_CLUSTER)'"
+	$(call build-load,$(UI_IMG),ui)
 	$(UI_KUBECTL) apply -k config/ui
 	$(UI_KUBECTL) -n $(UI_NAMESPACE) set image deployment/c4-factory-ui ui=$(UI_IMG)
 	@# Same tag, new image: restart so the Pod picks up what was just loaded.

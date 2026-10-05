@@ -42,14 +42,14 @@ address; use `make deploy` for anything that scaffolds.
 make manifests generate
 
 # 2. Build, load into Kind, deploy
-make deploy            # builds c4factory/operator:dev, kind-loads it, applies config/default, restarts
+make deploy            # builds c4factory/operator:dev-<checkout>, kind-loads it as :dev, applies config/default, restarts
 
-# 3. Try it
+# 3. Try it (kubectl names the cluster: kind-c4factory, or the one you leased)
 make sample            # the webshop story
-kubectl get c4 -n webshop
+kubectl --context kind-c4factory get c4 -n webshop
 
 # 4. Debug
-kubectl logs -n c4-factory-system deployment/c4-factory-controller-manager -c manager -f
+kubectl --context kind-c4factory logs -n c4-factory-system deployment/c4-factory-controller-manager -c manager -f
 make gitea-forward     # then open http://localhost:3000
 ```
 
@@ -133,10 +133,18 @@ around the steps that touch it:
    cluster without being told (`hack/lib/github.sh cluster name`), and so do
    `hack/up.sh`, `hack/doctor.sh` and `hack/evidence.sh`; a Bash call doesn't
    keep exported variables, so kubectl takes `--context kind-<name>` each
-   time. Images built for a deploy are loaded into that cluster only; they
-   keep one tag (`c4factory/operator:dev`, ...) across the pool, so each build
-   and its `kind load` run under a device-wide lock (`.git/c4-image.lock`),
-   and two deploys build one after the other.
+   time. Never switch the kubeconfig's current context (`kubectl config
+   use-context`): every checkout shares `.dev/kube/config` of the main
+   checkout, and plain kubectl in another session would follow it. The
+   `cluster` target and `hack/up.sh` put it back after kind sets it
+   (`hack/kind.sh keep-context`). Images built for a deploy (`make deploy`,
+   the agent, runner, seed, session and UI images) are tagged per checkout
+   (`c4factory/operator:dev-relay-2-1a2b3c`, from `hack/kind.sh checkout`),
+   so two checkouts building at once never share a tag; `hack/kind.sh load`
+   loads one into the leased cluster under the name the manifests use
+   (`c4factory/operator:dev`). The toolchain base images
+   (`c4factory/go:1.26`, `c4factory/base:dev`) stay shared: they change
+   rarely and only from `hack/toolchain-*`.
    `make gitea-forward` and `make test-gitea` use port 3000 for `c4factory`
    and 3000+K-1 for `c4factory-K` (`GITEA_PORT`), so two forwards don't
    collide; the e2e tests pick a free one.

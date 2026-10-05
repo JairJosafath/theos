@@ -1,0 +1,42 @@
+# make deploy on c4factory-2 from relay-2 (#123, otter-123), 2026-10-05T22:50:01Z
+docker build  -t c4factory/operator:dev-relay-2-744282 .
+hack/kind.sh load 'c4factory-2' c4factory/operator:dev
+Loaded c4factory/operator:dev-relay-2-744282 into Kind cluster c4factory-2 as c4factory/operator:dev
+deployment "c4-factory-controller-manager" successfully rolled out
+
+# docker image inspect: the checkout build
+sha256:a3d97e8909242ec5985f14272f278bb88b19d88f5ac8b4f70eaf93f79e542cab
+
+# containerd in the node: shared name only, same digest family
+docker.io/c4factory/operator:dev
+
+# running pod image
+c4-factory-controller-manager-6ddbdc787c-6wfsw docker.io/c4factory/operator:dev docker.io/library/import-2026-10-05@sha256:1c70efc539aeebefc1ed7a9fce4fc4c7719cf8788906bf23b0f692455a2c4c7f
+
+# crictl image id in node
+sha256:bb01b29e36c88b23e36a1fc4c4fd28b5cae0e0a796f19a9c00d4f586141102a8 ["docker.io/c4factory/operator:dev"]
+
+# kubeconfig current-context after deploy
+error: current-context is not set
+
+# same image: Docker (containerd store) reports the index digest, crictl the config; top layer and creation match
+docker: 2026-10-05T22:05:41.65875839Z sha256:07c0850973a6a80e0f9a121315284e22208efacfe42d075628f989f873cfa0c6
+node:   2026-10-05T22:05:41.65875839Z sha256:07c0850973a6a80e0f9a121315284e22208efacfe42d075628f989f873cfa0c6
+
+# hack/kind_test.sh
+ok   tag: names the directory
+ok   tag: differs by path
+ok   tag: stable
+ok   tag: valid docker tag
+ok   ref: docker hub user
+ok   ref: library
+ok   ref: registry
+ok   ref: registry port
+ok   load: calls
+ok   load: no nodes fails
+ok   load: unbuilt image fails
+ok   load: untagged is latest
+ok   keep-context: restores
+ok   keep-context: stays unset
+ok   keep-context: keeps the exit code
+ok   usage

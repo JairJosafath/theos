@@ -50,7 +50,8 @@ Only around the steps that touch one (deploys, samples, e2e, factory-ops,
    checkout (waits up to 30m, `--wait 10m` for less). Exit 4 names the
    holders: hand off with only the cluster steps left.
 3. Make targets now use it; kubectl takes `--context kind-<name>` on every
-   call. `make deploy` this branch first: never trust what is deployed.
+   call, never `kubectl config use-context` (every checkout shares the
+   kubeconfig). `make deploy` this branch first: never trust what is deployed.
 4. Verify, then `hack/lib/github.sh cluster release`. A handoff names the
    cluster under **State outside git** only while the work still holds it.
 
