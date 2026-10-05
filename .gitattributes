@@ -1,3 +1,5 @@
-# Shell scripts must keep LF line endings, or bash fails inside the dev container.
+# Shell scripts must keep LF line endings, or bash fails on them (in a checkout
+# made from Windows, for example).
 *.sh text eol=lf
-.devcontainer/** text eol=lf
+/dev text eol=lf
+hack/dev/** text eol=lf

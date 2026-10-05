@@ -14,6 +14,7 @@ task. Read the rest when the task needs it:
 | change what the factory does | [docs/design.md](docs/design.md): the spec |
 | add or move code | [docs/architecture.md](docs/architecture.md) and [docs/dev/structure.md](docs/dev/structure.md) |
 | change API types, reconcilers or log lines | [docs/dev/api-and-controllers.md](docs/dev/api-and-controllers.md) |
+| set up a device, or change `./dev` or `.vscode/` | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
 | take an issue, or continue work someone left in flight | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
@@ -117,7 +118,7 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   piece of work, labeled `status/*`, `priority/urgent`, `kind/*`;
   `hack/lib/github.sh` reads and writes them. Product work stays in Gitea with
   the Crews. Issues that need the Kind cluster carry `needs/cluster`; a device
-  without one sets `C4_CLUSTER=none` (the light devcontainer) and skips them.
+  without one sets `C4_CLUSTER=none` (`./dev setup --lite`) and skips them.
 - **One issue, plan step or fix per session.** Start the next one fresh.
 - **Agents work in parallel.** Take an issue with `hack/lib/github.sh take N`
   before working it; it names you (`otter-23`). Sign commits with an
@@ -145,7 +146,7 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   minute of an issue becoming ready.
 - **On the cluster device, memory is the limit.** Check `free -g` before a
   heavy job (`make check`, image builds, `make deploy`), never run two at once,
-  and build a nested devcontainer only on a device without the cluster;
+  and build a devcontainer (`devcontainer up`) only on a device without the cluster;
   [docs/dev/testenv.md](docs/dev/testenv.md) has the numbers.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?

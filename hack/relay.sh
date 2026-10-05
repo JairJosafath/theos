@@ -21,7 +21,7 @@
 # exists and the device has the cluster.
 #
 # Issues that need the Kind cluster carry needs/cluster. On a device without
-# one, C4_CLUSTER=none (the light devcontainer sets it): the workers skip those
+# one, C4_CLUSTER=none (./dev setup --lite sets it): the workers skip those
 # issues, and a session that finds its issue needs the cluster lands what it
 # can, labels it and hands it back for a device with one. On a device with the
 # cluster, one checkout at a time works a needs/cluster issue.

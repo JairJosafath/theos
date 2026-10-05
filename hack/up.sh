@@ -31,18 +31,12 @@ wait_for() {
 }
 
 if ! docker info >/dev/null 2>&1; then
-  if [[ -x /usr/local/share/docker-init.sh ]]; then
-    say "Starting the Docker daemon"
-    sudo /usr/local/share/docker-init.sh >/dev/null 2>&1 || true
-    wait_for 60 "the Docker daemon" docker info
-  else
-    echo "The Docker daemon is not running; start it and try again" >&2
-    exit 1
-  fi
+  echo "The Docker daemon is not running; start Docker Desktop (or the Docker service) and try again" >&2
+  exit 1
 fi
 
 started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-state=$(docker inspect -f '{{.State.Status}}' "$NODE" 2>/dev/null || echo missing)
+state=$(docker inspect -f '{{.State.Status}}' "$NODE" 2>/dev/null) || state=missing
 if [[ "$state" == missing ]]; then
   echo "Kind cluster $CLUSTER does not exist: build it with make e2e (or make cluster ...)" >&2
   exit 1
@@ -52,7 +46,7 @@ if [[ "$state" != running ]]; then
   docker start "$NODE" >/dev/null
 fi
 
-# A rebuilt devcontainer has a fresh home directory, without the kubeconfig.
+# A fresh .dev/ (./dev nuke, a new checkout) has no kubeconfig for the cluster.
 if ! kubectl config get-contexts "kind-${CLUSTER}" >/dev/null 2>&1; then
   say "Restoring the kubeconfig for kind-${CLUSTER}"
   kind export kubeconfig --name "$CLUSTER" >/dev/null

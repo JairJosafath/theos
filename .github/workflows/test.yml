@@ -18,7 +18,8 @@ on:
       - '!.custom-gcl.yml'
       - '!hack/**'
       - hack/boilerplate.go.txt
-      - '!.devcontainer/**'
+      - '!dev'
+      - '!.vscode/**'
       - '!.github/**'
       - .github/workflows/test.yml
   pull_request:

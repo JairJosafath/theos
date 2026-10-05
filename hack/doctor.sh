@@ -23,11 +23,11 @@ section() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 section "Machine"
 if ! docker info >/dev/null 2>&1; then
   bad "Docker daemon is not running"
-  hint "make up starts it (in the devcontainer: sudo /usr/local/share/docker-init.sh)"
+  hint "Start Docker Desktop (or the Docker service), then run make up"
   exit 1
 fi
 ok "Docker daemon is running"
-state=$(docker inspect -f '{{.State.Status}}' "$NODE" 2>/dev/null || echo missing)
+state=$(docker inspect -f '{{.State.Status}}' "$NODE" 2>/dev/null) || state=missing
 case "$state" in
 running) ok "Kind node $NODE is running" ;;
 missing)
@@ -44,7 +44,7 @@ esac
 
 section "Cluster"
 if ! kubectl config get-contexts "kind-$CLUSTER" >/dev/null 2>&1; then
-  bad "No kubeconfig context kind-$CLUSTER (a rebuilt devcontainer loses it)"
+  bad "No kubeconfig context kind-$CLUSTER in ${KUBECONFIG:-~/.kube/config} (outside the project shell, or a fresh .dev/)"
   hint "make up restores it (kind export kubeconfig --name $CLUSTER)"
   exit 1
 fi

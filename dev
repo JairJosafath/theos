@@ -1,0 +1,331 @@
+#!/usr/bin/env bash
+# ./dev: the C4 Factory development environment, kept inside this folder.
+#
+#   ./dev setup            download every tool into .dev/ (safe to run again)
+#   ./dev setup --lite     the same, without Kind, kubectl, Helm and Docker
+#                          (C4_CLUSTER=none, for a device with too little disk)
+#   ./dev setup --full     switch a lite device back to the full setup
+#   ./dev setup --upgrade  download the newest tool versions again
+#   ./dev shell            open the project shell (zsh, everything set up)
+#   ./dev run CMD...       run one command inside the project environment
+#   ./dev nuke             delete this project's Kind clusters and all of .dev/
+#
+# VS Code runs "./dev setup" by itself when you open the folder
+# (.vscode/tasks.json), and every terminal opens in the project shell
+# (.vscode/settings.json). Everything the project needs or writes lives in .dev/,
+# which git ignores: run ./dev nuke, delete the folder, and nothing is left.
+set -euo pipefail
+
+# Versions. Go follows the newest patch of this series; the rest take the latest
+# release when they are first downloaded (./dev setup --upgrade refreshes them).
+GO_SERIES="1.26"
+
+C4_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export C4_ROOT
+DEV="$C4_ROOT/.dev"
+
+step() { printf '\n==> %s\n' "$*"; }
+info() { printf '    %s\n' "$*"; }
+die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+fetch() { curl -fsSL --retry 3 "$@"; }
+
+arch() {
+  case "$(uname -m)" in
+    x86_64) echo amd64 ;;
+    aarch64 | arm64) echo arm64 ;;
+    *) die "unsupported architecture: $(uname -m)" ;;
+  esac
+}
+
+# Tag of a GitHub project's latest release, read from the redirect (no API token).
+latest_tag() {
+  curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$1/releases/latest" | sed 's#.*/tag/##'
+}
+
+# Download a single binary into .dev/bin unless it is already there.
+get_bin() { # name url
+  [ -x "$DEV/bin/$1" ] && return 0
+  info "$1"
+  fetch -o "$DEV/bin/$1.part" "$2"
+  chmod +x "$DEV/bin/$1.part"
+  mv "$DEV/bin/$1.part" "$DEV/bin/$1"
+}
+
+is_lite() { [ -f "$DEV/lite" ]; }
+
+# --- setup -------------------------------------------------------------------
+
+# A git worktree shares the main checkout's .dev/ through a symlink, so tools and
+# caches exist once. Prints the main checkout's path when this is a worktree.
+main_checkout() {
+  local common
+  common="$(git -C "$C4_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
+  common="${common%/}"
+  [ "${common##*/}" = .git ] || return 0
+  [ "${common%/.git}" != "$C4_ROOT" ] && echo "${common%/.git}"
+  return 0
+}
+
+system_packages() {
+  # Only what the downloaded tools can't bring themselves: a shell, git, and a C
+  # toolchain for make, cgo and `go test -race`.
+  local missing=()
+  have git || missing+=(git)
+  have curl || missing+=(curl)
+  have zsh || missing+=(zsh)
+  have make || missing+=(make)
+  have gcc || missing+=(build-essential)
+  have tar || missing+=(tar)
+  [ ${#missing[@]} -eq 0 ] && return 0
+  step "System packages: ${missing[*]}"
+  have apt-get || die "install these with your package manager, then run ./dev setup again: ${missing[*]}"
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq "${missing[@]}"
+}
+
+install_go() {
+  [ -x "$DEV/tools/go/bin/go" ] && return 0
+  local v
+  # sed -n 1p, not head -1: head exits early, grep and curl die of SIGPIPE, and
+  # under pipefail that ends the script without a message.
+  v="$(fetch 'https://go.dev/dl/?mode=json&include=all' | grep -o "\"go${GO_SERIES}[.0-9]*\"" | sed -n 1p | tr -d '"')"
+  [ -n "$v" ] || die "no Go release found for series $GO_SERIES"
+  info "$v"
+  rm -rf "$DEV/tools/go"
+  fetch "https://go.dev/dl/$v.linux-$(arch).tar.gz" | tar -xz -C "$DEV/tools"
+}
+
+install_node() {
+  [ -x "$DEV/tools/node/bin/node" ] && return 0
+  local v a
+  # The newest release marked LTS. Only its "version" field: the "v8" field also
+  # looks like a version.
+  v="$(fetch https://nodejs.org/dist/index.json | grep -o '"version":"v[0-9.]*"[^}]*"lts":"' |
+    sed -n '1s/^"version":"\(v[0-9.]*\)".*/\1/p')"
+  [ -n "$v" ] || die "no Node.js LTS release found"
+  case "$(arch)" in amd64) a=x64 ;; arm64) a=arm64 ;; esac
+  info "node $v"
+  rm -rf "$DEV/tools/node" && mkdir -p "$DEV/tools/node"
+  fetch "https://nodejs.org/dist/$v/node-$v-linux-$a.tar.gz" | tar -xz --strip-components=1 -C "$DEV/tools/node"
+}
+
+install_uv() {
+  [ -x "$DEV/bin/uv" ] && return 0
+  local t
+  case "$(arch)" in amd64) t=x86_64-unknown-linux-gnu ;; arm64) t=aarch64-unknown-linux-gnu ;; esac
+  info "uv"
+  fetch "https://github.com/astral-sh/uv/releases/latest/download/uv-$t.tar.gz" | tar -xz --strip-components=1 -C "$DEV/bin"
+}
+
+install_fzf() {
+  [ -x "$DEV/bin/fzf" ] && return 0
+  local tag
+  tag="$(latest_tag junegunn/fzf)"
+  info "fzf $tag"
+  fetch "https://github.com/junegunn/fzf/releases/download/$tag/fzf-${tag#v}-linux_$(arch).tar.gz" | tar -xz -C "$DEV/bin" fzf
+}
+
+install_helm() {
+  [ -x "$DEV/bin/helm" ] && return 0
+  local tag
+  tag="$(latest_tag helm/helm)"
+  info "helm $tag"
+  fetch "https://get.helm.sh/helm-$tag-linux-$(arch).tar.gz" | tar -xzO "linux-$(arch)/helm" >"$DEV/bin/helm.part"
+  chmod +x "$DEV/bin/helm.part" && mv "$DEV/bin/helm.part" "$DEV/bin/helm"
+}
+
+install_zsh_setup() {
+  local z="$DEV/zsh"
+  if [ ! -d "$z/oh-my-zsh" ]; then
+    info "oh-my-zsh"
+    git clone -q --depth 1 https://github.com/ohmyzsh/ohmyzsh "$z/oh-my-zsh"
+  fi
+  local plugin
+  for plugin in zsh-autosuggestions zsh-syntax-highlighting; do
+    if [ ! -d "$z/custom/plugins/$plugin" ]; then
+      info "$plugin"
+      git clone -q --depth 1 "https://github.com/zsh-users/$plugin" "$z/custom/plugins/$plugin"
+    fi
+  done
+  # ZDOTDIR points here; the real configuration is versioned in hack/dev/zshrc.
+  # shellcheck disable=SC2016 # $C4_ROOT must expand when zsh starts, not now
+  printf '%s\n' '# Generated by ./dev setup. Edit hack/dev/zshrc instead.' \
+    'source "$C4_ROOT/hack/dev/zshrc"' >"$z/.zshrc"
+}
+
+install_npm_tools() {
+  # npm's global prefix is .dev/npm (hack/dev/env.sh), so -g stays in this folder.
+  local pkgs=()
+  [ -x "$DEV/npm/bin/claude" ] || pkgs+=(@anthropic-ai/claude-code)
+  if ! is_lite && [ ! -x "$DEV/npm/bin/devcontainer" ]; then pkgs+=(@devcontainers/cli); fi
+  [ ${#pkgs[@]} -eq 0 ] && return 0
+  info "npm: ${pkgs[*]}"
+  npm install -g --silent --no-fund --no-audit "${pkgs[@]}"
+}
+
+check_docker() {
+  if ! have docker; then
+    info "WARNING: no docker command. Install Docker Desktop and turn on WSL integration"
+    info "for this distro (or install Docker Engine), then run ./dev setup again."
+  elif ! docker info >/dev/null 2>&1; then
+    info "WARNING: docker is installed but not running (start Docker Desktop)."
+  else
+    info "docker: ok"
+  fi
+}
+
+install_vscode_extensions() {
+  # The `code` command inside WSL installs on the WSL side, where Go must run.
+  have code || { info "skipped: no code command (open the folder in VS Code to get it)"; return 0; }
+  local wanted installed ext
+  wanted="$(grep -o '"[A-Za-z0-9-]*\.[A-Za-z0-9-]*"' "$C4_ROOT/.vscode/extensions.json" | tr -d '"')"
+  installed="$(code --list-extensions 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+  for ext in $wanted; do
+    if ! grep -qx "$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')" <<<"$installed"; then
+      info "extension $ext"
+      code --install-extension "$ext" >/dev/null 2>&1 || info "WARNING: could not install $ext"
+    fi
+  done
+}
+
+cmd_setup() {
+  local upgrade=false mode=""
+  for arg in "$@"; do
+    case "$arg" in
+      --lite) mode=lite ;;
+      --full) mode=full ;;
+      --upgrade) upgrade=true ;;
+      *) die "unknown option: $arg" ;;
+    esac
+  done
+
+  local main
+  main="$(main_checkout)"
+  if [ -n "$main" ] && [ ! -e "$DEV" ]; then
+    [ -d "$main/.dev" ] || die "this is a worktree of $main; run ./dev setup there first"
+    ln -s "$main/.dev" "$DEV"
+    step "Worktree: sharing $main/.dev"
+    return 0
+  fi
+
+  mkdir -p "$DEV"
+  case "$mode" in
+    lite) touch "$DEV/lite" ;;
+    full) rm -f "$DEV/lite" ;;
+  esac
+
+  system_packages
+
+  if $upgrade; then
+    step "Removing downloaded tools for a fresh download"
+    chmod -R u+w "$DEV/tools" 2>/dev/null || true
+    rm -rf "${DEV:?}/tools" "${DEV:?}/bin" "${DEV:?}/npm"
+  fi
+  mkdir -p "$DEV/bin" "$DEV/tools"
+
+  # shellcheck source=hack/dev/env.sh
+  source "$C4_ROOT/hack/dev/env.sh"
+
+  step "Go, Node, uv, jq, fzf, kubebuilder"
+  install_go
+  install_node
+  install_uv
+  get_bin jq "https://github.com/jqlang/jq/releases/latest/download/jq-linux-$(arch)"
+  install_fzf
+  get_bin kubebuilder "https://go.kubebuilder.io/dl/latest/linux/$(arch)"
+
+  if is_lite; then
+    step "Lite device (C4_CLUSTER=none): skipping Docker, Kind, kubectl and Helm"
+  else
+    step "Kind, kubectl, Helm, Docker"
+    # The newest release, not kind.sigs.k8s.io/dl/latest: that is a build of
+    # Kind's main branch, whose default node image may not be released yet.
+    [ -x "$DEV/bin/kind" ] ||
+      get_bin kind "https://github.com/kubernetes-sigs/kind/releases/download/$(latest_tag kubernetes-sigs/kind)/kind-linux-$(arch)"
+    [ -x "$DEV/bin/kubectl" ] ||
+      get_bin kubectl "https://dl.k8s.io/release/$(fetch https://dl.k8s.io/release/stable.txt)/bin/linux/$(arch)/kubectl"
+    install_helm
+    check_docker
+  fi
+
+  step "Claude Code$(is_lite || printf ' and the Dev Container CLI')"
+  install_npm_tools
+
+  step "Project shell"
+  install_zsh_setup
+
+  step "VS Code extensions"
+  install_vscode_extensions
+
+  step "Versions"
+  set +e
+  go version
+  printf 'node %s\n' "$(node --version)"
+  uv --version
+  kubebuilder version 2>/dev/null | head -1
+  claude --version
+  if ! is_lite; then
+    kind version
+    kubectl version --client 2>/dev/null | head -1
+    helm version --short
+    devcontainer --version
+  fi
+  set -e
+  echo
+  echo "Ready. Open a new terminal in VS Code, or run ./dev shell."
+}
+
+# --- shell, run, nuke ----------------------------------------------------------
+
+cmd_shell() {
+  [ -f "$DEV/zsh/.zshrc" ] || die "run ./dev setup first"
+  cd "$C4_ROOT"
+  ZDOTDIR="$DEV/zsh" exec zsh -i
+}
+
+cmd_run() {
+  [ $# -gt 0 ] || die "usage: ./dev run COMMAND [ARGS...]"
+  # shellcheck source=hack/dev/env.sh
+  source "$C4_ROOT/hack/dev/env.sh"
+  exec "$@"
+}
+
+cmd_nuke() {
+  if [ -L "$DEV" ]; then
+    rm "$DEV"
+    echo "Removed this worktree's link to the shared .dev/. The main checkout keeps it."
+    return 0
+  fi
+  [ -d "$DEV" ] || { echo "Nothing to remove: there is no .dev/ here."; return 0; }
+
+  # shellcheck source=hack/dev/env.sh
+  source "$C4_ROOT/hack/dev/env.sh"
+
+  # Every Kind cluster created from here wrote its context into .dev/kube/config.
+  local clusters=()
+  if have kind && have kubectl && [ -f "$KUBECONFIG" ]; then
+    mapfile -t clusters < <(kubectl config get-contexts -o name 2>/dev/null | sed -n 's/^kind-//p')
+  fi
+
+  echo "This deletes:"
+  [ ${#clusters[@]} -gt 0 ] && echo "  - Kind clusters: ${clusters[*]}"
+  echo "  - $DEV ($(du -sh "$DEV" 2>/dev/null | cut -f1))"
+  read -r -p "Continue? [y/N] " answer
+  [[ "$answer" =~ ^[Yy]$ ]] || { echo "Nothing deleted."; return 0; }
+
+  local c
+  for c in "${clusters[@]}"; do kind delete cluster --name "$c"; done
+  # Go makes its module cache read-only; make it writable so rm can remove it.
+  chmod -R u+w "$DEV" 2>/dev/null || true
+  rm -rf "$DEV"
+  echo "Done. Images you built yourself (make docker-build) stay in Docker: see docker image ls."
+}
+
+case "${1:-}" in
+  setup) shift; cmd_setup "$@" ;;
+  shell) shift; cmd_shell ;;
+  run) shift; cmd_run "$@" ;;
+  nuke) shift; cmd_nuke ;;
+  *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

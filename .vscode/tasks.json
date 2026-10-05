@@ -1,19 +1,74 @@
 {
-  // Shared tasks, committed so every device runs them. "Pull main" keeps local main
-  // up to date while the folder is open: hack/pull.sh fast-forwards main only, and
-  // never touches a branch or uncommitted work. VS Code asks once whether to allow
-  // automatic tasks; the dev container allows them.
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "Pull main",
-      "detail": "hack/pull.sh every 5 minutes",
-      "type": "shell",
-      "command": "${workspaceFolder}/hack/pull.sh --every 300",
-      "isBackground": true,
-      "problemMatcher": [],
-      "presentation": { "reveal": "never", "panel": "dedicated", "showReuseMessage": false },
-      "runOptions": { "runOn": "folderOpen", "instanceLimit": 1 }
-    }
-  ]
+	// Shared tasks, committed so every device runs them. Two start when the folder
+	// opens: "Dev: open" sets the environment up (./dev setup, DEVELOPMENT.md), and
+	// "Pull main" keeps local main up to date: hack/pull.sh fast-forwards main
+	// only, and never touches a branch or uncommitted work. VS Code asks once
+	// whether to allow automatic tasks; .vscode/settings.json allows them.
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Pull main",
+			"detail": "hack/pull.sh every 5 minutes",
+			"type": "shell",
+			"command": "${workspaceFolder}/hack/pull.sh --every 300",
+			"isBackground": true,
+			"problemMatcher": [],
+			"presentation": { "reveal": "never", "panel": "dedicated", "showReuseMessage": false },
+			"runOptions": { "runOn": "folderOpen", "instanceLimit": 1 }
+		},
+		{
+			// Runs every time the folder opens: downloads what is missing (the first
+			// time takes a few minutes), then trims Go's build cache.
+			"label": "Dev: open",
+			"dependsOn": ["Dev: set up environment", "Dev: trim Go cache"],
+			"dependsOrder": "sequence",
+			"runOptions": { "runOn": "folderOpen" },
+			"problemMatcher": []
+		},
+		{
+			"label": "Dev: set up environment",
+			"type": "shell",
+			"command": "${workspaceFolder}/dev",
+			"args": ["setup"],
+			"presentation": { "reveal": "always", "focus": false, "panel": "dedicated", "clear": true },
+			"problemMatcher": []
+		},
+		{
+			// Go's build cache grows without bound across worktrees; keep it under 4 GB.
+			"label": "Dev: trim Go cache",
+			"type": "shell",
+			"command": "${workspaceFolder}/dev",
+			"args": ["run", "bash", "hack/trim-go-cache.sh"],
+			"options": { "cwd": "${workspaceFolder}" },
+			"presentation": { "reveal": "never", "panel": "dedicated" },
+			"problemMatcher": []
+		},
+		{
+			"label": "Dev: upgrade tools",
+			"type": "shell",
+			"command": "${workspaceFolder}/dev",
+			"args": ["setup", "--upgrade"],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+			"problemMatcher": []
+		},
+		{
+			// Asks before it deletes anything.
+			"label": "Dev: remove everything (nuke)",
+			"type": "shell",
+			"command": "${workspaceFolder}/dev",
+			"args": ["nuke"],
+			"presentation": { "reveal": "always", "focus": true, "panel": "dedicated" },
+			"problemMatcher": []
+		},
+		{
+			// Gitea on http://localhost:3000, from Windows too (WSL forwards localhost).
+			"label": "Gitea: port-forward",
+			"type": "shell",
+			"command": "${workspaceFolder}/dev",
+			"args": ["run", "kubectl", "port-forward", "-n", "gitea", "svc/gitea", "3000:3000"],
+			"isBackground": true,
+			"presentation": { "reveal": "silent", "panel": "dedicated" },
+			"problemMatcher": []
+		}
+	]
 }
