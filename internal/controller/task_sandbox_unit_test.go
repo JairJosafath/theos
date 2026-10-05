@@ -174,12 +174,59 @@ func TestRunStateReadsOnlyItsSandboxsPod(t *testing.T) {
 				}}},
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, pod).Build()
-			state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement")
+			state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement", "")
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !state.Started || state.Done != tt.wantDone {
 				t.Fatalf("started %v, done %v; want started, done %v", state.Started, state.Done, tt.wantDone)
+			}
+		})
+	}
+}
+
+func TestRunStateTellsAReplacedPod(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	scheme.AddKnownTypeWithName(SandboxGVK, &unstructured.Unstructured{})
+	for _, tt := range []struct {
+		name        string
+		pod         types.UID // the pod under the sandbox now; empty for none
+		startedOn   string
+		interrupted bool
+	}{
+		{name: "the first pod the operator sees", pod: "pod-1"},
+		{name: "the pod the run started on", pod: "pod-1", startedOn: "pod-1"},
+		// A forced delete: Agent Sandbox starts the round over in a new pod.
+		{name: "a replacement pod", pod: "pod-2", startedOn: "pod-1", interrupted: true},
+		{name: "the pod gone, not yet replaced", startedOn: "pod-1", interrupted: true},
+		{name: "no pod yet"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sandbox := newSandbox()
+			sandbox.SetNamespace("apps")
+			sandbox.SetName("add-crop-r1-implement")
+			sandbox.SetUID("sandbox-1")
+			objs := []client.Object{sandbox}
+			if tt.pod != "" {
+				objs = append(objs, &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "add-crop-r1-implement", UID: tt.pod,
+						OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
+				})
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+			state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement", tt.startedOn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state.Pod != string(tt.pod) {
+				t.Errorf("pod %q; want %q", state.Pod, tt.pod)
+			}
+			if state.Done != tt.interrupted || state.Interrupted != tt.interrupted || state.Result != nil {
+				t.Errorf("runState() = %+v; want done and interrupted %v, no result", state, tt.interrupted)
 			}
 		})
 	}
@@ -233,7 +280,7 @@ func TestRunStateTellsAnInterruptedRun(t *testing.T) {
 					}}},
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, pod).Build()
-			state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement")
+			state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -301,7 +348,7 @@ func TestRunStateTellsAClusterOutage(t *testing.T) {
 				})
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
-			state, err := runState(context.Background(), c, "apps", "add-crop-r1-review-a1")
+			state, err := runState(context.Background(), c, "apps", "add-crop-r1-review-a1", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -363,7 +410,7 @@ func TestRunStateTellsADeadlineAcrossAnOutage(t *testing.T) {
 					}}},
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, pod).Build()
-			state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement")
+			state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -453,7 +500,7 @@ func TestRunStateReadsTheProposal(t *testing.T) {
 		}}},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, pod).Build()
-	state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement")
+	state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement", "")
 	if err != nil {
 		t.Fatal(err)
 	}

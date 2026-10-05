@@ -1,0 +1,59 @@
+# A force-deleted sandbox pod counts as an interrupted run (#111)
+
+Kind cluster c4factory-2, 2026-10-06, operator at b31aae1 (make deploy), Agent
+Sandbox from make agent-sandbox, c4factory/agent-base:dev, the e2e fixture
+(test/e2e/testdata/apps), and the sleeping Agent and Task of
+v4-interrupted-rerun.txt (Agent slow, C4AGENT_COMMAND=sleep 900; Task rerun).
+
+The operator remembers the pod the run started on (status.sandboxPod):
+
+    phase=Implementing round=1 sandboxPod=0d22dea3-d1f5-4ad8-ae62-ceb08b4b3fee
+    pod rerun-r1-implement uid 0d22dea3-d1f5-4ad8-ae62-ceb08b4b3fee
+
+## 1. Force delete: Agent Sandbox replaces the pod, the Task counts a rerun
+
+    00:48:30 $ kubectl -n apps delete pod rerun-r1-implement --grace-period=0 --force --wait=false
+    Warning: Immediate deletion does not wait for confirmation that the running resource has been terminated. The resource may continue to run on the cluster indefinitely.
+    pod "rerun-r1-implement" force deleted from apps namespace
+    00:48:35 $ kubectl -n apps get sandboxes,pods
+    NAME                                            READY   REASON              AGE
+    sandbox.agents.x-k8s.io/rerun-r1-implement-x1   True    DependenciesReady   6s
+
+    NAME                        READY   STATUS    RESTARTS   AGE
+    pod/rerun-r1-implement-x1   1/1     Running   0          6s
+    00:48:36 $ kubectl -n apps get task rerun
+    phase=Implementing round=1 reruns=1 sandbox=rerun-r1-implement-x1 sandboxPod=531ceb11-b21a-4df3-819a-58408419f397
+    Implementing r1 Running: Starting round 1 in sandbox rerun-r1-implement
+    Implementing r1 Waiting: The agent is working on round 1
+    Implementing r1 Interrupted: The run was interrupted (the sandbox's pod was deleted before it finished, and replaced); round 1 runs again (rerun 1 of 2)
+    Implementing r1 Running: Starting round 1 in sandbox rerun-r1-implement-x1
+    Implementing r1 Waiting: The agent is working on round 1
+
+## 2. Two more force deletes: past the cap the round is spent
+
+The second was caught as the replacement pod came; the third before it did
+("deleted before it finished", no replacement yet). Either way it counts.
+
+    00:48:43 $ kubectl -n apps delete pod rerun-r1-implement-x1 --grace-period=0 --force --wait=false
+    pod "rerun-r1-implement-x1" force deleted from apps namespace
+    00:48:51 $ kubectl -n apps delete pod rerun-r1-implement-x2 --grace-period=0 --force --wait=false
+    pod "rerun-r1-implement-x2" force deleted from apps namespace
+    00:49:03 $ kubectl -n apps get sandboxes,pods
+    NAME                                         READY   REASON              AGE
+    sandbox.agents.x-k8s.io/rerun-r2-implement   True    DependenciesReady   11s
+
+    NAME                     READY   STATUS    RESTARTS   AGE
+    pod/rerun-r2-implement   1/1     Running   0          11s
+    00:49:03 $ kubectl -n apps get task rerun
+    phase=Implementing round=2 reruns= sandbox=rerun-r2-implement
+    Implementing r1 Running: Starting round 1 in sandbox rerun-r1-implement
+    Implementing r1 Waiting: The agent is working on round 1
+    Implementing r1 Interrupted: The run was interrupted (the sandbox's pod was deleted before it finished, and replaced); round 1 runs again (rerun 1 of 2)
+    Implementing r1 Running: Starting round 1 in sandbox rerun-r1-implement-x1
+    Implementing r1 Waiting: The agent is working on round 1
+    Implementing r1 Interrupted: The run was interrupted (the sandbox's pod was deleted before it finished, and replaced); round 1 runs again (rerun 2 of 2)
+    Implementing r1 Running: Starting round 1 in sandbox rerun-r1-implement-x2
+    Implementing r1 Waiting: The agent is working on round 1
+    Implementing r2 NextRound: Round 1 was not accepted (The agent's sandbox ended without a result: the sandbox's pod was deleted before it finished); starting round 2
+    Implementing r2 Running: Starting round 2 in sandbox rerun-r2-implement
+    Implementing r2 Waiting: The agent is working on round 2
