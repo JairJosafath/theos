@@ -4,12 +4,13 @@ name: Test Chart
 # would: the operator and UI images, Agent Sandbox, then `helm install` with a
 # GitProvider value. Checks that the manager and UI become ready, the GitProvider
 # exists and the admission policy refuses a Project named unlike its namespace.
-# It runs when the chart or what it is generated from changes, not on every Go
-# or UI change: a Kind cluster and two image builds take minutes.
+# A Kind cluster and two image builds take minutes, so like every workflow that
+# needs Kind it skips pull requests: it runs after a merge to main that changes
+# the chart or what it is generated from, on a release, and on demand.
 on:
   push:
     branches: [main]
-    paths: &paths
+    paths:
       - dist/chart/**
       - config/**
       - '!config/samples/**'
@@ -17,14 +18,9 @@ on:
       - ui/Dockerfile
       - Makefile
       - .github/workflows/test-chart.yml
-  pull_request:
-    paths: *paths
+  release:
+    types: [published]
   workflow_dispatch:
-
-# A newer push to a pull request replaces the run in progress.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 

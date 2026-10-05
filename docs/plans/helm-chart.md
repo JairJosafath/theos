@@ -46,5 +46,6 @@ operator installs only through kustomize into the Kind test cluster.
 - `helm lint dist/chart` passes and `helm template` renders the operator, CRDs,
   RBAC, policy and binding, UI and a GitProvider from values.
 - The *Test Chart* workflow installs the chart into a fresh Kind cluster and the
-  manager and UI become ready, on the pull request.
+  manager and UI become ready, on main after the merge (Kind workflows skip
+  pull requests).
 - `make check` passes.
