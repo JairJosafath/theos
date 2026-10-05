@@ -85,6 +85,25 @@ type CrewRelease struct {
 	// time is when the Crew tagged the release and closed its milestone.
 	// +required
 	Time metav1.Time `json:"time"`
+
+	// bumps are the bump issues filed for this release, one per Container that
+	// bundles this one.
+	// +listType=map
+	// +listMapKey=container
+	// +optional
+	Bumps []CrewReleaseBump `json:"bumps,omitempty"`
+}
+
+// CrewReleaseBump is a bump issue filed in a Container that bundles the released
+// one.
+type CrewReleaseBump struct {
+	// container is the Container that bundles the release.
+	// +required
+	Container string `json:"container"`
+
+	// issueURL is the bump issue's address.
+	// +optional
+	IssueURL string `json:"issueURL,omitempty"`
 }
 
 // CrewPhase says what a Crew is doing.

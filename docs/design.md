@@ -289,6 +289,18 @@ model and context it needs.
   release left to a person is a Warning Event, once per reason, and the Crew's
   `Released` condition says why. A paused Crew still tags: its release's work
   is already merged.
+- **A release reaches the Containers that bundle it.** A Relationship from
+  Container A to Container B with `spec.bundles: true` says A ships a pinned
+  release of B, as an extension ships its server; only a Container to Container
+  link can say it, and most don't (a client calling a service follows its
+  deploys, not its tags). When B's Crew tags a release, it files `Bump B to vX`
+  in A's repository, labelled `kind/bump` and `status/ready` with acceptance
+  criteria, in A's first open release, so A's Crew picks it up and A's next
+  release carries it. Each Container gets one issue per release, recorded in
+  `status.lastRelease.bumps` and found again by a marker in its body; only the
+  newest release is bumped, a link created after the release files nothing, and
+  a bundler not yet Ready gets its issue once it is. Each is an Event
+  `BumpFiled`. See [plans/release-bumps.md](plans/release-bumps.md).
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other
   issue, whatever its release, even when every place is taken (once running, it

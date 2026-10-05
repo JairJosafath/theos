@@ -22,6 +22,7 @@ import (
 
 // RelationshipSpec defines the desired state of Relationship.
 // +kubebuilder:validation:XValidation:rule="!(self.source.kind == self.target.kind && self.source.name == self.target.name)",message="a Relationship cannot point to itself"
+// +kubebuilder:validation:XValidation:rule="!has(self.bundles) || !self.bundles || (self.source.kind == 'Container' && self.target.kind == 'Container')",message="only a Container to Container link can bundle"
 type RelationshipSpec struct {
 	// source is the element the link starts from, and its owner. It can't change.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="source is immutable"
@@ -38,6 +39,13 @@ type RelationshipSpec struct {
 	// +kubebuilder:validation:MaxLength=200
 	// +optional
 	Description string `json:"description,omitempty"`
+
+	// bundles says the source Container ships a pinned release of the target
+	// Container, as an extension ships its server. Each release the target's Crew
+	// tags files a bump issue in the source's repository. Only a Container to
+	// Container link can bundle; it can change, as it touches no scaffold.
+	// +optional
+	Bundles bool `json:"bundles,omitempty"`
 }
 
 // RelationshipStatus defines the observed state of Relationship.

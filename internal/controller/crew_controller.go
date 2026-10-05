@@ -81,7 +81,7 @@ type CrewReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews/finalizers,verbs=update
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers;agents;gitproviders,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=containers;agents;gitproviders;relationships,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile reads the Crew's Container and its ready issues, hands unclear ones
@@ -216,6 +216,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
 	case facts.ContainerReady:
 		r.tagRelease(ctx, &crew, status, provider, repo, containerTasks)
+		r.fileBumps(ctx, &crew, status, repo)
 	}
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 }
