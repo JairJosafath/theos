@@ -142,6 +142,20 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
 			g.Expect(task.Status.FollowUps).To(HaveLen(1))
 		}).Should(Succeed())
+		mergeCommit := gitFake.pullRequests(ns, "orders-api")[0].MergeCommit
+		Expect(mergeCommit).NotTo(BeEmpty())
+		Expect(getTask(Default, ns, "orders-api-3").Status.MergeCommit).To(Equal(mergeCommit),
+			"the Task records the commit its merge made, where a release is tagged")
+
+		By("reading the merge commit again when a Merged Task lacks it")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-3")
+			task.Status.MergeCommit = ""
+			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-3").Status.MergeCommit).To(Equal(mergeCommit))
+		}).Should(Succeed())
 		Expect(gitFake.reviews(ns, "orders-api", pr.Number)).To(ConsistOf(And(
 			HaveField("Event", gitprovider.ReviewApprove), HaveField("Commit", "sha-1"),
 			HaveField("Body", And(ContainSubstring("Agent `reviewer` (claude-opus-5-5)"), ContainSubstring("Every criterion met."))))))

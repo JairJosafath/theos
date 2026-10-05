@@ -57,6 +57,8 @@ const (
 	taskSecretRecheck = 15 * time.Second
 	// slotRecheck: a Task waiting for a free agent slot looks again.
 	slotRecheck = 20 * time.Second
+	// mergeCommitRetry: a Merged Task whose merge commit couldn't be read tries again.
+	mergeCommitRetry = time.Minute
 )
 
 // TaskReconciler drives a Task through its rounds: an agent implements in a
@@ -129,7 +131,19 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 	if isFinal(status.Phase) {
-		return ctrl.Result{}, r.writeStatus(ctx, &task, status)
+		if status.Phase != c4v1alpha1.TaskMerged || status.MergeCommit != "" || status.PullRequest == 0 {
+			return ctrl.Result{}, r.writeStatus(ctx, &task, status)
+		}
+		// Merged before the Task recorded merge commits, or the read failed: a Crew
+		// waits for it to tag the release.
+		if provider, repo, err := r.gitRepo(ctx, &container); err == nil {
+			status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
+		}
+		var result ctrl.Result
+		if status.MergeCommit == "" {
+			result.RequeueAfter = mergeCommitRetry
+		}
+		return result, r.writeStatus(ctx, &task, status)
 	}
 
 	var agent c4v1alpha1.Agent

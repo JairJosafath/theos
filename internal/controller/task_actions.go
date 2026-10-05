@@ -397,6 +397,10 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 	if err := r.endRun(ctx, task, status); err != nil {
 		return ctrl.Result{}, err
 	}
+	status.MergeCommit = pr.MergeCommit
+	if !pr.Merged {
+		status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
+	}
 	if task.Spec.Issue > 0 {
 		var followUps []model.FollowUp
 		if reviewRun != nil {
@@ -407,6 +411,20 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 	r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, "Merged", step.Message)
 	logf.FromContext(ctx).Info("Merged Task", "url", status.PullRequestURL, "round", status.Round)
 	return ctrl.Result{}, nil
+}
+
+// mergeCommit reads the commit the pull request's merge made on the default
+// branch; empty when it can't be read yet, for the Task to read again once Merged.
+func (r *TaskReconciler) mergeCommit(ctx context.Context, provider gitprovider.Provider,
+	repo gitprovider.Repository, status *c4v1alpha1.TaskStatus) string {
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to read the merge commit", "url", status.PullRequestURL)
+		return ""
+	}
+	return pr.MergeCommit
 }
 
 // mergeReviewed squashes the reviewed commit into main, posting the reviewer's

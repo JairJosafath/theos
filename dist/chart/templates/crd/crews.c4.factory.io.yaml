@@ -133,6 +133,14 @@ spec:
                 required:
                 - name
                 type: object
+              tagReleases:
+                description: |-
+                  tagReleases lets the Crew tag a release once it is done: a milestone with a
+                  due date and a vMAJOR.MINOR.PATCH title, with no open issue and no Task at
+                  work on one of its issues. The tag goes at the merge commit of the release's
+                  most recently merged issue, and the milestone is then closed. Releases go
+                  out in order, and an existing tag is never moved.
+                type: boolean
             required:
             - containerRef
             - implementer
@@ -150,8 +158,10 @@ spec:
                 type: array
                 x-kubernetes-list-type: atomic
               conditions:
-                description: 'conditions: Ready says whether the Crew can pick up
-                  issues, and why not.'
+                description: |-
+                  conditions: Ready says whether the Crew can pick up issues, and why not.
+                  Released, when spec.tagReleases is set, says whether the Crew's next
+                  release went out, and why not.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -214,6 +224,26 @@ spec:
                 description: lastPolled is when the Crew last read the issues.
                 format: date-time
                 type: string
+              lastRelease:
+                description: lastRelease is the release the Crew tagged last, when
+                  spec.tagReleases is set.
+                properties:
+                  commit:
+                    description: commit is the commit the tag names.
+                    type: string
+                  tag:
+                    description: tag is the release's version, the milestone's title.
+                    type: string
+                  time:
+                    description: time is when the Crew tagged the release and closed
+                      its milestone.
+                    format: date-time
+                    type: string
+                required:
+                - commit
+                - tag
+                - time
+                type: object
               observedGeneration:
                 description: observedGeneration is the spec generation the status
                   reflects.

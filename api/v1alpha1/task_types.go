@@ -200,6 +200,11 @@ type TaskStatus struct {
 	// +optional
 	Commit string `json:"commit,omitempty"`
 
+	// mergeCommit is the commit the pull request's squash merge made on the
+	// default branch, recorded once the Task is Merged. A Crew tags releases at it.
+	// +optional
+	MergeCommit string `json:"mergeCommit,omitempty"`
+
 	// pullRequest is the number of the pull request, and pullRequestURL its address.
 	// +optional
 	PullRequest int32 `json:"pullRequest,omitempty"`

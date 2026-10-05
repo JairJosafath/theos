@@ -47,6 +47,7 @@ type fakeGit struct {
 	hangs     map[string]chan struct{}
 	agent     *fakeAgentState
 	issues    *fakeIssueState
+	releases  *fakeReleaseState
 }
 
 type fakeRepo struct {
@@ -572,6 +573,10 @@ func (p *fakeProvider) merge(repo gitprovider.Repository, number int, headSHA, t
 		p.git.applyToMain(key, edits, title+"\n\n"+message)
 		delete(s.edits, key+"@"+pr.Head)
 		delete(s.branches, key+"@"+pr.Head)
+		commits := p.git.repos[key].commits
+		pr.MergeCommit = commits[len(commits)-1].Hash
+	} else {
+		pr.MergeCommit = p.git.newSHA()
 	}
 	return nil
 }
