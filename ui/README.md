@@ -45,9 +45,8 @@ Without make: `npm ci`, then `kubectl proxy --port 8001` in one terminal and
 **Demo mode:** add `?demo=1` to the address (for example
 <http://localhost:5173/?demo=1>) to see a built-in version of the webshop story
 with every state: containers Pending, Scaffolding, Ready and Failed, agent and
-human Sessions, a Stale one, a Relationship added after scaffolding, and a paused
-Crew and one waiting for its Container. Pick the CEL Lens project for Crews at
-work on issues (`?demo=1&project=cel-lens&view=containers`). It needs no cluster
+human Sessions, a Stale one, a Relationship added after scaffolding, and Crews
+working on issues, paused and waiting for their Container. It needs no cluster
 and is clearly labelled as demo data.
 
 Other query parameters: `project=<namespace>`, `view=containers` or

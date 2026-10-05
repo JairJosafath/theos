@@ -1,9 +1,9 @@
 // The webshop story with every state the UI can show: containers in all four
 // phases, a failed type check, agent and human Sessions (one Stale), a
-// Relationship added after scaffolding, a paused Crew and one that waits for its
-// Container. Used by demo mode (?demo=1), so the whole UI can be seen and
-// screenshotted without writing to a cluster. CEL Lens (celLensFixture.ts) is
-// the second demo project.
+// Relationship added after scaffolding, and Crews working, paused and waiting
+// for their Container: the working one with a Sonnet implementer, an Opus
+// reviewer and Tasks made from issues. Used by demo mode (?demo=1), so the whole
+// UI can be seen and screenshotted without writing to a cluster.
 
 import type { StoryData } from '../k8s/sources'
 import type {
@@ -18,12 +18,18 @@ import type {
   Relationship,
   Session,
   SoftwareSystem,
+  Task,
+  TaskPhase,
+  TaskTransition,
 } from '../k8s/types'
 
 export const DEMO_NAMESPACE = 'webshop'
 
 const API_VERSION = 'c4.factory.io/v1alpha1'
 const GITEA = 'http://gitea.gitea.svc.cluster.local:3000'
+/** Where the operator's issue and pull request links point: Gitea's own address, port-forwarded. */
+const GITEA_WEB = 'http://localhost:3000'
+const MIN = 60_000
 
 function meta(name: string, created: string) {
   return { name, namespace: DEMO_NAMESPACE, uid: `demo-${name}`, resourceVersion: '1', creationTimestamp: created }
@@ -381,25 +387,238 @@ export function demoStory(now: number): StoryData {
       // No model: Claude Code's default.
       spec: { displayName: 'Claude Code (Python)', image: 'c4factory/agent-python:dev', maxRounds: 3 },
     },
+    {
+      apiVersion: API_VERSION,
+      kind: 'Agent',
+      metadata: meta('claude-implementer', created),
+      spec: {
+        displayName: 'Claude Code, Sonnet (implementer)',
+        description: 'Implements one issue at a time, test first, until make check passes.',
+        image: 'c4factory/agent-python:dev',
+        harness: 'claude-code',
+        model: 'claude-sonnet-5-5',
+        maxRounds: 3,
+        timeoutMinutes: 90,
+      },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'Agent',
+      metadata: meta('claude-reviewer', created),
+      spec: {
+        displayName: 'Claude Code, Opus (reviewer)',
+        description: 'Reviews each round against the issue’s acceptance criteria and the Standard’s checklist.',
+        image: 'c4factory/agent-python:dev',
+        harness: 'claude-code',
+        model: 'claude-opus-5-5',
+        maxRounds: 3,
+        timeoutMinutes: 45,
+      },
+    },
   ]
 
-  const crew = (name: string, displayName: string, paused: boolean, status: Crew['status']): Crew => ({
+  const at = (minutesAgo: number) => ago(minutesAgo * 60)
+  const step = (minutesAgo: number, phase: TaskPhase, round: number, reason: string, message = ''): TaskTransition => ({
+    at: at(minutesAgo),
+    phase,
+    round,
+    reason,
+    message,
+  })
+  const issueURL = (repo: string, n: number) => `${GITEA_WEB}/webshop/${repo}/issues/${n}`
+  const pr = (repo: string, n: number) => ({
+    pullRequest: n,
+    pullRequestURL: `${GITEA_WEB}/webshop/${repo}/pulls/${n}`,
+  })
+  const merged = (minutesAgo: number) => ({
+    phase: 'Merged' as const,
+    completedAt: at(minutesAgo),
+    checks: { state: 'success' },
+    review: { verdict: 'approve', summary: 'Every acceptance criterion is met.' },
+    conditions: [
+      cond('Progressing', 'False', 'Merged', 'Approved; merging', at(minutesAgo)),
+      cond('Succeeded', 'True', 'Merged', 'Approved; merging', at(minutesAgo)),
+    ],
+  })
+  /** A Task a Crew started from an issue: named <container>-<issue>, with the attempt from the second one on. */
+  const issueTask = (
+    repo: string,
+    issue: number,
+    title: string,
+    createdMinutesAgo: number,
+    status: Task['status'],
+    attempt = 1,
+  ): Task => {
+    const name = `${repo}-${issue}${attempt > 1 ? `-${attempt}` : ''}`
+    return {
+      apiVersion: API_VERSION,
+      kind: 'Task',
+      metadata: {
+        ...meta(name, at(createdMinutesAgo)),
+        labels: { 'c4.factory.io/crew': repo, 'c4.factory.io/issue': `${issue}` },
+      },
+      spec: {
+        containerRef: { name: repo },
+        agentRef: { name: 'claude-implementer' },
+        reviewerRef: { name: 'claude-reviewer' },
+        issue,
+      },
+      status: { branch: `task/${name}`, issueTitle: title, issueURL: issueURL(repo, issue), ...status },
+    }
+  }
+
+  const back = now + 38 * MIN
+  const unavailable = `The agent is unavailable (usage limit reached); round 2 waits for it; trying again at ${new Date(back).toISOString().replace(/\.\d+Z$/, 'Z')}`
+
+  // The orders-api Crew's issues: merged ones with follow-ups, a failed one
+  // tried again, one waiting for its agent after a usage limit, and one in review.
+  const tasks: Task[] = [
+    issueTask('orders-api', 10, 'List a customer’s past orders', 140, {
+      ...merged(118),
+      round: 1,
+      summary: 'GET /customers/{id}/orders, newest first and paged, with tests for an empty history.',
+      ...pr('orders-api', 3),
+      history: [
+        step(140, 'Implementing', 1, 'Running', 'Starting round 1'),
+        step(139, 'Implementing', 1, 'Waiting', 'The agent is working on round 1'),
+        step(126, 'Checking', 1, 'Checking', 'The agent pushed 3e1f0a2; waiting for checks'),
+        step(123, 'Reviewing', 1, 'Running', 'Checks passed; starting the review'),
+        step(118, 'Merged', 1, 'Merged', 'Approved; merging'),
+      ],
+    }),
+    issueTask('orders-api', 11, 'Reorder a past order in one call', 117, {
+      ...merged(85),
+      round: 2,
+      summary: 'POST /orders/{id}/reorder copies the lines at today’s prices; sold-out lines are reported.',
+      followUps: [issueURL('orders-api', 16), issueURL('orders-api', 17)],
+      ...pr('orders-api', 4),
+      history: [
+        step(117, 'Implementing', 1, 'Running', 'Starting round 1'),
+        step(104, 'Checking', 1, 'Checking', 'The agent pushed 7b2c9d4; waiting for checks'),
+        step(101, 'Reviewing', 1, 'Running', 'Checks passed; starting the review'),
+        step(97, 'Implementing', 2, 'NextRound', 'Round 1 was not accepted (old prices); starting round 2'),
+        step(91, 'Checking', 2, 'Checking', 'The agent pushed a04e6f1; waiting for checks'),
+        step(89, 'Reviewing', 2, 'Running', 'Checks passed; starting the review'),
+        step(85, 'Merged', 2, 'Merged', 'Approved; merging'),
+      ],
+    }),
+    issueTask('orders-api', 13, 'Refund an order through the payment provider', 84, {
+      phase: 'Failed',
+      round: 3,
+      completedAt: at(52),
+      checks: { state: 'failure' },
+      review: { verdict: 'changes', summary: 'A retried refund pays out twice; send an idempotency key.' },
+      feedback: 'CI failed: test_refund_retry pays out twice.',
+      ...pr('orders-api', 5),
+      conditions: [
+        cond('Progressing', 'False', 'RoundsExhausted', 'Failed after 3 rounds', at(52)),
+        cond('Succeeded', 'False', 'RoundsExhausted', 'Failed after 3 rounds: a retried refund pays out twice', at(52)),
+      ],
+      history: [
+        step(84, 'Implementing', 1, 'Running', 'Starting round 1'),
+        step(74, 'Checking', 1, 'Checking', 'Waiting for checks'),
+        step(71, 'Reviewing', 1, 'Running', 'Checks passed; starting the review'),
+        step(68, 'Implementing', 2, 'NextRound', 'Round 1 was not accepted; starting round 2'),
+        step(61, 'Checking', 2, 'Checking', 'Waiting for checks'),
+        step(58, 'Implementing', 3, 'NextRound', 'Round 2 was not accepted (CI failed); starting round 3'),
+        step(54, 'Checking', 3, 'Checking', 'Waiting for checks'),
+        step(52, 'Failed', 3, 'RoundsExhausted', 'Failed after 3 rounds'),
+      ],
+    }),
+    issueTask(
+      'orders-api',
+      13,
+      'Refund an order through the payment provider',
+      45,
+      {
+        ...merged(30),
+        round: 1,
+        summary: 'Refunds send an idempotency key, so a retry never pays out twice.',
+        followUps: [issueURL('orders-api', 18)],
+        ...pr('orders-api', 6),
+        history: [
+          step(45, 'Implementing', 1, 'Running', 'Starting round 1'),
+          step(36, 'Checking', 1, 'Checking', 'The agent pushed 0c9d3be; waiting for checks'),
+          step(33, 'Reviewing', 1, 'Running', 'Checks passed; starting the review'),
+          step(30, 'Merged', 1, 'Merged', 'Approved; merging'),
+        ],
+      },
+      2,
+    ),
+    issueTask('orders-api', 14, 'Reject orders for products out of stock', 29, {
+      phase: 'Implementing',
+      round: 2,
+      checks: { state: 'success' },
+      review: { verdict: 'changes', summary: 'Stock is read before the lock; criterion 2 is not met.' },
+      feedback: 'The reviewer asked for changes:\nStock is read before the lock; criterion 2 is not met.',
+      agentBackAt: new Date(back).toISOString(),
+      ...pr('orders-api', 7),
+      conditions: [cond('Progressing', 'True', 'AgentUnavailable', unavailable, at(6))],
+      history: [
+        step(29, 'Implementing', 1, 'Running', 'Starting round 1'),
+        step(17, 'Checking', 1, 'Checking', 'The agent pushed 5d8e2a7; waiting for checks'),
+        step(14, 'Reviewing', 1, 'Running', 'Checks passed; starting the review'),
+        step(10, 'Implementing', 2, 'NextRound', 'Round 1 was not accepted (stock lock); starting round 2'),
+        step(6, 'Implementing', 2, 'AgentUnavailable', unavailable),
+      ],
+    }),
+    issueTask('orders-api', 15, 'Email the customer when an order ships', 25, {
+      phase: 'Checking',
+      round: 1,
+      checks: { state: 'pending' },
+      commit: '9f41c2e',
+      summary: 'Sends a shipping email from the warehouse callback, with a test for a missing address.',
+      ...pr('orders-api', 8),
+      conditions: [cond('Progressing', 'True', 'Checking', 'The agent pushed 9f41c2e; waiting for checks', at(8))],
+      history: [
+        step(25, 'Implementing', 1, 'Running', 'Starting round 1'),
+        step(24, 'Implementing', 1, 'Waiting', 'The agent is working on round 1'),
+        step(8, 'Checking', 1, 'Checking', 'The agent pushed 9f41c2e; waiting for checks'),
+      ],
+    }),
+  ]
+
+  const crew = (name: string, displayName: string, paused: boolean, status: Crew['status'], parallel = 1): Crew => ({
     apiVersion: API_VERSION,
     kind: 'Crew',
     metadata: meta(name, created),
     spec: {
       containerRef: { name },
       displayName,
-      implementer: { name: 'claude' },
-      reviewer: { name: 'claude' },
+      implementer: { name: 'claude-implementer' },
+      reviewer: { name: 'claude-reviewer' },
       ...(paused ? { paused } : {}),
+      ...(parallel > 1 ? { parallel } : {}),
     },
     status,
   })
   const crews: Crew[] = [
-    crew('orders-api', 'Orders API crew', true, {
+    crew(
+      'orders-api',
+      'Orders API crew',
+      false,
+      {
+        phase: 'Working',
+        activeTasks: ['orders-api-14', 'orders-api-15'],
+        ready: [],
+        waiting: [16, 17, 18],
+        lastPolled: ago(30),
+        conditions: [
+          cond(
+            'Ready',
+            'True',
+            'Working',
+            'Tasks orders-api-14 and orders-api-15 are working on issues #14 and #15',
+            at(25),
+          ),
+        ],
+      },
+      2,
+    ),
+    // Paused by a person until the storefront has a framework that fits it.
+    crew('storefront', 'Storefront crew', true, {
       phase: 'Paused',
-      ready: [12, 14],
+      ready: [2, 3],
       lastPolled: ago(40),
       conditions: [cond('Ready', 'True', 'Paused', 'Paused; not picking up issues', ago(3600))],
     }),
@@ -430,6 +649,6 @@ export function demoStory(now: number): StoryData {
     connectors,
     crews,
     agents,
-    tasks: [],
+    tasks,
   }
 }
