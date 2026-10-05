@@ -81,10 +81,7 @@ stashed, not dropped. Claims keep workers and hand-started sessions off each
 other's issues, so the relay starts right away. A session that ends still
 holding its claim gets it released; a worker stops when a session leaves no
 handoff comment and doesn't close the issue or set `status/needs-human`. With
-nothing ready a worker claims the "Factory evaluations" issue and runs
-`hack/evaluate.sh` if its newest evaluation is 6 hours old, then picks once
-more. After each session it runs `make backup-releases` if the target exists,
-except with `C4_CLUSTER=none`, where it logs the skip.
+nothing ready a worker stops.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
@@ -94,9 +91,7 @@ later waits until someone starts it again. `hack/relay-watch.sh` stays up
 instead: every minute it asks `pick` (which changes nothing) and, when there is
 an issue and a worker is free, runs `hack/relay.sh --workers N`, which leaves
 running workers alone. Asking first keeps the relay's logs free of a worker that
-starts, finds nothing and stops every minute. On the device with the cluster it
-also starts the relay every 30 minutes, so a worker can run the evaluator when
-it is due. It logs only changes, to `.relay/watch.log`, pulls main every 5
+starts, finds nothing and stops every minute. It logs only changes, to `.relay/watch.log`, pulls main every 5
 minutes and restarts itself when that changed its code.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked.
 
@@ -122,7 +117,7 @@ and every Claude session with it (#57). So:
   `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;
   `docker build`). Below `RELAY_MIN_MEM_GIB` it asks the user before the job
   runs, naming the processes with the most memory and the Kind node. A
-  headless session (`C4_HEADLESS=1`, set by the relay and the evaluator) gets
+  headless session (`C4_HEADLESS=1`, set by the relay) gets
   that warning in its context and the job runs, since in `claude -p` a
   question nobody can answer blocks the command. Other commands cost one
   `bash` and nothing more.

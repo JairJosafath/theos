@@ -5,7 +5,7 @@
 # RELAY_MIN_MEM_GIB (default 4, the relay's own threshold) it names what uses
 # the memory: the processes with the most, and the Kind node. An interactive
 # session then asks the user before running the job; a headless one
-# (C4_HEADLESS=1, set by hack/relay.sh and hack/evaluate.sh) gets the warning
+# (C4_HEADLESS=1, set by hack/relay.sh) gets the warning
 # in its context instead and the job runs: in `claude -p` a question nobody
 # can answer blocks the command. Silent otherwise.
 # Other commands cost one bash, with no subprocess and no file read.

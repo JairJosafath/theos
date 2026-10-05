@@ -18,7 +18,6 @@ task. Read the rest when the task needs it:
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
 | take an issue, or continue work someone left in flight | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
-| evaluate how the factory runs | `hack/evaluate.sh`, the `factory-evaluator` skill |
 | work on a milestone | its plan in [docs/plans/](docs/plans/) and its results file |
 
 ## Project Architecture
