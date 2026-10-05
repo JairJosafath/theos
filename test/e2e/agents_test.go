@@ -173,14 +173,13 @@ var _ = Describe("Agent factory", Ordered, ContinueOnFailure, func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(content)).To(HavePrefix(line))
 
+		// Merged, its branch is gone and Gitea reports the head as refs/pull/N/head.
 		var pulls []struct {
-			Merged bool `json:"merged"`
-			Head   struct {
-				Ref string `json:"ref"`
-			} `json:"head"`
+			Title  string `json:"title"`
+			Merged bool   `json:"merged"`
 		}
 		giteaGet("/api/v1/repos/apps/hello/pulls?state=closed&limit=50", &pulls)
 		Expect(pulls).To(ContainElement(And(
-			HaveField("Merged", true), HaveField("Head.Ref", "standard-update/hello-standard-"+commit))))
+			HaveField("Merged", true), HaveField("Title", "Update the Standard hello-standard to "+commit))))
 	})
 })
