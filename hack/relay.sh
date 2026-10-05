@@ -151,7 +151,7 @@ Rules for this headless run:
   - Hand off: the handoff skill posts a handoff comment on #$n
     (\`hack/lib/github.sh handoff $n FILE\`). The next session continues #$n.
   - Finished: open a pull request to main whose body says \`Closes #$n\`, merge
-    it with a merge commit once its checks are green, and if the issue is still
+    it with a merge commit once \`make check\` passes, and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue.
   - Stuck without the user: \`hack/lib/github.sh status $n needs-human\` and a

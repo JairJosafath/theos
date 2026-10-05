@@ -62,14 +62,12 @@ a fresh Kind cluster on GitHub. Don't `helm install` it into the shared
 
 A pushed `vX.Y.Z` tag runs the *Release* workflow, which builds the operator,
 UI, toolchain, agent and runner images, pushes them and the chart to GHCR and
-creates the GitHub release ([plan](../plans/release-workflow.md)). A pull
-request that changes the workflow or the toolchain, agent or runner images runs
-it as a dry run that builds everything and pushes nothing.
+creates the GitHub release ([plan](../plans/release-workflow.md)).
 
-A GitHub workflow that needs a Kind cluster (*Test Chart*, *E2E Tests*) never
-runs on pull requests, which it would hold up for many minutes. It runs on a
-push to main, on a release or on demand (*E2E Tests* only on demand for now),
-so a broken chart shows up on main after the merge, not on the pull request.
+GitHub workflows never run on pull requests. Lint, tests, UI checks and *Test
+Chart* run after a merge to main, each only when its paths change, or on demand;
+*E2E Tests* only on demand. A pushed tag runs *Release*, which builds and
+publishes and tests nothing. `make check` is the gate before a merge.
 
 ## Work on the factory: GitHub issues and the relay
 
