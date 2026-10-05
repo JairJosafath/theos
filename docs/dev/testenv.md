@@ -115,8 +115,8 @@ and every Claude session with it (#57). So:
   workers is `RELAY_ADMIT_GAP` seconds old (default 300), and stops after
   `RELAY_MEM_WAIT` seconds (default 3600) without headroom. It logs the wait.
 - Sessions check `free -g` before a heavy job (`make check`, image builds,
-  `make deploy`), never run two at once, and build a second devcontainer only
-  on a device without the cluster.
+  `make deploy`), never run two at once, and build a devcontainer
+  (`devcontainer up`) only on a device without the cluster.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
   before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
   `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Empties Go's build cache when it has grown past C4_GOCACHE_MAX_GB (default 4).
 # Go only drops cache entries unused for five days, and builds from several
-# worktrees fill it fast (14 GB on the cluster device). Both devcontainers run
-# it on start; the next build refills what it needs.
+# worktrees fill it fast (14 GB on the cluster device). VS Code runs it when
+# the folder opens (.vscode/tasks.json); the next build refills what it needs.
 set -uo pipefail
 max=${C4_GOCACHE_MAX_GB:-4}
 command -v go >/dev/null || exit 0

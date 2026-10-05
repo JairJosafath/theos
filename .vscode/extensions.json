@@ -1,0 +1,10 @@
+{
+	// Installed on the WSL side by ./dev setup, and offered by VS Code on open.
+	"recommendations": [
+		"golang.go",
+		"ms-kubernetes-tools.vscode-kubernetes-tools",
+		"redhat.vscode-yaml",
+		"ms-azuretools.vscode-docker",
+		"anthropic.claude-code"
+	]
+}

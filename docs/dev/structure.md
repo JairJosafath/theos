@@ -31,6 +31,7 @@ config/agent-sandbox/              Agent Sandbox for Kind, without leader electi
 templates/<name>/                  Template repositories, pushed and tagged into Gitea by the seed job
 templates/versions.txt             The tag each template is released at
 hack/testenv.mk                    Make targets for the Kind test environment
+hack/dev/                          The project shell's environment and zsh setup, for ./dev
 hack/seed/                         The seed job image and manifests
 hack/session/                      The Session client image and the test Session pod
 hack/toolchain-slim/               The slim Flutter toolchain (no Android SDK) for CI checks and agents
@@ -44,6 +45,7 @@ test/e2e/                          End-to-end tests against the Kind cluster (ma
 ui/                                Read-only UI (React + a GET-only proxy)
 docs/                              Design, architecture, plans and screenshots
 Makefile                           Build, test, cluster and deploy commands
+dev                                The development environment in .dev/ (DEVELOPMENT.md)
 PROJECT                            Kubebuilder metadata, auto-generated (DO NOT EDIT)
 ```
 

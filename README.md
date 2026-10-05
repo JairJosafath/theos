@@ -44,8 +44,11 @@ working, with screenshots.
 
 ## Try it
 
-Open the repository in the dev container. It includes Go, kubebuilder, Docker, Kind,
-kubectl, Helm, uv and Node; see [.devcontainer/README.md](.devcontainer/README.md).
+Clone the repository on Linux or WSL and open it in VS Code: `./dev setup` downloads
+Go, kubebuilder, Kind, kubectl, Helm, uv and Node into `.dev/`, and Kind runs on
+your Docker (Docker Desktop with WSL integration). Run the commands below in the
+project shell, which every VS Code terminal opens in; see
+[DEVELOPMENT.md](DEVELOPMENT.md).
 
 ```sh
 make cluster gitea seed   # a Kind cluster with Gitea and the tagged templates
@@ -65,8 +68,7 @@ each cluster.
 ## A device without the cluster
 
 The Kind cluster wants about 32 GB of disk. A device with less can still work the
-factory's issues in the light dev container,
-[`.devcontainer/lite`](.devcontainer/lite/devcontainer.json): Go, Node, git, the
+factory's issues with the light setup, `./dev setup --lite`: Go, Node, git, the
 GitHub CLI and Claude Code, without Docker, Kind, kubectl or Helm, and with
 `C4_CLUSTER=none` set.
 
@@ -86,18 +88,18 @@ with the cluster takes it from there. On that device one checkout at a time work
 
 To set one up:
 
-1. Clone `JairJosafath/c4factory`, open it in VS Code, run "Dev Containers: Reopen in
-   Container" and choose **C4 Factory (lite, no cluster)**. Sign in to GitHub in VS
-   Code: the git credential helper gives `hack/lib/github.sh` its token. If
-   `git fetch` still asks for a username, run `gh auth login` and then
-   `gh auth setup-git` in the container.
-2. Run `claude` once to log in, and check that `echo $C4_CLUSTER` prints `none`.
+1. Clone `JairJosafath/c4factory` on Linux or WSL and run `./dev setup --lite` in
+   it; the choice is remembered, and VS Code runs `./dev setup` on every open
+   after that. Run `gh auth login` and then `gh auth setup-git`: the git
+   credential helper gives `hack/lib/github.sh` its token.
+2. Open a new terminal (the project shell), run `claude` once to log in, and
+   check that `echo $C4_CLUSTER` prints `none`.
 3. `hack/relay.sh`, or `hack/relay-watch.sh` to keep it ready for new issues; the
    logs are in `.relay/relay-1.log` and `.relay/watch.log`, `touch .relay/stop`
    stops it.
 
-The container empties Go's build cache on start when it has grown past 4 GB
-(`hack/trim-go-cache.sh`, `C4_GOCACHE_MAX_GB`); the full container does the same.
+Opening the folder in VS Code empties Go's build cache when it has grown past
+4 GB (`hack/trim-go-cache.sh`, `C4_GOCACHE_MAX_GB`), on every device.
 
 ## Contributing
 

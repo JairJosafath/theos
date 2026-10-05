@@ -1,0 +1,39 @@
+{
+	// Terminals open in the project shell: zsh configured by hack/dev/zshrc, with
+	// every tool and cache in .dev/. ZDOTDIR keeps your own ~/.zshrc out of it.
+	"terminal.integrated.env.linux": {
+		"C4_ROOT": "${workspaceFolder}",
+		"ZDOTDIR": "${workspaceFolder}/.dev/zsh"
+	},
+	"terminal.integrated.defaultProfile.linux": "zsh",
+	// Tasks (./dev setup and friends) run in plain bash.
+	"terminal.integrated.automationProfile.linux": { "path": "/bin/bash" },
+
+	// The Go extension and gopls use the Go in .dev/ and keep their caches there.
+	"go.alternateTools": { "go": "${workspaceFolder}/.dev/tools/go/bin/go" },
+	"go.toolsGopath": "${workspaceFolder}/.dev/go",
+	"go.toolsEnvVars": {
+		"GOPATH": "${workspaceFolder}/.dev/go",
+		"GOCACHE": "${workspaceFolder}/.dev/cache/go-build",
+		"GOENV": "${workspaceFolder}/.dev/go/env",
+		"GOFLAGS": "-modcacherw",
+		"XDG_CACHE_HOME": "${workspaceFolder}/.dev/cache",
+		"XDG_CONFIG_HOME": "${workspaceFolder}/.dev/config"
+	},
+	"go.toolsManagement.autoUpdate": true,
+	"[go]": { "editor.formatOnSave": true },
+
+	// The Kubernetes panel shows the Kind clusters created from this folder.
+	"vs-kubernetes": {
+		"vs-kubernetes.kubeconfig": "${workspaceFolder}/.dev/kube/config"
+	},
+
+	// Keep main current: fetch in the background, and let the folder-open tasks in
+	// .vscode/tasks.json (environment setup, Pull main) start by themselves.
+	"git.autofetch": true,
+	"task.allowAutomaticTasks": "on",
+
+	// .dev/ holds gigabytes of tools and caches: don't watch or search it.
+	"files.watcherExclude": { "**/.dev/**": true },
+	"search.exclude": { "**/.dev": true }
+}

@@ -48,13 +48,17 @@ evaluate: ## Evaluate how the factory ran (one headless session): report on GitH
 
 ##@ Development
 
+# The Go code controller-gen reads. Not "./...": controller-gen loads every
+# go.mod below the folder, and the module cache in .dev/ (./dev) holds thousands.
+CONTROLLER_GEN_PATHS ?= ./api/...;./cmd/...;./internal/...
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="./..."
+	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="$(CONTROLLER_GEN_PATHS)"
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.

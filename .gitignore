@@ -1,3 +1,6 @@
+# The development environment: tools, caches and logins from ./dev setup
+/.dev
+
 # Binaries and tools downloaded by the Makefile
 bin/
 dist/
@@ -24,6 +27,7 @@ go.work.sum
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 !.vscode/tasks.json
 
 # Kubernetes
