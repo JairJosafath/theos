@@ -6,7 +6,8 @@
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 HOOK="$(cd "$(dirname "$0")" && pwd)/heavy-guard.sh"
-export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 CALLED=$T/called C4_CLUSTER_LEASE=$T/lease
+export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 CALLED=$T/called C4_CLUSTER_LEASE=$T/lease \
+  HEAVY_SLOTS_DIR=$T/slots HEAVY_JOBS=2
 unset C4_HEADLESS KIND_CLUSTER
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
@@ -142,5 +143,41 @@ check "no lease: runs" "$(cat "$T/out")" ""
 meminfo 1
 hook "make deploy"
 check "no lease, low memory: asks" "$(decision)" ask
+
+# The default threshold is 2 GiB, the relay's own.
+unset RELAY_MIN_MEM_GIB
+meminfo 2
+hook "make check"
+check "default threshold, 2 GiB: silent" "$(cat "$T/out")" ""
+meminfo 1
+hook "make check"
+check "default threshold, 1 GiB: asks" "$(decision)" ask
+case $(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out") in *"under the 2 GiB"*) r=yes ;; *) r=no ;; esac
+check "default threshold: named" $r yes
+
+# Every heavy-job slot taken: a make job will wait, and the session hears that
+# the wait is not a hang, with who holds the slots.
+meminfo 8
+sleep 60 & a=$!
+sleep 60 & b=$!
+"$(dirname "$HOOK")/heavy-slot.sh" acquire $a "make check" 2>/dev/null
+hook "make lint"
+check "slots free: silent" "$(cat "$T/out")" ""
+"$(dirname "$HOOK")/heavy-slot.sh" acquire $b "make test" 2>/dev/null
+hook "make lint"
+check "slots taken: allowed" "$(decision)" none
+ctx=$(jq -r .hookSpecificOutput.additionalContext "$T/out")
+case $ctx in *"not a hang"*) r=yes ;; *) r=no ;; esac
+check "slots taken: not a hang" $r yes
+case $ctx in *"pid $a "*"make check"*"pid $b "*"make test"*) r=yes ;; *) r=no ;; esac
+check "slots taken: names the holders" $r yes
+hook "docker build -t x ."
+check "slots taken, not a make job: silent" "$(cat "$T/out")" ""
+meminfo 1
+hook "make lint"
+check "slots taken, low memory: asks" "$(decision)" ask
+case $(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out") in *"GiB available"*"not a hang"*) r=yes ;; *) r=no ;; esac
+check "slots taken, low memory: says both" $r yes
+kill $a $b; wait $a $b 2>/dev/null
 
 exit $fail
