@@ -95,10 +95,13 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
 5. **On by default, tested.** `gitea.enabled: true`. *Test Chart* builds the
    operator, UI, seed and runner images, kind-loads them (the pull request's
    code isn't published yet), installs Agent Sandbox and the chart with Gitea
-   and project `webshop`, then checks: the seed Job completed, organizations
-   `templates` and `webshop` exist, GitProvider `webshop/gitea` is `Ready`, both
-   runners are registered (Gitea's admin runner list), the manager and UI are
-   ready. `dist/chart/README.md` gives the device's install sequence and both
+   and project `webshop`, then checks: organizations `templates` and `webshop`
+   exist, Secret `webshop/gitea-credentials` and GitProvider `webshop/gitea`
+   exist (a GitProvider has no status), both runners are registered (Gitea's
+   admin runner list), the manager and UI are ready. The Go toolchain is
+   several GB and Release's dry run builds it, so *Test Chart* runs the `go`
+   runner on the `gitea-runner-base` image without its Go cache: it checks the
+   chart's Deployment and registration, not the toolchain. `dist/chart/README.md` gives the device's install sequence and both
    ways to pull private images; README *Try it* points at it.
 6. **Verified from a release.** Once the owner pushes `v0.2.0` and *Release*
    publishes it: on a fresh Kind cluster of the pool, apply Agent Sandbox,
