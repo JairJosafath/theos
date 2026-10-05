@@ -15,6 +15,8 @@ import (
 type fakeReleaseState struct {
 	closed map[string][]string // owner/name, closed milestones' titles
 	tags   map[string]string   // owner/name@tag, the commit it names
+	// closeFailures is how many CloseMilestone calls fail before one succeeds.
+	closeFailures int
 }
 
 func (g *fakeGit) releaseState() *fakeReleaseState {
@@ -75,6 +77,10 @@ func (p *fakeProvider) CloseMilestone(_ context.Context, repo gitprovider.Reposi
 	if err != nil {
 		return err
 	}
+	if s := p.git.releaseState(); s.closeFailures > 0 {
+		s.closeFailures--
+		return fmt.Errorf("closing milestone %s: host unavailable", title)
+	}
 	if s := p.git.releaseState(); !slices.Contains(s.closed[key], title) {
 		s.closed[key] = append(s.closed[key], title)
 	}
@@ -108,6 +114,8 @@ func (g *fakeGit) milestoneTitle(key string, id int64) (string, error) {
 }
 
 // tag returns the commit a tag names, "" when there is none.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) tag(owner, name, tag string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -122,8 +130,17 @@ func (g *fakeGit) setTag(owner, name, tag, commit string) {
 }
 
 // milestoneClosed reports whether the milestone titled title was closed.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) milestoneClosed(owner, name, title string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return slices.Contains(g.releaseState().closed[owner+"/"+name], title)
+}
+
+// failCloses makes the next n CloseMilestone calls fail.
+func (g *fakeGit) failCloses(n int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().closeFailures = n
 }

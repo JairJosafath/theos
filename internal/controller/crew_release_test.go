@@ -34,6 +34,12 @@ var releaseDue = time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
 // merged at commit 5a-merge by a Task.
 func mergedIssue(ns string) {
 	GinkgoHelper()
+	mergedIssueAt(ns, "5a-merge")
+}
+
+// mergedIssueAt is mergedIssue with the Task's merge commit, "" for none read yet.
+func mergedIssueAt(ns, commit string) {
+	GinkgoHelper()
 	n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, nil)
 	gitFake.setIssueRelease(ns, "orders-api", n, "v0.1.0", releaseDue)
 	Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
@@ -51,7 +57,7 @@ func mergedIssue(ns string) {
 	Eventually(func(g Gomega) {
 		task := getTask(g, ns, "orders-api-merged")
 		completed := metav1.Now()
-		task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1alpha1.TaskMerged, "5a-merge", &completed
+		task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1alpha1.TaskMerged, commit, &completed
 		g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 	}).Should(Succeed())
 }
@@ -141,5 +147,81 @@ var _ = Describe("Crew releases", func() {
 			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
 			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.1.0")).To(BeFalse())
 		}, 3*time.Second).Should(Succeed())
+	})
+
+	It("closes the milestone of a release it tagged once closing works again", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		gitFake.failCloses(1)
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		// The second poll finds the tag at its commit and only closes; creating
+		// the tag again would fail, so a Released condition shows it didn't.
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.1.0")).To(BeTrue())
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.LastRelease).NotTo(BeNil())
+			g.Expect(crew.Status.LastRelease.Commit).To(Equal("5a-merge"))
+			cond := condition(crew.Status.Conditions, ConditionReleased)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		}).Should(Succeed())
+		Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(Equal("5a-merge"))
+	})
+
+	It("holds a release until its Task has read its merge commit", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssueAt(ns, "")
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReleased)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Reason).To(Equal("NoMergeCommit"))
+		}).Should(Succeed())
+		Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
+
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-merged")
+			task.Status.MergeCommit = "5a-merge"
+			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(Equal("5a-merge"))
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReleased)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		}).Should(Succeed())
+	})
+
+	It("drops the Released condition when spec.tagReleases is switched off", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		gitFake.setTag(ns, "orders-api", "v0.1.0", "5a-other")
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			g.Expect(condition(getCrew(g, ns).Status.Conditions, ConditionReleased)).NotTo(BeNil())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			crew.Spec.TagReleases = false
+			g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(condition(getCrew(g, ns).Status.Conditions, ConditionReleased)).To(BeNil())
+		}).Should(Succeed())
 	})
 })
