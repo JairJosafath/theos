@@ -161,6 +161,13 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			r.wait(&crew, status, "GitHostUnavailable", "Could not read the issues: "+err.Error())
 			return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 		}
+		// Before the Crew picks issues: a prepare issue filed now keeps its
+		// release the current one, so the next release's work waits for it.
+		if crew.Spec.TagReleases || crew.Spec.PrepareReleases {
+			if filed := r.tagRelease(ctx, &crew, status, provider, repo, containerTasks); filed != nil {
+				facts.Issues = append(facts.Issues, *filed)
+			}
+		}
 	}
 
 	step := model.NextCrewStep(container.Name, facts)
@@ -215,9 +222,6 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	setCondition(&status.Conditions, crew.Generation, ConditionReady, ready, reason, step.Message)
 	if !crew.Spec.TagReleases {
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
-	}
-	if (crew.Spec.TagReleases || crew.Spec.PrepareReleases) && facts.ContainerReady {
-		r.tagRelease(ctx, &crew, status, provider, repo, containerTasks)
 	}
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 }

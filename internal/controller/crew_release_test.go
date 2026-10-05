@@ -17,11 +17,13 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	eventsv1 "k8s.io/api/events/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -284,6 +286,31 @@ var _ = Describe("Crew release preparation", func() {
 			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(BeEmpty(), "the release waits for its prepare issue")
 			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.1.0")).To(BeFalse())
 			g.Expect(prepareIssues(ns)).To(HaveLen(1))
+		}, 3*time.Second).Should(Succeed())
+	})
+
+	It("starts the prepare issue before the next release's work", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		next := gitFake.addIssue(ns, "orders-api", "Ship orders", clearIssue, []string{"status/ready"})
+		gitFake.setIssueRelease(ns, "orders-api", next, "v0.2.0", releaseDue.AddDate(0, 0, 7))
+		crew := newCrew(ns)
+		crew.Spec.PrepareReleases = true
+		mustCreate(crew)
+
+		var prepare int
+		Eventually(func(g Gomega) {
+			issues := prepareIssues(ns)
+			g.Expect(issues).To(HaveLen(1))
+			prepare = issues[0].Number
+			g.Expect(getTask(g, ns, fmt.Sprintf("orders-api-%d", prepare)).Spec.Issue).To(BeEquivalentTo(prepare))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			var task c4v1alpha1.Task
+			err := k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: fmt.Sprintf("orders-api-%d", next)}, &task)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "v0.2.0 waits for v0.1.0's prepare issue")
 		}, 3*time.Second).Should(Succeed())
 	})
 

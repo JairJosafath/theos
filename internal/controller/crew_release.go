@@ -49,9 +49,9 @@ const (
 // prepare issue, it files one; with tagReleases, once it is done, it tags the
 // merge commit of its most recently merged issue and closes its milestone. A
 // release that is done but can't go out is a Warning Event, once per release and
-// reason.
+// reason. It returns the prepare issue it filed, as a ready issue, or nil.
 func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
-	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) {
+	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) *model.Issue {
 	log := logf.FromContext(ctx)
 	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -79,13 +79,14 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		if crew.Spec.TagReleases {
 			r.setReleased(crew, status, metav1.ConditionTrue, reasonPreparingRelease, message)
 		}
-		return
+		return &model.Issue{Number: filed.Number, Title: filed.Title, Body: filed.Body,
+			Release: releaseOf(facts, step.Milestone)}
 	}
 	if !crew.Spec.TagReleases {
 		if err != nil {
 			log.Error(err, "Failed to prepare a release", "container", crew.Spec.ContainerRef.Name, "tag", step.Tag)
 		}
-		return
+		return nil
 	}
 	switch {
 	case err != nil:
@@ -122,6 +123,17 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 			r.setReleased(crew, status, metav1.ConditionTrue, reasonNoReleaseDone, "No open release is done")
 		}
 	}
+	return nil
+}
+
+// releaseOf is the release of milestone id among the facts' releases.
+func releaseOf(facts model.ReleaseFacts, id int64) *model.Release {
+	for _, m := range facts.Milestones {
+		if m.ID == id {
+			return &m.Release
+		}
+	}
+	return nil
 }
 
 // filePrepareIssue files release step.Tag's prepare issue in its milestone,
