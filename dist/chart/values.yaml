@@ -16,10 +16,11 @@ manager:
   replicas: 1
 
   image:
-    repository: c4factory/operator
-    ## Image tag (defaults to Chart.appVersion if not set)
+    repository: ghcr.io/jairjosafath/c4factory/operator
+    ## Image tag (defaults to Chart.appVersion if not set): a released chart
+    ## runs its own version's images
     ##
-    tag: "dev"
+    tag: ""
     pullPolicy: IfNotPresent
 
   ## Arguments (go run ./cmd --help lists them). These are the Kind test
@@ -213,10 +214,11 @@ ui:
   enabled: true
 
   image:
-    repository: c4factory/ui
-    ## Image tag (defaults to Chart.appVersion if not set)
+    repository: ghcr.io/jairjosafath/c4factory/ui
+    ## Image tag (defaults to Chart.appVersion if not set): a released chart
+    ## runs its own version's images
     ##
-    tag: "dev"
+    tag: ""
     pullPolicy: IfNotPresent
 
   # imagePullSecrets:

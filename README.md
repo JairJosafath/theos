@@ -71,6 +71,10 @@ devcontainer with Postgres, pushed as one commit. The repositories are public; t
 in, `make gitea-admin` prints the admin password, which `make gitea` generates for
 each cluster.
 
+To use c4factory on your own cluster instead, install a release: its Helm chart
+and images are published to GHCR by a version tag ([the chart's
+README](dist/chart/README.md)).
+
 ## A device without the cluster
 
 The Kind cluster wants about 32 GB of disk. A device with less can still work the
