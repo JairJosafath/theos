@@ -255,3 +255,43 @@ hold its own:
   in proportion to its request; at 50m Gitea got a tenth of a runner's share,
   and its liveness probe restarted it just before that release (#17). It
   stays without a limit, so it can use idle cores.
+
+## GitHub Actions on a self-hosted runner
+
+When GitHub's hosted runners are slow to start, the workflows can run on a
+runner in a container on a device's Docker (`hack/gh-runner/`). Every
+workflow's `runs-on` is `${{ vars.RUNS_ON || 'ubuntu-latest' }}`, so switching
+needs no code change.
+
+```bash
+make gh-runner                              # build, register c4factory-<hostname> once, start it
+make gh-runner-status                       # its container, and whether GitHub sees it online
+make gh-runner-down                         # stop it and remove it from GitHub
+gh variable set RUNS_ON --body self-hosted  # every job goes to it
+gh variable delete RUNS_ON                  # back to ubuntu-latest
+docker logs -f c4factory-gh-runner          # what it is doing
+```
+
+- It registers with the labels `self-hosted`, `linux`, `x64` and `c4factory`,
+  with a token from the device's `gh` login. The registration lives on a
+  volume, so `docker restart`, a reboot and a new image keep it. GitHub drops
+  a runner that stays offline for 14 days; `make gh-runner` then registers it
+  again. With `RUNS_ON` set and the runner down, jobs wait in the queue.
+- Jobs use the device's Docker through its socket, on the host's network, so
+  `docker build` and Kind work and a Kind cluster a job makes answers on
+  127.0.0.1. The socket is root on the device, which is acceptable for a
+  private repository with one owner. The work directory
+  (`~/.cache/c4factory/gh-runner/work`) has the same path in the container, so
+  a job's bind mounts resolve.
+- One runner, so jobs go one at a time. They run on the device's Docker
+  outside the `HEAVY_JOBS` slots: a release builds eight images and *Tests*
+  runs `make test` whatever the device's sessions are doing.
+- The tool cache (setup-go, setup-node) and the Go, npm and golangci-lint
+  caches stay on volumes, so the workflows skip GitHub's cache there. *Test
+  Chart* and *E2E Tests* make Kind clusters of their own (`chart-test`,
+  `ci-e2e`) and delete them after, never one of the pool.
+- The image pins the runner (`RUNNER_VERSION` in `hack/gh-runner/Dockerfile`),
+  which updates itself when GitHub asks. Bump the pin to
+  `gh api repos/actions/runner/releases/latest --jq .tag_name` now and then
+  and run `make gh-runner`: it rebuilds the image and starts a new container
+  on the same registration.
