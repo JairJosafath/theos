@@ -76,7 +76,7 @@ the cluster device:
 
 ```
 $ hack/lib/github.sh claims        # 08:41
-#14	lynx-14	live	e68e918e5f86	…	chore/14-keep-the-cel-lens-releases-moving
+#14	lynx-14	live	e68e918e5f86	…	chore/14-keep-the-[product]-releases-moving
 #27	heron-27	live	e68e918e5f86	…	feat/27-parallel-agents-5-5-needs-cluster-and
 #54	otter-54	live	1aba59e9ec44	…	chore/54-lite-devcontainer-commit-its-lock-file
 ```

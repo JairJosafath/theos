@@ -85,7 +85,7 @@ Each step is one or more small commits with tests.
 
 ## Outcome (1 October 2026)
 
-Done, with every "Done when" checked in Kind; see [results-v3.md](../results-v3.md).
+Done, with every "Done when" checked in Kind; see [results-v3.md](../../results-v3.md).
 Watching the factory found its worst problem on the first day: Flutter checks
 writing to the disk etcd uses stalled the API server for up to 24 s. CI and
 sandbox work now happen in memory. Added along the way, beyond the steps above:

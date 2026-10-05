@@ -19,7 +19,7 @@ says so.
 - `lowerCamelCase` for variables, parameters, functions, methods, properties. [review]
 - `UpperCamelCase` for classes, interfaces, types, enums, type parameters. [review]
 - `CONSTANT_CASE` for module-level constants and enum members that never change. [review]
-- Acronyms are words: `loadHttpUrl`, `celLensServer`, not `loadHTTPURL`. [review]
+- Acronyms are words: `loadHttpUrl`, `jsonApiServer`, not `loadHTTPURL`. [review]
 - No `_` prefix or suffix, not even for private members; `_` alone only for an
   unused destructured value. [review]
 - File names are lower case with underscores: `yaml_scanner.ts`. [review]

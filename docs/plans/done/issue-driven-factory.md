@@ -1,6 +1,6 @@
 # Plan: issues, crews and roles (v4)
 
-Design: [../superpowers/specs/2026-10-02-issue-driven-factory-design.md](../superpowers/specs/2026-10-02-issue-driven-factory-design.md).
+Design: [2026-10-02-issue-driven-factory-design.md](2026-10-02-issue-driven-factory-design.md).
 Branch `feat/issue-driven-factory`, stacked on `feat/factory-monitoring` (PR #8).
 
 ## Goal

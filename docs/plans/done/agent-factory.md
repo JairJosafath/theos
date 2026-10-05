@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.26, kubebuilder v4, controller-runtime, envtest + Ginkgo, Gitea 1.27 + Actions (act_runner), Agent Sandbox v1.0.4 (`agents.x-k8s.io/v1beta1`), Flutter stable (cirruslabs image), very_good_analysis, Claude Code CLI.
 
-**Spec:** [docs/superpowers/specs/2026-09-30-agent-factory-design.md](../superpowers/specs/2026-09-30-agent-factory-design.md)
+**Spec:** [docs/plans/done/2026-09-30-agent-factory-design.md](2026-09-30-agent-factory-design.md)
 
 ## Global Constraints
 

@@ -1,8 +1,8 @@
 # Plan: MVP v1, end to end
 
-Goal: build the six milestones of [design.md](../design.md#mvp-v1-plan) on the branch
+Goal: build the six milestones of [design.md](../../design.md) on the branch
 `explore/mvp-v1`, each checked in the Kind cluster, with evidence in
-[docs/screenshots/](../screenshots/).
+[docs/screenshots/](../../screenshots/).
 
 ## Decisions the design leaves open
 
@@ -56,12 +56,12 @@ These are the calls made while building. Each is small and easy to change.
 
 ## Layering check
 
-`make lint` runs depguard with the rules in [architecture.md](../architecture.md).
+`make lint` runs depguard with the rules in [architecture.md](../../architecture.md).
 `make check` runs manifests, generate, fmt, vet, lint and test.
 
 ## Progress
 
-All six milestones are built on `explore/mvp-v1`; [results.md](../results.md) shows
+All six milestones are built on `explore/mvp-v1`; [results.md](../../results.md) shows
 each check passing. Where the build departed from this plan, or learned something:
 
 - **Stale cache after our own writes.** A reconcile queued during a scaffold could
