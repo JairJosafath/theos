@@ -109,7 +109,7 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
    built or loaded locally (pulled with a pull secret or after making the
    packages public), and save the `kubectl get` output and a Gitea screenshot
    in `docs/screenshots/`. If the tag isn't pushed yet, step 5 closes #127 and
-   this check is filed as its own issue, `Depends on` nothing but the tag.
+   this check is filed as its own issue (#156), waiting on nothing but the tag.
 
 ## Done when
 
