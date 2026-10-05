@@ -1,6 +1,8 @@
 name: Lint
 
-# Only Go sources and the linter's own configuration can change the result.
+# Only Go sources and the linter's own configuration can change the result. On a
+# pull request the Changed step skips the linter when none of them changed since
+# the last commit it passed on, such as a push of docs only.
 on:
   push:
     branches: [main]
@@ -12,6 +14,7 @@ on:
       - .custom-gcl.yml
       - Makefile
       - .github/workflows/lint.yml
+      - .github/actions/changed/**
   pull_request:
     paths: *paths
   workflow_dispatch:
@@ -26,6 +29,7 @@ permissions: {}
 jobs:
   lint:
     permissions:
+      actions: read
       contents: read
     name: Run on Ubuntu
     runs-on: ubuntu-latest
@@ -35,12 +39,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check what changed
+        id: changed
+        uses: ./.github/actions/changed
+
       - name: Setup Go
+        if: steps.changed.outputs.changed == 'true'
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
       - name: Check linter configuration
+        if: steps.changed.outputs.changed == 'true'
         run: make lint-config
       - name: Run linter
+        if: steps.changed.outputs.changed == 'true'
         run: make lint
