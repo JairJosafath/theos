@@ -17,7 +17,7 @@ fake_kind() {
     "create cluster") echo "kind-$4" >"$T/context" ;;
   esac
 }
-fake_docker() { echo "docker $*" >>"$T/calls"; }
+fake_docker() { [ "$1" = image ] && { [ "$3" != missing:dev-$(checkout_tag) ]; return; }; echo "docker $*" >>"$T/calls"; }
 fake_kubectl() {
   case "$2" in
     current-context) [ -s "$T/context" ] && cat "$T/context" || { echo "error: current-context is not set" >&2; return 1; } ;;
@@ -50,6 +50,11 @@ docker exec c4factory-2-control-plane ctr -n k8s.io images tag --force docker.io
 docker exec c4factory-2-control-plane ctr -n k8s.io images rm docker.io/c4factory/operator:dev-$tag"
 load gone c4factory/operator:dev >/dev/null 2>&1
 check "load: no nodes fails" "$?" 1
+calls >/dev/null
+load c4factory-2 missing:dev >/dev/null 2>&1
+check "load: unbuilt image fails" "$?$(calls)" 1
+load c4factory-2 foo/bar >/dev/null
+check "load: untagged is latest" "$(calls | sed -n 3p)" "docker exec c4factory-2-control-plane ctr -n k8s.io images tag --force docker.io/foo/bar:latest-$tag docker.io/foo/bar:latest"
 
 # keep-context: kind create switches the context; it's put back.
 echo kind-c4factory >"$T/context"

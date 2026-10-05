@@ -46,7 +46,13 @@ ref() {
 
 load() {
   local cluster=$1 image=$2 built node nodes
+  # Untagged, IMAGE is IMAGE:latest; the checkout's tag goes after the tag.
+  [[ "${image##*/}" == *:* ]] || image="$image:latest"
   built="$image-$(checkout_tag)"
+  if ! "$CONTAINER_TOOL" image inspect "$built" >/dev/null 2>&1; then
+    echo "kind.sh: no image $built: build this checkout's IMAGE with that tag first (make deploy, or docker build -t $built)" >&2
+    return 1
+  fi
   "$KIND" load docker-image "$built" --name "$cluster"
   nodes=$("$KIND" get nodes --name "$cluster")
   [ -n "$nodes" ] || { echo "kind.sh: Kind cluster $cluster has no nodes" >&2; return 1; }
