@@ -1,0 +1,114 @@
+name: Test Chart
+
+# Installs the Helm chart (dist/chart) into a fresh Kind cluster, as a device
+# would: the operator and UI images, Agent Sandbox, then `helm install` with a
+# GitProvider value. Checks that the manager and UI become ready, the GitProvider
+# exists and the admission policy refuses a Project named unlike its namespace.
+# It runs when the chart or what it is generated from changes, not on every Go
+# or UI change: a Kind cluster and two image builds take minutes.
+on:
+  push:
+    branches: [main]
+    paths: &paths
+      - dist/chart/**
+      - config/**
+      - '!config/samples/**'
+      - Dockerfile
+      - .github/workflows/test-chart.yml
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+# A newer push to a pull request replaces the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  test-chart:
+    permissions:
+      contents: read
+    name: Run on Ubuntu
+    runs-on: ubuntu-latest
+    env:
+      IMG: c4factory/operator:dev
+      UI_IMG: c4factory/ui:dev
+      AGENT_SANDBOX: https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Helm
+        run: make install-helm
+
+      - name: Lint Helm Chart
+        run: make helm-lint
+
+      - name: Install the latest version of kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Create kind cluster
+        run: kind create cluster --wait 120s
+
+      - name: Build and load the images
+        run: |
+          docker build -t "$IMG" .
+          docker build -t "$UI_IMG" ui
+          kind load docker-image "$IMG" "$UI_IMG"
+
+      - name: Install Agent Sandbox
+        run: |
+          kubectl apply -f "$AGENT_SANDBOX"
+          kubectl wait --for=condition=Established crd --all --timeout=60s
+
+      - name: Install the chart
+        run: |
+          kubectl create namespace webshop
+          make helm-deploy HELM_EXTRA_ARGS="\
+            --set ui.image.repository=${UI_IMG%:*} --set ui.image.tag=${UI_IMG##*:} \
+            --set gitProviders[0].namespace=webshop \
+            --set gitProviders[0].name=gitea \
+            --set gitProviders[0].url=http://gitea.gitea.svc.cluster.local:3000 \
+            --set gitProviders[0].owner=webshop \
+            --set gitProviders[0].token=unused"
+
+      - name: Check the release
+        run: |
+          make helm-status
+          kubectl -n c4-factory-system get deployments,pods
+          kubectl -n c4-factory-system rollout status deployment/c4-factory-ui --timeout=120s
+          kubectl -n webshop get gitprovider gitea -o jsonpath='{.spec.url}{"\n"}'
+          kubectl -n webshop get secret gitea-credentials
+          # A new admission policy takes a few seconds to apply; until then a
+          # misnamed Project gets in, so delete it and try again.
+          for i in $(seq 1 12); do
+            if ! kubectl -n webshop create -f - <<'EOF' 2>err.txt; then
+          apiVersion: c4.factory.io/v1alpha1
+          kind: Project
+          metadata:
+            name: not-webshop
+          spec: {}
+          EOF
+              break
+            fi
+            kubectl -n webshop delete project not-webshop
+            sleep 5
+          done
+          cat err.txt
+          grep -q "must be named after its namespace" err.txt
+
+      - name: Show the manager's log
+        if: failure()
+        run: kubectl -n c4-factory-system logs deployment/c4-factory-controller-manager --tail=100 || true

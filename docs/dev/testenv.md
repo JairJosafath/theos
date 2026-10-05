@@ -51,6 +51,13 @@ kubectl logs -n c4-factory-system deployment/c4-factory-controller-manager -c ma
 make gitea-forward     # then open http://localhost:3000
 ```
 
+The Kind test environment installs with kustomize. Devices install the Helm
+chart in `dist/chart/` instead ([its README](../../dist/chart/README.md)).
+After a change under `config/`, `make chart` regenerates it from the kustomize
+output and `make helm-lint` checks it; the *Test Chart* workflow installs it into
+a fresh Kind cluster on GitHub. Don't `helm install` it into the shared
+`c4factory` cluster: `make deploy` owns the CRDs there.
+
 ## Work on the factory: GitHub issues and the relay
 
 Work on the factory itself is tracked as issues on `JairJosafath/c4factory`; the

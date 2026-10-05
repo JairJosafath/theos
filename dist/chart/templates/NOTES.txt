@@ -1,0 +1,19 @@
+c4factory is installed in namespace {{ .Release.Namespace }} as release {{ .Release.Name }}.
+
+The operator needs Agent Sandbox (its Sandbox kind) to start:
+
+  kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
+
+Check it:
+
+  kubectl -n {{ .Release.Namespace }} get pods
+{{- if .Values.ui.enabled }}
+
+Open the read-only UI on http://localhost:8080:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "c4-factory.uiName" . }} 8080
+{{- end }}
+{{- range .Values.gitProviders }}
+
+GitProvider {{ .name | default "git" }} in namespace {{ .namespace }} points at {{ .url }}.
+{{- end }}
