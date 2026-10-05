@@ -60,14 +60,43 @@ type RunResult struct {
 }
 
 // FollowUp is work a reviewer suggests for later, outside the change it reviewed:
-// an issue for a person to triage.
+// an issue for a person to triage. Its Criteria become the issue's "Acceptance
+// criteria" checklist, so a person who moves it into a release can ready it as it
+// stands.
 type FollowUp struct {
-	Title string `json:"title"`
-	Body  string `json:"body,omitempty"`
+	Title    string   `json:"title"`
+	Body     string   `json:"body,omitempty"`
+	Criteria []string `json:"criteria,omitempty"`
 }
 
-// MaxFollowUps is how many follow-ups one review may file.
-const MaxFollowUps = 3
+// MaxFollowUps is how many follow-ups one review may file, and
+// MaxFollowUpCriteria how many acceptance criteria each may carry.
+const (
+	MaxFollowUps        = 3
+	MaxFollowUpCriteria = 3
+)
+
+// FollowUpIssue renders the body of the issue filed for a reviewer's follow-up:
+// its text, its criteria as an "Acceptance criteria" checklist, and where it came
+// from. by names the reviewer, review the pull request it reviewed for issue in
+// Task task.
+func FollowUpIssue(f FollowUp, by, review string, issue int, task string) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(f.Body))
+	if len(f.Criteria) > 0 {
+		b.WriteString("\n\n## Acceptance criteria\n")
+		for _, c := range f.Criteria {
+			fmt.Fprintf(&b, "\n- [ ] %s", strings.Join(strings.Fields(c), " "))
+		}
+	}
+	fmt.Fprintf(&b, "\n\n---\nSuggested by %s while reviewing %s for #%d (Task `%s`). ", by, review, issue, task)
+	if len(f.Criteria) > 0 {
+		fmt.Fprintf(&b, "To have agents do it, check the criteria, move it into a release and label it %s.", LabelReady)
+	} else {
+		fmt.Fprintf(&b, "To have agents do it, add an \"Acceptance criteria\" checklist and label it %s.", LabelReady)
+	}
+	return strings.TrimLeft(b.String(), "\n")
+}
 
 // RunState is the sandbox for the Task's current phase and round.
 type RunState struct {

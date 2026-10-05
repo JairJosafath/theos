@@ -260,8 +260,8 @@ model and context it needs.
   issue is in one state at a time.
 - **Ready means clear.** An issue needs an "Acceptance criteria" checklist before
   an agent gets it; without one it goes back to a person before any tokens are
-  spent. The Standards' issue templates ask for context, goal, criteria, scope and
-  notes.
+  spent, with an example checklist in the comment. The Standards' issue templates
+  ask for context, goal, criteria, scope and notes.
 - **A Crew per Container picks up the work.** It names the implementer and the
   reviewer Agents, polls the repository's `status/ready` issues, waits for their
   Gitea dependencies (also across repositories) to close, and starts up to `parallel`
@@ -289,8 +289,9 @@ model and context it needs.
   `docs/agents/implementer.md` and `reviewer.md`, read from the base branch so a
   change can't rewrite its own review. The reviewer reports each acceptance
   criterion, posts its verdict as a pull request review, and may name up to three
-  follow-ups, which become `status/proposed` issues in the Later milestone,
-  outside any release.
+  follow-ups, each with its own acceptance criteria, which become
+  `status/proposed` issues in the Later milestone, outside any release; a person
+  who moves one into a release can ready it as it stands.
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the VS Code extension's agent reads the server it

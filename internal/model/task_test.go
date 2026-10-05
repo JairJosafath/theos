@@ -588,3 +588,36 @@ func TestGatedMergeRefusal(t *testing.T) {
 		})
 	}
 }
+
+func TestFollowUpIssue(t *testing.T) {
+	tests := []struct {
+		name      string
+		followUp  FollowUp
+		want      []string
+		readyAsIs bool
+	}{
+		{name: "criteria become the checklist", followUp: FollowUp{Title: "Cache schemas", Body: "Parse once.",
+			Criteria: []string{"Each schema is parsed once", "A test\ncounts  parses"}},
+			want: []string{"Parse once.\n\n## Acceptance criteria\n\n- [ ] Each schema is parsed once\n- [ ] A test counts parses\n\n---\n",
+				"Suggested by Agent `reviewer` while reviewing http://pr/5 for #3 (Task `api-3`).",
+				"check the criteria, move it into a release and label it status/ready"},
+			readyAsIs: true},
+		{name: "without criteria a person adds them", followUp: FollowUp{Title: "Cache schemas", Body: "Parse once."},
+			want: []string{"Parse once.\n\n---\n", `add an "Acceptance criteria" checklist and label it status/ready`}},
+		{name: "without a body", followUp: FollowUp{Title: "Cache schemas", Criteria: []string{"Parsed once"}},
+			want: []string{"## Acceptance criteria\n\n- [ ] Parsed once\n"}, readyAsIs: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FollowUpIssue(tt.followUp, "Agent `reviewer`", "http://pr/5", 3, "api-3")
+			for _, w := range tt.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("FollowUpIssue() = %q, want it to contain %q", got, w)
+				}
+			}
+			if ready := MissingAcceptanceCriteria(got) == ""; ready != tt.readyAsIs {
+				t.Errorf("FollowUpIssue() = %q: ready as it stands = %v, want %v", got, ready, tt.readyAsIs)
+			}
+		})
+	}
+}

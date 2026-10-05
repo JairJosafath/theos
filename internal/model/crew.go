@@ -478,7 +478,11 @@ var (
 // or returns "" when it is: its body needs an "Acceptance criteria" heading with
 // at least one checklist item under it, so a reviewer can tell when it is done.
 func MissingAcceptanceCriteria(body string) string {
-	const fix = " Add one, then label it " + LabelReady + " again."
+	const fix = " Add one, then label it " + LabelReady + " again. For example:\n\n" +
+		"```markdown\n## Acceptance criteria\n\n" +
+		"- [ ] An empty order is rejected with a message naming the missing field\n" +
+		"- [ ] A test covers the empty order\n```\n\n" +
+		"Each item is one check a reviewer can verify in the pull request."
 	if strings.TrimSpace(body) == "" {
 		return "This issue has no description, so an agent would have to guess what to build." + fix
 	}

@@ -26,6 +26,13 @@ func TestMissingAcceptanceCriteria(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := MissingAcceptanceCriteria(tt.body)
+			if got != "" {
+				// The refusal shows a checklist that would pass, so a person fixes it in one go.
+				example, ok := between(got, "```markdown\n", "```")
+				if !ok || MissingAcceptanceCriteria(example) != "" {
+					t.Errorf("MissingAcceptanceCriteria() = %q, want an example checklist that passes", got)
+				}
+			}
 			if tt.want == "" && got != "" || tt.want != "" && !strings.Contains(got, tt.want) {
 				t.Errorf("MissingAcceptanceCriteria() = %q, want %q", got, tt.want)
 			}
@@ -115,10 +122,8 @@ func TestNextCrewStep(t *testing.T) {
 			Issues: []Issue{{Number: 2, Title: "Vague", Body: "Make it better."}, ready(6)},
 			Tasks:  []CrewTask{{Name: "cel-ls-1", Issue: 1}}},
 			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-1"}, Ready: []int{6},
-				NotReady: []IssueRejection{{Issue: 2, Reason: "This issue has no \"Acceptance criteria\" section " +
-					"with a checklist (\"- [ ] ...\"), so a reviewer could not tell when it is done. Add one, " +
-					"then label it status/ready again."}},
-				Message: "Task cel-ls-1 is working on issue #1; 1 ready issue waits for a free place"}},
+				NotReady: []IssueRejection{{Issue: 2, Reason: MissingAcceptanceCriteria("Make it better.")}},
+				Message:  "Task cel-ls-1 is working on issue #1; 1 ready issue waits for a free place"}},
 		{name: "a blocked Task leaves its place free, so its Standard change runs with the allowance", facts: CrewFacts{
 			ContainerReady: true, Parallel: 1, Tasks: []CrewTask{filer}, Issues: []Issue{change}},
 			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-1"},
@@ -274,4 +279,14 @@ func TestIssueGoal(t *testing.T) {
 	if got != want {
 		t.Errorf("IssueGoal() = %q, want %q", got, want)
 	}
+}
+
+// between returns the text of s after the first start and before the next end.
+func between(s, start, end string) (string, bool) {
+	_, after, ok := strings.Cut(s, start)
+	if !ok {
+		return "", false
+	}
+	inner, _, ok := strings.Cut(after, end)
+	return inner, ok
 }

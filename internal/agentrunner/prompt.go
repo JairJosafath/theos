@@ -206,11 +206,13 @@ points after "Non-blocking:" in the summary and approve.
 `, untested)
 	b.WriteString(`
 Work worth doing later that is outside this change can go in "followUps": up to
-three, each a title and a few sentences a person can turn into an issue. Never
-use a follow-up for something this change must fix.
+three, each a title, a few sentences saying what and why, and one to three
+"criteria": short checks a reviewer could verify to call it done (each becomes an
+"Acceptance criteria" checklist item on the issue). Never use a follow-up for
+something this change must fix.
 
 End your reply with one line of JSON and nothing after it:
-{"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>", "followUps": [{"title": "...", "body": "..."}]}
+{"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>", "followUps": [{"title": "...", "body": "...", "criteria": ["..."]}]}
 `)
 	return b.String()
 }
@@ -260,6 +262,18 @@ type Verdict struct {
 	FollowUps []model.FollowUp
 }
 
+// criteria keeps a follow-up's non-empty criteria, trimmed, up to
+// model.MaxFollowUpCriteria.
+func criteria(in []string) []string {
+	var out []string
+	for _, c := range in {
+		if c = strings.TrimSpace(c); c != "" && len(out) < model.MaxFollowUpCriteria {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // ParseVerdict finds the reviewer's JSON verdict: the last JSON object in the
 // output that has a verdict. It keeps the titled follow-ups, up to
 // model.MaxFollowUps.
@@ -281,6 +295,7 @@ func ParseVerdict(output string) (Verdict, error) {
 			out := Verdict{Verdict: verdict, Summary: strings.TrimSpace(v.Summary)}
 			for _, f := range v.FollowUps {
 				f.Title, f.Body = strings.TrimSpace(f.Title), strings.TrimSpace(f.Body)
+				f.Criteria = criteria(f.Criteria)
 				if f.Title != "" && len(out.FollowUps) < model.MaxFollowUps {
 					out.FollowUps = append(out.FollowUps, f)
 				}

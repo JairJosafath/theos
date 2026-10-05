@@ -133,7 +133,8 @@ var _ = Describe("Crew", func() {
 			"the implementer opens its pull request, so the operator may review it")
 		finishSandbox(ns, "orders-api-3-r1-review-a1", "orders-api-3", &agentrunner.Result{Role: "review",
 			Verdict: "approve", Summary: "Every criterion met.", FollowUps: []model.FollowUp{
-				{Title: "Validate addresses", Body: "Postcodes are not checked."}}}, "")
+				{Title: "Validate addresses", Body: "Postcodes are not checked.",
+					Criteria: []string{"An order with an unknown postcode is rejected"}}}}, "")
 
 		By("approving in the Git host, merging, filing the follow-up and closing the issue")
 		Eventually(func(g Gomega) {
@@ -158,6 +159,9 @@ var _ = Describe("Crew", func() {
 		Expect(followUp.Labels).To(Equal([]string{model.LabelProposed}))
 		Expect(followUp.milestone).To(Equal("Later"), "follow-ups are filed outside any release")
 		Expect(followUp.Body).To(ContainSubstring("Postcodes are not checked."))
+		Expect(followUp.Body).To(ContainSubstring("- [ ] An order with an unknown postcode is rejected"))
+		Expect(model.MissingAcceptanceCriteria(followUp.Body)).To(BeEmpty(),
+			"a follow-up moved into a release is ready as it stands")
 
 		By("starting the blocked issue once its dependency is closed")
 		gitFake.setBlockers(ns, "orders-api", blocked)
