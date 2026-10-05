@@ -5,7 +5,8 @@
 #   3. pushes and tags each template in versions.txt that is not tagged yet;
 #   4. stores an admin access token as Secret gitea-credentials in each project's
 #      namespace;
-#   5. stores a runner registration token as Secret gitea/gitea-runner.
+#   5. stores a runner registration token as Secret gitea/gitea-runner, unless
+#      RUNNER_SECRET is empty (the Helm chart makes that token itself).
 # Every step looks before it acts, so a second run changes nothing.
 set -euo pipefail
 
@@ -28,7 +29,7 @@ CREDENTIALS_SECRET=${CREDENTIALS_SECRET:-gitea-credentials}
 # write:admin lets the operator make each Container's agent bot user; write:issue
 # lets it label, comment on and close issues, and comment on pull requests.
 TOKEN_SCOPES=${TOKEN_SCOPES:-write:admin,write:issue,write:organization,write:repository,read:user}
-RUNNER_SECRET=${RUNNER_SECRET:-gitea-runner}
+RUNNER_SECRET=${RUNNER_SECRET-gitea-runner}
 RUNNER_NAMESPACE=${RUNNER_NAMESPACE:-gitea}
 
 export GIT_AUTHOR_NAME="C4 Factory seed" GIT_AUTHOR_EMAIL="seed@c4.factory.io"
@@ -243,8 +244,8 @@ main() {
   for project in $PROJECTS; do
     ensure_credentials "$project"
   done
-  ensure_runner_token
-  log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials and runner token stored"
+  if [[ -n $RUNNER_SECRET ]]; then ensure_runner_token; fi
+  log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials${RUNNER_SECRET:+ and runner token} stored"
 }
 
 main "$@"

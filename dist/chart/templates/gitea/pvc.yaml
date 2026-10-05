@@ -1,0 +1,21 @@
+{{- if .Values.gitea.enabled }}
+# Repositories, the SQLite database and app.ini. Kept on uninstall, so a
+# reinstall finds every repository in place.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-data
+  namespace: {{ include "c4-factory.giteaNamespace" . }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "gitea" "context" .) | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.gitea.persistence.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.gitea.persistence.size }}
+{{- end }}

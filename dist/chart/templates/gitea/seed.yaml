@@ -1,0 +1,111 @@
+{{- if .Values.gitea.enabled }}
+{{- $ns := include "c4-factory.giteaNamespace" . }}
+{{- $seed := .Values.gitea.seed }}
+# The seed (hack/seed/seed.sh): the templates organization and its tagged
+# template repositories, and an organization and Secret gitea-credentials for
+# each project. Not the runners' token: the chart makes that one. A hook
+# after every install and upgrade: it changes nothing already in place, and a new
+# chart version brings new template tags. A failed Job stays for its log until
+# the next upgrade replaces it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed
+  namespace: {{ $ns }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: {{ add $seed.waitSeconds 300 }}
+  template:
+    metadata:
+      labels:
+        {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 8 }}
+    spec:
+      serviceAccountName: seed
+      restartPolicy: Never
+      {{- include "c4-factory.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          image: "{{ $seed.image.repository }}:{{ $seed.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ $seed.image.pullPolicy }}
+          env:
+            - name: GITEA_URL
+              value: {{ include "c4-factory.giteaURL" . | quote }}
+            - name: GITEA_WAIT
+              value: {{ $seed.waitSeconds | quote }}
+            - name: PROJECTS
+              value: {{ join " " (.Values.gitea.projects | uniq) | quote }}
+            - name: RUNNER_SECRET
+              value: ""
+            - name: GITEA_USERNAME
+              valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: username}}
+            - name: GITEA_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: password}}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: seed
+  namespace: {{ $ns }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+{{- range .Values.gitea.projects | uniq }}
+---
+# The seed may create Secret gitea-credentials and change only that one.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: seed-credentials
+  namespace: {{ . }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [gitea-credentials]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: seed-credentials
+  namespace: {{ . }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: seed-credentials
+subjects:
+  - kind: ServiceAccount
+    name: seed
+    namespace: {{ $ns }}
+{{- end }}
+{{- end }}

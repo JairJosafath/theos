@@ -306,10 +306,13 @@ chart: ## Regenerate the Helm chart in dist/chart from the kustomize output.
 	kubebuilder edit --plugins=helm.kubebuilder.io/v2-alpha
 
 .PHONY: helm-lint
-helm-lint: ## Lint the Helm chart and render it with a GitProvider value.
+helm-lint: ## Lint the Helm chart and render it with a GitProvider value, and with Gitea.
 	$(HELM) lint $(HELM_CHART_DIR)
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
 		--set 'gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].token=t' >/dev/null
+	$(HELM) lint $(HELM_CHART_DIR) --set gitea.enabled=true
+	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
+		--set 'gitea.enabled=true,gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >/dev/null
 
 ## Helm binary to use for deploying the chart
 HELM ?= helm
@@ -337,7 +340,7 @@ helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify
 		--set manager.image.repository=$${IMG%:*} \
 		--set manager.image.tag=$${IMG##*:} \
 		--wait \
-		--timeout 5m \
+		--timeout 10m \
 		$(HELM_EXTRA_ARGS)
 
 .PHONY: helm-uninstall

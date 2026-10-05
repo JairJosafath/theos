@@ -18,7 +18,7 @@ spec:
         {{- include "c4-factory.uiLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "c4-factory.uiName" . }}
-      {{- with .Values.ui.imagePullSecrets }}
+      {{- with .Values.ui.imagePullSecrets | default .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}

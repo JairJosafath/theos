@@ -20,7 +20,8 @@ helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 
 {{/*
 ui.components as JSON: an empty namespace is the release's, and the ui entry's
-empty selector is the UI's own selector labels.
+empty selector is the UI's own selector labels. With gitea.enabled, Gitea and the
+CI runners follow; the UI sums the runners' CPU as CI's (key runner).
 */}}
 {{- define "c4-factory.uiComponents" -}}
 {{- $out := list }}
@@ -33,6 +34,12 @@ empty selector is the UI's own selector labels.
 {{- $_ := set $c "selector" (printf "app.kubernetes.io/name=%s-ui,app.kubernetes.io/instance=%s" (include "c4-factory.name" $) $.Release.Name) }}
 {{- end }}
 {{- $out = append $out $c }}
+{{- end }}
+{{- if .Values.gitea.enabled }}
+{{- $ns := include "c4-factory.giteaNamespace" . }}
+{{- $sel := printf "app.kubernetes.io/instance=%s" .Release.Name }}
+{{- $out = append $out (dict "key" "gitea" "name" "Gitea" "role" "Holds the templates and the Container repositories" "namespace" $ns "selector" (printf "app.kubernetes.io/name=gitea,%s" $sel)) }}
+{{- $out = append $out (dict "key" "runner" "name" "CI runners" "role" "Run Container CI jobs" "namespace" $ns "selector" (printf "app.kubernetes.io/component=ci-runner,%s" $sel)) }}
 {{- end }}
 {{- toJson $out }}
 {{- end }}

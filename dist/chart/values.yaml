@@ -284,3 +284,99 @@ gitProviders: []
 #    username: c4factory
 #    token: ""
 #    # existingSecret: gitea-credentials
+
+## Pull secrets for the pods of the UI (unless ui.imagePullSecrets is set),
+## Gitea, the seed and the runners; the operator's are manager.imagePullSecrets.
+## Each must exist in the namespace the pod runs in. Private GHCR packages:
+## dist/chart/README.md, "Private images".
+##
+global:
+  imagePullSecrets: []
+  #  - name: ghcr
+
+## Gitea, the Git host the factory scaffolds into, with the seed Job and the CI
+## runners. Off: gitProviders point at a Gitea the release does not run.
+##
+gitea:
+  enabled: false
+  ## Its own namespace, so its URL is http://gitea.<namespace>.svc.cluster.local:3000
+  ## (an empty one is the release's). The chart creates it unless createNamespace
+  ## is false, and keeps it on uninstall, with the volume.
+  ##
+  namespace: gitea
+  createNamespace: true
+  image:
+    repository: gitea/gitea
+    tag: 1.27.3-rootless
+    pullPolicy: IfNotPresent
+  ## The admin: Secret gitea-admin, its password generated on install and kept
+  ## on upgrade; or existingSecret, a Secret with username, password and email.
+  ##
+  admin:
+    username: c4admin
+    email: c4admin@c4.factory.io
+    # existingSecret: ""
+  persistence:
+    ## Empty: the cluster's default StorageClass.
+    storageClassName: ""
+    size: 1Gi
+  ## Its share of a busy node: at less CPU a CI build left it too little to
+  ## answer its probes (docs/dev/testenv.md, "CPU on the cluster device").
+  ##
+  resources:
+    requests:
+      cpu: 500m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  ## More settings as GITEA__<section>__<KEY>: value, over the chart's.
+  ##
+  config: {}
+  ## Project names: for each, the seed creates its organization and stores Secret
+  ## gitea-credentials in the namespace of that name (which must exist), and the
+  ## chart creates GitProvider gitea there. helm upgrade to add one.
+  ##
+  projects: []
+  #  - webshop
+  seed:
+    image:
+      repository: ghcr.io/jairjosafath/c4factory/seed
+      ## Defaults to Chart.appVersion
+      tag: ""
+      pullPolicy: IfNotPresent
+    ## How long the seed waits for Gitea to answer; on a fresh install its
+    ## image may still be pulling. Give helm install a --timeout above it.
+    ##
+    waitSeconds: 300
+
+## The CI runners in Gitea's namespace, one per label, installed with Gitea.
+## A Container's workflow picks one with runs-on: <label>.
+##
+runners:
+  ## The minimal toolchain (Node, bash, git, make).
+  base:
+    enabled: true
+    image:
+      repository: ghcr.io/jairjosafath/c4factory/gitea-runner-base
+      tag: ""
+      pullPolicy: IfNotPresent
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    workSize: 512Mi
+    tmpSize: 256Mi
+  ## The Go and Node toolchain. A job takes at most 4 cores, so a build can't
+  ## starve the API server and Gitea. goCache: the node directory holding its
+  ## Go build cache (empty: none).
+  go:
+    enabled: true
+    image:
+      repository: ghcr.io/jairjosafath/c4factory/gitea-runner-go
+      tag: ""
+      pullPolicy: IfNotPresent
+    resources:
+      requests: {cpu: 500m, memory: 1Gi}
+      limits: {cpu: "4", memory: 6Gi}
+    workSize: 2Gi
+    tmpSize: 1Gi
+    goCache: /var/cache/c4factory/go/ci
