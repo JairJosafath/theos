@@ -6,8 +6,9 @@ name: Test Chart
 # that the seed made its organizations and webshop's credentials, the chart made
 # GitProvider webshop/gitea, both runners registered, the manager and UI are
 # ready, and the admission policy refuses a Project named unlike its namespace.
-# The go runner runs on the base runner image without its Go cache: the Go
-# toolchain is several GB, and Release's dry run builds it.
+# The go runner runs on the base runner image without its Go cache and with
+# the base runner's requests: the Go toolchain is several GB, Release's dry run
+# builds it, and a runner's two-CPU node has no room for its 500m.
 # A Kind cluster and the image builds take minutes, so like every workflow that
 # needs Kind it skips pull requests: it runs after a merge to main that changes
 # the chart or what it is generated from, on a release, and on demand.
@@ -101,6 +102,8 @@ jobs:
             --set runners.base.image.repository=${RUNNER_IMG%:*} --set runners.base.image.tag=${RUNNER_IMG##*:} \
             --set runners.go.image.repository=${RUNNER_IMG%:*} --set runners.go.image.tag=${RUNNER_IMG##*:} \
             --set runners.go.goCache= \
+            --set runners.go.resources.requests.cpu=100m \
+            --set runners.go.resources.requests.memory=128Mi \
             --set gitea.projects={webshop}"
 
       - name: Check the release

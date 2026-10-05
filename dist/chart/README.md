@@ -37,6 +37,10 @@ regeneration; `Chart.yaml` is never overwritten.
      --set 'gitea.projects={webshop}'
    ```
 
+The release requests about 1.1 CPU and 1.4 GiB of memory on top of
+Kubernetes' own, most of it Gitea and the `go` runner; on a two-CPU node, lower
+`runners.go.resources` or turn the runner off (`runners.go.enabled=false`).
+
 That is the whole factory. Gitea runs in namespace `gitea`, at
 `http://gitea.gitea.svc.cluster.local:3000` inside the cluster; the seed Job,
 a hook after every install and upgrade, pushed the tagged templates to
