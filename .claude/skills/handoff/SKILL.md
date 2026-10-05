@@ -1,151 +1,100 @@
 ---
 name: handoff
-description: Hand off the in-flight state of work on the factory as a comment on its GitHub issue (JairJosafath/c4factory), so a fresh session can pick it up; also how to pick an issue up, the rules while working one (agent name, branch, claims, one agent per checkout), and how to finish it or mark it needs-human. Use when taking or continuing a factory issue, when the session's context is getting large (around 140k tokens), when work stops mid-way, or when the user asks to hand off, pause, wrap up or continue later.
+description: Pick up, claim, hand off or finish a GitHub issue on JairJosafath/c4factory with hack/lib/github.sh - pick and take, lease a Kind cluster, write the handoff comment, close or mark needs-human, file a follow-up. Use when taking or continuing a factory issue, when the context grows past about 100k tokens between tasks, when work stops mid-way, or when the user asks to hand off, pause, wrap up or continue later.
 ---
 
 # Handoff
 
-Work on the factory itself is tracked as GitHub issues on `JairJosafath/c4factory`,
-one issue per piece of work. A handoff is a comment on that issue; the next
-session reads the newest one and continues. Products are built on devices that
-run the factory's Helm release, not here; their problems arrive as
-`source/user` issues and are worked like any other.
-
-Standing facts (true next month) go in `AGENTS.md`, `docs/` or memory, never in
+The procedure for working a factory issue. AGENTS.md ("How to Work", "Working
+in Sessions") has the standing rules; they are not repeated here. Every GitHub
+call goes through `hack/lib/github.sh` (run it alone for its commands; it never
+prints the token). Standing facts go in AGENTS.md, `docs/` or memory, never in
 a handoff.
 
-Every GitHub call goes through `hack/lib/github.sh` (run it alone for its
-commands). It reads the token from the git credential helper and never prints it.
-
-## Labels
-
-- `status/proposed`: waits for the user to ready it. `status/ready`: a session
-  may take it. `status/in-progress`: a session works on it.
-  `status/needs-human`: blocked on the user; the newest comment says why.
-  One status at a time: `hack/lib/github.sh status N <status>` swaps it.
-- `priority/urgent` goes before other ready issues. `kind/bug|feature|chore|docs|improvement`
-  says what it is. `source/dev` or `source/user` says where an issue came from; `create` adds `source/dev`; `user/<name>` names the reporting device.
-- `needs/cluster`: the work or its "Done when" needs the Kind cluster
-  (deploys, factory-ops, Crews, e2e). Set it when you file such an issue, or
-  `hack/lib/github.sh label N needs/cluster` when you find out mid-way. On a
-  device without a cluster (`C4_CLUSTER=none`) `pick` skips these and `take`
-  refuses them: land what you can there (code, unit and envtest tests), label
-  the issue and hand off with what is left. On a device with one, any checkout
-  may work a `needs/cluster` issue, and the checkouts share the cluster through
-  a lease (below).
-
-## The cluster lease
-
-The device with the cluster runs a pool of Kind clusters (`C4_CLUSTERS`,
-default 2: `c4factory`, `c4factory-2`, ...). A session leases one only around
-the steps that touch it (deploys, samples, e2e, factory-ops checks,
-`make up`/`down`), not for the whole issue:
-
-1. Do the work that needs no cluster first: code, `make check`, envtest.
-2. Right before the first step that touches a cluster:
-   `hack/lib/github.sh cluster acquire`. It prints the cluster it leased this
-   checkout (creating it on first use, a few minutes); it waits up to 30m
-   (`--wait 10m` for another bound) while other checkouts hold every one.
-3. Every make target in this checkout now uses that cluster
-   (`hack/lib/github.sh cluster name`); kubectl takes `--context kind-<name>`
-   on every call, since a Bash call doesn't keep exported variables. Deploy
-   this branch's own build (`make deploy`); never trust what is already
-   deployed, another session may have deployed its branch.
-4. Verify, then `hack/lib/github.sh cluster release`.
-
-Exit 4 from `acquire` names the holders: hand off with only the cluster steps
-left. `cluster holder` shows who holds which cluster, `cluster pool` each
-cluster's state. `beat` refreshes the lease; it is stale after the claim TTL
-(2h). `release`, `handoff`, `close` and `status N needs-human` drop it, and
-the relay drops one its session left behind. The `heavy-guard` hook denies
-`make deploy`, `sample`, `e2e`, `test-e2e`, `up` and `down` while another
-checkout holds the cluster the command targets. A handoff names the cluster
-under **State outside git** only while the work still holds it.
-
 ## Pick one up
+
+Issues are the relay's: pick one up only in a relay session, or when the user
+said to work it in this session; otherwise leave it to the relay.
 
 1. `hack/lib/github.sh flush` posts any handoff kept in `.relay/` while GitHub
    was away.
 2. No issue named? `hack/lib/github.sh pick`: the oldest in-progress issue
    nobody holds, else the oldest ready + urgent one, else the oldest ready one.
-   It skips issues another agent claims and issues whose `Depends on #M` is open.
-3. `hack/lib/github.sh take N` claims it for this checkout (a comment naming
-   you, e.g. `otter-23`, your host, branch and session) and swaps it to
-   in-progress; it prints your name and branch. Exit 4: another agent holds it,
-   so pick again. Exit 1 with "this checkout holds #M": another agent works in
-   this checkout, so work from your own worktree (below); release it only if
-   it is a leftover of your own session.
-   `hack/relay.sh` has already done this for its sessions.
-   `handoff`, `close`, `status N needs-human` and a `flush` that posts a kept
-   handoff release the claim;
-   `hack/lib/github.sh claims` shows who holds what.
-4. Switch to the branch `take` printed: `git fetch origin`, then
-   `git switch BRANCH` if `origin/BRANCH` exists (an earlier agent pushed it;
-   continue there), else `git switch -c BRANCH origin/main`.
-5. `hack/lib/github.sh show N` prints the issue, its newest handoff comment and
-   the comments after it (the user may have steered there). Check "Where it
-   stands" against `git log` and the cluster, then do the first next step.
+3. `hack/lib/github.sh take N` claims it, sets `status/in-progress` and prints
+   your name (`otter-23`) and branch. Exit 4: another agent holds it, pick
+   again. Exit 1 "this checkout holds #M": work from your own worktree. The
+   relay has already done this for its sessions.
+4. `git fetch origin`; `git switch BRANCH` if `origin/BRANCH` exists, else
+   `git switch -c BRANCH origin/main`.
+5. `hack/lib/github.sh show N` prints the issue, its newest handoff and the
+   comments after it. Check "Where it stands" against `git log`, then do the
+   first next step.
 
-## While you work
 
-- **Your name** is the one `take` printed (`jq -r .name .relay/claim` reads it
-  again). Sign your traces with it: every commit message ends with an
-  `Agent: otter-23` trailer, in the trailer block with `Co-Authored-By`
-  (`Agent: otter-23` on the line above it, no blank line between), the pull
-  request body has an `Agent: otter-23` line, and so does your handoff (its
-  **Agent:** section). No `@` in front: GitHub would read it as a mention.
-- **One agent per checkout.** The claim lives in this checkout's `.relay/claim`.
-  A second agent on the same device works in its own git worktree
-  (`claude --worktree`, or `git worktree add ../c4factory-NAME origin/main`
-  and start there), never in a checkout another agent uses.
-- **One branch per issue**, the one in the claim; never commit on main. Push
-  after every commit (`git push -u origin HEAD`), so a dead session loses at
-  most one commit and the next agent finds its branch.
-- **Lost claim.** A hook beats your claim's heartbeat after tool calls. If it
-  says you no longer hold the issue (your session slept past the 2-hour lease
-  and another agent took over), stop working on it: push what you have to
-  the issue's branch with your name appended, e.g.
-  `git push origin HEAD:refs/heads/feat/23-claims-otter-23`, comment that
-  branch on the issue (`hack/lib/github.sh comment N -`) so the new owner can
-  take what it needs, and stop. Don't push to the issue's branch any more, and
-  don't take the issue back.
+## Labels
+
+One `status/*` at a time, swapped with `hack/lib/github.sh status N <status>`:
+`proposed` (waits for the user), `ready`, `in-progress`, `needs-human` (the
+newest comment says why). `needs/cluster` marks work whose "Done when" needs a
+Kind cluster (`hack/lib/github.sh label N needs/cluster` when you find out
+mid-way); with `C4_CLUSTER=none`, land the code and tests, label it and hand
+off the rest.
+
+## Lease a cluster
+
+Only around the steps that touch one (deploys, samples, e2e, factory-ops,
+`make up`/`down`), never for the whole issue:
+
+1. Do the cluster-free work first: code, `make check`, envtest.
+2. `hack/lib/github.sh cluster acquire` prints the cluster leased to this
+   checkout (waits up to 30m, `--wait 10m` for less). Exit 4 names the
+   holders: hand off with only the cluster steps left.
+3. Make targets now use it; kubectl takes `--context kind-<name>` on every
+   call. `make deploy` this branch first: never trust what is deployed.
+4. Verify, then `hack/lib/github.sh cluster release`. A handoff names the
+   cluster under **State outside git** only while the work still holds it.
+
+## Sign your work
+
+`Agent: otter-23` goes on the line above `Co-Authored-By` in every commit
+(same trailer block, no blank line), and as a line in the pull request body
+and the handoff. No `@`: GitHub would read it as a mention.
+
+Lost claim (the heartbeat hook says so):
+`git push origin HEAD:refs/heads/<branch>-otter-23`, then
+`hack/lib/github.sh comment N -` naming that branch, and stop.
 
 ## Write a handoff
 
-1. Commit and push your work first, so the SHAs you name exist on the remote.
-2. Write the comment to a scratch file. Its first line is `<!-- relay-handoff -->`
-   (the helper adds it if missing). Sections, short:
-   - **Agent:** your name, e.g. `otter-23`.
-   - **Goal:** the outcome, in two sentences, and who asked for it.
-   - **Where it stands:** done (with commit SHAs), in progress, not started; the
+1. Commit and push first, so the SHAs you name exist on the remote.
+2. Write it to a scratch file, first line `<!-- relay-handoff -->`, under 150
+   lines, secrets redacted. Short sections:
+   - **Agent:** your name.
+   - **Goal:** the outcome in two sentences, and who asked for it.
+   - **Where it stands:** done (commit SHAs), in progress, not started; the
      branch and whether it is pushed.
-   - **Live thread:** what you were in the middle of, what you learned that is
-     written nowhere else, dead ends and why.
-   - **Decisions:** made, and still open with your recommendation.
+   - **Live thread:** what you were in the middle of; what you learned that is
+     written nowhere else; dead ends and why.
+   - **Decisions:** made, and open ones with your recommendation.
    - **Next steps:** numbered and concrete; the first doable in minutes.
-   - **State outside git:** clusters, paused or running things, background
-     processes, ports; where secrets live, never their values.
-   - **References:** spec, plan, results, issues, pull requests, by path or URL.
-     Point to them; never copy them.
-   - **For the next session:** the skills and docs to reach for.
-3. Keep it under about 150 lines. Redact secrets.
-4. `hack/lib/github.sh handoff N FILE` posts it and prints the comment's URL.
-   If GitHub can't be reached it exits 3 and keeps the text in
-   `.relay/pending-handoff-N.md`; the next session or relay posts it first. Say
-   so in your last message.
-5. Give the user the comment's URL and the line to start the next session with:
+   - **State outside git:** clusters, running things, ports; where secrets
+     live, never their values.
+   - **References:** spec, plan, results, issues, pull requests by path or
+     URL, never copied; and the skills and docs the next session needs.
+3. `hack/lib/github.sh handoff N FILE` posts it and prints the URL. Exit 3
+   (GitHub away) keeps it in `.relay/pending-handoff-N.md`; say so in your
+   last message.
+4. Give the user the URL and the line to start the next session with:
    `Continue GitHub issue #N.`
 
 ## Finish
 
-- **Landed:** the work's pull request to main says `Closes #N` and is merged
-  (merge commit) once its checks are green; GitHub then closes N. If N is still
-  open, `hack/lib/github.sh close N FILE`, FILE saying what landed: pull
-  request, commit SHAs, evidence. If GitHub closed it, the claim stays live
-  until the next `take` in this checkout, which releases it as finished.
-- **Can't go on without the user:** `hack/lib/github.sh status N needs-human`,
-  and a comment (or a handoff) saying why and what you need.
-- **Follow-up found on the way:** `hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>`.
-  `create` adds `source/dev`. Don't start it in this session. If it can only start once another issue has
-  landed (a plan's step 3 after step 2), its body says `Depends on #M`;
-  `pick` skips it while #M is open.
+- **Landed:** the pull request says `Closes #N` and is merged as AGENTS.md
+  ("How to Work") says. If N is still open: `hack/lib/github.sh close N FILE`,
+  FILE naming the pull request, SHAs and evidence.
+- **Blocked on the user:** `hack/lib/github.sh status N needs-human` plus a
+  comment saying what you need.
+- **Follow-up found:** `hack/lib/github.sh create TITLE FILE status/proposed
+  kind/<kind>` (add `needs/cluster` if it needs one; a body line
+  `Depends on #M` if it waits on another issue). Don't start it in this
+  session.
