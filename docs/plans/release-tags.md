@@ -68,6 +68,17 @@ person moved #99 and #120 to v0.3.0 it was done, and its newest merge is
   whom the tag protection allows. Step 5 checks that a tag made through the API
   starts the release workflow; if it doesn't, the tag is pushed with go-git
   instead, as `PushBranch` pushes branches.
+- **A paused Crew still tags.** `spec.paused` stops it picking up issues; a
+  release whose work is already merged still goes out.
+- **Warnings once.** A held release sets the Crew's `Released` condition False
+  with the reason; the Crew emits its Warning only when the reason or message
+  changes, and also remembers what it said, since the cached Crew can lag behind
+  the status it just wrote.
+- **Merge commits read late.** A Merged Task without one reads it again each
+  minute for an hour after it completed, then each hour.
+- **Known limit.** The Crew tags and closes before it writes its status; if that
+  write fails, the milestone is closed and `status.lastRelease` misses that
+  release. The Event still names it.
 - **Version files.** The release job's `make release-version` refuses a tag that
   differs from `package.json`; that check stays in the release job. The Crew
   doesn't watch the release run (a follow-up, below).
