@@ -1,0 +1,11 @@
+{{- if and .Values.gitea.enabled .Values.gitea.createNamespace (ne (include "c4-factory.giteaNamespace" .) .Release.Namespace) }}
+# Kept on uninstall: it holds Gitea's volume, and with it every repository.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "c4-factory.giteaNamespace" . }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "gitea" "context" .) | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+{{- end }}

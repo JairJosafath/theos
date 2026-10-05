@@ -2,6 +2,8 @@
 # with a generated password and then runs kubectl apply -k config/gitea.
 # One container, SQLite on a small volume, reachable in the cluster at
 # http://gitea.gitea.svc.cluster.local:3000/ and on the laptop via `make gitea-forward`.
+# The Helm chart runs the same Gitea (dist/chart/templates/gitea): a change of
+# settings belongs in both.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: gitea
