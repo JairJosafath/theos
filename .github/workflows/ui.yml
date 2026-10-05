@@ -1,29 +1,19 @@
 name: UI
 
-# The UI is self-contained in ui/. On a pull request the Changed step skips the
-# checks when it hasn't changed since the last commit they passed on.
+# The UI is self-contained in ui/.
 on:
   push:
     branches: [main]
-    paths: &paths
+    paths:
       - 'ui/**'
       - .github/workflows/ui.yml
-      - .github/actions/changed/**
-  pull_request:
-    paths: *paths
   workflow_dispatch:
-
-# A newer push to a pull request replaces the run in progress.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
 jobs:
   check:
     permissions:
-      actions: read
       contents: read
     name: Typecheck, lint, test and build
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
@@ -36,12 +26,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check what changed
-        id: changed
-        uses: ./.github/actions/changed
-
       - name: Setup Node
-        if: steps.changed.outputs.changed == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
@@ -50,13 +35,10 @@ jobs:
           cache-dependency-path: ui/package-lock.json
 
       - name: Install dependencies
-        if: steps.changed.outputs.changed == 'true'
         run: npm ci --no-audit --no-fund
 
       - name: Check
-        if: steps.changed.outputs.changed == 'true'
         run: npm run check
 
       - name: Build
-        if: steps.changed.outputs.changed == 'true'
         run: npm run build

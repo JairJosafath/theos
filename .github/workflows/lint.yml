@@ -1,12 +1,10 @@
 name: Lint
 
-# Only Go sources and the linter's own configuration can change the result. On a
-# pull request the Changed step skips the linter when none of them changed since
-# the last commit it passed on, such as a push of docs only.
+# Only Go sources and the linter's own configuration can change the result.
 on:
   push:
     branches: [main]
-    paths: &paths
+    paths:
       - '**/*.go'
       - go.mod
       - go.sum
@@ -14,22 +12,13 @@ on:
       - .custom-gcl.yml
       - Makefile
       - .github/workflows/lint.yml
-      - .github/actions/changed/**
-  pull_request:
-    paths: *paths
   workflow_dispatch:
-
-# A newer push to a pull request replaces the run in progress.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
 jobs:
   lint:
     permissions:
-      actions: read
       contents: read
     name: Run on Ubuntu
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
@@ -39,12 +28,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check what changed
-        id: changed
-        uses: ./.github/actions/changed
-
       - name: Setup Go
-        if: steps.changed.outputs.changed == 'true'
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
@@ -52,8 +36,6 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Check linter configuration
-        if: steps.changed.outputs.changed == 'true'
         run: make lint-config
       - name: Run linter
-        if: steps.changed.outputs.changed == 'true'
         run: make lint

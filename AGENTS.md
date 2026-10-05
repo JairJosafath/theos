@@ -98,7 +98,7 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   `take` names (`<type>/<N>-<slug>`, from an up-to-date main), pushed after
   every commit; open a pull request to main whose body
   says `Closes #N` for the GitHub issue it finishes, and merge it with a merge
-  commit once its checks are green. No long-lived or stacked branches: each plan
+  commit once `make check` passes. No long-lived or stacked branches: each plan
   step lands on its own and leaves main working, with new behaviour off until
   the step that turns it on.
 - **Main keeps itself current.** `hack/pull.sh` fast-forwards local main when

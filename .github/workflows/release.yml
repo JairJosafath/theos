@@ -5,24 +5,11 @@ name: Release
 # ghcr.io/<owner>/c4factory/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
 # to oci://ghcr.io/<owner>/c4factory/charts and to a GitHub release for the tag.
 # One job builds the images in order with the local Docker daemon, so the agent
-# and runner images build on the toolchains just built. A pull request that
-# changes this workflow or the images it builds runs it as a dry run: it builds
-# everything and pushes nothing (docs/plans/release-workflow.md).
+# and runner images build on the toolchains just built. It runs no tests:
+# releases are cut from main.
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
-  pull_request:
-    paths:
-      - .github/workflows/release.yml
-      - hack/toolchain-base/**
-      - hack/toolchain-go/**
-      - hack/agent/**
-      - hack/runner/**
-      - hack/seed/**
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
