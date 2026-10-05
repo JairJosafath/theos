@@ -2,12 +2,14 @@
 # PreToolUse hook on Bash (.claude/settings.json): before a heavy job (make
 # check, test, lint, lint-fix, docker-build, deploy, e2e, test-e2e;
 # devcontainer up; docker build) it reads MemAvailable. Below
-# RELAY_MIN_MEM_GIB (default 4, the relay's own threshold) it names what uses
+# RELAY_MIN_MEM_GIB (default 2, the relay's own threshold) it names what uses
 # the memory: the processes with the most, and the Kind node. An interactive
 # session then asks the user before running the job; a headless one
 # (C4_HEADLESS=1, set by hack/relay.sh) gets the warning
 # in its context instead and the job runs: in `claude -p` a question nobody
-# can answer blocks the command. Silent otherwise.
+# can answer blocks the command. When every heavy-job slot is taken
+# (hack/heavy-slot.sh), a make job will wait for one: the session is told so,
+# and that the wait is not a hang, with who holds the slots. Silent otherwise.
 # Before a cluster command (make deploy, sample, e2e, test-e2e, up, down) it
 # reads the lease of the Kind cluster the command targets (hack/lib/github.sh
 # cluster): KIND_CLUSTER= in the command, else KIND_CLUSTER, else the one this
@@ -44,25 +46,38 @@ if [[ $unquoted =~ $sep$cluster$end ]]; then
   job=${BASH_REMATCH[2]}
   # shellcheck source=hack/lib/github.sh
   . "$(dirname "${BASH_SOURCE[0]}")/lib/github.sh"
-  target=${KIND_CLUSTER:-}
+  kc=${KIND_CLUSTER:-}
   # On $cmd, not $unquoted: the quotes of KIND_CLUSTER="c4factory-2" are taken off there with the name.
-  [[ $cmd =~ (^|[[:space:]])KIND_CLUSTER=[\"\']?([^\"\'[:space:]\;\&\|]+) ]] && target=${BASH_REMATCH[2]}
-  [ -n "$target" ] || target=$(gh_cluster name 2>/dev/null)
-  target=${target:-c4factory}
-  if holder=$(gh_lease_holder "$target" 2>/dev/null); then
-    msg="The Kind cluster $target is in use: $holder holds its lease, so \`make $job\` would change or stop it under that session. Run \`hack/lib/github.sh cluster acquire\` first: it leases a free cluster of the pool to this checkout (or waits up to 30m), and make here then uses that one; on exit 4, land what needs no cluster and hand off with only the cluster steps left."
+  [[ $cmd =~ (^|[[:space:]])KIND_CLUSTER=[\"\']?([^\"\'[:space:]\;\&\|]+) ]] && kc=${BASH_REMATCH[2]}
+  [ -n "$kc" ] || kc=$(gh_cluster name 2>/dev/null)
+  kc=${kc:-c4factory}
+  if holder=$(gh_lease_holder "$kc" 2>/dev/null); then
+    msg="The Kind cluster $kc is in use: $holder holds its lease, so \`make $job\` would change or stop it under that session. Run \`hack/lib/github.sh cluster acquire\` first: it leases a free cluster of the pool to this checkout (or waits up to 30m), and make here then uses that one; on exit 4, land what needs no cluster and hand off with only the cluster steps left."
     jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $m}}'
     exit 0
   fi
 fi
 
 [[ $cmd =~ $sep$jobs$end ]] || exit 0
-job=${BASH_REMATCH[2]}
+job=${BASH_REMATCH[2]} target=${BASH_REMATCH[4]}
 
-min=${RELAY_MIN_MEM_GIB:-4}
-[[ $min =~ ^[0-9]+$ ]] || min=4
-avail=$(awk '/^MemAvailable:/ { print $2; found = 1 } END { exit !found }' "${RELAY_MEMINFO:-/proc/meminfo}" 2>/dev/null) || exit 0
-[ "$avail" -ge $((min * 1048576)) ] && exit 0
+# A make job takes a heavy-job slot first; when none is free it waits.
+queue=
+if [ -n "$target" ] && ! slots=$("${0%/*}/heavy-slot.sh" status 2>/dev/null); then
+  queue="Every heavy-job slot on this device is taken (HEAVY_JOBS), so \`$job\` will first wait for one, printing who holds them; that wait is not a hang. Give the command a timeout long enough for the jobs ahead of it, or run it in the background, and don't kill it for being quiet. ${slots//$'\n'/ }"
+fi
+say() {
+  jq -n --arg m "$1" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $m}}'
+}
+
+min=${RELAY_MIN_MEM_GIB:-2}
+[[ $min =~ ^[0-9]+$ ]] || min=2
+avail=$(awk '/^MemAvailable:/ { print $2; found = 1 } END { exit !found }' "${RELAY_MEMINFO:-/proc/meminfo}" 2>/dev/null) ||
+  { [ -n "$queue" ] && say "$queue"; exit 0; }
+if [ "$avail" -ge $((min * 1048576)) ]; then
+  [ -n "$queue" ] && say "$queue"
+  exit 0
+fi
 
 # The five programs with the most resident memory, summed over their
 # processes; named by the command line, since node renames its main thread.
@@ -71,16 +86,16 @@ top=$(ps -eo rss=,args= 2>/dev/null | awk '
   END { for (c in sum) printf "%d\t%s\t%d\n", sum[c], c, n[c] }' |
   sort -rn | head -5 | awk -F'\t' '
   { printf "%s%s%s %.1f GiB", (NR > 1 ? ", " : ""), $2, ($3 > 1 ? " (" $3 ")" : ""), $1 / 1048576 }')
-node="${target:-${KIND_CLUSTER:-c4factory}}-control-plane"
+node="${kc:-${KIND_CLUSTER:-c4factory}}-control-plane"
 kind=
 if command -v docker >/dev/null; then
   use=$(timeout 5 docker stats --no-stream --format '{{.MemUsage}}' "$node" 2>/dev/null) &&
     [ -n "$use" ] && kind="; the Kind node $node uses ${use%% /*}"
 fi
 
-msg="Memory is low: $(awk -v kb="$avail" 'BEGIN { printf "%.1f", kb / 1048576 }') GiB available, under the $min GiB a heavy job like \`$job\` needs (RELAY_MIN_MEM_GIB). Using the most: ${top:-unknown}$kind. Running it now can stall every session on this device; close a session or wait for other builds to finish first (docs/dev/testenv.md, \"Memory on the cluster device\")."
+msg="Memory is low: $(awk -v kb="$avail" 'BEGIN { printf "%.1f", kb / 1048576 }') GiB available, under the $min GiB a heavy job like \`$job\` needs (RELAY_MIN_MEM_GIB). Using the most: ${top:-unknown}$kind. Running it now can stall every session on this device; close a session or wait for other builds to finish first (docs/dev/testenv.md, \"Memory on the cluster device\").${queue:+ $queue}"
 if [ "${C4_HEADLESS:-}" = 1 ]; then
-  jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $m}}'
+  say "$msg"
 else
   jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: $m}}'
 fi

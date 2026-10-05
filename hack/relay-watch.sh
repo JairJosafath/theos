@@ -17,7 +17,8 @@
 # changed this script.
 #
 #   hack/relay-watch.sh                start the watch, detached, for one worker
-#   hack/relay-watch.sh --workers N    for N workers; on the cluster device RELAY_MAX_WORKERS caps them
+#   hack/relay-watch.sh --workers N    for N workers (1-9); on the cluster device RELAY_MAX_WORKERS (default 9)
+#                                      caps them, and hack/relay.sh admits each session by memory
 #   touch .relay/stop                  stop the watch, and every worker after its current session
 #
 # Log: .relay/watch.log, one line per change; the workers log as usual, to

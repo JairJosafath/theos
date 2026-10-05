@@ -34,10 +34,12 @@
 #   hack/relay.sh --workers N      start N workers (1-9); workers already running are left alone
 #
 # On the device with the Kind cluster (C4_CLUSTER not none), memory is the
-# limit: at most RELAY_MAX_WORKERS workers run (default 1). On every device a
-# worker waits before each pick until MemAvailable is at least RELAY_MIN_MEM_GIB
-# (default 4) and the last session start is RELAY_ADMIT_GAP seconds old
-# (default 300), and stops after waiting RELAY_MEM_WAIT seconds (default 3600).
+# limit: at most RELAY_MAX_WORKERS workers run (default 9, so the memory gate,
+# not a count, holds them). On every device a worker waits before each pick
+# until MemAvailable is at least RELAY_MIN_MEM_GIB (default 2) and the last
+# session start is RELAY_ADMIT_GAP seconds old (default 120), and stops after
+# waiting RELAY_MEM_WAIT seconds (default 3600). Heavy jobs (make check, test,
+# lint, deploy, ...) queue device-wide for HEAVY_JOBS slots (hack/heavy-slot.sh).
 #   RELAY_DRY_RUN=1 hack/relay.sh  print the issue and prompt the next session would get; change nothing
 #   touch .relay/stop              stop every worker after its current session
 #
@@ -65,9 +67,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 [[ $WORKERS =~ ^[1-9]$ ]] || { echo "relay: --workers takes 1 to 9" >&2; exit 64; }
-MAX_WORKERS=${RELAY_MAX_WORKERS:-1}
-MIN_MEM_GIB=${RELAY_MIN_MEM_GIB:-4}
-ADMIT_GAP=${RELAY_ADMIT_GAP:-300}  # seconds between session starts across workers
+MAX_WORKERS=${RELAY_MAX_WORKERS:-9}
+MIN_MEM_GIB=${RELAY_MIN_MEM_GIB:-2}
+ADMIT_GAP=${RELAY_ADMIT_GAP:-120}  # seconds between session starts across workers
 MEM_WAIT=${RELAY_MEM_WAIT:-3600}   # seconds a worker waits for headroom before it stops
 MEM_POLL=${RELAY_MEM_POLL:-60}
 MEMINFO=${RELAY_MEMINFO:-/proc/meminfo}
@@ -290,10 +292,11 @@ running_workers() {
   echo "$n"
 }
 
-# cap N: on the device with the Kind cluster, memory is the limit (a session's
-# make check takes 2 to 3 GiB next to the cluster's 4.5), so the workers
-# running and those `--workers N` would start stay at most RELAY_MAX_WORKERS
-# (default 1). Exit 1, with the reason on stderr, when N would pass it.
+# cap N: on the device with the Kind cluster, memory is the limit, so the
+# workers running and those `--workers N` would start stay at most
+# RELAY_MAX_WORKERS (default 9, every worker: admit's memory gate and the
+# heavy-job slots hold them instead). Exit 1, with the reason on stderr, when N
+# would pass it.
 cap() {
   local n=$1 k running new=0
   [ "${C4_CLUSTER:-}" = none ] && return 0
