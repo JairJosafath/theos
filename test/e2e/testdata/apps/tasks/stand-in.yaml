@@ -6,6 +6,6 @@ metadata:
   name: stand-in-loop
   namespace: apps
 spec:
-  containerRef: {name: hello-cli}
+  containerRef: {name: hello}
   agentRef: {name: stand-in}
   goal: Prove the Task loop with the stand-in agent.

@@ -73,7 +73,7 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 KIND_CLUSTER ?= c4factory
 
 .PHONY: e2e
-e2e: cluster metrics-server gitea seed deploy session-image sample toolchain-go runner-go agent-sandbox agent-image-go e2e-apps ## Build the whole test environment in Kind, then check every milestone.
+e2e: cluster metrics-server gitea seed deploy session-image sample toolchain-base runner-base agent-sandbox agent-image-base e2e-apps ## Build the whole test environment in Kind, then check every milestone.
 	KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout 90m
 
 .PHONY: test-e2e

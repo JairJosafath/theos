@@ -1,5 +1,5 @@
-# The e2e fixture: one Go Container scaffolded from the seeded templates.
-# Needs `make gitea seed runner-go agent-sandbox agent-image-go` first. The stand-in
+# The e2e fixture: one hello-world Container scaffolded from the seeded templates.
+# Needs `make gitea seed runner-base agent-sandbox agent-image-base` first. The stand-in
 # Task in tasks/ is applied by the e2e test itself.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

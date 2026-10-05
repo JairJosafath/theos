@@ -128,6 +128,9 @@ AGENT_IMG ?= c4factory/agent-flutter:dev
 GO_TOOLCHAIN_IMG ?= c4factory/go:1.26
 RUNNER_GO_IMG ?= c4factory/gitea-runner-go:dev
 AGENT_GO_IMG ?= c4factory/agent-go:dev
+BASE_TOOLCHAIN_IMG ?= c4factory/base:dev
+RUNNER_BASE_IMG ?= c4factory/gitea-runner-base:dev
+AGENT_BASE_IMG ?= c4factory/agent-base:dev
 
 .PHONY: toolchain
 toolchain: ## Build the slim Flutter toolchain (no Android SDK) that CI checks and agents use.
@@ -174,6 +177,23 @@ agent-image-go: ## Build the agent image on the Go and Node toolchain and load i
 	$(CONTAINER_TOOL) build -t $(AGENT_GO_IMG) --build-arg BASE=$(GO_TOOLCHAIN_IMG) -f hack/agent/Dockerfile .
 	$(KIND) load docker-image $(AGENT_GO_IMG) --name '$(KIND_CLUSTER)'
 
+.PHONY: toolchain-base
+toolchain-base: ## Build the minimal toolchain (Node, bash, git, make) the e2e hello-world Container uses.
+	$(CONTAINER_TOOL) build -t $(BASE_TOOLCHAIN_IMG) hack/toolchain-base
+
+.PHONY: runner-base
+runner-base: ## Build the minimal CI runner (label base), load it into Kind and run it.
+	$(CONTAINER_TOOL) build -t $(RUNNER_BASE_IMG) --build-arg BASE=$(BASE_TOOLCHAIN_IMG) -f hack/runner/Dockerfile .
+	$(KIND) load docker-image $(RUNNER_BASE_IMG) --name '$(KIND_CLUSTER)'
+	$(TESTENV_KUBECTL) apply -f config/runner/base.yaml
+	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner-base
+	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-base --timeout=600s
+
+.PHONY: agent-image-base
+agent-image-base: ## Build the agent image on the minimal toolchain and load it into Kind.
+	$(CONTAINER_TOOL) build -t $(AGENT_BASE_IMG) --build-arg BASE=$(BASE_TOOLCHAIN_IMG) -f hack/agent/Dockerfile .
+	$(KIND) load docker-image $(AGENT_BASE_IMG) --name '$(KIND_CLUSTER)'
+
 .PHONY: agent-sandbox
 agent-sandbox: ## Install Agent Sandbox (config/agent-sandbox, v1.0.4), which runs the agents.
 	$(TESTENV_KUBECTL) apply --server-side -k config/agent-sandbox
@@ -198,7 +218,7 @@ claude-secret-copy: ## Copy the Claude Secret between projects: make claude-secr
 	@echo "Copied Secret claude-credentials from $(FROM) to $(TO)"
 
 .PHONY: e2e-apps
-e2e-apps: ## Apply the e2e fixture project: one Go command-line tool (test/e2e/testdata/apps).
+e2e-apps: ## Apply the e2e fixture project: one hello-world Container (test/e2e/testdata/apps).
 	$(TESTENV_KUBECTL) apply -k test/e2e/testdata/apps
 
 .PHONY: metrics-server

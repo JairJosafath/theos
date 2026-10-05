@@ -1,0 +1,53 @@
+# The minimal runner: the Gitea runner on the minimal toolchain (hack/toolchain-base),
+# labelled base, for the e2e hello-world Container.
+# `make runner-base` builds it and applies this; it is not part of config/runner.
+# It registers with the token the seed Job stores in Secret gitea/gitea-runner.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-runner-base
+  namespace: gitea
+  labels:
+    app.kubernetes.io/part-of: c4factory-testenv
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitea-runner-base
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitea-runner-base
+        app.kubernetes.io/part-of: c4factory-testenv
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: runner
+          image: c4factory/gitea-runner-base:dev
+          imagePullPolicy: Never
+          env:
+            - name: GITEA_INSTANCE
+              value: http://gitea.gitea.svc.cluster.local:3000
+            - name: RUNNER_TOKEN
+              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+            - name: RUNNER_LABELS
+              value: base:host
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: work
+              mountPath: /data/work
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: work
+          emptyDir: {medium: Memory, sizeLimit: 512Mi}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 256Mi}

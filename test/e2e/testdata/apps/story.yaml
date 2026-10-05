@@ -1,44 +1,42 @@
-# Who uses what, and what it is made of: one sample Go command-line tool for the e2e agent loop.
+# Who uses what, and what it is made of: a hello-world project for the e2e agent loop.
 apiVersion: c4.factory.io/v1alpha1
 kind: Person
 metadata:
-  name: tool-user
+  name: hello-user
 spec:
-  displayName: Tool user
-  description: Someone who runs the sample tool.
+  displayName: Hello user
+  description: Someone who runs the hello script.
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: SoftwareSystem
 metadata:
-  name: sample-tools
+  name: hello-system
 spec:
-  displayName: Sample tools
-  description: A sample Go command-line tool for the e2e agent loop.
+  displayName: Hello system
+  description: A hello-world project for the e2e agent loop.
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Relationship
 metadata:
-  name: tool-user-uses-sample-tools
+  name: hello-user-uses-hello-system
 spec:
-  source: {kind: Person, name: tool-user}
-  target: {kind: SoftwareSystem, name: sample-tools}
-  description: Runs the tool
+  source: {kind: Person, name: hello-user}
+  target: {kind: SoftwareSystem, name: hello-system}
+  description: Runs it
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Container
 metadata:
-  name: hello-cli
+  name: hello
 spec:
   softwareSystemRef:
-    name: sample-tools
-  displayName: Hello CLI
-  description: A sample Go command-line tool for the e2e agent loop.
+    name: hello-system
+  displayName: Hello
+  description: A hello-world project for the e2e agent loop.
   type: cli
   gitProviderRef:
     name: gitea
   frameworkRef:
-    name: go-cli
+    name: hello
   standardRef:
-    name: go-standard
-  deploymentRef:
-    name: gitea-release
+    name: hello-standard
