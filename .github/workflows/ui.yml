@@ -26,7 +26,7 @@ jobs:
       actions: read
       contents: read
     name: Typecheck, lint, test and build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: ui
@@ -45,7 +45,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
-          cache: npm
+          # A self-hosted runner keeps its npm cache on a volume (make gh-runner).
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: ui/package-lock.json
 
       - name: Install dependencies
