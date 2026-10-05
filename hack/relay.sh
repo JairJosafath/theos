@@ -449,9 +449,9 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   [ "$rc" = 124 ] && log "session $i hit the $SESSION_TIMEOUT timeout"
   [ "$rc" = 143 ] && log "session $i was killed (SIGTERM)"
 
+  drop_lease "that session $i left behind"
   flush || { log "GitHub can't be reached; stopping"; break; }
   result=$(outcome "$ISSUE" "$before") || result=unknown
-  drop_lease "that session $i left behind"
   if gh_claim_read; then
     case $result in
       closed) reason=finished ;;

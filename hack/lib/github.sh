@@ -329,7 +329,7 @@ gh_branch_name() {
 
 # gh_device_locked CMD ARGS...: run CMD under a lock shared by the device's
 # checkouts (in the git common dir), so two takes on the device don't race
-# each other, nor two checkouts' cluster acquires.
+# each other.
 gh_device_locked() {
   local dir fd rc
   dir=$(git -C "$GH_LIB_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
@@ -479,11 +479,12 @@ gh_lease_read() {
   [ -n "$l_wt" ]
 }
 
-# gh_lease_live: gh_lease_read, and exit 1 unless the lease is live.
+# gh_lease_live: gh_lease_read, and exit 1 unless the lease is live. A bad
+# C4_LEASE_TTL counts as live: better wait than deploy over another session.
 gh_lease_live() {
   local ttl
   gh_lease_read && [ -d "$l_wt" ] || return 1
-  ttl=$(gh_ttl) || return 1
+  ttl=$(gh_ttl 2>/dev/null) || return 0
   [ $(($(date +%s) - ${l_beat:-0})) -lt "$ttl" ]
 }
 
@@ -503,8 +504,21 @@ gh_lease_holder() {
   gh_lease_desc
 }
 
+# gh_lease_locked CMD ARGS...: run CMD under the lease's own lock, so
+# acquires, releases and beats in different checkouts don't interleave. Not the
+# device lock: take holds that while it releases a claim, and so the lease.
+gh_lease_locked() {
+  local fd rc
+  exec {fd}>>"$(gh_lease_file).lock"
+  flock -w 30 "$fd" || { echo "github: waited 30s for the cluster lease's lock" >&2; exec {fd}>&-; return 2; }
+  "$@"
+  rc=$?
+  exec {fd}>&-
+  return $rc
+}
+
 # gh_lease_take: write this checkout's lease unless another checkout holds a
-# live one; then print that one and exit 1. Run under the device lock.
+# live one; then print that one and exit 1. Run under gh_lease_locked.
 gh_lease_take() {
   local f name= issue= c_issue c_id c_name c_branch
   gh_lease_holder && return 1
@@ -528,8 +542,10 @@ gh_lease_acquire() {
     esac
   done
   secs=$(gh_seconds "$wait" --wait) || return 64
+  gh_ttl >/dev/null || return 64
   t0=$(date +%s)
-  while ! holder=$(gh_device_locked gh_lease_take); do
+  while ! holder=$(gh_lease_locked gh_lease_take); do
+    [ -n "$holder" ] || return 1
     if [ $(($(date +%s) - t0)) -ge "$secs" ]; then
       echo "github: the Kind cluster is in use: $holder holds the lease. Land what needs no cluster and hand off with only the cluster steps left" >&2
       return 4
@@ -544,7 +560,9 @@ gh_lease_acquire() {
 
 # gh_lease_release: drop this checkout's lease, live or stale; another
 # checkout's is left alone.
-gh_lease_release() {
+gh_lease_release() { gh_lease_locked gh_lease_release_locked; }
+
+gh_lease_release_locked() {
   local l_name l_issue l_wt l_beat
   gh_lease_read && gh_lease_mine || return 0
   rm -f "$(gh_lease_file)"
@@ -556,6 +574,12 @@ gh_lease_beat() {
   local f l_name l_issue l_wt l_beat
   gh_lease_read && gh_lease_mine || return 0
   [ $(($(date +%s) - ${l_beat:-0})) -ge "$GH_BEAT_EVERY" ] || return 0
+  gh_lease_locked gh_lease_beat_locked
+}
+
+gh_lease_beat_locked() {
+  local f l_name l_issue l_wt l_beat
+  gh_lease_read && gh_lease_mine || return 0
   f=$(gh_lease_file)
   jq --argjson t "$(date +%s)" '.beat = $t' "$f" >"$f.$$" && mv "$f.$$" "$f"
 }

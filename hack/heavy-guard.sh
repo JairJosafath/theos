@@ -35,7 +35,9 @@ cmd=${cmd//$'\\\n'/ }
 
 # A cluster command while another checkout holds the cluster lease: deny it.
 cluster="make([[:blank:]][^;&|$nl]*)?[[:blank:]](deploy|sample|e2e|test-e2e|up|down)"
-if [[ $cmd =~ $sep$cluster$end ]]; then
+# Quoted text (a commit message, an echo) is not a command.
+unquoted=$(sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" <<<"$cmd")
+if [[ $unquoted =~ $sep$cluster$end ]]; then
   job=${BASH_REMATCH[2]}
   # shellcheck source=hack/lib/github.sh
   . "$(dirname "${BASH_SOURCE[0]}")/lib/github.sh"

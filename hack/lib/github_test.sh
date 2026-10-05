@@ -79,6 +79,8 @@ as "$T/wt2" gh_cluster acquire --wait 0 >/dev/null; check "acquire again, own le
 gh_cluster acquire --wait 0 2>"$T/err"; check "acquire, held: exit 4" $? 4
 grep -q "heron-50 (#50, $T/wt2)" "$T/err"; check "acquire, held: names the holder" $? 0
 gh_cluster acquire --wait x 2>/dev/null; check "acquire, bad wait" $? 64
+C4_LEASE_TTL=bogus gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad TTL" $? 64
+check "bad TTL: the lease counts as live" "$(C4_LEASE_TTL=bogus gh_lease_holder | cut -d' ' -f1)" heron-50
 (sleep 1; as "$T/wt2" gh_cluster release >/dev/null) &
 t0=$(date +%s)
 GH_LEASE_POLL=0.2 gh_cluster acquire --wait 10s >/dev/null 2>"$T/err"; check "acquire waits for a release" $? 0

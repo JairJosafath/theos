@@ -125,7 +125,8 @@ case $reason in *"hack/lib/github.sh cluster acquire"*) r=yes ;; *) r=no ;; esac
 check "deny: says to acquire" $r yes
 C4_HEADLESS=1 hook "make deploy"
 check "lease held, headless: denied" "$(decision)" deny
-for c in "make check" "make upgrade" "make docker-build" "git log --grep 'make deploy'"; do
+for c in "make check" "make upgrade" "make docker-build" "git log --grep 'make deploy'" \
+  "git commit -m 'next: make deploy then verify'" 'echo "then make e2e"'; do
   hook "$c"
   check "lease held, $c: not a cluster command" "$(cat "$T/out")" ""
 done
