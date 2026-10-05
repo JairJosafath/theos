@@ -9,6 +9,7 @@ package scaffold
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"maps"
 	"path"
 	"slices"
@@ -30,6 +31,28 @@ type Tree map[string]File
 // Paths returns the paths in the tree, sorted.
 func (t Tree) Paths() []string {
 	return slices.Sorted(maps.Keys(t))
+}
+
+// ReadTree reads every file under fsys into a Tree, such as a template folder
+// through os.DirFS. A file with any execute bit set is executable.
+func ReadTree(fsys fs.FS) (Tree, error) {
+	tree := Tree{}
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		tree[p] = File{Data: data, Executable: info.Mode()&0o111 != 0}
+		return nil
+	})
+	return tree, err
 }
 
 // Input is the data every template receives.

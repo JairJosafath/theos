@@ -34,7 +34,15 @@ flock "$DIR/lock-3" sleep 30 &
 until ! flock -n "$DIR/lock-3" true; do sleep 0.1; done
 check "running workers" "$(running_workers)" 1
 cap 1 2>/dev/null; check "cap: worker 3 already runs" $? 1
-kill %1; wait 2>/dev/null
+flock "$DIR/lock-12" sleep 30 &
+until ! flock -n "$DIR/lock-12" true; do sleep 0.1; done
+check "running workers: worker 12 counts" "$(running_workers)" 2
+kill %1 %2; wait 2>/dev/null
+
+# Arguments: one or two digits.
+check "--workers 12" "$(. "$(dirname "$0")/relay.sh" --workers 12; echo "$WORKERS")" 12
+(. "$(dirname "$0")/relay.sh" --workers 100) 2>/dev/null; check "--workers 100 refused" $? 64
+(. "$(dirname "$0")/relay.sh" --workers 0) 2>/dev/null; check "--workers 0 refused" $? 64
 
 # The wait for headroom.
 meminfo 8

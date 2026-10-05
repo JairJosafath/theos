@@ -373,10 +373,10 @@ release installs the whole factory:
 | --- | --- | --- |
 | Operator, CRDs, RBAC, admission policy | release namespace | always |
 | UI | release namespace | `ui.enabled`, on by default |
-| Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password generated into Secret `gitea-admin` and kept on upgrade; namespace and volume kept on uninstall |
+| Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password generated in the cluster by Gitea's pod into Secret `gitea-admin`, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
 | Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret and a GitProvider for each project in `gitea.projects`, the runners' registration token |
 | CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
-| GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`) |
+| GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values |
 
 A device installs itself only what is another project's or its own: Agent
 Sandbox (its controller and CRDs) before the chart, the namespaces of its
@@ -394,7 +394,21 @@ make targets (`make gitea seed deploy`) and locally built images.
 - **Provisioning data stores.** A Connector only scaffolds; creating real databases is left to tools such as Crossplane.
 - **Git providers other than Gitea.** The GitProvider interface allows more later.
 
-## Test environment: everything in the cluster
+## Test tiers
+
+Each rule is verified at the lowest tier that can see it, so most work verifies on any device without a cluster. The Kind cluster is for what needs a real Kubernetes node.
+
+| Tier | Verifies |
+| --- | --- |
+| Table tests (`make test`) | The decisions in `internal/model` and the rendering of every template in `internal/scaffold`. |
+| Offline YAML (`make validate-yaml`, in `make check`) | Samples, e2e fixtures, kustomize builds, the Helm chart and rendered manifests, against the built-in schemas and the CRDs, with their create-time CEL rules. |
+| Local Gitea (`make test-gitea`, `make seed-local`) | The Gitea API's behaviour and the seed, against the same Gitea binary the cluster runs, started per checkout. |
+| envtest (`make test`) | Reconcilers wired to a real API server: status, ownerReferences, CEL rules on updates, the admission policy. |
+| Kind (`make e2e`) | Agent Sandbox pods and the agent fence, node and kubelet behaviour, RBAC as deployed, Gitea Actions runners. |
+
+The plan that builds the lower tiers is [verify-without-cluster.md](plans/verify-without-cluster.md).
+
+## Test environment: the Kind cluster
 
 One kind cluster on a laptop holds Gitea, the operator, a sample project and a test Session, so the whole loop runs with nothing but Docker. Every part is picked to stay light on resources.
 

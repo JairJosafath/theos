@@ -17,6 +17,7 @@ task. Read the rest when the task needs it:
 | set up a device, or change `./dev` or `.vscode/` | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
+| make, store, pass or test a credential, or a secret scanner fails a pull request | the `secrets` skill |
 | take an issue, or continue work someone left in flight (a relay session, or the user said to) | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
 | work on a plan step | its plan in [docs/plans/](docs/plans/); finished plans are in [docs/plans/done/](docs/plans/done/) |
 

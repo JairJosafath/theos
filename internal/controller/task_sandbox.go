@@ -336,8 +336,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 			return state, nil
 		}
 		state.Failure = term.Reason
-		// A container the kubelet lost across a node restart.
-		state.Interrupted = state.Interrupted || term.Reason == "ContainerStatusUnknown"
+		state.Interrupted = state.Interrupted || containerLost(term)
 		if term.Reason == "OOMKilled" || ownLimit {
 			state.Interrupted = false
 		}
@@ -366,7 +365,8 @@ func podDisrupted(pod *corev1.Pod) bool {
 
 // endedAtDeadline reports whether the kubelet ended a DeadlineExceeded pod at
 // its deadline (model.EndedAtDeadline), going by when the agent container
-// finished. A container the kubelet lost wasn't ended by it.
+// finished. A lost container wasn't ended by the kubelet, and its finish time is
+// when the node came back.
 func endedAtDeadline(pod *corev1.Pod) bool {
 	var deadline time.Time
 	if pod.Status.StartTime != nil && pod.Spec.ActiveDeadlineSeconds != nil {
@@ -374,13 +374,21 @@ func endedAtDeadline(pod *corev1.Pod) bool {
 	}
 	for _, cs := range pod.Status.ContainerStatuses {
 		if term := cs.State.Terminated; cs.Name == agentContainer && term != nil {
-			if term.Reason == "ContainerStatusUnknown" {
+			if containerLost(term) {
 				return false
 			}
 			return model.EndedAtDeadline(deadline, term.FinishedAt.Time)
 		}
 	}
 	return true
+}
+
+// containerLost reports whether the agent container died with its node: the
+// kubelet lost it (ContainerStatusUnknown), or containerd found its exit gone
+// when the node restarted (Unknown, exit code 255, finished when containerd
+// noticed).
+func containerLost(term *corev1.ContainerStateTerminated) bool {
+	return term.Reason == "ContainerStatusUnknown" || term.Reason == "Unknown"
 }
 
 // sandboxExpiry reports whether Agent Sandbox found the sandbox past its

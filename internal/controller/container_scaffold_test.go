@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"path"
 	"time"
@@ -441,7 +442,7 @@ var _ = Describe("Container scaffolding", func() {
 		By("scaffolding once the Secret appears, though Secrets aren't watched")
 		mustCreate(&corev1.Secret{
 			ObjectMeta: objectMeta(ns, "gitea-credentials"),
-			StringData: map[string]string{"username": "c4admin", "token": "t0ken"},
+			StringData: map[string]string{"username": "c4admin", "token": rand.Text()},
 		})
 		Eventually(func(g Gomega) {
 			var container c4v1alpha1.Container

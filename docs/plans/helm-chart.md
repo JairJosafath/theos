@@ -19,8 +19,8 @@ operator installs only through kustomize into the Kind test cluster.
 - **UI:** `ui.enabled` (default true) installs the read-only UI in the release
   namespace, with the same read-only ClusterRoles as `config/ui/`.
 - **Git provider:** `gitProviders`, a list of `{namespace, name, provider, url,
-  owner}` plus a token or an existing Secret. Each becomes a GitProvider (and its
-  credentials Secret) in that namespace. CRDs are chart templates, so these are
+  owner, existingSecret}`, the Secret one the user makes (#137 dropped the
+  token value). Each becomes a GitProvider in that namespace. CRDs are chart templates, so these are
   `post-install,post-upgrade` hooks: Helm builds hooks only after the release's
   CRDs exist. The namespace must exist.
 - **Prerequisite:** Agent Sandbox (the Task controller owns its `Sandbox`

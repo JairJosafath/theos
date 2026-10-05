@@ -131,6 +131,9 @@ check "pick fails: logged once" "$(logged 'could not ask GitHub for the next iss
 # Arguments.
 bash "$(dirname "$0")/relay-watch.sh" --workers 0 2>/dev/null
 check "--workers 0 refused" $? 64
+check "--workers 12" "$(. "$(dirname "$0")/relay-watch.sh" --workers 12; echo "$WORKERS")" 12
+bash "$(dirname "$0")/relay-watch.sh" --workers 100 2>/dev/null
+check "--workers 100 refused" $? 64
 bash "$(dirname "$0")/relay-watch.sh" --bogus 2>/dev/null
 check "unknown flag refused" $? 64
 

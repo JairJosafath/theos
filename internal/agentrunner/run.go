@@ -126,16 +126,32 @@ func shorten(s string, n int) string {
 // checkFixAttempts is how often the agent is sent back when the check fails.
 const checkFixAttempts = 2
 
+// stopGrace is how long a failed run waits for c4agent to be told to stop. A
+// node restart signals every process of the pod at once, so the agent may die
+// before c4agent's own SIGTERM cancels ctx.
+var stopGrace = 2 * time.Second
+
 // Run does one job in dir and reports the outcome. Failures of the work itself
-// are in Result.Error; the run as such does not fail. A run that fails after ctx
-// was cancelled is Interrupted: c4agent was told to stop, and the kill of the
-// agent that follows is not the agent's failure.
+// are in Result.Error; the run as such does not fail. A run that fails when ctx
+// is cancelled, or within stopGrace after, is Interrupted: c4agent was told to
+// stop, and the kill of the agent that comes with it is not the agent's failure.
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	result := run(ctx, job, agent, dir)
-	if result.Error != "" && !result.Unavailable && ctx.Err() != nil {
+	if result.Error != "" && !result.Unavailable && stoppedWithin(ctx, stopGrace) {
 		result.Interrupted = true
 	}
 	return result
+}
+
+func stoppedWithin(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return true
+	case <-timer.C:
+		return false
+	}
 }
 
 func run(ctx context.Context, job Job, agent Agent, dir string) Result {

@@ -270,20 +270,23 @@ ui:
       optional: true
 
 ## Git providers: where Container repositories are created. Each entry becomes a
-## GitProvider in its namespace (a Project's, which must exist), with a Secret
-## holding its credentials unless existingSecret names one with the keys
-## "username" and "token". They are post-install and post-upgrade hooks, so
-## `helm uninstall` leaves them in place.
+## GitProvider in its namespace (a Project's, which must exist), reading the
+## Secret existingSecret names, with the keys "username" and "token". You make
+## that Secret before the install; the chart renders none:
+##
+##   kubectl -n webshop create secret generic git-credentials \
+##     --from-literal=username=c4factory --from-literal=token="$GIT_TOKEN"
+##
+## They are post-install and post-upgrade hooks, so `helm uninstall` leaves them
+## in place. With gitea.enabled, gitea.projects makes these instead.
 ##
 gitProviders: []
 #  - namespace: webshop
-#    name: gitea
+#    name: git
 #    provider: gitea
-#    url: http://gitea.gitea.svc.cluster.local:3000
+#    url: http://git.example.com:3000
 #    owner: webshop
-#    username: c4factory
-#    token: ""
-#    # existingSecret: gitea-credentials
+#    existingSecret: git-credentials
 
 ## Pull secrets for the pods of the UI (unless ui.imagePullSecrets is set),
 ## Gitea, the seed and the runners; the operator's are manager.imagePullSecrets.
@@ -298,7 +301,7 @@ global:
 ## runners. Off: gitProviders point at a Gitea the release does not run.
 ##
 gitea:
-  enabled: false
+  enabled: true
   ## Its own namespace, so its URL is http://gitea.<namespace>.svc.cluster.local:3000
   ## (an empty one is the release's). The chart creates it unless createNamespace
   ## is false, and keeps it on uninstall, with the volume.
