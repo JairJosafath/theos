@@ -144,8 +144,10 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   `.claude/worktrees/relay-k` and logs to `.relay/relay-k.log`.
   `hack/relay-watch.sh [--workers N]` keeps it ready, starting it within a
   minute of an issue becoming ready.
-- **On the cluster device, memory is the limit.** Check `free -g` before a
-  heavy job (`make check`, image builds, `make deploy`) and never run two at once;
+- **On the cluster device, memory is the limit.** A session at rest is cheap;
+  heavy jobs (`make check`, `test`, `lint`, `docker-build`, `deploy`, `e2e`) are
+  not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
+  that waits for one prints who holds them, and that wait is not a hang;
   [docs/dev/testenv.md](docs/dev/testenv.md) has the numbers.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?

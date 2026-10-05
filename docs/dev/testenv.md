@@ -125,20 +125,38 @@ minutes and restarts itself when that changed its code.
 
 ### Memory on the cluster device
 
-The device with the Kind cluster has 14.7 GiB; the Kind node takes about 4.5
-with a Crew's agent sandboxes running, and one `make check` (Go builds,
-envtest, golangci-lint) 2 to 3 GiB at its peak. Four sessions and a nested
-devcontainer build on it stalled every task for minutes and took down VS Code
-and every Claude session with it (#57). So:
+The device with the Kind cluster has 13.4 GiB and 4 GiB of swap. Four sessions
+and a nested devcontainer build on it once stalled every task for minutes and
+took down VS Code and every Claude session with it (#57), when the Kind node
+took about 4.5 GiB with a Crew's agent sandboxes running. Measured again on
+2026-10-05, after the products went (#86):
 
-- There, the relay runs at most `RELAY_MAX_WORKERS` workers (default 1), counting
-  those already running; `--workers N` above it refuses to start.
+- the Kind node with Gitea and the seeded templates: 1.2 GiB;
+- a relay session (`claude -p` and its children): 0.5 to 1.1 GiB;
+- one `make check` at its peak: still 2 to 3 GiB (Go builds, envtest,
+  golangci-lint).
+
+A session at rest is cheap; what can still take the device down is several
+heavy jobs at once. So the relay admits sessions by memory, and heavy jobs
+queue:
+
+- There, the relay runs at most `RELAY_MAX_WORKERS` workers (default 9, every
+  worker `--workers` allows), counting those already running; `--workers N`
+  above it refuses to start. The memory gate below, not this count, is the
+  limit.
 - On every device, a worker waits before each pick until `MemAvailable` is at
-  least `RELAY_MIN_MEM_GIB` (default 4) and the last session start across
-  workers is `RELAY_ADMIT_GAP` seconds old (default 300), and stops after
+  least `RELAY_MIN_MEM_GIB` (default 2) and the last session start across
+  workers is `RELAY_ADMIT_GAP` seconds old (default 120), and stops after
   `RELAY_MEM_WAIT` seconds (default 3600) without headroom. It logs the wait.
-- Sessions check `free -g` before a heavy job (`make check`, image builds,
-  `make deploy`) and never run two at once.
+- Heavy jobs queue device-wide: `make check`, `test`, `lint`, `lint-fix`,
+  `docker-build`, `deploy`, `e2e` and `test-e2e` take one of `HEAVY_JOBS` slots
+  (default 2; 0 turns the queue off) before anything builds, shared by every
+  checkout on the device (`hack/heavy-slot.sh`: `flock`ed files in
+  `<git common dir>/heavy-slots`). A `make` that finds them all taken waits,
+  printing who holds them (pid, checkout, goals, since when); the wait is not a
+  hang, so give the command a long timeout or run it in the background. A job
+  that ends, fails or is killed frees its slot within a second; its sub-makes
+  don't take another. `hack/heavy-slot.sh status` shows the slots.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
   before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
   `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;
@@ -146,12 +164,15 @@ and every Claude session with it (#57). So:
   runs, naming the processes with the most memory and the Kind node. A
   headless session (`C4_HEADLESS=1`, set by the relay) gets
   that warning in its context and the job runs, since in `claude -p` a
-  question nobody can answer blocks the command. Other commands cost one
-  `bash` and nothing more.
+  question nobody can answer blocks the command. When every slot is taken, it
+  tells the session a `make` job will wait, and that the wait is not a hang.
+  Other commands cost one `bash` and nothing more.
 
-`hack/relay_test.sh` tests the cap and the wait against a faked
-`/proc/meminfo` (`RELAY_MEMINFO`), and `hack/heavy-guard_test.sh` the hook,
-with `ps` and `docker` faked too.
+`hack/relay_test.sh` tests the defaults, the cap and the wait against a faked
+`/proc/meminfo` (`RELAY_MEMINFO`), `hack/heavy-guard_test.sh` the hook,
+with `ps` and `docker` faked too, and `hack/heavy-slot_test.sh` the slots: two
+jobs running while a third waits, a slot freed by a job that ends or is killed,
+and the Makefile queueing its heavy goals.
 
 ### CPU on the cluster device
 

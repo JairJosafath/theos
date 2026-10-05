@@ -64,6 +64,17 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+# Heavy goals queue device-wide for one of HEAVY_JOBS slots (default 2), shared
+# by every checkout, before anything builds (hack/heavy-slot.sh). The slot is
+# held while this make runs; its sub-makes don't take another.
+HEAVY_GOALS = check test lint lint-fix docker-build deploy e2e test-e2e
+ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
+ifeq ($(C4_HEAVY_SLOT),)
+$(shell hack/heavy-slot.sh acquire $$PPID "make $(MAKECMDGOALS)" >&2)
+export C4_HEAVY_SLOT := 1
+endif
+endif
+
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
