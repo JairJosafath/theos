@@ -39,6 +39,7 @@ Log in once per machine: `gh auth login` and `gh auth setup-git` (machine-wide;
 | `./dev setup --upgrade` | Downloads the newest version of every tool again. |
 | `./dev shell` | Opens the project shell outside VS Code, for example in Windows Terminal. |
 | `./dev run CMD` | Runs one command with the project environment, for example `./dev run go test ./...`. |
+| `./dev clean` | Deletes the Makefile tools left in each checkout's and worktree's `bin/` from before they moved to `.dev/make/bin/`. |
 | `./dev nuke` | Deletes this project's Kind clusters and all of `.dev/`, after asking. |
 
 The same actions are VS Code tasks (**Terminal → Run Task → Dev: …**).
@@ -54,7 +55,8 @@ The same actions are VS Code tasks (**Terminal → Run Task → Dev: …**).
 | `.dev/kube/config` | Contexts of the Kind clusters created from this folder |
 | `.dev/zsh/` | oh-my-zsh, plugins and shell history |
 | `.dev/claude/` | Claude Code login, settings and history for this project |
-| `bin/` | Tools the Makefile downloads, as before |
+| `.dev/make/bin/` | Tools the Makefile downloads (controller-gen, golangci-lint, kustomize, setup-envtest and the envtest binaries in `k8s/`), under versioned names |
+| `bin/` | What `make build` writes (`bin/manager`) |
 
 `hack/dev/env.sh` sets the variables that point every tool at `.dev/`, and
 `hack/dev/zshrc` is the shell configuration. Both are versioned; `.dev/` is not.
@@ -63,6 +65,13 @@ The same actions are VS Code tasks (**Terminal → Run Task → Dev: …**).
 
 A git worktree gets a symlink to the main checkout's `.dev/`, so tools and caches
 exist once. `./dev nuke` in a worktree removes only that link.
+
+The Makefile finds the main checkout through git, so a worktree without the link
+(a relay worktree) uses the same `.dev/make/bin/`. Several worktrees can install
+into it at once: each tool installs under a lock and appears under its versioned
+name only when complete. Before this, every checkout had its own tools in `bin/`;
+`./dev clean` deletes them in the main checkout and every worktree, once no branch
+in flight still predates the change.
 
 ## Removing the project
 
