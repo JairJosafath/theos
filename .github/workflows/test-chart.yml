@@ -29,10 +29,14 @@ jobs:
     permissions:
       contents: read
     name: Run on Ubuntu
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    # A cluster and image tags of its own: on a self-hosted runner (make
+    # gh-runner) it shares the device's Docker with the Kind pool and its :dev
+    # images.
     env:
-      IMG: c4factory/operator:dev
-      UI_IMG: c4factory/ui:dev
+      IMG: c4factory/operator:chart-test
+      UI_IMG: c4factory/ui:chart-test
+      KIND_CLUSTER_NAME: chart-test
       AGENT_SANDBOX: https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
     steps:
       - name: Clone the code
@@ -44,6 +48,8 @@ jobs:
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
+          # A self-hosted runner keeps its Go caches on a volume (make gh-runner).
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Install Helm
         run: make install-helm
@@ -57,8 +63,11 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
+      # A self-hosted runner may still have the one a cancelled run left.
       - name: Create kind cluster
-        run: kind create cluster --wait 120s
+        run: |
+          kind delete cluster
+          kind create cluster --wait 120s
 
       - name: Build and load the images
         run: |
@@ -110,3 +119,7 @@ jobs:
       - name: Show the manager's log
         if: failure()
         run: kubectl -n c4-factory-system logs deployment/c4-factory-controller-manager --tail=100 || true
+
+      - name: Delete kind cluster
+        if: always() && runner.environment == 'self-hosted'
+        run: kind delete cluster

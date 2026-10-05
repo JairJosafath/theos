@@ -279,6 +279,23 @@ endef
 include hack/testenv.mk
 include hack/ui.mk
 
+##@ GitHub Actions runner
+
+# A self-hosted runner for this repository's workflows, in a container on this
+# device's Docker (hack/gh-runner). The workflows run on it while the repository
+# variable RUNS_ON is self-hosted (docs/dev/testenv.md).
+.PHONY: gh-runner
+gh-runner: ## Build and start the self-hosted GitHub Actions runner; it registers once.
+	@hack/gh-runner/gh-runner.sh up
+
+.PHONY: gh-runner-down
+gh-runner-down: ## Stop the GitHub Actions runner and remove it from GitHub.
+	@hack/gh-runner/gh-runner.sh down
+
+.PHONY: gh-runner-status
+gh-runner-status: ## Show the GitHub Actions runner's container and its status on GitHub.
+	@hack/gh-runner/gh-runner.sh status
+
 ##@ Helm Deployment
 
 # The chart is dist/chart, generated from dist/install.yaml by kubebuilder's helm

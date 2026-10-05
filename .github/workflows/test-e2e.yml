@@ -13,7 +13,11 @@ jobs:
     permissions:
       contents: read
     name: Run on Ubuntu
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    # Not c4factory, the first of the Kind pool: on a self-hosted runner (make
+    # gh-runner) it shares the device's Docker with the pool.
+    env:
+      KIND_CLUSTER: ci-e2e
     steps:
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -24,6 +28,8 @@ jobs:
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
+          # A self-hosted runner keeps its Go caches on a volume (make gh-runner).
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Install the latest version of kind
         run: |
@@ -36,3 +42,7 @@ jobs:
 
       - name: Build the test environment and run the e2e tests
         run: make e2e
+
+      - name: Delete kind cluster
+        if: always() && runner.environment == 'self-hosted'
+        run: kind delete cluster --name "$KIND_CLUSTER"
