@@ -19,7 +19,8 @@ Actions runners. Issue #142.
 - **Gaps below Kind:**
   - Nothing checks the samples, the e2e fixtures or the kustomize builds
     against the CRDs.
-  - The chart is rendered only after the merge.
+  - The chart is rendered only by workflows on main, after the merge
+    (`make helm-lint` is not part of `make check`).
   - Six of the ten templates are rendered by no test.
   - Several state machines are written in the controllers, so only envtest
     reaches them.
@@ -59,13 +60,15 @@ another names it too. None of them needs the cluster.
 1. **Plan and design** (#142). This plan, and `docs/design.md` gets *Test
    tiers*.
 2. **Offline YAML in `make check`** (#143). `make validate-yaml` with
-   `kubectl-validate` and `helm` in `bin/`, run in pull request CI.
+   `kubectl-validate` and `helm` in `bin/`. No workflow runs on pull requests
+   (#138), so `make check` is the gate before a merge.
 3. **Every CEL rule tested** (#149, after #143). Failing fixtures for the
    create-time rules, envtest specs for the transition rules.
 4. **Every template renders** (#144). A table test in `internal/scaffold` over
    `templates/`, with a guard for new folders.
 5. **Local Gitea** (#145). `make gitea-local`. `make test-gitea` runs without
-   Kubernetes and in pull request CI.
+   Kubernetes: before a merge that changes the Gitea code, and in the Tests
+   workflow on main.
 6. **Local seed** (#150, after #145). `seed.sh` writes credentials to a file;
    `make seed-local`.
 7. **Standard update in the model** (#146). The pull request state machine of
@@ -88,7 +91,7 @@ so Kind stays for that.
 ## Done when
 
 - `make check` validates the samples, fixtures, kustomize builds and the chart
-  offline, and pull request CI runs it.
+  offline, before every merge.
 - Every CEL rule in `config/crd/bases` has a fixture or an envtest spec.
 - `make test` renders every template.
 - `make test-gitea` and `make seed-local` run on a device with
