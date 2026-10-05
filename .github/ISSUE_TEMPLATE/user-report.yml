@@ -1,0 +1,30 @@
+name: Report from a device
+description: Something went wrong, or could be better, on a device that runs c4factory
+labels: [source/user]
+body:
+  - type: input
+    id: reporter
+    attributes:
+      label: Reported by
+      description: The device's name, e.g. laptop-2
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: c4factory version
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: shell

@@ -101,6 +101,41 @@ To set one up:
 Opening the folder in VS Code empties Go's build cache when it has grown past
 4 GB (`hack/trim-go-cache.sh`, `C4_GOCACHE_MAX_GB`), on every device.
 
+## Report an issue
+
+Report a problem from a device that runs c4factory with the form:
+<https://github.com/JairJosafath/c4factory/issues/new?template=user-report.yml>.
+Fill in `Reported by` with the device's name (for example `laptop-2`); the issue
+gets the labels `source/user` and `user/laptop-2`.
+
+From a terminal, copy this layout into `report.md` and send it with the GitHub CLI:
+
+```markdown
+### Reported by
+
+laptop-2
+
+### c4factory version
+
+v0.1.0
+
+### What happened
+
+...
+
+### What you expected
+
+...
+
+### Logs
+
+...
+```
+
+```
+gh issue create -R JairJosafath/c4factory --title "Crew stalls" --label source/user --body-file report.md
+```
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) for the project layout and the rules for changing it.
