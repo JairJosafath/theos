@@ -24,7 +24,7 @@ helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory -
 A `vX.Y.Z` tag publishes the chart and its images: the *Release* workflow
 (`.github/workflows/release.yml`) pushes the chart to
 `oci://ghcr.io/jairjosafath/c4factory/charts`, attaches it to the GitHub release
-and pushes `ghcr.io/jairjosafath/c4factory/<name>:X.Y.Z` for `operator`, `ui`,
+and pushes `ghcr.io/jairjosafath/c4factory/<name>:X.Y.Z` for `operator`, `ui`, `seed`,
 the toolchains `base` and `go`, `agent-base`, `agent-go`, `gitea-runner-base`
 and `gitea-runner-go` (all `linux/amd64`). A released chart runs its own
 version's operator and UI images. From a checkout, `helm install ... dist/chart`

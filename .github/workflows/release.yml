@@ -1,7 +1,7 @@
 name: Release
 
 # A pushed vX.Y.Z tag publishes c4factory, so a device installs it without
-# building anything: the operator, UI, toolchain, agent and runner images to
+# building anything: the operator, UI, seed, toolchain, agent and runner images to
 # ghcr.io/<owner>/c4factory/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
 # to oci://ghcr.io/<owner>/c4factory/charts and to a GitHub release for the tag.
 # One job builds the images in order with the local Docker daemon, so the agent
@@ -18,6 +18,7 @@ on:
       - hack/toolchain-go/**
       - hack/agent/**
       - hack/runner/**
+      - hack/seed/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -58,6 +59,7 @@ jobs:
           set -x
           docker build -t "$REGISTRY/operator:$VERSION" .
           docker build -t "$REGISTRY/ui:$VERSION" ui
+          docker build -t "$REGISTRY/seed:$VERSION" -f hack/seed/Dockerfile .
           docker build -t "$REGISTRY/base:$VERSION" hack/toolchain-base
           docker build -t "$REGISTRY/go:$VERSION" hack/toolchain-go
           for tc in base go; do
@@ -85,7 +87,7 @@ jobs:
         run: |
           echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
           echo "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
-          for name in operator ui base go agent-base agent-go gitea-runner-base gitea-runner-go; do
+          for name in operator ui seed base go agent-base agent-go gitea-runner-base gitea-runner-go; do
             docker push "$REGISTRY/$name:$VERSION"
           done
           helm push "c4-factory-$VERSION.tgz" "oci://$REGISTRY/charts"
@@ -97,7 +99,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat >notes.md <<EOF
-          Images: \`$REGISTRY/<name>:$VERSION\` for operator, ui, the toolchains
+          Images: \`$REGISTRY/<name>:$VERSION\` for operator, ui, seed, the toolchains
           base and go, agent-base, agent-go, gitea-runner-base and gitea-runner-go.
 
           Install (needs [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox) first):
