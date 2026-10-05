@@ -389,6 +389,22 @@ func TestResultEncodeKeepsFollowUpsShort(t *testing.T) {
 	}
 }
 
+func TestResultEncodeDropsFollowUpsBeforeAskedChanges(t *testing.T) {
+	long := strings.Repeat("c", 120)
+	f := model.FollowUp{Title: strings.Repeat("t", 100), Body: strings.Repeat("b", 400), Criteria: []string{long, long, long}}
+	summary := strings.Repeat("s", 2500)
+	changes := Result{Role: RoleReview, Verdict: VerdictChanges, Summary: summary, FollowUps: []model.FollowUp{f, f, f}}
+	var back Result
+	if err := json.Unmarshal(changes.Encode(), &back); err != nil || back.Summary != summary || back.FollowUps != nil {
+		t.Errorf("Encode() of changes kept follow-ups (%d) over the summary (%d bytes), %v", len(back.FollowUps), len(back.Summary), err)
+	}
+	approve := changes
+	approve.Verdict, approve.Summary = VerdictApprove, "Good."
+	if err := json.Unmarshal(approve.Encode(), &back); err != nil || len(back.FollowUps) != 3 {
+		t.Errorf("Encode() of an approval with full follow-ups kept %d, want 3, %v", len(back.FollowUps), err)
+	}
+}
+
 func TestRoleGuideComesFromTheBase(t *testing.T) {
 	url := bareRepo(t, map[string]string{"docs/agents/reviewer.md": "Review strictly.\n", "docs/agents/implementer.md": "Test first.\n"})
 	ctx := context.Background()

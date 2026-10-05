@@ -83,6 +83,10 @@ const (
 func FollowUpIssue(f FollowUp, by, review string, issue int, task string) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimSpace(f.Body))
+	if strings.Count(f.Body, "```")%2 == 1 {
+		// A body cut short inside a code block would swallow the checklist.
+		b.WriteString("\n```")
+	}
 	if len(f.Criteria) > 0 {
 		b.WriteString("\n\n## Acceptance criteria\n")
 		for _, c := range f.Criteria {

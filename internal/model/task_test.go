@@ -604,6 +604,8 @@ func TestFollowUpIssue(t *testing.T) {
 			readyAsIs: true},
 		{name: "without criteria a person adds them", followUp: FollowUp{Title: "Cache schemas", Body: "Parse once."},
 			want: []string{"Parse once.\n\n---\n", `add an "Acceptance criteria" checklist and label it status/ready`}},
+		{name: "a code block cut short is closed", followUp: FollowUp{Body: "Like this:\n```go\nfunc f() {…",
+			Criteria: []string{"Done"}}, want: []string{"func f() {…\n```\n\n## Acceptance criteria"}, readyAsIs: true},
 		{name: "without a body", followUp: FollowUp{Title: "Cache schemas", Criteria: []string{"Parsed once"}},
 			want: []string{"## Acceptance criteria\n\n- [ ] Parsed once\n"}, readyAsIs: true},
 	}

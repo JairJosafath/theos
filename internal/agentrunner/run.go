@@ -78,6 +78,9 @@ func (r Result) Encode() []byte {
 			return data
 		}
 		switch {
+		case len(r.FollowUps) > 0 && r.Verdict != VerdictApprove:
+			// Follow-ups are filed only on merge; a summary asking for changes matters more.
+			r.FollowUps = nil
 		case len(r.Summary) > 200:
 			r.Summary = shorten(r.Summary, len(r.Summary)-(len(data)-MaxResultBytes)-16)
 		case len(r.Error) > 200:
