@@ -7,17 +7,23 @@
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
+unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN
+fail=0
+check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
+# The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
+# 2 GiB free and 120s between session starts.
+check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP")" "9 2 120"
+
 export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 RELAY_ADMIT_GAP=300 RELAY_MEM_POLL=1 RELAY_MEM_WAIT=30
-unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_DRY_RUN
 # shellcheck source=hack/relay.sh
 . "$(dirname "$0")/relay.sh"
 DIR=$T/relay STOP=$DIR/stop LOG=$T/log
 mkdir -p "$DIR"
-fail=0
-check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 meminfo() { printf 'MemTotal:       15400000 kB\nMemAvailable:   %s kB\n' $(($1 * 1048576)) >"$RELAY_MEMINFO"; }
 
 # The cap, on the device with the cluster.
+cap 9 2>/dev/null; check "cap: nine workers by default" $? 0
+MAX_WORKERS=1
 cap 1 2>/dev/null; check "cap: one worker" $? 0
 cap 2 2>"$T/err"; check "cap: two workers" $? 1
 grep -q RELAY_MAX_WORKERS "$T/err"; check "cap: names RELAY_MAX_WORKERS" $? 0
