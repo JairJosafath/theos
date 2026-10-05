@@ -2,6 +2,7 @@ package agentrunner
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -23,11 +24,14 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// gitToken is the Git token of every test job.
+var gitToken = rand.Text()
+
 func env(overrides map[string]string) func(string) string {
 	base := map[string]string{
 		EnvRole: RoleImplement, EnvRepoURL: "http://gitea/apps/photo-editor.git", EnvBranch: "task/add-crop",
 		EnvGoal: "Add crop", EnvContainer: "photo-editor", EnvProject: "apps", EnvGitUsername: "bot",
-		EnvGitToken: "t0k", EnvTask: "add-crop",
+		EnvGitToken: gitToken, EnvTask: "add-crop",
 	}
 	maps.Copy(base, overrides)
 	return func(k string) string { return base[k] }
@@ -102,7 +106,7 @@ func TestPrompts(t *testing.T) {
 	if !strings.Contains(ReviewPrompt(job, Workspace{}), "This is the last round") {
 		t.Error("review prompt of the last round doesn't say so")
 	}
-	if strings.Contains(review, "t0k") || strings.Contains(implement, "t0k") {
+	if strings.Contains(review, gitToken) || strings.Contains(implement, gitToken) {
 		t.Error("a prompt contains the Git token")
 	}
 }

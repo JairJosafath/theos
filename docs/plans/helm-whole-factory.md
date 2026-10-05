@@ -22,9 +22,10 @@ a checkout and locally built `:dev` images (`imagePullPolicy: Never`).
   SQLite with WAL, the same probes, requests and settings), with the storage
   class and size as values.
 - **The admin** comes from Secret `gitea-admin` in that namespace. The chart
-  generates its password on install and keeps it on upgrade (`lookup`); or
-  `gitea.admin.existingSecret` names one with `username`, `password` and
-  `email`.
+  never renders it: a first init container in Gitea's pod creates it with a
+  generated password when it is missing and never overwrites it (the `secrets`
+  skill); or `gitea.admin.existingSecret` names one with `username`,
+  `password` and `email`.
 - **Gitea off:** `gitea.enabled=false` installs none of Gitea, the seed or the
   runners; `gitProviders` then point at an existing Gitea, as in v0.1.0.
 - **The seed** is a `post-install,post-upgrade` hook Job in Gitea's namespace
@@ -85,9 +86,10 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
 2. **The seed image is published.** `seed.sh` takes `GITEA_WAIT`; *Release*
    builds and pushes `seed` (and its dry run builds it); the chart README's
    image list names it.
-3. **Gitea in the chart, off.** `templates/gitea/`: Namespace, admin Secret,
-   ConfigMap, PVC, Deployment, Service; `gitea.*` values with `enabled: false`;
-   `make helm-lint` also renders the chart with `gitea.enabled=true`.
+3. **Gitea in the chart, off.** `templates/gitea/`: Namespace, the admin
+   Secret's init container and Role, ConfigMap, PVC, Deployment, Service;
+   `gitea.*` values with `enabled: false`; `make helm-lint` also renders the
+   chart with `gitea.enabled=true`.
 4. **The seed, projects and runners in the chart, off.** The seed hook Job and
    its RBAC, the per-project GitProviders, the runner Deployments,
    `global.imagePullSecrets` on every pod, the UI components for Gitea and the

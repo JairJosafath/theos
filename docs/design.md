@@ -362,7 +362,7 @@ release installs the whole factory:
 | --- | --- | --- |
 | Operator, CRDs, RBAC, admission policy | release namespace | always |
 | UI | release namespace | `ui.enabled`, on by default |
-| Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password generated into Secret `gitea-admin` and kept on upgrade; namespace and volume kept on uninstall |
+| Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password generated in the cluster by Gitea's pod into Secret `gitea-admin`, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
 | Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret and a GitProvider for each project in `gitea.projects`, the runners' registration token |
 | CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`) |
