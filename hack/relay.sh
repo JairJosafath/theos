@@ -13,12 +13,7 @@
 # ready + urgent one, else the oldest ready one) and claims it (take); when
 # another agent claims it first, it picks again, up to 5 times. Claims keep the
 # workers and hand-started sessions off each other's issues. A session that ends
-# still holding its claim gets it released. With nothing ready, hack/evaluate.sh
-# (if present) runs when the newest evaluation on the "Factory evaluations"
-# issue is 6 hours old, under a claim on that issue, so it runs once across
-# workers and devices; the worker picks once more and stops if there is still
-# nothing. After each session it runs `make backup-releases` if that target
-# exists and the device has the cluster.
+# still holding its claim gets it released. With nothing ready, a worker stops.
 #
 # Issues that need the Kind cluster carry needs/cluster. On a device without
 # one, C4_CLUSTER=none (./dev setup --lite sets it): the workers skip those
@@ -53,8 +48,6 @@ DIR="$REPO/.relay"
 STOP="$DIR/stop"
 MAX_SESSIONS=${MAX_SESSIONS:-8}
 SESSION_TIMEOUT=${SESSION_TIMEOUT:-6h}
-EVALUATIONS_TITLE="Factory evaluations"
-EVALUATE_EVERY=${EVALUATE_EVERY:-21600} # seconds: 6 hours
 DRY_RUN=${RELAY_DRY_RUN:-}
 [ "$DRY_RUN" = 0 ] && DRY_RUN=
 PULL=${RELAY_PULL:-1}
@@ -196,57 +189,6 @@ pick() {
   IFS=$'\t' read -r ISSUE TITLE URL HOW <<<"$row"
 }
 
-# evaluate: run hack/evaluate.sh if the newest evaluation on the "Factory
-# evaluations" issue is at least 6 hours old, under a claim on that issue so
-# no other worker or device evaluates at the same time. Exit 1 when it didn't run.
-evaluate() {
-  local issue last age out rc t0
-  if [ "${C4_CLUSTER:-}" = none ]; then
-    log "no issue ready; the evaluator reads the cluster, and this device has none (C4_CLUSTER=none)"
-    return 1
-  fi
-  if [ ! -x "$REPO/hack/evaluate.sh" ]; then
-    log "no issue ready, and hack/evaluate.sh is missing or not executable"
-    return 1
-  fi
-  issue=$(gh_api --paginate "repos/$C4_GITHUB_REPO/issues?state=open&per_page=100" \
-    --jq ".[] | select((.pull_request | not) and .title == \"$EVALUATIONS_TITLE\") | .number" |
-    head -1) || { log "no issue ready; could not look for the $EVALUATIONS_TITLE issue"; return 1; }
-  if [ -n "$issue" ]; then
-    last=$(gh_comments "$issue" | jq -r '[.[] | select(.body | contains("<!-- factory-evaluator"))] | last | .created_at // empty') ||
-      { log "no issue ready; could not read #$issue's evaluations"; return 1; }
-    if [ -n "$last" ]; then
-      age=$(($(date +%s) - $(date -d "$last" +%s)))
-      if [ "$age" -lt "$EVALUATE_EVERY" ]; then
-        log "no issue ready; the newest evaluation on #$issue is $((age / 60))m old, and the evaluator runs at most every $((EVALUATE_EVERY / 60))m"
-        return 1
-      fi
-    fi
-  fi
-  if [ -n "$DRY_RUN" ]; then
-    log "no issue ready; would claim #${issue:-?} and run hack/evaluate.sh, then pick once more"
-    return 1
-  fi
-  if [ -n "$issue" ]; then
-    GH_TAKE_KEEP_STATUS=1 gh_take "$issue" >/dev/null 2>>"$LOG"
-    rc=$?
-    [ "$rc" = 4 ] && { log "no issue ready; another agent is evaluating (#$issue is claimed)"; return 1; }
-    [ "$rc" = 0 ] || { log "no issue ready; could not claim #$issue to evaluate (exit $rc)"; return 1; }
-  fi
-  if ! git -C "$WT" switch -q --detach origin/main 2>>"$LOG"; then
-    log "could not switch $WT to origin/main to evaluate"
-    gh_release "relay could not prepare its worktree" >/dev/null 2>>"$LOG"
-    return 1
-  fi
-  out="$DIR/evaluate-$(date +%Y%m%d-%H%M%S).out"
-  log "no issue ready; running hack/evaluate.sh in relay-$K, output in $out"
-  t0=$(date +%s)
-  (cd "$WT" && RELAY_DIR="$DIR" timeout "$SESSION_TIMEOUT" hack/evaluate.sh) >"$out" 2>&1
-  rc=$?
-  log "evaluator end: exit $rc after $((($(date +%s) - t0) / 60))m"
-  gh_release evaluated >/dev/null 2>>"$LOG"
-}
-
 # worktree: create the worker's worktree if it is missing, fetch, and stash
 # whatever a dead session left uncommitted in it, so nothing is lost.
 worktree() {
@@ -297,26 +239,6 @@ switch_branch() {
     "${g[@]}" switch -q -c "$b" --track "origin/$b" 2>>"$LOG"
   else
     "${g[@]}" switch -q -c "$b" --no-track origin/main 2>>"$LOG"
-  fi
-}
-
-# backup: run `make backup-releases` if the Makefile has that target, this
-# device has the cluster and no other worker is running it.
-backup() {
-  local out="$DIR/backup-releases.out"
-  make -n backup-releases >/dev/null 2>&1 || return 0
-  if [ "${C4_CLUSTER:-}" = none ]; then
-    log "backup-releases: skipped; it reads Gitea in the cluster, and this device has none (C4_CLUSTER=none)"
-    return 0
-  fi
-  if [ -n "$DRY_RUN" ]; then
-    log "would run make backup-releases after the session"
-    return 0
-  fi
-  if flock -n "$DIR/backup.lock" timeout 30m make backup-releases >"$out" 2>&1; then
-    log "backup-releases: done"
-  else
-    log "backup-releases: failed with exit $?; see $out"
   fi
 }
 
@@ -461,11 +383,6 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   admit || { log "stopping"; break; }
   pick
   rc=$?
-  if [ "$rc" = 1 ] && evaluate; then
-    pick
-    rc=$?
-    [ "$rc" = 1 ] && { log "still no issue ready after the evaluator; stopping"; break; }
-  fi
   [ "$rc" = 1 ] && { log "no issue ready; stopping"; break; }
   [ "$rc" = 0 ] || { log "could not ask GitHub for the next issue; stopping"; break; }
 
@@ -476,7 +393,6 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
     echo "-----"
     prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "<name>" "<branch>"
     echo "-----"
-    backup
     exit 0
   fi
 
@@ -517,7 +433,6 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   [ "$rc" = 124 ] && log "session $i hit the $SESSION_TIMEOUT timeout"
   [ "$rc" = 143 ] && log "session $i was killed (SIGTERM)"
 
-  backup
   flush || { log "GitHub can't be reached; stopping"; break; }
   result=$(outcome "$ISSUE" "$before") || result=unknown
   if gh_claim_read; then

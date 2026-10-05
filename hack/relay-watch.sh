@@ -9,9 +9,7 @@
 # pick first keeps the relay's logs free of a worker that starts, finds nothing
 # and stops every minute.
 #
-# On a device with the Kind cluster it also starts the relay every
-# WATCH_IDLE_RUN seconds (default 1800) with nothing ready, so a worker can run
-# hack/evaluate.sh when that is due. When pick names the same issue again within
+# When pick names the same issue again within
 # WATCH_RETRY seconds (default 600), nobody claimed it, so the relay stopped
 # without it or hack/relay.sh failed: the watch starts it again for that issue
 # once the time has passed, not every minute. Every 5 minutes it runs
@@ -32,7 +30,6 @@ STOP="$DIR/stop"
 LOG="$DIR/watch.log"
 EVERY=${WATCH_EVERY:-60}
 RETRY=${WATCH_RETRY:-600}
-IDLE_RUN=${WATCH_IDLE_RUN:-1800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 
 WORKERS=1
@@ -57,13 +54,6 @@ worker_free() {
   return 1
 }
 
-# workers_idle: whether none of the watch's workers runs.
-workers_idle() {
-  local k
-  for k in $(seq 1 "$WORKERS"); do running "$k" && return 1; done
-  return 0
-}
-
 # pick_next and run_relay: what the watch asks and starts (faked in the tests).
 pick_next() { "$REPO/hack/lib/github.sh" pick; }
 run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
@@ -80,7 +70,7 @@ start() {
 
 # round: one look at GitHub, and the relay started when there is work for it.
 # SAID is the last state logged, so a state that lasts is logged once.
-SAID= LAST_N= LAST_T=0 IDLE_T=0
+SAID= LAST_N= LAST_T=0
 round() {
   local row rc n now
   worker_free || { SAID=busy; return 0; }
@@ -100,11 +90,6 @@ round() {
       start "ready: ${row//$'\t'/ | }"
       ;;
     1)
-      if [ "${C4_CLUSTER:-}" != none ] && [ $((now - IDLE_T)) -ge "$IDLE_RUN" ] && workers_idle; then
-        IDLE_T=$now SAID=
-        start "nothing ready; the relay runs hack/evaluate.sh if it is due"
-        return 0
-      fi
       [ "$SAID" = idle ] || log "nothing ready; waiting"
       SAID=idle
       ;;

@@ -74,8 +74,7 @@ GitHub CLI and Claude Code, without Docker, Kind, kubectl or Helm, and with
 
 - **It can** build and test the operator (`make check`: envtest runs a local API
   server, no cluster), change scripts, templates and docs, and run the relay.
-- **It can't** deploy, run Crews, `make e2e`, check anything in Gitea, or run the
-  evaluator (it reads the cluster), so its relay stops when no issue is ready;
+- **It can't** deploy, run Crews, `make e2e`, check anything in Gitea. Its relay stops when no issue is ready;
   `hack/relay-watch.sh` starts it again when one is.
 
 Issues whose work or "Done when" needs the cluster carry the label `needs/cluster`;

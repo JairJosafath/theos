@@ -4,7 +4,7 @@
 # through comments on them (the handoff skill). Product work, the apps the
 # factory builds, stays in Gitea, where the Crews work it.
 #
-# Source it for the gh_* functions (hack/relay.sh, hack/evaluate.sh), or run it:
+# Source it for the gh_* functions (hack/relay.sh), or run it:
 #
 #   hack/lib/github.sh labels            create the labels below (safe to repeat)
 #   hack/lib/github.sh pick              the issue to work next: NUMBER TITLE URL STATUS, tab-separated
@@ -96,7 +96,6 @@ GH_LABELS=(
   'kind/chore|ededed|Upkeep: operations, releases, tooling'
   'kind/docs|0075ca|Documentation'
   'kind/improvement|84b6eb|Make something that works better'
-  'source/evaluator|5319e7|Filed by hack/evaluate.sh, the factory evaluator'
   'source/dev|bfd4f2|Made while developing c4factory'
   'source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it'
   'needs/cluster|1d76db|Needs the Kind cluster: deploys, factory-ops, Crews or e2e'
@@ -339,7 +338,7 @@ gh_take() { gh_device_locked gh_take_locked "$@"; }
 # closed issue is released first. Exit 4: someone
 # else holds N, or won the race to it; exit 1: this checkout holds another
 # issue, or GitHub could not be asked. GH_TAKE_KEEP_STATUS=1 leaves N's status
-# label alone (the evaluator's claim on "Factory evaluations").
+# label alone.
 gh_take_locked() {
   local n=${1:?usage: take N} ttl c_issue c_id c_name c_branch rc state issue all holder used w name branch stale id winner
   ttl=$(gh_ttl) || return 1
