@@ -97,15 +97,18 @@ prompt() {
   (\`hack/lib/github.sh label $n needs/cluster\`) and hand off with what is
   left (deploy and verify): a device with the cluster takes it from there."
   else
-    cluster="- This device's Kind cluster is shared by its checkouts through a
-  lease. If the issue needs the cluster and lacks the label, add it
-  (\`hack/lib/github.sh label $n needs/cluster\`). Do the work that needs no
-  cluster first (code, make check, envtest); right before the first step that
-  touches the cluster, \`hack/lib/github.sh cluster acquire\`; then deploy
+    cluster="- This device runs a pool of Kind clusters (c4factory, c4factory-2,
+  ...) that its checkouts share through leases. If the issue needs the cluster
+  and lacks the label, add it (\`hack/lib/github.sh label $n needs/cluster\`).
+  Do the work that needs no cluster first (code, make check, envtest); right
+  before the first step that touches a cluster, \`hack/lib/github.sh cluster
+  acquire\`: it leases this checkout a free cluster and prints its name
+  (creating it on first use). Every make target in this checkout then uses
+  that cluster; give kubectl \`--context kind-<name>\` on every call. Deploy
   this branch's own build (\`make deploy\`), never trusting what is already
   deployed; \`hack/lib/github.sh cluster release\` when verification is done.
-  Exit 4 from acquire means another checkout holds it: hand off with only the
-  cluster steps left."
+  Exit 4 from acquire means other checkouts hold every cluster: hand off with
+  only the cluster steps left."
   fi
   if [ "$how" = in-progress ]; then
     start="A session worked on it before you: continue from its newest handoff comment."

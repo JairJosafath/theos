@@ -8,7 +8,8 @@
 # It takes about five minutes, two of them waiting for a Session to turn Stale.
 set -euo pipefail
 
-CLUSTER="${KIND_CLUSTER:-c4factory}"
+# Default: the pool cluster this checkout leased (hack/lib/github.sh cluster name), else c4factory.
+CLUSTER="${KIND_CLUSTER:-$("$(dirname "${BASH_SOURCE[0]}")/lib/github.sh" cluster name 2>/dev/null || echo c4factory)}"
 OUT="${OUT:-docs/screenshots}"
 WORK="$(mktemp -d)"
 trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$WORK"' EXIT

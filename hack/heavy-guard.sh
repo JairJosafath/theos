@@ -11,13 +11,16 @@
 # (hack/heavy-slot.sh), a make job will wait for one: the session is told so,
 # and that the wait is not a hang, with who holds the slots. Silent otherwise.
 # Before a cluster command (make deploy, sample, e2e, test-e2e, up, down) it
-# reads the cluster lease (hack/lib/github.sh cluster): while another checkout
-# holds a live one it denies the command and tells the session to run
+# reads the lease of the Kind cluster the command targets (hack/lib/github.sh
+# cluster): KIND_CLUSTER= in the command, else KIND_CLUSTER, else the one this
+# checkout leased, else c4factory. While another checkout holds a live lease on
+# it, it denies the command and tells the session to run
 # `hack/lib/github.sh cluster acquire`; without a holder the command goes on
 # to the memory check, as before.
 # Other commands cost one bash, with no subprocess and no file read.
 #   RELAY_MEMINFO   file to read instead of /proc/meminfo (hack/heavy-guard_test.sh fakes it)
-#   KIND_CLUSTER    the Kind cluster whose node it names (default c4factory)
+#   KIND_CLUSTER    the Kind cluster a cluster command targets and whose node it names
+#                   (default: this checkout's leased cluster, else c4factory)
 set -uo pipefail
 
 IFS= read -r -d '' input
@@ -43,8 +46,13 @@ if [[ $unquoted =~ $sep$cluster$end ]]; then
   job=${BASH_REMATCH[2]}
   # shellcheck source=hack/lib/github.sh
   . "$(dirname "${BASH_SOURCE[0]}")/lib/github.sh"
-  if holder=$(gh_lease_holder 2>/dev/null); then
-    msg="The Kind cluster is in use: $holder holds the cluster lease, so \`make $job\` would change or stop the cluster under that session. Run \`hack/lib/github.sh cluster acquire\` first (it waits up to 30m); on exit 4, land what needs no cluster and hand off with only the cluster steps left."
+  kc=${KIND_CLUSTER:-}
+  # On $cmd, not $unquoted: the quotes of KIND_CLUSTER="c4factory-2" are taken off there with the name.
+  [[ $cmd =~ (^|[[:space:]])KIND_CLUSTER=[\"\']?([^\"\'[:space:]\;\&\|]+) ]] && kc=${BASH_REMATCH[2]}
+  [ -n "$kc" ] || kc=$(gh_cluster name 2>/dev/null)
+  kc=${kc:-c4factory}
+  if holder=$(gh_lease_holder "$kc" 2>/dev/null); then
+    msg="The Kind cluster $kc is in use: $holder holds its lease, so \`make $job\` would change or stop it under that session. Run \`hack/lib/github.sh cluster acquire\` first: it leases a free cluster of the pool to this checkout (or waits up to 30m), and make here then uses that one; on exit 4, land what needs no cluster and hand off with only the cluster steps left."
     jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $m}}'
     exit 0
   fi
@@ -78,7 +86,7 @@ top=$(ps -eo rss=,args= 2>/dev/null | awk '
   END { for (c in sum) printf "%d\t%s\t%d\n", sum[c], c, n[c] }' |
   sort -rn | head -5 | awk -F'\t' '
   { printf "%s%s%s %.1f GiB", (NR > 1 ? ", " : ""), $2, ($3 > 1 ? " (" $3 ")" : ""), $1 / 1048576 }')
-node="${KIND_CLUSTER:-c4factory}-control-plane"
+node="${kc:-${KIND_CLUSTER:-c4factory}}-control-plane"
 kind=
 if command -v docker >/dev/null; then
   use=$(timeout 5 docker stats --no-stream --format '{{.MemUsage}}' "$node" 2>/dev/null) &&

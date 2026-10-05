@@ -77,7 +77,7 @@ lease() { jq -n --arg wt "$1" --argjson b "$(date +%s)" '{name:"otter-76",issue:
 lease "$T/wt/.."
 drop_lease "that session 1 left behind"
 check "lease: dropped" "$([ -e "$C4_CLUSTER_LEASE" ] && echo kept || echo gone)" gone
-grep -q "released the cluster lease (otter-76, #76) that session 1 left behind$" "$LOG"; check "lease: logged" $? 0
+grep -q "released Kind cluster c4factory (otter-76, #76) that session 1 left behind$" "$LOG"; check "lease: logged" $? 0
 lease "$T/other"
 : >"$LOG"
 drop_lease "that session 1 left behind"

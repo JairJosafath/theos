@@ -137,6 +137,28 @@ check "own lease: runs" "$(cat "$T/out")" ""
 lease "$T/other" $(($(date +%s) - 3 * 3600))
 hook "make deploy"
 check "stale lease: runs" "$(cat "$T/out")" ""
+# With a pool, the lease that counts is the targeted cluster's: KIND_CLUSTER=
+# in the command, else KIND_CLUSTER, else this checkout's leased one.
+LEASE2=$T/lease-c4factory-2.lease
+lease "$T/other" "$(date +%s)"
+hook "make deploy KIND_CLUSTER=c4factory-2"
+check "c4factory held, deploy to c4factory-2: runs" "$(cat "$T/out")" ""
+KIND_CLUSTER=c4factory-2 hook "make deploy"
+check "c4factory held, KIND_CLUSTER=c4factory-2: runs" "$(cat "$T/out")" ""
+jq -n --arg wt "$REPO" --argjson b "$(date +%s)" '{cluster:"c4factory-2",name:"otter-9",issue:9,worktree:$wt,beat:$b}' >"$LEASE2"
+hook "make deploy"
+check "c4factory held, this checkout leased c4factory-2: runs" "$(cat "$T/out")" ""
+jq -n --arg wt "$T/other" --argjson b "$(date +%s)" '{cluster:"c4factory-2",name:"heron-51",issue:51,worktree:$wt,beat:$b}' >"$LEASE2"
+hook "KIND_CLUSTER=c4factory-2 make deploy"
+check "c4factory-2 held elsewhere, deploy to it: denied" "$(decision)" deny
+hook 'KIND_CLUSTER="c4factory-2" make deploy'
+check "c4factory-2 held elsewhere, quoted name: denied" "$(decision)" deny
+hook "make deploy KIND_CLUSTER='c4factory-2'"
+check "c4factory-2 held elsewhere, single-quoted name: denied" "$(decision)" deny
+case $(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out") in *"Kind cluster c4factory-2 is in use: heron-51"*) r=yes ;; *) r=no ;; esac
+check "deny: names the cluster and its holder" $r yes
+rm -f "$LEASE2"
+
 rm -f "$C4_CLUSTER_LEASE"
 hook "make up"
 check "no lease: runs" "$(cat "$T/out")" ""

@@ -1,8 +1,11 @@
 # Tests, the Kind cluster and deploying
 
 How to test and run the factory. The e2e tests run only against the dedicated
-Kind cluster `c4factory` (`make cluster`), never a real cluster. Run `make e2e`
-only when the user explicitly asks for it; `make check` is the gate for every change.
+Kind clusters of the device's pool (`c4factory`, `c4factory-2`, ...; `make
+cluster`), never a real cluster. Run `make e2e` only when the user explicitly
+asks for it; `make check` is the gate for every change. Every make target
+works on `KIND_CLUSTER`, by default the pool cluster this checkout leased,
+else `c4factory`; kubectl calls name it with `--context kind-<name>`.
 
 ## Testing & Development
 
@@ -74,9 +77,11 @@ hack/lib/github.sh pick            # the issue to work next
 hack/lib/github.sh show 14         # an issue, its newest handoff comment and what came after
 hack/lib/github.sh take 14         # claim it for this checkout; prints the agent's name and branch
 hack/lib/github.sh claims          # who holds which issue, with heartbeat age and branch
-hack/lib/github.sh cluster acquire # take the Kind cluster lease before deploying (waits up to 30m; exit 4 names the holder)
+hack/lib/github.sh cluster acquire # lease a pool cluster before deploying; prints its name (waits up to 30m; exit 4 names the holders)
+hack/lib/github.sh cluster name    # the cluster make uses in this checkout: its lease's, else c4factory
 hack/lib/github.sh cluster release # drop it once verification is done
-hack/lib/github.sh cluster holder  # who holds the cluster lease
+hack/lib/github.sh cluster holder  # who holds which cluster
+hack/lib/github.sh cluster pool    # each pool cluster: leased, free or not created yet
 hack/lib/github.sh labels          # create the status/priority/kind/source labels (safe to repeat)
 RELAY_DRY_RUN=1 hack/relay.sh      # the issue and prompt the next headless session would get
 hack/relay.sh                      # headless sessions one after another, overnight (billed)
@@ -100,31 +105,55 @@ Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
 
-### Sharing the Kind cluster between checkouts
+### Sharing the Kind clusters between checkouts
 
-Every checkout on the cluster device may work a `needs/cluster` issue; they
-share the one Kind cluster through a lease, held only around the steps that
-touch it. The checkouts can't share its state while one deploys and verifies:
-`make deploy` from a branch replaces the operator and CRDs another session
-deployed, an outage or `make down`/`make up` cuts every session off, and a
-second cluster (about 4.5 GiB) doesn't fit in memory. So a session does the
-work that needs no cluster first (code, `make check`, envtest), runs
-`hack/lib/github.sh cluster acquire` right before its first cluster step,
-deploys its own branch (`make deploy`, never trusting what is already
-deployed), verifies, and runs `cluster release`. `acquire` waits up to
-`--wait` (default 30m) while another checkout holds a live lease, then exits 4
-naming it; the session then hands off with only the cluster steps left.
+Every checkout on the cluster device may work a `needs/cluster` issue. A
+deploy and its verification take a whole cluster: `make deploy` from a branch
+replaces the operator, CRDs and admission policies another session deployed,
+an outage test or `make down`/`make up` stops the node, and Standard tags land
+in Gitea's shared `templates` org. So the device runs a pool of
+`C4_CLUSTERS` Kind clusters (default 2): `c4factory`, `c4factory-2`, ...,
+each with its own Gitea and seeded templates, and a session leases one only
+around the steps that touch it:
 
-The lease is the file `c4-cluster.lease` in the git common dir (`.git/` of
-the main checkout), naming the agent, issue and worktree. `beat` (the
-heartbeat hook) refreshes it, and it is stale after `C4_LEASE_TTL` (2h) or
-once its worktree is gone; `acquire` takes a stale one over. `release`,
-`handoff`, `close` and `status N needs-human` drop it, and the relay drops one
-its session left behind, as it does a claim. `hack/heavy-guard.sh` denies
-`make deploy`, `sample`, `e2e`, `test-e2e`, `up` and `down` while another
-checkout holds the lease. The memory gates below stay as they are.
+1. Do the work that needs no cluster first (code, `make check`, envtest).
+2. Right before the first cluster step, `hack/lib/github.sh cluster acquire`.
+   It leases this checkout the cluster it already holds, else a free one that
+   exists, else the first free one, which it then creates
+   (`make cluster gitea seed KIND_CLUSTER=<name>`, a few minutes). It prints
+   the name on stdout; while other checkouts hold every cluster it waits up
+   to `--wait` (default 30m), then exits 4 naming them, and the session hands
+   off with only the cluster steps left.
+3. Deploy this branch's own build (`make deploy`; never trust what is
+   deployed) and verify. Every make target in the checkout uses the leased
+   cluster without being told (`hack/lib/github.sh cluster name`), and so do
+   `hack/up.sh`, `hack/doctor.sh` and `hack/evidence.sh`; a Bash call doesn't
+   keep exported variables, so kubectl takes `--context kind-<name>` each
+   time. Images built for a deploy are loaded into that cluster only; they
+   keep one tag (`c4factory/operator:dev`, ...) across the pool, so each build
+   and its `kind load` run under a device-wide lock (`.git/c4-image.lock`),
+   and two deploys build one after the other.
+   `make gitea-forward` and `make test-gitea` use port 3000 for `c4factory`
+   and 3000+K-1 for `c4factory-K` (`GITEA_PORT`), so two forwards don't
+   collide; the e2e tests pick a free one.
+4. `hack/lib/github.sh cluster release`.
+
+Each cluster's lease is a file in the git common dir (`.git/` of the main
+checkout): `c4-cluster.lease` for `c4factory`, `c4-cluster-<name>.lease` for
+the others, naming the cluster, agent, issue and worktree. A checkout holds
+at most one. `beat` (the heartbeat hook) refreshes it, and it is stale after
+`C4_LEASE_TTL` (2h) or once its worktree is gone; `acquire` takes a stale one
+over. `release`, `handoff`, `close` and `status N needs-human` drop it, and
+the relay drops one its session left behind, as it does a claim.
+`hack/heavy-guard.sh` denies `make deploy`, `sample`, `e2e`, `test-e2e`, `up`
+and `down` while another checkout holds the cluster the command targets
+(`KIND_CLUSTER=` in the command, else the checkout's lease, else
+`c4factory`). The memory gates below stay as they are.
 `hack/lib/github_test.sh`, `hack/relay_test.sh` and `hack/heavy-guard_test.sh`
-test the lease.
+test the leases.
+
+Raise `C4_CLUSTERS` only after measuring: each idle cluster takes about 1.1
+GiB, and up to 4.5 GiB with a Crew running.
 
 The relay stops when no issue is ready, so an issue marked ready or handed back
 later waits until someone starts it again. `hack/relay-watch.sh` stays up
@@ -137,13 +166,15 @@ minutes and restarts itself when that changed its code.
 
 ### Memory on the cluster device
 
-The device with the Kind cluster has 13.4 GiB and 4 GiB of swap. Four sessions
+The device with the Kind clusters has 13.4 GiB and 4 GiB of swap. Four sessions
 and a nested devcontainer build on it once stalled every task for minutes and
 took down VS Code and every Claude session with it (#57), when the Kind node
 took about 4.5 GiB with a Crew's agent sandboxes running. Measured again on
 2026-10-05, after the products went (#86):
 
-- the Kind node with Gitea and the seeded templates: 1.2 GiB;
+- each Kind node of the pool with Gitea and the seeded templates: 1.1 to
+  1.2 GiB idle, up to 4.5 GiB with a Crew running; the default pool of two
+  idles at about 2.5 GiB;
 - a relay session (`claude -p` and its children): 0.5 to 1.1 GiB;
 - one `make check` at its peak: still 2 to 3 GiB (Go builds, envtest,
   golangci-lint).

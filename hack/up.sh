@@ -4,10 +4,11 @@
 # is back, crash on "dial tcp 10.96.0.1:443: i/o timeout", and then sit in
 # back-off for up to five minutes; this restarts them once the network is up,
 # then waits for every Deployment and runs the doctor.
-#   make up     (make down stops it again)
+#   make up     (make down stops it again; both work on KIND_CLUSTER, one cluster of the pool)
 set -euo pipefail
 
-CLUSTER="${KIND_CLUSTER:-c4factory}"
+# Default: the pool cluster this checkout leased (hack/lib/github.sh cluster name), else c4factory.
+CLUSTER="${KIND_CLUSTER:-$("$(dirname "${BASH_SOURCE[0]}")/lib/github.sh" cluster name 2>/dev/null || echo c4factory)}"
 NODE="${CLUSTER}-control-plane"
 KUBECTL=(kubectl --context "kind-${CLUSTER}" --request-timeout=10s)
 NAMESPACES=(kube-system local-path-storage gitea agent-sandbox-system c4-factory-system c4-factory-ui)
