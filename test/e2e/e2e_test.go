@@ -17,6 +17,7 @@ limitations under the License.
 package e2e
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -362,6 +363,22 @@ func giteaGet(path string, into any) {
 		g.Expect(resp.StatusCode).To(Equal(http.StatusOK), path)
 		g.Expect(json.NewDecoder(resp.Body).Decode(into)).To(Succeed())
 	}).WithTimeout(15 * time.Second).WithPolling(500 * time.Millisecond).Should(Succeed())
+}
+
+// giteaSend sends body as JSON to a Gitea API path and reads the reply into into.
+func giteaSend(method, path string, body, into any) {
+	GinkgoHelper()
+	data, err := json.Marshal(body)
+	Expect(err).NotTo(HaveOccurred())
+	req, err := http.NewRequestWithContext(ctx, method, giteaURL+path, bytes.NewReader(data))
+	Expect(err).NotTo(HaveOccurred())
+	req.Header.Set("Authorization", "token "+giteaToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = resp.Body.Close() }()
+	Expect(resp.StatusCode).To(BeNumerically("<", 300), "%s %s", method, path)
+	Expect(json.NewDecoder(resp.Body).Decode(into)).To(Succeed())
 }
 
 func giteaDelete(path string) {

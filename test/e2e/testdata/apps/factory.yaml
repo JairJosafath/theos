@@ -36,7 +36,7 @@ spec:
   protectedPaths: [Makefile]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/hello-standard
-    ref: v1.0.0
+    ref: v1.0.1
 ---
 # A stand-in that makes a scripted change and approves it: proves the loop
 # without spending tokens.

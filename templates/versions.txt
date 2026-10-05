@@ -8,4 +8,4 @@ vscode-extension v1.0.0
 ts-standard v1.1.2
 gitea-release v1.0.0
 hello v1.0.0
-hello-standard v1.0.0
+hello-standard v1.0.1
