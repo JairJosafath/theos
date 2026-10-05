@@ -198,7 +198,7 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox)
+	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
 	if err != nil || run.Result == nil {
 		return ctrl.Result{}, fmt.Errorf("reading the implement result of %s: %v", status.Sandbox, err)
 	}
@@ -298,7 +298,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	if err := r.Create(ctx, sandbox); err != nil && !apierrors.IsAlreadyExists(err) {
 		return ctrl.Result{}, err
 	}
-	status.Sandbox, status.AgentBackAt = name, nil
+	status.Sandbox, status.SandboxPod, status.AgentBackAt = name, "", nil
 	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", message, name))
 	logf.FromContext(ctx).Info("Started agent sandbox", "sandbox", name, "role", role, "round", status.Round)
 	return ctrl.Result{}, nil
@@ -449,7 +449,7 @@ func (r *TaskReconciler) reviewRun(ctx context.Context, task *c4v1alpha1.Task,
 	if status.Phase != c4v1alpha1.TaskReviewing || status.Sandbox == "" {
 		return nil
 	}
-	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox)
+	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
 	if err != nil || run.Result == nil || run.Result.Verdict == "" {
 		return nil
 	}
@@ -468,7 +468,7 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, stat
 		!apierrors.IsNotFound(err) {
 		return err
 	}
-	status.Sandbox = ""
+	status.Sandbox, status.SandboxPod = "", ""
 	return nil
 }
 

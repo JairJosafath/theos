@@ -51,7 +51,7 @@ const defaultStandardChangeRecheck = time.Minute
 // instead.
 func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
 	container *c4v1alpha1.Container, step model.TaskStep) (ctrl.Result, error) {
-	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox)
+	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("reading the proposal of %s: %w", status.Sandbox, err)
 	}

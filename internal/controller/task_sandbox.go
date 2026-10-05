@@ -257,7 +257,10 @@ func toAnyMap(m map[string]string) map[string]any {
 }
 
 // runState reads what a sandbox's pod has done. The pod has the sandbox's name.
-func runState(ctx context.Context, c client.Client, ns, name string) (model.RunState, error) {
+// startedOn is the UID of the pod the run started on, if the operator saw it:
+// Agent Sandbox replaces a pod that went away without c4agent ending it, and
+// the replacement would run the round again without the Task knowing.
+func runState(ctx context.Context, c client.Client, ns, name, startedOn string) (model.RunState, error) {
 	var state model.RunState
 	sandbox := newSandbox()
 	err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, sandbox)
@@ -279,6 +282,9 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 			state.Failure = "the cluster was down at the sandbox's shutdown time"
 		case expired:
 			state.Done, state.Failure = true, "the sandbox reached its shutdown time"
+		case startedOn != "":
+			state.Done, state.Interrupted = true, true
+			state.Failure = "the sandbox's pod was deleted before it finished"
 		}
 		return state, nil
 	}
@@ -288,6 +294,12 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 	if !metav1.IsControlledBy(&pod, sandbox) {
 		// A pod of an earlier sandbox with this name, not yet collected: not this
 		// run's. Creation times can't tell: they count whole seconds.
+		return state, nil
+	}
+	state.Pod = string(pod.UID)
+	if startedOn != "" && state.Pod != startedOn {
+		state.Done, state.Interrupted = true, true
+		state.Failure = "the sandbox's pod was deleted before it finished, and replaced"
 		return state, nil
 	}
 	if pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {

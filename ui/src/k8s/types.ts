@@ -255,6 +255,7 @@ export interface Task extends K8sObject {
     summary?: string
     feedback?: string
     sandbox?: string
+    sandboxPod?: string
     /** When an unavailable agent is tried again; Progressing's reason is then AgentUnavailable. */
     agentBackAt?: string
     slotWaitSince?: string

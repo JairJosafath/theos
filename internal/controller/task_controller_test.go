@@ -27,6 +27,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
@@ -355,6 +356,52 @@ var _ = Describe("Task with an interrupted run", func() {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(2)), "past the cap the round is spent")
 			g.Expect(task.Status.Reruns).To(BeZero())
+		}).Should(Succeed())
+	})
+
+	It("reruns a round whose pod was deleted and replaced under the same sandbox", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+
+		// Agent Sandbox starts the pod; the operator remembers it.
+		startPod := func() *corev1.Pod {
+			GinkgoHelper()
+			sandbox := newSandbox()
+			Expect(k8sClient.Get(ctx, key(ns, "add-crop-r1-implement"), sandbox)).To(Succeed())
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "add-crop-r1-implement",
+					Labels:          map[string]string{LabelTask: "add-crop"},
+					OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "agent", Image: "agent"}}},
+			}
+			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+			return pod
+		}
+		first := startPod()
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "add-crop").Status.SandboxPod).To(Equal(string(first.UID)))
+		}).Should(Succeed())
+
+		By("force-deleting the pod, which Agent Sandbox replaces")
+		Expect(k8sClient.Delete(ctx, first, client.GracePeriodSeconds(0))).To(Succeed())
+		startPod()
+
+		rerun := model.SandboxName("add-crop", 1, model.RoleImplementer, 1, 1)
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, rerun)
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Reruns).To(Equal(int32(1)))
+			g.Expect(task.Status.Round).To(Equal(int32(1)), "an interrupted run costs no round")
+			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Reason", "Interrupted"),
+				HaveField("Message", ContainSubstring("(rerun 1 of 2)")))))
+		}, "20s").Should(Succeed())
+		Eventually(func(g Gomega) {
+			old := newSandbox()
+			err := k8sClient.Get(ctx, key(ns, "add-crop-r1-implement"), old)
+			g.Expect(apierrors.IsNotFound(err) || err == nil && !old.GetDeletionTimestamp().IsZero()).To(BeTrue(),
+				"the replaced run's sandbox goes")
 		}).Should(Succeed())
 	})
 

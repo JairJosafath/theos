@@ -106,6 +106,8 @@ func FollowUpIssue(f FollowUp, by, review string, issue int, task string) string
 type RunState struct {
 	// Started means the sandbox exists.
 	Started bool
+	// Pod is the UID of the sandbox's pod the run is on now, if any.
+	Pod string
 	// Done means its pod has finished.
 	Done bool
 	// Result is the reported outcome; nil when the pod ended without one.
