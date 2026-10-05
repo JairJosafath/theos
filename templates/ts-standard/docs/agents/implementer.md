@@ -43,9 +43,12 @@ If the issue truly needs a change to a protected file, make it in the same
 work. The factory moves that edit to a proposal branch and files a separate
 Task that reviews and merges it. Then:
 
-- The rest of your work must run on `main` alone. Never call something only the
-  proposal has; use a hook the protected file can pick up later, such as a `Makefile` target that calls `npm run dist --if-present`, or an
-  npm script that runs an optional step only when it exists.
+- The protected change merges first, so it must work on `main` without the
+  rest of your work. Never have it call a file only your branch has; use a hook
+  that does nothing until the rest lands, such as a `Makefile` target that calls
+  `npm run dist --if-present`, or an npm script that runs an optional step only
+  when it exists.
+- The rest of your work merges after it and may rely on it.
 - End your summary with a line: `Standard change: <why the issue needs it>`.
 - Never change `AGENTS.md`, `docs/agents/` or `.c4factory.yaml`. No Standard
   change can.
