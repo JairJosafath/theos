@@ -29,9 +29,30 @@ commands). It reads the token from the git credential helper and never prints it
   `hack/lib/github.sh label N needs/cluster` when you find out mid-way. On a
   device without a cluster (`C4_CLUSTER=none`) `pick` skips these and `take`
   refuses them: land what you can there (code, unit and envtest tests), label
-  the issue and hand off with what is left. On a device with one, one checkout
-  at a time works a `needs/cluster` issue; `take` and `label` exit 4 while
-  another holds it.
+  the issue and hand off with what is left. On a device with one, any checkout
+  may work a `needs/cluster` issue, and the checkouts share the cluster through
+  a lease (below).
+
+## The cluster lease
+
+On the device with the Kind cluster, a session holds the cluster only around
+the steps that touch it (deploys, samples, e2e, factory-ops checks,
+`make up`/`down`), not for the whole issue:
+
+1. Do the work that needs no cluster first: code, `make check`, envtest.
+2. Right before the first step that touches the cluster:
+   `hack/lib/github.sh cluster acquire` (waits up to 30m, `--wait 10m` for
+   another bound, while another checkout holds it).
+3. Deploy this branch's own build (`make deploy`); never trust what is already
+   deployed, another session may have deployed its branch.
+4. Verify, then `hack/lib/github.sh cluster release`.
+
+Exit 4 from `acquire` names the holder: hand off with only the cluster steps
+left. `cluster holder` shows who holds it. `beat` refreshes the lease; it is
+stale after the claim TTL (2h). `release`, `handoff`, `close` and
+`status N needs-human` drop it, and the relay drops one its session left
+behind. The `heavy-guard` hook denies `make deploy`, `sample`, `e2e`,
+`test-e2e`, `up` and `down` while another checkout holds it.
 
 ## Pick one up
 

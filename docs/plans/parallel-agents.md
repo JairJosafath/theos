@@ -100,13 +100,24 @@ evaluate twice; its 6-hour throttle reads that issue's newest evaluation.
   none: code, docs and scripts, checked with `make check` (envtest needs no
   cluster). Whoever files an issue sets it; `labels` creates it, and
   `label N needs/cluster` adds it.
-- **One cluster issue per device.** A device with a cluster shares it between
-  its checkouts and works one `needs/cluster` issue at a time: while another
-  checkout on the device (`git worktree list`) holds a claim on one, beaten
-  within the TTL, `pick` skips them and `take` refuses them (exit 4, so the
-  relay picks again). The labels are read from GitHub, so a label added
-  mid-way counts; `label N needs/cluster` exits 4 when the cluster is already
-  in use, and the session lands what needs no cluster and hands off.
+- **The cluster lease (#94).** A device with a cluster shares it between its
+  checkouts, and any of them may work a `needs/cluster` issue. What they can't
+  share is the cluster's state while one deploys and verifies (one operator
+  Deployment and one set of CRDs, verifications that stop the node, and no
+  memory for a second cluster), so a session holds the cluster only around
+  those steps: `hack/lib/github.sh cluster acquire [--wait DURATION]` right
+  before the first step that touches the cluster, then `make deploy` of its own
+  branch, verify, `cluster release`. The lease is one file in the git common
+  dir, beside every checkout, naming the agent, issue and worktree; `beat`
+  refreshes it and it is stale after the TTL. `acquire` waits up to DURATION
+  (default 30m) for another checkout's live lease, then exits 4 naming it, and
+  the session hands off with only the cluster steps left. `release`,
+  `handoff`, `close` and needs-human drop it; the relay drops one its session
+  left behind; `hack/heavy-guard.sh` denies `make deploy`, `sample`, `e2e`,
+  `test-e2e`, `up` and `down` while another checkout holds it. (Step 5 first
+  had one `needs/cluster` issue per device, held for the claim's life; with 9
+  workers that serialized most open issues, whose code and envtest work needs
+  no cluster.)
 - **Devices without a cluster.** `C4_CLUSTER=none` in the environment: `pick`
   skips `needs/cluster` issues, `take` refuses them, and the relay prompt says
   there is no cluster. A session that finds mid-way that its issue needs the
@@ -147,7 +158,8 @@ Each step is one pull request to main and leaves the single-relay flow working.
    is lost.
 4. **Relay workers.** `--workers N`, a worktree per worker, release on session
    end, no handoff wait, the evaluator claims its issue.
-5. **Cluster.** The `needs/cluster` label and the one-per-device rule.
+5. **Cluster.** The `needs/cluster` label and the one-per-device rule, since
+   replaced by the cluster lease (#94).
 
 ## Done when
 
