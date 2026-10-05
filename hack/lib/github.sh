@@ -11,21 +11,25 @@
 #   hack/lib/github.sh show N            issue N, its newest handoff comment and the comments after it
 #   hack/lib/github.sh take N            claim N for this checkout and swap it to status/in-progress;
 #                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it,
-#                                        or it needs the cluster and this device can't give it one now.
+#                                        or it needs the cluster and this device has none (C4_CLUSTER=none).
 #                                        This checkout's claim on a closed issue is released first
-#   hack/lib/github.sh release [REASON]  release this checkout's claim (default reason: released)
+#   hack/lib/github.sh release [REASON]  release this checkout's claim and cluster lease (default reason: released)
 #   hack/lib/github.sh claims            the live and stale claims on open issues
-#   hack/lib/github.sh beat              refresh this checkout's claim heartbeat, at most every 15
+#   hack/lib/github.sh beat              refresh this checkout's claim heartbeat and cluster lease, at most every 15
 #                                        minutes. Exit 2: the claim was taken over; stop working
-#   hack/lib/github.sh handoff N FILE    post FILE as N's handoff comment and release the claim; if
+#   hack/lib/github.sh handoff N FILE    post FILE as N's handoff comment and release the claim and lease; if
 #                                        GitHub can't be reached, keep it in .relay/pending-handoff-N.md (exit 3)
 #   hack/lib/github.sh flush             post the handoffs kept in .relay/ while GitHub was away, releasing their claims
 #   hack/lib/github.sh comment N FILE    post FILE as a comment on N
-#   hack/lib/github.sh label N LABEL...  add labels to N. Exit 4 after adding needs/cluster: another
-#                                        checkout on this device holds the cluster
+#   hack/lib/github.sh label N LABEL...  add labels to N
+#   hack/lib/github.sh cluster acquire [--wait DURATION]
+#                                        take this device's Kind cluster lease for this checkout, waiting
+#                                        up to DURATION (default 30m) while another holds it; exit 4 names it
+#   hack/lib/github.sh cluster release   drop this checkout's cluster lease
+#   hack/lib/github.sh cluster holder    who holds the live cluster lease; exit 1: nobody
 #   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, needs-human
-#                                        (needs-human releases the claim)
-#   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), release the claim, close N
+#                                        (needs-human releases the claim and lease)
+#   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, release the claim and lease
 #   hack/lib/github.sh create TITLE FILE LABEL...
 #                                        file an issue, FILE as its body; prints its number. An open
 #                                        issue with the same title is left as it is.
@@ -42,9 +46,13 @@
 #
 # The Kind cluster: issues whose work needs it carry needs/cluster. On a device
 # without one (C4_CLUSTER=none) pick skips them and take refuses them. On a
-# device with one, a single checkout works a needs/cluster issue at a time:
-# while another checkout (git worktree list) holds a claim on one, beaten within
-# C4_LEASE_TTL, pick skips them and take refuses them.
+# device with one, any checkout may work them, and the checkouts share the
+# cluster through a lease: a session does the work that needs no cluster first,
+# runs `cluster acquire` right before its first step that touches the cluster,
+# deploys its own branch (make deploy), verifies, and runs `cluster release`.
+# The lease lives in the git common dir, beside every checkout, names the
+# agent, issue and worktree, is refreshed by beat and is stale after
+# C4_LEASE_TTL. release, handoff, close and needs-human drop it too.
 # hack/lib/github_test.sh tests these rules against a stubbed GitHub.
 #
 # Claims (docs/plans/done/parallel-agents.md): taking an issue posts a comment that
@@ -141,16 +149,20 @@ gh_labels() {
   done
 }
 
-# gh_ttl: C4_LEASE_TTL in seconds.
-gh_ttl() {
-  local t=$C4_LEASE_TTL
-  [[ $t =~ ^[0-9]+[smh]?$ ]] || { echo "github: C4_LEASE_TTL must look like 2h, 90m, 300s or 300" >&2; return 1; }
+# gh_seconds VALUE NAME: VALUE (2h, 90m, 300s or 300) in seconds; NAME is
+# what the error message calls it.
+gh_seconds() {
+  local t=$1
+  [[ $t =~ ^[0-9]+[smh]?$ ]] || { echo "github: $2 must look like 2h, 90m, 300s or 300" >&2; return 1; }
   case $t in
     *h) echo $((${t%h} * 3600)) ;;
     *m) echo $((${t%m} * 60)) ;;
     *) echo "${t%s}" ;;
   esac
 }
+
+# gh_ttl: C4_LEASE_TTL in seconds.
+gh_ttl() { gh_seconds "$C4_LEASE_TTL" C4_LEASE_TTL; }
 
 # gh_recent_claims SECONDS: the claim comments on any issue edited in the last
 # SECONDS, as one JSON array of {id, issue, updated_at, html_url, body}.
@@ -168,7 +180,7 @@ gh_recent_claims() {
 gh_pick() {
   local ttl issues claims row nocluster=false
   ttl=$(gh_ttl) || return 2
-  if [ "${C4_CLUSTER:-}" = none ] || [ -n "$(gh_cluster_holder)" ]; then nocluster=true; fi
+  [ "${C4_CLUSTER:-}" != none ] || nocluster=true
   issues=$(gh_api --paginate --slurp \
     "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
@@ -249,7 +261,7 @@ gh_set_status() {
     jq -n --arg l "$want" '{labels: [$l]}' |
       gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
   fi
-  [ "$want" != status/needs-human ] || gh_release_for "$n" needs-human
+  [ "$want" != status/needs-human ] || { gh_lease_release; gh_release_for "$n" needs-human; }
 }
 
 # gh_edit_comment ID BODY: replace comment ID's body.
@@ -316,8 +328,8 @@ gh_branch_name() {
 }
 
 # gh_device_locked CMD ARGS...: run CMD under a lock shared by the device's
-# checkouts (in the git common dir), so two of them can't both pass the
-# one-cluster-issue check before either has written its claim or label.
+# checkouts (in the git common dir), so two takes on the device don't race
+# each other.
 gh_device_locked() {
   local dir fd rc
   dir=$(git -C "$GH_LIB_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
@@ -363,16 +375,9 @@ gh_take_locked() {
   fi
 
   issue=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n") || return 1
-  if jq -e '.labels | any(.name == "needs/cluster")' <<<"$issue" >/dev/null; then
-    if [ "${C4_CLUSTER:-}" = none ]; then
-      echo "github: #$n needs the Kind cluster (needs/cluster) and this device has none (C4_CLUSTER=none)" >&2
-      return 4
-    fi
-    holder=$(gh_cluster_holder)
-    if [ -n "$holder" ]; then
-      echo "github: #$n needs the Kind cluster, and $holder already works a needs/cluster issue on this device" >&2
-      return 4
-    fi
+  if [ "${C4_CLUSTER:-}" = none ] && jq -e '.labels | any(.name == "needs/cluster")' <<<"$issue" >/dev/null; then
+    echo "github: #$n needs the Kind cluster (needs/cluster) and this device has none (C4_CLUSTER=none)" >&2
+    return 4
   fi
   all=$(gh_comments "$n") || return 1
   local q=(--arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl")
@@ -432,56 +437,174 @@ gh_take_locked() {
   printf '%s\t%s\n' "$name" "$branch"
 }
 
-# gh_cluster_holder: another checkout on this device (git worktree list) whose
-# claim is on a needs/cluster issue and was beaten within C4_LEASE_TTL, as
-# "otter-23 (#23, PATH)"; nothing when there is none. The labels come from
-# GitHub, else from the claim file.
-gh_cluster_holder() {
-  local ttl mine wt f issue name beat labels
-  ttl=$(gh_ttl) || return 0
-  mine=$(realpath -m "$GH_CLAIM_FILE")
-  while IFS= read -r wt; do
-    f=$wt/.relay/claim
-    [ -s "$f" ] && [ "$(realpath -m "$f")" != "$mine" ] || continue
-    IFS=$'\t' read -r issue name beat < <(jq -r '[.issue, .name, (.beat // 0)] | @tsv' "$f" 2>/dev/null)
-    [ -n "$issue" ] && [ $(($(date +%s) - ${beat:-0})) -lt "$ttl" ] || continue
-    labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$issue/labels?per_page=100" --jq '.[].name' 2>/dev/null) ||
-      labels=$(jq -r '.labels[]?' "$f")
-    grep -qxF needs/cluster <<<"$labels" || continue
-    echo "$name (#$issue, $wt)"
-    return 0
-  done < <(git -C "$GH_LIB_ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
-}
-
-# gh_label N LABEL...: add LABELs to N, under the device lock. Exit 4 after
-# adding needs/cluster when another checkout on this device holds the cluster:
-# land what needs no cluster and hand off.
-gh_label() { gh_device_locked gh_label_locked "$@"; }
-
-gh_label_locked() {
-  local n=${1:?usage: label N LABEL...} holder
+# gh_label N LABEL...: add LABELs to N.
+gh_label() {
+  local n=${1:?usage: label N LABEL...}
   shift
   [ $# -gt 0 ] || { echo "usage: label N LABEL..." >&2; return 64; }
   jq -n '{labels: $ARGS.positional}' --args "$@" |
     gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
   echo "labeled #$n: $*"
-  # This checkout's own issue: keep the claim's labels current, the fallback
-  # gh_cluster_holder reads when GitHub can't be asked.
-  if [ -s "$GH_CLAIM_FILE" ] && [ "$(jq -r .issue "$GH_CLAIM_FILE")" = "$n" ]; then
-    jq --args '.labels = ((.labels // []) + $ARGS.positional | unique)' "$@" <"$GH_CLAIM_FILE" >"$GH_CLAIM_FILE.tmp" &&
-      mv "$GH_CLAIM_FILE.tmp" "$GH_CLAIM_FILE"
-  fi
-  printf '%s\n' "$@" | grep -qxF needs/cluster && [ "${C4_CLUSTER:-}" != none ] || return 0
-  holder=$(gh_cluster_holder)
-  [ -n "$holder" ] || return 0
-  echo "github: this device's Kind cluster is in use: $holder works a needs/cluster issue; land what needs no cluster and hand off #$n" >&2
-  return 4
 }
 
-# gh_release [REASON]: release this checkout's claim; its comment then says
-# "**NAME** released this issue: REASON". Without a claim there is nothing to do.
+# The cluster lease: the checkouts on a device share its Kind cluster, but not
+# while one of them deploys and verifies (one operator Deployment, one set of
+# CRDs, a node that verifications stop). A session holds the lease only around
+# the steps that touch the cluster. It is one JSON file in the git common dir,
+# beside every checkout: {name, issue, worktree, beat}. It is live while its
+# worktree exists and its beat is within C4_LEASE_TTL; a stale one is taken
+# over. C4_CLUSTER_LEASE names another file (the tests).
+GH_LEASE_POLL=${GH_LEASE_POLL:-15} # seconds between tries while acquire waits
+
+# gh_lease_file: the lease's path.
+gh_lease_file() {
+  local dir
+  [ -z "${C4_CLUSTER_LEASE:-}" ] || { echo "$C4_CLUSTER_LEASE"; return; }
+  dir=$(git -C "$GH_LIB_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || dir=$GH_PENDING_DIR
+  echo "$dir/c4-cluster.lease"
+}
+
+# gh_checkout: this checkout's root, the worktree a lease names (the relay's
+# workers set GH_PENDING_DIR to their worktree's .relay).
+gh_checkout() { realpath -m "$GH_PENDING_DIR/.."; }
+
+# gh_lease_read: set l_name, l_issue, l_wt and l_beat from the lease, live or
+# not. Exit 1: there is none.
+gh_lease_read() {
+  local f
+  f=$(gh_lease_file)
+  [ -s "$f" ] || return 1
+  IFS=$'\x1f' read -r l_name l_issue l_wt l_beat < <(jq -r \
+    '[.name // "", (.issue // "" | tostring), .worktree // "", (.beat // 0 | tostring)] | join("\u001f")' "$f" 2>/dev/null)
+  [ -n "$l_wt" ]
+}
+
+# gh_lease_live: gh_lease_read, and exit 1 unless the lease is live. A bad
+# C4_LEASE_TTL counts as live: better wait than deploy over another session.
+gh_lease_live() {
+  local ttl
+  gh_lease_read && [ -d "$l_wt" ] || return 1
+  ttl=$(gh_ttl 2>/dev/null) || return 0
+  [ $(($(date +%s) - ${l_beat:-0})) -lt "$ttl" ]
+}
+
+# gh_lease_mine: exit 0 when the lease read names this checkout.
+gh_lease_mine() { [ "$(realpath -m "$l_wt")" = "$(gh_checkout)" ]; }
+
+# gh_lease_desc: the lease read, as "otter-23 (#23, PATH), heartbeat 5m ago".
+gh_lease_desc() {
+  echo "$l_name (${l_issue:+#$l_issue, }$l_wt), heartbeat $((($(date +%s) - ${l_beat:-0}) / 60))m ago"
+}
+
+# gh_lease_holder: the checkout other than this one that holds a live lease,
+# as gh_lease_desc prints it. Exit 1: none does.
+gh_lease_holder() {
+  local l_name l_issue l_wt l_beat
+  gh_lease_live && ! gh_lease_mine || return 1
+  gh_lease_desc
+}
+
+# gh_lease_locked CMD ARGS...: run CMD under the lease's own lock, so
+# acquires, releases and beats in different checkouts don't interleave. Not the
+# device lock: take holds that while it releases a claim, and so the lease.
+gh_lease_locked() {
+  local fd rc
+  exec {fd}>>"$(gh_lease_file).lock"
+  flock -w 30 "$fd" || { echo "github: waited 30s for the cluster lease's lock" >&2; exec {fd}>&-; return 2; }
+  "$@"
+  rc=$?
+  exec {fd}>&-
+  return $rc
+}
+
+# gh_lease_take: write this checkout's lease unless another checkout holds a
+# live one; then print that one and exit 1. Run under gh_lease_locked.
+gh_lease_take() {
+  local f name= issue= c_issue c_id c_name c_branch
+  gh_lease_holder && return 1
+  if gh_claim_read; then name=$c_name issue=$c_issue; fi
+  f=$(gh_lease_file)
+  jq -n --arg name "${name:-${USER:-$(id -un)}}" --arg issue "$issue" --arg wt "$(gh_checkout)" \
+    --argjson beat "$(date +%s)" '{name: $name, issue: ($issue | tonumber? // null), worktree: $wt, beat: $beat}' \
+    >"$f.$$" && mv "$f.$$" "$f"
+}
+
+# gh_lease_acquire [--wait DURATION]: take the cluster lease for this
+# checkout, waiting up to DURATION (default 30m) while another checkout holds
+# a live one. Exit 4 naming the holder when the wait runs out.
+gh_lease_acquire() {
+  local wait=30m secs t0 holder said= l_name l_issue l_wt l_beat
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --wait) wait=${2:-}; shift 2 || shift ;;
+      --wait=*) wait=${1#*=}; shift ;;
+      *) echo "usage: cluster acquire [--wait DURATION]" >&2; return 64 ;;
+    esac
+  done
+  secs=$(gh_seconds "$wait" --wait) || return 64
+  gh_ttl >/dev/null || return 64
+  t0=$(date +%s)
+  while ! holder=$(gh_lease_locked gh_lease_take); do
+    [ -n "$holder" ] || return 1
+    if [ $(($(date +%s) - t0)) -ge "$secs" ]; then
+      echo "github: the Kind cluster is in use: $holder holds the lease. Land what needs no cluster and hand off with only the cluster steps left" >&2
+      return 4
+    fi
+    [ -n "$said" ] || echo "github: $holder holds the cluster lease; waiting up to $wait" >&2
+    said=1
+    sleep "$GH_LEASE_POLL"
+  done
+  gh_lease_read
+  echo "cluster lease: $(gh_lease_desc); release it when verification is done (hack/lib/github.sh cluster release)"
+}
+
+# gh_lease_release: drop this checkout's lease, live or stale; another
+# checkout's is left alone.
+gh_lease_release() { gh_lease_locked gh_lease_release_locked; }
+
+gh_lease_release_locked() {
+  local l_name l_issue l_wt l_beat
+  gh_lease_read && gh_lease_mine || return 0
+  rm -f "$(gh_lease_file)"
+  echo "released the cluster lease ($l_name${l_issue:+, #$l_issue})"
+}
+
+# gh_lease_beat: refresh this checkout's lease, at most every GH_BEAT_EVERY seconds.
+gh_lease_beat() {
+  local f l_name l_issue l_wt l_beat
+  gh_lease_read && gh_lease_mine || return 0
+  [ $(($(date +%s) - ${l_beat:-0})) -ge "$GH_BEAT_EVERY" ] || return 0
+  gh_lease_locked gh_lease_beat_locked
+}
+
+gh_lease_beat_locked() {
+  local f l_name l_issue l_wt l_beat
+  gh_lease_read && gh_lease_mine || return 0
+  f=$(gh_lease_file)
+  jq --argjson t "$(date +%s)" '.beat = $t' "$f" >"$f.$$" && mv "$f.$$" "$f"
+}
+
+# gh_cluster acquire [--wait DURATION] | release | holder: the cluster lease.
+# holder prints the live lease, whoever holds it; exit 1 when there is none.
+gh_cluster() {
+  local l_name l_issue l_wt l_beat
+  case ${1:-} in
+    acquire) shift; gh_lease_acquire "$@" ;;
+    release) gh_lease_release ;;
+    holder)
+      gh_lease_live || return 1
+      echo "$(gh_lease_desc)$(gh_lease_mine && echo ' (this checkout)')"
+      ;;
+    *) echo "usage: cluster acquire [--wait DURATION] | release | holder" >&2; return 64 ;;
+  esac
+}
+
+# gh_release [REASON]: release this checkout's claim, and its cluster lease;
+# the claim's comment then says "**NAME** released this issue: REASON".
+# Without a claim there is nothing more to do.
 gh_release() {
   local reason=${1:-released} c_issue c_id c_name c_branch rc
+  gh_lease_release
   gh_claim_read || return 0
   gh_claim_held >/dev/null
   rc=$?
@@ -505,11 +628,12 @@ gh_release_for() {
     echo "github: could not release the claim on #$1; it expires after $C4_LEASE_TTL" >&2
 }
 
-# gh_beat: refresh this checkout's claim heartbeat, at most every
+# gh_beat: refresh this checkout's cluster lease and claim heartbeat, at most every
 # GH_BEAT_EVERY seconds. GitHub errors are ignored until the next beat. Exit 2:
 # the claim was taken over, with what to do on stderr.
 gh_beat() {
   local c_issue c_id c_name c_branch c rc last body
+  gh_lease_beat
   gh_claim_read || return 0
   last=$(jq -r '.beat // 0' "$GH_CLAIM_FILE")
   [ $(($(date +%s) - last)) -ge "$GH_BEAT_EVERY" ] || return 0
@@ -546,8 +670,8 @@ gh_claims() {
     | @tsv' <<<"$claims"
 }
 
-# gh_handoff N FILE: post FILE as N's handoff comment, the marker line first.
-# If GitHub can't be reached, keep the text in .relay/pending-handoff-N.md and
+# gh_handoff N FILE: post FILE as N's handoff comment, the marker line first,
+# and drop this checkout's cluster lease. If GitHub can't be reached, keep the text in .relay/pending-handoff-N.md and
 # exit 3; gh_flush posts it later. A newer handoff replaces an unposted older
 # one: each handoff is a full snapshot.
 gh_handoff() {
@@ -556,6 +680,7 @@ gh_handoff() {
   [ -n "$body" ] || { echo "github: empty handoff" >&2; return 1; }
   [ "$(head -1 <<<"$body")" = "$GH_HANDOFF_MARKER" ] || body="$GH_HANDOFF_MARKER"$'\n'"$body"
   pending="$GH_PENDING_DIR/pending-handoff-$n.md"
+  gh_lease_release >&2
   if url=$(printf '%s\n' "$body" | gh_comment "$n" -); then
     rm -f "$pending"
     echo "$url"
@@ -593,13 +718,14 @@ gh_flush() {
 }
 
 # gh_close N FILE: comment what landed, close N as completed, then release the
-# claim. Closing comes first: if it fails, the claim stays live, so pick does
+# claim and the cluster lease. Closing comes first: if it fails, the claim stays live, so pick does
 # not offer the open, in-progress issue again as abandoned work.
 gh_close() {
   local n=${1:?usage: close N FILE}
   gh_comment "$n" "${2:--}" || return 1
   gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
     -f state=closed -f state_reason=completed --jq '"closed #\(.number)"' || return 1
+  gh_lease_release
   gh_release_for "$n" finished
 }
 
@@ -699,6 +825,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     flush) gh_flush ;;
     comment) gh_comment "$@" ;;
     label) gh_label "$@" ;;
+    cluster) gh_cluster "$@" ;;
     status) gh_set_status "$@" ;;
     close) gh_close "$@" ;;
     create) gh_create "$@" ;;

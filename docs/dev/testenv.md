@@ -62,6 +62,9 @@ hack/lib/github.sh pick            # the issue to work next
 hack/lib/github.sh show 14         # an issue, its newest handoff comment and what came after
 hack/lib/github.sh take 14         # claim it for this checkout; prints the agent's name and branch
 hack/lib/github.sh claims          # who holds which issue, with heartbeat age and branch
+hack/lib/github.sh cluster acquire # take the Kind cluster lease before deploying (waits up to 30m; exit 4 names the holder)
+hack/lib/github.sh cluster release # drop it once verification is done
+hack/lib/github.sh cluster holder  # who holds the cluster lease
 hack/lib/github.sh labels          # create the status/priority/kind/source labels (safe to repeat)
 RELAY_DRY_RUN=1 hack/relay.sh      # the issue and prompt the next headless session would get
 hack/relay.sh                      # headless sessions one after another, overnight (billed)
@@ -84,6 +87,32 @@ nothing ready a worker stops.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
+
+### Sharing the Kind cluster between checkouts
+
+Every checkout on the cluster device may work a `needs/cluster` issue; they
+share the one Kind cluster through a lease, held only around the steps that
+touch it. The checkouts can't share its state while one deploys and verifies:
+`make deploy` from a branch replaces the operator and CRDs another session
+deployed, an outage or `make down`/`make up` cuts every session off, and a
+second cluster (about 4.5 GiB) doesn't fit in memory. So a session does the
+work that needs no cluster first (code, `make check`, envtest), runs
+`hack/lib/github.sh cluster acquire` right before its first cluster step,
+deploys its own branch (`make deploy`, never trusting what is already
+deployed), verifies, and runs `cluster release`. `acquire` waits up to
+`--wait` (default 30m) while another checkout holds a live lease, then exits 4
+naming it; the session then hands off with only the cluster steps left.
+
+The lease is the file `c4-cluster.lease` in the git common dir (`.git/` of
+the main checkout), naming the agent, issue and worktree. `beat` (the
+heartbeat hook) refreshes it, and it is stale after `C4_LEASE_TTL` (2h) or
+once its worktree is gone; `acquire` takes a stale one over. `release`,
+`handoff`, `close` and `status N needs-human` drop it, and the relay drops one
+its session left behind, as it does a claim. `hack/heavy-guard.sh` denies
+`make deploy`, `sample`, `e2e`, `test-e2e`, `up` and `down` while another
+checkout holds the lease. The memory gates below stay as they are.
+`hack/lib/github_test.sh`, `hack/relay_test.sh` and `hack/heavy-guard_test.sh`
+test the lease.
 
 The relay stops when no issue is ready, so an issue marked ready or handed back
 later waits until someone starts it again. `hack/relay-watch.sh` stays up
