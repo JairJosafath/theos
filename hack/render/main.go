@@ -8,7 +8,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +34,7 @@ func main() {
 		if !ok {
 			fail(fmt.Errorf("%q: want Side=template", arg))
 		}
-		files, err := readTree(filepath.Join(*root, name))
+		files, err := scaffold.ReadTree(os.DirFS(filepath.Join(*root, name)))
 		if err != nil {
 			fail(err)
 		}
@@ -72,27 +71,6 @@ func main() {
 		}
 	}
 	fmt.Printf("Rendered %d files from %s into %s\n", len(result.Files), strings.Join(result.ScaffoldedFrom, ", "), *out)
-}
-
-func readTree(dir string) (scaffold.Tree, error) {
-	tree := scaffold.Tree{}
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(dir, p)
-		tree[filepath.ToSlash(rel)] = scaffold.File{Data: data, Executable: info.Mode()&0o111 != 0}
-		return nil
-	})
-	return tree, err
 }
 
 func fail(err error) {

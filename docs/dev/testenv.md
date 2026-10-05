@@ -28,8 +28,11 @@ make doctor              # Check every part of the factory and say what is wrong
 
 Controller tests use **Ginkgo + Gomega** (BDD style) with the real manager and every
 reconciler; see `internal/controller/suite_test.go`. A fake Git host serves the real
-`templates/`, so envtest also proves the templates render together. Business-rule tests
-use the standard `testing` package with table tests. In tests, write with merge patches
+`templates/`, so envtest also proves some templates render together. Business-rule tests
+use the standard `testing` package with table tests; `internal/scaffold/templates_test.go`
+renders every folder in `templates/` in a realistic combination, without envtest, and
+fails on a render error, a path two layers write, or YAML that doesn't parse. A new
+template needs a row there. In tests, write with merge patches
 (`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
 
 `make run` runs the operator on your machine, but it can't reach Gitea's in-cluster
