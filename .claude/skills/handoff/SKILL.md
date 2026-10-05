@@ -48,7 +48,8 @@ the steps that touch it (deploys, samples, e2e, factory-ops checks,
    (`--wait 10m` for another bound) while other checkouts hold every one.
 3. Every make target in this checkout now uses that cluster
    (`hack/lib/github.sh cluster name`); kubectl takes `--context kind-<name>`
-   on every call, since a Bash call doesn't keep exported variables. Deploy
+   on every call, since a Bash call doesn't keep exported variables; never
+   `kubectl config use-context`, every checkout shares the kubeconfig. Deploy
    this branch's own build (`make deploy`); never trust what is already
    deployed, another session may have deployed its branch.
 4. Verify, then `hack/lib/github.sh cluster release`.
