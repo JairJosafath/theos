@@ -215,6 +215,16 @@ queue:
   hang, so give the command a long timeout or run it in the background. A job
   that ends, fails or is killed frees its slot within a second; its sub-makes
   don't take another. `hack/heavy-slot.sh status` shows the slots.
+- `make check` remembers a passing tree, device-wide (`hack/check-cache.sh`).
+  A pass is recorded under the git tree hash of the working state as the
+  check left it (tracked and untracked non-ignored files, after `manifests`,
+  `generate` and `fmt`) in `.dev/cache/c4factory/checks/<tree>`: when, which
+  checkout, which agent. A plain `make check` on a tree that already passed, in
+  any checkout, prints `make check: passed on tree <hash> at <time> in
+  <checkout> (cached); FORCE=1 to rerun` and exits 0 without a heavy slot. A
+  cached pass counts as a pass. A failure records nothing; `FORCE=1 make
+  check` always runs the whole check and records it. Tool versions,
+  `go.mod`/`go.sum` and the Makefile are in the tree, so bumping them misses.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
   before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
   `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;
@@ -230,7 +240,9 @@ queue:
 `/proc/meminfo` (`RELAY_MEMINFO`), `hack/heavy-guard_test.sh` the hook,
 with `ps` and `docker` faked too, and `hack/heavy-slot_test.sh` the slots: two
 jobs running while a third waits, a slot freed by a job that ends or is killed,
-and the Makefile queueing its heavy goals.
+and the Makefile queueing its heavy goals. `hack/check-cache_test.sh` tests the
+check cache: a pass, then a hit on the same tree from another worktree, a miss
+on one changed byte (tracked or untracked), and `FORCE=1` queueing again.
 
 ### CPU on the cluster device
 
