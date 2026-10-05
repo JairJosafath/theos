@@ -1,9 +1,0 @@
-Two stand-in Tasks at once, API response sampled every 15 s by the UI server
-
-22:51:30-23:00:30: 30 samples, API median 91 ms, p90 10742 ms, max 23762 ms, failed 3, over 5 s 4
-23:07:10-23:14:00: 24 samples, API median 11 ms, p90 2712 ms, max 5704 ms, failed 0, over 5 s 1
-23:23:00-23:29:00: 22 samples, API median 15 ms, p90 1543 ms, max 2502 ms, failed 0, over 5 s 0
-
-A 22:51  CI and sandbox workspaces on the node's disk
-B 23:07  CI work dir and /tmp in memory
-C 23:23  and the sandbox workspace in memory (--sandbox-workspace-memory=3Gi)

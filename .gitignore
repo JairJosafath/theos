@@ -3,7 +3,8 @@
 
 # Binaries and tools downloaded by the Makefile
 bin/
-dist/
+dist/*
+!dist/chart/
 *.exe
 *.dll
 *.so
