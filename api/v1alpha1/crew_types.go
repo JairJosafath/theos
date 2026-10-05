@@ -62,6 +62,29 @@ type CrewSpec struct {
 	// +kubebuilder:default=1
 	// +optional
 	Parallel int32 `json:"parallel,omitempty"`
+
+	// tagReleases lets the Crew tag a release once it is done: a milestone with a
+	// due date and a vMAJOR.MINOR.PATCH title, with no open issue and no Task at
+	// work on one of its issues. The tag goes at the merge commit of the release's
+	// most recently merged issue, and the milestone is then closed. Releases go
+	// out in order, and an existing tag is never moved.
+	// +optional
+	TagReleases bool `json:"tagReleases,omitempty"`
+}
+
+// CrewRelease is a release a Crew tagged.
+type CrewRelease struct {
+	// tag is the release's version, the milestone's title.
+	// +required
+	Tag string `json:"tag"`
+
+	// commit is the commit the tag names.
+	// +required
+	Commit string `json:"commit"`
+
+	// time is when the Crew tagged the release and closed its milestone.
+	// +required
+	Time metav1.Time `json:"time"`
 }
 
 // CrewPhase says what a Crew is doing.
@@ -106,6 +129,10 @@ type CrewStatus struct {
 	// +optional
 	Waiting []int32 `json:"waiting,omitempty"`
 
+	// lastRelease is the release the Crew tagged last, when spec.tagReleases is set.
+	// +optional
+	LastRelease *CrewRelease `json:"lastRelease,omitempty"`
+
 	// lastPolled is when the Crew last read the issues.
 	// +optional
 	LastPolled *metav1.Time `json:"lastPolled,omitempty"`
@@ -115,6 +142,8 @@ type CrewStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions: Ready says whether the Crew can pick up issues, and why not.
+	// Released, when spec.tagReleases is set, says whether the Crew's next
+	// release went out, and why not.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

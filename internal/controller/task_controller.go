@@ -57,7 +57,21 @@ const (
 	taskSecretRecheck = 15 * time.Second
 	// slotRecheck: a Task waiting for a free agent slot looks again.
 	slotRecheck = 20 * time.Second
+	// mergeCommitRetry: a Merged Task whose merge commit couldn't be read tries
+	// again, less often once it merged long ago (mergeCommitSlowRetry).
+	mergeCommitRetry     = time.Minute
+	mergeCommitSlowRetry = time.Hour
 )
+
+// mergeCommitRetryAfter is when a Merged Task without its merge commit reads it
+// again: each minute for the first hour after it completed, then each hour, so a
+// pull request that is gone doesn't cost a Git request a minute forever.
+func mergeCommitRetryAfter(completed *metav1.Time, now time.Time) time.Duration {
+	if completed != nil && now.Sub(completed.Time) > mergeCommitSlowRetry {
+		return mergeCommitSlowRetry
+	}
+	return mergeCommitRetry
+}
 
 // TaskReconciler drives a Task through its rounds: an agent implements in a
 // sandbox, CI checks the pull request, an agent reviews, and the operator merges.
@@ -129,7 +143,22 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 	if isFinal(status.Phase) {
-		return ctrl.Result{}, r.writeStatus(ctx, &task, status)
+		if status.Phase != c4v1alpha1.TaskMerged || status.MergeCommit != "" || status.PullRequest == 0 {
+			return ctrl.Result{}, r.writeStatus(ctx, &task, status)
+		}
+		// Merged before the Task recorded merge commits, or the read failed: a Crew
+		// waits for it to tag the release.
+		provider, repo, err := r.gitRepo(ctx, &container)
+		if err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to reach the Git host for the merge commit")
+		} else {
+			status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
+		}
+		var result ctrl.Result
+		if status.MergeCommit == "" {
+			result.RequeueAfter = mergeCommitRetryAfter(status.CompletedAt, r.now())
+		}
+		return result, r.writeStatus(ctx, &task, status)
 	}
 
 	var agent c4v1alpha1.Agent

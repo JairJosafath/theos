@@ -275,6 +275,20 @@ model and context it needs.
   waits on, and an issue the current release's issues depend on. An issue handed
   back to a person (`status/needs-human`) no longer holds its release, so the
   factory keeps working. Running Tasks are never stopped.
+- **The Crew tags a done release** when its `spec.tagReleases` is true (off by
+  default). A release whose title is `vMAJOR.MINOR.PATCH` is done when its
+  milestone has no open issue, `status/needs-human` included, and no active Task
+  works on one of its issues. The Crew tags it, as the operator's Git user, at
+  the merge commit of its most recently merged issue (the Task records it in
+  `status.mergeCommit`; issues closed by hand don't count), then closes its
+  milestone. Tags go out in due-date order, and a tag is never moved: a tag
+  already at that commit only closes the milestone, one at another commit is
+  left to a person. A release is also left to a person when it has no merged
+  issue, or when the tag would carry a later release's merged work. Each release
+  is an Event, the log line `Released milestone` and `status.lastRelease`; a
+  release left to a person is a Warning Event, once per reason, and the Crew's
+  `Released` condition says why. A paused Crew still tags: its release's work
+  is already merged.
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other
   issue, whatever its release, even when every place is taken (once running, it
