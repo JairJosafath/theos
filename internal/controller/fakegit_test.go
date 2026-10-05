@@ -19,6 +19,7 @@ package controller
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -474,7 +475,7 @@ func (p *fakeProvider) EnsureAgentAccess(_ context.Context, repo gitprovider.Rep
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	p.git.agentState().agents[repo.Owner+"/"+repo.Name] = user
-	return gitprovider.Credentials{Username: user, Token: "b0t-" + user}, nil
+	return gitprovider.Credentials{Username: user, Token: rand.Text()}, nil
 }
 
 func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repository, head, _, _, _ string) (gitprovider.PullRequest, error) {

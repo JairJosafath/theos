@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	"crypto/rand"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -35,7 +37,7 @@ func createFactory(ns string) {
 	mustCreate(
 		&corev1.Secret{
 			ObjectMeta: objectMeta(ns, "gitea-credentials"),
-			StringData: map[string]string{"username": "c4admin", "token": "t0ken"},
+			StringData: map[string]string{"username": "c4admin", "token": rand.Text()},
 		},
 		&c4v1alpha1.GitProvider{
 			ObjectMeta: objectMeta(ns, "gitea"),

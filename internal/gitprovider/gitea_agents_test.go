@@ -2,6 +2,7 @@ package gitprovider
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,14 +33,17 @@ type agentGitea struct {
 	manyFiles bool
 	// files, if set, is pull request 7's one page of files.
 	files string
+	// botToken is the token Gitea issues for the agent's bot account.
+	botToken string
 }
 
 func newAgentGitea(t *testing.T) (*agentGitea, Provider) {
 	t.Helper()
-	g := &agentGitea{t: t, bodies: map[string]map[string]any{}, users: map[string]bool{}, rules: map[string]bool{}}
+	g := &agentGitea{t: t, bodies: map[string]map[string]any{}, users: map[string]bool{}, rules: map[string]bool{},
+		botToken: rand.Text()}
 	srv := httptest.NewServer(g)
 	t.Cleanup(srv.Close)
-	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "apps", Credentials: Credentials{Username: "c4admin", Token: "admin"}})
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "apps", Credentials: Credentials{Username: "c4admin", Token: rand.Text()}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +140,7 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !basic || user != "photo-editor-agent" {
 			g.t.Errorf("%s without the bot's basic auth", call)
 		}
-		reply(http.StatusCreated, map[string]string{"sha1": "b0t-t0ken"})
+		reply(http.StatusCreated, map[string]string{"sha1": g.botToken})
 	case call == "POST "+repo+"/pulls":
 		for _, p := range g.pulls {
 			if p.Head.Ref == body["head"] {
@@ -248,7 +252,7 @@ func TestEnsureAgentAccess(t *testing.T) {
 		if err != nil {
 			t.Fatalf("EnsureAgentAccess() #%d error = %v", i, err)
 		}
-		if creds != (Credentials{Username: "photo-editor-agent", Token: "b0t-t0ken"}) {
+		if creds != (Credentials{Username: "photo-editor-agent", Token: g.botToken}) {
 			t.Errorf("creds = %+v", creds)
 		}
 	}
@@ -378,7 +382,7 @@ func TestDeleteBranch(t *testing.T) {
 			call = r.Method + " " + r.URL.EscapedPath()
 			w.WriteHeader(tc.status)
 		}))
-		p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "apps", Credentials: Credentials{Username: "c4admin", Token: "admin"}})
+		p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "apps", Credentials: Credentials{Username: "c4admin", Token: rand.Text()}})
 		if err != nil {
 			t.Fatal(err)
 		}

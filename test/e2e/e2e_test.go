@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"bytes"
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -136,7 +137,7 @@ var _ = Describe("C4 Factory", Ordered, ContinueOnFailure, func() {
 			ns := newNamespace("e2e-catalog")
 			kubectl("apply", "-n", ns, "-f", "config/samples/webshop/factory.yaml")
 			Expect(k8s.Create(ctx, &corev1.Secret{ObjectMeta: objMeta(ns, "gitea-credentials"),
-				StringData: map[string]string{"username": "nobody", "token": "unused"}})).To(Succeed())
+				StringData: map[string]string{"username": "nobody", "token": crand.Text()}})).To(Succeed())
 			for _, obj := range []client.Object{
 				&c4v1alpha1.Project{ObjectMeta: objMeta(ns, ns)},
 				&c4v1alpha1.SoftwareSystem{ObjectMeta: objMeta(ns, "webshop-core")},

@@ -2,6 +2,7 @@ package gitprovider
 
 import (
 	"context"
+	"crypto/rand"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,13 +10,13 @@ import (
 	"testing"
 )
 
-// fakeGitea answers the two API calls EnsureRepository makes.
-func fakeGitea(t *testing.T, createStatus int, createBody string) (*httptest.Server, *[]string) {
+// fakeGitea answers the two API calls EnsureRepository makes, each with token.
+func fakeGitea(t *testing.T, token string, createStatus int, createBody string) (*httptest.Server, *[]string) {
 	t.Helper()
 	var calls []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
-		if got := r.Header.Get("Authorization"); got != "token secret" {
+		if got := r.Header.Get("Authorization"); got != "token "+token {
 			t.Errorf("Authorization = %q, want the token", got)
 		}
 		switch {
@@ -39,8 +40,9 @@ func fakeGitea(t *testing.T, createStatus int, createBody string) (*httptest.Ser
 func TestEnsureRepository(t *testing.T) {
 	for _, status := range []int{http.StatusCreated, http.StatusConflict} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
-			srv, calls := fakeGitea(t, status, `{}`)
-			p, err := Client{}.Provider(Config{URL: srv.URL + "/", Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+			token := rand.Text()
+			srv, calls := fakeGitea(t, token, status, `{}`)
+			p, err := Client{}.Provider(Config{URL: srv.URL + "/", Owner: "webshop", Credentials: Credentials{Token: token}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -70,8 +72,9 @@ func TestEnsureRepositoryErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(http.StatusText(tt.status), func(t *testing.T) {
-			srv, _ := fakeGitea(t, tt.status, tt.body)
-			p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+			token := rand.Text()
+			srv, _ := fakeGitea(t, token, tt.status, tt.body)
+			p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: token}})
 			if err != nil {
 				t.Fatal(err)
 			}
