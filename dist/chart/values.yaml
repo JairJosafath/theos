@@ -298,7 +298,7 @@ global:
 ## runners. Off: gitProviders point at a Gitea the release does not run.
 ##
 gitea:
-  enabled: false
+  enabled: true
   ## Its own namespace, so its URL is http://gitea.<namespace>.svc.cluster.local:3000
   ## (an empty one is the release's). The chart creates it unless createNamespace
   ## is false, and keeps it on uninstall, with the volume.

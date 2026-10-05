@@ -97,18 +97,22 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
 5. **On by default, tested.** `gitea.enabled: true`. *Test Chart* builds the
    operator, UI, seed and runner images, kind-loads them (the pull request's
    code isn't published yet), installs Agent Sandbox and the chart with Gitea
-   and project `webshop`, then checks: the seed Job completed, organizations
-   `templates` and `webshop` exist, GitProvider `webshop/gitea` is `Ready`, both
-   runners are registered (Gitea's admin runner list), the manager and UI are
-   ready. `dist/chart/README.md` gives the device's install sequence and both
-   ways to pull private images; README *Try it* points at it.
+   and project `webshop`, then checks: organizations `templates` and `webshop`
+   exist, Secret `webshop/gitea-credentials` and GitProvider `webshop/gitea`
+   exist (a GitProvider has no status), both runners are registered (Gitea's
+   admin runner list), the manager and UI are ready. The Go toolchain is
+   several GB and *Release* builds it (#156 checks it), so *Test Chart* runs
+   the `go` runner on the `gitea-runner-base` image without its Go cache: it
+   checks the chart's Deployment and registration, not the toolchain.
+   `dist/chart/README.md` gives the device's install sequence and both ways to
+   pull private images; README *Try it* points at it.
 6. **Verified from a release.** Once the owner pushes `v0.2.0` and *Release*
    publishes it: on a fresh Kind cluster of the pool, apply Agent Sandbox,
    `helm install` from `oci://ghcr.io/jairjosafath/c4factory/charts`, nothing
    built or loaded locally (pulled with a pull secret or after making the
    packages public), and save the `kubectl get` output and a Gitea screenshot
    in `docs/screenshots/`. If the tag isn't pushed yet, step 5 closes #127 and
-   this check is filed as its own issue, `Depends on` nothing but the tag.
+   this check is filed as its own issue (#156), waiting on nothing but the tag.
 
 ## Done when
 
@@ -117,6 +121,7 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
 - *Test Chart* installs the chart with Gitea on a fresh Kind cluster with
   Agent Sandbox and gets a seeded Gitea, the operator, the UI and the `base`
   and `go` runners, on main after the merge.
-- *Release* (its dry run on the pull request) builds and publishes `seed`.
+- *Release* builds and publishes `seed` (its pull request dry run, since
+  removed from main, built it in #130).
 - `dist/chart/README.md` gives the install sequence and how private images are
   pulled.
