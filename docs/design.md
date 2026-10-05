@@ -339,6 +339,25 @@ whose `### Reported by` heading names the device; the intake workflow
 (`hack/lib/github.sh intake`) labels the issue, for trusted authors only, and
 files it as `status/proposed` for the owner to ready like any other issue.
 
+A `vX.Y.Z` tag publishes the release: the chart at
+`oci://ghcr.io/jairjosafath/c4factory/charts` and its images on GHCR. The
+release installs the whole factory:
+
+| Part | Where | Notes |
+| --- | --- | --- |
+| Operator, CRDs, RBAC, admission policy | release namespace | always |
+| UI | release namespace | `ui.enabled`, on by default |
+| Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password generated into Secret `gitea-admin` and kept on upgrade; namespace and volume kept on uninstall |
+| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret and a GitProvider for each project in `gitea.projects`, the runners' registration token |
+| CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
+| GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`) |
+
+A device installs itself only what is another project's or its own: Agent
+Sandbox (its controller and CRDs) before the chart, the namespaces of its
+projects, and, while the GHCR packages are private, a pull secret or the images
+loaded into its cluster. The Kind test environment of this repository keeps its
+make targets (`make gitea seed deploy`) and locally built images.
+
 ## Out of scope for v1
 
 - **Shipping.** No builds, registries or rollouts; existing tools pick up the scaffolded files.
