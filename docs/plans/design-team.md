@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.26, kubebuilder/controller-runtime, envtest + Ginkgo, Gitea API, `claude -p` in agent sandboxes.
 
-**Spec:** [docs/superpowers/specs/2026-10-03-design-team-design.md](../superpowers/specs/2026-10-03-design-team-design.md) (decisions are numbered; this plan cites them as D1-D22). GitHub issue #19.
+**Spec:** [docs/plans/done/2026-10-03-design-team-design.md](done/2026-10-03-design-team-design.md) (decisions are numbered; this plan cites them as D1-D22). GitHub issue #19.
 
 ## Global Constraints
 

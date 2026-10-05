@@ -7,8 +7,9 @@ description: Hand off the in-flight state of work on the factory as a comment on
 
 Work on the factory itself is tracked as GitHub issues on `JairJosafath/c4factory`,
 one issue per piece of work. A handoff is a comment on that issue; the next
-session reads the newest one and continues. Product work (the apps the factory
-builds) stays in Gitea, where the Crews work it; this skill is not for that.
+session reads the newest one and continues. Products are built on devices that
+run the factory's Helm release, not here; their problems arrive as
+`source/user` issues and are worked like any other.
 
 Standing facts (true next month) go in `AGENTS.md`, `docs/` or memory, never in
 a handoff.
@@ -145,6 +146,6 @@ under **State outside git** only while the work still holds it.
 - **Can't go on without the user:** `hack/lib/github.sh status N needs-human`,
   and a comment (or a handoff) saying why and what you need.
 - **Follow-up found on the way:** `hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>`.
-  Don't start it in this session. If it can only start once another issue has
+  `create` adds `source/dev`. Don't start it in this session. If it can only start once another issue has
   landed (a plan's step 3 after step 2), its body says `Depends on #M`;
   `pick` skips it while #M is open.

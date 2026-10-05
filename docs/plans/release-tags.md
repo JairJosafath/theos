@@ -53,10 +53,13 @@ person moved #99 and #120 to v0.3.0 it was done, and its newest merge is
   branch head, not the commit on main. Standard-change Tasks, merged by
   `ForceMergePullRequest`, record it too. A Task that reached `Merged` without
   one (merged before this change, or the read failed) gets it read again on its
-  next reconcile; the Crew skips a merged Task without one and says so.
+  next reconcile. Until it has one, its release waits and the Crew says so,
+  unless a later merged Task of the same issue has one.
 - **Which merge is newest.** The merged Task's `status.completedAt`; ties break
   on the Task's name. Tasks are only ordered within one Container, whose `main`
   takes squash merges one at a time, so merge order is completion order.
+  A deleted Task's merge is lost to the Crew, so Merged Tasks of an open release
+  must be kept until it is tagged.
 - **Which issues belong to a release.** Gitea is the truth: the milestone's open
   and closed issues, read each poll, pull requests left out. A Task's own record
   of its issue's milestone would go stale when a person moves an issue.
