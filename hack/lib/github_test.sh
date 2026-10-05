@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label)
-# and the cluster lease (acquire, wait, exit 4, stale lease, release on
-# handoff, close and release),
+# and the cluster pool's leases (acquire, wait, exit 4, stale lease, two leases
+# on two clusters, a third waiting, a released cluster reused, a missing one
+# created; release on handoff, close and release),
 # for flush releasing the claim of the handoff it posts,
-# for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees.
+# for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 unset C4_CLUSTER # ./dev setup --lite sets it; each test sets its own
@@ -61,45 +62,96 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
 claim() { mkdir -p "$1/.relay"; jq -n --argjson i "$2" --argjson b "$3" '{issue:$i,id:1,name:"heron-\($i)",branch:"b",labels:[],beat:$b}' >"$1/.relay/claim"; }
 clear() { rm -rf "$T"/{main,wt2,wt3}/.relay; }
 
-# The cluster lease. as WT CMD...: run CMD as the checkout WT would.
+# The cluster pool. as WT CMD...: run CMD as the checkout WT would. A fake kind
+# lists $T/kind-clusters; a fake make records what it was asked and creates the cluster.
 as() { local wt=$1; shift; GH_PENDING_DIR=$wt/.relay GH_CLAIM_FILE=$wt/.relay/claim "$@"; }
 LEASE=$T/main/.git/c4-cluster.lease
-lease() { jq -n --arg wt "$1" --argjson i "$2" --argjson b "$3" '{name:"heron-\($i)",issue:$i,worktree:$wt,beat:$b}' >"$LEASE"; }
+LEASE2=$T/main/.git/c4-cluster-c4factory-2.lease
+lease() { jq -n --arg wt "$1" --argjson i "$2" --argjson b "$3" '{name:"heron-\($i)",issue:$i,worktree:$wt,beat:$b}' >"${4:-$LEASE}"; }
+mkdir -p "$T/bin"
+printf '#!/bin/sh\n[ "$1 $2" = "get clusters" ] && cat "%s/kind-clusters"\n' "$T" >"$T/bin/kind"
+printf '#!/bin/sh\necho "$*" >>"%s/made"\nfor a; do case $a in KIND_CLUSTER=*) echo "${a#*=}" >>"%s/kind-clusters" ;; esac; done\n[ ! -e "%s/make-fails" ]\n' "$T" "$T" "$T" >"$T/bin/make"
+chmod +x "$T"/bin/*
+export KIND=$T/bin/kind C4_MAKE=$T/bin/make
+echo c4factory >"$T/kind-clusters"
 clear
-check "lease file in the git common dir" "$(as "$T/wt2" gh_lease_file)" "$LEASE"
+
+# One cluster (C4_CLUSTERS=1): acquire, wait, exit 4, stale lease, release, beat.
+export C4_CLUSTERS=1
+check "lease file in the git common dir" "$(as "$T/wt2" gh_lease_file c4factory)" "$LEASE"
+check "second cluster's lease beside it" "$(as "$T/wt2" gh_lease_file c4factory-2)" "$LEASE2"
 as "$T/wt2" gh_cluster holder >/dev/null; check "holder, none" $? 1
+check "name, no lease: the default" "$(as "$T/wt2" gh_cluster name)" c4factory
 claim "$T/wt2" 50 "$(date +%s)"
-out=$(as "$T/wt2" gh_cluster acquire --wait 0); check "acquire, free" $? 0
-case $out in "cluster lease: heron-50 (#50, $T/wt2), heartbeat 0m ago;"*) r=yes ;; *) r=no ;; esac
+out=$(as "$T/wt2" gh_cluster acquire --wait 0 2>"$T/err"); check "acquire, free" "$? $out" "0 c4factory"
+case $(cat "$T/err") in "github: Kind cluster c4factory is leased to heron-50 (#50, $T/wt2), heartbeat 0m ago."*) r=yes ;; *) r=no ;; esac
 check "acquire names the lease" $r yes
-check "lease names agent, issue, worktree" "$(jq -c '[.name, .issue, .worktree]' "$LEASE")" "[\"heron-50\",50,\"$T/wt2\"]"
-check "holder, other checkout" "$(gh_cluster holder)" "heron-50 (#50, $T/wt2), heartbeat 0m ago"
-check "holder, this checkout" "$(as "$T/wt2" gh_cluster holder)" "heron-50 (#50, $T/wt2), heartbeat 0m ago (this checkout)"
-as "$T/wt2" gh_cluster acquire --wait 0 >/dev/null; check "acquire again, own lease" $? 0
+check "lease names cluster, agent, issue, worktree" "$(jq -c '[.cluster, .name, .issue, .worktree]' "$LEASE")" "[\"c4factory\",\"heron-50\",50,\"$T/wt2\"]"
+check "holder, other checkout" "$(gh_cluster holder)" "c4factory: heron-50 (#50, $T/wt2), heartbeat 0m ago"
+check "holder, this checkout" "$(as "$T/wt2" gh_cluster holder)" "c4factory: heron-50 (#50, $T/wt2), heartbeat 0m ago (this checkout)"
+check "acquire again, own lease" "$(as "$T/wt2" gh_cluster acquire --wait 0 2>/dev/null)" c4factory
 gh_cluster acquire --wait 0 2>"$T/err"; check "acquire, held: exit 4" $? 4
-grep -q "heron-50 (#50, $T/wt2)" "$T/err"; check "acquire, held: names the holder" $? 0
+grep -q "c4factory: heron-50 (#50, $T/wt2)" "$T/err"; check "acquire, held: names the holder" $? 0
 gh_cluster acquire --wait x 2>/dev/null; check "acquire, bad wait" $? 64
 C4_LEASE_TTL=bogus gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad TTL" $? 64
-check "bad TTL: the lease counts as live" "$(C4_LEASE_TTL=bogus gh_lease_holder | cut -d' ' -f1)" heron-50
+C4_CLUSTERS=0 gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad C4_CLUSTERS" $? 64
+check "bad TTL: the lease counts as live" "$(C4_LEASE_TTL=bogus gh_lease_holder c4factory | cut -d' ' -f1)" heron-50
 (sleep 1; as "$T/wt2" gh_cluster release >/dev/null) &
 t0=$(date +%s)
 GH_LEASE_POLL=0.2 gh_cluster acquire --wait 10s >/dev/null 2>"$T/err"; check "acquire waits for a release" $? 0
 wait
 check "acquire waited" "$(($(date +%s) - t0 >= 1))" 1
-grep -q "holds the cluster lease; waiting up to 10s" "$T/err"; check "acquire says it waits" $? 0
+grep -q "every Kind cluster in the pool is leased (c4factory: heron-50.*); waiting up to 10s" "$T/err"; check "acquire says it waits" $? 0
 check "acquire after the wait: lease is main's" "$(jq -r .worktree "$LEASE")" "$T/main"
+check "name, own lease" "$(gh_cluster name)" c4factory
 gh_cluster release >/dev/null; check "release" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
 lease "$T/wt2" 50 $(($(date +%s) - 3 * 3600))
 gh_cluster holder >/dev/null; check "stale lease: no holder" $? 1
-gh_cluster acquire --wait 0 >/dev/null; check "stale lease taken over" "$? $(jq -r .worktree "$LEASE")" "0 $T/main"
+gh_cluster acquire --wait 0 >/dev/null 2>&1; check "stale lease taken over" "$? $(jq -r .worktree "$LEASE")" "0 $T/main"
 lease "$T/gone" 50 "$(date +%s)"
-gh_cluster acquire --wait 0 >/dev/null; check "lease of a removed worktree taken over" "$? $(jq -r .worktree "$LEASE")" "0 $T/main"
+gh_cluster acquire --wait 0 >/dev/null 2>&1; check "lease of a removed worktree taken over" "$? $(jq -r .worktree "$LEASE")" "0 $T/main"
 lease "$T/wt2" 50 "$(date +%s)"
 gh_cluster release >/dev/null; check "release leaves another checkout's lease" "$(jq -r .worktree "$LEASE")" "$T/wt2"
 lease "$T/main" 50 $(($(date +%s) - 3600))
 gh_beat; check "beat refreshes the lease" "$(($(date +%s) - $(jq .beat "$LEASE") < 5))" 1
 lease "$T/wt2" 50 $(($(date +%s) - 3600)); b=$(jq .beat "$LEASE")
 gh_beat; check "beat leaves another checkout's lease" "$(jq .beat "$LEASE")" "$b"
+rm -f "$LEASE"
+
+# A pool of two: two leases at once get different clusters, a third waits, a
+# released cluster is reused, and a missing one is created on its first lease.
+export C4_CLUSTERS=2
+clear; rm -f "$T/made"; claim "$T/wt2" 50 "$(date +%s)"; claim "$T/wt3" 51 "$(date +%s)"
+check "pool, c4factory-2 not created" "$(gh_cluster pool | tail -1)" "c4factory-2: free, not created yet (its first lease creates it)"
+check "two at once: the first gets c4factory" "$(as "$T/wt2" gh_cluster acquire --wait 0 2>/dev/null)" c4factory
+check "two at once: no cluster made for an existing one" "$(cat "$T/made" 2>/dev/null)" ""
+out=$(as "$T/wt3" gh_cluster acquire --wait 0 2>"$T/err"); check "two at once: the second gets c4factory-2" "$? $out" "0 c4factory-2"
+check "a missing cluster is created on its first lease" "$(cat "$T/made")" "-C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
+grep -q "Kind cluster c4factory-2 does not exist yet; creating it" "$T/err"; check "acquire says it creates" $? 0
+check "second lease names its cluster" "$(jq -r '"\(.cluster) \(.worktree)"' "$LEASE2")" "c4factory-2 $T/wt3"
+check "name, each checkout its own" "$(as "$T/wt2" gh_cluster name) $(as "$T/wt3" gh_cluster name)" "c4factory c4factory-2"
+check "holder lists both" "$(gh_cluster holder | cut -d' ' -f1-2 | tr '\n' ' ')" "c4factory: heron-50 c4factory-2: heron-51 "
+check "holder NAME" "$(gh_cluster holder c4factory-2 | cut -d: -f1)" c4factory-2
+check "pool, both leased" "$(gh_cluster pool | grep -c ': leased to ')" 2
+gh_cluster acquire --wait 0 2>"$T/err"; check "a third: exit 4" $? 4
+grep -q "c4factory: heron-50.*; c4factory-2: heron-51" "$T/err"; check "a third: names both holders" $? 0
+(sleep 1; as "$T/wt3" gh_cluster release >/dev/null) &
+out=$(GH_LEASE_POLL=0.2 gh_cluster acquire --wait 10s 2>/dev/null); check "a third waits, then reuses the released cluster" "$? $out" "0 c4factory-2"
+wait
+check "reused cluster not created again" "$(wc -l <"$T/made")" 1
+as "$T/wt2" gh_cluster release >/dev/null
+check "release leaves the other checkout's cluster" "$([ -e "$LEASE" ] && echo kept || echo gone) $(jq -r .worktree "$LEASE2")" "gone $T/main"
+gh_cluster release >/dev/null
+echo c4factory-2 >"$T/kind-clusters"
+check "a free cluster that exists goes first" "$(gh_cluster acquire --wait 0 2>/dev/null)" c4factory-2
+gh_cluster release >/dev/null
+: >"$T/kind-clusters"; touch "$T/make-fails"
+gh_cluster acquire --wait 0 >/dev/null 2>"$T/err"; check "create fails: exit 1" $? 1
+check "create fails: lease dropped" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
+rm -f "$T/make-fails"; echo c4factory >"$T/kind-clusters"
+lease "$T/main" 50 "$(date +%s)" "$LEASE2"
+check "pool shrunk: a lease outside it is dropped for one inside" "$(C4_CLUSTERS=1 gh_cluster acquire --wait 0 2>/dev/null) $([ -e "$LEASE2" ] && echo kept || echo gone)" "c4factory gone"
+gh_cluster release >/dev/null
 
 # needs/cluster issues are picked and taken while another checkout holds the lease.
 clear; lease "$T/wt2" 50 "$(date +%s)"

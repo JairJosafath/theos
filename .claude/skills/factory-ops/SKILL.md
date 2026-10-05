@@ -1,12 +1,18 @@
 ---
 name: factory-ops
-description: Watch and drive the running C4 Factory in the Kind cluster c4factory - health, Crews, Tasks, agent sandboxes, reviews and issues in Gitea, pausing and resuming agents, deploying the operator, rebuilding images and templates. Use when asked about the factory's state or to run, pause, resume or change it.
+description: Watch and drive the running C4 Factory in a Kind cluster of the pool (c4factory, c4factory-2, ...) - health, Crews, Tasks, agent sandboxes, reviews and issues in Gitea, pausing and resuming agents, deploying the operator, rebuilding images and templates. Use when asked about the factory's state or to run, pause, resume or change it.
 ---
 
 # Running the factory
 
-Commands for the Kind cluster `c4factory`. Keep output small: `-o jsonpath`,
-`jq`, `--tail=N`, `head`. `P` is a project (namespace), `T` a Task, `C` a Crew.
+Commands for a Kind cluster of the device's pool: `c4factory`, `c4factory-2`,
+... A session that changes or verifies a cluster first leases one
+(`hack/lib/github.sh cluster acquire` prints its name; `cluster pool` shows
+them all); make targets in its checkout then use that cluster
+(`hack/lib/github.sh cluster name`), and kubectl names it on every call:
+`kubectl --context kind-<name>`, written `kubectl` below. Keep output small:
+`-o jsonpath`, `jq`, `--tail=N`, `head`. `P` is a project (namespace), `T` a
+Task, `C` a Crew.
 
 ## State at a glance
 
@@ -45,7 +51,9 @@ curl -s -u "c4admin:$ADMIN_PW" "http://localhost:3917/api/v1/repos/ORG/REPO/pull
 ```
 
 Never print a password or token; read it into a variable. Browse with
-`make gitea-forward` (http://localhost:3000).
+`make gitea-forward` (http://localhost:3000 for `c4factory`, 3001 for
+`c4factory-2`; `GITEA_PORT` overrides), and pick a different local port than
+3917 above when another session may forward too.
 
 ## Changing the factory
 

@@ -39,7 +39,7 @@ Sat Oct  3 08:08:42 UTC 2026
 $ hack/lib/github.sh claims
 #10	otter-10	live	36fc77da978f	heartbeat 2m ago	fix/10-an-agent-killed-by-the-infrastructure
 #11	otter-11	live	36fc77da978f	heartbeat 2m ago	fix/11-standard-change-proposal-branches-are
-#14	heron-14	live	e68e918e5f86	heartbeat 8m ago	chore/14-keep-the-cel-lens-releases-moving
+#14	heron-14	live	e68e918e5f86	heartbeat 8m ago	chore/14-keep-the-[product]-releases-moving
 #27	heron-27	live	e68e918e5f86	heartbeat 1m ago	feat/27-parallel-agents-5-5-needs-cluster-and
 
 # cluster device, second checkout (.claude/worktrees/cluster-27, C4_CLUSTER unset)

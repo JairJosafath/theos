@@ -623,3 +623,30 @@ func TestFollowUpIssue(t *testing.T) {
 		})
 	}
 }
+
+func TestEndedAtDeadline(t *testing.T) {
+	deadline := time.Date(2026, 10, 3, 9, 48, 49, 0, time.UTC)
+	tests := []struct {
+		name     string
+		finished time.Time
+		want     bool
+	}{
+		{"ended at the deadline", deadline, true},
+		{"ended after its grace period", deadline.Add(32 * time.Second), true},
+		{"ended at the slack", deadline.Add(DeadlineSlack), true},
+		{"ended just past the slack", deadline.Add(DeadlineSlack + time.Second), false},
+		{"ended when the node came back", deadline.Add(5 * time.Minute), false},
+		{"died with its node before the deadline", deadline.Add(-20 * time.Minute), false},
+		{"no finish time", time.Time{}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EndedAtDeadline(deadline, tt.finished); got != tt.want {
+				t.Errorf("EndedAtDeadline(%v, %v) = %v, want %v", deadline, tt.finished, got, tt.want)
+			}
+		})
+	}
+	if !EndedAtDeadline(time.Time{}, deadline) {
+		t.Error("EndedAtDeadline() without a deadline = false, want true")
+	}
+}

@@ -1,0 +1,20 @@
+name: Changed
+description: >-
+  Whether a check has anything new to check: on a pull request, whether a file
+  its workflow's paths filter takes in changed since the last commit the
+  workflow passed on for the branch. Any other event always runs. The job needs
+  `actions: read` and `contents: read`.
+outputs:
+  changed:
+    description: "'true' when the check should run, 'false' when it can skip"
+    value: ${{ steps.check.outputs.changed }}
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        HEAD_REF: ${{ github.head_ref }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: python3 "$GITHUB_ACTION_PATH/changed.py"

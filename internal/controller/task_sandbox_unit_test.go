@@ -312,6 +312,68 @@ func TestRunStateTellsAClusterOutage(t *testing.T) {
 	}
 }
 
+func TestRunStateTellsADeadlineAcrossAnOutage(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	scheme.AddKnownTypeWithName(SandboxGVK, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(SandboxGVK.GroupVersion().WithKind("SandboxList"), &unstructured.UnstructuredList{})
+	started := time.Date(2026, 10, 3, 8, 48, 49, 0, time.UTC)
+	deadline := started.Add(time.Hour)
+	stopped := `{"role":"implement","error":"claude failed: signal: terminated","interrupted":true}`
+	for _, tt := range []struct {
+		name        string
+		term        corev1.ContainerStateTerminated
+		interrupted bool
+	}{
+		{name: "c4agent stopped at the deadline", interrupted: false,
+			term: corev1.ContainerStateTerminated{Reason: "Completed", Message: stopped,
+				FinishedAt: metav1.NewTime(deadline.Add(3 * time.Second))}},
+		{name: "killed after its grace period", interrupted: false,
+			term: corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 137,
+				FinishedAt: metav1.NewTime(deadline.Add(31 * time.Second))}},
+		{name: "c4agent stopped when the node came back", interrupted: true,
+			term: corev1.ContainerStateTerminated{Reason: "Completed", Message: stopped,
+				FinishedAt: metav1.NewTime(deadline.Add(5 * time.Minute))}},
+		{name: "died with the node before the deadline", interrupted: true,
+			term: corev1.ContainerStateTerminated{Reason: "Unknown", ExitCode: 255,
+				FinishedAt: metav1.NewTime(deadline.Add(-20 * time.Minute))}},
+		{name: "a container lost across the node restart", interrupted: true,
+			term: corev1.ContainerStateTerminated{Reason: "ContainerStatusUnknown", ExitCode: 137}},
+		{name: "a result written before the outage stands", interrupted: false,
+			term: corev1.ContainerStateTerminated{Reason: "Completed",
+				Message:    `{"role":"implement","commit":"abc123","summary":"done"}`,
+				FinishedAt: metav1.NewTime(deadline.Add(-20 * time.Minute))}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sandbox := newSandbox()
+			sandbox.SetNamespace("apps")
+			sandbox.SetName("add-crop-r1-implement")
+			sandbox.SetUID("sandbox-1")
+			seconds := int64(time.Hour / time.Second)
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "add-crop-r1-implement",
+					OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
+				Spec: corev1.PodSpec{ActiveDeadlineSeconds: &seconds},
+				Status: corev1.PodStatus{Phase: corev1.PodFailed, Reason: "DeadlineExceeded",
+					StartTime: &metav1.Time{Time: started},
+					ContainerStatuses: []corev1.ContainerStatus{{
+						Name: "agent", State: corev1.ContainerState{Terminated: &tt.term},
+					}}},
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, pod).Build()
+			state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !state.Done || state.Interrupted != tt.interrupted {
+				t.Errorf("runState() = %+v, want done, interrupted %v", state, tt.interrupted)
+			}
+		})
+	}
+}
+
 func TestBuildSandboxStandardChangeEnv(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := c4v1alpha1.AddToScheme(scheme); err != nil {

@@ -133,6 +133,25 @@ func MissedShutdown(shutdown, noticed time.Time) bool {
 	return !shutdown.IsZero() && !noticed.IsZero() && noticed.Sub(shutdown) > ShutdownSlack
 }
 
+// DeadlineSlack is how long past a pod's deadline the kubelet may end it while
+// its node runs: it notices within seconds and gives the container its grace
+// period, 30 seconds, to stop.
+const DeadlineSlack = 2 * time.Minute
+
+// EndedAtDeadline reports whether a pod Kubernetes marked DeadlineExceeded was
+// ended at its deadline, so the run took too long: its container finished
+// between the deadline and DeadlineSlack later. One that finished earlier died
+// with its node, and was marked once the node came back past the deadline; one
+// that finished well after it was ended when the node came back from an outage
+// across the deadline. Either way the outage ended the run, not the agent.
+// Without both times it can't tell, and the run took too long.
+func EndedAtDeadline(deadline, finished time.Time) bool {
+	if deadline.IsZero() || finished.IsZero() {
+		return true
+	}
+	return !finished.Before(deadline) && finished.Sub(deadline) <= DeadlineSlack
+}
+
 // MaxReruns is how often a round's runs are rerun for free after the
 // infrastructure interrupted them. The cap keeps a run that is interrupted every
 // time, which may be the run's own doing, from looping forever.

@@ -7,8 +7,9 @@ description: Hand off the in-flight state of work on the factory as a comment on
 
 Work on the factory itself is tracked as GitHub issues on `JairJosafath/c4factory`,
 one issue per piece of work. A handoff is a comment on that issue; the next
-session reads the newest one and continues. Product work (the apps the factory
-builds) stays in Gitea, where the Crews work it; this skill is not for that.
+session reads the newest one and continues. Products are built on devices that
+run the factory's Helm release, not here; their problems arrive as
+`source/user` issues and are worked like any other.
 
 Standing facts (true next month) go in `AGENTS.md`, `docs/` or memory, never in
 a handoff.
@@ -35,24 +36,31 @@ commands). It reads the token from the git credential helper and never prints it
 
 ## The cluster lease
 
-On the device with the Kind cluster, a session holds the cluster only around
+The device with the cluster runs a pool of Kind clusters (`C4_CLUSTERS`,
+default 2: `c4factory`, `c4factory-2`, ...). A session leases one only around
 the steps that touch it (deploys, samples, e2e, factory-ops checks,
 `make up`/`down`), not for the whole issue:
 
 1. Do the work that needs no cluster first: code, `make check`, envtest.
-2. Right before the first step that touches the cluster:
-   `hack/lib/github.sh cluster acquire` (waits up to 30m, `--wait 10m` for
-   another bound, while another checkout holds it).
-3. Deploy this branch's own build (`make deploy`); never trust what is already
+2. Right before the first step that touches a cluster:
+   `hack/lib/github.sh cluster acquire`. It prints the cluster it leased this
+   checkout (creating it on first use, a few minutes); it waits up to 30m
+   (`--wait 10m` for another bound) while other checkouts hold every one.
+3. Every make target in this checkout now uses that cluster
+   (`hack/lib/github.sh cluster name`); kubectl takes `--context kind-<name>`
+   on every call, since a Bash call doesn't keep exported variables. Deploy
+   this branch's own build (`make deploy`); never trust what is already
    deployed, another session may have deployed its branch.
 4. Verify, then `hack/lib/github.sh cluster release`.
 
-Exit 4 from `acquire` names the holder: hand off with only the cluster steps
-left. `cluster holder` shows who holds it. `beat` refreshes the lease; it is
-stale after the claim TTL (2h). `release`, `handoff`, `close` and
-`status N needs-human` drop it, and the relay drops one its session left
-behind. The `heavy-guard` hook denies `make deploy`, `sample`, `e2e`,
-`test-e2e`, `up` and `down` while another checkout holds it.
+Exit 4 from `acquire` names the holders: hand off with only the cluster steps
+left. `cluster holder` shows who holds which cluster, `cluster pool` each
+cluster's state. `beat` refreshes the lease; it is stale after the claim TTL
+(2h). `release`, `handoff`, `close` and `status N needs-human` drop it, and
+the relay drops one its session left behind. The `heavy-guard` hook denies
+`make deploy`, `sample`, `e2e`, `test-e2e`, `up` and `down` while another
+checkout holds the cluster the command targets. A handoff names the cluster
+under **State outside git** only while the work still holds it.
 
 ## Pick one up
 
@@ -138,6 +146,6 @@ behind. The `heavy-guard` hook denies `make deploy`, `sample`, `e2e`,
 - **Can't go on without the user:** `hack/lib/github.sh status N needs-human`,
   and a comment (or a handoff) saying why and what you need.
 - **Follow-up found on the way:** `hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>`.
-  Don't start it in this session. If it can only start once another issue has
+  `create` adds `source/dev`. Don't start it in this session. If it can only start once another issue has
   landed (a plan's step 3 after step 2), its body says `Depends on #M`;
   `pick` skips it while #M is open.

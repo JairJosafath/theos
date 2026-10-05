@@ -5,7 +5,7 @@
 # comment on it (the handoff skill); hack/lib/github.sh has the GitHub helpers.
 # Product work stays in Gitea, where the Crews work it.
 #
-# It runs N workers side by side (docs/plans/parallel-agents.md). Worker k runs
+# It runs N workers side by side (docs/plans/done/parallel-agents.md). Worker k runs
 # from this checkout and starts its sessions, one after another, in its own git
 # worktree .claude/worktrees/relay-k, switched to each issue's branch; the
 # worktree's .relay/ holds its claim. Each round picks an issue
@@ -34,10 +34,12 @@
 #   hack/relay.sh --workers N      start N workers (1-9); workers already running are left alone
 #
 # On the device with the Kind cluster (C4_CLUSTER not none), memory is the
-# limit: at most RELAY_MAX_WORKERS workers run (default 1). On every device a
-# worker waits before each pick until MemAvailable is at least RELAY_MIN_MEM_GIB
-# (default 4) and the last session start is RELAY_ADMIT_GAP seconds old
-# (default 300), and stops after waiting RELAY_MEM_WAIT seconds (default 3600).
+# limit: at most RELAY_MAX_WORKERS workers run (default 9, so the memory gate,
+# not a count, holds them). On every device a worker waits before each pick
+# until MemAvailable is at least RELAY_MIN_MEM_GIB (default 2) and the last
+# session start is RELAY_ADMIT_GAP seconds old (default 120), and stops after
+# waiting RELAY_MEM_WAIT seconds (default 3600). Heavy jobs (make check, test,
+# lint, deploy, ...) queue device-wide for HEAVY_JOBS slots (hack/heavy-slot.sh).
 #   RELAY_DRY_RUN=1 hack/relay.sh  print the issue and prompt the next session would get; change nothing
 #   touch .relay/stop              stop every worker after its current session
 #
@@ -65,9 +67,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 [[ $WORKERS =~ ^[1-9]$ ]] || { echo "relay: --workers takes 1 to 9" >&2; exit 64; }
-MAX_WORKERS=${RELAY_MAX_WORKERS:-1}
-MIN_MEM_GIB=${RELAY_MIN_MEM_GIB:-4}
-ADMIT_GAP=${RELAY_ADMIT_GAP:-300}  # seconds between session starts across workers
+MAX_WORKERS=${RELAY_MAX_WORKERS:-9}
+MIN_MEM_GIB=${RELAY_MIN_MEM_GIB:-2}
+ADMIT_GAP=${RELAY_ADMIT_GAP:-120}  # seconds between session starts across workers
 MEM_WAIT=${RELAY_MEM_WAIT:-3600}   # seconds a worker waits for headroom before it stops
 MEM_POLL=${RELAY_MEM_POLL:-60}
 MEMINFO=${RELAY_MEMINFO:-/proc/meminfo}
@@ -95,15 +97,18 @@ prompt() {
   (\`hack/lib/github.sh label $n needs/cluster\`) and hand off with what is
   left (deploy and verify): a device with the cluster takes it from there."
   else
-    cluster="- This device's Kind cluster is shared by its checkouts through a
-  lease. If the issue needs the cluster and lacks the label, add it
-  (\`hack/lib/github.sh label $n needs/cluster\`). Do the work that needs no
-  cluster first (code, make check, envtest); right before the first step that
-  touches the cluster, \`hack/lib/github.sh cluster acquire\`; then deploy
+    cluster="- This device runs a pool of Kind clusters (c4factory, c4factory-2,
+  ...) that its checkouts share through leases. If the issue needs the cluster
+  and lacks the label, add it (\`hack/lib/github.sh label $n needs/cluster\`).
+  Do the work that needs no cluster first (code, make check, envtest); right
+  before the first step that touches a cluster, \`hack/lib/github.sh cluster
+  acquire\`: it leases this checkout a free cluster and prints its name
+  (creating it on first use). Every make target in this checkout then uses
+  that cluster; give kubectl \`--context kind-<name>\` on every call. Deploy
   this branch's own build (\`make deploy\`), never trusting what is already
   deployed; \`hack/lib/github.sh cluster release\` when verification is done.
-  Exit 4 from acquire means another checkout holds it: hand off with only the
-  cluster steps left."
+  Exit 4 from acquire means other checkouts hold every cluster: hand off with
+  only the cluster steps left."
   fi
   if [ "$how" = in-progress ]; then
     start="A session worked on it before you: continue from its newest handoff comment."
@@ -287,10 +292,11 @@ running_workers() {
   echo "$n"
 }
 
-# cap N: on the device with the Kind cluster, memory is the limit (a session's
-# make check takes 2 to 3 GiB next to the cluster's 4.5), so the workers
-# running and those `--workers N` would start stay at most RELAY_MAX_WORKERS
-# (default 1). Exit 1, with the reason on stderr, when N would pass it.
+# cap N: on the device with the Kind cluster, memory is the limit, so the
+# workers running and those `--workers N` would start stay at most
+# RELAY_MAX_WORKERS (default 9, every worker: admit's memory gate and the
+# heavy-job slots hold them instead). Exit 1, with the reason on stderr, when N
+# would pass it.
 cap() {
   local n=$1 k running new=0
   [ "${C4_CLUSTER:-}" = none ] && return 0

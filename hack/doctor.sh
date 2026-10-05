@@ -2,11 +2,12 @@
 # Checks the factory in the Kind test environment and says what is wrong, from
 # the Docker daemon up to the Agents' credentials. Works when the cluster or the
 # UI is down, which is when it is needed.
-#   make doctor            (KIND_CLUSTER=c4factory by default)
+#   make doctor            (KIND_CLUSTER: this checkout's leased cluster, else c4factory)
 # Exits 1 when a required part is broken; optional parts only warn.
 set -uo pipefail
 
-CLUSTER="${KIND_CLUSTER:-c4factory}"
+# Default: the pool cluster this checkout leased (hack/lib/github.sh cluster name), else c4factory.
+CLUSTER="${KIND_CLUSTER:-$("$(dirname "${BASH_SOURCE[0]}")/lib/github.sh" cluster name 2>/dev/null || echo c4factory)}"
 NODE="${CLUSTER}-control-plane"
 KUBECTL=(kubectl --context "kind-${CLUSTER}" --request-timeout=10s)
 

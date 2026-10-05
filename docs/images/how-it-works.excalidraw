@@ -7296,13 +7296,13 @@
       "updated": 1791061570781,
       "link": null,
       "locked": false,
-      "text": "Built on it so far: v1 scaffolds Containers from a catalog · v2 six offline Flutter tool apps, built by agents · v3 the Factory view · v4 CEL Lens, a Go language server and a VS Code extension, built issue by issue by two Crews. Spec: docs/design.md.",
+      "text": "Built on it so far: v1 scaffolds Containers from a catalog · v2 six offline Flutter tool apps, built by agents · v3 the Factory view · v4 a Go language server and an editor extension, built issue by issue by two Crews. Spec: docs/design.md.",
       "fontSize": 18,
       "fontFamily": 6,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": "r170",
-      "originalText": "Built on it so far: v1 scaffolds Containers from a catalog · v2 six offline Flutter tool apps, built by agents · v3 the Factory view · v4 CEL Lens, a Go language server and a VS Code extension, built issue by issue by two Crews. Spec: docs/design.md.",
+      "originalText": "Built on it so far: v1 scaffolds Containers from a catalog · v2 six offline Flutter tool apps, built by agents · v3 the Factory view · v4 a Go language server and an editor extension, built issue by issue by two Crews. Spec: docs/design.md.",
       "autoResize": true,
       "lineHeight": 1.35
     }

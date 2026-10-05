@@ -23,10 +23,14 @@
 #   hack/lib/github.sh comment N FILE    post FILE as a comment on N
 #   hack/lib/github.sh label N LABEL...  add labels to N
 #   hack/lib/github.sh cluster acquire [--wait DURATION]
-#                                        take this device's Kind cluster lease for this checkout, waiting
-#                                        up to DURATION (default 30m) while another holds it; exit 4 names it
+#                                        lease one of this device's Kind clusters (C4_CLUSTERS, default 2) to this
+#                                        checkout and print its name, creating it if it does not exist yet; wait up
+#                                        to DURATION (default 30m) while other checkouts hold every one; exit 4 names them
 #   hack/lib/github.sh cluster release   drop this checkout's cluster lease
-#   hack/lib/github.sh cluster holder    who holds the live cluster lease; exit 1: nobody
+#   hack/lib/github.sh cluster name      the cluster this checkout's make targets use: its lease's, else c4factory
+#   hack/lib/github.sh cluster holder [NAME]
+#                                        the live cluster leases (or NAME's); exit 1: none
+#   hack/lib/github.sh cluster pool      each cluster in the pool: leased, free or not created yet
 #   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, needs-human
 #                                        (needs-human releases the claim and lease)
 #   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, release the claim and lease
@@ -46,16 +50,17 @@
 #
 # The Kind cluster: issues whose work needs it carry needs/cluster. On a device
 # without one (C4_CLUSTER=none) pick skips them and take refuses them. On a
-# device with one, any checkout may work them, and the checkouts share the
-# cluster through a lease: a session does the work that needs no cluster first,
-# runs `cluster acquire` right before its first step that touches the cluster,
-# deploys its own branch (make deploy), verifies, and runs `cluster release`.
-# The lease lives in the git common dir, beside every checkout, names the
-# agent, issue and worktree, is refreshed by beat and is stale after
-# C4_LEASE_TTL. release, handoff, close and needs-human drop it too.
+# device with one, any checkout may work them, and the checkouts share a pool
+# of Kind clusters through leases: a session does the work that needs no
+# cluster first, runs `cluster acquire` right before its first step that
+# touches a cluster, deploys its own branch (make deploy) to the cluster it got,
+# verifies, and runs `cluster release`. A lease lives in the git common dir,
+# beside every checkout, names the cluster, agent, issue and worktree, is
+# refreshed by beat and is stale after C4_LEASE_TTL. release, handoff, close
+# and needs-human drop it too.
 # hack/lib/github_test.sh tests these rules against a stubbed GitHub.
 #
-# Claims (docs/plans/parallel-agents.md): taking an issue posts a comment that
+# Claims (docs/plans/done/parallel-agents.md): taking an issue posts a comment that
 # starts with <!-- c4-claim --> and names the agent (otter-23), host, branch and
 # session. It is live while it says "works on this issue" and was edited within
 # C4_LEASE_TTL (2h; 90m, 300s and plain seconds work too). The local half is
@@ -447,43 +452,80 @@ gh_label() {
   echo "labeled #$n: $*"
 }
 
-# The cluster lease: the checkouts on a device share its Kind cluster, but not
-# while one of them deploys and verifies (one operator Deployment, one set of
-# CRDs, a node that verifications stop). A session holds the lease only around
-# the steps that touch the cluster. It is one JSON file in the git common dir,
-# beside every checkout: {name, issue, worktree, beat}. It is live while its
-# worktree exists and its beat is within C4_LEASE_TTL; a stale one is taken
-# over. C4_CLUSTER_LEASE names another file (the tests).
+# The cluster pool: the device runs C4_CLUSTERS Kind clusters (default 2),
+# c4factory, c4factory-2, ..., and its checkouts share them through leases. A
+# deploy and its verification take a whole cluster (one operator Deployment,
+# one set of cluster-scoped CRDs, a node that verifications stop), so a session
+# leases one only around the steps that touch it, and the make targets in its
+# checkout use that one (cluster name). Each cluster's lease is a JSON file in
+# the git common dir, beside every checkout: {cluster, name, issue, worktree,
+# beat}. It is live while its worktree exists and its beat is within
+# C4_LEASE_TTL; a stale one is taken over. A checkout holds at most one.
+# C4_CLUSTER_LEASE names the first cluster's file (the tests); the others sit
+# beside it. A pool cluster that does not exist yet is created on its first
+# lease (make cluster gitea seed; C4_MAKE overrides make, KIND kind).
 GH_LEASE_POLL=${GH_LEASE_POLL:-15} # seconds between tries while acquire waits
+GH_POOL_FIRST=c4factory
 
-# gh_lease_file: the lease's path.
-gh_lease_file() {
+# gh_pool: the pool's cluster names, one per line.
+gh_pool() {
+  local n=${C4_CLUSTERS:-2} k
+  [[ $n =~ ^[1-9][0-9]{0,1}$ ]] || { echo "github: C4_CLUSTERS must be a number from 1 to 99, not '$n'" >&2; return 64; }
+  echo "$GH_POOL_FIRST"
+  for ((k = 2; k <= n; k++)); do echo "$GH_POOL_FIRST-$k"; done
+}
+
+# gh_lease_base: the first cluster's lease file; the lock sits beside it.
+gh_lease_base() {
   local dir
   [ -z "${C4_CLUSTER_LEASE:-}" ] || { echo "$C4_CLUSTER_LEASE"; return; }
   dir=$(git -C "$GH_LIB_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || dir=$GH_PENDING_DIR
   echo "$dir/c4-cluster.lease"
 }
 
+# gh_lease_file NAME: the path of cluster NAME's lease.
+gh_lease_file() {
+  local base
+  base=$(gh_lease_base)
+  case ${1:?usage: gh_lease_file NAME} in
+    "$GH_POOL_FIRST") echo "$base" ;;
+    *) echo "${base%.lease}-$1.lease" ;;
+  esac
+}
+
+# gh_lease_names: the clusters that have a lease file, live or not, one per line.
+gh_lease_names() {
+  local base f
+  base=$(gh_lease_base)
+  [ ! -s "$base" ] || echo "$GH_POOL_FIRST"
+  for f in "${base%.lease}"-*.lease; do
+    [ -s "$f" ] || continue
+    f=${f##*/}
+    f=${f#"$(basename "${base%.lease}")-"}
+    echo "${f%.lease}"
+  done
+}
+
 # gh_checkout: this checkout's root, the worktree a lease names (the relay's
 # workers set GH_PENDING_DIR to their worktree's .relay).
 gh_checkout() { realpath -m "$GH_PENDING_DIR/.."; }
 
-# gh_lease_read: set l_name, l_issue, l_wt and l_beat from the lease, live or
-# not. Exit 1: there is none.
+# gh_lease_read NAME: set l_name, l_issue, l_wt and l_beat from cluster NAME's
+# lease, live or not. Exit 1: there is none.
 gh_lease_read() {
   local f
-  f=$(gh_lease_file)
+  f=$(gh_lease_file "$1")
   [ -s "$f" ] || return 1
   IFS=$'\x1f' read -r l_name l_issue l_wt l_beat < <(jq -r \
     '[.name // "", (.issue // "" | tostring), .worktree // "", (.beat // 0 | tostring)] | join("\u001f")' "$f" 2>/dev/null)
   [ -n "$l_wt" ]
 }
 
-# gh_lease_live: gh_lease_read, and exit 1 unless the lease is live. A bad
+# gh_lease_live NAME: gh_lease_read, and exit 1 unless the lease is live. A bad
 # C4_LEASE_TTL counts as live: better wait than deploy over another session.
 gh_lease_live() {
   local ttl
-  gh_lease_read && [ -d "$l_wt" ] || return 1
+  gh_lease_read "$1" && [ -d "$l_wt" ] || return 1
   ttl=$(gh_ttl 2>/dev/null) || return 0
   [ $(($(date +%s) - ${l_beat:-0})) -lt "$ttl" ]
 }
@@ -496,44 +538,76 @@ gh_lease_desc() {
   echo "$l_name (${l_issue:+#$l_issue, }$l_wt), heartbeat $((($(date +%s) - ${l_beat:-0}) / 60))m ago"
 }
 
-# gh_lease_holder: the checkout other than this one that holds a live lease,
-# as gh_lease_desc prints it. Exit 1: none does.
+# gh_lease_name: the cluster whose lease names this checkout, live or not.
+# Exit 1: this checkout holds none.
+gh_lease_name() {
+  local c l_name l_issue l_wt l_beat
+  for c in $(gh_lease_names); do
+    gh_lease_read "$c" && gh_lease_mine && { echo "$c"; return 0; }
+  done
+  return 1
+}
+
+# gh_lease_holder NAME: the checkout other than this one that holds a live
+# lease on cluster NAME, as gh_lease_desc prints it. Exit 1: none does.
 gh_lease_holder() {
   local l_name l_issue l_wt l_beat
-  gh_lease_live && ! gh_lease_mine || return 1
+  gh_lease_live "${1:?usage: gh_lease_holder NAME}" && ! gh_lease_mine || return 1
   gh_lease_desc
 }
 
-# gh_lease_locked CMD ARGS...: run CMD under the lease's own lock, so
-# acquires, releases and beats in different checkouts don't interleave. Not the
-# device lock: take holds that while it releases a claim, and so the lease.
+# gh_lease_locked CMD ARGS...: run CMD under the leases' lock, so acquires,
+# releases and beats in different checkouts don't interleave. Not the device
+# lock: take holds that while it releases a claim, and so the lease.
 gh_lease_locked() {
   local fd rc
-  exec {fd}>>"$(gh_lease_file).lock"
-  flock -w 30 "$fd" || { echo "github: waited 30s for the cluster lease's lock" >&2; exec {fd}>&-; return 2; }
+  exec {fd}>>"$(gh_lease_base).lock"
+  flock -w 30 "$fd" || { echo "github: waited 30s for the cluster leases' lock" >&2; exec {fd}>&-; return 2; }
   "$@"
   rc=$?
   exec {fd}>&-
   return $rc
 }
 
-# gh_lease_take: write this checkout's lease unless another checkout holds a
-# live one; then print that one and exit 1. Run under gh_lease_locked.
+# gh_kind_clusters: the Kind clusters that exist on this device, one per line.
+gh_kind_clusters() { "${KIND:-kind}" get clusters 2>/dev/null; }
+
+# gh_lease_take: lease a pool cluster to this checkout and print its name: the
+# one it already holds, else a free one that exists, else the first free one.
+# With every cluster held by other checkouts, print them and exit 1. Run under
+# gh_lease_locked.
 gh_lease_take() {
-  local f name= issue= c_issue c_id c_name c_branch
-  gh_lease_holder && return 1
+  local pool c f pick= free=() held=() exist name= issue= c_issue c_id c_name c_branch l_name l_issue l_wt l_beat
+  pool=$(gh_pool) || return 64
+  # The cluster this checkout holds, while it is still in the pool (C4_CLUSTERS may have shrunk).
+  pick=$(gh_lease_name) && grep -qxF -- "$pick" <<<"$pool" || pick=
+  if [ -z "$pick" ]; then
+    [ -z "$(gh_lease_name)" ] || gh_lease_release_locked >/dev/null
+    for c in $pool; do
+      if gh_lease_live "$c"; then held+=("$c: $(gh_lease_desc)"); else free+=("$c"); fi
+    done
+    if [ ${#free[@]} -eq 0 ]; then
+      f=$(printf '%s; ' "${held[@]}")
+      echo "${f%; }"
+      return 1
+    fi
+    exist=$(gh_kind_clusters)
+    for c in "${free[@]}"; do grep -qxF -- "$c" <<<"$exist" && { pick=$c; break; }; done
+    pick=${pick:-${free[0]}}
+  fi
   if gh_claim_read; then name=$c_name issue=$c_issue; fi
-  f=$(gh_lease_file)
-  jq -n --arg name "${name:-${USER:-$(id -un)}}" --arg issue "$issue" --arg wt "$(gh_checkout)" \
-    --argjson beat "$(date +%s)" '{name: $name, issue: ($issue | tonumber? // null), worktree: $wt, beat: $beat}' \
-    >"$f.$$" && mv "$f.$$" "$f"
+  f=$(gh_lease_file "$pick")
+  jq -n --arg c "$pick" --arg name "${name:-${USER:-$(id -un)}}" --arg issue "$issue" --arg wt "$(gh_checkout)" \
+    --argjson beat "$(date +%s)" '{cluster: $c, name: $name, issue: ($issue | tonumber? // null), worktree: $wt, beat: $beat}' \
+    >"$f.$$" && mv "$f.$$" "$f" && echo "$pick"
 }
 
-# gh_lease_acquire [--wait DURATION]: take the cluster lease for this
-# checkout, waiting up to DURATION (default 30m) while another checkout holds
-# a live one. Exit 4 naming the holder when the wait runs out.
+# gh_lease_acquire [--wait DURATION]: lease a pool cluster to this checkout,
+# waiting up to DURATION (default 30m) while other checkouts hold every one;
+# create it if it does not exist yet. Prints the cluster's name on stdout, the
+# rest on stderr. Exit 4 naming the holders when the wait runs out.
 gh_lease_acquire() {
-  local wait=30m secs t0 holder said= l_name l_issue l_wt l_beat
+  local wait=30m secs t0 out said= l_name l_issue l_wt l_beat
   while [ $# -gt 0 ]; do
     case $1 in
       --wait) wait=${2:-}; shift 2 || shift ;;
@@ -543,59 +617,96 @@ gh_lease_acquire() {
   done
   secs=$(gh_seconds "$wait" --wait) || return 64
   gh_ttl >/dev/null || return 64
+  gh_pool >/dev/null || return 64
   t0=$(date +%s)
-  while ! holder=$(gh_lease_locked gh_lease_take); do
-    [ -n "$holder" ] || return 1
+  while ! out=$(gh_lease_locked gh_lease_take); do
+    [ -n "$out" ] || return 1
     if [ $(($(date +%s) - t0)) -ge "$secs" ]; then
-      echo "github: the Kind cluster is in use: $holder holds the lease. Land what needs no cluster and hand off with only the cluster steps left" >&2
+      echo "github: every Kind cluster in the pool is in use ($out). Land what needs no cluster and hand off with only the cluster steps left" >&2
       return 4
     fi
-    [ -n "$said" ] || echo "github: $holder holds the cluster lease; waiting up to $wait" >&2
+    [ -n "$said" ] || echo "github: every Kind cluster in the pool is leased ($out); waiting up to $wait" >&2
     said=1
     sleep "$GH_LEASE_POLL"
   done
-  gh_lease_read
-  echo "cluster lease: $(gh_lease_desc); release it when verification is done (hack/lib/github.sh cluster release)"
+  if ! gh_kind_clusters | grep -qxF -- "$out"; then
+    echo "github: Kind cluster $out does not exist yet; creating it with Gitea and the seeded templates (make cluster gitea seed KIND_CLUSTER=$out)" >&2
+    if ! "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" cluster gitea seed "KIND_CLUSTER=$out" >&2; then
+      gh_lease_release >/dev/null
+      echo "github: could not create Kind cluster $out; released its lease" >&2
+      return 1
+    fi
+  fi
+  gh_lease_read "$out"
+  echo "github: Kind cluster $out is leased to $(gh_lease_desc). make in this checkout uses it; kubectl needs --context kind-$out. Release it when verification is done (hack/lib/github.sh cluster release)" >&2
+  echo "$out"
 }
 
-# gh_lease_release: drop this checkout's lease, live or stale; another
-# checkout's is left alone.
+# gh_lease_release: drop this checkout's lease, live or stale; other
+# checkouts' are left alone.
 gh_lease_release() { gh_lease_locked gh_lease_release_locked; }
 
 gh_lease_release_locked() {
-  local l_name l_issue l_wt l_beat
-  gh_lease_read && gh_lease_mine || return 0
-  rm -f "$(gh_lease_file)"
-  echo "released the cluster lease ($l_name${l_issue:+, #$l_issue})"
+  local c l_name l_issue l_wt l_beat
+  c=$(gh_lease_name) || return 0
+  gh_lease_read "$c"
+  rm -f "$(gh_lease_file "$c")"
+  echo "released Kind cluster $c ($l_name${l_issue:+, #$l_issue})"
 }
 
 # gh_lease_beat: refresh this checkout's lease, at most every GH_BEAT_EVERY seconds.
 gh_lease_beat() {
-  local f l_name l_issue l_wt l_beat
-  gh_lease_read && gh_lease_mine || return 0
+  local c l_name l_issue l_wt l_beat
+  c=$(gh_lease_name) || return 0
+  gh_lease_read "$c"
   [ $(($(date +%s) - ${l_beat:-0})) -ge "$GH_BEAT_EVERY" ] || return 0
   gh_lease_locked gh_lease_beat_locked
 }
 
 gh_lease_beat_locked() {
-  local f l_name l_issue l_wt l_beat
-  gh_lease_read && gh_lease_mine || return 0
-  f=$(gh_lease_file)
+  local c f
+  c=$(gh_lease_name) || return 0
+  f=$(gh_lease_file "$c")
   jq --argjson t "$(date +%s)" '.beat = $t' "$f" >"$f.$$" && mv "$f.$$" "$f"
 }
 
-# gh_cluster acquire [--wait DURATION] | release | holder: the cluster lease.
-# holder prints the live lease, whoever holds it; exit 1 when there is none.
+# gh_lease_pool: each pool cluster and whether it is leased, free or not
+# created yet.
+gh_lease_pool() {
+  local c pool exist l_name l_issue l_wt l_beat
+  pool=$(gh_pool) || return 64
+  exist=$(gh_kind_clusters)
+  for c in $pool; do
+    if gh_lease_live "$c"; then
+      echo "$c: leased to $(gh_lease_desc)$(gh_lease_mine && echo ' (this checkout)')"
+    elif grep -qxF -- "$c" <<<"$exist"; then
+      echo "$c: free"
+    else
+      echo "$c: free, not created yet (its first lease creates it)"
+    fi
+  done
+}
+
+# gh_cluster acquire [--wait DURATION] | release | name | holder [NAME] | pool:
+# the cluster pool. name prints the cluster this checkout's make targets use:
+# its lease's, else c4factory. holder prints the live leases, or NAME's; exit
+# 1 when there is none.
 gh_cluster() {
-  local l_name l_issue l_wt l_beat
+  local c found= l_name l_issue l_wt l_beat
   case ${1:-} in
     acquire) shift; gh_lease_acquire "$@" ;;
     release) gh_lease_release ;;
+    name) gh_lease_name || echo "$GH_POOL_FIRST" ;;
+    pool) gh_lease_pool ;;
     holder)
-      gh_lease_live || return 1
-      echo "$(gh_lease_desc)$(gh_lease_mine && echo ' (this checkout)')"
+      for c in ${2:-$(gh_lease_names)}; do
+        gh_lease_live "$c" || continue
+        echo "$c: $(gh_lease_desc)$(gh_lease_mine && echo ' (this checkout)')"
+        found=1
+      done
+      [ -n "$found" ]
       ;;
-    *) echo "usage: cluster acquire [--wait DURATION] | release | holder" >&2; return 64 ;;
+    *) echo "usage: cluster acquire [--wait DURATION] | release | name | holder [NAME] | pool" >&2; return 64 ;;
   esac
 }
 

@@ -188,8 +188,8 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    neither its implementer nor its reviewer is asked for tests; the check
    command passing and the reviewer's three checks decide. The gated
    implementer's prompt overrides old guides:
-   Containers on Standard v1.0.0 have guides that say "stop", and
-   `flutter-standard` ships none and its `AGENTS.md` says "Leave .devcontainer/,
+   Containers on Standard v1.0.0 have guides that say "stop", and a Standard
+   may ship none and an `AGENTS.md` that says "Leave .devcontainer/,
    .c4factory.yaml and .gitea/ alone"; the prompt says to follow it instead. Only
    `go-standard` and `ts-standard` (v1.1.0 and later) ship guides that describe Standard
    changes.

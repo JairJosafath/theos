@@ -1,4 +1,4 @@
-# C4 Factory: Design and MVP v1 Plan
+# C4 Factory: Design
 
 Sep 30, 2026 · @Jeremy Jo.
 
@@ -175,11 +175,9 @@ In v1, the client authenticates with a per-namespace ServiceAccount that may onl
 
 ## v2: agents build the apps
 
-![The v2 board: the Task loop, the new kinds, the fence and the toolbox apps](images/design-board-v2.png)
-
 Settled step by step on 30 September 2026; the full design is
-[superpowers/specs/2026-09-30-agent-factory-design.md](superpowers/specs/2026-09-30-agent-factory-design.md)
-and the plan [plans/agent-factory.md](plans/agent-factory.md).
+[plans/done/2026-09-30-agent-factory-design.md](plans/done/2026-09-30-agent-factory-design.md)
+and the plan [plans/done/agent-factory.md](plans/done/agent-factory.md).
 
 Agents build complete apps when asked, and stay inside their workspace while they
 do. Quality does not come from trusting the agent but from what the platform
@@ -210,13 +208,13 @@ enforces.
   deadline. The Claude token is readable inside the sandbox; Agent Substrate's
   egress credential injection is the later fix.
 - **App values are needs, not platform rules.** "Works offline, no login, no ads"
-  is a need on the Pocket Tools SoftwareSystem in `config/samples/toolbox`; the
-  agents get the needs with every Task.
+  is a need on a SoftwareSystem, not a rule of the platform; the agents get the
+  needs with every Task.
 
 ## v3: watching the factory
 
 Settled on 1 October 2026; the plan is
-[plans/factory-monitoring.md](plans/factory-monitoring.md) and what it found is in
+[plans/done/factory-monitoring.md](plans/done/factory-monitoring.md) and what it found is in
 [results-v3.md](results-v3.md).
 
 The factory runs whole Task loops on its own, so it needs to be seen and run
@@ -243,10 +241,9 @@ without kubectl, and cheaply: it lives on a laptop.
 
 ## v4: issues, crews and roles
 
-Decided on 2 October 2026 while building CEL Lens; the full design is
-[superpowers/specs/2026-10-02-issue-driven-factory-design.md](superpowers/specs/2026-10-02-issue-driven-factory-design.md),
-the plan [plans/issue-driven-factory.md](plans/issue-driven-factory.md), and what
-the run found [results-v4.md](results-v4.md).
+Decided on 2 October 2026; the full design is
+[plans/done/2026-10-02-issue-driven-factory-design.md](plans/done/2026-10-02-issue-driven-factory-design.md)
+and the plan [plans/done/issue-driven-factory.md](plans/done/issue-driven-factory.md).
 
 v2's apps were built one Task per app, and their quality was only "ok for
 testing". v4 makes the work smaller and clearer, and gives each role the agent,
@@ -285,7 +282,7 @@ model and context it needs.
   paused Crew starts nothing. A Standard change filed for an urgent issue is
   urgent too. The operator keeps the label in every repository it polls.
 - **Roles get their own model and guide.** Agents have a `harness` and a `model`;
-  CEL Lens pairs a Sonnet implementer with an Opus reviewer. A Standard ships
+  a Sonnet implementer can pair with an Opus reviewer. A Standard ships
   `docs/agents/implementer.md` and `reviewer.md`, read from the base branch so a
   change can't rewrite its own review. The reviewer reports each acceptance
   criterion, posts its verdict as a pull request review, and may name up to three
@@ -294,13 +291,12 @@ model and context it needs.
   who moves one into a release can ready it as it stands.
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
-  Containers' repositories: the VS Code extension's agent reads the server it
-  starts.
+  Containers' repositories: the agent of a client reads the service it calls.
 - **Waiting is not failing.** A usage limit, an overloaded API or rejected
   credentials don't cost a round: the Task waits (`AgentUnavailable`) and tries
   the same step again. Neither does a run the infrastructure ended (a node
-  shutdown or restart, an eviction, a preemption, a cluster outage that lasted
-  past its sandbox's shutdown time): it runs again in the same round
+  shutdown or restart, an eviction, a preemption, an outage that lasted past
+  its pod's deadline or its sandbox's shutdown time): it runs again in the same round
   (`Interrupted`, then `status.reruns`), at most twice per round, so a run that
   is cut short every time still spends rounds. An out-of-memory kill, or a run
   that ran out its time while the cluster ran, is the agent's run failing, not
@@ -310,7 +306,7 @@ model and context it needs.
   `kind/standard-change` issue, the waiting Task is `Blocked`, and the operator
   merges the reviewed change itself. The agents' rules and `.c4factory.yaml` stay
   out of reach. See
-  [superpowers/specs/2026-10-02-standard-change-design.md](superpowers/specs/2026-10-02-standard-change-design.md).
+  [plans/done/2026-10-02-standard-change-design.md](plans/done/2026-10-02-standard-change-design.md).
 - **A Standard's fixes reach its Containers.** Bumping a Standard's pinned `ref`
   updates every Ready Container that uses it. The operator renders the Standard
   at the Container's ref and at the new one, and opens a pull request of its own
@@ -326,11 +322,22 @@ model and context it needs.
   again. `status.standard` records the ref the Standard's files are at and the
   update in flight, the condition `StandardUpdated` how it went;
   `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
-  [plans/standard-update.md](plans/standard-update.md).
-- **New shapes, same operator.** Container types `cli` and `extension`; templates
-  `go-cli`, `go-standard`, `vscode-extension`, `ts-standard` and `gitea-release`;
-  a Go and Node toolchain whose image ships a warm build cache, a CI runner
+  [plans/done/standard-update.md](plans/done/standard-update.md).
+- **New shapes, same operator.** Container types `cli` and `extension`, with
+  their templates in the template catalog in `templates/`; a Go and Node toolchain whose image ships a warm build cache, a CI runner
   labelled `go`, and two agent sandboxes at once.
+
+## Distribution and issues
+
+This repository develops the factory and holds no product. The factory ships
+as a Helm release, and other devices build their products with it. Every issue
+on `JairJosafath/c4factory` carries one source label: `source/dev` when it was
+made while developing the factory, or `source/user` with one `user/<name>`
+label when a device running the release reported it. A device reports through
+the issue form *Report from a device*, or with `gh issue create` and a body
+whose `### Reported by` heading names the device; the intake workflow
+(`hack/lib/github.sh intake`) labels the issue, for trusted authors only, and
+files it as `status/proposed` for the owner to ready like any other issue.
 
 ## Out of scope for v1
 
@@ -358,7 +365,7 @@ The highlighted operator is the main thing being built. Gitea and kind are off t
 | Sample project | `webshop` | Project, GitProvider, catalog entries and the story resources. |
 | Test Session | `webshop` | A pod that clones `orders-api` from Gitea and runs the client under the Session ServiceAccount. |
 
-The seeded templates are the smallest set that exercises every layer:
+The webshop sample uses the smallest set of seeded templates that exercises every layer:
 
 - `python-fastapi` (Framework): a uv project with FastAPI, ruff and pytest, plus the base devcontainer settings.
 - `small` (Compute): resource requests and limits for the manifests, as a `deploy/k8s/compute.yaml` patch.
@@ -367,6 +374,8 @@ The seeded templates are the smallest set that exercises every layer:
 
 The sample in `config/samples/webshop/` tells a small story: a `customer` Person uses `webshop-core`, whose `orders-api` service reads and writes the `orders-db` DataStore.
 
+The agent loop runs on a second project, the e2e fixture `apps` in `test/e2e/testdata/apps`: one hello-world Container scaffolded from the templates `hello` (Framework) and `hello-standard` (Standard), whose CI runner and stand-in agent use the minimal `c4factory/base:dev` toolchain (Node, bash, git, make). `make e2e` builds no Flutter or Go toolchain image.
+
 Make targets:
 
 - `make cluster`: create the kind cluster.
@@ -374,46 +383,9 @@ Make targets:
 - `make seed`: run the seed job.
 - `make deploy`: build and install the operator. During development, `make run` runs it from the laptop instead.
 - `make sample`: apply the webshop sample.
-- `make e2e`: all of the above, then check the result.
+- `make e2e`: all of the above, plus the minimal toolchain, its CI runner, Agent Sandbox and the `apps` fixture, then check the result.
 
 Gitea keeps the cluster light: one container and SQLite, no separate database. To open a scaffolded repository in a local VS Code devcontainer, reach Gitea through `kubectl port-forward`.
-
-## MVP v1 plan
-
-![The design board: story, decisions, model, scaffolding, test environment and timeline](images/design-board.png)
-
-Six milestones, each ending in something you can run and check in the kind cluster. Each builds only on the ones before it.
-
-1. **Test environment**
-   - Builds: the kind cluster, Gitea, the seed job, the four template repositories and the Make targets.
-   - Done when: `make cluster gitea seed` gives a Gitea with tagged templates and the `gitea-credentials` Secret.
-2. **Story model**
-   - Builds: `kubebuilder init` with domain `factory.io`, then Project, Person, SoftwareSystem, Container, DataStore and Relationship. Parent refs become ownerReferences and ancestor labels. CEL rules make parent refs immutable and reject a Relationship to itself. A ValidatingAdmissionPolicy enforces Project name equals namespace. Printer columns.
-   - Done when: applying the sample builds the tree, deleting `webshop-core` cascades, and envtest covers both.
-3. **Catalog and GitProvider**
-   - Builds: Framework, Compute, Deployment, Connector and GitProvider. The Container controller resolves references and checks supported types.
-   - Done when: a `static-site` Container using `python-fastapi` shows `ChoicesValid=False` with a clear message.
-4. **Scaffolding**
-   - Builds: a GitProvider interface with a Gitea implementation, template fetching at pinned refs, layer rendering, devcontainer assembly, the identity file, the single commit and the Container status.
-   - Done when: `orders-api` gets a Gitea repository with the uv project, manifests and a devcontainer with Postgres; it shows `Ready` with `scaffoldedFrom`; a repeat reconcile changes nothing; `make e2e` passes.
-5. **Sessions**
-   - Builds: the Session kind, the Go client as a devcontainer feature, the Session ServiceAccount and RBAC, heartbeats, `Stale` marking and `activeSessions`.
-   - Done when: the test pod registers a Session that shows as Active on `orders-api`, and it turns `Stale` after the pod is killed.
-6. **Read-only UI**
-   - Builds: a system context view and a container view drawn from the resources, with live phase and Sessions through watches.
-   - Done when: someone who has never used kubectl can read the webshop story in a browser.
-
-## Timeline
-
-MVP v1 is realistic by Nov 25, 2026: about 188 hours at 26 hours a week, starting Oct 5, 2026. The operator on its own, without the UI, is done around Nov 13, 2026.
-
-&#91;embedded content: MVP v1 timeline · 6 milestones, about 188 hours\]
-
-- **Capacity:** about 4 hours on weekdays and 6 over the weekend, so roughly 26 hours a week.
-- **AI speeds up the typing, not the thinking.** The estimates assume Claude or ChatGPT write most of the boilerplate: CRD types, tests, templates and Make targets. Settling structure first still takes real time.
-- **Each estimate includes about 25% for design decisions and rework,** because you decide the structure before building it.
-- **Scaffolding is the biggest risk.** Gitea's API, template layering and safe retries are where surprises tend to land.
-- **A lost week moves everything a week.** If time runs short, the UI is the natural cut: the operator alone is a complete, testable v1.
 
 ## Risks and open points
 

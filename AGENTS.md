@@ -18,7 +18,7 @@ task. Read the rest when the task needs it:
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
 | take an issue, or continue work someone left in flight | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
-| work on a milestone | its plan in [docs/plans/](docs/plans/) and its results file |
+| work on a plan step | its plan in [docs/plans/](docs/plans/); finished plans are in [docs/plans/done/](docs/plans/done/) |
 
 ## Project Architecture
 
@@ -62,8 +62,11 @@ worth repeating:
   deletion cascades.
 
 ### E2E Tests Require an Isolated Kind Cluster
-The e2e tests run against the dedicated Kind cluster created by `make cluster`
-(named `c4factory`), never against a real dev or prod cluster.
+The e2e tests run against a dedicated Kind cluster of the device's pool
+(`c4factory`, `c4factory-2`, ...; `make cluster`), the one this checkout
+leased with `hack/lib/github.sh cluster acquire`, never against a real dev or
+prod cluster. Run `make e2e` only when the user explicitly asks for it;
+`make check` is the gate for every change.
 
 ## After Making Changes
 
@@ -86,12 +89,11 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
 
 ## How to Work
 
-- **Plan before building.** For work that spans more than one package or milestone,
+- **Plan before building.** For work that spans more than one package or issue,
   write a short plan in `docs/plans/` first: goal, steps, and how you'll know it's done.
-- **One milestone at a time.** The six milestones in the design build on each other.
-  Finish one, including its "Done when" check in the Kind cluster, before starting the next.
 - **Test the rules where they live.** Table tests for `internal/model` and
-  `internal/scaffold`, envtest for controllers, `make e2e` for the whole loop.
+  `internal/scaffold`, envtest for controllers, `make check` for every change;
+  `make e2e` covers the whole loop, run when the user asks for it.
 - **Small pull requests to main.** One branch per issue or plan step, the one
   `take` names (`<type>/<N>-<slug>`, from an up-to-date main), pushed after
   every commit; open a pull request to main whose body
@@ -103,7 +105,7 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   that is safe and never touches a branch or uncommitted work. VS Code runs it
   every 5 minutes, Claude Code at session start, the relay before each session;
   run it yourself before you branch or pick an issue.
-- **Show, don't claim.** When a milestone is done, save evidence (test output,
+- **Show, don't claim.** When a plan is done, save evidence (test output,
   `kubectl get` output, UI or Gitea screenshots) in `docs/screenshots/`.
 - **Report honestly.** If a check fails or a step is skipped, say so in the commit or
   PR with the output.
@@ -115,9 +117,10 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 
 - **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
   piece of work, labeled `status/*`, `priority/urgent`, `kind/*`;
-  `hack/lib/github.sh` reads and writes them. Product work stays in Gitea with
-  the Crews. Issues that need the Kind cluster carry `needs/cluster`; a device
+  `hack/lib/github.sh` reads and writes them. Issues that need the Kind cluster carry `needs/cluster`; a device
   without one sets `C4_CLUSTER=none` (`./dev setup --lite`) and skips them.
+- **Every issue carries `source/dev`** (developing the factory) or `source/user`
+  with `user/<name>` (reported from a device running the Helm release).
 - **One issue, plan step or fix per session.** Start the next one fresh.
 - **Agents work in parallel.** Take an issue with `hack/lib/github.sh take N`
   before working it; it names you (`otter-23`). Sign commits with an
@@ -143,9 +146,10 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   `.claude/worktrees/relay-k` and logs to `.relay/relay-k.log`.
   `hack/relay-watch.sh [--workers N]` keeps it ready, starting it within a
   minute of an issue becoming ready.
-- **On the cluster device, memory is the limit.** Check `free -g` before a
-  heavy job (`make check`, image builds, `make deploy`), never run two at once,
-  and build a devcontainer (`devcontainer up`) only on a device without the cluster;
+- **On the cluster device, memory is the limit.** A session at rest is cheap;
+  heavy jobs (`make check`, `test`, `lint`, `docker-build`, `deploy`, `e2e`) are
+  not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
+  that waits for one prints who holds them, and that wait is not a hang;
   [docs/dev/testenv.md](docs/dev/testenv.md) has the numbers.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?

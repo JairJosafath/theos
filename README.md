@@ -37,10 +37,16 @@ such as ArgoCD, Flux and Crossplane.
 
 ## Status
 
-MVP v1 runs end to end in a local Kind cluster: the story model, the catalog,
-scaffolding into Gitea, Sessions and a read-only UI. [docs/design.md](docs/design.md)
-holds the design and plan, [docs/results.md](docs/results.md) shows each milestone
-working, with screenshots.
+The factory runs end to end in a local Kind cluster: the story model, the
+catalog, scaffolding into Gitea, Sessions, Tasks and Crews that build from
+issues, Standards that keep their Containers current, and a UI with the story
+and a factory view. [docs/design.md](docs/design.md) holds the design,
+[docs/results.md](docs/results.md) shows v1 working, with screenshots, and
+[docs/results-v3.md](docs/results-v3.md) the factory watching itself.
+
+Next is the Helm release: devices install the factory from a chart, build their
+products with it, and report problems here (see *Report an issue*). Until it
+lands, the install path is the Kind one below.
 
 ## Try it
 
@@ -56,7 +62,7 @@ make deploy sample        # the operator, and the webshop story
 kubectl get c4 -n webshop # the story as the operator sees it
 make session              # a test Session: a pod working on orders-api
 make ui ui-forward        # the read-only UI on http://localhost:8080
-make e2e                  # all of the above, then check every milestone
+make e2e                  # all of the above, then check the whole loop
 ```
 
 A minute after `make sample`, Gitea (`make gitea-forward`, http://localhost:3000)
