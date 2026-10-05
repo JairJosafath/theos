@@ -54,6 +54,9 @@ const (
 	agentSandboxValue = "true"
 )
 
+// agentContainer is the sandbox pod's container that runs c4agent.
+const agentContainer = "agent"
+
 // sandboxGrace is how long a sandbox object outlives its pod's deadline.
 const sandboxGrace = 10 * time.Minute
 
@@ -204,7 +207,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		ActiveDeadlineSeconds:        &deadline,
 		InitContainers:               initContainers,
 		Containers: []corev1.Container{{
-			Name:                     "agent",
+			Name:                     agentContainer,
 			Image:                    agent.Spec.Image,
 			ImagePullPolicy:          corev1.PullIfNotPresent,
 			Env:                      env,
@@ -294,12 +297,16 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 	state.Failure = pod.Status.Reason
 	state.Interrupted = podDisrupted(&pod)
 	// Its own deadline or its sandbox's shutdown time ends a run that took too
-	// long: the run's failure, though c4agent sees the same SIGTERM. A shutdown
-	// time the cluster was down for is not the run's limit.
-	ownLimit := pod.Status.Reason == "DeadlineExceeded" || expired && !missed
+	// long: the run's failure, though c4agent sees the same SIGTERM. A deadline
+	// or shutdown time the node or the cluster was down at is not the run's limit.
+	ownLimit := expired && !missed
+	if pod.Status.Reason == "DeadlineExceeded" {
+		ownLimit = endedAtDeadline(&pod)
+		state.Interrupted = state.Interrupted || !ownLimit
+	}
 	for _, cs := range pod.Status.ContainerStatuses {
 		term := cs.State.Terminated
-		if cs.Name != "agent" || term == nil {
+		if cs.Name != agentContainer || term == nil {
 			continue
 		}
 		var result agentrunner.Result
@@ -309,7 +316,8 @@ func runState(ctx context.Context, c client.Client, ns, name string) (model.RunS
 				Proposal: result.Proposal, Empty: result.Empty,
 				FollowUps: result.FollowUps, Unavailable: result.Unavailable,
 			}
-			state.Interrupted = (state.Interrupted || result.Interrupted) && !ownLimit
+			// A result c4agent wrote before an outage stands.
+			state.Interrupted = (podDisrupted(&pod) || result.Interrupted) && !ownLimit
 			if result.RetryAt != nil {
 				state.Result.RetryAt = *result.RetryAt
 			}
@@ -342,6 +350,25 @@ func podDisrupted(pod *corev1.Pod) bool {
 		}
 	}
 	return false
+}
+
+// endedAtDeadline reports whether the kubelet ended a DeadlineExceeded pod at
+// its deadline (model.EndedAtDeadline), going by when the agent container
+// finished. A container the kubelet lost wasn't ended by it.
+func endedAtDeadline(pod *corev1.Pod) bool {
+	var deadline time.Time
+	if pod.Status.StartTime != nil && pod.Spec.ActiveDeadlineSeconds != nil {
+		deadline = pod.Status.StartTime.Add(time.Duration(*pod.Spec.ActiveDeadlineSeconds) * time.Second)
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if term := cs.State.Terminated; cs.Name == agentContainer && term != nil {
+			if term.Reason == "ContainerStatusUnknown" {
+				return false
+			}
+			return model.EndedAtDeadline(deadline, term.FinishedAt.Time)
+		}
+	}
+	return true
 }
 
 // sandboxExpiry reports whether Agent Sandbox found the sandbox past its
