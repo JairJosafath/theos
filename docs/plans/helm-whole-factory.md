@@ -43,18 +43,22 @@ a checkout and locally built `:dev` images (`imagePullPolicy: Never`).
   projects and runs `helm upgrade` to add one.
 - **Runners:** `runners.base` and `runners.go` (each `enabled`, default on with
   Gitea, `image`, `resources`) are Deployments in Gitea's namespace on the
-  released `gitea-runner-base` and `gitea-runner-go` images, registering with
-  the token the seed stores in Secret `gitea-runner`; until it exists their pods
-  wait in `CreateContainerConfigError` and start on their own. The `go` runner
+  released `gitea-runner-base` and `gitea-runner-go` images. Their
+  registration token is the chart's, in Secret `gitea-runner` (generated on
+  install, kept on upgrade), which Gitea takes as its global token on start
+  (`GITEA_RUNNER_REGISTRATION_TOKEN`); the seed leaves it alone
+  (`RUNNER_SECRET=""`). So the runners don't wait for a hook, and
+  `helm install --wait` works. The `go` runner
   keeps its Go build cache on the node (`runners.go.goCache`, default
   `/var/cache/c4factory/go/ci`), as `config/runner/go.yaml` does.
 - **The UI's health view** lists Gitea and the runners when Gitea is enabled.
 - **Private images.** GHCR packages are private until the owner makes them
   public. The chart supports both ways:
-  - `global.imagePullSecrets` (names of `kubernetes.io/dockerconfigjson`
-    Secrets) goes on every pod the chart runs: manager, UI, seed and runners;
-    the Secret must exist in the release namespace and in Gitea's. A device
-    makes it from a gh token with `read:packages`.
+  - `global.imagePullSecrets` (`[{name: ...}]`, `kubernetes.io/dockerconfigjson`
+    Secrets) goes on the pods of the UI, Gitea, the seed and the runners;
+    the operator's template is generated, so it takes the same list as
+    `manager.imagePullSecrets`. The Secret must exist in the release namespace
+    and in Gitea's. A device makes it from a gh token with `read:packages`.
   - On Kind, `docker pull` with that token and `kind load docker-image`, and no
     pull secret. This is also the way for the agent images, which run in
     project namespaces in Sandboxes the operator creates, outside the chart.

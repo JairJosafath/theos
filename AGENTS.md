@@ -17,7 +17,7 @@ task. Read the rest when the task needs it:
 | set up a device, or change `./dev` or `.vscode/` | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
-| take an issue, or continue work someone left in flight | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
+| take an issue, or continue work someone left in flight (a relay session, or the user said to) | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
 | work on a plan step | its plan in [docs/plans/](docs/plans/); finished plans are in [docs/plans/done/](docs/plans/done/) |
 
 ## Project Architecture
@@ -121,6 +121,10 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   without one sets `C4_CLUSTER=none` (`./dev setup --lite`) and skips them.
 - **Every issue carries `source/dev`** (developing the factory) or `source/user`
   with `user/<name>` (reported from a device running the Helm release).
+- **Issues are the relay's.** Relay agents pick up every ready issue. A session
+  the user started picks or takes one only when the user says to work it in
+  that session; an issue it files for the user is `status/ready`, for the
+  relay.
 - **One issue, plan step or fix per session.** Start the next one fresh.
 - **Agents work in parallel.** Take an issue with `hack/lib/github.sh take N`
   before working it; it names you (`otter-23`). Sign commits with an

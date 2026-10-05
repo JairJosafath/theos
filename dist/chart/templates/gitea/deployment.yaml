@@ -1,0 +1,128 @@
+{{- if .Values.gitea.enabled }}
+{{- $image := printf "%s:%s" .Values.gitea.image.repository .Values.gitea.image.tag }}
+# Gitea, rootless image, one replica, as config/gitea/deployment.yaml. The setup
+# container prepares app.ini, migrates the database and makes the admin match
+# the admin Secret; all of it is safe to repeat on every start.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: {{ include "c4-factory.giteaNamespace" . }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "gitea" "context" .) | nindent 4 }}
+spec:
+  replicas: 1
+  # SQLite on a ReadWriteOnce volume: never run two pods at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitea
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "c4-factory.giteaLabels" (dict "name" "gitea" "context" .) | nindent 8 }}
+      annotations:
+        # A change of settings rolls the pod. Not the admin Secret: its password
+        # is random on install, so a checksum of it would restart Gitea on the
+        # first upgrade.
+        checksum/config: {{ include (print $.Template.BasePath "/gitea/configmap.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "c4-factory.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: setup
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.gitea.image.pullPolicy }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              # Writes app.ini on first start, then applies GITEA__* env vars.
+              /usr/local/bin/docker-setup.sh
+              gitea migrate
+              if gitea admin user list --admin | awk 'NR > 1 { print $2 }' | grep -qx "$ADMIN_USERNAME"; then
+                echo "Admin $ADMIN_USERNAME exists; syncing its password with the admin Secret"
+                gitea admin user change-password --username "$ADMIN_USERNAME" \
+                  --password "$ADMIN_PASSWORD" --must-change-password=false
+              else
+                echo "Creating admin $ADMIN_USERNAME"
+                gitea admin user create --admin --username "$ADMIN_USERNAME" \
+                  --password "$ADMIN_PASSWORD" --email "$ADMIN_EMAIL" --must-change-password=false
+              fi
+          envFrom:
+            - configMapRef:
+                name: gitea-env
+          env:
+            - name: GITEA_APP_INI
+              value: /var/lib/gitea/custom/conf/app.ini
+            - name: ADMIN_USERNAME
+              valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: username}}
+            - name: ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: password}}
+            - name: ADMIN_EMAIL
+              valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: email}}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/gitea
+      containers:
+        - name: gitea
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.gitea.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: gitea-env
+          env:
+            # app.ini lives on the volume, so the secrets Gitea generates into it
+            # on first start survive restarts.
+            - name: GITEA_APP_INI
+              value: /var/lib/gitea/custom/conf/app.ini
+            # The runners register with this token (runner-secret.yaml).
+            - name: GITEA_RUNNER_REGISTRATION_TOKEN
+              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+          ports:
+            - name: http
+              containerPort: 3000
+          # Generous timeouts: under a disk stall Gitea's health check, which
+          # reads SQLite, is slow, and leaving the Service cuts off CI, agents
+          # and the operator (config/gitea/deployment.yaml has the history).
+          readinessProbe:
+            httpGet: {path: /api/healthz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet: {path: /api/healthz, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.gitea.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/gitea
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitea-data
+{{- end }}

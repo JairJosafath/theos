@@ -236,9 +236,17 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	}
 
 	if role := runRole(status.Phase); role != "" {
-		run, err := runState(ctx, r.Client, task.Namespace, sandboxName(task, status, role))
+		name := sandboxName(task, status, role)
+		startedOn := ""
+		if name == status.Sandbox {
+			startedOn = status.SandboxPod
+		}
+		run, err := runState(ctx, r.Client, task.Namespace, name, startedOn)
 		if err != nil {
 			return facts, err
+		}
+		if name == status.Sandbox && startedOn == "" {
+			status.SandboxPod = run.Pod // the pod the run started on
 		}
 		facts.Run = run
 	}

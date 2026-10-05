@@ -1,0 +1,118 @@
+{{- if .Values.gitea.enabled }}
+{{- $ns := include "c4-factory.giteaNamespace" . }}
+{{- range $label, $r := .Values.runners }}
+{{- if $r.enabled }}
+{{- $name := printf "gitea-runner-%s" $label }}
+{{- $image := printf "%s:%s" $r.image.repository ($r.image.tag | default $.Chart.AppVersion) }}
+{{- if $r.goCache }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-env
+  namespace: {{ $ns }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" $name "context" $) | nindent 4 }}
+data:
+  # Read by the runner for every job (env_file in hack/runner/config.yaml).
+  job.env: |
+    GOCACHE=/cache/go/build
+    GOLANGCI_LINT_CACHE=/cache/go/golangci-lint
+{{- end }}
+---
+# The CI runner labelled {{ $label }} (config/runner/{{ $label }}.yaml in the Kind
+# test environment). It registers with the token in Secret gitea-runner.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" $name "context" $) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "c4-factory.giteaLabels" (dict "name" $name "context" $) | nindent 8 }}
+        app.kubernetes.io/component: ci-runner
+    spec:
+      automountServiceAccountToken: false
+      {{- include "c4-factory.imagePullSecrets" $ | nindent 6 }}
+      {{- if $r.goCache }}
+      initContainers:
+        # Seeds the node's Go build cache from the image's warm one.
+        - name: go-cache
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ $r.image.pullPolicy }}
+          command: [c4-go-cache, /cache/go]
+          volumeMounts:
+            - name: go-cache
+              mountPath: /cache/go
+      {{- end }}
+      containers:
+        - name: runner
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ $r.image.pullPolicy }}
+          env:
+            - name: GITEA_INSTANCE
+              value: {{ include "c4-factory.giteaURL" $ | quote }}
+            - name: RUNNER_TOKEN
+              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+            - name: RUNNER_LABELS
+              value: {{ printf "%s:host" $label | quote }}
+          resources:
+            {{- toYaml $r.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: work
+              mountPath: /data/work
+            - name: tmp
+              mountPath: /tmp
+            {{- if $r.goCache }}
+            - name: go-cache
+              mountPath: /cache/go
+            - name: job-env
+              mountPath: /etc/gitea-runner/job.env
+              subPath: job.env
+            {{- end }}
+        {{- if $r.goCache }}
+        # Keeps the cache under its bound between jobs; Go drops nothing for five days.
+        - name: go-cache-trim
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ $r.image.pullPolicy }}
+          command: [sh, -c, "while sleep 3600; do c4-go-cache /cache/go; done"]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          volumeMounts:
+            - name: go-cache
+              mountPath: /cache/go
+        {{- end }}
+      volumes:
+        - name: data
+          emptyDir: {}
+        # Checkouts and test output in memory, to spare the disk.
+        - name: work
+          emptyDir: {medium: Memory, sizeLimit: {{ $r.workSize }}}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: {{ $r.tmpSize }}}
+        {{- if $r.goCache }}
+        # The build cache on the node, so a job compiles only what changed.
+        # Only this runner mounts it: agent sandboxes, which run untrusted
+        # code, share a sibling of their own (the operator's --sandbox-go-cache).
+        - name: go-cache
+          hostPath: {path: {{ $r.goCache }}, type: DirectoryOrCreate}
+        - name: job-env
+          configMap: {name: {{ $name }}-env}
+        {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

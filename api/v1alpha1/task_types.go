@@ -236,6 +236,13 @@ type TaskStatus struct {
 	// +optional
 	Sandbox string `json:"sandbox,omitempty"`
 
+	// sandboxPod is the UID of the pod the running sandbox's run started on.
+	// Agent Sandbox replaces a pod that went away without c4agent ending it (a
+	// forced delete, a lost node); another pod, or none, under the same sandbox
+	// means the run was interrupted.
+	// +optional
+	SandboxPod string `json:"sandboxPod,omitempty"`
+
 	// agentBackAt is when to try an unavailable agent again: its service hit a
 	// usage limit, was overloaded or refused the credentials. Waiting costs no round.
 	// +optional
