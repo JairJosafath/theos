@@ -1,0 +1,83 @@
+# Interrupted runs rerun the same round (#52, verifying #10 / PR #49)
+
+Kind cluster c4factory, 2026-10-05, operator at 190d405 (make deploy), Agent Sandbox
+v1.0.4, c4factory/agent-base:dev, the e2e fixture (test/e2e/testdata/apps).
+
+The stand-in finishes a whole Task (two rounds, merged) before a pod can be caught
+Running, so the run to interrupt came from an Agent whose command sleeps:
+
+    apiVersion: c4.factory.io/v1alpha1
+    kind: Agent
+    metadata: {name: slow, namespace: apps}
+    spec:
+      image: c4factory/agent-base:dev
+      maxRounds: 2
+      timeoutMinutes: 15
+      env:
+        - {name: C4AGENT_COMMAND, value: sleep 900}
+    ---
+    apiVersion: c4.factory.io/v1alpha1
+    kind: Task
+    metadata: {name: rerun, namespace: apps}
+    spec:
+      containerRef: {name: hello}
+      agentRef: {name: slow}
+      goal: Sleep, so the run can be interrupted.
+
+## 1. SIGTERM, as a node shutdown sends it
+
+    19:23:43 $ kubectl -n apps delete pod rerun-r1-implement --grace-period=30 --wait=false
+    19:23:47 $ kubectl -n apps get pods
+    NAME                    READY   STATUS    RESTARTS   AGE
+    rerun-r1-implement-x1   1/1     Running   0          3s
+    phase=Implementing round=1 reruns=1
+    Implementing r1 Running: Starting round 1 in sandbox rerun-r1-implement
+    Implementing r1 Waiting: The agent is working on round 1
+    Implementing r1 Interrupted: The run was interrupted (sleep failed: signal: killed:); round 1 runs again (rerun 1 of 2)
+    Implementing r1 Running: Starting round 1 in sandbox rerun-r1-implement-x1
+    Implementing r1 Waiting: The agent is working on round 1
+
+What the pod leaves behind: no pod reason, no DisruptionTarget condition. c4agent
+catches SIGTERM, kills the agent and ends cleanly with interrupted set, which
+runState reads from the termination message:
+
+    phase: Succeeded
+    containerStatuses[agent].state.terminated:
+      exitCode: 0
+      reason: Completed
+      message: {"role":"implement","error":"sleep failed: signal: killed: ","interrupted":true}
+
+## 2. Force delete (no grace period): not seen
+
+    19:24:26 $ kubectl -n apps delete pod rerun-r1-implement-x1 --grace-period=0 --force --wait=false
+    pod uid 1e00a66e created 19:23:44  Running, deletionTimestamp 19:24:26
+    pod uid fb868696 created 19:24:26  Pending -> Running, owner Sandbox/rerun-r1-implement-x1
+    19:24:29 INFO Starting job role=implement container=hello branch=task/rerun round=1
+
+Agent Sandbox replaced the pod in the same sandbox and c4agent started round 1
+over. The Task recorded nothing: no Interrupted step, reruns still 1. The old pod
+was gone before the operator could read it, so there is no signal to add to
+podDisrupted; follow-up #111 (an uncounted rerun inside one sandbox).
+
+## 3. Second SIGTERM: rerun 2 of 2
+
+    19:28:56 $ kubectl -n apps delete pod rerun-r1-implement-x1 --grace-period=30 --wait=false
+    Implementing r1 Interrupted: The run was interrupted (sleep failed: signal: killed:); round 1 runs again (rerun 2 of 2)
+    Implementing r1 Running: Starting round 1 in sandbox rerun-r1-implement-x2
+
+## 4. Third SIGTERM: the round is spent
+
+    19:29:09 $ kubectl -n apps delete pod rerun-r1-implement-x2 --grace-period=30 --wait=false
+    phase=Implementing round=2 reruns=
+    Implementing r2 NextRound: Round 1 was not accepted (sleep failed: signal: killed:); starting round 2
+    Implementing r2 Running: Starting round 2 in sandbox rerun-r2-implement
+
+As the design says: at most twice per round, so a run cut short every time still
+spends rounds. reruns resets with the new round. The x2 pod left the same
+termination as in 1 (exit 0, Completed, "interrupted":true).
+
+## Not done
+
+`docker restart c4factory-control-plane` (a node restart) was refused by the
+headless session's permission mode, so which pod reason a node restart leaves
+(ContainerStatusUnknown or other) is still unverified: #112.

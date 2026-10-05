@@ -51,9 +51,9 @@ yourself.
 - The `documentSelector` is as narrow as the server's job:
   `{ scheme: 'file', language: 'yaml' }`. [review]
 - `await client.start()` inside `try`. When the server is missing or crashes,
-  show one actionable error ("CEL language server not found: set
-  `celLens.server.path` or reinstall the extension", with a button to the
-  setting) and leave VS Code usable. [review]
+  show one actionable error ("Language server not found: set
+  `<extension>.server.path` or reinstall the extension", with a button to
+  the setting) and leave VS Code usable. [review]
 - Contribute `<extension>.trace.server` (`off`, `messages`, `verbose`) so
   people can see the protocol in the output channel. [review]
 - Don't redo the server's work in the client: diagnostics, completion and
