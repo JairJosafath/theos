@@ -14,8 +14,8 @@ import (
 	"time"
 )
 
-// issueHost is an in-memory Gitea with labels, milestones, issues, dependencies
-// and reviews, for repository webshop/orders-api. Exclusive scoped labels replace
+// issueHost is an in-memory Gitea with labels, milestones, issues, dependencies,
+// reviews and tags, for repository webshop/orders-api. Exclusive scoped labels replace
 // their siblings, and milestone lists show only open ones unless asked for all,
 // as in Gitea.
 type issueHost struct {
@@ -27,6 +27,9 @@ type issueHost struct {
 	reviews    []map[string]string
 	comments   map[int][]string
 	depPosts   []map[string]any
+	// tags maps a tag to the commit it names; tagPosts are the create requests.
+	tags     map[string]string
+	tagPosts []map[string]string
 }
 
 type hostIssue struct {
@@ -38,15 +41,17 @@ type hostIssue struct {
 }
 
 type hostMilestone struct {
-	ID          int64  `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	State       string `json:"state"`
+	ID          int64      `json:"id"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	State       string     `json:"state"`
+	DueOn       *time.Time `json:"due_on,omitempty"`
 }
 
 func newIssueHost(t *testing.T) (*issueHost, Provider) {
 	t.Helper()
-	h := &issueHost{scoped: map[int64]bool{}, issues: map[int]*hostIssue{}, comments: map[int][]string{}}
+	h := &issueHost{scoped: map[int64]bool{}, issues: map[int]*hostIssue{}, comments: map[int][]string{},
+		tags: map[string]string{}}
 	mux := http.NewServeMux()
 	const repo = "/api/v1/repos/webshop/orders-api"
 	reply := func(w http.ResponseWriter, status int, v any) {
@@ -91,7 +96,12 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		h.milestones = append(h.milestones, m)
 		reply(w, http.StatusCreated, m)
 	})
+	h.handleReleases(mux, repo, reply)
 	mux.HandleFunc("GET "+repo+"/issues", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("milestones") {
+			reply(w, http.StatusOK, h.milestoneIssues(t, r))
+			return
+		}
 		if r.URL.Query().Get("type") != "issues" || r.URL.Query().Get("state") != "open" {
 			t.Errorf("list query = %s", r.URL.RawQuery)
 		}
@@ -228,6 +238,59 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		t.Fatal(err)
 	}
 	return h, p
+}
+
+// handleReleases serves the milestone edits and tags of the issueHost.
+func (h *issueHost) handleReleases(mux *http.ServeMux, repo string, reply func(http.ResponseWriter, int, any)) {
+	mux.HandleFunc("PATCH "+repo+"/milestones/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		idx := slices.IndexFunc(h.milestones, func(m hostMilestone) bool { return m.ID == id })
+		if idx < 0 {
+			reply(w, http.StatusNotFound, map[string]string{"message": "no milestone"})
+			return
+		}
+		var body struct {
+			State string `json:"state"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		h.milestones[idx].State = body.State
+		reply(w, http.StatusOK, h.milestones[idx])
+	})
+	mux.HandleFunc("GET "+repo+"/tags/{tag}", func(w http.ResponseWriter, r *http.Request) {
+		sha, ok := h.tags[r.PathValue("tag")]
+		if !ok {
+			reply(w, http.StatusNotFound, map[string]string{"message": "no tag"})
+			return
+		}
+		reply(w, http.StatusOK, map[string]any{"name": r.PathValue("tag"), "id": "tagobject",
+			"commit": map[string]string{"sha": sha}})
+	})
+	mux.HandleFunc("POST "+repo+"/tags", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		h.tagPosts = append(h.tagPosts, body)
+		if _, ok := h.tags[body["tag_name"]]; ok {
+			reply(w, http.StatusConflict, map[string]string{"message": "tag already exists"})
+			return
+		}
+		h.tags[body["tag_name"]] = body["target"]
+		reply(w, http.StatusCreated, map[string]any{"name": body["tag_name"]})
+	})
+}
+
+// milestoneIssues lists the issues, open and closed, of the milestone the query names.
+func (h *issueHost) milestoneIssues(t *testing.T, r *http.Request) []giteaIssue {
+	if r.URL.Query().Get("type") != "issues" || r.URL.Query().Get("state") != "all" {
+		t.Errorf("milestone query = %s", r.URL.RawQuery)
+	}
+	id, _ := strconv.ParseInt(r.URL.Query().Get("milestones"), 10, 64)
+	out := []giteaIssue{}
+	for n := 1; n <= len(h.issues); n++ {
+		if i := h.issues[n]; i != nil && i.milestone != nil && *i.milestone == id {
+			out = append(out, i.giteaIssue)
+		}
+	}
+	return out
 }
 
 func TestIssues(t *testing.T) {

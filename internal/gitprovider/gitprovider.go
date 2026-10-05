@@ -149,6 +149,19 @@ type Provider interface {
 	// CreateIssue files an issue with labels, which must exist in the repository,
 	// in the milestone with ID milestone, or in none when it is 0.
 	CreateIssue(ctx context.Context, repo Repository, title, body string, labels []string, milestone int64) (Issue, error)
+
+	// ListMilestones returns repo's open milestones.
+	ListMilestones(ctx context.Context, repo Repository) ([]Milestone, error)
+	// MilestoneIssues returns the numbers of the open and the closed issues in
+	// milestone id, without pull requests.
+	MilestoneIssues(ctx context.Context, repo Repository, id int64) (open, closed []int, err error)
+	// CloseMilestone closes milestone id. It is safe to repeat.
+	CloseMilestone(ctx context.Context, repo Repository, id int64) error
+	// GetTag returns the commit tag points at, or "" when repo has no such tag.
+	GetTag(ctx context.Context, repo Repository, tag string) (string, error)
+	// CreateTag tags commit as tag, annotated with message. It fails if the tag
+	// exists, wherever it points.
+	CreateTag(ctx context.Context, repo Repository, tag, commit, message string) error
 }
 
 // BranchRule is what a protected branch requires of a pull request.

@@ -157,7 +157,8 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case call == "POST "+repo+"/issues/1/comments":
 		reply(http.StatusCreated, map[string]string{})
 	case call == "POST "+repo+"/pulls/1/merge":
-		g.pulls[0].Merged = true
+		sha := "694db57"
+		g.pulls[0].Merged, g.pulls[0].MergeCommit = true, &sha
 		w.WriteHeader(http.StatusOK)
 	case call == "POST "+repo+"/pulls/2/merge":
 		reply(http.StatusMethodNotAllowed, map[string]string{"message": "Please try again later"})
@@ -269,7 +270,7 @@ func TestPullRequests(t *testing.T) {
 	repo := p.Repository("photo-editor")
 
 	pr, err := p.OpenPullRequest(ctx, repo, "task/add-crop", "main", "Add crop", "body")
-	if err != nil || pr.Number != 1 || pr.HeadSHA != "abc123" {
+	if err != nil || pr.Number != 1 || pr.HeadSHA != "abc123" || pr.MergeCommit != "" {
 		t.Fatalf("OpenPullRequest() = %+v, %v", pr, err)
 	}
 	again, err := p.OpenPullRequest(ctx, repo, "task/add-crop", "main", "Add crop", "body")
@@ -286,8 +287,8 @@ func TestPullRequests(t *testing.T) {
 		t.Errorf("merge = %v", merge)
 	}
 	got, err := p.GetPullRequest(ctx, repo, 1)
-	if err != nil || !got.Merged {
-		t.Errorf("GetPullRequest() = %+v, %v; want merged", got, err)
+	if err != nil || !got.Merged || got.MergeCommit != "694db57" {
+		t.Errorf("GetPullRequest() = %+v, %v; want merged at 694db57", got, err)
 	}
 	if err := p.MergePullRequest(ctx, repo, 2, "def456", "x", "y"); err == nil || !strings.Contains(err.Error(), "HTTP 405") {
 		t.Errorf("MergePullRequest() of an unmergeable PR error = %v", err)
