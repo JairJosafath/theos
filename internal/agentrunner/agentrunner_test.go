@@ -18,8 +18,8 @@ import (
 
 func env(overrides map[string]string) func(string) string {
 	base := map[string]string{
-		EnvRole: RoleImplement, EnvRepoURL: "http://gitea/toolbox/photo-editor.git", EnvBranch: "task/add-crop",
-		EnvGoal: "Add crop", EnvContainer: "photo-editor", EnvProject: "toolbox", EnvGitUsername: "bot",
+		EnvRole: RoleImplement, EnvRepoURL: "http://gitea/apps/photo-editor.git", EnvBranch: "task/add-crop",
+		EnvGoal: "Add crop", EnvContainer: "photo-editor", EnvProject: "apps", EnvGitUsername: "bot",
 		EnvGitToken: "t0k", EnvTask: "add-crop",
 	}
 	maps.Copy(base, overrides)
@@ -312,11 +312,11 @@ func (a *countingAgent) Run(_ context.Context, dir, _ string) (string, error) {
 
 func TestJobFromEnvIssueAndRoles(t *testing.T) {
 	job, err := JobFromEnv(env(map[string]string{EnvIssue: "3", EnvModel: "claude-opus-5-5", EnvHarness: HarnessStandIn,
-		EnvRelated: "vscode-extension=http://gitea/cel-lens/vscode-extension.git, server=http://gitea/cel-lens/server.git"}))
+		EnvRelated: "vscode-extension=http://gitea/tools/vscode-extension.git, server=http://gitea/tools/server.git"}))
 	if err != nil {
 		t.Fatalf("JobFromEnv() error = %v", err)
 	}
-	want := map[string]string{"vscode-extension": "http://gitea/cel-lens/vscode-extension.git", "server": "http://gitea/cel-lens/server.git"}
+	want := map[string]string{"vscode-extension": "http://gitea/tools/vscode-extension.git", "server": "http://gitea/tools/server.git"}
 	if job.Issue != 3 || job.Model != "claude-opus-5-5" || job.Harness != HarnessStandIn || !maps.Equal(job.Related, want) {
 		t.Errorf("job = issue %d, model %q, harness %q, related %v", job.Issue, job.Model, job.Harness, job.Related)
 	}

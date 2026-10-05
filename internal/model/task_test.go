@@ -184,7 +184,7 @@ func TestBlockingTask(t *testing.T) {
 }
 
 func TestAgentUsername(t *testing.T) {
-	if got := AgentUsername("toolbox", "photo-editor"); got != "toolbox-photo-editor-agent" {
+	if got := AgentUsername("apps", "photo-editor"); got != "apps-photo-editor-agent" {
 		t.Errorf("AgentUsername() = %q", got)
 	}
 	long := AgentUsername("a-very-long-project-name", "an-even-longer-container-name")
@@ -212,8 +212,8 @@ func TestSandboxName(t *testing.T) {
 func TestHasSlotTurn(t *testing.T) {
 	t0 := time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC)
 	waiting := []SlotWaiter{
-		{Name: "toolbox/bg-eraser", Since: t0},
-		{Name: "toolbox/doc-scanner", Since: t0.Add(time.Minute)},
+		{Name: "apps/bg-eraser", Since: t0},
+		{Name: "apps/doc-scanner", Since: t0.Add(time.Minute)},
 	}
 	tests := []struct {
 		name string
@@ -221,12 +221,12 @@ func TestHasSlotTurn(t *testing.T) {
 		free int
 		want bool
 	}{
-		{"the longest waiter goes first", "toolbox/bg-eraser", 1, true},
-		{"later waiters wait", "toolbox/doc-scanner", 1, false},
-		{"a newcomer joins at the back", "toolbox/audio-cutter", 1, false},
-		{"two slots take two waiters", "toolbox/doc-scanner", 2, true},
-		{"no free slot, no turn", "toolbox/bg-eraser", 0, false},
-		{"an empty queue lets a newcomer start", "toolbox/audio-cutter", 3, true},
+		{"the longest waiter goes first", "apps/bg-eraser", 1, true},
+		{"later waiters wait", "apps/doc-scanner", 1, false},
+		{"a newcomer joins at the back", "apps/audio-cutter", 1, false},
+		{"two slots take two waiters", "apps/doc-scanner", 2, true},
+		{"no free slot, no turn", "apps/bg-eraser", 0, false},
+		{"an empty queue lets a newcomer start", "apps/audio-cutter", 3, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

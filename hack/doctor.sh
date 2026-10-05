@@ -120,7 +120,7 @@ fi
 section "Projects"
 projects=$("${KUBECTL[@]}" get projects.c4.factory.io -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"\n"}{end}' 2>/dev/null)
 if [[ -z "$projects" ]]; then
-  warn "No Projects yet (make sample, make toolbox)"
+  warn "No Projects yet (make sample, make e2e-apps)"
 fi
 for ns in $projects; do
   # Each GitProvider's credentials.

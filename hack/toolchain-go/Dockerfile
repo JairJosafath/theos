@@ -1,6 +1,5 @@
 # The Go and Node toolchain: Go, golangci-lint and Node with npm, for Containers
-# written in Go or TypeScript (CEL Lens: a Go language server and a VS Code
-# extension). CI (runner label `go`), agents and devcontainers all use it, so an
+# written in Go or TypeScript. CI (runner label `go`), agents and devcontainers all use it, so an
 # agent checks its work with exactly the tools CI uses.
 FROM golang:1.26-bookworm
 
@@ -26,13 +25,13 @@ ENV GOTOOLCHAIN=local \
     GOCACHE=/root/.cache/go-build \
     GOLANGCI_LINT_CACHE=/root/.cache/golangci-lint
 
-# Warm the module and build caches with the Kubernetes CEL libraries CEL Lens
-# builds on. Cold, they take about 7 minutes and 3 GB to compile (half of it for
+# Warm the module and build caches with the Kubernetes libraries Go projects
+# commonly build on. Cold, they take about 7 minutes and 3 GB to compile (half of it for
 # -race); CI and agents only compile their own packages on top. Pods don't
 # write here: c4-go-cache copies it into the node's caches once.
 COPY warm.go.txt /tmp/warm/main.go
 RUN cd /tmp/warm && go mod init warm >/dev/null 2>&1 \
- && go get k8s.io/apiserver@v0.37.0 k8s.io/apiextensions-apiserver@v0.37.0 k8s.io/client-go@v0.37.0 \
+ && go get k8s.io/client-go@v0.37.0 sigs.k8s.io/controller-runtime@v0.25.0 \
  && go build ./... && go build -race ./... && go vet ./... \
  && cd / && rm -rf /tmp/warm \
  && chmod -R a+rX /go/pkg/mod /root/.cache

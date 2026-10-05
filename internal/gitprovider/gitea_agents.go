@@ -429,7 +429,7 @@ func randomSecret() (string, error) {
 }
 
 // CheckLog returns the log of the CI job a check status links to, such as
-// /toolbox/app/actions/runs/27/jobs/27.
+// /apps/app/actions/runs/27/jobs/27.
 func (g *gitea) CheckLog(ctx context.Context, repo Repository, checkURL string) (string, error) {
 	_, job, ok := strings.Cut(checkURL, "/jobs/")
 	job = strings.Trim(job, "/")

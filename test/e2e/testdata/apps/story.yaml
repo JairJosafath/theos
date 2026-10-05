@@ -1,0 +1,44 @@
+# Who uses what, and what it is made of: one sample Flutter app for the e2e agent loop.
+apiVersion: c4.factory.io/v1alpha1
+kind: Person
+metadata:
+  name: app-user
+spec:
+  displayName: App user
+  description: Someone who uses the sample app.
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: sample-apps
+spec:
+  displayName: Sample apps
+  description: A sample Flutter app for the e2e agent loop.
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: app-user-uses-sample-apps
+spec:
+  source: {kind: Person, name: app-user}
+  target: {kind: SoftwareSystem, name: sample-apps}
+  description: Uses the app
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: image-shrink
+spec:
+  softwareSystemRef:
+    name: sample-apps
+  displayName: Image Shrink
+  description: A sample Flutter app for the e2e agent loop.
+  type: mobile-app
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: flutter-app
+  standardRef:
+    name: flutter-standard
+  deploymentRef:
+    name: android-release

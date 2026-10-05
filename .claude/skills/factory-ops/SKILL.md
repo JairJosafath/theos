@@ -31,7 +31,6 @@ kubectl -n P logs T-r1-implement --tail=20                      # while it runs
 ```bash
 kubectl -n P patch crew C --type merge -p '{"spec":{"paused":true}}'   # false resumes
 kubectl -n P patch crew C --type merge -p '{"spec":{"parallel":2}}'
-make cel-lens-backlog          # hack/backlog/file-issues.sh; idempotent
 ```
 
 A paused Crew starts nothing; running Tasks finish. Gitea numbers issues and pull

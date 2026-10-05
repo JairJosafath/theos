@@ -36,10 +36,10 @@ func TestBuildSandboxWorkspace(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			run := sandboxRun{
-				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("toolbox", "add-crop")},
+				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
 				status:    &c4v1alpha1.TaskStatus{Round: 1},
-				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("toolbox", "image-shrink")},
-				agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("toolbox", "claude")},
+				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")},
 				name:      "add-crop-r1-implement", role: "implement",
 				workspaceMemory: tt.memory,
 			}
@@ -76,13 +76,13 @@ func TestBuildSandboxGoCache(t *testing.T) {
 		{name: "the node's shared cache when set", cache: "/var/cache/c4factory/go/sandbox"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta("toolbox", "claude")}
+			agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")}
 			agent.Spec.Image = "c4factory/agent-go:dev"
 			agent.Spec.Env = []corev1.EnvVar{{Name: "GOCACHE", Value: "/agent/own"}}
 			run := sandboxRun{
-				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("toolbox", "add-crop")},
+				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
 				status:    &c4v1alpha1.TaskStatus{Round: 1},
-				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("toolbox", "image-shrink")},
+				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
 				agent:     agent,
 				name:      "add-crop-r1-implement", role: "implement",
 				goCache: tt.cache,
@@ -159,14 +159,14 @@ func TestRunStateReadsOnlyItsSandboxsPod(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sandbox := newSandbox()
-			sandbox.SetNamespace("toolbox")
+			sandbox.SetNamespace("apps")
 			sandbox.SetName("add-crop-r1-implement")
 			sandbox.SetUID("sandbox-2")
 			sandbox.SetCreationTimestamp(created)
 			owner := *metav1.NewControllerRef(sandbox, SandboxGVK)
 			owner.UID = tt.podOwner
 			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "toolbox", Name: "add-crop-r1-implement",
+				ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "add-crop-r1-implement",
 					CreationTimestamp: created, OwnerReferences: []metav1.OwnerReference{owner}},
 				Status: corev1.PodStatus{Phase: corev1.PodSucceeded, ContainerStatuses: []corev1.ContainerStatus{{
 					Name: "agent", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
@@ -174,7 +174,7 @@ func TestRunStateReadsOnlyItsSandboxsPod(t *testing.T) {
 				}}},
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, pod).Build()
-			state, err := runState(context.Background(), c, "toolbox", "add-crop-r1-implement")
+			state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -221,11 +221,11 @@ func TestRunStateTellsAnInterruptedRun(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sandbox := newSandbox()
-			sandbox.SetNamespace("toolbox")
+			sandbox.SetNamespace("apps")
 			sandbox.SetName("add-crop-r1-implement")
 			sandbox.SetUID("sandbox-1")
 			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "toolbox", Name: "add-crop-r1-implement",
+				ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "add-crop-r1-implement",
 					OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
 				Status: corev1.PodStatus{Phase: corev1.PodFailed, Reason: tt.reason, Conditions: tt.conditions,
 					ContainerStatuses: []corev1.ContainerStatus{{
@@ -233,7 +233,7 @@ func TestRunStateTellsAnInterruptedRun(t *testing.T) {
 					}}},
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, pod).Build()
-			state, err := runState(context.Background(), c, "toolbox", "add-crop-r1-implement")
+			state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -282,7 +282,7 @@ func TestRunStateTellsAClusterOutage(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sandbox := newSandbox()
-			sandbox.SetNamespace("toolbox")
+			sandbox.SetNamespace("apps")
 			sandbox.SetName("add-crop-r1-review-a1")
 			sandbox.SetUID("sandbox-1")
 			sandbox.Object["spec"] = map[string]any{"shutdownTime": shutdown.Format(time.RFC3339)}
@@ -292,7 +292,7 @@ func TestRunStateTellsAClusterOutage(t *testing.T) {
 			objects := []client.Object{sandbox}
 			if tt.term != nil {
 				objects = append(objects, &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{Namespace: "toolbox", Name: "add-crop-r1-review-a1",
+					ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "add-crop-r1-review-a1",
 						OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
 					Status: corev1.PodStatus{Phase: corev1.PodFailed, Reason: tt.reason,
 						ContainerStatuses: []corev1.ContainerStatus{{
@@ -301,7 +301,7 @@ func TestRunStateTellsAClusterOutage(t *testing.T) {
 				})
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
-			state, err := runState(context.Background(), c, "toolbox", "add-crop-r1-review-a1")
+			state, err := runState(context.Background(), c, "apps", "add-crop-r1-review-a1")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -335,13 +335,13 @@ func TestBuildSandboxStandardChangeEnv(t *testing.T) {
 			want: map[string]string{agentrunner.EnvAllowedPaths: "", agentrunner.EnvResumed: ""}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			task := &c4v1alpha1.Task{ObjectMeta: objectMeta("toolbox", "add-crop")}
+			task := &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")}
 			task.Spec.Issue, task.Spec.AllowedProtectedPaths = 2, tt.allowed
 			run := sandboxRun{
 				task:      task,
 				status:    &c4v1alpha1.TaskStatus{Round: 1},
-				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("toolbox", "image-shrink")},
-				agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("toolbox", "claude")},
+				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")},
 				name:      "add-crop-r1-" + tt.role, role: tt.role,
 				allowedPaths: task.Spec.AllowedProtectedPaths, resumed: tt.resumed,
 			}
@@ -378,11 +378,11 @@ func TestRunStateReadsTheProposal(t *testing.T) {
 	}
 	scheme.AddKnownTypeWithName(SandboxGVK, &unstructured.Unstructured{})
 	sandbox := newSandbox()
-	sandbox.SetNamespace("toolbox")
+	sandbox.SetNamespace("apps")
 	sandbox.SetName("add-crop-r1-implement")
 	sandbox.SetUID("sandbox-1")
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "toolbox", Name: "add-crop-r1-implement",
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "add-crop-r1-implement",
 			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
 		Status: corev1.PodStatus{Phase: corev1.PodSucceeded, ContainerStatuses: []corev1.ContainerStatus{{
 			Name: "agent", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
@@ -391,7 +391,7 @@ func TestRunStateReadsTheProposal(t *testing.T) {
 		}}},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, pod).Build()
-	state, err := runState(context.Background(), c, "toolbox", "add-crop-r1-implement")
+	state, err := runState(context.Background(), c, "apps", "add-crop-r1-implement")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -52,7 +52,7 @@ gitea-admin: ## Print the Gitea admin's username and generated password, for sig
 seed: ## Seed Gitea: orgs, tagged template repos, Secret gitea-credentials.
 	$(CONTAINER_TOOL) build -t $(SEED_IMG) -f hack/seed/Dockerfile .
 	$(KIND) load docker-image $(SEED_IMG) --name '$(KIND_CLUSTER)'
-	for ns in webshop toolbox cel-lens; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -; done
+	for ns in webshop apps; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -; done
 	$(TESTENV_KUBECTL) apply -f hack/seed/rbac.yaml
 	@# Foreground: the old pods are gone before the new Job starts.
 	$(TESTENV_KUBECTL) -n gitea delete job seed --ignore-not-found --cascade=foreground --wait=true
@@ -179,7 +179,7 @@ agent-sandbox: ## Install Agent Sandbox (config/agent-sandbox, v1.0.4), which ru
 	$(TESTENV_KUBECTL) apply --server-side -k config/agent-sandbox
 	$(TESTENV_KUBECTL) -n agent-sandbox-system rollout status deployment --timeout=300s
 
-CLAUDE_NAMESPACE ?= toolbox
+CLAUDE_NAMESPACE ?= apps
 
 .PHONY: claude-secret
 claude-secret: ## Store a Claude token for agents: make claude-secret CLAUDE_TOKEN=... (from `claude setup-token`).
@@ -189,29 +189,17 @@ claude-secret: ## Store a Claude token for agents: make claude-secret CLAUDE_TOK
 		$(TESTENV_KUBECTL) apply --server-side --field-manager=c4factory-testenv -f - >/dev/null
 	@echo "Stored Secret $(CLAUDE_NAMESPACE)/claude-credentials"
 
-.PHONY: cel-lens
-cel-lens: ## Apply the CEL Lens story: a CEL language server and VS Code extension built by agents.
-	$(TESTENV_KUBECTL) apply -k config/samples/cel-lens
-
-.PHONY: cel-lens-backlog
-cel-lens-backlog: ## File the CEL Lens backlog (config/samples/cel-lens/backlog) as Gitea issues.
-	@$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea 3911:3000 >/dev/null 2>&1 & pf=$$!; \
-	trap 'kill $$pf 2>/dev/null || true' EXIT; sleep 2; \
-	GITEA_URL=http://localhost:3911 \
-	GITEA_TOKEN="$$($(TESTENV_KUBECTL) -n cel-lens get secret gitea-credentials -o jsonpath='{.data.token}' | base64 -d)" \
-	hack/backlog/file-issues.sh cel-lens config/samples/cel-lens/backlog
-
 .PHONY: claude-secret-copy
-claude-secret-copy: ## Copy the Claude Secret between projects: make claude-secret-copy FROM=toolbox TO=cel-lens.
+claude-secret-copy: ## Copy the Claude Secret between projects: make claude-secret-copy FROM=webshop TO=apps.
 	@test -n "$(FROM)" -a -n "$(TO)" || { echo "Set FROM and TO namespaces" >&2; exit 1; }
 	@$(TESTENV_KUBECTL) -n $(FROM) get secret claude-credentials -o json | \
 		jq --arg ns "$(TO)" '{apiVersion, kind, type, data, metadata: {name: .metadata.name, namespace: $$ns}}' | \
 		$(TESTENV_KUBECTL) apply --server-side --field-manager=c4factory-testenv -f - >/dev/null
 	@echo "Copied Secret claude-credentials from $(FROM) to $(TO)"
 
-.PHONY: toolbox
-toolbox: ## Apply the toolbox story: offline tool apps built by agents (config/samples/toolbox).
-	$(TESTENV_KUBECTL) apply -k config/samples/toolbox
+.PHONY: e2e-apps
+e2e-apps: ## Apply the e2e fixture project: one Flutter app (test/e2e/testdata/apps).
+	$(TESTENV_KUBECTL) apply -k test/e2e/testdata/apps
 
 .PHONY: metrics-server
 metrics-server: ## Install metrics-server (config/metrics-server): live CPU and memory for the UI's factory view.

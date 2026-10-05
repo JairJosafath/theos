@@ -7,7 +7,7 @@ metadata:
 spec:
   provider: gitea
   url: http://gitea.gitea.svc.cluster.local:3000
-  owner: toolbox
+  owner: apps
   credentialsSecretRef:
     name: gitea-credentials
 ---

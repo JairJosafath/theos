@@ -1,0 +1,8 @@
+# One Project per namespace, named after it.
+apiVersion: c4.factory.io/v1alpha1
+kind: Project
+metadata:
+  name: apps
+spec:
+  displayName: Apps
+  description: A sample Flutter app for the e2e agent loop.
