@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label)
+# for flush releasing the claim of the handoff it posts,
 # for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
@@ -38,6 +39,7 @@ gh_api() {
     */issues/73) echo closed ;; # --jq .state, as take asks
     */issues/74) echo open ;;
     */issues/61) echo '{"number":61,"title":"Docs","labels":[{"name":"kind/docs"}]}' ;;
+    */issues/77/comments*) return 1 ;; # posting on #77 fails
     */issues/*/comments*)
       if [[ " $* " == *" POST "* ]]; then touch "$T/posted"; echo 999; return; fi
       [ -e "$T/posted" ] || { echo '[[]]'; return; }
@@ -104,6 +106,30 @@ touch "$T/hold74"; claim "$T/main" 74 "$(date +%s)"
 gh_take 61 >/dev/null 2>&1; check "take, own claim on an open issue" $? 1
 check "take, open issue's claim kept" "$(jq .issue "$T/main/.relay/claim")" 74
 rm -f "$T/hold74"
+
+# Flush: a kept handoff, once posted, releases this checkout's claim on its
+# issue as handed off, and leaves a claim on another issue alone.
+pending() { mkdir -p "$T/main/.relay"; echo handoff >"$T/main/.relay/pending-handoff-$1.md"; }
+rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
+claim "$T/main" 73 "$(date +%s)"; pending 73
+out=$(gh_flush 2>&1); check "flush" $? 0
+check "flush prints the URL" "$(head -1 <<<"$out")" "posted the pending handoff on #73: 999"
+check "flush says it released" "$(sed -n 2p <<<"$out")" "released #73: handed off"
+check "flush, claim released as handed off" "$(jq -r .body "$T/edited" | grep -c 'heron-73\*\* released this issue: handed off')" 1
+check "flush, claim file gone" "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" released
+check "flush, pending file gone" "$([ -e "$T/main/.relay/pending-handoff-73.md" ] && echo kept || echo gone)" gone
+rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
+touch "$T/hold74"; claim "$T/main" 74 "$(date +%s)"; pending 73
+out=$(gh_flush 2>&1); check "flush, claim on another issue" "$? $out" "0 posted the pending handoff on #73: 999"
+check "flush, other claim kept" "$(jq .issue "$T/main/.relay/claim")" 74
+check "flush, other claim not edited" "$([ -e "$T/edited" ] && echo edited || echo untouched)" untouched
+rm -f "$T/hold74"
+rm -rf "$T"/{main,wt2,wt3}/.relay
+claim "$T/main" 77 "$(date +%s)"; pending 77
+gh_flush >/dev/null 2>&1; check "flush fails" $? 1
+check "flush fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 77
+check "flush fails, pending kept" "$([ -e "$T/main/.relay/pending-handoff-77.md" ] && echo kept || echo gone)" kept
+rm -rf "$T"/{main,wt2,wt3}/.relay
 
 # Pick order: an in-progress issue nobody holds, else ready + urgent, else
 # ready, oldest first; proposed and needs-human issues are never picked, nor

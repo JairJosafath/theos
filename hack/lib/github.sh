@@ -19,7 +19,7 @@
 #                                        minutes. Exit 2: the claim was taken over; stop working
 #   hack/lib/github.sh handoff N FILE    post FILE as N's handoff comment and release the claim; if
 #                                        GitHub can't be reached, keep it in .relay/pending-handoff-N.md (exit 3)
-#   hack/lib/github.sh flush             post the handoffs kept in .relay/ while GitHub was away
+#   hack/lib/github.sh flush             post the handoffs kept in .relay/ while GitHub was away, releasing their claims
 #   hack/lib/github.sh comment N FILE    post FILE as a comment on N
 #   hack/lib/github.sh label N LABEL...  add labels to N. Exit 4 after adding needs/cluster: another
 #                                        checkout on this device holds the cluster
@@ -569,16 +569,21 @@ gh_handoff() {
   return 3
 }
 
-# gh_flush: post every handoff kept in .relay/; exit 1 if any is still there.
+# gh_flush: post every handoff kept in .relay/, printing each comment's URL,
+# and release this checkout's claim on its issue as gh_handoff would have;
+# exit 1 if any is still there.
 gh_flush() {
-  local f n rc=0
+  local f n url held rc=0
   for f in "$GH_PENDING_DIR"/pending-handoff-*.md; do
     [ -e "$f" ] || continue
     n=${f##*/pending-handoff-}
     n=${n%.md}
-    if gh_comment "$n" "$f" >/dev/null; then
+    if url=$(gh_comment "$n" "$f"); then
       rm -f "$f"
-      echo "posted the pending handoff on #$n"
+      echo "posted the pending handoff on #$n: $url"
+      held=$(jq -r .issue "$GH_CLAIM_FILE" 2>/dev/null)
+      gh_release_for "$n" "handed off"
+      [ "$held" != "$n" ] || [ -e "$GH_CLAIM_FILE" ] || echo "released #$n: handed off"
     else
       echo "github: still could not post $f" >&2
       rc=1

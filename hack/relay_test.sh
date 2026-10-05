@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests for the relay's memory guard in hack/relay.sh: the worker cap on the
 # device with the Kind cluster, and the wait for headroom before a pick, with a
-# faked /proc/meminfo.
+# faked /proc/meminfo; and the flush of a kept handoff, which releases the
+# session's claim so the relay has none left to release.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -46,5 +47,19 @@ meminfo 1
 MEM_WAIT=1 admit; check "admit: gives up" $? 1
 touch "$STOP"
 admit; check "admit: stop file" $? 1
+
+# The flush: a session's kept handoff is posted and its claim released as
+# handed off, so the relay finds no claim left and logs no failed release.
+GH_PENDING_DIR=$T/wt GH_CLAIM_FILE=$T/wt/claim
+mkdir -p "$GH_PENDING_DIR"
+echo '{"issue":76,"id":1,"name":"otter-76","branch":"b"}' >"$GH_CLAIM_FILE"
+echo handoff >"$GH_PENDING_DIR/pending-handoff-76.md"
+gh_comment() { echo "https://github.com/x/issues/$1#issuecomment-5"; }
+gh_release() { rm -f "$GH_CLAIM_FILE"; echo "released #76 (otter-76): $1"; }
+flush; check "flush: posts" $? 0
+grep -q "posted the pending handoff on #76: https://github.com/x/issues/76#issuecomment-5; released #76: handed off$" "$LOG"
+check "flush: logs the URL and the release" $? 0
+gh_claim_read; check "flush: no claim left to release" $? 1
+grep -q "could not release" "$LOG"; check "flush: no failed release logged" $? 1
 
 exit $fail
