@@ -17,13 +17,19 @@ for its agents' sandboxes, and won't start without its `Sandbox` kind:
 
 ```bash
 kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
-helm install c4-factory dist/chart -n c4-factory-system --create-namespace \
-  --set manager.image.repository=REGISTRY/c4factory/operator --set manager.image.tag=TAG \
-  --set ui.image.repository=REGISTRY/c4factory/ui --set ui.image.tag=TAG
+helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version VERSION \
+  -n c4-factory-system --create-namespace
 ```
 
-Images and the chart aren't published yet; until they are, build and push them
-yourself (`make docker-build docker-push IMG=...`, `docker build ui`).
+A `vX.Y.Z` tag publishes the chart and its images: the *Release* workflow
+(`.github/workflows/release.yml`) pushes the chart to
+`oci://ghcr.io/jairjosafath/c4factory/charts`, attaches it to the GitHub release
+and pushes `ghcr.io/jairjosafath/c4factory/<name>:X.Y.Z` for `operator`, `ui`,
+the toolchains `base` and `go`, `agent-base`, `agent-go`, `gitea-runner-base`
+and `gitea-runner-go` (all `linux/amd64`). A released chart runs its own
+version's operator and UI images. From a checkout, `helm install ... dist/chart`
+with `--set manager.image.tag=...` and `--set ui.image.tag=...` installs images
+you built and pushed yourself.
 
 ## Values
 
