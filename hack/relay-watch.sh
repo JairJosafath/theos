@@ -12,7 +12,18 @@
 # When pick names the same issue again within
 # WATCH_RETRY seconds (default 600), nobody claimed it, so the relay stopped
 # without it or hack/relay.sh failed: the watch starts it again for that issue
-# once the time has passed, not every minute. Every 5 minutes it runs
+# once the time has passed, not every minute.
+#
+# When nothing is ready and open issues wait in status/proposed, the watch
+# starts one triage session (hack/relay.sh --triage, in a free worker's
+# worktree): it reads each proposed issue against docs/design.md and the open
+# issues, readies the sound ones, comments on the others what they lack and
+# closes duplicates. It takes no issue and changes no code. Triage runs again
+# only when a proposed issue it hasn't seen appears, and at most every
+# WATCH_TRIAGE seconds (default 1800); .relay/triaged keeps what it saw across
+# restarts. status/needs-human stays the user's.
+#
+# Every 5 minutes it runs
 # hack/pull.sh, so pick never reads stale rules, and restarts itself when that
 # changed this script.
 #
@@ -31,6 +42,7 @@ STOP="$DIR/stop"
 LOG="$DIR/watch.log"
 EVERY=${WATCH_EVERY:-60}
 RETRY=${WATCH_RETRY:-600}
+TRIAGE_EVERY=${WATCH_TRIAGE:-1800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 
 WORKERS=1
@@ -55,9 +67,12 @@ worker_free() {
   return 1
 }
 
-# pick_next and run_relay: what the watch asks and starts (faked in the tests).
+# pick_next, proposed, run_relay and run_triage: what the watch asks and
+# starts (faked in the tests).
 pick_next() { "$REPO/hack/lib/github.sh" pick; }
+proposed() { "$REPO/hack/lib/github.sh" proposed; }
 run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
+run_triage() { "$REPO/hack/relay.sh" --triage --workers "$WORKERS"; }
 
 # start WHY: log WHY and run hack/relay.sh for the workers that aren't running.
 start() {
@@ -67,6 +82,37 @@ start() {
   rc=$?
   [ -n "$out" ] && log "relay: ${out//$'\n'/; }"
   [ "$rc" = 0 ] || log "hack/relay.sh failed (exit $rc)"
+}
+
+# triage NOW: with nothing ready, start a triage session when a proposed issue
+# waits that the last triage didn't see, and that triage is TRIAGE_EVERY
+# seconds old. $DIR/triaged holds the last triage's time and issues; when its
+# session never ran, hack/relay.sh --triage keeps only the time there, so the
+# same issues start it again.
+TRIAGE_ERR=
+triage() {
+  local now=$1 list rc n new= out t=0 seen=
+  [ -r "$DIR/triaged" ] && read -r t seen <"$DIR/triaged"
+  list=$(proposed 2>"$DIR/proposed.err")
+  rc=$?
+  if [ "$rc" != 0 ]; then
+    out="$list $(cat "$DIR/proposed.err" 2>/dev/null)"
+    [ -n "$TRIAGE_ERR" ] || log "could not list the proposed issues (exit $rc): ${out//$'\n'/; }"
+    TRIAGE_ERR=1
+    return 0
+  fi
+  TRIAGE_ERR=
+  list=$(grep -xE '[0-9]+' <<<"$list" | tr '\n' ' ')
+  list=${list% }
+  for n in $list; do
+    [[ " $seen " == *" $n "* ]] || new+=" #$n"
+  done
+  [ -n "$new" ] && [ $((now - ${t:-0})) -ge "$TRIAGE_EVERY" ] || return 0
+  echo "$now $list" >"$DIR/triaged"
+  out=$(run_triage 2>&1 8>&-)
+  rc=$?
+  log "triage: proposed #${list// / #} (new:$new); hack/relay.sh --triage${out:+: ${out//$'\n'/; }}$([ "$rc" = 0 ] || echo " (failed, exit $rc; again after $((TRIAGE_EVERY / 60))m)")"
+  [ "$rc" = 0 ] || echo "$now" >"$DIR/triaged"
 }
 
 # round: one look at GitHub, and the relay started when there is work for it.
@@ -93,6 +139,7 @@ round() {
     1)
       [ "$SAID" = idle ] || log "nothing ready; waiting"
       SAID=idle
+      triage "$now"
       ;;
     *)
       [ "$SAID" = err ] || log "could not ask GitHub for the next issue (exit $rc): ${row//$'\n'/; }"

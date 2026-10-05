@@ -16,6 +16,15 @@
 # still holding its claim or the cluster lease gets them released. With nothing
 # ready, a worker stops.
 #
+# Triage: with nothing ready, hack/relay-watch.sh starts one triage session
+# (--triage) on the open status/proposed issues, which relay sessions file
+# their follow-ups as. Its worker switches its worktree to origin/main and runs
+# one session that takes no issue and changes no code: it readies each sound
+# proposed issue (clear, says when it is done, no duplicate, names what it
+# waits on with Depends on #M), comments on the others what they lack, closes
+# duplicates, and ends with an account of what it readied, left and closed.
+# status/needs-human stays the user's.
+#
 # Issues that need the Kind cluster carry needs/cluster. On a device without
 # one, C4_CLUSTER=none (./dev setup --lite sets it): the workers skip those
 # issues, and a session that finds its issue needs the cluster lands what it
@@ -32,6 +41,8 @@
 #
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-9); workers already running are left alone
+#   hack/relay.sh --triage [--workers N]
+#                                  start one triage session in the first of workers 1-N that isn't running
 #
 # On the device with the Kind cluster (C4_CLUSTER not none), memory is the
 # limit: at most RELAY_MAX_WORKERS workers run (default 9, so the memory gate,
@@ -53,6 +64,7 @@ DIR="$REPO/.relay"
 STOP="$DIR/stop"
 MAX_SESSIONS=${MAX_SESSIONS:-8}
 SESSION_TIMEOUT=${SESSION_TIMEOUT:-6h}
+TRIAGE=${C4_RELAY_TRIAGE:-}
 DRY_RUN=${RELAY_DRY_RUN:-}
 [ "$DRY_RUN" = 0 ] && DRY_RUN=
 PULL=${RELAY_PULL:-1}
@@ -62,8 +74,9 @@ while [ $# -gt 0 ]; do
   case $1 in
     --workers) WORKERS=${2:-}; shift 2 || shift ;;
     --workers=*) WORKERS=${1#*=}; shift ;;
+    --triage) TRIAGE=1; shift ;;
     --now) shift ;; # the relay no longer waits for a handoff; kept for old habits
-    *) echo "usage: hack/relay.sh [--workers N]" >&2; exit 64 ;;
+    *) echo "usage: hack/relay.sh [--triage] [--workers N]" >&2; exit 64 ;;
   esac
 done
 [[ $WORKERS =~ ^[1-9]$ ]] || { echo "relay: --workers takes 1 to 9" >&2; exit 64; }
@@ -162,6 +175,52 @@ $cluster
   start it; add needs/cluster to its labels if it needs the cluster.
 - End your turn with a short account of what you did and what is next; it is
   the relay's log of your session.
+EOF
+}
+
+# triage_prompt ISSUES: the triage session's prompt, for the proposed ISSUES (#1 #2 ...).
+triage_prompt() {
+  cat <<EOF
+You run headless, started by hack/relay-watch.sh (hack/relay.sh --triage)
+while the user sleeps; no person is watching and nobody can answer a question.
+No issue on $C4_GITHUB_REPO is ready for the relay, and these wait in
+status/proposed: $1. Your work is to triage them, so the relay has sound work:
+ready each one that is sound, and say on the others what they lack. You take
+no issue, change no code, commit nothing and open no pull request; this
+worktree, relay-$K, is on origin/main for reading only.
+
+Start with \`hack/lib/github.sh proposed\` (the list now; triage those) and
+\`hack/lib/github.sh show N\` for each. Read docs/design.md and AGENTS.md, and
+list the open issues to compare against: \`gh issue list --repo $C4_GITHUB_REPO
+--state open --limit 200 --json number,title,labels\` (gh has the token).
+
+For each proposed issue, decide one of three:
+- Ready it, \`hack/lib/github.sh status N ready\`, when it is clear (one piece
+  of work, its goal fits docs/design.md or says which part of the design it
+  changes), says when it is done (a checkable "Done when"), isn't a duplicate
+  of an open issue, and names what it waits on with a "Depends on #M" line in
+  its body, or waits on nothing.
+- Leave it proposed, with a comment (\`hack/lib/github.sh comment N FILE\`,
+  its first line \`<!-- relay-triage -->\`) saying what is missing, when it
+  falls short of that, or when it needs a decision only the user can make (a
+  design choice the design doesn't settle, money, credentials, access). When
+  its newest triage comment still says what is missing and nothing changed
+  since, leave it without a new comment.
+- Close it as a duplicate, \`hack/lib/github.sh duplicate N M\`, when open
+  issue #M covers the same work.
+
+Rules for this headless run:
+- Never use the Fable model: not for subagents, not for anything. Always name
+  the model when dispatching (sonnet or opus). Dispatch every subagent with
+  run_in_background: false and never end your turn while one is running.
+- Touch only the issues listed as proposed: never set status/in-progress or
+  status/needs-human (needs-human stays the user's), never take an issue,
+  never edit an issue's body or title, and file no new issues.
+- If an action is refused (permissions, auto mode), don't retry it: say so in
+  your account.
+- End your turn with a short account, the relay's log of this triage: readied
+  (#N, one line why), left proposed (#N, what is missing), closed as
+  duplicates (#N of #M).
 EOF
 }
 
@@ -350,12 +409,87 @@ admit() {
   done
 }
 
+# session WHAT OUT ID PROMPT: run headless session ID in the worktree with
+# PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
+# and log its end as WHAT.
+session() {
+  local what=$1 out=$2 id=$3 rc t0 mins
+  t0=$(date +%s)
+  (cd "$WT" && C4_HEADLESS=1 timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+    --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err"
+  rc=$?
+  mins=$((($(date +%s) - t0) / 60))
+  if [ -s "$out.json" ] && jq -e .result "$out.json" >/dev/null 2>&1; then
+    jq -r .result "$out.json" >"$out.md"
+    log "$what end: exit $rc after ${mins}m, $(jq -r '"\(.num_turns) turns, error \(.is_error)"' "$out.json"); account in $out.md"
+  else
+    log "$what end: exit $rc after ${mins}m, no result; see $out.err"
+  fi
+  [ "$rc" = 124 ] && log "$what hit the $SESSION_TIMEOUT timeout"
+  [ "$rc" = 143 ] && log "$what was killed (SIGTERM)"
+  return 0
+}
+
+# untriaged: tell the watch the triage session never ran: keep only the time
+# in .relay/triaged, so it starts one again after WATCH_TRIAGE.
+untriaged() { [ -n "$DRY_RUN" ] || date +%s >"$DIR/triaged"; }
+
+# triage: one triage session on the open proposed issues (see the header).
+triage() {
+  local list id
+  if [ -z "$DRY_RUN" ]; then
+    worktree || { log "could not prepare the worktree $WT; no triage"; untriaged; return 1; }
+    # What a dead session of this worker left behind isn't the triage's.
+    drop_lease "when worker $K started a triage"
+    if gh_claim_read; then
+      log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
+    fi
+  fi
+  flush || { log "GitHub can't be reached; no triage"; untriaged; return 1; }
+  admit || { log "no triage"; untriaged; return 1; }
+  list=$(gh_proposed 2>>"$LOG") || { log "could not list the proposed issues; no triage"; untriaged; return 1; }
+  [ -n "$list" ] || { log "no proposed issues; no triage"; return 0; }
+  list="#$(echo $list | sed 's/ / #/g')"
+  id=$(cat /proc/sys/kernel/random/uuid)
+  if [ -n "$DRY_RUN" ]; then
+    log "would switch $WT to origin/main and start triage session $id on $list, with this prompt:"
+    echo "-----"
+    triage_prompt "$list"
+    echo "-----"
+    return 0
+  fi
+  git -C "$WT" switch -q --detach origin/main 2>>"$LOG" ||
+    { log "could not switch $WT to origin/main; no triage"; untriaged; return 1; }
+  log "triage start: id $id, proposed $list, HEAD $(git -C "$WT" rev-parse --short HEAD)"
+  session triage "$DIR/triage-$K-$(date +%Y%m%d-%H%M%S)" "$id" "$(triage_prompt "$list")"
+}
+
 # Sourced (hack/relay_test.sh): the functions only.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
-[ "${C4_RELAY_CHILD:-}" = 1 ] || cap "$WORKERS" || exit 1
+[ "${C4_RELAY_CHILD:-}" = 1 ] || [ -n "$TRIAGE" ] || cap "$WORKERS" || exit 1
+
+# --triage from a terminal or the watch: start one triage session, detached,
+# in the first worker that isn't running.
+if [ -n "$TRIAGE" ] && [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; then
+  [ -e "$STOP" ] && { echo "the stop file is there; no triage"; exit 0; }
+  # On the device with the Kind cluster, the triage counts against RELAY_MAX_WORKERS too.
+  if [ "${C4_CLUSTER:-}" != none ] && [ "$(running_workers)" -ge "$MAX_WORKERS" ]; then
+    echo "relay: $MAX_WORKERS worker(s) run, RELAY_MAX_WORKERS; no triage" >&2
+    exit 1
+  fi
+  gh_token || exit 1
+  for k in $(seq 1 "$WORKERS"); do
+    flock -n "$DIR/lock-$k" true || continue
+    C4_RELAY_CHILD=1 C4_RELAY_WORKER=$k C4_RELAY_TRIAGE=1 setsid nohup bash "$0" >>"$DIR/relay-$k.out" 2>&1 </dev/null &
+    echo "triage started in worker $k (pid $!): tail -f $DIR/relay-$k.log"
+    exit 0
+  done
+  echo "relay: workers 1-$WORKERS all run; no triage" >&2
+  exit 1
+fi
 
 # Started from a terminal: start the workers that aren't running, detached,
 # and return. The token is read here, where the git credential helper answers;
@@ -381,12 +515,17 @@ if [ -z "$DRY_RUN" ]; then
     flock -n 9 || { log "restarted without the lock of worker $K; exiting"; exit 1; }
   else
     exec 9>"$DIR/lock-$K"
-    flock -n 9 || { log "another worker $K holds the lock; exiting"; exit 1; }
+    flock -n 9 || { log "another worker $K holds the lock; exiting"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
   fi
 fi
 CODE_SUM=$(code_sum)
 gh_token 2>/dev/null || { log "no GitHub token; stopping"; exit 1; }
 log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, HEAD $(git rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
+if [ -n "$TRIAGE" ]; then
+  triage
+  log "worker $K finished the triage"
+  exit 0
+fi
 # Workers started together would all race for the same first issue.
 [ -n "$DRY_RUN" ] || [ "${C4_RELAY_RESTART:-}" = 1 ] || sleep $(((K - 1) * 20))
 
@@ -437,23 +576,9 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
     gh_release "relay could not read the issue" >/dev/null 2>>"$LOG"
     break
   }
-  out="$DIR/session-$K-$i-$(date +%Y%m%d-%H%M%S)"
   log "session $i start: id $id, $name on #$ISSUE ($HOW) $TITLE, branch $branch, HEAD $(git -C "$WT" rev-parse --short HEAD)"
-  t0=$(date +%s)
-  (cd "$WT" && C4_HEADLESS=1 timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
-    --session-id "$id" --output-format json "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")") \
-    >"$out.json" 2>"$out.err"
-  rc=$?
-  mins=$((($(date +%s) - t0) / 60))
-
-  if [ -s "$out.json" ] && jq -e .result "$out.json" >/dev/null 2>&1; then
-    jq -r .result "$out.json" >"$out.md"
-    log "session $i end: exit $rc after ${mins}m, $(jq -r '"\(.num_turns) turns, error \(.is_error)"' "$out.json"); account in $out.md"
-  else
-    log "session $i end: exit $rc after ${mins}m, no result; see $out.err"
-  fi
-  [ "$rc" = 124 ] && log "session $i hit the $SESSION_TIMEOUT timeout"
-  [ "$rc" = 143 ] && log "session $i was killed (SIGTERM)"
+  session "session $i" "$DIR/session-$K-$i-$(date +%Y%m%d-%H%M%S)" "$id" \
+    "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")"
 
   drop_lease "that session $i left behind"
   flush || { log "GitHub can't be reached; stopping"; break; }

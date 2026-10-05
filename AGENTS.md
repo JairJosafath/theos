@@ -149,7 +149,10 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   the in-progress or next ready issue; worker k works in the worktree
   `.claude/worktrees/relay-k` and logs to `.relay/relay-k.log`.
   `hack/relay-watch.sh [--workers N]` keeps it ready, starting it within a
-  minute of an issue becoming ready.
+  minute of an issue becoming ready. When nothing is ready, it starts a triage
+  session (`hack/relay.sh --triage`) that readies the sound `status/proposed`
+  issues and comments on the others what they lack; `status/needs-human`
+  stays the user's.
 - **On the cluster device, memory is the limit.** A session at rest is cheap;
   heavy jobs (`make check`, `test`, `lint`, `docker-build`, `deploy`, `e2e`) are
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`

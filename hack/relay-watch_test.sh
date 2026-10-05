@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests for hack/relay-watch.sh: when a round starts the relay, with pick and
+# Tests for hack/relay-watch.sh: when a round starts the relay, and when it
+# starts a triage of the proposed issues, with pick, the proposed list and
 # hack/relay.sh faked.
 # Run: hack/relay-watch_test.sh
 T=$(mktemp -d)
@@ -7,15 +8,20 @@ trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
 unset C4_CLUSTER
 # shellcheck source=hack/relay-watch.sh
 . "$(dirname "$0")/relay-watch.sh"
-DIR=$T/relay LOG=$T/log WORKERS=2 RETRY=600
+DIR=$T/relay LOG=$T/log WORKERS=2 RETRY=600 TRIAGE_EVERY=1800
 mkdir -p "$DIR"
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 
-PICKED= PICK_RC=1 RELAY_RC=0
+PICKED= PICK_RC=1 RELAY_RC=0 PROPOSED= PROPOSED_RC=0 TRIAGE_RC=0
 pick_next() { [ -n "$PICKED" ] && printf '%s\n' "$PICKED"; return "$PICK_RC"; }
+proposed() { [ -n "$PROPOSED" ] && printf '%s\n' $PROPOSED; return "$PROPOSED_RC"; }
 run_relay() { echo started >>"$T/starts"; echo "worker 1 started"; return "$RELAY_RC"; }
+run_triage() { echo triage >>"$T/triages"; echo "triage started in worker 2"; return "$TRIAGE_RC"; }
 starts() { cat "$T/starts" 2>/dev/null | wc -l | tr -d ' '; }
+triages() { cat "$T/triages" 2>/dev/null | wc -l | tr -d ' '; }
+# aged: make the last triage WATCH_TRIAGE old.
+aged() { sed -i "1s/^[0-9]*/$(($(date +%s) - TRIAGE_EVERY))/" "$DIR/triaged"; }
 logged() { grep -c "$1" "$LOG" 2>/dev/null || true; }
 
 # Nothing ready, on a device without the cluster: wait, and say so once.
@@ -23,6 +29,59 @@ C4_CLUSTER=none
 round; round
 check "idle: no relay" "$(starts)" 0
 check "idle: logged once" "$(logged 'nothing ready; waiting')" 1
+check "idle, nothing proposed: no triage" "$(triages)" 0
+
+# Nothing ready, two issues proposed: one triage, logged on one line.
+PROPOSED='40 41'
+round
+check "proposed: starts a triage" "$(triages)" 1
+check "proposed: one line" "$(logged 'triage: proposed #40 #41 (new: #40 #41); hack/relay.sh --triage: triage started in worker 2$')" 1
+check "proposed: kept" "$(cut -d' ' -f2- "$DIR/triaged")" "40 41"
+check "proposed: no relay" "$(starts)" 0
+
+# The same set again, and a smaller one (the triage readied #40): no triage.
+round
+PROPOSED='41'
+round
+check "same set: no second triage" "$(triages)" 1
+check "same set: one line in all" "$(logged 'triage:')" 1
+
+# A new proposed issue: not before WATCH_TRIAGE, then once.
+PROPOSED='41 42'
+round
+check "new issue: waits for WATCH_TRIAGE" "$(triages)" 1
+aged
+round; round
+check "new issue: triage after WATCH_TRIAGE" "$(triages)" 2
+check "new issue: names the new one" "$(logged 'triage: proposed #41 #42 (new: #42)')" 1
+
+# A triage that fails to start: logged, and the same set tries again after WATCH_TRIAGE.
+PROPOSED='43' TRIAGE_RC=1
+echo 0 >"$DIR/triaged"
+round
+check "triage fails: logged" "$(logged 'triage: proposed #43 (new: #43).*(failed, exit 1; again after 30m)')" 1
+TRIAGE_RC=0
+round
+check "triage fails: not straight away" "$(triages)" 3
+aged
+round
+check "triage fails: again after WATCH_TRIAGE" "$(triages)" 4
+
+# The triage started but its session never ran: hack/relay.sh --triage kept
+# only the time, so the same issues start it again after WATCH_TRIAGE.
+round
+check "session never ran: not straight away" "$(triages)" 4
+echo "$(($(date +%s) - TRIAGE_EVERY))" >"$DIR/triaged"
+round
+check "session never ran: again after WATCH_TRIAGE" "$(triages)" 5
+
+# The proposed issues can't be listed: no triage, logged once.
+PROPOSED='github: no token' PROPOSED_RC=2
+echo 0 >"$DIR/triaged"
+round; round
+check "proposed fails: no triage" "$(triages)" 5
+check "proposed fails: logged once" "$(logged 'could not list the proposed issues (exit 2)')" 1
+PROPOSED= PROPOSED_RC=0
 
 # An issue is ready: start the relay, and log the issue and its output.
 PICKED=$'12\tFix the guides\thttps://github.com/x/y/issues/12\tready' PICK_RC=0

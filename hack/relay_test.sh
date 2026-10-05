@@ -2,8 +2,9 @@
 # Tests for the relay's memory guard in hack/relay.sh: the worker cap on the
 # device with the Kind cluster, and the wait for headroom before a pick, with a
 # faked /proc/meminfo; the flush of a kept handoff, which releases the
-# session's claim so the relay has none left to release; and the cluster
-# lease a session leaves behind, which the relay drops.
+# session's claim so the relay has none left to release; the cluster
+# lease a session leaves behind, which the relay drops; and the triage of the
+# proposed issues, as a dry run.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -83,5 +84,21 @@ lease "$T/other"
 drop_lease "that session 1 left behind"
 check "lease: another checkout's kept" "$(jq -r .worktree "$C4_CLUSTER_LEASE")" "$T/other"
 check "lease: nothing logged" "$(cat "$LOG")" ""
+
+# Triage, as a dry run: the proposed issues go into its prompt; none, no session.
+rm -f "$STOP" "$DIR/admitted"
+meminfo 8
+gh_proposed() { printf '40\n41\n'; }
+out=$(DRY_RUN=1 triage)
+check "triage: names the issues" "$(grep -c 'status/proposed: #40 #41\.' <<<"$out")" 1
+check "triage: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$out")" 1
+check "triage: needs-human stays the user's" "$(grep -c "needs-human stays the user's" <<<"$out")" 1
+gh_proposed() { :; }
+rm -f "$DIR/admitted"
+check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues; no triage"
+# A triage whose session never ran keeps only the time, for the watch to try again.
+echo "1 40 41" >"$DIR/triaged"
+DRY_RUN= untriaged
+check "triage: never ran" "$(awk '{print NF}' "$DIR/triaged")" 1
 
 exit $fail
