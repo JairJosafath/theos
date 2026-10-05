@@ -62,8 +62,10 @@ worth repeating:
   deletion cascades.
 
 ### E2E Tests Require an Isolated Kind Cluster
-The e2e tests run against the dedicated Kind cluster created by `make cluster`
-(named `c4factory`), never against a real dev or prod cluster.
+The e2e tests run against a dedicated Kind cluster of the device's pool
+(`c4factory`, `c4factory-2`, ...; `make cluster`), the one this checkout
+leased with `hack/lib/github.sh cluster acquire`, never against a real dev or
+prod cluster.
 
 ## After Making Changes
 

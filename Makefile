@@ -70,7 +70,11 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 
 # The e2e tests run against the dedicated Kind cluster $(KIND_CLUSTER), never
 # another one. make e2e builds everything it needs first; it's safe to repeat.
-KIND_CLUSTER ?= c4factory
+# KIND_CLUSTER defaults to the pool cluster this checkout leased
+# (hack/lib/github.sh cluster acquire), else c4factory.
+ifeq ($(origin KIND_CLUSTER),undefined)
+KIND_CLUSTER := $(or $(shell hack/lib/github.sh cluster name 2>/dev/null),c4factory)
+endif
 
 .PHONY: e2e
 e2e: cluster metrics-server gitea seed deploy session-image sample toolchain-base runner-base agent-sandbox agent-image-base e2e-apps ## Build the whole test environment in Kind, then check every milestone.

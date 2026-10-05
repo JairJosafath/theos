@@ -2,7 +2,9 @@
 
 # The in-cluster test environment from docs/design.md: a Kind cluster, Gitea and
 # the seed Job. Included from the Makefile; the fallbacks below let it run alone
-# (make -f Makefile -f hack/testenv.mk ...).
+# (make -f Makefile -f hack/testenv.mk ...). Every target works on the Kind
+# cluster $(KIND_CLUSTER): one of the device's pool (c4factory, c4factory-2,
+# ...), by default the one this checkout leased.
 KIND ?= kind
 KUBECTL ?= kubectl
 KIND_CLUSTER ?= c4factory
@@ -13,6 +15,11 @@ SEED_TIMEOUT ?= 300
 # Every kubectl call names the Kind context, so these targets never touch
 # whatever cluster the current context happens to point at.
 TESTENV_KUBECTL = $(KUBECTL) --context kind-$(KIND_CLUSTER)
+
+# The local port Gitea is forwarded to: 3000 for c4factory, 3000+K-1 for
+# c4factory-K, so each pool cluster's forward has its own.
+GITEA_PORT ?= $(if $(filter c4factory-%,$(KIND_CLUSTER)),$(shell \
+	expr 2999 + '$(patsubst c4factory-%,%,$(KIND_CLUSTER))' 2>/dev/null || echo 3000),3000)
 
 .PHONY: cluster
 cluster: ## Create the Kind cluster (hack/kind.yaml) if it does not exist.
@@ -77,8 +84,8 @@ seed: ## Seed Gitea: orgs, tagged template repos, Secret gitea-credentials.
 	esac
 
 .PHONY: gitea-forward
-gitea-forward: ## Forward Gitea to http://localhost:3000 (Ctrl-C to stop).
-	$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea 3000:3000
+gitea-forward: ## Forward Gitea to http://localhost:$(GITEA_PORT): 3000 for c4factory, 3001 for c4factory-2 (Ctrl-C to stop).
+	$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea $(GITEA_PORT):3000
 
 .PHONY: cluster-delete
 cluster-delete: ## Delete the Kind cluster and everything in it.
@@ -86,9 +93,9 @@ cluster-delete: ## Delete the Kind cluster and everything in it.
 
 .PHONY: test-gitea
 test-gitea: ## Run the gitprovider integration test against the seeded Gitea.
-	@$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea 3000:3000 >/dev/null 2>&1 & pf=$$!; \
+	@$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea $(GITEA_PORT):3000 >/dev/null 2>&1 & pf=$$!; \
 	trap 'kill $$pf 2>/dev/null || true' EXIT; sleep 2; \
-	C4_GITEA_URL=http://localhost:3000 \
+	C4_GITEA_URL=http://localhost:$(GITEA_PORT) \
 	C4_GITEA_USERNAME="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d)" \
 	C4_GITEA_TOKEN="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.token}' | base64 -d)" \
 	go test -count=1 -v ./internal/gitprovider/ -run Integration

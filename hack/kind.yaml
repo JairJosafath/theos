@@ -4,6 +4,8 @@
 # `make gitea-forward`, so no host ports are mapped here.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+# make cluster passes --name, so every cluster of the pool (c4factory,
+# c4factory-2, ...) is made from this file.
 name: c4factory
 # The node's disk is shared with the rest of the machine (on WSL, one virtual
 # disk), and agents and CI write gigabytes to it. etcd syncing each write to it

@@ -9,13 +9,16 @@
 # in its context instead and the job runs: in `claude -p` a question nobody
 # can answer blocks the command. Silent otherwise.
 # Before a cluster command (make deploy, sample, e2e, test-e2e, up, down) it
-# reads the cluster lease (hack/lib/github.sh cluster): while another checkout
-# holds a live one it denies the command and tells the session to run
+# reads the lease of the Kind cluster the command targets (hack/lib/github.sh
+# cluster): KIND_CLUSTER= in the command, else KIND_CLUSTER, else the one this
+# checkout leased, else c4factory. While another checkout holds a live lease on
+# it, it denies the command and tells the session to run
 # `hack/lib/github.sh cluster acquire`; without a holder the command goes on
 # to the memory check, as before.
 # Other commands cost one bash, with no subprocess and no file read.
 #   RELAY_MEMINFO   file to read instead of /proc/meminfo (hack/heavy-guard_test.sh fakes it)
-#   KIND_CLUSTER    the Kind cluster whose node it names (default c4factory)
+#   KIND_CLUSTER    the Kind cluster a cluster command targets and whose node it names
+#                   (default: this checkout's leased cluster, else c4factory)
 set -uo pipefail
 
 IFS= read -r -d '' input
@@ -41,8 +44,12 @@ if [[ $unquoted =~ $sep$cluster$end ]]; then
   job=${BASH_REMATCH[2]}
   # shellcheck source=hack/lib/github.sh
   . "$(dirname "${BASH_SOURCE[0]}")/lib/github.sh"
-  if holder=$(gh_lease_holder 2>/dev/null); then
-    msg="The Kind cluster is in use: $holder holds the cluster lease, so \`make $job\` would change or stop the cluster under that session. Run \`hack/lib/github.sh cluster acquire\` first (it waits up to 30m); on exit 4, land what needs no cluster and hand off with only the cluster steps left."
+  target=${KIND_CLUSTER:-}
+  [[ $unquoted =~ (^|[[:space:]])KIND_CLUSTER=([^[:space:];&|]+) ]] && target=${BASH_REMATCH[2]}
+  [ -n "$target" ] || target=$(gh_cluster name 2>/dev/null)
+  target=${target:-c4factory}
+  if holder=$(gh_lease_holder "$target" 2>/dev/null); then
+    msg="The Kind cluster $target is in use: $holder holds its lease, so \`make $job\` would change or stop it under that session. Run \`hack/lib/github.sh cluster acquire\` first: it leases a free cluster of the pool to this checkout (or waits up to 30m), and make here then uses that one; on exit 4, land what needs no cluster and hand off with only the cluster steps left."
     jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $m}}'
     exit 0
   fi
