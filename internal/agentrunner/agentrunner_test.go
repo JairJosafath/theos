@@ -294,6 +294,11 @@ func TestRunReview(t *testing.T) {
 	if second.Verdict != VerdictApprove {
 		t.Errorf("round 2 review = %+v", second)
 	}
+
+	followUp := Run(ctx, testJob(t, url, RoleReview, 1), FakeAgent{Role: RoleReview, Round: 1, FollowUp: true}, t.TempDir())
+	if followUp.Verdict != VerdictApprove || len(followUp.FollowUps) != 1 || len(followUp.FollowUps[0].Criteria) == 0 {
+		t.Errorf("review with a follow-up = %+v", followUp)
+	}
 }
 
 // editAgent changes one file.
