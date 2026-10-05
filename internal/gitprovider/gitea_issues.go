@@ -50,6 +50,9 @@ const (
 	maxIssuePages = 20
 )
 
+// stateClosed is the state of a closed issue, pull request or milestone.
+const stateClosed = "closed"
+
 type giteaLabel struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
@@ -113,6 +116,12 @@ func (i giteaIssue) issue() Issue {
 		}
 	}
 	return out
+}
+
+// issueQuery lists one page of issues in state, without pull requests.
+func issueQuery(state string, page int) url.Values {
+	return url.Values{"state": {state}, "type": {"issues"}, "limit": {strconv.Itoa(issuePageSize)},
+		"page": {strconv.Itoa(page)}}
 }
 
 func issuePath(repo Repository, number int) string {
@@ -203,8 +212,8 @@ func (g *gitea) EnsureMilestone(ctx context.Context, repo Repository, title, des
 func (g *gitea) ListIssues(ctx context.Context, repo Repository, label string) ([]Issue, error) {
 	var issues []Issue
 	for page := 1; page <= maxIssuePages; page++ {
-		query := url.Values{"state": {"open"}, "type": {"issues"}, "labels": {label},
-			"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
+		query := issueQuery("open", page)
+		query.Set("labels", label)
 		status, data, err := g.do(ctx, http.MethodGet, "/api/v1/repos/"+repoPath(repo)+"/issues?"+query.Encode(), nil)
 		if err != nil {
 			return nil, err
@@ -353,7 +362,7 @@ func (g *gitea) CommentIssue(ctx context.Context, repo Repository, number int, b
 
 // CloseIssue closes an issue.
 func (g *gitea) CloseIssue(ctx context.Context, repo Repository, number int) error {
-	return g.editIssue(ctx, repo, number, map[string]any{"state": "closed"})
+	return g.editIssue(ctx, repo, number, map[string]any{"state": stateClosed})
 }
 
 // AssignIssue makes users the issue's assignees.

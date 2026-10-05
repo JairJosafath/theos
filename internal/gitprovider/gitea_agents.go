@@ -41,6 +41,8 @@ type PullRequest struct {
 	Merged  bool
 	// Mergeable is false while the pull request conflicts with its base.
 	Mergeable bool
+	// MergeCommit is the commit the merge made on the base; empty until merged.
+	MergeCommit string
 }
 
 // agentTokenName is the name of the access token made for an agent bot user.
@@ -251,15 +253,21 @@ type giteaPull struct {
 	State     string `json:"state"`
 	Merged    bool   `json:"merged"`
 	Mergeable bool   `json:"mergeable"`
-	Head      struct {
+	// MergeCommit is merge_commit_sha, set once the pull request is merged.
+	MergeCommit *string `json:"merge_commit_sha"`
+	Head        struct {
 		Ref string `json:"ref"`
 		SHA string `json:"sha"`
 	} `json:"head"`
 }
 
 func (p giteaPull) pullRequest() PullRequest {
-	return PullRequest{Number: p.Number, URL: p.HTMLURL, Head: p.Head.Ref, HeadSHA: p.Head.SHA, State: p.State,
+	out := PullRequest{Number: p.Number, URL: p.HTMLURL, Head: p.Head.Ref, HeadSHA: p.Head.SHA, State: p.State,
 		Merged: p.Merged, Mergeable: p.Mergeable}
+	if p.MergeCommit != nil {
+		out.MergeCommit = *p.MergeCommit
+	}
+	return out
 }
 
 // OpenPullRequest opens a pull request from head into base, or returns the open
@@ -388,7 +396,7 @@ func (g *gitea) PullRequestFiles(ctx context.Context, repo Repository, number in
 func (g *gitea) ClosePullRequest(ctx context.Context, repo Repository, number int) error {
 	payload, _ := json.Marshal(struct {
 		State string `json:"state"`
-	}{"closed"})
+	}{stateClosed})
 	status, data, err := g.do(ctx, http.MethodPatch, "/api/v1/repos/"+repoPath(repo)+"/pulls/"+strconv.Itoa(number), payload)
 	if err != nil {
 		return err
