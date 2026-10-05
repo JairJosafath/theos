@@ -383,7 +383,21 @@ make targets (`make gitea seed deploy`) and locally built images.
 - **Provisioning data stores.** A Connector only scaffolds; creating real databases is left to tools such as Crossplane.
 - **Git providers other than Gitea.** The GitProvider interface allows more later.
 
-## Test environment: everything in the cluster
+## Test tiers
+
+Each rule is verified at the lowest tier that can see it, so most work verifies on any device without a cluster. The Kind cluster is for what needs a real Kubernetes node.
+
+| Tier | Verifies |
+| --- | --- |
+| Table tests (`make test`) | The decisions in `internal/model` and the rendering of every template in `internal/scaffold`. |
+| Offline YAML (`make validate-yaml`, in `make check`) | Samples, e2e fixtures, kustomize builds, the Helm chart and rendered manifests, against the built-in schemas and the CRDs, with their create-time CEL rules. |
+| Local Gitea (`make test-gitea`, `make seed-local`) | The Gitea API's behaviour and the seed, against the same Gitea binary the cluster runs, started per checkout. |
+| envtest (`make test`) | Reconcilers wired to a real API server: status, ownerReferences, CEL rules on updates, the admission policy. |
+| Kind (`make e2e`) | Agent Sandbox pods and the agent fence, node and kubelet behaviour, RBAC as deployed, Gitea Actions runners. |
+
+The plan that builds the lower tiers is [verify-without-cluster.md](plans/verify-without-cluster.md).
+
+## Test environment: the Kind cluster
 
 One kind cluster on a laptop holds Gitea, the operator, a sample project and a test Session, so the whole loop runs with nothing but Docker. Every part is picked to stay light on resources.
 
