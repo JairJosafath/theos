@@ -4,7 +4,7 @@
 # on two clusters, a third waiting, a released cluster reused, a missing one
 # created; release on handoff, close and release),
 # for flush releasing the claim of the handoff it posts,
-# for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 unset C4_CLUSTER # ./dev setup --lite sets it; each test sets its own
@@ -239,6 +239,10 @@ check "pick, then ready + urgent" "$(OPEN=$(jq 'map(select(.[0] != 85))' <<<"$al
 check "pick, then ready" "$(OPEN=$(jq 'map(select(.[0] < 83))' <<<"$all" | issues) gh_pick | cut -f1,4)" "82	ready"
 OPEN=$(jq 'map(select(.[0] < 82))' <<<"$all" | issues) gh_pick >/dev/null
 check "pick, only proposed and needs-human" $? 1
+
+# Proposed: the open status/proposed issues, oldest first, for the relay's triage.
+check "proposed" "$(OPEN=$(jq '. + [[86, ["status/proposed", "kind/bug"]]]' <<<"$all" | issues) gh_proposed | tr '\n' ' ')" "81 86 "
+check "proposed, none" "$(OPEN=$(jq 'map(select(.[0] != 81))' <<<"$all" | issues) gh_proposed)" ""
 
 # Intake: labels an issue by where it came from.
 R=repos/JairJosafath/c4factory

@@ -37,7 +37,43 @@ NAME            CONTAINER   ISSUE   PHASE      ROUND   CHECKS    REVIEW    AGE
 hello-8         hello       8       Checking   1       pending             18s
 stand-in-loop   hello               Merged     2       success   approve   28m
 
-Not shown: a reviewer filing the follow-up itself. That needs the agent image rebuilt
-from this branch (make agent-image-base), which auto mode refused in the headless run.
-The reviewer side is covered by unit tests (ParseVerdict, FollowUpIssue, the stand-in's
-C4AGENT_FAKE_FOLLOW_UP).
+## 3. A reviewer files the follow-up itself (issue #122)
+# Kind cluster c4factory, created fresh 2026-10-05T22:25Z; operator (make deploy) and
+# agent image c4factory/agent-base:dev (make agent-image-base) built from main at fe737fe.
+# Crew apps/hello, implementer and reviewer: the stand-in Agent with follow-ups on.
+$ kubectl -n apps get agent stand-in -o jsonpath='{.spec.env}'
+[{"name":"C4AGENT_FAKE","value":"1"},{"name":"C4AGENT_FAKE_FOLLOW_UP","value":"true"}]
+$ gitea issue apps/hello#1 "Greet twice", milestone v0.1.0 (due 2026-12-01), labeled status/ready
+$ kubectl -n apps get task hello-1 -o jsonpath='{range .status.history[*]}...'
+Implementing r1 Running
+Implementing r1 Waiting
+Checking r1 Checking
+Checking r1 Waiting
+Reviewing r1 Running
+Reviewing r1 Waiting
+Merged r1 Merged
+$ gitea issue apps/hello#1 last comment:
+Merged in http://gitea.gitea.svc.cluster.local:3000/apps/hello/pulls/2 after 1 round.
+
+The reviewer suggested follow-ups, filed as status/proposed:
+- http://gitea.gitea.svc.cluster.local:3000/apps/hello/issues/3
+$ gitea issue apps/hello#3 "Stand-in follow-up: add a third line", labels ["status/proposed"], milestone Later
+$ body:
+The stand-in reviewer files this to show a follow-up.
+
+## Acceptance criteria
+
+- [ ] STAND-IN.md has a third line
+- [ ] make check passes
+
+---
+Suggested by Agent `stand-in` while reviewing http://gitea.gitea.svc.cluster.local:3000/apps/hello/pulls/2 for #1 (Task `hello-1`). To have agents do it, check the criteria, move it into a release and label it status/ready.
+
+# Moved into release v0.1.0 and labeled status/ready:
+$ labels: ["status/in-progress"], milestone v0.1.0
+$ comment:
+Task `hello-3` picked this up: Agent `stand-in` implements, Agent `stand-in` reviews, in up to 2 rounds.
+$ kubectl -n apps get tasks
+NAME      CONTAINER   ISSUE   PHASE    ROUND   CHECKS    REVIEW    AGE
+hello-1   hello       1       Merged   1       success   approve   111s
+hello-3   hello       3       Merged   1       success   approve   28s

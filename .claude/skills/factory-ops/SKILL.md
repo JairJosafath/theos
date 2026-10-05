@@ -10,7 +10,8 @@ Commands for a Kind cluster of the device's pool: `c4factory`, `c4factory-2`,
 (`hack/lib/github.sh cluster acquire` prints its name; `cluster pool` shows
 them all); make targets in its checkout then use that cluster
 (`hack/lib/github.sh cluster name`), and kubectl names it on every call:
-`kubectl --context kind-<name>`, written `kubectl` below. Keep output small:
+`kubectl --context kind-<name>`, written `kubectl` below; never
+`kubectl config use-context`, the kubeconfig is shared by every checkout. Keep output small:
 `-o jsonpath`, `jq`, `--tail=N`, `head`. `P` is a project (namespace), `T` a
 Task, `C` a Crew.
 

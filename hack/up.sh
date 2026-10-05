@@ -50,7 +50,7 @@ fi
 # A fresh .dev/ (./dev nuke, a new checkout) has no kubeconfig for the cluster.
 if ! kubectl config get-contexts "kind-${CLUSTER}" >/dev/null 2>&1; then
   say "Restoring the kubeconfig for kind-${CLUSTER}"
-  kind export kubeconfig --name "$CLUSTER" >/dev/null
+  "$(dirname "$0")/kind.sh" keep-context kind export kubeconfig --name "$CLUSTER" >/dev/null
 fi
 
 say "Waiting for the Kubernetes API"

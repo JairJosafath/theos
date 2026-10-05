@@ -16,13 +16,19 @@ SEED_TIMEOUT ?= 300
 # whatever cluster the current context happens to point at.
 TESTENV_KUBECTL = $(KUBECTL) --context kind-$(KIND_CLUSTER)
 
-# Images keep one tag (c4factory/operator:dev, ...) for every pool cluster, so a
-# build and its kind load run under one device-wide lock: another checkout's
-# build of the same tag can't land between them and load its branch into this
-# cluster.
-ifndef IMAGE_LOCK
-IMAGE_LOCK := flock $(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo /tmp)/c4-image.lock
-endif
+# Every checkout on the device shares one Docker daemon, so a build tags
+# IMAGE-$(CHECKOUT_TAG) (c4factory/operator:dev-relay-2-1a2b3c), never the
+# shared IMAGE: another checkout's build can't replace it before the load.
+# hack/kind.sh load puts it into $(KIND_CLUSTER) under IMAGE, the name the
+# manifests use.
+CHECKOUT_TAG := $(shell hack/kind.sh checkout)
+
+# build-load IMAGE,BUILD-ARGS: build this checkout's IMAGE and load it into
+# $(KIND_CLUSTER) as IMAGE.
+define build-load
+$(CONTAINER_TOOL) build -t $(1)-$(CHECKOUT_TAG) $(2)
+hack/kind.sh load '$(KIND_CLUSTER)' $(1)
+endef
 
 # The local port Gitea is forwarded to: 3000 for c4factory, 3000+K-1 for
 # c4factory-K, so each pool cluster's forward has its own.
@@ -34,7 +40,7 @@ cluster: ## Create the Kind cluster (hack/kind.yaml) if it does not exist.
 	@if $(KIND) get clusters 2>/dev/null | grep -qx '$(KIND_CLUSTER)'; then \
 		echo "Kind cluster '$(KIND_CLUSTER)' already exists"; \
 	else \
-		$(KIND) create cluster --name '$(KIND_CLUSTER)' --config hack/kind.yaml --wait 120s; \
+		hack/kind.sh keep-context $(KIND) create cluster --name '$(KIND_CLUSTER)' --config hack/kind.yaml --wait 120s; \
 	fi
 
 GITEA_ADMIN ?= c4admin
@@ -65,8 +71,7 @@ gitea-admin: ## Print the Gitea admin's username and generated password, for sig
 
 .PHONY: seed
 seed: ## Seed Gitea: orgs, tagged template repos, Secret gitea-credentials.
-	$(IMAGE_LOCK) sh -c "$(CONTAINER_TOOL) build -t $(SEED_IMG) -f hack/seed/Dockerfile . && \
-		$(KIND) load docker-image $(SEED_IMG) --name '$(KIND_CLUSTER)'"
+	$(call build-load,$(SEED_IMG),-f hack/seed/Dockerfile .)
 	for ns in webshop apps; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -; done
 	$(TESTENV_KUBECTL) apply -f hack/seed/rbac.yaml
 	@# Foreground: the old pods are gone before the new Job starts.
@@ -109,8 +114,8 @@ test-gitea: ## Run the gitprovider integration test against the seeded Gitea.
 	go test -count=1 -v ./internal/gitprovider/ -run Integration
 
 .PHONY: kind-load
-kind-load: ## Load the operator image $(IMG) into the Kind cluster.
-	$(KIND) load docker-image $(IMG) --name '$(KIND_CLUSTER)'
+kind-load: ## Load this checkout's build of the operator image into the Kind cluster as $(IMG).
+	hack/kind.sh load '$(KIND_CLUSTER)' $(IMG)
 
 .PHONY: sample
 sample: ## Apply the webshop story (config/samples/webshop).
@@ -120,8 +125,7 @@ SESSION_IMG ?= c4factory/c4session:dev
 
 .PHONY: session-image
 session-image: ## Build the Session client image and load it into the Kind cluster.
-	$(IMAGE_LOCK) sh -c "$(CONTAINER_TOOL) build -t $(SESSION_IMG) -f hack/session/Dockerfile . && \
-		$(KIND) load docker-image $(SESSION_IMG) --name '$(KIND_CLUSTER)'"
+	$(call build-load,$(SESSION_IMG),-f hack/session/Dockerfile .)
 
 .PHONY: session
 session: session-image ## Run the test Session: a pod that clones orders-api and runs c4session.
@@ -148,16 +152,14 @@ toolchain-go: ## Build the Go and Node toolchain (Go Containers, VS Code extensi
 
 .PHONY: runner-go
 runner-go: ## Build the Go and Node CI runner (label go), load it into Kind and run it.
-	$(IMAGE_LOCK) sh -c "$(CONTAINER_TOOL) build -t $(RUNNER_GO_IMG) --build-arg BASE=$(GO_TOOLCHAIN_IMG) -f hack/runner/Dockerfile . && \
-		$(KIND) load docker-image $(RUNNER_GO_IMG) --name '$(KIND_CLUSTER)'"
+	$(call build-load,$(RUNNER_GO_IMG),--build-arg BASE=$(GO_TOOLCHAIN_IMG) -f hack/runner/Dockerfile .)
 	$(TESTENV_KUBECTL) apply -f config/runner/go.yaml
 	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner-go
 	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-go --timeout=600s
 
 .PHONY: agent-image-go
 agent-image-go: ## Build the agent image on the Go and Node toolchain and load it into Kind.
-	$(IMAGE_LOCK) sh -c "$(CONTAINER_TOOL) build -t $(AGENT_GO_IMG) --build-arg BASE=$(GO_TOOLCHAIN_IMG) -f hack/agent/Dockerfile . && \
-		$(KIND) load docker-image $(AGENT_GO_IMG) --name '$(KIND_CLUSTER)'"
+	$(call build-load,$(AGENT_GO_IMG),--build-arg BASE=$(GO_TOOLCHAIN_IMG) -f hack/agent/Dockerfile .)
 
 .PHONY: toolchain-base
 toolchain-base: ## Build the minimal toolchain (Node, bash, git, make) the e2e hello-world Container uses.
@@ -165,16 +167,14 @@ toolchain-base: ## Build the minimal toolchain (Node, bash, git, make) the e2e h
 
 .PHONY: runner-base
 runner-base: ## Build the minimal CI runner (label base), load it into Kind and run it.
-	$(IMAGE_LOCK) sh -c "$(CONTAINER_TOOL) build -t $(RUNNER_BASE_IMG) --build-arg BASE=$(BASE_TOOLCHAIN_IMG) -f hack/runner/Dockerfile . && \
-		$(KIND) load docker-image $(RUNNER_BASE_IMG) --name '$(KIND_CLUSTER)'"
+	$(call build-load,$(RUNNER_BASE_IMG),--build-arg BASE=$(BASE_TOOLCHAIN_IMG) -f hack/runner/Dockerfile .)
 	$(TESTENV_KUBECTL) apply -f config/runner/base.yaml
 	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner-base
 	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-base --timeout=600s
 
 .PHONY: agent-image-base
 agent-image-base: ## Build the agent image on the minimal toolchain and load it into Kind.
-	$(IMAGE_LOCK) sh -c "$(CONTAINER_TOOL) build -t $(AGENT_BASE_IMG) --build-arg BASE=$(BASE_TOOLCHAIN_IMG) -f hack/agent/Dockerfile . && \
-		$(KIND) load docker-image $(AGENT_BASE_IMG) --name '$(KIND_CLUSTER)'"
+	$(call build-load,$(AGENT_BASE_IMG),--build-arg BASE=$(BASE_TOOLCHAIN_IMG) -f hack/agent/Dockerfile .)
 
 .PHONY: agent-sandbox
 agent-sandbox: ## Install Agent Sandbox (config/agent-sandbox, v1.0.4), which runs the agents.

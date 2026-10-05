@@ -6,8 +6,9 @@
 #
 # Source it for the gh_* functions (hack/relay.sh), or run it:
 #
-#   hack/lib/github.sh labels            create the labels below (safe to repeat)
+#   hack/lib/github.sh labels            create the labels below, or update their descriptions (safe to repeat)
 #   hack/lib/github.sh pick              the issue to work next: NUMBER TITLE URL STATUS, tab-separated
+#   hack/lib/github.sh proposed          the open status/proposed issues' numbers, oldest first, one per line
 #   hack/lib/github.sh show N            issue N, its newest handoff comment and the comments after it
 #   hack/lib/github.sh take N            claim N for this checkout and swap it to status/in-progress;
 #                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it,
@@ -34,6 +35,7 @@
 #   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, needs-human
 #                                        (needs-human releases the claim and lease)
 #   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, release the claim and lease
+#   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N
 #   hack/lib/github.sh create TITLE FILE LABEL...
 #                                        file an issue, FILE as its body; prints its number. An open
 #                                        issue with the same title is left as it is.
@@ -99,7 +101,7 @@ GH_CLAIM_JQ='
 
 # name|color|description, the same words the factory uses in Gitea.
 GH_LABELS=(
-  'status/proposed|c5def5|Proposed; waits for the user to ready it'
+  'status/proposed|c5def5|Proposed; the relay'"'"'s triage or the user readies it when it is sound'
   'status/ready|0e8a16|Ready: the next session may take it'
   'status/in-progress|fbca04|A session works on it; continue from its newest handoff comment'
   'status/needs-human|d93f0b|Blocked on the user; the newest comment says why'
@@ -140,12 +142,18 @@ gh_read() {
 }
 
 gh_labels() {
-  local have line name color desc
-  have=$(gh_api --paginate "repos/$C4_GITHUB_REPO/labels?per_page=100" --jq '.[].name') || return 1
+  local have line name color desc was
+  have=$(gh_api --paginate "repos/$C4_GITHUB_REPO/labels?per_page=100" --jq '.[] | [.name, .description // ""] | @tsv') || return 1
   for line in "${GH_LABELS[@]}"; do
     IFS='|' read -r name color desc <<<"$line"
-    if grep -qxF -- "$name" <<<"$have"; then
-      echo "label $name: exists"
+    if grep -q -- "^$name"$'\t' <<<"$have"; then
+      was=$(grep -- "^$name"$'\t' <<<"$have" | head -1 | cut -f2)
+      if [ "$was" = "$desc" ]; then
+        echo "label $name: exists"
+      else
+        gh_api --method PATCH "repos/$C4_GITHUB_REPO/labels/${name//\//%2F}" -f description="$desc" >/dev/null || return 1
+        echo "label $name: description updated"
+      fi
       continue
     fi
     gh_api --method POST "repos/$C4_GITHUB_REPO/labels" \
@@ -207,6 +215,16 @@ gh_pick() {
     | first // empty | [.number, .title, .html_url, .how] | @tsv' <<<"$issues") || return 2
   [ -n "$row" ] || return 1
   echo "$row"
+}
+
+# gh_proposed: the open status/proposed issues' numbers, oldest first, one
+# per line, for the relay's triage. Exit 2: GitHub could not be asked.
+gh_proposed() {
+  local issues
+  issues=$(gh_api --paginate --slurp \
+    "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
+  jq -r '.[][] | select(.pull_request | not) | select(.labels | any(.name == "status/proposed")) | .number' <<<"$issues" ||
+    return 2
 }
 
 # gh_comments N: issue N's comments, oldest first, as one JSON array.
@@ -840,6 +858,15 @@ gh_close() {
   gh_release_for "$n" finished
 }
 
+# gh_duplicate N M: comment on N that it duplicates M, and close N as not planned.
+gh_duplicate() {
+  local n=${1:?usage: duplicate N M} m=${2:?usage: duplicate N M}
+  [[ $n =~ ^[0-9]+$ && $m =~ ^[0-9]+$ && $n != "$m" ]] || { echo "github: duplicate takes two issue numbers" >&2; return 1; }
+  echo "Duplicate of #$m." | gh_comment "$n" - >/dev/null || return 1
+  gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
+    -f state=closed -f state_reason=not_planned --jq '"closed #\(.number) as a duplicate of #'"$m"'"'
+}
+
 # gh_create TITLE FILE LABEL...: file an issue and print its number. An open
 # issue with exactly this title is left as it is, and its number printed.
 gh_create() {
@@ -927,6 +954,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   case $cmd in
     labels) gh_labels ;;
     pick) gh_pick ;;
+    proposed) gh_proposed ;;
     show) gh_show "$@" ;;
     take) gh_take "$@" ;;
     release) gh_release "$@" ;;
@@ -939,6 +967,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     cluster) gh_cluster "$@" ;;
     status) gh_set_status "$@" ;;
     close) gh_close "$@" ;;
+    duplicate) gh_duplicate "$@" ;;
     create) gh_create "$@" ;;
     intake) gh_intake "$@" ;;
     *)

@@ -2,16 +2,16 @@ name: Test Chart
 
 # Installs the Helm chart (dist/chart) into a fresh Kind cluster, as a device
 # would: Agent Sandbox, then `helm install` with Gitea and project webshop, on
-# images built here, since the pull request's code isn't published yet. Checks
+# images built here, since the code isn't published yet. Checks
 # that the seed made its organizations and webshop's credentials, the chart made
 # GitProvider webshop/gitea, both runners registered, the manager and UI are
 # ready, and the admission policy refuses a Project named unlike its namespace.
 # The go runner runs on the base runner image without its Go cache and with
-# the base runner's requests: the Go toolchain is several GB, Release's dry run
-# builds it, and a runner's two-CPU node has no room for its 500m.
+# the base runner's requests: the Go toolchain is several GB, Release builds
+# it, and a hosted runner's two-CPU node has no room for its 500m.
 # A Kind cluster and the image builds take minutes, so like every workflow that
-# needs Kind it skips pull requests: it runs after a merge to main that changes
-# the chart or what it is generated from, on a release, and on demand.
+# needs Kind it runs after a merge to main that changes the chart or what it is
+# generated from, and on demand.
 on:
   push:
     branches: [main]
@@ -26,8 +26,6 @@ on:
       - hack/runner/**
       - hack/toolchain-base/**
       - .github/workflows/test-chart.yml
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions: {}

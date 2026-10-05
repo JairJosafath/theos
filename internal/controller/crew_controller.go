@@ -21,12 +21,15 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -66,6 +69,12 @@ type CrewReconciler struct {
 	PollInterval time.Duration
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// Recorder emits the Crew's Events about releases; nil emits none.
+	Recorder events.EventRecorder
+
+	// heldSaid is, by Crew UID, the reason and message of the last release left
+	// to a person, so each gets one Warning.
+	heldSaid sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
@@ -73,6 +82,7 @@ type CrewReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews/finalizers,verbs=update
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers;agents;gitproviders,verbs=get;list;watch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile reads the Crew's Container and its ready issues, hands unclear ones
 // back to a person, and starts a Task for the next one.
@@ -121,9 +131,11 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err := r.APIReader.List(ctx, &tasks, client.InNamespace(crew.Namespace)); err != nil {
 		return ctrl.Result{}, err
 	}
+	var containerTasks []c4v1alpha1.Task
 	for _, t := range tasks.Items {
 		if t.Spec.ContainerRef.Name == container.Name {
 			facts.Tasks = append(facts.Tasks, crewTask(&t))
+			containerTasks = append(containerTasks, t)
 		}
 	}
 
@@ -199,6 +211,12 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		ready, reason = metav1.ConditionFalse, "ContainerNotReady"
 	}
 	setCondition(&status.Conditions, crew.Generation, ConditionReady, ready, reason, step.Message)
+	switch {
+	case !crew.Spec.TagReleases:
+		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
+	case facts.ContainerReady:
+		r.tagRelease(ctx, &crew, status, provider, repo, containerTasks)
+	}
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 }
 

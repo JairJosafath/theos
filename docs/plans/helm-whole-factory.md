@@ -99,10 +99,11 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
    exist, Secret `webshop/gitea-credentials` and GitProvider `webshop/gitea`
    exist (a GitProvider has no status), both runners are registered (Gitea's
    admin runner list), the manager and UI are ready. The Go toolchain is
-   several GB and Release's dry run builds it, so *Test Chart* runs the `go`
-   runner on the `gitea-runner-base` image without its Go cache: it checks the
-   chart's Deployment and registration, not the toolchain. `dist/chart/README.md` gives the device's install sequence and both
-   ways to pull private images; README *Try it* points at it.
+   several GB and *Release* builds it (#156 checks it), so *Test Chart* runs
+   the `go` runner on the `gitea-runner-base` image without its Go cache: it
+   checks the chart's Deployment and registration, not the toolchain.
+   `dist/chart/README.md` gives the device's install sequence and both ways to
+   pull private images; README *Try it* points at it.
 6. **Verified from a release.** Once the owner pushes `v0.2.0` and *Release*
    publishes it: on a fresh Kind cluster of the pool, apply Agent Sandbox,
    `helm install` from `oci://ghcr.io/jairjosafath/c4factory/charts`, nothing
@@ -118,6 +119,7 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
 - *Test Chart* installs the chart with Gitea on a fresh Kind cluster with
   Agent Sandbox and gets a seeded Gitea, the operator, the UI and the `base`
   and `go` runners, on main after the merge.
-- *Release* (its dry run on the pull request) builds and publishes `seed`.
+- *Release* builds and publishes `seed` (its pull request dry run, since
+  removed from main, built it in #130).
 - `dist/chart/README.md` gives the install sequence and how private images are
   pulled.
