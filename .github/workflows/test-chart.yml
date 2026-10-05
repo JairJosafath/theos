@@ -14,6 +14,8 @@ on:
       - config/**
       - '!config/samples/**'
       - Dockerfile
+      - ui/Dockerfile
+      - Makefile
       - .github/workflows/test-chart.yml
   pull_request:
     paths: *paths

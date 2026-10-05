@@ -18,13 +18,19 @@ app.kubernetes.io/part-of: {{ include "c4-factory.name" . }}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 {{- end }}
 
-{{/* ui.components as JSON, an empty namespace replaced by the release's. */}}
+{{/*
+ui.components as JSON: an empty namespace is the release's, and the ui entry's
+empty selector is the UI's own selector labels.
+*/}}
 {{- define "c4-factory.uiComponents" -}}
 {{- $out := list }}
 {{- range .Values.ui.components }}
 {{- $c := deepCopy . }}
 {{- if not $c.namespace }}
 {{- $_ := set $c "namespace" $.Release.Namespace }}
+{{- end }}
+{{- if and (eq $c.key "ui") (not $c.selector) }}
+{{- $_ := set $c "selector" (printf "app.kubernetes.io/name=%s-ui,app.kubernetes.io/instance=%s" (include "c4-factory.name" $) $.Release.Name) }}
 {{- end }}
 {{- $out = append $out $c }}
 {{- end }}

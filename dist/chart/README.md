@@ -54,5 +54,6 @@ gitProviders:
 ```
 
 The CRDs are part of the release, so these are `post-install` and
-`post-upgrade` hooks, created once the CRDs exist; `helm uninstall` leaves them
-in place.
+`post-upgrade` hooks, created once the CRDs exist. Every `helm upgrade` deletes
+and recreates them, so a Container scaffolding at that moment may wait a
+reconcile for its GitProvider; `helm uninstall` leaves them in place.
