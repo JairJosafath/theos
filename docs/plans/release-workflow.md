@@ -15,7 +15,7 @@ Issue #99; follows the chart (#98, [helm-chart.md](helm-chart.md)); spec in
 - **Images**, each tagged with the version without its `v` (`0.1.0`):
   `operator`, `ui`, the toolchains `go` and `base`, and the images built on them,
   `agent-go`, `agent-base`, `gitea-runner-go`, `gitea-runner-base`. The test
-  environment's own images (`seed`, `c4session`) are not published. The
+  environment's own image `c4session` is not published; `seed` is since #127. The
   toolchains install `linux-x64` binaries, so every image is `linux/amd64`.
 - **Chart:** `helm package dist/chart --version V --app-version V`, pushed as an
   OCI artifact to `oci://ghcr.io/<owner>/c4factory/charts` and attached to a

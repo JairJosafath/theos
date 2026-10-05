@@ -10,6 +10,9 @@
 set -euo pipefail
 
 GITEA_URL=${GITEA_URL:-http://gitea.gitea.svc.cluster.local:3000}
+# Seconds to wait for Gitea to answer: on a fresh Helm install its image may
+# still be pulling when the seed starts.
+GITEA_WAIT=${GITEA_WAIT:-120}
 # The admin credentials come from Secret gitea-admin (see job.yaml).
 for var in GITEA_USERNAME GITEA_PASSWORD; do
   [ -n "${!var:-}" ] || { echo "set $var (from Secret gitea-admin)" >&2; exit 1; }
@@ -67,8 +70,8 @@ expect() {
 
 wait_for_gitea() {
   log "Waiting for Gitea at $GITEA_URL"
-  local _
-  for _ in $(seq 1 60); do
+  local deadline=$((SECONDS + GITEA_WAIT))
+  while ((SECONDS < deadline)); do
     if curl -fs -o /dev/null "$GITEA_URL/api/healthz"; then
       api GET /user
       expect "Signing in as $GITEA_USERNAME" 200
@@ -77,7 +80,7 @@ wait_for_gitea() {
     fi
     sleep 2
   done
-  die "Gitea did not become healthy within 120s"
+  die "Gitea did not become healthy within ${GITEA_WAIT}s"
 }
 
 # ensure_org NAME DESCRIPTION
