@@ -73,7 +73,8 @@ func (a ClaudeAgent) Run(ctx context.Context, dir, prompt string) (string, error
 }
 
 // FakeAgent stands in for a real agent in tests and demos. Implementing, it adds
-// a line to STAND-IN.md; reviewing, it approves, or first asks for changes.
+// a line to STAND-IN.md; reviewing, it approves, or first asks for changes, and
+// may file a follow-up.
 type FakeAgent struct {
 	Role  string
 	Round int
@@ -81,6 +82,8 @@ type FakeAgent struct {
 	ChangesFirst bool
 	// NoChange makes implementing change nothing.
 	NoChange bool
+	// FollowUp makes the approval file one follow-up with acceptance criteria.
+	FollowUp bool
 }
 
 // Run does the scripted work.
@@ -88,6 +91,12 @@ func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	if a.Role == RoleReview {
 		if a.ChangesFirst && a.Round == 1 {
 			return `{"verdict": "changes", "summary": "Stand-in review: add a second line."}`, nil
+		}
+		if a.FollowUp {
+			return `Looked at it.` + "\n" + `{"verdict": "approve", "summary": "Stand-in review: fine.", ` +
+				`"followUps": [{"title": "Stand-in follow-up: add a third line", ` +
+				`"body": "The stand-in reviewer files this to show a follow-up.", ` +
+				`"criteria": ["STAND-IN.md has a third line", "make check passes"]}]}`, nil
 		}
 		return `Looked at it.` + "\n" + `{"verdict": "approve", "summary": "Stand-in review: fine."}`, nil
 	}

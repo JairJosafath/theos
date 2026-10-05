@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -293,6 +294,11 @@ func TestRunReview(t *testing.T) {
 	if second.Verdict != VerdictApprove {
 		t.Errorf("round 2 review = %+v", second)
 	}
+
+	followUp := Run(ctx, testJob(t, url, RoleReview, 1), FakeAgent{Role: RoleReview, Round: 1, FollowUp: true}, t.TempDir())
+	if followUp.Verdict != VerdictApprove || len(followUp.FollowUps) != 1 || len(followUp.FollowUps[0].Criteria) == 0 {
+		t.Errorf("review with a follow-up = %+v", followUp)
+	}
 }
 
 // editAgent changes one file.
@@ -341,7 +347,7 @@ func TestIssuePrompts(t *testing.T) {
 	ws.Guide = "Check the criteria first."
 	review := ReviewPrompt(job, ws)
 	for _, want := range []string{"issue #3", "each acceptance criterion", "Check the criteria first.", "docs/agents/reviewer.md",
-		`"followUps"`, "/workspace/related/vscode-extension"} {
+		`"followUps"`, `"criteria"`, "/workspace/related/vscode-extension"} {
 		if !strings.Contains(review, want) {
 			t.Errorf("review prompt lacks %q", want)
 		}
@@ -353,21 +359,24 @@ func TestIssuePrompts(t *testing.T) {
 }
 
 func TestParseVerdictFollowUps(t *testing.T) {
-	out := `{"verdict": "approve", "summary": "Good.", "followUps": [{"title": "Cache schemas", "body": "Parse once."},` +
+	out := `{"verdict": "approve", "summary": "Good.", "followUps": [{"title": "Cache schemas", "body": "Parse once.",` +
+		` "criteria": [" Parsed once per file ", "", "A test counts parses", "Three", "Four"]},` +
 		`{"title": " ", "body": "no title"}, {"title": "B", "body": ""}, {"title": "C"}, {"title": "D"}]}`
 	v, err := ParseVerdict(out)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []model.FollowUp{{Title: "Cache schemas", Body: "Parse once."}, {Title: "B"}, {Title: "C"}}
-	if v.Verdict != VerdictApprove || !slices.Equal(v.FollowUps, want) {
-		t.Errorf("ParseVerdict() = %+v, want follow-ups %v (untitled dropped, three at most)", v, want)
+	want := []model.FollowUp{{Title: "Cache schemas", Body: "Parse once.",
+		Criteria: []string{"Parsed once per file", "A test counts parses", "Three"}}, {Title: "B"}, {Title: "C"}}
+	if v.Verdict != VerdictApprove || !reflect.DeepEqual(v.FollowUps, want) {
+		t.Errorf("ParseVerdict() = %+v, want follow-ups %v (untitled dropped, three at most, blank criteria dropped)", v, want)
 	}
 }
 
 func TestResultEncodeKeepsFollowUpsShort(t *testing.T) {
 	r := Result{Role: RoleReview, Verdict: VerdictApprove, Summary: strings.Repeat("s", 3000),
-		FollowUps: []model.FollowUp{{Title: strings.Repeat("t", 300), Body: strings.Repeat("b", 2000)},
+		FollowUps: []model.FollowUp{{Title: strings.Repeat("t", 300), Body: strings.Repeat("b", 2000),
+			Criteria: []string{strings.Repeat("c", 500), "Short"}},
 			{Title: "Two", Body: strings.Repeat("b", 2000)}, {Title: "Three", Body: strings.Repeat("b", 2000)}}}
 	data := r.Encode()
 	var back Result
@@ -376,6 +385,28 @@ func TestResultEncodeKeepsFollowUpsShort(t *testing.T) {
 	}
 	if len(back.FollowUps) != 3 || back.Verdict != VerdictApprove {
 		t.Errorf("Encode() lost follow-ups or the verdict: %+v", back)
+	}
+	if c := back.FollowUps[0].Criteria; len(c) != 2 || len(c[0]) > maxFollowUpCriterion+len("…") || c[1] != "Short" {
+		t.Errorf("Encode() criteria = %q, want both, the long one shortened", c)
+	}
+	if len(r.FollowUps[0].Criteria[0]) != 500 {
+		t.Error("Encode() changed the caller's criteria")
+	}
+}
+
+func TestResultEncodeDropsFollowUpsBeforeAskedChanges(t *testing.T) {
+	long := strings.Repeat("c", 120)
+	f := model.FollowUp{Title: strings.Repeat("t", 100), Body: strings.Repeat("b", 400), Criteria: []string{long, long, long}}
+	summary := strings.Repeat("s", 2500)
+	changes := Result{Role: RoleReview, Verdict: VerdictChanges, Summary: summary, FollowUps: []model.FollowUp{f, f, f}}
+	var back Result
+	if err := json.Unmarshal(changes.Encode(), &back); err != nil || back.Summary != summary || back.FollowUps != nil {
+		t.Errorf("Encode() of changes kept follow-ups (%d) over the summary (%d bytes), %v", len(back.FollowUps), len(back.Summary), err)
+	}
+	approve := changes
+	approve.Verdict, approve.Summary = VerdictApprove, "Good."
+	if err := json.Unmarshal(approve.Encode(), &back); err != nil || len(back.FollowUps) != 3 {
+		t.Errorf("Encode() of an approval with full follow-ups kept %d, want 3, %v", len(back.FollowUps), err)
 	}
 }
 

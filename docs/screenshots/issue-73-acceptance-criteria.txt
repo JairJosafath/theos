@@ -1,0 +1,43 @@
+# Issue 73: acceptance criteria where issues are written
+# Kind cluster c4factory, operator built from feat/73 at 7b7806c (image c4factory/operator:heron-73), 2026-10-05T19:46:11Z
+# Crew apps/hello, implementer and reviewer: the stand-in Agent.
+
+## 1. A ready issue without a checklist: the needs-human comment shows an example
+$ gitea issue apps/hello#7 body:
+hello should accept a name and greet it.
+$ labels: ["status/needs-human"]
+$ comment:
+This issue has no "Acceptance criteria" section with a checklist ("- [ ] ..."), so a reviewer could not tell when it is done. Add one, then label it status/ready again. For example:
+
+```markdown
+## Acceptance criteria
+
+- [ ] An empty order is rejected with a message naming the missing field
+- [ ] A test covers the empty order
+```
+
+Each item is one check a reviewer can verify in the pull request.
+
+## 2. A follow-up body as model.FollowUpIssue renders it, readied: a Task starts
+$ gitea issue apps/hello#8 body:
+The stand-in reviewer files this to show a follow-up.
+
+## Acceptance criteria
+
+- [ ] STAND-IN.md has a third line
+- [ ] make check passes
+
+---
+Suggested by stand-in while reviewing approve for #7 (Task `hello-7`). To have agents do it, check the criteria, move it into a release and label it status/ready.
+$ labels: ["status/in-progress"]
+$ comment:
+Task `hello-8` picked this up: Agent `stand-in` implements, Agent `stand-in` reviews, in up to 2 rounds.
+$ kubectl -n apps get tasks
+NAME            CONTAINER   ISSUE   PHASE      ROUND   CHECKS    REVIEW    AGE
+hello-8         hello       8       Checking   1       pending             18s
+stand-in-loop   hello               Merged     2       success   approve   28m
+
+Not shown: a reviewer filing the follow-up itself. That needs the agent image rebuilt
+from this branch (make agent-image-base), which auto mode refused in the headless run.
+The reviewer side is covered by unit tests (ParseVerdict, FollowUpIssue, the stand-in's
+C4AGENT_FAKE_FOLLOW_UP).

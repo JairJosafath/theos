@@ -97,9 +97,7 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Pr
 		}), err)
 	}
 	for _, f := range followUps {
-		body := fmt.Sprintf("%s\n\n---\nSuggested by %s while reviewing %s for #%d (Task `%s`). To have agents do it, "+
-			"add an \"Acceptance criteria\" checklist and label it %s.", strings.TrimSpace(f.Body), agentName(reviewer),
-			status.PullRequestURL, n, task.Name, model.LabelReady)
+		body := model.FollowUpIssue(f, agentName(reviewer), status.PullRequestURL, n, task.Name)
 		var issue gitprovider.Issue
 		err := r.gitCall(ctx, func(ctx context.Context) (err error) {
 			issue, err = provider.CreateIssue(ctx, repo, f.Title, body, []string{model.LabelProposed}, milestone)

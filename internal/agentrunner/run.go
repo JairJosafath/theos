@@ -51,8 +51,9 @@ const MaxResultBytes = 4000
 
 // Follow-ups share the termination message with the verdict, so they stay short.
 const (
-	maxFollowUpTitle = 100
-	maxFollowUpBody  = 400
+	maxFollowUpTitle     = 100
+	maxFollowUpBody      = 400
+	maxFollowUpCriterion = 120
 )
 
 // Encode returns the Result as JSON of at most MaxResultBytes, shortening the
@@ -62,6 +63,10 @@ func (r Result) Encode() []byte {
 	for i := range r.FollowUps {
 		r.FollowUps[i].Title = shorten(r.FollowUps[i].Title, maxFollowUpTitle)
 		r.FollowUps[i].Body = shorten(r.FollowUps[i].Body, maxFollowUpBody)
+		r.FollowUps[i].Criteria = slices.Clone(r.FollowUps[i].Criteria)
+		for j, c := range r.FollowUps[i].Criteria {
+			r.FollowUps[i].Criteria[j] = shorten(c, maxFollowUpCriterion)
+		}
 	}
 	if r.Proposal != nil {
 		p := *r.Proposal
@@ -73,6 +78,9 @@ func (r Result) Encode() []byte {
 			return data
 		}
 		switch {
+		case len(r.FollowUps) > 0 && r.Verdict != VerdictApprove:
+			// Follow-ups are filed only on merge; a summary asking for changes matters more.
+			r.FollowUps = nil
 		case len(r.Summary) > 200:
 			r.Summary = shorten(r.Summary, len(r.Summary)-(len(data)-MaxResultBytes)-16)
 		case len(r.Error) > 200:

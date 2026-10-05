@@ -70,7 +70,8 @@ func run(ctx context.Context, workdir string) agentrunner.Result {
 func agentFor(job agentrunner.Job) agentrunner.Agent {
 	if job.Harness == agentrunner.HarnessStandIn || os.Getenv("C4AGENT_FAKE") != "" {
 		changesFirst, _ := strconv.ParseBool(os.Getenv("C4AGENT_FAKE_CHANGES_FIRST"))
-		return agentrunner.FakeAgent{Role: job.Role, Round: job.Round, ChangesFirst: changesFirst}
+		followUp, _ := strconv.ParseBool(os.Getenv("C4AGENT_FAKE_FOLLOW_UP"))
+		return agentrunner.FakeAgent{Role: job.Role, Round: job.Round, ChangesFirst: changesFirst, FollowUp: followUp}
 	}
 	agent := agentrunner.ClaudeAgent{Model: job.Model}
 	if command := strings.Fields(os.Getenv("C4AGENT_COMMAND")); len(command) > 0 {
