@@ -1,0 +1,54 @@
+# Two needs/cluster issues verified on two pool clusters at the same time (#102)
+# 2026-10-05T19:32Z, cluster device 3st8JJ
+
+$ hack/lib/github.sh cluster pool
+c4factory: free
+c4factory-2: leased to otter-102 (#102, /home/math/www/github.com/jairjosafath/c4factory/.claude/worktrees/relay-9), heartbeat 3m ago (this checkout)
+
+$ kind get clusters
+c4factory
+c4factory-2
+
+$ hack/lib/github.sh cluster name   # what make uses in this checkout (relay-9, #102)
+c4factory-2
+
+$ kubectl --context kind-<c> -n c4-factory-system get deploy c4-factory-controller-manager  # each cluster its own build
+c4factory: image c4factory/operator:dev, restarted 2026-10-05T21:24:40+02:00, ready 1
+c4factory-2: image c4factory/operator:dev, restarted 2026-10-05T21:32:01+02:00, ready 1
+
+$ kubectl --context kind-c4factory-2 get containers -A   # #102 verifying on c4factory-2
+NAMESPACE   NAME         TYPE      PHASE   CHECKS   SESSIONS   AGE
+webshop     orders-api   service   Ready            0          23s
+
+$ kubectl --context kind-c4factory get containers -A   # #80 verifying on c4factory meanwhile
+NAMESPACE   NAME    TYPE   PHASE   CHECKS    SESSIONS   AGE
+apps        hello   cli    Ready   success   0          25m
+
+$ docker stats --no-stream   # the Kind nodes
+c4factory-2-control-plane 1.379GiB / 13.4GiB
+c4factory-control-plane 1.605GiB / 13.4GiB
+
+# Earlier, at 19:28Z, right before this checkout's acquire: #80 (otter-80,
+# relay-4) held c4factory and was verifying its Standard update there, so the
+# acquire leased the free pool cluster and created it:
+$ hack/lib/github.sh cluster pool
+c4factory: leased to otter-80 (#80, .../.claude/worktrees/relay-4), heartbeat 5m ago
+c4factory-2: free, not created yet (its first lease creates it)
+
+$ hack/lib/github.sh cluster acquire --wait 5m      # 19:29Z, relay-9 (#102)
+github: Kind cluster c4factory-2 does not exist yet; creating it with Gitea and the seeded templates (make cluster gitea seed KIND_CLUSTER=c4factory-2)
+...
+Seed Job completed
+github: Kind cluster c4factory-2 is leased to otter-102 (#102, .../.claude/worktrees/relay-9), heartbeat 2m ago. make in this checkout uses it; kubectl needs --context kind-c4factory-2. ...
+c4factory-2
+
+# Then, with no KIND_CLUSTER given, make deploy sample built under the image
+# lock and went to c4factory-2 only, while otter-80 kept verifying on c4factory:
+flock .../.git/c4-image.lock make --no-print-directory docker-build kind-load
+kind load docker-image c4factory/operator:dev --name 'c4factory-2'
+kustomize build config/default | kubectl --context kind-c4factory-2 apply -f -
+
+# make doctor on c4factory-2: The factory is healthy. (metrics-server and UI not installed: optional)
+# make test-gitea on c4factory-2 forwards svc/gitea 3001:3000 (GITEA_PORT), not 3000:
+--- PASS: TestGiteaIntegration
+--- PASS: TestGiteaIssuesIntegration
