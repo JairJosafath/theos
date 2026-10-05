@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -39,26 +41,51 @@ const (
 	reasonReleased          = "Released"
 	reasonNoReleaseDone     = "NoReleaseDone"
 	reasonReleaseGitFailure = "GitHostUnavailable"
+	reasonPreparingRelease  = "PreparingRelease"
 )
 
-// tagRelease tags the Crew's first open release once it is done, at the merge
-// commit of its most recently merged issue, and closes its milestone. A release
-// that is done but can't go out is a Warning Event, once per release and reason.
+// tagRelease looks after the Crew's first open release, as its switches say:
+// with prepareReleases, once the release is done with merged work and has no
+// prepare issue, it files one; with tagReleases, once it is done, it tags the
+// merge commit of its most recently merged issue and closes its milestone. A
+// release that is done but can't go out is a Warning Event, once per release and
+// reason.
 func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) {
 	log := logf.FromContext(ctx)
 	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	facts, err := releaseFacts(gitCtx, provider, repo, tasks)
+	facts, titles, err := releaseFacts(gitCtx, provider, repo, tasks)
+	facts.Prepare = crew.Spec.PrepareReleases
 	var step model.ReleaseStep
+	var filed gitprovider.Issue
 	if err == nil {
 		step = model.NextRelease(facts)
-		if step.CreateTag {
+		switch {
+		case step.File:
+			filed, err = filePrepareIssue(gitCtx, provider, repo, step, titles)
+		case !crew.Spec.TagReleases:
+		case step.CreateTag:
 			err = provider.CreateTag(gitCtx, repo, step.Tag, step.Commit, "Release "+step.Tag)
 		}
-		if err == nil && step.Commit != "" {
+		if err == nil && step.Commit != "" && crew.Spec.TagReleases {
 			err = provider.CloseMilestone(gitCtx, repo, step.Milestone)
 		}
+	}
+	if step.File && err == nil {
+		message := fmt.Sprintf("Filed #%d to prepare %s", filed.Number, step.Tag)
+		log.Info("Filed release preparation", "tag", step.Tag, "issue", filed.Number)
+		r.event(crew, corev1.EventTypeNormal, reasonPreparingRelease, "PrepareRelease", message)
+		if crew.Spec.TagReleases {
+			r.setReleased(crew, status, metav1.ConditionTrue, reasonPreparingRelease, message)
+		}
+		return
+	}
+	if !crew.Spec.TagReleases {
+		if err != nil {
+			log.Error(err, "Failed to prepare a release", "container", crew.Spec.ContainerRef.Name, "tag", step.Tag)
+		}
+		return
 	}
 	switch {
 	case err != nil:
@@ -68,51 +95,83 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 	case step.Commit != "":
 		message := fmt.Sprintf("Released %s at %s", step.Tag, step.Commit)
 		log.Info("Released milestone", "tag", step.Tag, "commit", step.Commit, "created", step.CreateTag)
-		r.event(crew, corev1.EventTypeNormal, reasonReleased, message)
+		r.event(crew, corev1.EventTypeNormal, reasonReleased, "TagRelease", message)
 		status.LastRelease = &c4v1alpha1.CrewRelease{Tag: step.Tag, Commit: step.Commit, Time: metav1.NewTime(r.now())}
+		r.releaseSaid.Store(crew.UID, reasonReleased+"\n"+message)
 		r.setReleased(crew, status, metav1.ConditionTrue, reasonReleased, message)
 	case step.Held != "":
 		// The cached Crew can miss the condition the last poll wrote, so the
 		// Reconciler remembers what it said too.
 		said := step.Reason + "\n" + step.Held
 		prev := apimeta.FindStatusCondition(status.Conditions, ConditionReleased)
-		last, _ := r.heldSaid.Load(crew.UID)
+		last, _ := r.releaseSaid.Load(crew.UID)
 		if (prev == nil || prev.Reason != step.Reason || prev.Message != step.Held) && last != said {
 			log.Info("Left a release to a person", "tag", step.Tag, "reason", step.Reason)
-			r.event(crew, corev1.EventTypeWarning, step.Reason, step.Held)
+			r.event(crew, corev1.EventTypeWarning, step.Reason, "TagRelease", step.Held)
 		}
-		r.heldSaid.Store(crew.UID, said)
+		r.releaseSaid.Store(crew.UID, said)
 		r.setReleased(crew, status, metav1.ConditionFalse, step.Reason, step.Held)
 	default:
-		if prev := apimeta.FindStatusCondition(status.Conditions, ConditionReleased); prev == nil ||
+		// The cached Crew can miss the release the last poll wrote.
+		last, _ := r.releaseSaid.Load(crew.UID)
+		if said, ok := last.(string); ok && strings.HasPrefix(said, reasonReleased+"\n") {
+			r.setReleased(crew, status, metav1.ConditionTrue, reasonReleased,
+				strings.TrimPrefix(said, reasonReleased+"\n"))
+		} else if prev := apimeta.FindStatusCondition(status.Conditions, ConditionReleased); prev == nil ||
 			prev.Reason != reasonReleased {
 			r.setReleased(crew, status, metav1.ConditionTrue, reasonNoReleaseDone, "No open release is done")
 		}
 	}
 }
 
+// filePrepareIssue files release step.Tag's prepare issue in its milestone,
+// labelled kind/release and ready.
+func filePrepareIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	step model.ReleaseStep, titles map[int]string) (gitprovider.Issue, error) {
+	l := model.ReleaseLabel()
+	labels := append(issueLabels(),
+		gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+	if err := provider.EnsureLabels(ctx, repo, labels); err != nil {
+		return gitprovider.Issue{}, err
+	}
+	title, body := model.PrepareIssue(step.Tag, step.Merged, titles)
+	return provider.CreateIssue(ctx, repo, title, body, []string{model.LabelRelease, model.LabelReady}, step.Milestone)
+}
+
 // releaseFacts reads the open releases, their issues and tags, and the Tasks'
-// merges.
+// merges, and the titles of the releases' issues.
 func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	tasks []c4v1alpha1.Task) (model.ReleaseFacts, error) {
+	tasks []c4v1alpha1.Task) (model.ReleaseFacts, map[int]string, error) {
 	var facts model.ReleaseFacts
+	titles := map[int]string{}
 	milestones, err := provider.ListMilestones(ctx, repo)
 	if err != nil {
-		return facts, fmt.Errorf("milestones: %w", err)
+		return facts, nil, fmt.Errorf("milestones: %w", err)
 	}
 	for _, m := range milestones {
 		if !model.IsReleaseTitle(m.Title) || m.Due.IsZero() {
 			continue
 		}
-		open, closed, err := provider.MilestoneIssues(ctx, repo, m.ID)
+		issues, err := provider.MilestoneIssues(ctx, repo, m.ID)
 		if err != nil {
-			return facts, fmt.Errorf("issues of milestone %s: %w", m.Title, err)
+			return facts, nil, fmt.Errorf("issues of milestone %s: %w", m.Title, err)
 		}
-		facts.Milestones = append(facts.Milestones, model.ReleaseMilestone{
-			Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID, Open: open, Closed: closed})
+		release := model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID}
+		for _, i := range issues {
+			if i.State == "closed" {
+				release.Closed = append(release.Closed, i.Number)
+			} else {
+				release.Open = append(release.Open, i.Number)
+			}
+			if slices.Contains(i.Labels, model.LabelRelease) {
+				release.Prepared = append(release.Prepared, i.Number)
+			}
+			titles[i.Number] = i.Title
+		}
+		facts.Milestones = append(facts.Milestones, release)
 		commit, err := provider.GetTag(ctx, repo, m.Title)
 		if err != nil {
-			return facts, fmt.Errorf("tag %s: %w", m.Title, err)
+			return facts, nil, fmt.Errorf("tag %s: %w", m.Title, err)
 		}
 		if commit != "" {
 			if facts.Tags == nil {
@@ -134,7 +193,7 @@ func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitpr
 			facts.Merged = append(facts.Merged, merged)
 		}
 	}
-	return facts, nil
+	return facts, titles, nil
 }
 
 func (r *CrewReconciler) setReleased(crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
@@ -142,8 +201,8 @@ func (r *CrewReconciler) setReleased(crew *c4v1alpha1.Crew, status *c4v1alpha1.C
 	setCondition(&status.Conditions, crew.Generation, ConditionReleased, value, reason, message)
 }
 
-func (r *CrewReconciler) event(crew *c4v1alpha1.Crew, eventType, reason, note string) {
+func (r *CrewReconciler) event(crew *c4v1alpha1.Crew, eventType, reason, action, note string) {
 	if r.Recorder != nil {
-		r.Recorder.Eventf(crew, nil, eventType, reason, "TagRelease", "%s", note)
+		r.Recorder.Eventf(crew, nil, eventType, reason, action, "%s", note)
 	}
 }

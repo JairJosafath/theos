@@ -225,3 +225,82 @@ var _ = Describe("Crew releases", func() {
 		}).Should(Succeed())
 	})
 })
+
+var _ = Describe("Crew release preparation", func() {
+	// prepareIssues lists the open issues of orders-api titled "Prepare v0.1.0".
+	prepareIssues := func(ns string) []fakeIssue {
+		var out []fakeIssue
+		for _, i := range gitFake.openIssues(ns, "orders-api") {
+			if i.Title == "Prepare v0.1.0" {
+				out = append(out, i)
+			}
+		}
+		return out
+	}
+
+	It("files the prepare issue of a release whose work merged, once", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		crew := newCrew(ns)
+		// Paused, it starts no Task on the prepare issue, but still files it.
+		crew.Spec.Paused = true
+		crew.Spec.PrepareReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			issues := prepareIssues(ns)
+			g.Expect(issues).To(HaveLen(1))
+			g.Expect(issues[0].Labels).To(ConsistOf("kind/release", "status/ready"))
+			g.Expect(issues[0].milestone).To(Equal("v0.1.0"))
+			g.Expect(issues[0].Body).To(ContainSubstring("Validate orders"))
+			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
+				HaveField("Reason", "PreparingRelease"), HaveField("Action", "PrepareRelease"))))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(prepareIssues(ns)).To(HaveLen(1))
+			crew := getCrew(g, ns)
+			g.Expect(condition(crew.Status.Conditions, ConditionReleased)).To(BeNil(), "tagging is off")
+			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
+		}, 3*time.Second).Should(Succeed())
+	})
+
+	It("files the prepare issue before it tags, with both switches", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		crew := newCrew(ns)
+		crew.Spec.Paused = true
+		crew.Spec.PrepareReleases = true
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			g.Expect(prepareIssues(ns)).To(HaveLen(1))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(BeEmpty(), "the release waits for its prepare issue")
+			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.1.0")).To(BeFalse())
+			g.Expect(prepareIssues(ns)).To(HaveLen(1))
+		}, 3*time.Second).Should(Succeed())
+	})
+
+	It("files nothing without spec.prepareReleases", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		crew := newCrew(ns)
+		crew.Spec.Paused = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.LastPolled).NotTo(BeNil())
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(prepareIssues(ns)).To(BeEmpty())
+		}, 3*time.Second).Should(Succeed())
+	})
+})
