@@ -7,6 +7,6 @@ mkdir -p /data/work
 if [[ ! -s /data/.runner ]]; then
   gitea-runner register --no-interactive --config "$config" \
     --instance "$GITEA_INSTANCE" --token "$RUNNER_TOKEN" \
-    --name "${RUNNER_NAME:-$(hostname)}" --labels "${RUNNER_LABELS:-flutter:host}"
+    --name "${RUNNER_NAME:-$(hostname)}" --labels "${RUNNER_LABELS:-base:host}"
 fi
 exec gitea-runner daemon --config "$config"

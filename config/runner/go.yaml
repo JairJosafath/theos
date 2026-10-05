@@ -93,7 +93,7 @@ spec:
       volumes:
         - name: data
           emptyDir: {}
-        # Checkouts and test output in memory, as for the Flutter runner: disk
+        # Checkouts and test output in memory, to spare the disk: disk
         # writes stall etcd on a laptop. The build cache is on the node (above).
         - name: work
           emptyDir: {medium: Memory, sizeLimit: 2Gi}

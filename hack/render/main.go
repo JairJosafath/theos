@@ -2,7 +2,7 @@
 // the operator scaffolds a Container, so a template author can run the result:
 //
 //	go run ./hack/render -out /tmp/app -type mobile-app \
-//	  Framework=flutter-app Standard=flutter-standard Deployment=android-release
+//	  Framework=go-cli Standard=go-standard Deployment=gitea-release
 package main
 
 import (

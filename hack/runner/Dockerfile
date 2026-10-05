@@ -1,8 +1,8 @@
-# The CI runner for Container repositories: the Gitea runner on the slim Flutter
-# toolchain, running jobs in host mode, so CI checks with exactly the tools the
-# agents use. Jobs pick it with `runs-on: flutter`. Built on the full toolchain
-# (BASE=c4factory/flutter:3.47.5) and labelled flutter-android, it runs releases.
-ARG BASE=c4factory/flutter:3.47.5-slim
+# The CI runner for Container repositories: the Gitea runner on a toolchain image
+# (BASE), running jobs in host mode, so CI checks with exactly the tools the
+# agents use. Jobs pick it with `runs-on: <label>`: `make runner-base` builds it
+# on the minimal image (label base), `make runner-go` on the Go and Node one (label go).
+ARG BASE=c4factory/base:dev
 FROM ${BASE}
 ARG RUNNER_VERSION=3.5.0
 ARG RUNNER_SHA256=16dc5c89ad5ac5496369642f01ed29c9bb130a2512e16a8cc3b400d9d0bfea73
