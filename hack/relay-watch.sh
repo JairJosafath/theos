@@ -28,7 +28,7 @@
 # changed this script.
 #
 #   hack/relay-watch.sh                start the watch, detached, for one worker
-#   hack/relay-watch.sh --workers N    for N workers (1-9); on the cluster device RELAY_MAX_WORKERS (default 9)
+#   hack/relay-watch.sh --workers N    for N workers (1-99); on the cluster device RELAY_MAX_WORKERS (default 9)
 #                                      caps them, and hack/relay.sh admits each session by memory
 #   touch .relay/stop                  stop the watch, and every worker after its current session
 #
@@ -53,7 +53,7 @@ while [ $# -gt 0 ]; do
     *) echo "usage: hack/relay-watch.sh [--workers N]" >&2; exit 64 ;;
   esac
 done
-[[ $WORKERS =~ ^[1-9]$ ]] || { echo "relay-watch: --workers takes 1 to 9" >&2; exit 64; }
+[[ $WORKERS =~ ^[1-9][0-9]?$ ]] || { echo "relay-watch: --workers takes 1 to 99" >&2; exit 64; }
 
 log() { echo "$(date -Is) $*" >>"$LOG"; }
 

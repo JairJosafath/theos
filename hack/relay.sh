@@ -40,7 +40,7 @@
 # changes from a branch.
 #
 #   hack/relay.sh                  start one worker
-#   hack/relay.sh --workers N      start N workers (1-9); workers already running are left alone
+#   hack/relay.sh --workers N      start N workers (1-99); workers already running are left alone
 #   hack/relay.sh --triage [--workers N]
 #                                  start one triage session in the first of workers 1-N that isn't running
 #
@@ -79,7 +79,7 @@ while [ $# -gt 0 ]; do
     *) echo "usage: hack/relay.sh [--triage] [--workers N]" >&2; exit 64 ;;
   esac
 done
-[[ $WORKERS =~ ^[1-9]$ ]] || { echo "relay: --workers takes 1 to 9" >&2; exit 64; }
+[[ $WORKERS =~ ^[1-9][0-9]?$ ]] || { echo "relay: --workers takes 1 to 99" >&2; exit 64; }
 MAX_WORKERS=${RELAY_MAX_WORKERS:-9}
 MIN_MEM_GIB=${RELAY_MIN_MEM_GIB:-2}
 ADMIT_GAP=${RELAY_ADMIT_GAP:-120}  # seconds between session starts across workers
@@ -344,9 +344,9 @@ outcome() {
 
 # running_workers: how many workers hold their lock now.
 running_workers() {
-  local k n=0
-  for k in 1 2 3 4 5 6 7 8 9; do
-    [ -e "$DIR/lock-$k" ] && ! flock -n "$DIR/lock-$k" true && n=$((n + 1))
+  local f n=0
+  for f in "$DIR"/lock-*; do
+    [ -e "$f" ] && ! flock -n "$f" true && n=$((n + 1))
   done
   echo "$n"
 }
