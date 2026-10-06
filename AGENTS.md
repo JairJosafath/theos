@@ -94,6 +94,14 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
 
 - **Plan before building.** For work that spans more than one package or issue,
   write a short plan in `docs/plans/` first: goal, steps, and how you'll know it's done.
+- **Designing is our job.** Whoever files an issue says what they want; how the
+  factory does it is ours to decide. When the design doesn't settle something,
+  make the choice you think works, write it and why in a plan in `docs/plans/`
+  (or the change to `docs/design.md`), and go on. Never ask the reporter how to
+  build it, and never hand the user a list of open design questions. Ask the
+  reporter only to elaborate, when what they want is unclear. When you're
+  unsure which way to go, ask the user with the choice you'd make and why, so
+  they can steer.
 - **Test the rules where they live,** at the lowest tier that can see them:
   1. `internal/model` and `internal/scaffold` table tests (`make test`).
   2. `make validate-yaml`: samples, fixtures, kustomize builds, the chart and
