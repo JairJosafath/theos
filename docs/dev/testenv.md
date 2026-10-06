@@ -237,7 +237,9 @@ instead: every minute it asks `pick` (which changes nothing) and, when there is
 an issue and a worker is free, runs `hack/relay.sh --workers N`, which leaves
 running workers alone. Asking first keeps the relay's logs free of a worker that
 starts, finds nothing and stops every minute. It logs only changes, to `.relay/watch.log`, pulls main every 5
-minutes and restarts itself when that changed its code.
+minutes and restarts itself when that changed its code. Every 30 minutes
+(`WATCH_TRIM_EVERY`) it runs `hack/trim-go-cache.sh` and logs what that
+dropped: nine workers grow Go's build cache by gigabytes an hour.
 With nothing ready, it starts a triage of the `status/proposed` issues: for a
 new one, for one that changed since the last triage or waits on an issue that
 closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every

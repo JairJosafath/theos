@@ -45,7 +45,9 @@
 #
 # Every 5 minutes it runs
 # hack/pull.sh, so pick never reads stale rules, and restarts itself when that
-# changed this script.
+# changed this script. Every WATCH_TRIM_EVERY seconds (default 1800) it runs
+# hack/trim-go-cache.sh: nine workers' builds grow Go's build cache by gigabytes
+# an hour, faster than opening VS Code trims it.
 #
 #   hack/relay-watch.sh                start the watch, detached, for one worker
 #   hack/relay-watch.sh --workers N    for N workers (1-99); on the cluster device RELAY_MAX_WORKERS (default 9)
@@ -76,6 +78,7 @@ TRIAGE_EVERY=${WATCH_TRIAGE:-1800}
 RETRIAGE=${WATCH_RETRIAGE:-10800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 CI_EVERY=${WATCH_CI_EVERY:-900}
+TRIM_EVERY=${WATCH_TRIM_EVERY:-1800}
 
 WORKERS=1 MODE=start
 while [ $# -gt 0 ]; do
@@ -100,14 +103,28 @@ worker_free() {
   return 1
 }
 
-# pick_next, proposed, blocked, cycles, run_relay and run_triage: what the
-# watch asks and starts (faked in the tests).
+# pick_next, proposed, blocked, cycles, run_relay, run_triage and trim_caches:
+# what the watch asks and starts (faked in the tests).
 pick_next() { "$REPO/hack/lib/github.sh" pick; }
 blocked() { "$REPO/hack/lib/github.sh" blocked --unworked; }
 cycles() { "$REPO/hack/lib/github.sh" cycles --report; }
 proposed() { "$REPO/hack/lib/github.sh" proposed; }
 run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { "$REPO/hack/relay.sh" --triage --workers "$WORKERS"; }
+trim_caches() { "$REPO/hack/trim-go-cache.sh"; }
+
+# trim NOW: trim the build caches when the last trim is TRIM_EVERY seconds old,
+# and log what it dropped (it says nothing when a cache is under its limit).
+TRIM_T=0
+trim() {
+  local out
+  [ $(($1 - TRIM_T)) -ge "$TRIM_EVERY" ] || return 0
+  TRIM_T=$1
+  out=$(trim_caches 2>&1 8>&-)
+  [ -n "$out" ] && log "${out//$'\n'/; }"
+  return 0
+}
+
 github() { "$REPO/hack/lib/github.sh" "$@"; }
 
 # ci_workflows: FILE<tab>NAME of each workflow that runs on a push to main.
@@ -474,6 +491,7 @@ while :; do
         $([ "$MODE" = foreground ] && echo --foreground)
     fi
   fi
+  trim "$now"
   round
   sleep "$EVERY"
 done
