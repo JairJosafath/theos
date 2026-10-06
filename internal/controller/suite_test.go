@@ -48,12 +48,14 @@ const testScaffoldTimeout = 3 * time.Second
 
 var (
 	// gitFake is the Git host every test scaffolds into.
-	gitFake   *fakeGit
-	ctx       context.Context
-	cancel    context.CancelFunc
-	testEnv   *envtest.Environment
-	cfg       *rest.Config
-	k8sClient client.Client
+	gitFake *fakeGit
+	// githubFake is the GitHub every Crew publishes its releases to.
+	githubFake *fakeGitHub
+	ctx        context.Context
+	cancel     context.CancelFunc
+	testEnv    *envtest.Environment
+	cfg        *rest.Config
+	k8sClient  client.Client
 )
 
 func TestControllers(t *testing.T) {
@@ -110,6 +112,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	gitFake, err = newFakeGit(filepath.Join("..", "..", "templates"))
 	Expect(err).NotTo(HaveOccurred())
+	githubFake = newFakeGitHub()
+	DeferCleanup(githubFake.server.Close)
 	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
 	Expect(setupReconcilers(mgr)).To(Succeed())
 	go func() {
@@ -136,7 +140,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&TaskReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second,
 			StandardChangeRecheck: time.Second},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, PollInterval: time.Second,
-			Recorder: mgr.GetEventRecorder("crew")},
+			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err
