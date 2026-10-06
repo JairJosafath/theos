@@ -94,6 +94,7 @@ RELAY_DRY_RUN=1 hack/relay.sh      # the issue and prompt the next headless sess
 hack/relay.sh                      # headless sessions one after another, overnight (billed)
 hack/relay.sh --workers 2          # two relay workers side by side, each in its own worktree (no-cluster devices)
 hack/relay-watch.sh --workers 2    # keep the relay ready: start it within a minute of an issue becoming ready
+hack/relay-watch.sh --install --workers 2  # the same, kept up by systemd (or cron) across crashes and reboots
 touch .relay/stop                  # stop the watch, and every worker after its current session
 ```
 
@@ -178,6 +179,21 @@ running workers alone. Asking first keeps the relay's logs free of a worker that
 starts, finds nothing and stops every minute. It logs only changes, to `.relay/watch.log`, pulls main every 5
 minutes and restarts itself when that changed its code.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked.
+
+Install the watch once on each device that runs the relay overnight, from the
+main checkout: `hack/relay-watch.sh --install --workers N`. It writes the
+systemd user unit `c4factory-relay-watch.service` (from
+`hack/relay-watch.service`, with this checkout, N and your `PATH`), enables and
+starts it, and turns on `loginctl enable-linger`, so the watch starts at boot
+without a login. A crash, an OOM kill or `kill <pid>` brings the watch back
+within a minute; a watch you started by hand keeps running, and the unit's
+watch waits for its lock and takes over when it ends. On a device without
+systemd, `--install` adds two crontab lines instead, at boot and every 5
+minutes, which start the watch unless one runs. `touch .relay/stop` still stops
+it for good: the unit doesn't restart a watch that exits for the stop file, and
+cron doesn't start one while the file is there. `--install` again starts it,
+`--uninstall` removes the unit or the crontab lines. `systemctl --user status
+c4factory-relay-watch` shows the unit.
 
 ### Memory on the cluster device
 

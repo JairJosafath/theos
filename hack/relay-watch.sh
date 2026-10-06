@@ -30,13 +30,23 @@
 #   hack/relay-watch.sh                start the watch, detached, for one worker
 #   hack/relay-watch.sh --workers N    for N workers (1-99); on the cluster device RELAY_MAX_WORKERS (default 9)
 #                                      caps them, and hack/relay.sh admits each session by memory
-#   touch .relay/stop                  stop the watch, and every worker after its current session
+#   hack/relay-watch.sh --install [--workers N]
+#                                      keep the watch up: a systemd user unit (hack/relay-watch.service)
+#                                      restarts it after a crash, a kill or a reboot; without systemd, a
+#                                      crontab line starts it at boot and every 5 minutes
+#   hack/relay-watch.sh --uninstall    remove the unit or the crontab lines
+#   touch .relay/stop                  stop the watch, and every worker after its current session; an
+#                                      installed watch stays down until --install starts it again
+#
+# The unit runs the watch with --foreground: in its own process, waiting for the
+# lock while a watch started by hand holds it. The crontab line runs it with
+# --cron: started detached unless a watch runs or .relay/stop is there.
 #
 # Log: .relay/watch.log, one line per change; the workers log as usual, to
 # .relay/relay-<k>.log.
 set -uo pipefail
 
-REPO=$(cd "$(dirname "$0")/.." && pwd)
+REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 DIR="$REPO/.relay"
 STOP="$DIR/stop"
 LOG="$DIR/watch.log"
@@ -45,12 +55,13 @@ RETRY=${WATCH_RETRY:-600}
 TRIAGE_EVERY=${WATCH_TRIAGE:-1800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 
-WORKERS=1
+WORKERS=1 MODE=start
 while [ $# -gt 0 ]; do
   case $1 in
     --workers) WORKERS=${2:-}; shift 2 || shift ;;
     --workers=*) WORKERS=${1#*=}; shift ;;
-    *) echo "usage: hack/relay-watch.sh [--workers N]" >&2; exit 64 ;;
+    --install | --uninstall | --foreground | --cron) MODE=${1#--}; shift ;;
+    *) echo "usage: hack/relay-watch.sh [--install | --uninstall] [--workers N]" >&2; exit 64 ;;
   esac
 done
 [[ $WORKERS =~ ^[1-9][0-9]?$ ]] || { echo "relay-watch: --workers takes 1 to 99" >&2; exit 64; }
@@ -150,19 +161,105 @@ round() {
 
 code_sum() { cksum <"$REPO/hack/relay-watch.sh"; }
 
+# --install and --uninstall. The unit goes to the user's own systemd folder,
+# not $XDG_CONFIG_HOME, which the project shell points into .dev/.
+UNIT=c4factory-relay-watch.service
+TEMPLATE="$REPO/hack/relay-watch.service"
+unit_file() { echo "$HOME/.config/systemd/user/$UNIT"; }
+cron_tag() { echo "# c4factory relay watch: $REPO"; }
+
+# has_systemd: whether this user has a systemd user manager to run the unit.
+has_systemd() { command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; }
+
+# render_unit: the unit for this checkout and WORKERS, with the installer's PATH
+# (the user manager's own PATH lacks gh and claude).
+render_unit() {
+  local t
+  t=$(<"$TEMPLATE")
+  t=${t//@REPO@/"$REPO"}
+  t=${t//@WORKERS@/"$WORKERS"}
+  t=${t//@PATH@/"$PATH"}
+  printf '%s\n' "$t"
+}
+
+# cron_lines: the crontab without this checkout's lines (stdin), then them.
+cron_lines() {
+  local cmd
+  cmd="cd $(printf %q "$REPO") && PATH=$(printf %q "$PATH") ./dev run hack/relay-watch.sh --cron --workers $WORKERS >>.relay/watch.out 2>&1"
+  grep -vF "$(cron_tag)"
+  echo "@reboot $cmd $(cron_tag)"
+  echo "*/5 * * * * $cmd $(cron_tag)"
+}
+
+# without_cron: remove this checkout's crontab lines, if there are any.
+without_cron() {
+  local tab
+  command -v crontab >/dev/null || return 0
+  tab=$(crontab -l 2>/dev/null) || return 0
+  grep -qF "$(cron_tag)" <<<"$tab" || return 0
+  grep -vF "$(cron_tag)" <<<"$tab" | crontab -
+}
+
+install_watch() {
+  mkdir -p "$DIR"
+  rm -f "$STOP"
+  if has_systemd; then
+    mkdir -p "$(dirname "$(unit_file)")"
+    render_unit >"$(unit_file)"
+    without_cron
+    systemctl --user daemon-reload &&
+      systemctl --user enable "$UNIT" &&
+      systemctl --user restart "$UNIT" || { echo "relay-watch: systemctl failed" >&2; return 1; }
+    # Linger starts the user's manager, and so the watch, at boot without a login.
+    loginctl enable-linger "$(id -un)" 2>/dev/null ||
+      echo "relay-watch: loginctl enable-linger failed; the watch starts at the first login, not at boot" >&2
+    echo "relay watch installed as $(unit_file) for $WORKERS worker(s): tail -f $LOG"
+  else
+    command -v crontab >/dev/null || { echo "relay-watch: neither systemd nor crontab here" >&2; return 1; }
+    { crontab -l 2>/dev/null || true; } | cron_lines | crontab - || { echo "relay-watch: crontab failed" >&2; return 1; }
+    echo "relay watch installed in the crontab (at boot and every 5 minutes) for $WORKERS worker(s): tail -f $LOG"
+    (cd "$REPO" && ./dev run hack/relay-watch.sh --cron --workers "$WORKERS" >>"$DIR/watch.out" 2>&1)
+  fi
+  echo "stop: touch $STOP; start again: hack/relay-watch.sh --install"
+}
+
+uninstall_watch() {
+  if [ -e "$(unit_file)" ]; then
+    has_systemd && systemctl --user disable --now "$UNIT"
+    rm -f "$(unit_file)"
+    has_systemd && systemctl --user daemon-reload
+    echo "removed $(unit_file); its watch is stopped"
+  fi
+  if command -v crontab >/dev/null && crontab -l 2>/dev/null | grep -qF "$(cron_tag)"; then
+    without_cron
+    echo "removed the crontab lines; a watch running now keeps running (touch $STOP)"
+  fi
+  return 0
+}
+
 # Sourced (hack/relay-watch_test.sh): the functions only.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
 
-# Started from a terminal: start the watch, detached, and return.
-if [ "${C4_RELAY_WATCH_CHILD:-}" != 1 ]; then
+case $MODE in
+  install) install_watch; exit ;;
+  uninstall) uninstall_watch; exit ;;
+esac
+
+# Started from a terminal or cron: start the watch, detached, and return.
+# From cron, a stop file stays and keeps the watch down.
+if [ "${C4_RELAY_WATCH_CHILD:-}" != 1 ] && [ "$MODE" != foreground ]; then
   if ! flock -n "$DIR/watch.lock" true; then
-    echo "the relay watch is already running; see $LOG"
+    [ "$MODE" = cron ] || echo "the relay watch is already running; see $LOG"
     exit 0
   fi
-  rm -f "$STOP"
+  if [ "$MODE" = cron ]; then
+    [ -e "$STOP" ] && exit 0
+  else
+    rm -f "$STOP"
+  fi
   C4_RELAY_WATCH_CHILD=1 setsid nohup bash "$0" --workers "$WORKERS" >>"$DIR/watch.out" 2>&1 </dev/null &
   echo "relay watch started (pid $!) for $WORKERS worker(s): tail -f $LOG"
   echo "stop: touch $STOP"
@@ -174,12 +271,17 @@ if [ "${C4_RELAY_WATCH_RESTART:-}" = 1 ]; then
   flock -n 8 || { log "restarted without the watch's lock; exiting"; exit 1; }
 else
   exec 8>"$DIR/watch.lock"
-  flock -n 8 || { log "another watch holds the lock; exiting"; exit 1; }
+  if ! flock -n 8; then
+    [ "$MODE" = foreground ] || { log "another watch holds the lock; exiting"; exit 1; }
+    # Under the unit: wait for the watch started by hand, then take over.
+    log "another watch holds the lock; pid $$ waits for it to end"
+    flock 8
+  fi
 fi
 # The workers and their sessions don't need to know they were started by a watch.
 unset C4_RELAY_WATCH_CHILD C4_RELAY_WATCH_RESTART
 CODE_SUM=$(code_sum)
-log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, HEAD $(git rev-parse --short HEAD), $WORKERS worker(s), asks GitHub every ${EVERY}s"
+log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}$([ "$MODE" = foreground ] && echo ", under systemd"), HEAD $(git rev-parse --short HEAD 2>/dev/null), $WORKERS worker(s), asks GitHub every ${EVERY}s"
 PULL_T=0 PULLED=
 while :; do
   [ -e "$STOP" ] && { log "stop file found; stopping"; exit 0; }
@@ -194,7 +296,8 @@ while :; do
     if [ "$(code_sum)" != "$CODE_SUM" ]; then
       log "the watch's code changed (HEAD $(git rev-parse --short HEAD)); restarting"
       # The new watch keeps this one's lock on fd 8.
-      exec env C4_RELAY_WATCH_CHILD=1 C4_RELAY_WATCH_RESTART=1 bash "$REPO/hack/relay-watch.sh" --workers "$WORKERS"
+      exec env C4_RELAY_WATCH_CHILD=1 C4_RELAY_WATCH_RESTART=1 bash "$REPO/hack/relay-watch.sh" --workers "$WORKERS" \
+        $([ "$MODE" = foreground ] && echo --foreground)
     fi
   fi
   round

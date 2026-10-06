@@ -1,0 +1,25 @@
+# The relay watch as a systemd user unit; hack/relay-watch.sh --install fills in
+# @REPO@, @WORKERS@ and @PATH@ and writes it to ~/.config/systemd/user.
+#
+# Restart=always brings the watch back after a crash, an OOM kill or a kill;
+# RestartPreventExitStatus=0 keeps it down when it exits for .relay/stop.
+# KillMode=process stops only the watch: the relay workers it started finish
+# their sessions.
+[Unit]
+Description=C4 Factory relay watch (@REPO@)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+Environment="PATH=@PATH@"
+ExecStart="@REPO@/dev" run "@REPO@/hack/relay-watch.sh" --foreground --workers @WORKERS@
+Restart=always
+RestartSec=15
+RestartPreventExitStatus=0
+KillMode=process
+
+[Install]
+WantedBy=default.target
