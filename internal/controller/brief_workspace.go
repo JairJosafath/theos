@@ -167,12 +167,18 @@ func writeWorkspace(ctx context.Context, provider gitprovider.Provider, repo git
 // gatherWorkspace reads what the planner needs: the Brief, the namespace's
 // story, its catalog and its Containers' open issues.
 func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1.Brief) (model.BriefWorkspace, error) {
+	status := &brief.Status
+	outcomes := make([]string, 0, len(status.History))
+	for _, h := range status.History {
+		outcomes = append(outcomes, h.Outcome)
+	}
+	roundRuns := status.Round > 0 && !roundOver(status)
 	ws := model.BriefWorkspace{
 		Brief:          brief.Name,
 		Idea:           brief.Spec.Idea,
-		Prompts:        brief.Spec.Prompts,
-		PromptsPlanned: int(brief.Status.PromptsPlanned),
-		IdeaPlanned:    len(brief.Status.History) > 0,
+		Prompts:        model.WorkspacePrompts(brief.Spec.Prompts, int(status.RoundPrompts), roundRuns),
+		PromptsPlanned: int(status.PromptsPlanned),
+		IdeaPlanned:    model.IdeaPlanned(outcomes, int(status.PromptsPlanned)),
 		GitProvider:    brief.Spec.GitProviderRef.Name,
 	}
 	var err error

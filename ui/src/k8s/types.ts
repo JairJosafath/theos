@@ -334,6 +334,8 @@ export interface Brief extends K8sObject {
     phase?: BriefPhase
     /** The round running now or last run; 0 before the first. */
     round?: number
+    /** How many of spec.prompts the running or last round took. */
+    roundPrompts?: number
     /** How many of spec.prompts the last applied round took; the rest wait for the next round. */
     promptsPlanned?: number
     /** What the planner chose in the last round, in plain words. */
@@ -341,9 +343,18 @@ export interface Brief extends K8sObject {
     /** The objects the Brief made, over all rounds. */
     created?: { kind: string; name: string }[]
     /** The issues the Brief filed, over all rounds. */
-    issues?: { repository: string; number: number; url?: string; title?: string }[]
+    issues?: { repository: string; number: number; url?: string; title?: string; round?: number; n?: number }[]
     /** One entry per round, oldest first. */
-    history?: { round: number; summary?: string; choices?: string[]; costMilliUSD?: number }[]
+    history?: {
+      round: number
+      summary?: string
+      choices?: string[]
+      costMilliUSD?: number
+      /** Applied, PlannerNeedsInput or RoundFailed. */
+      outcome?: 'Applied' | 'PlannerNeedsInput' | 'RoundFailed'
+      /** The planner's question, when the round asked for input. */
+      needsInput?: string
+    }[]
     /** The Brief's own repository, where every round's plan is kept. */
     repositoryURL?: string
     /** What planning cost over all rounds, in thousandths of a US dollar. */

@@ -70,7 +70,9 @@ type Provider interface {
 	// It fails, without force, if the branch already exists.
 	PushInitialCommit(ctx context.Context, repo Repository, files scaffold.Tree, message string, author Signature) (string, error)
 	// ReadFiles returns branch's copy of those of paths it has, and the commit it
-	// read them at. A path it doesn't have is left out, not an error.
+	// read them at. A path it doesn't have is left out, not an error. A path
+	// ending in "/" reads every regular file below that directory, keyed by its
+	// full path; a missing directory gives nothing.
 	ReadFiles(ctx context.Context, repo Repository, branch string, paths []string) (scaffold.Tree, string, error)
 	// PushBranch commits files, and the removal of removes, on top of commit base
 	// of the default branch, and force-pushes the commit as branch, creating or

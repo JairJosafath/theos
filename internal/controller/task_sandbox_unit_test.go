@@ -517,3 +517,121 @@ func TestRunStateReadsTheProposal(t *testing.T) {
 		t.Fatalf("result %+v; want proposal %+v and empty", state.Result, want)
 	}
 }
+
+// podOf reads the pod spec of a built Sandbox.
+func podOf(t *testing.T, sandbox *unstructured.Unstructured) corev1.PodSpec {
+	t.Helper()
+	var pod corev1.PodSpec
+	spec := sandbox.Object["spec"].(map[string]any)["podTemplate"].(map[string]any)["spec"].(map[string]any)
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(spec, &pod); err != nil {
+		t.Fatal(err)
+	}
+	return pod
+}
+
+func envNames(env []corev1.EnvVar) []string {
+	names := make([]string, 0, len(env))
+	for _, e := range env {
+		names = append(names, e.Name)
+	}
+	return names
+}
+
+func TestBuildSandboxImplementEnv(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	sandbox, err := buildSandbox(sandboxRun{
+		task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+		status:    &c4v1alpha1.TaskStatus{Round: 2, Branch: "task/add-crop"},
+		container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+		agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+		name:      "add-crop-r2-implement", role: model.RoleImplementer, gitSecret: "image-shrink-agent-git",
+	}, scheme, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"C4_ROLE", "C4_REPO_URL", "C4_BRANCH", "C4_BASE", "C4_GOAL", "C4_CONTEXT", "C4_PROJECT",
+		"C4_CONTAINER", "C4_TASK", "C4_ROUND", "C4_MAX_ROUNDS", "C4_HARNESS", "C4_PROTECTED_PATHS",
+		"C4_GIT_USERNAME", "C4_GIT_TOKEN"}
+	if got := envNames(podOf(t, sandbox).Containers[0].Env); !reflect.DeepEqual(got, want) {
+		t.Errorf("env %v, want %v", got, want)
+	}
+	if got := sandbox.GetLabels(); got[c4v1alpha1.LabelContainer] != "image-shrink" || got[c4v1alpha1.LabelBrief] != "" {
+		t.Errorf("labels %v, want the Container's and no Brief's", got)
+	}
+}
+
+func TestBuildSandboxPlanEnv(t *testing.T) {
+	if model.RolePlanner != agentrunner.RolePlan {
+		t.Fatalf("model.RolePlanner = %q, but c4agent plans as %q", model.RolePlanner, agentrunner.RolePlan)
+	}
+	scheme := runtime.NewScheme()
+	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, goal, feedback string
+		want                 []corev1.EnvVar
+	}{
+		{name: "a first try", want: []corev1.EnvVar{
+			{Name: "C4_ROLE", Value: "plan"},
+			{Name: "C4_REPO_URL", Value: "http://gitea/apps/brief-cel-lens.git"},
+			{Name: "C4_BRANCH", Value: "plan/4"},
+			{Name: "C4_BASE", Value: "main"},
+			{Name: "C4_BRIEF", Value: "cel-lens"},
+			{Name: "C4_PROJECT", Value: "apps"},
+			{Name: "C4_TASK", Value: "cel-lens-plan-4"},
+			{Name: "C4_ROUND", Value: "4"},
+			{Name: "C4_MAX_ROUNDS", Value: "3"},
+			{Name: "C4_HARNESS", Value: "stand-in"},
+			secretEnv("C4_GIT_USERNAME", "brief-cel-lens-git", "username"),
+			secretEnv("C4_GIT_TOKEN", "brief-cel-lens-git", "token"),
+			{Name: "C4_MODEL", Value: "opus"},
+		}},
+		{name: "a try after a refusal, with a goal", goal: "Keep it small.", feedback: "The Brief refused the plan:\nx",
+			want: []corev1.EnvVar{
+				{Name: "C4_ROLE", Value: "plan"},
+				{Name: "C4_REPO_URL", Value: "http://gitea/apps/brief-cel-lens.git"},
+				{Name: "C4_BRANCH", Value: "plan/4"},
+				{Name: "C4_BASE", Value: "main"},
+				{Name: "C4_BRIEF", Value: "cel-lens"},
+				{Name: "C4_GOAL", Value: "Keep it small."},
+				{Name: "C4_PROJECT", Value: "apps"},
+				{Name: "C4_TASK", Value: "cel-lens-plan-4"},
+				{Name: "C4_ROUND", Value: "4"},
+				{Name: "C4_MAX_ROUNDS", Value: "3"},
+				{Name: "C4_HARNESS", Value: "stand-in"},
+				secretEnv("C4_GIT_USERNAME", "brief-cel-lens-git", "username"),
+				secretEnv("C4_GIT_TOKEN", "brief-cel-lens-git", "token"),
+				{Name: "C4_MODEL", Value: "opus"},
+				{Name: "C4_FEEDBACK", Value: "The Brief refused the plan:\nx"},
+			}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			task := &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "cel-lens-plan-4")}
+			task.Spec.Goal = tt.goal
+			agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "planner")}
+			agent.Spec.Harness, agent.Spec.Model = "stand-in", "opus"
+			sandbox, err := buildSandbox(sandboxRun{
+				task:   task,
+				status: &c4v1alpha1.TaskStatus{Round: 2, Branch: "plan/4", Feedback: tt.feedback},
+				agent:  agent, name: "cel-lens-plan-4-r2-plan", role: model.RolePlanner,
+				repoURL: "http://gitea/apps/brief-cel-lens.git", gitSecret: "brief-cel-lens-git", goal: tt.goal,
+				maxRounds: 3, brief: "cel-lens", briefRound: 4,
+			}, scheme, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := podOf(t, sandbox).Containers[0].Env; !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("env\n%v\nwant\n%v", got, tt.want)
+			}
+			want := map[string]string{LabelTask: "cel-lens-plan-4", c4v1alpha1.LabelProject: "apps",
+				LabelAgentSandbox: "true", c4v1alpha1.LabelBrief: "cel-lens"}
+			if got := sandbox.GetLabels(); !reflect.DeepEqual(got, want) {
+				t.Errorf("labels %v, want %v", got, want)
+			}
+		})
+	}
+}

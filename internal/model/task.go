@@ -27,6 +27,8 @@ const (
 const (
 	RoleImplementer = "implement"
 	RoleReviewer    = "review"
+	// RolePlanner is a Plan Task's run: the planner writes a Brief round's plan.
+	RolePlanner = "plan"
 )
 
 // Review verdicts.
@@ -206,6 +208,13 @@ type TaskFacts struct {
 	Change ChangeFacts
 	// Feedback is the round's feedback, status.feedback.
 	Feedback string
+	// Plan means a Plan Task: the planner writes a Brief round's plan, and the
+	// Brief checks it. It has no Container, protection, queue, CI or review.
+	Plan bool
+	// PlanChecked means the Brief gave its verdict on the round's commit, and
+	// PlanRefusals are its reasons when it refused the plan.
+	PlanChecked  bool
+	PlanRefusals string
 }
 
 // ChangeFacts is a Standard change a Task filed.
@@ -355,7 +364,12 @@ const (
 	// ActionRefuseMerge fails a Standard change whose gated merge is refused, and
 	// hands its issue back.
 	ActionRefuseMerge TaskAction = "RefuseMerge"
-	ActionFail        TaskAction = "Fail"
+	// ActionAwaitPlanCheck records the plan a planner pushed and waits for the
+	// Brief's verdict on it.
+	ActionAwaitPlanCheck TaskAction = "AwaitPlanCheck"
+	// ActionPlanAccepted ends a Plan Task whose plan the Brief accepted.
+	ActionPlanAccepted TaskAction = "PlanAccepted"
+	ActionFail         TaskAction = "Fail"
 )
 
 // TaskStep is the next action, with the feedback for the next round when the
@@ -387,6 +401,9 @@ func NextTaskStep(f TaskFacts) TaskStep {
 }
 
 func nextTaskStep(f TaskFacts) TaskStep {
+	if f.Plan {
+		return planStep(f)
+	}
 	switch f.Phase {
 	case "", TaskPending:
 		switch {
@@ -432,6 +449,37 @@ func nextTaskStep(f TaskFacts) TaskStep {
 	return TaskStep{Action: ActionNone}
 }
 
+// planStep decides what happens next to a Plan Task: the planner pushes a
+// plan, and the Brief checks it. A refused plan costs a round, as a refused
+// change does.
+func planStep(f TaskFacts) TaskStep {
+	switch f.Phase {
+	case "", TaskPending:
+		return TaskStep{Action: ActionStartImplement, Message: "Starting round 1"}
+	case TaskImplementing:
+		return implementingStep(f)
+	case TaskChecking:
+		switch {
+		case !f.PlanChecked:
+			return TaskStep{Action: ActionWait, Message: "Waiting for the Brief to check the plan"}
+		case f.PlanRefusals != "":
+			return roundFailed(f, "The Brief refused the plan:\n"+f.PlanRefusals)
+		}
+		return TaskStep{Action: ActionPlanAccepted, Message: "The Brief accepted the plan"}
+	}
+	return TaskStep{Action: ActionNone}
+}
+
+// planPushedStep decides what follows a finished planner run that reported
+// neither an error nor an outage.
+func planPushedStep(f TaskFacts) TaskStep {
+	if f.Run.Result.Commit == "" {
+		return roundFailed(f, "The planner's run pushed no plan")
+	}
+	return TaskStep{Action: ActionAwaitPlanCheck, Message: "The planner pushed " + short(f.Run.Result.Commit) +
+		"; waiting for the Brief to check the plan"}
+}
+
 // implementingStep decides what follows in the Implementing phase.
 func implementingStep(f TaskFacts) TaskStep {
 	switch {
@@ -447,6 +495,8 @@ func implementingStep(f TaskFacts) TaskStep {
 		return agentUnavailable(f)
 	case f.Run.Result.Error != "":
 		return roundFailed(f, f.Run.Result.Error)
+	case f.Plan:
+		return planPushedStep(f)
 	}
 	return implementedStep(f)
 }
