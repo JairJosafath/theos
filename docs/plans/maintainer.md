@@ -45,9 +45,10 @@ design questions, and the owner had to clean it up by hand.
 - **It runs on activity, not on a clock alone.** A sweep every 2 hours when
   anything changed (an issue, a pull request or main), and soon after an issue
   enters `status/needs-maintainer`. Quiet nights cost nothing.
-- **LICENSE stays the owner's.** CNCF requires one (Apache-2.0); choosing a
-  license is reserved, so the maintainer recommends it in *Needs you* rather
-  than adding it.
+- **The license is proprietary, all rights reserved** (the owner's choice).
+  The owner holds every copyright, so open-sourcing later (CNCF projects use
+  Apache-2.0) stays a relicense the owner can make at any time. Only the owner
+  changes the license; the maintainer never proposes it on its own.
 
 ## Steps
 
