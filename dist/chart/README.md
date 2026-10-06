@@ -48,12 +48,25 @@ organization `templates`, made organization `webshop` and stored its token in
 Secret `webshop/gitea-credentials`, and the chart made GitProvider
 `webshop/gitea` from it. Apply your Project, Systems and Containers to
 `webshop` and their repositories appear in Gitea. The admin's password is in
-Secret `gitea/gitea-admin`:
+Secret `gitea/gitea-admin`, which Gitea's pod made with a random password on
+its first start (the chart renders no credential):
 
 ```bash
 kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d; echo
 kubectl -n gitea port-forward service/gitea 3000:3000   # http://localhost:3000
 ```
+
+To rotate the admin's password or the runners' registration token, delete
+its Secret and restart the pods that use it; Gitea's pod makes a new one:
+
+```bash
+kubectl -n gitea delete secret gitea-admin     # or gitea-runner
+kubectl -n gitea rollout restart deployment/gitea
+kubectl -n gitea rollout restart deployment/gitea-runner-base deployment/gitea-runner-go  # after gitea-runner
+```
+
+With `gitea.admin.existingSecret` the admin is your Secret: change its
+password there and restart Deployment `gitea`.
 
 A new project later: create its namespace, add it to `gitea.projects` and
 `helm upgrade` with the same values. `helm uninstall` keeps namespace `gitea`

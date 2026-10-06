@@ -212,13 +212,18 @@ instead: every minute it asks `pick` (which changes nothing) and, when there is
 an issue and a worker is free, runs `hack/relay.sh --workers N`, which leaves
 running workers alone. Asking first keeps the relay's logs free of a worker that
 starts, finds nothing and stops every minute. It logs only changes, to `.relay/watch.log`, pulls main every 5
-minutes and restarts itself when that changed its code. Every
-`WATCH_CI_EVERY` (15 minutes) it checks main's CI: a workflow that runs on a
-push to main and failed its two newest finished runs there (`hack/lib/github.sh
-red`) gets one issue, `main is red: <workflow>`, ready and urgent, so the next
-session fixes main before anything else; a single failure files nothing.
+minutes and restarts itself when that changed its code.
+With nothing ready, it starts a triage of the `status/proposed` issues: for a
+new one, for one that changed since the last triage or waits on an issue that
+closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
+`WATCH_TRIAGE` (30m). Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
+a workflow that runs on a push to main and failed its two newest finished runs
+there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
+ready and urgent, so the next session fixes main before anything else; a single
+failure files nothing.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
-and its CI rounds with `gh` faked.
+the triage's reasons with `proposed --since` against a stubbed GitHub, and its
+CI rounds with `gh` faked.
 
 ### Memory on the cluster device
 

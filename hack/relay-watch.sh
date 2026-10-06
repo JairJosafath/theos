@@ -18,10 +18,13 @@
 # starts one triage session (hack/relay.sh --triage, in a free worker's
 # worktree): it reads each proposed issue against docs/design.md and the open
 # issues, readies the sound ones, comments on the others what they lack and
-# closes duplicates. It takes no issue and changes no code. Triage runs again
-# only when a proposed issue it hasn't seen appears, and at most every
-# WATCH_TRIAGE seconds (default 1800); .relay/triaged keeps what it saw across
-# restarts. status/needs-human stays the user's.
+# closes duplicates. It takes no issue and changes no code. Triage runs again,
+# at most every WATCH_TRIAGE seconds (default 1800), when a proposed issue it
+# hasn't seen appears, when one changed after it (its body, title, labels or a
+# comment that isn't the triage's own), when one waits on an issue that closed
+# after it (Depends on #M, or an #M in the triage's comment), and in any case
+# after WATCH_RETRIAGE seconds (default 10800, 3h); .relay/triaged keeps its
+# time and the issues it saw across restarts. status/needs-human stays the user's.
 #
 # Every WATCH_CI_EVERY seconds (default 900) it checks main's CI: each
 # workflow in .github/workflows that runs on a push to main and whose two
@@ -51,6 +54,7 @@ LOG="$DIR/watch.log"
 EVERY=${WATCH_EVERY:-60}
 RETRY=${WATCH_RETRY:-600}
 TRIAGE_EVERY=${WATCH_TRIAGE:-1800}
+RETRIAGE=${WATCH_RETRIAGE:-10800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 CI_EVERY=${WATCH_CI_EVERY:-900}
 
@@ -146,34 +150,53 @@ start() {
   [ "$rc" = 0 ] || log "hack/relay.sh failed (exit $rc)"
 }
 
-# triage NOW: with nothing ready, start a triage session when a proposed issue
-# waits that the last triage didn't see, and that triage is TRIAGE_EVERY
-# seconds old. $DIR/triaged holds the last triage's time and issues; when its
-# session never ran, hack/relay.sh --triage keeps only the time there, so the
-# same issues start it again.
+# triage NOW: with nothing ready, start a triage session, at most every
+# TRIAGE_EVERY seconds, when a proposed issue waits that the last triage didn't
+# see, one changed after it (not by the triage's own comment), one waits on an
+# issue that closed after it, or the last triage is RETRIAGE seconds old.
+# $DIR/triaged holds the last triage's time and issues; when its session never
+# ran, hack/relay.sh --triage keeps only the time there, so the same issues
+# start it again.
 TRIAGE_ERR=
 triage() {
-  local now=$1 list rc n new= out t=0 seen=
+  local now=$1 list= rc n changed closed why=() new= moved= freed= out t=0 seen= since=()
   [ -r "$DIR/triaged" ] && read -r t seen <"$DIR/triaged"
-  list=$(proposed 2>"$DIR/proposed.err")
+  t=${t:-0}
+  [ $((now - t)) -ge "$TRIAGE_EVERY" ] || return 0
+  # Within RETRIAGE, ask what changed since the last triage too.
+  [ "$t" -gt 0 ] && [ $((now - t)) -lt "$RETRIAGE" ] && since=(--since "$t")
+  out=$(proposed "${since[@]}" 2>"$DIR/proposed.err")
   rc=$?
   if [ "$rc" != 0 ]; then
-    out="$list $(cat "$DIR/proposed.err" 2>/dev/null)"
+    out="$out $(cat "$DIR/proposed.err" 2>/dev/null)"
     [ -n "$TRIAGE_ERR" ] || log "could not list the proposed issues (exit $rc): ${out//$'\n'/; }"
     TRIAGE_ERR=1
     return 0
   fi
   TRIAGE_ERR=
-  list=$(grep -xE '[0-9]+' <<<"$list" | tr '\n' ' ')
-  list=${list% }
-  for n in $list; do
-    [[ " $seen " == *" $n "* ]] || new+=" #$n"
-  done
-  [ -n "$new" ] && [ $((now - ${t:-0})) -ge "$TRIAGE_EVERY" ] || return 0
+  while read -r n changed closed; do
+    [[ $n =~ ^[0-9]+$ ]] || continue
+    list+=" $n"
+    if [[ " $seen " != *" $n "* ]]; then
+      new+=" #$n"
+    elif [ "${changed:-0}" -gt "$t" ] 2>/dev/null; then
+      moved+=" #$n"
+    elif [ "${closed:-0}" -gt "$t" ] 2>/dev/null; then
+      freed+=" #$n"
+    fi
+  done <<<"$out"
+  list=${list# }
+  [ -n "$list" ] || return 0
+  [ -n "$new" ] && why+=("new:$new")
+  [ -n "$moved" ] && why+=("changed:$moved")
+  [ -n "$freed" ] && why+=("waited on a closed issue:$freed")
+  [ ${#why[@]} -gt 0 ] || [ ${#since[@]} = 0 ] || return 0
+  [ ${#why[@]} -gt 0 ] || why=("read again after $((RETRIAGE / 3600))h")
   echo "$now $list" >"$DIR/triaged"
   out=$(run_triage 2>&1 8>&-)
   rc=$?
-  log "triage: proposed #${list// / #} (new:$new); hack/relay.sh --triage${out:+: ${out//$'\n'/; }}$([ "$rc" = 0 ] || echo " (failed, exit $rc; again after $((TRIAGE_EVERY / 60))m)")"
+  why=$(printf '%s; ' "${why[@]}")
+  log "triage: proposed #${list// / #} (${why%; }); hack/relay.sh --triage${out:+: ${out//$'\n'/; }}$([ "$rc" = 0 ] || echo " (failed, exit $rc; again after $((TRIAGE_EVERY / 60))m)")"
   [ "$rc" = 0 ] || echo "$now" >"$DIR/triaged"
 }
 

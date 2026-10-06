@@ -8,7 +8,9 @@
 #
 #   hack/lib/github.sh labels            create the labels below, or update their descriptions (safe to repeat)
 #   hack/lib/github.sh pick              the issue to work next: NUMBER TITLE URL STATUS, tab-separated
-#   hack/lib/github.sh proposed          the open status/proposed issues' numbers, oldest first, one per line
+#   hack/lib/github.sh proposed [--since EPOCH]
+#                                        the open status/proposed issues' numbers, oldest first, one per line;
+#                                        with --since, N CHANGED CLOSED for the relay watch (see gh_proposed)
 #   hack/lib/github.sh show N            issue N, its newest handoff comment and the comments after it
 #   hack/lib/github.sh take N            claim N for this checkout and swap it to status/in-progress;
 #                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it,
@@ -222,14 +224,58 @@ gh_pick() {
   echo "$row"
 }
 
-# gh_proposed: the open status/proposed issues' numbers, oldest first, one
-# per line, for the relay's triage. Exit 2: GitHub could not be asked.
+# gh_proposed [--since T]: the open status/proposed issues' numbers, oldest
+# first, one per line, for the relay's triage. With --since T (epoch seconds,
+# the last triage's start), each line is N CHANGED CLOSED for hack/relay-watch.sh:
+# CHANGED is when N last changed in a way the triage didn't (its body, title,
+# labels or a comment that isn't a triage's, <!-- relay-triage -->), CLOSED
+# when the newest issue it waits on closed (Depends on #M in its body, or an #M
+# in its newest triage comment); either is 0 when nothing after T says so.
+# Exit 2: GitHub could not be asked.
 gh_proposed() {
-  local issues
+  local issues since= comments closed n triage='[]' t
+  case ${1:-} in
+    --since) [[ ${2:-} =~ ^[0-9]+$ ]] || { echo "github: proposed --since takes epoch seconds" >&2; return 1; }
+      since=$(date -u -d "@$2" +%Y-%m-%dT%H:%M:%SZ) ;;
+    '') ;;
+    *) echo "usage: hack/lib/github.sh proposed [--since EPOCH]" >&2; return 1 ;;
+  esac
   issues=$(gh_api --paginate --slurp \
     "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
-  jq -r '.[][] | select(.pull_request | not) | select(.labels | any(.name == "status/proposed")) | .number' <<<"$issues" ||
+  issues=$(jq -c '[.[][] | select(.pull_request | not) | select(.labels | any(.name == "status/proposed"))]' <<<"$issues") ||
     return 2
+  if [ -z "$since" ]; then
+    jq -r '.[].number' <<<"$issues"
+    return
+  fi
+  comments=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/comments?since=$since&per_page=100") || return 2
+  closed=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues?state=closed&since=$since&per_page=100") || return 2
+  closed=$(jq -c --arg s "$since" '[.[][] | select(.closed_at != null and .closed_at > $s) | {number, closed_at}]' <<<"$closed") ||
+    return 2
+  # Only when something closed since T: each issue's newest triage comment, for the #M it names.
+  if [ "$closed" != '[]' ]; then
+    for n in $(jq -r '.[].number' <<<"$issues"); do
+      t=$(gh_comments "$n") || return 2
+      triage=$(jq -c --argjson n "$n" --argjson c "$t" \
+        '. + [{n: $n, body: ([$c[] | select(.body | startswith("<!-- relay-triage -->"))] | last | .body // "")}]' <<<"$triage")
+    done
+  fi
+  jq -r --arg s "$since" --argjson comments "$comments" --argjson closed "$closed" --argjson triage "$triage" '
+    def ep: fromdateiso8601;
+    def mine: .body | startswith("<!-- relay-triage -->");
+    [$comments[][] | select(.updated_at > $s) | . + {n: (.issue_url | sub(".*/"; "") | tonumber)}] as $since
+    | .[] | .number as $n
+    | [$since[] | select(.n == $n)] as $c
+    # The triage comment bumps the issue'"'"'s updated_at; a change in its few
+    # seconds is taken for the triage'"'"'s own.
+    | ([$c[] | select(mine) | .updated_at | ep] | max) as $tc
+    | ([$c[] | select(mine | not) | .updated_at | ep]
+        + (if (.updated_at | ep) > (($tc // 0) + 10) then [.updated_at | ep] else [] end)
+        | max // 0) as $changed
+    | ([(.body // "") | scan("[Dd]epends on #([0-9]+)") | .[0] | tonumber]
+        + [$triage[] | select(.n == $n) | .body | scan("#([0-9]+)") | .[0] | tonumber]) as $refs
+    | ([$closed[] | select(.number as $m | $refs | any(. == $m)) | .closed_at | ep] | max // 0) as $done
+    | "\($n) \($changed) \($done)"' <<<"$issues" || return 2
 }
 
 # gh_comments N: issue N's comments, oldest first, as one JSON array.
@@ -993,7 +1039,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   case $cmd in
     labels) gh_labels ;;
     pick) gh_pick ;;
-    proposed) gh_proposed ;;
+    proposed) gh_proposed "$@" ;;
     show) gh_show "$@" ;;
     take) gh_take "$@" ;;
     release) gh_release "$@" ;;

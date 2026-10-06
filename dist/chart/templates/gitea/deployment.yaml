@@ -1,8 +1,11 @@
 {{- if .Values.gitea.enabled }}
 {{- $image := printf "%s:%s" .Values.gitea.image.repository .Values.gitea.image.tag }}
-# Gitea, rootless image, one replica, as config/gitea/deployment.yaml. The setup
-# container prepares app.ini, migrates the database and makes the admin match
-# the admin Secret; all of it is safe to repeat on every start.
+{{- $seed := .Values.gitea.seed }}
+# Gitea, rootless image, one replica, as config/gitea/deployment.yaml. The
+# credentials container makes Secrets gitea-admin and gitea-runner when they are
+# missing, so no generated value is ever rendered; the setup container prepares
+# app.ini, migrates the database and makes the admin match the admin Secret.
+# All of it is safe to repeat on every start.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,11 +27,13 @@ spec:
       labels:
         {{- include "c4-factory.giteaLabels" (dict "name" "gitea" "context" .) | nindent 8 }}
       annotations:
-        # A change of settings rolls the pod. Not the admin Secret: its password
-        # is random on install, so a checksum of it would restart Gitea on the
-        # first upgrade.
+        # A change of settings rolls the pod. The Secrets are not rendered, so
+        # a rotation restarts the pod by hand (values.yaml, gitea.admin).
         checksum/config: {{ include (print $.Template.BasePath "/gitea/configmap.yaml") . | sha256sum }}
     spec:
+      serviceAccountName: gitea
+      # Gitea itself gets no API access; only the credentials container mounts
+      # a token.
       automountServiceAccountToken: false
       {{- include "c4-factory.imagePullSecrets" . | nindent 6 }}
       securityContext:
@@ -39,6 +44,49 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
+        # First, and never overwrites: a Secret that exists, the user's
+        # gitea.admin.existingSecret among them, is left alone. Rotate one by
+        # deleting it and restarting the pod.
+        - name: credentials
+          image: "{{ $seed.image.repository }}:{{ $seed.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ $seed.image.pullPolicy }}
+          command: [sh, -ec]
+          args:
+            - |
+              missing() { ! kubectl get secret "$1" >/dev/null 2>&1; }
+              {{- if not .Values.gitea.admin.existingSecret }}
+              if missing gitea-admin; then
+                kubectl create secret generic gitea-admin --from-literal=username="$ADMIN_USERNAME" \
+                  --from-literal=email="$ADMIN_EMAIL" --from-literal=password="$(openssl rand -hex 24)"
+              fi
+              {{- end }}
+              # Gitea takes it as its global registration token on every start
+              # (GITEA_RUNNER_REGISTRATION_TOKEN), so the runners start without
+              # waiting for the seed.
+              if missing gitea-runner; then
+                kubectl create secret generic gitea-runner --from-literal=token="$(openssl rand -hex 20)"
+              fi
+          env:
+            - name: HOME
+              value: /tmp
+            - name: ADMIN_USERNAME
+              value: {{ .Values.gitea.admin.username | quote }}
+            - name: ADMIN_EMAIL
+              value: {{ .Values.gitea.admin.email | quote }}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: api
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            - name: credentials-tmp
+              mountPath: /tmp
         - name: setup
           image: {{ $image | quote }}
           imagePullPolicy: {{ .Values.gitea.image.pullPolicy }}
@@ -92,7 +140,7 @@ spec:
             # on first start survive restarts.
             - name: GITEA_APP_INI
               value: /var/lib/gitea/custom/conf/app.ini
-            # The runners register with this token (runner-secret.yaml).
+            # The runners register with this token (the credentials container).
             - name: GITEA_RUNNER_REGISTRATION_TOKEN
               valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
           ports:
@@ -122,6 +170,14 @@ spec:
             - name: data
               mountPath: /var/lib/gitea
       volumes:
+        - name: api
+          projected:
+            sources:
+              - serviceAccountToken: {path: token}
+              - configMap: {name: kube-root-ca.crt, items: [{key: ca.crt, path: ca.crt}]}
+              - downwardAPI: {items: [{path: namespace, fieldRef: {fieldPath: metadata.namespace}}]}
+        - name: credentials-tmp
+          emptyDir: {}
         - name: data
           persistentVolumeClaim:
             claimName: gitea-data
