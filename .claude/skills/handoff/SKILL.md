@@ -57,7 +57,10 @@ Only around the steps that touch one (deploys, samples, e2e, factory-ops,
    still be on it: when the "Done when" asks for a fresh cluster, or what is
    installed isn't yours, pass `--fresh`. It prefers a cluster not created
    yet, else deletes and recreates the one it leased, and only that one;
-   never `kind delete cluster` or `make cluster-delete` by hand.
+   never `kind delete cluster` or `make cluster-delete` by hand. To install
+   a release (`docs/getting-started.md`, the chart), pass `--fresh --bare`:
+   the same, with nothing installed, since the chart brings its own Gitea
+   and helm can't take over the testenv's.
 3. Make targets now use it; kubectl takes `--context kind-<name>` on every
    call, never `kubectl config use-context` (every checkout shares the
    kubeconfig). `make deploy` this branch first: never trust what is deployed.
