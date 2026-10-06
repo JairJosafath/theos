@@ -300,7 +300,7 @@ model and context it needs.
   `status.lastRelease.bumps` and found again by a marker in its body; only the
   newest release is bumped, a link created after the release files nothing, and
   a bundler not yet Ready gets its issue once it is. Each is an Event
-  `BumpFiled`. See [plans/release-bumps.md](plans/done/release-bumps.md).
+  `BumpFiled`. See [plans/done/release-bumps.md](plans/done/release-bumps.md).
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other
   issue, whatever its release, even when every place is taken (once running, it
