@@ -13,11 +13,11 @@ Test a rule at the lowest tier that can see it ([design](../design.md#test-tiers
 
 | Tier | Runs | Verifies |
 | --- | --- | --- |
-| 1. Table tests | `make test`, no API server | `internal/model` decisions, `internal/scaffold` rendering of every template |
+| 1. Table tests | `make test`, no API server | `internal/model` decisions, `internal/scaffold` rendering of every template, the agent pod spec and the fence's NetworkPolicy (`sandbox_fence_unit_test.go`) |
 | 2. Offline YAML | `make validate-yaml`, in `make check` | samples, e2e fixtures, kustomize builds, the chart, rendered manifests, against the CRDs: valid YAML passes their create-time CEL rules |
 | 3. Local Gitea | `make test-gitea`, `make seed-local` | the Gitea API's real behaviour, the seed, template tags |
-| 4. envtest | `make test` | reconcilers, status, ownerReferences, the admission policy, every CEL rule's failing case (create-time and on `oldSelf`) |
-| 5. Kind | `make e2e`, factory-ops | Agent Sandbox pods and the agent fence, node and kubelet behaviour, RBAC as deployed, Gitea Actions runners |
+| 4. envtest | `make test` | reconcilers, status, ownerReferences, the admission policy, every CEL rule's failing case (create-time and on `oldSelf`), the generated RBAC: the reconcilers run as the operator's ServiceAccount bound to `config/rbac/role.yaml` |
+| 5. Kind | `make e2e`, factory-ops | Agent Sandbox pods running, the fence enforced by a CNI, node and kubelet behaviour, Gitea Actions runners |
 
 Tiers 1 to 4 run on any device, lite ones included, with no lease. Only
 tier 5 needs a Kind cluster, and only issues that need it carry

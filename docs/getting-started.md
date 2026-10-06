@@ -80,7 +80,9 @@ pushed, pinned to their tags: Frameworks `go-cli`, `python-fastapi` and
 Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four
 Agents on the release's `agent-go` image: `planner`, `designer` and `reviewer`
 on Opus, `implementer` on Sonnet. The Agents read Secret `claude-credentials`,
-which you make in step 2. `catalog.enabled=false` and `agents.enabled=false`
+which you make in step 2. A fifth, `stand-in`, needs no token: it plans from
+the catalog and makes a scripted change, to show the loop
+([without a token](#without-a-token)). `catalog.enabled=false` and `agents.enabled=false`
 leave them out ([the chart's README](../dist/chart/README.md#values)). On a fresh cluster Gitea's image may still be pulling
 when the seed starts, so give `helm install` time:
 
@@ -178,6 +180,24 @@ Container again: it adds new Containers, and turns a change to an existing
 one into an issue in its repository. When the planner can't go on without
 you, such as an Agent it needs is missing, the phase is `NeedsInput` and the
 card says what in one sentence.
+
+### Without a token
+
+To watch the loop before making the token Secret, name Agent `stand-in` for
+every role. [config/samples/brief/stand-in.yaml](../config/samples/brief/stand-in.yaml)
+does that in `webshop`. The stand-in reads only the catalog: it adds Container
+`stand-in-demo` on the first Framework, `go-cli`, files one issue for it,
+and the Container's Crew picks the issue up. It plans in a minute or so, and
+every release checks it does:
+
+```bash
+kubectl apply -f config/samples/brief/stand-in.yaml
+kubectl -n webshop wait brief/stand-in-demo --for=jsonpath='{.status.phase}'=Planned --timeout=10m
+kubectl -n webshop get c4
+```
+
+Deleting a Brief keeps what it made; `kubectl -n webshop delete brief,container
+stand-in-demo` removes the Container and its Crew too.
 
 ## 3. The model and the Crew
 

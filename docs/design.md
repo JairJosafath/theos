@@ -435,7 +435,9 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for
   each follow-up prompt. `make e2e` takes a Brief through two rounds that way,
-  with no token. How well a real planner plans an idea is the person's run.
+  with no token, and every release's *Verify Release* takes one through a
+  round on the published chart, whose Agent `stand-in` any project can name.
+  How well a real planner plans an idea is the person's run.
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a
@@ -491,17 +493,17 @@ make targets (`make gitea seed deploy`) and locally built images.
 
 ## Test tiers
 
-Each rule is verified at the lowest tier that can see it, so most work verifies on any device without a cluster. The Kind cluster is for what needs a real Kubernetes node.
+Go tests are the gate: each rule is verified at the lowest tier that can see it, and `make check` runs the first three tiers before every merge. A Kind cluster exists only when a human asks to run tests in it; agents never create, lease or deploy to one. What only a real node would catch is not tested before release.
 
 | Tier | Verifies |
 | --- | --- |
-| Table tests (`make test`) | The decisions in `internal/model` and the rendering of every template in `internal/scaffold`. |
+| Table tests (`make test`) | The decisions in `internal/model`, the rendering of every template in `internal/scaffold`, and the Agent Sandbox and pod specs the controllers build, the agent fence included. |
 | Offline YAML (`make validate-yaml`, in `make check`) | Samples, e2e fixtures, kustomize builds, the Helm chart and rendered manifests, against the built-in schemas and the CRDs, with their create-time CEL rules. |
-| Local Gitea (`make test-gitea`, `make seed-local`) | The Gitea API's behaviour and the seed, against the same Gitea binary the cluster runs, started per checkout. |
-| envtest (`make test`) | Reconcilers wired to a real API server: status, ownerReferences, the admission policy, and every CEL rule's failing case, at create and on update. |
-| Kind (`make e2e`) | Agent Sandbox pods and the agent fence, node and kubelet behaviour, RBAC as deployed, Gitea Actions runners. |
+| envtest (`make test`) | Reconcilers wired to a real API server: status, ownerReferences, the admission policy, every CEL rule's failing case at create and on update, the reaction to faked Sandbox and pod status, and the generated RBAC role against the calls the controllers make. |
+| Components (`make test-gitea`, `make seed-local`) | The Gitea API's behaviour, the seed and what Gitea shows of Actions, against the same Gitea binary the cluster runs, started per checkout. |
+| Kind (`make e2e`, only when a human asks) | The whole loop on stand-in agents with no model keys: a hello-world page scaffolded, planned from a Brief, a Task taken through two rounds to a merge, a Standard bump carried to main. |
 
-The plan that builds the lower tiers is [verify-without-cluster.md](plans/done/verify-without-cluster.md).
+The plans that build these tiers are [verify-without-cluster.md](plans/done/verify-without-cluster.md) and [test-without-cluster.md](plans/test-without-cluster.md).
 
 ## Test environment: the Kind cluster
 

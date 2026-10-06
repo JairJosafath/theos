@@ -385,6 +385,45 @@ jobs:
             { $KUBECTL -n webshop get crew orders-cli -o yaml | tail -30; exit 1; }
           $KUBECTL -n webshop get crew orders-cli -o wide
 
+      # docs/getting-started.md, "Without a token": the chart's Agent stand-in
+      # plans the tag's config/samples/brief/stand-in.yaml from the catalog, its
+      # Container scaffolds, and its Crew starts a Task for the issue the Brief
+      # filed. The Brief loop on the published chart, with no Claude token. A
+      # release without the sample or the Agent skips it and says so.
+      - name: "Getting started: a Brief without a token"
+        if: matrix.check == 'install' && env.GUIDE == 'run'
+        run: |
+          sample=guide/config/samples/brief/stand-in.yaml
+          if [ ! -f "$sample" ] || ! $KUBECTL -n webshop get agent stand-in >/dev/null 2>&1; then
+            echo "::notice::$TAG has no config/samples/brief/stand-in.yaml or Agent stand-in: the Brief check is skipped"
+            echo "No stand-in Brief in $TAG: the Brief check is skipped." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          brief=$($KUBECTL apply -f "$sample" -o jsonpath='{.metadata.name}')
+          get() { $KUBECTL -n webshop get brief "$brief" -o jsonpath="$1"; }
+          for i in $(seq 1 90); do
+            phase=$(get '{.status.phase}')
+            case $phase in Planned | Failed | NeedsInput) break ;; esac
+            sleep 10
+          done
+          echo "Brief $brief: ${phase:-no phase}"
+          [ "$phase" = Planned ] || { $KUBECTL -n webshop get brief "$brief" -o yaml | tail -40; exit 1; }
+          get '{range .status.choices[*]}- {@}{"\n"}{end}'
+          container=$(get '{.status.created[?(@.kind=="Container")].name}')
+          crew=$(get '{.status.created[?(@.kind=="Crew")].name}')
+          issue=$(get '{.status.issues[0].number}')
+          $KUBECTL -n webshop wait "container/$container" --for=jsonpath='{.status.phase}'=Ready --timeout=5m ||
+            { $KUBECTL -n webshop describe container "$container" | tail -30; exit 1; }
+          task=
+          for i in $(seq 1 60); do
+            task=$($KUBECTL -n webshop get tasks -l "c4.factory.io/crew=$crew,c4.factory.io/issue=$issue" -o name)
+            [ -n "$task" ] && break
+            sleep 10
+          done
+          [ -n "$task" ] || { $KUBECTL -n webshop get crew "$crew" -o yaml | tail -30; exit 1; }
+          echo "Crew $crew started $task for issue $issue"
+          $KUBECTL -n webshop get briefs,containers,crews,tasks -o wide
+
       # What a device has before it upgrades: every c4 object with its phase
       # and Ready condition, Gitea's repositories with their head commits, and
       # a hash of each generated Secret. The script stays for the check after.

@@ -60,6 +60,10 @@ later, create all types together with
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
 ```
 
+The envtest suite runs every reconciler as the operator's ServiceAccount, bound
+to the generated `config/rbac/role.yaml`, so a call a marker doesn't grant fails
+the spec that makes it, with `forbidden` in the reconciler's log.
+
 **Implementation rules:**
 - **Idempotent reconciliation**: Safe to run multiple times; a repeat reconcile of a
   `Ready` Container changes nothing

@@ -52,6 +52,9 @@ var templateCombos = []struct {
 		{model.SideFramework, "hello"},
 		{model.SideStandard, "hello-standard"},
 	}},
+	{"hello html", "static-site", []side{
+		{model.SideFramework, "hello-html"},
+	}},
 }
 
 func TestEveryTemplateRenders(t *testing.T) {
