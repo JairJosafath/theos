@@ -20,12 +20,14 @@ set -uo pipefail
 DIR=${CHECK_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/c4factory/checks}
 
 # tree: the hash git would give the working state if it were all added: a copy
-# of the index, so git add only rehashes what changed, takes every change.
+# of the index, so git add only rehashes what changed, takes every change. The
+# copy keeps the index's mtime: git rehashes an entry whose file is as new as
+# the index (racy git), and a fresh mtime would make it trust stale stat data.
 tree() {
   local index tmp
   index=$(git rev-parse --path-format=absolute --git-path index) || return 1
   tmp=$(mktemp) || return 1
-  if [ -f "$index" ]; then cp "$index" "$tmp"; else rm -f "$tmp"; fi
+  if [ -f "$index" ]; then cp -p "$index" "$tmp"; else rm -f "$tmp"; fi
   GIT_INDEX_FILE=$tmp git add -A >/dev/null 2>&1 &&
     GIT_INDEX_FILE=$tmp git write-tree
   local rc=$?
