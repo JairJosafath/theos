@@ -183,22 +183,25 @@ start() {
   if in_use "$(port)" && ! running; then
     die "port $(port) is taken by another process; stop it, or rm -rf ${DIR#"$TOP"/} to pick a new port"
   fi
-  if ! running; then
+  local pid
+  if running; then
+    pid=$(cat "$PIDFILE")
+  else
     g migrate >"$DIR/log/migrate.log" 2>&1 || { tail -n 20 "$DIR/log/migrate.log" >&2; die "gitea migrate failed"; }
     # setsid: Gitea outlives the make that started it, and Ctrl-C in that
     # terminal doesn't reach it.
     setsid "$GITEA" web --config "$CONFIG" --work-path "$DIR" \
       >>"$DIR/log/gitea.out" 2>&1 </dev/null &
-    echo $! >"$PIDFILE"
+    pid=$!
+    echo "$pid" >"$PIDFILE"
   fi
+  # kill -0, not running: until the forked shell execs setsid, the new pid's
+  # cmdline is still this script's, and running would call a booting Gitea
+  # exited (#311).
   local deadline=$((SECONDS + GITEA_WAIT))
   until healthy; do
-    running || {
-      echo "DIAG pid=$(cat "$PIDFILE") alive=$(kill -0 "$(cat "$PIDFILE")" 2>&1 && echo yes)" >&2
-      echo "DIAG cmdline=$(tr '\0' ' ' <"/proc/$(cat "$PIDFILE")/cmdline" 2>&1)" >&2
-      ps -eo pid,ppid,pgid,stat,cmd | grep -i gite[a] >&2 || true
-      sleep 2; ps -eo pid,ppid,pgid,stat,cmd | grep -i gite[a] >&2 || true
-      tail -n 20 "$DIR"/log/* >&2
+    kill -0 "$pid" 2>/dev/null || {
+      tail -n 20 "$DIR/log/gitea.out" "$DIR/log/gitea.log" >&2 2>/dev/null || true
       die "Gitea exited; its log is ${DIR#"$TOP"/}/log/"
     }
     ((SECONDS < deadline)) || die "Gitea did not answer at $(url) within ${GITEA_WAIT}s"

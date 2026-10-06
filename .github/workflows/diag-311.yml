@@ -10,10 +10,6 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        after-test: [false, true]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -21,16 +17,13 @@ jobs:
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
-      - if: matrix.after-test
-        run: make test
-      - name: Fresh starts
+      - name: make test-gitea 10 times, each from a fresh .gitea-local
         run: |
-          make gitea-local; hack/gitea-local.sh stop
-          fails=0
           for i in $(seq 1 10); do
-            rm -rf .gitea-local
-            make gitea-local || fails=$((fails+1))
+            echo "::group::run $i"
+            make test-gitea
             hack/gitea-local.sh stop
+            rm -rf .gitea-local
+            echo "::endgroup::"
+            echo "run $i passed"
           done
-          echo "fails=$fails/10"
-          ss -ltnp | head -30
