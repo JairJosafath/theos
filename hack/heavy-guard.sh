@@ -10,13 +10,15 @@
 # can answer blocks the command. When every heavy-job slot is taken
 # (hack/heavy-slot.sh), a make job will wait for one: the session is told so,
 # and that the wait is not a hang, with who holds the slots. Silent otherwise.
-# Before a cluster command (make deploy, sample, e2e, test-e2e, up, down) it
-# reads the lease of the Kind cluster the command targets (hack/lib/github.sh
-# cluster): KIND_CLUSTER= in the command, else KIND_CLUSTER, else the one this
-# checkout leased, else c4factory. While another checkout holds a live lease on
-# it, it denies the command and tells the session to run
-# `hack/lib/github.sh cluster acquire`; without a holder the command goes on
-# to the memory check, as before.
+# A cluster command (make deploy, sample, e2e, test-e2e, up, down) in a
+# headless session is denied: agents never deploy to or run a Kind cluster,
+# make check is their gate, and Kind is a tier only a human runs. For a human
+# it reads the lease of the Kind cluster the command targets
+# (hack/lib/github.sh cluster): KIND_CLUSTER= in the command, else
+# KIND_CLUSTER, else the one this checkout leased, else c4factory. While
+# another checkout holds a live lease on it, it denies the command and tells
+# the human to lease one (C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster
+# acquire); without a holder the command goes on to the memory check, as before.
 # Other commands cost one bash, with no subprocess and no file read.
 #   RELAY_MEMINFO   file to read instead of /proc/meminfo (hack/heavy-guard_test.sh fakes it)
 #   KIND_CLUSTER    the Kind cluster a cluster command targets and whose node it names
@@ -44,6 +46,11 @@ cluster="make([[:blank:]][^;&|$nl]*)?[[:blank:]](deploy|sample|e2e|test-e2e|up|d
 unquoted=$(sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" <<<"$cmd")
 if [[ $unquoted =~ $sep$cluster$end ]]; then
   job=${BASH_REMATCH[2]}
+  if [ "${C4_HEADLESS:-}" = 1 ]; then
+    msg="Agents never deploy to or run a Kind cluster, so \`make $job\` is not for this session: make check (Go tests, validate-yaml, envtest) is the gate, and Kind is a tier only a human runs. Land the code with the tests the lower tiers can give, and say in the pull request what a human run of Kind would check."
+    jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $m}}'
+    exit 0
+  fi
   # shellcheck source=hack/lib/github.sh
   . "$(dirname "${BASH_SOURCE[0]}")/lib/github.sh"
   kc=${KIND_CLUSTER:-}
@@ -52,7 +59,7 @@ if [[ $unquoted =~ $sep$cluster$end ]]; then
   [ -n "$kc" ] || kc=$(gh_cluster name 2>/dev/null)
   kc=${kc:-c4factory}
   if holder=$(gh_lease_holder "$kc" 2>/dev/null); then
-    msg="The Kind cluster $kc is in use: $holder holds its lease, so \`make $job\` would change or stop it under that session. Run \`hack/lib/github.sh cluster acquire\` first: it leases a free cluster of the pool to this checkout (or waits up to 30m), and make here then uses that one; on exit 4, land what needs no cluster and hand off with only the cluster steps left."
+    msg="The Kind cluster $kc is in use: $holder holds its lease, so \`make $job\` would change or stop it under that session. Lease one first, \`C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire\`: it leases a free cluster of the pool to this checkout (or waits up to 30m), and make here then uses that one; exit 4 means every cluster is held."
     jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $m}}'
     exit 0
   fi

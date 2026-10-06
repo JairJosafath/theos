@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Checks the factory in the Kind test environment and says what is wrong, from
 # the Docker daemon up to the Agents' credentials. Works when the cluster or the
-# UI is down, which is when it is needed.
+# UI is down, which is when it is needed. Kind is a tier only a human runs:
+# agents never lease, build or deploy to a cluster, so its hints are a human's.
 #   make doctor            (KIND_CLUSTER: this checkout's leased cluster, else c4factory)
 # Exits 1 when a required part is broken; optional parts only warn.
 set -uo pipefail
@@ -33,7 +34,7 @@ case "$state" in
 running) ok "Kind node $NODE is running" ;;
 missing)
   bad "Kind cluster $CLUSTER does not exist"
-  hint "make cluster gitea seed deploy ... (see make e2e)"
+  hint "C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire (a human only: it leases and builds one)"
   exit 1
   ;;
 *)
@@ -66,7 +67,7 @@ if "${KUBECTL[@]}" get crd tasks.c4.factory.io >/dev/null 2>&1; then
   ok "C4 Factory CRDs are installed"
 else
   bad "C4 Factory CRDs are missing"
-  hint "make deploy"
+  hint "make deploy (a human only, on the cluster this checkout leased)"
 fi
 
 # deployment <namespace> <name> <what> [optional]: counts the pods that are Ready

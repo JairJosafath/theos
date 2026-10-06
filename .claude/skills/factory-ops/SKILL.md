@@ -1,14 +1,16 @@
 ---
 name: factory-ops
-description: Watch and drive the running C4 Factory in a Kind cluster of the pool (c4factory, c4factory-2, ...) - health, Crews, Tasks, agent sandboxes, reviews and issues in Gitea, pausing and resuming agents, deploying the operator, rebuilding images and templates. Use when asked about the factory's state or to run, pause, resume or change it.
+description: For a human only (agents never touch a cluster) - watch and drive the running C4 Factory in a Kind cluster of the pool (c4factory, c4factory-2, ...) - health, Crews, Tasks, agent sandboxes, reviews and issues in Gitea, pausing and resuming agents, deploying the operator, rebuilding images and templates. Use when a human asks about the factory's state or to run, pause, resume or change it.
 ---
 
 # Running the factory
 
 Commands for a Kind cluster of the device's pool: `c4factory`, `c4factory-2`,
-... A session that changes or verifies a cluster first leases one
-(`hack/lib/github.sh cluster acquire` prints its name; `cluster pool` shows
-them all); make targets in its checkout then use that cluster
+... Kind is a tier only a human runs: an agent never leases, creates or
+deploys to a cluster, and a headless session (the relay) never uses this
+skill; `make check` is its gate. A human who changes or verifies a cluster
+first leases one (`C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire`
+prints its name; `cluster pool` shows them all); make targets in its checkout then use that cluster
 (`hack/lib/github.sh cluster name`), and kubectl names it on every call:
 `kubectl --context kind-<name>`, written `kubectl` below; never
 `kubectl config use-context`, the kubeconfig is shared by every checkout. Keep output small:

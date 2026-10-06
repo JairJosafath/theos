@@ -23,7 +23,7 @@
 # one session that takes no issue and changes no code: it readies each sound
 # proposed issue (clear, says when it is done, no duplicate, names what it
 # waits on with Depends on #M), fills a gap it can write itself (a Depends on
-# #M line, the needs/cluster label) and readies the issue, comments on the
+# #M line) and readies the issue, comments on the
 # others what they lack, readies one the design doesn't settle as design work
 # (designing is ours, never a question for the user), escalates one that
 # nothing it can write moves on (it needs a decision: something only the user
@@ -52,14 +52,11 @@
 # its end (no headroom, a limit, a crash, a timeout) leaves it as it was, and
 # the watch tries again after WATCH_RETRY.
 #
-# Issues that need the Kind cluster carry needs/cluster. On a device without
-# one, C4_CLUSTER=none (./dev setup --lite sets it): the workers skip those
-# issues, and a session that finds its issue needs the cluster lands what it
-# can, labels it and hands it back for a device with one. On a device with the
-# cluster, any worker may work them; the checkouts share the cluster through a
-# lease (hack/lib/github.sh cluster) that a session holds only while it deploys
-# and verifies. A worker there that can't reach Docker (docker_gate) runs its
-# next session as C4_CLUSTER=none.
+# Agents never lease, create or deploy to a Kind cluster: make check (Go
+# tests, validate-yaml, envtest) is the gate, and Kind is a manual tier only a
+# human runs (hack/lib/github.sh cluster acquire refuses without
+# C4_HUMAN_CLUSTER=1, which the relay never sets). No prompt here tells a
+# session to use one, and every issue is any worker's, needs/cluster or not.
 #
 # Workers load their code once, from this checkout. Before each pick a worker
 # runs hack/pull.sh here, and when that changed hack/relay.sh or
@@ -136,12 +133,6 @@ MAX_FAILS=${RELAY_MAX_FAILS:-3}     # failed sessions in a row before an issue g
 IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change this long is ended
 IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
-DOCKER_WAIT=${RELAY_DOCKER_WAIT:-10} # seconds docker info may take before Docker counts as down
-# The device's C4_CLUSTER, which docker_gate sets per session; kept across the
-# worker's restarts, which inherit what docker_gate set.
-CLUSTER0=${C4_RELAY_CLUSTER0:-${C4_CLUSTER-unset}}
-export C4_RELAY_CLUSTER0=$CLUSTER0
-DOCKER_SAID=ok
 
 K=${C4_RELAY_WORKER:-1}
 # The maintainer is no numbered worker: its own worktree, log and lock.
@@ -161,41 +152,7 @@ GH_CLAIM_FILE="$GH_PENDING_DIR/claim"
 # prompt N TITLE URL HOW NAME BRANCH: the headless session's prompt for issue
 # N, worked by agent NAME on BRANCH.
 prompt() {
-  local n=$1 title=$2 url=$3 how=$4 name=$5 branch=$6 start cluster
-  if [ -n "${DOCKER_WHY:-}" ]; then
-    cluster="- This session can't reach Docker ($DOCKER_WHY), so it runs as
-  C4_CLUSTER=none: no deploys, factory-ops, Crews, kind or make e2e; make
-  check works (envtest needs no cluster). If the issue turns out to need the
-  cluster, land what you can, label it
-  (\`hack/lib/github.sh label $n needs/cluster\`) and hand off with what is
-  left (deploy and verify)."
-  elif [ "${C4_CLUSTER:-}" = none ]; then
-    cluster="- This device has no Kind cluster (C4_CLUSTER=none): no deploys,
-  factory-ops, Crews or make e2e; make check works (envtest needs no cluster).
-  If the issue turns out to need the cluster, land what you can (the code pull
-  request, with unit and envtest tests), label it
-  (\`hack/lib/github.sh label $n needs/cluster\`) and hand off with what is
-  left (deploy and verify): a device with the cluster takes it from there."
-  else
-    cluster="- This device runs a pool of Kind clusters (c4factory, c4factory-2,
-  ...) that its checkouts share through leases. If the issue needs the cluster
-  and lacks the label, add it (\`hack/lib/github.sh label $n needs/cluster\`).
-  Do the work that needs no cluster first (code, make check, envtest); right
-  before the first step that touches a cluster, \`hack/lib/github.sh cluster
-  acquire\`: it leases this checkout a free cluster and prints its name
-  (creating it on first use). Every make target in this checkout then uses
-  that cluster; give kubectl \`--context kind-<name>\` on every call. Deploy
-  this branch's own build (\`make deploy\`), never trusting what is already
-  deployed; \`hack/lib/github.sh cluster release\` when verification is done.
-  A pool cluster belongs to nobody between leases: when the \"Done when\" asks
-  for a fresh cluster, or what is installed on it isn't yours, pass
-  \`--fresh\` (\`cluster acquire --fresh\`): it deletes and recreates only the
-  cluster this checkout leased; never delete a cluster by hand. To install a
-  release (docs/getting-started.md, the chart), pass \`--fresh --bare\`: the
-  same, with nothing installed.
-  Exit 4 from acquire means other checkouts hold every cluster: hand off with
-  only the cluster steps left."
-  fi
+  local n=$1 title=$2 url=$3 how=$4 name=$5 branch=$6 start
   if [ "$how" = in-progress ]; then
     start="A session worked on it before you: continue from its newest handoff comment."
   else
@@ -247,10 +204,14 @@ Rules for this headless run:
     what only the user can give (a tag, access, credentials, money), or a
     direction you are unsure of, asked with the choice you would make and
     why. Never set status/needs-human: only the maintainer does.
-$cluster
+- Never lease, create or deploy to a Kind cluster, and never run make e2e,
+  kind or factory-ops: make check (Go tests, validate-yaml, envtest) is the
+  gate, and Kind is a tier only a human runs. When only a real node would show
+  something, land the code with the tests the lower tiers can give and say in
+  the pull request what a human run of Kind would check.
 - Work you find outside #$n: file it with
   \`hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>\`; don't
-  start it; add needs/cluster to its labels if it needs the cluster.
+  start it.
 - End your turn with a short account of what you did and what is next; it is
   the relay's log of your session.
 EOF
@@ -295,8 +256,7 @@ For each proposed issue, decide one of these:
 - Fill the gap and ready it, when the only thing missing is something you
   can write yourself: a "Depends on #M" line it lacks (add it to the body with
   \`gh issue edit N --repo $C4_GITHUB_REPO --body-file FILE\`, keeping the
-  rest of the body as it is), or the needs/cluster label its "Done when" needs
-  (\`hack/lib/github.sh label N needs/cluster\`). Then ready it and say what
+  rest of the body as it is). Then ready it and say what
   you wrote in a comment (first line \`<!-- relay-triage -->\`).
 - Leave it proposed, with a comment (\`hack/lib/github.sh comment N FILE\`,
   its first line \`<!-- relay-triage -->\`) saying what is missing, when it
@@ -585,38 +545,6 @@ pause() {
   old=$(paused) && [ "${old%% *}" -ge "$t" ] && return 0
   echo "$t ${1//$'\n'/ }" >"$DIR/paused-until"
   log "paused the relay until $(date -d "@$t" -Is): $1"
-}
-
-# docker_gate: on a device with the Kind cluster, check before each pick that
-# this worker reaches Docker (docker info, at most RELAY_DOCKER_WAIT seconds).
-# When it doesn't, the next session runs as C4_CLUSTER=none, so pick and take
-# skip needs/cluster issues instead of failing them: a worker started under a
-# systemd user manager that started before the user joined the docker group
-# lacks the group (docs/dev/testenv.md). Logs the reason once per change, and
-# when Docker answers again; DOCKER_WHY keeps the reason for the prompt.
-docker_gate() {
-  local out rc why=ok
-  [ "$CLUSTER0" = none ] && return 0
-  out=$(timeout "$DOCKER_WAIT" docker info --format '{{.ServerVersion}}' 2>&1 >/dev/null)
-  rc=$?
-  if [ "$rc" != 0 ]; then
-    case $rc:$out in
-      127:*) why="docker isn't installed" ;;
-      124:*) why="the Docker daemon didn't answer in ${DOCKER_WAIT}s" ;;
-      *[Pp]"ermission denied"*) why="permission denied on the Docker socket: the relay runs without the docker group (restart the systemd user manager; on WSL, wsl --shutdown)" ;;
-      *) why="the Docker daemon is down: $(head -n 1 <<<"$out" | cut -c1-200)" ;;
-    esac
-  fi
-  if [ "$why" = ok ]; then
-    DOCKER_WHY=
-    if [ "$CLUSTER0" = unset ]; then unset C4_CLUSTER; else export C4_CLUSTER=$CLUSTER0; fi
-    [ "$DOCKER_SAID" = ok ] || log "docker: reachable again; sessions take needs/cluster issues"
-  else
-    DOCKER_WHY=$why
-    export C4_CLUSTER=none
-    [ "$DOCKER_SAID" = "$why" ] || log "docker: $why; sessions run as C4_CLUSTER=none and skip needs/cluster issues"
-  fi
-  DOCKER_SAID=$why
 }
 
 # admit: wait until the device has headroom for one more session: no pause for
@@ -930,14 +858,12 @@ work() {
     # again after it, as the issue can be taken during the wait. While paused,
     # wait in admit instead.
     if ! paused >/dev/null; then
-      docker_gate
       pick
       rc=$?
       [ "$rc" = 1 ] && { log "no issue ready; stopping"; break; }
       [ "$rc" = 0 ] || { log "could not ask GitHub for the next issue; stopping"; break; }
     fi
     admit || { log "stopping"; break; }
-    docker_gate
     pick
     rc=$?
     [ "$rc" = 1 ] && { log "no issue ready; stopping"; break; }

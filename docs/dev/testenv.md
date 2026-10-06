@@ -396,11 +396,8 @@ that started before you joined `docker` can't reach Docker however
 the gid of `docker` (`getent group docker`). If it doesn't, restart the user
 manager: log out and in again, or on WSL run `wsl --shutdown` from Windows.
 `--install` warns when the manager lacks one of your groups, and the watch logs
-it when it starts. Until then, `hack/relay.sh` checks Docker (`docker info`,
-`RELAY_DOCKER_WAIT` seconds, default 10) before each pick and, when it can't
-reach it, runs that session as `C4_CLUSTER=none`, so it skips `needs/cluster`
-issues instead of failing them; its log says why once (permission denied,
-daemon down or not answering) and again when Docker answers.
+it when it starts. Until then its sessions can't reach Docker, so
+`make test-gitea` fails in them; they never need a cluster.
 
 ### Every release checks itself
 
