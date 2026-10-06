@@ -431,6 +431,13 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   becomes an issue in its repository; a new Container is added and scaffolded;
   a Relationship added from a scaffolded Container shows `AddedAfterScaffold`
   and its wiring becomes an issue.
+- **Deleting a Brief deletes its bot on the Git host** and keeps its
+  repository and the model it made. A host that fails the delete (down,
+  unreachable, or answering with an error) is tried again, each failure a
+  `BotNotDeleted` Event naming the user and the error, until the namespace is
+  terminating or ten minutes have passed; then the Brief goes and leaves the
+  bot, with a `BotLeft` Event and log line saying so. A Brief whose
+  GitProvider or credentials are gone leaves its bot at once.
 - **The Brief's status tells the story of the plan:** its phase, the last
   round's choices, what it created, the issues it filed, each round's summary
   and cost. The chart makes each project's Project, catalog and four default
