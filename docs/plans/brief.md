@@ -59,16 +59,16 @@ One issue and one pull request each, from an up-to-date main. Every step
 leaves main working: nothing plans until step 5 lands. Each issue says
 `Part of #240`; step 8's pull request also says `Closes #240`.
 
-| Step | What | Depends on | Cluster |
-| --- | --- | --- | --- |
-| 1 | API: the `Brief` kind (`kubebuilder create api`), B2's spec and CEL, B13's status, a controller that only sets `Pending`; envtest for the CEL rules | none | no |
-| 2 | Model: `internal/model/brief.go`, parse and check a plan (B5, B6, B7), the round's prompts (B12), the issue marker (B11); table tests for every refusal | none | no |
-| 3 | API and runner: Task `spec.kind` (`Implement` default, `Plan`; immutable) and `spec.briefRef` with CEL (exactly one parent; a Plan Task has a brief and no reviewer); `C4_ROLE=plan` in `internal/agentrunner`: clone the brief repository, run the planner with `PLANNER.md`, push `plan/<round>` | 1 | no |
-| 4 | Workspace: the operator makes the brief repository and its bot (B4), writes `brief.md`, `model/` and `PLANNER.md` to `main` before each round; fake provider and envtest | 1, 2 | no |
-| 5 | Controller: the Brief starts a Plan Task per round, reads and checks the plan, applies it (B8), makes Crews (B9), files issues (B11), sets status (B13) and `NeedsInput` (B10), merges the plan; envtest with the fake provider, including a restart halfway through applying | 2, 3, 4 | no |
-| 6 | Chart: B14's catalog entries and Agents per project; `make validate-yaml` | none | no |
-| 7 | UI: the box, the prompt field and the Brief's status (B15); server tests for the two writes and that every other write is still refused | 1 | no |
-| 8 | Sample, docs and the Done-when run: `config/samples/brief/cel-lens.yaml`, getting-started's short path, design.md's status line, evidence in `docs/screenshots/brief/` | 5, 6, 7 | yes |
+| Step | Issue | What | Depends on | Cluster |
+| --- | --- | --- | --- | --- |
+| 1 | #275 | API: the `Brief` kind (`kubebuilder create api`), B2's spec and CEL, B13's status, a controller that only sets `Pending`; envtest for the CEL rules | none | no |
+| 2 | #276 | Model: `internal/model/brief.go`, parse and check a plan (B5, B6, B7), the round's prompts (B12), the issue marker (B11); table tests for every refusal | none | no |
+| 3 | #277 | API and runner: Task `spec.kind` (`Implement` default, `Plan`; immutable) and `spec.briefRef` with CEL (exactly one parent; a Plan Task has a brief and no reviewer); `C4_ROLE=plan` in `internal/agentrunner`: clone the brief repository, run the planner with `PLANNER.md`, push `plan/<round>` | 1 | no |
+| 4 | #278 | Workspace: the operator makes the brief repository and its bot (B4), writes `brief.md`, `model/` and `PLANNER.md` to `main` before each round; fake provider and envtest | 1, 2 | no |
+| 5 | #279 | Controller: the Brief starts a Plan Task per round, reads and checks the plan, applies it (B8), makes Crews (B9), files issues (B11), sets status (B13) and `NeedsInput` (B10), merges the plan; envtest with the fake provider, including a restart halfway through applying | 2, 3, 4 | no |
+| 6 | #280 | Chart: B14's catalog entries and Agents per project; `make validate-yaml` | none | no |
+| 7 | #281 | UI: the box, the prompt field and the Brief's status (B15); server tests for the two writes and that every other write is still refused | 1 | no |
+| 8 | #282 | Sample, docs and the Done-when run: `config/samples/brief/cel-lens.yaml`, getting-started's short path, design.md's status line, evidence in `docs/screenshots/brief/` | 5, 6, 7 | yes |
 
 ## Review focus
 
