@@ -24,9 +24,12 @@
 # proposed issue (clear, says when it is done, no duplicate, names what it
 # waits on with Depends on #M), fills a gap it can write itself (a Depends on
 # #M line, the needs/cluster label) and readies the issue, comments on the
-# others what they lack, sends one that waits only on a user's decision to
-# status/needs-human with the question, closes duplicates, and ends with an
-# account of what it did. It never takes an issue out of status/needs-human.
+# others what they lack, readies one the design doesn't settle as design work
+# (designing is ours, never a question for the user), sends one that waits
+# only on the user (a tag, access, credentials, money, or a direction it is
+# unsure of, with the choice it would make) to status/needs-human, closes
+# duplicates, and ends with an account of what it did. It never takes an
+# issue out of status/needs-human.
 #
 # Issues that need the Kind cluster carry needs/cluster. On a device without
 # one, C4_CLUSTER=none (./dev setup --lite sets it): the workers skip those
@@ -208,6 +211,10 @@ Rules for this headless run:
     request, commit SHAs). The relay then picks the next issue.
   - Stuck without the user: \`hack/lib/github.sh status $n needs-human\` and a
     comment saying why and what you need. The relay then picks the next issue.
+    How to build it is yours to decide (AGENTS.md, "Designing is our job"):
+    this is for what only the user can give (a tag, access, credentials,
+    money), or a direction you are unsure of, asked with the choice you would
+    make and why.
 $cluster
 - Work you find outside #$n: file it with
   \`hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>\`; don't
@@ -233,12 +240,24 @@ Start with \`hack/lib/github.sh proposed\` (the list now; triage those) and
 list the open issues to compare against: \`gh issue list --repo $C4_GITHUB_REPO
 --state open --limit 200 --json number,title,labels\` (gh has the token).
 
-For each proposed issue, decide one of four:
+Designing is our work, not the reporter's or the user's (AGENTS.md,
+"Designing is our job"): an issue that wants something docs/design.md doesn't
+settle yet lacks a design, which a session makes, not an answer from the user.
+Never ask how to build something; ask the reporter only to elaborate what they
+want.
+
+For each proposed issue, decide one of these:
 - Ready it, \`hack/lib/github.sh status N ready\`, when it is clear (one piece
   of work, its goal fits docs/design.md or says which part of the design it
   changes), says when it is done (a checkable "Done when"), isn't a duplicate
   of an open issue, and names what it waits on with a "Depends on #M" line in
   its body, or waits on nothing.
+- Ready it as design work, when what it wants is clear but docs/design.md
+  doesn't settle how, or it is more than one piece of work: comment (first
+  line \`<!-- relay-triage -->\`) that its session makes the design choices,
+  writes them and why in a plan in docs/plans/ (and the change to
+  docs/design.md), and files the steps as status/proposed issues, each with
+  its own "Done when"; that is its "Done when". Then ready it.
 - Fill the gap and ready it, when the only thing missing is something you
   can write yourself: a "Depends on #M" line it lacks (add it to the body with
   \`gh issue edit N --repo $C4_GITHUB_REPO --body-file FILE\`, keeping the
@@ -247,14 +266,17 @@ For each proposed issue, decide one of four:
   you wrote in a comment (first line \`<!-- relay-triage -->\`).
 - Leave it proposed, with a comment (\`hack/lib/github.sh comment N FILE\`,
   its first line \`<!-- relay-triage -->\`) saying what is missing, when it
-  falls short of that in a way you can't fill, or when it waits on something
-  that can still move it (an open issue: name it as #M, so the watch reads it
-  again when #M closes). When its newest triage comment still says what is
+  falls short of that in a way you can't fill (what it wants is unclear: ask
+  the reporter to elaborate), or when it waits on something that can still
+  move it (an open issue: name it as #M, so the watch reads it again when #M
+  closes). When its newest triage comment still says what is
   missing and nothing changed since, leave it without a new comment.
-- When it needs a decision only the user can make (a tag, access,
-  credentials, money, a design choice the design doesn't settle) and nothing
-  else can move it, \`hack/lib/github.sh status N needs-human\` with a
-  comment (first line \`<!-- relay-triage -->\`) asking the question.
+- When nothing else can move it and it needs something only the user can give
+  (a tag, access, credentials, money), or you are unsure which way the factory
+  should go, \`hack/lib/github.sh status N needs-human\` with a comment (first
+  line \`<!-- relay-triage -->\`) asking for it; for a direction, the comment
+  says the choice you would make and why, so the user can steer, never a list
+  of open questions.
 - Close it as a duplicate, \`hack/lib/github.sh duplicate N M\`, when open
   issue #M covers the same work.
 

@@ -107,7 +107,10 @@ Lost claim (the heartbeat hook says so):
   ("How to Work") says. If N is still open: `hack/lib/github.sh close N FILE`,
   FILE naming the pull request, SHAs and evidence.
 - **Blocked on the user:** `hack/lib/github.sh status N needs-human` plus a
-  comment saying what you need.
+  comment saying what you need: something only the user can give (a tag,
+  access, credentials, money), or a direction you're unsure of, with the
+  choice you'd make and why. How to build it is ours to decide (AGENTS.md,
+  "Designing is our job"), never a question for the user.
 - **Follow-up found:** `hack/lib/github.sh create TITLE FILE status/proposed
   kind/<kind>` (add `needs/cluster` if it needs a real node; a body line
   `Depends on #M` if it waits on another issue). Don't start it in this
