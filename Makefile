@@ -134,9 +134,10 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 # (hack/validate-yaml.sh): samples, e2e fixtures, the kustomize builds, the chart
 # renders of helm-lint, the seed and session manifests and a rendered repository.
 .PHONY: validate-yaml
-validate-yaml: manifests kustomize kubectl-validate k8s-openapi helm-lint ## Validate the YAML against the built-in schemas and our CRDs, offline.
+validate-yaml: manifests kustomize kubectl-validate k8s-openapi helm-lint ## Validate the YAML against the built-in schemas and our CRDs, offline, and check the chart's CRDs match them.
 	@KUBECTL_VALIDATE="$(KUBECTL_VALIDATE)" KUSTOMIZE="$(KUSTOMIZE)" K8S_OPENAPI="$(K8S_OPENAPI)" \
 		KUBECTL_VALIDATE_K8S_VERSION="$(KUBECTL_VALIDATE_K8S_VERSION)" OUT="$(YAML_OUT)" hack/validate-yaml.sh
+	@hack/chart-crds.sh
 
 ##@ Build
 

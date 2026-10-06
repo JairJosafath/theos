@@ -65,6 +65,9 @@ rendered with `hack/render`. Built-in kinds are checked against the schemas of
 the envtest Kubernetes release, downloaded once next to the tools (`k8s-openapi-*`); our
 kinds against `config/crd/bases` and `test/crds/agent-sandbox`, create-time CEL
 rules included. Rules on `oldSelf` need an update, so envtest covers them.
+It also fails when a CRD in `dist/chart/templates/crd` differs from
+`config/crd/bases` beyond the chart's `crd.enabled` and `crd.keep` guard
+(`hack/chart-crds.sh`): an API change runs `make chart` and commits the chart.
 Every CEL rule has an envtest spec that expects its message: a create-time rule's
 spec creates an object that breaks it, a rule on `oldSelf` creates, patches and
 expects the message. A new rule adds one.
@@ -152,7 +155,7 @@ make gitea-forward     # then open http://localhost:3000
 
 The Kind test environment installs with kustomize. Devices install the Helm
 chart in `dist/chart/` instead ([its README](../../dist/chart/README.md)).
-After a change under `config/`, `make chart` regenerates it from the kustomize
+After a change under `config/` or `api/`, `make chart` regenerates it from the kustomize
 output and `make helm-lint` checks it; the *Test Chart* workflow installs it into
 a fresh Kind cluster on GitHub. Don't `helm install` it into the shared
 `c4factory` cluster: `make deploy` owns the CRDs there.
