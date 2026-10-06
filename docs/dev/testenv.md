@@ -15,7 +15,8 @@ make check               # manifests, generate, fmt, vet, lint and test
 make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
-make test-gitea          # gitprovider against the seeded Gitea
+make test-gitea          # gitprovider against a local Gitea (make gitea-local), or C4_GITEA_URL if set
+make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind cluster
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain, CI runner (label base), Agent Sandbox, agent image
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
 make toolchain-go runner-go agent-image-go  # Go and Node toolchain, CI runner (label go) and agent image
@@ -37,6 +38,41 @@ template needs a row there. In tests, write with merge patches
 
 `make run` runs the operator on your machine, but it can't reach Gitea's in-cluster
 address; use `make deploy` for anything that scaffolds.
+
+## Local Gitea
+
+`make gitea-local` runs a Gitea of this checkout's own, with no Kubernetes or
+Docker, so the Gitea tests run on any device, lite ones included:
+
+- It downloads the Gitea binary `config/gitea` runs (`GITEA_VERSION`, linux
+  amd64 or arm64) into `bin/` and checks its sha256.
+- It starts it from `.gitea-local/` (gitignored): SQLite, `INSTALL_LOCK`,
+  offline, listening on 127.0.0.1 only, with Actions, mail, SSH and LFS off.
+- The first start picks a free port in 13000-13999 near one derived from the
+  checkout's path, so worktrees don't collide, and keeps it in
+  `.gitea-local/app.ini`. There is no lease.
+- It also creates admin `c4admin` with a random password and an access token
+  (the seed's scopes) and writes them to `.gitea-local/credentials.env`
+  (mode 0600; `C4_GITEA_URL`, `C4_GITEA_USERNAME`, `C4_GITEA_PASSWORD`,
+  `C4_GITEA_TOKEN`). Nothing prints them; source the file to use them.
+- Starting again while it runs is a no-op. `make gitea-local-stop` stops it
+  and keeps its data; after a stop, `rm -rf .gitea-local` starts over with a
+  new port and new credentials.
+
+`make test-gitea` starts it, seeds the templates (`hack/gitea-local.sh
+fixtures`: `hack/seed/seed.sh` with no projects, so no Secrets, plus the
+`webshop` organization) and runs the `Integration` tests in
+`internal/gitprovider`. A first run takes about three minutes, mostly
+pushing the templates; later runs take about half a minute. With
+`C4_GITEA_URL` set (and `C4_GITEA_USERNAME`, `C4_GITEA_TOKEN`) it tests that
+Gitea instead, for example the Kind one behind `make gitea-forward`;
+`make test-gitea-kind` does that forward and reads the token from the cluster.
+Sourcing `credentials.env` into your shell exports `C4_GITEA_URL` too, so
+`make test-gitea` then skips starting the local Gitea; unset it after a stop.
+
+No workflow runs on pull requests, so run `make test-gitea` before merging a
+change to `internal/gitprovider` or the seed; the Tests workflow runs it on
+main.
 
 ## Deployment Workflow
 
@@ -148,7 +184,7 @@ around the steps that touch it:
    (`c4factory/operator:dev`). The toolchain base images
    (`c4factory/go:1.26`, `c4factory/base:dev`) stay shared: they change
    rarely and only from `hack/toolchain-*`.
-   `make gitea-forward` and `make test-gitea` use port 3000 for `c4factory`
+   `make gitea-forward` and `make test-gitea-kind` use port 3000 for `c4factory`
    and 3000+K-1 for `c4factory-K` (`GITEA_PORT`), so two forwards don't
    collide; the e2e tests pick a free one.
 4. `hack/lib/github.sh cluster release`.
@@ -215,6 +251,16 @@ queue:
   hang, so give the command a long timeout or run it in the background. A job
   that ends, fails or is killed frees its slot within a second; its sub-makes
   don't take another. `hack/heavy-slot.sh status` shows the slots.
+- `make check` remembers a passing tree, device-wide (`hack/check-cache.sh`).
+  A pass is recorded under the git tree hash of the working state as the
+  check left it (tracked and untracked non-ignored files, after `manifests`,
+  `generate` and `fmt`) in `.dev/cache/c4factory/checks/<tree>`: when, which
+  checkout, which agent. A plain `make check` on a tree that already passed, in
+  any checkout, prints `make check: passed on tree <hash> at <time> in
+  <checkout> (cached); FORCE=1 to rerun` and exits 0 without a heavy slot. A
+  cached pass counts as a pass. A failure records nothing; `FORCE=1 make
+  check` always runs the whole check and records it. Tool versions,
+  `go.mod`/`go.sum` and the Makefile are in the tree, so bumping them misses.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
   before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
   `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;
@@ -230,7 +276,9 @@ queue:
 `/proc/meminfo` (`RELAY_MEMINFO`), `hack/heavy-guard_test.sh` the hook,
 with `ps` and `docker` faked too, and `hack/heavy-slot_test.sh` the slots: two
 jobs running while a third waits, a slot freed by a job that ends or is killed,
-and the Makefile queueing its heavy goals.
+and the Makefile queueing its heavy goals. `hack/check-cache_test.sh` tests the
+check cache: a pass, then a hit on the same tree from another worktree, a miss
+on one changed byte (tracked or untracked), and `FORCE=1` queueing again.
 
 ### CPU on the cluster device
 

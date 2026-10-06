@@ -43,6 +43,11 @@ Log in once per machine: `gh auth login` and `gh auth setup-git` (machine-wide;
 
 The same actions are VS Code tasks (**Terminal → Run Task → Dev: …**).
 
+A lite device runs everything but the Kind cluster: `make check`, and
+`make test-gitea`, which tests `internal/gitprovider` against a Gitea of this
+checkout's own (`make gitea-local`, no Kubernetes; see
+[docs/dev/testenv.md](docs/dev/testenv.md#local-gitea)).
+
 ## What lives where
 
 | Path | Contents |

@@ -223,6 +223,8 @@ func (g *fakeGit) setIssueMilestone(owner, name string, number int, title string
 }
 
 // setIssueRelease puts an issue in the milestone titled title, due on due.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) setIssueRelease(owner, name string, number int, title string, due time.Time) {
 	g.setIssueMilestone(owner, name, number, title)
 	g.mu.Lock()
