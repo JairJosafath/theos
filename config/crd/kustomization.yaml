@@ -18,6 +18,7 @@ resources:
 - bases/c4.factory.io_agents.yaml
 - bases/c4.factory.io_tasks.yaml
 - bases/c4.factory.io_crews.yaml
+- bases/c4.factory.io_briefs.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

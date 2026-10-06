@@ -62,6 +62,7 @@ rules:
 - apiGroups:
   - c4.factory.io
   resources:
+  - briefs
   - containers
   - crews
   - datastores
@@ -81,6 +82,7 @@ rules:
 - apiGroups:
   - c4.factory.io
   resources:
+  - briefs/finalizers
   - containers/finalizers
   - crews/finalizers
   - datastores/finalizers
@@ -94,6 +96,7 @@ rules:
 - apiGroups:
   - c4.factory.io
   resources:
+  - briefs/status
   - containers/status
   - crews/status
   - datastores/status
