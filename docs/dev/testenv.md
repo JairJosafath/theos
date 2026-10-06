@@ -338,13 +338,21 @@ gh token has `read:packages`), so a workflow does. After *Release* publishes
 `vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`) installs
 the published chart and images on a fresh Kind cluster, builds nothing, waits
 for the seed's repositories, both runners, the manager and the UI, and
-scaffolds the release's `orders-api` sample. Its result is the run's job
+scaffolds the release's `orders-api` sample. Then it follows
+[getting-started](../getting-started.md) for the first app: the `ghcr` pull
+Secret on `webshop`'s `default` ServiceAccount (it pulls `agent-go` through
+it) and `config/samples/first-app/`, set to the release's agent tag and
+template refs, until `orders-cli` is scaffolded and its Crew is `Idle`; no
+Agent runs, as CI has no Claude token. A tag without `first-app` skips that
+part and says so. Its result is the run's job
 summary and its artifact `release-vX.Y.Z-check` (Actions → Verify Release).
 When it fails it files `Release vX.Y.Z fails its check` (`status/ready`,
 `priority/urgent`), or comments on the open one, so the relay picks it up; the
 issue says if the runner ran short of memory or disk. Check an older release
 with Actions → Verify Release → Run workflow, or
-`gh workflow run verify-release.yml -f tag=vX.Y.Z`.
+`gh workflow run verify-release.yml -f tag=vX.Y.Z`; dispatched, it takes the
+`first-app` samples from the ref it runs on, so on main it checks the guide's
+current samples against that release.
 
 ### Memory on the cluster device
 
