@@ -282,3 +282,26 @@ func TestReleaseRunResult(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseRunLate(t *testing.T) {
+	tagged := time.Date(2026, 10, 6, 1, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name   string
+		result string
+		after  time.Duration
+		want   bool
+	}{
+		{"waiting within the bound", RunWaiting, 59 * time.Minute, false},
+		{"waiting at the bound", RunWaiting, time.Hour, true},
+		{"running past the bound", RunRunning, 90 * time.Minute, true},
+		{"succeeded past the bound", RunSucceeded, 2 * time.Hour, false},
+		{"failed past the bound", RunFailed, 2 * time.Hour, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ReleaseRunLate(tt.result, tagged, tagged.Add(tt.after)); got != tt.want {
+				t.Errorf("ReleaseRunLate(%s, +%s) = %v; want %v", tt.result, tt.after, got, tt.want)
+			}
+		})
+	}
+}

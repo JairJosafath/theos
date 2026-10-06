@@ -281,6 +281,64 @@ var _ = Describe("Crew releases", func() {
 				HaveField("Reason", "ReleaseRunSucceeded"))))
 		}).Should(Succeed())
 	})
+
+	It("reports release runs that haven't ended an hour after tagging, once, and their later end", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		runURL := "http://gitea/" + ns + "/orders-api/actions/runs/5"
+		run := gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "queued", URL: runURL}
+		gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", run)
+		Eventually(func(g Gomega) {
+			release := getCrew(g, ns).Status.LastRelease
+			g.Expect(release).NotTo(BeNil())
+			g.Expect(release.Run).To(Equal("Running"))
+		}).Should(Succeed())
+		Expect(crewEvents(Default, ns)).NotTo(ContainElement(HaveField("Reason", "ReleaseRunOverdue")))
+
+		// No runner picks the run up; the release was tagged two hours ago.
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			crew.Status.LastRelease.Time = metav1.NewTime(time.Now().Add(-2 * time.Hour))
+			g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
+		}).Should(Succeed())
+		overdue := And(HaveField("Type", "Warning"), HaveField("Reason", "ReleaseRunOverdue"),
+			HaveField("Note", "Release runs of v0.1.0 have not ended an hour after tagging, Running: "+runURL))
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.LastRelease.Run).To(Equal("Running"))
+			cond := condition(crew.Status.Conditions, ConditionReleased)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Message).To(Equal("Released v0.1.0 at 5a-merge; its runs have not ended an hour after tagging"))
+			g.Expect(crewEvents(g, ns)).To(ContainElement(overdue))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			var warnings []eventsv1.Event
+			for _, e := range crewEvents(g, ns) {
+				if e.Reason == "ReleaseRunOverdue" {
+					warnings = append(warnings, e)
+				}
+			}
+			g.Expect(warnings).To(HaveLen(1))
+			g.Expect(warnings[0].Series).To(BeNil())
+		}, 3*time.Second).Should(Succeed())
+
+		run.Status, run.Conclusion = "completed", "success"
+		gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", run)
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.LastRelease.Run).To(Equal("Succeeded"))
+			g.Expect(condition(crew.Status.Conditions, ConditionReleased).Message).
+				To(Equal("Released v0.1.0 at 5a-merge"))
+			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
+				HaveField("Reason", "ReleaseRunSucceeded"))))
+		}).Should(Succeed())
+	})
 })
 
 var _ = Describe("Crew release preparation", func() {

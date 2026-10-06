@@ -114,6 +114,8 @@ func (p *fakeProvider) TagRuns(_ context.Context, repo gitprovider.Repository, t
 }
 
 // setRuns sets the workflow runs a push of tag at commit started, newest first.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) setRuns(owner, name, tag, commit string, runs ...gitprovider.WorkflowRun) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

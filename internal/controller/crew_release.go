@@ -44,7 +44,12 @@ const (
 	reasonPreparingRelease  = "PreparingRelease"
 	reasonReleaseRunFailed  = "ReleaseRunFailed"
 	reasonReleaseRunPassed  = "ReleaseRunSucceeded"
+	reasonReleaseRunOverdue = "ReleaseRunOverdue"
 )
+
+// runOverdueNote ends the Released condition's message while the last
+// release's runs are past model.ReleaseRunBound.
+const runOverdueNote = "; its runs have not ended an hour after tagging"
 
 // tagRelease looks after the Crew's first open release, as its switches say:
 // with prepareReleases, once the release is done with merged work and has no
@@ -270,4 +275,41 @@ func (r *CrewReconciler) watchReleaseRun(ctx context.Context, crew *c4v1alpha1.C
 	}
 	r.runSaid.Store(crew.UID, said)
 	release.Run, release.RunURL = result, run.URL
+}
+
+// noteOverdueRun reports a last release whose runs haven't ended
+// model.ReleaseRunBound after tagging, such as one no runner picks up: one
+// Warning Event per release, and while the Released condition names that
+// release, a note on its message until the runs end. The watch carries on, so
+// a later end is reported as usual.
+func (r *CrewReconciler) noteOverdueRun(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus) {
+	release := status.LastRelease
+	if release == nil {
+		return
+	}
+	late := model.ReleaseRunLate(release.Run, release.Time.Time, r.now())
+	// The Crew as read says whether an earlier process reported it already.
+	read := apimeta.FindStatusCondition(crew.Status.Conditions, ConditionReleased)
+	noted := read != nil && read.Reason == reasonReleased && strings.HasSuffix(read.Message, runOverdueNote)
+	if last, _ := r.runLateSaid.Load(crew.UID); late && !noted && last != release.Tag {
+		note := fmt.Sprintf("Release runs of %s have not ended an hour after tagging, %s", release.Tag, release.Run)
+		if release.RunURL != "" {
+			note += ": " + release.RunURL
+		}
+		logf.FromContext(ctx).Info("Release run overdue", "tag", release.Tag, "run", release.Run,
+			"url", release.RunURL)
+		r.event(crew, corev1.EventTypeWarning, reasonReleaseRunOverdue, "WatchReleaseRun", note)
+	}
+	if late {
+		r.runLateSaid.Store(crew.UID, release.Tag)
+	}
+	cond := apimeta.FindStatusCondition(status.Conditions, ConditionReleased)
+	if cond == nil || cond.Reason != reasonReleased {
+		return
+	}
+	message := strings.TrimSuffix(cond.Message, runOverdueNote)
+	if late {
+		message += runOverdueNote
+	}
+	r.setReleased(crew, status, metav1.ConditionTrue, reasonReleased, message)
 }
