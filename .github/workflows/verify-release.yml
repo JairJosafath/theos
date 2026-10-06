@@ -24,9 +24,9 @@ name: Verify Release
 # install takes the guide's samples: the tag's, or dispatched, the dispatched
 # ref's, so dispatching on main checks the guide against a release. A tag
 # without config/samples/first-app skips that part and says so. upgrade takes
-# the previous release's own first-app; a release from before first-app was
-# tagged (v0.3.0 and older) takes the newest samples that still made their own
-# catalog and Agents, as such a device did.
+# the previous release's own first-app when it has one, else the guide's. A
+# release whose chart has no catalog (v0.3.0 and older) takes the newest
+# samples that still made their own catalog and Agents, as such a device did.
 #
 # upgrade then notes the objects, Gitea's repositories and Secrets gitea-admin
 # and gitea-runner, `helm upgrade`s with the same values and checks that the
@@ -142,15 +142,15 @@ jobs:
           sparse-checkout: config/crd/bases
           persist-credentials: false
 
-      # The guide's samples: the tag's, or the dispatched ref's (main's). The
-      # upgrade reads their history for a previous release without first-app.
+      # The guide's samples: the tag's, or the dispatched ref's (main's), and
+      # their history for a release whose chart has no catalog.
       - name: Clone the guide's samples
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || env.TAG }}
           path: guide
           sparse-checkout: config/samples
-          fetch-depth: ${{ matrix.check == 'upgrade' && 0 || 1 }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Name the guide's samples
@@ -158,15 +158,15 @@ jobs:
           GUIDE_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || env.TAG }}
         run: |
           samples= ref=
-          if [ "$CHECK" = install ]; then
-            [ -d guide/config/samples/first-app ] && samples=guide/config/samples/first-app ref=$GUIDE_REF
-          elif [ -d config/samples/first-app ]; then
+          if [ "$CHECK" = upgrade ] && [ -d config/samples/first-app ]; then
             samples=config/samples/first-app ref=$FROM
-          elif [ -f guide/config/samples/first-app/catalog.yaml ]; then
+          elif [ -d guide/config/samples/first-app ]; then
             samples=guide/config/samples/first-app ref=$GUIDE_REF
-          else
-            # The last commit with a catalog.yaml in first-app is the one that
-            # removed it, when the chart took the catalog and the Agents over.
+          fi
+          # A chart without the catalog and Agents (0.3.0 and older) takes the
+          # newest samples that made their own: the commit before the one that
+          # removed first-app/catalog.yaml, when the chart took them over.
+          if [ -n "$samples" ] && [ ! -f "$samples/catalog.yaml" ] && ! grep -q '^catalog:' dist/chart/values.yaml; then
             removed=$(git -C guide log -1 --format=%H -- config/samples/first-app/catalog.yaml)
             if [ -n "$removed" ]; then
               mkdir -p "$RUNNER_TEMP/legacy"

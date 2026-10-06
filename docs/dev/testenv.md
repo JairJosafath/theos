@@ -384,24 +384,48 @@ daemon down or not answering) and again when Docker answers.
 
 The relay can't pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. After *Release* publishes
-`vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`) installs
-the published chart and images on a fresh Kind cluster, builds nothing, waits
-for the seed's repositories, both runners, the manager and the UI, and
+`vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`) checks it
+twice, each on a Kind cluster of its own, building nothing.
+
+The install check installs the published chart and images on a fresh cluster,
+waits for the seed's repositories, both runners, the manager and the UI, and
 scaffolds the release's `orders-api` sample. Then it follows
 [getting-started](../getting-started.md) for the first app: the `ghcr` pull
 Secret on `webshop`'s `default` ServiceAccount (it pulls `agent-go` through
 it) and `config/samples/first-app/`, set to the release's agent tag and
 template refs, until `orders-cli` is scaffolded and its Crew is `Idle`; no
 Agent runs, as CI has no Claude token. A tag without `first-app` skips that
-part and says so. Its result is the run's job
-summary and its artifact `release-vX.Y.Z-check` (Actions → Verify Release).
-When it fails it files `Release vX.Y.Z fails its check` (`status/ready`,
-`priority/urgent`), or comments on the open one, so the relay picks it up; the
-issue says if the runner ran short of memory or disk. Check an older release
-with Actions → Verify Release → Run workflow, or
-`gh workflow run verify-release.yml -f tag=vX.Y.Z`; dispatched, it takes the
-`first-app` samples from the ref it runs on, so on main it checks the guide's
-current samples against that release.
+part and says so.
+
+The upgrade check takes the path a device takes: `helm upgrade` from the
+release it already runs. It installs the previous release (the highest `v*`
+tag below this one) the same way, with its own `orders-api` sample and its
+`first-app` (else the guide's) until `orders-cli`'s Crew is `Idle`, notes what
+is there,
+and `helm upgrade`s to the new release with the same values. Then it checks
+that the CRDs are the new tag's (`kubectl diff` against its
+`config/crd/bases`), that every earlier `c4` and `c4catalog` object is still
+there with its phase and its `Ready` condition, that the new manager logs no
+`Reconciler error` in its first two minutes (optimistic-lock conflicts
+aside), that Secrets `gitea-admin` and `gitea-runner` are unchanged, and that
+every Gitea repository is still there with its earlier head commit (the seed
+may add template tags). The chart recreates its hooks (GitProviders, the
+catalog) on every upgrade, so objects are matched by kind, namespace and name,
+not uid. On the repository's first tag there is no previous release, and the
+check is skipped and says so. A release whose chart has no catalog (v0.3.0 and
+older) has no `first-app` of its own that works on it, so either check takes
+the newest samples that made their own catalog and Agents, from history.
+
+Their results are the run's job summaries and the artifacts
+`release-vX.Y.Z-install` and `release-vX.Y.Z-upgrade` (Actions → Verify
+Release). When either fails it files `Release vX.Y.Z fails its check`
+(`status/ready`, `priority/urgent`), or comments on the open one, so the relay
+picks it up; the issue says which check failed and if the runner ran short of
+memory or disk. Check an older release with Actions → Verify Release → Run
+workflow, or `gh workflow run verify-release.yml -f tag=vX.Y.Z`; add
+`--ref <branch>` to try a branch's workflow. Dispatched, the install check
+takes the `first-app` samples from the ref it runs on, so on main it checks
+the guide's current samples against that release.
 
 ### Memory on the cluster device
 
