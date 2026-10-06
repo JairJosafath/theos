@@ -462,62 +462,72 @@ func checkCreated(plan Plan, current CurrentModel, o PlanObject, refuse func(str
 		}
 	case KindContainer:
 		needSystem()
-		if !slices.Contains(containerTypes, o.Type) {
-			refuse(subject, "type %q is not a Container type; one of %s", o.Type, joinAnd(containerTypes))
-			return
-		}
-		if o.GitProvider != current.GitProvider {
-			refuse(subject, "gitProviderRef names %q; a Brief's Containers use its GitProvider, %q", o.GitProvider, current.GitProvider)
-		}
-		for _, side := range []struct{ side, field, name string }{
-			{SideFramework, "frameworkRef", o.Framework},
-			{SideStandard, "standardRef", o.Standard},
-			{SideCompute, "computeRef", o.Compute},
-			{SideDeployment, "deploymentRef", o.Deployment},
-		} {
-			if side.name == "" && side.side != SideFramework {
-				continue
-			}
-			entry, reason := catalogEntry(current.Catalog, side.side, side.name, o.Type)
-			if reason != "" {
-				refuse(subject, "%s %s", side.field, reason)
-				continue
-			}
-			if side.side == SideStandard {
-				if err := CheckStandard(o.Framework, &entry); err != nil {
-					refuse(subject, "standardRef: %v", err)
-				}
-			}
-		}
+		checkCreatedContainer(current, o, refuse)
 	case KindDataStore:
 		needSystem()
 		if _, reason := catalogEntry(current.Catalog, SideConnector, o.Connector, ""); reason != "" {
 			refuse(subject, "connectorRef %s", reason)
 		}
 	case KindRelationship:
-		for _, end := range []struct {
-			field string
-			ref   Ref
-		}{{"source", o.Source}, {"target", o.Target}} {
-			if _, ok := findObject(plan.Objects, end.ref); !ok || !slices.Contains(elementKinds, end.ref.Kind) {
-				refuse(subject, "%s names %s, which is not a Person, SoftwareSystem, Container or DataStore of the plan",
-					end.field, end.ref)
+		checkCreatedRelationship(plan, current, o, refuse)
+	}
+}
+
+func checkCreatedContainer(current CurrentModel, o PlanObject, refuse func(string, string, ...any)) {
+	subject := o.Ref().String()
+	if !slices.Contains(containerTypes, o.Type) {
+		refuse(subject, "type %q is not a Container type; one of %s", o.Type, joinAnd(containerTypes))
+		return
+	}
+	if o.GitProvider != current.GitProvider {
+		refuse(subject, "gitProviderRef names %q; a Brief's Containers use its GitProvider, %q", o.GitProvider, current.GitProvider)
+	}
+	for _, side := range []struct{ side, field, name string }{
+		{SideFramework, "frameworkRef", o.Framework},
+		{SideStandard, "standardRef", o.Standard},
+		{SideCompute, "computeRef", o.Compute},
+		{SideDeployment, "deploymentRef", o.Deployment},
+	} {
+		if side.name == "" && side.side != SideFramework {
+			continue
+		}
+		entry, reason := catalogEntry(current.Catalog, side.side, side.name, o.Type)
+		if reason != "" {
+			refuse(subject, "%s %s", side.field, reason)
+			continue
+		}
+		if side.side == SideStandard {
+			if err := CheckStandard(o.Framework, &entry); err != nil {
+				refuse(subject, "standardRef: %v", err)
 			}
 		}
-		if o.Source == o.Target {
-			refuse(subject, "points to itself; a Relationship links two elements")
+	}
+}
+
+func checkCreatedRelationship(plan Plan, current CurrentModel, o PlanObject, refuse func(string, string, ...any)) {
+	subject := o.Ref().String()
+	for _, end := range []struct {
+		field string
+		ref   Ref
+	}{{"source", o.Source}, {"target", o.Target}} {
+		if _, ok := findObject(plan.Objects, end.ref); !ok || !slices.Contains(elementKinds, end.ref.Kind) {
+			refuse(subject, "%s names %s, which is not a Person, SoftwareSystem, Container or DataStore of the plan",
+				end.field, end.ref)
 		}
-		if o.Bundles && (o.Source.Kind != KindContainer || o.Target.Kind != KindContainer) {
-			refuse(subject, "bundles is set, but only a Container to Container link can bundle")
-		}
-		source, _ := findObject(plan.Objects, o.Source)
-		target, _ := findObject(plan.Objects, o.Target)
-		if source.Kind == KindContainer && target.Kind == KindDataStore {
-			for _, entry := range current.Catalog {
-				if entry.Side == SideConnector && entry.Name == target.Connector && !entry.Supports(source.Type) {
-					refuse(subject, "DataStore %s's Connector %s does not support %s, the type of Container %s",
-						target.Name, entry.Name, source.Type, source.Name)
-				}
+	}
+	if o.Source == o.Target {
+		refuse(subject, "points to itself; a Relationship links two elements")
+	}
+	if o.Bundles && (o.Source.Kind != KindContainer || o.Target.Kind != KindContainer) {
+		refuse(subject, "bundles is set, but only a Container to Container link can bundle")
+	}
+	source, _ := findObject(plan.Objects, o.Source)
+	target, _ := findObject(plan.Objects, o.Target)
+	if source.Kind == KindContainer && target.Kind == KindDataStore {
+		for _, entry := range current.Catalog {
+			if entry.Side == SideConnector && entry.Name == target.Connector && !entry.Supports(source.Type) {
+				refuse(subject, "DataStore %s's Connector %s does not support %s, the type of Container %s",
+					target.Name, entry.Name, source.Type, source.Name)
 			}
 		}
 	}
