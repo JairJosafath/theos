@@ -65,7 +65,7 @@ func (r *CrewReconciler) fileBumps(ctx context.Context, crew *c4v1alpha1.Crew, s
 			log.Info("Filed a bump issue", "bundler", b.Container, "tag", release.Tag, "issue", issue.URL)
 			if r.Recorder != nil {
 				r.Recorder.Eventf(crew, nil, corev1.EventTypeNormal, reasonBumpFiled, "FileBump",
-					"Filed %s to bump %s to %s", issue.URL, b.Container, release.Tag)
+					"Filed %s to bump %s to %s in %s", issue.URL, bump.Bundled, release.Tag, b.Container)
 			}
 		}
 	}

@@ -30,7 +30,9 @@ GitHub issue #118, a follow-up of #78 ([release-tags.md](release-tags.md)).
   issue.
 - **Links at release time.** A Relationship created after the release was tagged
   files no bump for it: the bundler started from a later state. A bundler that
-  isn't Ready yet is tried again on the next poll.
+  isn't Ready yet is tried again on the next poll. Known limit: the rule reads
+  the link's creation, so turning `bundles` on for an older link files a bump
+  for the last release, which the bundler may already ship; a person closes it.
 - **Reporting.** Each filed issue is a Normal Event `BumpFiled` and the log line
   `Filed a bump issue`; a failure is logged and retried on the next poll.
 
