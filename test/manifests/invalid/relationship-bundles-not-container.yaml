@@ -1,0 +1,10 @@
+# expect: only a Container to Container link can bundle
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: orders-api-to-orders-db
+  namespace: apps
+spec:
+  source: {kind: Container, name: orders-api}
+  target: {kind: DataStore, name: orders-db}
+  bundles: true

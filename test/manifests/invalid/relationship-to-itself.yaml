@@ -1,0 +1,9 @@
+# expect: a Relationship cannot point to itself
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: loop
+  namespace: apps
+spec:
+  source: {kind: Container, name: orders-api}
+  target: {kind: Container, name: orders-api}

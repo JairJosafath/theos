@@ -70,6 +70,14 @@ func getCrew(g Gomega, ns string) *c4v1alpha1.Crew {
 }
 
 var _ = Describe("Crew", func() {
+	It("keeps its Container for life", func() {
+		ns := newProjectNamespace()
+		crew := newCrew(ns)
+		mustCreate(crew)
+		Expect(patch(crew, func() { crew.Spec.ContainerRef.Name = "cart-api" })).
+			To(MatchError(ContainSubstring("containerRef is immutable")))
+	})
+
 	It("works through ready issues in order, each one reviewed by its own Agent and closed on merge", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
