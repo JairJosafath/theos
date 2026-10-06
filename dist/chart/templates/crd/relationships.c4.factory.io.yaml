@@ -64,6 +64,13 @@ spec:
           spec:
             description: spec defines the desired state of Relationship
             properties:
+              bundles:
+                description: |-
+                  bundles says the source Container ships a pinned release of the target
+                  Container, as an extension ships its server. Each release the target's Crew
+                  tags files a bump issue in the source's repository. Only a Container to
+                  Container link can bundle; it can change, as it touches no scaffold.
+                type: boolean
               description:
                 description: description says what the link is, such as "Reads and
                   writes orders".
@@ -126,6 +133,9 @@ spec:
             - message: a Relationship cannot point to itself
               rule: '!(self.source.kind == self.target.kind && self.source.name ==
                 self.target.name)'
+            - message: only a Container to Container link can bundle
+              rule: '!has(self.bundles) || !self.bundles || (self.source.kind == ''Container''
+                && self.target.kind == ''Container'')'
           status:
             description: status defines the observed state of Relationship
             properties:
