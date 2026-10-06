@@ -8,20 +8,24 @@ every image and the chart come from GHCR.
 
 You need:
 
-- a cluster with about 4 CPUs and 8 GiB of memory free for the factory and two
-  agents (a Kind cluster on your machine works), with `kubectl` and `helm` 3.8
-  or later pointing at it;
+- a Kubernetes 1.30 or later cluster (Kind v0.23 or later) with about 4 CPUs
+  and 8 GiB of memory free for the factory and two agents (a Kind cluster on
+  your machine works), with `kubectl` and `helm` 3.8 or later pointing at it;
 - `jq` and `curl`, for the Gitea step;
 - a Claude subscription or API account and the `claude` CLI, for the agents'
   token;
-- the GitHub CLI (`gh`), logged in, while the images on GHCR are private.
+- the GitHub CLI (`gh`), logged in, while this repository, the chart and the
+  images on GHCR are private.
 
-The commands use the release `0.3.0`; for a later one, change `VERSION` and the
-`agent-go` tag in [config/samples/first-app/agents.yaml](../config/samples/first-app/agents.yaml).
-Run them from a clone of this repository, for the sample files:
+The commands use the release `0.3.0`; for a later one, change `VERSION`, the
+`agent-go` tag in [config/samples/first-app/agents.yaml](../config/samples/first-app/agents.yaml)
+and the template `ref`s in [config/samples/first-app/catalog.yaml](../config/samples/first-app/catalog.yaml):
+they must match that release's `templates/versions.txt`, because the seed
+pushes only the tags that file lists. Run them from a clone of this repository,
+for the sample files (`gh` clones it while the repository is private):
 
 ```bash
-git clone https://github.com/JairJosafath/c4factory && cd c4factory
+gh repo clone JairJosafath/c4factory && cd c4factory
 VERSION=0.3.0
 ```
 
@@ -43,13 +47,15 @@ for ns in c4-factory-system gitea webshop; do
 done
 ```
 
-**The pull secret** (skip it once the images on GHCR are public). Your GitHub
-token, with `read:packages`, goes in a Secret named `ghcr` in each namespace
-that pulls an image: the release's, Gitea's and the project's. You run this
-yourself; the factory never sees the token anywhere else.
+**Registry login and the pull secret** (skip them once the chart and the
+images on GHCR are public). Your GitHub token, with `read:packages`, logs Helm
+in to GHCR, so it can pull the chart, and goes in a Secret named `ghcr` in each
+namespace that pulls an image: the release's, Gitea's and the project's. You
+run this yourself; the factory never sees the token anywhere else.
 
 ```bash
 gh auth refresh -s read:packages
+gh auth token | helm registry login ghcr.io -u "$(gh api user -q .login)" --password-stdin
 for ns in c4-factory-system gitea webshop; do
   kubectl -n $ns create secret docker-registry ghcr --docker-server=ghcr.io \
     --docker-username="$(gh api user -q .login)" --docker-password="$(gh auth token)"

@@ -80,9 +80,16 @@ namespace to drop them.
 
 ### Private images
 
-The images on GHCR are private until the owner makes them public. A device
-pulls them with a GitHub token that has `read:packages` (`gh auth refresh -s
-read:packages`, then `gh auth token`), in one of two ways:
+The chart and the images on GHCR are private until the owner makes them
+public. A device pulls them with a GitHub token that has `read:packages`
+(`gh auth refresh -s read:packages`, then `gh auth token`). Helm pulls the
+chart, so log it in first, whichever way the images come:
+
+```bash
+gh auth token | helm registry login ghcr.io -u "$(gh api user -q .login)" --password-stdin
+```
+
+The images come in one of two ways:
 
 - **A pull secret.** Make a `kubernetes.io/dockerconfigjson` Secret in the
   release's namespace and in Gitea's, and name it in `global.imagePullSecrets`
