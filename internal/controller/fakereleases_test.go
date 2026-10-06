@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
@@ -16,6 +19,10 @@ type fakeReleaseState struct {
 	closed map[string][]string                  // owner/name, closed milestones' titles
 	tags   map[string]string                    // owner/name@tag, the commit it names
 	runs   map[string][]gitprovider.WorkflowRun // owner/name@tag@commit, newest first
+	// published is the Gitea releases, by owner/name@tag, and assets their
+	// files' contents, by UUID.
+	published map[string]*gitprovider.Release
+	assets    map[string][]byte
 	// closeFailures is how many CloseMilestone calls fail before one succeeds.
 	closeFailures int
 }
@@ -23,7 +30,8 @@ type fakeReleaseState struct {
 func (g *fakeGit) releaseState() *fakeReleaseState {
 	if g.releases == nil {
 		g.releases = &fakeReleaseState{closed: map[string][]string{}, tags: map[string]string{},
-			runs: map[string][]gitprovider.WorkflowRun{}}
+			runs: map[string][]gitprovider.WorkflowRun{}, published: map[string]*gitprovider.Release{},
+			assets: map[string][]byte{}}
 	}
 	return g.releases
 }
@@ -111,6 +119,44 @@ func (p *fakeProvider) TagRuns(_ context.Context, repo gitprovider.Repository, t
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	return slices.Clone(p.git.releaseState().runs[repo.Owner+"/"+repo.Name+"@"+tag+"@"+commit]), nil
+}
+
+func (p *fakeProvider) GetRelease(_ context.Context, repo gitprovider.Repository, tag string) (
+	*gitprovider.Release, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	rel := p.git.releaseState().published[repo.Owner+"/"+repo.Name+"@"+tag]
+	if rel == nil {
+		return nil, nil
+	}
+	out := *rel
+	out.Assets = slices.Clone(rel.Assets)
+	return &out, nil
+}
+
+func (p *fakeProvider) OpenReleaseAsset(_ context.Context, _ gitprovider.Repository, asset gitprovider.ReleaseAsset) (
+	io.ReadCloser, int64, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	data, ok := p.git.releaseState().assets[asset.UUID]
+	if !ok {
+		return nil, 0, fmt.Errorf("no asset %s", asset.UUID)
+	}
+	return io.NopCloser(bytes.NewReader(data)), int64(len(data)), nil
+}
+
+func (p *fakeProvider) SetReleaseBody(_ context.Context, repo gitprovider.Repository, id int64, body string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	for key, rel := range p.git.releaseState().published {
+		if strings.HasPrefix(key, repo.Owner+"/"+repo.Name+"@") && rel.ID == id {
+			if body != "" {
+				rel.Body = body
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("no release %d in %s/%s", id, repo.Owner, repo.Name)
 }
 
 // setRuns sets the workflow runs a push of tag at commit started, newest first.

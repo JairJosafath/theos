@@ -3,7 +3,9 @@ package gitprovider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -188,4 +190,147 @@ func (g *gitea) TagRuns(ctx context.Context, repo Repository, tag, commit string
 		}
 	}
 	return out, nil
+}
+
+// Release is a release on a repository, with the files attached to it.
+type Release struct {
+	ID int64
+	// Tag is the tag it releases.
+	Tag  string
+	Name string
+	// Body is its notes, "" when nobody wrote any.
+	Body  string
+	Draft bool
+	// URL is the release's page.
+	URL    string
+	Assets []ReleaseAsset
+}
+
+// ReleaseAsset is a file attached to a release.
+type ReleaseAsset struct {
+	ID   int64
+	Name string
+	Size int64
+	// UUID names the file's download, independent of the release's tag.
+	UUID string
+}
+
+type giteaRelease struct {
+	ID      int64  `json:"id"`
+	TagName string `json:"tag_name"`
+	Name    string `json:"name"`
+	Body    string `json:"body"`
+	Draft   bool   `json:"draft"`
+	HTMLURL string `json:"html_url"`
+	Assets  []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+		Size int64  `json:"size"`
+		UUID string `json:"uuid"`
+	} `json:"assets"`
+}
+
+// GetRelease returns the release of tag with its assets, a draft too, or nil
+// when repo has none.
+func (g *gitea) GetRelease(ctx context.Context, repo Repository, tag string) (*Release, error) {
+	status, data, err := g.do(ctx, http.MethodGet, "/api/v1/repos/"+repoPath(repo)+"/releases/tags/"+url.PathEscape(tag), nil)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusNotFound {
+		return nil, nil
+	}
+	var r giteaRelease
+	if status != http.StatusOK || json.Unmarshal(data, &r) != nil || r.ID == 0 {
+		return nil, fmt.Errorf("gitea: reading the release of %s in %s failed (HTTP %d): %s", tag, repoPath(repo), status,
+			apiMessage(data))
+	}
+	rel := &Release{ID: r.ID, Tag: r.TagName, Name: r.Name, Body: r.Body, Draft: r.Draft, URL: r.HTMLURL}
+	for _, a := range r.Assets {
+		rel.Assets = append(rel.Assets, ReleaseAsset{ID: a.ID, Name: a.Name, Size: a.Size, UUID: a.UUID})
+	}
+	return rel, nil
+}
+
+// OpenReleaseAsset starts the download of asset and returns its body, which the
+// caller closes, and its size in bytes. The body is streamed, never held whole,
+// and fails as it is read if it is not that size. ctx bounds the whole
+// download, which may take longer than the provider's timeout for one call.
+func (g *gitea) OpenReleaseAsset(ctx context.Context, repo Repository, asset ReleaseAsset) (io.ReadCloser, int64, error) {
+	if asset.UUID == "" {
+		return nil, 0, fmt.Errorf("gitea: asset %s of %s has no download", asset.Name, repoPath(repo))
+	}
+	// The download is a web route, not under /api/v1; it is built on the
+	// configured base, like the repository's addresses.
+	req, err := g.request(ctx, http.MethodGet, "/attachments/"+url.PathEscape(asset.UUID), nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	client := *g.http
+	client.Timeout = 0
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("gitea: downloading %s of %s: %w", asset.Name, repoPath(repo), err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+		_ = resp.Body.Close()
+		return nil, 0, fmt.Errorf("gitea: downloading %s of %s failed (HTTP %d): %s", asset.Name, repoPath(repo),
+			resp.StatusCode, apiMessage(data))
+	}
+	if resp.ContentLength >= 0 && resp.ContentLength != asset.Size {
+		_ = resp.Body.Close()
+		return nil, 0, fmt.Errorf("gitea: %s of %s is %d bytes, the release says %d", asset.Name, repoPath(repo),
+			resp.ContentLength, asset.Size)
+	}
+	return &sizedBody{body: resp.Body, left: asset.Size,
+		name: asset.Name + " of " + repoPath(repo)}, asset.Size, nil
+}
+
+// sizedBody is a download that must be exactly as long as the release says,
+// also when the host sends no Content-Length.
+type sizedBody struct {
+	body io.ReadCloser
+	left int64
+	name string
+}
+
+func (b *sizedBody) Read(p []byte) (int, error) {
+	if b.left <= 0 {
+		var one [1]byte
+		if n, _ := b.body.Read(one[:]); n > 0 {
+			return 0, fmt.Errorf("gitea: %s is longer than the release says", b.name)
+		}
+		return 0, io.EOF
+	}
+	if int64(len(p)) > b.left {
+		p = p[:b.left]
+	}
+	n, err := b.body.Read(p)
+	b.left -= int64(n)
+	if errors.Is(err, io.EOF) {
+		if b.left > 0 {
+			return n, fmt.Errorf("gitea: %s ended %d bytes short: %w", b.name, b.left, io.ErrUnexpectedEOF)
+		}
+		err = nil
+	}
+	return n, err
+}
+
+func (b *sizedBody) Close() error { return b.body.Close() }
+
+// SetReleaseBody replaces the notes of release id with body. Gitea keeps the
+// notes it has when body is "".
+func (g *gitea) SetReleaseBody(ctx context.Context, repo Repository, id int64, body string) error {
+	payload, _ := json.Marshal(map[string]string{"body": body})
+	path := "/api/v1/repos/" + repoPath(repo) + "/releases/" + strconv.FormatInt(id, 10)
+	status, data, err := g.do(ctx, http.MethodPatch, path, payload)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("gitea: setting the notes of release %d of %s failed (HTTP %d): %s", id, repoPath(repo), status,
+			apiMessage(data))
+	}
+	return nil
 }

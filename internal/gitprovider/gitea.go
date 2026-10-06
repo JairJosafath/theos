@@ -119,19 +119,13 @@ func (g *gitea) do(ctx context.Context, method, path string, body []byte) (int, 
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, g.base.String()+path, reader)
+	req, err := g.request(ctx, method, path, reader)
 	if err != nil {
 		return 0, nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
-	}
-	switch {
-	case g.basic != nil:
-		req.SetBasicAuth(g.basic.Username, g.basic.Token)
-	case g.creds.Token != "":
-		req.Header.Set("Authorization", "token "+g.creds.Token)
 	}
 	resp, err := g.http.Do(req)
 	if err != nil {
@@ -143,6 +137,22 @@ func (g *gitea) do(ctx context.Context, method, path string, body []byte) (int, 
 		return 0, nil, fmt.Errorf("gitea: %s %s: %w", method, path, err)
 	}
 	return resp.StatusCode, data, nil
+}
+
+// request builds a request for path on the host, signed with the provider's
+// credentials.
+func (g *gitea) request(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, g.base.String()+path, body)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case g.basic != nil:
+		req.SetBasicAuth(g.basic.Username, g.basic.Token)
+	case g.creds.Token != "":
+		req.Header.Set("Authorization", "token "+g.creds.Token)
+	}
+	return req, nil
 }
 
 // apiMessage pulls the message out of a Gitea error body.

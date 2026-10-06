@@ -106,7 +106,10 @@ a port-forward, and are gone with the cluster. The repository they named is
   assets, the GitHub release found by marker and its assets) and returns one
   step: wait, write the notes, create the draft, upload an asset, publish the
   draft, done, or fail with a reason. The controller runs one step per poll,
-  like the Standard update.
+  like the Standard update: the reads (the Gitea release, the merged issues,
+  GitHub's releases) are steps too, asked for only when the decision needs
+  them, so a missing Secret or unfinished runs read nothing; a GitHub call
+  that fails goes back in as a fact and comes out as the failure's reason.
 
 ## Steps
 
@@ -123,6 +126,12 @@ until step 4, since nothing reads `publishReleases` before it.
    release's body; local-Gitea tests (`make test-gitea`).
    *Done when:* `make test-gitea` reads a release and streams its asset
    against the local Gitea, and `make check` passes.
+   *Landed:* `Provider.GetRelease` (nil when the tag has no release; drafts
+   are found too), `OpenReleaseAsset` and `SetReleaseBody`. An asset downloads
+   from `/attachments/<uuid>` on the configured base URL, not the API's
+   `browser_download_url`, which follows Gitea's `ROOT_URL`; a download whose
+   size differs from the release's record is an error. Gitea ignores an empty
+   body on edit, so notes can be set but not cleared.
 3. **GitHub's side.** `internal/gitprovider`: the `ReleaseTarget` interface
    and its GitHub implementation, tested against an `httptest` server with a
    generated token (`rand.Text()`): the calls, streaming upload with
@@ -130,6 +139,20 @@ until step 4, since nothing reads `publishReleases` before it.
    that every path is under `/releases`.
    *Done when:* `make check` passes with those tests, and the path test fails
    if a non-release call is added.
+   *As built:* the failures are `ReleaseError`s carrying the reasons above
+   (`gitprovider.ReleaseReason`). A 422 is `EmptyRepository` when GitHub says
+   the repository is empty, `TagTaken` when a release of the tag exists
+   (`already_exists` on `tag_name`), else `GitHubError`; 429 and a 403 with
+   `X-RateLimit-Remaining: 0`, `Retry-After` or "rate limit" are
+   `GitHubError`; a 409 saying the repository is empty is `EmptyRepository`
+   too. `FindRelease` returns the marked release, else a published one of the
+   tag, for the rule to call `TagTaken` (someone's draft of the tag doesn't
+   take it). An asset GitHub never finished has `Uploaded: false`: step 4
+   deletes and re-sends it whatever its size. GitHub may rename a file (a
+   space becomes a dot); `UploadAsset` returns the name it got, and step 4
+   compares by that. A bare tag with no release isn't
+   seen, since reading tags isn't a release call: publishing the draft then
+   releases that existing tag, which still adds no commit and changes no file.
 4. **The Crew publishes.** API: `spec.publishReleases`, its CEL rules,
    `status.lastRelease.publish`, the `Published` condition (`make manifests
    generate`); the controller runs `NextPublishStep` each poll, with Events
