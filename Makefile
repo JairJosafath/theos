@@ -334,7 +334,7 @@ gh-runner-status: ## Show the GitHub Actions runner's container and its status o
 
 # The chart is dist/chart, generated from dist/install.yaml by kubebuilder's helm
 # plugin. Its templates/ui/, templates/gitprovider/ and values.yaml are written
-# by hand and survive a regeneration (docs/plans/helm-chart.md).
+# by hand and survive a regeneration (docs/plans/done/helm-chart.md).
 .PHONY: chart
 chart: ## Regenerate the Helm chart in dist/chart from the kustomize output.
 	kubebuilder edit --plugins=helm.kubebuilder.io/v2-alpha
