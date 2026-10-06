@@ -45,12 +45,12 @@ fi
 echo "All valid"
 
 # The chart's catalog (values.yaml, catalog.entries) pins each template the seed
-# pushes to its tag in templates/versions.txt; hello and hello-standard are the
-# end-to-end tests' own. Rendered without the catalog and the Agents, it has
+# pushes to its tag in templates/versions.txt; hello, hello-standard and hello-html
+# are the end-to-end tests' own. Rendered without the catalog and the Agents, it has
 # neither.
 pinned=$(awk '/url: .*\/templates\// { name = $2; gsub(/"/, "", name); sub(/.*\/templates\//, "", name) }
 	/^ *ref:/ && name != "" { ref = $2; gsub(/"/, "", ref); print name, ref; name = "" }' "$OUT/chart-gitea.yaml" | sort -u)
-want=$(grep -v -e '^hello ' -e '^hello-standard ' templates/versions.txt | sort)
+want=$(grep -v -e '^hello ' -e '^hello-standard ' -e '^hello-html ' templates/versions.txt | sort)
 if [ "$pinned" != "$want" ]; then
 	echo "The chart's catalog.entries don't match templates/versions.txt (< chart, > versions.txt):" >&2
 	diff <(echo "$pinned") <(echo "$want") >&2 || true

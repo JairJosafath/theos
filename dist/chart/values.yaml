@@ -401,7 +401,7 @@ runners:
 ## For each of gitea.projects, the catalog its Containers pick from: the
 ## templates the seed pushes to the templates organization, each pinned to its
 ## tag in templates/versions.txt (make validate-yaml checks they match). The
-## seed's hello and hello-standard are for the end-to-end tests and left out.
+## seed's hello, hello-standard and hello-html are for the end-to-end tests and left out.
 ## Off: make your own catalog entries in the project's namespace.
 ##
 catalog:
