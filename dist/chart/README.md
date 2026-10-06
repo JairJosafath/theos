@@ -163,6 +163,7 @@ as the run's artifact); a failing release gets an issue titled
 | `gitea.seed.image`, `gitea.seed.waitSeconds` | the seed Job's image (default tag `Chart.appVersion`) and how long it waits for Gitea |
 | `catalog.enabled`, `catalog.entries` | for each of `gitea.projects`, the catalog entries of the templates the seed pushes (Frameworks, Standards, Compute, Deployments, Connectors), each pinned to its tag in `templates/versions.txt` (default on) |
 | `agents.enabled`, `agents.image`, `agents.credentialsSecret` | for each of `gitea.projects`, Agents `planner`, `designer`, `implementer` and `reviewer` on the agent image (default `agent-go`, tag `Chart.appVersion`), reading the Secret you make (default `claude-credentials`) (default on) |
+| `agents.standIn` | for each of `gitea.projects`, Agent `stand-in` on the same image: no model and no Secret, it plans from the catalog and makes a scripted change, to show the loop without a token (default on; off with `agents.enabled=false` too) |
 | `agents.<role>` | each Agent's `description`, `model` (Opus, Sonnet for the implementer; a Fable model fails the install), `maxRounds`, `timeoutMinutes` and `resources` |
 | `runners.base`, `runners.go` | the CI runners: `enabled`, `image`, `resources`, `workSize`, `tmpSize`; `go.goCache` is the node directory of its Go build cache |
 | `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners; the operator's are `manager.imagePullSecrets` |

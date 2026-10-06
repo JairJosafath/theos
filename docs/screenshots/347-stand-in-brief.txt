@@ -1,0 +1,59 @@
+# The chart's stand-in Agent and config/samples/brief/stand-in.yaml on Kind (#347)
+#
+# Cluster c4factory with the testenv's operator (main 12d9f11's code) and dev images.
+# Namespace standin-check holds the e2e fixture's GitProvider, Framework hello and
+# Standard hello-standard, and Agent stand-in exactly as the chart renders it:
+#   helm template x dist/chart --set 'gitea.projects={webshop}' \
+#     --set agents.image.repository=c4factory/agent-base --set agents.image.tag=dev
+# (namespace changed to standin-check; harness: stand-in, no model, no Secret).
+# The sample was applied with the same namespace change. Then Verify Release's new
+# step, "Getting started: a Brief without a token", was run as written, with
+# -n webshop changed to -n standin-check:
+
+## Agent stand-in as rendered
+apiVersion: c4.factory.io/v1alpha1
+kind: Agent
+metadata:
+  name: stand-in
+  namespace: standin-check
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/instance: x
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  displayName: Stand-in
+  description: "Plans from the catalog, makes a scripted change and approves it: the loop without a model."
+  image: "c4factory/agent-base:dev"
+  harness: stand-in
+  maxRounds: 2
+  timeoutMinutes: 15
+  resources:
+    limits:
+      cpu: "1"
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+## The step's output
+Brief stand-in-demo: Planned
+- The stand-in planner makes SoftwareSystem stand-in-demo: the namespace has none.
+- The stand-in planner adds Container stand-in-demo, a cli on hello with the Standard hello-standard: it takes the catalog's first Framework and reads nothing else.
+container.c4.factory.io/stand-in-demo condition met
+Crew stand-in-demo started task.c4.factory.io/stand-in-demo-1 for issue 1
+NAME                                PHASE     ROUND   AGE
+brief.c4.factory.io/stand-in-demo   Planned   1       95s
+
+NAME                                    TYPE   PHASE   CHECKS    SESSIONS   REPOSITORY                                                     AGE
+container.c4.factory.io/stand-in-demo   cli    Ready   success   0          http://gitea.gitea.svc.cluster.local:3000/apps/stand-in-demo   84s
+
+NAME                               CONTAINER       IMPLEMENTER   REVIEWER   PHASE     PARALLEL   TASKS                 AGE
+crew.c4.factory.io/stand-in-demo   stand-in-demo   stand-in      stand-in   Working   1          ["stand-in-demo-1"]   83s
+
+NAME                                      CONTAINER       ISSUE   PHASE      ROUND   CHECKS    REVIEW   PR                                                                     KIND        BRIEF           AGE
+task.c4.factory.io/stand-in-demo-1        stand-in-demo   1       Checking   1       pending            http://gitea.gitea.svc.cluster.local:3000/apps/stand-in-demo/pulls/2   Implement                   83s
+task.c4.factory.io/stand-in-demo-plan-1                           Merged     1                                                                                                 Plan        stand-in-demo   93s
+rc=0
