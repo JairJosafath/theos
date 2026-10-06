@@ -11,7 +11,8 @@ else `c4factory`; kubectl calls name it with `--context kind-<name>`.
 
 ```bash
 make test                # Unit and envtest tests (real K8s API + etcd, no cluster needed)
-make check               # manifests, generate, fmt, vet, lint and test
+make check               # manifests, generate, fmt, vet, lint, validate-yaml and test
+make validate-yaml       # The YAML against the built-in schemas and our CRDs, offline
 make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
@@ -36,6 +37,18 @@ renders every folder in `templates/` in a realistic combination, without envtest
 fails on a render error, a path two layers write, or YAML that doesn't parse. A new
 template needs a row there. In tests, write with merge patches
 (`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
+
+`make validate-yaml` checks the YAML without a cluster or a network, with
+`kubectl-validate` and `helm` from the device's tool directory: the samples, the e2e fixtures, the
+`kustomize build` of `config/default`, `config/gitea` and `config/ui`,
+`config/runner`, `hack/seed/job.yaml`, `hack/session/pod.yaml`, the chart
+(`make helm-lint`, Gitea on and off) and the webshop's `orders-api` repository
+rendered with `hack/render`. Built-in kinds are checked against the schemas of
+the envtest Kubernetes release, downloaded once next to the tools (`k8s-openapi-*`); our
+kinds against `config/crd/bases` and `test/crds/agent-sandbox`, create-time CEL
+rules included. Rules on `oldSelf` need an update, so envtest covers them.
+`config/agent-sandbox` and `config/metrics-server` fetch remote URLs and are
+skipped. What it rendered is in `bin/yaml/`.
 
 Every checkout on a device shares one Go build cache. `make test`, `vet` and
 `build` pass `-trimpath`, which keeps the checkout's absolute directory out of Go's

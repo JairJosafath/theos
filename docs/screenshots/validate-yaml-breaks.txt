@@ -1,0 +1,32 @@
+$ # break 1: an unknown field (spec.replicas) in the orders-api Container of the webshop sample
+$ make validate-yaml
+Skipped, they fetch remote URLs: config/agent-sandbox, config/metrics-server
+Validating 19 files
+config/samples/webshop/story.yaml...ERROR
+spec.replicas: Invalid value: value provided for unknown field
+Error: validation failed
+make: *** [Makefile:133: validate-yaml] Error 1
+exit 2
+
+$ # break 2: a template error in dist/chart/templates/manager/manager.yaml
+$ make validate-yaml
+[ERROR] templates/: parse error at (c4-factory/templates/manager/manager.yaml:5): missing value for if
+Error: 1 chart(s) linted, 1 chart(s) failed
+make: *** [Makefile:398: helm-lint] Error 1
+exit 2
+
+$ # break 3: a Relationship in the e2e fixture that points to itself (create-time CEL rule)
+$ make validate-yaml
+Skipped, they fetch remote URLs: config/agent-sandbox, config/metrics-server
+Validating 19 files
+test/e2e/testdata/apps/story.yaml...ERROR
+Relationship.c4.factory.io "hello-user-uses-hello-system" is invalid: spec: Invalid value: a Relationship cannot point to itself
+Error: validation failed
+make: *** [Makefile:133: validate-yaml] Error 1
+exit 2
+
+$ # all three reverted
+$ make validate-yaml
+Skipped, they fetch remote URLs: config/agent-sandbox, config/metrics-server
+Validating 19 files
+All valid
