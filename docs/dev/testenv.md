@@ -220,6 +220,21 @@ closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
 and the triage's reasons with `proposed --since` against a stubbed GitHub.
 
+### Every release checks itself
+
+The relay can't pull a release (the GHCR packages are private and no device's
+gh token has `read:packages`), so a workflow does. After *Release* publishes
+`vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`) installs
+the published chart and images on a fresh Kind cluster, builds nothing, waits
+for the seed's repositories, both runners, the manager and the UI, and
+scaffolds the release's `orders-api` sample. Its result is the run's job
+summary and its artifact `release-vX.Y.Z-check` (Actions → Verify Release).
+When it fails it files `Release vX.Y.Z fails its check` (`status/ready`,
+`priority/urgent`), or comments on the open one, so the relay picks it up; the
+issue says if the runner ran short of memory or disk. Check an older release
+with Actions → Verify Release → Run workflow, or
+`gh workflow run verify-release.yml -f tag=vX.Y.Z`.
+
 ### Memory on the cluster device
 
 The device with the Kind clusters has 13.4 GiB and 4 GiB of swap. Four sessions
