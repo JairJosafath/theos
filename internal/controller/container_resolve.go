@@ -190,6 +190,7 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 	return model.CatalogEntry{
 		Side:                side,
 		Name:                obj.GetName(),
+		Description:         spec.Description,
 		SupportedTypes:      supported,
 		TemplateURL:         spec.Template.URL,
 		TemplateRef:         spec.Template.Ref,

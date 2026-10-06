@@ -277,6 +277,35 @@ func (p *fakeProvider) PushBranch(_ context.Context, repo gitprovider.Repository
 	return sha, nil
 }
 
+// PushDefaultBranch writes files to main as one commit, provided base is still
+// main's head.
+func (p *fakeProvider) PushDefaultBranch(_ context.Context, repo gitprovider.Repository, base string,
+	files scaffold.Tree, removes []string, message string, _ gitprovider.Signature) (string, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	key := repo.Owner + "/" + repo.Name
+	r := p.git.repos[key]
+	if r == nil || len(r.commits) == 0 || r.commits[len(r.commits)-1].Hash != base {
+		return "", fmt.Errorf("push %s of %s: %s is not its head", gitprovider.DefaultBranch, key, base)
+	}
+	edits := map[string]*scaffold.File{}
+	for _, filePath := range removes {
+		if _, ok := r.files[filePath]; ok {
+			edits[filePath] = nil
+		}
+	}
+	for filePath, f := range files {
+		if cur, ok := r.files[filePath]; !ok || cur.Executable != f.Executable || string(cur.Data) != string(f.Data) {
+			edits[filePath] = &f
+		}
+	}
+	if len(edits) == 0 {
+		return "", fmt.Errorf("push %s: %w", gitprovider.DefaultBranch, gitprovider.ErrEmptyChange)
+	}
+	p.git.applyToMain(key, edits, message)
+	return r.commits[len(r.commits)-1].Hash, nil
+}
+
 // mainFiles returns main's tree in owner/name.
 //
 //nolint:unparam // takes owner and name like the other helpers
@@ -391,6 +420,26 @@ func (g *fakeGit) protectedBranches(owner, name string) []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.agentState().protected[owner+"/"+name]
+}
+
+// agentUser returns the bot user given write access to owner/name.
+func (g *fakeGit) agentUser(owner, name string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.agentState().agents[owner+"/"+name]
+}
+
+// commitCount returns how many commits main of owner/name has; 0 when the
+// repository doesn't exist.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) commitCount(owner, name string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if r := g.repos[owner+"/"+name]; r != nil {
+		return len(r.commits)
+	}
+	return 0
 }
 
 // branchRule returns the default branch's rule and the protected tag patterns.

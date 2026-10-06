@@ -78,11 +78,19 @@ type Provider interface {
 	// commit's SHA.
 	PushBranch(ctx context.Context, repo Repository, base, branch string, files scaffold.Tree, removes []string,
 		message string, author Signature) (string, error)
+	// PushDefaultBranch commits files, and the removal of removes, on top of
+	// commit base, the default branch's head, and pushes the commit to the
+	// default branch without force: it fails when the branch moved on past base.
+	// It returns the commit's SHA, or ErrEmptyChange when the commit would
+	// change nothing.
+	PushDefaultBranch(ctx context.Context, repo Repository, base string, files scaffold.Tree, removes []string,
+		message string, author Signature) (string, error)
 	// Repository returns the addresses of name in the owner organization, without
 	// calling the host.
 	Repository(name string) Repository
 	// ProtectBranch makes branch accept changes only through pull requests that
-	// pass rule, merged by the provider's own user. It is safe to repeat.
+	// pass rule, merged by the provider's own user, and, when rule.OperatorPushes,
+	// that user's own pushes. It is safe to repeat.
 	ProtectBranch(ctx context.Context, repo Repository, branch string, rule BranchRule) error
 	// ProtectTags lets only the provider's own user push tags matching pattern.
 	// It is safe to repeat.
@@ -126,7 +134,8 @@ type Provider interface {
 	// closed, and creates it, open and with description, if there is none. It
 	// leaves an existing milestone as it is, and is safe to repeat.
 	EnsureMilestone(ctx context.Context, repo Repository, title, description string) (int64, error)
-	// ListIssues returns the open issues of repo labelled label, without pull requests.
+	// ListIssues returns the open issues of repo labelled label, or all of them
+	// when label is "", without pull requests.
 	ListIssues(ctx context.Context, repo Repository, label string) ([]Issue, error)
 	// GetIssue reads one issue.
 	GetIssue(ctx context.Context, repo Repository, number int) (Issue, error)
@@ -185,6 +194,9 @@ type BranchRule struct {
 	StatusContexts []string
 	// ProtectedPaths may not change: a file path, or a directory ending in "/".
 	ProtectedPaths []string
+	// OperatorPushes lets the provider's own user push to the branch directly,
+	// and nobody else.
+	OperatorPushes bool
 }
 
 // Client builds Providers and fetches templates. It is what the operator uses;

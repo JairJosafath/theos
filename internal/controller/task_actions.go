@@ -20,7 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -277,43 +276,13 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 // Container, so it goes when the Container goes.
 func (r *TaskReconciler) ensureAgentGit(ctx context.Context, container *c4v1alpha1.Container,
 	provider gitprovider.Provider, repo gitprovider.Repository) (string, error) {
-	name := container.Name + "-agent-git"
-	var secret corev1.Secret
-	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: name}, &secret)
-	if err == nil && len(secret.Data["token"]) > 0 {
-		return name, nil
-	}
-	if err != nil && !apierrors.IsNotFound(err) {
-		return "", err
-	}
-	found := err == nil
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	creds, err := provider.EnsureAgentAccess(gitCtx, repo, model.AgentUsername(container.Namespace, container.Name))
-	if err != nil {
-		return "", err
-	}
-	// Written without reading through the cache: the operator doesn't watch Secrets.
-	desired := corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: container.Namespace, Name: name, Labels: map[string]string{
-			c4v1alpha1.LabelProject: container.Namespace, c4v1alpha1.LabelContainer: container.Name}},
-		Data: map[string][]byte{"username": []byte(creds.Username), "token": []byte(creds.Token)},
-	}
-	if err := controllerutil.SetControllerReference(container, &desired, r.Scheme); err != nil {
-		return "", err
-	}
-	if found {
-		orig := secret.DeepCopy()
-		secret.Labels, secret.Data, secret.OwnerReferences = desired.Labels, desired.Data, desired.OwnerReferences
-		err = r.Patch(ctx, &secret, client.MergeFrom(orig))
-	} else {
-		err = r.Create(ctx, &desired)
-	}
-	if err != nil {
-		return "", err
-	}
-	logf.FromContext(ctx).Info("Created agent Git access", "user", creds.Username, "secret", name)
-	return name, nil
+	return ensureAgentSecret(ctx, r.Client, r.APIReader, container, container.Name+"-agent-git",
+		map[string]string{c4v1alpha1.LabelProject: container.Namespace, c4v1alpha1.LabelContainer: container.Name},
+		func() (gitprovider.Credentials, error) {
+			return provider.EnsureAgentAccess(gitCtx, repo, model.AgentUsername(container.Namespace, container.Name))
+		})
 }
 
 // merge squashes the approved pull request into main.

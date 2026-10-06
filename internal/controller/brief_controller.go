@@ -10,56 +10,142 @@ package controller
 
 import (
 	"context"
+	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 )
 
 // BriefReconciler turns a Brief's idea and prompts into the model. For now it
-// only marks a new Brief Pending: nothing plans yet (docs/plans/brief.md).
+// marks a new Brief Pending and keeps its repository, the planner's workspace,
+// up to date: nothing plans yet (docs/plans/brief.md).
 type BriefReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// APIReader reads Secrets without caching them.
+	APIReader client.Reader
+	Git       GitClient
+	// GitTimeout bounds the Git calls of one reconcile; 0 means two minutes.
+	GitTimeout time.Duration
+	// NeedsInputRecheck is how often a Brief waiting for a Secret looks again,
+	// as Secrets aren't watched; 0 means a minute.
+	NeedsInputRecheck time.Duration
+}
+
+const (
+	defaultBriefGitTimeout        = 2 * time.Minute
+	defaultBriefNeedsInputRecheck = time.Minute
+)
+
+func (r *BriefReconciler) gitTimeout() time.Duration {
+	if r.GitTimeout > 0 {
+		return r.GitTimeout
+	}
+	return defaultBriefGitTimeout
+}
+
+func (r *BriefReconciler) needsInputRecheck() time.Duration {
+	if r.NeedsInputRecheck > 0 {
+		return r.NeedsInputRecheck
+	}
+	return defaultBriefNeedsInputRecheck
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=briefs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=briefs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=briefs/finalizers,verbs=update
+// +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=projects;persons;softwaresystems;containers;datastores;relationships,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=frameworks;standards;computes;deployments;connectors,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;patch
 
-// Reconcile marks a Brief that has no phase yet Pending.
+// Reconcile marks a Brief that has no phase yet Pending, and brings its
+// repository up to date. A missing GitProvider or credentials Secret sets
+// NeedsInput, naming it.
 func (r *BriefReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
 	var brief c4v1alpha1.Brief
 	if err := r.Get(ctx, req.NamespacedName, &brief); err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	if !brief.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+	orig := brief.DeepCopy()
+	status := &brief.Status
+	if status.Phase == "" {
+		status.Phase = c4v1alpha1.BriefPending
+		log.Info("Marked Brief Pending")
+	}
+	status.ObservedGeneration = brief.Generation
+
+	url, err := r.prepareWorkspace(ctx, &brief)
+	sentence, needsInput := needsInputSentence(err)
+	if err != nil && !needsInput {
+		if patchErr := r.writeStatus(ctx, &brief, orig); patchErr != nil {
+			return ctrl.Result{}, patchErr
 		}
 		return ctrl.Result{}, err
 	}
-	if brief.Status.Phase != "" {
-		return ctrl.Result{}, nil
+	var result ctrl.Result
+	if needsInput {
+		if status.Phase != c4v1alpha1.BriefNeedsInput {
+			log.Info("Brief needs input", "reason", sentence)
+		}
+		status.Phase = c4v1alpha1.BriefNeedsInput
+		setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput,
+			metav1.ConditionTrue, c4v1alpha1.ReasonNotFound, sentence)
+		result.RequeueAfter = r.needsInputRecheck()
+	} else {
+		if status.Phase == c4v1alpha1.BriefNeedsInput {
+			status.Phase = c4v1alpha1.BriefPending
+		}
+		setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput,
+			metav1.ConditionFalse, c4v1alpha1.ReasonResolved, "The Brief has what it needs")
+		if status.RepositoryURL != url {
+			log.Info("Prepared the Brief's repository", "url", url)
+		}
+		status.RepositoryURL = url
 	}
+	return result, r.writeStatus(ctx, &brief, orig)
+}
 
-	orig := brief.DeepCopy()
-	brief.Status.Phase = c4v1alpha1.BriefPending
-	brief.Status.ObservedGeneration = brief.Generation
-	if err := r.Status().Patch(ctx, &brief, client.MergeFrom(orig)); err != nil {
-		return ctrl.Result{}, err
+// writeStatus patches the Brief's status when it changed.
+func (r *BriefReconciler) writeStatus(ctx context.Context, brief, orig *c4v1alpha1.Brief) error {
+	if equality.Semantic.DeepEqual(brief.Status, orig.Status) {
+		return nil
 	}
-	log.Info("Marked Brief Pending")
-	return ctrl.Result{}, nil
+	return r.Status().Patch(ctx, brief, client.MergeFrom(orig))
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *BriefReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// A GitProvider appearing can end a Brief's wait for it.
+	allInNamespace := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		var briefs c4v1alpha1.BriefList
+		if err := mgr.GetClient().List(ctx, &briefs, client.InNamespace(obj.GetNamespace())); err != nil {
+			return nil
+		}
+		reqs := make([]reconcile.Request, 0, len(briefs.Items))
+		for _, b := range briefs.Items {
+			reqs = append(reqs, requestFor(b.Namespace, b.Name))
+		}
+		return reqs
+	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.Brief{}).
+		For(&c4v1alpha1.Brief{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(&c4v1alpha1.GitProvider{}, allInNamespace, createOrDelete()).
 		Named("brief").
 		Complete(r)
 }

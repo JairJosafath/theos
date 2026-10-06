@@ -37,6 +37,7 @@ const (
 type CatalogEntry struct {
 	Side           string
 	Name           string
+	Description    string
 	SupportedTypes []string
 	TemplateURL    string
 	TemplateRef    string

@@ -110,7 +110,8 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		var out []giteaIssue
 		for n := 1; n <= len(h.issues); n++ {
 			i := h.issues[n]
-			if i != nil && i.State == "open" && slices.ContainsFunc(i.Labels, func(l giteaLabel) bool { return l.Name == want }) {
+			if i != nil && i.State == "open" && (!r.URL.Query().Has("labels") ||
+				slices.ContainsFunc(i.Labels, func(l giteaLabel) bool { return l.Name == want })) {
 				out = append(out, i.giteaIssue)
 			}
 		}
@@ -328,6 +329,9 @@ func TestIssues(t *testing.T) {
 	ready, err := p.ListIssues(ctx, repo, "status/ready")
 	if err != nil || len(ready) != 1 || ready[0].Number != 1 || ready[0].URL == "" {
 		t.Fatalf("ListIssues() = %+v, %v; want issue 1", ready, err)
+	}
+	if all, err := p.ListIssues(ctx, repo, ""); err != nil || len(all) != 2 {
+		t.Fatalf("ListIssues() without a label = %+v, %v; want both open issues", all, err)
 	}
 
 	if err := p.AddIssueLabel(ctx, repo, 1, "status/in-progress"); err != nil {

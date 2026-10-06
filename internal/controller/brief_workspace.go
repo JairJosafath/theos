@@ -1,0 +1,381 @@
+/*
+Copyright 2026 JairJosafath. All rights reserved.
+
+This file is part of C4 Factory, which is proprietary. No license is granted
+to use, copy, modify or distribute it without the copyright holder's written
+permission. See the LICENSE file.
+*/
+
+package controller
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"strings"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/scaffold"
+)
+
+// briefWorkspaceMessage is the message of every commit the operator makes on a
+// Brief repository's main.
+const briefWorkspaceMessage = "Update the brief, the model and the catalog for the planner\n"
+
+// briefGitSecret names the Secret holding the Git credentials of Brief brief's bot.
+func briefGitSecret(brief string) string { return model.BriefRepository(brief) + "-git" }
+
+// errNeedsInput says what the person has to make before the Brief can go on,
+// in one sentence for the NeedsInput condition.
+type errNeedsInput struct{ sentence string }
+
+func (e errNeedsInput) Error() string { return e.sentence }
+
+// briefGit reads the Brief's GitProvider and its credentials. A missing one is
+// errNeedsInput, naming it.
+func (r *BriefReconciler) briefGit(ctx context.Context, brief *c4v1alpha1.Brief) (gitprovider.Provider, error) {
+	name := brief.Spec.GitProviderRef.Name
+	var provider c4v1alpha1.GitProvider
+	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: name}, &provider)
+	if apierrors.IsNotFound(err) {
+		return nil, errNeedsInput{fmt.Sprintf("GitProvider %s is missing: make it in namespace %s, "+
+			"or name another in spec.gitProviderRef, so the Brief has a repository to plan in", name, brief.Namespace)}
+	}
+	if err != nil {
+		return nil, err
+	}
+	creds, found, err := readCredentials(ctx, r.APIReader, &provider)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, errNeedsInput{fmt.Sprintf("Secret %s of GitProvider %s is missing: make it with the Git host's "+
+			"username and token, so the Brief has a repository to plan in", provider.Spec.CredentialsSecretRef.Name, name)}
+	}
+	return r.Git.Provider(gitprovider.Config{
+		Kind:        string(provider.Spec.Provider),
+		URL:         provider.Spec.URL,
+		Owner:       provider.Spec.Owner,
+		Credentials: creds,
+	})
+}
+
+// prepareWorkspace makes the Brief's repository and its bot the first time,
+// and brings main's brief.md, model/ and PLANNER.md up to date. It writes
+// nothing when main already holds them as they are. It returns the
+// repository's web address.
+func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha1.Brief) (string, error) {
+	provider, err := r.briefGit(ctx, brief)
+	if err != nil {
+		return "", err
+	}
+	ws, err := r.gatherWorkspace(ctx, brief)
+	if err != nil {
+		return "", err
+	}
+	rendered, err := model.BriefWorkspaceFiles(ws)
+	if err != nil {
+		return "", err
+	}
+	files := scaffold.Tree{}
+	for p, data := range rendered {
+		files[p] = scaffold.File{Data: []byte(data)}
+	}
+
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	repo, err := provider.EnsureRepository(gitCtx, model.BriefRepository(brief.Name),
+		fmt.Sprintf("Brief %s/%s: the planner's workspace", brief.Namespace, brief.Name))
+	if err != nil {
+		return "", err
+	}
+	if err := writeWorkspace(gitCtx, provider, repo, files); err != nil {
+		return "", err
+	}
+	if brief.Status.RepositoryURL == "" {
+		// Only the operator writes main; the bot pushes plan branches. Protected
+		// before the bot exists, so it never could.
+		if err := provider.ProtectBranch(gitCtx, repo, gitprovider.DefaultBranch,
+			gitprovider.BranchRule{OperatorPushes: true}); err != nil {
+			return "", fmt.Errorf("protecting %s: %w", gitprovider.DefaultBranch, err)
+		}
+	}
+	if _, err := ensureAgentSecret(ctx, r.Client, r.APIReader, brief, briefGitSecret(brief.Name),
+		map[string]string{c4v1alpha1.LabelProject: brief.Namespace, c4v1alpha1.LabelBrief: brief.Name},
+		func() (gitprovider.Credentials, error) {
+			return provider.EnsureAgentAccess(gitCtx, repo,
+				model.AgentUsername(brief.Namespace, model.BriefRepository(brief.Name)))
+		}); err != nil {
+		return "", err
+	}
+	return repo.WebURL, nil
+}
+
+// writeWorkspace puts files on main: as its first commit in an empty
+// repository, else as one more commit when any of them differs.
+func writeWorkspace(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	files scaffold.Tree) error {
+	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
+	commits, err := provider.History(ctx, repo, 1)
+	if err != nil {
+		return err
+	}
+	if len(commits) == 0 {
+		_, err := provider.PushInitialCommit(ctx, repo, files, briefWorkspaceMessage, author)
+		return err
+	}
+	current, head, err := provider.ReadFiles(ctx, repo, gitprovider.DefaultBranch, model.WorkspaceFiles)
+	if err != nil {
+		return err
+	}
+	if maps.EqualFunc(current, files, func(a, b scaffold.File) bool { return string(a.Data) == string(b.Data) }) {
+		return nil
+	}
+	_, err = provider.PushDefaultBranch(ctx, repo, head, files, nil, briefWorkspaceMessage, author)
+	if errors.Is(err, gitprovider.ErrEmptyChange) {
+		return nil
+	}
+	return err
+}
+
+// gatherWorkspace reads what the planner needs: the Brief, the namespace's
+// story, its catalog and its Containers' open issues.
+func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1.Brief) (model.BriefWorkspace, error) {
+	ws := model.BriefWorkspace{
+		Brief:          brief.Name,
+		Idea:           brief.Spec.Idea,
+		Prompts:        brief.Spec.Prompts,
+		PromptsPlanned: int(brief.Status.PromptsPlanned),
+		IdeaPlanned:    len(brief.Status.History) > 0,
+		GitProvider:    brief.Spec.GitProviderRef.Name,
+	}
+	var err error
+	if ws.Objects, err = storyObjects(ctx, r.Client, brief.Namespace); err != nil {
+		return ws, err
+	}
+	if ws.Catalog, err = installedCatalog(ctx, r.Client, brief.Namespace); err != nil {
+		return ws, err
+	}
+	ws.Containers, err = r.containerIssues(ctx, brief.Namespace)
+	return ws, err
+}
+
+// containerIssues lists each Container that has a repository, with its open
+// issues. Issues that can't be read are marked so, not an error: one broken
+// repository doesn't stop the Brief.
+func (r *BriefReconciler) containerIssues(ctx context.Context, ns string) ([]model.WorkspaceContainer, error) {
+	var containers c4v1alpha1.ContainerList
+	if err := r.List(ctx, &containers, client.InNamespace(ns)); err != nil {
+		return nil, err
+	}
+	providers := map[string]gitprovider.Provider{}
+	var out []model.WorkspaceContainer
+	for _, c := range containers.Items {
+		if c.Status.RepositoryURL == "" {
+			continue
+		}
+		entry := model.WorkspaceContainer{Name: c.Name, Repository: c.Status.RepositoryURL}
+		issues, err := r.openIssues(ctx, providers, &c)
+		if err != nil {
+			logf.FromContext(ctx).Info("Could not read a Container's issues", "container", c.Name, "error", err.Error())
+			entry.IssuesUnread = true
+		}
+		entry.Issues = issues
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]gitprovider.Provider,
+	c *c4v1alpha1.Container) ([]model.WorkspaceIssue, error) {
+	name := c.Spec.GitProviderRef.Name
+	provider, ok := providers[name]
+	if !ok {
+		var err error
+		if provider, err = providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, name); err != nil {
+			return nil, err
+		}
+		providers[name] = provider
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	issues, err := provider.ListIssues(gitCtx, provider.Repository(c.Name), "")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.WorkspaceIssue, 0, len(issues))
+	for _, i := range issues {
+		out = append(out, model.WorkspaceIssue{Number: i.Number, Title: i.Title})
+	}
+	return out, nil
+}
+
+// storyObjects reads the namespace's story kinds, the ones a plan may write.
+func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.PlanObject, error) {
+	var out []model.PlanObject
+	in := client.InNamespace(ns)
+	var projects c4v1alpha1.ProjectList
+	if err := c.List(ctx, &projects, in); err != nil {
+		return nil, err
+	}
+	for _, o := range projects.Items {
+		out = append(out, model.PlanObject{Kind: model.KindProject, Name: o.Name,
+			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description})
+	}
+	var persons c4v1alpha1.PersonList
+	if err := c.List(ctx, &persons, in); err != nil {
+		return nil, err
+	}
+	for _, o := range persons.Items {
+		out = append(out, model.PlanObject{Kind: model.KindPerson, Name: o.Name,
+			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description})
+	}
+	var systems c4v1alpha1.SoftwareSystemList
+	if err := c.List(ctx, &systems, in); err != nil {
+		return nil, err
+	}
+	for _, o := range systems.Items {
+		out = append(out, model.PlanObject{Kind: model.KindSoftwareSystem, Name: o.Name,
+			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description, Needs: o.Spec.Needs, KPIs: o.Spec.KPIs})
+	}
+	var containers c4v1alpha1.ContainerList
+	if err := c.List(ctx, &containers, in); err != nil {
+		return nil, err
+	}
+	for _, o := range containers.Items {
+		s := o.Spec
+		out = append(out, model.PlanObject{Kind: model.KindContainer, Name: o.Name,
+			DisplayName: s.DisplayName, Description: s.Description, SoftwareSystem: s.SoftwareSystemRef.Name,
+			Type: string(s.Type), GitProvider: s.GitProviderRef.Name, Framework: s.FrameworkRef.Name,
+			Standard: refName(s.StandardRef), Compute: refName(s.ComputeRef), Deployment: refName(s.DeploymentRef)})
+	}
+	var stores c4v1alpha1.DataStoreList
+	if err := c.List(ctx, &stores, in); err != nil {
+		return nil, err
+	}
+	for _, o := range stores.Items {
+		out = append(out, model.PlanObject{Kind: model.KindDataStore, Name: o.Name,
+			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description,
+			SoftwareSystem: o.Spec.SoftwareSystemRef.Name, Connector: o.Spec.ConnectorRef.Name})
+	}
+	var relationships c4v1alpha1.RelationshipList
+	if err := c.List(ctx, &relationships, in); err != nil {
+		return nil, err
+	}
+	for _, o := range relationships.Items {
+		s := o.Spec
+		out = append(out, model.PlanObject{Kind: model.KindRelationship, Name: o.Name, Description: s.Description,
+			Source:  model.Ref{Kind: string(s.Source.Kind), Name: s.Source.Name},
+			Target:  model.Ref{Kind: string(s.Target.Kind), Name: s.Target.Name},
+			Bundles: s.Bundles})
+	}
+	return out, nil
+}
+
+func refName(ref *c4v1alpha1.LocalRef) string {
+	if ref == nil {
+		return ""
+	}
+	return ref.Name
+}
+
+// installedCatalog reads every catalog entry of the namespace.
+func installedCatalog(ctx context.Context, c client.Reader, ns string) ([]model.CatalogEntry, error) {
+	in := client.InNamespace(ns)
+	var out []model.CatalogEntry
+	var frameworks c4v1alpha1.FrameworkList
+	if err := c.List(ctx, &frameworks, in); err != nil {
+		return nil, err
+	}
+	for i := range frameworks.Items {
+		out = append(out, catalogEntry(model.SideFramework, &frameworks.Items[i]))
+	}
+	var standards c4v1alpha1.StandardList
+	if err := c.List(ctx, &standards, in); err != nil {
+		return nil, err
+	}
+	for i := range standards.Items {
+		out = append(out, catalogEntry(model.SideStandard, &standards.Items[i]))
+	}
+	var computes c4v1alpha1.ComputeList
+	if err := c.List(ctx, &computes, in); err != nil {
+		return nil, err
+	}
+	for i := range computes.Items {
+		out = append(out, catalogEntry(model.SideCompute, &computes.Items[i]))
+	}
+	var deployments c4v1alpha1.DeploymentList
+	if err := c.List(ctx, &deployments, in); err != nil {
+		return nil, err
+	}
+	for i := range deployments.Items {
+		out = append(out, catalogEntry(model.SideDeployment, &deployments.Items[i]))
+	}
+	var connectors c4v1alpha1.ConnectorList
+	if err := c.List(ctx, &connectors, in); err != nil {
+		return nil, err
+	}
+	for i := range connectors.Items {
+		out = append(out, catalogEntry(model.SideConnector, &connectors.Items[i]))
+	}
+	return out, nil
+}
+
+// ensureAgentSecret returns Secret name holding a bot's Git credentials, owned
+// by owner, making the bot with access and the Secret the first time. The
+// Secret is read and written without the cache: the operator doesn't watch
+// Secrets.
+func ensureAgentSecret(ctx context.Context, c client.Client, apiReader client.Reader, owner client.Object,
+	name string, labels map[string]string, access func() (gitprovider.Credentials, error)) (string, error) {
+	var secret corev1.Secret
+	err := apiReader.Get(ctx, client.ObjectKey{Namespace: owner.GetNamespace(), Name: name}, &secret)
+	if err == nil && len(secret.Data["token"]) > 0 {
+		return name, nil
+	}
+	if err != nil && !apierrors.IsNotFound(err) {
+		return "", err
+	}
+	found := err == nil
+	creds, err := access()
+	if err != nil {
+		return "", err
+	}
+	desired := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: owner.GetNamespace(), Name: name, Labels: labels},
+		Data:       map[string][]byte{"username": []byte(creds.Username), "token": []byte(creds.Token)},
+	}
+	if err := controllerutil.SetControllerReference(owner, &desired, c.Scheme()); err != nil {
+		return "", err
+	}
+	if found {
+		orig := secret.DeepCopy()
+		secret.Labels, secret.Data, secret.OwnerReferences = desired.Labels, desired.Data, desired.OwnerReferences
+		err = c.Patch(ctx, &secret, client.MergeFrom(orig))
+	} else {
+		err = c.Create(ctx, &desired)
+	}
+	if err != nil {
+		return "", err
+	}
+	logf.FromContext(ctx).Info("Created agent Git access", "user", creds.Username, "secret", name)
+	return name, nil
+}
+
+// needsInputSentence returns the sentence of an errNeedsInput in err.
+func needsInputSentence(err error) (string, bool) {
+	if e, ok := errors.AsType[errNeedsInput](err); ok {
+		return strings.TrimSpace(e.sentence), true
+	}
+	return "", false
+}

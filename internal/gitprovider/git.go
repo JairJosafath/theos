@@ -368,6 +368,22 @@ func pushBranch(ctx context.Context, repoURL string, creds *Credentials, base, b
 	if branch == defaultBranch {
 		return "", fmt.Errorf("won't force-push the default branch %s of %s", defaultBranch, repoURL)
 	}
+	return commitAndPush(ctx, repoURL, creds, base, branch, files, removes, message, author, true)
+}
+
+// pushDefaultBranch commits files, and the removal of removes, on top of commit
+// base of the default branch, and pushes it to the default branch without
+// force: it fails when the branch moved on past base. A change that leaves base
+// as it is fails with ErrEmptyChange and pushes nothing.
+func pushDefaultBranch(ctx context.Context, repoURL string, creds *Credentials, base string, files scaffold.Tree,
+	removes []string, message string, author Signature) (string, error) {
+	return commitAndPush(ctx, repoURL, creds, base, defaultBranch, files, removes, message, author, false)
+}
+
+// commitAndPush is pushBranch and pushDefaultBranch: one commit on base,
+// pushed as branch, with force or without.
+func commitAndPush(ctx context.Context, repoURL string, creds *Credentials, base, branch string, files scaffold.Tree,
+	removes []string, message string, author Signature, force bool) (string, error) {
 	if !commitSHA.MatchString(base) {
 		return "", fmt.Errorf("base %q is not a full commit SHA", base)
 	}
@@ -427,10 +443,14 @@ func pushBranch(ctx context.Context, repoURL string, creds *Credentials, base, b
 	if err := repo.Storer.SetReference(plumbing.NewHashReference(ref, hash)); err != nil {
 		return "", err
 	}
+	spec := string(ref) + ":" + string(ref)
+	if force {
+		spec = "+" + spec
+	}
 	err = repo.PushContext(ctx, &git.PushOptions{
 		RemoteName: remoteName,
 		Auth:       auth(creds),
-		RefSpecs:   []config.RefSpec{config.RefSpec("+" + ref + ":" + ref)},
+		RefSpecs:   []config.RefSpec{config.RefSpec(spec)},
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return "", fmt.Errorf("push %s to %s: %w", branch, repoURL, err)

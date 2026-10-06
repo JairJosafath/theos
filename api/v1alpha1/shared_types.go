@@ -143,6 +143,8 @@ const (
 	LabelProject        = "c4.factory.io/project"
 	LabelSoftwareSystem = "c4.factory.io/software-system"
 	LabelContainer      = "c4.factory.io/container"
+	// LabelBrief names the Brief an object came from.
+	LabelBrief = "c4.factory.io/brief"
 )
 
 // AnnotationRetry, set or changed on a Failed Container, makes the operator try

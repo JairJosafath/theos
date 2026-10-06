@@ -139,7 +139,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
 		&TaskReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second,
 			StandardChangeRecheck: time.Second},
-		&BriefReconciler{Client: c, Scheme: s},
+		&BriefReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
+			NeedsInputRecheck: time.Second},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake},
 	} {

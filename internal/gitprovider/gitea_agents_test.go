@@ -182,7 +182,8 @@ func TestProtectBranchCreatesThenUpdates(t *testing.T) {
 		}
 	}
 	rule := g.bodies["POST /api/v1/repos/apps/photo-editor/branch_protections"]
-	if rule["enable_push"] != false || rule["enable_status_check"] != true || rule["rule_name"] != "main" {
+	if rule["enable_push"] != false || rule["enable_status_check"] != true || rule["rule_name"] != "main" ||
+		fmt.Sprint(rule["push_whitelist_usernames"]) != "[]" {
 		t.Errorf("rule = %v", rule)
 	}
 	if rule["enable_merge_whitelist"] != true || fmt.Sprint(rule["merge_whitelist_usernames"]) != "[c4admin]" {
@@ -193,6 +194,22 @@ func TestProtectBranchCreatesThenUpdates(t *testing.T) {
 	}
 	if last := g.calls[len(g.calls)-1]; last != "PATCH /api/v1/repos/apps/photo-editor/branch_protections/main" {
 		t.Errorf("second call = %s, want the update", last)
+	}
+}
+
+func TestProtectBranchOperatorPushes(t *testing.T) {
+	g, p := newAgentGitea(t)
+	repo := p.Repository("photo-editor")
+	if err := p.ProtectBranch(context.Background(), repo, "main", BranchRule{OperatorPushes: true}); err != nil {
+		t.Fatalf("ProtectBranch() error = %v", err)
+	}
+	rule := g.bodies["POST /api/v1/repos/apps/photo-editor/branch_protections"]
+	if rule["enable_push"] != true || rule["enable_push_whitelist"] != true ||
+		fmt.Sprint(rule["push_whitelist_usernames"]) != "[c4admin]" {
+		t.Errorf("rule = %v, want only the operator's user to push", rule)
+	}
+	if rule["enable_status_check"] != false {
+		t.Errorf("rule = %v, want no status checks when none are named", rule)
 	}
 }
 

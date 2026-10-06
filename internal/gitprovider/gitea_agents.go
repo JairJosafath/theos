@@ -60,8 +60,10 @@ func (g *gitea) ProtectBranch(ctx context.Context, repo Repository, branch strin
 	}
 	body, _ := json.Marshal(map[string]any{
 		"rule_name":                 branch,
-		"enable_push":               false,
-		"enable_status_check":       true,
+		"enable_push":               rule.OperatorPushes,
+		"enable_push_whitelist":     rule.OperatorPushes,
+		"push_whitelist_usernames":  pushers(rule, g.creds.Username),
+		"enable_status_check":       len(rule.StatusContexts) > 0,
 		"status_check_contexts":     rule.StatusContexts,
 		"block_on_outdated_branch":  false,
 		"enable_merge_whitelist":    true,
@@ -87,6 +89,14 @@ func (g *gitea) ProtectBranch(ctx context.Context, repo Repository, branch strin
 		}
 	}
 	return fmt.Errorf("gitea: protecting %s of %s failed (HTTP %d): %s", branch, repoPath(repo), status, apiMessage(data))
+}
+
+// pushers are the users that may push to a branch under rule.
+func pushers(rule BranchRule, operator string) []string {
+	if rule.OperatorPushes {
+		return []string{operator}
+	}
+	return []string{}
 }
 
 // ProtectTags lets only the provider's user push tags matching pattern.
