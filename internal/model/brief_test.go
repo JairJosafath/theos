@@ -83,6 +83,7 @@ func happyFiles() map[string]string {
 		"plan/issues/02-api.md":   strings.Replace(readyIssue, "Show the orders", "Serve the orders", 1),
 		PlanChoicesFile:           "- A static site for the shop\n- Postgres keeps orders\n",
 		"brief.md":                "not part of the plan",
+		"plan/issues/.gitkeep":    "",
 		"model/containers/api.md": "not part of the plan",
 	}
 }
@@ -272,6 +273,18 @@ func TestCheckPlan(t *testing.T) {
 			rel := object(p, "Relationship/api-to-db")
 			rel.Name, rel.Source = "web-to-db", Ref{KindContainer, "web"}
 		}, "Relationship/web-to-db", "Connector postgres does not support static-site, the type of Container web"},
+		{"a Container without a type", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").Type = ""
+		}, "Container/web", `type "" is not a Container type; one of static-site, service`},
+		{"a Container of an unknown type", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").Type = "website"
+		}, "Container/web", `type "website" is not a Container type`},
+		{"a Relationship to itself", func(p *Plan, _ *CurrentModel) {
+			object(p, "Relationship/api-to-db").Target = Ref{KindContainer, "api"}
+		}, "Relationship/api-to-db", "points to itself"},
+		{"a Relationship that bundles a DataStore", func(p *Plan, _ *CurrentModel) {
+			object(p, "Relationship/api-to-db").Bundles = true
+		}, "Relationship/api-to-db", "only a Container to Container link can bundle"},
 		{"another GitProvider than the Brief's", func(p *Plan, _ *CurrentModel) {
 			object(p, "Container/web").GitProvider = "github"
 		}, "Container/web", `gitProviderRef names "github"; a Brief's Containers use its GitProvider, "gitea"`},
@@ -333,6 +346,13 @@ func TestCheckPlan(t *testing.T) {
 		}, "plan/issues/02-api.md", "api's Crew has no designer"},
 		{"empty choices", func(p *Plan, _ *CurrentModel) {
 			p.Choices = nil
+		}, PlanChoicesFile, "is empty"},
+		{"choices with only a heading and empty items", func(p *Plan, _ *CurrentModel) {
+			parsed, err := ParsePlan(map[string]string{PlanModelFile: "", PlanChoicesFile: "# Choices\n-\n- [ ]\n*\n"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.Choices = parsed.Choices
 		}, PlanChoicesFile, "is empty"},
 	}
 	for _, tt := range tests {

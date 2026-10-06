@@ -125,16 +125,16 @@ func ParsePlan(files map[string]string) (Plan, error) {
 	}
 	for line := range strings.SplitSeq(files[PlanChoicesFile], "\n") {
 		line = strings.TrimSpace(line)
-		for _, marker := range []string{"- ", "* "} {
+		for _, marker := range []string{"-", "*", "[ ]", "[x]"} {
 			line = strings.TrimSpace(strings.TrimPrefix(line, marker))
 		}
-		if line != "" {
+		if line != "" && !strings.HasPrefix(line, "#") {
 			plan.Choices = append(plan.Choices, line)
 		}
 	}
 	paths := make([]string, 0, len(files))
 	for path := range files {
-		if strings.HasPrefix(path, planIssuesDir) {
+		if strings.HasPrefix(path, planIssuesDir) && !strings.HasPrefix(strings.TrimPrefix(path, planIssuesDir), ".") {
 			paths = append(paths, path)
 		}
 	}
@@ -462,6 +462,10 @@ func checkCreated(plan Plan, current CurrentModel, o PlanObject, refuse func(str
 		}
 	case KindContainer:
 		needSystem()
+		if !slices.Contains(containerTypes, o.Type) {
+			refuse(subject, "type %q is not a Container type; one of %s", o.Type, joinAnd(containerTypes))
+			return
+		}
 		if o.GitProvider != current.GitProvider {
 			refuse(subject, "gitProviderRef names %q; a Brief's Containers use its GitProvider, %q", o.GitProvider, current.GitProvider)
 		}
@@ -500,6 +504,12 @@ func checkCreated(plan Plan, current CurrentModel, o PlanObject, refuse func(str
 					end.field, end.ref)
 			}
 		}
+		if o.Source == o.Target {
+			refuse(subject, "points to itself; a Relationship links two elements")
+		}
+		if o.Bundles && (o.Source.Kind != KindContainer || o.Target.Kind != KindContainer) {
+			refuse(subject, "bundles is set, but only a Container to Container link can bundle")
+		}
 		source, _ := findObject(plan.Objects, o.Source)
 		target, _ := findObject(plan.Objects, o.Target)
 		if source.Kind == KindContainer && target.Kind == KindDataStore {
@@ -512,6 +522,8 @@ func checkCreated(plan Plan, current CurrentModel, o PlanObject, refuse func(str
 		}
 	}
 }
+
+var containerTypes = []string{TypeStaticSite, TypeService, TypeJob, TypeWorker, TypeMobileApp, TypeCLI, TypeExtension}
 
 var elementKinds = []string{KindPerson, KindSoftwareSystem, KindContainer, KindDataStore}
 
