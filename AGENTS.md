@@ -25,7 +25,9 @@ task. Read the rest when the task needs it:
 
 Business rules live in `internal/model` and `internal/scaffold` and must not
 import Kubernetes, controller-runtime, `net/http` or `api/`; `make lint` enforces
-the layering. Run `make check` before finishing a change.
+the layering. Run `make check` before finishing a change; a tree that already
+passed on this device answers from the cache, which counts as a pass
+(`FORCE=1 make check` reruns it).
 
 ## Critical Rules
 

@@ -67,9 +67,15 @@ vet: ## Run go vet against code.
 # Heavy goals queue device-wide for one of HEAVY_JOBS slots (default 2), shared
 # by every checkout, before anything builds (hack/heavy-slot.sh). The slot is
 # held while this make runs; its sub-makes don't take another.
+# A plain `make check` on a tree that already passed on this device, in any
+# checkout, is answered from the cache (hack/check-cache.sh) without a slot;
+# FORCE=1 runs it anyway.
+ifeq ($(MAKECMDGOALS)$(C4_HEAVY_SLOT),check)
+CHECK_CACHED := $(shell hack/check-cache.sh lookup)
+endif
 HEAVY_GOALS = check test lint lint-fix docker-build deploy e2e test-e2e
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
-ifeq ($(C4_HEAVY_SLOT),)
+ifeq ($(C4_HEAVY_SLOT)$(CHECK_CACHED),)
 $(shell hack/heavy-slot.sh acquire $$PPID "make $(MAKECMDGOALS)" >&2)
 export C4_HEAVY_SLOT := 1
 endif
@@ -94,10 +100,18 @@ e2e: cluster metrics-server gitea seed deploy session-image sample toolchain-bas
 .PHONY: test-e2e
 test-e2e: e2e ## Same as e2e.
 
+# A pass is recorded under the tree as the check left it, after manifests,
+# generate and fmt, so a tree with stale generated files never hits the cache.
 .PHONY: check
+ifeq ($(CHECK_CACHED),)
 check: manifests generate fmt vet lint test ## Everything to run before finishing a change: generate, format, vet, lint and test.
 	@git diff --quiet -- config/crd config/rbac api || \
 		{ echo "Generated files changed; commit them with your change:"; git diff --stat -- config/crd config/rbac api; }
+	@hack/check-cache.sh record
+else
+check:
+	@echo "$(CHECK_CACHED)"
+endif
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
