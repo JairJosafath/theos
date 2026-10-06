@@ -1,15 +1,14 @@
 # The first app a device builds from the release (docs/getting-started.md): a Go
 # command-line Container in project webshop, and a Crew of Claude Code Agents that
 # build it from its Gitea issues. Needs the chart installed with
-# gitea.projects={webshop} (namespace, GitProvider gitea and Secret
-# gitea-credentials) and Secret claude-credentials, which you create yourself.
+# gitea.projects={webshop}: GitProvider gitea, Secret gitea-credentials, the
+# catalog (go-cli, go-standard, ...) and Agents implementer and reviewer come
+# with the release. And Secret claude-credentials, which you create yourself.
 # Apply with: kubectl apply -k config/samples/first-app
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: webshop
 resources:
 - project.yaml
-- catalog.yaml
 - story.yaml
-- agents.yaml
 - crew.yaml

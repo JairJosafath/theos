@@ -51,8 +51,14 @@ That is the whole factory. Gitea runs in namespace `gitea`, at
 a hook after every install and upgrade, pushed the tagged templates to
 organization `templates`, made organization `webshop` and stored its token in
 Secret `webshop/gitea-credentials`, and the chart made GitProvider
-`webshop/gitea` from it. Apply your Project, Systems and Containers to
-`webshop` and their repositories appear in Gitea. The admin's password is in
+`webshop/gitea` from it. In `webshop` the chart also made the catalog, each
+template the seed pushed pinned to its tag (`kubectl -n webshop get
+c4catalog`), and Agents `planner`, `designer`, `reviewer` (Opus) and
+`implementer` (Sonnet) on the release's `agent-go` image. The Agents read
+Secret `webshop/claude-credentials`, key `CLAUDE_CODE_OAUTH_TOKEN` (from
+`claude setup-token`), which you make; the chart holds no token. Apply your
+Project, Systems and Containers to `webshop` and their repositories appear in
+Gitea. The admin's password is in
 Secret `gitea/gitea-admin`, which Gitea's pod made with a random password on
 its first start (the chart renders no credential):
 
@@ -152,6 +158,9 @@ as the run's artifact); a failing release gets an issue titled
 | `gitea.admin` | the admin's name and email; `existingSecret` for one of your own, else the password is generated |
 | `gitea.projects` | project names: an organization, Secret `gitea-credentials` and GitProvider `gitea` in each namespace |
 | `gitea.seed.image`, `gitea.seed.waitSeconds` | the seed Job's image (default tag `Chart.appVersion`) and how long it waits for Gitea |
+| `catalog.enabled`, `catalog.entries` | for each of `gitea.projects`, the catalog entries of the templates the seed pushes (Frameworks, Standards, Compute, Deployments, Connectors), each pinned to its tag in `templates/versions.txt` (default on) |
+| `agents.enabled`, `agents.image`, `agents.credentialsSecret` | for each of `gitea.projects`, Agents `planner`, `designer`, `implementer` and `reviewer` on the agent image (default `agent-go`, tag `Chart.appVersion`), reading the Secret you make (default `claude-credentials`) (default on) |
+| `agents.<role>` | each Agent's `description`, `model` (Opus, Sonnet for the implementer; a Fable model fails the install), `maxRounds`, `timeoutMinutes` and `resources` |
 | `runners.base`, `runners.go` | the CI runners: `enabled`, `image`, `resources`, `workSize`, `tmpSize`; `go.goCache` is the node directory of its Go build cache |
 | `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners; the operator's are `manager.imagePullSecrets` |
 | `gitProviders` | more GitProviders to create, each reading a Secret you make (`existingSecret`), below |

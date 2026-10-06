@@ -17,12 +17,11 @@ You need:
 - the GitHub CLI (`gh`), logged in, while this repository, the chart and the
   images on GHCR are private.
 
-The commands use the release `0.3.0`; for a later one, change `VERSION`, the
-`agent-go` tag in [config/samples/first-app/agents.yaml](../config/samples/first-app/agents.yaml)
-and the template `ref`s in [config/samples/first-app/catalog.yaml](../config/samples/first-app/catalog.yaml):
-they must match that release's `templates/versions.txt`, because the seed
-pushes only the tags that file lists. Run them from a clone of this repository,
-for the sample files (`gh` clones it while the repository is private):
+The commands use the release `0.3.0`; for a later one, change `VERSION`. The
+release brings the catalog and the Agents, pinned to its own template tags and
+agent image, so the sample files name no version. Run the commands from a clone
+of this repository, for the sample files (`gh` clones it while the repository
+is private):
 
 ```bash
 gh repo clone JairJosafath/c4factory && cd c4factory
@@ -72,7 +71,14 @@ kubectl -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name"
 
 **The release.** `gitea.projects` lists the project namespaces: for each one
 the seed makes a Gitea organization, Secret `gitea-credentials` with its token
-and GitProvider `gitea`. On a fresh cluster Gitea's image may still be pulling
+and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
+pushed, pinned to their tags: Frameworks `go-cli`, `python-fastapi` and
+`vscode-extension`, Standards `go-standard` and `ts-standard`, Compute `small`,
+Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four
+Agents on the release's `agent-go` image: `planner`, `designer` and `reviewer`
+on Opus, `implementer` on Sonnet. The Agents read Secret `claude-credentials`,
+which you make in step 2. `catalog.enabled=false` and `agents.enabled=false`
+leave them out ([the chart's README](../dist/chart/README.md#values)). On a fresh cluster Gitea's image may still be pulling
 when the seed starts, so give `helm install` time:
 
 ```bash
@@ -85,12 +91,13 @@ helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory -
 ```
 
 Without the pull secret, leave out the two `imagePullSecrets` lines. Check
-that everything runs and that the project has its GitProvider:
+that everything runs and that the project has its GitProvider, catalog and
+Agents:
 
 ```bash
 kubectl -n c4-factory-system get pods
 kubectl -n gitea get pods
-kubectl -n webshop get gitprovider,secret
+kubectl -n webshop get gitprovider,secret,c4catalog,agents
 ```
 
 The release requests about 1.1 CPU and 1.4 GiB of memory; on a two-CPU node
@@ -131,10 +138,12 @@ Secret becomes an environment variable in the agent's sandbox.
 | File | What it is |
 | --- | --- |
 | `project.yaml` | Project `webshop`, named after its namespace |
-| `catalog.yaml` | Framework `go-cli` and Standard `go-standard`, pinned to the tags the release's seed pushed to Gitea |
 | `story.yaml` | Person `staff`, SoftwareSystem `webshop-core`, Container `orders-cli` (a Go command-line program) and two Relationships |
-| `agents.yaml` | Agents `claude-implementer` (Sonnet) and `claude-reviewer` (Opus) on `ghcr.io/jairjosafath/c4factory/agent-go`, reading Secret `claude-credentials` |
-| `crew.yaml` | Crew `orders-cli`: picks up `orders-cli`'s ready issues, implemented by one Agent and reviewed by the other |
+| `crew.yaml` | Crew `orders-cli`: picks up `orders-cli`'s ready issues, implemented by Agent `implementer` and reviewed by Agent `reviewer` |
+
+The Container picks Framework `go-cli` and Standard `go-standard`, and the Crew
+names Agents `implementer` and `reviewer`: all four came with the release, so
+the sample makes none of them.
 
 Apply it and wait for the Container to be scaffolded:
 

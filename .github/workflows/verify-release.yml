@@ -10,9 +10,10 @@ name: Verify Release
 # applies the release's own webshop sample and waits for orders-api's repository.
 # Then it follows docs/getting-started.md for the first app: the `ghcr` pull
 # Secret in webshop and its `default` ServiceAccount patch (proved by pulling
-# agent-go through it), and config/samples/first-app pinned to the release
-# (the agent-go tag and the template refs from its templates/versions.txt),
-# until orders-cli is scaffolded and its Crew is Idle. The Agent isn't run: CI
+# agent-go through it), and config/samples/first-app (on the chart's catalog
+# and Agents; an older tag's samples pinned to the release: the agent-go tag
+# and the template refs from its templates/versions.txt), until orders-cli is
+# scaffolded and its Crew is Idle. The Agent isn't run: CI
 # has no Claude token. The samples are the tag's; dispatched, they are the
 # dispatched ref's, so dispatching on main checks the guide against a release.
 # A tag without config/samples/first-app skips that part and says so.
@@ -228,11 +229,17 @@ jobs:
         run: |
           samples="$RUNNER_TEMP/first-app"
           cp -r guide/config/samples/first-app "$samples"
-          sed -i -E "s#image: .*/agent-go:.*#image: $REGISTRY/agent-go:$VERSION#" "$samples/agents.yaml"
-          awk 'NR == FNR { ref[$1] = $2; next }
-            /url: .*\/templates\// { name = $2; sub(/.*\/templates\//, "", name) }
-            /^ *ref:/ && (name in ref) { sub(/ref: .*/, "ref: " ref[name]); name = "" }
-            { print }' templates/versions.txt guide/config/samples/first-app/catalog.yaml >"$samples/catalog.yaml"
+          # Since the chart installs the catalog and the Agents, the samples
+          # have neither; an older tag's still pin them here.
+          if [ -f "$samples/agents.yaml" ]; then
+            sed -i -E "s#image: .*/agent-go:.*#image: $REGISTRY/agent-go:$VERSION#" "$samples/agents.yaml"
+          fi
+          if [ -f "$samples/catalog.yaml" ]; then
+            awk 'NR == FNR { ref[$1] = $2; next }
+              /url: .*\/templates\// { name = $2; sub(/.*\/templates\//, "", name) }
+              /^ *ref:/ && (name in ref) { sub(/ref: .*/, "ref: " ref[name]); name = "" }
+              { print }' templates/versions.txt guide/config/samples/first-app/catalog.yaml >"$samples/catalog.yaml"
+          fi
           diff -ru guide/config/samples/first-app "$samples" | tee "$RUNNER_TEMP/first-app.diff" || true
           if [ "$SAMPLES_REF" = "$TAG" ] && [ -s "$RUNNER_TEMP/first-app.diff" ]; then
             echo "::error::$TAG's config/samples/first-app is not pinned to $TAG (diff above)"

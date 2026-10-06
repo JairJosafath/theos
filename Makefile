@@ -387,7 +387,7 @@ gh-runner-status: ## Show the GitHub Actions runner's container and its status o
 ##@ Helm Deployment
 
 # The chart is dist/chart, generated from dist/install.yaml by kubebuilder's helm
-# plugin. Its templates/ui/, templates/gitprovider/ and values.yaml are written
+# plugin. Its templates/ui/, templates/gitea/, templates/gitprovider/ and values.yaml are written
 # by hand and survive a regeneration (docs/plans/done/helm-chart.md).
 .PHONY: chart
 chart: ## Regenerate the Helm chart in dist/chart from the kustomize output.
@@ -399,7 +399,7 @@ HELM_ALL_ON ?= gitea.projects={apps},gitea.admin.existingSecret=gitea-admin,glob
 HELM_SECRETS_ALLOWED ?=
 
 .PHONY: helm-lint
-helm-lint: install-helm ## Lint the Helm chart, render it without Gitea and with it, and fail if it renders a Secret, with every option on or with Gitea's defaults.
+helm-lint: install-helm ## Lint the Helm chart, render it without Gitea, with it and without its catalog and Agents, fail if it renders a Secret or an Agent on a Fable model.
 	@mkdir -p "$(YAML_OUT)"
 	$(HELM) lint $(HELM_CHART_DIR) --set gitea.enabled=false
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
@@ -407,6 +407,10 @@ helm-lint: install-helm ## Lint the Helm chart, render it without Gitea and with
 	$(HELM) lint $(HELM_CHART_DIR)
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
 		--set 'gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >"$(YAML_OUT)/chart-gitea.yaml"
+	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
+		--set 'gitea.projects={apps},catalog.enabled=false,agents.enabled=false' >"$(YAML_OUT)/chart-gitea-bare.yaml"
+	@if $(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --set 'gitea.projects={apps},agents.reviewer.model=claude-fable-5-1' >/dev/null 2>&1; then \
+		echo "helm template renders an Agent on a Fable model; the chart must refuse it"; exit 1; fi
 	@set -o pipefail; for set in '$(HELM_ALL_ON)' 'gitea.projects={apps}'; do \
 	out=$$($(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) --set "$$set") || exit 1; \
 	secrets=$$(echo "$$out" | awk '/^---/ { s = 0; n = ""; ns = "" } /^kind: Secret$$/ { s = 1 } \
