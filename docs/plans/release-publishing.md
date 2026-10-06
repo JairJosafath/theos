@@ -139,6 +139,20 @@ until step 4, since nothing reads `publishReleases` before it.
    that every path is under `/releases`.
    *Done when:* `make check` passes with those tests, and the path test fails
    if a non-release call is added.
+   *As built:* the failures are `ReleaseError`s carrying the reasons above
+   (`gitprovider.ReleaseReason`). A 422 is `EmptyRepository` when GitHub says
+   the repository is empty, `TagTaken` when a release of the tag exists
+   (`already_exists` on `tag_name`), else `GitHubError`; 429 and a 403 with
+   `X-RateLimit-Remaining: 0`, `Retry-After` or "rate limit" are
+   `GitHubError`; a 409 saying the repository is empty is `EmptyRepository`
+   too. `FindRelease` returns the marked release, else a published one of the
+   tag, for the rule to call `TagTaken` (someone's draft of the tag doesn't
+   take it). An asset GitHub never finished has `Uploaded: false`: step 4
+   deletes and re-sends it whatever its size. GitHub may rename a file (a
+   space becomes a dot); `UploadAsset` returns the name it got, and step 4
+   compares by that. A bare tag with no release isn't
+   seen, since reading tags isn't a release call: publishing the draft then
+   releases that existing tag, which still adds no commit and changes no file.
 4. **The Crew publishes.** API: `spec.publishReleases`, its CEL rules,
    `status.lastRelease.publish`, the `Published` condition (`make manifests
    generate`); the controller runs `NextPublishStep` each poll, with Events
