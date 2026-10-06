@@ -82,6 +82,9 @@ type CrewReconciler struct {
 	runSaid sync.Map
 	// runErrSaid is, by Crew UID, the last error reading the release run logged.
 	runErrSaid sync.Map
+	// runLateSaid is, by Crew UID, the tag of the last release whose overdue
+	// runs were reported.
+	runLateSaid sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete

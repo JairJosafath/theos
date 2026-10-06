@@ -309,3 +309,13 @@ func ReleaseRunResult(runs []ReleaseRun) (string, ReleaseRun) {
 	}
 	return result, runs[0]
 }
+
+// ReleaseRunBound is how long after tagging a release's runs may take to end
+// before the Crew reports them: a run no runner picks up never ends.
+const ReleaseRunBound = time.Hour
+
+// ReleaseRunLate says whether a release tagged at tagged, whose runs are at
+// result, has runs that haven't ended ReleaseRunBound after tagging at now.
+func ReleaseRunLate(result string, tagged, now time.Time) bool {
+	return (result == RunWaiting || result == RunRunning) && now.Sub(tagged) >= ReleaseRunBound
+}

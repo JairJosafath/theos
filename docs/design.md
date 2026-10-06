@@ -321,7 +321,10 @@ model and context it needs.
   until the runs succeed, counting each workflow's newest run, so a failed run a
   person re-runs, or a tag a person deletes and pushes again at the same commit,
   turns `Succeeded`. Only the last release is watched, at the commit the Crew
-  tagged, and a run that never starts is not reported.
+  tagged. Runs that haven't ended an hour after tagging (one no runner picks
+  up never starts) are a Warning Event `ReleaseRunOverdue`, once per release,
+  the log line `Release run overdue`, and a note on the `Released` condition's
+  message until they end; the watch carries on and reports their end as usual.
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other
   issue, whatever its release, even when every place is taken (once running, it
