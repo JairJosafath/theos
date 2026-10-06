@@ -101,6 +101,13 @@ func (r *BriefReconciler) reconcileRound(ctx context.Context, brief, orig *c4v1a
 	if task == nil {
 		return ctrl.Result{}, r.ensureRoundTask(ctx, brief)
 	}
+	// A Plan Task that hasn't started waits for its Agent: say so on the Brief,
+	// such as the token Secret made after the round began.
+	if task.Status.Phase == "" || task.Status.Phase == c4v1alpha1.TaskPending {
+		if err := r.needAgents(ctx, brief, "planner"); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	var result ctrl.Result
 	switch task.Status.Phase {
 	case c4v1alpha1.TaskChecking:
@@ -149,7 +156,8 @@ func (r *BriefReconciler) roundTask(ctx context.Context, brief *c4v1alpha1.Brief
 }
 
 // needAgents returns errNeedsInput naming the first of the roles' Agents that
-// is missing.
+// is missing, or whose credentials Secret is: the person makes that Secret
+// (the Agents' token), and an Agent without it can't start.
 func (r *BriefReconciler) needAgents(ctx context.Context, brief *c4v1alpha1.Brief, roles ...string) error {
 	agents := map[string]c4v1alpha1.LocalRef{
 		"planner": brief.Spec.Agents.Planner, "implementer": brief.Spec.Agents.Implementer,
@@ -157,10 +165,23 @@ func (r *BriefReconciler) needAgents(ctx context.Context, brief *c4v1alpha1.Brie
 	}
 	for _, role := range roles {
 		name := agents[role].Name
-		err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: name}, &c4v1alpha1.Agent{})
+		var agent c4v1alpha1.Agent
+		err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: name}, &agent)
 		if apierrors.IsNotFound(err) {
 			return errNeedsInput{fmt.Sprintf("Agent %s is missing: make it in namespace %s, or name another in "+
 				"spec.agents.%s, so the Brief has its %s", name, brief.Namespace, role, role)}
+		}
+		if err != nil {
+			return err
+		}
+		if agent.Spec.CredentialsSecretRef == nil {
+			continue
+		}
+		secret := agent.Spec.CredentialsSecretRef.Name
+		err = r.APIReader.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: secret}, &corev1.Secret{})
+		if apierrors.IsNotFound(err) {
+			return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s with the "+
+				"Agents' token, so the Brief's %s can start", secret, name, brief.Namespace, role)}
 		}
 		if err != nil {
 			return err
