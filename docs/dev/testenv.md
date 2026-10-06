@@ -274,10 +274,13 @@ queue:
   (default 2; 0 turns the queue off) before anything builds, shared by every
   checkout on the device (`hack/heavy-slot.sh`: `flock`ed files in
   `<git common dir>/heavy-slots`). A `make` that finds them all taken waits,
-  printing who holds them (pid, checkout, goals, since when); the wait is not a
-  hang, so give the command a long timeout or run it in the background. A job
+  printing who holds them (pid, checkout, goals, since when) and how many jobs
+  wait ahead of it; the wait is not a hang, so give the command a long timeout
+  or run it in the background. Waiters get slots first come, first served:
+  each holds a numbered ticket, and a waiter that dies loses its turn. A job
   that ends, fails or is killed frees its slot within a second; its sub-makes
-  don't take another. `hack/heavy-slot.sh status` shows the slots.
+  don't take another. `hack/heavy-slot.sh status` shows the slots and the
+  waiters.
 - `make check` remembers a passing tree, device-wide (`hack/check-cache.sh`).
   A pass is recorded under the git tree hash of the working state as the
   check left it (tracked and untracked non-ignored files, after `manifests`,
@@ -303,7 +306,8 @@ queue:
 `/proc/meminfo` (`RELAY_MEMINFO`), `hack/heavy-guard_test.sh` the hook,
 with `ps` and `docker` faked too, and `hack/heavy-slot_test.sh` the slots: two
 jobs running while a third waits, a slot freed by a job that ends or is killed,
-and the Makefile queueing its heavy goals. `hack/check-cache_test.sh` tests the
+the oldest waiter taking the next free slot and a dead waiter skipped, and the
+Makefile queueing its heavy goals. `hack/check-cache_test.sh` tests the
 check cache: a pass, then a hit on the same tree from another worktree, a miss
 on one changed byte (tracked or untracked), and `FORCE=1` queueing again.
 
