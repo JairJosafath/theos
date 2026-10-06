@@ -403,8 +403,8 @@ tag below this one) the same way, with its own `orders-api` sample and its
 `first-app` (else the guide's) until `orders-cli`'s Crew is `Idle`, notes what
 is there,
 and `helm upgrade`s to the new release with the same values. Then it checks
-that the CRDs are the new tag's (`kubectl diff` against its
-`config/crd/bases`), that every earlier `c4` and `c4catalog` object is still
+that the CRDs are the new chart's (`kubectl diff` against the CRDs it
+renders), that every earlier `c4` and `c4catalog` object is still
 there with its phase and its `Ready` condition, that the new manager logs no
 `Reconciler error` in its first two minutes (optimistic-lock conflicts
 aside), that Secrets `gitea-admin` and `gitea-runner` are unchanged, and that

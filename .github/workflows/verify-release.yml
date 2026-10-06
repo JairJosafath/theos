@@ -30,7 +30,7 @@ name: Verify Release
 #
 # upgrade then notes the objects, Gitea's repositories and Secrets gitea-admin
 # and gitea-runner, `helm upgrade`s with the same values and checks that the
-# CRDs are the new tag's, that every earlier object is still there with its
+# CRDs are the new chart's, that every earlier object is still there with its
 # phase and its Ready condition, that the new manager logs no reconcile error
 # in its first two minutes, and that the Secrets and the repositories (each
 # with its earlier head commit) are unchanged.
@@ -132,16 +132,6 @@ jobs:
           ref: ${{ env.FROM }}
           persist-credentials: false
 
-      # The CRDs the upgrade must leave in place.
-      - name: Clone the release's CRDs
-        if: matrix.check == 'upgrade'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ env.TAG }}
-          path: release
-          sparse-checkout: config/crd/bases
-          persist-credentials: false
-
       # The guide's samples: the tag's, or the dispatched ref's (main's), and
       # their history for a release whose chart has no catalog.
       - name: Clone the guide's samples
@@ -149,7 +139,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || env.TAG }}
           path: guide
-          sparse-checkout: config/samples
+          # Whole: the history's blobs need no credentials later.
           fetch-depth: 0
           persist-credentials: false
 
@@ -413,12 +403,20 @@ jobs:
           for i in $(seq 1 30); do curl -fsS http://localhost:3001/api/v1/version >/dev/null 2>&1 && break; sleep 2; done
           helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system history c4-factory
 
+      # What the release's chart renders, not its config/crd/bases: v0.3.0's
+      # chart shipped a crews CRD older than its bases.
       - name: "Upgrade: the CRDs are the release's"
         if: matrix.check == 'upgrade'
         run: |
-          # kubectl diff exits 1 when applying the release's CRDs would change
-          # what the cluster has.
-          if $KUBECTL diff -f release/config/crd/bases >"$EVIDENCE/crd.diff"; then
+          helm pull "oci://$REGISTRY/charts/c4-factory" --version "$VERSION" --untar -d "$RUNNER_TEMP/chart"
+          chart=$RUNNER_TEMP/chart/c4-factory
+          only=()
+          for f in "$chart"/templates/crd/*.yaml; do only+=(--show-only "templates/crd/${f##*/}"); done
+          helm template c4-factory "$chart" -n c4-factory-system -f "$VALUES" "${only[@]}" >"$EVIDENCE/crds.yaml"
+          echo "$(grep -c '^kind: CustomResourceDefinition' "$EVIDENCE/crds.yaml") CRDs in $TAG's chart"
+          # kubectl diff exits 1 when applying them would change what the
+          # cluster has.
+          if $KUBECTL diff -f "$EVIDENCE/crds.yaml" >"$EVIDENCE/crd.diff"; then
             echo "The CRDs are $TAG's."
           else
             cat "$EVIDENCE/crd.diff"
