@@ -28,11 +28,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/test/e2e/standin"
 )
 
-// These tests check every milestone of docs/design.md against the Kind cluster
-// that make e2e builds: Gitea seeded, the operator deployed, the webshop sample
-// applied and the Session client image loaded. They never touch another cluster.
+// Four specs on the hello-html page and stand-in agents, against the Kind
+// cluster that make e2e builds: Gitea seeded, the operator deployed and the
+// fixture in testdata/apps applied. They need no model keys and never touch
+// another cluster: a Container is scaffolded, a Brief plans it, a Task goes two
+// rounds to a merge, and a Standard bump reaches main.
 
 var (
 	ctx        context.Context
@@ -51,6 +54,12 @@ func TestE2E(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	By("checking every Agent in the fixture runs on the stand-in")
+	agents, err := standin.Agents("testdata/apps")
+	Expect(err).NotTo(HaveOccurred())
+	Expect(agents).NotTo(BeEmpty())
+	Expect(standin.Check(agents)).To(Succeed())
+
 	ctx, cancel = context.WithCancel(context.Background())
 	cluster := os.Getenv("KIND_CLUSTER")
 	if cluster == "" {
@@ -94,7 +103,7 @@ var _ = BeforeSuite(func() {
 	}).WithTimeout(30 * time.Second).Should(Succeed())
 
 	var secret corev1.Secret
-	Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "webshop", Name: "gitea-credentials"}, &secret)).To(Succeed())
+	Expect(k8s.Get(ctx, types.NamespacedName{Namespace: apps, Name: "gitea-credentials"}, &secret)).To(Succeed())
 	giteaToken = string(secret.Data["token"])
 })
 

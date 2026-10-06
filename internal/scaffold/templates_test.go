@@ -54,6 +54,7 @@ var templateCombos = []struct {
 	}},
 	{"hello html", "static-site", []side{
 		{model.SideFramework, "hello-html"},
+		{model.SideStandard, "hello-html-standard"},
 	}},
 }
 

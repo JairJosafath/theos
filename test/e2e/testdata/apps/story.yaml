@@ -5,7 +5,7 @@ metadata:
   name: hello-user
 spec:
   displayName: Hello user
-  description: Someone who runs the hello script.
+  description: Someone who opens the hello page.
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: SoftwareSystem
@@ -22,7 +22,7 @@ metadata:
 spec:
   source: {kind: Person, name: hello-user}
   target: {kind: SoftwareSystem, name: hello-system}
-  description: Runs it
+  description: Opens it
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Container
@@ -33,10 +33,10 @@ spec:
     name: hello-system
   displayName: Hello
   description: A hello-world project for the e2e agent loop.
-  type: cli
+  type: static-site
   gitProviderRef:
     name: gitea
   frameworkRef:
-    name: hello
+    name: hello-html
   standardRef:
-    name: hello-standard
+    name: hello-html-standard
