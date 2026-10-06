@@ -75,10 +75,11 @@ jobs:
           for t in "$TAG" $FROM_INPUT; do
             case "$t" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "not a release tag: $t" >&2; exit 1 ;; esac
           done
-          tags=$(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name' |
-            grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+          # A failed lookup fails the plan, never an upgrade from nothing.
+          names=$(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name')
           # The highest release tag below TAG; TAG itself when there is none.
-          prev=$({ printf '%s\n' $tags; echo "$TAG"; } | sort -uV | grep -x -B1 -F "$TAG" | head -1)
+          prev=$({ grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$names" || true; echo "$TAG"; } |
+            sort -uV | grep -x -B1 -F "$TAG" | head -1)
           # Dispatched with from: the path a given device takes, or the same
           # release again to try the check's own steps.
           if [ -n "$FROM_INPUT" ]; then
@@ -399,7 +400,8 @@ jobs:
           # repository default-branch head
           api "repos/search?limit=50" | jq -r '.data[] | [.full_name, .default_branch] | @tsv' | sort |
             while read -r repo branch; do
-              echo "$repo $branch $(api "repos/$repo/branches/$branch" | jq -r .commit.id)"
+              sha=$(api "repos/$repo/branches/$branch" | jq -er .commit.id)
+              echo "$repo $branch $sha"
             done >"$out/repos.txt"
           EOF
           bash "$RUNNER_TEMP/snapshot.sh" "$EVIDENCE/before"
