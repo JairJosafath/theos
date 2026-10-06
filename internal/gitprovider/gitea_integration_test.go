@@ -117,6 +117,87 @@ func TestGiteaIntegration(t *testing.T) {
 	})
 }
 
+// TestGiteaTemplatesIntegration checks that the seeded Gitea has every template
+// the catalog pins, at its tag, like TestGiteaIntegration.
+func TestGiteaTemplatesIntegration(t *testing.T) {
+	base := os.Getenv("C4_GITEA_URL")
+	if base == "" {
+		t.Skip("C4_GITEA_URL not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	client := Client{}
+
+	data, err := os.ReadFile("../../templates/versions.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.Lines(string(data)) {
+		name, tag, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok {
+			continue
+		}
+		if tree, err := client.FetchTemplate(ctx, base+"/templates/"+name, tag, nil); err != nil || len(tree) == 0 {
+			t.Errorf("templates/%s@%s: %d files, %v", name, tag, len(tree), err)
+		}
+	}
+}
+
+// TestGiteaChecksIntegration protects a branch and reads the checks on it against
+// the seeded Gitea, like TestGiteaIntegration.
+func TestGiteaChecksIntegration(t *testing.T) {
+	base := os.Getenv("C4_GITEA_URL")
+	if base == "" {
+		t.Skip("C4_GITEA_URL not set")
+	}
+	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	client := Client{}
+
+	p, err := client.Provider(Config{URL: base, Owner: "webshop", Credentials: creds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("it-checks-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteRepo(t, base, "webshop", name, creds.Token) })
+	repo, err := p.EnsureRepository(ctx, name, "integration test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := p.PushInitialCommit(ctx, repo, scaffold.Tree{"Makefile": {Data: []byte("check:\n")}}, "Scaffold\n", testAuthor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 { // the second updates the rule
+		if err := p.ProtectBranch(ctx, repo, "main", BranchRule{StatusContexts: []string{"check*"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var rules []struct {
+		RuleName          string   `json:"rule_name"`
+		EnablePush        bool     `json:"enable_push"`
+		EnableStatusCheck bool     `json:"enable_status_check"`
+		Contexts          []string `json:"status_check_contexts"`
+	}
+	giteaJSON(t, base, creds.Token, http.MethodGet, "/api/v1/repos/webshop/"+name+"/branch_protections", nil, &rules)
+	if len(rules) != 1 || rules[0].RuleName != "main" || rules[0].EnablePush || !rules[0].EnableStatusCheck ||
+		strings.Join(rules[0].Contexts, ",") != "check*" {
+		t.Errorf("branch protections = %+v, want one rule on main: no pushes, checks check*", rules)
+	}
+
+	if got, err := p.CombinedStatus(ctx, repo, "main"); err != nil || got.Commit != hash || got.State != "" {
+		t.Fatalf("CombinedStatus() before any check = %+v, %v", got, err)
+	}
+	// A Gitea Actions run of the Standard's workflow reports like this.
+	giteaJSON(t, base, creds.Token, http.MethodPost, "/api/v1/repos/webshop/"+name+"/statuses/"+hash,
+		map[string]string{"state": "success", "context": "check / check (push)", "target_url": base + "/runs/1"}, nil)
+	got, err := p.CombinedStatus(ctx, repo, "main")
+	if err != nil || got.State != CheckSuccess || got.Contexts["check / check (push)"] != CheckSuccess {
+		t.Errorf("CombinedStatus() = %+v, %v; want success", got, err)
+	}
+}
+
 // TestGiteaIssuesIntegration runs the issue flow against the seeded Gitea, like
 // TestGiteaIntegration.
 func TestGiteaIssuesIntegration(t *testing.T) {
@@ -315,6 +396,37 @@ func addDependency(t *testing.T, base, token string, repo Repository, blocked, b
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("adding a dependency: HTTP %d", resp.StatusCode)
+	}
+}
+
+// giteaJSON sends body, if any, as JSON to a Gitea API path and reads the reply
+// into into, if any.
+func giteaJSON(t *testing.T, base, token, method, path string, body, into any) {
+	t.Helper()
+	var payload io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload = bytes.NewReader(data)
+	}
+	req, _ := http.NewRequest(method, strings.TrimSuffix(base, "/")+path, payload)
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("%s %s: HTTP %d: %s", method, path, resp.StatusCode, data)
+	}
+	if into != nil {
+		if err := json.NewDecoder(resp.Body).Decode(into); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

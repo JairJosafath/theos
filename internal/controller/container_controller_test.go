@@ -31,7 +31,7 @@ var _ = Describe("Container", func() {
 		}).Should(Succeed())
 
 		// ownerReferences carry blockOwnerDeletion, so deleting the system cascades
-		// through the garbage collector (checked for real in the Kind cluster).
+		// through the garbage collector, which envtest lacks and Go tests trust.
 		ref := metav1.GetControllerOf(container)
 		Expect(ref.BlockOwnerDeletion).To(HaveValue(BeTrue()))
 	})
