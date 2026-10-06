@@ -10,6 +10,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -39,6 +40,13 @@ const (
 // planPushRecheck is how often a Brief looks again for a plan its Task says
 // was pushed and the brief repository doesn't show yet.
 const planPushRecheck = 5 * time.Second
+
+// errStaleBrief says the Brief changed since this reconcile read it: its
+// copy, status included, must not be written.
+var errStaleBrief = errors.New("the Brief changed since it was read")
+
+// staleBriefRetry is how soon a reconcile that found its Brief stale runs again.
+const staleBriefRetry = time.Second
 
 // planTaskName names the Plan Task of a Brief's round.
 func planTaskName(brief string, round int32) string { return fmt.Sprintf("%s-plan-%d", brief, round) }
@@ -185,6 +193,9 @@ func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1alpha
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput,
 		metav1.ConditionFalse, c4v1alpha1.ReasonResolved, "The Brief has what it needs")
 	if err := r.Status().Patch(ctx, brief, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{})); err != nil {
+		if apierrors.IsConflict(err) {
+			return fmt.Errorf("%w: %w", errStaleBrief, err)
+		}
 		return err
 	}
 	*orig = *brief.DeepCopy()
@@ -269,12 +280,11 @@ func (r *BriefReconciler) checkPlan(ctx context.Context, brief *c4v1alpha1.Brief
 		return ctrl.Result{}, nil
 	}
 	tree, ok, err := r.readPlan(ctx, brief, commit)
-	if err != nil {
+	if _, needsInput := needsInputSentence(err); needsInput {
 		return ctrl.Result{}, err
 	}
-	if !ok {
-		logf.FromContext(ctx).V(1).Info("Waiting for the plan on the brief repository", "commit", commit)
-		return ctrl.Result{RequeueAfter: planPushRecheck}, nil
+	if err != nil || !ok {
+		return r.awaitPlan(ctx, brief, task, err)
 	}
 	var refusals string
 	plan, err := model.ParsePlan(planFiles(tree))
@@ -302,6 +312,37 @@ func (r *BriefReconciler) checkPlan(ctx context.Context, brief *c4v1alpha1.Brief
 	return ctrl.Result{}, nil
 }
 
+// awaitPlan waits for the plan the Task reports to show on plan/<round>, as
+// a read of the branch can lag its push. A plan that isn't there once the Task
+// has been Checking for PlanCheckTimeout is refused, so the planner pushes it
+// again, or the Task fails after its tries, instead of waiting forever. A Git
+// host down that long costs the planner a try.
+func (r *BriefReconciler) awaitPlan(ctx context.Context, brief *c4v1alpha1.Brief, task *c4v1alpha1.Task,
+	readErr error) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	commit, branch := task.Status.Commit, model.PlanBranch(int(brief.Status.Round))
+	var waited time.Duration
+	if task.Status.PhaseChangedAt != nil {
+		waited = time.Since(task.Status.PhaseChangedAt.Time)
+	}
+	if left := r.planCheckTimeout() - waited; left > 0 {
+		if readErr != nil {
+			log.Info("Could not read the plan", "branch", branch, "error", readErr.Error())
+		} else {
+			log.V(1).Info("Waiting for the plan on the brief repository", "branch", branch, "commit", commit)
+		}
+		return ctrl.Result{RequeueAfter: min(planPushRecheck, left+time.Second)}, nil
+	}
+	refusal := fmt.Sprintf("The plan isn't on %s at %s; push it again", branch, commit)
+	if err := r.writeVerdict(ctx, task, commit, refusal); err != nil {
+		return ctrl.Result{}, err
+	}
+	log.Info("Refused Brief plan", "round", brief.Status.Round, "commit", commit, "reasons", refusal)
+	r.event(brief, corev1.EventTypeWarning, eventPlanRefused, "CheckPlan",
+		fmt.Sprintf("Refused the plan of round %d (try %d): %s", brief.Status.Round, task.Status.Round, refusal))
+	return ctrl.Result{}, nil
+}
+
 // writeVerdict records the Brief's verdict on commit as the Task's
 // annotations; no refusals accepts it.
 func (r *BriefReconciler) writeVerdict(ctx context.Context, task *c4v1alpha1.Task, commit, refusals string) error {
@@ -325,10 +366,15 @@ func (r *BriefReconciler) failRound(ctx context.Context, brief *c4v1alpha1.Brief
 	if cond := meta.FindStatusCondition(task.Status.Conditions, ConditionSucceeded); cond != nil && cond.Message != "" {
 		message = cond.Message
 	}
+	endRoundFailed(ctx, brief, task.Status.Summary, message)
+}
+
+// endRoundFailed records a round that failed, and why.
+func endRoundFailed(ctx context.Context, brief *c4v1alpha1.Brief, summary, message string) {
 	status := &brief.Status
-	recordRound(status, task.Status.Summary, nil)
+	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonRoundFailed, Summary: summary})
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
-		model.ReasonRoundFailed, fmt.Sprintf("Round %d failed: %s", status.Round, message))
+		model.ReasonRoundFailed, model.Clip(fmt.Sprintf("Round %d failed: %s", status.Round, message), 32768))
 	logf.FromContext(ctx).Info("Brief round failed", "round", status.Round, "message", firstLine(message))
 }
 
@@ -336,8 +382,9 @@ func (r *BriefReconciler) failRound(ctx context.Context, brief *c4v1alpha1.Brief
 func (r *BriefReconciler) plannerNeedsInput(ctx context.Context, brief *c4v1alpha1.Brief, task *c4v1alpha1.Task,
 	plan model.Plan) {
 	status := &brief.Status
-	recordRound(status, task.Status.Summary, plan.Choices)
 	sentence := model.Clip(plan.NeedsInput, 1000)
+	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonPlannerNeedsInput, Summary: task.Status.Summary,
+		Choices: plan.Choices, NeedsInput: sentence})
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput, metav1.ConditionTrue,
 		model.ReasonPlannerNeedsInput, sentence)
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
@@ -345,13 +392,15 @@ func (r *BriefReconciler) plannerNeedsInput(ctx context.Context, brief *c4v1alph
 	logf.FromContext(ctx).Info("Planner needs input for Brief", "round", status.Round, "reason", sentence)
 }
 
-// recordRound adds the round to the history, once; the newest 20 are kept.
-func recordRound(status *c4v1alpha1.BriefStatus, summary string, choices []string) {
+// recordRound adds the running round to the history as entry says it ended,
+// once; the newest 20 are kept.
+func recordRound(status *c4v1alpha1.BriefStatus, entry c4v1alpha1.BriefRound) {
 	if roundOver(status) {
 		return
 	}
-	entry := c4v1alpha1.BriefRound{Round: status.Round, Summary: model.Clip(summary, 1000),
-		Choices: model.ClipList(choices, 50, 500)}
+	entry.Round = status.Round
+	entry.Summary = model.Clip(entry.Summary, 1000)
+	entry.Choices = model.ClipList(entry.Choices, 50, 500)
 	status.History = model.KeepNewest(append(status.History, entry), 20)
 }
 
@@ -361,14 +410,21 @@ func operatorNeedsInput(brief *c4v1alpha1.Brief, sentence string) {
 		metav1.ConditionTrue, c4v1alpha1.ReasonNotFound, sentence)
 }
 
-// clearOperatorNeedsInput says the Brief has what it needs, unless the
-// planner's question is open: only a new round clears that.
+// clearOperatorNeedsInput ends the operator's own NeedsInput. The planner's
+// question stays open, or comes back if the operator's wait showed over it,
+// until a new round answers it.
 func clearOperatorNeedsInput(brief *c4v1alpha1.Brief) {
-	cond := meta.FindStatusCondition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)
+	status := &brief.Status
+	cond := meta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionNeedsInput)
 	if cond != nil && cond.Reason == model.ReasonPlannerNeedsInput {
 		return
 	}
-	setCondition(&brief.Status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput,
+	if n := len(status.History); roundOver(status) && status.History[n-1].Outcome == model.ReasonPlannerNeedsInput {
+		setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput,
+			metav1.ConditionTrue, model.ReasonPlannerNeedsInput, status.History[n-1].NeedsInput)
+		return
+	}
+	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput,
 		metav1.ConditionFalse, c4v1alpha1.ReasonResolved, "The Brief has what it needs")
 }
 

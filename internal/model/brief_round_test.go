@@ -164,3 +164,45 @@ func TestClip(t *testing.T) {
 		t.Errorf("ClipList = %q", got)
 	}
 }
+
+func TestWorkspacePrompts(t *testing.T) {
+	prompts := []string{"one", "two", "three"}
+	for _, tc := range []struct {
+		name         string
+		roundPrompts int
+		runs         bool
+		want         []string
+	}{
+		{"between rounds, every prompt", 1, false, prompts},
+		{"during a round, the ones it took", 1, true, []string{"one"}},
+		{"during the idea's round, none", 0, true, []string{}},
+		{"during a round that took them all", 3, true, prompts},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := WorkspacePrompts(prompts, tc.roundPrompts, tc.runs); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("WorkspacePrompts = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIdeaPlanned(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		outcomes []string
+		planned  int
+		want     bool
+	}{
+		{"no round", nil, 0, false},
+		{"a failed round", []string{ReasonRoundFailed}, 0, false},
+		{"a round that asked", []string{ReasonPlannerNeedsInput}, 0, false},
+		{"an applied round", []string{ReasonRoundFailed, ReasonApplied}, 0, true},
+		{"prompts planned, the round gone from the history", []string{ReasonRoundFailed}, 2, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IdeaPlanned(tc.outcomes, tc.planned); got != tc.want {
+				t.Errorf("IdeaPlanned(%q, %d) = %v, want %v", tc.outcomes, tc.planned, got, tc.want)
+			}
+		})
+	}
+}

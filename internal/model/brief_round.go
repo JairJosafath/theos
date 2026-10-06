@@ -219,3 +219,20 @@ func ClipList(list []string, maxItems, n int) []string {
 	}
 	return out
 }
+
+// WorkspacePrompts are the prompts brief.md shows the planner: all of them
+// between rounds, and while a round runs only the ones it took, so a prompt
+// appended meanwhile, which waits for the next round, isn't planned twice.
+func WorkspacePrompts(prompts []string, roundPrompts int, roundRuns bool) []string {
+	if roundRuns && roundPrompts >= 0 && roundPrompts < len(prompts) {
+		return prompts[:roundPrompts]
+	}
+	return prompts
+}
+
+// IdeaPlanned reports whether a round of the Brief applied, given the
+// outcomes of the rounds in its history and how many prompts the last applied
+// round took. A round that failed or asked for input planned nothing.
+func IdeaPlanned(outcomes []string, promptsPlanned int) bool {
+	return promptsPlanned > 0 || slices.Contains(outcomes, ReasonApplied)
+}

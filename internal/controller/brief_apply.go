@@ -76,6 +76,14 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 		return ctrl.Result{}, errNeedsInput{fmt.Sprintf("The plan of round %d needs %s, missing in namespace %s: "+
 			"install it, so the Brief can apply the round", brief.Status.Round, strings.Join(missing, ", "), brief.Namespace)}
 	}
+	// The namespace may have changed since the plan was checked: someone made
+	// an object of the same name, or one the plan doesn't keep. What this
+	// round applied already is in the plan as it is, so a restart passes.
+	if refusals := model.CheckPlan(plan, current); len(refusals) > 0 {
+		endRoundFailed(ctx, brief, task.Status.Summary,
+			"the plan no longer fits the namespace:\n"+model.RefusalText(refusals))
+		return ctrl.Result{}, nil
+	}
 
 	run := &roundApply{brief: brief, orig: orig, round: strconv.Itoa(int(brief.Status.Round))}
 	var created []string
@@ -321,7 +329,14 @@ func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, c *c4
 		return err
 	}
 	brief, round := run.brief, int(run.brief.Status.Round)
+	repository := repo.Owner + "/" + repo.Name
 	for _, issue := range issues {
+		if slices.ContainsFunc(brief.Status.Issues, func(i c4v1alpha1.BriefIssue) bool {
+			return i.Repository == repository && int(i.Round) == round && int(i.N) == issue.N
+		}) {
+			continue // filed and recorded, maybe closed since: never filed again
+		}
+		// Filed, but not recorded before a restart: found by its marker.
 		i := slices.IndexFunc(open, func(o gitprovider.Issue) bool {
 			return model.HasIssueMarker(o.Body, brief.Name, round, issue.N)
 		})
@@ -336,7 +351,7 @@ func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, c *c4
 			}
 			logf.FromContext(ctx).Info("Filed Brief issue", "container", c.Name, "number", filed.Number, "round", round)
 		}
-		if err := r.recordIssue(ctx, run, repo.Owner+"/"+repo.Name, filed); err != nil {
+		if err := r.recordIssue(ctx, run, repository, issue.N, filed); err != nil {
 			return err
 		}
 	}
@@ -357,9 +372,10 @@ func briefIssueLabels(issues []model.PlanIssue) []gitprovider.Label {
 	return labels
 }
 
-// recordIssue adds a filed issue to the Brief's status, once, and writes the
-// status at once, so a restart knows it.
-func (r *BriefReconciler) recordIssue(ctx context.Context, run *roundApply, repository string,
+// recordIssue adds a filed issue to the Brief's status, once, with its round
+// and number in the plan, and writes the status at once, so a later reconcile
+// never files it again, even once it is closed.
+func (r *BriefReconciler) recordIssue(ctx context.Context, run *roundApply, repository string, n int,
 	issue gitprovider.Issue) error {
 	status := &run.brief.Status
 	if slices.ContainsFunc(status.Issues, func(i c4v1alpha1.BriefIssue) bool {
@@ -369,6 +385,7 @@ func (r *BriefReconciler) recordIssue(ctx context.Context, run *roundApply, repo
 	}
 	status.Issues = model.KeepNewest(append(status.Issues, c4v1alpha1.BriefIssue{
 		Repository: repository, Number: int32(issue.Number), URL: issue.URL, Title: model.Clip(issue.Title, 255),
+		Round: status.Round, N: int32(n),
 	}), 500)
 	if err := r.Status().Patch(ctx, run.brief, client.MergeFrom(run.orig)); err != nil {
 		return err
@@ -430,7 +447,8 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	if err != nil {
 		return err
 	}
-	recordRound(status, task.Status.Summary, plan.Choices)
+	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: task.Status.Summary,
+		Choices: plan.Choices})
 	status.Choices = model.ClipList(plan.Choices, 50, 500)
 	status.PromptsPlanned = status.RoundPrompts
 	status.Created = created

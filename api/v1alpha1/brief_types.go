@@ -133,6 +133,14 @@ type BriefIssue struct {
 	// +kubebuilder:validation:MaxLength=255
 	// +optional
 	Title string `json:"title,omitempty"`
+
+	// round is the Brief round that filed the issue.
+	// +optional
+	Round int32 `json:"round,omitempty"`
+
+	// n is the issue's number in its round's plan, as in its marker.
+	// +optional
+	N int32 `json:"n,omitempty"`
 }
 
 // BriefRound is one round of planning: the idea, or a batch of new prompts.
@@ -158,6 +166,16 @@ type BriefRound struct {
 	// US dollar.
 	// +optional
 	CostMilliUSD int64 `json:"costMilliUSD,omitempty"`
+
+	// outcome is how the round ended: Applied, PlannerNeedsInput or RoundFailed.
+	// +kubebuilder:validation:Enum=Applied;PlannerNeedsInput;RoundFailed
+	// +optional
+	Outcome string `json:"outcome,omitempty"`
+
+	// needsInput is the planner's question, when the round asked for input.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	NeedsInput string `json:"needsInput,omitempty"`
 }
 
 // BriefStatus is what the Brief planned and made so far.

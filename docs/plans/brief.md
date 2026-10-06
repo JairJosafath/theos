@@ -245,6 +245,17 @@ What B3, B8 and B10-B13 leave open, settled in step 5
   in the scaffold. When a round ends the workspace is written again at once,
   and a prompt that waited starts the next round in the same reconcile.
   A plan's labels the factory doesn't define are made in grey (`#ededed`).
+- **After review:** while a round runs, `brief.md` lists only the prompts it
+  took, so a later try never plans one meant for the next round. The idea
+  counts as planned once a round applied (each history entry keeps its
+  `outcome`, and the planner's question as `needsInput`, which comes back
+  when the operator's own wait ends). Each filed issue keeps its `round` and
+  `n`, so one recorded is never filed again, even once closed; the marker
+  covers only the window before the status write. Applying runs `CheckPlan`
+  again first and fails the round with the reasons when the namespace
+  changed. A plan the brief repository doesn't show at the Task's commit
+  after 10 minutes in `Checking` is refused ("push it again"). A round start
+  that finds the Brief stale writes nothing and reads it again.
 
 ## Review focus
 

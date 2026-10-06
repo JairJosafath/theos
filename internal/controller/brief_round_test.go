@@ -201,7 +201,7 @@ var _ = Describe("Brief rounds", func() {
 		}).Should(Succeed())
 		brief = getBrief(Default, ns)
 		Expect(brief.Status.History).To(Equal([]c4v1alpha1.BriefRound{{Round: 1, Summary: "Planned round 1.",
-			Choices: []string{"A service lints the rules", "Postgres keeps them"}}}))
+			Choices: []string{"A service lints the rules", "Postgres keeps them"}, Outcome: model.ReasonApplied}}))
 		Expect(brief.Status.Choices).To(Equal([]string{"A service lints the rules", "Postgres keeps them"}))
 		Expect(brief.Status.PromptsPlanned).To(BeZero())
 		Expect(brief.Status.Created).To(ConsistOf(
@@ -278,11 +278,16 @@ var _ = Describe("Brief rounds", func() {
 		Eventually(func(g Gomega) { getTask(g, ns, "cel-lens-plan-1") }).Should(Succeed())
 
 		By("leaving a prompt appended during round 1 for round 2")
+		reads := gitFake.historyCount(ns, briefRepo)
 		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Support VAP files first."} })).To(Succeed())
+		Eventually(func() int { return gitFake.historyCount(ns, briefRepo) }).Should(BeNumerically(">", reads),
+			"the workspace was not written again")
 		Consistently(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(1)))
 			g.Expect(b.Status.RoundPrompts).To(BeZero())
+			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).NotTo(
+				ContainSubstring("Support VAP"), "a try of round 1 that starts now must not plan it")
 		}, "1s").Should(Succeed())
 		planRound(ns, 1, 1, quietPlan(ns))
 
@@ -355,6 +360,24 @@ var _ = Describe("Brief rounds", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
 			getTask(g, ns, "cel-lens-plan-2")
 		}).Should(Succeed())
+		Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).To(And(
+			ContainSubstring("## Idea (**new**)"), ContainSubstring("1. (**new**) Keep it simple.")),
+			"a failed round planned nothing, the idea neither")
+	})
+
+	It("refuses a plan the brief repository doesn't show once the Task waited long enough", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		mustCreate(newBrief(ns, "cel-lens"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "cel-lens-plan-1-r1-plan") }).Should(Succeed())
+		finishSandbox(ns, "cel-lens-plan-1-r1-plan", "cel-lens-plan-1",
+			&agentrunner.Result{Role: "plan", Commit: "5a-never-pushed"}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "cel-lens-plan-1")
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(task.Status.Feedback).To(ContainSubstring(
+				"The plan isn't on plan/1 at 5a-never-pushed; push it again"))
+		}, "15s").Should(Succeed())
 	})
 
 	It("asks the person when the planner needs input, applying nothing until a prompt answers", func() {
@@ -379,6 +402,21 @@ var _ = Describe("Brief rounds", func() {
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "nothing is applied")
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput), "the operator keeps the planner's question")
 		}, "2s").Should(Succeed())
+
+		By("showing the operator's own wait over the question, then the question again")
+		provider := &c4v1alpha1.GitProvider{}
+		Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, provider)).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(And(
+				HaveField("Reason", c4v1alpha1.ReasonNotFound), HaveField("Message", HavePrefix("GitProvider gitea"))))
+		}).Should(Succeed())
+		mustCreate(&c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "gitea"), Spec: provider.Spec})
+		Eventually(func(g Gomega) {
+			g.Expect(condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(And(
+				HaveField("Status", metav1.ConditionTrue), HaveField("Reason", model.ReasonPlannerNeedsInput),
+				HaveField("Message", "Which CRDs should it lint first?")))
+		}).Should(Succeed())
 
 		By("starting the next round on a prompt, which clears the question")
 		brief := getBrief(Default, ns)
@@ -434,6 +472,70 @@ var _ = Describe("Brief rounds", func() {
 		crew := &c4v1alpha1.Crew{}
 		Expect(k8sClient.Get(ctx, key(ns, "linter"), crew)).To(Succeed())
 		Expect(crew.Spec.Implementer.Name).To(Equal("late-implementer"))
+	})
+
+	It("never files a recorded issue again, even once it is closed", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		// checker's template is missing, so it never gets Ready and the round
+		// keeps applying, reconcile after reconcile.
+		mustCreate(&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "broken"),
+			Spec: newCatalogSpec(templatesURL+"missing", "v1.0.0", c4v1alpha1.ContainerTypeService)})
+		mustCreate(newBrief(ns, "cel-lens"))
+		plan := linterPlan(ns, 1)
+		plan[model.PlanModelFile] = scaffold.File{Data: append(plan[model.PlanModelFile].Data, []byte(`---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: checker
+spec:
+  softwareSystemRef: {name: cel-lens}
+  type: service
+  gitProviderRef: {name: gitea}
+  frameworkRef: {name: broken}
+`)...)}
+		planRound(ns, 1, 1, plan)
+
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Issues).To(HaveLen(1))
+			g.Expect(b.Status.Issues[0]).To(And(HaveField("Round", int32(1)), HaveField("N", int32(1))))
+			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(
+				HaveField("Message", ContainSubstring("Container checker")))
+		}).Should(Succeed())
+		Expect(gitFake.closeIssue(ns, "linter", int(getBrief(Default, ns).Status.Issues[0].Number))).To(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(gitFake.openIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefApplying))
+		}, "3s").Should(Succeed())
+	})
+
+	It("fails the round when the namespace changed since the plan was checked", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		brief := newBrief(ns, "cel-lens")
+		brief.Spec.Agents.Implementer.Name = "late-implementer"
+		mustCreate(brief)
+		planRound(ns, 1, 1, linterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
+		}).Should(Succeed())
+
+		By("a person making a Container of the planned name meanwhile")
+		mustCreate(newContainer(ns, "linter", "cel-lens", c4v1alpha1.ContainerTypeWorker))
+		mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "late-implementer"),
+			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev"}})
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefFailed))
+			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
+				HaveField("Reason", model.ReasonRoundFailed),
+				HaveField("Message", And(ContainSubstring("no longer fits the namespace"),
+					ContainSubstring("Container/linter: type can't change")))))
+			g.Expect(b.Status.History).To(ConsistOf(HaveField("Outcome", model.ReasonRoundFailed)))
+		}).Should(Succeed())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.SoftwareSystem{}))).
+			To(BeTrue(), "nothing is applied")
 	})
 
 	It("finishes a round a restart left halfway, with no duplicate issue or Crew", func() {

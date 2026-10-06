@@ -10,6 +10,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -41,6 +42,9 @@ type BriefReconciler struct {
 	Recorder events.EventRecorder
 	// GitTimeout bounds the Git calls of one reconcile; 0 means two minutes.
 	GitTimeout time.Duration
+	// PlanCheckTimeout is how long a Plan Task may report a plan the brief
+	// repository doesn't show before the Brief refuses it; 0 means ten minutes.
+	PlanCheckTimeout time.Duration
 	// NeedsInputRecheck is how often a Brief waiting for the person, or for a
 	// Container to be Ready, looks again, as Secrets aren't watched; 0 means a
 	// minute.
@@ -50,6 +54,7 @@ type BriefReconciler struct {
 const (
 	defaultBriefGitTimeout        = 2 * time.Minute
 	defaultBriefNeedsInputRecheck = time.Minute
+	defaultPlanCheckTimeout       = 10 * time.Minute
 )
 
 func (r *BriefReconciler) gitTimeout() time.Duration {
@@ -57,6 +62,13 @@ func (r *BriefReconciler) gitTimeout() time.Duration {
 		return r.GitTimeout
 	}
 	return defaultBriefGitTimeout
+}
+
+func (r *BriefReconciler) planCheckTimeout() time.Duration {
+	if r.PlanCheckTimeout > 0 {
+		return r.PlanCheckTimeout
+	}
+	return defaultPlanCheckTimeout
 }
 
 func (r *BriefReconciler) needsInputRecheck() time.Duration {
@@ -91,14 +103,26 @@ func (r *BriefReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	brief.Status.ObservedGeneration = brief.Generation
 
 	result, err := r.reconcileBrief(ctx, &brief, orig)
+	return r.finishReconcile(ctx, &brief, orig, result, err)
+}
+
+// finishReconcile records the outcome of a reconcile in the Brief's status:
+// the operator's NeedsInput, and the phase. A Brief found stale is left as
+// it is, for the next reconcile to read again.
+func (r *BriefReconciler) finishReconcile(ctx context.Context, brief, orig *c4v1alpha1.Brief,
+	result ctrl.Result, err error) (ctrl.Result, error) {
+	if errors.Is(err, errStaleBrief) {
+		logf.FromContext(ctx).V(1).Info("Brief changed since it was read; reading it again")
+		return ctrl.Result{RequeueAfter: staleBriefRetry}, nil
+	}
 	if sentence, needsInput := needsInputSentence(err); needsInput {
-		operatorNeedsInput(&brief, sentence)
+		operatorNeedsInput(brief, sentence)
 		result, err = ctrl.Result{RequeueAfter: r.needsInputRecheck()}, nil
 	} else if err == nil {
-		clearOperatorNeedsInput(&brief)
+		clearOperatorNeedsInput(brief)
 	}
-	r.setPhase(ctx, &brief)
-	if patchErr := r.writeStatus(ctx, &brief, orig); patchErr != nil {
+	r.setPhase(ctx, brief)
+	if patchErr := r.writeStatus(ctx, brief, orig); patchErr != nil {
 		return ctrl.Result{}, patchErr
 	}
 	return result, err

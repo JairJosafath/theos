@@ -284,6 +284,19 @@ spec:
                         US dollar.
                       format: int64
                       type: integer
+                    needsInput:
+                      description: needsInput is the planner's question, when the
+                        round asked for input.
+                      maxLength: 1000
+                      type: string
+                    outcome:
+                      description: 'outcome is how the round ended: Applied, PlannerNeedsInput
+                        or RoundFailed.'
+                      enum:
+                      - Applied
+                      - PlannerNeedsInput
+                      - RoundFailed
+                      type: string
                     round:
                       description: round is the round's number, from 1.
                       format: int32
@@ -304,6 +317,11 @@ spec:
                 items:
                   description: BriefIssue is an issue a Brief filed.
                   properties:
+                    "n":
+                      description: n is the issue's number in its round's plan, as
+                        in its marker.
+                      format: int32
+                      type: integer
                     number:
                       description: number of the issue in its repository.
                       format: int32
@@ -313,6 +331,10 @@ spec:
                       description: repository is the Container's repository, owner/name.
                       maxLength: 140
                       type: string
+                    round:
+                      description: round is the Brief round that filed the issue.
+                      format: int32
+                      type: integer
                     title:
                       description: title of the issue.
                       maxLength: 255
