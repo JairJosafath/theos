@@ -152,6 +152,10 @@ prompt() {
   that cluster; give kubectl \`--context kind-<name>\` on every call. Deploy
   this branch's own build (\`make deploy\`), never trusting what is already
   deployed; \`hack/lib/github.sh cluster release\` when verification is done.
+  A pool cluster belongs to nobody between leases: when the \"Done when\" asks
+  for a fresh cluster, or what is installed on it isn't yours, pass
+  \`--fresh\` (\`cluster acquire --fresh\`): it deletes and recreates only the
+  cluster this checkout leased; never delete a cluster by hand.
   Exit 4 from acquire means other checkouts hold every cluster: hand off with
   only the cluster steps left."
   fi

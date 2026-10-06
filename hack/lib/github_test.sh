@@ -2,7 +2,7 @@
 # Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label)
 # and the cluster pool's leases (acquire, wait, exit 4, stale lease, two leases
 # on two clusters, a third waiting, a released cluster reused, a missing one
-# created; release on handoff, close and release),
+# created, --fresh recreating only the cluster it leased; release on handoff, close and release),
 # for flush releasing the claim of the handoff it posts,
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
 # for proposed listing the issues the relay's triage reads, for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
@@ -72,7 +72,14 @@ LEASE2=$T/main/.git/c4-cluster-c4factory-2.lease
 lease() { jq -n --arg wt "$1" --argjson i "$2" --argjson b "$3" '{name:"heron-\($i)",issue:$i,worktree:$wt,beat:$b}' >"${4:-$LEASE}"; }
 mkdir -p "$T/bin"
 printf '#!/bin/sh\n[ "$1 $2" = "get clusters" ] && cat "%s/kind-clusters"\n' "$T" >"$T/bin/kind"
-printf '#!/bin/sh\necho "$*" >>"%s/made"\nfor a; do case $a in KIND_CLUSTER=*) echo "${a#*=}" >>"%s/kind-clusters" ;; esac; done\n[ ! -e "%s/make-fails" ]\n' "$T" "$T" "$T" >"$T/bin/make"
+cat >"$T/bin/make" <<EOF
+#!/bin/sh
+echo "\$*" >>"$T/made"
+[ ! -e "$T/make-fails" ] || exit 1
+for a; do case \$a in KIND_CLUSTER=*) c=\${a#*=} ;; esac; done
+if [ "\$3" = cluster-delete ]; then grep -vxF "\$c" "$T/kind-clusters" >"$T/kind-clusters.new"; mv "$T/kind-clusters.new" "$T/kind-clusters"
+else echo "\$c" >>"$T/kind-clusters"; fi
+EOF
 chmod +x "$T"/bin/*
 export KIND=$T/bin/kind C4_MAKE=$T/bin/make
 echo c4factory >"$T/kind-clusters"
@@ -154,6 +161,28 @@ rm -f "$T/make-fails"; echo c4factory >"$T/kind-clusters"
 lease "$T/main" 50 "$(date +%s)" "$LEASE2"
 check "pool shrunk: a lease outside it is dropped for one inside" "$(C4_CLUSTERS=1 gh_cluster acquire --wait 0 2>/dev/null) $([ -e "$LEASE2" ] && echo kept || echo gone)" "c4factory gone"
 gh_cluster release >/dev/null
+
+# --fresh: a cluster not created yet goes first; else the leased one, and only
+# it, is deleted and created again; with every cluster held it waits and exits 4.
+rm -f "$T/made"; echo c4factory >"$T/kind-clusters"
+out=$(gh_cluster acquire --wait 0 --fresh 2>"$T/err"); check "fresh: a not-yet-created cluster first" "$? $out" "0 c4factory-2"
+check "fresh, not created: created, nothing deleted" "$(cat "$T/made")" "-C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
+gh_cluster release >/dev/null; rm -f "$T/made"
+lease "$T/wt2" 50 "$(date +%s)"
+out=$(gh_cluster acquire --fresh --wait 0 2>"$T/err"); check "fresh: an existing free cluster when all exist" "$? $out" "0 c4factory-2"
+check "fresh: recreates only the cluster it leased" "$(cat "$T/made")" "-C $T/main cluster-delete KIND_CLUSTER=c4factory-2
+-C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
+check "fresh: the held cluster is left alone" "$(sort "$T/kind-clusters" | tr '\n' ' ') $(jq -r .worktree "$LEASE")" "c4factory c4factory-2  $T/wt2"
+grep -q "deleting Kind cluster c4factory-2, which this checkout now leases (no other checkout holds it)" "$T/err"; check "fresh: says what it deletes and why" $? 0
+rm -f "$T/made"
+check "fresh, own lease: recreated again" "$(gh_cluster acquire --wait 0 --fresh 2>/dev/null) $(head -1 "$T/made")" "c4factory-2 -C $T/main cluster-delete KIND_CLUSTER=c4factory-2"
+rm -f "$T/made"
+as "$T/wt3" gh_cluster acquire --wait 0 --fresh 2>"$T/err"; check "fresh, every cluster held: exit 4" $? 4
+check "fresh, every cluster held: nothing deleted" "$(cat "$T/made" 2>/dev/null)" ""
+touch "$T/make-fails"
+gh_cluster acquire --wait 0 --fresh >/dev/null 2>"$T/err"; check "fresh, delete fails: exit 1" $? 1
+check "fresh, delete fails: lease dropped" "$([ -e "$LEASE2" ] && echo kept || echo gone)" gone
+rm -f "$T/make-fails" "$LEASE" "$T/made"; echo c4factory >"$T/kind-clusters"
 
 # needs/cluster issues are picked and taken while another checkout holds the lease.
 clear; lease "$T/wt2" 50 "$(date +%s)"
