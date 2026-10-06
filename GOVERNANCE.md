@@ -37,7 +37,7 @@ The maintainer decides these without asking the owner, following the
   explain what they want, never how to build it.
 - **Review:** of merged pull requests. Each defect it finds becomes an issue.
 - **Releases:** tagging, release notes and checking the release, as
-  [docs/dev/testenv.md](docs/dev/testenv.md#every-release-checks-itself)
+  [docs/dev/testenv.md](docs/dev/testenv.md#checking-a-release)
   says.
 
 The maintainer changes no code or docs and commits nothing. Changes go through

@@ -137,8 +137,9 @@ version's operator and UI images. From a checkout, `helm install ... dist/chart`
 with `--set manager.image.tag=...` and `--set ui.image.tag=...` installs images
 you built and pushed yourself.
 
-Every release checks itself: after *Release*, the *Verify Release* workflow
-(`.github/workflows/verify-release.yml`) installs that version's chart from
+A release can be checked by hand: once *Release* has published it, the
+*Verify Release* workflow (`.github/workflows/verify-release.yml`),
+dispatched from the Actions page, installs that version's chart from
 GHCR on Kind, as above, scaffolds the webshop sample's `orders-api`, then
 follows [getting-started](../../docs/getting-started.md) up to the first app's
 scaffold and an `Idle` Crew (no Agent runs). The

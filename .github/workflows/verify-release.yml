@@ -1,7 +1,9 @@
 name: Verify Release
 
-# Every release checks itself, twice, on Kind clusters of its own, building
-# nothing. "install" installs the published chart from GHCR into a fresh Kind
+# A release is checked, twice, on Kind clusters of its own, building nothing.
+# Like every workflow that needs Kind it runs only on demand (Actions → Verify
+# Release → Run workflow, or `gh workflow run verify-release.yml -f
+# tag=vX.Y.Z`), after Release has published the tag. "install" installs the published chart from GHCR into a fresh Kind
 # cluster, as a new device would; "upgrade" installs the previous release (the
 # highest published release below this one, hack/previous-release.sh: a tag
 # whose release failed is skipped) the same way and then `helm upgrade`s it to
@@ -22,8 +24,8 @@ name: Verify Release
 # orders-cli is scaffolded and its Crew is Idle. The Agent isn't run: CI has no
 # Claude token.
 #
-# install takes the guide's samples: the tag's, or dispatched, the dispatched
-# ref's, so dispatching on main checks the guide against a release. A tag
+# install takes the guide's samples: the dispatched ref's, so dispatching on
+# main checks the guide against a release. A tag
 # without config/samples/first-app skips that part and says so. upgrade takes
 # the previous release's own first-app when it has one, else the guide's. A
 # release whose chart has no catalog (v0.3.0 and older) takes the newest
@@ -36,14 +38,11 @@ name: Verify Release
 # in its first two minutes, and that the Secrets and the repositories (each
 # with its earlier head commit) are unchanged.
 #
-# The evidence is an artifact per check and the job summary; a failure of the
-# release's own check or of a dispatch on main files (or comments on) the issue
+# The evidence is an artifact per check and the job summary; a failure of a
+# dispatch on main files (or comments on) the issue
 # "Release vX.Y.Z fails its check". A dispatch on another branch tests that
 # branch, and its run is the report.
 on:
-  workflow_run:
-    workflows: [Release]
-    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -58,7 +57,6 @@ permissions: {}
 
 jobs:
   plan:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
     name: Find the previous release
@@ -76,8 +74,8 @@ jobs:
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
-          FROM_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.from || '' }}
+          TAG: ${{ inputs.tag }}
+          FROM_INPUT: ${{ inputs.from }}
         run: |
           for t in "$TAG" $FROM_INPUT; do
             case "$t" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "not a release tag: $t" >&2; exit 1 ;; esac
@@ -157,12 +155,12 @@ jobs:
           ref: ${{ env.FROM }}
           persist-credentials: false
 
-      # The guide's samples: the tag's, or the dispatched ref's (main's), and
+      # The guide's samples: the dispatched ref's (main's), and
       # their history for a release whose chart has no catalog.
       - name: Clone the guide's samples
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || env.TAG }}
+          ref: ${{ github.sha }}
           path: guide
           # Whole: the history's blobs need no credentials later.
           fetch-depth: 0
@@ -170,7 +168,7 @@ jobs:
 
       - name: Name the guide's samples
         env:
-          GUIDE_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || env.TAG }}
+          GUIDE_REF: ${{ github.ref_name }}
         run: |
           samples= ref=
           if [ "$CHECK" = upgrade ] && [ -d config/samples/first-app ]; then
@@ -590,11 +588,10 @@ jobs:
           name: release-${{ env.TAG }}-${{ matrix.check }}
           path: ${{ env.EVIDENCE }}
 
-      # Only the release's own check, or a dispatch on main, speaks for the
-      # release; a dispatch on another branch tests that branch, and its run
+      # Only a dispatch on main speaks for the release; a dispatch on another branch tests that branch, and its run
       # is the report.
       - name: File the failure
-        if: failure() && (github.event_name == 'workflow_run' || github.ref_name == github.event.repository.default_branch)
+        if: failure() && github.ref_name == github.event.repository.default_branch
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

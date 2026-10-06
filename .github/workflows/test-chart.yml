@@ -10,25 +10,9 @@ name: Test Chart
 # the base runner's requests: the Go toolchain is several GB, Release builds
 # it, and a hosted runner's two-CPU node has no room for its 500m.
 # A Kind cluster and the image builds take minutes, so like every workflow that
-# needs Kind it runs after a merge to main that changes the chart or what it is
-# generated from, and on demand.
+# needs Kind it runs only on demand (Actions → Test Chart → Run workflow). The
+# chart stays checked offline by `make validate-yaml` (helm lint) in `make check`.
 on:
-  push:
-    branches: [main]
-    paths:
-      - dist/chart/**
-      - config/**
-      - '!config/samples/**'
-      - Dockerfile
-      - '**/.dockerignore'
-      - '**/*.dockerignore'
-      - ui/Dockerfile
-      - Makefile
-      - hack/seed/**
-      - hack/runner/**
-      - hack/toolchain-base/**
-      - hack/agent/**
-      - .github/workflows/test-chart.yml
   workflow_dispatch:
 
 permissions: {}
