@@ -44,6 +44,25 @@ if ! env -u KUBERNETES_SERVICE_HOST -u KUBERNETES_SERVICE_PORT KUBECONFIG=/dev/n
 fi
 echo "All valid"
 
+# The chart's catalog (values.yaml, catalog.entries) pins each template the seed
+# pushes to its tag in templates/versions.txt; hello and hello-standard are the
+# end-to-end tests' own. Rendered without the catalog and the Agents, it has
+# neither.
+pinned=$(awk '/url: .*\/templates\// { name = $2; gsub(/"/, "", name); sub(/.*\/templates\//, "", name) }
+	/^ *ref:/ && name != "" { ref = $2; gsub(/"/, "", ref); print name, ref; name = "" }' "$OUT/chart-gitea.yaml" | sort -u)
+want=$(grep -v -e '^hello ' -e '^hello-standard ' templates/versions.txt | sort)
+if [ "$pinned" != "$want" ]; then
+	echo "The chart's catalog.entries don't match templates/versions.txt (< chart, > versions.txt):" >&2
+	diff <(echo "$pinned") <(echo "$want") >&2 || true
+	exit 1
+fi
+if grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart-gitea-bare.yaml" |
+	grep -qE '^kind: (Agent|Framework|Standard|Compute|Deployment|Connector)$'; then
+	echo "The chart renders catalog entries or Agents with catalog.enabled=false and agents.enabled=false" >&2
+	exit 1
+fi
+echo "The chart's catalog matches templates/versions.txt; off, it renders no catalog or Agents"
+
 # test/invalid holds YAML each create-time CEL rule must reject: each file's
 # first line says "# expect: <message>", which the rejection must contain.
 checked=0

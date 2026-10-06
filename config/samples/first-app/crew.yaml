@@ -11,6 +11,6 @@ spec:
   displayName: Orders CLI crew
   description: Builds orders-cli issue by issue.
   implementer:
-    name: claude-implementer
+    name: implementer
   reviewer:
-    name: claude-reviewer
+    name: reviewer

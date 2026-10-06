@@ -1,0 +1,27 @@
+{{- if and .Values.gitea.enabled .Values.catalog.enabled }}
+{{- range $project := .Values.gitea.projects | uniq }}
+{{- range $.Values.catalog.entries }}
+---
+# Project {{ $project }}'s catalog entry {{ .name }}: the template the seed
+# pushed to the templates organization, pinned to its tag. A hook after the
+# seed: the kind exists only once the release's CRDs do, as for GitProviders.
+apiVersion: c4.factory.io/v1alpha1
+kind: {{ .kind }}
+metadata:
+  name: {{ .name }}
+  namespace: {{ $project }}
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  {{- toYaml (omit .spec "template") | nindent 2 }}
+  template:
+    url: {{ printf "%s/templates/%s" (include "c4-factory.giteaURL" $) .name | quote }}
+    ref: {{ required (printf "catalog.entries: %s needs a ref, a tag the seed pushes" .name) .ref | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
