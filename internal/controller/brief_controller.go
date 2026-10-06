@@ -28,7 +28,7 @@ import (
 )
 
 // BriefReconciler turns a Brief's idea and prompts into the model, a round at
-// a time (docs/plans/brief.md): it keeps the Brief's repository, the planner's
+// a time (docs/plans/done/brief.md): it keeps the Brief's repository, the planner's
 // workspace, up to date, starts a Plan Task per round, checks its plan,
 // applies it, makes the new Containers' Crews and files their first issues.
 type BriefReconciler struct {

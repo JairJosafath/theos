@@ -30,7 +30,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
-// The Brief's Events (docs/plans/brief.md, step 5).
+// The Brief's Events (docs/plans/done/brief.md, step 5).
 const (
 	eventPlanned     = "Planned"
 	eventNeedsInput  = "NeedsInput"

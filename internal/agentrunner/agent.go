@@ -76,7 +76,8 @@ func (a ClaudeAgent) Run(ctx context.Context, dir, prompt string) (string, error
 
 // FakeAgent stands in for a real agent in tests and demos. Implementing, it adds
 // a line to STAND-IN.md; reviewing, it approves, or first asks for changes, and
-// may file a follow-up; planning, it plans to keep the model as it is.
+// may file a follow-up; planning, it plans from the catalog alone
+// (model.StandInPlan).
 type FakeAgent struct {
 	Role  string
 	Round int
@@ -156,16 +157,19 @@ func unavailable(output string, now time.Time) (bool, time.Time) {
 	return true, time.Time{}
 }
 
-// plan writes a plan that keeps the model as model/model.yaml has it, with one
-// choice.
+// plan writes the stand-in's plan for the workspace the operator wrote on main.
 func (a FakeAgent) plan(dir string) (string, error) {
-	current, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(model.WorkspaceModelFile)))
+	workspace := map[string]string{}
+	for _, name := range model.WorkspaceFiles {
+		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+		if err != nil {
+			return "", err
+		}
+		workspace[name] = string(data)
+	}
+	plan, err := model.StandInPlan(workspace)
 	if err != nil {
 		return "", err
-	}
-	plan := map[string]string{
-		model.PlanModelFile:   string(current),
-		model.PlanChoicesFile: fmt.Sprintf("- Round %d of the stand-in planner: keep the model as it is.\n", a.Round),
 	}
 	for name, data := range plan {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
@@ -175,5 +179,5 @@ func (a FakeAgent) plan(dir string) (string, error) {
 			return "", err
 		}
 	}
-	return fmt.Sprintf("Round %d: the stand-in planner keeps the model as it is.", a.Round), nil
+	return fmt.Sprintf("Round %d: the stand-in planner planned from the catalog alone.", a.Round), nil
 }

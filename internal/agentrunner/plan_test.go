@@ -163,20 +163,27 @@ func TestRunPlanPushesOnlyThePlan(t *testing.T) {
 }
 
 func TestRunPlanStandIn(t *testing.T) {
-	url := briefRepo(t)
-	result := Run(context.Background(), planJob(t, url, 1), FakeAgent{Role: RolePlan, Round: 1}, t.TempDir())
+	workspace, err := model.BriefWorkspaceFiles(model.BriefWorkspace{
+		Brief: "notes", Idea: "Notes for a team.", GitProvider: "gitea",
+		Catalog: []model.CatalogEntry{{Side: model.SideFramework, Name: "go-cli", SupportedTypes: []string{model.TypeCLI}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace["plan/issues/01-cli.md"] = "---\ntitle: Round 1's issue\n---\nOld.\n"
+	url := bareRepo(t, workspace)
+
+	result := Run(context.Background(), planJob(t, url, 2), FakeAgent{Role: RolePlan, Round: 1}, t.TempDir())
 	if result.Error != "" {
 		t.Fatalf("Run() = %+v", result)
 	}
-	files := planFiles(t, url, "plan/1")
-	plan, err := model.ParsePlan(map[string]string{
-		model.PlanModelFile: files[model.PlanModelFile], model.PlanChoicesFile: files[model.PlanChoicesFile],
-	})
+	files := planFiles(t, url, "plan/2")
+	plan, err := model.ParsePlan(files)
 	if err != nil {
 		t.Fatalf("the stand-in's plan doesn't parse: %v", err)
 	}
-	if len(plan.Objects) != 1 || len(plan.Issues) != 0 {
-		t.Errorf("stand-in plan = %+v, want the model as it is", plan)
+	if len(plan.Objects) != 2 || len(plan.Issues) != 1 || plan.Issues[0].Container != "notes" {
+		t.Errorf("stand-in plan = %+v, want a SoftwareSystem and Container notes, with one issue", plan)
 	}
 	if _, ok := files["plan/issues/01-cli.md"]; ok {
 		t.Error("the earlier round's issue is still in the plan")

@@ -6,7 +6,7 @@ SoftwareSystems, Containers, DataStores, Relationships), a Crew per new
 Container and the first issues, and says in plain words what it chose. Nobody
 writes the model's YAML, runs kubectl or files issues through curl. Asked for
 in GitHub issue #240 (cel-lens, by gray-lenovo); the maintainer's decision is
-on that issue, and [docs/design.md](../design.md#briefs-an-idea-in-plain-words)
+on that issue, and [docs/design.md](../../design.md#briefs-an-idea-in-plain-words)
 holds the rules.
 
 **Architecture:** A new namespaced kind, `Brief` (`spec.idea`, append-only
@@ -20,14 +20,15 @@ issues, records it all in `Brief.status` and merges the plan into the
 repository's `main`, which keeps every round's decisions. The planner never
 touches the Kubernetes API: the sandbox has no token, as for every Task.
 
-**Done when:** on a fresh Kind cluster with the chart installed and only the
-`claude-credentials` Secret made by hand, one Brief holding the cel-lens idea
-(created from the UI's box) ends `Planned`: the namespace holds the model and a
-Crew per Container, every Container is `Ready`, each has at least one issue
-the Crew picks up, and the Brief's status lists what it created and why. A
-follow-up prompt ("support `ValidatingAdmissionPolicy` files first") ends a
-second round that changes no scaffolded Container and files an issue for it.
-Evidence in `docs/screenshots/brief/`.
+**Done when:** `make e2e` takes a Brief through the whole loop on Kind with
+the stand-in planner, without a Claude token: the Brief ends `Planned`, the
+namespace holds the model and a Crew per new Container, every Container is
+`Ready`, each has an issue its Crew picks up, and the Brief's status lists
+what it created and why. A follow-up prompt ends a second round that changes
+no scaffolded Container and files an issue for it. The stand-in's plan passes
+`CheckPlan` for any catalog with a Framework (`make test`). The cel-lens
+sample and getting-started's short path show a person the real planner; how
+well Claude plans their idea is their run, not this plan's gate (step 8).
 
 ## Decisions
 
@@ -69,7 +70,7 @@ leaves main working: nothing plans until step 5 lands. Each issue says
 | 5 | #279 | Controller: the Brief starts a Plan Task per round, reads and checks the plan, applies it (B8), makes Crews (B9), files issues (B11), sets status (B13) and `NeedsInput` (B10), merges the plan; envtest with the fake provider, including a restart halfway through applying | 2, 3, 4 | no |
 | 6 | #280 | Chart: B14's catalog entries and Agents per project; `make validate-yaml` | none | no |
 | 7 | #281 | UI: the box, the prompt field and the Brief's status (B15); server tests for the two writes and that every other write is still refused | 1 | no |
-| 8 | #282 | Sample, docs and the Done-when run: `config/samples/brief/cel-lens.yaml`, getting-started's short path, design.md's status line, evidence in `docs/screenshots/brief/` | 5, 6, 7 | yes |
+| 8 | #282 | Sample and docs: `config/samples/brief/cel-lens.yaml`, getting-started's short path, design.md's status line. The stand-in planner plans from the catalog, and an e2e spec takes a Brief through two rounds on Kind without a token (below) | 5, 6, 7 | yes |
 
 ## Step 2: the plan's format
 
@@ -262,6 +263,39 @@ What B3, B8 and B10-B13 leave open, settled in step 5
   changed. A plan the brief repository doesn't show at the Task's commit
   after 10 minutes in `Checking` is refused ("push it again"). A round start
   that finds the Brief stale writes nothing and reads it again.
+
+## Step 8: the loop on Kind, without a token
+
+The first Done-when ran the real planner on cel-lens: Opus and Sonnet runs
+for every try, a different plan each time, and one person's idea as the
+factory's test. What the factory owns is the loop: the sandbox runs the
+planner, the plan reaches the brief repository, the operator checks and
+applies it, Containers scaffold, Crews start and issues are filed. A
+scripted planner proves that for everyone, every run, for free, as the
+stand-in implementer and reviewer already do for Crews.
+
+- **The stand-in planner plans from the catalog.** `model.StandInPlan` reads
+  the workspace the operator wrote. A round that plans the idea adds one
+  Container named after the Brief (to the first SoftwareSystem, or a new one
+  named after the Brief when there is none). It uses the first Framework in
+  the catalog, that Framework's first type, and the first Standard that fits
+  both, if any. The round files one issue for that Container. A round of
+  prompts changes no object and files one issue per new prompt, for the
+  Brief's Container (else the model's first). With no Framework, it writes
+  `needs-input.md`. `FakeAgent` runs it for `C4_ROLE=plan`.
+- **Tier 1 proves the plan is valid:** for catalogs with and without a
+  Standard, for a model with and without a SoftwareSystem, and for a round
+  of prompts, `ParsePlan` and `CheckPlan` take the stand-in's plan with no
+  refusal.
+- **Tier 5 proves the loop:** an e2e spec makes a namespace from
+  `test/e2e/testdata/apps/factory.yaml` and a Brief whose three Agents are
+  the `stand-in` Agent. It waits for `Planned`, the Container `Ready`, its
+  Crew and the filed issue picked up by a Task. Then it adds a prompt and
+  waits for round 2, which files an issue and leaves the Container's
+  scaffold commit alone. `make e2e` already builds everything it needs.
+- **Not a gate any more:** the real planner's choices on a real idea. The
+  cel-lens sample and getting-started's short path are how a person runs
+  that, with their token.
 
 ## Review focus
 
