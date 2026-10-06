@@ -108,6 +108,10 @@ Lost claim (the heartbeat hook says so):
 - **Landed:** the pull request says `Closes #N` and is merged as AGENTS.md
   ("How to Work") says. If N is still open: `hack/lib/github.sh close N FILE`,
   FILE naming the pull request, SHAs and evidence.
+- **Plan finished:** when the issue you close finishes a plan's last step,
+  move the plan to `docs/plans/done/` in the same pull request (`git mv`),
+  fix the relative links inside it, and update every link to it
+  (`grep -rn <plan>.md` finds none left at the old path).
 - **Stuck on a decision:** escalate to the maintainer,
   `hack/lib/github.sh status N needs-maintainer`, plus a comment saying what
   you need: something only the user can give (a tag, access, credentials,

@@ -32,6 +32,11 @@
 #   hack/lib/github.sh flush             post the handoffs kept in .relay/ while GitHub was away, releasing their claims
 #   hack/lib/github.sh comment N FILE    post FILE as a comment on N
 #   hack/lib/github.sh label N LABEL...  add labels to N
+#   hack/lib/github.sh milestone N [TITLE]
+#                                        set N's milestone to the open milestone titled TITLE; without TITLE,
+#                                        clear it. Exit 1: no open milestone has that title (the error lists them)
+#   hack/lib/github.sh milestones        the open milestones, by due date: TITLE OPEN CLOSED DUE, tab-separated,
+#                                        OPEN and CLOSED being their issue counts, DUE the date or empty
 #   hack/lib/github.sh cluster acquire [--wait DURATION] [--fresh] [--bare]
 #                                        lease one of this device's Kind clusters (C4_CLUSTERS, default 2) to this
 #                                        checkout and print its name, creating it if it does not exist yet; wait up
@@ -693,6 +698,36 @@ gh_label() {
   echo "labeled #$n: $*"
 }
 
+# gh_open_milestones: the open milestones as JSON objects, one per line, by due date.
+gh_open_milestones() {
+  local all
+  all=$(gh_api --paginate "repos/$C4_GITHUB_REPO/milestones?state=open&sort=due_on&direction=asc&per_page=100") || return 1
+  jq -c '.[]' <<<"$all"
+}
+
+# gh_milestone N [TITLE]: set N's milestone to the open one titled TITLE, or clear it.
+gh_milestone() {
+  local n=${1:?usage: milestone N [TITLE]} title=${2:-} open num=null
+  if [ -n "$title" ]; then
+    open=$(gh_open_milestones) || return 1
+    num=$(jq -r --arg t "$title" 'select(.title == $t) | .number' <<<"$open" | head -1)
+    if [ -z "$num" ]; then
+      echo "github: no open milestone is titled \"$title\"; open: $(jq -rs 'map(.title) | join(", ")' <<<"$open")" >&2
+      return 1
+    fi
+  fi
+  jq -n --argjson m "$num" '{milestone: $m}' |
+    gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - >/dev/null || return 1
+  echo "milestone #$n: ${title:-cleared}"
+}
+
+# gh_milestones: the open milestones: TITLE OPEN CLOSED DUE, tab-separated.
+gh_milestones() {
+  local open
+  open=$(gh_open_milestones) || return 1
+  [ -z "$open" ] || jq -r '[.title, .open_issues, .closed_issues, ((.due_on // "")[:10])] | @tsv' <<<"$open"
+}
+
 # The cluster pool: the device runs C4_CLUSTERS Kind clusters (default 2),
 # c4factory, c4factory-2, ..., and its checkouts share them through leases. A
 # deploy and its verification take a whole cluster (one operator Deployment,
@@ -1347,6 +1382,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     flush) gh_flush ;;
     comment) gh_comment "$@" ;;
     label) gh_label "$@" ;;
+    milestone) gh_milestone "$@" ;;
+    milestones) gh_milestones ;;
     cluster) gh_cluster "$@" ;;
     status) gh_set_status "$@" ;;
     close) gh_close "$@" ;;

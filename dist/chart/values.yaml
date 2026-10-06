@@ -228,6 +228,13 @@ ui:
     type: ClusterIP
     port: 8080
 
+  ## Host names the UI answers besides localhost, 127.0.0.1 and [::1] (the
+  ## port-forward above): add the host of an Ingress or Route you put in front
+  ## of it. Any other Host is refused, so a page that rebinds its own name to
+  ## the UI's address (DNS rebinding) can't read or write through it.
+  ##
+  allowedHosts: []
+
   resources:
     limits:
       cpu: 200m

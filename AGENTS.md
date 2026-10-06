@@ -18,6 +18,7 @@ task. Read the rest when the task needs it:
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
 | act as the maintainer, decide who decides, or review and clean up what the relay's agents did | [GOVERNANCE.md](GOVERNANCE.md) and the `maintainer` skill |
+| plan or cut a release, or set a milestone | [ROADMAP.md](ROADMAP.md) |
 | make, store, pass or test a credential, or a secret scanner fails a pull request | the `secrets` skill |
 | take an issue, or continue work someone left in flight (a relay session, or the user said to) | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
 | work on a plan step | its plan in [docs/plans/](docs/plans/); finished plans are in [docs/plans/done/](docs/plans/done/) |

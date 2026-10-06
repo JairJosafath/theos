@@ -339,7 +339,7 @@ model and context it needs.
   make is left alone. `status.lastRelease.publish` and the condition
   `Published` say how it went, with the reason; a failure is a Warning Event
   `ReleasePublishFailed`, once per reason, and is retried each poll. See
-  [plans/release-publishing.md](plans/release-publishing.md).
+  [plans/done/release-publishing.md](plans/done/release-publishing.md).
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other
   issue, whatever its release, even when every place is taken (once running, it
