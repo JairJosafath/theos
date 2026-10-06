@@ -1,0 +1,255 @@
+name: Verify Release
+
+# Every release checks itself. After Release publishes vX.Y.Z (and on demand for
+# a tag), this installs the published chart from GHCR into a fresh Kind cluster,
+# as a device would, and builds nothing: Agent Sandbox, the ghcr pull secret made
+# from GITHUB_TOKEN (packages: read reads the private packages Release pushed),
+# the agent images pulled and loaded into Kind, then `helm install` of
+# oci://ghcr.io/<owner>/c4factory/charts/c4-factory with project webshop. It
+# waits for the seed's repositories, both runners, the manager and the UI, then
+# applies the release's own webshop sample and waits for orders-api's repository.
+# The evidence is an artifact and the job summary; a failure files (or comments
+# on) the issue "Release vX.Y.Z fails its check".
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to check, e.g. v0.2.0
+        required: true
+  # TEMPORARY (#191): try it on its branch for v0.2.0; removed before merging.
+  pull_request:
+
+permissions: {}
+
+jobs:
+  verify-release:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+    name: Install the release on Kind
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    # A cluster of its own: on a self-hosted runner (make gh-runner) it shares
+    # the device's Docker with the Kind pool.
+    env:
+      KIND_CLUSTER_NAME: release-check
+      KUBECTL: kubectl --context kind-release-check
+      AGENT_SANDBOX: https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch || 'v0.2.0' }}
+      EVIDENCE: evidence
+      # What this workflow gives up so the release fits a hosted runner (two
+      # CPUs, 7 GB); the failure issue repeats it.
+      TURNED_OFF: >-
+        the go runner runs without its Go build cache (runners.go.goCache) and
+        requests 100m CPU and 128Mi instead of its defaults; on a hosted runner,
+        the preinstalled .NET, Android, GHC and CodeQL are removed for disk.
+    steps:
+      - name: Name the version and the registry
+        run: |
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "not a release tag: $TAG" >&2; exit 1 ;; esac
+          echo "VERSION=${TAG#v}" >>"$GITHUB_ENV"
+          echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/c4factory" >>"$GITHUB_ENV"
+          mkdir -p "$EVIDENCE"
+
+      # The release's own sample: its templates are pinned to the refs that
+      # release's seed pushes.
+      - name: Clone the release
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Free disk space
+        if: runner.environment == 'github-hosted'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Install kind and Helm
+        run: |
+          if ! command -v kind >/dev/null; then
+            curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+            chmod +x ./kind
+            sudo mv ./kind /usr/local/bin/kind
+          fi
+          command -v helm >/dev/null || curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash
+          kind version
+          helm version
+
+      # A self-hosted runner may still have the one a cancelled run left.
+      - name: Create kind cluster
+        run: |
+          kind delete cluster --name "$KIND_CLUSTER_NAME"
+          kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
+
+      - name: Install Agent Sandbox
+        run: |
+          $KUBECTL apply --server-side -f "$AGENT_SANDBOX"
+          $KUBECTL wait --for=condition=Established crd --all --timeout=60s
+          $KUBECTL -n agent-sandbox-system rollout status deployment --timeout=300s
+
+      # The pull secret covers the chart's pods; the agent images run in
+      # Sandboxes outside the chart, so they are loaded (dist/chart/README.md,
+      # "Private images"). Each one leaves Docker once Kind has it, for disk.
+      - name: Pull the release's images
+        env:
+          TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          for ns in c4-factory-system gitea webshop; do
+            $KUBECTL create namespace "$ns"
+          done
+          for ns in c4-factory-system gitea; do
+            $KUBECTL -n "$ns" create secret docker-registry ghcr --docker-server=ghcr.io \
+              --docker-username="$ACTOR" --docker-password="$TOKEN"
+          done
+          echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          echo "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
+          for name in agent-base agent-go; do
+            docker pull "$REGISTRY/$name:$VERSION"
+            kind load docker-image --name "$KIND_CLUSTER_NAME" "$REGISTRY/$name:$VERSION"
+            docker rmi "$REGISTRY/$name:$VERSION"
+          done
+          df -h /
+
+      - name: Install the chart
+        run: |
+          helm install c4-factory "oci://$REGISTRY/charts/c4-factory" --version "$VERSION" \
+            --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system --wait --timeout 15m \
+            --set gitea.createNamespace=false \
+            --set 'gitea.projects={webshop}' \
+            --set 'global.imagePullSecrets[0].name=ghcr' \
+            --set 'manager.imagePullSecrets[0].name=ghcr' \
+            --set runners.go.goCache= \
+            --set runners.go.resources.requests.cpu=100m \
+            --set runners.go.resources.requests.memory=128Mi
+
+      - name: Wait for the seed, the runners, the manager and the UI
+        run: |
+          $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-controller-manager --timeout=300s
+          $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-ui --timeout=300s
+          $KUBECTL -n gitea port-forward service/gitea 3000:3000 >/dev/null 2>&1 &
+          user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
+          pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::$pass"
+          api() { curl -fsS -u "$user:$pass" "http://localhost:3000/api/v1/$1"; }
+          for i in $(seq 1 30); do api version >/dev/null 2>&1 && break; sleep 2; done
+          for i in $(seq 1 60); do
+            api orgs/templates >/dev/null 2>&1 && api orgs/webshop >/dev/null 2>&1 &&
+              [ "$(api orgs/templates/repos | jq length)" -gt 0 ] && break
+            sleep 5
+          done
+          echo "templates: $(api orgs/templates/repos | jq -r '[.[].name] | sort | join(" ")')"
+          api orgs/webshop >/dev/null
+          for i in $(seq 1 60); do
+            runners=$(api admin/actions/runners | jq -r '[.runners[] | select(.status != "offline") | .labels[].name] | sort | join(" ")')
+            [ "$runners" = "base go" ] && break
+            sleep 5
+          done
+          echo "runners: $runners"
+          [ "$runners" = "base go" ]
+
+      - name: Scaffold orders-api
+        run: |
+          $KUBECTL apply -k config/samples
+          for i in $(seq 1 60); do
+            phase=$($KUBECTL -n webshop get container orders-api -o jsonpath='{.status.phase}')
+            [ "$phase" = Ready ] || [ "$phase" = Failed ] && break
+            sleep 5
+          done
+          $KUBECTL -n webshop get container orders-api -o wide
+          [ "$phase" = Ready ]
+          user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
+          pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
+          curl -fsS -u "$user:$pass" http://localhost:3000/api/v1/repos/webshop/orders-api/contents |
+            jq -r '.[].path'
+
+      - name: Collect the evidence
+        if: always()
+        run: |
+          cd "$EVIDENCE"
+          {
+            echo "== free -m"; free -m
+            echo "== df -h /"; df -h /
+          } >runner.txt 2>&1
+          $KUBECTL get nodes -o wide >nodes.txt 2>&1 || true
+          $KUBECTL get pods -A -o wide >pods.txt 2>&1 || true
+          $KUBECTL get deployments,statefulsets,jobs -A >workloads.txt 2>&1 || true
+          $KUBECTL get events -A --sort-by=.lastTimestamp >events.txt 2>&1 || true
+          $KUBECTL top node >top.txt 2>&1 || true
+          $KUBECTL -n webshop get projects,gitproviders,softwaresystems,containers,datastores,relationships -o wide >webshop.txt 2>&1 || true
+          $KUBECTL -n webshop get container orders-api -o yaml >orders-api.yaml 2>&1 || true
+          helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system status c4-factory >helm-status.txt 2>&1 || true
+          user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || true)
+          pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || true)
+          curl -fsS -u "$user:$pass" "http://localhost:3000/api/v1/repos/search?limit=50" 2>/dev/null |
+            jq -r '.data[].full_name' | sort >gitea-repos.txt || echo "(Gitea did not answer)" >gitea-repos.txt
+          if [ "${{ job.status }}" != success ]; then
+            mkdir -p logs
+            $KUBECTL get pods -A --no-headers -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name 2>/dev/null |
+              while read -r ns pod; do
+                $KUBECTL -n "$ns" logs "$pod" --all-containers --tail=200 >"logs/$ns.$pod.log" 2>&1 || true
+              done
+          fi
+          # Short of memory or disk: an OOMKilled or Evicted pod, under 512 MB
+          # available, or under 2 GB of disk left.
+          mem=$(free -m | awk '/^Mem:/ {print $7}')
+          disk=$(df -BM --output=avail / | tail -1 | tr -dc 0-9)
+          killed=$(cat pods.txt events.txt | grep -cE 'OOMKilled|Evicted' || true)
+          echo "Runner: ${mem} MB of memory available, ${disk} MB of disk left, ${killed} OOMKilled or Evicted." >pressure.txt
+          if [ "$killed" -gt 0 ] || [ "$mem" -lt 512 ] || [ "$disk" -lt 2048 ]; then
+            echo "SHORT=true" >>"$GITHUB_ENV"
+          fi
+          {
+            echo "## Release $TAG: ${{ job.status }}"
+            echo
+            echo "Chart \`oci://$REGISTRY/charts/c4-factory\` $VERSION on Kind. $(cat pressure.txt)"
+            echo
+            echo "### Gitea repositories"; echo '```'; cat gitea-repos.txt; echo '```'
+            echo "### webshop"; echo '```'; cat webshop.txt; echo '```'
+            echo "### Pods"; echo '```'; cat pods.txt; echo '```'
+          } | tee summary.md >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ env.TAG }}-check
+          path: ${{ env.EVIDENCE }}
+
+      - name: File the failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Release $TAG fails its check"
+          {
+            echo "*Verify Release* installed the published chart $VERSION on Kind and it failed: $RUN_URL"
+            echo
+            echo "The evidence (kubectl get output, Gitea's repositories, the pods' logs) is the run's artifact \`release-$TAG-check\`."
+            echo
+            if [ "${SHORT:-}" = true ]; then
+              echo "**The runner ran short of memory or disk.** $(cat "$EVIDENCE/pressure.txt")"
+            else
+              cat "$EVIDENCE/pressure.txt"
+            fi
+            echo
+            echo "To fit, the workflow turned off: $TURNED_OFF"
+          } >body.md
+          number=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" \
+            --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+          if [ -n "$number" ]; then
+            gh issue comment "$number" -R "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body-file body.md \
+              --label status/ready --label priority/urgent --label kind/bug --label source/dev
+          fi
+
+      - name: Delete kind cluster
+        if: always() && runner.environment == 'self-hosted'
+        run: kind delete cluster --name "$KIND_CLUSTER_NAME"
