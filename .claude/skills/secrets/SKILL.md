@@ -23,6 +23,7 @@ those renders. A literal in git stays in its history.
 | A token a running service issues (Gitea API tokens) | The job that talks to the service makes it and stores it with `kubectl create secret`, as `hack/seed/seed.sh` does. |
 | make targets and scripts | `head -c 24 /dev/urandom \| base64` into `kubectl create secret generic`, only when the Secret is missing (target `gitea` in `hack/testenv.mk`). |
 | A credential only the user has | The user creates the Secret; the chart takes `existingSecret`. |
+| A credential only the user has, for a make target on the device (the Claude token) | A file under the main checkout's `.dev/secrets/`, mode 0600, outside git; the target reads it, fails naming the path when it is missing or looser than 0600, and passes it on stdin, never argv (`make claude-secret`, `.dev/secrets/claude-token`). |
 | Go tests | `token := rand.Text()` (`crypto/rand`, Go 1.24+) in the fixture; assert against `token`, e.g. `r.Header.Get("Authorization") == "token "+token`. |
 | UI (Node) tests | `randomBytes(18).toString('base64url')` (`node:crypto`), the same way. |
 

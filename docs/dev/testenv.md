@@ -49,7 +49,7 @@ make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind clus
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain, CI runner (label base), Agent Sandbox, agent image
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
 make toolchain-go runner-go agent-image-go  # Go and Node toolchain, CI runner (label go) and agent image
-make claude-secret CLAUDE_TOKEN=...  # The real agent's token, from `claude setup-token`
+make claude-secret       # The real agent's token, from .dev/secrets/claude-token (below) or CLAUDE_TOKEN=...
 make claude-secret-copy FROM=webshop TO=apps  # Reuse that Secret in another project
 make e2e                 # Only when the user asks: all of the above but the Go images, then check the whole loop in Kind
 make down / make up       # Stop the factory to free the machine; bring it back healthy
@@ -95,6 +95,23 @@ compiled test binary: `internal/controller` (envtest CRDs, `templates/`, and the
 sources `typeneutral_test.go` reads), `internal/sessionclient` (envtest CRDs) and
 `internal/scaffold` (`templates_test.go` reads `templates/`). Those files sit
 outside the package, so `//go:embed` can't reach them.
+
+The agents' Claude token lives in one file per device, outside git:
+`.dev/secrets/claude-token` in the main checkout (the `.dev/` every worktree
+shares), mode 0600. Make it once, from the main checkout:
+
+```sh
+claude setup-token                                    # prints the token
+mkdir -p .dev/secrets && install -m 600 /dev/stdin .dev/secrets/claude-token
+# paste the token, then Enter and Ctrl-D
+```
+
+`make claude-secret` then stores it as Secret `claude-credentials` in
+`CLAUDE_NAMESPACE` (default `apps`) of the leased cluster, so a session on a fresh
+cluster makes the Secret without the token in its argv or transcript. It fails,
+naming the path, when the file is missing, empty, or readable by group or others;
+it never prints the token. `CLAUDE_TOKEN=...` on the command line or in the
+environment wins over the file; `CLAUDE_TOKEN_FILE` names another file.
 
 `make run` runs the operator on your machine, but it can't reach Gitea's in-cluster
 address; use `make deploy` for anything that scaffolds.
