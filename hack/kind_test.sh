@@ -67,6 +67,17 @@ keep_context false
 check "keep-context: keeps the exit code" "$?" 1
 calls >/dev/null
 
+# keep-context: two checkouts at once, each switching the context while it runs
+# (A saves X and switches; B saves A's context; A restores; B restores A's):
+# the lock beside the kubeconfig keeps the device on X.
+export KUBECONFIG="$T/config"
+slow_switch() { echo "kind-$1" >"$T/context"; sleep 0.3; }
+echo kind-c4factory >"$T/context"
+keep_context slow_switch a & sleep 0.1
+keep_context slow_switch b & wait
+check "keep-context: concurrent calls restore the original" "$(cat "$T/context")" kind-c4factory
+check "keep-context: lock beside the kubeconfig" "$(ls "$T" | grep -c '^config\.keep-context\.lock$')" 1
+
 check "usage" "$(main bogus 2>/dev/null; echo $?)" 64
 
 exit "$fail"
