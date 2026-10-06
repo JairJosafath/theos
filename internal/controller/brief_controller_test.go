@@ -79,7 +79,7 @@ var _ = Describe("Brief", func() {
 
 			Expect(gitFake.commitCount(ns, repo)).To(Equal(1))
 			Expect(file(model.BriefFile)).To(ContainSubstring("## Idea (**new**)\n\nA linter for CEL rules in CRDs.\n"))
-			Expect(file(model.PlannerFile)).To(ContainSubstring("Plan the story kinds only"))
+			Expect(file(model.PlannerGuide)).To(ContainSubstring("Plan the story kinds only"))
 			Expect(file(model.WorkspaceModelFile)).To(And(
 				ContainSubstring("kind: Project\nmetadata:\n    name: "+ns),
 				ContainSubstring("kind: Container\nmetadata:\n    name: orders-api"),

@@ -161,6 +161,9 @@ func run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		result.Error = err.Error()
 		return result
 	}
+	if job.Role == RolePlan {
+		return plan(ctx, job, agent, r, result)
+	}
 	ws := Workspace{Guide: r.showBase(ctx, job.Base, roleGuides[job.Role]), Conflicts: r.conflicts}
 	ws.Related = cloneRelated(ctx, job, filepath.Join(filepath.Dir(dir), "related"))
 	if job.Role == RoleReview {

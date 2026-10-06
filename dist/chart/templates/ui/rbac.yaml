@@ -7,9 +7,10 @@ metadata:
   labels:
     {{- include "c4-factory.uiLabels" . | nindent 4 }}
 ---
-# The same read-only access as config/ui/rbac.yaml: the story, the Sessions, the
+# The same access as config/ui/rbac.yaml: reading the story, the Sessions, the
 # catalog and the factory's work in every namespace, and for the health view
-# pods, nodes and their metrics. No status subresources, no Secrets, no writes.
+# pods, nodes and their metrics, and creating a Brief or adding a prompt to
+# one. No status subresources, no Secrets, no other writes.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -35,6 +36,7 @@ rules:
   - agents
   - tasks
   - crews
+  - briefs
   verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -76,6 +78,35 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ include "c4-factory.uiName" . }}-health
+subjects:
+- kind: ServiceAccount
+  name: {{ include "c4-factory.uiName" . }}
+  namespace: {{ .Release.Namespace }}
+---
+# The UI's only two writes (ui/server.mjs checks them first): create a Brief,
+# the box for an idea, and patch one to append a follow-up prompt. Nothing
+# else: no update, delete or status, no other kind.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-brief-writer
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+rules:
+- apiGroups: [c4.factory.io]
+  resources: [briefs]
+  verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-brief-writer
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "c4-factory.uiName" . }}-brief-writer
 subjects:
 - kind: ServiceAccount
   name: {{ include "c4-factory.uiName" . }}

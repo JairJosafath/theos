@@ -39,6 +39,19 @@ const (
 	planIssuesDir      = "plan/issues/"
 )
 
+// PlanDir is the folder of the brief repository the planner writes; the
+// operator writes the rest of it (B4).
+const PlanDir = "plan"
+
+// The files the operator keeps on the brief repository's main for the planner (B4).
+const (
+	BriefFile    = "brief.md"
+	PlannerGuide = "PLANNER.md"
+)
+
+// PlanBranch is the branch a round's plan is pushed to (B5).
+func PlanBranch(round int) string { return "plan/" + strconv.Itoa(round) }
+
 // planKinds are the kinds a plan may write (B6).
 var planKinds = []string{KindProject, KindPerson, KindSoftwareSystem, KindContainer, KindDataStore, KindRelationship}
 

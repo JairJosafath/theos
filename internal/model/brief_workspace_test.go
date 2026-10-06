@@ -28,7 +28,7 @@ func TestBriefWorkspaceFilesPaths(t *testing.T) {
 	if !reflect.DeepEqual(paths, want) {
 		t.Fatalf("paths = %v, want %v", paths, want)
 	}
-	if files[PlannerFile] != plannerGuide || plannerGuide == "" {
+	if files[PlannerGuide] != plannerGuideText || plannerGuideText == "" {
 		t.Fatalf("PLANNER.md is not the embedded guide")
 	}
 }
@@ -249,7 +249,7 @@ func TestPlannerGuide(t *testing.T) {
 		"Explain each choice in `choices.md`, in plain words",
 		"Write `needs-input.md` only for what costs money or touches access",
 	} {
-		if !strings.Contains(plannerGuide, s) {
+		if !strings.Contains(plannerGuideText, s) {
 			t.Errorf("PLANNER.md lacks %q", s)
 		}
 	}

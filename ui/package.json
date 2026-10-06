@@ -2,7 +2,7 @@
   "name": "c4factory-ui",
   "private": true,
   "version": "0.1.0",
-  "description": "Read-only UI for C4 Factory: draws the story from the custom resources, live through watches.",
+  "description": "UI for C4 Factory: draws the story from the custom resources, live through watches; its only writes create a Brief and add a prompt to one.",
   "license": "UNLICENSED",
   "type": "module",
   "engines": {

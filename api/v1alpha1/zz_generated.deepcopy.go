@@ -1817,6 +1817,11 @@ func (in *TaskReview) DeepCopy() *TaskReview {
 func (in *TaskSpec) DeepCopyInto(out *TaskSpec) {
 	*out = *in
 	out.ContainerRef = in.ContainerRef
+	if in.BriefRef != nil {
+		in, out := &in.BriefRef, &out.BriefRef
+		*out = new(LocalRef)
+		**out = **in
+	}
 	out.AgentRef = in.AgentRef
 	if in.ReviewerRef != nil {
 		in, out := &in.ReviewerRef, &out.ReviewerRef

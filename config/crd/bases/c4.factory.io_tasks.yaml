@@ -39,6 +39,14 @@ spec:
       name: PR
       priority: 1
       type: string
+    - jsonPath: .spec.kind
+      name: Kind
+      priority: 1
+      type: string
+    - jsonPath: .spec.briefRef.name
+      name: Brief
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -48,7 +56,8 @@ spec:
         description: |-
           Task is a goal for a Container. The operator runs an Agent in a sandbox to
           implement it on a branch, opens a pull request, waits for CI, runs the Agent
-          again as reviewer, and merges when both pass. It is owned by its Container.
+          again as reviewer, and merges when both pass. It is owned by its Container. A
+          Plan Task is a planning round of a Brief, owned by the Brief.
         properties:
           apiVersion:
             description: |-
@@ -105,9 +114,26 @@ spec:
                     p != 'docs/agents' && !p.startsWith('docs/agents/'))
                 - message: allowedProtectedPaths is immutable
                   rule: self == oldSelf
+              briefRef:
+                description: |-
+                  briefRef names the Brief a Plan Task plans a round of, in place of
+                  containerRef. It can't change.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: briefRef is immutable
+                  rule: self == oldSelf
               containerRef:
-                description: containerRef names the Container to work on. It can't
-                  change.
+                description: |-
+                  containerRef names the Container to work on; every Task but a Plan Task
+                  has one. It can't change.
                 properties:
                   name:
                     description: name of the referenced object.
@@ -140,6 +166,16 @@ spec:
                 x-kubernetes-validations:
                 - message: issue is immutable; create a new Task
                   rule: self == oldSelf
+              kind:
+                default: Implement
+                description: |-
+                  kind is Implement (the default): implement the goal in the Container's
+                  repository; or Plan: plan a round of the Brief named by briefRef. It can't
+                  change.
+                enum:
+                - Implement
+                - Plan
+                type: string
               reviewerRef:
                 description: |-
                   reviewerRef names the Agent that reviews each round, so the review can use
@@ -158,11 +194,25 @@ spec:
                   rule: self == oldSelf
             required:
             - agentRef
-            - containerRef
             type: object
             x-kubernetes-validations:
-            - message: set exactly one of goal and issue
-              rule: has(self.goal) != has(self.issue)
+            - message: set exactly one of goal and issue; a Plan Task has no issue
+              rule: 'has(self.kind) && self.kind == ''Plan'' ? !has(self.issue) :
+                has(self.goal) != has(self.issue)'
+            - message: set exactly one of containerRef and briefRef
+              rule: has(self.containerRef) != has(self.briefRef)
+            - message: briefRef needs kind Plan
+              rule: '!has(self.briefRef) || (has(self.kind) && self.kind == ''Plan'')'
+            - message: a Plan Task needs a briefRef
+              rule: '!has(self.kind) || self.kind != ''Plan'' || has(self.briefRef)'
+            - message: a Plan Task has no reviewerRef
+              rule: '!has(self.kind) || self.kind != ''Plan'' || !has(self.reviewerRef)'
+            - message: containerRef and briefRef are immutable; create a new Task
+              rule: has(self.containerRef) == has(oldSelf.containerRef) && has(self.briefRef)
+                == has(oldSelf.briefRef)
+            - message: kind is immutable; create a new Task
+              rule: '(has(self.kind) ? self.kind : ''Implement'') == (has(oldSelf.kind)
+                ? oldSelf.kind : ''Implement'')'
             - message: goal and issue are immutable; create a new Task
               rule: has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)
             - message: reviewerRef is immutable

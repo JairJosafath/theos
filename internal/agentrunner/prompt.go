@@ -217,6 +217,35 @@ End your reply with one line of JSON and nothing after it:
 	return b.String()
 }
 
+// PlanPrompt is what the planner is asked to do: guide is PLANNER.md and brief
+// brief.md, both as on the brief repository's base branch.
+func PlanPrompt(job Job, guide, brief string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "You are the planner of brief %q in project %q. You turn a person's idea, and their "+
+		"follow-up prompts, into a C4 model, a Crew's first issues for each application, and the choices "+
+		"you made, said in plain words.\n", job.Brief, job.Project)
+	fmt.Fprintf(&b, "\nThis repository is the brief's workspace: %s holds the idea and the prompts, model/ "+
+		"what the project holds now and the catalog it can use. Read them, and change nothing outside %s/.\n",
+		model.BriefFile, model.PlanDir)
+	fmt.Fprintf(&b, "\nYour guide (%s):\n%s\n", model.PlannerGuide, strings.TrimSpace(guide))
+	fmt.Fprintf(&b, "\nThe brief (%s):\n%s\n", model.BriefFile, strings.TrimSpace(brief))
+	if job.Feedback != "" {
+		fmt.Fprintf(&b, "\nThis is round %d. The previous plan was refused. Address every one of these reasons:\n%s\n",
+			job.Round, job.Feedback)
+	}
+	if job.MaxRounds > 0 && job.Round >= job.MaxRounds {
+		b.WriteString("\nThis is the last round: a plan refused now ends the brief's round with nothing applied.\n")
+	}
+	fmt.Fprintf(&b, `
+Write the whole plan in %[1]s/, as the guide says: %[2]s, one file per issue in
+%[1]s/issues/ and %[3]s. Only when you cannot go on without the person, write
+%[4]s instead: one sentence saying what you need and why. Do not commit or
+push: c4agent pushes %[1]s/ to %[5]s. End your reply with a short summary of the
+plan, in a few plain sentences.
+`, model.PlanDir, model.PlanModelFile, model.PlanChoicesFile, model.PlanNeedsInputFile, job.Branch)
+	return b.String()
+}
+
 func writeContext(b *strings.Builder, job Job) {
 	if job.Context != "" {
 		fmt.Fprintf(b, "\nWhere the application fits in its system:\n%s\n", job.Context)

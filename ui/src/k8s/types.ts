@@ -181,6 +181,7 @@ export const RESOURCES = {
   tasks: 'tasks',
   agents: 'agents',
   crews: 'crews',
+  briefs: 'briefs',
 } as const
 
 /** API path of a c4.factory.io resource, in one namespace or across all of them. */
@@ -218,7 +219,12 @@ export const LABEL_ISSUE = 'c4.factory.io/issue'
 
 export interface Task extends K8sObject {
   spec: {
-    containerRef: LocalRef
+    /** Implement (the default), or Plan: a planning round of a Brief. */
+    kind?: 'Implement' | 'Plan'
+    /** Every Task but a Plan Task names its Container. */
+    containerRef?: LocalRef
+    /** A Plan Task names its Brief in place of a Container. */
+    briefRef?: LocalRef
     /** Implements the goal, and reviews it when there is no reviewerRef. */
     agentRef: LocalRef
     reviewerRef?: LocalRef
@@ -308,6 +314,42 @@ export interface Crew extends K8sObject {
     lastPolled?: string
     observedGeneration?: number
     /** Ready: whether the Crew can pick up issues, and why not. */
+    conditions?: Condition[]
+  }
+}
+
+export type BriefPhase = 'Pending' | 'Planning' | 'Applying' | 'Planned' | 'NeedsInput' | 'Failed'
+
+/** An app idea in plain words, steered by follow-up prompts; a planner Agent turns it into the model, round by round. */
+export interface Brief extends K8sObject {
+  spec: {
+    /** What the app is for and who uses it; it can't change. */
+    idea: string
+    /** Follow-ups, oldest first; only ever appended. */
+    prompts?: string[]
+    agents?: { planner?: LocalRef; implementer?: LocalRef; reviewer?: LocalRef; designer?: LocalRef }
+    gitProviderRef?: LocalRef
+  }
+  status?: {
+    phase?: BriefPhase
+    /** The round running now or last run; 0 before the first. */
+    round?: number
+    /** How many of spec.prompts the last applied round took; the rest wait for the next round. */
+    promptsPlanned?: number
+    /** What the planner chose in the last round, in plain words. */
+    choices?: string[]
+    /** The objects the Brief made, over all rounds. */
+    created?: { kind: string; name: string }[]
+    /** The issues the Brief filed, over all rounds. */
+    issues?: { repository: string; number: number; url?: string; title?: string }[]
+    /** One entry per round, oldest first. */
+    history?: { round: number; summary?: string; choices?: string[]; costMilliUSD?: number }[]
+    /** The Brief's own repository, where every round's plan is kept. */
+    repositoryURL?: string
+    /** What planning cost over all rounds, in thousandths of a US dollar. */
+    costMilliUSD?: number
+    observedGeneration?: number
+    /** Planned, and NeedsInput: while True, its message says what the Brief waits for. */
     conditions?: Condition[]
   }
 }

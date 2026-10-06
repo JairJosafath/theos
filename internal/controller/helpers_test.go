@@ -29,7 +29,22 @@ func newProjectNamespace() string {
 		ObjectMeta: metav1.ObjectMeta{Name: ns.Name, Namespace: ns.Name},
 		Spec:       c4v1alpha1.ProjectSpec{DisplayName: "Test story"},
 	})).To(Succeed())
+	DeferCleanup(stopPolling, ns.Name)
 	return ns.Name
+}
+
+// stopPolling deletes the kinds that requeue on a timer once a test is done.
+// Envtest never deletes a namespace's objects, and each one left behind would
+// keep polling on its controller's single worker, every second, for the rest
+// of the suite; on a loaded machine they crowd out the running test's reconciles.
+// Crews go first, so none makes a Task again after its Tasks are gone.
+func stopPolling(ns string) {
+	GinkgoHelper()
+	for _, obj := range []client.Object{
+		&c4v1alpha1.Crew{}, &c4v1alpha1.Task{}, &c4v1alpha1.Session{}, &c4v1alpha1.Container{},
+	} {
+		Expect(k8sClient.DeleteAllOf(ctx, obj, client.InNamespace(ns))).To(Succeed())
+	}
 }
 
 func key(ns, name string) types.NamespacedName {

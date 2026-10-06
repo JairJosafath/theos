@@ -65,7 +65,11 @@ func SetupIndexes(ctx context.Context, mgr manager.Manager) error {
 	}
 	if err := indexer.IndexField(ctx, &c4v1alpha1.Task{}, indexTaskContainer,
 		func(o client.Object) []string {
-			return []string{o.(*c4v1alpha1.Task).Spec.ContainerRef.Name}
+			// A Plan Task names a Brief, not a Container.
+			if name := o.(*c4v1alpha1.Task).Spec.ContainerRef.Name; name != "" {
+				return []string{name}
+			}
+			return nil
 		}); err != nil {
 		return err
 	}

@@ -41,9 +41,14 @@ every scaffolded repository.
 | Assets | `features` | `internal/scaffold` | everything else |
 | Entry points | `cmd/*` | everything | nothing imports them |
 
-The UI in `ui/` is a separate program. Its server proxies only GET requests to the
-Kubernetes API, so it is read-only by construction; it shares nothing with the Go code
-but the resource shapes. For the Factory view it also reads pods, nodes and
+The UI in `ui/` is a separate program. Its server proxies GET requests to the
+Kubernetes API, under `/apis/c4.factory.io/` only, and is read-only by construction
+but for two writes: creating a Brief (`POST` of kind `Brief` into a namespace that
+holds a Project; only its name and spec go upstream) and appending a follow-up
+prompt to one (a JSON patch whose only operation is `add` at `/spec/prompts/-`).
+The server refuses every other write, and its RBAC grants only `create` and
+`patch` on `briefs` beyond its reads, so what a Brief may say stays the CRD's to
+check. It shares nothing with the Go code but the resource shapes. For the Factory view it also reads pods, nodes and
 metrics-server itself (`ui/health.mjs`) and sends the browser only a summary.
 
 `make lint` enforces the rows marked "must not import" with golangci-lint's

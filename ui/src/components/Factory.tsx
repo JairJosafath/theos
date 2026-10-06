@@ -1,5 +1,5 @@
 // The factory view: is the factory healthy, what is it doing, where does the
-// time go, and what needs a look. Across all projects; read-only like the rest.
+// time go, and what needs a look. Across all projects; read-only.
 
 import { useMemo } from 'react'
 import type { FactoryData } from '../k8s/sources'
@@ -298,7 +298,7 @@ function TaskCard({
       <span className="task-card-name">{task.metadata.name}</span>
       {headline.issue ? <span className="task-card-issue">{headline.text}</span> : null}
       <span className="task-card-sub">
-        {task.metadata.namespace} · {task.spec.containerRef.name}
+        {task.metadata.namespace} · {task.spec.containerRef?.name ?? `brief ${task.spec.briefRef?.name ?? ''}`}
       </span>
       <span className="task-card-meta">
         {phase === 'Merged' ? (
@@ -588,8 +588,17 @@ function TaskPanel({
         </p>
       ) : null}
       <dl className="facts">
-        <dt>Container</dt>
-        <dd className="mono">{task.spec.containerRef.name}</dd>
+        {task.spec.briefRef ? (
+          <>
+            <dt>Brief</dt>
+            <dd className="mono">{task.spec.briefRef.name}</dd>
+          </>
+        ) : (
+          <>
+            <dt>Container</dt>
+            <dd className="mono">{task.spec.containerRef?.name}</dd>
+          </>
+        )}
         {crew ? (
           <>
             <dt>Crew</dt>

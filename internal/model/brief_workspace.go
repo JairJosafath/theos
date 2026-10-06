@@ -12,8 +12,6 @@ import (
 // The files the operator keeps on the main branch of a Brief's repository for
 // the planner to read (plans/brief.md, B4).
 const (
-	BriefFile               = "brief.md"
-	PlannerFile             = "PLANNER.md"
 	WorkspaceModelFile      = "model/model.yaml"
 	WorkspaceCatalogFile    = "model/catalog.yaml"
 	WorkspaceContainersFile = "model/containers.yaml"
@@ -21,16 +19,16 @@ const (
 
 // WorkspaceFiles are every file BriefWorkspaceFiles writes, so the operator can
 // read them back to see whether main is already up to date.
-var WorkspaceFiles = []string{BriefFile, PlannerFile, WorkspaceModelFile, WorkspaceCatalogFile, WorkspaceContainersFile}
+var WorkspaceFiles = []string{BriefFile, PlannerGuide, WorkspaceModelFile, WorkspaceCatalogFile, WorkspaceContainersFile}
 
 // MaxWorkspaceIssues is how many open issue titles model/containers.yaml lists
 // per Container; the rest are counted, not listed.
 const MaxWorkspaceIssues = 50
 
-// plannerGuide is PLANNER.md, the planner's guide, embedded in the operator.
+// plannerGuideText is PLANNER.md, the planner's guide, embedded in the operator.
 //
 //go:embed planner.md
-var plannerGuide string
+var plannerGuideText string
 
 // BriefRepository names the Gitea repository of Brief name.
 func BriefRepository(brief string) string { return "brief-" + brief }
@@ -90,7 +88,7 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 	}
 	return map[string]string{
 		BriefFile:               renderBrief(ws),
-		PlannerFile:             plannerGuide,
+		PlannerGuide:            plannerGuideText,
 		WorkspaceModelFile:      story,
 		WorkspaceCatalogFile:    catalog,
 		WorkspaceContainersFile: containers,

@@ -13,18 +13,50 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// TaskKind is what a Task does: implement a goal in a Container's repository,
+// or plan a round of a Brief.
+// +kubebuilder:validation:Enum=Implement;Plan
+type TaskKind string
+
+// Task kinds.
+const (
+	TaskImplement TaskKind = "Implement"
+	TaskPlan      TaskKind = "Plan"
+)
+
 // TaskSpec is a goal for one Container, done by an Agent: written here, or in an
-// issue of the Container's repository.
-// +kubebuilder:validation:XValidation:rule="has(self.goal) != has(self.issue)",message="set exactly one of goal and issue"
+// issue of the Container's repository. A Plan Task is a planning round of a
+// Brief instead: it names the Brief, and the Brief's repository holds the goal.
+// +kubebuilder:validation:XValidation:rule="has(self.kind) && self.kind == 'Plan' ? !has(self.issue) : has(self.goal) != has(self.issue)",message="set exactly one of goal and issue; a Plan Task has no issue"
+// +kubebuilder:validation:XValidation:rule="has(self.containerRef) != has(self.briefRef)",message="set exactly one of containerRef and briefRef"
+// +kubebuilder:validation:XValidation:rule="!has(self.briefRef) || (has(self.kind) && self.kind == 'Plan')",message="briefRef needs kind Plan"
+// +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Plan' || has(self.briefRef)",message="a Plan Task needs a briefRef"
+// +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Plan' || !has(self.reviewerRef)",message="a Plan Task has no reviewerRef"
+// +kubebuilder:validation:XValidation:rule="has(self.containerRef) == has(oldSelf.containerRef) && has(self.briefRef) == has(oldSelf.briefRef)",message="containerRef and briefRef are immutable; create a new Task"
+// +kubebuilder:validation:XValidation:rule="(has(self.kind) ? self.kind : 'Implement') == (has(oldSelf.kind) ? oldSelf.kind : 'Implement')",message="kind is immutable; create a new Task"
 // +kubebuilder:validation:XValidation:rule="has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)",message="goal and issue are immutable; create a new Task"
 // +kubebuilder:validation:XValidation:rule="has(self.reviewerRef) == has(oldSelf.reviewerRef)",message="reviewerRef is immutable"
 // +kubebuilder:validation:XValidation:rule="!has(self.allowedProtectedPaths) || has(self.issue)",message="allowedProtectedPaths needs an issue"
 // +kubebuilder:validation:XValidation:rule="has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)",message="allowedProtectedPaths is immutable"
 type TaskSpec struct {
-	// containerRef names the Container to work on. It can't change.
+	// kind is Implement (the default): implement the goal in the Container's
+	// repository; or Plan: plan a round of the Brief named by briefRef. It can't
+	// change.
+	// +kubebuilder:default=Implement
+	// +optional
+	Kind TaskKind `json:"kind,omitempty"`
+
+	// containerRef names the Container to work on; every Task but a Plan Task
+	// has one. It can't change.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="containerRef is immutable"
-	// +required
-	ContainerRef LocalRef `json:"containerRef"`
+	// +optional
+	ContainerRef LocalRef `json:"containerRef,omitzero"`
+
+	// briefRef names the Brief a Plan Task plans a round of, in place of
+	// containerRef. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="briefRef is immutable"
+	// +optional
+	BriefRef *LocalRef `json:"briefRef,omitempty"`
 
 	// agentRef names the Agent that implements the goal, and reviews it when no
 	// reviewerRef is set. It can't change.
@@ -286,11 +318,14 @@ type TaskStatus struct {
 // +kubebuilder:printcolumn:name="Checks",type=string,JSONPath=".status.checks.state"
 // +kubebuilder:printcolumn:name="Review",type=string,JSONPath=".status.review.verdict"
 // +kubebuilder:printcolumn:name="PR",type=string,JSONPath=".status.pullRequestURL",priority=1
+// +kubebuilder:printcolumn:name="Kind",type=string,JSONPath=".spec.kind",priority=1
+// +kubebuilder:printcolumn:name="Brief",type=string,JSONPath=".spec.briefRef.name",priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // Task is a goal for a Container. The operator runs an Agent in a sandbox to
 // implement it on a branch, opens a pull request, waits for CI, runs the Agent
-// again as reviewer, and merges when both pass. It is owned by its Container.
+// again as reviewer, and merges when both pass. It is owned by its Container. A
+// Plan Task is a planning round of a Brief, owned by the Brief.
 type Task struct {
 	metav1.TypeMeta `json:",inline"`
 

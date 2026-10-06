@@ -95,6 +95,34 @@ What B5 and B7 leave open, settled in step 2 (`internal/model/brief.go`):
 - The operator files an issue's body with the planner's `<!--` escaped, then
   the marker (`BriefIssueBody`), as bump issues do.
 
+## Step 3: Plan Tasks and the planner's run
+
+What B3 and B5 leave open, settled in step 3:
+
+- **A Plan Task's goal is optional.** `brief.md` is the goal; `spec.goal` may
+  still say more. A Plan Task has no `issue`, `reviewerRef` or
+  `containerRef`, so `allowedProtectedPaths` can't be set either.
+  `containerRef` is optional in the schema, and CEL asks for exactly one of
+  it and `briefRef`; Go keeps it a value (`omitzero`), so every existing
+  reader of `containerRef.name` is unchanged, and the Task-by-Container index
+  skips the empty one.
+- **The Task controller returns at once for a Plan Task** until step 5 gives
+  the Brief its rounds: no status, no owner, no labels.
+- **The runner, `C4_ROLE=plan`,** takes `C4_BRIEF` in place of `C4_GOAL` and
+  `C4_CONTAINER`; its branch is `plan/<C4_ROUND>`, and any other `C4_BRANCH`
+  is refused. Each run starts from the base branch (`main`), removes `plan/`
+  from the working tree (earlier rounds' plans stay in the history), and
+  fails without `PLANNER.md` or `brief.md` there. After the agent, the branch
+  is one commit on `main` that holds the working tree's `plan/` and nothing
+  else, force-pushed, so a rerun of the round replaces it; a run that leaves
+  no `plan/` fails and pushes nothing. The summary is cut to 1000 bytes; the
+  plan itself is on the branch.
+- **The runner doesn't check the plan.** The operator does (B7), and a
+  refusal comes back as `C4_FEEDBACK` in the next round.
+- **The stand-in planner** (`harness: stand-in`) copies `model/model.yaml` into
+  `plan/model.yaml` and writes one choice: a plan that changes nothing, for
+  demos and e2e.
+
 ## Step 4: the workspace
 
 What B4 leaves open, settled in step 4 (`internal/model/brief_workspace.go`,
