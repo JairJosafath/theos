@@ -3,9 +3,10 @@ name: Verify Release
 # Every release checks itself, twice, on Kind clusters of its own, building
 # nothing. "install" installs the published chart from GHCR into a fresh Kind
 # cluster, as a new device would; "upgrade" installs the previous release (the
-# highest v* tag below this one) the same way and then `helm upgrade`s it to
-# this one, as a device that already runs a release would. A repository's first
-# tag has no previous release: the upgrade is skipped and says so.
+# highest published release below this one, hack/previous-release.sh: a tag
+# whose release failed is skipped) the same way and then `helm upgrade`s it to
+# this one, as a device that already runs a release would. The first release
+# has no previous one: the upgrade is skipped and says so.
 #
 # Both follow the same steps: Agent Sandbox, the ghcr pull secret made from
 # GITHUB_TOKEN (packages: read reads the private packages Release pushed), the
@@ -49,7 +50,7 @@ on:
         description: The release tag to check, e.g. v0.2.0
         required: true
       from:
-        description: The release to upgrade from, e.g. v0.3.0; empty, the highest tag below tag
+        description: The release to upgrade from, e.g. v0.3.0; empty, the highest published release below tag
         required: false
         default: ""
 
@@ -66,6 +67,12 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       checks: ${{ steps.plan.outputs.checks }}
     steps:
+      # For hack/previous-release.sh: main's, or the dispatched ref's.
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,24 +82,26 @@ jobs:
           for t in "$TAG" $FROM_INPUT; do
             case "$t" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "not a release tag: $t" >&2; exit 1 ;; esac
           done
-          # A failed lookup fails the plan, never an upgrade from nothing.
-          names=$(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name')
-          # The highest release tag below TAG; TAG itself when there is none.
-          prev=$({ grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$names" || true; echo "$TAG"; } |
-            sort -uV | grep -x -B1 -F "$TAG" | head -1)
+          # The highest published release below TAG, or nothing. A failed
+          # lookup fails the plan, never an upgrade from nothing.
+          prev=$(hack/previous-release.sh "$TAG")
+          skipped=$(hack/previous-release.sh --skipped "$TAG")
           # Dispatched with from: the path a given device takes, or the same
           # release again to try the check's own steps.
           if [ -n "$FROM_INPUT" ]; then
-            prev=$FROM_INPUT
+            prev=$FROM_INPUT skipped=
             [ "$prev" != "$TAG" ] || echo "::notice::from is $TAG itself: the upgrade check upgrades $TAG to $TAG"
           fi
           checks=$(jq -cn --arg tag "$TAG" '[{check: "install", from: $tag, name: "Install the release on Kind"}]')
-          if [ "$prev" = "$TAG" ] && [ -z "$FROM_INPUT" ]; then
-            echo "::notice::$TAG is the first release: there is no previous one to upgrade from, so the upgrade check is skipped"
+          if [ -z "$prev" ]; then
+            echo "::notice::$TAG is the first release: there is no published one before it to upgrade from, so the upgrade check is skipped"
             echo "No release before $TAG: the upgrade check is skipped." >>"$GITHUB_STEP_SUMMARY"
           else
             echo "$TAG upgrades from $prev." | tee -a "$GITHUB_STEP_SUMMARY"
             checks=$(jq -c --arg prev "$prev" '. + [{check: "upgrade", from: $prev, name: ("Upgrade from " + $prev + " on Kind")}]' <<<"$checks")
+          fi
+          if [ -n "$skipped" ]; then
+            echo "Skipped, tagged but never released: ${skipped//$'\n'/, }." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           echo "tag=$TAG" >>"$GITHUB_OUTPUT"
           echo "checks=$checks" >>"$GITHUB_OUTPUT"

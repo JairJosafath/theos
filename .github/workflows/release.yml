@@ -7,8 +7,9 @@ name: Release
 # One job builds the images in order with the local Docker daemon, so the agent
 # and runner images build on the toolchains just built. It runs no tests:
 # releases are cut from main. The release's notes are hack/release-notes.sh's
-# draft from the pull requests merged since the previous tag, for the
-# maintainer to edit on the release.
+# draft from the pull requests merged since the previous release, the newest
+# published one below the tag (hack/previous-release.sh): a tag whose release
+# failed is not a release. The maintainer edits them on the release.
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
@@ -30,7 +31,7 @@ jobs:
         with:
           persist-credentials: false
           # The whole history and its tags: the release notes list the pull
-          # requests merged since the previous tag.
+          # requests merged since the previous release's tag.
           fetch-depth: 0
 
       # The Go toolchain's warm build cache makes it several GB, and the agent
@@ -94,7 +95,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" >notes.md
+          # A failed lookup fails the release, never notes from the start.
+          prev=$(hack/previous-release.sh "$GITHUB_REF_NAME")
+          echo "The notes list what merged since ${prev:-the start of history}."
+          REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" "$prev" >notes.md
           cat notes.md
           gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag

@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 # Drafts a release's notes in Keep a Changelog categories from the pull requests
-# merged since the previous tag, then the image list and the install command.
-# The Release workflow writes its GitHub release from it; the maintainer edits
-# the draft there, so it only has to be close.
+# merged since the previous release, then the image list and the install
+# command. The Release workflow writes its GitHub release from it; the
+# maintainer edits the draft there, so it only has to be close.
 #
 #   hack/release-notes.sh [TO [FROM]]       the pull requests merged in FROM..TO
 #   hack/release-notes.sh --prs FILE [FROM] the pull requests in FILE instead
 #
-# TO defaults to HEAD, FROM to the newest vX.Y.Z tag before TO (the whole
-# history when there is none). A pull request is a first-parent merge commit
-# "Merge pull request #N from owner/branch": its title is the commit's body, its
-# files what it changed, its body the messages of the commits it merged, and its
-# labels come from gh (none when gh can't say).
+# TO defaults to HEAD. FROM given empty is the whole history; left out, it is
+# the newest vX.Y.Z tag before TO (the whole history when there is none). The
+# Release workflow passes hack/previous-release.sh's answer, the newest
+# published release before TO, so a tag whose release failed doesn't cut the
+# notes short: they list everything since the last release devices got.
+#
+# A pull request is a first-parent merge commit "Merge pull request #N from
+# owner/branch": its title is the commit's body, its files what it changed, its
+# body the messages of the commits it merged, and its labels come from gh (none
+# when gh can't say).
 #
 # FILE holds one JSON object per line:
 #   {"number":N,"title":"...","branch":"...","labels":[...],"files":[...],"body":"..."}
@@ -37,7 +42,7 @@ if [ "${1:-}" = --prs ]; then
   from=${3:-} to=HEAD
 else
   to=${1:-HEAD}
-  from=${2:-$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "$to^" 2>/dev/null || true)}
+  from=${2-$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "$to^" 2>/dev/null || true)}
 fi
 REPO=${REPO:-JairJosafath/c4factory}
 REGISTRY=${REGISTRY:-ghcr.io/jairjosafath/c4factory}
