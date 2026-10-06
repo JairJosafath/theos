@@ -26,6 +26,11 @@
 # after WATCH_RETRIAGE seconds (default 10800, 3h); .relay/triaged keeps its
 # time and the issues it saw across restarts. status/needs-human stays the user's.
 #
+# On an idle round it also logs, once per change, what holds back the issues
+# pick skips for an open "Depends on #M" when nobody works #M (hack/lib/github.sh
+# blocked --unworked), and reports issues that wait on each other in a cycle:
+# a comment on each, the newest to status/needs-human (cycles --report).
+#
 # Every WATCH_CI_EVERY seconds (default 900) it checks main's CI: each
 # workflow in .github/workflows that runs on a push to main and whose two
 # newest finished runs on main failed (hack/lib/github.sh red) gets an issue
@@ -87,9 +92,11 @@ worker_free() {
   return 1
 }
 
-# pick_next, proposed, run_relay, run_triage and trim_caches: what the watch
-# asks and starts (faked in the tests).
+# pick_next, proposed, blocked, cycles, run_relay, run_triage and trim_caches:
+# what the watch asks and starts (faked in the tests).
 pick_next() { "$REPO/hack/lib/github.sh" pick; }
+blocked() { "$REPO/hack/lib/github.sh" blocked --unworked; }
+cycles() { "$REPO/hack/lib/github.sh" cycles --report; }
 proposed() { "$REPO/hack/lib/github.sh" proposed; }
 run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { "$REPO/hack/relay.sh" --triage --workers "$WORKERS"; }
@@ -221,6 +228,37 @@ triage() {
   [ "$rc" = 0 ] || echo "$now" >"$DIR/triaged"
 }
 
+# held: on an idle round, log what holds back the issues pick skips whose
+# blocker nobody works (hack/lib/github.sh blocked --unworked), once per
+# change, and report the issues that wait on each other in a cycle (cycles
+# --report: a comment on each, the newest to status/needs-human).
+HELD= HELD_ERR= CYCLES_ERR=
+held() {
+  local out rc
+  out=$(blocked 2>"$DIR/blocked.err")
+  rc=$?
+  if [ "$rc" != 0 ]; then
+    out="$out $(cat "$DIR/blocked.err" 2>/dev/null)"
+    [ -n "$HELD_ERR" ] || log "could not list what holds back the skipped issues (exit $rc): ${out//$'\n'/; }"
+    HELD_ERR=1
+    return 0
+  fi
+  HELD_ERR=
+  if [ "$out" != "$HELD" ]; then
+    HELD=$out
+    if [ -n "$out" ]; then
+      log "held back by issues nobody works: ${out//$'\n'/; }"
+    else
+      log "no skipped issue waits on an issue nobody works"
+    fi
+  fi
+  out=$(cycles 2>&1)
+  rc=$?
+  [ "$rc" = 0 ] && [ -z "$out" ] && { CYCLES_ERR=; return 0; }
+  [ "$rc" = 0 ] || { [ -z "$CYCLES_ERR" ] || return 0; CYCLES_ERR=1; }
+  log "${out//$'\n'/; }$([ "$rc" = 0 ] || echo " (cycles --report failed, exit $rc)")"
+}
+
 # round: one look at GitHub, and the relay started when there is work for it.
 # SAID is the last state logged, so a state that lasts is logged once.
 SAID= LAST_N= LAST_T=0
@@ -253,6 +291,7 @@ round() {
     1)
       [ "$SAID" = idle ] || log "nothing ready; waiting"
       SAID=idle
+      held
       triage "$now"
       ;;
     *)
