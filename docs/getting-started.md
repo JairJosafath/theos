@@ -1,0 +1,215 @@
+# Getting started: your first app from the release
+
+This guide takes a Kubernetes cluster from nothing to an app the factory builds:
+it installs the factory from the published release, describes a small Go
+command-line program as a C4 model, and has a Crew of Claude Code Agents turn
+a Gitea issue into a merged pull request. Nothing is built from this repository;
+every image and the chart come from GHCR.
+
+You need:
+
+- a cluster with about 4 CPUs and 8 GiB of memory free for the factory and two
+  agents (a Kind cluster on your machine works), with `kubectl` and `helm` 3.8
+  or later pointing at it;
+- `jq` and `curl`, for the Gitea step;
+- a Claude subscription or API account and the `claude` CLI, for the agents'
+  token;
+- the GitHub CLI (`gh`), logged in, while the images on GHCR are private.
+
+The commands use the release `0.3.0`; for a later one, change `VERSION` and the
+`agent-go` tag in [config/samples/first-app/agents.yaml](../config/samples/first-app/agents.yaml).
+Run them from a clone of this repository, for the sample files:
+
+```bash
+git clone https://github.com/JairJosafath/c4factory && cd c4factory
+VERSION=0.3.0
+```
+
+## 1. Install the factory
+
+**Agent Sandbox.** The operator runs its agents in Sandboxes and won't start
+without the `Sandbox` kind:
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
+```
+
+**Namespaces.** The release goes in `c4-factory-system` and Gitea in `gitea`.
+Each project lives in a namespace of its own name; this guide's is `webshop`:
+
+```bash
+for ns in c4-factory-system gitea webshop; do
+  kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
+done
+```
+
+**The pull secret** (skip it once the images on GHCR are public). Your GitHub
+token, with `read:packages`, goes in a Secret named `ghcr` in each namespace
+that pulls an image: the release's, Gitea's and the project's. You run this
+yourself; the factory never sees the token anywhere else.
+
+```bash
+gh auth refresh -s read:packages
+for ns in c4-factory-system gitea webshop; do
+  kubectl -n $ns create secret docker-registry ghcr --docker-server=ghcr.io \
+    --docker-username="$(gh api user -q .login)" --docker-password="$(gh auth token)"
+done
+```
+
+The agents run in the project namespace, in pods the operator makes outside the
+chart. They run as the namespace's `default` ServiceAccount, so they pull with
+the secrets it lists:
+
+```bash
+kubectl -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr"}]}'
+```
+
+**The release.** `gitea.projects` lists the project namespaces: for each one
+the seed makes a Gitea organization, Secret `gitea-credentials` with its token
+and GitProvider `gitea`. On a fresh cluster Gitea's image may still be pulling
+when the seed starts, so give `helm install` time:
+
+```bash
+helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
+  -n c4-factory-system --wait --timeout 10m \
+  --set gitea.createNamespace=false \
+  --set 'gitea.projects={webshop}' \
+  --set 'global.imagePullSecrets[0].name=ghcr' \
+  --set 'manager.imagePullSecrets[0].name=ghcr'
+```
+
+Without the pull secret, leave out the two `imagePullSecrets` lines. Check
+that everything runs and that the project has its GitProvider:
+
+```bash
+kubectl -n c4-factory-system get pods
+kubectl -n gitea get pods
+kubectl -n webshop get gitprovider,secret
+```
+
+The release requests about 1.1 CPU and 1.4 GiB of memory; on a two-CPU node
+see [the chart's README](../dist/chart/README.md#install) for what to turn
+down.
+
+## 2. The agents' token
+
+The agents run Claude Code, which signs in with a long-lived token. Make one
+with `claude setup-token` and store it in Secret `claude-credentials` in the
+project namespace; the Agents name the Secret and hold no token. Paste the
+token at the prompt (it isn't echoed, and stays out of your shell history):
+
+```bash
+claude setup-token
+read -rs -p 'Claude token: ' CLAUDE_TOKEN; echo
+printf '%s' "$CLAUDE_TOKEN" | kubectl -n webshop create secret generic claude-credentials \
+  --from-file=CLAUDE_CODE_OAUTH_TOKEN=/dev/stdin
+unset CLAUDE_TOKEN
+```
+
+With an API key instead, name the key `ANTHROPIC_API_KEY`: every key of the
+Secret becomes an environment variable in the agent's sandbox.
+
+## 3. The model and the Crew
+
+[config/samples/first-app/](../config/samples/first-app/) holds the first app:
+
+| File | What it is |
+| --- | --- |
+| `project.yaml` | Project `webshop`, named after its namespace |
+| `catalog.yaml` | Framework `go-cli` and Standard `go-standard`, pinned to the tags the release's seed pushed to Gitea |
+| `story.yaml` | Person `staff`, SoftwareSystem `webshop-core`, Container `orders-cli` (a Go command-line program) and two Relationships |
+| `agents.yaml` | Agents `claude-implementer` (Sonnet) and `claude-reviewer` (Opus) on `ghcr.io/jairjosafath/c4factory/agent-go`, reading Secret `claude-credentials` |
+| `crew.yaml` | Crew `orders-cli`: picks up `orders-cli`'s ready issues, implemented by one Agent and reviewed by the other |
+
+Apply it and wait for the Container to be scaffolded:
+
+```bash
+kubectl apply -k config/samples/first-app
+kubectl -n webshop wait container/orders-cli --for=jsonpath='{.status.phase}'=Ready --timeout=5m
+kubectl -n webshop get c4
+```
+
+Gitea now holds `webshop/orders-cli`: a Go module, the Standard's `Makefile`,
+linter settings, the guides agents read, and CI that runs `make check` on the
+`go` runner. Open it:
+
+```bash
+kubectl -n gitea port-forward service/gitea 3000:3000 &   # http://localhost:3000/webshop/orders-cli
+```
+
+The repositories are public; to sign in, the admin's name and password are in
+Secret `gitea/gitea-admin`:
+
+```bash
+kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d; echo
+kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d; echo
+```
+
+Once the Crew has polled the repository its phase is `Idle`, and the
+repository has the labels it works with, `status/ready` among them:
+
+```bash
+kubectl -n webshop wait crew/orders-cli --for=jsonpath='{.status.phase}'=Idle --timeout=5m
+```
+
+## 4. The first issue
+
+A Crew works on open issues labelled `status/ready` whose body has an
+`## Acceptance criteria` section with a checklist; the reviewer judges each
+item. File one as the admin, through Gitea's API (or in its web UI, with the
+same title, body and label):
+
+```bash
+GITEA=http://localhost:3000
+ADMIN=$(kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
+PASS=$(kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
+READY=$(curl -fsS -u "$ADMIN:$PASS" "$GITEA/api/v1/repos/webshop/orders-cli/labels" |
+  jq '.[] | select(.name == "status/ready") | .id')
+jq -n --argjson ready "$READY" '{
+  title: "Total an order",
+  labels: [$ready],
+  body: "## Goal\n\n`orders-cli total` reads an order from standard input, one line per item as `QUANTITY PRICE` (such as `2 4.50`), and prints the order'"'"'s total with two decimals.\n\n## Acceptance criteria\n\n- [ ] `printf \"2 4.50\\n1 10\\n\" | orders-cli total` prints `19.00` and exits 0.\n- [ ] Empty input prints `0.00`.\n- [ ] A line that is not two numbers prints an error naming its line number to standard error and exits 1.\n- [ ] `orders-cli` without a command prints its usage, which lists `total`, and exits 2.\n- [ ] Table tests cover each case, and `make check` passes.\n"
+}' | curl -fsS -u "$ADMIN:$PASS" -H 'Content-Type: application/json' \
+  -d @- "$GITEA/api/v1/repos/webshop/orders-cli/issues" | jq '{number, html_url}'
+```
+
+## 5. Watch it build
+
+Within a minute the Crew's phase turns `Working`: it starts Task
+`orders-cli-1` and labels the issue
+`status/in-progress`. The implementer works in an Agent Sandbox pod, pushes a
+branch and opens a pull request; CI runs `make check`; the reviewer approves or
+asks for changes, up to the Agent's `maxRounds`; an approved, green pull request
+is merged and the issue closed. With Claude Code that takes 10 to 30 minutes.
+
+```bash
+kubectl -n webshop get crew,tasks
+kubectl -n webshop get task orders-cli-1 -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{"\n"}{end}'
+kubectl -n webshop get sandboxes,pods
+```
+
+The Task's phase ends `Merged`. The pull request, its review and CI run are on
+<http://localhost:3000/webshop/orders-cli/pulls>. A Task that fails labels its
+issue `status/needs-human` with the reason in a comment; label it
+`status/ready` again to try once more.
+
+## When it doesn't work
+
+| What you see | Why, and what to do |
+| --- | --- |
+| A pod in `ImagePullBackOff` in `c4-factory-system` or `gitea` | The images are private and that namespace has no `ghcr` Secret, or the install lacks the `imagePullSecrets` settings. |
+| A sandbox pod in `ImagePullBackOff` in `webshop` | ServiceAccount `webshop/default` doesn't list `ghcr`, or Secret `webshop/ghcr` is missing; patch it, then delete the pod. |
+| `helm install` times out | Gitea's image is still pulling; `kubectl -n gitea get pods`, then `helm upgrade` with the same settings. |
+| Container `orders-cli` not `Ready` | `kubectl -n webshop describe container orders-cli`: the condition's message says which template or GitProvider is missing. |
+| The issue is labelled `status/needs-human` before any Task | The Crew rejected it and said why in a comment, such as a missing checklist; fix the body and label it `status/ready` again. |
+| The Crew stays `Waiting` | `kubectl -n webshop get crew orders-cli -o yaml`: `status.conditions` says what it waits for, such as the Container. |
+| The agent says it isn't logged in | Secret `webshop/claude-credentials` is missing or its key isn't `CLAUDE_CODE_OAUTH_TOKEN`. |
+
+## Next
+
+- Your own project: create its namespace (with the `ghcr` Secret and the
+  `default` ServiceAccount patch), add it to `gitea.projects`, `helm upgrade`
+  with the same settings, and copy `claude-credentials` into it.
+- [docs/design.md](design.md) explains the model, the catalog, Crews and
+  Standards; [the chart's README](../dist/chart/README.md) lists its values.
+- A problem with the release: [report it](https://github.com/JairJosafath/c4factory/issues/new?template=user-report.yml).
