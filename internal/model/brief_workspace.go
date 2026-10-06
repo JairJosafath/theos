@@ -10,7 +10,7 @@ import (
 )
 
 // The files the operator keeps on the main branch of a Brief's repository for
-// the planner to read (plans/brief.md, B4).
+// the planner to read (plans/done/brief.md, B4).
 const (
 	WorkspaceModelFile      = "model/model.yaml"
 	WorkspaceCatalogFile    = "model/catalog.yaml"

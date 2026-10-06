@@ -143,7 +143,7 @@ func TestNextTaskStep(t *testing.T) {
 	}
 }
 
-// A Plan Task's steps (docs/plans/brief.md, step 5): no Container to wait
+// A Plan Task's steps (docs/plans/done/brief.md, step 5): no Container to wait
 // for, and the Brief's verdict in place of CI and a review.
 func TestNextTaskStepPlan(t *testing.T) {
 	done := func(r RunResult) RunState { return RunState{Started: true, Done: true, Result: &r} }

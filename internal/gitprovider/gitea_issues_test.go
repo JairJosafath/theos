@@ -369,6 +369,65 @@ func TestIssues(t *testing.T) {
 	}
 }
 
+// Two reconcilers make sure of a new repository's labels at once, each with a
+// provider of its own: a Brief filing its issues while the Crew it made polls.
+// Gitea takes two labels with one name, and then filters issues by neither, so
+// each label must still be made once.
+func TestEnsureLabelsConcurrently(t *testing.T) {
+	var mu sync.Mutex
+	var labels []giteaLabel
+	listing, both := 0, make(chan struct{})
+	mux := http.NewServeMux()
+	const path = "/api/v1/repos/webshop/orders-api/labels"
+	mux.HandleFunc("GET "+path, func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		out := slices.Clone(labels)
+		if listing++; listing == 2 {
+			close(both)
+		}
+		mu.Unlock()
+		// Reply once the other caller has listed too, or after a moment when
+		// it waits for this one: then only one of them sees no labels.
+		select {
+		case <-both:
+		case <-time.After(300 * time.Millisecond):
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	})
+	mux.HandleFunc("POST "+path, func(w http.ResponseWriter, r *http.Request) {
+		var body giteaLabelOption
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		l := giteaLabel{ID: int64(len(labels) + 1), Name: body.Name}
+		labels = append(labels, l)
+		mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(l)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	want := []Label{{Name: "status/ready", Exclusive: true}, {Name: "kind/bug"}}
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range errs {
+		p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: rand.Text()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wg.Go(func() { errs[i] = p.EnsureLabels(context.Background(), p.Repository("orders-api"), want) })
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatalf("EnsureLabels() error = %v", err)
+		}
+	}
+	if len(labels) != len(want) {
+		t.Errorf("labels = %v, want each once", labels)
+	}
+}
+
 func TestEnsureMilestone(t *testing.T) {
 	ctx := context.Background()
 

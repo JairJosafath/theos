@@ -29,7 +29,7 @@ func newPlanTask(ns, name string) *c4v1alpha1.Task {
 	}}
 }
 
-// A Plan Task's CEL rules (docs/plans/brief.md, B3).
+// A Plan Task's CEL rules (docs/plans/done/brief.md, B3).
 var _ = Describe("Plan Task", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })
@@ -103,7 +103,7 @@ var _ = Describe("Plan Task", func() {
 
 })
 
-// A Plan Task's run (docs/plans/brief.md, step 5): the planner pushes a plan,
+// A Plan Task's run (docs/plans/done/brief.md, step 5): the planner pushes a plan,
 // and the Brief's verdict, two annotations, ends the try.
 var _ = Describe("Plan Task run", func() {
 	var ns string

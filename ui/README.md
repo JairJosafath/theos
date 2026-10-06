@@ -4,7 +4,7 @@ A view of a C4 Factory project, drawn live from the custom resources.
 Milestone 6 in [docs/design.md](../docs/design.md#mvp-v1-plan): someone who has
 never used kubectl can read the story in a browser. It reads everything and
 changes only two things: it creates a Brief from an app idea and adds a
-follow-up prompt to one ([docs/plans/brief.md](../docs/plans/brief.md)).
+follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)).
 
 - **Briefs**, above the views: a _Describe an app_ box that creates a Brief (an
   idea and a name, suggested from the idea), and a card per Brief with its

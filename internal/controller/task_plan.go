@@ -25,7 +25,7 @@ import (
 )
 
 // reconcilePlan takes the next step of a Plan Task, one round of a Brief
-// (docs/plans/brief.md, step 5): the planner pushes a plan to the brief
+// (docs/plans/done/brief.md, step 5): the planner pushes a plan to the brief
 // repository's plan/<round>, and the Brief checks it. The Brief made the Task,
 // owned and labelled; its verdict comes back as annotations on the Task.
 func (r *TaskReconciler) reconcilePlan(ctx context.Context, task *c4v1alpha1.Task) (ctrl.Result, error) {

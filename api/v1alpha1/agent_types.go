@@ -32,7 +32,8 @@ type AgentSpec struct {
 	Image string `json:"image"`
 
 	// harness is the agent program c4agent runs: claude-code (Claude Code, headless)
-	// or stand-in (a scripted change and review, for tests and demos).
+	// or stand-in (a scripted change, review and plan from the catalog, for tests
+	// and demos).
 	// +kubebuilder:validation:Enum=claude-code;stand-in
 	// +kubebuilder:default=claude-code
 	// +optional

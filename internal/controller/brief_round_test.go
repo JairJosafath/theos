@@ -180,7 +180,7 @@ func ownedByBrief(obj client.Object) bool {
 	return false
 }
 
-// Step 5 of docs/plans/brief.md: rounds, applying and filing.
+// Step 5 of docs/plans/done/brief.md: rounds, applying and filing.
 var _ = Describe("Brief rounds", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })

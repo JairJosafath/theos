@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -52,6 +53,13 @@ const (
 
 // stateClosed is the state of a closed issue, pull request or milestone.
 const stateClosed = "closed"
+
+// labelLocks holds one lock per repository, by URL, for EnsureLabels. Gitea
+// takes two labels with one name and then filters issues by neither, so two
+// reconcilers making sure of a new repository's labels at once (a Brief filing
+// its issues while the Crew it made polls) take turns, each provider of this
+// process included.
+var labelLocks sync.Map // string -> chan struct{}, holding one token while locked
 
 type giteaLabel struct {
 	ID   int64  `json:"id"`
@@ -128,8 +136,16 @@ func issuePath(repo Repository, number int) string {
 	return "/api/v1/repos/" + repoPath(repo) + "/issues/" + strconv.Itoa(number)
 }
 
-// EnsureLabels creates the labels repo doesn't have yet. It is safe to repeat.
+// EnsureLabels creates the labels repo doesn't have yet. It is safe to repeat,
+// and to call at once from more than one provider of this process.
 func (g *gitea) EnsureLabels(ctx context.Context, repo Repository, labels []Label) error {
+	lock, _ := labelLocks.LoadOrStore(g.base.JoinPath(repoPath(repo)).String(), make(chan struct{}, 1))
+	select {
+	case lock.(chan struct{}) <- struct{}{}:
+		defer func() { <-lock.(chan struct{}) }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	existing, err := g.labels(ctx, repo)
 	if err != nil {
 		return err

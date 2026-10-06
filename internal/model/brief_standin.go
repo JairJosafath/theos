@@ -1,0 +1,182 @@
+package model
+
+import (
+	"fmt"
+	"regexp"
+	"slices"
+	"strings"
+
+	"go.yaml.in/yaml/v3"
+)
+
+// standInTitleRunes is how much of a prompt the stand-in planner puts in an
+// issue's title; the body has all of it.
+const standInTitleRunes = 80
+
+var (
+	briefHeading     = regexp.MustCompile(`(?m)^# Brief (\S+)$`)
+	briefGitProvider = regexp.MustCompile("`gitProviderRef: \\{name: (\\S+)\\}`")
+	briefNewPrompt   = regexp.MustCompile(`(?m)^\d+\. \(\*\*new\*\*\) (.+)$`)
+)
+
+// StandInPlan is the stand-in planner's plan for the workspace the operator
+// wrote (BriefWorkspaceFiles), by path. It plans from the catalog alone: a
+// round that plans the idea adds one Container named after the Brief, on the
+// catalog's first Framework, that Framework's first type and the first
+// Standard that fits both, and files one issue for it; each new prompt is one
+// issue for the Brief's Container, else the model's first. It changes nothing
+// that exists, so CheckPlan takes it; with no Framework to plan the idea on,
+// it asks for one. It runs the whole loop without a model, for tests and
+// demos (plans/done/brief.md, step 8).
+func StandInPlan(workspace map[string]string) (map[string]string, error) {
+	brief := workspace[BriefFile]
+	m, provider := briefHeading.FindStringSubmatch(brief), briefGitProvider.FindStringSubmatch(brief)
+	if m == nil || provider == nil {
+		return nil, fmt.Errorf("%s names no Brief or no Git provider", BriefFile)
+	}
+	name := m[1]
+	objects, err := parsePlanModel(workspace[WorkspaceModelFile])
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", WorkspaceModelFile, err)
+	}
+	var catalog catalogOut
+	if err := yaml.Unmarshal([]byte(workspace[WorkspaceCatalogFile]), &catalog); err != nil {
+		return nil, fmt.Errorf("%s: %w", WorkspaceCatalogFile, err)
+	}
+	// The idea comes first, then the prompts, one line each, then the Git
+	// provider; the idea's own text can't fake the later headings.
+	idea := strings.Index(brief, "\n## Idea")
+	ideaNew := idea >= 0 && strings.HasPrefix(brief[idea:], "\n## Idea (**new**)\n")
+	var prompts []string
+	if i, end := strings.LastIndex(brief, "\n## Prompts\n"), strings.LastIndex(brief, "\n## Git provider\n"); i > idea && end > i {
+		for _, p := range briefNewPrompt.FindAllStringSubmatch(brief[i:end], -1) {
+			prompts = append(prompts, p[1])
+		}
+	}
+
+	files := map[string]string{}
+	var choices []string
+	var issues [][2]string // title after "Stand-in: ", and the goal
+	container := standInContainer(objects, name)
+	if ideaNew {
+		framework, kind, standard := standInCatalog(catalog)
+		if framework == "" {
+			return map[string]string{PlanNeedsInputFile: "The catalog has no Framework with a Container type, " +
+				"so the stand-in planner can't add a Container: install one.\n"}, nil
+		}
+		system := ""
+		for _, o := range objects {
+			if o.Kind == KindSoftwareSystem {
+				system = o.Name
+				break
+			}
+		}
+		if system == "" {
+			system = name
+			objects = append(objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindSoftwareSystem, Name: system,
+				Description: "What Brief " + name + " describes."})
+			choices = append(choices, fmt.Sprintf("The stand-in planner makes SoftwareSystem %s: the namespace has none.",
+				system))
+		}
+		container = standInName(objects, strings.TrimPrefix(name, BriefRepository("")))
+		objects = append(objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindContainer, Name: container,
+			SoftwareSystem: system, Type: kind, GitProvider: provider[1], Framework: framework, Standard: standard})
+		with := ""
+		if standard != "" {
+			with = " with the Standard " + standard
+		}
+		choices = append(choices, fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s%s: "+
+			"it takes the catalog's first Framework and reads nothing else.", container, kind, framework, with))
+		issues = append(issues, [2]string{"start " + name, fmt.Sprintf("Start %s as Brief %s's idea says.", container, name)})
+	}
+	switch {
+	case len(prompts) == 0:
+	case container == "":
+		choices = append(choices, "The stand-in planner files no issue: the namespace has no Container to file it for.")
+	default:
+		for _, p := range prompts {
+			issues = append(issues, [2]string{shortTitle(p), p})
+		}
+		choices = append(choices, fmt.Sprintf("The stand-in planner files each new prompt as an issue for %s.", container))
+	}
+	if len(issues) > MaxPlanIssues {
+		issues = issues[:MaxPlanIssues]
+	}
+	for n, issue := range issues {
+		files[fmt.Sprintf("%s%02d-%s.md", planIssuesDir, n+1, container)] = fmt.Sprintf(
+			"---\ntitle: %q\nlabels: []\n---\n## Goal\n\n%s\n\n## Acceptance criteria\n\n- [ ] A change for it is merged to main\n",
+			"Stand-in: "+issue[0], issue[1])
+	}
+	if len(choices) == 0 {
+		choices = append(choices, "The stand-in planner keeps the model as it is.")
+	}
+
+	story, err := renderWorkspaceModel(objects)
+	if err != nil {
+		return nil, err
+	}
+	_, story, _ = strings.Cut(story, "\n") // the workspace's "copy it" header
+	files[PlanModelFile] = story
+	files[PlanChoicesFile] = "- " + strings.Join(choices, "\n- ") + "\n"
+	return files, nil
+}
+
+// standInCatalog picks the catalog's first Framework that has a Container
+// type, its first type, and the first Standard that fits both, if any.
+func standInCatalog(catalog catalogOut) (framework, kind, standard string) {
+	for _, f := range catalog.Frameworks {
+		if len(f.SupportedTypes) == 0 {
+			continue
+		}
+		framework, kind = f.Name, f.SupportedTypes[0]
+		for _, s := range catalog.Standards {
+			if slices.Contains(s.SupportedFrameworks, framework) && slices.Contains(s.SupportedTypes, kind) {
+				return framework, kind, s.Name
+			}
+		}
+		return framework, kind, ""
+	}
+	return "", "", ""
+}
+
+// standInContainer is the Container named after the Brief, else the model's
+// first, else none.
+func standInContainer(objects []PlanObject, brief string) string {
+	first := ""
+	for _, o := range objects {
+		if o.Kind != KindContainer {
+			continue
+		}
+		if o.Name == brief {
+			return o.Name
+		}
+		if first == "" {
+			first = o.Name
+		}
+	}
+	return first
+}
+
+// standInName is base, or base-2, base-3, ... when a Container has that name.
+func standInName(objects []PlanObject, base string) string {
+	name := base
+	for n := 2; slices.ContainsFunc(objects, func(o PlanObject) bool {
+		return o.Kind == KindContainer && o.Name == name
+	}); n++ {
+		name = fmt.Sprintf("%s-%d", base, n)
+	}
+	return name
+}
+
+// shortTitle is s on one line, cut at a word to standInTitleRunes.
+func shortTitle(s string) string {
+	s = oneParagraph(s)
+	if r := []rune(s); len(r) > standInTitleRunes {
+		cut := string(r[:standInTitleRunes])
+		if i := strings.LastIndex(cut, " "); i > 0 {
+			cut = cut[:i]
+		}
+		return strings.TrimRight(cut, " ,.;:") + "…"
+	}
+	return s
+}

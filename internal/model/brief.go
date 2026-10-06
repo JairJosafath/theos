@@ -13,7 +13,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// The story kinds a plan may write besides the element kinds (plans/brief.md, B6).
+// The story kinds a plan may write besides the element kinds (plans/done/brief.md, B6).
 const (
 	KindProject      = "Project"
 	KindRelationship = "Relationship"
