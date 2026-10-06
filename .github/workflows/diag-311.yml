@@ -1,0 +1,36 @@
+# Temporary (#311): find why the local Gitea exits on the runner. Removed before merge.
+name: Diag 311
+on:
+  push:
+    branches: [fix/311-main-is-red-tests]
+    paths: [.github/workflows/diag-311.yml, hack/gitea-local.sh]
+permissions: {}
+jobs:
+  starts:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        after-test: [false, true]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+      - if: matrix.after-test
+        run: make test
+      - name: Fresh starts
+        run: |
+          make gitea-local; hack/gitea-local.sh stop
+          fails=0
+          for i in $(seq 1 10); do
+            rm -rf .gitea-local
+            make gitea-local || fails=$((fails+1))
+            hack/gitea-local.sh stop
+          done
+          echo "fails=$fails/10"
+          ss -ltnp | head -30

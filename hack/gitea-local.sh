@@ -193,7 +193,14 @@ start() {
   fi
   local deadline=$((SECONDS + GITEA_WAIT))
   until healthy; do
-    running || { tail -n 20 "$DIR/log/gitea.out" >&2; die "Gitea exited; its log is ${DIR#"$TOP"/}/log/"; }
+    running || {
+      echo "DIAG pid=$(cat "$PIDFILE") alive=$(kill -0 "$(cat "$PIDFILE")" 2>&1 && echo yes)" >&2
+      echo "DIAG cmdline=$(tr '\0' ' ' <"/proc/$(cat "$PIDFILE")/cmdline" 2>&1)" >&2
+      ps -eo pid,ppid,pgid,stat,cmd | grep -i gite[a] >&2 || true
+      sleep 2; ps -eo pid,ppid,pgid,stat,cmd | grep -i gite[a] >&2 || true
+      tail -n 20 "$DIR"/log/* >&2
+      die "Gitea exited; its log is ${DIR#"$TOP"/}/log/"
+    }
     ((SECONDS < deadline)) || die "Gitea did not answer at $(url) within ${GITEA_WAIT}s"
     sleep 1
   done
