@@ -127,7 +127,14 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    wait (`status.agentBackAt`) is over.
 2. `internal/model.NextTaskStep` turns the facts into one step: wait, start the
    implementer or reviewer, open the pull request, merge, next round, wait for an
-   unavailable agent, or fail.
+   unavailable agent, or fail. The model also decides what each step does to the
+   Task (`internal/model/task_transition.go`): the controller copies the status
+   into a `TaskProgress`, applies one transition and copies it back.
+   `StartRun`, `OpenedPR`, `NextRound`, `ResolveConflicts`, `RetryReview`,
+   `Rerun`, `Recheck` and `Proposed` move the round, phase and feedback;
+   `DecideMerge` and `AfterSquash` choose what to do with an approved pull
+   request; `AgentBackAt` sets an unavailable agent's wait; and `IssueClosed`,
+   `PullRequestClosed` and `GatedMergeRefused` end the Task.
 3. To start a run, the controller makes sure the Container's agent bot user exists
    (`gitprovider.EnsureAgentAccess`, token in Secret `<container>-agent-git`) and
    creates an Agent Sandbox `Sandbox` owned by the Task, with the role's Agent

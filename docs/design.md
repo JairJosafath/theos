@@ -442,7 +442,7 @@ Each rule is verified at the lowest tier that can see it, so most work verifies 
 | Table tests (`make test`) | The decisions in `internal/model` and the rendering of every template in `internal/scaffold`. |
 | Offline YAML (`make validate-yaml`, in `make check`) | Samples, e2e fixtures, kustomize builds, the Helm chart and rendered manifests, against the built-in schemas and the CRDs, with their create-time CEL rules. |
 | Local Gitea (`make test-gitea`, `make seed-local`) | The Gitea API's behaviour and the seed, against the same Gitea binary the cluster runs, started per checkout. |
-| envtest (`make test`) | Reconcilers wired to a real API server: status, ownerReferences, CEL rules on updates, the admission policy. |
+| envtest (`make test`) | Reconcilers wired to a real API server: status, ownerReferences, the admission policy, and every CEL rule's failing case, at create and on update. |
 | Kind (`make e2e`) | Agent Sandbox pods and the agent fence, node and kubelet behaviour, RBAC as deployed, Gitea Actions runners. |
 
 The plan that builds the lower tiers is [verify-without-cluster.md](plans/done/verify-without-cluster.md).
