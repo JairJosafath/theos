@@ -523,3 +523,15 @@ agents:
     resources:
       requests: {cpu: 500m, memory: 1Gi}
       limits: {cpu: "2", memory: 4Gi}
+  ## Agent stand-in: no model and no token. It plans a Brief from the catalog,
+  ## makes a scripted change and approves it, so a Brief or a Crew naming it
+  ## shows the whole loop for free (config/samples/brief/stand-in.yaml).
+  standIn:
+    enabled: true
+    description: "Plans from the catalog, makes a scripted change and approves it: the loop without a model."
+    maxRounds: 2
+    timeoutMinutes: 15
+    ## Its implement rounds still run the Container's make check.
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: "1", memory: 2Gi}

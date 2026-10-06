@@ -435,7 +435,9 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for
   each follow-up prompt. `make e2e` takes a Brief through two rounds that way,
-  with no token. How well a real planner plans an idea is the person's run.
+  with no token, and every release's *Verify Release* takes one through a
+  round on the published chart, whose Agent `stand-in` any project can name.
+  How well a real planner plans an idea is the person's run.
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a
