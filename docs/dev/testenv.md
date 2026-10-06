@@ -183,8 +183,9 @@ make gitea-forward     # then open http://localhost:3000
 The Kind test environment installs with kustomize. Devices install the Helm
 chart in `dist/chart/` instead ([its README](../../dist/chart/README.md)).
 After a change under `config/` or `api/`, `make chart` regenerates it from the kustomize
-output and `make helm-lint` checks it; the *Test Chart* workflow installs it into
-a fresh Kind cluster on GitHub. Don't `helm install` it into the shared
+output and `make helm-lint` checks it, offline, in `make validate-yaml` and so in `make
+check`; the *Test Chart* workflow, dispatched by hand, installs it into a
+fresh Kind cluster on GitHub. Don't `helm install` it into the shared
 `c4factory` cluster: `make deploy` owns the CRDs there.
 
 A pushed `vX.Y.Z` tag runs the *Release* workflow, which builds the operator,
@@ -196,9 +197,10 @@ below the tag (`hack/previous-release.sh`; drafts and prereleases don't
 count): a tag whose *Release* failed has no release, so the next notes carry
 what it did.
 
-GitHub workflows never run on pull requests. Lint, tests, UI checks and *Test
-Chart* run after a merge to main, each only when its paths change, or on demand;
-*E2E Tests* only on demand. A pushed tag runs *Release*, which builds and
+GitHub workflows never run on pull requests. Lint, tests and UI checks run
+after a merge to main, each only when its paths change, or on demand. No
+workflow starts a Kind cluster on its own: *Test Chart*, *E2E Tests* and
+*Verify Release* run only when a human dispatches them. A pushed tag runs *Release*, which builds and
 publishes and tests nothing. `make check` is the gate before a merge.
 
 ## Work on the factory: GitHub issues and the relay
@@ -402,12 +404,15 @@ reach it, runs that session as `C4_CLUSTER=none`, so it skips `needs/cluster`
 issues instead of failing them; its log says why once (permission denied,
 daemon down or not answering) and again when Docker answers.
 
-### Every release checks itself
+### Checking a release
 
 The relay can't pull a release (the GHCR packages are private and no device's
-gh token has `read:packages`), so a workflow does. After *Release* publishes
-`vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`) checks it
-twice, each on a Kind cluster of its own, building nothing.
+gh token has `read:packages`), so a workflow does. Once *Release* has
+published `vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`)
+checks it twice, each on a Kind cluster of its own, building nothing. It
+starts Kind, so it runs only when a human dispatches it: Actions → Verify
+Release → Run workflow, or `gh workflow run verify-release.yml -f
+tag=vX.Y.Z`. Agents never dispatch it.
 
 The install check installs the published chart and images on a fresh cluster,
 waits for the seed's repositories, both runners, the manager and the UI, and
@@ -441,16 +446,13 @@ the newest samples that made their own catalog and Agents, from history.
 
 Their results are the run's job summaries and the artifacts
 `release-vX.Y.Z-install` and `release-vX.Y.Z-upgrade` (Actions → Verify
-Release). When the release's own check, or a dispatch on main, fails it
-files `Release vX.Y.Z fails its check` (`status/ready`, `priority/urgent`), or
+Release). When a dispatch on main fails it files `Release vX.Y.Z fails its check` (`status/ready`, `priority/urgent`), or
 comments on the open one, so the relay picks it up; the issue says which check
 failed and if the runner ran short of memory or disk. A dispatch on another
-branch only reports in its run. Check an older release with Actions → Verify Release → Run
-workflow, or `gh workflow run verify-release.yml -f tag=vX.Y.Z`; add
+branch only reports in its run. Any published release can be checked; add
 `--ref <branch>` to try a branch's workflow, and `-f from=vA.B.C` to upgrade
 from another release than the one below (the same tag upgrades it to itself,
-which tries the check's own steps). Dispatched, the install check
-takes the `first-app` samples from the ref it runs on, so on main it checks
+which tries the check's own steps). The install check takes the `first-app` samples from the ref it runs on, so on main it checks
 the guide's current samples against that release.
 
 An upgrade from v0.2.0 is one Verify Release no longer takes: from v0.4.0

@@ -116,7 +116,7 @@ carries.
      reached (`kind/docs`, `status/ready`). One that is done in all but its
      *Done when* gets an issue for what is missing.
 8. **Releases**
-   ([docs/dev/testenv.md](../../../docs/dev/testenv.md#every-release-checks-itself)).
+   ([docs/dev/testenv.md](../../../docs/dev/testenv.md#checking-a-release)).
    Cut a release when `feat` or `fix` changes have landed since the last
    tag, main is green, and no half-built feature would ship
    ([ROADMAP.md](../../../ROADMAP.md)).
@@ -125,12 +125,14 @@ carries.
      does nothing yet. The only exception is a reporter waiting on the
      release; then it ships, and its notes say what is a preview.
    - Release as often as that holds; there is no daily cap. Don't tag while
-     the last release's *Verify Release* still runs, or its
+     a *Verify Release* run still runs, or a
      `Release vX.Y.Z fails its check` issue is open.
    - Tag the next version on origin/main:
      [SemVer](https://semver.org/), pre-1.0, so `feat` bumps the minor and
      `fix` the patch.
-   - Watch *Release* and *Verify Release*.
+   - Watch *Release*. *Verify Release* starts Kind, so it runs only when a
+     human dispatches it; never dispatch it yourself. Read its runs when
+     there are any.
    - The GitHub release has notes in
      [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) categories
      (Added, Changed, Fixed, Security). *Release* drafts them from the pull
