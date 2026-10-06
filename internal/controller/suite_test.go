@@ -56,7 +56,13 @@ var (
 	testEnv    *envtest.Environment
 	cfg        *rest.Config
 	k8sClient  client.Client
+	// managerCfg is cfg as the operator's ServiceAccount, bound to the generated
+	// role: a call the role doesn't grant fails the reconciler that makes it.
+	managerCfg *rest.Config
 )
+
+// managerUser is the operator's ServiceAccount in config/rbac/role_binding.yaml.
+const managerUser = "system:serviceaccount:system:controller-manager"
 
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -104,8 +110,15 @@ var _ = BeforeSuite(func() {
 	By("installing the admission policy")
 	Expect(applyManifests(ctx, filepath.Join("..", "..", "config", "policy", "project_name_policy.yaml"))).To(Succeed())
 
-	By("starting the manager with every reconciler")
-	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+	By("binding the generated role to the operator's ServiceAccount")
+	for _, file := range []string{"role.yaml", "role_binding.yaml"} {
+		Expect(applyManifests(ctx, filepath.Join("..", "..", "config", "rbac", file))).To(Succeed())
+	}
+	managerCfg = rest.CopyConfig(cfg)
+	managerCfg.Impersonate = rest.ImpersonationConfig{UserName: managerUser}
+
+	By("starting the manager with every reconciler, as that ServiceAccount")
+	mgr, err := ctrl.NewManager(managerCfg, ctrl.Options{
 		Scheme:  scheme.Scheme,
 		Metrics: metricsserver.Options{BindAddress: "0"},
 	})
