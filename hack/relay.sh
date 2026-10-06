@@ -31,6 +31,19 @@
 # duplicates, and ends with an account of what it did. It never takes an
 # issue out of status/needs-human.
 #
+# The maintainer: hack/relay-watch.sh starts one maintainer session
+# (--maintain) every 2 hours when anything changed, acting as the project's
+# maintainer on the owner's behalf (GOVERNANCE.md, the maintainer skill). It
+# runs in its own worktree, .claude/worktrees/relay-maintainer, on origin/main
+# for reading only, under its own lock (.relay/maintain.lock), and doesn't
+# count against RELAY_MAX_WORKERS: it must run while every worker is busy. It
+# goes through admit like any session. It takes no issue and commits nothing;
+# it decides, corrects, answers and keeps the pinned Maintainer report
+# (hack/lib/github.sh report). When it ends it writes .relay/maintained,
+# `<epoch> <activity>` (hack/lib/github.sh activity, read after the sweep so
+# its own comments don't count as new activity); a sweep that never ran
+# leaves only the time, so the watch tries again after WATCH_MAINTAIN.
+#
 # Issues that need the Kind cluster carry needs/cluster. On a device without
 # one, C4_CLUSTER=none (./dev setup --lite sets it): the workers skip those
 # issues, and a session that finds its issue needs the cluster lands what it
@@ -50,6 +63,7 @@
 #   hack/relay.sh --workers N      start N workers (1-99); workers already running are left alone
 #   hack/relay.sh --triage [--workers N]
 #                                  start one triage session in the first of workers 1-N that isn't running
+#   hack/relay.sh --maintain       start one maintainer session, unless one runs
 #
 # On the device with the Kind cluster (C4_CLUSTER not none), memory is the
 # limit: at most RELAY_MAX_WORKERS workers run (default 9, so the memory gate,
@@ -83,6 +97,7 @@ STOP="$DIR/stop"
 MAX_SESSIONS=${MAX_SESSIONS:-8}
 SESSION_TIMEOUT=${SESSION_TIMEOUT:-6h}
 TRIAGE=${C4_RELAY_TRIAGE:-}
+MAINTAIN=${C4_RELAY_MAINTAIN:-}
 DRY_RUN=${RELAY_DRY_RUN:-}
 [ "$DRY_RUN" = 0 ] && DRY_RUN=
 PULL=${RELAY_PULL:-1}
@@ -93,8 +108,9 @@ while [ $# -gt 0 ]; do
     --workers) WORKERS=${2:-}; shift 2 || shift ;;
     --workers=*) WORKERS=${1#*=}; shift ;;
     --triage) TRIAGE=1; shift ;;
+    --maintain) MAINTAIN=1; shift ;;
     --now) shift ;; # the relay no longer waits for a handoff; kept for old habits
-    *) echo "usage: hack/relay.sh [--triage] [--workers N]" >&2; exit 64 ;;
+    *) echo "usage: hack/relay.sh [--triage | --maintain] [--workers N]" >&2; exit 64 ;;
   esac
 done
 [[ $WORKERS =~ ^[1-9][0-9]?$ ]] || { echo "relay: --workers takes 1 to 99" >&2; exit 64; }
@@ -117,8 +133,12 @@ export C4_RELAY_CLUSTER0=$CLUSTER0
 DOCKER_SAID=ok
 
 K=${C4_RELAY_WORKER:-1}
+# The maintainer is no numbered worker: its own worktree, log and lock.
+[ -n "$MAINTAIN" ] && K=maintainer
 WT="$REPO/.claude/worktrees/relay-$K"
 LOG="$DIR/relay-$K.log"
+LOCK="$DIR/lock-$K"
+[ -n "$MAINTAIN" ] && LOCK="$DIR/maintain.lock"
 
 # shellcheck source=hack/lib/github.sh
 . "$REPO/hack/lib/github.sh"
@@ -293,6 +313,44 @@ Rules for this headless run:
 - End your turn with a short account, the relay's log of this triage: readied
   (#N, one line why), left proposed (#N, what is missing), closed as
   duplicates (#N of #M), sent to the user (#N, the question).
+EOF
+}
+
+# maintain_prompt LAST: the maintainer session's prompt; LAST is the time of
+# the last sweep, or "never".
+maintain_prompt() {
+  cat <<EOF
+You run headless, started by hack/relay-watch.sh (hack/relay.sh --maintain)
+while the user sleeps; no person is watching and nobody can answer a question.
+You are the project's maintainer for $C4_GITHUB_REPO, acting on the owner's
+behalf: follow GOVERNANCE.md and the maintainer skill (load it first), and run
+its sweep. $([ "$1" = never ] && echo "No sweep ran before this one: look at everything open, and the
+last week of closed issues and merged pull requests." || echo "The last sweep was at $1; look at what changed since then, plus
+what the report still carries.")
+
+You decide, correct, answer, review and release; you don't build. You take no
+issue, change no code or docs, commit nothing and open no pull request; this
+worktree, relay-maintainer, is on origin/main for reading only. What needs
+building becomes an issue the relay works (\`hack/lib/github.sh create TITLE
+FILE status/proposed kind/<kind>\`). The owner's word wins: an owner comment
+is binding and you never reverse it. Only what GOVERNANCE.md reserves to the
+owner, or a direction you are unsure of, goes to the owner, each item with the
+choice you would make and why, in the report's *Needs you*; never a list of
+open questions. End the sweep by writing the report and setting it with
+\`hack/lib/github.sh report FILE\` (the pinned *Maintainer report* issue).
+
+Rules for this headless run:
+- Never use the Fable model: not for subagents, not for anything. Always name
+  the model when dispatching (sonnet or opus). Dispatch every subagent with
+  run_in_background: false and never end your turn while one is running.
+- Never wait on the factory or a run longer than about 20 minutes in one
+  stretch; note it in the report and go on.
+- If an action is refused (permissions, auto mode), don't retry it: say so in
+  the report and your account.
+- Keep the context small: filter with jq, grep and tail; delegate broad reads
+  to a subagent.
+- End your turn with a short account, the relay's log of this sweep: what you
+  decided, corrected, filed and released, and what went to the owner.
 EOF
 }
 
@@ -755,6 +813,38 @@ triage() {
   session triage "$DIR/triage-$K-$(date +%Y%m%d-%H%M%S)" "$id" "$(triage_prompt "$list")"
 }
 
+# maintained [ACTIVITY]: tell the watch when the last sweep ended and the
+# activity it saw; without ACTIVITY (the sweep never ran, or GitHub can't say),
+# only the time, so the watch starts one again after WATCH_MAINTAIN.
+maintained() { [ -n "$DRY_RUN" ] || echo "$(date +%s)${1:+ $1}" >"$DIR/maintained"; }
+
+# maintain: one maintainer session (see the header).
+maintain() {
+  local id last t act rc
+  if [ -z "$DRY_RUN" ]; then
+    worktree || { log "could not prepare the worktree $WT; no sweep"; maintained; return 1; }
+  fi
+  admit || { log "no sweep"; maintained; return 1; }
+  last=never t=
+  [ -r "$DIR/maintained" ] && read -r t _ <"$DIR/maintained"
+  [[ $t =~ ^[0-9]+$ ]] && last=$(date -d "@$t" -Is)
+  id=$(cat /proc/sys/kernel/random/uuid)
+  if [ -n "$DRY_RUN" ]; then
+    log "would switch $WT to origin/main and start maintainer session $id, with this prompt:"
+    echo "-----"
+    maintain_prompt "$last"
+    echo "-----"
+    return 0
+  fi
+  git -C "$WT" switch -q --detach origin/main 2>>"$LOG" ||
+    { log "could not switch $WT to origin/main; no sweep"; maintained; return 1; }
+  log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD)"
+  session maintainer "$DIR/maintain-$(date +%Y%m%d-%H%M%S)" "$id" "$(maintain_prompt "$last")"
+  rc=$?
+  # After a limit, the sweep was cut short: only the time, so it runs again.
+  if [ "$rc" = 0 ] && act=$(gh_activity 2>>"$LOG"); then maintained "$act"; else maintained; fi
+}
+
 # work: the worker's sessions, one after another (see the header).
 work() {
   local i id rc try claim name branch before head out limited result reason released
@@ -873,7 +963,18 @@ work() {
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
-[ "${C4_RELAY_CHILD:-}" = 1 ] || [ -n "$TRIAGE" ] || cap "$WORKERS" || exit 1
+[ "${C4_RELAY_CHILD:-}" = 1 ] || [ -n "$TRIAGE" ] || [ -n "$MAINTAIN" ] || cap "$WORKERS" || exit 1
+
+# --maintain from a terminal or the watch: start the maintainer, detached,
+# unless it runs. It doesn't count against RELAY_MAX_WORKERS.
+if [ -n "$MAINTAIN" ] && [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; then
+  [ -e "$STOP" ] && { echo "the stop file is there; no sweep"; exit 0; }
+  flock -n "$LOCK" true || { echo "the maintainer is already running: tail -f $LOG"; exit 0; }
+  gh_token || exit 1
+  C4_RELAY_CHILD=1 C4_RELAY_MAINTAIN=1 setsid nohup bash "$0" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
+  echo "maintainer started (pid $!): tail -f $LOG"
+  exit 0
+fi
 
 # --triage from a terminal or the watch: start one triage session, detached,
 # in the first worker that isn't running.
@@ -918,13 +1019,18 @@ if [ -z "$DRY_RUN" ]; then
   if [ "${C4_RELAY_RESTART:-}" = 1 ]; then
     flock -n 9 || { log "restarted without the lock of worker $K; exiting"; exit 1; }
   else
-    exec 9>"$DIR/lock-$K"
+    exec 9>"$LOCK"
     flock -n 9 || { log "another worker $K holds the lock; exiting"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
   fi
 fi
 CODE_SUM=$(code_sum)
 gh_token 2>/dev/null || { log "no GitHub token; stopping"; exit 1; }
 log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, HEAD $(git rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
+if [ -n "$MAINTAIN" ]; then
+  maintain
+  log "the maintainer finished its sweep"
+  exit 0
+fi
 if [ -n "$TRIAGE" ]; then
   triage
   log "worker $K finished the triage"

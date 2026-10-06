@@ -58,6 +58,11 @@
 #                                        and none runs there now (it may be the fix).
 #                                        Prints an issue body naming the runs, their commits, the failing jobs
 #                                        and the newest run's last 40 failed log lines. Exit 1: not red
+#   hack/lib/github.sh activity          one line that changes whenever an issue or pull request changes (the
+#                                        Maintainer report excluded) or main moves; the relay watch compares it
+#   hack/lib/github.sh report FILE       set FILE as the body of the pinned Maintainer report issue (label
+#                                        maintainer/report, no status), creating and pinning it the first time;
+#                                        prints its URL
 #   hack/lib/github.sh intake N          label issue N by where it came from: a "### Reported by" name in its
 #                                        body gives user/<name> + source/user, else source/dev; adds
 #                                        status/proposed when it has no status. Only for issues from the
@@ -135,7 +140,10 @@ GH_LABELS=(
   'source/dev|bfd4f2|Made while developing c4factory'
   'source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it'
   'needs/cluster|1d76db|Needs a real Kubernetes node: Agent Sandbox pods, kubelet, RBAC as deployed, Gitea Actions runners'
+  'maintainer/report|5319e7|The pinned Maintainer report; the maintainer rewrites it each sweep'
 )
+GH_REPORT_LABEL=maintainer/report
+GH_REPORT_TITLE='Maintainer report'
 
 # gh_token: export GH_TOKEN, from the git credential helper unless already set.
 gh_token() {
@@ -1119,6 +1127,49 @@ gh_create() {
     gh_api --method POST "repos/$C4_GITHUB_REPO/issues" --input - --jq .number
 }
 
+# gh_activity: one line, UPDATED SHA: the newest updated_at among the issues
+# and pull requests (the report issue left out, so the maintainer's own report
+# doesn't count) and main's commit. It changes whenever anything does.
+gh_activity() {
+  local updated sha
+  updated=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=all&sort=updated&direction=desc&per_page=20" \
+    --jq "[.[] | select(.labels | any(.name == \"$GH_REPORT_LABEL\") | not) | .updated_at] | first // \"none\"") || return 1
+  sha=$(gh_api "repos/$C4_GITHUB_REPO/commits/main" --jq .sha) || return 1
+  [ -n "$updated" ] && [ -n "$sha" ] || { echo "github: activity: GitHub gave no answer" >&2; return 1; }
+  echo "$updated $sha"
+}
+
+# gh_report FILE: make FILE the body of the open issue labeled
+# maintainer/report, and print its URL. The first time there is none, create
+# it (and the label) and pin it; a pin that fails is said, not fatal. The issue
+# carries no status, so nothing picks or triages it.
+gh_report() {
+  local body n url id line color desc
+  body=$(gh_read "${1:?usage: report FILE}") || return 1
+  [ -n "$body" ] || { echo "github: empty report" >&2; return 1; }
+  n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
+    --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+  if [ -n "$n" ]; then
+    jq -n --arg b "$body" '{body: $b}' |
+      gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - --jq .html_url
+    return
+  fi
+  if ! gh_api "repos/$C4_GITHUB_REPO/labels/${GH_REPORT_LABEL//\//%2F}" >/dev/null 2>&1; then
+    for line in "${GH_LABELS[@]}"; do
+      [[ $line == "$GH_REPORT_LABEL|"* ]] || continue
+      IFS='|' read -r _ color desc <<<"$line"
+      gh_api --method POST "repos/$C4_GITHUB_REPO/labels" -f name="$GH_REPORT_LABEL" -f color="$color" \
+        -f description="$desc" >/dev/null || return 1
+    done
+  fi
+  url=$(jq -n --arg t "$GH_REPORT_TITLE" --arg b "$body" --arg l "$GH_REPORT_LABEL" '{title: $t, body: $b, labels: [$l]}' |
+    gh_api --method POST "repos/$C4_GITHUB_REPO/issues" --input - --jq '"\(.node_id) \(.html_url)"') || return 1
+  id=${url%% *} url=${url#* }
+  gh_api graphql -f query='mutation($id: ID!) { pinIssue(input: {issueId: $id}) { issue { number } } }' \
+    -f id="$id" >/dev/null || echo "github: created $url but could not pin it; pin it by hand" >&2
+  echo "$url"
+}
+
 # gh_red WORKFLOW: print an issue body when WORKFLOW's two newest finished runs
 # on main failed (see the usage above); exit 1 when it isn't red, 2 when GitHub
 # can't say.
@@ -1187,6 +1238,8 @@ gh_intake() {
   case $assoc in OWNER | MEMBER | COLLABORATOR) ;; *) return 0 ;; esac
   body=$(jq -r '.body // ""' <<<"$issue")
   labels=$(jq -r '.labels[].name' <<<"$issue")
+  # The Maintainer report is no piece of work: no source, no status.
+  grep -qxF -- "$GH_REPORT_LABEL" <<<"$labels" && return 0
   name=$(gh_reporter <<<"$body")
   slug=$(gh_user_slug "$name")
   if [ -n "$slug" ]; then
@@ -1238,6 +1291,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     create) gh_create "$@" ;;
     intake) gh_intake "$@" ;;
     red) gh_red "$@" ;;
+    activity) gh_activity ;;
+    report) gh_report "$@" ;;
     *)
       sed -n '2,/^$/{s/^# \{0,1\}//;p}' "$0"
       [ "$cmd" = help ] || exit 64
