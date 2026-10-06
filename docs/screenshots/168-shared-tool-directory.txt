@@ -16,23 +16,25 @@ B exit 0
 
 A installed golangci-lint while B waited on its lock; B built the custom one while A waited. Both exit 0.
 
-## First make check in relay-8 fills the shared .dev/make/bin
+## First make check in relay-8 fills the shared .dev/make/bin (two tries)
 
-check-a2.log:13:0 issues.
-check-a2.log:14:Setting up envtest binaries for Kubernetes version 1.37...
-features	0.008s	coverage: 92.0% of statements
-agentrunner	7.571s	coverage: 87.8% of statements
-controller	149.606s	coverage: 84.1% of statements
-gitprovider	0.541s	coverage: 81.0% of statements
-model	0.019s	coverage: 98.4% of statements
-scaffold	0.042s	coverage: 92.4% of statements
-sessionclient	15.964s	coverage: 73.2% of statements
-controller-gen@v0.22.0
-golangci-lint@v2.13.1
-check-a.log:7:Building custom golangci-lint with plugins...
-check-a.log:9:0 issues.
-setup-envtest@v0.25.0
-check-a.log:11:Setting up envtest binaries for Kubernetes version 1.37...
+Downloading sigs.k8s.io/controller-tools/cmd/controller-gen@v0.22.0
+Downloading github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+Building custom golangci-lint with plugins...
+0 issues.
+Downloading sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.25.0
+Setting up envtest binaries for Kubernetes version 1.37...
+Error: Failed to set up envtest binaries for version 1.37.
+make: *** [Makefile:253: setup-envtest] Error 1
+0 issues.
+Setting up envtest binaries for Kubernetes version 1.37...
+ok  	github.com/JairJosafath/c4factory/features	0.008s	coverage: 92.0% of statements
+ok  	github.com/JairJosafath/c4factory/internal/agentrunner	7.571s	coverage: 87.8% of statements
+ok  	github.com/JairJosafath/c4factory/internal/controller	149.606s	coverage: 84.1% of statements
+ok  	github.com/JairJosafath/c4factory/internal/gitprovider	0.541s	coverage: 81.0% of statements
+ok  	github.com/JairJosafath/c4factory/internal/model	0.019s	coverage: 98.4% of statements
+ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.042s	coverage: 92.4% of statements
+ok  	github.com/JairJosafath/c4factory/internal/sessionclient	15.964s	coverage: 73.2% of statements
 
 (The first try failed on a network reset while downloading envtest-v1.37.0; the retry passed: exit 0.)
 
