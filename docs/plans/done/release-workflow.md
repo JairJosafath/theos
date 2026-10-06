@@ -3,7 +3,7 @@
 **Goal:** A device installs a released c4factory without building anything: a
 `vX.Y.Z` tag publishes the operator, UI and toolchain images and the Helm chart.
 Issue #99; follows the chart (#98, [helm-chart.md](helm-chart.md)); spec in
-[user-issues.md](../user-issues.md), *Not in this plan*.
+[user-issues.md](user-issues.md), *Not in this plan*.
 
 ## Shape
 
