@@ -246,6 +246,22 @@ round; round
 check "pick fails: no relay" "$(starts)" 5
 check "pick fails: logged once" "$(logged 'could not ask GitHub for the next issue (exit 2): github: no token')" 1
 
+# Paused for a limit: nothing starts, not even a triage, and the pause is logged
+# once; once it passes, the relay starts again.
+echo "$(($(date +%s) + 3600)) You've hit your session limit" >"$DIR/paused-until"
+n=$(triages)
+PICKED= PICK_RC=1 PROPOSED='70 71 72'
+aged
+round
+check "paused: no triage" "$(triages)" "$n"
+PICKED=$'60\tTitle\turl\tready' PICK_RC=0 LAST_N=
+round
+check "paused: no relay" "$(starts)" 5
+check "paused: logged once" "$(logged "the relay is paused until .* (You've hit your session limit); starting nothing")" 1
+echo "$(($(date +%s) - 1)) You've hit your session limit" >"$DIR/paused-until"
+round
+check "pause over: starts the relay" "$(starts)" 6
+
 # Main's CI, with gh faked: runs from $T/runs-<file>.json, open issues in
 # $T/issues.json, and every issue filed appended there.
 HERE=$(cd "$(dirname "$0")" && pwd)

@@ -3,8 +3,9 @@
 # device with the Kind cluster, and the wait for headroom before a pick, with a
 # faked /proc/meminfo; the flush of a kept handoff, which releases the
 # session's claim so the relay has none left to release; the cluster
-# lease a session leaves behind, which the relay drops; and the triage of the
-# proposed issues, as a dry run.
+# lease a session leaves behind, which the relay drops; the triage of the
+# proposed issues, as a dry run; and, with claude faked, the pause a usage
+# limit sets and the issue that goes to the user after failed sessions.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -110,5 +111,95 @@ check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues
 echo "1 40 41" >"$DIR/triaged"
 DRY_RUN= untriaged
 check "triage: never ran" "$(awk '{print NF}' "$DIR/triaged")" 1
+
+# The sessions, with claude faked (FAKE: limit, fail, handoff or commit) and
+# GitHub faked: one ready issue, #175 on branch b.
+WT=$T/wt
+git init -q -b b "$WT"
+git -C "$WT" -c user.name=t -c user.email=t@t commit -q --allow-empty -m first
+mkdir -p "$T/bin"
+cat >"$T/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+case $(cat "$FAKE") in
+  limit) echo '{"is_error":true,"result":"You'"'"'ve hit your session limit · resets 3am (UTC)","num_turns":1}'; exit 1 ;;
+  login) echo 'Not logged in · Please run /login' >&2; exit 1 ;;
+  fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
+  handoff) echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"handed off","num_turns":9}' ;;
+  commit) git -c user.name=t -c user.email=t@t commit -q --allow-empty -m more; echo '{"is_error":false,"result":"committed","num_turns":9}' ;;
+esac
+FAKE
+chmod +x "$T/bin/claude"
+export PATH=$T/bin:$PATH FAKE=$T/fake HANDOFF=$T/handoff
+echo 1 >"$HANDOFF"
+update() { :; }
+worktree() { :; }
+drop_lease() { :; }
+gh_claim_read() { return 1; }
+pick() { ISSUE=175 TITLE=t URL=u HOW=ready; }
+gh_take() { echo take >>"$T/takes"; printf 'otter-175\tb\n'; }
+handoff_id() { cat "$HANDOFF"; }
+outcome() { if [ "$(handoff_id)" != "$2" ]; then echo handed-off; else echo nothing; fi; }
+gh_comment() { cat >"$T/comment"; echo "https://github.com/x/issues/$1#issuecomment-9"; }
+gh_set_status() { echo "$1 $2" >"$T/status"; }
+takes() { cat "$T/takes" 2>/dev/null | wc -l | tr -d ' '; }
+rm -f "$STOP" "$DIR/admitted"
+: >"$LOG"
+ADMIT_GAP=0 MAX_SESSIONS=1 MEM_POLL=1
+
+# A usage limit pauses the device until the time it names, and isn't counted.
+echo limit >"$FAKE"
+work
+want=$(TZ=UTC date -d 3am +%s)
+[ "$want" -le "$(date +%s)" ] && want=$((want + 86400))
+check "limit: paused until the reset" "$(cut -d' ' -f1 "$DIR/paused-until")" "$want"
+grep -q "paused the relay until .*: You've hit your session limit" "$LOG"; check "limit: logged" $? 0
+check "limit: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+check "limit: one claim" "$(takes)" 1
+# While paused, every worker waits in admit and claims nothing; then goes on.
+echo "$(($(date +%s) + 3)) limit" >"$DIR/paused-until"
+echo fail >"$FAKE"
+work &
+sleep 2
+check "paused: nothing claimed" "$(takes)" 1
+check "paused: logged once" "$(grep -c 'paused until .*(limit); picking nothing' "$LOG")" 1
+wait
+check "pause over: claims" "$(takes)" 2
+grep -q "the pause is over" "$LOG"; check "pause over: logged" $? 0
+rm -f "$DIR/fails-175"
+# A failed login, with no result, pauses for RELAY_LIMIT_WAIT.
+echo login >"$FAKE"
+LIMIT_WAIT=10m work
+check "login: paused for RELAY_LIMIT_WAIT" "$(($(cut -d' ' -f1 "$DIR/paused-until") - $(date +%s) > 590))" 1
+check "login: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+rm -f "$DIR/paused-until"
+
+# Failed sessions in a row: a handoff or a commit resets the count; the third
+# sets the issue to needs-human, with a comment naming each session.
+echo fail >"$FAKE"
+work; work
+check "fails: two counted" "$(wc -l <"$DIR/fails-175")" 2
+check "fails: not yet the user's" "$(cat "$T/status" 2>/dev/null)" ""
+echo handoff >"$FAKE"
+work
+check "fails: a handoff resets" "$(test -e "$DIR/fails-175" && echo kept)" ""
+echo fail >"$FAKE"
+work
+echo commit >"$FAKE"
+work
+check "fails: a commit resets" "$(test -e "$DIR/fails-175" && echo kept)" ""
+: >"$LOG"
+echo fail >"$FAKE"
+work; work
+check "fails: two, still not the user's" "$(cat "$T/status" 2>/dev/null)" ""
+work
+check "fails: the third sets needs-human" "$(cat "$T/status")" "175 needs-human"
+check "fails: count cleared" "$(test -e "$DIR/fails-175" && echo kept)" ""
+for id in $(sed -n 's/.*session 1 start: id \([^,]*\),.*/\1/p' "$LOG"); do
+  grep -q "^### Session \`$id\`: exit 0 after 0m$" "$T/comment"; check "fails: comment names $id" $? 0
+done
+check "fails: comment has each stderr" "$(grep -c '^boom ' "$T/comment")" 3
+check "fails: comment has each account" "$(grep -c '^gave up$' "$T/comment")" 3
+grep -q "#175 failed 3 sessions in a row; set it to status/needs-human: https://github.com/x/issues/175#issuecomment-9" "$LOG"
+check "fails: logged" $? 0
 
 exit $fail

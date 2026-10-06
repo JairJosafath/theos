@@ -34,6 +34,10 @@
 # red main that lasts, or both devices' watches, file one issue; a single
 # failure files nothing. The session that fixes main closes it.
 #
+# While the relay is paused for a usage limit or a failed login
+# (.relay/paused-until, which hack/relay.sh writes), the watch starts nothing,
+# not even a triage, and logs the pause once.
+#
 # Every 5 minutes it runs
 # hack/pull.sh, so pick never reads stale rules, and restarts itself when that
 # changed this script.
@@ -204,7 +208,15 @@ triage() {
 # SAID is the last state logged, so a state that lasts is logged once.
 SAID= LAST_N= LAST_T=0
 round() {
-  local row rc n now
+  local row rc n now until why
+  now=$(date +%s)
+  if [ -r "$DIR/paused-until" ] && read -r until why <"$DIR/paused-until" &&
+    [[ $until =~ ^[0-9]+$ ]] && [ "$until" -gt "$now" ]; then
+    [ "$SAID" = "paused$until" ] ||
+      log "the relay is paused until $(date -d "@$until" -Is) ($why); starting nothing"
+    SAID=paused$until
+    return 0
+  fi
   worker_free || { SAID=busy; return 0; }
   row=$(pick_next 2>&1)
   rc=$?
