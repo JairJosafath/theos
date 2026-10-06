@@ -97,6 +97,10 @@ carries.
    ([Kubernetes triage](https://www.kubernetes.dev/docs/guide/issue-triage/)):
    - Labels: every open issue has one `status/*`, one `kind/*` and a
      `source/*`; the report issue is the exception.
+   - No issue sends an agent to a cluster: agents never lease, create or
+     deploy to one, and `needs/cluster` gates nothing. A *Done when* that asks
+     for Kind evidence gets rewritten to what `make check` (and
+     `make test-gitea`) can show; a human run of Kind is never needed to close.
    - Duplicates: close them with `hack/lib/github.sh duplicate N M`.
    - Proposed issues: one whose triage comment has gone unanswered for 14
      days gets your decision. Fill it in, ready it as design work, or close it

@@ -5,6 +5,7 @@
 # back-off for up to five minutes; this restarts them once the network is up,
 # then waits for every Deployment and runs the doctor.
 #   make up     (make down stops it again; both work on KIND_CLUSTER, one cluster of the pool)
+# For a human: agents never lease, build or deploy to a Kind cluster.
 set -euo pipefail
 
 # Default: the pool cluster this checkout leased (hack/lib/github.sh cluster name), else c4factory.
@@ -39,7 +40,7 @@ fi
 started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 state=$(docker inspect -f '{{.State.Status}}' "$NODE" 2>/dev/null) || state=missing
 if [[ "$state" == missing ]]; then
-  echo "Kind cluster $CLUSTER does not exist: build it with make e2e (or make cluster ...)" >&2
+  echo "Kind cluster $CLUSTER does not exist: a human builds one with C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire; agents never do" >&2
   exit 1
 fi
 if [[ "$state" != running ]]; then

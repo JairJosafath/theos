@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests for hack/heavy-guard.sh, the PreToolUse hook that warns before a heavy
 # job when memory headroom is low, with a faked /proc/meminfo, ps and docker,
-# and denies a cluster command while another checkout holds the cluster lease.
+# and denies a cluster command in a headless session, or while another
+# checkout holds the cluster lease.
 # Run: hack/heavy-guard_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -122,8 +123,8 @@ done
 reason=$(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out")
 case $reason in *"heron-50 (#50, $T/other)"*) r=yes ;; *) r=no ;; esac
 check "deny: names the holder" $r yes
-case $reason in *"hack/lib/github.sh cluster acquire"*) r=yes ;; *) r=no ;; esac
-check "deny: says to acquire" $r yes
+case $reason in *"C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire"*) r=yes ;; *) r=no ;; esac
+check "deny: tells the human to acquire" $r yes
 C4_HEADLESS=1 hook "make deploy"
 check "lease held, headless: denied" "$(decision)" deny
 for c in "make check" "make upgrade" "make docker-build" "git log --grep 'make deploy'" \
@@ -162,6 +163,19 @@ rm -f "$LEASE2"
 rm -f "$C4_CLUSTER_LEASE"
 hook "make up"
 check "no lease: runs" "$(cat "$T/out")" ""
+# A headless session never runs a cluster command, lease or not, and is never
+# told to lease one (#353).
+for c in "make deploy" "make e2e" "make up"; do
+  C4_HEADLESS=1 hook "$c"
+  check "headless, no lease, $c: denied" "$(decision)" deny
+done
+reason=$(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out")
+case $reason in *"cluster acquire"*) r=yes ;; *) r=no ;; esac
+check "headless deny: never says to acquire" $r no
+case $reason in *"make check"*) r=yes ;; *) r=no ;; esac
+check "headless deny: names the gate" $r yes
+C4_HEADLESS=1 hook "git commit -m 'next: make deploy then verify'"
+check "headless, quoted: not a cluster command" "$(cat "$T/out")" ""
 meminfo 1
 hook "make deploy"
 check "no lease, low memory: asks" "$(decision)" ask

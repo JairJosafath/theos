@@ -418,7 +418,7 @@ group_warning() {
   local missing
   missing=$(missing_groups "$2")
   [ -n "$missing" ] || return 0
-  echo "$1 lacks the group(s) $missing that $(id -un) has in /etc/group: it inherits the groups of the systemd user manager, which started before $(id -un) joined them, so its sessions can't reach Docker and skip needs/cluster issues. Restart the user manager: log out and in again, or on WSL run wsl --shutdown from Windows. Check: grep Groups /proc/\$(pgrep -u \"\$USER\" -x systemd)/status"
+  echo "$1 lacks the group(s) $missing that $(id -un) has in /etc/group: it inherits the groups of the systemd user manager, which started before $(id -un) joined them, so its sessions can't reach Docker (make test-gitea runs Gitea in it). Restart the user manager: log out and in again, or on WSL run wsl --shutdown from Windows. Check: grep Groups /proc/\$(pgrep -u \"\$USER\" -x systemd)/status"
 }
 
 # own_groups: log the warning when this watch lacks one of the user's groups.

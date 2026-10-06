@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Pick up, claim, hand off or finish a GitHub issue on JairJosafath/c4factory with hack/lib/github.sh - pick and take, lease a Kind cluster, write the handoff comment, close or escalate to the maintainer (needs-maintainer), file a follow-up. Use when taking or continuing a factory issue, when the context grows past about 100k tokens between tasks, when work stops mid-way, or when the user asks to hand off, pause, wrap up or continue later.
+description: Pick up, claim, hand off or finish a GitHub issue on JairJosafath/c4factory with hack/lib/github.sh - pick and take, write the handoff comment, close or escalate to the maintainer (needs-maintainer), file a follow-up. Use when taking or continuing a factory issue, when the context grows past about 100k tokens between tasks, when work stops mid-way, or when the user asks to hand off, pause, wrap up or continue later.
 ---
 
 # Handoff
@@ -37,38 +37,43 @@ One `status/*` at a time, swapped with `hack/lib/github.sh status N <status>`:
 `proposed` (waits for the user), `ready`, `in-progress`, `needs-maintainer`
 (an agent escalated it; the newest comment says what it needs),
 `needs-human` (the maintainer sent it to the owner; only the maintainer sets
-it, [GOVERNANCE.md](../../../GOVERNANCE.md)). Both release your claim and lease. `needs/cluster` marks work whose "Done when" needs a
-real Kubernetes node: Agent Sandbox pods, node or kubelet behaviour, RBAC as
-deployed, Gitea Actions runners (`hack/lib/github.sh label N needs/cluster`
-when you find out mid-way). Gitea work, YAML, templates and controller logic
-don't qualify: `make test-gitea`, `make seed-local`, `make validate-yaml` and
-envtest verify them on any device ([docs/dev/testenv.md](../../../docs/dev/testenv.md#test-tiers)).
-With `C4_CLUSTER=none`, land the code and tests, label it and hand off the
-rest.
+it, [GOVERNANCE.md](../../../GOVERNANCE.md)). Both release your claim. A
+`needs/cluster` label left on an old issue gates nothing: take and work it
+like any other.
 
-## Lease a cluster
+## No cluster
 
-Only around the steps that touch one (deploys, samples, e2e, factory-ops,
-`make up`/`down`), never for the whole issue:
+An agent never leases, creates or deploys to a Kind cluster, and never runs
+`make e2e`, `make deploy`, `make up`/`down` or factory-ops against one.
+`make check` (Go tests, `make validate-yaml`, envtest) is the gate, with
+`make test-gitea` and `make seed-local` where Go alone can't see the
+behaviour ([docs/dev/testenv.md](../../../docs/dev/testenv.md#test-tiers)).
+When only a real node would show something, land the code with the tests the
+lower tiers can give and say in the pull request what a human run of Kind
+would check. Kind is a tier only a human runs: `cluster acquire` refuses
+without `C4_HUMAN_CLUSTER=1`, which no agent sets.
+
+### For a human: lease a cluster
+
+With `C4_HUMAN_CLUSTER=1` set, only around the steps that touch one (deploys,
+samples, e2e, factory-ops, `make up`/`down`), never for the whole issue:
 
 1. Do the cluster-free work first: code, `make check`, envtest.
-2. `hack/lib/github.sh cluster acquire` prints the cluster leased to this
-   checkout (waits up to 30m, `--wait 10m` for less). Exit 4 names the
-   holders: hand off with only the cluster steps left. A pool cluster
-   belongs to nobody between leases, so an earlier session's install may
-   still be on it: when the "Done when" asks for a fresh cluster, or what is
-   installed isn't yours, pass `--fresh`. It prefers a cluster not created
-   yet, else deletes and recreates the one it leased, and only that one;
-   never `kind delete cluster` or `make cluster-delete` by hand. To install
-   a release (`docs/getting-started.md`, the chart), pass `--fresh --bare`:
-   the same, with nothing installed, since the chart brings its own Gitea
-   and helm can't take over the testenv's. A plain acquire never hands out
-   a bare cluster as is: it prefers others and recreates one it must take.
+2. `C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire` prints the cluster
+   leased to this checkout (waits up to 30m, `--wait 10m` for less). Exit 4
+   names the holders. A pool cluster belongs to nobody between leases, so an
+   earlier install may still be on it: when what is installed isn't yours,
+   pass `--fresh`. It prefers a cluster not created yet, else deletes and
+   recreates the one it leased, and only that one; never `kind delete
+   cluster` or `make cluster-delete` by hand. To install a release
+   (`docs/getting-started.md`, the chart), pass `--fresh --bare`: the same,
+   with nothing installed, since the chart brings its own Gitea and helm
+   can't take over the testenv's. A plain acquire never hands out a bare
+   cluster as is: it prefers others and recreates one it must take.
 3. Make targets now use it; kubectl takes `--context kind-<name>` on every
    call, never `kubectl config use-context` (every checkout shares the
    kubeconfig). `make deploy` this branch first: never trust what is deployed.
-4. Verify, then `hack/lib/github.sh cluster release`. A handoff names the
-   cluster under **State outside git** only while the work still holds it.
+4. Verify, then `hack/lib/github.sh cluster release`.
 
 ## Sign your work
 
@@ -121,7 +126,6 @@ Lost claim (the heartbeat hook says so):
   How to build it is ours to decide (AGENTS.md, "Designing is our job"),
   never a question for the user.
 - **Follow-up found:** `hack/lib/github.sh create TITLE FILE status/proposed
-  kind/<kind>` (add `needs/cluster` if it needs a real node; a body line
-  `Depends on #M` if it waits on another issue). Don't start it in this
+  kind/<kind>` (a body line `Depends on #M` if it waits on another issue). Don't start it in this
   session. Write it so the relay's triage can ready it: one piece of work, a
   checkable "Done when", and what it waits on.

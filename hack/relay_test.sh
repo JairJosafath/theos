@@ -3,8 +3,8 @@
 # device with the Kind cluster, and the wait for headroom before a pick, with a
 # faked /proc/meminfo; the flush of a kept handoff, which releases the
 # session's claim so the relay has none left to release; the cluster
-# lease a session leaves behind, which the relay drops; the Docker gate, with
-# docker faked; the triage of the
+# lease a session leaves behind, which the relay drops; the prompts, which
+# never send a session to a cluster; the triage of the
 # proposed issues and the maintainer's prompt, as dry runs; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing; and idle workers,
@@ -120,59 +120,14 @@ drop_lease "that session 1 left behind"
 check "lease: another checkout's kept" "$(jq -r .worktree "$C4_CLUSTER_LEASE")" "$T/other"
 check "lease: nothing logged" "$(cat "$LOG")" ""
 
-# The Docker gate, with docker faked (DOCKER: ok, denied, down, slow): a worker
-# that can't reach Docker runs its sessions as C4_CLUSTER=none and logs why
-# once per change; one that can keeps the device's C4_CLUSTER.
-mkdir -p "$T/bin"
-cat >"$T/bin/docker" <<'FAKE'
-#!/usr/bin/env bash
-case $(cat "$DOCKER" 2>/dev/null) in
-  denied) echo 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.47/info": dial unix /var/run/docker.sock: connect: permission denied' >&2; exit 1 ;;
-  down) echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?' >&2; exit 1 ;;
-  slow) sleep 5 ;;
-  *) echo 27.5.1 ;;
-esac
-FAKE
-chmod +x "$T/bin/docker"
-export DOCKER=$T/docker
-gate() { # gate CLUSTER0 STATE: run the gate on a worker started with C4_CLUSTER=CLUSTER0; print C4_CLUSTER after it
-  echo "$2" >"$DOCKER"
-  if [ "$1" = unset ]; then unset C4_CLUSTER; else export C4_CLUSTER=$1; fi
-  CLUSTER0=$1 PATH=$T/bin:$PATH DOCKER_WAIT=1 docker_gate
-  echo "${C4_CLUSTER-unset}"
-}
-: >"$LOG"
-while IFS='|' read -r what cluster0 state want reason; do
-  check "docker gate: $what" "$(gate "$cluster0" "$state")" "$want"
-  if [ -n "$reason" ]; then
-    grep -q "docker: $reason.*; sessions run as C4_CLUSTER=none and skip needs/cluster issues$" "$LOG"
-    check "docker gate: $what: logs why" $? 0
-  else
-    check "docker gate: $what: logs nothing" "$(cat "$LOG")" ""
-  fi
-  : >"$LOG"
-done <<'TABLE'
-reachable|unset|ok|unset|
-reachable, cluster named|c4factory|ok|c4factory|
-permission denied|unset|denied|none|permission denied on the Docker socket: the relay runs without the docker group
-daemon down|unset|down|none|the Docker daemon is down: Cannot connect
-no answer|unset|slow|none|the Docker daemon didn't answer in 1s
-no cluster on the device|none|denied|none|
-TABLE
-# Once per change, and back when Docker answers again, in one worker.
-(
-  gate unset denied >/dev/null; gate unset denied >/dev/null; gate unset denied >/dev/null
-  check "docker gate: logged once" "$(grep -c "docker: permission denied" "$LOG")" 1
-  gate unset down >/dev/null
-  check "docker gate: a new reason logged" "$(grep -c "docker: " "$LOG")" 2
-  check "docker gate: the prompt says why" "$(prompt 1 t u ready n b | grep -c "can't reach Docker (the Docker daemon is down")" 1
-  gate unset ok >/dev/null
-  check "docker gate: back" "${C4_CLUSTER-unset}" unset
-  check "docker gate: back logged" "$(grep -c "docker: reachable again" "$LOG")" 1
-  check "docker gate: the prompt is the cluster's again" "$(prompt 1 t u ready n b | grep -c "can't reach Docker")" 0
-)
-: >"$LOG"
-rm -f "$DOCKER"
+# No prompt tells a session to lease, create or deploy to a cluster (#353):
+# the worker's, the triage's and the maintainer's, on a device with or without one.
+for c in unset none; do
+  out=$(if [ "$c" = unset ]; then unset C4_CLUSTER; else C4_CLUSTER=$c; fi
+    prompt 1 t u ready n b; prompt 1 t u in-progress n b)
+  check "prompt, C4_CLUSTER $c: no cluster steps" "$(grep -cE 'cluster acquire|cluster release|make deploy|--fresh|needs/cluster' <<<"$out")" 0
+  check "prompt, C4_CLUSTER $c: never a cluster" "$(grep -c 'Never lease, create or deploy to a Kind cluster' <<<"$out")" 2
+done
 
 # A session escalates to the maintainer, never to the user.
 out=$(prompt 1 t u ready n b)
@@ -206,6 +161,7 @@ check "triage: needs-maintainer is the maintainer's" "$(grep -c "needs-maintaine
 check "triage: readies an unsettled design as design work" "$(grep -c '^- Ready it as design work' <<<"$out")" 1
 check "triage: never asks how to build it" "$(grep -c 'Never ask how to' <<<"$out")" 1
 check "triage: a direction comes with the choice it would make" "$(grep -c 'says the choice you would make and why' <<<"$out")" 1
+check "triage: no cluster steps" "$(grep -cE 'cluster acquire|make deploy|needs/cluster' <<<"$out")" 0
 gh_proposed() { :; }
 rm -f "$DIR/admitted"
 check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues; no triage"
@@ -218,6 +174,7 @@ check "triage: never ran" "$(awk '{print NF}' "$DIR/triaged")" 1
 # report, says it commits nothing, and gives the last sweep's time.
 rm -f "$DIR/admitted" "$DIR/maintained"
 out=$(DRY_RUN=1 maintain)
+check "maintain: no cluster steps" "$(grep -cE 'cluster acquire|make deploy|needs/cluster' <<<"$out")" 0
 check "maintain: follows GOVERNANCE.md" "$(grep -c 'follow GOVERNANCE.md and the maintainer skill' <<<"$out")" 1
 check "maintain: sets the report" "$(grep -c 'hack/lib/github.sh report FILE' <<<"$out")" 1
 check "maintain: commits nothing" "$(grep -c 'commit nothing' <<<"$out")" 1
