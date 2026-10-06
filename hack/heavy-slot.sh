@@ -105,7 +105,8 @@ acquire() {
   exec {TFD}>"$tmp" && flock -n "$TFD" || { flock -u "$QFD"; return 1; }
   printf 'pid %s in %s, `%s`, since %s\n' "$pid" "$CHECKOUT" "$job" "$(date '+%H:%M')" >&"$TFD"
   mv "$tmp" "$ticket"
-  trap 'rm -f "$ticket"' EXIT
+  # Expanded now: $ticket is local, and gone by the time the shell exits.
+  trap "rm -f $(printf %q "$ticket")" EXIT
   local ahead free q
   while :; do
     # Under the queue lock: count the live waiters ahead, and take a slot only
