@@ -105,6 +105,10 @@ type Provider interface {
 	// EnsureAgentAccess makes user a bot that can write to repo only, and returns
 	// a fresh token for it.
 	EnsureAgentAccess(ctx context.Context, repo Repository, user string) (Credentials, error)
+	// RemoveAgentAccess takes away what EnsureAgentAccess gave user on repo: on
+	// Gitea it deletes the bot user, and its tokens with it. A user already gone
+	// is no error.
+	RemoveAgentAccess(ctx context.Context, repo Repository, user string) error
 	// OpenPullRequest opens a pull request from head into base, or returns the
 	// open one for head.
 	OpenPullRequest(ctx context.Context, repo Repository, head, base, title, body string) (PullRequest, error)
