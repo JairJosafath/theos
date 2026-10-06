@@ -95,6 +95,17 @@ type CrewRelease struct {
 	// +required
 	Time metav1.Time `json:"time"`
 
+	// run is how the CI workflow runs the tag started went: Waiting until one
+	// starts, Running while one hasn't ended, Failed as soon as one ended other
+	// than success or skipped, Succeeded once all ended well.
+	// +kubebuilder:validation:Enum=Waiting;Running;Succeeded;Failed
+	// +optional
+	Run string `json:"run,omitempty"`
+
+	// runURL links to the failed run, else to the newest one.
+	// +optional
+	RunURL string `json:"runURL,omitempty"`
+
 	// bumps are the bump issues filed for this release, one per Container that
 	// bundles this one.
 	// +listType=map

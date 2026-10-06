@@ -61,6 +61,9 @@
 # as failed, in .relay/fails-<N>; at RELAY_MAX_FAILS (default 3) in a row the
 # relay sets the issue to status/needs-human with a comment naming each one. A
 # handoff or a new commit resets the count; a paused session doesn't count.
+# A session whose transcript (under $CLAUDE_CONFIG_DIR/projects/) hasn't
+# changed for RELAY_IDLE (default 45m) is stuck: the relay ends it (SIGTERM,
+# then SIGKILL after RELAY_IDLE_KILL) and counts it as failed, commit or not.
 #   RELAY_DRY_RUN=1 hack/relay.sh  print the issue and prompt the next session would get; change nothing
 #   touch .relay/stop              stop every worker after its current session
 #
@@ -98,6 +101,9 @@ MEM_POLL=${RELAY_MEM_POLL:-60}
 MEMINFO=${RELAY_MEMINFO:-/proc/meminfo}
 LIMIT_WAIT=${RELAY_LIMIT_WAIT:-30m} # the pause after a limit whose message names no reset time
 MAX_FAILS=${RELAY_MAX_FAILS:-3}     # failed sessions in a row before an issue goes to the user
+IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change this long is ended
+IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
+IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
 
 K=${C4_RELAY_WORKER:-1}
 WT="$REPO/.claude/worktrees/relay-$K"
@@ -498,15 +504,84 @@ admit() {
   done
 }
 
+# seconds DURATION: DURATION (45, 45s, 45m, 2h, 1d) in seconds; exit 1 if it
+# isn't a whole number with one of those units.
+seconds() {
+  [[ $1 =~ ^([0-9]+)([smhd]?)$ ]] || return 1
+  case ${BASH_REMATCH[2]} in
+    m) echo $((BASH_REMATCH[1] * 60)) ;;
+    h) echo $((BASH_REMATCH[1] * 3600)) ;;
+    d) echo $((BASH_REMATCH[1] * 86400)) ;;
+    *) echo "${BASH_REMATCH[1]}" ;;
+  esac
+}
+
+# transcript ID: the file claude writes session ID's transcript to, as it works
+# in the worktree: under projects/, the worktree's path with each character
+# other than a letter or digit as -. Its subagents write theirs in the
+# directory of the same name without .jsonl.
+transcript() {
+  echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/${WT//[^a-zA-Z0-9]/-}/$1.jsonl"
+}
+
+# idle_watch WHAT PID FILE MARK: end session WHAT (process group PID) once its
+# transcript FILE and its subagents' haven't changed for RELAY_IDLE: SIGTERM,
+# then SIGKILL after RELAY_IDLE_KILL, with MARK touched so the relay counts it
+# as failed. A transcript that never appears leaves the session to
+# SESSION_TIMEOUT.
+idle_watch() {
+  local what=$1 pid=$2 f=$3 idle kill_after t0 last m now missing= i
+  if ! idle=$(seconds "$IDLE") || ! kill_after=$(seconds "$IDLE_KILL"); then
+    log "RELAY_IDLE ($IDLE) or RELAY_IDLE_KILL ($IDLE_KILL) isn't like 45m; $what runs until the $SESSION_TIMEOUT timeout"
+    return 0
+  fi
+  t0=$(date +%s) last=$t0
+  while sleep "$IDLE_POLL"; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    now=$(date +%s)
+    if ! m=$(stat -c %Y "$f" 2>/dev/null); then
+      if [ -z "$missing" ] && [ $((now - t0)) -ge "$idle" ]; then
+        log "$what wrote no transcript in $IDLE ($f); it runs until the $SESSION_TIMEOUT timeout"
+        missing=1
+      fi
+      continue
+    fi
+    m=$(find "$f" "${f%.jsonl}" -printf '%T@\n' 2>/dev/null | sort -n | tail -n 1)
+    [ "${m%.*}" -gt "$last" ] && last=${m%.*}
+    [ $((now - last)) -ge "$idle" ] || continue
+    : >"$4"
+    log "$what stopped: its transcript was idle for $IDLE"
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+    for ((i = 0; i < kill_after; i++)); do
+      kill -0 "$pid" 2>/dev/null || return 0
+      sleep 1
+    done
+    log "$what still ran $IDLE_KILL after SIGTERM; SIGKILL"
+    kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
+    return 0
+  done
+}
+
 # session WHAT OUT ID PROMPT: run headless session ID in the worktree with
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch
   t0=$(date +%s)
-  (cd "$WT" && C4_HEADLESS=1 timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
-    --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err"
+  # timeout leads its own process group, so the idle watch can end claude and
+  # every process it started.
+  (cd "$WT" && C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+    --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" &
+  pid=$!
+  rm -f "$out.idle"
+  idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" &
+  watch=$!
+  wait "$pid"
   rc=$?
+  kill "$watch" 2>/dev/null
+  wait "$watch" 2>/dev/null
+  S_IDLE=
+  [ -e "$out.idle" ] && S_IDLE=1
   mins=$((($(date +%s) - t0) / 60))
   if [ -s "$out.json" ] && jq -e .result "$out.json" >/dev/null 2>&1; then
     jq -r .result "$out.json" >"$out.md"
@@ -687,7 +762,10 @@ work() {
           log "session $i hit a limit on #$ISSUE; not counted against it"
           continue
         fi
-        if [ "$(git -C "$WT" rev-parse -q --verify "refs/heads/$branch")" != "$head" ]; then
+        if [ -n "$S_IDLE" ]; then
+          log "session $i was stopped idle on #$ISSUE; stopping (claude --resume $id in $WT to see why)"
+          failed "$ISSUE" "$id" "$out"
+        elif [ "$(git -C "$WT" rev-parse -q --verify "refs/heads/$branch")" != "$head" ]; then
           forget_fails "$ISSUE"
           log "session $i left no handoff on #$ISSUE but committed on $branch; stopping (claude --resume $id in $WT to see why)"
         else

@@ -265,3 +265,47 @@ func laterWorkBefore(later []ReleaseMilestone, merged []MergedTask, newest Merge
 	}
 	return ""
 }
+
+// ReleaseRun is one CI workflow run a release's tag started.
+type ReleaseRun struct {
+	// Workflow is the workflow file it runs, such as release.yaml.
+	Workflow string
+	// Status is queued, waiting, in_progress or completed.
+	Status string
+	// Conclusion is how a completed run ended: success, failure, cancelled or
+	// skipped.
+	Conclusion string
+	URL        string
+}
+
+// Results of a release's runs.
+const (
+	RunWaiting   = "Waiting"
+	RunRunning   = "Running"
+	RunSucceeded = "Succeeded"
+	RunFailed    = "Failed"
+)
+
+// ReleaseRunResult sums up the runs on a release's tag, newest first, counting
+// only each workflow's newest run (a tag pushed again runs it again): Failed as
+// soon as one ended other than success or skipped, with that run, Running while
+// one hasn't ended, Succeeded once all ended well, Waiting while none started.
+// The run returned is the failed one, else the newest.
+func ReleaseRunResult(runs []ReleaseRun) (string, ReleaseRun) {
+	if len(runs) == 0 {
+		return RunWaiting, ReleaseRun{}
+	}
+	result := RunSucceeded
+	seen := map[string]bool{}
+	for _, run := range runs {
+		switch {
+		case seen[run.Workflow]:
+		case run.Status != "completed":
+			result = RunRunning
+		case run.Conclusion != "success" && run.Conclusion != "skipped":
+			return RunFailed, run
+		}
+		seen[run.Workflow] = true
+	}
+	return result, runs[0]
+}

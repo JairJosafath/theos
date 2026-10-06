@@ -26,6 +26,11 @@
 # after WATCH_RETRIAGE seconds (default 10800, 3h); .relay/triaged keeps its
 # time and the issues it saw across restarts. status/needs-human stays the user's.
 #
+# On an idle round it also logs, once per change, what holds back the issues
+# pick skips for an open "Depends on #M" when nobody works #M (hack/lib/github.sh
+# blocked --unworked), and reports issues that wait on each other in a cycle:
+# a comment on each, the newest to status/needs-human (cycles --report).
+#
 # Every WATCH_CI_EVERY seconds (default 900) it checks main's CI: each
 # workflow in .github/workflows that runs on a push to main and whose two
 # newest finished runs on main failed (hack/lib/github.sh red) gets an issue
@@ -40,18 +45,30 @@
 #
 # Every 5 minutes it runs
 # hack/pull.sh, so pick never reads stale rules, and restarts itself when that
-# changed this script.
+# changed this script. Every WATCH_TRIM_EVERY seconds (default 1800) it runs
+# hack/trim-go-cache.sh: nine workers' builds grow Go's build cache by gigabytes
+# an hour, faster than opening VS Code trims it.
 #
 #   hack/relay-watch.sh                start the watch, detached, for one worker
 #   hack/relay-watch.sh --workers N    for N workers (1-99); on the cluster device RELAY_MAX_WORKERS (default 9)
 #                                      caps them, and hack/relay.sh admits each session by memory
-#   touch .relay/stop                  stop the watch, and every worker after its current session
+#   hack/relay-watch.sh --install [--workers N]
+#                                      keep the watch up: a systemd user unit (hack/relay-watch.service)
+#                                      restarts it after a crash, a kill or a reboot; without systemd, a
+#                                      crontab line starts it at boot and every 5 minutes
+#   hack/relay-watch.sh --uninstall    remove the unit or the crontab lines
+#   touch .relay/stop                  stop the watch, and every worker after its current session; an
+#                                      installed watch stays down until hack/relay-watch.sh starts the unit
+#
+# The unit runs the watch with --foreground: in its own process, waiting for the
+# lock while a watch started by hand holds it. The crontab line runs it with
+# --cron: started detached unless a watch runs or .relay/stop is there.
 #
 # Log: .relay/watch.log, one line per change; the workers log as usual, to
 # .relay/relay-<k>.log.
 set -uo pipefail
 
-REPO=$(cd "$(dirname "$0")/.." && pwd)
+REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 DIR="$REPO/.relay"
 STOP="$DIR/stop"
 LOG="$DIR/watch.log"
@@ -61,13 +78,15 @@ TRIAGE_EVERY=${WATCH_TRIAGE:-1800}
 RETRIAGE=${WATCH_RETRIAGE:-10800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 CI_EVERY=${WATCH_CI_EVERY:-900}
+TRIM_EVERY=${WATCH_TRIM_EVERY:-1800}
 
-WORKERS=1
+WORKERS=1 MODE=start
 while [ $# -gt 0 ]; do
   case $1 in
     --workers) WORKERS=${2:-}; shift 2 || shift ;;
     --workers=*) WORKERS=${1#*=}; shift ;;
-    *) echo "usage: hack/relay-watch.sh [--workers N]" >&2; exit 64 ;;
+    --install | --uninstall | --foreground | --cron) MODE=${1#--}; shift ;;
+    *) echo "usage: hack/relay-watch.sh [--install | --uninstall] [--workers N]" >&2; exit 64 ;;
   esac
 done
 [[ $WORKERS =~ ^[1-9][0-9]?$ ]] || { echo "relay-watch: --workers takes 1 to 99" >&2; exit 64; }
@@ -84,12 +103,28 @@ worker_free() {
   return 1
 }
 
-# pick_next, proposed, run_relay and run_triage: what the watch asks and
-# starts (faked in the tests).
+# pick_next, proposed, blocked, cycles, run_relay, run_triage and trim_caches:
+# what the watch asks and starts (faked in the tests).
 pick_next() { "$REPO/hack/lib/github.sh" pick; }
+blocked() { "$REPO/hack/lib/github.sh" blocked --unworked; }
+cycles() { "$REPO/hack/lib/github.sh" cycles --report; }
 proposed() { "$REPO/hack/lib/github.sh" proposed; }
 run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { "$REPO/hack/relay.sh" --triage --workers "$WORKERS"; }
+trim_caches() { "$REPO/hack/trim-go-cache.sh"; }
+
+# trim NOW: trim the build caches when the last trim is TRIM_EVERY seconds old,
+# and log what it dropped (it says nothing when a cache is under its limit).
+TRIM_T=0
+trim() {
+  local out
+  [ $(($1 - TRIM_T)) -ge "$TRIM_EVERY" ] || return 0
+  TRIM_T=$1
+  out=$(trim_caches 2>&1 8>&-)
+  [ -n "$out" ] && log "${out//$'\n'/; }"
+  return 0
+}
+
 github() { "$REPO/hack/lib/github.sh" "$@"; }
 
 # ci_workflows: FILE<tab>NAME of each workflow that runs on a push to main.
@@ -204,6 +239,37 @@ triage() {
   [ "$rc" = 0 ] || echo "$now" >"$DIR/triaged"
 }
 
+# held: on an idle round, log what holds back the issues pick skips whose
+# blocker nobody works (hack/lib/github.sh blocked --unworked), once per
+# change, and report the issues that wait on each other in a cycle (cycles
+# --report: a comment on each, the newest to status/needs-human).
+HELD= HELD_ERR= CYCLES_ERR=
+held() {
+  local out rc
+  out=$(blocked 2>"$DIR/blocked.err")
+  rc=$?
+  if [ "$rc" != 0 ]; then
+    out="$out $(cat "$DIR/blocked.err" 2>/dev/null)"
+    [ -n "$HELD_ERR" ] || log "could not list what holds back the skipped issues (exit $rc): ${out//$'\n'/; }"
+    HELD_ERR=1
+    return 0
+  fi
+  HELD_ERR=
+  if [ "$out" != "$HELD" ]; then
+    HELD=$out
+    if [ -n "$out" ]; then
+      log "held back by issues nobody works: ${out//$'\n'/; }"
+    else
+      log "no skipped issue waits on an issue nobody works"
+    fi
+  fi
+  out=$(cycles 2>&1)
+  rc=$?
+  [ "$rc" = 0 ] && [ -z "$out" ] && { CYCLES_ERR=; return 0; }
+  [ "$rc" = 0 ] || { [ -z "$CYCLES_ERR" ] || return 0; CYCLES_ERR=1; }
+  log "${out//$'\n'/; }$([ "$rc" = 0 ] || echo " (cycles --report failed, exit $rc)")"
+}
+
 # round: one look at GitHub, and the relay started when there is work for it.
 # SAID is the last state logged, so a state that lasts is logged once.
 SAID= LAST_N= LAST_T=0
@@ -236,6 +302,7 @@ round() {
     1)
       [ "$SAID" = idle ] || log "nothing ready; waiting"
       SAID=idle
+      held
       triage "$now"
       ;;
     *)
@@ -247,19 +314,139 @@ round() {
 
 code_sum() { cksum <"$REPO/hack/relay-watch.sh"; }
 
+# --install and --uninstall. The unit goes to the user's own systemd folder,
+# not $XDG_CONFIG_HOME, which the project shell points into .dev/.
+UNIT=c4factory-relay-watch.service
+TEMPLATE="$REPO/hack/relay-watch.service"
+unit_file() { echo "$HOME/.config/systemd/user/$UNIT"; }
+cron_tag() { echo "# c4factory relay watch: $REPO"; }
+
+# has_systemd: whether this user has a systemd user manager to run the unit.
+has_systemd() { command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; }
+
+# settings: the installer's relay settings, as NAME=VALUE lines, for the unit
+# and cron, whose environments have none. Credentials stay out: the watch gets
+# its GitHub token from the git credential helper, as hack/lib/github.sh does.
+settings() {
+  local v
+  for v in $(compgen -v | grep -E '^(RELAY_|WATCH_|HEAVY_JOBS$|C4_CLUSTER)'); do
+    printf '%s=%s\n' "$v" "${!v}"
+  done
+}
+
+# render_unit: the unit for this checkout and WORKERS, with the installer's PATH
+# (the user manager's own PATH lacks gh and claude) and relay settings.
+render_unit() {
+  local t env= line
+  t=$(<"$TEMPLATE")
+  t=${t//@REPO@/"$REPO"}
+  t=${t//@WORKERS@/"$WORKERS"}
+  t=${t//@PATH@/"$PATH"}
+  while IFS= read -r line; do env+=$'\n'"Environment=\"$line\""; done < <(settings)
+  t=${t//$'\n'@ENV@/"$env"}
+  printf '%s\n' "$t"
+}
+
+# cron_lines: the crontab without this checkout's lines (stdin), then them.
+cron_lines() {
+  local cmd
+  local line env=
+  while IFS= read -r line; do env+="${line%%=*}=$(printf %q "${line#*=}") "; done < <(settings)
+  cmd="cd $(printf %q "$REPO") && PATH=$(printf %q "$PATH") $env./dev run hack/relay-watch.sh --cron --workers $WORKERS >>.relay/watch.out 2>&1"
+  grep -vF "$(cron_tag)"
+  echo "@reboot $cmd $(cron_tag)"
+  echo "*/5 * * * * $cmd $(cron_tag)"
+}
+
+# without_cron: remove this checkout's crontab lines, if there are any.
+without_cron() {
+  local tab
+  command -v crontab >/dev/null || return 0
+  tab=$(crontab -l 2>/dev/null) || return 0
+  grep -qF "$(cron_tag)" <<<"$tab" || return 0
+  grep -vF "$(cron_tag)" <<<"$tab" | crontab -
+}
+
+# in_worktree: whether REPO is a linked git worktree, not the main checkout.
+in_worktree() {
+  local git common
+  git=$(git -C "$REPO" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+  common=$(cd "$REPO" && cd "$(git rev-parse --git-common-dir)" && pwd)
+  [ "$git" != "$common" ]
+}
+
+install_watch() {
+  # One unit per device: from a worktree it would run that worktree's watch.
+  in_worktree && { echo "relay-watch: install from the main checkout, not a worktree" >&2; return 1; }
+  mkdir -p "$DIR"
+  rm -f "$STOP"
+  if has_systemd; then
+    mkdir -p "$(dirname "$(unit_file)")"
+    render_unit >"$(unit_file)"
+    without_cron
+    systemctl --user daemon-reload &&
+      systemctl --user enable "$UNIT" &&
+      systemctl --user restart "$UNIT" || { echo "relay-watch: systemctl failed" >&2; return 1; }
+    # Linger starts the user's manager, and so the watch, at boot without a login.
+    loginctl enable-linger "$(id -un)" 2>/dev/null ||
+      echo "relay-watch: loginctl enable-linger failed; the watch starts at the first login, not at boot" >&2
+    echo "relay watch installed as $(unit_file) for $WORKERS worker(s): tail -f $LOG"
+  else
+    command -v crontab >/dev/null || { echo "relay-watch: neither systemd nor crontab here" >&2; return 1; }
+    { crontab -l 2>/dev/null || true; } | cron_lines | crontab - || { echo "relay-watch: crontab failed" >&2; return 1; }
+    echo "relay watch installed in the crontab (at boot and every 5 minutes) for $WORKERS worker(s): tail -f $LOG"
+    (cd "$REPO" && ./dev run hack/relay-watch.sh --cron --workers "$WORKERS" >>"$DIR/watch.out" 2>&1)
+  fi
+  echo "stop: touch $STOP; start again: hack/relay-watch.sh"
+}
+
+uninstall_watch() {
+  if [ -e "$(unit_file)" ]; then
+    has_systemd && systemctl --user disable --now "$UNIT" ||
+      { echo "relay-watch: systemctl --user failed; $(unit_file) stays" >&2; return 1; }
+    rm -f "$(unit_file)"
+    systemctl --user daemon-reload
+    echo "removed $(unit_file); its watch is stopped"
+  fi
+  if command -v crontab >/dev/null && crontab -l 2>/dev/null | grep -qF "$(cron_tag)"; then
+    without_cron
+    echo "removed the crontab lines; a watch running now keeps running (touch $STOP)"
+  fi
+  return 0
+}
+
 # Sourced (hack/relay-watch_test.sh): the functions only.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
 
-# Started from a terminal: start the watch, detached, and return.
-if [ "${C4_RELAY_WATCH_CHILD:-}" != 1 ]; then
+case $MODE in
+  install) install_watch; exit ;;
+  uninstall) uninstall_watch; exit ;;
+esac
+
+# Started from a terminal with the unit installed: start the unit (after a
+# stop file), so the watch stays supervised.
+if [ "$MODE" = start ] && [ "${C4_RELAY_WATCH_CHILD:-}" != 1 ] && [ -e "$(unit_file)" ] && has_systemd; then
+  rm -f "$STOP"
+  systemctl --user start "$UNIT" || exit 1
+  echo "relay watch started under systemd ($UNIT, its own worker count; --install --workers N changes it): tail -f $LOG"
+  exit 0
+fi
+
+# Started from a terminal or cron: start the watch, detached, and return.
+# From cron, a stop file stays and keeps the watch down.
+if [ "${C4_RELAY_WATCH_CHILD:-}" != 1 ] && [ "$MODE" != foreground ]; then
   if ! flock -n "$DIR/watch.lock" true; then
-    echo "the relay watch is already running; see $LOG"
+    [ "$MODE" = cron ] || echo "the relay watch is already running; see $LOG"
     exit 0
   fi
-  rm -f "$STOP"
+  if [ "$MODE" = cron ]; then
+    [ -e "$STOP" ] && exit 0
+  else
+    rm -f "$STOP"
+  fi
   C4_RELAY_WATCH_CHILD=1 setsid nohup bash "$0" --workers "$WORKERS" >>"$DIR/watch.out" 2>&1 </dev/null &
   echo "relay watch started (pid $!) for $WORKERS worker(s): tail -f $LOG"
   echo "stop: touch $STOP"
@@ -271,12 +458,17 @@ if [ "${C4_RELAY_WATCH_RESTART:-}" = 1 ]; then
   flock -n 8 || { log "restarted without the watch's lock; exiting"; exit 1; }
 else
   exec 8>"$DIR/watch.lock"
-  flock -n 8 || { log "another watch holds the lock; exiting"; exit 1; }
+  if ! flock -n 8; then
+    [ "$MODE" = foreground ] || { log "another watch holds the lock; exiting"; exit 1; }
+    # Under the unit: wait for the watch started by hand, then take over.
+    log "another watch holds the lock; pid $$ waits for it to end"
+    flock 8
+  fi
 fi
 # The workers and their sessions don't need to know they were started by a watch.
 unset C4_RELAY_WATCH_CHILD C4_RELAY_WATCH_RESTART
 CODE_SUM=$(code_sum)
-log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, HEAD $(git rev-parse --short HEAD), $WORKERS worker(s), asks GitHub every ${EVERY}s"
+log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}$([ "$MODE" = foreground ] && echo ", under systemd"), HEAD $(git rev-parse --short HEAD 2>/dev/null), $WORKERS worker(s), asks GitHub every ${EVERY}s"
 PULL_T=0 PULLED= CI_T=0
 while :; do
   [ -e "$STOP" ] && { log "stop file found; stopping"; exit 0; }
@@ -295,9 +487,11 @@ while :; do
     if [ "$(code_sum)" != "$CODE_SUM" ]; then
       log "the watch's code changed (HEAD $(git rev-parse --short HEAD)); restarting"
       # The new watch keeps this one's lock on fd 8.
-      exec env C4_RELAY_WATCH_CHILD=1 C4_RELAY_WATCH_RESTART=1 bash "$REPO/hack/relay-watch.sh" --workers "$WORKERS"
+      exec env C4_RELAY_WATCH_CHILD=1 C4_RELAY_WATCH_RESTART=1 bash "$REPO/hack/relay-watch.sh" --workers "$WORKERS" \
+        $([ "$MODE" = foreground ] && echo --foreground)
     fi
   fi
+  trim "$now"
   round
   sleep "$EVERY"
 done

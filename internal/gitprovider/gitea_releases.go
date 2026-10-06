@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -129,4 +130,62 @@ func (g *gitea) CreateTag(ctx context.Context, repo Repository, tag, commit, mes
 		return fmt.Errorf("gitea: tagging %s as %s in %s failed (HTTP %d): %s", commit, tag, repoPath(repo), status, apiMessage(data))
 	}
 	return nil
+}
+
+// WorkflowRun is a CI workflow run.
+type WorkflowRun struct {
+	ID int64
+	// Workflow is the workflow file it runs, such as release.yaml.
+	Workflow string
+	// Status is queued, waiting, in_progress or completed.
+	Status string
+	// Conclusion is how a completed run ended: success, failure, cancelled or
+	// skipped.
+	Conclusion string
+	// URL is the run's page.
+	URL string
+}
+
+// tagRunPages bounds the runs TagRuns reads: a tag's runs are among the newest
+// at its commit.
+const tagRunPages = 3
+
+// TagRuns returns the CI workflow runs a push of tag at commit started, newest
+// first: the push runs at commit whose workflow ran at refs/tags/<tag>.
+func (g *gitea) TagRuns(ctx context.Context, repo Repository, tag, commit string) ([]WorkflowRun, error) {
+	suffix := "@refs/tags/" + tag
+	var out []WorkflowRun
+	for page := 1; page <= tagRunPages; page++ {
+		query := url.Values{"event": {"push"}, "head_sha": {commit}, "limit": {strconv.Itoa(issuePageSize)},
+			"page": {strconv.Itoa(page)}}
+		status, data, err := g.do(ctx, http.MethodGet, "/api/v1/repos/"+repoPath(repo)+"/actions/runs?"+query.Encode(), nil)
+		if err != nil {
+			return nil, err
+		}
+		var runs struct {
+			WorkflowRuns []struct {
+				ID         int64  `json:"id"`
+				Path       string `json:"path"`
+				HeadSHA    string `json:"head_sha"`
+				Status     string `json:"status"`
+				Conclusion string `json:"conclusion"`
+				HTMLURL    string `json:"html_url"`
+			} `json:"workflow_runs"`
+		}
+		if status != http.StatusOK || json.Unmarshal(data, &runs) != nil {
+			return nil, fmt.Errorf("gitea: listing the runs of %s failed (HTTP %d): %s", repoPath(repo), status, apiMessage(data))
+		}
+		for _, r := range runs.WorkflowRuns {
+			workflow, ok := strings.CutSuffix(r.Path, suffix)
+			if !ok || r.HeadSHA != commit {
+				continue
+			}
+			out = append(out, WorkflowRun{ID: r.ID, Workflow: workflow, Status: r.Status, Conclusion: r.Conclusion,
+				URL: r.HTMLURL})
+		}
+		if len(runs.WorkflowRuns) < issuePageSize {
+			break
+		}
+	}
+	return out, nil
 }

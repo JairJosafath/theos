@@ -60,9 +60,14 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 fmt: ## Run go fmt against code.
 	go fmt ./...
 
+# -trimpath keeps each checkout's absolute directory out of Go's cache keys, so
+# worktrees on the same code share compiled packages and test results in the
+# shared GOCACHE. It sits here, not in GOFLAGS, so a debugger keeps its paths.
+GO_TRIM = -trimpath
+
 .PHONY: vet
 vet: ## Run go vet against code.
-	go vet ./...
+	go vet $(GO_TRIM) ./...
 
 # Heavy goals queue device-wide for one of HEAVY_JOBS slots (default 2), shared
 # by every checkout, before anything builds (hack/heavy-slot.sh). The slot is
@@ -83,7 +88,7 @@ endif
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # The e2e tests run against the dedicated Kind cluster $(KIND_CLUSTER), never
 # another one. make e2e builds everything it needs first; it's safe to repeat.
@@ -129,7 +134,7 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
+	go build $(GO_TRIM) -o bin/manager cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -334,7 +339,7 @@ gh-runner-status: ## Show the GitHub Actions runner's container and its status o
 
 # The chart is dist/chart, generated from dist/install.yaml by kubebuilder's helm
 # plugin. Its templates/ui/, templates/gitprovider/ and values.yaml are written
-# by hand and survive a regeneration (docs/plans/helm-chart.md).
+# by hand and survive a regeneration (docs/plans/done/helm-chart.md).
 .PHONY: chart
 chart: ## Regenerate the Helm chart in dist/chart from the kustomize output.
 	kubebuilder edit --plugins=helm.kubebuilder.io/v2-alpha

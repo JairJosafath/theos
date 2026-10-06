@@ -15,6 +15,7 @@ make check               # manifests, generate, fmt, vet, lint and test
 make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
+make gitea-local seed-local  # A Gitea of this checkout's own, seeded like Kind's (no kubectl)
 make test-gitea          # gitprovider against a local Gitea (make gitea-local), or C4_GITEA_URL if set
 make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind cluster
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain, CI runner (label base), Agent Sandbox, agent image
@@ -35,6 +36,18 @@ renders every folder in `templates/` in a realistic combination, without envtest
 fails on a render error, a path two layers write, or YAML that doesn't parse. A new
 template needs a row there. In tests, write with merge patches
 (`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
+
+Every checkout on a device shares one Go build cache. `make test`, `vet` and
+`build` pass `-trimpath`, which keeps the checkout's absolute directory out of Go's
+cache keys, so a worktree reuses the packages and test results another worktree
+built for the same code (`(cached)`); a plain `go test` without it doesn't. The
+flag is in the Makefile, not `GOFLAGS`, so a debugger keeps its paths. A test
+result is still keyed on the absolute path of every file the test opens, so suites
+that read repo files at run time rerun in each worktree, though they reuse the
+compiled test binary: `internal/controller` (envtest CRDs, `templates/`, and the
+sources `typeneutral_test.go` reads), `internal/sessionclient` (envtest CRDs) and
+`internal/scaffold` (`templates_test.go` reads `templates/`). Those files sit
+outside the package, so `//go:embed` can't reach them.
 
 `make run` runs the operator on your machine, but it can't reach Gitea's in-cluster
 address; use `make deploy` for anything that scaffolds.
@@ -70,6 +83,17 @@ Gitea instead, for example the Kind one behind `make gitea-forward`;
 Sourcing `credentials.env` into your shell exports `C4_GITEA_URL` too, so
 `make test-gitea` then skips starting the local Gitea; unset it after a stop.
 
+`make seed-local` starts it and seeds it as `make seed` seeds Kind's, with no
+kubectl: the `templates` organization with every tag in
+`templates/versions.txt`, and the `webshop` organization. The seed's file mode
+(`CREDENTIALS_DIR` in `hack/seed/seed.sh`) writes webshop's token to
+`.gitea-local/webshop.env` (mode 0600; `C4_GITEA_URL`, `C4_GITEA_USERNAME`,
+`C4_GITEA_TOKEN`) instead of Secret `gitea-credentials`, and skips the runner
+token. Use it to check template work on any device: a wording fix, a new tag in
+`versions.txt`, or how the seed pushes and tags. A second run changes nothing,
+and warns when a template no longer matches its tag. `hack/seed_test.sh`
+covers the file mode against a stand-in Gitea.
+
 No workflow runs on pull requests, so run `make test-gitea` before merging a
 change to `internal/gitprovider` or the seed; the Tests workflow runs it on
 main.
@@ -101,7 +125,7 @@ a fresh Kind cluster on GitHub. Don't `helm install` it into the shared
 
 A pushed `vX.Y.Z` tag runs the *Release* workflow, which builds the operator,
 UI, toolchain, agent and runner images, pushes them and the chart to GHCR and
-creates the GitHub release ([plan](../plans/release-workflow.md)).
+creates the GitHub release ([plan](../plans/done/release-workflow.md)).
 
 GitHub workflows never run on pull requests. Lint, tests, UI checks and *Test
 Chart* run after a merge to main, each only when its paths change, or on demand;
@@ -130,6 +154,7 @@ RELAY_DRY_RUN=1 hack/relay.sh      # the issue and prompt the next headless sess
 hack/relay.sh                      # headless sessions one after another, overnight (billed)
 hack/relay.sh --workers 2          # two relay workers side by side, each in its own worktree (no-cluster devices)
 hack/relay-watch.sh --workers 2    # keep the relay ready: start it within a minute of an issue becoming ready
+hack/relay-watch.sh --install --workers 2  # the same, kept up by systemd (or cron) across crashes and reboots
 touch .relay/stop                  # stop the watch, and every worker after its current session
 ```
 
@@ -212,7 +237,9 @@ instead: every minute it asks `pick` (which changes nothing) and, when there is
 an issue and a worker is free, runs `hack/relay.sh --workers N`, which leaves
 running workers alone. Asking first keeps the relay's logs free of a worker that
 starts, finds nothing and stops every minute. It logs only changes, to `.relay/watch.log`, pulls main every 5
-minutes and restarts itself when that changed its code.
+minutes and restarts itself when that changed its code. Every 30 minutes
+(`WATCH_TRIM_EVERY`) it runs `hack/trim-go-cache.sh` and logs what that
+dropped: nine workers grow Go's build cache by gigabytes an hour.
 With nothing ready, it starts a triage of the `status/proposed` issues: for a
 new one, for one that changed since the last triage or waits on an issue that
 closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
@@ -221,9 +248,47 @@ a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
 ready and urgent, so the next session fixes main before anything else; a single
 failure files nothing.
+With nothing ready, it also logs, once per change, which skipped issue waits on
+which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
+alone lists every skipped issue's blockers, with status and claim), and when
+issues wait on each other in a cycle, `cycles --report` comments each of them
+once and moves the newest to `status/needs-human`.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
 the triage's reasons with `proposed --since` against a stubbed GitHub, and its
 CI rounds with `gh` faked.
+
+Install the watch once on each device that runs the relay overnight, from the
+main checkout: `hack/relay-watch.sh --install --workers N`. It writes the
+systemd user unit `c4factory-relay-watch.service` (from
+`hack/relay-watch.service`, with this checkout, N and your `PATH`), enables and
+starts it, and turns on `loginctl enable-linger`, so the watch starts at boot
+without a login. A crash, an OOM kill or `kill <pid>` brings the watch back
+within a minute; a watch you started by hand keeps running, and the unit's
+watch waits for its lock and takes over when it ends. On a device without
+systemd, `--install` adds two crontab lines instead, at boot and every 5
+minutes, which start the watch unless one runs. `touch .relay/stop` still stops
+it for good: the unit doesn't restart a watch that exits for the stop file, and
+cron doesn't start one while the file is there. `hack/relay-watch.sh` starts
+the unit again (with the unit's worker count), `--uninstall` removes the unit or
+the crontab lines. Install from the main checkout, not a worktree; the unit and
+cron get your `PATH` and `RELAY_*`, `WATCH_*`, `HEAVY_JOBS` and `C4_CLUSTER*`
+settings, and the GitHub token from the git credential helper, not `GH_TOKEN`. `systemctl --user status
+c4factory-relay-watch` shows the unit.
+
+### Every release checks itself
+
+The relay can't pull a release (the GHCR packages are private and no device's
+gh token has `read:packages`), so a workflow does. After *Release* publishes
+`vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`) installs
+the published chart and images on a fresh Kind cluster, builds nothing, waits
+for the seed's repositories, both runners, the manager and the UI, and
+scaffolds the release's `orders-api` sample. Its result is the run's job
+summary and its artifact `release-vX.Y.Z-check` (Actions → Verify Release).
+When it fails it files `Release vX.Y.Z fails its check` (`status/ready`,
+`priority/urgent`), or comments on the open one, so the relay picks it up; the
+issue says if the runner ran short of memory or disk. Check an older release
+with Actions → Verify Release → Run workflow, or
+`gh workflow run verify-release.yml -f tag=vX.Y.Z`.
 
 ### Memory on the cluster device
 
@@ -257,10 +322,13 @@ queue:
   (default 2; 0 turns the queue off) before anything builds, shared by every
   checkout on the device (`hack/heavy-slot.sh`: `flock`ed files in
   `<git common dir>/heavy-slots`). A `make` that finds them all taken waits,
-  printing who holds them (pid, checkout, goals, since when); the wait is not a
-  hang, so give the command a long timeout or run it in the background. A job
+  printing who holds them (pid, checkout, goals, since when) and how many jobs
+  wait ahead of it; the wait is not a hang, so give the command a long timeout
+  or run it in the background. Waiters get slots first come, first served:
+  each holds a numbered ticket, and a waiter that dies loses its turn. A job
   that ends, fails or is killed frees its slot within a second; its sub-makes
-  don't take another. `hack/heavy-slot.sh status` shows the slots.
+  don't take another. `hack/heavy-slot.sh status` shows the slots and the
+  waiters.
 - `make check` remembers a passing tree, device-wide (`hack/check-cache.sh`).
   A pass is recorded under the git tree hash of the working state as the
   check left it (tracked and untracked non-ignored files, after `manifests`,
@@ -286,7 +354,8 @@ queue:
 `/proc/meminfo` (`RELAY_MEMINFO`), `hack/heavy-guard_test.sh` the hook,
 with `ps` and `docker` faked too, and `hack/heavy-slot_test.sh` the slots: two
 jobs running while a third waits, a slot freed by a job that ends or is killed,
-and the Makefile queueing its heavy goals. `hack/check-cache_test.sh` tests the
+the oldest waiter taking the next free slot and a dead waiter skipped, and the
+Makefile queueing its heavy goals. `hack/check-cache_test.sh` tests the
 check cache: a pass, then a hit on the same tree from another worktree, a miss
 on one changed byte (tracked or untracked), and `FORCE=1` queueing again.
 

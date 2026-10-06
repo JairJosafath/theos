@@ -3,8 +3,8 @@
 **Goal:** A device runs a working factory with two commands: apply Agent
 Sandbox, `helm install`. The release brings Gitea, seeds it, and runs the
 `base` and `go` CI runners next to the operator and the UI, all on published
-images. Issue #127; follows the chart ([helm-chart.md](helm-chart.md), #98) and
-the release workflow ([release-workflow.md](release-workflow.md), #99).
+images. Issue #127; follows the chart ([helm-chart.md](done/helm-chart.md), #98) and
+the release workflow ([release-workflow.md](done/release-workflow.md), #99).
 
 **Why:** Today the chart installs only the operator and the UI. Gitea, the seed
 Job and the runners come from `make gitea seed` and `config/runner/`, which need

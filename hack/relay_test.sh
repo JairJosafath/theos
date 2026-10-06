@@ -5,7 +5,8 @@
 # session's claim so the relay has none left to release; the cluster
 # lease a session leaves behind, which the relay drops; the triage of the
 # proposed issues, as a dry run; and, with claude faked, the pause a usage
-# limit sets and the issue that goes to the user after failed sessions.
+# limit sets, the issue that goes to the user after failed sessions and the
+# session the relay ends when its transcript stops growing.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -120,7 +121,16 @@ git -C "$WT" -c user.name=t -c user.email=t@t commit -q --allow-empty -m first
 mkdir -p "$T/bin"
 cat >"$T/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
+while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done
+t=$CLAUDE_CONFIG_DIR/projects/${PWD//[^a-zA-Z0-9]/-}/$id.jsonl
 case $(cat "$FAKE") in
+  hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 60 & echo $! >"$FAKE.child"; wait ;;
+  busy) mkdir -p "${t%/*}"; for _ in 1 2 3 4 5 6; do echo '{}' >>"$t"; sleep 1; done
+    echo '{"is_error":false,"result":"busy","num_turns":9}' ;;
+  agent) mkdir -p "${t%.jsonl}/subagents"; echo '{}' >"$t"
+    for _ in 1 2 3 4 5 6; do echo '{}' >>"${t%.jsonl}/subagents/agent-1.jsonl"; sleep 1; done
+    echo '{"is_error":false,"result":"agent","num_turns":9}' ;;
+  quiet) sleep 4; echo '{"is_error":false,"result":"quiet","num_turns":1}' ;;
   limit) echo '{"is_error":true,"result":"You'"'"'ve hit your session limit · resets 3am (UTC)","num_turns":1}'; exit 1 ;;
   login) echo 'Not logged in · Please run /login' >&2; exit 1 ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
@@ -129,7 +139,7 @@ case $(cat "$FAKE") in
 esac
 FAKE
 chmod +x "$T/bin/claude"
-export PATH=$T/bin:$PATH FAKE=$T/fake HANDOFF=$T/handoff
+export PATH=$T/bin:$PATH FAKE=$T/fake HANDOFF=$T/handoff CLAUDE_CONFIG_DIR=$T/claude
 echo 1 >"$HANDOFF"
 update() { :; }
 worktree() { :; }
@@ -201,5 +211,40 @@ check "fails: comment has each stderr" "$(grep -c '^boom ' "$T/comment")" 3
 check "fails: comment has each account" "$(grep -c '^gave up$' "$T/comment")" 3
 grep -q "#175 failed 3 sessions in a row; set it to status/needs-human: https://github.com/x/issues/175#issuecomment-9" "$LOG"
 check "fails: logged" $? 0
+
+# A session whose transcript stops growing is ended and counted as failed; one
+# that keeps writing, or writes none, runs on.
+IDLE=2s IDLE_KILL=2s IDLE_POLL=1
+: >"$LOG"
+rm -f "$DIR/fails-175" "$T/status"
+echo hang >"$FAKE"
+t0=$(date +%s)
+work
+check "idle: ended early" "$(($(date +%s) - t0 < 20))" 1
+grep -q "session 1 stopped: its transcript was idle for 2s$" "$LOG"; check "idle: logged" $? 0
+check "idle: counted" "$(wc -l <"$DIR/fails-175")" 1
+check "idle: what claude started ended too" "$(kill -0 "$(cat "$FAKE.child")" 2>/dev/null && echo running)" ""
+: >"$LOG"
+echo busy >"$FAKE"
+work
+grep -q "stopped: its transcript was idle" "$LOG"; check "busy: not ended" $? 1
+grep -q "session 1 end: exit 0 after 0m, 9 turns" "$LOG"; check "busy: ran to its end" $? 0
+: >"$LOG"
+echo agent >"$FAKE"
+work
+grep -q "stopped: its transcript was idle" "$LOG"; check "subagent writing: not ended" $? 1
+: >"$LOG"
+echo quiet >"$FAKE"
+work
+grep -q "stopped: its transcript was idle" "$LOG"; check "no transcript: not ended" $? 1
+check "no transcript: logged once" "$(grep -c "session 1 wrote no transcript in 2s (.*); it runs until the 6h timeout" "$LOG")" 1
+check "seconds: 45m" "$(seconds 45m)" 2700
+check "seconds: 1d" "$(seconds 1d)" 86400
+seconds 1.5h >/dev/null; check "seconds: 1.5h refused" $? 1
+: >"$LOG"
+IDLE=1.5h
+echo hang >"$FAKE"
+SESSION_TIMEOUT=4s work
+grep -q "RELAY_IDLE (1.5h) or RELAY_IDLE_KILL (2s) isn't like 45m; session 1 runs until the 4s timeout" "$LOG"; check "idle: a bad RELAY_IDLE logged" $? 0
 
 exit $fail

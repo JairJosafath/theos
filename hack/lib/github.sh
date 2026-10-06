@@ -8,6 +8,11 @@
 #
 #   hack/lib/github.sh labels            create the labels below, or update their descriptions (safe to repeat)
 #   hack/lib/github.sh pick              the issue to work next: NUMBER TITLE URL STATUS, tab-separated
+#   hack/lib/github.sh blocked [--unworked]
+#                                        what holds back each ready or in-progress issue pick skips: N waits on M
+#                                        (M's status, its claim, what M waits on); --unworked: only Ms nobody works
+#   hack/lib/github.sh cycles [--report] the open issues that wait on each other in a cycle, one cycle per line;
+#                                        --report comments each issue in one once, the newest to needs-human
 #   hack/lib/github.sh proposed [--since EPOCH]
 #                                        the open status/proposed issues' numbers, oldest first, one per line;
 #                                        with --since, N CHANGED CLOSED for the relay watch (see gh_proposed)
@@ -222,6 +227,108 @@ gh_pick() {
     | first // empty | [.number, .title, .html_url, .how] | @tsv' <<<"$issues") || return 2
   [ -n "$row" ] || return 1
   echo "$row"
+}
+
+# jq definitions over open issues: deps, the issues one says it depends on.
+GH_DEPS_JQ='
+  def deps: [(.body // "") | scan("[Dd]epends on #([0-9]+)") | .[0] | tonumber] | unique;
+'
+
+# gh_open_issues: the open issues, not pull requests, oldest first, as one JSON array.
+gh_open_issues() {
+  local pages
+  pages=$(gh_api --paginate --slurp \
+    "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 1
+  jq -c '[.[][] | select(.pull_request | not)]' <<<"$pages"
+}
+
+# gh_blocked [--unworked]: what holds back each open status/ready or
+# status/in-progress issue that pick skips because it waits on an open issue
+# (and no live claim holds it): one line per issue it waits on, oldest first,
+#   N waits on M (STATUS, CLAIM[, waits on #X, #Y])
+# STATUS being M's status label (or "no status"), CLAIM "claimed by NAME" while
+# a live claim holds M, else "no claim", and the last part the open issues M
+# waits on itself. With --unworked, only the lines whose M nobody works (in
+# progress with a live claim). Exit 2: GitHub could not be asked.
+gh_blocked() {
+  local ttl issues claims unworked=false
+  case ${1:-} in
+    --unworked) unworked=true ;;
+    '') ;;
+    *) echo "usage: hack/lib/github.sh blocked [--unworked]" >&2; return 1 ;;
+  esac
+  ttl=$(gh_ttl) || return 2
+  issues=$(gh_open_issues) || return 2
+  claims=$(gh_recent_claims "$ttl") || return 2
+  jq -r --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" \
+    --argjson unworked "$unworked" "$GH_CLAIM_JQ$GH_DEPS_JQ"'
+    def has($l): .labels | any(.name == $l);
+    def isopen($n): any(.[]; .number == $n);
+    . as $all
+    | def holder($n): [$claims[] | select(live and .issue == $n)] | last | if . then cname else null end;
+      def waits($i): [$i | deps[] | select(. as $d | $all | isopen($d))];
+      .[] | select(has("status/ready") or has("status/in-progress"))
+      | select(holder(.number) == null)
+      | .number as $n | waits(.)[] as $d
+      | ($all[] | select(.number == $d)) as $m
+      | ([$m.labels[].name | select(startswith("status/"))] | first // "no status") as $status
+      | holder($d) as $h
+      | select($unworked and $status == "status/in-progress" and $h != null | not)
+      | waits($m) as $w
+      | "\($n) waits on \($d) (\($status), \(if $h then "claimed by \($h)" else "no claim" end)"
+        + (if $w == [] then "" else ", waits on \($w | map("#\(.)") | join(", "))" end) + ")"' <<<"$issues" || return 2
+}
+
+GH_CYCLE_MARKER='<!-- relay-cycle -->'
+
+# gh_cycles [--report]: the open issues that wait on each other in a cycle
+# (Depends on #M in their bodies), one cycle per line as #A #B ..., oldest
+# first. With --report, each issue in a cycle gets one comment naming it (an
+# issue that has that comment already is left alone) and, when one was posted
+# or no issue in the cycle is in status/needs-human, the newest goes there;
+# prints what it did.
+# Exit 2: GitHub could not be asked.
+gh_cycles() {
+  local issues cycles cycle report=false n posted newest all body
+  case ${1:-} in
+    --report) report=true ;;
+    '') ;;
+    *) echo "usage: hack/lib/github.sh cycles [--report]" >&2; return 1 ;;
+  esac
+  issues=$(gh_open_issues) || return 2
+  cycles=$(jq -r "$GH_DEPS_JQ"'
+    [.[].number] as $open
+    | (reduce .[] as $i ({}; .["\($i.number)"] = [$i | deps[] | select(. as $d | $open | any(. == $d))])) as $g
+    | def reach($n): {seen: [], todo: $g["\($n)"]}
+        | until(.todo == []; .todo[0] as $x | .todo |= .[1:]
+            | if (.seen | any(. == $x)) then . else .seen += [$x] | .todo += $g["\($x)"] end)
+        | .seen;
+      [$open[] as $n | reach($n) as $r | select($r | any(. == $n))
+        | [$r[] | select(. as $m | reach($m) | any(. == $n))] | sort] | unique
+    | .[] | map("#\(.)") | join(" ")' <<<"$issues") || return 2
+  if ! $report; then
+    [ -z "$cycles" ] || echo "$cycles"
+    return 0
+  fi
+  while IFS= read -r cycle; do
+    [ -n "$cycle" ] || continue
+    newest=${cycle##*#}
+    body="$GH_CYCLE_MARKER"$'\n'"${cycle// /, } wait on each other in a cycle (\`Depends on #M\` in their bodies), so pick skips each of them for good. Drop one \`Depends on\` line to break it; #$newest, the newest, goes to status/needs-human until then."
+    posted=
+    for n in $cycle; do
+      n=${n#\#}
+      all=$(gh_comments "$n") || return 2
+      jq -e --arg b "$body" 'any(.[]; .body == $b)' <<<"$all" >/dev/null && continue
+      printf '%s\n' "$body" | gh_comment "$n" - >/dev/null || return 2
+      posted+=" #$n"
+    done
+    # Also when an earlier round commented but failed to move the newest.
+    [ -n "$posted" ] || ! jq -e --arg c "$cycle" '[$c | scan("[0-9]+") | tonumber] as $m
+      | any(.[] | select(.number as $n | $m | any(. == $n)); .labels | any(.name == "status/needs-human"))' \
+      <<<"$issues" >/dev/null || continue
+    gh_set_status "$newest" needs-human >/dev/null || return 2
+    echo "cycle $cycle: ${posted:+commented on${posted}; }#$newest to status/needs-human"
+  done <<<"$cycles"
 }
 
 # gh_proposed [--since T]: the open status/proposed issues' numbers, oldest
@@ -1039,6 +1146,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   case $cmd in
     labels) gh_labels ;;
     pick) gh_pick ;;
+    blocked) gh_blocked "$@" ;;
+    cycles) gh_cycles "$@" ;;
     proposed) gh_proposed "$@" ;;
     show) gh_show "$@" ;;
     take) gh_take "$@" ;;
