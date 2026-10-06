@@ -1,9 +1,17 @@
 # C4 Factory UI
 
-A read-only view of a C4 Factory project, drawn live from the custom resources.
+A view of a C4 Factory project, drawn live from the custom resources.
 Milestone 6 in [docs/design.md](../docs/design.md#mvp-v1-plan): someone who has
-never used kubectl can read the story in a browser.
+never used kubectl can read the story in a browser. It reads everything and
+changes only two things: it creates a Brief from an app idea and adds a
+follow-up prompt to one ([docs/plans/brief.md](../docs/plans/brief.md)).
 
+- **Briefs**, above the views: a _Describe an app_ box that creates a Brief (an
+  idea and a name, suggested from the idea), and a card per Brief with its
+  phase, what it waits for when it needs input, the planner's latest choices,
+  the objects and issues it made, its prompts (those not yet planned marked
+  _next round_), its repository and cost, and a field to add a prompt. The API's
+  answer shows as is when it refuses. Only shown in a namespace with a Project.
 - **System context** (C4 level 1): the People and SoftwareSystems, the
   Relationships between them, each system's needs, KPIs and roll-up summary.
 - **Containers** (C4 level 2) of one system: its Containers and DataStores inside
@@ -46,27 +54,45 @@ Without make: `npm ci`, then `kubectl proxy --port 8001` in one terminal and
 <http://localhost:5173/?demo=1>) to see a built-in version of the webshop story
 with every state: containers Pending, Scaffolding, Ready and Failed, agent and
 human Sessions, a Stale one, a Relationship added after scaffolding, and Crews
-working on issues, paused and waiting for their Container. It needs no cluster
-and is clearly labelled as demo data.
+working on issues, paused and waiting for their Container; and Briefs Planned,
+needing input and Planning. A Brief created or a prompt added there stays in the
+page's memory. It needs no cluster and is clearly labelled as demo data.
 
 Other query parameters: `project=<namespace>`, `view=containers` or
 `view=factory`, `system=<name>` and `task=<namespace>/<name>`, so any view can
 be bookmarked. `?demo=1&view=factory` shows the factory view with every state.
 
-## Read-only by construction
+## Read-only but for two writes
 
-The UI enforces nothing and changes nothing; the rules live in the CRDs and the
-operator. Three layers keep it that way:
+The UI enforces nothing; the rules live in the CRDs and the operator. It reads
+every C4 Factory kind and writes only two things: it creates a Brief, and it
+appends a prompt to one. Three layers keep it that way:
 
-1. The browser only ever sends GET requests, to `/k8s/...` and `/k8s-watch`.
-2. [server.mjs](server.mjs) passes on only GET, only under
-   `/apis/c4.factory.io/`, and answers everything else with 405 (other
-   methods) or 403 (other paths). It drops the browser's own headers (cookies,
-   `Authorization`, impersonation) and adds its own credentials.
-3. In the cluster, the ServiceAccount's ClusterRole allows only `get`, `list` and
-   `watch` on the `c4.factory.io` resources, plus `get` and `list` on pods,
-   nodes and `metrics.k8s.io` for the health summary below. No Secrets, no
-   writes.
+1. The browser sends GET requests to `/k8s/...` and `/k8s-watch`, plus the two
+   writes ([src/k8s/briefs.ts](src/k8s/briefs.ts)).
+2. [server.mjs](server.mjs) passes on only GET under `/apis/c4.factory.io/`,
+   and two writes:
+   - `POST .../namespaces/<ns>/briefs`, `Content-Type: application/json`: a
+     Brief, only into a namespace that holds a Project. Only its `name` (or
+     `generateName`) and `spec` go upstream: no labels, annotations or owners.
+   - `PATCH .../namespaces/<ns>/briefs/<name>`, `Content-Type:
+application/json-patch+json`: a patch whose one operation is `add` at
+     `/spec/prompts/-`. When the Brief has no prompts yet, the server sends the
+     equivalent `add /spec/prompts`, guarded by a `test` of the
+     resourceVersion it read.
+
+   A write whose `Origin` names another host is refused. Everything else is
+   answered with 405 (other methods), 403 (other paths or bodies) or 415
+   (another content type). It drops the browser's own headers (cookies,
+   `Authorization`, impersonation) and adds its own credentials. Whether a
+   Brief or prompt is valid (lengths, names, append-only prompts) is the CRD's
+   to say; the page shows its answer.
+
+3. In the cluster, the ServiceAccount's reader ClusterRole allows only `get`,
+   `list` and `watch` on the `c4.factory.io` resources (Briefs included), plus
+   `get` and `list` on pods, nodes and `metrics.k8s.io` for the health summary
+   below. A separate ClusterRole, `c4-factory-ui-brief-writer`, grants only
+   `create` and `patch` on `briefs`. No Secrets, no other writes.
 
 ### The factory's health
 
@@ -102,18 +128,20 @@ a single watch.
 ## Code
 
 ```
-server.mjs              static files + GET-only gateway to the Kubernetes API (/k8s, /k8s-watch)
+server.mjs              static files + gateway to the Kubernetes API (/k8s, /k8s-watch): GETs and the two Brief writes
 health.mjs              the factory's health summary and last hour (/factory/health)
 src/k8s/types.ts        the CRD shapes, mirroring api/v1alpha1
 src/k8s/watch.ts        list-then-watch: NDJSON events, reconnect with backoff, relist on 410
 src/k8s/mux.ts          many watches over one connection
 src/k8s/sources.ts      one watcher per kind, combined into a story snapshot
 src/k8s/health.ts       polls /factory/health while the factory view is open
+src/k8s/briefs.ts       the two writes: create a Brief, add a prompt; a name from the idea
 src/model/story.ts      resources -> diagram model (boxes, arrows, roll-ups)
 src/model/layout.ts     a small layered layout and edge routing
 src/model/describe.ts   plain-language wording for phases, conditions and times
 src/model/factory.ts    the factory view: stages, timelines, stats, Crews, what needs a look
-src/demo/               the demo fixture
+src/model/brief.ts      a Brief for display: phase, what it waits for, planned and waiting prompts
+src/demo/               the demo fixture; in demo mode the Brief writes stay in memory
 src/components/         the diagram, cards and side panels
 ```
 

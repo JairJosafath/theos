@@ -1,12 +1,15 @@
-// The page: a header with the project, two views of its story (system context
-// and containers), and a side panel with details, sessions and a legend.
+// The page: a header with the project, its Briefs, two views of its story
+// (system context and containers), and a side panel with details, sessions and
+// a legend.
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { Briefs } from './components/Briefs'
 import { Diagram } from './components/Diagram'
 import { FactoryPage } from './components/Factory'
 import { LogoMark, WarningIcon } from './components/icons'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { DemoFactorySource, DemoHealthSource, DemoProjectsSource, DemoStorySource } from './demo/demoSource'
+import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
 import { HealthSource, type FactoryHealth } from './k8s/health'
 import { WatchMux } from './k8s/mux'
 import {
@@ -34,6 +37,8 @@ import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForP
  * All watches of the page share connections through one WatchMux.
  */
 const API: Api = { baseUrl: 'k8s', mux: new WatchMux({ url: 'k8s-watch' }) }
+/** The page's only writes, through the same proxy: create a Brief, add a prompt to one. */
+const LIVE_WRITER = new LiveBriefWriter(API.baseUrl)
 
 /** A source with nothing in it: for a view that is not shown, or no project yet. */
 class Idle<T> implements Source<T> {
@@ -95,6 +100,8 @@ export default function App() {
   const health = useSource(healthSource)
   const story = useSource(storySource)
   const data = story.data
+  // Demo mode writes into its own fixture; live mode through the proxy.
+  const writer: BriefWriter = storySource instanceof DemoStorySource ? storySource : LIVE_WRITER
 
   const systems = useMemo(() => systemsForPicker(data), [data])
   const systemName = url.system && systems.some((s) => s.name === url.system) ? url.system : systems[0]?.name
@@ -160,7 +167,9 @@ export default function App() {
         <div className="brand">
           <LogoMark size={22} />
           <span className="brand-name">C4 Factory</span>
-          <span className="brand-sub">read-only</span>
+          <span className="brand-sub" title="Reads everything; writes only Briefs and their prompts">
+            read-only but for Briefs
+          </span>
         </div>
         <nav className="modes" aria-label="Mode">
           <button
@@ -225,6 +234,15 @@ export default function App() {
       ) : (
         <>
           <ProjectHeader data={data} namespace={namespace} loaded={story.connection.loaded} />
+          {namespace && story.connection.loaded ? (
+            <Briefs
+              briefs={data.briefs}
+              namespace={namespace}
+              canCreate={Boolean(data.project)}
+              writer={writer}
+              now={now}
+            />
+          ) : null}
 
           <nav className="tabs" aria-label="Views">
             <div className="tablist" role="tablist">
@@ -319,8 +337,8 @@ export default function App() {
       )}
 
       <footer className="footer">
-        This page only reads the C4 Factory resources in the cluster and updates as they change. Nothing can be changed
-        from here.
+        This page reads the C4 Factory resources in the cluster and updates as they change. It can change only two
+        things: create a Brief from an app idea, and add a prompt to a Brief.
       </footer>
     </div>
   )
@@ -356,7 +374,7 @@ function ProblemsBanner({ problems }: { problems: Problem[] }) {
   if (!problems.length) return null
   const hint = (p: Problem) => {
     if (p.code === 403)
-      return 'The UI is not allowed to read these. Its ClusterRole (config/ui) needs get, list and watch.'
+      return 'The UI is not allowed to read these. Its ClusterRole (config/ui) needs get, list and watch on them.'
     if (p.code === 404) return 'This kind is not installed in the cluster. Are the C4 Factory CRDs installed?'
     if (p.code === 502 || p.code === 503 || p.code === 504) return 'The UI server cannot reach the Kubernetes API.'
     return 'Retrying automatically.'

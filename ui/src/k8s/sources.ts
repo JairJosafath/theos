@@ -6,6 +6,7 @@ import {
   RESOURCES,
   resourcePath,
   type Agent,
+  type Brief,
   type CatalogEntry,
   type Container,
   type Crew,
@@ -38,6 +39,8 @@ export interface StoryData {
   crews: Crew[]
   agents: Agent[]
   tasks: Task[]
+  /** App ideas and what the factory planned from them. Optional: may stay empty. */
+  briefs: Brief[]
 }
 
 export interface Problem {
@@ -81,6 +84,7 @@ export function emptyStory(namespace: string): StoryData {
     crews: [],
     agents: [],
     tasks: [],
+    briefs: [],
   }
 }
 
@@ -194,6 +198,8 @@ export class LiveStorySource extends WatchingSource<StoryData> {
         { what: 'crews', watcher: watcher(api, RESOURCES.crews, namespace), optional: true },
         { what: 'agents', watcher: watcher(api, RESOURCES.agents, namespace), optional: true },
         { what: 'tasks', watcher: watcher(api, RESOURCES.tasks, namespace), optional: true },
+        // Optional, so a cluster without the Brief kind still shows its story.
+        { what: 'briefs', watcher: watcher(api, RESOURCES.briefs, namespace), optional: true },
       ],
       emptyStory(namespace),
     )
@@ -217,6 +223,7 @@ export class LiveStorySource extends WatchingSource<StoryData> {
       crews: this.items<Crew>(9),
       agents: this.items<Agent>(10),
       tasks: this.items<Task>(11),
+      briefs: this.items<Brief>(12),
     }
   }
 }

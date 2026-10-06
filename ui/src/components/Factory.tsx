@@ -1,5 +1,5 @@
 // The factory view: is the factory healthy, what is it doing, where does the
-// time go, and what needs a look. Across all projects; read-only like the rest.
+// time go, and what needs a look. Across all projects; read-only.
 
 import { useMemo } from 'react'
 import type { FactoryData } from '../k8s/sources'
