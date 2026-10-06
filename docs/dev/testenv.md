@@ -191,7 +191,10 @@ A pushed `vX.Y.Z` tag runs the *Release* workflow, which builds the operator,
 UI, toolchain, agent and runner images, pushes them and the chart to GHCR and
 creates the GitHub release ([plan](../plans/done/release-workflow.md)), its
 notes drafted by `hack/release-notes.sh` from the pull requests merged since
-the previous tag.
+the previous release. The previous release is the highest published release
+below the tag (`hack/previous-release.sh`; drafts and prereleases don't
+count): a tag whose *Release* failed has no release, so the next notes carry
+what it did.
 
 GitHub workflows never run on pull requests. Lint, tests, UI checks and *Test
 Chart* run after a merge to main, each only when its paths change, or on demand;
@@ -417,8 +420,9 @@ Agent runs, as CI has no Claude token. A tag without `first-app` skips that
 part and says so.
 
 The upgrade check takes the path a device takes: `helm upgrade` from the
-release it already runs. It installs the previous release (the highest `v*`
-tag below this one) the same way, with its own `orders-api` sample and its
+release it already runs. It installs the previous release (the highest
+published release below this one; the summary names any tag it skipped for
+having none) the same way, with its own `orders-api` sample and its
 `first-app` (else the guide's) until `orders-cli`'s Crew is `Idle`, notes what
 is there,
 and `helm upgrade`s to the new release with the same values. Then it checks
@@ -430,7 +434,7 @@ aside), that Secrets `gitea-admin` and `gitea-runner` are unchanged, and that
 every Gitea repository is still there with its earlier head commit (the seed
 may add template tags). The chart recreates its hooks (GitProviders, the
 catalog) on every upgrade, so objects are matched by kind, namespace and name,
-not uid. On the repository's first tag there is no previous release, and the
+not uid. On the first release there is no previous one, and the
 check is skipped and says so. A release whose chart has no catalog (v0.3.0 and
 older) has no `first-app` of its own that works on it, so either check takes
 the newest samples that made their own catalog and Agents, from history.

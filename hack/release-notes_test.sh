@@ -83,4 +83,17 @@ hasnt "  not before the previous tag" "(#1)"
 hasnt "  not after the tag" "(#6)"
 has "  the version comes from the tag" "helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version 0.3.0 \\"
 
+# The Release workflow passes the previous published release as FROM: v0.2.0's
+# release failed, so v0.3.0's notes run from v0.1.0.
+PATH="$T/bin:$PATH" "$NOTES" v0.3.0 v0.1.0 >"$T/out" 2>&1
+check "from git, FROM across a tag with no release: drafts" $? 0
+has "  lists what merged before that tag" "- before the range (#1)"
+has "  and after it" "- a new kind (#2)"
+
+PATH="$T/bin:$PATH" "$NOTES" v0.3.0 "" >"$T/out" 2>&1
+check "from git, FROM empty (no release before): drafts" $? 0
+has "  lists the whole history" "- before the range (#1)"
+has "  up to the tag" "- a new kind (#2)"
+hasnt "  not after it" "(#6)"
+
 exit $fail
