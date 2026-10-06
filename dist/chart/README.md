@@ -131,7 +131,9 @@ you built and pushed yourself.
 
 Every release checks itself: after *Release*, the *Verify Release* workflow
 (`.github/workflows/verify-release.yml`) installs that version's chart from
-GHCR on Kind, as above, and scaffolds the webshop sample's `orders-api`. The
+GHCR on Kind, as above, scaffolds the webshop sample's `orders-api`, then
+follows [getting-started](../../docs/getting-started.md) up to the first app's
+scaffold and an `Idle` Crew (no Agent runs). The
 result is on the repository's Actions page (Verify Release, with the evidence
 as the run's artifact); a failing release gets an issue titled
 `Release vX.Y.Z fails its check`.
