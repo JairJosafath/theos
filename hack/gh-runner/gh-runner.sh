@@ -53,6 +53,9 @@ remove_container() {
 
 # oneshot CMD: run the image once on the registration volume (configure, remove, registered).
 oneshot() {
+  # Made here first: a bind mount Docker has to make itself is root's, and so
+  # is every missing parent (.dev/cache/c4factory, where make check records).
+  mkdir -p "$work"
   docker run --rm -e ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT=false \
     -e RUNNER_TOKEN -e RUNNER_URL="https://github.com/$repo" -e RUNNER_NAME="$name" \
     -e RUNNER_LABELS=c4factory -e RUNNER_WORKDIR="$work" \
