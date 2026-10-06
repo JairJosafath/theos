@@ -27,11 +27,11 @@ what lands, so no milestone is tied to a version number. Only work a user of
 the release would notice gets a milestone; work on the relay, `hack/`, the
 skills and the governance files doesn't.
 
-| Milestone | Outcome | Target |
+| Milestone | Outcome | State |
 | --- | --- | --- |
-| [Briefs: an idea in plain words](https://github.com/JairJosafath/c4factory/milestone/1) | the *Done when* of [docs/plans/done/brief.md](docs/plans/done/brief.md), with the published chart | 2026-10-09 |
-| [Upgrades and release hygiene](https://github.com/JairJosafath/c4factory/milestone/2) | a device upgrades without losing work, and every release says what changed | 2026-10-14 |
-| [1.0: a stable API](https://github.com/JairJosafath/c4factory/milestone/3) | the criteria below hold | when they hold |
+| [Briefs: an idea in plain words](https://github.com/JairJosafath/c4factory/milestone/1?closed=1) | a Brief becomes a merged plan and working Crews with the stand-in planner and no Claude token, on the published chart: the *Done when* of [docs/plans/done/brief.md](docs/plans/done/brief.md) | reached 2026-10-06, released in v0.5.0 |
+| [Upgrades and release hygiene](https://github.com/JairJosafath/c4factory/milestone/2?closed=1) | a device upgrades without losing work, and every release says what changed | reached 2026-10-06, released in v0.5.0 |
+| [1.0: a stable API](https://github.com/JairJosafath/c4factory/milestone/3) | the criteria below hold | next, when they hold |
 
 ## What 1.0 means
 
