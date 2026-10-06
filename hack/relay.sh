@@ -38,8 +38,10 @@
 # runs in its own worktree, .claude/worktrees/relay-maintainer, on origin/main
 # for reading only, under its own lock (.relay/maintain.lock), and doesn't
 # count against RELAY_MAX_WORKERS: it must run while every worker is busy. It
-# goes through admit like any session. It takes no issue and commits nothing;
-# it decides, corrects, answers and keeps the pinned Maintainer report
+# goes through admit, and goes first: no worker takes a start slot while it
+# waits (#262), though it waits for memory and the gap like any session. It
+# takes no issue and commits nothing; it decides, corrects, answers and keeps
+# the pinned Maintainer report
 # (hack/lib/github.sh report). Agents escalate to it, with
 # status/needs-maintainer; only it sets status/needs-human, for what
 # GOVERNANCE.md reserves to the owner (docs/plans/maintainer.md). When it
@@ -611,8 +613,29 @@ docker_gate() {
 # so one session's build shows in memory before the next starts. Polls every
 # RELAY_MEM_POLL seconds; exit 1 when the stop file appears or the wait for
 # memory passes RELAY_MEM_WAIT (a pause doesn't count).
+# admit first: the maintainer's admit, which goes first (#262): while it waits,
+# .relay/admit-first holds its PID and no other admit takes the start slot, so
+# it starts as soon as memory and the gap allow, however many workers wait.
 admit() {
-  local t0 mem last now waited= p said=
+  local rc
+  [ "${1:-}" = first ] || { admit_wait; return; }
+  echo "$BASHPID" >"$DIR/admit-first"
+  admit_wait first
+  rc=$?
+  [ "$(cat "$DIR/admit-first" 2>/dev/null)" = "$BASHPID" ] && rm -f "$DIR/admit-first"
+  return "$rc"
+}
+
+# first_waits: exit 0 when another admit goes first: .relay/admit-first names
+# a live process other than this one. A crashed maintainer's file holds no one.
+first_waits() {
+  local pid
+  read -r pid 2>/dev/null <"$DIR/admit-first" || return 1
+  [[ $pid =~ ^[0-9]+$ ]] && [ "$pid" != "$BASHPID" ] && kill -0 "$pid" 2>/dev/null
+}
+
+admit_wait() {
+  local t0 mem last now waited= p said= first
   t0=$(date +%s)
   while :; do
     if p=$(paused); then
@@ -630,7 +653,9 @@ admit() {
     exec 8>"$DIR/admit.lock"
     flock 8
     last=$(stat -c %Y "$DIR/admitted" 2>/dev/null || echo 0)
-    if [ "$mem" -ge "$MIN_MEM_GIB" ] && [ $((now - last)) -ge "$ADMIT_GAP" ]; then
+    first=
+    [ "${1:-}" != first ] && first_waits && first=1
+    if [ -z "$first" ] && [ "$mem" -ge "$MIN_MEM_GIB" ] && [ $((now - last)) -ge "$ADMIT_GAP" ]; then
       [ -n "$DRY_RUN" ] || touch "$DIR/admitted"
       exec 8>&-
       [ -n "$waited" ] && log "headroom: ${mem} GiB available after $(((now - t0) / 60))m; starting"
@@ -638,7 +663,9 @@ admit() {
     fi
     exec 8>&-
     if [ -z "$waited" ]; then
-      if [ "$mem" -lt "$MIN_MEM_GIB" ]; then
+      if [ -n "$first" ]; then
+        log "waiting: the maintainer waits for a start, and it goes first"
+      elif [ "$mem" -lt "$MIN_MEM_GIB" ]; then
         log "waiting for headroom: ${mem} GiB available, a session needs ${MIN_MEM_GIB} (RELAY_MIN_MEM_GIB)"
       else
         log "waiting: a session started $((now - last))s ago, and sessions start at least ${ADMIT_GAP}s apart (RELAY_ADMIT_GAP)"
@@ -717,12 +744,14 @@ session() {
   local what=$1 out=$2 id=$3 rc t0 mins msg pid watch
   t0=$(date +%s)
   # timeout leads its own process group, so the idle watch can end claude and
-  # every process it started.
+  # every process it started. Neither gets the worker's lock (fd 9): a process
+  # the session leaves behind would hold it after the worker exits, and the
+  # watch would see the worker as running.
   (cd "$WT" && C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
-    --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" &
+    --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
-  idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" &
+  idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" 9>&- &
   watch=$!
   wait "$pid"
   rc=$?
@@ -841,7 +870,7 @@ maintain() {
   if [ -z "$DRY_RUN" ]; then
     worktree || { log "could not prepare the worktree $WT; no sweep"; return 1; }
   fi
-  admit || { log "no sweep"; return 1; }
+  admit first || { log "no sweep"; return 1; }
   last=never t=
   [ -r "$DIR/maintained" ] && read -r t _ <"$DIR/maintained"
   [[ $t =~ ^[0-9]+$ ]] && last=$(date -d "@$t" -Is)

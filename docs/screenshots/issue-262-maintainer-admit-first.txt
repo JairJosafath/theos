@@ -1,0 +1,18 @@
+# hack/relay_test.sh on fix/262 (otter-262), 2026-10-06
+ok   admit: headroom
+ok   admit: marks the start
+ok   admit: waits until memory frees
+ok   admit: waited
+ok   admit: logs the wait
+ok   admit: logs the end
+ok   admit: sessions start apart
+ok   admit: logs the gap
+ok   admit: gives up
+ok   admit: stop file
+ok   admit first: a worker waits for the maintainer
+ok   admit first: no slot taken
+ok   admit first: logs the wait
+ok   admit first: a dead maintainer holds no one
+ok   admit first: the maintainer starts first
+ok   admit first: its file goes
+ok   idle workers: admitted untouched

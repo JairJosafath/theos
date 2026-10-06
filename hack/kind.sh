@@ -64,15 +64,26 @@ load() {
   echo "Loaded $built into Kind cluster $cluster as $image"
 }
 
+# keep_context CMD ARGS..: run CMD, then put the current context back. Two
+# checkouts at once would each restore what the other switched to, so the
+# save, run and restore hold a lock beside the kubeconfig (the first file of
+# KUBECONFIG; not kubectl's own config.lock). CMD runs with the lock's fd
+# closed, so nothing it leaves running holds the lock.
 keep_context() {
-  local before rc=0
+  local before rc=0 cfg lockfd
+  cfg=${KUBECONFIG:-$HOME/.kube/config}
+  cfg=${cfg%%:*}
+  mkdir -p "$(dirname "$cfg")"
+  exec {lockfd}>"$cfg.keep-context.lock"
+  flock "$lockfd"
   before=$("$KUBECTL" config current-context 2>/dev/null) || before=
-  "$@" || rc=$?
+  "$@" {lockfd}>&- || rc=$?
   if [ -n "$before" ]; then
     "$KUBECTL" config use-context "$before" >/dev/null
   else
     "$KUBECTL" config unset current-context >/dev/null 2>&1 || true
   fi
+  exec {lockfd}>&-
   return "$rc"
 }
 
