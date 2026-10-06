@@ -7,8 +7,9 @@ metadata:
 ---
 # Read-only access to the story, the Sessions, the catalog and the factory's
 # work (Agents, Tasks, Crews), in every namespace (one Project per namespace, so
-# the project picker needs them all).
-# No status subresources, no Secrets, no verbs that write.
+# the project picker needs them all), the Briefs included.
+# No status subresources, no Secrets, no verbs that write: the Brief writes
+# are their own ClusterRole below.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -34,6 +35,7 @@ rules:
   - agents
   - tasks
   - crews
+  - briefs
   verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -79,6 +81,35 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: c4-factory-ui-health
+subjects:
+- kind: ServiceAccount
+  name: c4-factory-ui
+  namespace: c4-factory-ui
+---
+# The UI's only two writes (ui/server.mjs checks them first): create a Brief,
+# the box for an idea, and patch one to append a follow-up prompt. Nothing
+# else: no update, delete or status, no other kind.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: c4-factory-ui-brief-writer
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+rules:
+- apiGroups: [c4.factory.io]
+  resources: [briefs]
+  verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: c4-factory-ui-brief-writer
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: c4-factory-ui-brief-writer
 subjects:
 - kind: ServiceAccount
   name: c4-factory-ui

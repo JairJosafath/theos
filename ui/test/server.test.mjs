@@ -37,9 +37,31 @@ describe('server.mjs', () => {
   let dist
 
   before(async () => {
-    upstream = http.createServer((req, res) => {
-      seen.push({ method: req.method, url: req.url, headers: req.headers })
+    upstream = http.createServer(async (req, res) => {
+      let text = ''
+      for await (const chunk of req) text += chunk
+      seen.push({ method: req.method, url: req.url, headers: req.headers, body: text ? JSON.parse(text) : undefined })
       const url = new URL(req.url, 'http://x')
+      const json = (status, value) => {
+        res.writeHead(status, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(value))
+      }
+      if (req.method === 'POST' || req.method === 'PATCH') {
+        return json(req.method === 'POST' ? 201 : 200, { kind: 'Brief', metadata: { name: 'echo' } })
+      }
+      const briefs = '/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/'
+      if (url.pathname === '/apis/c4.factory.io/v1alpha1/namespaces/webshop/projects') {
+        return json(200, { kind: 'ProjectList', metadata: {}, items: [{ metadata: { name: 'webshop' } }] })
+      }
+      if (url.pathname === `${briefs}lens`) {
+        return json(200, { kind: 'Brief', metadata: { name: 'lens', resourceVersion: '7' }, spec: { prompts: ['a'] } })
+      }
+      if (url.pathname === `${briefs}fresh`) {
+        return json(200, { kind: 'Brief', metadata: { name: 'fresh', resourceVersion: '8' }, spec: { idea: 'x' } })
+      }
+      if (url.pathname === `${briefs}gone`) {
+        return json(404, { kind: 'Status', code: 404, reason: 'NotFound', message: 'briefs "gone" not found' })
+      }
       if (url.searchParams.get('watch') === '1' && url.searchParams.get('resourceVersion') === 'old') {
         res.writeHead(410, { 'content-type': 'application/json' })
         return res.end(
@@ -157,6 +179,179 @@ describe('server.mjs', () => {
       assert.equal(seen.length, 0)
     })
   }
+
+  describe('the two writes', () => {
+    const briefsPath = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs'
+    const brief = {
+      apiVersion: 'c4.factory.io/v1alpha1',
+      kind: 'Brief',
+      metadata: { name: 'lens', namespace: 'webshop', labels: { x: 'y' }, finalizers: ['f'] },
+      spec: { idea: 'A camera app that reads labels aloud' },
+    }
+    const prompt = (value = 'Add a dark mode') => [{ op: 'add', path: '/spec/prompts/-', value }]
+    const write = (
+      method,
+      p,
+      body,
+      type = method === 'PATCH' ? 'application/json-patch+json' : 'application/json',
+      headers = {},
+    ) =>
+      fetch(`${base}${p}`, {
+        method,
+        headers: { 'content-type': type, authorization: `Bearer ${browserToken}`, ...headers },
+        body: typeof body === 'string' ? body : JSON.stringify(body),
+      })
+
+    it('creates a Brief: only its name and spec go upstream, after checking the namespace holds a Project', async () => {
+      seen.length = 0
+      const res = await write('POST', briefsPath, brief)
+      assert.equal(res.status, 201)
+      assert.equal((await res.json()).kind, 'Brief')
+      assert.deepEqual(
+        seen.map((r) => [r.method, r.url]),
+        [
+          ['GET', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/projects'],
+          ['POST', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs?fieldManager=c4-factory-ui'],
+        ],
+      )
+      const post = seen[1]
+      assert.equal(post.headers['content-type'], 'application/json')
+      assert.equal(post.headers.authorization, undefined)
+      assert.deepEqual(post.body, {
+        apiVersion: 'c4.factory.io/v1alpha1',
+        kind: 'Brief',
+        metadata: { name: 'lens', namespace: 'webshop' },
+        spec: { idea: 'A camera app that reads labels aloud' },
+      })
+    })
+
+    it('adds a prompt to a Brief with exactly the patch it was sent', async () => {
+      seen.length = 0
+      const res = await write('PATCH', `${briefsPath}/lens`, prompt())
+      assert.equal(res.status, 200)
+      assert.deepEqual(
+        seen.map((r) => [r.method, r.url]),
+        [
+          ['GET', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/lens'],
+          ['PATCH', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/lens?fieldManager=c4-factory-ui'],
+        ],
+      )
+      assert.equal(seen[1].headers['content-type'], 'application/json-patch+json')
+      assert.deepEqual(seen[1].body, prompt())
+    })
+
+    it('adds the list for the first prompt, guarded by the resourceVersion it read', async () => {
+      seen.length = 0
+      const res = await write('PATCH', `${briefsPath}/fresh`, prompt('First'))
+      assert.equal(res.status, 200)
+      assert.deepEqual(seen[1].body, [
+        { op: 'test', path: '/metadata/resourceVersion', value: '8' },
+        { op: 'add', path: '/spec/prompts', value: ['First'] },
+      ])
+    })
+
+    it("passes the API's refusal back, such as a Brief that isn't there", async () => {
+      seen.length = 0
+      const res = await write('PATCH', `${briefsPath}/gone`, prompt())
+      assert.equal(res.status, 404)
+      assert.equal((await res.json()).reason, 'NotFound')
+      assert.deepEqual(
+        seen.map((r) => r.method),
+        ['GET'],
+      )
+    })
+
+    const refused = [
+      ['a patch of another path', 'PATCH', `${briefsPath}/lens`, [{ op: 'add', path: '/spec/idea', value: 'x' }], 403],
+      [
+        'a patch replacing a prompt',
+        'PATCH',
+        `${briefsPath}/lens`,
+        [{ op: 'replace', path: '/spec/prompts/0', value: 'x' }],
+        403,
+      ],
+      ['a patch removing prompts', 'PATCH', `${briefsPath}/lens`, [{ op: 'remove', path: '/spec/prompts' }], 403],
+      ['a patch with a second operation', 'PATCH', `${briefsPath}/lens`, [...prompt(), ...prompt()], 403],
+      [
+        'a patch adding a list as the prompt',
+        'PATCH',
+        `${briefsPath}/lens`,
+        [{ op: 'add', path: '/spec/prompts/-', value: ['x'] }],
+        403,
+      ],
+      ['a patch with an extra field', 'PATCH', `${briefsPath}/lens`, [{ ...prompt()[0], from: '/spec/idea' }], 403],
+      ['a patch of the status', 'PATCH', `${briefsPath}/lens/status`, prompt(), 405],
+      [
+        'a patch of another kind',
+        'PATCH',
+        '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api',
+        prompt(),
+        405,
+      ],
+      ['a patch of the Brief list', 'PATCH', briefsPath, prompt(), 403],
+      [
+        'a merge patch',
+        'PATCH',
+        `${briefsPath}/lens`,
+        { spec: { prompts: ['x'] } },
+        415,
+        'application/merge-patch+json',
+      ],
+      ['a server-side apply', 'PATCH', `${briefsPath}/lens`, brief, 415, 'application/apply-patch+yaml'],
+      ['a POST of another kind to the Brief path', 'POST', briefsPath, { ...brief, kind: 'Container' }, 403],
+      ['a POST of another API version', 'POST', briefsPath, { ...brief, apiVersion: 'c4.factory.io/v2' }, 403],
+      [
+        'a POST of another kind',
+        'POST',
+        '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers',
+        { ...brief, kind: 'Container' },
+        405,
+      ],
+      [
+        'a POST naming another namespace',
+        'POST',
+        briefsPath,
+        { ...brief, metadata: { name: 'lens', namespace: 'kube-system' } },
+        403,
+      ],
+      [
+        'a POST to a namespace without a Project',
+        'POST',
+        '/k8s/apis/c4.factory.io/v1alpha1/namespaces/empty/briefs',
+        brief,
+        403,
+      ],
+      ['a POST to one Brief', 'POST', `${briefsPath}/lens`, brief, 403],
+      ['a POST of something else than JSON', 'POST', briefsPath, 'idea=x', 415, 'application/x-www-form-urlencoded'],
+      ['a POST of malformed JSON', 'POST', briefsPath, '{', 403],
+      [
+        'a POST from another site',
+        'POST',
+        briefsPath,
+        brief,
+        403,
+        'application/json',
+        { origin: 'https://evil.example' },
+      ],
+      ['a POST too big', 'POST', briefsPath, { ...brief, spec: { idea: 'x'.repeat(70_000) } }, 413],
+      ['a PUT of a Brief', 'PUT', `${briefsPath}/lens`, brief, 405],
+      ['a DELETE of a Brief', 'DELETE', `${briefsPath}/lens`, undefined, 405],
+      ['a DELETE of the Brief list', 'DELETE', briefsPath, undefined, 405],
+    ]
+    for (const [what, method, p, body, status, type, headers] of refused) {
+      it(`refuses ${what} with ${status}, and only reads upstream`, async () => {
+        seen.length = 0
+        const res =
+          body === undefined ? await fetch(`${base}${p}`, { method }) : await write(method, p, body, type, headers)
+        assert.equal(res.status, status)
+        assert.equal((await res.json()).kind, 'Status')
+        assert.ok(
+          seen.every((r) => r.method === 'GET'),
+          `${what}: ${seen.map((r) => r.method).join()}`,
+        )
+      })
+    }
+  })
 
   it('refuses API paths outside c4.factory.io, including through .. and escapes', async () => {
     seen.length = 0

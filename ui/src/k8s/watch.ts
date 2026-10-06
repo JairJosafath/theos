@@ -167,7 +167,7 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-async function errorFromResponse(res: Response): Promise<ApiError> {
+export async function errorFromResponse(res: Response): Promise<ApiError> {
   let message = `${res.status} ${res.statusText}`.trim()
   try {
     const text = await res.text()

@@ -7,9 +7,15 @@
 //   GET /factory/health   the factory's components, node, agent sandboxes and last hour, summarized (health.mjs)
 //   GET /...              files from dist/
 //
-// Read-only by construction: only GET reaches the API, only under
-// /apis/c4.factory.io/, and every other method on /k8s gets 405. The browser's
-// own headers (cookies, Authorization, impersonation) never go upstream.
+//   POST  /k8s/apis/c4.factory.io/v1alpha1/namespaces/<ns>/briefs          create a Brief
+//   PATCH /k8s/apis/c4.factory.io/v1alpha1/namespaces/<ns>/briefs/<name>   append a prompt
+//
+// Read-only but for two writes: GET reaches the API only under
+// /apis/c4.factory.io/, and the only writes are creating a Brief in a
+// namespace that holds a Project, and a JSON patch whose one operation is
+// `add` at /spec/prompts/- on a Brief (see briefWrite). Every other method on
+// /k8s gets 405, every other write 403. The browser's own headers (cookies,
+// Authorization, impersonation) never go upstream.
 //
 // Upstream, in order of preference:
 //   K8S_API=http://127.0.0.1:8001   a `kubectl proxy`, or any API URL (no auth added)
@@ -31,6 +37,19 @@ const SERVICE_ACCOUNT_DIR = '/var/run/secrets/kubernetes.io/serviceaccount'
 
 /** Only the c4.factory.io API group is reachable: the UI needs nothing else. */
 const ALLOWED_PREFIX = '/apis/c4.factory.io/'
+
+/** The Briefs of one namespace, or one Brief: the only paths the UI writes. */
+const BRIEFS_PATH =
+  /^\/apis\/c4\.factory\.io\/v1alpha1\/namespaces\/([a-z0-9-]{1,63})\/briefs(?:\/([a-z0-9.-]{1,253}))?$/
+
+/** The one JSON patch path the UI may write: append a prompt. */
+const PROMPT_PATH = '/spec/prompts/-'
+
+/** Most bytes of a write's body; an idea is at most 4000 characters. */
+const MAX_WRITE_BYTES = 64 * 1024
+
+/** Who the API server records as writing the UI's changes. */
+const FIELD_MANAGER = 'c4-factory-ui'
 
 /** Most watches one /k8s-watch request may carry. */
 const MAX_WATCHES = 32
@@ -115,15 +134,16 @@ export function isAllowedApiPath(apiPath) {
   )
 }
 
-function upstreamRequest(upstream, apiPath, search, onResponse) {
+function upstreamRequest(upstream, apiPath, search, onResponse, { method = 'GET', contentType } = {}) {
   const target = new URL(upstream.url)
   target.pathname = `${upstream.url.pathname.replace(/\/$/, '')}${apiPath}`
   target.search = search
   const headers = { accept: 'application/json' }
+  if (contentType) headers['content-type'] = contentType
   const token = upstream.token()
   if (token) headers.authorization = `Bearer ${token}`
   const client = target.protocol === 'https:' ? https : http
-  return client.request(target, { method: 'GET', headers, ca: upstream.ca }, onResponse)
+  return client.request(target, { method, headers, ca: upstream.ca }, onResponse)
 }
 
 /** Most bytes getJson reads; a cluster-wide pod list on a small cluster is far less. */
@@ -134,25 +154,194 @@ const MAX_JSON_BYTES = 32 * 1024 * 1024
  * to c4.factory.io). Resolves to { status, body }.
  */
 function getJson(upstream, apiPath) {
+  return requestJson(upstream, apiPath)
+}
+
+/**
+ * One request of the server's own to the API, with an optional JSON body.
+ * Resolves to { status, body }.
+ */
+function requestJson(upstream, apiPath, { method = 'GET', search = '', contentType, body } = {}) {
   return new Promise((resolve, reject) => {
-    const req = upstreamRequest(upstream, apiPath, '', (upstreamRes) => {
-      const chunks = []
-      let size = 0
-      upstreamRes.on('data', (chunk) => {
-        size += chunk.length
-        if (size > MAX_JSON_BYTES)
-          return req.destroy(new Error(`${apiPath} answered more than ${MAX_JSON_BYTES} bytes`))
-        chunks.push(chunk)
-      })
-      upstreamRes.on('end', () =>
-        resolve({ status: upstreamRes.statusCode ?? 502, body: parseJson(Buffer.concat(chunks).toString('utf8')) }),
-      )
-      upstreamRes.on('error', reject)
-    })
+    const options = { method, contentType: body === undefined ? undefined : contentType }
+    const req = upstreamRequest(
+      upstream,
+      apiPath,
+      search,
+      (upstreamRes) => {
+        const chunks = []
+        let size = 0
+        upstreamRes.on('data', (chunk) => {
+          size += chunk.length
+          if (size > MAX_JSON_BYTES)
+            return req.destroy(new Error(`${apiPath} answered more than ${MAX_JSON_BYTES} bytes`))
+          chunks.push(chunk)
+        })
+        upstreamRes.on('end', () =>
+          resolve({ status: upstreamRes.statusCode ?? 502, body: parseJson(Buffer.concat(chunks).toString('utf8')) }),
+        )
+        upstreamRes.on('error', reject)
+      },
+      options,
+    )
     req.setTimeout(10_000, () => req.destroy(new Error(`${apiPath} took longer than 10 s`)))
     req.on('error', reject)
-    req.end()
+    req.end(body === undefined ? undefined : JSON.stringify(body))
   })
+}
+
+/** Reads a request's body, at most `limit` bytes; resolves to undefined past it. */
+function readBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    let tooBig = false
+    req.on('data', (chunk) => {
+      size += chunk.length
+      if (size > limit) tooBig = true
+      else chunks.push(chunk)
+    })
+    req.on('end', () => resolve(tooBig ? undefined : Buffer.concat(chunks).toString('utf8')))
+    req.on('error', reject)
+  })
+}
+
+/** The media type of a request, without parameters such as charset. */
+function mediaType(req) {
+  return (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
+}
+
+/** True when a browser sent the request from another site: its Origin names another host. */
+function isCrossSite(req) {
+  const origin = req.headers.origin
+  if (!origin) return false
+  try {
+    return new URL(origin).host !== req.headers.host
+  } catch {
+    return true
+  }
+}
+
+const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/**
+ * The UI's only two writes, checked before anything reaches the API:
+ *
+ *   POST  .../namespaces/<ns>/briefs         application/json, a Brief of
+ *         c4.factory.io/v1alpha1 in <ns>, and <ns> holds a Project. Only the
+ *         Brief's name (or generateName) and spec go upstream: no labels,
+ *         owners or finalizers.
+ *   PATCH .../namespaces/<ns>/briefs/<name>  application/json-patch+json,
+ *         exactly [{"op":"add","path":"/spec/prompts/-","value":"<prompt>"}].
+ *
+ * Everything else is refused here and, in the cluster, by RBAC too. What a
+ * Brief may say (lengths, append-only prompts) is the CRD's to check, not this
+ * server's: its answer, a refusal included, goes back to the browser as-is.
+ */
+async function briefWrite(req, res, apiPath, upstream, log) {
+  const match = BRIEFS_PATH.exec(apiPath)
+  const create = req.method === 'POST' && match && !match[2]
+  const patch = req.method === 'PATCH' && match && match[2]
+  if (!create && !patch) {
+    return sendStatus(
+      res,
+      403,
+      'Forbidden',
+      'The C4 Factory UI writes only two things: POST a Brief to a namespace, or PATCH a Brief to add a prompt',
+    )
+  }
+  if (isCrossSite(req)) return sendStatus(res, 403, 'Forbidden', 'Writes come only from the UI itself')
+  const wantType = create ? 'application/json' : 'application/json-patch+json'
+  if (mediaType(req) !== wantType) {
+    return sendStatus(res, 415, 'UnsupportedMediaType', `Expected Content-Type ${wantType}`)
+  }
+  const text = await readBody(req, MAX_WRITE_BYTES)
+  if (text === undefined) return sendStatus(res, 413, 'RequestEntityTooLarge', `At most ${MAX_WRITE_BYTES} bytes`)
+  const body = parseJson(text)
+  const [, namespace, name] = match
+
+  if (create) {
+    if (!isObject(body) || body.apiVersion !== 'c4.factory.io/v1alpha1' || body.kind !== 'Brief') {
+      return sendStatus(res, 403, 'Forbidden', 'The UI creates only Briefs (c4.factory.io/v1alpha1)')
+    }
+    const meta = isObject(body.metadata) ? body.metadata : {}
+    if (meta.namespace !== undefined && meta.namespace !== namespace) {
+      return sendStatus(res, 403, 'Forbidden', `The Brief's namespace must be ${namespace}, as in the path`)
+    }
+    const projects = await requestJson(upstream, `/apis/c4.factory.io/v1alpha1/namespaces/${namespace}/projects`)
+    if (projects.status !== 200)
+      return send(
+        res,
+        projects.status,
+        `${JSON.stringify(projects.body)}
+`,
+        JSON_TYPE,
+      )
+    if (!projects.body?.items?.length) {
+      return sendStatus(
+        res,
+        403,
+        'Forbidden',
+        `Namespace ${namespace} holds no Project, so the UI makes no Brief there`,
+      )
+    }
+    const metadata = { namespace }
+    if (typeof meta.name === 'string') metadata.name = meta.name
+    if (typeof meta.generateName === 'string') metadata.generateName = meta.generateName
+    const brief = { apiVersion: body.apiVersion, kind: 'Brief', metadata, spec: body.spec }
+    return forwardWrite(res, upstream, 'POST', apiPath, 'application/json', brief)
+  }
+
+  const op = Array.isArray(body) && body.length === 1 ? body[0] : undefined
+  if (
+    !isObject(op) ||
+    Object.keys(op).sort().join() !== 'op,path,value' ||
+    op.op !== 'add' ||
+    op.path !== PROMPT_PATH ||
+    typeof op.value !== 'string'
+  ) {
+    return sendStatus(
+      res,
+      403,
+      'Forbidden',
+      `The UI patches a Brief only with one operation: add a prompt (a string) at ${PROMPT_PATH}`,
+    )
+  }
+  // A JSON patch can't append to a list that isn't there, and a Brief without
+  // prompts has none: then the patch adds the list, guarded by the
+  // resourceVersion just read so it never replaces a list made meanwhile.
+  const current = await requestJson(upstream, apiPath)
+  if (current.status !== 200)
+    return send(
+      res,
+      current.status,
+      `${JSON.stringify(current.body)}
+`,
+      JSON_TYPE,
+    )
+  const ops = Array.isArray(current.body?.spec?.prompts)
+    ? [op]
+    : [
+        { op: 'test', path: '/metadata/resourceVersion', value: current.body?.metadata?.resourceVersion },
+        { op: 'add', path: '/spec/prompts', value: [op.value] },
+      ]
+  log(`Adding a prompt to Brief ${namespace}/${name}`)
+  return forwardWrite(res, upstream, 'PATCH', apiPath, 'application/json-patch+json', ops)
+}
+
+const JSON_TYPE = { 'content-type': 'application/json', 'cache-control': 'no-store' }
+
+/** Sends one write upstream and the API's answer, a refusal included, back to the browser. */
+async function forwardWrite(res, upstream, method, apiPath, contentType, body) {
+  const search = `?${new URLSearchParams({ fieldManager: FIELD_MANAGER })}`
+  const answer = await requestJson(upstream, apiPath, { method, search, contentType, body })
+  send(
+    res,
+    answer.status,
+    `${JSON.stringify(answer.body ?? {})}
+`,
+    JSON_TYPE,
+  )
 }
 
 /** Proxies one GET request to the Kubernetes API and streams the answer back. */
@@ -323,17 +512,31 @@ export function createApiHandler({
     const isWatch = url.pathname === '/k8s-watch'
     if (!isProxy && !isWatch) return false
 
-    // Read-only by construction: nothing but GET ever reaches the API.
+    // URL() has already resolved any "..".
+    const apiPath = url.pathname.slice('/k8s'.length)
+    // Nothing but GET reaches the API, except the two Brief writes.
+    if (isProxy && (req.method === 'POST' || req.method === 'PATCH') && BRIEFS_PATH.test(apiPath)) {
+      briefWrite(req, res, apiPath, upstream, log).catch((err) => {
+        log(`Write failed: ${err.message}`)
+        if (!res.headersSent) sendStatus(res, 502, 'BadGateway', `Cannot reach the Kubernetes API: ${err.message}`)
+        else res.destroy()
+      })
+      return true
+    }
     if (req.method !== 'GET') {
-      sendStatus(res, 405, 'MethodNotAllowed', 'The C4 Factory UI is read-only: only GET is allowed', { allow: 'GET' })
+      sendStatus(
+        res,
+        405,
+        'MethodNotAllowed',
+        'Only GET is allowed here: the C4 Factory UI writes nothing but Briefs',
+        { allow: 'GET' },
+      )
       return true
     }
     if (isWatch) {
       watchMany(res, url, upstream, log)
       return true
     }
-    // URL() has already resolved any "..".
-    const apiPath = url.pathname.slice('/k8s'.length)
     if (!isAllowedApiPath(apiPath)) {
       sendStatus(res, 403, 'Forbidden', `The UI proxy only serves ${ALLOWED_PREFIX}`)
       return true

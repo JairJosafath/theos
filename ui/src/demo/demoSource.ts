@@ -1,7 +1,9 @@
 // Demo mode's data source: the fixtures, kept "alive" by moving the heartbeat of
 // Active sessions forward every 30 seconds, as a real Session client would. One
-// project: the webshop.
+// project: the webshop. The story source also takes the UI's two writes in
+// memory, so the Brief box works without a cluster.
 
+import { briefManifest, isBriefName, MAX_IDEA, MAX_PROMPT, type BriefWriter } from '../k8s/briefs'
 import type { FactoryHealth } from '../k8s/health'
 import type { Connection, FactoryData, Snapshot, Source, StoryData } from '../k8s/sources'
 import type { Project } from '../k8s/types'
@@ -33,7 +35,9 @@ class StaticSource<T> implements Source<T> {
   stop(): void {}
 }
 
-export class DemoStorySource extends StaticSource<StoryData> {
+const MAX_PROMPTS = 50
+
+export class DemoStorySource extends StaticSource<StoryData> implements BriefWriter {
   private timer?: ReturnType<typeof setInterval>
 
   constructor(now = Date.now()) {
@@ -50,19 +54,44 @@ export class DemoStorySource extends StaticSource<StoryData> {
     this.timer = undefined
   }
 
+  /** A new Brief shows up as Pending, as the API would answer before the operator picks it up. */
+  async create(namespace: string, name: string, idea: string): Promise<void> {
+    const data = this.snapshot.data
+    if (!isBriefName(name)) throw new Error(`Brief name "${name}" must be lowercase letters, digits and '-'`)
+    if (data.briefs.some((b) => b.metadata.name === name))
+      throw new Error(`briefs.c4.factory.io "${name}" already exists`)
+    if (!idea.trim() || idea.length > MAX_IDEA) throw new Error(`spec.idea must be 1 to ${MAX_IDEA} characters`)
+    const brief = briefManifest(namespace, name, idea)
+    brief.metadata = { ...brief.metadata, uid: `demo-${name}`, creationTimestamp: new Date().toISOString() }
+    brief.status = { phase: 'Pending' }
+    this.update({ ...data, briefs: [...data.briefs, brief] })
+  }
+
+  async addPrompt(_namespace: string, name: string, prompt: string): Promise<void> {
+    const data = this.snapshot.data
+    const brief = data.briefs.find((b) => b.metadata.name === name)
+    if (!brief) throw new Error(`briefs.c4.factory.io "${name}" not found`)
+    if (!prompt.trim() || prompt.length > MAX_PROMPT) throw new Error(`a prompt must be 1 to ${MAX_PROMPT} characters`)
+    const prompts = brief.spec.prompts ?? []
+    if (prompts.length >= MAX_PROMPTS) throw new Error(`spec.prompts: at most ${MAX_PROMPTS} prompts`)
+    const changed = { ...brief, spec: { ...brief.spec, prompts: [...prompts, prompt] } }
+    this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
+  }
+
+  private update(data: StoryData): void {
+    this.snapshot = { ...this.snapshot, data }
+    for (const listener of this.listeners) listener()
+  }
+
   private heartbeat(): void {
     const at = new Date().toISOString()
     const data = this.snapshot.data
-    this.snapshot = {
-      ...this.snapshot,
-      data: {
-        ...data,
-        sessions: data.sessions.map((s) =>
-          s.status?.phase === 'Active' ? { ...s, status: { ...s.status, lastHeartbeat: at } } : s,
-        ),
-      },
-    }
-    for (const listener of this.listeners) listener()
+    this.update({
+      ...data,
+      sessions: data.sessions.map((s) =>
+        s.status?.phase === 'Active' ? { ...s, status: { ...s.status, lastHeartbeat: at } } : s,
+      ),
+    })
   }
 }
 

@@ -2,12 +2,14 @@
 // phases, a failed type check, agent and human Sessions (one Stale), a
 // Relationship added after scaffolding, and Crews working, paused and waiting
 // for their Container: the working one with a Sonnet implementer, an Opus
-// reviewer and Tasks made from issues. Used by demo mode (?demo=1), so the whole
+// reviewer and Tasks made from issues; and Briefs planned, needing input and
+// planning. Used by demo mode (?demo=1), so the whole
 // UI can be seen and screenshotted without writing to a cluster.
 
 import type { StoryData } from '../k8s/sources'
 import type {
   Agent,
+  Brief,
   CatalogEntry,
   Condition,
   Container,
@@ -636,6 +638,124 @@ export function demoStory(now: number): StoryData {
     catalog('Connector', 'redis', 'Redis', ['service', 'worker'], 'v1.0.0', created),
   ]
 
+  const briefs: Brief[] = [
+    // Two rounds applied; a third prompt came in since and waits for the next.
+    {
+      apiVersion: API_VERSION,
+      kind: 'Brief',
+      metadata: meta('webshop', created),
+      spec: {
+        idea: 'An online shop where customers browse the catalog, order, and reorder what they bought before. Shop managers keep the catalog up to date.',
+        prompts: [
+          'Customers can reorder a past order with one click.',
+          'Add gift cards that customers can buy and redeem.',
+        ],
+        agents: {
+          planner: { name: 'claude' },
+          implementer: { name: 'claude-implementer' },
+          reviewer: { name: 'claude-reviewer' },
+        },
+      },
+      status: {
+        phase: 'Planned',
+        round: 2,
+        promptsPlanned: 1,
+        choices: [
+          'Reorder is a button on each past order in the storefront, served by orders-api.',
+          'Past orders are read from orders-db; no new data store.',
+          'The catalog API gets its own Crew once its container is Ready.',
+        ],
+        created: [
+          { kind: 'SoftwareSystem', name: 'webshop-core' },
+          { kind: 'Container', name: 'storefront' },
+          { kind: 'Container', name: 'orders-api' },
+          { kind: 'Container', name: 'catalog-api' },
+          { kind: 'DataStore', name: 'orders-db' },
+          { kind: 'DataStore', name: 'catalog-db' },
+          { kind: 'Crew', name: 'orders-api' },
+          { kind: 'Crew', name: 'storefront' },
+        ],
+        issues: [
+          {
+            repository: 'webshop/orders-api',
+            number: 14,
+            url: issueURL('orders-api', 14),
+            title: 'Create an order from the cart',
+          },
+          {
+            repository: 'webshop/orders-api',
+            number: 15,
+            url: issueURL('orders-api', 15),
+            title: "List a customer's past orders",
+          },
+          {
+            repository: 'webshop/orders-api',
+            number: 16,
+            url: issueURL('orders-api', 16),
+            title: 'Reorder a past order',
+          },
+          { repository: 'webshop/storefront', number: 2, url: issueURL('storefront', 2), title: 'Product list page' },
+          {
+            repository: 'webshop/storefront',
+            number: 3,
+            url: issueURL('storefront', 3),
+            title: 'Reorder button on past orders',
+          },
+        ],
+        history: [
+          { round: 1, summary: 'Planned the shop: storefront, orders and catalog', costMilliUSD: 312 },
+          { round: 2, summary: 'Added one-click reorder', costMilliUSD: 148 },
+        ],
+        repositoryURL: `${GITEA_WEB}/webshop/brief-webshop`,
+        costMilliUSD: 460,
+        conditions: [
+          cond('Planned', 'True', 'Applied', 'Round 2 is applied', ago(1800)),
+          cond('NeedsInput', 'False', 'NothingAsked', 'Nothing is asked', ago(1800)),
+        ],
+      },
+    },
+    // The planner asked a question it can't answer itself.
+    {
+      apiVersion: API_VERSION,
+      kind: 'Brief',
+      metadata: meta('loyalty-points', ago(50 * 60)),
+      spec: {
+        idea: 'Customers collect loyalty points with every order and spend them at checkout.',
+        agents: { planner: { name: 'claude' } },
+      },
+      status: {
+        phase: 'NeedsInput',
+        round: 1,
+        choices: ['Points live in orders-db, next to the orders that earned them.'],
+        history: [{ round: 1, summary: 'Asked how points are paid out', costMilliUSD: 96 }],
+        repositoryURL: `${GITEA_WEB}/webshop/brief-loyalty-points`,
+        costMilliUSD: 96,
+        conditions: [
+          cond('Planned', 'False', 'NeedsInput', 'Round 1 waits for an answer', ago(40 * 60)),
+          cond(
+            'NeedsInput',
+            'True',
+            'Question',
+            'Which payment provider pays out redeemed points, the existing one or a new one? Add a prompt that says which.',
+            ago(40 * 60),
+          ),
+        ],
+      },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'Brief',
+      metadata: meta('returns', ago(5 * 60)),
+      spec: { idea: 'Customers can return items within 30 days and get their money back.' },
+      status: {
+        phase: 'Planning',
+        round: 1,
+        repositoryURL: `${GITEA_WEB}/webshop/brief-returns`,
+        conditions: [cond('Planned', 'False', 'Planning', 'Round 1 is being planned', ago(4 * 60))],
+      },
+    },
+  ]
+
   return {
     namespace: DEMO_NAMESPACE,
     project,
@@ -650,5 +770,6 @@ export function demoStory(now: number): StoryData {
     crews,
     agents,
     tasks,
+    briefs,
   }
 }
