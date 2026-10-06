@@ -395,11 +395,14 @@ Secret on `webshop`'s `default` ServiceAccount (it pulls `agent-go` through
 it) and `config/samples/first-app/`, set to the release's agent tag and
 template refs, until `orders-cli` is scaffolded and its Crew is `Idle`; no
 Agent runs, as CI has no Claude token. A tag without `first-app` skips that
-part and says so. Its result is the run's job
+part and says so, as do samples without their own `catalog.yaml` against a
+chart that has no catalog (0.3.0 and older). Its result is the run's job
 summary and its artifact `release-vX.Y.Z-check` (Actions → Verify Release).
-When it fails it files `Release vX.Y.Z fails its check` (`status/ready`,
-`priority/urgent`), or comments on the open one, so the relay picks it up; the
-issue says if the runner ran short of memory or disk. Check an older release
+When the release's own check, or a dispatch on main, fails it files
+`Release vX.Y.Z fails its check` (`status/ready`, `priority/urgent`), or
+comments on the open one, so the relay picks it up; the issue says if the
+runner ran short of memory or disk. A dispatch on another branch only reports
+in its run. Check an older release
 with Actions → Verify Release → Run workflow, or
 `gh workflow run verify-release.yml -f tag=vX.Y.Z`; dispatched, it takes the
 `first-app` samples from the ref it runs on, so on main it checks the guide's

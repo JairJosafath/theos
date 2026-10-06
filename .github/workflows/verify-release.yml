@@ -16,9 +16,11 @@ name: Verify Release
 # scaffolded and its Crew is Idle. The Agent isn't run: CI
 # has no Claude token. The samples are the tag's; dispatched, they are the
 # dispatched ref's, so dispatching on main checks the guide against a release.
-# A tag without config/samples/first-app skips that part and says so.
-# The evidence is an artifact and the job summary; a failure files (or comments
-# on) the issue "Release vX.Y.Z fails its check".
+# A tag without config/samples/first-app skips that part and says so, as do
+# samples that take the catalog from a chart that has none (0.3.0 and older).
+# The evidence is an artifact and the job summary; a failure of the release's
+# own check or of a dispatch on main files (or comments on) the issue
+# "Release vX.Y.Z fails its check".
 on:
   workflow_run:
     workflows: [Release]
@@ -83,11 +85,20 @@ jobs:
           SAMPLES_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || env.TAG }}
         run: |
           echo "SAMPLES_REF=$SAMPLES_REF" >>"$GITHUB_ENV"
-          if [ -d guide/config/samples/first-app ]; then
+          # Samples without their own catalog.yaml take the catalog and the
+          # Agents from the chart; a release whose chart has none (0.3.0 and
+          # older) can't run them, so the check is skipped, not failed.
+          if [ ! -d guide/config/samples/first-app ]; then
+            skip="$SAMPLES_REF has no config/samples/first-app"
+          elif [ ! -f guide/config/samples/first-app/catalog.yaml ] && ! grep -q '^catalog:' dist/chart/values.yaml; then
+            skip="$SAMPLES_REF's config/samples/first-app needs the chart's catalog and Agents, and $TAG's chart has none"
+          fi
+          if [ -z "${skip:-}" ]; then
             echo "GUIDE=run" >>"$GITHUB_ENV"
           else
             echo "GUIDE=skipped" >>"$GITHUB_ENV"
-            echo "::notice::$SAMPLES_REF has no config/samples/first-app: the getting-started check is skipped"
+            echo "GUIDE_SKIPPED=$skip" >>"$GITHUB_ENV"
+            echo "::notice::$skip: the getting-started check is skipped"
           fi
 
       - name: Free disk space
@@ -324,7 +335,7 @@ jobs:
                 echo "Set to the release:"; echo '```diff'; cat first-app.diff; echo '```'
               fi
             else
-              echo "Skipped: $SAMPLES_REF has no \`config/samples/first-app\`."
+              echo "Skipped: $GUIDE_SKIPPED."
             fi
             echo "### Pods"; echo '```'; cat pods.txt; echo '```'
           } | tee summary.md >>"$GITHUB_STEP_SUMMARY"
@@ -336,8 +347,11 @@ jobs:
           name: release-${{ env.TAG }}-check
           path: ${{ env.EVIDENCE }}
 
+      # Only the release's own check, or a dispatch on main, speaks for the
+      # release; a dispatch on another branch tests that branch, and its run
+      # is the report.
       - name: File the failure
-        if: failure()
+        if: failure() && (github.event_name == 'workflow_run' || github.ref_name == github.event.repository.default_branch)
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
