@@ -14,6 +14,11 @@ regeneration; `Chart.yaml` is never overwritten.
 
 ## Install
 
+[docs/getting-started.md](../../docs/getting-started.md) walks a device from
+here to a first app the factory builds: the install below, the agents' Claude
+token, a model, an Agent and a Crew, and a Gitea issue they turn into a merged
+pull request.
+
 1. **Agent Sandbox.** The operator runs its agents in Sandboxes and won't start
    without the `Sandbox` kind:
 
@@ -85,11 +90,12 @@ read:packages`, then `gh auth token`), in one of two ways:
   (the operator):
 
   ```bash
-  for ns in c4-factory-system gitea; do
+  for ns in c4-factory-system gitea webshop; do
     kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
     kubectl -n $ns create secret docker-registry ghcr --docker-server=ghcr.io \
       --docker-username=USER --docker-password="$(gh auth token)"
   done
+  kubectl -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr"}]}'
   helm install ... --set gitea.createNamespace=false \
     --set 'global.imagePullSecrets[0].name=ghcr' \
     --set 'manager.imagePullSecrets[0].name=ghcr'
@@ -97,13 +103,14 @@ read:packages`, then `gh auth token`), in one of two ways:
 
   The Secret has to exist before Gitea's pods, so you make namespace `gitea`
   and the chart doesn't (`gitea.createNamespace=false`). The agent images
-  aren't covered: see the next way.
+  (`agent-base`, `agent-go`) run in Sandboxes the operator makes in each
+  project namespace, outside the chart, as the namespace's `default`
+  ServiceAccount; the `patch` lets them pull with the Secret. Repeat both for
+  every project namespace.
 
 - **Kind: load them.** `docker login ghcr.io`, `docker pull` each image at the
   release's version and `kind load docker-image` it into the cluster; no pull
-  secret. The agent images (`agent-base`, `agent-go`) run in Sandboxes the
-  operator makes in project namespaces, outside the chart, so on a private
-  registry this is the only way for them.
+  secret.
 
 A `vX.Y.Z` tag publishes the chart and its images: the *Release* workflow
 (`.github/workflows/release.yml`) pushes the chart to

@@ -93,12 +93,20 @@ jobs:
           Images: \`$REGISTRY/<name>:$VERSION\` for operator, ui, seed, the toolchains
           base and go, agent-base, agent-go, gitea-runner-base and gitea-runner-go.
 
-          Install (needs [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox) first):
+          Install: [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox) first,
+          then a namespace for each project, then the chart with the projects in \`gitea.projects\`:
 
           \`\`\`bash
+          kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
+          kubectl create namespace webshop
           helm install c4-factory oci://$REGISTRY/charts/c4-factory --version $VERSION \\
-            -n c4-factory-system --create-namespace
+            -n c4-factory-system --create-namespace --wait --timeout 10m \\
+            --set 'gitea.projects={webshop}'
           \`\`\`
+
+          [docs/getting-started.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/getting-started.md)
+          goes on to a first app: the agents' Claude token, a model, an Agent and a Crew,
+          and pulling private images.
           EOF
           gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag

@@ -72,10 +72,14 @@ in, `make gitea-admin` prints the admin password, which `make gitea` generates f
 each cluster.
 
 To use c4factory on your own cluster instead, install a release: apply Agent
-Sandbox, then `helm install` the chart, which brings the operator, the UI and a
-seeded Gitea with its CI runners. The chart and images are published to GHCR by
-a version tag; [the chart's README](dist/chart/README.md) gives the install
-sequence and how to pull private images.
+Sandbox, make the project namespaces, then `helm install` the chart with
+`gitea.projects`, which brings the operator, the UI and a seeded Gitea with its
+CI runners. The chart and images are published to GHCR by a version tag.
+[docs/getting-started.md](docs/getting-started.md) takes a device from there to
+its first app: the install, the agents' Claude token, a model, an Agent and a
+Crew that turn a Gitea issue into a merged pull request.
+[The chart's README](dist/chart/README.md) gives the install sequence, its
+values and how to pull private images.
 
 ## A device without the cluster
 
