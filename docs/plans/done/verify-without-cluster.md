@@ -83,10 +83,12 @@ another names it too. None of them needs the cluster.
 
 Steps 2, 4, 5, 7, 8 and 9 are independent and can run in parallel.
 
-**Later, not designed yet** (#152, proposed): a local factory mode. It would
-run the Crew and Task loop on envtest, the local Gitea and `c4agent` as a
-subprocess, for live evidence without Kind. It can't prove the sandbox fence,
-so Kind stays for that.
+**Decided against** (#152, closed): a local factory mode. It would have run
+the Crew and Task loop on envtest, the local Gitea and `c4agent` as a
+subprocess, for live evidence without Kind. That is a second runtime to keep
+in step with the sandbox one, and it can't prove the sandbox fence
+(ServiceAccount token, NetworkPolicy, deadline). The tiers above cover a lite
+device, and *Verify Release* runs the whole release on a hosted Kind cluster.
 
 ## Done when
 
