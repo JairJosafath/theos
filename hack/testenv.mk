@@ -226,13 +226,13 @@ agent-sandbox: ## Install Agent Sandbox (config/agent-sandbox, v1.0.4), which ru
 
 CLAUDE_NAMESPACE ?= apps
 
+# The Claude token make claude-secret reads when CLAUDE_TOKEN is not given: one
+# file per device, outside git, mode 0600 (docs/dev/testenv.md).
+CLAUDE_TOKEN_FILE ?= $(TOOLS_ROOT)/.dev/secrets/claude-token
+
 .PHONY: claude-secret
-claude-secret: ## Store a Claude token for agents: make claude-secret CLAUDE_TOKEN=... (from `claude setup-token`).
-	@test -n "$(CLAUDE_TOKEN)" || { echo "Set CLAUDE_TOKEN to the output of 'claude setup-token'" >&2; exit 1; }
-	@printf '%s' "$(CLAUDE_TOKEN)" | $(TESTENV_KUBECTL) -n $(CLAUDE_NAMESPACE) create secret generic claude-credentials \
-		--from-file=CLAUDE_CODE_OAUTH_TOKEN=/dev/stdin --dry-run=client -o yaml | \
-		$(TESTENV_KUBECTL) apply --server-side --field-manager=c4factory-testenv -f - >/dev/null
-	@echo "Stored Secret $(CLAUDE_NAMESPACE)/claude-credentials"
+claude-secret: ## Store the agents' Claude token, from CLAUDE_TOKEN or the 0600 file CLAUDE_TOKEN_FILE (.dev/secrets/claude-token).
+	@KUBECTL="$(TESTENV_KUBECTL)" CLAUDE_TOKEN_FILE="$(CLAUDE_TOKEN_FILE)" hack/claude-secret.sh $(CLAUDE_NAMESPACE)
 
 .PHONY: claude-secret-copy
 claude-secret-copy: ## Copy the Claude Secret between projects: make claude-secret-copy FROM=webshop TO=apps.
