@@ -241,6 +241,7 @@ cat >"$T/bin/claude" <<'FAKE'
 while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done
 t=$CLAUDE_CONFIG_DIR/projects/${PWD//[^a-zA-Z0-9]/-}/$id.jsonl
 case $(cat "$FAKE") in
+  leftover) sleep 600 >/dev/null 2>&1 & echo $! >"$FAKE.child"; echo '{"is_error":false,"result":"left","num_turns":1}' ;;
   hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 60 & echo $! >"$FAKE.child"; wait ;;
   busy) mkdir -p "${t%/*}"; for _ in 1 2 3 4 5 6; do echo '{}' >>"$t"; sleep 1; done
     echo '{"is_error":false,"result":"busy","num_turns":9}' ;;
@@ -364,6 +365,15 @@ IDLE=1.5h
 echo hang >"$FAKE"
 SESSION_TIMEOUT=4s work
 grep -q "RELAY_IDLE (1.5h) or RELAY_IDLE_KILL (2s) isn't like 45m; session 1 runs until the 4s timeout" "$LOG"; check "idle: a bad RELAY_IDLE logged" $? 0
+
+# A process the session leaves behind doesn't get the worker's lock (fd 9), so
+# the lock is free once the worker exits.
+IDLE=2s
+echo leftover >"$FAKE"
+(exec 9>"$DIR/lock-7" && flock -n 9 && work)
+check "leftover: still running" "$(kill -0 "$(cat "$FAKE.child")" 2>/dev/null && echo running)" running
+flock -n "$DIR/lock-7" true; check "leftover: the lock is free" $? 0
+kill "$(cat "$FAKE.child")" 2>/dev/null
 
 # Idle workers take no start slot (#242): pick asks before admit, so with one
 # ready issue N workers start one session, and the other N-1 stop without
