@@ -221,6 +221,11 @@ a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
 ready and urgent, so the next session fixes main before anything else; a single
 failure files nothing.
+With nothing ready, it also logs, once per change, which skipped issue waits on
+which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
+alone lists every skipped issue's blockers, with status and claim), and when
+issues wait on each other in a cycle, `cycles --report` comments each of them
+once and moves the newest to `status/needs-human`.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
 the triage's reasons with `proposed --since` against a stubbed GitHub, and its
 CI rounds with `gh` faked.

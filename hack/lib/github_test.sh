@@ -4,6 +4,7 @@
 # on two clusters, a third waiting, a released cluster reused, a missing one
 # created; release on handoff, close and release),
 # for flush releasing the claim of the handoff it posts,
+# for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
 # for proposed listing the issues the relay's triage reads, for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
@@ -51,6 +52,7 @@ gh_api() {
       if [[ " $* " == *" PATCH "* ]]; then cat >"$T/edited"; return; fi
       echo '{"id":1,"updated_at":"'"$now"'","body":"<!-- c4-claim -->\n**heron-73** works on this issue"}' |
         { [ -e "$T/hold74" ] && sed 's/heron-73/heron-74/' || cat; } ;;
+    */issues/comments\?since*) echo "${CLAIMS:-[[]]}" ;;
     */issues/comments*) echo '[[]]' ;;
     */issues\?state=open*) [ -e "$T/no-open" ] && return 0; [ -n "${OPEN:-}" ] && { echo "$OPEN"; return; }; echo '[[{"number":60,"title":"Deploy","html_url":"u60","body":"","labels":[{"name":"needs/cluster"},{"name":"status/ready"}]},{"number":61,"title":"Docs","html_url":"u61","body":"","labels":[{"name":"status/ready"}]}]]' ;;
     *) return 0 ;;
@@ -245,6 +247,65 @@ check "proposed" "$(OPEN=$(jq '. + [[86, ["status/proposed", "kind/bug"]]]' <<<"
 check "proposed, none" "$(OPEN=$(jq 'map(select(.[0] != 81))' <<<"$all" | issues) gh_proposed)" ""
 gh_proposed --since soon 2>/dev/null
 check "proposed --since takes epoch seconds" $? 1
+
+# Blocked: what holds back each ready or in-progress issue that pick skips for
+# an open dependency, with the blocker's status, claim and own dependencies;
+# --unworked leaves out the blockers in progress under a live claim. Cycles:
+# the issues that wait on each other, and --report comments each once.
+dep='[[100, ["status/ready"], "Depends on #101"], [101, ["status/proposed"]],
+  [102, ["status/ready"], "Depends on #103\nDepends on #104"], [104, ["status/in-progress"]],
+  [105, ["status/in-progress"], "Depends on #106"], [106, ["status/ready"], "depends on #105"],
+  [107, ["status/ready"], "Depends on #101"], [108, ["status/ready"], "Depends on #109"], [109, []],
+  [110, ["status/proposed"], "Depends on #111"], [111, ["status/proposed"], "Depends on #112"],
+  [112, ["status/needs-human"], "Depends on #110"]]'
+claimed() { jq -nc --arg now "$now" '[[$ARGS.positional[] | tonumber | {id: ., issue_url: "x/issues/\(.)", updated_at: $now,
+  body: "<!-- c4-claim -->\n**otter-\(.)** works on this issue"}]]' --args "$@"; }
+check "blocked" "$(OPEN=$(issues <<<"$dep") CLAIMS=$(claimed 104 107) gh_blocked)" "100 waits on 101 (status/proposed, no claim)
+102 waits on 104 (status/in-progress, claimed by otter-104)
+105 waits on 106 (status/ready, no claim, waits on #105)
+106 waits on 105 (status/in-progress, no claim, waits on #106)
+108 waits on 109 (no status, no claim)"
+check "blocked --unworked" "$(OPEN=$(issues <<<"$dep") CLAIMS=$(claimed 104 107) gh_blocked --unworked | cut -d' ' -f1-4)" "100 waits on 101
+105 waits on 106
+106 waits on 105
+108 waits on 109"
+check "blocked, a claimed blocker not in progress is unworked" \
+  "$(OPEN=$(issues <<<"$dep") CLAIMS=$(claimed 101) gh_blocked --unworked | head -1)" "100 waits on 101 (status/proposed, claimed by otter-101)"
+check "blocked, none" "$(OPEN=$(issues <<<"$all") gh_blocked)" "83 waits on 81 (status/proposed, no claim)"
+check "blocked, the blocker closed" "$(OPEN=$(jq 'map(select(.[0] != 81))' <<<"$all" | issues) gh_blocked)" ""
+gh_blocked --bogus 2>/dev/null
+check "blocked, unknown flag" $? 1
+check "cycles" "$(OPEN=$(issues <<<"$dep") gh_cycles)" "#105 #106
+#110 #111 #112"
+check "cycles, none" "$(OPEN=$(issues <<<"$all") gh_cycles)" ""
+cyc=$T/cycle
+mkdir -p "$cyc"
+report() {
+  (
+    gh_comments() { if [ -e "$cyc/$1" ]; then jq -sc . "$cyc/$1"; else echo '[]'; fi; }
+    gh_comment() { jq -Rsc '{body: rtrimstr("\n")}' >>"$cyc/$1"; echo "comment #$1" >>"$cyc/log"; }
+    gh_set_status() { echo "status #$1 $2" >>"$cyc/log"; }
+    OPEN=$(issues <<<"$dep") gh_cycles --report
+  )
+}
+body="$GH_CYCLE_MARKER"$'\n#105, #106 wait on each other in a cycle (`Depends on #M` in their bodies), so pick skips each of them for good. Drop one `Depends on` line to break it; #106, the newest, goes to status/needs-human until then.'
+jq -nc --arg b "$body" '{body: $b}' >"$cyc/105"
+check "cycles --report" "$(report)" "cycle #105 #106: commented on #106; #106 to status/needs-human
+cycle #110 #111 #112: commented on #110 #111 #112; #112 to status/needs-human"
+check "cycles --report, what it did" "$(cat "$cyc/log")" "comment #106
+status #106 needs-human
+comment #110
+comment #111
+comment #112
+status #112 needs-human"
+check "cycles --report, the comment names the cycle" "$(jq -r .body "$cyc/106")" "$body"
+: >"$cyc/log"
+dep=$(jq '(.[] | select(.[0] == 106 or .[0] == 112)) |= (.[1] = ["status/needs-human"])' <<<"$dep")
+check "cycles --report, once" "$(report)$(cat "$cyc/log")" ""
+dep=$(jq '(.[] | select(.[0] == 106)) |= (.[1] = ["status/ready"])
+  | (.[] | select(.[0] == 112)) |= (.[1] = ["status/proposed"])' <<<"$dep")
+check "cycles --report, commented but not moved: moves the newest" "$(report)" "cycle #105 #106: #106 to status/needs-human
+cycle #110 #111 #112: #112 to status/needs-human"
 
 # Intake: labels an issue by where it came from.
 R=repos/JairJosafath/c4factory
