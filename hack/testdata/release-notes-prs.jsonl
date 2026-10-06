@@ -1,0 +1,14 @@
+{"number":1,"title":"feat(10): a Brief kind","branch":"feat/10-brief","labels":[],"files":["api/v1alpha1/brief_types.go"],"body":""}
+{"number":2,"title":"Briefs step 2: the planner","branch":"feat/11-briefs-step-2","labels":[],"files":["internal/model/plan.go"],"body":""}
+{"number":3,"title":"fix(12): the UI keeps its session","branch":"fix/12-session","labels":[],"files":["ui/server.js"],"body":""}
+{"number":4,"title":"feat(13)!: Containers name their System","branch":"feat/13-system","labels":[],"files":["api/v1alpha1/container_types.go"],"body":""}
+{"number":5,"title":"refactor(14): one reconcile loop","branch":"refactor/14-loop","labels":[],"files":["internal/controller/x.go"],"body":"refactor: one loop\n\nBREAKING CHANGE: the status moved"}
+{"number":6,"title":"fix(15): escape the repository name","branch":"fix/15-escape","labels":["kind/security"],"files":["internal/scaffold/name.go"],"body":""}
+{"number":7,"title":"fix(16): a security header on the UI","branch":"fix/16-header","labels":[],"files":["ui/server.js"],"body":""}
+{"number":8,"title":"perf(17): cache the templates","branch":"perf/17-cache","labels":[],"files":["internal/scaffold/cache.go"],"body":""}
+{"number":9,"title":"chore(18): bump a dependency","branch":"chore/18-dep","labels":[],"files":["go.mod"],"body":""}
+{"number":10,"title":"ci(19): cache Go","branch":"ci/19-cache","labels":[],"files":[".github/workflows/test.yml"],"body":""}
+{"number":11,"title":"test(20): a table test","branch":"test/20-table","labels":[],"files":["internal/model/x_test.go"],"body":""}
+{"number":12,"title":"docs(21): the design","branch":"docs/21-design","labels":[],"files":["docs/design.md"],"body":""}
+{"number":13,"title":"feat(22): the relay's watcher","branch":"feat/22-watch","labels":[],"files":["hack/relay-watch.sh","docs/dev/testenv.md",".claude/skills/handoff/SKILL.md",".relay/x"],"body":""}
+{"number":14,"title":"fix(23): a security hole in the relay","branch":"fix/23-relay","labels":[],"files":["hack/relay.sh"],"body":""}

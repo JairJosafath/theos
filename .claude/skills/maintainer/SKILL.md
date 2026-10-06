@@ -133,8 +133,11 @@ carries.
    - Watch *Release* and *Verify Release*.
    - The GitHub release has notes in
      [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) categories
-     (Added, Changed, Fixed, Security), and name each milestone the release
-     completes.
+     (Added, Changed, Fixed, Security). *Release* drafts them from the pull
+     requests merged since the previous tag (`hack/release-notes.sh`, which
+     says what goes where); edit the draft on the release where it reads
+     wrong, and add the milestones the release completes.
+     `hack/release-notes.sh origin/main` previews the next one.
    - A failure becomes a `kind/bug` issue, ready and `priority/urgent`.
 9. **The report:** write its body (format below) and set it with
    `hack/lib/github.sh report FILE`.
