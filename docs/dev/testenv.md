@@ -216,14 +216,19 @@ minutes and restarts itself when that changed its code.
 With nothing ready, it starts a triage of the `status/proposed` issues: for a
 new one, for one that changed since the last triage or waits on an issue that
 closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
-`WATCH_TRIAGE` (30m).
+`WATCH_TRIAGE` (30m). Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
+a workflow that runs on a push to main and failed its two newest finished runs
+there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
+ready and urgent, so the next session fixes main before anything else; a single
+failure files nothing.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
 issues wait on each other in a cycle, `cycles --report` comments each of them
 once and moves the newest to `status/needs-human`.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
-and the triage's reasons with `proposed --since` against a stubbed GitHub.
+the triage's reasons with `proposed --since` against a stubbed GitHub, and its
+CI rounds with `gh` faked.
 
 ### Memory on the cluster device
 
