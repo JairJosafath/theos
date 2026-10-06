@@ -449,6 +449,22 @@ which tries the check's own steps). Dispatched, the install check
 takes the `first-app` samples from the ref it runs on, so on main it checks
 the guide's current samples against that release.
 
+An upgrade from v0.2.0 is one Verify Release no longer takes: from v0.4.0
+on it upgrades from the release just below. What that upgrade alone runs is
+the chart's pre-upgrade hook `templates/gitea/keep-secrets.yaml`, which marks
+the Secrets `gitea-admin` and `gitea-runner` that a chart up to 0.2.0 rendered
+`helm.sh/resource-policy: keep`, so the upgrade keeps Gitea's admin password
+and runner token. It renders only on an upgrade whose `lookup` finds those
+Secrets owned by the release, so no `helm template` shows it. `make test`
+covers it in `test/chart`: `helm template --is-upgrade --dry-run=server`
+against envtest's API server, holding such Secrets, must render the hook for
+the release's own Secrets alone and nothing on an install; the test creates
+what it renders and, as the hook's ServiceAccount, does what its Job's
+`kubectl annotate` does; and the seed image the Job runs must still install
+kubectl. What it leaves to a node, the Job's pod running, was checked by hand
+on Kind in #329; `gh workflow run verify-release.yml -f tag=vX.Y.Z -f
+from=v0.2.0` runs the whole upgrade again.
+
 ### Memory on the cluster device
 
 The device with the Kind clusters has 13.4 GiB and 4 GiB of swap. Four sessions
