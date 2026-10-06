@@ -57,7 +57,10 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 	files := map[string]string{}
 	var choices []string
 	var issues [][2]string // title after "Stand-in: ", and the goal
-	container := standInContainer(objects, name)
+	// The Brief's Container is named after the Brief, without the prefix of
+	// the Brief's own repository.
+	base := strings.TrimPrefix(name, BriefRepository(""))
+	container := standInContainer(objects, base)
 	if ideaNew {
 		framework, kind, standard := standInCatalog(catalog)
 		if framework == "" {
@@ -78,7 +81,7 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 			choices = append(choices, fmt.Sprintf("The stand-in planner makes SoftwareSystem %s: the namespace has none.",
 				system))
 		}
-		container = standInName(objects, strings.TrimPrefix(name, BriefRepository("")))
+		container = standInName(objects, base)
 		objects = append(objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindContainer, Name: container,
 			SoftwareSystem: system, Type: kind, GitProvider: provider[1], Framework: framework, Standard: standard})
 		with := ""
@@ -139,15 +142,15 @@ func standInCatalog(catalog catalogOut) (framework, kind, standard string) {
 	return "", "", ""
 }
 
-// standInContainer is the Container named after the Brief, else the model's
+// standInContainer is the Container named base, the Brief's, else the model's
 // first, else none.
-func standInContainer(objects []PlanObject, brief string) string {
+func standInContainer(objects []PlanObject, base string) string {
 	first := ""
 	for _, o := range objects {
 		if o.Kind != KindContainer {
 			continue
 		}
-		if o.Name == brief {
+		if o.Name == base {
 			return o.Name
 		}
 		if first == "" {
