@@ -38,12 +38,14 @@
 #                                        (only it); pass it when the issue asks for a fresh cluster or what is installed
 #                                        isn't yours: a pool cluster belongs to nobody between leases.
 #                                        --bare (implies --fresh): create it with make cluster only, no testenv Gitea
-#                                        or seed; pass it to install a release (docs/getting-started.md) on it
+#                                        or seed; pass it to install a release (docs/getting-started.md) on it. The
+#                                        cluster stays marked bare: a plain acquire takes it last and recreates it
+#                                        with Gitea and the seed (one this checkout already holds is kept, with a warning)
 #   hack/lib/github.sh cluster release   drop this checkout's cluster lease
 #   hack/lib/github.sh cluster name      the cluster this checkout's make targets use: its lease's, else c4factory
 #   hack/lib/github.sh cluster holder [NAME]
 #                                        the live cluster leases (or NAME's); exit 1: none
-#   hack/lib/github.sh cluster pool      each cluster in the pool: leased, free or not created yet
+#   hack/lib/github.sh cluster pool      each cluster in the pool: leased, free or not created yet, and bare
 #   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, needs-human
 #                                        (needs-human releases the claim and lease)
 #   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, release the claim and lease
@@ -651,7 +653,10 @@ gh_label() {
 # stays on it, so acquire --fresh deletes and recreates the cluster it leased
 # (make cluster-delete, then as above), and never one another checkout holds.
 # acquire --bare does the same and creates it with make cluster only: nothing
-# installed, for a release's chart, which brings its own Gitea.
+# installed, for a release's chart, which brings its own Gitea. A cluster made
+# so is marked bare beside its lease, a mark that outlives the lease: a plain
+# acquire prefers other clusters, and recreates a bare one it gets with Gitea
+# and the seed, so it never hands out a bare cluster as a testenv one.
 GH_LEASE_POLL=${GH_LEASE_POLL:-15} # seconds between tries while acquire waits
 GH_POOL_FIRST=c4factory
 
@@ -680,6 +685,13 @@ gh_lease_file() {
     *) echo "${base%.lease}-$1.lease" ;;
   esac
 }
+
+# gh_bare_file NAME: the mark that cluster NAME was created bare (acquire
+# --bare), beside its lease; it outlives the lease.
+gh_bare_file() { local f; f=$(gh_lease_file "${1:?usage: gh_bare_file NAME}"); echo "${f%.lease}.bare"; }
+
+# gh_bare NAME: exit 0 when cluster NAME is marked bare.
+gh_bare() { [ -e "$(gh_bare_file "$1")" ]; }
 
 # gh_lease_names: the clusters that have a lease file, live or not, one per line.
 gh_lease_names() {
@@ -761,8 +773,9 @@ gh_lease_locked() {
 gh_kind_clusters() { "${KIND:-kind}" get clusters 2>/dev/null; }
 
 # gh_lease_take [FRESH]: lease a pool cluster to this checkout and print its
-# name: the one it already holds, else a free one that exists (with FRESH set, a
-# free one that does not), else the first free one. With every cluster held by
+# name: the one it already holds, else a free one that exists and is not
+# marked bare, else one that does not exist yet, else the first free one; with
+# FRESH set, a free one that does not exist yet, else the first free one. With every cluster held by
 # other checkouts, print them and exit 1. Run under gh_lease_locked.
 gh_lease_take() {
   local fresh=${1:-} pool c f pick= free=() held=() exist name= issue= c_issue c_id c_name c_branch l_name l_issue l_wt l_beat
@@ -781,8 +794,11 @@ gh_lease_take() {
     fi
     exist=$(gh_kind_clusters)
     for c in "${free[@]}"; do
-      if grep -qxF -- "$c" <<<"$exist"; then [ -n "$fresh" ] || { pick=$c; break; }; else [ -z "$fresh" ] || { pick=$c; break; }; fi
+      if grep -qxF -- "$c" <<<"$exist"; then [ -n "$fresh" ] || gh_bare "$c" || { pick=$c; break; }; else [ -z "$fresh" ] || { pick=$c; break; }; fi
     done
+    if [ -z "$pick$fresh" ]; then
+      for c in "${free[@]}"; do grep -qxF -- "$c" <<<"$exist" || { pick=$c; break; }; done
+    fi
     pick=${pick:-${free[0]}}
   fi
   if gh_claim_read; then name=$c_name issue=$c_issue; fi
@@ -796,11 +812,13 @@ gh_lease_take() {
 # to this checkout, waiting up to DURATION (default 30m) while other checkouts
 # hold every one; create it if it does not exist yet. --fresh prefers one that
 # does not exist yet, and deletes and recreates the leased one if it does.
-# --bare implies --fresh and creates it without Gitea and the seed. Prints
+# --bare implies --fresh and creates it without Gitea and the seed, and marks
+# it bare. Without either, a newly leased cluster marked bare is recreated with
+# them; one this checkout already held is kept, with a warning. Prints
 # the cluster's name on stdout, the rest on stderr. Exit 4 naming the holders
 # when the wait runs out.
 gh_lease_acquire() {
-  local wait=30m secs t0 out said= fresh= bare= l_name l_issue l_wt l_beat
+  local wait=30m secs t0 out said= fresh= bare= held= l_name l_issue l_wt l_beat
   while [ $# -gt 0 ]; do
     case $1 in
       --wait) wait=${2:-}; shift 2 || shift ;;
@@ -813,6 +831,7 @@ gh_lease_acquire() {
   secs=$(gh_seconds "$wait" --wait) || return 64
   gh_ttl >/dev/null || return 64
   gh_pool >/dev/null || return 64
+  held=$(gh_lease_name) || held=
   t0=$(date +%s)
   while ! out=$(gh_lease_locked gh_lease_take $fresh); do
     [ -n "$out" ] || return 1
@@ -824,6 +843,14 @@ gh_lease_acquire() {
     said=1
     sleep "$GH_LEASE_POLL"
   done
+  if [ -z "$fresh" ] && gh_bare "$out" && gh_kind_clusters | grep -qxF -- "$out"; then
+    if [ "$out" = "$held" ]; then
+      echo "github: Kind cluster $out, which this checkout already leased, was created bare (acquire --bare): no testenv Gitea or seed. Kept as it is; acquire --fresh makes it a testenv one" >&2
+    else
+      echo "github: Kind cluster $out was created bare (acquire --bare), with no testenv Gitea or seed, and is the only free one; recreating it as a testenv one" >&2
+      fresh=1
+    fi
+  fi
   if [ -n "$fresh" ] && gh_kind_clusters | grep -qxF -- "$out"; then
     # Only the cluster this checkout's lease names, checked once more.
     if ! gh_lease_read "$out" || ! gh_lease_mine; then
@@ -836,6 +863,7 @@ gh_lease_acquire() {
       echo "github: could not delete Kind cluster $out; released its lease" >&2
       return 1
     fi
+    rm -f "$(gh_bare_file "$out")"
   fi
   if [ -n "$bare" ] && ! gh_kind_clusters | grep -qxF -- "$out"; then
     echo "github: --bare: creating Kind cluster $out with nothing installed (make cluster KIND_CLUSTER=$out)" >&2
@@ -844,8 +872,10 @@ gh_lease_acquire() {
       echo "github: could not create Kind cluster $out; released its lease" >&2
       return 1
     fi
+    : >"$(gh_bare_file "$out")"
   elif ! gh_kind_clusters | grep -qxF -- "$out"; then
     echo "github: Kind cluster $out does not exist yet; creating it with Gitea and the seeded templates (make cluster gitea seed KIND_CLUSTER=$out)" >&2
+    rm -f "$(gh_bare_file "$out")"
     if ! "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" cluster gitea seed "KIND_CLUSTER=$out" >&2; then
       gh_lease_release >/dev/null
       echo "github: could not create Kind cluster $out; released its lease" >&2
@@ -886,14 +916,18 @@ gh_lease_beat_locked() {
 }
 
 # gh_lease_pool: each pool cluster and whether it is leased, free or not
-# created yet.
+# created yet, and whether it was created bare.
 gh_lease_pool() {
-  local c pool exist l_name l_issue l_wt l_beat
+  local c pool exist b l_name l_issue l_wt l_beat
   pool=$(gh_pool) || return 64
   exist=$(gh_kind_clusters)
   for c in $pool; do
+    b=
+    if grep -qxF -- "$c" <<<"$exist" && gh_bare "$c"; then b=", bare (acquire --bare: no testenv Gitea or seed)"; fi
     if gh_lease_live "$c"; then
-      echo "$c: leased to $(gh_lease_desc)$(gh_lease_mine && echo ' (this checkout)')"
+      echo "$c: leased to $(gh_lease_desc)$(gh_lease_mine && echo ' (this checkout)')$b"
+    elif [ -n "$b" ]; then
+      echo "$c: free$b; a plain acquire takes it last and recreates it"
     elif grep -qxF -- "$c" <<<"$exist"; then
       echo "$c: free"
     else

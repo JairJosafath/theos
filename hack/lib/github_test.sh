@@ -2,7 +2,7 @@
 # Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label)
 # and the cluster pool's leases (acquire, wait, exit 4, stale lease, two leases
 # on two clusters, a third waiting, a released cluster reused, a missing one
-# created, --fresh recreating only the cluster it leased; release on handoff, close and release),
+# created, --fresh recreating only the cluster it leased, a bare cluster taken last and recreated; release on handoff, close and release),
 # for flush releasing the claim of the handoff it posts,
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
 # for proposed listing the issues the relay's triage reads, for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
@@ -196,6 +196,35 @@ touch "$T/make-fails"; gh_cluster release >/dev/null; : >"$T/kind-clusters"
 gh_cluster acquire --wait 0 --bare >/dev/null 2>"$T/err"; check "bare, create fails: exit 1" $? 1
 check "bare, create fails: lease dropped" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
 rm -f "$T/make-fails" "$LEASE" "$LEASE2" "$T/made"; echo c4factory >"$T/kind-clusters"
+
+# A cluster made bare stays marked bare after its lease: a plain acquire
+# prefers any other free cluster, and recreates a bare one it must take with
+# Gitea and the seed; one this checkout already holds is kept, with a warning.
+BARE=$T/main/.git/c4-cluster.bare
+BARE2=$T/main/.git/c4-cluster-c4factory-2.bare
+check "bare mark beside the lease" "$(gh_bare_file c4factory) $(gh_bare_file c4factory-2)" "$BARE $BARE2"
+check "bare: the mark outlives the lease" "$([ -e "$BARE2" ] && echo kept || echo gone)" kept
+rm -f "$BARE2"; printf 'c4factory\nc4factory-2\n' >"$T/kind-clusters"; touch "$BARE"
+check "pool says free, bare" "$(gh_cluster pool | head -1)" "c4factory: free, bare (acquire --bare: no testenv Gitea or seed); a plain acquire takes it last and recreates it"
+out=$(gh_cluster acquire --wait 0 2>/dev/null); check "plain: a free testenv cluster before a bare one" "$? $out $(cat "$T/made" 2>/dev/null)" "0 c4factory-2 "
+gh_cluster release >/dev/null
+echo c4factory >"$T/kind-clusters"
+out=$(gh_cluster acquire --wait 0 2>/dev/null); check "plain: a cluster not created yet before a bare one" "$? $out $(cat "$T/made")" "0 c4factory-2 -C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
+gh_cluster release >/dev/null; rm -f "$T/made"
+lease "$T/wt2" 50 "$(date +%s)" "$LEASE2"
+out=$(gh_cluster acquire --wait 0 2>"$T/err"); check "plain, only a bare one free: it" "$? $out" "0 c4factory"
+check "plain, only a bare one free: recreated as a testenv one" "$(cat "$T/made")" "-C $T/main cluster-delete KIND_CLUSTER=c4factory
+-C $T/main cluster gitea seed KIND_CLUSTER=c4factory"
+grep -q "Kind cluster c4factory was created bare (acquire --bare), with no testenv Gitea or seed, and is the only free one; recreating it" "$T/err"; check "plain, bare: says why it recreates" $? 0
+check "plain, bare recreated: the mark is gone" "$([ -e "$BARE" ] && echo kept || echo gone) $(gh_cluster pool | head -1 | cut -d' ' -f1-3)" "gone c4factory: leased to"
+gh_cluster release >/dev/null; rm -f "$T/made"
+gh_cluster acquire --wait 0 --bare >/dev/null 2>&1; rm -f "$T/made"
+case $(gh_cluster pool | head -1) in "c4factory: leased to "*"(this checkout), bare (acquire --bare: no testenv Gitea or seed)") r=yes ;; *) r=no ;; esac
+check "pool says leased, bare" $r yes
+out=$(gh_cluster acquire --wait 0 2>"$T/err"); check "plain, own bare lease: kept as it is" "$? $out $(cat "$T/made" 2>/dev/null)" "0 c4factory "
+grep -q "which this checkout already leased, was created bare (acquire --bare): no testenv Gitea or seed. Kept as it is; acquire --fresh makes it a testenv one" "$T/err"; check "plain, own bare lease: warns" $? 0
+gh_cluster acquire --wait 0 --fresh >/dev/null 2>&1; check "fresh: a bare cluster becomes a testenv one" "$([ -e "$BARE" ] && echo kept || echo gone) $(tail -1 "$T/made")" "gone -C $T/main cluster gitea seed KIND_CLUSTER=c4factory"
+rm -f "$LEASE" "$LEASE2" "$BARE" "$BARE2" "$T/made"; echo c4factory >"$T/kind-clusters"
 
 # needs/cluster issues are picked and taken while another checkout holds the lease.
 clear; lease "$T/wt2" 50 "$(date +%s)"

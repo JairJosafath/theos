@@ -237,7 +237,10 @@ around the steps that touch it:
    install a release on it ([getting-started](../getting-started.md), the
    chart), pass `--fresh --bare`: the same, created with `make cluster` only,
    no testenv Gitea, seed, `webshop` or `apps`; the chart brings its own
-   Gitea into `gitea`, and helm can't take over the testenv's.
+   Gitea into `gitea`, and helm can't take over the testenv's. Such a
+   cluster stays marked bare (`cluster pool` says `free, bare`): a plain
+   acquire takes it only when no other is free, and then recreates it with
+   Gitea and the seed, so it never hands out a bare cluster as a testenv one.
 3. Deploy this branch's own build (`make deploy`; never trust what is
    deployed) and verify. Every make target in the checkout uses the leased
    cluster without being told (`hack/lib/github.sh cluster name`), and so do
