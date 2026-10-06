@@ -717,12 +717,14 @@ session() {
   local what=$1 out=$2 id=$3 rc t0 mins msg pid watch
   t0=$(date +%s)
   # timeout leads its own process group, so the idle watch can end claude and
-  # every process it started.
+  # every process it started. Neither gets the worker's lock (fd 9): a process
+  # the session leaves behind would hold it after the worker exits, and the
+  # watch would see the worker as running.
   (cd "$WT" && C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
-    --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" &
+    --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
-  idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" &
+  idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" 9>&- &
   watch=$!
   wait "$pid"
   rc=$?
