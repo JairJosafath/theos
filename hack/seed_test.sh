@@ -130,5 +130,15 @@ check "file without a token: file holds the token" "$(token)" "$(cat "$T/gitea/t
 "$SEED" >"$T/out" 2>&1; check "secret mode: succeeds" $? 0
 grep -q "create secret generic gitea-credentials" "$T/gitea/kubectl"; check "secret mode: stores Secret gitea-credentials" $? 0
 grep -q "create secret generic gitea-runner" "$T/gitea/kubectl"; check "secret mode: stores the runner token" $? 0
+grep -q "projects" "$T/gitea/kubectl"; check "secret mode: no Project without PROJECT_OBJECTS" $? 1
+
+# The chart's seed (PROJECT_OBJECTS=true) creates the project's Project when
+# the namespace has none; get finds none here.
+: >"$T/gitea/kubectl"
+PROJECT_OBJECTS=true "$SEED" >"$T/out" 2>&1; check "project objects: succeeds" $? 0
+grep -q "kubectl -n webshop get projects.c4.factory.io webshop" "$T/gitea/kubectl"; check "project objects: looks for the Project first" $? 0
+grep -q "Created Project webshop/webshop" "$T/out"; check "project objects: creates Project webshop" $? 0
+PROJECT_OBJECTS=true CREDENTIALS_DIR=$CREDS "$SEED" >"$T/out" 2>&1; check "project objects, file mode: succeeds" $? 0
+grep -q "Project" "$T/out"; check "project objects, file mode: no Project" $? 1
 
 exit $fail

@@ -49,16 +49,18 @@ Kubernetes' own, most of it Gitea and the `go` runner; on a two-CPU node, lower
 That is the whole factory. Gitea runs in namespace `gitea`, at
 `http://gitea.gitea.svc.cluster.local:3000` inside the cluster; the seed Job,
 a hook after every install and upgrade, pushed the tagged templates to
-organization `templates`, made organization `webshop` and stored its token in
-Secret `webshop/gitea-credentials`, and the chart made GitProvider
+organization `templates`, made organization `webshop`, stored its token in
+Secret `webshop/gitea-credentials` and made Project `webshop` (only when the
+namespace had none; it never changes one), and the chart made GitProvider
 `webshop/gitea` from it. In `webshop` the chart also made the catalog, each
 template the seed pushed pinned to its tag (`kubectl -n webshop get
 c4catalog`), and Agents `planner`, `designer`, `reviewer` (Opus) and
 `implementer` (Sonnet) on the release's `agent-go` image. The Agents read
 Secret `webshop/claude-credentials`, key `CLAUDE_CODE_OAUTH_TOKEN` (from
-`claude setup-token`), which you make; the chart holds no token. Apply your
-Project, Systems and Containers to `webshop` and their repositories appear in
-Gitea. The admin's password is in
+`claude setup-token`), which you make; the chart holds no token. Describe the
+app in a Brief (the UI's box) and the planner writes the model, or apply your
+own Systems and Containers to `webshop`; either way their repositories appear
+in Gitea. The admin's password is in
 Secret `gitea/gitea-admin`, which Gitea's pod made with a random password on
 its first start (the chart renders no credential):
 
@@ -157,7 +159,7 @@ as the run's artifact); a failing release gets an issue titled
 | `gitea.namespace`, `gitea.createNamespace` | Gitea's namespace (default `gitea`) and whether the chart makes it |
 | `gitea.image`, `gitea.resources`, `gitea.persistence`, `gitea.config` | Gitea's image, its share of the node, its volume and extra `GITEA__section__KEY` settings |
 | `gitea.admin` | the admin's name and email; `existingSecret` for one of your own, else the password is generated |
-| `gitea.projects` | project names: an organization, Secret `gitea-credentials` and GitProvider `gitea` in each namespace |
+| `gitea.projects` | project names: an organization, Secret `gitea-credentials`, GitProvider `gitea` and, when there is none, Project `<name>` in each namespace |
 | `gitea.seed.image`, `gitea.seed.waitSeconds` | the seed Job's image (default tag `Chart.appVersion`) and how long it waits for Gitea |
 | `catalog.enabled`, `catalog.entries` | for each of `gitea.projects`, the catalog entries of the templates the seed pushes (Frameworks, Standards, Compute, Deployments, Connectors), each pinned to its tag in `templates/versions.txt` (default on) |
 | `agents.enabled`, `agents.image`, `agents.credentialsSecret` | for each of `gitea.projects`, Agents `planner`, `designer`, `implementer` and `reviewer` on the agent image (default `agent-go`, tag `Chart.appVersion`), reading the Secret you make (default `claude-credentials`) (default on) |

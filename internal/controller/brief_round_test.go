@@ -13,6 +13,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -423,6 +424,37 @@ var _ = Describe("Brief rounds", func() {
 		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"The Gateway API CRDs."} })).To(Succeed())
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
+			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+				To(HaveField("Status", metav1.ConditionFalse))
+		}).Should(Succeed())
+	})
+
+	It("waits for its planner's token Secret, and plans once the person makes it", func() {
+		createFactory(ns)
+		for _, name := range []string{"planner", "implementer", "reviewer"} {
+			mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.AgentSpec{
+				Image: "c4factory/agent-go:dev", MaxRounds: 3,
+				CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: "claude-credentials"}}})
+		}
+		mustCreate(newBrief(ns, "cel-lens"))
+
+		By("naming the missing Secret, with no round started")
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
+			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(HaveField("Message",
+				Equal("Secret claude-credentials of Agent planner is missing: make it in namespace "+ns+
+					" with the Agents' token, so the Brief's planner can start")))
+			g.Expect(b.Status.Round).To(BeZero())
+		}).Should(Succeed())
+
+		By("starting round 1 once the Secret is there")
+		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "claude-credentials"),
+			StringData: map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "test-token"}})
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Round).To(Equal(int32(1)))
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
 				To(HaveField("Status", metav1.ConditionFalse))

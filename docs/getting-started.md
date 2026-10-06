@@ -3,7 +3,9 @@
 This guide takes a Kubernetes cluster from nothing to an app the factory builds:
 it installs the factory from the published release, describes a small Go
 command-line program as a C4 model, and has a Crew of Claude Code Agents turn
-a Gitea issue into a merged pull request. Nothing is built from this repository;
+a Gitea issue into a merged pull request. [The short path](#the-short-path-describe-the-app)
+does the same from an idea in plain words: a planner Agent writes the model
+and the first issues. Nothing is built from this repository;
 every image and the chart come from GHCR.
 
 You need:
@@ -132,6 +134,51 @@ Secret and run the second block again.
 With an API key instead, name the key `ANTHROPIC_API_KEY`: every key of the
 Secret becomes an environment variable in the agent's sandbox.
 
+## The short path: describe the app
+
+From the release after `0.3.0`, steps 1 and 2 are all you do by hand: install
+the factory, make the token Secret, and describe the app in plain words. A
+planner Agent writes the model, a Crew per Container and the first issues, and
+says what it chose; steps 3 to 5 show the same loop written by hand. For a
+project of its own, say `cel-lens`, put `cel-lens` where step 1 says
+`webshop` (the namespace, the pull secret, `gitea.projects={cel-lens}`) and
+make step 2's Secret in it. The seed makes Project `cel-lens`, so the UI
+offers the project.
+
+Open the UI:
+
+```bash
+kubectl -n c4-factory-system port-forward svc/c4-factory-ui 8080 &   # http://localhost:8080
+```
+
+Pick project `cel-lens`, write the idea in the box under *Describe an app*,
+and create the Brief. Or, the same without the UI,
+[config/samples/brief/cel-lens.yaml](../config/samples/brief/cel-lens.yaml)
+holds the idea from [#240](https://github.com/JairJosafath/c4factory/issues/240):
+
+```bash
+kubectl apply -f config/samples/brief/cel-lens.yaml
+```
+
+The Brief's phase goes `Planning` (the planner works in the Brief's own Gitea
+repository, `cel-lens/brief-cel-lens`), `Applying`, then `Planned`, in 10 to
+30 minutes. Its card in the UI, and its status, list what it chose, the
+objects it created and the issues it filed; each Container's Crew then picks
+up its issues as in step 5:
+
+```bash
+kubectl -n cel-lens wait brief/cel-lens --for=jsonpath='{.status.phase}'=Planned --timeout=45m
+kubectl -n cel-lens get brief cel-lens -o jsonpath='{range .status.choices[*]}- {@}{"\n"}{end}'
+kubectl -n cel-lens get c4
+```
+
+Steer it with a follow-up in the card's prompt field, such as "Support
+ValidatingAdmissionPolicy files first.". A follow-up never scaffolds a
+Container again: it adds new Containers, and turns a change to an existing
+one into an issue in its repository. When the planner can't go on without
+you, such as an Agent it needs is missing, the phase is `NeedsInput` and the
+card says what in one sentence.
+
 ## 3. The model and the Crew
 
 [config/samples/first-app/](../config/samples/first-app/) holds the first app:
@@ -228,6 +275,7 @@ issue `status/needs-human` with the reason in a comment; label it
 | Container `orders-cli` not `Ready` | `kubectl -n webshop describe container orders-cli`: the condition's message says which template or GitProvider is missing. |
 | The issue is labelled `status/needs-human` before any Task | The Crew rejected it and said why in a comment, such as a missing checklist; fix the body and label it `status/ready` again. |
 | The Crew stays `Waiting` | `kubectl -n webshop get crew orders-cli -o yaml`: `status.conditions` says what it waits for, such as the Container. |
+| A Brief stays `NeedsInput` | `kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions[?(@.type=="NeedsInput")].message}'` (or its card in the UI) says what it waits for in one sentence, such as Secret `claude-credentials` missing (step 2); it goes on within a minute of the fix. |
 | The agent says it isn't logged in | Secret `webshop/claude-credentials` is missing, empty (step 2's length check prints `0`), or its key isn't `CLAUDE_CODE_OAUTH_TOKEN`. |
 
 ## Publish releases to GitHub

@@ -6,7 +6,10 @@
 #   4. stores an admin access token as Secret gitea-credentials in each project's
 #      namespace;
 #   5. stores a runner registration token as Secret gitea/gitea-runner, unless
-#      RUNNER_SECRET is empty (in the Helm chart, Gitea's pod makes that token).
+#      RUNNER_SECRET is empty (in the Helm chart, Gitea's pod makes that token);
+#   6. with PROJECT_OBJECTS=true (the Helm chart), creates Project PROJECT in
+#      each project's namespace when it has none, so the UI can take a Brief
+#      there; it never changes or deletes one.
 # With CREDENTIALS_DIR set (`make seed-local`), step 4 writes each project's
 # token to CREDENTIALS_DIR/PROJECT.env instead, step 5 is skipped, and the
 # script needs no kubectl.
@@ -40,6 +43,8 @@ CREDENTIALS_DIR=${CREDENTIALS_DIR:-}
 RUNNER_SECRET=${RUNNER_SECRET-gitea-runner}
 if [[ -n $CREDENTIALS_DIR ]]; then RUNNER_SECRET=""; fi
 RUNNER_NAMESPACE=${RUNNER_NAMESPACE:-gitea}
+PROJECT_OBJECTS=${PROJECT_OBJECTS:-false}
+if [[ -n $CREDENTIALS_DIR ]]; then PROJECT_OBJECTS=false; fi
 
 export GIT_AUTHOR_NAME="C4 Factory seed" GIT_AUTHOR_EMAIL="seed@c4.factory.io"
 export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
@@ -277,6 +282,27 @@ ensure_runner_token() {
   log "Stored a runner registration token as Secret $RUNNER_NAMESPACE/$RUNNER_SECRET"
 }
 
+# ensure_project PROJECT: Project PROJECT in namespace PROJECT, named after it
+# (the admission policy's rule), unless the namespace has one. Created, never
+# applied: a Project someone wrote, or a Brief's planner described, stays as is.
+ensure_project() {
+  local ns=$1
+  if kubectl -n "$ns" get projects.c4.factory.io "$ns" >/dev/null 2>&1; then
+    log "Project $ns/$ns exists; keeping it"
+    return
+  fi
+  kubectl create -f - >/dev/null <<EOF
+apiVersion: c4.factory.io/v1alpha1
+kind: Project
+metadata:
+  name: $ns
+  namespace: $ns
+spec:
+  displayName: $ns
+EOF
+  log "Created Project $ns/$ns"
+}
+
 main() {
   wait_for_gitea
   ensure_org "$TEMPLATE_ORG" "Template repositories for the C4 Factory catalog"
@@ -298,6 +324,7 @@ main() {
     else
       ensure_credentials "$project"
     fi
+    if [[ $PROJECT_OBJECTS == true ]]; then ensure_project "$project"; fi
   done
   if [[ -n $RUNNER_SECRET ]]; then ensure_runner_token; fi
   if [[ -n $PROJECTS ]]; then
