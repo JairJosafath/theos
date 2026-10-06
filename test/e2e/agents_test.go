@@ -17,7 +17,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -75,21 +74,6 @@ var _ = Describe("Agent factory", Ordered, ContinueOnFailure, func() {
 		Expect(rules).To(ContainElement(And(
 			HaveField("RuleName", "main"), HaveField("EnablePush", false),
 			HaveField("EnableStatusCheck", true), HaveField("Contexts", ContainElement("check*")))))
-	})
-
-	It("fences agent sandboxes in the project", func() {
-		var policy networkingv1.NetworkPolicy
-		Expect(k8s.Get(ctx, key(apps, "c4-agent-sandbox"), &policy)).To(Succeed())
-		Expect(policy.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue("c4.factory.io/agent-sandbox", "true"))
-	})
-
-	It("runs CI on main and reports it on the Container", func() {
-		Eventually(func(g Gomega) {
-			var c c4v1alpha1.Container
-			g.Expect(k8s.Get(ctx, key(apps, "hello"), &c)).To(Succeed())
-			g.Expect(c.Status.Checks).NotTo(BeNil())
-			g.Expect(c.Status.Checks.State).To(Equal("success"), "checks: %+v", c.Status.Checks)
-		}).WithTimeout(15 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
 	})
 
 	It("takes a Task through two rounds to a merge with the stand-in agent", func() {

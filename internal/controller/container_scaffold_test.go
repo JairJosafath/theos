@@ -120,6 +120,7 @@ var _ = Describe("Container scaffolding", func() {
 		By("pushing the uv project, the manifests and a devcontainer with Postgres")
 		repo := gitFake.repo(ns, "orders-api")
 		Expect(repo.commits).To(HaveLen(1))
+		Expect(repo.commits[0].Message).To(ContainSubstring("C4-Factory-Container: " + ns + "/orders-api"))
 		Expect(repo.files).To(HaveKey("pyproject.toml"))
 		Expect(string(repo.files["pyproject.toml"].Data)).To(ContainSubstring(`name = "orders-api"`))
 		Expect(string(repo.files["pyproject.toml"].Data)).To(ContainSubstring("psycopg"))
@@ -130,7 +131,9 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(repo.files).To(HaveKey("deploy/k8s/connector-postgres.yaml"))
 		Expect(repo.files).To(HaveKey(".devcontainer/compose.yaml"))
 		Expect(repo.files).To(HaveKey(".devcontainer/compose.postgres.yaml"))
-		Expect(repo.files).NotTo(HaveKey(".c4factory/devcontainer.json"))
+		for p := range repo.files {
+			Expect(p).NotTo(HavePrefix(".c4factory/"), "a template's inputs are never pushed")
+		}
 
 		var devcontainer map[string]any
 		Expect(json.Unmarshal(repo.files[".devcontainer/devcontainer.json"].Data, &devcontainer)).To(Succeed())
