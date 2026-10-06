@@ -52,7 +52,12 @@ Only around the steps that touch one (deploys, samples, e2e, factory-ops,
 1. Do the cluster-free work first: code, `make check`, envtest.
 2. `hack/lib/github.sh cluster acquire` prints the cluster leased to this
    checkout (waits up to 30m, `--wait 10m` for less). Exit 4 names the
-   holders: hand off with only the cluster steps left.
+   holders: hand off with only the cluster steps left. A pool cluster
+   belongs to nobody between leases, so an earlier session's install may
+   still be on it: when the "Done when" asks for a fresh cluster, or what is
+   installed isn't yours, pass `--fresh`. It prefers a cluster not created
+   yet, else deletes and recreates the one it leased, and only that one;
+   never `kind delete cluster` or `make cluster-delete` by hand.
 3. Make targets now use it; kubectl takes `--context kind-<name>` on every
    call, never `kubectl config use-context` (every checkout shares the
    kubeconfig). `make deploy` this branch first: never trust what is deployed.
