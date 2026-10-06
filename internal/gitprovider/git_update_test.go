@@ -158,6 +158,39 @@ func TestReadFiles(t *testing.T) {
 	}
 }
 
+func TestReadFilesDirectory(t *testing.T) {
+	ctx := context.Background()
+	dir, _ := scaffolded(t, scaffold.Tree{
+		"brief.md":                {Data: []byte("# brief\n")},
+		"plan/plan.yaml":          {Data: []byte("choices: []\n")},
+		"plan/model.yaml":         {Data: []byte("kind: Project\n")},
+		"plan/issues/orders.yaml": {Data: []byte("- title: x\n")},
+		"plan/run.sh":             {Data: []byte("#!/bin/sh\n"), Executable: true},
+		"planner/notes.md":        {Data: []byte("not in plan/\n")},
+	})
+	p := localProvider(t)
+
+	files, _, err := p.ReadFiles(ctx, Repository{CloneURL: dir}, defaultBranch, []string{
+		"plan/",     // every file below, at any depth
+		"brief.md",  // a file beside it
+		"missing/",  // a directory that isn't there
+		"brief.md/", // a file, not a directory
+	})
+	if err != nil {
+		t.Fatalf("ReadFiles() error = %v", err)
+	}
+	want := scaffold.Tree{
+		"brief.md":                {Data: []byte("# brief\n")},
+		"plan/plan.yaml":          {Data: []byte("choices: []\n")},
+		"plan/model.yaml":         {Data: []byte("kind: Project\n")},
+		"plan/issues/orders.yaml": {Data: []byte("- title: x\n")},
+		"plan/run.sh":             {Data: []byte("#!/bin/sh\n"), Executable: true},
+	}
+	if !reflect.DeepEqual(files, want) {
+		t.Errorf("ReadFiles() = %+v, want %+v", files, want)
+	}
+}
+
 func TestPushBranch(t *testing.T) {
 	ctx := context.Background()
 	dir, base := scaffolded(t, scaffold.Tree{

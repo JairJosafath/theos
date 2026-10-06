@@ -171,6 +171,10 @@ type BriefStatus struct {
 	// +optional
 	Round int32 `json:"round,omitempty"`
 
+	// roundPrompts is how many of spec.prompts the running or last round took.
+	// +optional
+	RoundPrompts int32 `json:"roundPrompts,omitempty"`
+
 	// promptsPlanned is how many of spec.prompts the last applied round took;
 	// the prompts after them wait for the next round.
 	// +optional

@@ -363,6 +363,11 @@ spec:
                   first.
                 format: int32
                 type: integer
+              roundPrompts:
+                description: roundPrompts is how many of spec.prompts the running
+                  or last round took.
+                format: int32
+                type: integer
             type: object
         required:
         - spec

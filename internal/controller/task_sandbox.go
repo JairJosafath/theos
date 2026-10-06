@@ -62,7 +62,9 @@ func newSandbox() *unstructured.Unstructured {
 type sandboxRun struct {
 	task *c4v1alpha1.Task
 	// status is the Task's status as this step leaves it, not as it was read.
-	status    *c4v1alpha1.TaskStatus
+	status *c4v1alpha1.TaskStatus
+	// container is the Container an implement or review run works on; nil for
+	// a plan run.
 	container *c4v1alpha1.Container
 	agent     *c4v1alpha1.Agent
 	name      string
@@ -88,6 +90,10 @@ type sandboxRun struct {
 	// goCache, when set, is the directory on the node of the Go build cache the
 	// sandboxes share.
 	goCache string
+	// brief is the Brief a plan run plans, and briefRound the Brief's round it
+	// plans: C4_ROUND, while the Task's own round counts the planner's tries.
+	brief      string
+	briefRound int
 }
 
 // Where a sandbox mounts the shared Go build cache, and the variables pointing
@@ -106,23 +112,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	if timeout <= 0 {
 		timeout = 45 * time.Minute
 	}
-	env := []corev1.EnvVar{
-		{Name: agentrunner.EnvRole, Value: run.role},
-		{Name: agentrunner.EnvRepoURL, Value: run.repoURL},
-		{Name: agentrunner.EnvBranch, Value: run.status.Branch},
-		{Name: agentrunner.EnvBase, Value: "main"},
-		{Name: agentrunner.EnvGoal, Value: run.goal},
-		{Name: agentrunner.EnvContext, Value: run.context},
-		{Name: agentrunner.EnvProject, Value: task.Namespace},
-		{Name: agentrunner.EnvContainer, Value: run.container.Name},
-		{Name: agentrunner.EnvTask, Value: task.Name},
-		{Name: agentrunner.EnvRound, Value: strconv.Itoa(int(run.status.Round))},
-		{Name: agentrunner.EnvMaxRounds, Value: strconv.Itoa(int(run.maxRounds))},
-		{Name: agentrunner.EnvHarness, Value: harness(agent)},
-		{Name: agentrunner.EnvProtectedPaths, Value: strings.Join(run.protectedPaths, ",")},
-		secretEnv(agentrunner.EnvGitUsername, run.gitSecret, "username"),
-		secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
-	}
+	env := runEnv(run)
 	if agent.Spec.Model != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvModel, Value: agent.Spec.Model})
 	}
@@ -157,10 +147,14 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	deadline := int64(timeout.Seconds())
 	no := false
 	labels := map[string]string{
-		LabelTask:                 task.Name,
-		c4v1alpha1.LabelContainer: run.container.Name,
-		c4v1alpha1.LabelProject:   task.Namespace,
-		LabelAgentSandbox:         "true",
+		LabelTask:               task.Name,
+		c4v1alpha1.LabelProject: task.Namespace,
+		LabelAgentSandbox:       "true",
+	}
+	if run.brief != "" {
+		labels[c4v1alpha1.LabelBrief] = run.brief
+	} else {
+		labels[c4v1alpha1.LabelContainer] = run.container.Name
 	}
 	workspace := &corev1.EmptyDirVolumeSource{}
 	if run.workspaceMemory != nil {
@@ -232,6 +226,51 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		return nil, err
 	}
 	return sandbox, nil
+}
+
+// runEnv is the start of a run's environment: what c4agent needs to know of
+// the job. A plan run has a Brief in place of a Container, its goal and
+// context; its round is the Brief's.
+func runEnv(run sandboxRun) []corev1.EnvVar {
+	task := run.task
+	if run.brief != "" {
+		env := []corev1.EnvVar{
+			{Name: agentrunner.EnvRole, Value: run.role},
+			{Name: agentrunner.EnvRepoURL, Value: run.repoURL},
+			{Name: agentrunner.EnvBranch, Value: run.status.Branch},
+			{Name: agentrunner.EnvBase, Value: "main"},
+			{Name: agentrunner.EnvBrief, Value: run.brief},
+		}
+		if run.goal != "" {
+			env = append(env, corev1.EnvVar{Name: agentrunner.EnvGoal, Value: run.goal})
+		}
+		return append(env,
+			corev1.EnvVar{Name: agentrunner.EnvProject, Value: task.Namespace},
+			corev1.EnvVar{Name: agentrunner.EnvTask, Value: task.Name},
+			corev1.EnvVar{Name: agentrunner.EnvRound, Value: strconv.Itoa(run.briefRound)},
+			corev1.EnvVar{Name: agentrunner.EnvMaxRounds, Value: strconv.Itoa(int(run.maxRounds))},
+			corev1.EnvVar{Name: agentrunner.EnvHarness, Value: harness(run.agent)},
+			secretEnv(agentrunner.EnvGitUsername, run.gitSecret, "username"),
+			secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
+		)
+	}
+	return []corev1.EnvVar{
+		{Name: agentrunner.EnvRole, Value: run.role},
+		{Name: agentrunner.EnvRepoURL, Value: run.repoURL},
+		{Name: agentrunner.EnvBranch, Value: run.status.Branch},
+		{Name: agentrunner.EnvBase, Value: "main"},
+		{Name: agentrunner.EnvGoal, Value: run.goal},
+		{Name: agentrunner.EnvContext, Value: run.context},
+		{Name: agentrunner.EnvProject, Value: task.Namespace},
+		{Name: agentrunner.EnvContainer, Value: run.container.Name},
+		{Name: agentrunner.EnvTask, Value: task.Name},
+		{Name: agentrunner.EnvRound, Value: strconv.Itoa(int(run.status.Round))},
+		{Name: agentrunner.EnvMaxRounds, Value: strconv.Itoa(int(run.maxRounds))},
+		{Name: agentrunner.EnvHarness, Value: harness(run.agent)},
+		{Name: agentrunner.EnvProtectedPaths, Value: strings.Join(run.protectedPaths, ",")},
+		secretEnv(agentrunner.EnvGitUsername, run.gitSecret, "username"),
+		secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
+	}
 }
 
 func secretEnv(name, secret, key string) corev1.EnvVar {

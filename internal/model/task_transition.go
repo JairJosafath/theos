@@ -62,6 +62,14 @@ func OpenedPR(p TaskProgress, commit string) TaskProgress {
 	return p
 }
 
+// PlanPushed is the progress of a Plan Task whose planner pushed a plan at
+// commit: it waits for the Brief's verdict on that commit.
+func PlanPushed(p TaskProgress, commit string) TaskProgress {
+	p.Commit = commit
+	p.Phase = TaskChecking
+	return p
+}
+
 // NextRound is the progress of a Task whose round was not accepted: the next
 // round implements again with the feedback.
 func NextRound(p TaskProgress, feedback string) TaskProgress {

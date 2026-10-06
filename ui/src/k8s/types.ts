@@ -334,6 +334,8 @@ export interface Brief extends K8sObject {
     phase?: BriefPhase
     /** The round running now or last run; 0 before the first. */
     round?: number
+    /** How many of spec.prompts the running or last round took. */
+    roundPrompts?: number
     /** How many of spec.prompts the last applied round took; the rest wait for the next round. */
     promptsPlanned?: number
     /** What the planner chose in the last round, in plain words. */

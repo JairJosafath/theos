@@ -143,6 +143,70 @@ func TestNextTaskStep(t *testing.T) {
 	}
 }
 
+// A Plan Task's steps (docs/plans/brief.md, step 5): no Container to wait
+// for, and the Brief's verdict in place of CI and a review.
+func TestNextTaskStepPlan(t *testing.T) {
+	done := func(r RunResult) RunState { return RunState{Started: true, Done: true, Result: &r} }
+	const sha = "0123456789abcdef"
+	tests := []struct {
+		name              string
+		facts             TaskFacts
+		want              TaskAction
+		feedback, message string
+	}{
+		{name: "starts without a Container", facts: TaskFacts{}, want: ActionStartImplement, message: "Starting round 1"},
+		{name: "waits for a slot", facts: TaskFacts{Phase: TaskPending, NoFreeSlot: true},
+			want: ActionWait, message: "Waiting for a free agent slot"},
+		{name: "waits for its agent", facts: TaskFacts{Phase: TaskPending, AgentBackIn: time.Minute},
+			want: ActionWait, message: "The agent is unavailable"},
+		{name: "waits for the planner", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: RunState{Started: true}}, want: ActionWait},
+		{name: "a pushed plan waits for the Brief", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: done(RunResult{Commit: sha, Summary: "Planned it."})},
+			want: ActionAwaitPlanCheck, message: "The planner pushed 0123456; waiting for the Brief to check the plan"},
+		{name: "a proposal means nothing to a plan", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: done(RunResult{Commit: sha, Proposal: &Proposal{Paths: []string{"Makefile"}}, Empty: true})},
+			want: ActionAwaitPlanCheck},
+		{name: "a run without a plan is a failed round", facts: TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Run: done(RunResult{Error: "the planner wrote no plan/"})},
+			want: ActionRetry, feedback: "the planner wrote no plan/"},
+		{name: "a run that pushed nothing is a failed round", facts: TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Run: done(RunResult{})}, want: ActionRetry, feedback: "pushed no plan"},
+		{name: "an interrupted run runs again", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: RunState{Started: true, Done: true, Interrupted: true, Failure: "evicted"}}, want: ActionRerun},
+		{name: "an unavailable planner waits", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: done(RunResult{Unavailable: true, Error: "usage limit"})}, want: ActionAgentUnavailable},
+		{name: "waits for the verdict", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
+			InPhase: 2 * ChecksTimeout}, want: ActionWait, message: "Waiting for the Brief to check the plan"},
+		{name: "an accepted plan merges", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
+			PlanChecked: true}, want: ActionPlanAccepted, message: "The Brief accepted the plan"},
+		{name: "a refused plan is a failed round", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
+			PlanChecked: true, PlanRefusals: "Container/web: type is missing"},
+			want: ActionRetry, feedback: "The Brief refused the plan:\nContainer/web: type is missing",
+			message: "starting round 2"},
+		{name: "a refusal in the last round fails", facts: TaskFacts{Phase: TaskChecking, Round: 3, MaxRounds: 3,
+			PlanChecked: true, PlanRefusals: "Container/web: type is missing"},
+			want: ActionFail, message: "Failed after 3 rounds"},
+		{name: "merged is final", facts: TaskFacts{Phase: TaskMerged}, want: ActionNone},
+		{name: "failed is final", facts: TaskFacts{Phase: TaskFailed}, want: ActionNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.facts.Plan = true
+			got := NextTaskStep(tt.facts)
+			if got.Action != tt.want {
+				t.Fatalf("NextTaskStep() = %+v, want action %s", got, tt.want)
+			}
+			if !strings.Contains(got.Feedback, tt.feedback) {
+				t.Errorf("Feedback = %q, want it to contain %q", got.Feedback, tt.feedback)
+			}
+			if !strings.Contains(got.Message, tt.message) {
+				t.Errorf("Message = %q, want it to contain %q", got.Message, tt.message)
+			}
+		})
+	}
+}
+
 func TestNextTaskStepQueuesOnlyForSlots(t *testing.T) {
 	tests := []struct {
 		name  string

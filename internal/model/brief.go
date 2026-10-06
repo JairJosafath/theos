@@ -488,6 +488,9 @@ func checkCreated(plan Plan, current CurrentModel, o PlanObject, refuse func(str
 
 func checkCreatedContainer(current CurrentModel, o PlanObject, refuse func(string, string, ...any)) {
 	subject := o.Ref().String()
+	if strings.HasPrefix(o.Name, BriefRepository("")) {
+		refuse(subject, "a Container may not be named brief-*: that name is a Brief's repository")
+	}
 	if !slices.Contains(containerTypes, o.Type) {
 		refuse(subject, "type %q is not a Container type; one of %s", o.Type, joinAnd(containerTypes))
 		return

@@ -275,7 +275,8 @@ func pushInitialCommit(ctx context.Context, repoURL string, creds *Credentials, 
 
 // readFiles returns branch's copy of those of paths it has, and the commit it
 // read them at. A path that is no regular file there, missing or a directory,
-// is left out.
+// is left out. A path ending in "/" reads every regular file below that
+// directory, at any depth.
 func readFiles(ctx context.Context, repoURL string, creds *Credentials, branch string,
 	paths []string) (scaffold.Tree, string, error) {
 	repo, err := git.CloneContext(ctx, memory.NewStorage(), nil, &git.CloneOptions{
@@ -304,6 +305,12 @@ func readFiles(ctx context.Context, repoURL string, creds *Credentials, branch s
 	}
 	files := scaffold.Tree{}
 	for _, p := range paths {
+		if dir, ok := strings.CutSuffix(p, "/"); ok {
+			if err := treeDir(repo, root, dir, files); err != nil {
+				return nil, "", fmt.Errorf("read %s at %s in %s: %w", p, branch, repoURL, err)
+			}
+			continue
+		}
 		f, ok, err := treeFile(repo, root, p)
 		if err != nil {
 			return nil, "", fmt.Errorf("read %s at %s in %s: %w", p, branch, repoURL, err)
@@ -313,6 +320,32 @@ func readFiles(ctx context.Context, repoURL string, creds *Credentials, branch s
 		}
 	}
 	return files, head.Hash().String(), nil
+}
+
+// treeDir adds every regular file below directory dir of tree to files, by its
+// full path. A dir that is missing, or no directory, adds nothing.
+func treeDir(repo *git.Repository, tree *object.Tree, dir string, files scaffold.Tree) error {
+	for name := range strings.SplitSeq(dir, "/") {
+		e, ok := treeEntry(tree, name)
+		if !ok || e.Mode != filemode.Dir {
+			return nil
+		}
+		var err error
+		if tree, err = repo.TreeObject(e.Hash); err != nil {
+			return err
+		}
+	}
+	return tree.Files().ForEach(func(f *object.File) error {
+		if !f.Mode.IsFile() || f.Mode == filemode.Symlink {
+			return nil
+		}
+		data, err := f.Contents()
+		if err != nil {
+			return err
+		}
+		files[dir+"/"+f.Name] = scaffold.File{Data: []byte(data), Executable: f.Mode == filemode.Executable}
+		return nil
+	})
 }
 
 // treeFile reads the regular file at p in tree, executable bit included. It
