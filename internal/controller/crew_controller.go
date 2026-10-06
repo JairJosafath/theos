@@ -61,7 +61,7 @@ const defaultCrewPoll = time.Minute
 type CrewReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
-	// APIReader reads Secrets and Tasks without the cache.
+	// APIReader reads the Crew, Secrets and Tasks without the cache.
 	APIReader client.Reader
 	// Git reaches the Git hosts.
 	Git GitClient
@@ -72,9 +72,11 @@ type CrewReconciler struct {
 	// Recorder emits the Crew's Events about releases; nil emits none.
 	Recorder events.EventRecorder
 
-	// heldSaid is, by Crew UID, the reason and message of the last release left
-	// to a person, so each gets one Warning.
-	heldSaid sync.Map
+	// releaseSaid is, by Crew UID, the reason and message of the last release
+	// the Crew tagged or left to a person, so each held one gets one Warning and
+	// a cached Crew that lags behind its status doesn't undo a release's
+	// condition.
+	releaseSaid sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
@@ -88,8 +90,11 @@ type CrewReconciler struct {
 // back to a person, and starts a Task for the next one.
 func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+	// Read live: a reconcile queued before the last status write would see the
+	// cached Crew without it, and a release whose milestone that write closed
+	// would turn back into "No open release is done".
 	var crew c4v1alpha1.Crew
-	if err := r.Get(ctx, req.NamespacedName, &crew); err != nil {
+	if err := r.APIReader.Get(ctx, req.NamespacedName, &crew); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !crew.DeletionTimestamp.IsZero() {
@@ -159,6 +164,13 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			r.wait(&crew, status, "GitHostUnavailable", "Could not read the issues: "+err.Error())
 			return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 		}
+		// Before the Crew picks issues: a prepare issue filed now keeps its
+		// release the current one, so the next release's work waits for it.
+		if crew.Spec.TagReleases || crew.Spec.PrepareReleases {
+			if filed := r.tagRelease(ctx, &crew, status, provider, repo, containerTasks); filed != nil {
+				facts.Issues = append(facts.Issues, *filed)
+			}
+		}
 	}
 
 	step := model.NextCrewStep(container.Name, facts)
@@ -211,11 +223,8 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		ready, reason = metav1.ConditionFalse, "ContainerNotReady"
 	}
 	setCondition(&status.Conditions, crew.Generation, ConditionReady, ready, reason, step.Message)
-	switch {
-	case !crew.Spec.TagReleases:
+	if !crew.Spec.TagReleases {
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
-	case facts.ContainerReady:
-		r.tagRelease(ctx, &crew, status, provider, repo, containerTasks)
 	}
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 }

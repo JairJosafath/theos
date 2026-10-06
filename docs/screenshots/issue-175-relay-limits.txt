@@ -1,4 +1,4 @@
-# #175: hack/relay_test.sh and hack/relay-watch_test.sh, 2026-10-06T02:23:19+02:00
+# #175: hack/relay_test.sh and hack/relay-watch_test.sh, 2026-10-06T02:25:29+02:00, merged with main
 $ hack/relay_test.sh
 ok   defaults
 ok   cap: nine workers by default
@@ -34,6 +34,8 @@ ok   lease: nothing logged
 ok   triage: names the issues
 ok   triage: readies by status
 ok   triage: needs-human stays the user's
+ok   triage: writes a missing Depends on itself
+ok   triage: sends a user's decision to needs-human
 ok   triage: none proposed
 ok   triage: never ran
 ok   limit: paused until the reset
@@ -53,9 +55,9 @@ ok   fails: a commit resets
 ok   fails: two, still not the user's
 ok   fails: the third sets needs-human
 ok   fails: count cleared
-ok   fails: comment names 8fc746ea-e1a1-4446-9710-7d92c088b0c3
-ok   fails: comment names 3756e1f7-8109-4e85-8a36-8463d1ef4463
-ok   fails: comment names f1acfdcd-47b3-4362-ba00-518c809149a9
+ok   fails: comment names b1b0aaf0-80d0-4246-ad1f-ae0debfd16b9
+ok   fails: comment names a7fbeaf1-0a19-4bbb-b25d-092618de2e8c
+ok   fails: comment names 355ca1de-6dae-4cbc-997c-2eb085d4de96
 ok   fails: comment has each stderr
 ok   fails: comment has each account
 ok   fails: logged
@@ -80,6 +82,23 @@ ok   session never ran: not straight away
 ok   session never ran: again after WATCH_TRIAGE
 ok   proposed fails: no triage
 ok   proposed fails: logged once
+ok   unchanged: asks what changed since the last triage
+ok   unchanged: no triage
+ok   triage's own comment: no triage
+ok   changed by a comment: triage
+ok   changed by a comment: logged
+ok   changed by a comment: not twice
+ok   body edited after the triage's comment: triage
+ok   body edited: logged
+ok   dependency closed: triage
+ok   dependency closed: logged
+ok   dependency closed before: no triage
+ok   named in the triage comment, closed: triage
+ok   named in the triage comment: logged
+ok   WATCH_RETRIAGE: asks for the list only
+ok   WATCH_RETRIAGE: triage
+ok   WATCH_RETRIAGE: logged
+ok   WATCH_RETRIAGE: not twice
 ok   ready: starts the relay
 ok   ready: logs the issue
 ok   ready: logs the relay's output
@@ -96,6 +115,20 @@ ok   paused: no triage
 ok   paused: no relay
 ok   paused: logged once
 ok   pause over: starts the relay
+ok   ci: the workflows that run on a push to main
+ok   ci: a pass, or a single failure, files nothing
+ok   ci: one failure after a pass files nothing
+ok   ci: a run still going on main files nothing
+ok   ci: two failures file one issue
+ok   ci: its title
+ok   ci: its labels
+ok   ci: the body names both runs and commits
+ok   ci: the body names the failing jobs
+ok   ci: the body has the last 40 log lines
+ok   ci: logged
+ok   ci: a second round files no other issue
+ok   ci: a red main that lasts is logged once
+ok   ci: cancelled runs are skipped
 ok   --workers 0 refused
 ok   --workers 12
 ok   --workers 100 refused

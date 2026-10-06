@@ -102,6 +102,8 @@ out=$(DRY_RUN=1 triage)
 check "triage: names the issues" "$(grep -c 'status/proposed: #40 #41\.' <<<"$out")" 1
 check "triage: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$out")" 1
 check "triage: needs-human stays the user's" "$(grep -c "needs-human stays the user's" <<<"$out")" 1
+check "triage: writes a missing Depends on itself" "$(grep -c 'a "Depends on #M" line it lacks' <<<"$out")" 1
+check "triage: sends a user's decision to needs-human" "$(grep -c 'hack/lib/github.sh status N needs-human' <<<"$out")" 1
 gh_proposed() { :; }
 rm -f "$DIR/admitted"
 check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues; no triage"

@@ -21,9 +21,11 @@
 # their follow-ups as. Its worker switches its worktree to origin/main and runs
 # one session that takes no issue and changes no code: it readies each sound
 # proposed issue (clear, says when it is done, no duplicate, names what it
-# waits on with Depends on #M), comments on the others what they lack, closes
-# duplicates, and ends with an account of what it readied, left and closed.
-# status/needs-human stays the user's.
+# waits on with Depends on #M), fills a gap it can write itself (a Depends on
+# #M line, the needs/cluster label) and readies the issue, comments on the
+# others what they lack, sends one that waits only on a user's decision to
+# status/needs-human with the question, closes duplicates, and ends with an
+# account of what it did. It never takes an issue out of status/needs-human.
 #
 # Issues that need the Kind cluster carry needs/cluster. On a device without
 # one, C4_CLUSTER=none (./dev setup --lite sets it): the workers skip those
@@ -204,18 +206,28 @@ Start with \`hack/lib/github.sh proposed\` (the list now; triage those) and
 list the open issues to compare against: \`gh issue list --repo $C4_GITHUB_REPO
 --state open --limit 200 --json number,title,labels\` (gh has the token).
 
-For each proposed issue, decide one of three:
+For each proposed issue, decide one of four:
 - Ready it, \`hack/lib/github.sh status N ready\`, when it is clear (one piece
   of work, its goal fits docs/design.md or says which part of the design it
   changes), says when it is done (a checkable "Done when"), isn't a duplicate
   of an open issue, and names what it waits on with a "Depends on #M" line in
   its body, or waits on nothing.
+- Fill the gap and ready it, when the only thing missing is something you
+  can write yourself: a "Depends on #M" line it lacks (add it to the body with
+  \`gh issue edit N --repo $C4_GITHUB_REPO --body-file FILE\`, keeping the
+  rest of the body as it is), or the needs/cluster label its "Done when" needs
+  (\`hack/lib/github.sh label N needs/cluster\`). Then ready it and say what
+  you wrote in a comment (first line \`<!-- relay-triage -->\`).
 - Leave it proposed, with a comment (\`hack/lib/github.sh comment N FILE\`,
   its first line \`<!-- relay-triage -->\`) saying what is missing, when it
-  falls short of that, or when it needs a decision only the user can make (a
-  design choice the design doesn't settle, money, credentials, access). When
-  its newest triage comment still says what is missing and nothing changed
-  since, leave it without a new comment.
+  falls short of that in a way you can't fill, or when it waits on something
+  that can still move it (an open issue: name it as #M, so the watch reads it
+  again when #M closes). When its newest triage comment still says what is
+  missing and nothing changed since, leave it without a new comment.
+- When it needs a decision only the user can make (a tag, access,
+  credentials, money, a design choice the design doesn't settle) and nothing
+  else can move it, \`hack/lib/github.sh status N needs-human\` with a
+  comment (first line \`<!-- relay-triage -->\`) asking the question.
 - Close it as a duplicate, \`hack/lib/github.sh duplicate N M\`, when open
   issue #M covers the same work.
 
@@ -223,14 +235,15 @@ Rules for this headless run:
 - Never use the Fable model: not for subagents, not for anything. Always name
   the model when dispatching (sonnet or opus). Dispatch every subagent with
   run_in_background: false and never end your turn while one is running.
-- Touch only the issues listed as proposed: never set status/in-progress or
-  status/needs-human (needs-human stays the user's), never take an issue,
-  never edit an issue's body or title, and file no new issues.
+- Touch only the issues listed as proposed: never set status/in-progress,
+  never take an issue out of status/needs-human
+  (needs-human stays the user's), never take an issue, edit a body only to
+  add a "Depends on #M" line, never a title, and file no new issues.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   your account.
 - End your turn with a short account, the relay's log of this triage: readied
   (#N, one line why), left proposed (#N, what is missing), closed as
-  duplicates (#N of #M).
+  duplicates (#N of #M), sent to the user (#N, the question).
 EOF
 }
 
