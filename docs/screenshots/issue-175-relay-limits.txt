@@ -1,0 +1,103 @@
+# #175: hack/relay_test.sh and hack/relay-watch_test.sh, 2026-10-06T02:23:19+02:00
+$ hack/relay_test.sh
+ok   defaults
+ok   cap: nine workers by default
+ok   cap: one worker
+ok   cap: two workers
+ok   cap: names RELAY_MAX_WORKERS
+ok   cap: raised on purpose
+ok   cap: no cluster
+ok   running workers
+ok   cap: worker 3 already runs
+ok   running workers: worker 12 counts
+ok   --workers 12
+ok   --workers 100 refused
+ok   --workers 0 refused
+ok   admit: headroom
+ok   admit: marks the start
+ok   admit: waits until memory frees
+ok   admit: waited
+ok   admit: logs the wait
+ok   admit: logs the end
+ok   admit: sessions start apart
+ok   admit: logs the gap
+ok   admit: gives up
+ok   admit: stop file
+ok   flush: posts
+ok   flush: logs the URL and the release
+ok   flush: no claim left to release
+ok   flush: no failed release logged
+ok   lease: dropped
+ok   lease: logged
+ok   lease: another checkout's kept
+ok   lease: nothing logged
+ok   triage: names the issues
+ok   triage: readies by status
+ok   triage: needs-human stays the user's
+ok   triage: none proposed
+ok   triage: never ran
+ok   limit: paused until the reset
+ok   limit: logged
+ok   limit: not counted
+ok   limit: one claim
+ok   paused: nothing claimed
+ok   paused: logged once
+ok   pause over: claims
+ok   pause over: logged
+ok   login: paused for RELAY_LIMIT_WAIT
+ok   login: not counted
+ok   fails: two counted
+ok   fails: not yet the user's
+ok   fails: a handoff resets
+ok   fails: a commit resets
+ok   fails: two, still not the user's
+ok   fails: the third sets needs-human
+ok   fails: count cleared
+ok   fails: comment names 8fc746ea-e1a1-4446-9710-7d92c088b0c3
+ok   fails: comment names 3756e1f7-8109-4e85-8a36-8463d1ef4463
+ok   fails: comment names f1acfdcd-47b3-4362-ba00-518c809149a9
+ok   fails: comment has each stderr
+ok   fails: comment has each account
+ok   fails: logged
+exit 0
+$ hack/relay-watch_test.sh
+ok   idle: no relay
+ok   idle: logged once
+ok   idle, nothing proposed: no triage
+ok   proposed: starts a triage
+ok   proposed: one line
+ok   proposed: kept
+ok   proposed: no relay
+ok   same set: no second triage
+ok   same set: one line in all
+ok   new issue: waits for WATCH_TRIAGE
+ok   new issue: triage after WATCH_TRIAGE
+ok   new issue: names the new one
+ok   triage fails: logged
+ok   triage fails: not straight away
+ok   triage fails: again after WATCH_TRIAGE
+ok   session never ran: not straight away
+ok   session never ran: again after WATCH_TRIAGE
+ok   proposed fails: no triage
+ok   proposed fails: logged once
+ok   ready: starts the relay
+ok   ready: logs the issue
+ok   ready: logs the relay's output
+ok   unclaimed: no second start
+ok   unclaimed: logged once
+ok   unclaimed: starts again after RETRY
+ok   another issue: starts the relay
+ok   busy: no relay
+ok   free again: starts the relay
+ok   relay fails: logged
+ok   pick fails: no relay
+ok   pick fails: logged once
+ok   paused: no triage
+ok   paused: no relay
+ok   paused: logged once
+ok   pause over: starts the relay
+ok   --workers 0 refused
+ok   --workers 12
+ok   --workers 100 refused
+ok   unknown flag refused
+exit 0
