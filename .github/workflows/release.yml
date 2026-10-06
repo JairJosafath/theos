@@ -6,7 +6,9 @@ name: Release
 # to oci://ghcr.io/<owner>/c4factory/charts and to a GitHub release for the tag.
 # One job builds the images in order with the local Docker daemon, so the agent
 # and runner images build on the toolchains just built. It runs no tests:
-# releases are cut from main.
+# releases are cut from main. The release's notes are hack/release-notes.sh's
+# draft from the pull requests merged since the previous tag, for the
+# maintainer to edit on the release.
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
@@ -27,6 +29,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          # The whole history and its tags: the release notes list the pull
+          # requests merged since the previous tag.
+          fetch-depth: 0
 
       # The Go toolchain's warm build cache makes it several GB, and the agent
       # and runner images build on it. A self-hosted runner (make gh-runner)
@@ -89,24 +94,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat >notes.md <<EOF
-          Images: \`$REGISTRY/<name>:$VERSION\` for operator, ui, seed, the toolchains
-          base and go, agent-base, agent-go, gitea-runner-base and gitea-runner-go.
-
-          Install: [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox) first,
-          then a namespace for each project, then the chart with the projects in \`gitea.projects\`:
-
-          \`\`\`bash
-          kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
-          kubectl create namespace webshop
-          helm install c4-factory oci://$REGISTRY/charts/c4-factory --version $VERSION \\
-            -n c4-factory-system --create-namespace --wait --timeout 10m \\
-            --set 'gitea.projects={webshop}'
-          \`\`\`
-
-          [docs/getting-started.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/getting-started.md)
-          goes on to a first app: the agents' Claude token, a model, an Agent and a Crew,
-          and pulling private images.
-          EOF
+          REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" >notes.md
+          cat notes.md
           gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
