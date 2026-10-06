@@ -37,7 +37,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 
 ## The model
 
-Sixteen namespaced kinds in `c4.factory.io/v1alpha1`: six tell the story, three track work (Session, Task since v2, and Crew since v4), and seven configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
+Seventeen namespaced kinds in `c4.factory.io/v1alpha1`: six tell the story, four track work (Session, Task since v2, Crew since v4, and Brief), and seven configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
 
 &#91;embedded content: ownership tree · 9 boxes, 1 relationship\]
 
@@ -58,6 +58,7 @@ Solid arrows mean "owns": deleting a parent deletes its children. The dashed Rel
 | Agent (v2) | Project | none | Who does Tasks: an image with the agent CLI and toolchain, credentials and limits |
 | Task (v2) | Container | `spec.containerRef` | A goal for a Container, implemented, checked, reviewed and merged by agents |
 | Crew (v4) | Container | `spec.containerRef` | The Agents that implement and review a Container's issues, and pick up the ready ones |
+| Brief | nothing | none | An app idea in plain words and its follow-up prompts, which a planner Agent turns into the model ([Briefs](#briefs-an-idea-in-plain-words)) |
 
 The story kinds, abbreviated:
 
@@ -391,6 +392,49 @@ model and context it needs.
 - **New shapes, same operator.** Container types `cli` and `extension`, with
   their templates in the template catalog in `templates/`; a Go and Node toolchain whose image ships a warm build cache, a CI runner
   labelled `go`, and two agent sandboxes at once.
+
+## Briefs: an idea in plain words
+
+Decided on 6 October 2026 for GitHub issue #240; the plan, with every
+decision and why, is [plans/brief.md](plans/brief.md). Being built.
+
+Writing the model, the catalog, the Agents and the Crew as YAML, and filing the
+first issue through Gitea's API, is operating the factory, not describing a
+product. A Brief lets a person give the idea in plain words and steer with
+follow-up prompts; a planner Agent does the rest and says what it chose.
+
+- **A Brief is one more writer of the model.** `spec.idea` is the idea,
+  immutable; `spec.prompts` takes follow-ups and only grows. Anything can
+  write it: the UI's box, kubectl or GitOps. The UI server writes nothing but
+  this: creating a Brief and appending a prompt.
+- **A planner Agent plans each round** (the idea, then each batch of new
+  prompts) as a Task with `spec.kind: Plan` owned by the Brief, in an agent
+  sandbox like any Task. It works in the Brief's own repository, where the
+  operator writes the brief, the namespace's current model and the installed
+  catalog, and pushes its plan to a branch: the story kinds, the first issues
+  and its choices in plain words.
+- **The operator checks and applies the plan.** A plan writes only story
+  kinds (Project, Person, SoftwareSystem, Container, DataStore, Relationship),
+  names only installed catalog entries that support the Container's type,
+  changes only the story text of what exists and deletes nothing; anything
+  else refuses it, and the planner's next round gets the reasons. The operator
+  applies it (Relationships before the Containers they start from, so their
+  Connectors are part of the scaffold), makes a Crew for each new Container
+  with the Brief's Agents and one place, and files the issues in each
+  Container's repository once it is Ready, ready for its Crew. What it made
+  carries the label `c4.factory.io/brief`; deleting the Brief keeps it.
+- **It asks only for what costs money or touches access.** Agents, their
+  models, a Crew's size, GitProviders and credentials are never the planner's
+  to make or change. When it needs one, or can't go on without a decision, the
+  Brief's condition `NeedsInput` says what in one sentence, and the round waits.
+- **Follow-ups keep scaffold once.** A change to a scaffolded Container
+  becomes an issue in its repository; a new Container is added and scaffolded;
+  a Relationship added from a scaffolded Container shows `AddedAfterScaffold`
+  and its wiring becomes an issue.
+- **The Brief's status tells the story of the plan:** its phase, the last
+  round's choices, what it created, the issues it filed, each round's summary
+  and cost. The chart makes each project's catalog and four default Agents,
+  so a person makes only the Agents' token Secret by hand.
 
 ## Distribution and issues
 
