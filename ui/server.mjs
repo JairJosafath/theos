@@ -289,6 +289,7 @@ async function briefWrite(req, res, apiPath, upstream, log) {
     if (typeof meta.name === 'string') metadata.name = meta.name
     if (typeof meta.generateName === 'string') metadata.generateName = meta.generateName
     const brief = { apiVersion: body.apiVersion, kind: 'Brief', metadata, spec: body.spec }
+    log(`Creating a Brief in ${namespace}`)
     return forwardWrite(res, upstream, 'POST', apiPath, 'application/json', brief)
   }
 
