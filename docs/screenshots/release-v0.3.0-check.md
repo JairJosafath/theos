@@ -26,8 +26,8 @@ UI, `orders-api` scaffolded) it followed
   Task; the job summary says so.
 
 Two earlier tries on the branch: run 37407332867 failed before installing
-anything, in `kubectl wait` on a CRD that had no status yet (the wait now
-retries; it filed #230, closed as that race); run 37407693703 was green but
+anything, in `kubectl wait` on a CRD that had no status yet (it filed #230;
+main's 2a7fd3d now retries that wait); run 37407693703 was green but
 listed no files for `orders-cli`, read the moment it was pushed (the step now
 waits for `go.mod`).
 

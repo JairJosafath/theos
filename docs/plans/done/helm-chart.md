@@ -2,7 +2,7 @@
 
 **Goal:** A device installs c4factory with `helm install`: the operator, its CRDs,
 RBAC, the admission policy and the UI, with values for the images and the Git
-provider. Issue #98; spec in [user-issues.md](../user-issues.md), *Not in this plan*.
+provider. Issue #98; spec in [user-issues.md](user-issues.md), *Not in this plan*.
 
 **Why:** Devices build their products with c4factory as a Helm release, but the
 operator installs only through kustomize into the Kind test cluster.
