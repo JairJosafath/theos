@@ -167,7 +167,7 @@ func (p *fakeProvider) ListIssues(_ context.Context, repo gitprovider.Repository
 	defer p.git.mu.Unlock()
 	var out []gitprovider.Issue
 	for _, i := range p.git.issueState().issues[repo.Owner+"/"+repo.Name] {
-		if i.State == "open" && slices.Contains(i.Labels, label) {
+		if i.State == "open" && (label == "" || slices.Contains(i.Labels, label)) {
 			out = append(out, i.Issue)
 		}
 	}

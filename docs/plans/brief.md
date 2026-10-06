@@ -119,9 +119,52 @@ What B3 and B5 leave open, settled in step 3:
   plan itself is on the branch.
 - **The runner doesn't check the plan.** The operator does (B7), and a
   refusal comes back as `C4_FEEDBACK` in the next round.
-- **The stand-in planner** (`harness: stand-in`) copies `model/*.yaml` into
+- **The stand-in planner** (`harness: stand-in`) copies `model/model.yaml` into
   `plan/model.yaml` and writes one choice: a plan that changes nothing, for
   demos and e2e.
+
+## Step 4: the workspace
+
+What B4 leaves open, settled in step 4 (`internal/model/brief_workspace.go`,
+`internal/controller/brief_workspace.go`):
+
+- **`model/` is three files:** `model/model.yaml` (the namespace's story
+  objects in `plan/model.yaml`'s format, Project first, so the planner copies
+  it and edits the copy; a test parses it back), `model/catalog.yaml` (each
+  installed entry by side, with its description, `supportedTypes` and a
+  Standard's `supportedFrameworks`) and `model/containers.yaml` (each
+  Container with a repository: its address and its open issues, `#n title`,
+  the first 50 by number and a count of the rest). A Container whose issues
+  can't be read is listed with `issuesUnread: true`: one broken repository
+  doesn't stop the Brief. Fixed paths, so a write never has to remove a file.
+- **`brief.md`** has the idea, marked **new** until a round is in
+  `status.history`, every prompt numbered and marked planned or **new**
+  (after `status.promptsPlanned`), and the GitProvider every new Container
+  names. A prompt's line breaks become spaces so it stays one list item.
+- **`PLANNER.md`** is `internal/model/planner.md`, embedded in the operator.
+- **The bot** is `model.AgentUsername(<namespace>, brief-<name>)`, made with
+  `EnsureAgentAccess` like a Container's; its credentials are in Secret
+  `brief-<name>-git`, owned by the Brief, made once (the token isn't rotated
+  on every reconcile).
+- **Only the operator writes `main`:** its rule (`BranchRule.OperatorPushes`)
+  lets the operator's user push and nobody else, set before the bot exists.
+  The operator writes with `PushDefaultBranch`, a fast-forward push on the
+  head it read, never a force push; an unchanged workspace pushes nothing.
+- **When:** in step 4 on every change of the Brief's spec and when a
+  GitProvider appears; step 5 calls `prepareWorkspace` before each round.
+- **A missing GitProvider or credentials Secret** sets `NeedsInput` naming it;
+  the Brief looks again every minute (Secrets aren't watched) and goes back to
+  `Pending` once it has what it needs.
+- **A Container named `brief-<name>`** would share the Brief's repository
+  and bot: the Brief sets `NeedsInput` naming it instead.
+- **A changed `gitProviderRef`** makes the repository on the new host: it is
+  protected again when `status.repositoryURL` differs, and the bot's Secret
+  records the repository it was given access to, so a moved repository gets
+  its bot again.
+- **Left for step 5:** B16's deletion of the bot user in Gitea (the Secret
+  already goes with the Brief); refusing a plan that creates a Container named
+  `brief-*`; and NeedsInput from `needs-input.md`, which the operator's
+  "has what it needs" must not clear: step 5 clears only the reasons it set.
 
 ## Review focus
 

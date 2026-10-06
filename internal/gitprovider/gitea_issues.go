@@ -213,7 +213,9 @@ func (g *gitea) ListIssues(ctx context.Context, repo Repository, label string) (
 	var issues []Issue
 	for page := 1; page <= maxIssuePages; page++ {
 		query := issueQuery("open", page)
-		query.Set("labels", label)
+		if label != "" {
+			query.Set("labels", label)
+		}
 		status, data, err := g.do(ctx, http.MethodGet, "/api/v1/repos/"+repoPath(repo)+"/issues?"+query.Encode(), nil)
 		if err != nil {
 			return nil, err

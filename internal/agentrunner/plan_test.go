@@ -59,11 +59,13 @@ func TestJobFromEnvPlan(t *testing.T) {
 func briefRepo(t *testing.T) string {
 	t.Helper()
 	return bareRepo(t, map[string]string{
-		model.BriefFile:         "# cel-lens\n\nA tool that explains CEL rules.\n",
-		model.PlannerGuide:      "Plan the brief.\n",
-		"model/project.yaml":    "apiVersion: c4.factory.io/v1alpha1\nkind: Project\nmetadata:\n  name: apps\n",
-		"plan/choices.md":       "- Round 1 chose a CLI.\n",
-		"plan/issues/01-cli.md": "---\ntitle: Round 1's issue\n---\nOld.\n",
+		model.BriefFile:               "# cel-lens\n\nA tool that explains CEL rules.\n",
+		model.PlannerGuide:            "Plan the brief.\n",
+		model.WorkspaceModelFile:      "---\napiVersion: c4.factory.io/v1alpha1\nkind: Project\nmetadata:\n  name: apps\n",
+		model.WorkspaceCatalogFile:    "frameworks: []\n",
+		model.WorkspaceContainersFile: "- name: cli\n  repository: http://gitea/apps/cli\n  openIssues: []\n",
+		"plan/choices.md":             "- Round 1 chose a CLI.\n",
+		"plan/issues/01-cli.md":       "---\ntitle: Round 1's issue\n---\nOld.\n",
 	})
 }
 

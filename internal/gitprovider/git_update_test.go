@@ -343,3 +343,37 @@ func TestPushBranchRefuses(t *testing.T) {
 		})
 	}
 }
+
+func TestPushDefaultBranch(t *testing.T) {
+	ctx := context.Background()
+	agents := scaffold.Tree{"AGENTS.md": {Data: []byte("# agents v1\n")}}
+	dir, base := scaffolded(t, agents)
+	p := localProvider(t)
+	repo := Repository{CloneURL: dir}
+
+	if _, err := p.PushDefaultBranch(ctx, repo, base, agents, nil, "Nothing", updateAuthor); !errors.Is(err, ErrEmptyChange) {
+		t.Fatalf("PushDefaultBranch() of no change error = %v, want ErrEmptyChange", err)
+	}
+
+	update := scaffold.Tree{"brief.md": {Data: []byte("# Brief\n")}}
+	sha, err := p.PushDefaultBranch(ctx, repo, base, update, nil, "Write the brief", updateAuthor)
+	if err != nil {
+		t.Fatalf("PushDefaultBranch() error = %v", err)
+	}
+	main, files := branchAt(t, dir, defaultBranch)
+	if main.Hash.String() != sha || len(main.ParentHashes) != 1 || main.ParentHashes[0].String() != base {
+		t.Fatalf("main is at %s (parents %v), want %s on %s", main.Hash, main.ParentHashes, sha, base)
+	}
+	if string(files["brief.md"].Data) != "# Brief\n" || string(files["AGENTS.md"].Data) != "# agents v1\n" {
+		t.Errorf("main files = %+v", files)
+	}
+
+	// main moved past base: no force, so the push fails and main stays.
+	again := scaffold.Tree{"brief.md": {Data: []byte("# Brief v2\n")}}
+	if _, err := p.PushDefaultBranch(ctx, repo, base, again, nil, "Stale", updateAuthor); err == nil {
+		t.Fatal("PushDefaultBranch() on a stale base succeeded")
+	}
+	if main, _ := branchAt(t, dir, defaultBranch); main.Hash.String() != sha {
+		t.Errorf("main moved to %s, want it left at %s", main.Hash, sha)
+	}
+}

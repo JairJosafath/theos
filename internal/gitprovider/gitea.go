@@ -108,6 +108,13 @@ func (g *gitea) ReadFiles(ctx context.Context, repo Repository, branch string, p
 	return readFiles(ctx, repo.CloneURL, &g.creds, branch, paths)
 }
 
+// PushDefaultBranch builds one commit on base over Git and pushes it to the
+// default branch without force.
+func (g *gitea) PushDefaultBranch(ctx context.Context, repo Repository, base string, files scaffold.Tree,
+	removes []string, message string, author Signature) (string, error) {
+	return pushDefaultBranch(ctx, repo.CloneURL, &g.creds, base, files, removes, message, author)
+}
+
 // PushBranch builds one commit on base over Git and force-pushes it as branch.
 func (g *gitea) PushBranch(ctx context.Context, repo Repository, base, branch string, files scaffold.Tree,
 	removes []string, message string, author Signature) (string, error) {

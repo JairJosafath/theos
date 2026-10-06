@@ -156,22 +156,15 @@ func unavailable(output string, now time.Time) (bool, time.Time) {
 	return true, time.Time{}
 }
 
-// plan writes a plan that keeps the model as model/ has it, with one choice.
+// plan writes a plan that keeps the model as model/model.yaml has it, with one
+// choice.
 func (a FakeAgent) plan(dir string) (string, error) {
-	files, err := filepath.Glob(filepath.Join(dir, "model", "*.yaml"))
+	current, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(model.WorkspaceModelFile)))
 	if err != nil {
 		return "", err
 	}
-	var current []string
-	for _, name := range files {
-		data, err := os.ReadFile(name)
-		if err != nil {
-			return "", err
-		}
-		current = append(current, strings.TrimSpace(string(data)))
-	}
 	plan := map[string]string{
-		model.PlanModelFile:   strings.Join(current, "\n---\n") + "\n",
+		model.PlanModelFile:   string(current),
 		model.PlanChoicesFile: fmt.Sprintf("- Round %d of the stand-in planner: keep the model as it is.\n", a.Round),
 	}
 	for name, data := range plan {
