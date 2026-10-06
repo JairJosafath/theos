@@ -37,6 +37,18 @@ fails on a render error, a path two layers write, or YAML that doesn't parse. A 
 template needs a row there. In tests, write with merge patches
 (`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
 
+Every checkout on a device shares one Go build cache. `make test`, `vet` and
+`build` pass `-trimpath`, which keeps the checkout's absolute directory out of Go's
+cache keys, so a worktree reuses the packages and test results another worktree
+built for the same code (`(cached)`); a plain `go test` without it doesn't. The
+flag is in the Makefile, not `GOFLAGS`, so a debugger keeps its paths. A test
+result is still keyed on the absolute path of every file the test opens, so suites
+that read repo files at run time rerun in each worktree, though they reuse the
+compiled test binary: `internal/controller` (envtest CRDs, `templates/`, and the
+sources `typeneutral_test.go` reads), `internal/sessionclient` (envtest CRDs) and
+`internal/scaffold` (`templates_test.go` reads `templates/`). Those files sit
+outside the package, so `//go:embed` can't reach them.
+
 `make run` runs the operator on your machine, but it can't reach Gitea's in-cluster
 address; use `make deploy` for anything that scaffolds.
 
