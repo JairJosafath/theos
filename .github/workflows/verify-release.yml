@@ -19,14 +19,12 @@ on:
       tag:
         description: The release tag to check, e.g. v0.2.0
         required: true
-  # TEMPORARY (#191): try it on its branch for v0.2.0; removed before merging.
-  pull_request:
 
 permissions: {}
 
 jobs:
   verify-release:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
       packages: read
@@ -39,7 +37,7 @@ jobs:
       KIND_CLUSTER_NAME: release-check
       KUBECTL: kubectl --context kind-release-check
       AGENT_SANDBOX: https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
-      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch || 'v0.2.0' }}
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
       EVIDENCE: evidence
       # What this workflow gives up so the release fits a hosted runner (two
       # CPUs, 7 GB); the failure issue repeats it.
