@@ -293,6 +293,11 @@ stand-in implementer and reviewer already do for Crews.
   Crew and the filed issue picked up by a Task. Then it adds a prompt and
   waits for round 2, which files an issue and leaves the Container's
   scaffold commit alone. `make e2e` already builds everything it needs.
+- **Found on Kind:** the first run's Crew never saw the Brief's issue. The
+  Brief filing it and the new Crew's first poll made the repository's labels
+  at once, Gitea took each name twice, and then filtered issues by neither.
+  `EnsureLabels` now takes turns per repository within the operator
+  ([the run](../../screenshots/brief/kind-stand-in-e2e.txt)).
 - **Not a gate any more:** the real planner's choices on a real idea. The
   cel-lens sample and getting-started's short path are how a person runs
   that, with their token.
