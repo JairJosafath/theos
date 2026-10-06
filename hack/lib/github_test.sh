@@ -6,6 +6,7 @@
 # for flush releasing the claim of the handoff it posts,
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
+# for milestone setting and clearing an issue's milestone and milestones listing the open ones,
 # for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails, for close, duplicate and closed dropping the status labels, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
@@ -516,6 +517,31 @@ check "intake leaves the report issue alone" "$(calls)" ""
   echo "second" | gh_report - >"$T/out" 2>&1
   check "report: then edits it" "$(cat "$T/out") | $(calls | tr '\n' ',') | $(cat "$T/body7")" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,PATCH $R/issues/7, | second"
   check "activity: newest change, the report left out, and main" "$(gh_activity)" "2026-10-06T08:00:00Z abc123"
+  exit $fail
+) || fail=1
+
+# milestone: sets an issue's milestone by the open milestone's title, clears it
+# without one, and refuses a title no open milestone has; milestones lists them.
+(
+  : >"$T/calls"
+  gh_api() {
+    local url= a m=GET
+    for a in "$@"; do case $a in repos/*) url=$a ;; PATCH) m=$a ;; esac; done
+    if [[ " $* " == *" --input - "* ]]; then echo "$m $url $(jq -c . </dev/stdin)" >>"$T/calls"; else echo "$m $url" >>"$T/calls"; fi
+    case "$m $url" in
+      "GET $R/milestones?state=open"*) echo '[{"number":1,"title":"Briefs","open_issues":3,"closed_issues":2,"due_on":"2026-10-09T07:00:00Z"},{"number":3,"title":"1.0: a stable API","open_issues":0,"closed_issues":0,"due_on":null}]' ;;
+    esac
+  }
+  out=$(gh_milestone 42 '1.0: a stable API' 2>&1)
+  check "milestone: sets it by title" "$out | $(calls | tail -1)" "milestone #42: 1.0: a stable API | PATCH $R/issues/42 {\"milestone\":3}"
+  : >"$T/calls"
+  out=$(gh_milestone 42 2>&1)
+  check "milestone: no title clears it" "$out | $(calls)" "milestone #42: cleared | PATCH $R/issues/42 {\"milestone\":null}"
+  : >"$T/calls"
+  out=$(gh_milestone 42 Upgrades 2>&1)
+  check "milestone: an unknown title fails and sets nothing" "$? $out | $(calls | grep -c PATCH)" '1 github: no open milestone is titled "Upgrades"; open: Briefs, 1.0: a stable API | 0'
+  check "milestones: title, open, closed, due" "$(gh_milestones)" "Briefs	3	2	2026-10-09
+1.0: a stable API	0	0	"
   exit $fail
 ) || fail=1
 exit $fail

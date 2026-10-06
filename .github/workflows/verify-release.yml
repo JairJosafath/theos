@@ -35,8 +35,10 @@ name: Verify Release
 # in its first two minutes, and that the Secrets and the repositories (each
 # with its earlier head commit) are unchanged.
 #
-# The evidence is an artifact per check and the job summary; a failure files
-# (or comments on) the issue "Release vX.Y.Z fails its check".
+# The evidence is an artifact per check and the job summary; a failure of the
+# release's own check or of a dispatch on main files (or comments on) the issue
+# "Release vX.Y.Z fails its check". A dispatch on another branch tests that
+# branch, and its run is the report.
 on:
   workflow_run:
     workflows: [Release]
@@ -170,9 +172,11 @@ jobs:
             echo "SAMPLES_REF=$ref" >>"$GITHUB_ENV"
             echo "first-app: $samples, from $ref"
           else
+            skip="$GUIDE_REF has no config/samples/first-app that $FROM's chart can run"
             echo "GUIDE=skipped" >>"$GITHUB_ENV"
             echo "SAMPLES_REF=$GUIDE_REF" >>"$GITHUB_ENV"
-            echo "::notice::$GUIDE_REF has no config/samples/first-app for $FROM: the getting-started check is skipped"
+            echo "GUIDE_SKIPPED=$skip" >>"$GITHUB_ENV"
+            echo "::notice::$skip: the getting-started check is skipped"
           fi
 
       - name: Free disk space
@@ -550,7 +554,7 @@ jobs:
                 echo "Set to the release:"; echo '```diff'; cat first-app.diff; echo '```'
               fi
             else
-              echo "Skipped: $SAMPLES_REF has no \`config/samples/first-app\`."
+              echo "Skipped: $GUIDE_SKIPPED."
             fi
             echo "### Pods"; echo '```'; cat pods.txt; echo '```'
           } | tee summary.md >>"$GITHUB_STEP_SUMMARY"
@@ -562,8 +566,11 @@ jobs:
           name: release-${{ env.TAG }}-${{ matrix.check }}
           path: ${{ env.EVIDENCE }}
 
+      # Only the release's own check, or a dispatch on main, speaks for the
+      # release; a dispatch on another branch tests that branch, and its run
+      # is the report.
       - name: File the failure
-        if: failure()
+        if: failure() && (github.event_name == 'workflow_run' || github.ref_name == github.event.repository.default_branch)
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

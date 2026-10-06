@@ -32,7 +32,7 @@ design questions, and the owner had to clean it up by hand.
   relay works. It commits nothing.
 - **Escalation has two levels.** Agents escalate to the maintainer
   (`status/needs-maintainer`); only the maintainer escalates to the owner
-  (`status/needs-human`), and only for what [GOVERNANCE.md](../../GOVERNANCE.md)
+  (`status/needs-human`), and only for what [GOVERNANCE.md](../../../GOVERNANCE.md)
   reserves to the owner or a direction it is unsure of, with the choice it
   would make.
 - **One report, not a stream of pings.** The owner reads one pinned issue,

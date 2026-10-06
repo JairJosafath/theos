@@ -172,7 +172,9 @@ a fresh Kind cluster on GitHub. Don't `helm install` it into the shared
 
 A pushed `vX.Y.Z` tag runs the *Release* workflow, which builds the operator,
 UI, toolchain, agent and runner images, pushes them and the chart to GHCR and
-creates the GitHub release ([plan](../plans/done/release-workflow.md)).
+creates the GitHub release ([plan](../plans/done/release-workflow.md)), its
+notes drafted by `hack/release-notes.sh` from the pull requests merged since
+the previous tag.
 
 GitHub workflows never run on pull requests. Lint, tests, UI checks and *Test
 Chart* run after a merge to main, each only when its paths change, or on demand;
@@ -418,10 +420,11 @@ the newest samples that made their own catalog and Agents, from history.
 
 Their results are the run's job summaries and the artifacts
 `release-vX.Y.Z-install` and `release-vX.Y.Z-upgrade` (Actions → Verify
-Release). When either fails it files `Release vX.Y.Z fails its check`
-(`status/ready`, `priority/urgent`), or comments on the open one, so the relay
-picks it up; the issue says which check failed and if the runner ran short of
-memory or disk. Check an older release with Actions → Verify Release → Run
+Release). When the release's own check, or a dispatch on main, fails it
+files `Release vX.Y.Z fails its check` (`status/ready`, `priority/urgent`), or
+comments on the open one, so the relay picks it up; the issue says which check
+failed and if the runner ran short of memory or disk. A dispatch on another
+branch only reports in its run. Check an older release with Actions → Verify Release → Run
 workflow, or `gh workflow run verify-release.yml -f tag=vX.Y.Z`; add
 `--ref <branch>` to try a branch's workflow. Dispatched, the install check
 takes the `first-app` samples from the ref it runs on, so on main it checks
