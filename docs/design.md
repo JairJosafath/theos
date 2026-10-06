@@ -396,7 +396,7 @@ model and context it needs.
 ## Briefs: an idea in plain words
 
 Decided on 6 October 2026 for GitHub issue #240; the plan, with every
-decision and why, is [plans/brief.md](plans/brief.md). Being built.
+decision and why, is [plans/brief.md](plans/brief.md).
 
 Writing the model, the catalog, the Agents and the Crew as YAML, and filing the
 first issue through Gitea's API, is operating the factory, not describing a
@@ -433,8 +433,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   and its wiring becomes an issue.
 - **The Brief's status tells the story of the plan:** its phase, the last
   round's choices, what it created, the issues it filed, each round's summary
-  and cost. The chart makes each project's catalog and four default Agents,
-  so a person makes only the Agents' token Secret by hand.
+  and cost. The chart makes each project's Project, catalog and four default
+  Agents, so a person makes only the Agents' token Secret by hand.
 
 ## Distribution and issues
 
@@ -457,7 +457,7 @@ release installs the whole factory:
 | Operator, CRDs, RBAC, admission policy | release namespace | always |
 | UI | release namespace | `ui.enabled`, on by default |
 | Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password and the runners' registration token generated in the cluster by Gitea's pod into Secrets `gitea-admin` and `gitea-runner` when missing, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
-| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret and a GitProvider for each project in `gitea.projects` |
+| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret, a GitProvider and, when the namespace has none, a Project for each project in `gitea.projects` |
 | CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values |
 

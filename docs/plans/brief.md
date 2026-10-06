@@ -31,7 +31,7 @@ Evidence in `docs/screenshots/brief/`.
 
 ## Decisions
 
-Numbered so steps and reviews can cite them (B1-B16). The maintainer's
+Numbered so steps and reviews can cite them (B1-B17). The maintainer's
 decision on #240 set B1, B3, B9 and B10; the rest fill in what it left open.
 
 | # | Topic | Decision | Why |
@@ -52,6 +52,7 @@ decision on #240 set B1, B3, B9 and B10; the rest fill in what it left open.
 | B14 | Install | The chart makes, for each project in `gitea.projects`, the catalog entries of the templates the seed pushed and four Agents (`planner` and `designer` on Opus, `implementer` on Sonnet, `reviewer` on Opus) reading Secret `claude-credentials`, each part switchable off in the values. The person still makes that Secret | A plan can only use what is installed, and the token is the person's to give |
 | B15 | The UI | The UI server may write exactly two things: create a Brief, and append to a Brief's `spec.prompts` (a JSON patch `add` at `/spec/prompts/-`). Everything else stays GET only; its RBAC grants `create` and `patch` on `briefs` and nothing more. The UI shows the Brief's phase, choices, created objects, issues and the `NeedsInput` sentence | #240 asks for a text box, not kubectl; the rules stay in the CRDs, the UI enforces nothing |
 | B16 | Deleting | A Brief's deletion deletes its Tasks and its repository's bot, keeps its repository and the model it made | The product outlives how it was asked for |
+| B17 | The first Project | The chart's seed creates Project `<ns>` (display name the namespace) in each of `gitea.projects` when the namespace has none, and never changes or deletes one; a plan then changes only its story text | The UI takes a Brief only in a namespace that holds a Project (B15), and a fresh install had none. Not a Helm object: a hook would be recreated on every upgrade and an ordinary template deleted on uninstall, and either would cascade to the whole model. Added in step 8 |
 
 ## Steps
 

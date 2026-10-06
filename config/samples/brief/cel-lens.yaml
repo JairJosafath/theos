@@ -1,0 +1,23 @@
+# The cel-lens idea from GitHub issue #240, in plain words: the whole input a
+# person gives. The planner Agent turns it into the model, a Crew per
+# Container and the first issues. Needs the chart installed with
+# gitea.projects={cel-lens}, which makes the catalog, the Agents and the
+# GitProvider, and Secret claude-credentials, which you create yourself.
+# Apply with: kubectl apply -f config/samples/brief/cel-lens.yaml
+# (or type the idea into the UI's box). The first follow-up, once it is
+# Planned (later ones append with a JSON patch, or the UI's prompt field):
+# kubectl -n cel-lens patch brief cel-lens --type=merge \
+#   -p '{"spec":{"prompts":["Support ValidatingAdmissionPolicy files first."]}}'
+apiVersion: c4.factory.io/v1alpha1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: cel-lens
+spec:
+  idea: >-
+    cel-lens is a VS Code extension that helps Kubernetes developers write,
+    test and dry-run the CEL in their CustomResourceDefinitions and admission
+    policies, right in the editor, the way GitLens does for git. While they
+    edit a CEL rule it shows what the rule means, whether it compiles, and
+    what it says about example objects they keep next to it, without a
+    cluster. Kubernetes developers who write operators and policies use it.
