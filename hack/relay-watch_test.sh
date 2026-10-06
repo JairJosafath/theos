@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests for hack/relay-watch.sh: when a round starts the relay, and when it
 # starts a triage of the proposed issues, with pick, the proposed list and
-# hack/relay.sh faked.
+# hack/relay.sh faked; and when a triage reads a proposed issue again, with
+# hack/lib/github.sh's proposed against a stubbed GitHub.
 # Run: hack/relay-watch_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -15,7 +16,7 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
 
 PICKED= PICK_RC=1 RELAY_RC=0 PROPOSED= PROPOSED_RC=0 TRIAGE_RC=0
 pick_next() { [ -n "$PICKED" ] && printf '%s\n' "$PICKED"; return "$PICK_RC"; }
-proposed() { [ -n "$PROPOSED" ] && printf '%s\n' $PROPOSED; return "$PROPOSED_RC"; }
+proposed() { echo "$*" >"$T/proposed-args"; [ -n "$PROPOSED" ] && printf '%s\n' $PROPOSED; return "$PROPOSED_RC"; }
 run_relay() { echo started >>"$T/starts"; echo "worker 1 started"; return "$RELAY_RC"; }
 run_triage() { echo triage >>"$T/triages"; echo "triage started in worker 2"; return "$TRIAGE_RC"; }
 starts() { cat "$T/starts" 2>/dev/null | wc -l | tr -d ' '; }
@@ -82,6 +83,122 @@ round; round
 check "proposed fails: no triage" "$(triages)" 5
 check "proposed fails: logged once" "$(logged 'could not list the proposed issues (exit 2)')" 1
 PROPOSED= PROPOSED_RC=0
+
+# A triage reads a seen proposed issue again: hack/lib/github.sh proposed
+# --since, against a stubbed GitHub ($T/gh/*.json), says what changed since it.
+mkdir -p "$T/gh"
+iso() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
+gh_proposed_stubbed() {
+  (
+    # shellcheck source=hack/lib/github.sh
+    . "$(dirname "${BASH_SOURCE[0]}")/lib/github.sh"
+    gh_token() { :; }
+    gh_api() {
+      local a url
+      for a in "$@"; do case $a in repos/*) url=$a ;; esac; done
+      case $url in
+        *issues\?state=open*) cat "$T/gh/open.json" ;;
+        *issues\?state=closed*) cat "$T/gh/closed.json" ;;
+        */issues/comments\?since=*) cat "$T/gh/comments.json" ;;
+        */issues/*/comments*) n=${url#*/issues/}; cat "$T/gh/comments-${n%%/*}.json" 2>/dev/null || echo '[[]]' ;;
+      esac
+    }
+    gh_proposed "$@"
+  )
+}
+proposed() { echo "$*" >"$T/proposed-args"; gh_proposed_stubbed "$@"; }
+# open N UPDATED BODY...: the open proposed issues, each updated at epoch UPDATED.
+open_issues() {
+  local rows=() n u b
+  while [ $# -gt 0 ]; do
+    n=$1 u=$2 b=$3; shift 3
+    rows+=("$(jq -n --argjson n "$n" --arg u "$(iso "$u")" --arg b "$b" \
+      '{number: $n, title: "t", body: $b, updated_at: $u, labels: [{name: "status/proposed"}]}')")
+  done
+  printf '%s\n' "${rows[@]}" | jq -s '[.]' >"$T/gh/open.json"
+}
+# comment N AT BODY: a comment on N, updated at epoch AT, among those since the last triage.
+comment() {
+  jq --argjson n "$1" --arg at "$(iso "$2")" --arg b "$3" \
+    '.[0] += [{issue_url: "https://api.github.com/repos/x/y/issues/\($n)", updated_at: $at, body: $b}]' \
+    "$T/gh/comments.json" >"$T/gh/c" && mv "$T/gh/c" "$T/gh/comments.json"
+}
+# closed M AT: issue M closed at epoch AT.
+closed() {
+  jq --argjson m "$1" --arg at "$(iso "$2")" '.[0] += [{number: $m, closed_at: $at}]' \
+    "$T/gh/closed.json" >"$T/gh/c" && mv "$T/gh/c" "$T/gh/closed.json"
+}
+# retriaged: a last triage of 50-53 at WATCH_TRIAGE ago, nothing since it.
+retriaged() {
+  t0=$(($(date +%s) - TRIAGE_EVERY))
+  echo "$t0 50 51 52 53" >"$DIR/triaged"
+  echo '[[]]' >"$T/gh/comments.json"
+  echo '[[]]' >"$T/gh/closed.json"
+  open_issues 50 $((t0 - 100)) "" 51 $((t0 - 100)) "" 52 $((t0 - 100)) "Depends on #127" 53 $((t0 - 100)) ""
+}
+TRIAGE_RC=0
+before=$(triages)
+
+retriaged
+round
+check "unchanged: asks what changed since the last triage" "$(cat "$T/proposed-args")" "--since $t0"
+check "unchanged: no triage" "$(triages)" "$before"
+
+# The triage's own comment bumps the issue's updated_at: no triage.
+retriaged
+comment 50 $((t0 + 60)) $'<!-- relay-triage -->\nLacks a Done when; waits on #130.'
+open_issues 50 $((t0 + 61)) "" 51 $((t0 - 100)) "" 52 $((t0 - 100)) "Depends on #127" 53 $((t0 - 100)) ""
+round
+check "triage's own comment: no triage" "$(triages)" "$before"
+
+# A comment that isn't the triage's: triage again, once.
+comment 51 $((t0 + 120)) "Added the Done when."
+open_issues 50 $((t0 + 61)) "" 51 $((t0 + 120)) "" 52 $((t0 - 100)) "Depends on #127" 53 $((t0 - 100)) ""
+round
+check "changed by a comment: triage" "$(triages)" $((before + 1))
+check "changed by a comment: logged" "$(logged 'triage: proposed #50 #51 #52 #53 (changed: #51); ')" 1
+round
+check "changed by a comment: not twice" "$(triages)" $((before + 1))
+
+# A body edit or a label (only the issue's updated_at moves): triage again.
+retriaged
+comment 50 $((t0 + 60)) $'<!-- relay-triage -->\nLacks a Done when.'
+open_issues 50 $((t0 + 600)) "" 51 $((t0 - 100)) "" 52 $((t0 - 100)) "Depends on #127" 53 $((t0 - 100)) ""
+round
+check "body edited after the triage's comment: triage" "$(triages)" $((before + 2))
+check "body edited: logged" "$(logged '(changed: #50)')" 1
+
+# An issue it depends on closed after the last triage: triage again.
+retriaged
+closed 127 $((t0 + 30))
+round
+check "dependency closed: triage" "$(triages)" $((before + 3))
+check "dependency closed: logged" "$(logged '(waited on a closed issue: #52)')" 1
+
+# One closed before the last triage: no triage.
+retriaged
+closed 127 $((t0 - 30))
+round
+check "dependency closed before: no triage" "$(triages)" $((before + 3))
+
+# An #M in the issue's newest triage comment closed after the last triage: triage again.
+retriaged
+echo '[[{"id":1,"created_at":"x","updated_at":"x","html_url":"u","user":{"login":"x"},"body":"<!-- relay-triage -->\nWaits for #130 to land."}]]' >"$T/gh/comments-53.json"
+closed 130 $((t0 + 30))
+round
+check "named in the triage comment, closed: triage" "$(triages)" $((before + 4))
+check "named in the triage comment: logged" "$(logged '(waited on a closed issue: #53)')" 1
+
+# Nothing changed, but the last triage is WATCH_RETRIAGE old: read them all again.
+retriaged
+sed -i "1s/^[0-9]*/$(($(date +%s) - RETRIAGE))/" "$DIR/triaged"
+round
+check "WATCH_RETRIAGE: asks for the list only" "$(cat "$T/proposed-args")" ""
+check "WATCH_RETRIAGE: triage" "$(triages)" $((before + 5))
+check "WATCH_RETRIAGE: logged" "$(logged '(read again after 3h)')" 1
+round
+check "WATCH_RETRIAGE: not twice" "$(triages)" $((before + 5))
+proposed() { echo "$*" >"$T/proposed-args"; [ -n "$PROPOSED" ] && printf '%s\n' $PROPOSED; return "$PROPOSED_RC"; }
 
 # An issue is ready: start the relay, and log the issue and its output.
 PICKED=$'12\tFix the guides\thttps://github.com/x/y/issues/12\tready' PICK_RC=0
