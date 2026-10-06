@@ -1,26 +1,44 @@
 name: Verify Release
 
-# Every release checks itself. After Release publishes vX.Y.Z (and on demand for
-# a tag), this installs the published chart from GHCR into a fresh Kind cluster,
-# as a device would, and builds nothing: Agent Sandbox, the ghcr pull secret made
-# from GITHUB_TOKEN (packages: read reads the private packages Release pushed),
-# the agent images pulled and loaded into Kind, then `helm install` of
-# oci://ghcr.io/<owner>/c4factory/charts/c4-factory with project webshop. It
-# waits for the seed's repositories, both runners, the manager and the UI, then
-# applies the release's own webshop sample and waits for orders-api's repository.
-# Then it follows docs/getting-started.md for the first app: the `ghcr` pull
-# Secret in webshop and its `default` ServiceAccount patch (proved by pulling
-# agent-go through it), and config/samples/first-app (on the chart's catalog
-# and Agents; an older tag's samples pinned to the release: the agent-go tag
-# and the template refs from its templates/versions.txt), until orders-cli is
-# scaffolded and its Crew is Idle. The Agent isn't run: CI
-# has no Claude token. The samples are the tag's; dispatched, they are the
-# dispatched ref's, so dispatching on main checks the guide against a release.
-# A tag without config/samples/first-app skips that part and says so, as do
-# samples that take the catalog from a chart that has none (0.3.0 and older).
-# The evidence is an artifact and the job summary; a failure of the release's
-# own check or of a dispatch on main files (or comments on) the issue
-# "Release vX.Y.Z fails its check".
+# Every release checks itself, twice, on Kind clusters of its own, building
+# nothing. "install" installs the published chart from GHCR into a fresh Kind
+# cluster, as a new device would; "upgrade" installs the previous release (the
+# highest v* tag below this one) the same way and then `helm upgrade`s it to
+# this one, as a device that already runs a release would. A repository's first
+# tag has no previous release: the upgrade is skipped and says so.
+#
+# Both follow the same steps: Agent Sandbox, the ghcr pull secret made from
+# GITHUB_TOKEN (packages: read reads the private packages Release pushed), the
+# agent images pulled and loaded into Kind, then `helm install` of
+# oci://ghcr.io/<owner>/c4factory/charts/c4-factory with project webshop. They
+# wait for the seed's repositories, both runners, the manager and the UI, then
+# apply the installed release's own webshop sample and wait for orders-api's
+# repository. Then they follow docs/getting-started.md for the first app: the
+# `ghcr` pull Secret in webshop and its `default` ServiceAccount patch (proved
+# by pulling agent-go through it), and config/samples/first-app (on the chart's
+# catalog and Agents; an older tag's samples pinned to the release: the
+# agent-go tag and the template refs from its templates/versions.txt), until
+# orders-cli is scaffolded and its Crew is Idle. The Agent isn't run: CI has no
+# Claude token.
+#
+# install takes the guide's samples: the tag's, or dispatched, the dispatched
+# ref's, so dispatching on main checks the guide against a release. A tag
+# without config/samples/first-app skips that part and says so. upgrade takes
+# the previous release's own first-app when it has one, else the guide's. A
+# release whose chart has no catalog (v0.3.0 and older) takes the newest
+# samples that still made their own catalog and Agents, as such a device did.
+#
+# upgrade then notes the objects, Gitea's repositories and Secrets gitea-admin
+# and gitea-runner, `helm upgrade`s with the same values and checks that the
+# CRDs are the new chart's, that every earlier object is still there with its
+# phase and its Ready condition, that the new manager logs no reconcile error
+# in its first two minutes, and that the Secrets and the repositories (each
+# with its earlier head commit) are unchanged.
+#
+# The evidence is an artifact per check and the job summary; a failure of the
+# release's own check or of a dispatch on main files (or comments on) the issue
+# "Release vX.Y.Z fails its check". A dispatch on another branch tests that
+# branch, and its run is the report.
 on:
   workflow_run:
     workflows: [Release]
@@ -30,25 +48,81 @@ on:
       tag:
         description: The release tag to check, e.g. v0.2.0
         required: true
+      from:
+        description: The release to upgrade from, e.g. v0.3.0; empty, the highest tag below tag
+        required: false
+        default: ""
 
 permissions: {}
 
 jobs:
-  verify-release:
+  plan:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    permissions:
+      contents: read
+    name: Find the previous release
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      checks: ${{ steps.plan.outputs.checks }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
+          FROM_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.from || '' }}
+        run: |
+          for t in "$TAG" $FROM_INPUT; do
+            case "$t" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "not a release tag: $t" >&2; exit 1 ;; esac
+          done
+          # A failed lookup fails the plan, never an upgrade from nothing.
+          names=$(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name')
+          # The highest release tag below TAG; TAG itself when there is none.
+          prev=$({ grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$names" || true; echo "$TAG"; } |
+            sort -uV | grep -x -B1 -F "$TAG" | head -1)
+          # Dispatched with from: the path a given device takes, or the same
+          # release again to try the check's own steps.
+          if [ -n "$FROM_INPUT" ]; then
+            prev=$FROM_INPUT
+            [ "$prev" != "$TAG" ] || echo "::notice::from is $TAG itself: the upgrade check upgrades $TAG to $TAG"
+          fi
+          checks=$(jq -cn --arg tag "$TAG" '[{check: "install", from: $tag, name: "Install the release on Kind"}]')
+          if [ "$prev" = "$TAG" ] && [ -z "$FROM_INPUT" ]; then
+            echo "::notice::$TAG is the first release: there is no previous one to upgrade from, so the upgrade check is skipped"
+            echo "No release before $TAG: the upgrade check is skipped." >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "$TAG upgrades from $prev." | tee -a "$GITHUB_STEP_SUMMARY"
+            checks=$(jq -c --arg prev "$prev" '. + [{check: "upgrade", from: $prev, name: ("Upgrade from " + $prev + " on Kind")}]' <<<"$checks")
+          fi
+          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
+          echo "checks=$checks" >>"$GITHUB_OUTPUT"
+
+  verify-release:
+    needs: plan
     permissions:
       contents: read
       packages: read
       issues: write
-    name: Install the release on Kind
+    name: ${{ matrix.name }}
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
-    # A cluster of its own: on a self-hosted runner (make gh-runner) it shares
-    # the device's Docker with the Kind pool.
+    strategy:
+      fail-fast: false
+      # A self-hosted runner (make gh-runner) shares the device's Docker and
+      # memory with the Kind pool: one cluster at a time.
+      max-parallel: ${{ vars.RUNS_ON && 1 || 2 }}
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.checks) }}
+    # A cluster of its own: on a self-hosted runner it shares the device's
+    # Docker with the Kind pool.
     env:
-      KIND_CLUSTER_NAME: release-check
-      KUBECTL: kubectl --context kind-release-check
+      CHECK: ${{ matrix.check }}
+      KIND_CLUSTER_NAME: release-${{ matrix.check }}
+      KUBECTL: kubectl --context kind-release-${{ matrix.check }}
       AGENT_SANDBOX: https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
-      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
+      # TAG is the release checked; FROM the one installed first: TAG itself,
+      # or for upgrade the previous release.
+      TAG: ${{ needs.plan.outputs.tag }}
+      FROM: ${{ matrix.from }}
       EVIDENCE: evidence
       # What this workflow gives up so the release fits a hosted runner (two
       # CPUs, 7 GB); the failure issue repeats it.
@@ -57,46 +131,64 @@ jobs:
         requests 100m CPU and 128Mi instead of its defaults; on a hosted runner,
         the preinstalled .NET, Android, GHC and CodeQL are removed for disk.
     steps:
-      - name: Name the version and the registry
+      - name: Name the versions and the registry
         run: |
-          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "not a release tag: $TAG" >&2; exit 1 ;; esac
           echo "VERSION=${TAG#v}" >>"$GITHUB_ENV"
+          echo "FROM_VERSION=${FROM#v}" >>"$GITHUB_ENV"
           echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/c4factory" >>"$GITHUB_ENV"
+          echo "GITEA_PORT=3000" >>"$GITHUB_ENV"
+          # The values the upgrade repeats.
+          echo "VALUES=$RUNNER_TEMP/values.yaml" >>"$GITHUB_ENV"
 
-      # The release's own sample: its templates are pinned to the refs that
-      # release's seed pushes.
-      - name: Clone the release
+      # The installed release's own sample: its templates are pinned to the
+      # refs that release's seed pushes.
+      - name: Clone the installed release
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ env.FROM }}
           persist-credentials: false
 
-      # The guide's samples: the tag's, or the dispatched ref's (main's).
+      # The guide's samples: the tag's, or the dispatched ref's (main's), and
+      # their history for a release whose chart has no catalog.
       - name: Clone the guide's samples
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || env.TAG }}
           path: guide
-          sparse-checkout: config/samples
+          # Whole: the history's blobs need no credentials later.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Name the guide's samples
         env:
-          SAMPLES_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || env.TAG }}
+          GUIDE_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || env.TAG }}
         run: |
-          echo "SAMPLES_REF=$SAMPLES_REF" >>"$GITHUB_ENV"
-          # Samples without their own catalog.yaml take the catalog and the
-          # Agents from the chart; a release whose chart has none (0.3.0 and
-          # older) can't run them, so the check is skipped, not failed.
-          if [ ! -d guide/config/samples/first-app ]; then
-            skip="$SAMPLES_REF has no config/samples/first-app"
-          elif [ ! -f guide/config/samples/first-app/catalog.yaml ] && ! grep -q '^catalog:' dist/chart/values.yaml; then
-            skip="$SAMPLES_REF's config/samples/first-app needs the chart's catalog and Agents, and $TAG's chart has none"
+          samples= ref=
+          if [ "$CHECK" = upgrade ] && [ -d config/samples/first-app ]; then
+            samples=config/samples/first-app ref=$FROM
+          elif [ -d guide/config/samples/first-app ]; then
+            samples=guide/config/samples/first-app ref=$GUIDE_REF
           fi
-          if [ -z "${skip:-}" ]; then
+          # A chart without the catalog and Agents (0.3.0 and older) takes the
+          # newest samples that made their own: the commit before the one that
+          # removed first-app/catalog.yaml, when the chart took them over.
+          if [ -n "$samples" ] && [ ! -f "$samples/catalog.yaml" ] && ! grep -q '^catalog:' dist/chart/values.yaml; then
+            removed=$(git -C guide log -1 --format=%H -- config/samples/first-app/catalog.yaml)
+            if [ -n "$removed" ]; then
+              mkdir -p "$RUNNER_TEMP/legacy"
+              git -C guide archive "$removed^" config/samples/first-app | tar -x -C "$RUNNER_TEMP/legacy"
+              samples=$RUNNER_TEMP/legacy/config/samples/first-app ref=$(git -C guide rev-parse --short "$removed^")
+            fi
+          fi
+          if [ -n "$samples" ]; then
             echo "GUIDE=run" >>"$GITHUB_ENV"
+            echo "SAMPLES=$samples" >>"$GITHUB_ENV"
+            echo "SAMPLES_REF=$ref" >>"$GITHUB_ENV"
+            echo "first-app: $samples, from $ref"
           else
+            skip="$GUIDE_REF has no config/samples/first-app that $FROM's chart can run"
             echo "GUIDE=skipped" >>"$GITHUB_ENV"
+            echo "SAMPLES_REF=$GUIDE_REF" >>"$GITHUB_ENV"
             echo "GUIDE_SKIPPED=$skip" >>"$GITHUB_ENV"
             echo "::notice::$skip: the getting-started check is skipped"
           fi
@@ -138,7 +230,8 @@ jobs:
 
       # The pull secret covers the chart's pods; the agent images run in
       # Sandboxes outside the chart, so they are loaded (dist/chart/README.md,
-      # "Private images"). Each one leaves Docker once Kind has it, for disk.
+      # "Private images"), both releases' for the upgrade. Each one leaves
+      # Docker once Kind has it, for disk.
       - name: Pull the release's images
         env:
           TOKEN: ${{ github.token }}
@@ -153,34 +246,43 @@ jobs:
           done
           echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
           echo "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
-          for name in agent-base agent-go; do
-            docker pull "$REGISTRY/$name:$VERSION"
-            kind load docker-image --name "$KIND_CLUSTER_NAME" "$REGISTRY/$name:$VERSION"
-            docker rmi "$REGISTRY/$name:$VERSION"
+          for version in $(printf '%s\n' "$FROM_VERSION" "$VERSION" | sort -u); do
+            for name in agent-base agent-go; do
+              docker pull "$REGISTRY/$name:$version"
+              kind load docker-image --name "$KIND_CLUSTER_NAME" "$REGISTRY/$name:$version"
+              docker rmi "$REGISTRY/$name:$version"
+            done
           done
           df -h /
 
       - name: Install the chart
         run: |
-          helm install c4-factory "oci://$REGISTRY/charts/c4-factory" --version "$VERSION" \
-            --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system --wait --timeout 15m \
-            --set gitea.createNamespace=false \
-            --set 'gitea.projects={webshop}' \
-            --set 'global.imagePullSecrets[0].name=ghcr' \
-            --set 'manager.imagePullSecrets[0].name=ghcr' \
-            --set runners.go.goCache= \
-            --set runners.go.resources.requests.cpu=100m \
-            --set runners.go.resources.requests.memory=128Mi
+          cat >"$VALUES" <<'EOF'
+          gitea:
+            createNamespace: false
+            projects: [webshop]
+          global:
+            imagePullSecrets: [{name: ghcr}]
+          manager:
+            imagePullSecrets: [{name: ghcr}]
+          runners:
+            go:
+              goCache: ""
+              resources:
+                requests: {cpu: 100m, memory: 128Mi}
+          EOF
+          helm install c4-factory "oci://$REGISTRY/charts/c4-factory" --version "$FROM_VERSION" \
+            --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system --wait --timeout 15m -f "$VALUES"
 
       - name: Wait for the seed, the runners, the manager and the UI
         run: |
           $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-controller-manager --timeout=300s
           $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-ui --timeout=300s
-          $KUBECTL -n gitea port-forward service/gitea 3000:3000 >/dev/null 2>&1 &
+          $KUBECTL -n gitea port-forward service/gitea "$GITEA_PORT:3000" >/dev/null 2>&1 &
           user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
           pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
           echo "::add-mask::$pass"
-          api() { curl -fsS -u "$user:$pass" "http://localhost:3000/api/v1/$1"; }
+          api() { curl -fsS -u "$user:$pass" "http://localhost:$GITEA_PORT/api/v1/$1"; }
           for i in $(seq 1 30); do api version >/dev/null 2>&1 && break; sleep 2; done
           for i in $(seq 1 60); do
             api orgs/templates >/dev/null 2>&1 && api orgs/webshop >/dev/null 2>&1 &&
@@ -209,7 +311,7 @@ jobs:
           [ "$phase" = Ready ]
           user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
           pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
-          curl -fsS -u "$user:$pass" http://localhost:3000/api/v1/repos/webshop/orders-api/contents |
+          curl -fsS -u "$user:$pass" "http://localhost:$GITEA_PORT/api/v1/repos/webshop/orders-api/contents" |
             jq -r '.[].path'
 
       # docs/getting-started.md, "Registry login and the pull secret": the
@@ -225,35 +327,35 @@ jobs:
           $KUBECTL -n webshop create secret docker-registry ghcr --docker-server=ghcr.io \
             --docker-username="$ACTOR" --docker-password="$TOKEN"
           $KUBECTL -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr"}]}'
-          $KUBECTL -n webshop run pull-check --image="$REGISTRY/agent-go:$VERSION" --image-pull-policy=Always \
+          $KUBECTL -n webshop run pull-check --image="$REGISTRY/agent-go:$FROM_VERSION" --image-pull-policy=Always \
             --restart=Never --command -- true
           $KUBECTL -n webshop wait pod/pull-check --for=jsonpath='{.status.phase}'=Succeeded --timeout=10m ||
             { $KUBECTL -n webshop describe pod pull-check | tail -20; exit 1; }
           $KUBECTL -n webshop delete pod pull-check
 
-      # docs/getting-started.md, "The model and the Crew", with the guide's
-      # samples. Since the chart installs the catalog and the Agents they pin
-      # nothing; an older tag's samples are set to the release (the agent-go
-      # tag and the template refs of its templates/versions.txt), and the
-      # tag's own samples must already say so. Main's samples need a release
-      # whose chart has the catalog and Agents (after 0.3.0).
+      # docs/getting-started.md, "The model and the Crew", with the samples
+      # named above. Since the chart installs the catalog and the Agents they
+      # pin nothing; older samples are set to the installed release (the
+      # agent-go tag and the template refs of its templates/versions.txt), and
+      # the release's own samples must already say so. Main's samples need a
+      # release whose chart has the catalog and Agents (after 0.3.0).
       - name: "Getting started: the first app"
         if: env.GUIDE == 'run'
         run: |
           samples="$RUNNER_TEMP/first-app"
-          cp -r guide/config/samples/first-app "$samples"
+          cp -r "$SAMPLES" "$samples"
           if [ -f "$samples/agents.yaml" ]; then
-            sed -i -E "s#image: .*/agent-go:.*#image: $REGISTRY/agent-go:$VERSION#" "$samples/agents.yaml"
+            sed -i -E "s#image: .*/agent-go:.*#image: $REGISTRY/agent-go:$FROM_VERSION#" "$samples/agents.yaml"
           fi
           if [ -f "$samples/catalog.yaml" ]; then
             awk 'NR == FNR { ref[$1] = $2; next }
               /url: .*\/templates\// { name = $2; sub(/.*\/templates\//, "", name) }
               /^ *ref:/ && (name in ref) { sub(/ref: .*/, "ref: " ref[name]); name = "" }
-              { print }' templates/versions.txt guide/config/samples/first-app/catalog.yaml >"$samples/catalog.yaml"
+              { print }' templates/versions.txt "$SAMPLES/catalog.yaml" >"$samples/catalog.yaml"
           fi
-          diff -ru guide/config/samples/first-app "$samples" | tee "$RUNNER_TEMP/first-app.diff" || true
-          if [ "$SAMPLES_REF" = "$TAG" ] && [ -s "$RUNNER_TEMP/first-app.diff" ]; then
-            echo "::error::$TAG's config/samples/first-app is not pinned to $TAG (diff above)"
+          diff -ru "$SAMPLES" "$samples" | tee "$RUNNER_TEMP/first-app.diff" || true
+          if [ "$SAMPLES_REF" = "$FROM" ] && [ -s "$RUNNER_TEMP/first-app.diff" ]; then
+            echo "::error::$FROM's config/samples/first-app is not pinned to $FROM (diff above)"
             exit 1
           fi
           $KUBECTL apply -k "$samples"
@@ -263,7 +365,7 @@ jobs:
           pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
           # Gitea may list a repository pushed a moment ago as empty.
           for i in $(seq 1 30); do
-            files=$(curl -fsS -u "$user:$pass" http://localhost:3000/api/v1/repos/webshop/orders-cli/contents |
+            files=$(curl -fsS -u "$user:$pass" "http://localhost:$GITEA_PORT/api/v1/repos/webshop/orders-cli/contents" |
               jq -r '.[].path' || true)
             grep -qx go.mod <<<"$files" && break
             sleep 2
@@ -273,6 +375,124 @@ jobs:
           $KUBECTL -n webshop wait crew/orders-cli --for=jsonpath='{.status.phase}'=Idle --timeout=5m ||
             { $KUBECTL -n webshop get crew orders-cli -o yaml | tail -30; exit 1; }
           $KUBECTL -n webshop get crew orders-cli -o wide
+
+      # What a device has before it upgrades: every c4 object with its phase
+      # and Ready condition, Gitea's repositories with their head commits, and
+      # a hash of each generated Secret. The script stays for the check after.
+      - name: "Upgrade: note what the previous release made"
+        if: matrix.check == 'upgrade'
+        run: |
+          cat >"$RUNNER_TEMP/snapshot.sh" <<'EOF'
+          set -euo pipefail
+          out=$1
+          mkdir -p "$out"
+          # kind namespace name phase Ready
+          $KUBECTL get c4,c4catalog -A -o json | jq -r '.items[] | [.kind, .metadata.namespace, .metadata.name,
+            (.status.phase // "-"), ((.status.conditions // []) | map(select(.type == "Ready")) | .[0].status // "-")] | @tsv' |
+            sort >"$out/objects.tsv"
+          for s in gitea-admin gitea-runner; do
+            echo "$s $($KUBECTL -n gitea get secret "$s" -o json | jq -cS .data | sha256sum | cut -c1-16)"
+          done >"$out/secrets.txt"
+          user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
+          pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::$pass"
+          api() { curl -fsS -u "$user:$pass" "http://localhost:$GITEA_PORT/api/v1/$1"; }
+          # repository default-branch head
+          api "repos/search?limit=50" | jq -r '.data[] | [.full_name, .default_branch] | @tsv' | sort |
+            while read -r repo branch; do
+              sha=$(api "repos/$repo/branches/$branch" | jq -er .commit.id)
+              echo "$repo $branch $sha"
+            done >"$out/repos.txt"
+          EOF
+          bash "$RUNNER_TEMP/snapshot.sh" "$EVIDENCE/before"
+          cat "$EVIDENCE/before/objects.tsv" "$EVIDENCE/before/secrets.txt" "$EVIDENCE/before/repos.txt"
+
+      - name: "Upgrade: helm upgrade to the release"
+        if: matrix.check == 'upgrade'
+        run: |
+          # Pulled once: the CRD check renders the same chart.
+          helm pull "oci://$REGISTRY/charts/c4-factory" --version "$VERSION" --untar -d "$RUNNER_TEMP/chart"
+          helm upgrade c4-factory "$RUNNER_TEMP/chart/c4-factory" \
+            --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system --wait --timeout 15m -f "$VALUES"
+          $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-controller-manager --timeout=300s
+          $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-ui --timeout=300s
+          $KUBECTL -n gitea rollout status deployment/gitea --timeout=300s
+          date -u +%s >"$RUNNER_TEMP/upgraded-at"
+          # Gitea's pod may have rolled, and the earlier port-forward with it.
+          echo "GITEA_PORT=3001" >>"$GITHUB_ENV"
+          $KUBECTL -n gitea port-forward service/gitea 3001:3000 >/dev/null 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://localhost:3001/api/v1/version >/dev/null 2>&1 && break; sleep 2; done
+          helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system history c4-factory
+
+      # What the release's chart renders, not its config/crd/bases: v0.3.0's
+      # chart shipped a crews CRD older than its bases.
+      - name: "Upgrade: the CRDs are the release's"
+        if: matrix.check == 'upgrade'
+        run: |
+          chart=$RUNNER_TEMP/chart/c4-factory
+          only=()
+          for f in "$chart"/templates/crd/*.yaml; do only+=(--show-only "templates/crd/${f##*/}"); done
+          helm template c4-factory "$chart" -n c4-factory-system -f "$VALUES" "${only[@]}" >"$EVIDENCE/crds.yaml"
+          echo "$(grep -c '^kind: CustomResourceDefinition' "$EVIDENCE/crds.yaml") CRDs in $TAG's chart"
+          # kubectl diff exits 1 when applying them would change what the
+          # cluster has.
+          if $KUBECTL diff -f "$EVIDENCE/crds.yaml" >"$EVIDENCE/crd.diff"; then
+            echo "The CRDs are $TAG's."
+          else
+            cat "$EVIDENCE/crd.diff"
+            echo "::error::The CRDs after the upgrade are not $TAG's (diff above)"
+            exit 1
+          fi
+
+      # Two minutes of the new manager: the earlier objects keep their phase
+      # and Ready, and it logs no reconcile error. Conflicts (the object has
+      # been modified) are retried at once and not counted.
+      - name: "Upgrade: the earlier objects still run"
+        if: matrix.check == 'upgrade'
+        run: |
+          left=$(( $(cat "$RUNNER_TEMP/upgraded-at") + 120 - $(date -u +%s) ))
+          [ "$left" -gt 0 ] && sleep "$left"
+          $KUBECTL -n c4-factory-system logs deployment/c4-factory-controller-manager --all-containers \
+            >"$EVIDENCE/manager.log" 2>&1
+          bash "$RUNNER_TEMP/snapshot.sh" "$EVIDENCE/after"
+          fail=0
+          # Every earlier object, by kind, namespace and name: the chart's hooks
+          # (GitProviders, the catalog) are recreated on every upgrade.
+          while IFS=$'\t' read -r kind ns name phase ready; do
+            now=$(awk -F'\t' -v k="$kind" -v n="$ns" -v m="$name" '$1 == k && $2 == n && $3 == m' "$EVIDENCE/after/objects.tsv")
+            if [ -z "$now" ]; then
+              echo "::error::$kind $ns/$name is gone after the upgrade"; fail=1; continue
+            fi
+            IFS=$'\t' read -r _ _ _ phase2 ready2 <<<"$now"
+            if [ "$phase2" != "$phase" ] || { [ "$ready" = True ] && [ "$ready2" != True ]; }; then
+              echo "::error::$kind $ns/$name was phase $phase, Ready $ready; after the upgrade phase $phase2, Ready $ready2"
+              fail=1
+            fi
+          done <"$EVIDENCE/before/objects.tsv"
+          errors=$(grep 'Reconciler error' "$EVIDENCE/manager.log" | grep -v 'the object has been modified' || true)
+          if [ -n "$errors" ]; then
+            echo "$errors"
+            echo "::error::The manager logged $(wc -l <<<"$errors") reconcile errors in its first two minutes after the upgrade (above)"
+            fail=1
+          fi
+          if ! diff -u "$EVIDENCE/before/secrets.txt" "$EVIDENCE/after/secrets.txt"; then
+            echo "::error::The upgrade changed Secret gitea-admin or gitea-runner (hashes above)"
+            fail=1
+          fi
+          # Every earlier repository is still there and still has its earlier
+          # head commit; the seed may add template tags on top.
+          user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
+          pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::$pass"
+          while read -r repo branch sha; do
+            if ! curl -fsS -u "$user:$pass" "http://localhost:$GITEA_PORT/api/v1/repos/$repo/git/commits/$sha" >/dev/null; then
+              echo "::error::Gitea repository $repo lost commit $sha of $branch in the upgrade"
+              fail=1
+            fi
+          done <"$EVIDENCE/before/repos.txt"
+          diff -u "$EVIDENCE/before/objects.tsv" "$EVIDENCE/after/objects.tsv" || true
+          diff -u "$EVIDENCE/before/repos.txt" "$EVIDENCE/after/repos.txt" || true
+          exit "$fail"
 
       - name: Collect the evidence
         if: always()
@@ -297,9 +517,10 @@ jobs:
             cp "$RUNNER_TEMP/first-app.diff" first-app.diff 2>/dev/null || true
           fi
           helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system status c4-factory >helm-status.txt 2>&1 || true
+          helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system history c4-factory >helm-history.txt 2>&1 || true
           user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || true)
           pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || true)
-          curl -fsS -u "$user:$pass" "http://localhost:3000/api/v1/repos/search?limit=50" 2>/dev/null |
+          curl -fsS -u "$user:$pass" "http://localhost:$GITEA_PORT/api/v1/repos/search?limit=50" 2>/dev/null |
             jq -r '.data[].full_name' | sort >gitea-repos.txt || echo "(Gitea did not answer)" >gitea-repos.txt
           if [ "${{ job.status }}" != success ]; then
             mkdir -p logs
@@ -318,16 +539,29 @@ jobs:
             echo "SHORT=true" >>"$GITHUB_ENV"
           fi
           {
-            echo "## Release $TAG: ${{ job.status }}"
-            echo
-            echo "Chart \`oci://$REGISTRY/charts/c4-factory\` $VERSION on Kind. $(cat pressure.txt)"
+            if [ "$CHECK" = upgrade ]; then
+              echo "## Release $TAG, upgraded from $FROM: ${{ job.status }}"
+              echo
+              echo "Chart \`oci://$REGISTRY/charts/c4-factory\` $FROM_VERSION on Kind, then \`helm upgrade\` to $VERSION" \
+                "with the same values. $(cat pressure.txt)"
+              echo
+              echo "### Before and after the upgrade"
+              for f in objects.tsv secrets.txt repos.txt; do
+                echo "\`$f\`:"; echo '```diff'; diff -u before/$f after/$f 2>&1 || true; echo '```'
+              done
+              echo "### Helm history"; echo '```'; cat helm-history.txt; echo '```'
+            else
+              echo "## Release $TAG: ${{ job.status }}"
+              echo
+              echo "Chart \`oci://$REGISTRY/charts/c4-factory\` $VERSION on Kind. $(cat pressure.txt)"
+            fi
             echo
             echo "### Gitea repositories"; echo '```'; cat gitea-repos.txt; echo '```'
             echo "### webshop"; echo '```'; cat webshop.txt; echo '```'
             echo "### Getting started"
             echo
             if [ "$GUIDE" = run ]; then
-              echo "The guide's first app, from \`config/samples/first-app\` of $SAMPLES_REF set to $VERSION," \
+              echo "The guide's first app, from \`$SAMPLES\` of $SAMPLES_REF set to $FROM_VERSION," \
                 "through the \`ghcr\` pull Secret on ServiceAccount \`webshop/default\`." \
                 "The Agent isn't run: CI has no Claude token, so the check stops before a Task."
               echo; echo '```'; cat first-app.txt; echo '```'
@@ -344,7 +578,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-${{ env.TAG }}-check
+          name: release-${{ env.TAG }}-${{ matrix.check }}
           path: ${{ env.EVIDENCE }}
 
       # Only the release's own check, or a dispatch on main, speaks for the
@@ -358,9 +592,13 @@ jobs:
         run: |
           title="Release $TAG fails its check"
           {
-            echo "*Verify Release* installed the published chart $VERSION on Kind and it failed: $RUN_URL"
+            if [ "$CHECK" = upgrade ]; then
+              echo "*Verify Release* installed the published chart $FROM_VERSION on Kind, upgraded it to $VERSION and it failed: $RUN_URL"
+            else
+              echo "*Verify Release* installed the published chart $VERSION on Kind and it failed: $RUN_URL"
+            fi
             echo
-            echo "The evidence (kubectl get output, Gitea's repositories, the pods' logs) is the run's artifact \`release-$TAG-check\`."
+            echo "The evidence (kubectl get output, Gitea's repositories, the pods' logs) is the run's artifact \`release-$TAG-$CHECK\`."
             echo
             if [ "${SHORT:-}" = true ]; then
               echo "**The runner ran short of memory or disk.** $(cat "$EVIDENCE/pressure.txt")"
