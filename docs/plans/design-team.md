@@ -46,8 +46,8 @@
 | `internal/agentrunner/job.go`, `prompt.go`, `git.go`, `run.go`, `agent.go` | Design role in the runner | 7 |
 | `internal/controller/task_design.go` (new), `task_controller.go`, `task_actions.go`, `task_issue.go` | Task runs and applies a design | 8 |
 | `internal/controller/crew_controller.go` | Crew starts design Tasks | 9 |
-| `templates/{go,ts}-standard/...`, `templates/versions.txt`, `config/samples/cel-lens/factory.yaml` | `designer.md`, v1.2.0 | 10 |
-| `docs/design.md`, `docs/architecture.md`, `docs/results-v5.md`, `config/samples/cel-lens/crews/crews.yaml`, `.claude/skills/factory-evaluator/gather.sh` | Docs, sample, evaluator, Done when | 11 |
+| `templates/{go,ts}-standard/...`, `templates/versions.txt`, `config/samples/webshop/factory.yaml` | `designer.md`, v1.2.0 | 10 |
+| `docs/design.md`, `docs/architecture.md`, `docs/results-v5.md`, `config/samples/webshop/` (a Crew), `.claude/skills/factory-evaluator/gather.sh` | Docs, sample, evaluator, Done when | 11 |
 
 Tasks 1-6 and 10 are independent and can run in parallel. Task 7 needs 4. Task 8 needs 1, 3, 4, 5 and 7. Task 9 needs 3, 6 and 8. Task 11 comes last.
 
@@ -374,7 +374,7 @@ Behaviour:
 
 **Files:**
 - Create: `templates/go-standard/docs/agents/designer.md`, `templates/ts-standard/docs/agents/designer.md` (identical; the designer is language-neutral)
-- Modify: both `AGENTS.md.tmpl` (role list), both `.gitea/ISSUE_TEMPLATE/task.md` (the top comment mentions `status/design` for a short idea), `templates/versions.txt` (`go-standard v1.2.0`, `ts-standard v1.2.0`), `config/samples/cel-lens/factory.yaml` (both refs `v1.2.0`), `docs/architecture.md` l.162
+- Modify: both `AGENTS.md.tmpl` (role list), both `.gitea/ISSUE_TEMPLATE/task.md` (the top comment mentions `status/design` for a short idea), `templates/versions.txt` (`go-standard v1.2.0`, `ts-standard v1.2.0`), `config/samples/webshop/factory.yaml` (both refs `v1.2.0`), `docs/architecture.md` l.162
 
 **`designer.md` decides the craft, not the format** (the format lives in the prompt, Task 7). It has these sections:
 1. **Research first:** the platform's official guidelines, plus two or three widely used products that solve the same thing. Read them, compare them, and link them in "How others do it" and "Guidelines followed".
@@ -395,7 +395,7 @@ Behaviour:
 ### Task 11: Docs, sample, evaluator and the Done-when run
 
 **Files:**
-- Modify: `docs/design.md` (a "v5: a design team per Container" section after v4, linking the spec and this plan), `docs/architecture.md` (the design flow and `task_design.go`), `docs/dev/api-and-controllers.md` (any new log lines), `config/samples/cel-lens/crews/crews.yaml` (a `designer` Agent, model `claude-opus-5-5`, on both Crews), `.claude/skills/factory-evaluator/gather.sh` (sum `status.costMilliUSD` per Task kind)
+- Modify: `docs/design.md` (a "v5: a design team per Container" section after v4, linking the spec and this plan), `docs/architecture.md` (the design flow and `task_design.go`), `docs/dev/api-and-controllers.md` (any new log lines), `config/samples/webshop/` (a Crew with a `designer` Agent, model `claude-opus-5-5`), `.claude/skills/factory-evaluator/gather.sh` (sum `status.costMilliUSD` per Task kind)
 - Create: `docs/results-v5.md`, `docs/screenshots/v5-*`
 
 - [ ] **Step 1: Docs, sample and evaluator edits.** `make check`
