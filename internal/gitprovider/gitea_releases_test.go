@@ -2,6 +2,7 @@ package gitprovider
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -40,15 +41,21 @@ func TestMilestoneIssues(t *testing.T) {
 	h.issues[2] = &hostIssue{giteaIssue: giteaIssue{Number: 2, State: "open"}, milestone: in(2)}
 	h.issues[3] = &hostIssue{giteaIssue: giteaIssue{Number: 3, State: "open"}, milestone: in(3)}
 	h.issues[4] = &hostIssue{giteaIssue: giteaIssue{Number: 4, State: "closed"}}
-	h.issues[5] = &hostIssue{giteaIssue: giteaIssue{Number: 5, State: "closed"}, milestone: in(2)}
+	h.issues[5] = &hostIssue{giteaIssue: giteaIssue{Number: 5, State: "closed", Title: "Prepare v0.2.0",
+		Labels: []giteaLabel{{Name: "kind/release"}}}, milestone: in(2)}
 
-	open, closed, err := p.MilestoneIssues(ctx, repo, 2)
-	if err != nil || !reflect.DeepEqual(open, []int{2}) || !reflect.DeepEqual(closed, []int{1, 5}) {
-		t.Errorf("MilestoneIssues(2) = %v, %v, %v; want [2], [1 5]", open, closed, err)
+	issues, err := p.MilestoneIssues(ctx, repo, 2)
+	got := make([]string, 0, len(issues))
+	for _, i := range issues {
+		got = append(got, fmt.Sprintf("#%d %s %q %v", i.Number, i.State, i.Title, i.Labels))
 	}
-	open, closed, err = p.MilestoneIssues(ctx, repo, 9)
-	if err != nil || len(open)+len(closed) != 0 {
-		t.Errorf("MilestoneIssues(9) = %v, %v, %v; want none", open, closed, err)
+	want := []string{`#1 closed "" []`, `#2 open "" []`, `#5 closed "Prepare v0.2.0" [kind/release]`}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("MilestoneIssues(2) = %v, %v; want %v", got, err, want)
+	}
+	issues, err = p.MilestoneIssues(ctx, repo, 9)
+	if err != nil || len(issues) != 0 {
+		t.Errorf("MilestoneIssues(9) = %v, %v; want none", issues, err)
 	}
 }
 

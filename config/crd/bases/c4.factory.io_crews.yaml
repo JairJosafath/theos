@@ -117,6 +117,15 @@ spec:
                   paused stops the Crew from picking up new issues. A Task already started
                   runs to its end.
                 type: boolean
+              prepareReleases:
+                description: |-
+                  prepareReleases lets the Crew file each release's prepare issue: once the
+                  first open release is done with merged work and has no issue labelled
+                  kind/release, the Crew files "Prepare vX.Y.Z" in its milestone, labelled
+                  kind/release and status/ready, to set the version and write the changelog.
+                  Its merge is then the release's newest, where tagReleases puts the tag; work
+                  merged after it holds the tag for a person.
+                type: boolean
               reviewer:
                 description: |-
                   reviewer names the Agent that reviews each round; usually a stronger model

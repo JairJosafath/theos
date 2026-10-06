@@ -4,7 +4,7 @@
 on that tag and reports how they went; a failure is a Warning Event, a log line
 and `Failed` in the Crew's `status.lastRelease`. Today a person checks that the
 release run attached its files. GitHub issue #116, filed as a follow-up of
-`docs/plans/release-tags.md`.
+`docs/plans/done/release-tags.md`.
 
 ## The rule
 

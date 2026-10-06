@@ -70,6 +70,15 @@ type CrewSpec struct {
 	// out in order, and an existing tag is never moved.
 	// +optional
 	TagReleases bool `json:"tagReleases,omitempty"`
+
+	// prepareReleases lets the Crew file each release's prepare issue: once the
+	// first open release is done with merged work and has no issue labelled
+	// kind/release, the Crew files "Prepare vX.Y.Z" in its milestone, labelled
+	// kind/release and status/ready, to set the version and write the changelog.
+	// Its merge is then the release's newest, where tagReleases puts the tag; work
+	// merged after it holds the tag for a person.
+	// +optional
+	PrepareReleases bool `json:"prepareReleases,omitempty"`
 }
 
 // CrewRelease is a release a Crew tagged.

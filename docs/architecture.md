@@ -97,7 +97,9 @@ Containers at once.
    with `model`'s title and body. The controller records it in
    `status.standard.update`.
 5. Each later reconcile reads the pull request: merged, closed, conflicting,
-   pushed to by someone else, or waiting for CI. Once CI is green,
+   pushed to by someone else, or waiting for CI. `model.NextStandardStep`
+   decides every step from the facts the controller reads, one read at a time:
+   whether to plan, record a merge, drop, stop, wait or merge. Once CI is green,
    `model.StandardUpdateRefusal` checks the required checks and the paths, and
    `gitprovider` merges it as admin (`ForceMergePullRequest`). The controller
    moves `status.standard.ref` and reports each step in the condition

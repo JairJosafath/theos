@@ -152,9 +152,9 @@ type Provider interface {
 
 	// ListMilestones returns repo's open milestones.
 	ListMilestones(ctx context.Context, repo Repository) ([]Milestone, error)
-	// MilestoneIssues returns the numbers of the open and the closed issues in
-	// milestone id, without pull requests.
-	MilestoneIssues(ctx context.Context, repo Repository, id int64) (open, closed []int, err error)
+	// MilestoneIssues returns the open and the closed issues in milestone id,
+	// without pull requests.
+	MilestoneIssues(ctx context.Context, repo Repository, id int64) ([]Issue, error)
 	// CloseMilestone closes milestone id. It is safe to repeat.
 	CloseMilestone(ctx context.Context, repo Repository, id int64) error
 	// GetTag returns the commit tag points at, or "" when repo has no such tag.

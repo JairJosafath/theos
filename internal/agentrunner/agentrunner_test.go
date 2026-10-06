@@ -2,6 +2,7 @@ package agentrunner
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -17,11 +18,20 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
+func TestMain(m *testing.M) {
+	// Failed runs wait this long for a stop that never comes.
+	stopGrace = 200 * time.Millisecond
+	os.Exit(m.Run())
+}
+
+// gitToken is the Git token of every test job.
+var gitToken = rand.Text()
+
 func env(overrides map[string]string) func(string) string {
 	base := map[string]string{
 		EnvRole: RoleImplement, EnvRepoURL: "http://gitea/apps/photo-editor.git", EnvBranch: "task/add-crop",
 		EnvGoal: "Add crop", EnvContainer: "photo-editor", EnvProject: "apps", EnvGitUsername: "bot",
-		EnvGitToken: "t0k", EnvTask: "add-crop",
+		EnvGitToken: gitToken, EnvTask: "add-crop",
 	}
 	maps.Copy(base, overrides)
 	return func(k string) string { return base[k] }
@@ -96,7 +106,7 @@ func TestPrompts(t *testing.T) {
 	if !strings.Contains(ReviewPrompt(job, Workspace{}), "This is the last round") {
 		t.Error("review prompt of the last round doesn't say so")
 	}
-	if strings.Contains(review, "t0k") || strings.Contains(implement, "t0k") {
+	if strings.Contains(review, gitToken) || strings.Contains(implement, gitToken) {
 		t.Error("a prompt contains the Git token")
 	}
 }
@@ -510,6 +520,18 @@ func TestRunReportsAnInterruptedRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	got := Run(ctx, testJob(t, url, RoleImplement, 1), killedAgent{stop: cancel}, t.TempDir())
 	if !got.Interrupted || got.Unavailable || got.Error != "claude failed: signal: killed" {
+		t.Errorf("Run() = %+v, want an interrupted run", got)
+	}
+}
+
+func TestRunKilledBeforeTheStopIsInterrupted(t *testing.T) {
+	// A node restart: every process of the pod gets SIGTERM at once, and the
+	// agent dies before c4agent's own signal cancels ctx.
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	ctx, cancel := context.WithCancel(context.Background())
+	agent := killedAgent{stop: func() { time.AfterFunc(50*time.Millisecond, cancel) }}
+	got := Run(ctx, testJob(t, url, RoleImplement, 1), agent, t.TempDir())
+	if !got.Interrupted || got.Error != "claude failed: signal: killed" {
 		t.Errorf("Run() = %+v, want an interrupted run", got)
 	}
 }

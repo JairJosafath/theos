@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -326,7 +327,7 @@ var _ = Describe("Task", func() {
 			g.Expect(cond.Reason).To(Equal("CredentialsNotFound"))
 		}).Should(Succeed())
 		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "claude-credentials"),
-			StringData: map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "x"}})
+			StringData: map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": rand.Text()}})
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }, "30s").Should(Succeed())
 	})
 })

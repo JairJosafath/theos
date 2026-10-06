@@ -83,7 +83,7 @@ person moved #99 and #120 to v0.3.0 it was done, and its newest merge is
 - **Version files.** The release job's `make release-version` refuses a tag that
   differs from `package.json`; that check stays in the release job. The Crew
   doesn't watch the release run (a follow-up, below; #116,
-  `docs/plans/release-runs.md`).
+  `docs/plans/done/release-runs.md`).
 
 ## Steps
 

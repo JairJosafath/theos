@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -60,19 +59,8 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, sta
 	}
 	proposal := *run.Result.Proposal
 	n := int(task.Spec.Issue)
-	switch {
-	case n == 0:
-		// The runner proposes for an issue only: a goal has no issue to block.
-		return ctrl.Result{}, r.fail(ctx, task, status, container, "Failed", fmt.Sprintf(
-			"The change needs a Standard change to %s, but only an issue's Task can propose one",
-			quotePaths(proposal.Paths)))
-	case task.Labels[LabelCrew] == "":
-		// Only a Crew runs the change and grants its allowance: without one, the
-		// Task would wait on it forever.
-		return ctrl.Result{}, r.fail(ctx, task, status, container, "Failed", fmt.Sprintf(
-			"The change needs a Standard change to %s, but only a Crew's Task can propose one, "+
-				"since only a Crew runs it; make the change by hand or leave the issue to a Crew",
-			quotePaths(proposal.Paths)))
+	if refusal := model.ProposeRefusal(n, task.Labels[LabelCrew] != "", proposal.Paths); refusal != "" {
+		return ctrl.Result{}, r.fail(ctx, task, status, container, "Failed", refusal)
 	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
@@ -89,8 +77,7 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, sta
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
-		r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, "IssueClosed",
-			fmt.Sprintf("Issue #%d was closed before the Task finished", n))
+		r.end(task, status, model.IssueClosed(n))
 		return ctrl.Result{}, nil
 	}
 	skip := 0
@@ -113,14 +100,15 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, sta
 	if err := r.endRun(ctx, task, status); err != nil {
 		return ctrl.Result{}, err
 	}
-	count := int32(1)
+	var earlier int
 	if status.StandardChange != nil {
-		count = status.StandardChange.Count + 1
+		earlier = int(status.StandardChange.Count)
 	}
-	status.Commit, status.Summary = run.Result.Commit, run.Result.Summary
+	count := model.ProposalCount(earlier)
+	setProgress(status, model.Proposed(progressOf(status), run.Result.Commit))
+	status.Summary = run.Result.Summary
 	status.StandardChange = &c4v1alpha1.TaskStandardChange{Issue: int32(filed.Number), IssueURL: filed.URL,
-		Paths: proposal.Paths, Branch: proposal.Branch, Count: count}
-	status.Phase = c4v1alpha1.TaskBlocked
+		Paths: proposal.Paths, Branch: proposal.Branch, Count: int32(count)}
 	r.progress(task, status, metav1.ConditionTrue, "WaitingForStandardChange", step.Message)
 	logf.FromContext(ctx).Info("Filed a Standard change", "issue", filed.Number, "paths", proposal.Paths)
 	return ctrl.Result{}, nil // the status write triggers the next step
@@ -313,9 +301,7 @@ func (r *TaskReconciler) dropProposal(ctx context.Context, task *c4v1alpha1.Task
 	logNotes(ctx, task, []error{err})
 }
 
-func quotePaths(paths []string) string {
-	return "`" + strings.Join(paths, "`, `") + "`"
-}
+func quotePaths(paths []string) string { return model.QuotePaths(paths) }
 
 func (r *TaskReconciler) standardChangeRecheck() time.Duration {
 	if r.StandardChangeRecheck > 0 {

@@ -3,6 +3,7 @@
 // Run with: node --test test/server.test.mjs
 
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import http from 'node:http'
 import { tmpdir } from 'node:os'
@@ -21,6 +22,9 @@ function close(server) {
   server.closeAllConnections?.()
   return new Promise((resolve) => server.close(() => resolve()))
 }
+
+/** A credential the browser sends; the server never passes it on. */
+const browserToken = randomBytes(18).toString('base64url')
 
 describe('server.mjs', () => {
   /** Requests the fake API server has seen. */
@@ -83,7 +87,7 @@ describe('server.mjs', () => {
 
   it('answers /factory/health with a summary read by the server itself', async () => {
     seen.length = 0
-    const res = await fetch(`${base}/factory/health`, { headers: { authorization: 'Bearer from-the-browser' } })
+    const res = await fetch(`${base}/factory/health`, { headers: { authorization: `Bearer ${browserToken}` } })
     assert.equal(res.status, 200)
     const health = await res.json()
     assert.ok(Array.isArray(health.components) && health.components.length > 0)
@@ -106,8 +110,8 @@ describe('server.mjs', () => {
     seen.length = 0
     const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers?limit=5`, {
       headers: {
-        authorization: 'Bearer from-the-browser',
-        cookie: 'session=abc',
+        authorization: `Bearer ${browserToken}`,
+        cookie: `session=${browserToken}`,
         'impersonate-user': 'system:admin',
         'x-remote-user': 'admin',
         accept: 'application/json',
@@ -195,7 +199,9 @@ describe('server.mjs', () => {
     q.append('w', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/sessions')
     q.append('rv', 'old')
     q.set('timeoutSeconds', '300')
-    const res = await fetch(`${base}/k8s-watch?${q}`, { headers: { cookie: 'x=1', authorization: 'Bearer no' } })
+    const res = await fetch(`${base}/k8s-watch?${q}`, {
+      headers: { cookie: 'x=1', authorization: `Bearer ${browserToken}` },
+    })
     assert.equal(res.status, 200)
     assert.match(res.headers.get('content-type'), /ndjson/)
     const reader = res.body.getReader()
@@ -298,12 +304,13 @@ describe('resolveUpstream', () => {
   it('uses the ServiceAccount inside a Pod', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'c4ui-sa-'))
     try {
-      await writeFile(path.join(dir, 'token'), 'sa-token\n')
+      const token = randomBytes(18).toString('base64url')
+      await writeFile(path.join(dir, 'token'), `${token}\n`)
       await writeFile(path.join(dir, 'ca.crt'), 'not really a cert')
       const up = resolveUpstream({ KUBERNETES_SERVICE_HOST: '10.96.0.1', KUBERNETES_SERVICE_PORT: '443' }, dir)
       assert.equal(up.url.href, 'https://10.96.0.1/')
       assert.equal(up.mode, 'in-cluster')
-      assert.equal(up.token(), 'sa-token')
+      assert.equal(up.token(), token)
       assert.ok(up.ca)
     } finally {
       await rm(dir, { recursive: true, force: true })

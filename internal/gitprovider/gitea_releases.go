@@ -53,10 +53,11 @@ func (g *gitea) ListMilestones(ctx context.Context, repo Repository) ([]Mileston
 // MilestoneIssues returns the numbers of the open and the closed issues in
 // milestone id, without pull requests. A milestone with more issues than it can
 // list in full is an error, not cut short: an issue left out could be open.
-func (g *gitea) MilestoneIssues(ctx context.Context, repo Repository, id int64) (open, closed []int, err error) {
+func (g *gitea) MilestoneIssues(ctx context.Context, repo Repository, id int64) ([]Issue, error) {
+	var issues []Issue
 	for page := 1; ; page++ {
 		if page > maxIssuePages {
-			return nil, nil, fmt.Errorf("gitea: milestone %d of %s has more than %d issues", id, repoPath(repo),
+			return nil, fmt.Errorf("gitea: milestone %d of %s has more than %d issues", id, repoPath(repo),
 				maxIssuePages*issuePageSize)
 		}
 		// Gitea matches milestones by title first, then by ID: a milestone titled
@@ -65,22 +66,18 @@ func (g *gitea) MilestoneIssues(ctx context.Context, repo Repository, id int64) 
 		query.Set("milestones", strconv.FormatInt(id, 10))
 		status, data, err := g.do(ctx, http.MethodGet, "/api/v1/repos/"+repoPath(repo)+"/issues?"+query.Encode(), nil)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		var batch []giteaIssue
 		if status != http.StatusOK || json.Unmarshal(data, &batch) != nil {
-			return nil, nil, fmt.Errorf("gitea: listing issues of milestone %d of %s failed (HTTP %d): %s",
+			return nil, fmt.Errorf("gitea: listing issues of milestone %d of %s failed (HTTP %d): %s",
 				id, repoPath(repo), status, apiMessage(data))
 		}
 		for _, i := range batch {
-			if i.State == stateClosed {
-				closed = append(closed, i.Number)
-			} else {
-				open = append(open, i.Number)
-			}
+			issues = append(issues, i.issue())
 		}
 		if len(batch) < issuePageSize {
-			return open, closed, nil
+			return issues, nil
 		}
 	}
 }

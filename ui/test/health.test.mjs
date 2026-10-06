@@ -3,6 +3,7 @@
 // Run with: node --test test/health.test.mjs
 
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { describe, it } from 'node:test'
 import {
   componentState,
@@ -19,6 +20,9 @@ import {
 
 const NOW = Date.parse('2026-10-01T12:00:00Z')
 
+// The value of a Secret env var in every pod; no summary may show it.
+const secretValue = randomBytes(18).toString('base64url')
+
 function pod(
   namespace,
   name,
@@ -33,7 +37,7 @@ function pod(
           name: 'main',
           args,
           resources: memoryLimit ? { limits: { memory: memoryLimit } } : {},
-          env: [{ name: 'SECRET', value: 'hunter2' }],
+          env: [{ name: 'SECRET', value: secretValue }],
         },
       ],
     },
@@ -129,7 +133,7 @@ describe('summarizePod', () => {
   })
   it('never passes on the spec', () => {
     const summary = summarizePod(pod('x', 'y', {}), undefined, NOW)
-    assert.ok(!JSON.stringify(summary).includes('hunter2'))
+    assert.ok(!JSON.stringify(summary).includes(secretValue))
   })
 })
 
@@ -243,7 +247,7 @@ describe('summarizeHealth', () => {
 
   it('carries no pod spec to the browser', () => {
     const health = summarizeHealth({ components, pods: [operator, gitea, sandbox], nodes: [node], now: NOW })
-    assert.ok(!JSON.stringify(health).includes('hunter2'))
+    assert.ok(!JSON.stringify(health).includes(secretValue))
   })
 })
 

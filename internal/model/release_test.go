@@ -2,6 +2,7 @@ package model
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -145,6 +146,105 @@ func TestNextRelease(t *testing.T) {
 				t.Errorf("NextRelease() = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNextReleasePrepares(t *testing.T) {
+	day := func(d int) time.Time { return time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC) }
+	release := func(open, closed, prepared []int) ReleaseMilestone {
+		return ReleaseMilestone{ID: 2, Release: Release{Title: "v0.2.0", Due: day(12)}, Open: open, Closed: closed,
+			Prepared: prepared}
+	}
+	merged := func(issue int, commit string, at int) MergedTask {
+		return MergedTask{Name: "t-" + commit, Issue: issue, Commit: commit, At: day(at)}
+	}
+	work := make([]MergedTask, 0, 4)
+	work = append(work, merged(3, "c3", 5), merged(1, "c1", 3), merged(2, "c2", 4))
+
+	tests := []struct {
+		name  string
+		facts ReleaseFacts
+		want  ReleaseStep
+	}{
+		{"a done release with merged work gets its prepare issue, merges oldest first",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3, 4}, nil)}, Merged: work},
+			ReleaseStep{Tag: "v0.2.0", Milestone: 2, File: true, Merged: []int{1, 2, 3}}},
+		{"without the switch it is tagged as before",
+			ReleaseFacts{Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3}, nil)}, Merged: work},
+			ReleaseStep{Tag: "v0.2.0", Commit: "c3", Milestone: 2, CreateTag: true}},
+		{"a merge waiting for its commit still counts as work",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1}, nil)},
+				Merged: []MergedTask{{Name: "t-1", Issue: 1}}},
+			ReleaseStep{Tag: "v0.2.0", Milestone: 2, File: true, Merged: []int{1}}},
+		{"a later try of an issue is listed once",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1}, nil)},
+				Merged: []MergedTask{merged(1, "old", 2), merged(1, "new", 3)}},
+			ReleaseStep{Tag: "v0.2.0", Milestone: 2, File: true, Merged: []int{1}}},
+		{"an open release gets none",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release([]int{4}, []int{1, 2, 3}, nil)},
+				Merged: work},
+			ReleaseStep{}},
+		{"an open prepare issue holds the release like any issue",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release([]int{7}, []int{1, 2, 3}, []int{7})},
+				Merged: work},
+			ReleaseStep{}},
+		{"a release with no merged work gets none",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{4}, nil)}},
+			ReleaseStep{Tag: "v0.2.0", Reason: ReleaseNoMergedIssue, Held: "v0.2.0 is done but none of its issues was " +
+				"merged by a Task; a person tags it"}},
+		{"only the first release gets one",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release([]int{9}, nil, nil),
+				{ID: 3, Release: Release{Title: "v0.3.0", Due: day(19)}, Closed: []int{1}}},
+				Merged: []MergedTask{merged(1, "c1", 3)}},
+			ReleaseStep{Tag: "v0.3.0", Reason: ReleaseWaiting, Held: "v0.3.0 is done and waits for v0.2.0 to be released"}},
+		{"a merged prepare issue is the tag",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3, 7}, []int{7})},
+				Merged: append(work, merged(7, "c7", 6))},
+			ReleaseStep{Tag: "v0.2.0", Commit: "c7", Milestone: 2, CreateTag: true}},
+		{"a prepare issue closed by hand is the person's call",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3, 7}, []int{7})},
+				Merged: work},
+			ReleaseStep{Tag: "v0.2.0", Commit: "c3", Milestone: 2, CreateTag: true}},
+		{"work merged after the prepare issue is left to a person",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3, 7}, []int{7})},
+				Merged: []MergedTask{merged(1, "c1", 3), merged(7, "c7", 4), merged(3, "c3", 5)}},
+			ReleaseStep{Tag: "v0.2.0", Reason: ReleaseMergedAfterPrepare, Held: "v0.2.0's #3 merged after its prepare " +
+				"issue #7, so its changelog misses it; a person files another kind/release issue in v0.2.0 or tags it"}},
+		{"another prepare issue after the late work clears it",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1, 3, 7, 8}, []int{7, 8})},
+				Merged: []MergedTask{merged(1, "c1", 3), merged(7, "c7", 4), merged(3, "c3", 5), merged(8, "c8", 6)}},
+			ReleaseStep{Tag: "v0.2.0", Commit: "c8", Milestone: 2, CreateTag: true}},
+		{"without the switch late work is tagged as before",
+			ReleaseFacts{Milestones: []ReleaseMilestone{release(nil, []int{1, 3, 7}, []int{7})},
+				Merged: []MergedTask{merged(1, "c1", 3), merged(7, "c7", 4), merged(3, "c3", 5)}},
+			ReleaseStep{Tag: "v0.2.0", Commit: "c3", Milestone: 2, CreateTag: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NextRelease(tt.facts); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("NextRelease() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrepareIssue(t *testing.T) {
+	title, body := PrepareIssue("v0.2.0", []int{3, 1}, map[int]string{1: "Add a greeting", 3: "Say it in Dutch"})
+	if title != "Prepare v0.2.0" {
+		t.Errorf("title = %q", title)
+	}
+	for _, want := range []string{
+		"- #3 Say it in Dutch\n- #1 Add a greeting\n",
+		"`make release-version VERSION=v0.2.0`",
+		"## Acceptance criteria\n\n- [ ] ",
+		"0.2.0",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body misses %q:\n%s", want, body)
+		}
+	}
+	if msg := MissingAcceptanceCriteria(body); msg != "" {
+		t.Errorf("the prepare issue is not ready as filed: %s", msg)
 	}
 }
 
