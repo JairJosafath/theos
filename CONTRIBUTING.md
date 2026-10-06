@@ -30,6 +30,8 @@ Vulnerabilities go to [SECURITY.md](SECURITY.md), never to an issue.
   passes.
 - Report honestly: a failed check or a skipped step goes in the pull request,
   with the output.
+- [ROADMAP.md](ROADMAP.md) says how releases go out, which outcomes the
+  milestones track, and what 1.0 means.
 
 ## License
 

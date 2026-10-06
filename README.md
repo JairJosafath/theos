@@ -48,6 +48,9 @@ Next is the Helm release: devices install the factory from a chart, build their
 products with it, and report problems here (see *Report an issue*). Until it
 lands, the install path is the Kind one below.
 
+[ROADMAP.md](ROADMAP.md) has the release train, the milestones and what 1.0
+means.
+
 ## Try it
 
 Clone the repository on Linux or WSL and open it in VS Code: `./dev setup` downloads
