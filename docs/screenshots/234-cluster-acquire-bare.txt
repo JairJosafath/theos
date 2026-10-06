@@ -1,0 +1,12 @@
+$ hack/lib/github.sh cluster acquire --wait 10m --fresh --bare
+github: --bare: creating Kind cluster c4factory with nothing installed (make cluster KIND_CLUSTER=c4factory)
+...
+c4factory
+
+$ kubectl --context kind-c4factory get ns
+NAME                 STATUS   AGE
+default              Active   43s
+kube-node-lease      Active   43s
+kube-public          Active   43s
+kube-system          Active   43s
+local-path-storage   Active   33s
