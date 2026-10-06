@@ -1,6 +1,7 @@
 name: Lint
 
-# Only Go sources and the linter's own configuration can change the result.
+# Go sources, the linter's configuration and the YAML that make validate-yaml
+# checks (with the templates and tools it renders them with).
 on:
   push:
     branches: [main]
@@ -11,6 +12,11 @@ on:
       - .golangci.yml
       - .custom-gcl.yml
       - Makefile
+      - '**/*.yaml'
+      - dist/chart/**
+      - templates/**
+      - hack/validate-yaml.sh
+      - hack/k8s-openapi.sh
       - .github/workflows/lint.yml
   workflow_dispatch:
 
@@ -39,3 +45,8 @@ jobs:
         run: make lint-config
       - name: Run linter
         run: make lint
+      - name: Validate the YAML
+        run: make validate-yaml
+        env:
+          # hack/k8s-openapi.sh lists the Kubernetes schemas through the GitHub API.
+          GITHUB_TOKEN: ${{ github.token }}

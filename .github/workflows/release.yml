@@ -58,7 +58,9 @@ jobs:
           docker images "$REGISTRY/*"
 
       - name: Install Helm
-        run: make install-helm
+        run: |
+          make install-helm
+          echo "$PWD/bin" >>"$GITHUB_PATH"
 
       - name: Package the chart
         run: |

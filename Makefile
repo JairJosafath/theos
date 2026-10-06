@@ -95,7 +95,7 @@ e2e: cluster metrics-server gitea seed deploy session-image sample toolchain-bas
 test-e2e: e2e ## Same as e2e.
 
 .PHONY: check
-check: manifests generate fmt vet lint test ## Everything to run before finishing a change: generate, format, vet, lint and test.
+check: manifests generate fmt vet lint validate-yaml test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test.
 	@git diff --quiet -- config/crd config/rbac api || \
 		{ echo "Generated files changed; commit them with your change:"; git diff --stat -- config/crd config/rbac api; }
 
@@ -110,6 +110,14 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify
+
+# The YAML checks of make check run offline, without a cluster
+# (hack/validate-yaml.sh): samples, e2e fixtures, the kustomize builds, the chart
+# renders of helm-lint, the seed and session manifests and a rendered repository.
+.PHONY: validate-yaml
+validate-yaml: manifests kustomize kubectl-validate k8s-openapi helm-lint ## Validate the YAML against the built-in schemas and our CRDs, offline.
+	@KUBECTL_VALIDATE="$(KUBECTL_VALIDATE)" KUSTOMIZE="$(KUSTOMIZE)" K8S_OPENAPI="$(K8S_OPENAPI)" \
+		KUBECTL_VALIDATE_K8S_VERSION="$(KUBECTL_VALIDATE_K8S_VERSION)" OUT="$(YAML_OUT)" hack/validate-yaml.sh
 
 ##@ Build
 
@@ -208,6 +216,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+KUBECTL_VALIDATE ?= $(LOCALBIN)/kubectl-validate
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
@@ -224,6 +233,25 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.13.1
+# The newest kubectl-validate; its tag v0.0.4 predates the Kubernetes 1.35 libraries.
+KUBECTL_VALIDATE_VERSION ?= v0.0.5-0.20260105161640-a97ccfaca20b
+# The newest release whose built-in schemas kubectl-validate embeds. It only
+# backs K8S_OPENAPI, the schemas of the envtest release, which come first. A
+# release it doesn't embed makes it fetch the schemas from GitHub instead.
+KUBECTL_VALIDATE_K8S_VERSION ?= 1.35
+# The Kubernetes tag of the k8s.io/api version in go.mod (v0.37.0 -> v1.37.0).
+K8S_OPENAPI_TAG ?= $(shell printf '%s\n' '$(call gomodver,k8s.io/api)' | sed -E 's/^v0\./v1./')
+K8S_OPENAPI ?= $(LOCALBIN)/k8s-openapi-$(K8S_OPENAPI_TAG)
+## Where validate-yaml and helm-lint write what they render
+YAML_OUT ?= $(LOCALBIN)/yaml
+
+HELM_VERSION ?= v4.3.0
+# sha256 of helm-$(HELM_VERSION)-<os>-<arch>.tar.gz, from get.helm.sh.
+HELM_SHA256_linux-amd64 = 86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb
+HELM_SHA256_linux-arm64 = 31c5794dd55c66a51e6b7d2e2ac7a114ae8b1de41ff1d9ba51748ac973b06a08
+HELM_SHA256_darwin-amd64 = 347a784877e0e20eac865e8d1c36a80f6bb0861d6f29abd34defb6570ef95d92
+HELM_SHA256_darwin-arm64 = d3870437e1e95b67f8edbde964156c84a26503f560821d40c542441658934fba
+HELM_PLATFORM = $(shell go env GOOS)-$(shell go env GOARCH)
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
@@ -256,6 +284,26 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
 		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \
 	} || true
+
+.PHONY: kubectl-validate
+kubectl-validate: $(KUBECTL_VALIDATE) ## Download kubectl-validate locally if necessary.
+$(KUBECTL_VALIDATE): $(LOCALBIN)
+	$(call go-install-tool,$(KUBECTL_VALIDATE),sigs.k8s.io/kubectl-validate,$(KUBECTL_VALIDATE_VERSION))
+
+.PHONY: k8s-openapi
+k8s-openapi: $(LOCALBIN) ## Download the built-in OpenAPI schemas of the envtest Kubernetes release.
+	@hack/k8s-openapi.sh "$(K8S_OPENAPI_TAG)" "$(K8S_OPENAPI)"
+
+# Helm is a release tarball, checked against its pinned sha256.
+$(LOCALBIN)/helm-$(HELM_VERSION): | $(LOCALBIN)
+	@sum='$(HELM_SHA256_$(HELM_PLATFORM))'; [ -n "$$sum" ] || { echo "No Helm sha256 for $(HELM_PLATFORM)" >&2; exit 1; }; \
+	set -e; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	echo "Downloading helm $(HELM_VERSION)"; \
+	curl -fsSL -o "$$tmp/helm.tgz" "https://get.helm.sh/helm-$(HELM_VERSION)-$(HELM_PLATFORM).tar.gz"; \
+	got=$$( { sha256sum "$$tmp/helm.tgz" 2>/dev/null || shasum -a 256 "$$tmp/helm.tgz"; } | cut -d' ' -f1); \
+	[ "$$got" = "$$sum" ] || { echo "helm $(HELM_VERSION): sha256 $$got, want $$sum" >&2; exit 1; }; \
+	tar -xzf "$$tmp/helm.tgz" -C "$$tmp"; \
+	mv "$$tmp/$(HELM_PLATFORM)/helm" "$@"
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
@@ -307,16 +355,17 @@ chart: ## Regenerate the Helm chart in dist/chart from the kustomize output.
 	kubebuilder edit --plugins=helm.kubebuilder.io/v2-alpha
 
 .PHONY: helm-lint
-helm-lint: ## Lint the Helm chart and render it with a GitProvider value, and with Gitea.
+helm-lint: install-helm ## Lint the Helm chart and render it with a GitProvider value, and with Gitea.
+	@mkdir -p "$(YAML_OUT)"
 	$(HELM) lint $(HELM_CHART_DIR)
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
-		--set 'gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].token=t' >/dev/null
+		--set 'gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].token=t' >"$(YAML_OUT)/chart.yaml"
 	$(HELM) lint $(HELM_CHART_DIR) --set gitea.enabled=true
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
-		--set 'gitea.enabled=true,gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >/dev/null
+		--set 'gitea.enabled=true,gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >"$(YAML_OUT)/chart-gitea.yaml"
 
-## Helm binary to use for deploying the chart
-HELM ?= helm
+## Helm binary to use for deploying the chart; make install-helm downloads it
+HELM ?= $(LOCALBIN)/helm
 ## Namespace to deploy the Helm release
 HELM_NAMESPACE ?= c4-factory-system
 ## Name of the Helm release
@@ -327,11 +376,13 @@ HELM_CHART_DIR ?= dist/chart
 HELM_EXTRA_ARGS ?=
 
 .PHONY: install-helm
-install-helm: ## Install the latest version of Helm.
-	@command -v $(HELM) >/dev/null 2>&1 || { \
-		echo "Installing Helm..." && \
-		curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash; \
-	}
+ifeq ($(HELM),$(LOCALBIN)/helm)
+install-helm: $(LOCALBIN)/helm-$(HELM_VERSION) ## Download the pinned Helm into bin/ if necessary.
+	@ln -sf "$$(realpath "$(LOCALBIN)/helm-$(HELM_VERSION)")" "$(LOCALBIN)/helm"
+else
+install-helm: ## Download the pinned Helm into bin/ if necessary.
+	@command -v "$(HELM)" >/dev/null || { echo "HELM=$(HELM) is not found" >&2; exit 1; }
+endif
 
 .PHONY: helm-deploy
 helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
@@ -345,17 +396,17 @@ helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify
 		$(HELM_EXTRA_ARGS)
 
 .PHONY: helm-uninstall
-helm-uninstall: ## Uninstall the Helm release from the K8s cluster.
+helm-uninstall: install-helm ## Uninstall the Helm release from the K8s cluster.
 	$(HELM) uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
 .PHONY: helm-status
-helm-status: ## Show Helm release status.
+helm-status: install-helm ## Show Helm release status.
 	$(HELM) status $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
 .PHONY: helm-history
-helm-history: ## Show Helm release history.
+helm-history: install-helm ## Show Helm release history.
 	$(HELM) history $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
 .PHONY: helm-rollback
-helm-rollback: ## Rollback to previous Helm release.
+helm-rollback: install-helm ## Rollback to previous Helm release.
 	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
