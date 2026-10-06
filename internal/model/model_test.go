@@ -179,6 +179,69 @@ func TestAppliedRelationship(t *testing.T) {
 	}
 }
 
+func TestRelationshipApplied(t *testing.T) {
+	const rel = "api-to-db"
+	ready := func(r ScaffoldedRelationship) ScaffoldedRelationship {
+		r.Name, r.ContainerReady = rel, true
+		return r
+	}
+	recorded := []AppliedRelationship{{Name: rel, DataStore: "orders-db", Connector: "postgres"}}
+	tests := []struct {
+		name string
+		in   ScaffoldedRelationship
+		want Applied
+	}{
+		{"the Container isn't scaffolded yet", ScaffoldedRelationship{Name: rel, AppliedNames: []string{rel}}, AppliedWaiting},
+		{"recorded with its target", ready(ScaffoldedRelationship{AppliedNames: []string{rel},
+			AppliedRecords: recorded, DataStore: "orders-db", Connector: "postgres"}), AppliedAtScaffold},
+		{"added after the scaffold", ready(ScaffoldedRelationship{AppliedNames: []string{"other"},
+			DataStore: "orders-db", Connector: "postgres"}), AddedAfterScaffold},
+		{"nothing applied at all", ready(ScaffoldedRelationship{DataStore: "orders-db"}), AddedAfterScaffold},
+		{"a name-only record matches any target", ready(ScaffoldedRelationship{AppliedNames: []string{rel},
+			DataStore: "users-db", Connector: "mongo"}), AppliedAtScaffold},
+		{"recreated with another DataStore", ready(ScaffoldedRelationship{AppliedNames: []string{rel},
+			AppliedRecords: recorded, DataStore: "users-db", Connector: "postgres"}), AddedAfterScaffold},
+		{"its DataStore now uses another Connector", ready(ScaffoldedRelationship{AppliedNames: []string{rel},
+			AppliedRecords: recorded, DataStore: "orders-db", Connector: "mongo"}), AddedAfterScaffold},
+		{"the DataStore is gone", ready(ScaffoldedRelationship{AppliedNames: []string{rel},
+			AppliedRecords: recorded, DataStore: "orders-db"}), AppliedAtScaffold},
+		{"another Relationship's record doesn't count", ready(ScaffoldedRelationship{AppliedNames: []string{rel},
+			AppliedRecords: []AppliedRelationship{{Name: "other", DataStore: "users-db", Connector: "mongo"}},
+			DataStore:      "orders-db", Connector: "postgres"}), AppliedAtScaffold},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RelationshipApplied(tt.in); got != tt.want {
+				t.Errorf("RelationshipApplied() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScaffoldHistory(t *testing.T) {
+	const container = "shop/orders-api"
+	tests := []struct {
+		name       string
+		commits    int
+		initialFor string
+		want       ExistingHistory
+	}{
+		{"a new repository is scaffolded", 0, "", HistoryEmpty},
+		{"our own initial commit is recovered", 1, container, HistoryRecover},
+		{"one commit we didn't make is foreign", 1, "", HistoryForeign},
+		{"another Container's initial commit is foreign", 1, "shop/billing-api", HistoryForeign},
+		{"a second commit after ours is foreign", 2, container, HistoryForeign},
+		{"two commits we didn't make are foreign", 2, "", HistoryForeign},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ScaffoldHistory(tt.commits, tt.initialFor, container); got != tt.want {
+				t.Errorf("ScaffoldHistory(%d, %q) = %v, want %v", tt.commits, tt.initialFor, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCheckStandard(t *testing.T) {
 	standard := CatalogEntry{Side: SideStandard, Name: "strict-standard", SupportedFrameworks: []string{"go-cli"}}
 	tests := []struct {
