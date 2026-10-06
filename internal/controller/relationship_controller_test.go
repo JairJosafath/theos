@@ -101,6 +101,14 @@ var _ = Describe("Relationship", func() {
 })
 
 var _ = Describe("DataStore", func() {
+	It("keeps its SoftwareSystem for life", func() {
+		ns := newProjectNamespace()
+		store := newOrdersDB(ns)
+		mustCreate(store)
+		Expect(patch(store, func() { store.Spec.SoftwareSystemRef.Name = "another-system" })).
+			To(MatchError(ContainSubstring("softwareSystemRef is immutable")))
+	})
+
 	It("keeps its Connector for life", func() {
 		ns := newProjectNamespace()
 		store := newOrdersDB(ns)

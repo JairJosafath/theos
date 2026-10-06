@@ -1,0 +1,9 @@
+# expect: set exactly one of goal and issue
+apiVersion: c4.factory.io/v1alpha1
+kind: Task
+metadata:
+  name: neither
+  namespace: apps
+spec:
+  containerRef: {name: orders-api}
+  agentRef: {name: claude}

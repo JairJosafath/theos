@@ -1,0 +1,11 @@
+# expect: allowedProtectedPaths needs an issue
+apiVersion: c4.factory.io/v1alpha1
+kind: Task
+metadata:
+  name: goal-with-paths
+  namespace: apps
+spec:
+  containerRef: {name: orders-api}
+  agentRef: {name: claude}
+  goal: Bump the linter.
+  allowedProtectedPaths: [Makefile]

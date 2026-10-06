@@ -132,7 +132,8 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 # The YAML checks of make check run offline, without a cluster
 # (hack/validate-yaml.sh): samples, e2e fixtures, the kustomize builds, the chart
-# renders of helm-lint, the seed and session manifests and a rendered repository.
+# renders of helm-lint, the seed and session manifests and a rendered repository;
+# the files in test/manifests/invalid must fail, each with its CEL rule's message.
 .PHONY: validate-yaml
 validate-yaml: manifests kustomize kubectl-validate k8s-openapi helm-lint ## Validate the YAML against the built-in schemas and our CRDs, offline.
 	@KUBECTL_VALIDATE="$(KUBECTL_VALIDATE)" KUSTOMIZE="$(KUSTOMIZE)" K8S_OPENAPI="$(K8S_OPENAPI)" \
