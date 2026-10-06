@@ -128,6 +128,22 @@ round; round
 check "pick fails: no relay" "$(starts)" 5
 check "pick fails: logged once" "$(logged 'could not ask GitHub for the next issue (exit 2): github: no token')" 1
 
+# Trimming the build caches: at once, then again once TRIM_EVERY has passed;
+# only what the trim says is logged.
+TRIM_EVERY=1800 TRIM_OUT=
+trim_caches() { echo trim >>"$T/trims"; [ -z "$TRIM_OUT" ] || echo "$TRIM_OUT"; }
+trims() { cat "$T/trims" 2>/dev/null | wc -l | tr -d ' '; }
+now=$(date +%s)
+trim "$now"
+check "trim: on the first loop" "$(trims)" 1
+check "trim: under the limit, nothing logged" "$(logged 'trim-go-cache')" 0
+TRIM_OUT='trim-go-cache: /c was 9 MB, limit 4 MB; dropped 6 MB of entries unused for 2+ hours, now 3 MB'
+trim $((now + 60))
+check "trim: not again before TRIM_EVERY" "$(trims)" 1
+trim $((now + 1800))
+check "trim: again after TRIM_EVERY" "$(trims)" 2
+check "trim: logs what it dropped" "$(logged 'dropped 6 MB of entries unused for 2+ hours, now 3 MB')" 1
+
 # Arguments.
 bash "$(dirname "$0")/relay-watch.sh" --workers 0 2>/dev/null
 check "--workers 0 refused" $? 64
