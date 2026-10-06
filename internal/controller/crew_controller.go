@@ -88,7 +88,7 @@ type CrewReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews/finalizers,verbs=update
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers;agents;gitproviders,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=containers;agents;gitproviders;relationships,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile reads the Crew's Container and its ready issues, hands unclear ones
@@ -171,13 +171,8 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 		// Before the Crew picks issues: a prepare issue filed now keeps its
 		// release the current one, so the next release's work waits for it.
-		if crew.Spec.TagReleases {
-			r.watchReleaseRun(ctx, &crew, status, provider, repo)
-		}
-		if crew.Spec.TagReleases || crew.Spec.PrepareReleases {
-			if filed := r.tagRelease(ctx, &crew, status, provider, repo, containerTasks); filed != nil {
-				facts.Issues = append(facts.Issues, *filed)
-			}
+		if filed := r.release(ctx, &crew, status, provider, repo, containerTasks); filed != nil {
+			facts.Issues = append(facts.Issues, *filed)
 		}
 	}
 
@@ -235,6 +230,24 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
 	}
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
+}
+
+// release watches the last release's run, prepares or tags the next release,
+// and files the last release's bumps, as the Crew's switches say. It returns the
+// prepare issue filed now, if any.
+func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) *model.Issue {
+	if crew.Spec.TagReleases {
+		r.watchReleaseRun(ctx, crew, status, provider, repo)
+	}
+	var filed *model.Issue
+	if crew.Spec.TagReleases || crew.Spec.PrepareReleases {
+		filed = r.tagRelease(ctx, crew, status, provider, repo, tasks)
+	}
+	if crew.Spec.TagReleases {
+		r.fileBumps(ctx, crew, status, repo)
+	}
+	return filed
 }
 
 // crewTask is what a Crew reads of a Task: its issue, whether it ended or waits on
