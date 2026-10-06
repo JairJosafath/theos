@@ -44,7 +44,7 @@
 # the pinned Maintainer report
 # (hack/lib/github.sh report). Agents escalate to it, with
 # status/needs-maintainer; only it sets status/needs-human, for what
-# GOVERNANCE.md reserves to the owner (docs/plans/maintainer.md). When it
+# GOVERNANCE.md reserves to the owner (docs/plans/done/maintainer.md). When it
 # ends it writes .relay/maintained, `<epoch> <activity>`: when the sweep
 # started (so an issue escalated while it ran is still new to the watch) and
 # hack/lib/github.sh activity, read after the sweep so its own comments don't
