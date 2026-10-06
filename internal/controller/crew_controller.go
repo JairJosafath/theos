@@ -236,7 +236,8 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 }
 
 // release watches the last release's run, prepares or tags the next release,
-// and files the last release's bumps, as the Crew's switches say. It returns the
+// reports the last release's overdue runs and files its bumps, as the Crew's
+// switches say. It returns the
 // prepare issue filed now, if any.
 func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) *model.Issue {
@@ -248,6 +249,7 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, sta
 		filed = r.tagRelease(ctx, crew, status, provider, repo, tasks)
 	}
 	if crew.Spec.TagReleases {
+		r.noteOverdueRun(ctx, crew, status)
 		r.fileBumps(ctx, crew, status, repo)
 	}
 	return filed
