@@ -113,7 +113,8 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   4. envtest (`make test`): reconcilers, status, the admission policy, and
      every CEL rule's failing case, create-time ones included.
   5. Kind and `make e2e`, only for what needs a real node: Agent Sandbox
-     pods, node or kubelet behaviour, RBAC as deployed, Gitea Actions runners.
+     pods running, node or kubelet behaviour, Gitea Actions runners. The pod
+     spec, the fence and the generated RBAC are checked in tiers 1 and 4.
 
   `make check` runs tiers 1, 2 and 4 for every change; `make e2e` covers the
   whole loop, run when the user asks for it.
@@ -143,8 +144,8 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 - **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
   piece of work, labeled `status/*`, `priority/urgent`, `kind/*`;
   `hack/lib/github.sh` reads and writes them. Issues that need a real
-  Kubernetes node (Agent Sandbox pods, node or kubelet behaviour, RBAC as
-  deployed, Gitea Actions runners) carry `needs/cluster`; Gitea work, YAML,
+  Kubernetes node (Agent Sandbox pods running, node or kubelet behaviour,
+  Gitea Actions runners) carry `needs/cluster`; Gitea work, YAML,
   templates and controller logic don't. A device without a cluster sets
   `C4_CLUSTER=none` (`./dev setup --lite`) and skips them.
 - **Every issue carries `source/dev`** (developing the factory) or `source/user`
