@@ -89,7 +89,7 @@ func (r *BriefReconciler) needsInputRecheck() time.Duration {
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile brings the Brief's repository up to date and takes the next step
-// of its rounds. A missing GitProvider, credentials Secret, Agent or catalog
+// of its rounds, and deletes its bot when the Brief goes (B16). A missing GitProvider, credentials Secret, Agent or catalog
 // entry sets NeedsInput, naming it, and nothing is applied while it lasts.
 func (r *BriefReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var brief c4v1alpha1.Brief
@@ -97,7 +97,7 @@ func (r *BriefReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !brief.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.deleteBot(ctx, &brief)
 	}
 	orig := brief.DeepCopy()
 	brief.Status.ObservedGeneration = brief.Generation

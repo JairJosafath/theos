@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -157,6 +158,36 @@ var _ = Describe("Brief", func() {
 					To(HaveField("Message", HavePrefix("Container "+repo+" has the repository the Brief needs")))
 			}).Should(Succeed())
 			Expect(gitFake.agentUser(ns, repo)).To(BeEmpty())
+		})
+
+		It("deletes its bot when deleted, and keeps its repository (B16)", func() {
+			createFactory(ns)
+			brief := newBrief(ns, "cel-lens")
+			mustCreate(brief)
+			Eventually(func() string { return gitFake.agentUser(ns, repo) }).Should(Equal(model.AgentUsername(ns, repo)))
+			Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
+			Expect(brief.Finalizers).To(ContainElement("c4.factory.io/brief-bot"))
+
+			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
+			}).Should(BeTrue(), "the finalizer was not removed")
+			Expect(gitFake.agentUser(ns, repo)).To(BeEmpty(), "the bot is still there")
+			Expect(gitFake.commitCount(ns, repo)).To(Equal(1), "the repository went")
+		})
+
+		It("goes without deleting its bot when its GitProvider is gone", func() {
+			createFactory(ns)
+			brief := newBrief(ns, "cel-lens")
+			mustCreate(brief)
+			Eventually(func() string { return gitFake.agentUser(ns, repo) }).ShouldNot(BeEmpty())
+
+			Expect(k8sClient.Delete(ctx, &c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "gitea")})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
+			}).Should(BeTrue(), "the finalizer held the Brief")
+			Expect(gitFake.agentUser(ns, repo)).To(Equal(model.AgentUsername(ns, repo)))
 		})
 
 		It("waits for a missing GitProvider, naming it", func() {

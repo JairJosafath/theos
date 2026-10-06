@@ -163,7 +163,10 @@ What B4 leaves open, settled in step 4 (`internal/model/brief_workspace.go`,
   records the repository it was given access to, so a moved repository gets
   its bot again.
 - **Left for step 5:** B16's deletion of the bot user in Gitea (the Secret
-  already goes with the Brief); refusing a plan that creates a Container named
+  already goes with the Brief; done in #326: a `c4.factory.io/brief-bot`
+  finalizer, put on before the bot is made, deletes the user through
+  `RemoveAgentAccess`, and lets the Brief go without it when its GitProvider
+  or credentials are gone); refusing a plan that creates a Container named
   `brief-*`; and NeedsInput from `needs-input.md`, which the operator's
   "has what it needs" must not clear: step 5 clears only the reasons it set.
 

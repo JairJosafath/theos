@@ -31,7 +31,12 @@ check "hit: says the tree, when, where and who" $? 0
 FORCE=1 "$CACHE" lookup >/dev/null; check "FORCE=1: miss" $? 1
 
 # One changed byte misses, tracked or untracked; an ignored file doesn't count.
-printf 'b\n' >tracked
+# The tracked change is racy git, forced: same size, and the file and the index
+# share one mtime a minute back, so only the content tells them apart (#330).
+git config core.trustctime false
+touch -d '-1 min' tracked && git update-index -q --refresh
+touch -r tracked "$(git rev-parse --git-path index)"
+printf 'b\n' >tracked && touch -r "$(git rev-parse --git-path index)" tracked
 "$CACHE" lookup >/dev/null; check "tracked byte changed: miss" $? 1
 printf 'a\n' >tracked
 "$CACHE" lookup >/dev/null; check "changed back: hit" $? 0

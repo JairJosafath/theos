@@ -74,6 +74,47 @@ func TestGiteaIntegration(t *testing.T) {
 			t.Fatalf("History() = %v, %v; want the initial commit", commits, err)
 		}
 	})
+
+	t.Run("gives a bot a repository and deletes it", func(t *testing.T) {
+		p, err := client.Provider(Config{URL: base, Owner: "webshop", Credentials: creds})
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := fmt.Sprintf("it-bot-%d", time.Now().UnixNano())
+		t.Cleanup(func() { deleteRepo(t, base, "webshop", name, creds.Token) })
+		repo, err := p.EnsureRepository(ctx, name, "integration test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		bot, err := p.EnsureAgentAccess(ctx, repo, name+"-agent")
+		if err != nil {
+			t.Fatal(err)
+		}
+		readRepo := func(token string) int {
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/v1/repos/webshop/"+name, nil)
+			req.Header.Set("Authorization", "token "+token)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			return resp.StatusCode
+		}
+		if status := readRepo(bot.Token); status != http.StatusOK {
+			t.Fatalf("the bot reads its repository: HTTP %d", status)
+		}
+		for i := range 2 { // the second finds the user gone
+			if err := p.RemoveAgentAccess(ctx, repo, bot.Username); err != nil {
+				t.Fatalf("RemoveAgentAccess() #%d: %v", i, err)
+			}
+		}
+		if status := readRepo(bot.Token); status != http.StatusUnauthorized {
+			t.Errorf("the deleted bot's token reads the repository: HTTP %d, want 401", status)
+		}
+		if status := readRepo(creds.Token); status != http.StatusOK {
+			t.Errorf("the repository went with its bot: HTTP %d", status)
+		}
+	})
 }
 
 // TestGiteaIssuesIntegration runs the issue flow against the seeded Gitea, like
@@ -277,6 +318,7 @@ func addDependency(t *testing.T, base, token string, repo Repository, blocked, b
 	}
 }
 
+//nolint:unparam // takes owner and name like the API
 func deleteRepo(t *testing.T, base, owner, name, token string) {
 	req, _ := http.NewRequest(http.MethodDelete, strings.TrimSuffix(base, "/")+"/api/v1/repos/"+owner+"/"+name, nil)
 	req.Header.Set("Authorization", "token "+token)
