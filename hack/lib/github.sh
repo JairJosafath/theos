@@ -62,7 +62,9 @@
 # while #M is open, are skipped. A handoff comment starts with the line
 # <!-- relay-handoff -->.
 #
-# The Kind cluster: issues whose work needs it carry needs/cluster. On a device
+# The Kind cluster: issues whose work needs a real Kubernetes node (Agent
+# Sandbox pods, kubelet, RBAC as deployed, Gitea Actions runners) carry
+# needs/cluster. On a device
 # without one (C4_CLUSTER=none) pick skips them and take refuses them. On a
 # device with one, any checkout may work them, and the checkouts share a pool
 # of Kind clusters through leases: a session does the work that needs no
@@ -125,7 +127,7 @@ GH_LABELS=(
   'kind/improvement|84b6eb|Make something that works better'
   'source/dev|bfd4f2|Made while developing c4factory'
   'source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it'
-  'needs/cluster|1d76db|Needs the Kind cluster: deploys, factory-ops, Crews or e2e'
+  'needs/cluster|1d76db|Needs a real Kubernetes node: Agent Sandbox pods, kubelet, RBAC as deployed, Gitea Actions runners'
 )
 
 # gh_token: export GH_TOKEN, from the git credential helper unless already set.

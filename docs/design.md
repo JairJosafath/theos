@@ -431,7 +431,7 @@ Each rule is verified at the lowest tier that can see it, so most work verifies 
 | envtest (`make test`) | Reconcilers wired to a real API server: status, ownerReferences, CEL rules on updates, the admission policy. |
 | Kind (`make e2e`) | Agent Sandbox pods and the agent fence, node and kubelet behaviour, RBAC as deployed, Gitea Actions runners. |
 
-The plan that builds the lower tiers is [verify-without-cluster.md](plans/verify-without-cluster.md).
+The plan that builds the lower tiers is [verify-without-cluster.md](plans/done/verify-without-cluster.md).
 
 ## Test environment: the Kind cluster
 

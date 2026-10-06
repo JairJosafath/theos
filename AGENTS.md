@@ -94,9 +94,18 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
 
 - **Plan before building.** For work that spans more than one package or issue,
   write a short plan in `docs/plans/` first: goal, steps, and how you'll know it's done.
-- **Test the rules where they live.** Table tests for `internal/model` and
-  `internal/scaffold`, envtest for controllers, `make check` for every change;
-  `make e2e` covers the whole loop, run when the user asks for it.
+- **Test the rules where they live,** at the lowest tier that can see them:
+  1. `internal/model` and `internal/scaffold` table tests (`make test`).
+  2. `make validate-yaml`: samples, fixtures, kustomize builds, the chart and
+     create-time CEL rules, offline.
+  3. `make test-gitea` and `make seed-local`: a local Gitea, no Kubernetes.
+  4. envtest (`make test`): reconcilers, status, CEL rules on updates, the
+     admission policy.
+  5. Kind and `make e2e`, only for what needs a real node: Agent Sandbox
+     pods, node or kubelet behaviour, RBAC as deployed, Gitea Actions runners.
+
+  `make check` runs tiers 1, 2 and 4 for every change; `make e2e` covers the
+  whole loop, run when the user asks for it.
 - **Small pull requests to main.** One branch per issue or plan step, the one
   `take` names (`<type>/<N>-<slug>`, from an up-to-date main), pushed after
   every commit; open a pull request to main whose body
@@ -108,8 +117,10 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   that is safe and never touches a branch or uncommitted work. VS Code runs it
   every 5 minutes, Claude Code at session start, the relay before each session;
   run it yourself before you branch or pick an issue.
-- **Show, don't claim.** When a plan is done, save evidence (test output,
-  `kubectl get` output, UI or Gitea screenshots) in `docs/screenshots/`.
+- **Show, don't claim.** When a plan is done, save evidence in
+  `docs/screenshots/`. Test output is the evidence for logic; Kind evidence
+  (`kubectl get` output, UI or Gitea screenshots of the running factory) is
+  needed only for behaviour that needs a real node.
 - **Report honestly.** If a check fails or a step is skipped, say so in the commit or
   PR with the output.
 
@@ -120,8 +131,11 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 
 - **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
   piece of work, labeled `status/*`, `priority/urgent`, `kind/*`;
-  `hack/lib/github.sh` reads and writes them. Issues that need the Kind cluster carry `needs/cluster`; a device
-  without one sets `C4_CLUSTER=none` (`./dev setup --lite`) and skips them.
+  `hack/lib/github.sh` reads and writes them. Issues that need a real
+  Kubernetes node (Agent Sandbox pods, node or kubelet behaviour, RBAC as
+  deployed, Gitea Actions runners) carry `needs/cluster`; Gitea work, YAML,
+  templates and controller logic don't. A device without a cluster sets
+  `C4_CLUSTER=none` (`./dev setup --lite`) and skips them.
 - **Every issue carries `source/dev`** (developing the factory) or `source/user`
   with `user/<name>` (reported from a device running the Helm release).
 - **Issues are the relay's.** Relay agents pick up every ready issue. A session
