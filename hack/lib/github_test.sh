@@ -2,7 +2,7 @@
 # Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label)
 # and the cluster pool's leases (acquire, wait, exit 4, stale lease, two leases
 # on two clusters, a third waiting, a released cluster reused, a missing one
-# created, --fresh recreating only the cluster it leased, a bare cluster taken last and recreated; release on handoff, close and release),
+# created, --fresh recreating only the cluster it leased, a bare cluster taken last and recreated; release on handoff, close and release, and kept when marking, handing off or closing another issue),
 # for flush releasing the claim of the handoff it posts,
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
@@ -240,7 +240,7 @@ gh_label 61 needs/cluster >/dev/null 2>&1; check "label needs/cluster, lease hel
 C4_CLUSTER=none gh_label 61 needs/cluster >/dev/null 2>&1; check "label needs/cluster, no cluster" $? 0
 gh_label 61 kind/docs >/dev/null 2>&1; check "label other" $? 0
 
-# release, handoff, close and needs-human drop this checkout's lease.
+# release, handoff, close and needs-human drop this checkout's lease when it works on that issue.
 clear; claim "$T/main" 72 "$(date +%s)"; lease "$T/main" 72 "$(date +%s)"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close drops the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
 clear; claim "$T/main" 71 "$(date +%s)"; lease "$T/main" 71 "$(date +%s)"
@@ -262,6 +262,21 @@ clear; claim "$T/main" 51 "$(date +%s)"; lease "$T/main" 51 "$(date +%s)"
 real_set_status 51 needs-human >/dev/null 2>&1
 check "needs-human drops the lease and the claim" \
   "$([ -e "$LEASE" ] && echo kept || echo gone) $([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" "gone released"
+# Marking, handing off or closing another issue keeps this checkout's lease and claim.
+clear; claim "$T/main" 52 "$(date +%s)"; lease "$T/main" 52 "$(date +%s)"
+real_set_status 51 needs-human >/dev/null 2>&1
+check "needs-human on another issue keeps the lease and the claim" \
+  "$([ -e "$LEASE" ] && echo kept || echo gone) $([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" "kept kept"
+clear; lease "$T/main" 52 "$(date +%s)"
+real_set_status 51 needs-maintainer >/dev/null 2>&1
+check "needs-maintainer on another issue, no claim, keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
+clear; claim "$T/main" 51 "$(date +%s)"; lease "$T/main" null "$(date +%s)"
+real_set_status 51 needs-human >/dev/null 2>&1
+check "needs-human, claim on it, lease taken before the claim: dropped" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
+clear; claim "$T/main" 52 "$(date +%s)"; lease "$T/main" 52 "$(date +%s)"
+echo h | gh_handoff 73 - >/dev/null 2>&1; check "handoff of another issue keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
+clear; claim "$T/main" 52 "$(date +%s)"; lease "$T/main" 52 "$(date +%s)"
+echo landed | gh_close 72 - >/dev/null 2>&1; check "close of another issue keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
 real_set_status 51 bogus 2>/dev/null; check "status, unknown" $? 1
 rm -f "$LEASE" "$T/posted" "$T/edited" "$T/calls"
 

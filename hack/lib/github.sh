@@ -484,7 +484,7 @@ gh_set_status() {
       gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
   fi
   case $want in
-    status/needs-maintainer | status/needs-human) gh_lease_release; gh_release_for "$n" "${want#status/}" ;;
+    status/needs-maintainer | status/needs-human) gh_lease_release_for "$n"; gh_release_for "$n" "${want#status/}" ;;
   esac
 }
 
@@ -925,6 +925,17 @@ gh_lease_acquire() {
 # checkouts' are left alone.
 gh_lease_release() { gh_lease_locked gh_lease_release_locked; }
 
+# gh_lease_release_for N: drop this checkout's lease if it works on N: its
+# claim is on N, or its lease was taken for N. Marking, handing off or closing
+# another issue leaves the lease alone.
+gh_lease_release_for() {
+  local c c_issue c_id c_name c_branch l_name l_issue l_wt l_beat
+  if ! { gh_claim_read && [ "$c_issue" = "$1" ]; }; then
+    c=$(gh_lease_name) && gh_lease_read "$c" && [ "$l_issue" = "$1" ] || return 0
+  fi
+  gh_lease_release
+}
+
 gh_lease_release_locked() {
   local c l_name l_issue l_wt l_beat
   c=$(gh_lease_name) || return 0
@@ -1065,7 +1076,7 @@ gh_claims() {
 }
 
 # gh_handoff N FILE: post FILE as N's handoff comment, the marker line first,
-# and drop this checkout's cluster lease. If GitHub can't be reached, keep the text in .relay/pending-handoff-N.md and
+# and drop this checkout's cluster lease if it works on N. If GitHub can't be reached, keep the text in .relay/pending-handoff-N.md and
 # exit 3; gh_flush posts it later. A newer handoff replaces an unposted older
 # one: each handoff is a full snapshot.
 gh_handoff() {
@@ -1074,7 +1085,7 @@ gh_handoff() {
   [ -n "$body" ] || { echo "github: empty handoff" >&2; return 1; }
   [ "$(head -1 <<<"$body")" = "$GH_HANDOFF_MARKER" ] || body="$GH_HANDOFF_MARKER"$'\n'"$body"
   pending="$GH_PENDING_DIR/pending-handoff-$n.md"
-  gh_lease_release >&2
+  gh_lease_release_for "$n" >&2
   if url=$(printf '%s\n' "$body" | gh_comment "$n" -); then
     rm -f "$pending"
     echo "$url"
@@ -1112,14 +1123,14 @@ gh_flush() {
 }
 
 # gh_close N FILE: comment what landed, close N as completed, then release the
-# claim and the cluster lease. Closing comes first: if it fails, the claim stays live, so pick does
+# claim and the cluster lease if they are on N. Closing comes first: if it fails, the claim stays live, so pick does
 # not offer the open, in-progress issue again as abandoned work.
 gh_close() {
   local n=${1:?usage: close N FILE}
   gh_comment "$n" "${2:--}" || return 1
   gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
     -f state=closed -f state_reason=completed --jq '"closed #\(.number)"' || return 1
-  gh_lease_release
+  gh_lease_release_for "$n"
   gh_release_for "$n" finished
 }
 
