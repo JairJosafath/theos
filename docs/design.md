@@ -396,7 +396,7 @@ model and context it needs.
 ## Briefs: an idea in plain words
 
 Decided on 6 October 2026 for GitHub issue #240; the plan, with every
-decision and why, is [plans/brief.md](plans/brief.md).
+decision and why, is [plans/brief.md](plans/brief.md). Being built.
 
 Writing the model, the catalog, the Agents and the Crew as YAML, and filing the
 first issue through Gitea's API, is operating the factory, not describing a
