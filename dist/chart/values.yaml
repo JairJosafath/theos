@@ -401,7 +401,7 @@ runners:
 ## For each of gitea.projects, the catalog its Containers pick from: the
 ## templates the seed pushes to the templates organization, each pinned to its
 ## tag in templates/versions.txt (make validate-yaml checks they match). The
-## seed's hello and hello-standard are for the end-to-end tests and left out.
+## seed's hello, hello-standard and hello-html are for the end-to-end tests and left out.
 ## Off: make your own catalog entries in the project's namespace.
 ##
 catalog:
@@ -523,3 +523,15 @@ agents:
     resources:
       requests: {cpu: 500m, memory: 1Gi}
       limits: {cpu: "2", memory: 4Gi}
+  ## Agent stand-in: no model and no token. It plans a Brief from the catalog,
+  ## makes a scripted change and approves it, so a Brief or a Crew naming it
+  ## shows the whole loop for free (config/samples/brief/stand-in.yaml).
+  standIn:
+    enabled: true
+    description: "Plans from the catalog, makes a scripted change and approves it: the loop without a model."
+    maxRounds: 2
+    timeoutMinutes: 15
+    ## Its implement rounds still run the Container's make check.
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: "1", memory: 2Gi}
