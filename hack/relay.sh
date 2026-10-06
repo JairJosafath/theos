@@ -270,7 +270,9 @@ worktree, relay-$K, is on origin/main for reading only.
 Start with \`hack/lib/github.sh proposed\` (the list now; triage those) and
 \`hack/lib/github.sh show N\` for each. Read docs/design.md and AGENTS.md, and
 list the open issues to compare against: \`gh issue list --repo $C4_GITHUB_REPO
---state open --limit 200 --json number,title,labels\` (gh has the token).
+--state open --limit 200 --json number,title,labels,milestone\` (gh has the
+token). \`hack/lib/github.sh milestones\` lists the open milestones, and
+ROADMAP.md says what each one's outcome is.
 
 Designing is our work, not the reporter's or the user's (AGENTS.md,
 "Designing is our job"): an issue that wants something docs/design.md doesn't
@@ -314,6 +316,15 @@ For each proposed issue, decide one of these:
 - Close it as a duplicate, \`hack/lib/github.sh duplicate N M\`, when open
   issue #M covers the same work.
 
+When you ready an issue, any of the three ways, and a user of the release
+would notice what it changes (the CRDs, the operator, the UI, the chart,
+templates, docs a user reads), give it the open milestone whose outcome it
+serves, if one fits: \`hack/lib/github.sh milestone N "TITLE"\`, the title
+exactly as \`milestones\` prints it. When none fits, it gets none; never
+create, rename or close a milestone. Work on the relay, \`hack/\`, the skills
+or the governance files (AGENTS.md, GOVERNANCE.md, ROADMAP.md, docs/dev/)
+gets no milestone (ROADMAP.md).
+
 Rules for this headless run:
 - Never use the Fable model: not for subagents, not for anything. Always name
   the model when dispatching (sonnet or opus). Dispatch every subagent with
@@ -321,11 +332,12 @@ Rules for this headless run:
 - Touch only the issues listed as proposed: never set status/in-progress,
   never take an issue out of status/needs-maintainer or status/needs-human
   (needs-maintainer is the maintainer's, needs-human stays the user's), never take an issue, edit a body only to
-  add a "Depends on #M" line, never a title, and file no new issues.
+  add a "Depends on #M" line, never a title, set a milestone only on an issue
+  you ready, and file no new issues.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   your account.
 - End your turn with a short account, the relay's log of this triage: readied
-  (#N, one line why), left proposed (#N, what is missing), closed as
+  (#N, one line why, and its milestone or none), left proposed (#N, what is missing), closed as
   duplicates (#N of #M), sent to the user (#N, the question).
 EOF
 }
