@@ -92,17 +92,15 @@ GitHub CLI and Claude Code, without Docker, Kind, kubectl or Helm, and with
 `C4_CLUSTER=none` set.
 
 - **It can** build and test the operator (`make check`: envtest runs a local API
-  server, no cluster), change scripts, templates and docs, and run the relay.
-- **It can't** deploy, run Crews, `make e2e`, check anything in Gitea. Its relay stops when no issue is ready;
-  `hack/relay-watch.sh` starts it again when one is.
+  server, no cluster), test against a local Gitea (`make test-gitea`), change
+  scripts, templates and docs, and run the relay.
+- **It can't** deploy, run Crews or `make e2e`. Its relay stops when no issue is
+  ready; `hack/relay-watch.sh` starts it again when one is.
 
-Issues whose work or "Done when" needs the cluster carry the label `needs/cluster`;
-whoever files an issue sets it. With `C4_CLUSTER=none`, `hack/lib/github.sh pick`
-skips them and `take` refuses them. A session that finds mid-way that its issue
-needs the cluster lands what it can (the code pull request, with unit and envtest
-tests), labels the issue `needs/cluster` and hands off with what is left; a device
-with the cluster takes it from there. On that device one checkout at a time works a
-`needs/cluster` issue: the cluster is shared.
+No issue needs the cluster: Go tests are the gate, and a Kind cluster runs only
+when a human asks for it (`C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster
+acquire`; agents never lease one). So a device without it works every ready
+issue.
 
 To set one up:
 

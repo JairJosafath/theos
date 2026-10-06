@@ -9,7 +9,7 @@ stand-in agents that needs no model keys. Issue #344.
 **Why:** The owner wants to move fast and stop paying for clusters. The pool
 of Kind clusters costs memory, lease waits and sessions spent deploying, for
 evidence the lower tiers mostly already give
-([verify-without-cluster.md](done/verify-without-cluster.md) moved most rules
+([verify-without-cluster.md](verify-without-cluster.md) moved most rules
 below Kind). What only a real node would catch is not tested before release:
 if it breaks, customers file an issue. That is the trade the owner chose.
 

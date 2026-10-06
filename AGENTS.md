@@ -66,12 +66,15 @@ worth repeating:
 - **Children name their parent in `spec`;** the operator sets the ownerReference so
   deletion cascades.
 
-### E2E Tests Require an Isolated Kind Cluster
-The e2e tests run against a dedicated Kind cluster of the device's pool
-(`c4factory`, `c4factory-2`, ...; `make cluster`), the one this checkout
-leased with `hack/lib/github.sh cluster acquire`, never against a real dev or
-prod cluster. Run `make e2e` only when the user explicitly asks for it;
-`make check` is the gate for every change.
+### Agents Never Touch a Cluster
+Go tests are the gate: `make check` for every change, `make test-gitea` and
+`make seed-local` for the Gitea code and the seed. A Kind cluster exists only
+when a human asks to run tests in it. Agents never create, lease or deploy to
+one, and never run `make e2e`; `hack/lib/github.sh cluster acquire` refuses
+without `C4_HUMAN_CLUSTER=1`, which only a human sets in their own shell. The
+human runs `make e2e` against a Kind cluster of the device's pool, never a
+real dev or prod cluster. What only a real node would catch is not tested
+before release.
 
 ## After Making Changes
 
@@ -105,19 +108,22 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   unsure which way to go, ask the user with the choice you'd make and why, so
   they can steer.
 - **Test the rules where they live,** at the lowest tier that can see them:
-  1. `internal/model` and `internal/scaffold` table tests (`make test`).
+  1. `internal/model` and `internal/scaffold` table tests, and the Agent
+     Sandbox and pod specs the controllers build, the fence included
+     (`make test`).
   2. `make validate-yaml`: samples, fixtures, kustomize builds and the chart,
      offline, against the CRDs; the valid YAML passes their create-time CEL
      rules.
   3. `make test-gitea` and `make seed-local`: a local Gitea, no Kubernetes.
   4. envtest (`make test`): reconcilers, status, the admission policy, and
-     every CEL rule's failing case, create-time ones included.
-  5. Kind and `make e2e`, only for what needs a real node: Agent Sandbox
-     pods running, node or kubelet behaviour, Gitea Actions runners. The pod
-     spec, the fence and the generated RBAC are checked in tiers 1 and 4.
+     every CEL rule's failing case, create-time ones included, the reaction
+     to faked Sandbox and pod status, and the generated RBAC role against
+     the calls the controllers make.
+  5. Kind and `make e2e`, only when a human asks: the whole loop on stand-in
+     agents. No agent runs it, and nothing waits for it.
 
-  `make check` runs tiers 1, 2 and 4 for every change; `make e2e` covers the
-  whole loop, run when the user asks for it.
+  `make check` runs tiers 1, 2 and 4 for every change. Node and kubelet
+  behaviour and the Gitea Actions runner itself are not tested before release.
 - **Small pull requests to main.** One branch per issue or plan step, the one
   `take` names (`<type>/<N>-<slug>`, from an up-to-date main), pushed after
   every commit; open a pull request to main whose body
@@ -130,9 +136,8 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   every 5 minutes, Claude Code at session start, the relay before each session;
   run it yourself before you branch or pick an issue.
 - **Show, don't claim.** When a plan is done, save evidence in
-  `docs/screenshots/`. Test output is the evidence for logic; Kind evidence
-  (`kubectl get` output, UI or Gitea screenshots of the running factory) is
-  needed only for behaviour that needs a real node.
+  `docs/screenshots/`. Test output is the evidence; no plan asks an agent for
+  Kind evidence (`kubectl get` output, screenshots of a running factory).
 - **Report honestly.** If a check fails or a step is skipped, say so in the commit or
   PR with the output.
 
@@ -143,11 +148,9 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 
 - **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
   piece of work, labeled `status/*`, `priority/urgent`, `kind/*`;
-  `hack/lib/github.sh` reads and writes them. Issues that need a real
-  Kubernetes node (Agent Sandbox pods running, node or kubelet behaviour,
-  Gitea Actions runners) carry `needs/cluster`; Gitea work, YAML,
-  templates and controller logic don't. A device without a cluster sets
-  `C4_CLUSTER=none` (`./dev setup --lite`) and skips them.
+  `hack/lib/github.sh` reads and writes them. No issue needs a cluster:
+  every one is verified by Go tests, so a device without Kind
+  (`./dev setup --lite`, `C4_CLUSTER=none`) works every ready issue.
 - **Every issue carries `source/dev`** (developing the factory) or `source/user`
   with `user/<name>` (reported from a device running the Helm release).
 - **Issues are the relay's.** Relay agents pick up every ready issue. A session
@@ -193,7 +196,7 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   row without a handoff or a commit goes to `status/needs-maintainer`. A session
   whose transcript stops changing for 45 minutes (`RELAY_IDLE`) is ended and
   counts as one of those.
-- **On the cluster device, memory is the limit.** A session at rest is cheap;
+- **On a device running many sessions, memory is the limit.** A session at rest is cheap;
   heavy jobs (`make check`, `test`, `lint`, `docker-build`, `deploy`, `e2e`) are
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
   that waits for one prints who holds them, and that wait is not a hang;

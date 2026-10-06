@@ -29,7 +29,7 @@ skills and the governance files doesn't.
 
 | Milestone | Outcome | Target |
 | --- | --- | --- |
-| [Briefs: an idea in plain words](https://github.com/JairJosafath/c4factory/milestone/1) | the *Done when* of [docs/plans/done/brief.md](docs/plans/done/brief.md), on Kind, with the published chart | 2026-10-09 |
+| [Briefs: an idea in plain words](https://github.com/JairJosafath/c4factory/milestone/1) | the *Done when* of [docs/plans/done/brief.md](docs/plans/done/brief.md), with the published chart | 2026-10-09 |
 | [Upgrades and release hygiene](https://github.com/JairJosafath/c4factory/milestone/2) | a device upgrades without losing work, and every release says what changed | 2026-10-14 |
 | [1.0: a stable API](https://github.com/JairJosafath/c4factory/milestone/3) | the criteria below hold | when they hold |
 
