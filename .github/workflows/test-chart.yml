@@ -89,7 +89,13 @@ jobs:
       - name: Install Agent Sandbox
         run: |
           kubectl apply -f "$AGENT_SANDBOX"
-          kubectl wait --for=condition=Established crd --all --timeout=60s
+          # A CRD applied a moment ago may have no status.conditions yet, and
+          # wait fails on it at once instead of waiting; try again until it has.
+          for i in $(seq 30); do
+            kubectl wait --for=condition=Established crd --all --timeout=60s && break
+            [ "$i" -lt 30 ] || exit 1
+            sleep 2
+          done
 
       - name: Install the chart
         run: |
