@@ -41,8 +41,9 @@
 # it decides, corrects, answers and keeps the pinned Maintainer report
 # (hack/lib/github.sh report). When it ends it writes .relay/maintained,
 # `<epoch> <activity>` (hack/lib/github.sh activity, read after the sweep so
-# its own comments don't count as new activity); a sweep that never ran
-# leaves only the time, so the watch tries again after WATCH_MAINTAIN.
+# its own comments don't count as new activity); a sweep that didn't run to
+# its end (no headroom, a limit, a crash, a timeout) leaves it as it was, and
+# the watch tries again after WATCH_RETRY.
 #
 # Issues that need the Kind cluster carry needs/cluster. On a device without
 # one, C4_CLUSTER=none (./dev setup --lite sets it): the workers skip those
@@ -813,18 +814,18 @@ triage() {
   session triage "$DIR/triage-$K-$(date +%Y%m%d-%H%M%S)" "$id" "$(triage_prompt "$list")"
 }
 
-# maintained [ACTIVITY]: tell the watch when the last sweep ended and the
-# activity it saw; without ACTIVITY (the sweep never ran, or GitHub can't say),
-# only the time, so the watch starts one again after WATCH_MAINTAIN.
-maintained() { [ -n "$DRY_RUN" ] || echo "$(date +%s)${1:+ $1}" >"$DIR/maintained"; }
+# maintained ACTIVITY: tell the watch, and the next sweep's prompt, that a
+# sweep ended now and saw ACTIVITY. A sweep that didn't run to its end leaves
+# the file as it is, so the next one still looks back to the last full sweep.
+maintained() { [ -n "$DRY_RUN" ] || echo "$(date +%s) $1" >"$DIR/maintained"; }
 
 # maintain: one maintainer session (see the header).
 maintain() {
-  local id last t act rc
+  local id last t act rc out
   if [ -z "$DRY_RUN" ]; then
-    worktree || { log "could not prepare the worktree $WT; no sweep"; maintained; return 1; }
+    worktree || { log "could not prepare the worktree $WT; no sweep"; return 1; }
   fi
-  admit || { log "no sweep"; maintained; return 1; }
+  admit || { log "no sweep"; return 1; }
   last=never t=
   [ -r "$DIR/maintained" ] && read -r t _ <"$DIR/maintained"
   [[ $t =~ ^[0-9]+$ ]] && last=$(date -d "@$t" -Is)
@@ -837,12 +838,18 @@ maintain() {
     return 0
   fi
   git -C "$WT" switch -q --detach origin/main 2>>"$LOG" ||
-    { log "could not switch $WT to origin/main; no sweep"; maintained; return 1; }
+    { log "could not switch $WT to origin/main; no sweep"; return 1; }
   log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD)"
-  session maintainer "$DIR/maintain-$(date +%Y%m%d-%H%M%S)" "$id" "$(maintain_prompt "$last")"
+  out="$DIR/maintain-$(date +%Y%m%d-%H%M%S)"
+  session maintainer "$out" "$id" "$(maintain_prompt "$last")"
   rc=$?
-  # After a limit, the sweep was cut short: only the time, so it runs again.
-  if [ "$rc" = 0 ] && act=$(gh_activity 2>>"$LOG"); then maintained "$act"; else maintained; fi
+  # A limit, a crash, a timeout or an idle kill cut the sweep short: not recorded.
+  if [ "$rc" != 0 ] || [ "$S_RC" != 0 ] || [ -n "$S_IDLE" ] || [ ! -s "$out.md" ]; then
+    log "the sweep didn't run to its end; not recorded, so the watch starts one again"
+    return 1
+  fi
+  act=$(gh_activity 2>>"$LOG") || { log "could not read the activity after the sweep; not recorded"; return 1; }
+  maintained "$act"
 }
 
 # work: the worker's sessions, one after another (see the header).

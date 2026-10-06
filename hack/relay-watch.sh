@@ -44,8 +44,8 @@
 # keeps the pinned Maintainer report: when none runs (.relay/maintain.lock),
 # the last sweep (.relay/maintained) is WATCH_MAINTAIN seconds old (default
 # 7200, 2h; 0 turns it off), and hack/lib/github.sh activity differs from the
-# one that sweep recorded, so quiet nights cost nothing. A start that doesn't
-# take is tried again after WATCH_RETRY.
+# one that sweep recorded, so quiet nights cost nothing. It asks at most every
+# WATCH_RETRY, and a sweep that doesn't run to its end is tried again then.
 #
 # While the relay is paused for a usage limit or a failed login
 # (.relay/paused-until, which hack/relay.sh writes), the watch starts nothing,
@@ -263,8 +263,8 @@ triage() {
 # is MAINTAIN_EVERY seconds old and the activity changed since (see the
 # header). .relay/maintained holds the last sweep's end and the activity it
 # saw; hack/relay.sh --maintain writes it, so the sweep's prompt reads when the
-# last one ran. MAINT_T keeps a start that didn't take from repeating before
-# RETRY.
+# last one ran. MAINT_T keeps the watch from asking for the activity, or
+# repeating a start that didn't take, more often than every RETRY.
 MAINT_T=0 MAINT_ERR=
 maintain() {
   local now=$1 t= seen= act out rc
@@ -280,8 +280,9 @@ maintain() {
     return 0
   fi
   MAINT_ERR=
-  [ "$act" != "$seen" ] || return 0
+  # Asked at most every RETRY, on a quiet night too.
   MAINT_T=$now
+  [ "$act" != "$seen" ] || return 0
   out=$(run_maintain 2>&1 8>&-)
   rc=$?
   log "maintainer: $([ "$t" = 0 ] && echo "no sweep recorded" || echo "activity since the sweep of $(date -d "@$t" -Is)") ($act); hack/relay.sh --maintain${out:+: ${out//$'\n'/; }}$([ "$rc" = 0 ] || echo " (failed, exit $rc; again after $((RETRY / 60))m)")"

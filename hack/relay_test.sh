@@ -207,6 +207,7 @@ case $(cat "$FAKE") in
   quiet) sleep 4; echo '{"is_error":false,"result":"quiet","num_turns":1}' ;;
   limit) echo '{"is_error":true,"result":"You'"'"'ve hit your session limit · resets 3am (UTC)","num_turns":1}'; exit 1 ;;
   login) echo 'Not logged in · Please run /login' >&2; exit 1 ;;
+  crash) echo "crashed" >&2; exit 1 ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
   handoff) echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"handed off","num_turns":9}' ;;
   commit) git -c user.name=t -c user.email=t@t commit -q --allow-empty -m more; echo '{"is_error":false,"result":"committed","num_turns":9}' ;;
@@ -365,7 +366,8 @@ grep -q "waiting: a session started" "$LOG"; check "taken while waiting: waited"
 check "taken while waiting: stopped" "$(grep -c "no issue ready; stopping" "$LOG")" 1
 
 # A maintainer sweep, with claude faked, on origin/main: it records the
-# activity after it; one cut short by a limit records only the time.
+# activity after it; one cut short by a limit or a crash records nothing, so
+# the next one still looks back to the last full sweep.
 git -C "$WT" update-ref refs/remotes/origin/main HEAD
 gh_activity() { echo "2026-10-06T08:00:00Z abc123"; }
 rm -f "$DIR/paused-until" "$DIR/maintained"
@@ -375,9 +377,14 @@ ADMIT_GAP=0 maintain
 check "maintain: records the activity" "$(cut -d' ' -f2- "$DIR/maintained")" "2026-10-06T08:00:00Z abc123"
 check "maintain: start logged" "$(grep -c 'maintainer start: id .*, last sweep never' "$LOG")" 1
 check "maintain: on origin/main" "$(git -C "$WT" rev-parse --abbrev-ref HEAD)" HEAD
+echo "86400 t0 sha0" >"$DIR/maintained"
 echo limit >"$FAKE"
 ADMIT_GAP=0 maintain
-check "maintain: a limit records only the time" "$(awk '{print NF}' "$DIR/maintained")" 1
+check "maintain: a limit records nothing" "$(cat "$DIR/maintained")" "86400 t0 sha0"
 rm -f "$DIR/paused-until"
+echo crash >"$FAKE"
+ADMIT_GAP=0 maintain
+check "maintain: a crash records nothing" "$(cat "$DIR/maintained")" "86400 t0 sha0"
+check "maintain: says so" "$(grep -c "the sweep didn't run to its end" "$LOG")" 2
 
 exit $fail

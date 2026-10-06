@@ -336,12 +336,17 @@ MAINT_T=0
 echo "$((now - 7200)) t1 sha1" >"$DIR/maintained"
 round
 check "maintain: due, unchanged: no sweep" "$(maintains)" 1
+# Quiet: the activity is asked at most every WATCH_RETRY.
 ACT='t2 sha1'
+round
+check "maintain: quiet: not asked again before WATCH_RETRY" "$(maintains)" 1
+MAINT_T=0
 echo "$((now - 3600)) t1 sha1" >"$DIR/maintained"
 round
 check "maintain: changed, not due: no sweep" "$(maintains)" 1
 echo "$((now - 7200)) t1 sha1" >"$DIR/maintained"
 exec 5>"$DIR/maintain.lock"; flock 5
+MAINT_T=0
 round
 check "maintain: already running: no sweep" "$(maintains)" 1
 exec 5>&-
@@ -353,6 +358,7 @@ MAINTAIN_EVERY=0 round
 check "maintain: off: no sweep" "$(maintains)" 1
 # Every worker busy: the maintainer starts all the same.
 exec 5>"$DIR/lock-1" 6>"$DIR/lock-2"; flock 5; flock 6
+MAINT_T=0
 round
 check "maintain: due and changed, workers busy: starts" "$(maintains)" 2
 check "maintain: names the last sweep" "$(logged "maintainer: activity since the sweep of $(date -d "@$((now - 7200))" -Is) (t2 sha1)")" 1
