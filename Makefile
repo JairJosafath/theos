@@ -67,9 +67,15 @@ vet: ## Run go vet against code.
 # Heavy goals queue device-wide for one of HEAVY_JOBS slots (default 2), shared
 # by every checkout, before anything builds (hack/heavy-slot.sh). The slot is
 # held while this make runs; its sub-makes don't take another.
+# A plain `make check` on a tree that already passed on this device, in any
+# checkout, is answered from the cache (hack/check-cache.sh) without a slot;
+# FORCE=1 runs it anyway.
+ifeq ($(MAKECMDGOALS)$(C4_HEAVY_SLOT),check)
+CHECK_CACHED := $(shell hack/check-cache.sh lookup)
+endif
 HEAVY_GOALS = check test lint lint-fix docker-build deploy e2e test-e2e
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
-ifeq ($(C4_HEAVY_SLOT),)
+ifeq ($(C4_HEAVY_SLOT)$(CHECK_CACHED),)
 $(shell hack/heavy-slot.sh acquire $$PPID "make $(MAKECMDGOALS)" >&2)
 export C4_HEAVY_SLOT := 1
 endif
@@ -77,7 +83,7 @@ endif
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # The e2e tests run against the dedicated Kind cluster $(KIND_CLUSTER), never
 # another one. make e2e builds everything it needs first; it's safe to repeat.
@@ -94,10 +100,18 @@ e2e: cluster metrics-server gitea seed deploy session-image sample toolchain-bas
 .PHONY: test-e2e
 test-e2e: e2e ## Same as e2e.
 
+# A pass is recorded under the tree as the check left it, after manifests,
+# generate and fmt, so a tree with stale generated files never hits the cache.
 .PHONY: check
+ifeq ($(CHECK_CACHED),)
 check: manifests generate fmt vet lint test ## Everything to run before finishing a change: generate, format, vet, lint and test.
 	@git diff --quiet -- config/crd config/rbac api || \
 		{ echo "Generated files changed; commit them with your change:"; git diff --stat -- config/crd config/rbac api; }
+	@hack/check-cache.sh record
+else
+check:
+	@echo "$(CHECK_CACHED)"
+endif
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -196,18 +210,14 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 
 ##@ Dependencies
 
-## Location to install dependencies to
-LOCALBIN ?= $(shell pwd)/bin
+## Location to install dependencies to: once per device, in the .dev/ of the
+## main checkout that every worktree shares (./dev), under versioned names so
+## branches pinning different versions coexist. Outside git, this checkout's .dev/.
+GIT_COMMON_DIR := $(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+TOOLS_ROOT := $(or $(patsubst %/.git,%,$(filter %/.git,$(GIT_COMMON_DIR))),$(CURDIR))
+LOCALBIN ?= $(TOOLS_ROOT)/.dev/make/bin
 $(LOCALBIN):
 	mkdir -p "$(LOCALBIN)"
-
-## Tool Binaries
-KUBECTL ?= kubectl
-KIND ?= kind
-KUSTOMIZE ?= $(LOCALBIN)/kustomize
-CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
-ENVTEST ?= $(LOCALBIN)/setup-envtest
-GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
@@ -224,53 +234,76 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.13.1
+
+## Tool Binaries
+KUBECTL ?= kubectl
+KIND ?= kind
+KUSTOMIZE ?= $(LOCALBIN)/kustomize-$(KUSTOMIZE_VERSION)
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen-$(CONTROLLER_TOOLS_VERSION)
+ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)
+GOLANGCI_LINT_BASE = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
+# The plugins in .custom-gcl.yml are built into the binary, so its name carries
+# a checksum of that file.
+GOLANGCI_LINT_PLUGINS := $(shell [ -f .custom-gcl.yml ] && cksum < .custom-gcl.yml | cut -d' ' -f1)
+GOLANGCI_LINT = $(GOLANGCI_LINT_BASE)$(if $(GOLANGCI_LINT_PLUGINS),-custom-$(GOLANGCI_LINT_PLUGINS))
+
+# setup-envtest under a lock, so worktrees don't download the same Kubernetes
+# binaries into the shared $(LOCALBIN)/k8s at once.
+ENVTEST_LOCKED = $(if $(shell command -v flock),flock "$(LOCALBIN)/k8s.lock") "$(ENVTEST)"
+
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
-$(KUSTOMIZE): $(LOCALBIN)
-	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5,$(KUSTOMIZE_VERSION))
+$(KUSTOMIZE):
+	$(call go-install-tool,$@,sigs.k8s.io/kustomize/kustomize/v5,$(KUSTOMIZE_VERSION))
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
-$(CONTROLLER_GEN): $(LOCALBIN)
-	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
+$(CONTROLLER_GEN):
+	$(call go-install-tool,$@,sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
 .PHONY: setup-envtest
-setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
+setup-envtest: envtest | $(LOCALBIN) ## Download the binaries required for ENVTEST in the local bin directory.
 	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
-	@"$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path || { \
+	@$(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path || { \
 		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
 		exit 1; \
 	}
 
+# A phony target, not a file rule: its versioned name would run go list on
+# every make, not only when envtest is needed.
 .PHONY: envtest
-envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
-$(ENVTEST): $(LOCALBIN)
+envtest: ## Download setup-envtest locally if necessary.
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
-$(GOLANGCI_LINT): $(LOCALBIN)
-	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
-	@test -f .custom-gcl.yml && { \
-		echo "Building custom golangci-lint with plugins..." && \
-		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
-		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \
-	} || true
+$(GOLANGCI_LINT_BASE):
+	$(call go-install-tool,$@,github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+ifneq ($(GOLANGCI_LINT_PLUGINS),)
+$(GOLANGCI_LINT): | $(GOLANGCI_LINT_BASE)
+	$(call install-tool,$@,echo "Building custom golangci-lint with plugins..."; \
+		"$(GOLANGCI_LINT_BASE)" custom --destination "$$tmp" --name golangci-lint)
+endif
+
+# install-tool makes the binary $(1) unless it exists: the shell commands $(2)
+# write it alone into the directory $$tmp, and it moves under its final name
+# only when complete. Worktrees share $(LOCALBIN), so a lock per tool keeps two
+# makes from building the same one at once.
+define install-tool
+@set -e; [ ! -x "$(1)" ] || exit 0; mkdir -p "$(LOCALBIN)"; \
+if command -v flock >/dev/null 2>&1; then exec 9>"$(1).lock"; flock 9; fi; \
+[ ! -x "$(1)" ] || exit 0; \
+tmp="$$(mktemp -d "$(1).tmp.XXXXXX")"; trap 'rm -rf "$$tmp"' EXIT; \
+$(2); \
+mv "$$tmp"/* "$(1)"
+endef
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
-# $1 - target path with name of binary
+# $1 - target path with name of binary, versioned
 # $2 - package url which can be installed
 # $3 - specific version of package
 define go-install-tool
-@[ -f "$(1)-$(3)" ] && [ "$$(readlink -- "$(1)" 2>/dev/null)" = "$(1)-$(3)" ] || { \
-set -e; \
-package=$(2)@$(3) ;\
-echo "Downloading $${package}" ;\
-rm -f "$(1)" ;\
-GOBIN="$(LOCALBIN)" go install $${package} ;\
-mv "$(LOCALBIN)/$$(basename "$(1)")" "$(1)-$(3)" ;\
-} ;\
-ln -sf "$$(realpath "$(1)-$(3)")" "$(1)"
+$(call install-tool,$(1),echo "Downloading $(2)@$(3)"; GOBIN="$$tmp" go install "$(2)@$(3)")
 endef
 
 define gomodver
@@ -306,14 +339,28 @@ gh-runner-status: ## Show the GitHub Actions runner's container and its status o
 chart: ## Regenerate the Helm chart in dist/chart from the kustomize output.
 	kubebuilder edit --plugins=helm.kubebuilder.io/v2-alpha
 
+## Every option of the chart on, for the check that it renders no Secret.
+HELM_ALL_ON ?= gitea.projects={apps},gitea.admin.existingSecret=gitea-admin,global.imagePullSecrets[0].name=ghcr,manager.imagePullSecrets[0].name=ghcr,gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].existingSecret=git-credentials,rbac.helpers.enabled=true,certManager.enabled=true,webhook.enabled=true,prometheus.enabled=true,networkPolicy.enabled=true
+## Secrets the chart may render: none; a pod makes each in the cluster.
+HELM_SECRETS_ALLOWED ?=
+
 .PHONY: helm-lint
-helm-lint: ## Lint the Helm chart and render it with a GitProvider value, and with Gitea.
+helm-lint: ## Lint the Helm chart, render it without Gitea and with it, and fail if it renders a Secret, with every option on or with Gitea's defaults.
+	$(HELM) lint $(HELM_CHART_DIR) --set gitea.enabled=false
+	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
+		--set 'gitea.enabled=false,gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].existingSecret=git-credentials' >/dev/null
 	$(HELM) lint $(HELM_CHART_DIR)
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
-		--set 'gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].token=t' >/dev/null
-	$(HELM) lint $(HELM_CHART_DIR) --set gitea.enabled=true
-	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
-		--set 'gitea.enabled=true,gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >/dev/null
+		--set 'gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >/dev/null
+	@set -o pipefail; for set in '$(HELM_ALL_ON)' 'gitea.projects={apps}'; do \
+	out=$$($(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) --set "$$set") || exit 1; \
+	secrets=$$(echo "$$out" | awk '/^---/ { s = 0; n = ""; ns = "" } /^kind: Secret$$/ { s = 1 } \
+		/^  name: / && n == "" { n = $$2 } /^  namespace: / && ns == "" { ns = $$2 } \
+		s && n != "" && ns != "" { print ns "/" n; s = 0 }' | grep -vxF -e '$(HELM_SECRETS_ALLOWED)' || true); \
+	if [ -n "$$secrets" ]; then \
+		echo "helm template --set $$set renders a Secret; make it in the cluster instead (the secrets skill):"; \
+		echo "$$secrets"; exit 1; fi; \
+	done
 
 ## Helm binary to use for deploying the chart
 HELM ?= helm

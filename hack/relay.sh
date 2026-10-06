@@ -21,9 +21,11 @@
 # their follow-ups as. Its worker switches its worktree to origin/main and runs
 # one session that takes no issue and changes no code: it readies each sound
 # proposed issue (clear, says when it is done, no duplicate, names what it
-# waits on with Depends on #M), comments on the others what they lack, closes
-# duplicates, and ends with an account of what it readied, left and closed.
-# status/needs-human stays the user's.
+# waits on with Depends on #M), fills a gap it can write itself (a Depends on
+# #M line, the needs/cluster label) and readies the issue, comments on the
+# others what they lack, sends one that waits only on a user's decision to
+# status/needs-human with the question, closes duplicates, and ends with an
+# account of what it did. It never takes an issue out of status/needs-human.
 #
 # Issues that need the Kind cluster carry needs/cluster. On a device without
 # one, C4_CLUSTER=none (./dev setup --lite sets it): the workers skip those
@@ -40,7 +42,7 @@
 # changes from a branch.
 #
 #   hack/relay.sh                  start one worker
-#   hack/relay.sh --workers N      start N workers (1-9); workers already running are left alone
+#   hack/relay.sh --workers N      start N workers (1-99); workers already running are left alone
 #   hack/relay.sh --triage [--workers N]
 #                                  start one triage session in the first of workers 1-N that isn't running
 #
@@ -51,6 +53,14 @@
 # session start is RELAY_ADMIT_GAP seconds old (default 120), and stops after
 # waiting RELAY_MEM_WAIT seconds (default 3600). Heavy jobs (make check, test,
 # lint, deploy, ...) queue device-wide for HEAVY_JOBS slots (hack/heavy-slot.sh).
+# A session that ends on a usage limit or a failed login pauses the device: it
+# writes .relay/paused-until (the reset time the message gives, else now plus
+# RELAY_LIMIT_WAIT, default 30m), and until then every worker waits in admit
+# without picking or claiming, and the watch starts nothing. A session that
+# ends without a handoff and without a new commit on the issue's branch counts
+# as failed, in .relay/fails-<N>; at RELAY_MAX_FAILS (default 3) in a row the
+# relay sets the issue to status/needs-human with a comment naming each one. A
+# handoff or a new commit resets the count; a paused session doesn't count.
 #   RELAY_DRY_RUN=1 hack/relay.sh  print the issue and prompt the next session would get; change nothing
 #   touch .relay/stop              stop every worker after its current session
 #
@@ -79,13 +89,15 @@ while [ $# -gt 0 ]; do
     *) echo "usage: hack/relay.sh [--triage] [--workers N]" >&2; exit 64 ;;
   esac
 done
-[[ $WORKERS =~ ^[1-9]$ ]] || { echo "relay: --workers takes 1 to 9" >&2; exit 64; }
+[[ $WORKERS =~ ^[1-9][0-9]?$ ]] || { echo "relay: --workers takes 1 to 99" >&2; exit 64; }
 MAX_WORKERS=${RELAY_MAX_WORKERS:-9}
 MIN_MEM_GIB=${RELAY_MIN_MEM_GIB:-2}
 ADMIT_GAP=${RELAY_ADMIT_GAP:-120}  # seconds between session starts across workers
 MEM_WAIT=${RELAY_MEM_WAIT:-3600}   # seconds a worker waits for headroom before it stops
 MEM_POLL=${RELAY_MEM_POLL:-60}
 MEMINFO=${RELAY_MEMINFO:-/proc/meminfo}
+LIMIT_WAIT=${RELAY_LIMIT_WAIT:-30m} # the pause after a limit whose message names no reset time
+MAX_FAILS=${RELAY_MAX_FAILS:-3}     # failed sessions in a row before an issue goes to the user
 
 K=${C4_RELAY_WORKER:-1}
 WT="$REPO/.claude/worktrees/relay-$K"
@@ -194,18 +206,28 @@ Start with \`hack/lib/github.sh proposed\` (the list now; triage those) and
 list the open issues to compare against: \`gh issue list --repo $C4_GITHUB_REPO
 --state open --limit 200 --json number,title,labels\` (gh has the token).
 
-For each proposed issue, decide one of three:
+For each proposed issue, decide one of four:
 - Ready it, \`hack/lib/github.sh status N ready\`, when it is clear (one piece
   of work, its goal fits docs/design.md or says which part of the design it
   changes), says when it is done (a checkable "Done when"), isn't a duplicate
   of an open issue, and names what it waits on with a "Depends on #M" line in
   its body, or waits on nothing.
+- Fill the gap and ready it, when the only thing missing is something you
+  can write yourself: a "Depends on #M" line it lacks (add it to the body with
+  \`gh issue edit N --repo $C4_GITHUB_REPO --body-file FILE\`, keeping the
+  rest of the body as it is), or the needs/cluster label its "Done when" needs
+  (\`hack/lib/github.sh label N needs/cluster\`). Then ready it and say what
+  you wrote in a comment (first line \`<!-- relay-triage -->\`).
 - Leave it proposed, with a comment (\`hack/lib/github.sh comment N FILE\`,
   its first line \`<!-- relay-triage -->\`) saying what is missing, when it
-  falls short of that, or when it needs a decision only the user can make (a
-  design choice the design doesn't settle, money, credentials, access). When
-  its newest triage comment still says what is missing and nothing changed
-  since, leave it without a new comment.
+  falls short of that in a way you can't fill, or when it waits on something
+  that can still move it (an open issue: name it as #M, so the watch reads it
+  again when #M closes). When its newest triage comment still says what is
+  missing and nothing changed since, leave it without a new comment.
+- When it needs a decision only the user can make (a tag, access,
+  credentials, money, a design choice the design doesn't settle) and nothing
+  else can move it, \`hack/lib/github.sh status N needs-human\` with a
+  comment (first line \`<!-- relay-triage -->\`) asking the question.
 - Close it as a duplicate, \`hack/lib/github.sh duplicate N M\`, when open
   issue #M covers the same work.
 
@@ -213,14 +235,15 @@ Rules for this headless run:
 - Never use the Fable model: not for subagents, not for anything. Always name
   the model when dispatching (sonnet or opus). Dispatch every subagent with
   run_in_background: false and never end your turn while one is running.
-- Touch only the issues listed as proposed: never set status/in-progress or
-  status/needs-human (needs-human stays the user's), never take an issue,
-  never edit an issue's body or title, and file no new issues.
+- Touch only the issues listed as proposed: never set status/in-progress,
+  never take an issue out of status/needs-human
+  (needs-human stays the user's), never take an issue, edit a body only to
+  add a "Depends on #M" line, never a title, and file no new issues.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   your account.
 - End your turn with a short account, the relay's log of this triage: readied
   (#N, one line why), left proposed (#N, what is missing), closed as
-  duplicates (#N of #M).
+  duplicates (#N of #M), sent to the user (#N, the question).
 EOF
 }
 
@@ -344,9 +367,9 @@ outcome() {
 
 # running_workers: how many workers hold their lock now.
 running_workers() {
-  local k n=0
-  for k in 1 2 3 4 5 6 7 8 9; do
-    [ -e "$DIR/lock-$k" ] && ! flock -n "$DIR/lock-$k" true && n=$((n + 1))
+  local f n=0
+  for f in "$DIR"/lock-*; do
+    [ -e "$f" ] && ! flock -n "$f" true && n=$((n + 1))
   done
   echo "$n"
 }
@@ -373,15 +396,81 @@ mem_gib() {
   awk '/^MemAvailable:/ { print int($2 / 1048576); found = 1 } END { exit !found }' "$MEMINFO"
 }
 
-# admit: wait until the device has headroom for one more session: MemAvailable
-# at least RELAY_MIN_MEM_GIB, and the last session start across workers at
-# least RELAY_ADMIT_GAP seconds ago, so one session's build shows in memory
-# before the next starts. Polls every RELAY_MEM_POLL seconds; exit 1 when the
-# stop file appears or the wait passes RELAY_MEM_WAIT.
+# paused: print the time .relay/paused-until holds and why, and exit 0, while
+# the device is paused for a limit.
+paused() {
+  local until why
+  [ -r "$DIR/paused-until" ] && read -r until why <"$DIR/paused-until" || return 1
+  [[ $until =~ ^[0-9]+$ ]] && [ "$until" -gt "$(date +%s)" ] || return 1
+  echo "$until $why"
+}
+
+# limit_message OUT: the line that says session OUT ended on a usage limit or a
+# failed login, from its error result, else (no result) the tail of OUT.err.
+limit_message() {
+  local out=$1
+  {
+    if jq -e 'has("result")' "$out.json" >/dev/null 2>&1; then
+      jq -r 'select(.is_error == true) | .result // empty' "$out.json"
+    else
+      tail -n 20 "$out.err" 2>/dev/null
+    fi
+  } | grep -m1 -iE "you've hit your|you've reached your|you're out of usage|out of usage credits|usage limit reached|not logged in|please run /login|invalid api key|oauth token (has )?(expired|revoked)|authentication_error|credit balance (is )?too low"
+}
+
+# reset_time MESSAGE: the epoch second a limit MESSAGE says it resets at
+# ("resets 3am (Europe/Amsterdam)", "resets Oct 7, 3:30pm", "...|1759712400"),
+# else now plus RELAY_LIMIT_WAIT.
+reset_time() {
+  local msg=$1 now when tz t epoch='\|([0-9]{9,})$' resets='resets (at )?([^·(]*[0-9][^·(]*)(\(([^)]+)\))?'
+  now=$(date +%s)
+  if [[ $msg =~ $epoch ]] && [ "${BASH_REMATCH[1]}" -gt "$now" ]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  if [[ $msg =~ $resets ]]; then
+    when=${BASH_REMATCH[2]//,/}
+    tz=${BASH_REMATCH[4]:-}
+    if t=$(if [ -n "$tz" ]; then TZ=$tz date -d "$when" +%s; else date -d "$when" +%s; fi 2>/dev/null); then
+      # A time of day alone that has passed today means tomorrow.
+      [ "$t" -le "$now" ] && t=$((t + 86400))
+      echo "$t"
+      return 0
+    fi
+  fi
+  echo $((now + $(gh_seconds "$LIMIT_WAIT" RELAY_LIMIT_WAIT || echo 1800)))
+}
+
+# pause MESSAGE: pause the device until MESSAGE's reset time; a later pause
+# another worker wrote stands.
+pause() {
+  local t old
+  t=$(reset_time "$1")
+  old=$(paused) && [ "${old%% *}" -ge "$t" ] && return 0
+  echo "$t ${1//$'\n'/ }" >"$DIR/paused-until"
+  log "paused the relay until $(date -d "@$t" -Is): $1"
+}
+
+# admit: wait until the device has headroom for one more session: no pause for
+# a limit (.relay/paused-until), MemAvailable at least RELAY_MIN_MEM_GIB, and
+# the last session start across workers at least RELAY_ADMIT_GAP seconds ago,
+# so one session's build shows in memory before the next starts. Polls every
+# RELAY_MEM_POLL seconds; exit 1 when the stop file appears or the wait for
+# memory passes RELAY_MEM_WAIT (a pause doesn't count).
 admit() {
-  local t0 mem last now waited=
+  local t0 mem last now waited= p said=
   t0=$(date +%s)
   while :; do
+    if p=$(paused); then
+      [ "$said" = "$p" ] || log "paused until $(date -d "@${p%% *}" -Is) (${p#* }); picking nothing"
+      said=$p
+      [ -n "$DRY_RUN" ] && return 1
+      [ -e "$STOP" ] && { log "stop file found while paused"; return 1; }
+      sleep "$MEM_POLL"
+      t0=$(date +%s)
+      continue
+    fi
+    [ -n "$said" ] && { log "the pause is over"; said=; }
     mem=$(mem_gib) || { log "could not read MemAvailable from $MEMINFO; starting anyway"; return 0; }
     now=$(date +%s)
     exec 8>"$DIR/admit.lock"
@@ -413,7 +502,7 @@ admit() {
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins
+  local what=$1 out=$2 id=$3 rc t0 mins msg
   t0=$(date +%s)
   (cd "$WT" && C4_HEADLESS=1 timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err"
@@ -427,8 +516,57 @@ session() {
   fi
   [ "$rc" = 124 ] && log "$what hit the $SESSION_TIMEOUT timeout"
   [ "$rc" = 143 ] && log "$what was killed (SIGTERM)"
+  S_RC=$rc S_MINS=$mins
+  if msg=$(limit_message "$out"); then
+    pause "$msg"
+    return 3
+  fi
   return 0
 }
+
+# failed N ID OUT: count session ID (output OUT, with S_RC and S_MINS) as one
+# more failed session in a row on issue N, in .relay/fails-N; at
+# RELAY_MAX_FAILS, set N to status/needs-human with a comment naming them.
+failed() {
+  local n=$1 f="$DIR/fails-$1" count body url
+  printf '%s\t%s\t%s\t%s\n' "$2" "$S_RC" "$S_MINS" "$3" >>"$f"
+  count=$(wc -l <"$f")
+  if [ "$count" -lt "$MAX_FAILS" ]; then
+    log "#$n: $count failed session(s) in a row; status/needs-human at $MAX_FAILS (RELAY_MAX_FAILS)"
+    return 0
+  fi
+  body=$(fail_comment "$n" "$f")
+  if url=$(gh_comment "$n" - <<<"$body" 2>>"$LOG") && gh_set_status "$n" needs-human >/dev/null 2>>"$LOG"; then
+    log "#$n failed $count sessions in a row; set it to status/needs-human: $url"
+    rm -f "$f"
+  else
+    log "#$n failed $count sessions in a row, but setting it to status/needs-human failed; trying again after the next"
+  fi
+}
+
+# fail_comment N FILE: the comment that hands issue N to the user, naming each
+# failed session in FILE.
+fail_comment() {
+  local id rc mins out
+  echo "The relay on host \`$(hostname)\` stopped working #$1: $(wc -l <"$2") sessions in a row ended without a handoff and without a new commit on its branch. Each session is below; \`claude --resume <id>\` in the worker's worktree opens it. Fix what stops them, then set the issue back to \`status/ready\`."
+  while IFS=$'\t' read -r id rc mins out; do
+    echo
+    echo "### Session \`$id\`: exit $rc after ${mins}m"
+    echo
+    echo "stderr (\`$out.err\`), last lines:"
+    echo '```'
+    tail -n 10 "$out.err" 2>/dev/null | cut -c1-300
+    echo '```'
+    echo
+    echo "Account (\`$out.md\`), last lines:"
+    echo '```'
+    tail -n 10 "$out.md" 2>/dev/null | cut -c1-300
+    echo '```'
+  done <"$2"
+}
+
+# forget_fails N: a handoff, a commit or a finish ends issue N's failures.
+forget_fails() { rm -f "$DIR/fails-$1"; }
 
 # untriaged: tell the watch the triage session never ran: keep only the time
 # in .relay/triaged, so it starts one again after WATCH_TRIAGE.
@@ -462,6 +600,104 @@ triage() {
     { log "could not switch $WT to origin/main; no triage"; untriaged; return 1; }
   log "triage start: id $id, proposed $list, HEAD $(git -C "$WT" rev-parse --short HEAD)"
   session triage "$DIR/triage-$K-$(date +%Y%m%d-%H%M%S)" "$id" "$(triage_prompt "$list")"
+}
+
+# work: the worker's sessions, one after another (see the header).
+work() {
+  local i id rc try claim name branch before head out limited result reason released
+  for i in $(seq 1 "$MAX_SESSIONS"); do
+    [ -e "$STOP" ] && { log "stop file found; stopping"; break; }
+    if [ -z "$DRY_RUN" ]; then
+      update $((MAX_SESSIONS - i + 1))
+      worktree || { log "could not prepare the worktree $WT; stopping"; break; }
+      [ "$i" = 1 ] && drop_lease "when worker $K restarted"
+      if [ "$i" = 1 ] && gh_claim_read; then
+        log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
+      fi
+    fi
+    flush || { log "GitHub can't be reached; stopping"; break; }
+
+    admit || { log "stopping"; break; }
+    pick
+    rc=$?
+    [ "$rc" = 1 ] && { log "no issue ready; stopping"; break; }
+    [ "$rc" = 0 ] || { log "could not ask GitHub for the next issue; stopping"; break; }
+
+    id=$(cat /proc/sys/kernel/random/uuid)
+    if [ -n "$DRY_RUN" ]; then
+      log "would claim #$ISSUE ($HOW) for session $id: $TITLE, $URL"
+      log "would switch $WT to the issue's branch and start session $i there: claude -p --permission-mode auto --model opus --session-id $id, with this prompt:"
+      echo "-----"
+      prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "<name>" "<branch>"
+      echo "-----"
+      exit 0
+    fi
+
+    for try in 1 2 3 4 5; do
+      claim=$(C4_SESSION_ID=$id gh_take "$ISSUE" 2>>"$LOG")
+      rc=$?
+      [ "$rc" = 4 ] || break
+      log "#$ISSUE is claimed by another agent (try $try); picking again"
+      pick || break
+    done
+    [ "$rc" = 0 ] || { log "could not claim an issue (exit $rc); stopping"; break; }
+    IFS=$'\t' read -r name branch <<<"$claim"
+    if ! switch_branch "$branch"; then
+      log "could not switch $WT to $branch; releasing #$ISSUE and stopping"
+      gh_release "relay could not prepare its worktree" >/dev/null 2>>"$LOG"
+      break
+    fi
+    before=$(handoff_id "$ISSUE") || {
+      log "could not read #$ISSUE's handoffs; stopping"
+      gh_release "relay could not read the issue" >/dev/null 2>>"$LOG"
+      break
+    }
+    head=$(git -C "$WT" rev-parse -q --verify "refs/heads/$branch")
+    log "session $i start: id $id, $name on #$ISSUE ($HOW) $TITLE, branch $branch, HEAD ${head:0:7}"
+    out="$DIR/session-$K-$i-$(date +%Y%m%d-%H%M%S)"
+    session "session $i" "$out" "$id" "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")"
+    limited=$?
+
+    drop_lease "that session $i left behind"
+    flush || { log "GitHub can't be reached; stopping"; break; }
+    result=$(outcome "$ISSUE" "$before") || result=unknown
+    if gh_claim_read; then
+      case $result in
+        closed) reason=finished ;;
+        handed-off) reason="handed off" ;;
+        *) reason="session ended without a handoff$([ "$limited" != 3 ] || echo " (a limit)")" ;;
+      esac
+      if released=$(gh_release "$reason" 2>&1); then
+        log "${released//$'\n'/; }"
+      else
+        log "could not release the claim on #$ISSUE; it expires after $C4_LEASE_TTL: ${released//$'\n'/; }"
+      fi
+    fi
+    case $result in
+      closed | needs-human | handed-off) forget_fails "$ISSUE" ;;
+    esac
+    case $result in
+      closed) log "session $i closed #$ISSUE" ;;
+      needs-human) log "session $i left #$ISSUE waiting for the user (status/needs-human)" ;;
+      handed-off) log "session $i handed off #$ISSUE" ;;
+      unknown) log "could not read #$ISSUE after session $i; stopping"; break ;;
+      *)
+        # A limit pauses the device and isn't the issue's failure: wait it out in admit.
+        if [ "$limited" = 3 ]; then
+          log "session $i hit a limit on #$ISSUE; not counted against it"
+          continue
+        fi
+        if [ "$(git -C "$WT" rev-parse -q --verify "refs/heads/$branch")" != "$head" ]; then
+          forget_fails "$ISSUE"
+          log "session $i left no handoff on #$ISSUE but committed on $branch; stopping (claude --resume $id in $WT to see why)"
+        else
+          log "session $i left no handoff on #$ISSUE and no commit; stopping (claude --resume $id in $WT to see why)"
+          failed "$ISSUE" "$id" "$out"
+        fi
+        break
+        ;;
+    esac
+  done
 }
 
 # Sourced (hack/relay_test.sh): the functions only.
@@ -529,81 +765,5 @@ fi
 # Workers started together would all race for the same first issue.
 [ -n "$DRY_RUN" ] || [ "${C4_RELAY_RESTART:-}" = 1 ] || sleep $(((K - 1) * 20))
 
-for i in $(seq 1 "$MAX_SESSIONS"); do
-  [ -e "$STOP" ] && { log "stop file found; stopping"; break; }
-  if [ -z "$DRY_RUN" ]; then
-    update $((MAX_SESSIONS - i + 1))
-    worktree || { log "could not prepare the worktree $WT; stopping"; break; }
-    [ "$i" = 1 ] && drop_lease "when worker $K restarted"
-    if [ "$i" = 1 ] && gh_claim_read; then
-      log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
-    fi
-  fi
-  flush || { log "GitHub can't be reached; stopping"; break; }
-
-  admit || { log "stopping"; break; }
-  pick
-  rc=$?
-  [ "$rc" = 1 ] && { log "no issue ready; stopping"; break; }
-  [ "$rc" = 0 ] || { log "could not ask GitHub for the next issue; stopping"; break; }
-
-  id=$(cat /proc/sys/kernel/random/uuid)
-  if [ -n "$DRY_RUN" ]; then
-    log "would claim #$ISSUE ($HOW) for session $id: $TITLE, $URL"
-    log "would switch $WT to the issue's branch and start session $i there: claude -p --permission-mode auto --model opus --session-id $id, with this prompt:"
-    echo "-----"
-    prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "<name>" "<branch>"
-    echo "-----"
-    exit 0
-  fi
-
-  for try in 1 2 3 4 5; do
-    claim=$(C4_SESSION_ID=$id gh_take "$ISSUE" 2>>"$LOG")
-    rc=$?
-    [ "$rc" = 4 ] || break
-    log "#$ISSUE is claimed by another agent (try $try); picking again"
-    pick || break
-  done
-  [ "$rc" = 0 ] || { log "could not claim an issue (exit $rc); stopping"; break; }
-  IFS=$'\t' read -r name branch <<<"$claim"
-  if ! switch_branch "$branch"; then
-    log "could not switch $WT to $branch; releasing #$ISSUE and stopping"
-    gh_release "relay could not prepare its worktree" >/dev/null 2>>"$LOG"
-    break
-  fi
-  before=$(handoff_id "$ISSUE") || {
-    log "could not read #$ISSUE's handoffs; stopping"
-    gh_release "relay could not read the issue" >/dev/null 2>>"$LOG"
-    break
-  }
-  log "session $i start: id $id, $name on #$ISSUE ($HOW) $TITLE, branch $branch, HEAD $(git -C "$WT" rev-parse --short HEAD)"
-  session "session $i" "$DIR/session-$K-$i-$(date +%Y%m%d-%H%M%S)" "$id" \
-    "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")"
-
-  drop_lease "that session $i left behind"
-  flush || { log "GitHub can't be reached; stopping"; break; }
-  result=$(outcome "$ISSUE" "$before") || result=unknown
-  if gh_claim_read; then
-    case $result in
-      closed) reason=finished ;;
-      handed-off) reason="handed off" ;;
-      *) reason="session ended without a handoff" ;;
-    esac
-    if released=$(gh_release "$reason" 2>&1); then
-      log "${released//$'\n'/; }"
-    else
-      log "could not release the claim on #$ISSUE; it expires after $C4_LEASE_TTL: ${released//$'\n'/; }"
-    fi
-  fi
-  case $result in
-    closed) log "session $i closed #$ISSUE" ;;
-    needs-human) log "session $i left #$ISSUE waiting for the user (status/needs-human)" ;;
-    handed-off) log "session $i handed off #$ISSUE" ;;
-    unknown) log "could not read #$ISSUE after session $i; stopping"; break ;;
-    *)
-      log "session $i left no handoff on #$ISSUE; stopping (claude --resume $id in $WT to see why)"
-      break
-      ;;
-  esac
-done
+work
 log "worker $K finished"

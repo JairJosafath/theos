@@ -103,17 +103,19 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
+	var info scaffold.CommitInfo
 	if len(commits) > 0 {
-		info, parseErr := scaffold.ParseCommitMessage(commits[0].Message)
-		if len(commits) == 1 && parseErr == nil && info.Container == container.Namespace+"/"+container.Name {
-			// An earlier attempt pushed but didn't get to record it.
-			log.Info("Found initial commit from an earlier attempt", "url", repo.WebURL)
-			if err := protectRepository(gitCtx, r.Client, provider, repo, container); err != nil {
-				return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
-			}
-			return r.ready(ctx, container, status, info.ScaffoldedFrom, info.Relationships,
-				"Found the initial commit from an earlier attempt")
+		info, _ = scaffold.ParseCommitMessage(commits[0].Message) // not ours leaves Container empty
+	}
+	switch model.ScaffoldHistory(len(commits), info.Container, container.Namespace+"/"+container.Name) {
+	case model.HistoryRecover:
+		log.Info("Found initial commit from an earlier attempt", "url", repo.WebURL)
+		if err := protectRepository(gitCtx, r.Client, provider, repo, container); err != nil {
+			return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 		}
+		return r.ready(ctx, container, status, info.ScaffoldedFrom, info.Relationships,
+			"Found the initial commit from an earlier attempt")
+	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonForeignCommits,
 			fmt.Sprintf("Repository %s has commits C4 Factory didn't make; it only scaffolds into a new, empty repository",
 				repo.WebURL))

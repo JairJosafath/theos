@@ -1,0 +1,45 @@
+$ C4_CLUSTER=none make test-gitea   # fresh: no bin/gitea, no .gitea-local/, no kubectl calls
+Downloading Gitea 1.27.3 for linux/amd64
+gitea-local: Wrote .gitea-local/app.ini (port 13547)
+gitea-local: Created admin c4admin and a token; credentials are in .gitea-local/credentials.env
+gitea-local: Gitea 1.27.3 runs at http://127.0.0.1:13547 (pid 1040575)
+23:57:29 seed: Waiting for Gitea at http://127.0.0.1:13547
+23:57:29 seed: Gitea 1.27.3 is up; signed in as c4admin
+23:57:29 seed: Created organization templates
+23:57:29 seed: Created repository templates/python-fastapi
+23:57:31 seed: Pushed template templates/python-fastapi v1.2.1 (commit 434ce2a)
+23:57:31 seed: Created repository templates/small
+23:57:32 seed: Pushed template templates/small v1.0.0 (commit 3642631)
+23:57:33 seed: Created repository templates/k8s-manifests
+23:57:35 seed: Pushed template templates/k8s-manifests v1.1.0 (commit b2b0a1b)
+23:57:36 seed: Created repository templates/postgres
+23:57:37 seed: Pushed template templates/postgres v1.1.0 (commit 977a0c1)
+23:57:38 seed: Created repository templates/go-cli
+23:57:39 seed: Pushed template templates/go-cli v1.0.0 (commit 4bf4872)
+23:57:39 seed: Created repository templates/go-standard
+23:57:40 seed: Pushed template templates/go-standard v1.1.3 (commit a48ee03)
+23:57:40 seed: Created repository templates/vscode-extension
+23:57:41 seed: Pushed template templates/vscode-extension v1.0.0 (commit 12a3a9c)
+23:57:41 seed: Created repository templates/ts-standard
+23:57:42 seed: Pushed template templates/ts-standard v1.1.3 (commit 3519f96)
+23:57:43 seed: Created repository templates/gitea-release
+23:57:44 seed: Pushed template templates/gitea-release v1.0.0 (commit 87e5aae)
+23:57:44 seed: Created repository templates/hello
+23:57:45 seed: Pushed template templates/hello v1.0.0 (commit bc7b8d5)
+23:57:45 seed: Created repository templates/hello-standard
+23:57:46 seed: Pushed template templates/hello-standard v1.0.1 (commit a3b473d)
+23:57:46 seed: Done: organization templates, templates tagged
+gitea-local: Created organization webshop
+=== RUN   TestGiteaIntegration
+=== RUN   TestGiteaIntegration/fetches_a_seeded_template_at_its_tag
+=== RUN   TestGiteaIntegration/creates,_fills_and_reads_a_repository
+--- PASS: TestGiteaIntegration (0.77s)
+    --- PASS: TestGiteaIntegration/fetches_a_seeded_template_at_its_tag (0.02s)
+    --- PASS: TestGiteaIntegration/creates,_fills_and_reads_a_repository (0.75s)
+=== RUN   TestGiteaIssuesIntegration
+=== RUN   TestGiteaIssuesIntegration/labels,_links_and_closes_issues
+--- PASS: TestGiteaIssuesIntegration (0.91s)
+    --- PASS: TestGiteaIssuesIntegration/labels,_links_and_closes_issues (0.91s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/gitprovider	1.689s
+exit 0

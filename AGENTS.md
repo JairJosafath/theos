@@ -17,6 +17,7 @@ task. Read the rest when the task needs it:
 | set up a device, or change `./dev` or `.vscode/` | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
+| make, store, pass or test a credential, or a secret scanner fails a pull request | the `secrets` skill |
 | take an issue, or continue work someone left in flight (a relay session, or the user said to) | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
 | work on a plan step | its plan in [docs/plans/](docs/plans/); finished plans are in [docs/plans/done/](docs/plans/done/) |
 
@@ -24,7 +25,9 @@ task. Read the rest when the task needs it:
 
 Business rules live in `internal/model` and `internal/scaffold` and must not
 import Kubernetes, controller-runtime, `net/http` or `api/`; `make lint` enforces
-the layering. Run `make check` before finishing a change.
+the layering. Run `make check` before finishing a change; a tree that already
+passed on this device answers from the cache, which counts as a pass
+(`FORCE=1 make check` reruns it).
 
 ## Critical Rules
 
@@ -152,7 +155,9 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   minute of an issue becoming ready. When nothing is ready, it starts a triage
   session (`hack/relay.sh --triage`) that readies the sound `status/proposed`
   issues and comments on the others what they lack; `status/needs-human`
-  stays the user's.
+  stays the user's. A usage limit or a failed login pauses the relay until it
+  resets (`.relay/paused-until`); an issue whose sessions end three times in a
+  row without a handoff or a commit goes to `status/needs-human`.
 - **On the cluster device, memory is the limit.** A session at rest is cheap;
   heavy jobs (`make check`, `test`, `lint`, `docker-build`, `deploy`, `e2e`) are
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`

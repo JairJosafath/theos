@@ -22,9 +22,10 @@ a checkout and locally built `:dev` images (`imagePullPolicy: Never`).
   SQLite with WAL, the same probes, requests and settings), with the storage
   class and size as values.
 - **The admin** comes from Secret `gitea-admin` in that namespace. The chart
-  generates its password on install and keeps it on upgrade (`lookup`); or
-  `gitea.admin.existingSecret` names one with `username`, `password` and
-  `email`.
+  never renders it: a first init container in Gitea's pod creates it with a
+  generated password when it is missing and never overwrites it (the `secrets`
+  skill); or `gitea.admin.existingSecret` names one with `username`,
+  `password` and `email`.
 - **Gitea off:** `gitea.enabled=false` installs none of Gitea, the seed or the
   runners; `gitProviders` then point at an existing Gitea, as in v0.1.0.
 - **The seed** is a `post-install,post-upgrade` hook Job in Gitea's namespace
@@ -44,8 +45,8 @@ a checkout and locally built `:dev` images (`imagePullPolicy: Never`).
 - **Runners:** `runners.base` and `runners.go` (each `enabled`, default on with
   Gitea, `image`, `resources`) are Deployments in Gitea's namespace on the
   released `gitea-runner-base` and `gitea-runner-go` images. Their
-  registration token is the chart's, in Secret `gitea-runner` (generated on
-  install, kept on upgrade), which Gitea takes as its global token on start
+  registration token is in Secret `gitea-runner`, which Gitea's pod makes in
+  the cluster when it is missing (#158), which Gitea takes as its global token on start
   (`GITEA_RUNNER_REGISTRATION_TOKEN`); the seed leaves it alone
   (`RUNNER_SECRET=""`). So the runners don't wait for a hook, and
   `helm install --wait` works. The `go` runner
@@ -85,9 +86,10 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
 2. **The seed image is published.** `seed.sh` takes `GITEA_WAIT`; *Release*
    builds and pushes `seed` (and its dry run builds it); the chart README's
    image list names it.
-3. **Gitea in the chart, off.** `templates/gitea/`: Namespace, admin Secret,
-   ConfigMap, PVC, Deployment, Service; `gitea.*` values with `enabled: false`;
-   `make helm-lint` also renders the chart with `gitea.enabled=true`.
+3. **Gitea in the chart, off.** `templates/gitea/`: Namespace, the admin
+   Secret's init container and Role, ConfigMap, PVC, Deployment, Service;
+   `gitea.*` values with `enabled: false`; `make helm-lint` also renders the
+   chart with `gitea.enabled=true`.
 4. **The seed, projects and runners in the chart, off.** The seed hook Job and
    its RBAC, the per-project GitProviders, the runner Deployments,
    `global.imagePullSecrets` on every pod, the UI components for Gitea and the
@@ -95,18 +97,22 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
 5. **On by default, tested.** `gitea.enabled: true`. *Test Chart* builds the
    operator, UI, seed and runner images, kind-loads them (the pull request's
    code isn't published yet), installs Agent Sandbox and the chart with Gitea
-   and project `webshop`, then checks: the seed Job completed, organizations
-   `templates` and `webshop` exist, GitProvider `webshop/gitea` is `Ready`, both
-   runners are registered (Gitea's admin runner list), the manager and UI are
-   ready. `dist/chart/README.md` gives the device's install sequence and both
-   ways to pull private images; README *Try it* points at it.
+   and project `webshop`, then checks: organizations `templates` and `webshop`
+   exist, Secret `webshop/gitea-credentials` and GitProvider `webshop/gitea`
+   exist (a GitProvider has no status), both runners are registered (Gitea's
+   admin runner list), the manager and UI are ready. The Go toolchain is
+   several GB and *Release* builds it (#156 checks it), so *Test Chart* runs
+   the `go` runner on the `gitea-runner-base` image without its Go cache: it
+   checks the chart's Deployment and registration, not the toolchain.
+   `dist/chart/README.md` gives the device's install sequence and both ways to
+   pull private images; README *Try it* points at it.
 6. **Verified from a release.** Once the owner pushes `v0.2.0` and *Release*
    publishes it: on a fresh Kind cluster of the pool, apply Agent Sandbox,
    `helm install` from `oci://ghcr.io/jairjosafath/c4factory/charts`, nothing
    built or loaded locally (pulled with a pull secret or after making the
    packages public), and save the `kubectl get` output and a Gitea screenshot
    in `docs/screenshots/`. If the tag isn't pushed yet, step 5 closes #127 and
-   this check is filed as its own issue, `Depends on` nothing but the tag.
+   this check is filed as its own issue (#156), waiting on nothing but the tag.
 
 ## Done when
 
@@ -115,6 +121,7 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
 - *Test Chart* installs the chart with Gitea on a fresh Kind cluster with
   Agent Sandbox and gets a seeded Gitea, the operator, the UI and the `base`
   and `go` runners, on main after the merge.
-- *Release* (its dry run on the pull request) builds and publishes `seed`.
+- *Release* builds and publishes `seed` (its pull request dry run, since
+  removed from main, built it in #130).
 - `dist/chart/README.md` gives the install sequence and how private images are
   pulled.

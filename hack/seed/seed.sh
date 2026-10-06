@@ -6,7 +6,7 @@
 #   4. stores an admin access token as Secret gitea-credentials in each project's
 #      namespace;
 #   5. stores a runner registration token as Secret gitea/gitea-runner, unless
-#      RUNNER_SECRET is empty (the Helm chart makes that token itself).
+#      RUNNER_SECRET is empty (in the Helm chart, Gitea's pod makes that token).
 # Every step looks before it acts, so a second run changes nothing.
 set -euo pipefail
 
@@ -22,7 +22,8 @@ TEMPLATES_DIR=${TEMPLATES_DIR:-/templates}
 TEMPLATE_ORG=${TEMPLATE_ORG:-templates}
 # The projects, space-separated: each one's organization holds its Container
 # repositories, and its namespace (same name) gets the credentials Secret.
-PROJECTS=${PROJECTS:-${PROJECT:-webshop}}
+# PROJECTS="" seeds only the templates, with no kubectl (hack/gitea-local.sh).
+PROJECTS=${PROJECTS-${PROJECT:-webshop}}
 CREDENTIALS_SECRET=${CREDENTIALS_SECRET:-gitea-credentials}
 # Enough to create repositories in an organization and push to them over HTTP;
 # read:user lets the operator (and this script) check the token with GET /user;
@@ -245,7 +246,11 @@ main() {
     ensure_credentials "$project"
   done
   if [[ -n $RUNNER_SECRET ]]; then ensure_runner_token; fi
-  log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials${RUNNER_SECRET:+ and runner token} stored"
+  if [[ -n $PROJECTS ]]; then
+    log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials${RUNNER_SECRET:+ and runner token} stored"
+  else
+    log "Done: organization $TEMPLATE_ORG, templates tagged${RUNNER_SECRET:+, runner token stored}"
+  fi
 }
 
 main "$@"

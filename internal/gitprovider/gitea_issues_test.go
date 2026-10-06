@@ -2,6 +2,7 @@ package gitprovider
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -233,7 +234,7 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		mux.ServeHTTP(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: rand.Text()}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -84,32 +85,109 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 	u.run(ctx, gitCtx, &standard)
 }
 
-// run takes the next step towards standard's ref.
+// run takes the steps towards standard's ref this pass can: it gathers the facts
+// model.NextStandardStep asks for and does what it decides.
 func (u *standardUpdate) run(ctx, gitCtx context.Context, standard *c4v1alpha1.Standard) {
+	log := logf.FromContext(ctx)
 	s := u.status.Standard
-	target := standard.Spec.Template.Ref
-	if update := s.Update; update != nil {
-		switch {
-		case update.Ref != target:
-			// The Standard moved on: end the update and plan towards its new ref.
-			if update.Stopped == "" && !u.movePast(ctx, gitCtx) {
+	f := model.StandardUpdateFacts{Name: s.Name, Target: standard.Spec.Template.Ref}
+	for {
+		// What was read stays in f when the update is gone: the model looks at it
+		// only while an update is in flight, and only Plan, which ends the pass,
+		// starts one.
+		f.Ref, f.Update = s.Ref, inFlight(s.Update)
+		step := model.NextStandardStep(f)
+		switch step.Action {
+		case model.StandardReadPR:
+			pr, ok := u.readPullRequest(ctx, gitCtx, step.Quiet)
+			if !ok {
 				return
 			}
-			s.Update = nil
-		case update.Stopped != "":
-			u.followStopped(ctx, gitCtx)
+			f.PR = &model.UpdatePullRequest{Merged: pr.Merged, Closed: pr.State == stateClosed,
+				Mergeable: pr.Mergeable, HeadSHA: pr.HeadSHA}
+		case model.StandardReadChecks:
+			git, ok := u.access(ctx)
+			if !ok {
+				return
+			}
+			checks, err := git.provider.CombinedStatus(gitCtx, git.provider.Repository(u.container.Name),
+				s.Update.Commit)
+			if err != nil {
+				u.gitError(ctx, err)
+				return
+			}
+			// A state the host leaves empty is pending, so the model doesn't ask again.
+			f.Checks = cmp.Or(checks.State, gitprovider.CheckPending)
+			f.ChecksURL, f.Contexts = checks.URL, checks.Contexts
+		case model.StandardReadFiles:
+			git, ok := u.access(ctx)
+			if !ok {
+				return
+			}
+			changed, err := git.provider.PullRequestFiles(gitCtx, git.provider.Repository(u.container.Name),
+				int(s.Update.PullRequest))
+			switch {
+			case errors.Is(err, gitprovider.ErrTooManyFiles):
+				f.Files = &model.UpdateFiles{Unchecked: err.Error()}
+			case err != nil:
+				u.gitError(ctx, err) // never merge a path nobody checked
+				return
+			default:
+				f.Files = &model.UpdateFiles{Changed: changed}
+			}
+		case model.StandardUpToDate:
+			u.upToDate()
 			return
-		default:
-			if !u.follow(ctx, gitCtx) {
+		case model.StandardPlan:
+			u.plan(ctx, gitCtx, standard)
+			return
+		case model.StandardForget:
+			s.Update = nil
+		case model.StandardRecordMerge:
+			u.merged(ctx)
+		case model.StandardDrop:
+			if !u.drop(ctx, gitCtx, step.Message) {
 				return
 			}
+		case model.StandardStopClosed:
+			u.stopClosed(ctx, gitCtx, step.Message)
+			return
+		case model.StandardStopPushed:
+			s.Update.Stopped = c4v1alpha1.ReasonUpdateRefused
+			u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdateRefused, step.Message)
+			log.Info("Stopped a Standard update someone else pushed to", "url", s.Update.PullRequestURL,
+				"head", f.PR.HeadSHA)
+			return
+		case model.StandardRefuseMerge:
+			s.Update.Stopped = c4v1alpha1.ReasonUpdateRefused
+			u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdateRefused, step.Message)
+			log.Info("Refused to merge a Standard update", "url", s.Update.PullRequestURL, "reason", step.Why)
+			return
+		case model.StandardChecksFailed:
+			u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonChecksFailed, step.Message)
+			return
+		case model.StandardWaitForChecks:
+			u.updating()
+			return
+		case model.StandardForceMerge:
+			if !u.forceMerge(ctx, gitCtx, f.Files.Changed) {
+				return
+			}
+		default: // model.StandardNone
+			return
 		}
 	}
-	if s.Ref == target {
-		u.upToDate()
-		return
+}
+
+// inFlight is the update in status as the model sees it, or nil.
+func inFlight(update *c4v1alpha1.StandardUpdateStatus) *model.StandardUpdateInFlight {
+	if update == nil {
+		return nil
 	}
-	u.plan(ctx, gitCtx, standard)
+	return &model.StandardUpdateInFlight{
+		Ref: update.Ref, Stopped: update.Stopped, PullRequest: int(update.PullRequest),
+		PullRequestURL: update.PullRequestURL, Branch: update.Branch, Commit: update.Commit, Paths: update.Paths,
+	}
 }
 
 // plan renders the Standard at the ref its files are at and at target, and
@@ -214,135 +292,73 @@ func (u *standardUpdate) alreadyUpToDate(ctx context.Context, ref string, leftOu
 		"leftOut", leftOut)
 }
 
-// follow takes the update in flight one step: record its merge, stop it when a
-// person closed it or pushed to it, wait for CI, or merge it. It reports true
-// when the update is gone and the Standard is to be planned again.
-func (u *standardUpdate) follow(ctx, gitCtx context.Context) bool {
-	log := logf.FromContext(ctx)
-	s := u.status.Standard
-	update := s.Update
+// readPullRequest reads the update's pull request. When quiet, the update
+// stopped and a Git error is only logged: the condition keeps saying why it
+// stopped.
+func (u *standardUpdate) readPullRequest(ctx, gitCtx context.Context, quiet bool) (gitprovider.PullRequest, bool) {
+	update := u.status.Standard.Update
+	if quiet {
+		git, err := gitAccessFor(ctx, u.r.Client, u.r.APIReader, u.r.Git, u.container.Namespace,
+			u.container.Spec.GitProviderRef.Name)
+		var pr gitprovider.PullRequest
+		if err == nil {
+			pr, err = git.provider.GetPullRequest(gitCtx, git.provider.Repository(u.container.Name),
+				int(update.PullRequest))
+		}
+		if err != nil {
+			logf.FromContext(ctx).Info("Could not read a stopped Standard update", "url", update.PullRequestURL,
+				"error", err.Error())
+			return pr, false
+		}
+		return pr, true
+	}
 	git, ok := u.access(ctx)
 	if !ok {
-		return false
+		return gitprovider.PullRequest{}, false
 	}
-	repo := git.provider.Repository(u.container.Name)
-	n := int(update.PullRequest)
-	pr, err := git.provider.GetPullRequest(gitCtx, repo, n)
+	pr, err := git.provider.GetPullRequest(gitCtx, git.provider.Repository(u.container.Name), int(update.PullRequest))
 	if err != nil {
 		u.gitError(ctx, err)
-		return false
+		return pr, false
 	}
-	switch {
-	case pr.Merged:
-		u.merged(ctx)
-		return false
-	case pr.State == stateClosed:
-		update.Stopped = c4v1alpha1.ReasonUpdateClosed
-		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdateClosed, fmt.Sprintf(
-			"Pull request %s was closed without merging; %s stays at %s until its ref changes again",
-			update.PullRequestURL, s.Name, s.Ref))
-		if err := git.provider.DeleteBranch(gitCtx, repo, update.Branch); err != nil {
+	return pr, true
+}
+
+// stopClosed stops an update a person closed without merging, and deletes its
+// branch.
+func (u *standardUpdate) stopClosed(ctx, gitCtx context.Context, message string) {
+	log := logf.FromContext(ctx)
+	update := u.status.Standard.Update
+	update.Stopped = c4v1alpha1.ReasonUpdateClosed
+	u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdateClosed, message)
+	if git, ok := u.access(ctx); ok {
+		if err := git.provider.DeleteBranch(gitCtx, git.provider.Repository(u.container.Name),
+			update.Branch); err != nil {
 			log.Info("Could not delete the branch of a closed Standard update", "branch", update.Branch,
 				"error", err.Error())
 		}
-		log.Info("Stopped a Standard update closed without merging", "url", update.PullRequestURL)
-		return false
-	case !pr.Mergeable:
-		// main moved with conflicting changes: plan again from the new main.
-		return u.drop(ctx, gitCtx, "Closed a Standard update that conflicts with main")
-	case pr.HeadSHA != update.Commit:
-		update.Stopped = c4v1alpha1.ReasonUpdateRefused
-		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdateRefused, fmt.Sprintf(
-			"Someone else pushed to %s; a person looks at %s", update.Branch, update.PullRequestURL))
-		log.Info("Stopped a Standard update someone else pushed to", "url", update.PullRequestURL,
-			"head", pr.HeadSHA)
-		return false
 	}
-
-	checks, err := git.provider.CombinedStatus(gitCtx, repo, update.Commit)
-	if err != nil {
-		u.gitError(ctx, err)
-		return false
-	}
-	switch checks.State {
-	case gitprovider.CheckSuccess:
-	case gitprovider.CheckFailure, gitprovider.CheckError:
-		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonChecksFailed, fmt.Sprintf(
-			"CI is %s on %s; the update merges once a re-run passes, or close %s to drop it",
-			checks.State, checks.URL, update.PullRequestURL))
-		return false
-	default:
-		u.updating()
-		return false
-	}
-
-	changed, err := git.provider.PullRequestFiles(gitCtx, repo, n)
-	if errors.Is(err, gitprovider.ErrTooManyFiles) {
-		u.refuse(ctx, "not every changed path can be checked: "+err.Error())
-		return false
-	}
-	if err != nil {
-		u.gitError(ctx, err) // never merge a path nobody checked
-		return false
-	}
-	if why := model.StandardUpdateRefusal(checks.State, checks.Contexts, changed, update.Paths); why != "" {
-		u.refuse(ctx, why)
-		return false
-	}
-	title, message := u.mergeMessage()
-	if err := git.provider.ForceMergePullRequest(gitCtx, repo, n, update.Commit, title, message); err != nil {
-		u.gitError(ctx, err)
-		return false
-	}
-	log.Info("Merged a Standard update with the admin override", "url", update.PullRequestURL, "paths", changed)
-	u.merged(ctx)
-	return false
+	log.Info("Stopped a Standard update closed without merging", "url", update.PullRequestURL)
 }
 
-// movePast ends the update in flight when the Standard moved past its ref: it
-// records the pull request if it merged meanwhile, and otherwise closes it and
-// deletes its branch. It reports false on a Git error.
-func (u *standardUpdate) movePast(ctx, gitCtx context.Context) bool {
+// forceMerge merges the update's pull request with the admin override and
+// records it. It reports false on a Git error.
+func (u *standardUpdate) forceMerge(ctx, gitCtx context.Context, changed []string) bool {
+	update := u.status.Standard.Update
 	git, ok := u.access(ctx)
 	if !ok {
 		return false
 	}
-	pr, err := git.provider.GetPullRequest(gitCtx, git.provider.Repository(u.container.Name),
-		int(u.status.Standard.Update.PullRequest))
-	if err != nil {
+	title, message := u.mergeMessage()
+	if err := git.provider.ForceMergePullRequest(gitCtx, git.provider.Repository(u.container.Name),
+		int(update.PullRequest), update.Commit, title, message); err != nil {
 		u.gitError(ctx, err)
 		return false
 	}
-	if pr.Merged {
-		u.merged(ctx)
-		return true
-	}
-	return u.drop(ctx, gitCtx, "Closed a Standard update its Standard moved past")
-}
-
-// followStopped records a stopped update's pull request if a person merged it
-// after all. Otherwise the update waits for the Standard's ref to change, and
-// the condition keeps saying why it stopped.
-func (u *standardUpdate) followStopped(ctx, gitCtx context.Context) {
-	update := u.status.Standard.Update
-	if update.PullRequest == 0 {
-		return
-	}
-	git, err := gitAccessFor(ctx, u.r.Client, u.r.APIReader, u.r.Git, u.container.Namespace,
-		u.container.Spec.GitProviderRef.Name)
-	var pr gitprovider.PullRequest
-	if err == nil {
-		pr, err = git.provider.GetPullRequest(gitCtx, git.provider.Repository(u.container.Name),
-			int(update.PullRequest))
-	}
-	if err != nil {
-		logf.FromContext(ctx).Info("Could not read a stopped Standard update", "url", update.PullRequestURL,
-			"error", err.Error())
-		return
-	}
-	if pr.Merged {
-		u.merged(ctx)
-	}
+	logf.FromContext(ctx).Info("Merged a Standard update with the admin override", "url", update.PullRequestURL,
+		"paths", changed)
+	u.merged(ctx)
+	return true
 }
 
 // drop closes the update's pull request and deletes its branch, then forgets
@@ -376,15 +392,6 @@ func (u *standardUpdate) merged(ctx context.Context) {
 	u.upToDate()
 	logf.FromContext(ctx).Info("Recorded a merged Standard update", "url", update.PullRequestURL,
 		"standard", s.Name, "ref", s.Ref)
-}
-
-// refuse stops the update: its pull request may not merge, and a person looks at it.
-func (u *standardUpdate) refuse(ctx context.Context, why string) {
-	update := u.status.Standard.Update
-	update.Stopped = c4v1alpha1.ReasonUpdateRefused
-	u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdateRefused, fmt.Sprintf(
-		"The update may not merge: %s; a person looks at %s", why, update.PullRequestURL))
-	logf.FromContext(ctx).Info("Refused to merge a Standard update", "url", update.PullRequestURL, "reason", why)
 }
 
 // mergeMessage is the title and message of the update's squash commit on main:

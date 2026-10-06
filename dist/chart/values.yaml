@@ -270,20 +270,23 @@ ui:
       optional: true
 
 ## Git providers: where Container repositories are created. Each entry becomes a
-## GitProvider in its namespace (a Project's, which must exist), with a Secret
-## holding its credentials unless existingSecret names one with the keys
-## "username" and "token". They are post-install and post-upgrade hooks, so
-## `helm uninstall` leaves them in place.
+## GitProvider in its namespace (a Project's, which must exist), reading the
+## Secret existingSecret names, with the keys "username" and "token". You make
+## that Secret before the install; the chart renders none:
+##
+##   kubectl -n webshop create secret generic git-credentials \
+##     --from-literal=username=c4factory --from-literal=token="$GIT_TOKEN"
+##
+## They are post-install and post-upgrade hooks, so `helm uninstall` leaves them
+## in place. With gitea.enabled, gitea.projects makes these instead.
 ##
 gitProviders: []
 #  - namespace: webshop
-#    name: gitea
+#    name: git
 #    provider: gitea
-#    url: http://gitea.gitea.svc.cluster.local:3000
+#    url: http://git.example.com:3000
 #    owner: webshop
-#    username: c4factory
-#    token: ""
-#    # existingSecret: gitea-credentials
+#    existingSecret: git-credentials
 
 ## Pull secrets for the pods of the UI (unless ui.imagePullSecrets is set),
 ## Gitea, the seed and the runners; the operator's are manager.imagePullSecrets.
@@ -298,7 +301,7 @@ global:
 ## runners. Off: gitProviders point at a Gitea the release does not run.
 ##
 gitea:
-  enabled: false
+  enabled: true
   ## Its own namespace, so its URL is http://gitea.<namespace>.svc.cluster.local:3000
   ## (an empty one is the release's). The chart creates it unless createNamespace
   ## is false, and keeps it on uninstall, with the volume.
@@ -309,8 +312,15 @@ gitea:
     repository: gitea/gitea
     tag: 1.27.3-rootless
     pullPolicy: IfNotPresent
-  ## The admin: Secret gitea-admin, its password generated on install and kept
-  ## on upgrade; or existingSecret, a Secret with username, password and email.
+  ## The admin: Secret gitea-admin, which Gitea's pod makes in the cluster with
+  ## a random password when it is missing, from the username and email below
+  ## (a later change of them takes a new Secret); or existingSecret, your own
+  ## Secret with username, password and email, which the pod never changes.
+  ## The runners' registration token, Secret gitea-runner, is made the same way.
+  ## Neither is rendered, so helm template, Argo CD and Flux never see a value.
+  ## To rotate one: kubectl -n gitea delete secret gitea-admin (or gitea-runner),
+  ## then kubectl -n gitea rollout restart deployment/gitea; after gitea-runner,
+  ## restart the runner Deployments too.
   ##
   admin:
     username: c4admin

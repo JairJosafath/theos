@@ -24,6 +24,9 @@ type ReleaseMilestone struct {
 	// requests.
 	Open   []int
 	Closed []int
+	// Prepared are the numbers of its prepare issues, open or closed: those
+	// labelled kind/release.
+	Prepared []int
 }
 
 // MergedTask is a Merged Task on the Crew's Container.
@@ -48,6 +51,19 @@ type ReleaseFacts struct {
 	Merged []MergedTask
 	// Tags maps the existing tags among the releases' titles to their commits.
 	Tags map[string]string
+	// Prepare says the Crew files each release's prepare issue: a done release
+	// with merged work and no prepare issue gets one before it is tagged, and
+	// work merged after its prepare issue holds it.
+	Prepare bool
+}
+
+// LabelRelease marks a release's prepare issue, which sets the version and
+// writes the changelog; the release is tagged at its merge.
+const LabelRelease = "kind/release"
+
+// ReleaseLabel is the prepare issue's label, for the Git host.
+func ReleaseLabel() IssueLabel {
+	return IssueLabel{LabelRelease, "#1d76db", "Prepares a release: sets its version and writes its changelog", false}
 }
 
 // Reasons a done release doesn't go out.
@@ -57,17 +73,24 @@ const (
 	ReleaseNoMergeCommit = "NoMergeCommit"
 	ReleaseLaterWork     = "HoldsLaterWork"
 	ReleaseTagClash      = "TagClash"
+	// ReleaseMergedAfterPrepare holds a release whose changelog misses work
+	// merged after its prepare issue.
+	ReleaseMergedAfterPrepare = "MergedAfterPrepare"
 )
 
-// ReleaseStep is what a Crew does about its releases. With Commit set, it tags
-// Commit as Tag when CreateTag says so, then closes milestone Milestone. With
-// Held set, release Tag is done but can't go out: Reason says why in a word,
-// Held in a sentence. With neither, there is nothing to do.
+// ReleaseStep is what a Crew does about its releases. With File set, it files
+// release Tag's prepare issue in milestone Milestone, listing the issues Merged
+// in the order they merged. With Commit set, it tags Commit as Tag when
+// CreateTag says so, then closes milestone Milestone. With Held set, release Tag
+// is done but can't go out: Reason says why in a word, Held in a sentence. With
+// none, there is nothing to do.
 type ReleaseStep struct {
 	Tag       string
 	Commit    string
 	Milestone int64
 	CreateTag bool
+	File      bool
+	Merged    []int
 	Reason    string
 	Held      string
 }
@@ -105,6 +128,12 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 		return ReleaseStep{}
 	}
 
+	if f.Prepare && len(first.Prepared) == 0 {
+		if work := mergedWork(first, f.Merged); len(work) > 0 {
+			return ReleaseStep{Tag: first.Title, Milestone: first.ID, File: true, Merged: work}
+		}
+	}
+
 	// A merge without its commit or time holds the release, unless another
 	// merged Task of the same issue (a later try) has them.
 	recorded := func(t MergedTask) bool { return t.Commit != "" && !t.At.IsZero() }
@@ -127,6 +156,13 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 	if newest == nil {
 		return held(first.Title, ReleaseNoMergedIssue,
 			"%s is done but none of its issues was merged by a Task; a person tags it", first.Title)
+	}
+	if f.Prepare && !slices.Contains(first.Prepared, newest.Issue) {
+		if prepared := newestOf(f.Merged, first.Prepared); prepared != nil {
+			return held(first.Title, ReleaseMergedAfterPrepare, "%s's #%d merged after its prepare issue #%d, so its "+
+				"changelog misses it; a person files another %s issue in %s or tags it",
+				first.Title, newest.Issue, prepared.Issue, LabelRelease, first.Title)
+		}
 	}
 	// An existing tag is never moved; at the right commit, only the milestone is
 	// left to close, whoever made the tag.
@@ -151,6 +187,61 @@ func releaseDone(m ReleaseMilestone, active []int) bool {
 		return false
 	}
 	return !slices.ContainsFunc(active, func(n int) bool { return slices.Contains(m.Closed, n) })
+}
+
+// mergedWork returns the release's closed issues, prepare issues left out, that
+// a Task merged, each once, in the order they first merged.
+func mergedWork(m ReleaseMilestone, merged []MergedTask) []int {
+	var work []MergedTask
+	for _, t := range merged {
+		if slices.Contains(m.Closed, t.Issue) && !slices.Contains(m.Prepared, t.Issue) {
+			work = append(work, t)
+		}
+	}
+	slices.SortStableFunc(work, func(a, b MergedTask) int {
+		if mergedAfter(a, b) {
+			return 1
+		}
+		return -1
+	})
+	var out []int
+	for _, t := range work {
+		if !slices.Contains(out, t.Issue) {
+			out = append(out, t.Issue)
+		}
+	}
+	return out
+}
+
+// newestOf returns the newest recorded merge of one of the issues, or nil.
+func newestOf(merged []MergedTask, issues []int) *MergedTask {
+	var newest *MergedTask
+	for i, t := range merged {
+		if slices.Contains(issues, t.Issue) && !t.At.IsZero() && (newest == nil || mergedAfter(t, *newest)) {
+			newest = &merged[i]
+		}
+	}
+	return newest
+}
+
+// PrepareIssue renders release tag's prepare issue, which lists the issues
+// merged in it, by number and title, in the order they merged.
+func PrepareIssue(tag string, merged []int, titles map[int]string) (title, body string) {
+	version := strings.TrimPrefix(tag, "v")
+	var b strings.Builder
+	fmt.Fprintf(&b, "The work of release %s is merged. This issue prepares it: once it merges, %s is tagged "+
+		"at its merge commit, so the tag carries the version and the changelog.\n\n", tag, tag)
+	fmt.Fprintf(&b, "## Merged in %s\n\n", tag)
+	for _, n := range merged {
+		fmt.Fprintf(&b, "- #%d %s\n", n, titles[n])
+	}
+	b.WriteString("\n## Acceptance criteria\n\n")
+	fmt.Fprintf(&b, "- [ ] Every file that holds the version says %s, such as `version` in `package.json` and its "+
+		"lockfile; `make release-version VERSION=%s` passes when the Makefile has that target\n", version, tag)
+	fmt.Fprintf(&b, "- [ ] `CHANGELOG.md` has a %s section that covers the issues above, with the \"Unreleased\" "+
+		"entries moved under it; the file is created in Keep a Changelog form when it is missing\n", version)
+	b.WriteString("- [ ] Nothing else changes: no code, test or check\n")
+	return "Prepare " + tag, b.String()
 }
 
 // mergedAfter orders merges by completion time, then by Task name.

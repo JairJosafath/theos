@@ -243,6 +243,8 @@ check "pick, only proposed and needs-human" $? 1
 # Proposed: the open status/proposed issues, oldest first, for the relay's triage.
 check "proposed" "$(OPEN=$(jq '. + [[86, ["status/proposed", "kind/bug"]]]' <<<"$all" | issues) gh_proposed | tr '\n' ' ')" "81 86 "
 check "proposed, none" "$(OPEN=$(jq 'map(select(.[0] != 81))' <<<"$all" | issues) gh_proposed)" ""
+gh_proposed --since soon 2>/dev/null
+check "proposed --since takes epoch seconds" $? 1
 
 # Intake: labels an issue by where it came from.
 R=repos/JairJosafath/c4factory
