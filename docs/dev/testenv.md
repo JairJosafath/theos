@@ -426,7 +426,9 @@ comments on the open one, so the relay picks it up; the issue says which check
 failed and if the runner ran short of memory or disk. A dispatch on another
 branch only reports in its run. Check an older release with Actions → Verify Release → Run
 workflow, or `gh workflow run verify-release.yml -f tag=vX.Y.Z`; add
-`--ref <branch>` to try a branch's workflow. Dispatched, the install check
+`--ref <branch>` to try a branch's workflow, and `-f from=vA.B.C` to upgrade
+from another release than the one below (the same tag upgrades it to itself,
+which tries the check's own steps). Dispatched, the install check
 takes the `first-app` samples from the ref it runs on, so on main it checks
 the guide's current samples against that release.
 

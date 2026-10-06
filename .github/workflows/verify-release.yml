@@ -48,6 +48,10 @@ on:
       tag:
         description: The release tag to check, e.g. v0.2.0
         required: true
+      from:
+        description: The release to upgrade from, e.g. v0.3.0; empty, the highest tag below tag
+        required: false
+        default: ""
 
 permissions: {}
 
@@ -66,14 +70,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
+          FROM_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.from || '' }}
         run: |
-          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "not a release tag: $TAG" >&2; exit 1 ;; esac
+          for t in "$TAG" $FROM_INPUT; do
+            case "$t" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "not a release tag: $t" >&2; exit 1 ;; esac
+          done
           tags=$(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name' |
             grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
           # The highest release tag below TAG; TAG itself when there is none.
           prev=$({ printf '%s\n' $tags; echo "$TAG"; } | sort -uV | grep -x -B1 -F "$TAG" | head -1)
+          # Dispatched with from: the path a given device takes, or the same
+          # release again to try the check's own steps.
+          if [ -n "$FROM_INPUT" ]; then
+            prev=$FROM_INPUT
+            [ "$prev" != "$TAG" ] || echo "::notice::from is $TAG itself: the upgrade check upgrades $TAG to $TAG"
+          fi
           checks=$(jq -cn --arg tag "$TAG" '[{check: "install", from: $tag, name: "Install the release on Kind"}]')
-          if [ "$prev" = "$TAG" ]; then
+          if [ "$prev" = "$TAG" ] && [ -z "$FROM_INPUT" ]; then
             echo "::notice::$TAG is the first release: there is no previous one to upgrade from, so the upgrade check is skipped"
             echo "No release before $TAG: the upgrade check is skipped." >>"$GITHUB_STEP_SUMMARY"
           else
