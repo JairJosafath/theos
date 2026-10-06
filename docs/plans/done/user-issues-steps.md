@@ -14,7 +14,7 @@ landed in order.
 **Tech Stack:** bash, `gh`, `jq` (`.dev/bin/jq`; put `.dev/bin` on `PATH`),
 GitHub Actions and issue forms, Go/Ginkgo e2e, the React UI under `ui/`.
 
-**Spec:** [docs/plans/user-issues.md](user-issues.md). Read it first.
+**Spec:** [docs/plans/done/user-issues.md](user-issues.md). Read it first.
 
 ## Global Constraints
 
