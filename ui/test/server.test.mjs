@@ -9,12 +9,27 @@ import http from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
-import { createServer, resolveUpstream } from '../server.mjs'
+import { allowedHostsFromEnv, createServer, resolveUpstream } from '../server.mjs'
 
 /** Starts a server on a free port and returns its base URL. */
 function listen(server) {
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}`))
+  })
+}
+
+/** Sends one request with the given Host header, which fetch() won't set. */
+function request(base, method, p, host, body) {
+  return new Promise((resolve, reject) => {
+    const headers = { host }
+    if (body !== undefined) headers['content-type'] = 'application/json'
+    const req = http.request(`${base}${p}`, { method, headers }, (res) => {
+      let text = ''
+      res.on('data', (chunk) => (text += chunk))
+      res.on('end', () => resolve({ status: res.statusCode, text }))
+    })
+    req.on('error', reject)
+    req.end(body === undefined ? undefined : JSON.stringify(body))
   })
 }
 
@@ -470,6 +485,74 @@ describe('server.mjs', () => {
     assert.equal(traversal.status, 404)
     const missing = await fetch(`${base}/nope.js`)
     assert.equal(missing.status, 404)
+  })
+
+  describe('the Host it answers (DNS rebinding)', () => {
+    const projects = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/projects'
+    const briefs = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs'
+    const brief = {
+      apiVersion: 'c4.factory.io/v1alpha1',
+      kind: 'Brief',
+      metadata: { name: 'lens' },
+      spec: { idea: 'A camera app that reads labels aloud' },
+    }
+    let named
+    let namedBase
+
+    before(async () => {
+      named = createServer({
+        distDir: dist,
+        upstream: resolveUpstream({ K8S_API: `http://127.0.0.1:${upstream.address().port}` }),
+        log: () => {},
+        allowedHosts: allowedHostsFromEnv({ UI_ALLOWED_HOSTS: ' Factory.Example.com , ,ui.internal' }),
+      })
+      namedBase = await listen(named)
+    })
+
+    after(() => close(named))
+
+    for (const host of ['evil.example', 'evil.example:8080', '127.0.0.1.evil.example', 'localhost.']) {
+      it(`refuses reads, writes and files for Host ${host}`, async () => {
+        seen.length = 0
+        for (const [method, p, body] of [
+          ['GET', projects],
+          ['GET', '/k8s-watch?w=x'],
+          ['GET', '/factory/health'],
+          ['GET', '/'],
+          ['POST', briefs, brief],
+        ]) {
+          const res = await request(base, method, p, host, body)
+          assert.equal(res.status, 421, `${method} ${p}`)
+          assert.doesNotMatch(res.text, /C4 Factory|ProjectList/)
+        }
+        assert.deepEqual(seen, [])
+      })
+    }
+
+    it('refuses a name it is not configured for, even beside configured ones', async () => {
+      const res = await request(namedBase, 'GET', projects, 'evil.example')
+      assert.equal(res.status, 421)
+    })
+
+    it('answers /healthz for any Host, for the kubelet', async () => {
+      const res = await request(base, 'GET', '/healthz', '10.244.0.7:8080')
+      assert.equal(res.status, 200)
+    })
+
+    for (const host of ['localhost:8080', 'LOCALHOST', '127.0.0.1:8080', '[::1]:8080', '[::1]']) {
+      it(`answers Host ${host}`, async () => {
+        const res = await request(base, 'GET', projects, host)
+        assert.equal(res.status, 200)
+        assert.match(res.text, /ProjectList/)
+      })
+    }
+
+    for (const host of ['factory.example.com', 'ui.internal:443', 'localhost:8080']) {
+      it(`answers a configured or local Host ${host}, for reads and writes`, async () => {
+        assert.equal((await request(namedBase, 'GET', projects, host)).status, 200)
+        assert.equal((await request(namedBase, 'POST', briefs, host, brief)).status, 201)
+      })
+    }
   })
 
   it('answers 502 with a Status when the API is unreachable', async () => {
