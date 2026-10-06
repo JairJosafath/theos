@@ -33,6 +33,10 @@ import (
 // Brief repository's main.
 const briefWorkspaceMessage = "Update the brief, the model and the catalog for the planner\n"
 
+// briefIssuesTimeout bounds reading one Container's open issues, so a few
+// unreachable hosts don't stall the Brief.
+const briefIssuesTimeout = 30 * time.Second
+
 // briefGitSecret names the Secret holding the Git credentials of Brief brief's bot.
 func briefGitSecret(brief string) string { return model.BriefRepository(brief) + "-git" }
 
@@ -93,6 +97,15 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 		files[p] = scaffold.File{Data: []byte(data)}
 	}
 
+	repoName := model.BriefRepository(brief.Name)
+	var clash c4v1alpha1.Container
+	if err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: repoName}, &clash); err == nil {
+		return "", errNeedsInput{fmt.Sprintf("Container %s has the repository the Brief needs: rename the Brief, "+
+			"so its repository %s is its own", repoName, repoName)}
+	} else if !apierrors.IsNotFound(err) {
+		return "", err
+	}
+
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	repo, err := provider.EnsureRepository(gitCtx, model.BriefRepository(brief.Name),
@@ -103,9 +116,10 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 	if err := writeWorkspace(gitCtx, provider, repo, files); err != nil {
 		return "", err
 	}
-	if brief.Status.RepositoryURL == "" {
+	if brief.Status.RepositoryURL != repo.WebURL {
 		// Only the operator writes main; the bot pushes plan branches. Protected
-		// before the bot exists, so it never could.
+		// before the bot exists, so it never could, and again when the
+		// repository moved to another GitProvider.
 		if err := provider.ProtectBranch(gitCtx, repo, gitprovider.DefaultBranch,
 			gitprovider.BranchRule{OperatorPushes: true}); err != nil {
 			return "", fmt.Errorf("protecting %s: %w", gitprovider.DefaultBranch, err)
@@ -113,6 +127,7 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 	}
 	if _, err := ensureAgentSecret(ctx, r.Client, r.APIReader, brief, briefGitSecret(brief.Name),
 		map[string]string{c4v1alpha1.LabelProject: brief.Namespace, c4v1alpha1.LabelBrief: brief.Name},
+		map[string]string{"repository": repo.CloneURL},
 		func() (gitprovider.Credentials, error) {
 			return provider.EnsureAgentAccess(gitCtx, repo,
 				model.AgentUsername(brief.Namespace, model.BriefRepository(brief.Name)))
@@ -208,7 +223,7 @@ func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]g
 		}
 		providers[name] = provider
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
 	defer cancel()
 	issues, err := provider.ListIssues(gitCtx, provider.Repository(c.Name), "")
 	if err != nil {
@@ -333,14 +348,19 @@ func installedCatalog(ctx context.Context, c client.Reader, ns string) ([]model.
 }
 
 // ensureAgentSecret returns Secret name holding a bot's Git credentials, owned
-// by owner, making the bot with access and the Secret the first time. The
-// Secret is read and written without the cache: the operator doesn't watch
-// Secrets.
+// by owner, making the bot with access and the Secret the first time, and
+// again when the Secret's data lacks any of extra, such as the repository the
+// bot was given. The Secret is read and written without the cache: the
+// operator doesn't watch Secrets.
 func ensureAgentSecret(ctx context.Context, c client.Client, apiReader client.Reader, owner client.Object,
-	name string, labels map[string]string, access func() (gitprovider.Credentials, error)) (string, error) {
+	name string, labels, extra map[string]string, access func() (gitprovider.Credentials, error)) (string, error) {
 	var secret corev1.Secret
 	err := apiReader.Get(ctx, client.ObjectKey{Namespace: owner.GetNamespace(), Name: name}, &secret)
-	if err == nil && len(secret.Data["token"]) > 0 {
+	current := err == nil && len(secret.Data["token"]) > 0
+	for k, v := range extra {
+		current = current && string(secret.Data[k]) == v
+	}
+	if current {
 		return name, nil
 	}
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -354,6 +374,9 @@ func ensureAgentSecret(ctx context.Context, c client.Client, apiReader client.Re
 	desired := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: owner.GetNamespace(), Name: name, Labels: labels},
 		Data:       map[string][]byte{"username": []byte(creds.Username), "token": []byte(creds.Token)},
+	}
+	for k, v := range extra {
+		desired.Data[k] = []byte(v)
 	}
 	if err := controllerutil.SetControllerReference(owner, &desired, c.Scheme()); err != nil {
 		return "", err

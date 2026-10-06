@@ -127,9 +127,16 @@ What B4 leaves open, settled in step 4 (`internal/model/brief_workspace.go`,
 - **A missing GitProvider or credentials Secret** sets `NeedsInput` naming it;
   the Brief looks again every minute (Secrets aren't watched) and goes back to
   `Pending` once it has what it needs.
+- **A Container named `brief-<name>`** would share the Brief's repository
+  and bot: the Brief sets `NeedsInput` naming it instead.
+- **A changed `gitProviderRef`** makes the repository on the new host: it is
+  protected again when `status.repositoryURL` differs, and the bot's Secret
+  records the repository it was given access to, so a moved repository gets
+  its bot again.
 - **Left for step 5:** B16's deletion of the bot user in Gitea (the Secret
-  already goes with the Brief). A Container named `brief-<name>` would share
-  the Brief's repository; step 5's checks should refuse planning one.
+  already goes with the Brief); refusing a plan that creates a Container named
+  `brief-*`; and NeedsInput from `needs-input.md`, which the operator's
+  "has what it needs" must not clear: step 5 clears only the reasons it set.
 
 ## Review focus
 

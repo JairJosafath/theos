@@ -279,7 +279,7 @@ func (r *TaskReconciler) ensureAgentGit(ctx context.Context, container *c4v1alph
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	return ensureAgentSecret(ctx, r.Client, r.APIReader, container, container.Name+"-agent-git",
-		map[string]string{c4v1alpha1.LabelProject: container.Namespace, c4v1alpha1.LabelContainer: container.Name},
+		map[string]string{c4v1alpha1.LabelProject: container.Namespace, c4v1alpha1.LabelContainer: container.Name}, nil,
 		func() (gitprovider.Credentials, error) {
 			return provider.EnsureAgentAccess(gitCtx, repo, model.AgentUsername(container.Namespace, container.Name))
 		})

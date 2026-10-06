@@ -103,9 +103,12 @@ var _ = Describe("Brief", func() {
 
 			By("writing nothing new when nothing changed")
 			token := string(secret.Data["token"])
+			reads := gitFake.historyCount(ns, repo)
 			mustCreate(&c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "another"), Spec: c4v1alpha1.GitProviderSpec{
 				URL: "http://gitea.invalid", Owner: ns, CredentialsSecretRef: c4v1alpha1.LocalRef{Name: "none"}}})
-			Consistently(func() int { return gitFake.commitCount(ns, repo) }, "2s").Should(Equal(1))
+			Eventually(func() int { return gitFake.historyCount(ns, repo) }).Should(BeNumerically(">", reads),
+				"the Brief was not reconciled again")
+			Consistently(func() int { return gitFake.commitCount(ns, repo) }, "1s").Should(Equal(1))
 			Expect(k8sClient.Get(ctx, key(ns, "brief-cel-lens-git"), secret)).To(Succeed())
 			Expect(string(secret.Data["token"])).To(Equal(token), "the bot's token was rotated")
 
@@ -113,6 +116,44 @@ var _ = Describe("Brief", func() {
 			Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Support VAP files first."} })).To(Succeed())
 			Eventually(func() int { return gitFake.commitCount(ns, repo) }).Should(Equal(2))
 			Expect(file(model.BriefFile)).To(ContainSubstring("1. (**new**) Support VAP files first.\n"))
+		})
+
+		It("protects and gives its bot the repository on a GitProvider it moves to", func() {
+			createFactory(ns)
+			brief := newBrief(ns, "cel-lens")
+			mustCreate(brief)
+			Eventually(func() int { return gitFake.commitCount(ns, repo) }).Should(Equal(1))
+
+			moved := ns + "-moved"
+			mustCreate(&c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "moved"), Spec: c4v1alpha1.GitProviderSpec{
+				URL: "http://gitea.gitea.svc.cluster.local:3000", Owner: moved,
+				CredentialsSecretRef: c4v1alpha1.LocalRef{Name: "gitea-credentials"}}})
+			Expect(patch(brief, func() { brief.Spec.GitProviderRef.Name = "moved" })).To(Succeed())
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
+				g.Expect(brief.Status.RepositoryURL).To(HaveSuffix("/" + moved + "/" + repo))
+			}).Should(Succeed())
+			Expect(gitFake.commitCount(moved, repo)).To(Equal(1))
+			rule, _ := gitFake.branchRule(moved, repo)
+			Expect(rule.OperatorPushes).To(BeTrue())
+			Expect(gitFake.agentUser(moved, repo)).To(Equal(model.AgentUsername(ns, repo)))
+			secret := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, key(ns, "brief-cel-lens-git"), secret)).To(Succeed())
+			Expect(string(secret.Data["repository"])).To(ContainSubstring("/" + moved + "/" + repo))
+		})
+
+		It("won't share a Container's repository", func() {
+			createFactory(ns)
+			mustCreate(newSystem(ns, "webshop-core"),
+				newContainer(ns, repo, "webshop-core", c4v1alpha1.ContainerTypeService), newBrief(ns, "cel-lens"))
+			brief := &c4v1alpha1.Brief{}
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
+				g.Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
+				g.Expect(condition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+					To(HaveField("Message", HavePrefix("Container "+repo+" has the repository the Brief needs")))
+			}).Should(Succeed())
+			Expect(gitFake.agentUser(ns, repo)).To(BeEmpty())
 		})
 
 		It("waits for a missing GitProvider, naming it", func() {
