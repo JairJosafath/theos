@@ -218,7 +218,12 @@ export const LABEL_ISSUE = 'c4.factory.io/issue'
 
 export interface Task extends K8sObject {
   spec: {
-    containerRef: LocalRef
+    /** Implement (the default), or Plan: a planning round of a Brief. */
+    kind?: 'Implement' | 'Plan'
+    /** Every Task but a Plan Task names its Container. */
+    containerRef?: LocalRef
+    /** A Plan Task names its Brief in place of a Container. */
+    briefRef?: LocalRef
     /** Implements the goal, and reviews it when there is no reviewerRef. */
     agentRef: LocalRef
     reviewerRef?: LocalRef
