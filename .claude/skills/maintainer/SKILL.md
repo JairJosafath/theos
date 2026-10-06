@@ -107,7 +107,9 @@ carries.
    ([docs/dev/testenv.md](../../../docs/dev/testenv.md#every-release-checks-itself)).
    Cut a release when `feat` or `fix` changes have landed since the last
    tag, main is green, and no issue in progress is meant for this release.
-   - Release at most once a day, unless a fix for a reporter waits.
+   - Release as often as that holds; there is no daily cap. Don't tag while
+     the last release's *Verify Release* still runs, or its
+     `Release vX.Y.Z fails its check` issue is open.
    - Tag the next version on origin/main:
      [SemVer](https://semver.org/), pre-1.0, so `feat` bumps the minor and
      `fix` the patch.
