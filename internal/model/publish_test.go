@@ -1,0 +1,287 @@
+package model
+
+import (
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestNextPublishStep(t *testing.T) {
+	const marker = "<!-- c4factory: cel-lens/extension v0.2.0 -->"
+	const url = "https://github.com/JairJosafath/cel-lens/releases/tag/v0.2.0"
+	vsix := ReleaseAsset{ID: 1, Name: "cel-lens-0.2.0.vsix", Size: 4096}
+	sums := ReleaseAsset{ID: 2, Name: "SHA256SUMS", Size: 120}
+	gitea := &SourceRelease{Body: "- Lens the CEL (#3)\n", Assets: []ReleaseAsset{vsix, sums}}
+	draft := func(assets ...ReleaseAsset) TargetRelease {
+		return TargetRelease{ID: 9, TagName: "v0.2.0", Draft: true, Body: "- Lens the CEL (#3)\n\n" + marker + "\n",
+			Assets: assets}
+	}
+	onGitHub := func(releases ...TargetRelease) *TargetReleases { return &TargetReleases{Releases: releases} }
+	// ready is a release whose runs succeeded, with its Secret, read from both
+	// sides unless f says otherwise.
+	ready := func(f PublishFacts) PublishFacts {
+		f.Configured, f.Namespace, f.Container, f.Tag = true, "cel-lens", "extension", "v0.2.0"
+		f.Repository, f.Secret, f.SecretFound, f.Runs = "JairJosafath/cel-lens", "cel-lens-github", true, RunSucceeded
+		return f
+	}
+	read := func(f PublishFacts) PublishFacts {
+		f = ready(f)
+		if f.Gitea == nil {
+			f.Gitea = gitea
+		}
+		if f.GitHub == nil {
+			f.GitHub = onGitHub()
+		}
+		return f
+	}
+	// readyBut is a ready release that change makes otherwise.
+	readyBut := func(change func(*PublishFacts)) PublishFacts {
+		f := ready(PublishFacts{})
+		change(&f)
+		return f
+	}
+	failure := func(reason string) PublishFacts {
+		return ready(PublishFacts{Failure: &PublishFailure{Reason: reason, Detail: "HTTP 418"}})
+	}
+
+	tests := []struct {
+		name  string
+		facts PublishFacts
+		want  PublishStep
+		// message must contain this, for steps that have one.
+		message string
+	}{
+		{name: "a Crew that doesn't publish does nothing",
+			facts: PublishFacts{Tag: "v0.2.0", Runs: RunSucceeded}, want: PublishStep{Action: PublishNone}},
+		{name: "a published release is not touched again",
+			facts: ready(PublishFacts{Published: true}), want: PublishStep{Action: PublishNone}},
+
+		{name: "runs not started wait",
+			facts: readyBut(func(f *PublishFacts) { f.Runs = RunWaiting }),
+			want:  PublishStep{Action: PublishWait, Reason: PublishWaiting}, message: "they are not started"},
+		{name: "running runs wait",
+			facts: readyBut(func(f *PublishFacts) { f.Runs = RunRunning }),
+			want:  PublishStep{Action: PublishWait, Reason: PublishWaiting}, message: "they are running"},
+		{name: "a failed run waits for a re-run",
+			facts: readyBut(func(f *PublishFacts) { f.Runs = RunFailed }),
+			want:  PublishStep{Action: PublishWait, Reason: PublishWaiting}, message: "waits for a re-run"},
+		{name: "runs wait before the Secret is looked at",
+			facts: PublishFacts{Configured: true, Tag: "v0.2.0", Runs: RunRunning},
+			want:  PublishStep{Action: PublishWait, Reason: PublishWaiting}},
+
+		{name: "a missing Secret fails",
+			facts:   readyBut(func(f *PublishFacts) { f.SecretFound = false }),
+			want:    PublishStep{Action: PublishFail, Reason: PublishSecretMissing},
+			message: "Secret cel-lens-github with the key token is missing"},
+
+		{name: "GitHub refusing the token fails",
+			facts: failure(PublishUnauthorized), want: PublishStep{Action: PublishFail, Reason: PublishUnauthorized},
+			message: "GitHub refused the token in Secret cel-lens-github for JairJosafath/cel-lens: HTTP 418"},
+		{name: "a repository the token can't see fails",
+			facts:   failure(PublishRepositoryNotFound),
+			want:    PublishStep{Action: PublishFail, Reason: PublishRepositoryNotFound},
+			message: "no repository JairJosafath/cel-lens the token in Secret cel-lens-github can see"},
+		{name: "an empty repository fails",
+			facts: failure(PublishEmptyRepository), want: PublishStep{Action: PublishFail, Reason: PublishEmptyRepository},
+			message: "has no default branch to tag v0.2.0 at"},
+		{name: "a tag GitHub says is taken fails",
+			facts: failure(PublishTagTaken), want: PublishStep{Action: PublishFail, Reason: PublishTagTaken},
+			message: "the factory didn't make"},
+		{name: "any other GitHub failure is a GitHub error",
+			facts: failure(PublishGitHubError), want: PublishStep{Action: PublishFail, Reason: PublishGitHubError},
+			message: "GitHub failed publishing v0.2.0 to JairJosafath/cel-lens: HTTP 418"},
+		{name: "an unknown failure is a GitHub error",
+			facts: failure("Teapot"), want: PublishStep{Action: PublishFail, Reason: PublishGitHubError}},
+
+		{name: "the Gitea release is read first",
+			facts: ready(PublishFacts{}), want: PublishStep{Action: PublishReadGitea}},
+		{name: "a missing Gitea release fails",
+			facts: ready(PublishFacts{Gitea: &SourceRelease{Missing: true}}),
+			want:  PublishStep{Action: PublishFail, Reason: PublishNoReleaseFiles}, message: "Gitea has no release v0.2.0"},
+		{name: "a Gitea release without files fails",
+			facts: ready(PublishFacts{Gitea: &SourceRelease{Body: "notes"}}),
+			want:  PublishStep{Action: PublishFail, Reason: PublishNoReleaseFiles}, message: "has no files"},
+		{name: "GitHub is read next",
+			facts: ready(PublishFacts{Gitea: gitea}), want: PublishStep{Action: PublishReadGitHub}},
+
+		{name: "a release of the tag without the marker is taken",
+			facts:   read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 4, TagName: "v0.2.0", Body: "mine"})}),
+			want:    PublishStep{Action: PublishFail, Reason: PublishTagTaken},
+			message: "JairJosafath/cel-lens already has a release or tag v0.2.0"},
+		{name: "a bare tag of that name is taken",
+			facts: read(PublishFacts{GitHub: &TargetReleases{TagExists: true}}),
+			want:  PublishStep{Action: PublishFail, Reason: PublishTagTaken}},
+		{name: "a marked release of another tag doesn't count",
+			facts: read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 4, TagName: "v0.1.0",
+				Body: "<!-- c4factory: cel-lens/extension v0.1.0 -->"})}),
+			want: PublishStep{Action: PublishCreateDraft, Tag: "v0.2.0", Body: "- Lens the CEL (#3)\n\n" + marker + "\n"}},
+		{name: "another Container's marked release of the tag is taken",
+			facts: read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 4, TagName: "v0.2.0",
+				Body: "<!-- c4factory: cel-lens/cli v0.2.0 -->"})}),
+			want: PublishStep{Action: PublishFail, Reason: PublishTagTaken}},
+
+		{name: "notes nobody wrote need the merged issues",
+			facts: read(PublishFacts{Gitea: &SourceRelease{Body: " \n", Assets: []ReleaseAsset{vsix}}}),
+			want:  PublishStep{Action: PublishReadIssues}},
+		{name: "notes nobody wrote are written on Gitea first",
+			facts: read(PublishFacts{Gitea: &SourceRelease{Assets: []ReleaseAsset{vsix}},
+				Issues: []ReleaseIssue{{3, "Lens the CEL"}, {5, "Show errors"}}}),
+			want: PublishStep{Action: PublishWriteNotes, Tag: "v0.2.0",
+				Body: "- Lens the CEL (#3)\n- Show errors (#5)\n"}},
+		{name: "a release with notes gets a marked draft",
+			facts: read(PublishFacts{}),
+			want:  PublishStep{Action: PublishCreateDraft, Tag: "v0.2.0", Body: "- Lens the CEL (#3)\n\n" + marker + "\n"}},
+		{name: "the prefix goes before the tag, in the marker too",
+			facts: read(PublishFacts{TagPrefix: "cli-"}),
+			want: PublishStep{Action: PublishCreateDraft, Tag: "cli-v0.2.0",
+				Body: "- Lens the CEL (#3)\n\n<!-- c4factory: cel-lens/extension cli-v0.2.0 -->\n"}},
+
+		{name: "retry: a draft without assets gets the first",
+			facts: read(PublishFacts{GitHub: onGitHub(draft())}),
+			want:  PublishStep{Action: PublishUploadAsset, Release: 9, Asset: vsix}},
+		{name: "retry: a draft with some assets gets the next",
+			facts: read(PublishFacts{GitHub: onGitHub(draft(ReleaseAsset{ID: 70, Name: vsix.Name, Size: vsix.Size}))}),
+			want:  PublishStep{Action: PublishUploadAsset, Release: 9, Asset: sums}},
+		{name: "retry: an asset of the wrong size is replaced",
+			facts: read(PublishFacts{GitHub: onGitHub(draft(ReleaseAsset{ID: 70, Name: vsix.Name, Size: 1000}))}),
+			want: PublishStep{Action: PublishUploadAsset, Release: 9, Asset: vsix,
+				Replace: &ReleaseAsset{ID: 70, Name: vsix.Name, Size: 1000}}},
+		{name: "retry: the draft is found among other releases",
+			facts: read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 4, TagName: "v0.1.0", Body: "old"},
+				draft(ReleaseAsset{ID: 70, Name: vsix.Name, Size: vsix.Size}))}),
+			want: PublishStep{Action: PublishUploadAsset, Release: 9, Asset: sums}},
+		{name: "retry: a draft with every asset is published",
+			facts: read(PublishFacts{GitHub: onGitHub(draft(
+				ReleaseAsset{ID: 71, Name: sums.Name, Size: sums.Size},
+				ReleaseAsset{ID: 70, Name: vsix.Name, Size: vsix.Size},
+				ReleaseAsset{ID: 72, Name: "extra.txt", Size: 1}))}),
+			want: PublishStep{Action: PublishDraft, Release: 9}},
+		{name: "retry: a draft with notes nobody wrote doesn't write them again",
+			facts: read(PublishFacts{Gitea: &SourceRelease{Assets: []ReleaseAsset{vsix}},
+				GitHub: onGitHub(draft(ReleaseAsset{ID: 70, Name: vsix.Name, Size: vsix.Size}))}),
+			want: PublishStep{Action: PublishDraft, Release: 9}},
+		{name: "a published marked release is done",
+			facts:   read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 9, TagName: "v0.2.0", Body: marker, URL: url})}),
+			want:    PublishStep{Action: PublishDone, Reason: PublishPublished, URL: url},
+			message: "v0.2.0 is published at " + url},
+		{name: "a published marked release wins over a stray draft",
+			facts: read(PublishFacts{GitHub: onGitHub(draft(),
+				TargetRelease{ID: 10, TagName: "v0.2.0", Body: marker, URL: url})}),
+			want: PublishStep{Action: PublishDone, Reason: PublishPublished, URL: url}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextPublishStep(tt.facts)
+			if !strings.Contains(got.Message, tt.message) {
+				t.Errorf("message = %q, want it to contain %q", got.Message, tt.message)
+			}
+			got.Message = ""
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("NextPublishStep() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestNextPublishStepRuns takes a release from nothing on GitHub to published,
+// taking each step on a fake of both sides, and again from a failure halfway.
+func TestNextPublishStepRuns(t *testing.T) {
+	assets := []ReleaseAsset{{1, "a.vsix", 10}, {2, "cli-linux", 20}, {3, "SHA256SUMS", 30}}
+	for _, failAt := range []PublishAction{"", PublishCreateDraft, PublishUploadAsset, PublishDraft} {
+		t.Run("fail at "+string(failAt), func(t *testing.T) {
+			giteaBody := ""
+			gh := &TargetReleases{}
+			failed, replaced := false, false
+			var actions []PublishAction
+			for range 20 {
+				f := PublishFacts{Configured: true, Namespace: "ns", Container: "app", Tag: "v1.0.0",
+					Repository: "o/r", Secret: "s", SecretFound: true, Runs: RunSucceeded}
+				for {
+					step := NextPublishStep(f)
+					switch step.Action {
+					case PublishReadGitea:
+						f.Gitea = &SourceRelease{Body: giteaBody, Assets: assets}
+						continue
+					case PublishReadIssues:
+						f.Issues = []ReleaseIssue{{1, "First"}}
+						continue
+					case PublishReadGitHub:
+						f.GitHub = gh
+						continue
+					}
+					actions = append(actions, step.Action)
+					if step.Action == failAt && !failed {
+						// The call half-happened: an upload left a short asset.
+						failed = true
+						if step.Action == PublishUploadAsset {
+							r := &gh.Releases[0]
+							r.Assets = append(r.Assets, ReleaseAsset{ID: 99, Name: step.Asset.Name, Size: 1})
+						}
+						f.Failure = &PublishFailure{Reason: PublishGitHubError}
+						if got := NextPublishStep(f); got.Reason != PublishGitHubError {
+							t.Fatalf("after a failed call: %+v", got)
+						}
+						break
+					}
+					switch step.Action {
+					case PublishWriteNotes:
+						giteaBody = step.Body
+					case PublishCreateDraft:
+						gh.Releases = append(gh.Releases, TargetRelease{ID: 7, TagName: step.Tag, Draft: true, Body: step.Body})
+					case PublishUploadAsset:
+						r := &gh.Releases[0]
+						if step.Replace != nil {
+							replaced = true
+							r.Assets = slices.DeleteFunc(r.Assets, func(a ReleaseAsset) bool { return a.ID == step.Replace.ID })
+						}
+						r.Assets = append(r.Assets, ReleaseAsset{ID: 100 + step.Asset.ID, Name: step.Asset.Name,
+							Size: step.Asset.Size})
+					case PublishDraft:
+						gh.Releases[0].Draft, gh.Releases[0].URL = false, "https://github.com/o/r/releases/tag/v1.0.0"
+					case PublishDone:
+						r := gh.Releases[0]
+						if len(r.Assets) != 3 || r.Body != "- First (#1)\n\n"+PublishMarker("ns", "app", "v1.0.0")+"\n" {
+							t.Fatalf("published %+v", r)
+						}
+						if replaced != (failAt == PublishUploadAsset) {
+							t.Fatalf("replaced an asset: %v, want it only after a failed upload", replaced)
+						}
+						for _, a := range r.Assets {
+							if a.Size == 1 {
+								t.Fatalf("published a short asset: %+v", r.Assets)
+							}
+						}
+						return
+					default:
+						t.Fatalf("step %+v", step)
+					}
+					break
+				}
+			}
+			t.Fatalf("not published after 20 polls: %v", actions)
+		})
+	}
+}
+
+func TestReleaseNotes(t *testing.T) {
+	got := ReleaseNotes([]ReleaseIssue{{3, "Lens the CEL"}, {12, "Show `errors` inline"}})
+	if want := "- Lens the CEL (#3)\n- Show `errors` inline (#12)\n"; got != want {
+		t.Errorf("ReleaseNotes() = %q, want %q", got, want)
+	}
+	if got := ReleaseNotes(nil); got != "" {
+		t.Errorf("ReleaseNotes(nil) = %q", got)
+	}
+}
+
+func TestPublishMarkerAndTag(t *testing.T) {
+	if got := GitHubTag("cli-", "v0.2.0"); got != "cli-v0.2.0" {
+		t.Errorf("GitHubTag = %q", got)
+	}
+	if got := GitHubTag("", "v0.2.0"); got != "v0.2.0" {
+		t.Errorf("GitHubTag = %q", got)
+	}
+	if got := PublishMarker("cel-lens", "extension", "v0.2.0"); got != "<!-- c4factory: cel-lens/extension v0.2.0 -->" {
+		t.Errorf("PublishMarker = %q", got)
+	}
+}
