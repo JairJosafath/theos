@@ -8,6 +8,14 @@ name: Verify Release
 # oci://ghcr.io/<owner>/c4factory/charts/c4-factory with project webshop. It
 # waits for the seed's repositories, both runners, the manager and the UI, then
 # applies the release's own webshop sample and waits for orders-api's repository.
+# Then it follows docs/getting-started.md for the first app: the `ghcr` pull
+# Secret in webshop and its `default` ServiceAccount patch (proved by pulling
+# agent-go through it), and config/samples/first-app pinned to the release
+# (the agent-go tag and the template refs from its templates/versions.txt),
+# until orders-cli is scaffolded and its Crew is Idle. The Agent isn't run: CI
+# has no Claude token. The samples are the tag's; dispatched, they are the
+# dispatched ref's, so dispatching on main checks the guide against a release.
+# A tag without config/samples/first-app skips that part and says so.
 # The evidence is an artifact and the job summary; a failure files (or comments
 # on) the issue "Release vX.Y.Z fails its check".
 on:
@@ -59,6 +67,27 @@ jobs:
         with:
           ref: ${{ env.TAG }}
           persist-credentials: false
+
+      # The guide's samples: the tag's, or the dispatched ref's (main's).
+      - name: Clone the guide's samples
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || env.TAG }}
+          path: guide
+          sparse-checkout: config/samples
+          persist-credentials: false
+
+      - name: Name the guide's samples
+        env:
+          SAMPLES_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || env.TAG }}
+        run: |
+          echo "SAMPLES_REF=$SAMPLES_REF" >>"$GITHUB_ENV"
+          if [ -d guide/config/samples/first-app ]; then
+            echo "GUIDE=run" >>"$GITHUB_ENV"
+          else
+            echo "GUIDE=skipped" >>"$GITHUB_ENV"
+            echo "::notice::$SAMPLES_REF has no config/samples/first-app: the getting-started check is skipped"
+          fi
 
       - name: Free disk space
         if: runner.environment == 'github-hosted'
@@ -165,6 +194,55 @@ jobs:
           curl -fsS -u "$user:$pass" http://localhost:3000/api/v1/repos/webshop/orders-api/contents |
             jq -r '.[].path'
 
+      # docs/getting-started.md, "Registry login and the pull secret": the
+      # agents' pods run as the project's default ServiceAccount. A pod with
+      # imagePullPolicy Always proves it pulls agent-go from GHCR, though Kind
+      # has the image loaded.
+      - name: "Getting started: the project's pull secret"
+        if: env.GUIDE == 'run'
+        env:
+          TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          $KUBECTL -n webshop create secret docker-registry ghcr --docker-server=ghcr.io \
+            --docker-username="$ACTOR" --docker-password="$TOKEN"
+          $KUBECTL -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr"}]}'
+          $KUBECTL -n webshop run pull-check --image="$REGISTRY/agent-go:$VERSION" --image-pull-policy=Always \
+            --restart=Never --command -- true
+          $KUBECTL -n webshop wait pod/pull-check --for=jsonpath='{.status.phase}'=Succeeded --timeout=10m ||
+            { $KUBECTL -n webshop describe pod pull-check | tail -20; exit 1; }
+          $KUBECTL -n webshop delete pod pull-check
+
+      # docs/getting-started.md, "The model and the Crew", with the guide's
+      # samples set to the release as it says: the agent-go tag and the
+      # template refs of the release's templates/versions.txt. The tag's own
+      # samples must already say so.
+      - name: "Getting started: the first app"
+        if: env.GUIDE == 'run'
+        run: |
+          samples="$RUNNER_TEMP/first-app"
+          cp -r guide/config/samples/first-app "$samples"
+          sed -i -E "s#image: .*/agent-go:.*#image: $REGISTRY/agent-go:$VERSION#" "$samples/agents.yaml"
+          awk 'NR == FNR { ref[$1] = $2; next }
+            /url: .*\/templates\// { name = $2; sub(/.*\/templates\//, "", name) }
+            /^ *ref:/ && (name in ref) { sub(/ref: .*/, "ref: " ref[name]); name = "" }
+            { print }' templates/versions.txt guide/config/samples/first-app/catalog.yaml >"$samples/catalog.yaml"
+          diff -ru guide/config/samples/first-app "$samples" | tee "$RUNNER_TEMP/first-app.diff" || true
+          if [ "$SAMPLES_REF" = "$TAG" ] && [ -s "$RUNNER_TEMP/first-app.diff" ]; then
+            echo "::error::$TAG's config/samples/first-app is not pinned to $TAG (diff above)"
+            exit 1
+          fi
+          $KUBECTL apply -k "$samples"
+          $KUBECTL -n webshop wait container/orders-cli --for=jsonpath='{.status.phase}'=Ready --timeout=5m ||
+            { $KUBECTL -n webshop describe container orders-cli | tail -30; exit 1; }
+          user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
+          pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
+          curl -fsS -u "$user:$pass" http://localhost:3000/api/v1/repos/webshop/orders-cli/contents |
+            jq -r '.[].path'
+          $KUBECTL -n webshop wait crew/orders-cli --for=jsonpath='{.status.phase}'=Idle --timeout=5m ||
+            { $KUBECTL -n webshop get crew orders-cli -o yaml | tail -30; exit 1; }
+          $KUBECTL -n webshop get crew orders-cli -o wide
+
       - name: Collect the evidence
         if: always()
         run: |
@@ -181,6 +259,12 @@ jobs:
           $KUBECTL top node >top.txt 2>&1 || true
           $KUBECTL -n webshop get projects,gitproviders,softwaresystems,containers,datastores,relationships -o wide >webshop.txt 2>&1 || true
           $KUBECTL -n webshop get container orders-api -o yaml >orders-api.yaml 2>&1 || true
+          if [ "$GUIDE" = run ]; then
+            $KUBECTL -n webshop get agents,crews -o wide >first-app.txt 2>&1 || true
+            $KUBECTL -n webshop get container orders-cli -o yaml >orders-cli.yaml 2>&1 || true
+            $KUBECTL -n webshop get crew orders-cli -o yaml >crew-orders-cli.yaml 2>&1 || true
+            cp "$RUNNER_TEMP/first-app.diff" first-app.diff 2>/dev/null || true
+          fi
           helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system status c4-factory >helm-status.txt 2>&1 || true
           user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || true)
           pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || true)
@@ -209,6 +293,19 @@ jobs:
             echo
             echo "### Gitea repositories"; echo '```'; cat gitea-repos.txt; echo '```'
             echo "### webshop"; echo '```'; cat webshop.txt; echo '```'
+            echo "### Getting started"
+            echo
+            if [ "$GUIDE" = run ]; then
+              echo "The guide's first app, from \`config/samples/first-app\` of $SAMPLES_REF set to $VERSION," \
+                "through the \`ghcr\` pull Secret on ServiceAccount \`webshop/default\`." \
+                "The Agent isn't run: CI has no Claude token, so the check stops before a Task."
+              echo; echo '```'; cat first-app.txt; echo '```'
+              if [ -s first-app.diff ]; then
+                echo "Set to the release:"; echo '```diff'; cat first-app.diff; echo '```'
+              fi
+            else
+              echo "Skipped: $SAMPLES_REF has no \`config/samples/first-app\`."
+            fi
             echo "### Pods"; echo '```'; cat pods.txt; echo '```'
           } | tee summary.md >>"$GITHUB_STEP_SUMMARY"
 
