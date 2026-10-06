@@ -25,7 +25,7 @@ import (
 )
 
 // typeIdentifier matches a named Container type from the API or the model.
-var typeIdentifier = regexp.MustCompile(`\b(ContainerType|model\.Type)(StaticSite|Service|Job|Worker|MobileApp)\b`)
+var typeIdentifier = regexp.MustCompile(`\b(ContainerType|model\.Type)(StaticSite|Service|Job|Worker|MobileApp|CLI|Extension)\b`)
 
 // TestOperatorIsTypeNeutral keeps everything type-specific in the catalog: the
 // operator and the scaffold never branch on a Container type, so a new type is an

@@ -1,7 +1,7 @@
 // Command render renders template layers from templates/ into a folder, the way
 // the operator scaffolds a Container, so a template author can run the result:
 //
-//	go run ./hack/render -out /tmp/app -type mobile-app \
+//	go run ./hack/render -out /tmp/app -type cli \
 //	  Framework=go-cli Standard=go-standard Deployment=gitea-release
 package main
 
@@ -21,7 +21,7 @@ func main() {
 	in := scaffold.Input{Project: "webshop", SoftwareSystem: "shop"}
 	flag.StringVar(&in.Container, "container", "sample-app", "Container name")
 	flag.StringVar(&in.DisplayName, "display-name", "Sample App", "Container display name")
-	flag.StringVar(&in.Type, "type", "mobile-app", "Container type")
+	flag.StringVar(&in.Type, "type", "cli", "Container type")
 	flag.Parse()
 	if *out == "" || flag.NArg() == 0 {
 		fmt.Fprintln(os.Stderr, "usage: render -out DIR Side=template ...")

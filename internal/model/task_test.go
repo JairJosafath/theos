@@ -60,8 +60,8 @@ func TestNextTaskStep(t *testing.T) {
 		{name: "red checks send it back", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
 			Checks: "failure", ChecksURL: "http://gitea/runs/4"}, want: ActionRetry, feedback: "http://gitea/runs/4"},
 		{name: "red checks pass on what failed", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
-			Checks: "failure", ChecksLog: "x\n❌ test/a_test.dart: A (failed)\nExpected: 1\n"}, want: ActionRetry,
-			feedback: "What failed in CI:\n❌ test/a_test.dart: A (failed)\nExpected: 1"},
+			Checks: "failure", ChecksLog: "x\n--- FAIL: TestA (0.00s)\n    a_test.go:9: got 2, want 1\n"}, want: ActionRetry,
+			feedback: "What failed in CI:\n--- FAIL: TestA (0.00s)\n    a_test.go:9: got 2, want 1"},
 
 		{name: "waits for the reviewer", facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: running},
 			want: ActionWait},
@@ -277,24 +277,6 @@ func TestCheckFailures(t *testing.T) {
 		want, unwanted []string
 	}{
 		{
-			name: "flutter",
-			log: stamp(
-				"+ very_good_analysis 11.0.0",
-				"✅ test/a_test.dart: A works",
-				"::group::❌ test/recorder_page_test.dart: RecorderPage shows the stop button (failed)",
-				"══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞══",
-				"Expected: exactly one matching candidate",
-				"  Actual: _TextWidgetFinder:<Found 0 widgets>",
-				"::endgroup::",
-				"✅ test/b_test.dart: B works",
-				"   info • Unnecessary cast • lib/x.dart:3:5 • unnecessary_cast",
-				"make: *** [Makefile:21: test] Error 1",
-			),
-			want: []string{"RecorderPage shows the stop button (failed)", "Expected: exactly one",
-				"Actual: _TextWidgetFinder", "info • Unnecessary cast", "make: *** [Makefile:21: test]"},
-			unwanted: []string{"very_good_analysis", "A works", "B works", "2026-10-01T"},
-		},
-		{
 			name: "go test",
 			log: stamp(
 				"go test -race -count=1 ./...",
@@ -342,7 +324,7 @@ func TestCheckFailures(t *testing.T) {
 				" ✓ src/ok.test.ts (3 tests) 4ms",
 				" × src/server.test.ts > findServer > prefers the setting 3ms",
 				" FAIL  src/server.test.ts > findServer > prefers the setting",
-				"AssertionError: expected '/usr/bin/cel' to be '/opt/cel' // Object.is equality",
+				"AssertionError: expected '/usr/bin/app' to be '/opt/app' // Object.is equality",
 				" ❯ src/server.test.ts:42:17",
 				"⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
 				" Test Files  1 failed | 1 passed (2)",
@@ -352,7 +334,7 @@ func TestCheckFailures(t *testing.T) {
 				"✖ 1 problem (1 error, 0 warnings)",
 			),
 			want: []string{"× src/server.test.ts > findServer > prefers the setting",
-				"FAIL  src/server.test.ts > findServer > prefers the setting", "AssertionError: expected '/usr/bin/cel'",
+				"FAIL  src/server.test.ts > findServer > prefers the setting", "AssertionError: expected '/usr/bin/app'",
 				"❯ src/server.test.ts:42:17", "Test Files  1 failed", "error TS2322", "3:7  error  'x' is assigned",
 				"✖ 1 problem"},
 			unwanted: []string{"src/ok.test.ts"},
@@ -383,7 +365,7 @@ func TestCheckFailures(t *testing.T) {
 			}
 		})
 	}
-	if long := CheckFailures(strings.Repeat("error • x\n", 2000)); len(long) > maxCheckExcerpt+10 {
+	if long := CheckFailures(strings.Repeat("Error: x\n", 2000)); len(long) > maxCheckExcerpt+10 {
 		t.Errorf("CheckFailures() of a long log = %d bytes", len(long))
 	}
 }

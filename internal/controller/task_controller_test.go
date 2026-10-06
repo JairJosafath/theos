@@ -227,13 +227,13 @@ var _ = Describe("Task", func() {
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
 		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1"}, "")
-		gitFake.setCheckLog("❌ test/a_test.dart: A (failed)\nExpected: 1\n")
+		gitFake.setCheckLog("--- FAIL: TestA (0.00s)\n    a_test.go:9: got 2, want 1\n")
 		gitFake.setChecks(ns, "orders-api", "sha-r1", "failure")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(task.Status.Feedback).To(ContainSubstring("The CI checks failed"))
-			g.Expect(task.Status.Feedback).To(ContainSubstring("What failed in CI:\n❌ test/a_test.dart: A (failed)"))
+			g.Expect(task.Status.Feedback).To(ContainSubstring("What failed in CI:\n--- FAIL: TestA (0.00s)"))
 		}).Should(Succeed())
 	})
 
