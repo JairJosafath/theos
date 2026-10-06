@@ -391,7 +391,9 @@ jobs:
       - name: "Upgrade: helm upgrade to the release"
         if: matrix.check == 'upgrade'
         run: |
-          helm upgrade c4-factory "oci://$REGISTRY/charts/c4-factory" --version "$VERSION" \
+          # Pulled once: the CRD check renders the same chart.
+          helm pull "oci://$REGISTRY/charts/c4-factory" --version "$VERSION" --untar -d "$RUNNER_TEMP/chart"
+          helm upgrade c4-factory "$RUNNER_TEMP/chart/c4-factory" \
             --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system --wait --timeout 15m -f "$VALUES"
           $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-controller-manager --timeout=300s
           $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-ui --timeout=300s
@@ -408,7 +410,6 @@ jobs:
       - name: "Upgrade: the CRDs are the release's"
         if: matrix.check == 'upgrade'
         run: |
-          helm pull "oci://$REGISTRY/charts/c4-factory" --version "$VERSION" --untar -d "$RUNNER_TEMP/chart"
           chart=$RUNNER_TEMP/chart/c4-factory
           only=()
           for f in "$chart"/templates/crd/*.yaml; do only+=(--show-only "templates/crd/${f##*/}"); done
