@@ -17,15 +17,16 @@ You need:
 - the GitHub CLI (`gh`), logged in, while this repository, the chart and the
   images on GHCR are private.
 
-The commands use the release `0.3.0`; for a later one, change `VERSION`. The
-release brings the catalog and the Agents, pinned to its own template tags and
-agent image, so the sample files name no version. Run the commands from a clone
-of this repository, for the sample files (`gh` clones it while the repository
-is private):
+The commands use the release `0.3.0`; for a later one, change `VERSION`. Run
+them from a clone of this repository at that release's tag, so the sample files
+match the release (`gh` clones it while the repository is private). From the
+release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
+its own template tags and agent image, and the samples make neither; `0.3.0`'s
+samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
-gh repo clone JairJosafath/c4factory && cd c4factory
 VERSION=0.3.0
+gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 ```
 
 ## 1. Install the factory

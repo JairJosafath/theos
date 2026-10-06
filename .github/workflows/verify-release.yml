@@ -221,16 +221,16 @@ jobs:
           $KUBECTL -n webshop delete pod pull-check
 
       # docs/getting-started.md, "The model and the Crew", with the guide's
-      # samples set to the release as it says: the agent-go tag and the
-      # template refs of the release's templates/versions.txt. The tag's own
-      # samples must already say so.
+      # samples. Since the chart installs the catalog and the Agents they pin
+      # nothing; an older tag's samples are set to the release (the agent-go
+      # tag and the template refs of its templates/versions.txt), and the
+      # tag's own samples must already say so. Main's samples need a release
+      # whose chart has the catalog and Agents (after 0.3.0).
       - name: "Getting started: the first app"
         if: env.GUIDE == 'run'
         run: |
           samples="$RUNNER_TEMP/first-app"
           cp -r guide/config/samples/first-app "$samples"
-          # Since the chart installs the catalog and the Agents, the samples
-          # have neither; an older tag's still pin them here.
           if [ -f "$samples/agents.yaml" ]; then
             sed -i -E "s#image: .*/agent-go:.*#image: $REGISTRY/agent-go:$VERSION#" "$samples/agents.yaml"
           fi
