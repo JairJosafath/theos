@@ -11,7 +11,7 @@
 #
 #   hack/check-cache.sh tree     print the tree hash of the working state
 #   hack/check-cache.sh lookup   print the cached-pass line and exit 0 on a hit; exit 1 on a miss or FORCE=1
-#   hack/check-cache.sh record   record a pass of the working state
+#   hack/check-cache.sh record   record a pass of the working state; warn and exit 0 when it can't
 #
 #   CHECK_CACHE_DIR  where passes live (default $XDG_CACHE_HOME/c4factory/checks, which ./dev puts in .dev/cache)
 #   FORCE            non-empty: lookup always misses
@@ -48,15 +48,24 @@ lookup() {
   echo "make check: passed on tree $t at $when in $checkout${agent:+ by $agent} (cached); FORCE=1 to rerun"
 }
 
+# record is best effort: the check passed, so a cache it can't write (a
+# sandboxed session may only write inside its own worktree) warns and exits 0.
 record() {
   local t agent= claim
-  t=$(tree) || return 1
+  if ! t=$(tree); then
+    echo "make check: passed; warning: could not hash the tree, pass not recorded" >&2
+    return 0
+  fi
   claim=$(git rev-parse --show-toplevel)/.relay/claim
   [ -s "$claim" ] && agent=$(jq -r '.name // empty' "$claim" 2>/dev/null)
-  mkdir -p "$DIR" || return 1
-  printf 'when=%s\ncheckout=%s\nagent=%s\n' \
-    "$(date '+%Y-%m-%d %H:%M')" "$(git rev-parse --show-toplevel)" "${agent:-${C4_AGENT:-}}" >"$DIR/$t.$$" &&
-    mv "$DIR/$t.$$" "$DIR/$t"
+  if ! { mkdir -p "$DIR" &&
+    printf 'when=%s\ncheckout=%s\nagent=%s\n' \
+      "$(date '+%Y-%m-%d %H:%M')" "$(git rev-parse --show-toplevel)" "${agent:-${C4_AGENT:-}}" >"$DIR/$t.$$" &&
+    mv "$DIR/$t.$$" "$DIR/$t"; } 2>/dev/null; then
+    rm -f "$DIR/$t.$$" 2>/dev/null
+    echo "make check: passed on tree $t; warning: $DIR is not writable, pass not recorded" >&2
+    return 0
+  fi
   echo "make check: passed on tree $t; recorded"
 }
 
