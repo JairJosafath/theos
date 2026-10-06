@@ -74,6 +74,16 @@ func TestNextPublishStep(t *testing.T) {
 			facts:   readyBut(func(f *PublishFacts) { f.SecretFound = false }),
 			want:    PublishStep{Action: PublishFail, Reason: PublishSecretMissing},
 			message: "Secret cel-lens-github with the key token is missing"},
+		{name: "a Secret that can't be read fails with why",
+			facts: readyBut(func(f *PublishFacts) {
+				f.SecretFound, f.SecretError = false, `secrets "cel-lens-github" is forbidden`
+			}),
+			want: PublishStep{Action: PublishFail, Reason: PublishSecretUnreadable},
+			message: `Secret cel-lens-github can't be read: secrets "cel-lens-github" is forbidden; ` +
+				"v0.2.0 is published once it can"},
+		{name: "runs wait before a Secret read error is reported",
+			facts: readyBut(func(f *PublishFacts) { f.Runs, f.SecretError = RunRunning, "timeout" }),
+			want:  PublishStep{Action: PublishWait, Reason: PublishWaiting}},
 
 		{name: "GitHub refusing the token fails",
 			facts: failure(PublishUnauthorized), want: PublishStep{Action: PublishFail, Reason: PublishUnauthorized},
