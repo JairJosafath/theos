@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tests for hack/relay-watch.sh: when a round starts the relay, and when it
-# starts a triage of the proposed issues, with pick, the proposed list and
+# starts a triage of the proposed issues, and what an idle round logs of the
+# issues pick skips, with pick, blocked, cycles, the proposed list and
 # hack/relay.sh faked; when a triage reads a proposed issue again, with
 # hack/lib/github.sh's proposed against a stubbed GitHub; and when a CI round
 # files a "main is red" issue, with gh faked under the real hack/lib/github.sh.
@@ -15,9 +16,12 @@ mkdir -p "$DIR"
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 
-PICKED= PICK_RC=1 RELAY_RC=0 PROPOSED= PROPOSED_RC=0 TRIAGE_RC=0
+PICKED= PICK_RC=1 RELAY_RC=0 PROPOSED= PROPOSED_RC=0 TRIAGE_RC=0 BLOCKED= BLOCKED_RC=0 CYCLES=
 pick_next() { [ -n "$PICKED" ] && printf '%s\n' "$PICKED"; return "$PICK_RC"; }
 proposed() { echo "$*" >"$T/proposed-args"; [ -n "$PROPOSED" ] && printf '%s\n' $PROPOSED; return "$PROPOSED_RC"; }
+blocked() { [ -n "$BLOCKED" ] && printf '%s\n' "$BLOCKED"; return "$BLOCKED_RC"; }
+# cycles reports a cycle once, as hack/lib/github.sh cycles --report does.
+cycles() { [ -n "$CYCLES" ] && ! grep -qxF "$CYCLES" "$T/cycles" 2>/dev/null && echo "$CYCLES" | tee -a "$T/cycles"; return 0; }
 run_relay() { echo started >>"$T/starts"; echo "worker 1 started"; return "$RELAY_RC"; }
 run_triage() { echo triage >>"$T/triages"; echo "triage started in worker 2"; return "$TRIAGE_RC"; }
 starts() { cat "$T/starts" 2>/dev/null | wc -l | tr -d ' '; }
@@ -200,6 +204,36 @@ check "WATCH_RETRIAGE: logged" "$(logged '(read again after 3h)')" 1
 round
 check "WATCH_RETRIAGE: not twice" "$(triages)" $((before + 5))
 proposed() { echo "$*" >"$T/proposed-args"; [ -n "$PROPOSED" ] && printf '%s\n' $PROPOSED; return "$PROPOSED_RC"; }
+
+# Nothing ready, and skipped issues wait on issues nobody works: logged once
+# per change, on one line.
+PROPOSED= SAID=
+BLOCKED=$'161 waits on 156 (status/proposed, no claim)\n151 waits on 149 (status/ready, no claim)'
+round; round
+check "held: logged once" "$(logged 'held back by issues nobody works: 161 waits on 156 (status/proposed, no claim); 151 waits on 149 (status/ready, no claim)$')" 1
+BLOCKED='161 waits on 156 (status/proposed, no claim)'
+round; round
+check "held: a change logged once" "$(logged 'held back by issues nobody works: 161 waits on 156 (status/proposed, no claim)$')" 1
+BLOCKED=
+round; round
+check "held: none left, logged once" "$(logged 'no skipped issue waits on an issue nobody works')" 1
+BLOCKED='github: no token' BLOCKED_RC=2
+round; round
+check "held: GitHub away, logged once" "$(logged 'could not list what holds back the skipped issues (exit 2): github: no token')" 1
+BLOCKED='161 waits on 156 (status/proposed, no claim)' BLOCKED_RC=0
+round
+check "held: back again, logged again" "$(logged 'held back by issues nobody works: 161 waits on 156 (status/proposed, no claim)$')" 2
+BLOCKED=
+round
+# A cycle: cycles --report's account is logged.
+CYCLES='cycle #105 #106: commented on #105 #106; #106 to status/needs-human'
+round; round
+check "cycle: logged once" "$(logged 'cycle #105 #106: commented on #105 #106; #106 to status/needs-human$')" 1
+cycles() { echo 'github: no token'; return 2; }
+round; round
+check "cycle: a failure logged once" "$(logged 'github: no token (cycles --report failed, exit 2)$')" 1
+cycles() { [ -n "$CYCLES" ] && ! grep -qxF "$CYCLES" "$T/cycles" 2>/dev/null && echo "$CYCLES" | tee -a "$T/cycles"; return 0; }
+CYCLES=
 
 # An issue is ready: start the relay, and log the issue and its output.
 PICKED=$'12\tFix the guides\thttps://github.com/x/y/issues/12\tready' PICK_RC=0

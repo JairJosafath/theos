@@ -15,6 +15,7 @@ make check               # manifests, generate, fmt, vet, lint and test
 make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
+make gitea-local seed-local  # A Gitea of this checkout's own, seeded like Kind's (no kubectl)
 make test-gitea          # gitprovider against a local Gitea (make gitea-local), or C4_GITEA_URL if set
 make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind cluster
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain, CI runner (label base), Agent Sandbox, agent image
@@ -69,6 +70,17 @@ Gitea instead, for example the Kind one behind `make gitea-forward`;
 `make test-gitea-kind` does that forward and reads the token from the cluster.
 Sourcing `credentials.env` into your shell exports `C4_GITEA_URL` too, so
 `make test-gitea` then skips starting the local Gitea; unset it after a stop.
+
+`make seed-local` starts it and seeds it as `make seed` seeds Kind's, with no
+kubectl: the `templates` organization with every tag in
+`templates/versions.txt`, and the `webshop` organization. The seed's file mode
+(`CREDENTIALS_DIR` in `hack/seed/seed.sh`) writes webshop's token to
+`.gitea-local/webshop.env` (mode 0600; `C4_GITEA_URL`, `C4_GITEA_USERNAME`,
+`C4_GITEA_TOKEN`) instead of Secret `gitea-credentials`, and skips the runner
+token. Use it to check template work on any device: a wording fix, a new tag in
+`versions.txt`, or how the seed pushes and tags. A second run changes nothing,
+and warns when a template no longer matches its tag. `hack/seed_test.sh`
+covers the file mode against a stand-in Gitea.
 
 No workflow runs on pull requests, so run `make test-gitea` before merging a
 change to `internal/gitprovider` or the seed; the Tests workflow runs it on
@@ -221,6 +233,11 @@ a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
 ready and urgent, so the next session fixes main before anything else; a single
 failure files nothing.
+With nothing ready, it also logs, once per change, which skipped issue waits on
+which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
+alone lists every skipped issue's blockers, with status and claim), and when
+issues wait on each other in a cycle, `cycles --report` comments each of them
+once and moves the newest to `status/needs-human`.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
 the triage's reasons with `proposed --since` against a stubbed GitHub, and its
 CI rounds with `gh` faked.

@@ -148,6 +148,10 @@ $(GITEA_BIN):
 gitea-local: $(GITEA_BIN) ## Start this checkout's own Gitea from .gitea-local/ (no Kubernetes); credentials in .gitea-local/credentials.env.
 	@GITEA="$(GITEA_BIN)" hack/gitea-local.sh start
 
+.PHONY: seed-local
+seed-local: gitea-local ## Seed the local Gitea like make seed, no kubectl: templates and tags, webshop and its token in .gitea-local/webshop.env.
+	@hack/gitea-local.sh seed
+
 .PHONY: gitea-local-stop
 gitea-local-stop: ## Stop this checkout's local Gitea; its data stays in .gitea-local/.
 	@hack/gitea-local.sh stop

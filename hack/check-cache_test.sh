@@ -45,6 +45,17 @@ printf 'c\n' >tracked; git add tracked; printf 'a\n' >tracked
 "$CACHE" lookup >/dev/null; check "staged change, worktree back: hit (the worktree counts)" $? 0
 git reset -q
 
+# A cache dir that can't be written: record warns and exits 0, so a passing
+# check still passes. (root writes anywhere, so the case needs a plain user.)
+if [ "$(id -u)" != 0 ]; then
+  mkdir "$T/ro" && chmod 555 "$T/ro"
+  err=$(CHECK_CACHE_DIR=$T/ro/checks "$CACHE" record 2>&1 >/dev/null); check "unwritable cache: record exit 0" $? 0
+  [[ $err == "make check: passed on tree $t; warning: $T/ro/checks is not writable, pass not recorded" ]]
+  check "unwritable cache: warns on stderr" $? 0
+  CHECK_CACHE_DIR=$T/ro/checks "$CACHE" lookup >/dev/null; check "unwritable cache: miss" $? 1
+  chmod 755 "$T/ro"
+fi
+
 # A pass in one checkout is a hit in another on the same tree.
 git worktree add -q "$T/other" HEAD 2>/dev/null
 (cd "$T/other" && "$CACHE" lookup >/dev/null); check "other worktree, same tree: hit" $? 0
