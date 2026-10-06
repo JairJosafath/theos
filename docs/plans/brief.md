@@ -70,6 +70,31 @@ leaves main working: nothing plans until step 5 lands. Each issue says
 | 7 | #281 | UI: the box, the prompt field and the Brief's status (B15); server tests for the two writes and that every other write is still refused | 1 | no |
 | 8 | #282 | Sample, docs and the Done-when run: `config/samples/brief/cel-lens.yaml`, getting-started's short path, design.md's status line, evidence in `docs/screenshots/brief/` | 5, 6, 7 | yes |
 
+## Step 2: the plan's format
+
+What B5 and B7 leave open, settled in step 2 (`internal/model/brief.go`):
+
+- **`plan/model.yaml` is the whole story model the round leaves,** as
+  manifests (`apiVersion: c4.factory.io/v1alpha1`, `kind`, `metadata.name`,
+  `spec` as in the CRDs), one per document: what the namespace holds, changed
+  or not, and what the round adds. A deletion is an object of the namespace
+  left out, and is refused. B7's 20 counts the objects the round creates or
+  changes, not the unchanged ones, so a big namespace can still be planned.
+  A story kind's spec is read strictly: a field the kind doesn't have is a
+  parse error naming the file and document.
+- **An issue file** is `plan/issues/<nn>-<container>.md`: front matter between
+  `---` lines with `title` (required) and `labels`, then the body. `nn` is the
+  issue's number in the round (B11's marker), unique in the plan.
+- **A design idea** is an issue labeled `status/design`; it needs no
+  acceptance criteria when its Container's Crew has a designer: an existing
+  Container's Crew names one, or, for a new Container, the Brief does (B9).
+- **A plan with `needs-input.md`** may leave out everything else; the
+  controller checks a plan only when it has none.
+- **Refusals** carry a subject (`Kind/name` or the file) and a reason the
+  planner can act on; a refused plan gets them all at once, not the first.
+- The operator files an issue's body with the planner's `<!--` escaped, then
+  the marker (`BriefIssueBody`), as bump issues do.
+
 ## Review focus
 
 1. **A plan that changes a scaffolded Container's type or catalog refs:**

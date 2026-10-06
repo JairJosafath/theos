@@ -1,0 +1,482 @@
+package model
+
+import (
+	"fmt"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+const happyModel = `apiVersion: c4.factory.io/v1alpha1
+kind: Project
+metadata:
+  name: shop
+spec:
+  displayName: Shop
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: shop
+spec:
+  description: Sells things
+  needs: [orders]
+  kpis: [orders per day]
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: api
+spec:
+  softwareSystemRef: {name: shop}
+  type: service
+  gitProviderRef: {name: gitea}
+  frameworkRef: {name: go-service}
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: web
+spec:
+  softwareSystemRef: {name: shop}
+  displayName: Web
+  type: static-site
+  gitProviderRef: {name: gitea}
+  frameworkRef: {name: react-site}
+  standardRef: {name: web-standard}
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: DataStore
+metadata:
+  name: db
+spec:
+  softwareSystemRef: {name: shop}
+  connectorRef: {name: postgres}
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: api-to-db
+spec:
+  source: {kind: Container, name: api}
+  target: {kind: DataStore, name: db}
+  description: Keeps orders
+`
+
+const readyIssue = `---
+title: Show the orders
+labels: [kind/feature]
+---
+## Goal
+
+A page lists the orders.
+
+## Acceptance criteria
+
+- [ ] The page lists every order
+`
+
+func happyFiles() map[string]string {
+	return map[string]string{
+		PlanModelFile:             happyModel,
+		"plan/issues/01-web.md":   readyIssue,
+		"plan/issues/02-api.md":   strings.Replace(readyIssue, "Show the orders", "Serve the orders", 1),
+		PlanChoicesFile:           "- A static site for the shop\n- Postgres keeps orders\n",
+		"brief.md":                "not part of the plan",
+		"plan/issues/.gitkeep":    "",
+		"model/containers/api.md": "not part of the plan",
+	}
+}
+
+func happyCurrent() CurrentModel {
+	return CurrentModel{
+		Objects: []PlanObject{
+			{Kind: KindProject, Name: "shop", DisplayName: "Shop"},
+			{Kind: KindSoftwareSystem, Name: "shop", Description: "Sells things", Needs: []string{"orders"},
+				KPIs: []string{"orders per day"}},
+			{Kind: KindContainer, Name: "api", SoftwareSystem: "shop", Type: TypeService, GitProvider: "gitea",
+				Framework: "go-service"},
+		},
+		Catalog: []CatalogEntry{
+			{Side: SideFramework, Name: "go-service", SupportedTypes: []string{TypeService}},
+			{Side: SideFramework, Name: "react-site", SupportedTypes: []string{TypeStaticSite}},
+			{Side: SideStandard, Name: "web-standard", SupportedTypes: []string{TypeStaticSite},
+				SupportedFrameworks: []string{"react-site"}},
+			{Side: SideStandard, Name: "go-standard", SupportedTypes: []string{TypeService},
+				SupportedFrameworks: []string{"go-service"}},
+			{Side: SideCompute, Name: "k8s", SupportedTypes: []string{TypeService}},
+			{Side: SideConnector, Name: "postgres", SupportedTypes: []string{TypeService}},
+		},
+		GitProvider: "gitea",
+	}
+}
+
+func TestParsePlan(t *testing.T) {
+	plan, err := ParsePlan(happyFiles())
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := make([]string, 0, len(plan.Objects))
+	for _, o := range plan.Objects {
+		refs = append(refs, o.Ref().String())
+	}
+	wantRefs := []string{"Project/shop", "SoftwareSystem/shop", "Container/api", "Container/web", "DataStore/db",
+		"Relationship/api-to-db"}
+	if !reflect.DeepEqual(refs, wantRefs) {
+		t.Errorf("objects %v, want %v", refs, wantRefs)
+	}
+	web := plan.Objects[3]
+	if web.Type != TypeStaticSite || web.Framework != "react-site" || web.Standard != "web-standard" ||
+		web.SoftwareSystem != "shop" || web.GitProvider != "gitea" || web.DisplayName != "Web" {
+		t.Errorf("web = %+v", web)
+	}
+	if s := plan.Objects[1]; !reflect.DeepEqual(s.KPIs, []string{"orders per day"}) || s.Description != "Sells things" {
+		t.Errorf("system = %+v", s)
+	}
+	if r := plan.Objects[5]; r.Source != (Ref{KindContainer, "api"}) || r.Target != (Ref{KindDataStore, "db"}) {
+		t.Errorf("relationship = %+v", r)
+	}
+	if len(plan.Issues) != 2 || plan.Issues[0].Container != "web" || plan.Issues[0].N != 1 ||
+		plan.Issues[0].Title != "Show the orders" || !reflect.DeepEqual(plan.Issues[0].Labels, []string{"kind/feature"}) ||
+		!strings.HasPrefix(plan.Issues[0].Body, "## Goal") || plan.Issues[1].Container != "api" {
+		t.Errorf("issues = %+v", plan.Issues)
+	}
+	if want := []string{"A static site for the shop", "Postgres keeps orders"}; !reflect.DeepEqual(plan.Choices, want) {
+		t.Errorf("choices %v, want %v", plan.Choices, want)
+	}
+	if plan.NeedsInput != "" {
+		t.Errorf("needs input %q", plan.NeedsInput)
+	}
+}
+
+func TestParsePlanNeedsInput(t *testing.T) {
+	plan, err := ParsePlan(map[string]string{PlanNeedsInputFile: "  Which payment provider?\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.NeedsInput != "Which payment provider?" || plan.Objects != nil {
+		t.Errorf("plan = %+v", plan)
+	}
+}
+
+func TestParsePlanErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  string // the error starts with the file it names
+	}{
+		{"no model", map[string]string{PlanChoicesFile: "x"}, PlanModelFile},
+		{"model isn't YAML", map[string]string{PlanModelFile: "kind: [Container"}, PlanModelFile},
+		{"a document without a name", map[string]string{PlanModelFile: "kind: Person\n"}, PlanModelFile},
+		{"a field the kind doesn't have", map[string]string{
+			PlanModelFile: "apiVersion: c4.factory.io/v1alpha1\nkind: Person\nmetadata: {name: ann}\nspec: {type: service}\n"},
+			PlanModelFile},
+		{"an empty needs-input", map[string]string{PlanNeedsInputFile: " \n", PlanModelFile: ""}, PlanNeedsInputFile},
+		{"an issue file badly named", map[string]string{PlanModelFile: "", "plan/issues/web.md": readyIssue},
+			"plan/issues/web.md"},
+		{"an issue for a name that isn't a DNS label", map[string]string{PlanModelFile: "", "plan/issues/01-Web.md": readyIssue},
+			"plan/issues/01-Web.md"},
+		{"an issue without front matter", map[string]string{PlanModelFile: "", "plan/issues/01-web.md": "## Goal\n"},
+			"plan/issues/01-web.md"},
+		{"front matter never closed", map[string]string{PlanModelFile: "", "plan/issues/01-web.md": "---\ntitle: x\n"},
+			"plan/issues/01-web.md"},
+		{"an issue without a title", map[string]string{PlanModelFile: "", "plan/issues/01-web.md": "---\nlabels: [a]\n---\nbody"},
+			"plan/issues/01-web.md"},
+		{"an unknown front matter field", map[string]string{PlanModelFile: "",
+			"plan/issues/01-web.md": "---\ntitle: x\nmilestone: v1\n---\nbody"}, "plan/issues/01-web.md"},
+		{"two issues with one number", map[string]string{PlanModelFile: "",
+			"plan/issues/01-web.md": readyIssue, "plan/issues/1-api.md": readyIssue}, "plan/issues/1-api.md"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParsePlan(tt.files)
+			if err == nil || !strings.HasPrefix(err.Error(), tt.want) {
+				t.Errorf("err = %v, want one naming %s", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckPlan(t *testing.T) {
+	object := func(p *Plan, ref string) *PlanObject {
+		for i, o := range p.Objects {
+			if o.Ref().String() == ref {
+				return &p.Objects[i]
+			}
+		}
+		t.Fatalf("no %s in the plan", ref)
+		return nil
+	}
+	tests := []struct {
+		name    string
+		change  func(p *Plan, c *CurrentModel)
+		subject string // "" means the plan passes
+		reason  string
+	}{
+		{"the happy path", func(*Plan, *CurrentModel) {}, "", ""},
+		{"story text of what exists may change", func(p *Plan, _ *CurrentModel) {
+			api := object(p, "Container/api")
+			api.DisplayName, api.Description = "API", "Serves orders"
+			object(p, "SoftwareSystem/shop").Needs = []string{"orders", "refunds"}
+		}, "", ""},
+		{"a Secret", func(p *Plan, _ *CurrentModel) {
+			p.Objects = append(p.Objects, PlanObject{APIVersion: "v1", Kind: "Secret", Name: "token"})
+		}, "Secret/token", "is the person's to make"},
+		{"a GitProvider", func(p *Plan, _ *CurrentModel) {
+			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: "GitProvider", Name: "github"})
+		}, "GitProvider/github", "a plan writes only Project, Person"},
+		{"an Agent", func(p *Plan, _ *CurrentModel) {
+			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: "Agent", Name: "cheap"})
+		}, "Agent/cheap", "is the person's to make"},
+		{"a story kind of another group", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").APIVersion = "example.com/v1"
+		}, "Container/web", PlanAPIVersion},
+		{"a name that isn't a DNS label", func(p *Plan, _ *CurrentModel) {
+			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindPerson, Name: "Ann_B"})
+		}, "Person/Ann_B", "not a DNS label"},
+		{"an object twice", func(p *Plan, _ *CurrentModel) {
+			p.Objects = append(p.Objects, *object(p, "DataStore/db"))
+		}, "DataStore/db", "twice"},
+		{"more than 20 objects", func(p *Plan, _ *CurrentModel) {
+			for i := range 18 {
+				p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindPerson, Name: fmt.Sprintf("p%d", i)})
+			}
+		}, PlanModelFile, "creates or changes 20+ objects"},
+		{"more than 10 issues", func(p *Plan, _ *CurrentModel) {
+			for i := range 9 {
+				p.Issues = append(p.Issues, PlanIssue{File: "x", N: 10 + i, Container: "web", Body: p.Issues[0].Body})
+			}
+		}, planIssuesDir, "has 11 issues"},
+		{"a Framework not installed", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").Framework = "vue-site"
+		}, "Container/web", `frameworkRef names "vue-site", which is not an installed Framework; installed: go-service and react-site`},
+		{"a Framework that doesn't support the type", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").Framework = "go-service"
+		}, "Container/web", "frameworkRef names go-service, which does not support static-site; Frameworks that do: react-site"},
+		{"a Standard that doesn't support the type", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").Standard = "go-standard"
+		}, "Container/web", "standardRef names go-standard, which does not support static-site"},
+		{"a Standard that doesn't fit the Framework", func(p *Plan, c *CurrentModel) {
+			c.Catalog = append(c.Catalog, CatalogEntry{Side: SideFramework, Name: "vue-site", SupportedTypes: []string{TypeStaticSite}})
+			object(p, "Container/web").Framework = "vue-site"
+		}, "Container/web", "standardRef: web-standard does not support vue-site"},
+		{"a Compute not installed", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").Compute = "lambda"
+		}, "Container/web", `computeRef names "lambda"`},
+		{"a Deployment when none is installed", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").Deployment = "helm"
+		}, "Container/web", "installed: none"},
+		{"a Connector not installed", func(p *Plan, _ *CurrentModel) {
+			object(p, "DataStore/db").Connector = "mysql"
+		}, "DataStore/db", `connectorRef names "mysql"`},
+		{"a Connector that doesn't support the Container", func(p *Plan, _ *CurrentModel) {
+			rel := object(p, "Relationship/api-to-db")
+			rel.Name, rel.Source = "web-to-db", Ref{KindContainer, "web"}
+		}, "Relationship/web-to-db", "Connector postgres does not support static-site, the type of Container web"},
+		{"a Container without a type", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").Type = ""
+		}, "Container/web", `type "" is not a Container type; one of static-site, service`},
+		{"a Container of an unknown type", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").Type = "website"
+		}, "Container/web", `type "website" is not a Container type`},
+		{"a Relationship to itself", func(p *Plan, _ *CurrentModel) {
+			object(p, "Relationship/api-to-db").Target = Ref{KindContainer, "api"}
+		}, "Relationship/api-to-db", "points to itself"},
+		{"a Relationship that bundles a DataStore", func(p *Plan, _ *CurrentModel) {
+			object(p, "Relationship/api-to-db").Bundles = true
+		}, "Relationship/api-to-db", "only a Container to Container link can bundle"},
+		{"another GitProvider than the Brief's", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").GitProvider = "github"
+		}, "Container/web", `gitProviderRef names "github"; a Brief's Containers use its GitProvider, "gitea"`},
+		{"a Container of a system not in the plan", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").SoftwareSystem = "blog"
+		}, "Container/web", `softwareSystemRef names "blog"`},
+		{"a Relationship to nothing", func(p *Plan, _ *CurrentModel) {
+			object(p, "Relationship/api-to-db").Target = Ref{KindDataStore, "cache"}
+		}, "Relationship/api-to-db", "target names DataStore/cache"},
+		{"a second Project", func(p *Plan, _ *CurrentModel) {
+			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindProject, Name: "blog"})
+		}, "Project/blog", "has Project shop already"},
+		{"two Projects in an empty namespace", func(p *Plan, c *CurrentModel) {
+			c.Objects = nil
+			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindProject, Name: "blog"})
+		}, "Project/blog", "more than one Project"},
+		{"a Container's type changes", func(p *Plan, c *CurrentModel) {
+			c.Catalog[0].SupportedTypes = append(c.Catalog[0].SupportedTypes, TypeJob)
+			object(p, "Container/api").Type = TypeJob
+		}, "Container/api", `type can't change (from "service" to "job")`},
+		{"a Container's Framework changes", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/api").Framework = "react-site"
+		}, "Container/api", `frameworkRef can't change (from "go-service" to "react-site")`},
+		{"a Standard is added to a Container", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/api").Standard = "go-standard"
+		}, "Container/api", `standardRef can't change (from "" to "go-standard")`},
+		{"an existing DataStore's Connector changes", func(p *Plan, c *CurrentModel) {
+			c.Objects = append(c.Objects, PlanObject{Kind: KindDataStore, Name: "db", SoftwareSystem: "shop", Connector: "redis"})
+		}, "DataStore/db", `connectorRef can't change (from "redis" to "postgres")`},
+		{"an existing Relationship's target changes", func(p *Plan, c *CurrentModel) {
+			c.Objects = append(c.Objects, PlanObject{Kind: KindRelationship, Name: "api-to-db",
+				Source: Ref{KindContainer, "api"}, Target: Ref{KindSoftwareSystem, "shop"}})
+		}, "Relationship/api-to-db", `target can't change (from "SoftwareSystem/shop" to "DataStore/db")`},
+		{"a deletion", func(p *Plan, _ *CurrentModel) {
+			p.Objects = slicesDelete(p.Objects, "Container/api")
+			p.Objects = slicesDelete(p.Objects, "Relationship/api-to-db")
+			p.Issues = p.Issues[:1]
+		}, "Container/api", "a plan deletes nothing"},
+		{"an issue for an unknown Container", func(p *Plan, _ *CurrentModel) {
+			p.Issues[1].Container = "mobile"
+		}, "plan/issues/02-api.md", `Container "mobile", which is not in the namespace or the plan`},
+		{"an issue without acceptance criteria", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].Body = "## Goal\n\nA page lists the orders."
+		}, "plan/issues/01-web.md", "MissingAcceptanceCriteria"},
+		{"a design idea for a new Container when the Brief has a designer", func(p *Plan, c *CurrentModel) {
+			c.Designer = true
+			p.Issues[0].Body, p.Issues[0].Labels = "A calm page for orders", []string{LabelDesign}
+		}, "", ""},
+		{"a design idea for an existing Container whose Crew has a designer", func(p *Plan, c *CurrentModel) {
+			c.CrewDesigners = []string{"api"}
+			p.Issues[1].Body, p.Issues[1].Labels = "An API people like", []string{LabelDesign}
+		}, "", ""},
+		{"a design idea for a new Container when the Brief has no designer", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].Body, p.Issues[0].Labels = "A calm page for orders", []string{LabelDesign}
+		}, "plan/issues/01-web.md", "web's Crew has no designer"},
+		{"a design idea for an existing Container whose Crew has no designer", func(p *Plan, c *CurrentModel) {
+			c.Designer = true
+			p.Issues[1].Body, p.Issues[1].Labels = "An API people like", []string{LabelDesign}
+		}, "plan/issues/02-api.md", "api's Crew has no designer"},
+		{"empty choices", func(p *Plan, _ *CurrentModel) {
+			p.Choices = nil
+		}, PlanChoicesFile, "is empty"},
+		{"choices with only a heading and empty items", func(p *Plan, _ *CurrentModel) {
+			parsed, err := ParsePlan(map[string]string{PlanModelFile: "", PlanChoicesFile: "# Choices\n-\n- [ ]\n*\n"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.Choices = parsed.Choices
+		}, PlanChoicesFile, "is empty"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := ParsePlan(happyFiles())
+			if err != nil {
+				t.Fatal(err)
+			}
+			current := happyCurrent()
+			tt.change(&plan, &current)
+			got := CheckPlan(plan, current)
+			if tt.subject == "" {
+				if got != nil {
+					t.Errorf("refused: %v", got)
+				}
+				return
+			}
+			reason := strings.Replace(tt.reason, "20+", "21", 1)
+			for _, r := range got {
+				if r.Subject == tt.subject && strings.Contains(r.Reason, reason) {
+					return
+				}
+			}
+			t.Errorf("got %v, want %s: ...%s...", got, tt.subject, reason)
+		})
+	}
+}
+
+func slicesDelete(objects []PlanObject, ref string) []PlanObject {
+	var out []PlanObject
+	for _, o := range objects {
+		if o.Ref().String() != ref {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+func TestPlanDiff(t *testing.T) {
+	plan, err := ParsePlan(happyFiles())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Objects[2].Description = "Serves orders" // Container/api
+	created, changed := PlanDiff(plan, happyCurrent())
+	refs := func(objects []PlanObject) (out []string) {
+		for _, o := range objects {
+			out = append(out, o.Ref().String())
+		}
+		return out
+	}
+	if want := []string{"Container/web", "DataStore/db", "Relationship/api-to-db"}; !reflect.DeepEqual(refs(created), want) {
+		t.Errorf("created %v, want %v", refs(created), want)
+	}
+	if want := []string{"Container/api"}; !reflect.DeepEqual(refs(changed), want) {
+		t.Errorf("changed %v, want %v", refs(changed), want)
+	}
+}
+
+func TestRoundPrompts(t *testing.T) {
+	tests := []struct {
+		name    string
+		prompts []string
+		planned int
+		want    []string
+	}{
+		{"the idea's round takes no prompt", nil, 0, nil},
+		{"every prompt when none was planned", []string{"a", "b"}, 0, []string{"a", "b"}},
+		{"the new ones after the planned", []string{"a", "b", "c"}, 1, []string{"b", "c"}},
+		{"none when every prompt was planned", []string{"a", "b"}, 2, nil},
+		{"none when planned is past the end", []string{"a"}, 3, nil},
+		{"none for a negative count", []string{"a"}, -1, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RoundPrompts(tt.prompts, tt.planned); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	// A prompt appended during a round is taken by the next one, never twice:
+	// a round records how many prompts it took when it started, and the Brief's
+	// promptsPlanned becomes that once the round applies.
+	prompts := make([]string, 0, 2)
+	prompts = append(prompts, "support VAP files first")
+	planned := 0
+	round1 := RoundPrompts(prompts, planned)
+	prompts = append(prompts, "and CRDs") // appended while round 1 runs
+	planned += len(round1)                // round 1 applies
+	round2 := RoundPrompts(prompts, planned)
+	planned += len(round2)
+	if !reflect.DeepEqual(round1, []string{"support VAP files first"}) || !reflect.DeepEqual(round2, []string{"and CRDs"}) ||
+		RoundPrompts(prompts, planned) != nil {
+		t.Errorf("round 1 %v, round 2 %v, then %v", round1, round2, RoundPrompts(prompts, planned))
+	}
+}
+
+func TestIssueMarker(t *testing.T) {
+	if got := IssueMarker("cel-lens", 2, 3); got != "<!-- c4-brief: cel-lens/2/3 -->" {
+		t.Errorf("marker %q", got)
+	}
+	issue := PlanIssue{N: 3, Body: "## Goal\n\n<!-- c4-brief: cel-lens/2/4 -->\n\nx"}
+	body := BriefIssueBody(issue, "cel-lens", 2)
+	tests := []struct {
+		name   string
+		body   string
+		brief  string
+		round  int
+		n      int
+		wanted bool
+	}{
+		{"the body it wrote", body, "cel-lens", 2, 3, true},
+		{"another number", body, "cel-lens", 2, 4, false},
+		{"another round", body, "cel-lens", 1, 3, false},
+		{"another Brief", body, "cel", 2, 3, false},
+		{"inside a line", "see <!-- c4-brief: cel-lens/2/3 --> here", "cel-lens", 2, 3, false},
+		{"with spaces around", "x\n  <!-- c4-brief: cel-lens/2/3 -->  \n", "cel-lens", 2, 3, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HasIssueMarker(tt.body, tt.brief, tt.round, tt.n); got != tt.wanted {
+				t.Errorf("got %v, want %v in %q", got, tt.wanted, tt.body)
+			}
+		})
+	}
+}
