@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -165,6 +166,17 @@ type Provider interface {
 	// TagRuns returns the CI workflow runs a push of tag at commit started,
 	// newest first.
 	TagRuns(ctx context.Context, repo Repository, tag, commit string) ([]WorkflowRun, error)
+	// GetRelease returns the release of tag with its assets, a draft too, or nil
+	// when repo has none.
+	GetRelease(ctx context.Context, repo Repository, tag string) (*Release, error)
+	// OpenReleaseAsset starts the download of asset and returns its body, which
+	// the caller closes, and its size in bytes. The body is streamed, never held
+	// whole in memory, and fails as it is read if it is not that size. ctx
+	// bounds the whole download.
+	OpenReleaseAsset(ctx context.Context, repo Repository, asset ReleaseAsset) (io.ReadCloser, int64, error)
+	// SetReleaseBody replaces the notes of release id with body; a body of ""
+	// leaves them as they are.
+	SetReleaseBody(ctx context.Context, repo Repository, id int64, body string) error
 }
 
 // BranchRule is what a protected branch requires of a pull request.
