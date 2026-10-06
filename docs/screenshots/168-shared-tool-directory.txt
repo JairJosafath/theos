@@ -1,0 +1,67 @@
+# #168: one tool directory per device
+
+## Two worktrees run `make lint` at the same moment on an empty tool directory (LOCALBIN=<scratch>/tools)
+
+### worktree A (relay-8)
+Downloading github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+"<scratch>/tools/golangci-lint-v2.13.1-custom-3965669120" run
+0 issues.
+A exit 0
+
+### worktree B (a fresh temporary worktree)
+Building custom golangci-lint with plugins...
+"<scratch>/tools/golangci-lint-v2.13.1-custom-3965669120" run
+0 issues.
+B exit 0
+
+A installed golangci-lint while B waited on its lock; B built the custom one while A waited. Both exit 0.
+
+## First make check in relay-8 fills the shared .dev/make/bin
+
+check-a2.log:13:0 issues.
+check-a2.log:14:Setting up envtest binaries for Kubernetes version 1.37...
+features	0.008s	coverage: 92.0% of statements
+agentrunner	7.571s	coverage: 87.8% of statements
+controller	149.606s	coverage: 84.1% of statements
+gitprovider	0.541s	coverage: 81.0% of statements
+model	0.019s	coverage: 98.4% of statements
+scaffold	0.042s	coverage: 92.4% of statements
+sessionclient	15.964s	coverage: 73.2% of statements
+controller-gen@v0.22.0
+golangci-lint@v2.13.1
+check-a.log:7:Building custom golangci-lint with plugins...
+check-a.log:9:0 issues.
+setup-envtest@v0.25.0
+check-a.log:11:Setting up envtest binaries for Kubernetes version 1.37...
+
+(The first try failed on a network reset while downloading envtest-v1.37.0; the retry passed: exit 0.)
+
+## First make check in a fresh worktree (no bin/, no .dev link): installs nothing, exit 0
+
+heavy-slot: all 2 heavy-job slots on this device are taken (HEAVY_JOBS); `make check` waits for one. Waiting is not a hang. Held by:
+  slot 1: pid 323467 in /home/asus/www/github.com/jairjosafath/c4factory/.claude/worktrees/relay-4, `make check`, since 02:04
+  slot 2: pid 330003 in /home/asus/www/github.com/jairjosafath/c4factory/.claude/worktrees/relay-1, `make check`, since 02:01
+heavy-slot: got slot 2 after 31s; `make check` starts
+"/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/controller-gen-v0.22.0" rbac:roleName=manager-role crd webhook paths="./api/...;./cmd/...;./internal/..." output:crd:artifacts:config=config/crd/bases
+"/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/controller-gen-v0.22.0" object:headerFile="hack/boilerplate.go.txt",year=2026 paths="./api/...;./cmd/...;./internal/..."
+go fmt ./...
+go vet ./...
+"/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/golangci-lint-v2.13.1-custom-3965669120" run
+0 issues.
+Setting up envtest binaries for Kubernetes version 1.37...
+/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/k8s/1.37.0-linux-amd64KUBEBUILDER_ASSETS="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/k8s/1.37.0-linux-amd64" go test $(go list ./... | grep -v /e2e) -coverprofile cover.out
+	github.com/JairJosafath/c4factory/api/v1alpha1		coverage: 0.0% of statements
+	github.com/JairJosafath/c4factory/cmd		coverage: 0.0% of statements
+	github.com/JairJosafath/c4factory/cmd/c4agent		coverage: 0.0% of statements
+	github.com/JairJosafath/c4factory/cmd/c4session		coverage: 0.0% of statements
+ok  	github.com/JairJosafath/c4factory/features	0.005s	coverage: 92.0% of statements
+	github.com/JairJosafath/c4factory/hack/render		coverage: 0.0% of statements
+ok  	github.com/JairJosafath/c4factory/internal/agentrunner	6.203s	coverage: 87.8% of statements
+ok  	github.com/JairJosafath/c4factory/internal/controller	144.571s	coverage: 84.1% of statements
+ok  	github.com/JairJosafath/c4factory/internal/gitprovider	0.663s	coverage: 81.0% of statements
+ok  	github.com/JairJosafath/c4factory/internal/model	0.016s	coverage: 98.4% of statements
+ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.047s	coverage: 92.4% of statements
+ok  	github.com/JairJosafath/c4factory/internal/sessionclient	13.177s	coverage: 73.2% of statements
+	github.com/JairJosafath/c4factory/test/utils		coverage: 0.0% of statements
+
+Download/Build lines in it: 0
