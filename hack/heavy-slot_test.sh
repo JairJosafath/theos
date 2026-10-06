@@ -16,7 +16,7 @@ job() { sleep 60 & job=$!; }
 until_ok() { local i; for i in $(seq 50); do "$@" && return 0; sleep 0.1; done; return 1; }
 free() { "$SLOT" status | head -1; }
 
-check "status: all free" "$(free)" "heavy-slot: 2 of 2 slots free"
+check "status: all free" "$(free)" "heavy-slot: 2 of 2 slots free, 0 waiting"
 "$SLOT" status >/dev/null; check "status: exit 0 with a free slot" $? 0
 
 # Two jobs run; a third waits and names who holds the slots.
@@ -25,7 +25,7 @@ job; b=$job
 job; c=$job
 "$SLOT" acquire "$a" "make check" 2>/dev/null; check "first job: gets a slot" $? 0
 "$SLOT" acquire "$b" "make lint" 2>/dev/null; check "second job: gets a slot" $? 0
-check "status: none free" "$(free)" "heavy-slot: 0 of 2 slots free"
+check "status: none free" "$(free)" "heavy-slot: 0 of 2 slots free, 0 waiting"
 "$SLOT" status >/dev/null; check "status: exit 1 when all are taken" $? 1
 "$SLOT" status | grep -q "pid $a in .*\`make check\`"; check "status: names the holder" $? 0
 "$SLOT" acquire "$a" "make check" 2>/dev/null; check "same job again: does not wait on itself" $? 0
@@ -48,9 +48,9 @@ grep -q "got slot .*\`make test\` starts" "$T/wait"; check "waiting job: says it
 
 # A killed job frees its slot.
 kill -9 "$b"; wait "$b" 2>/dev/null
-until_ok eval '[ "$(free)" = "heavy-slot: 1 of 2 slots free" ]'; check "killed job: frees its slot" $? 0
+until_ok eval '[ "$(free)" = "heavy-slot: 1 of 2 slots free, 0 waiting" ]'; check "killed job: frees its slot" $? 0
 kill -9 "$c"; wait "$c" 2>/dev/null
-until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free" ]'; check "all ended: every slot free" $? 0
+until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free, 0 waiting" ]'; check "all ended: every slot free" $? 0
 
 # A waiter whose own job goes away stops waiting.
 job; a=$job; job; b=$job; job; c=$job
@@ -60,6 +60,42 @@ waiter=$!
 kill "$c"
 until_ok eval '! kill -0 $waiter 2>/dev/null'; check "waiter's job gone: stops waiting" $? 0
 wait "$waiter"; check "waiter's job gone: exit 1" $? 1
+
+kill "$a" "$b"; wait "$a" "$b" 2>/dev/null
+until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free, 0 waiting" ]'
+
+# Waiters get slots first come, first served, and a dead waiter loses its turn.
+job; a=$job; job; b=$job; job; c=$job; job; d=$job; job; e=$job
+"$SLOT" acquire "$a" x 2>/dev/null; "$SLOT" acquire "$b" y 2>/dev/null
+"$SLOT" acquire "$c" older 2>"$T/older" &
+older=$!
+until_ok grep -q "waits for one" "$T/older"
+"$SLOT" acquire "$d" dead 2>/dev/null &
+dead=$!
+until_ok eval '"$SLOT" status | grep -q "^heavy-slot: 0 of 2 slots free, 2 waiting"'
+"$SLOT" acquire "$e" newer 2>"$T/newer" &
+newer=$!
+until_ok grep -q "waits for one" "$T/newer"
+grep -q "with 0 job(s) waiting ahead" "$T/older"; check "older waiter: none ahead" $? 0
+grep -q "with 2 job(s) waiting ahead" "$T/newer"; check "newer waiter: says two wait ahead" $? 0
+"$SLOT" status | grep -q "waiting 1: pid $c .*\`older\`"; check "status: names the waiters in order" $? 0
+"$SLOT" status | grep -q "waiting 3: pid $e .*\`newer\`"; check "status: the newest waiter last" $? 0
+kill "$a"; wait "$a" 2>/dev/null
+until_ok eval '! kill -0 $older 2>/dev/null'; check "freed slot: the oldest waiter takes it" $? 0
+sleep 1
+kill -0 "$newer" 2>/dev/null; check "freed slot: the newer waiter keeps waiting" $? 0
+grep -q "with 1 job(s) waiting ahead" "$T/newer"; check "newer waiter: says one waits ahead now" $? 0
+kill -9 "$dead"; wait "$dead" 2>/dev/null
+kill "$b"; wait "$b" 2>/dev/null
+until_ok eval '! kill -0 $newer 2>/dev/null'; check "dead waiter: skipped, the newer one takes the slot" $? 0
+"$SLOT" status | grep -q "pid $e "; check "newer waiter: holds a slot" $? 0
+ls "$HEAVY_SLOTS_DIR" | grep -c "^wait-" >"$T/tickets"; check "no tickets left" "$(cat "$T/tickets")" 0
+kill "$c" "$d" "$e"; wait "$c" "$d" "$e" 2>/dev/null
+until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free, 0 waiting" ]'
+
+# Both slots taken again, for the Makefile below.
+job; a=$job; job; b=$job
+"$SLOT" acquire "$a" x 2>/dev/null; "$SLOT" acquire "$b" y 2>/dev/null
 
 # HEAVY_JOBS=0 turns the queue off.
 job; c=$job
@@ -73,7 +109,7 @@ timeout 3 make -n manifests generate check >/dev/null 2>&1; check "make manifest
 timeout 10 make -n manifests generate >/dev/null 2>&1; check "make manifests generate: no wait" $? 0
 C4_HEAVY_SLOT=1 timeout 10 make -n lint >/dev/null 2>&1; check "sub-make of a job with a slot: no wait" $? 0
 kill "$a"; wait "$a" 2>/dev/null
-until_ok eval '[ "$(free)" = "heavy-slot: 1 of 2 slots free" ]'
+until_ok eval '[ "$(free)" = "heavy-slot: 1 of 2 slots free, 0 waiting" ]'
 timeout 10 make -n lint >/dev/null 2>&1; check "make lint, a slot free: runs" $? 0
 
 exit $fail
