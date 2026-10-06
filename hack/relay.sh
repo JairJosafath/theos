@@ -14,7 +14,8 @@
 # another agent claims it first, it picks again, up to 5 times. Claims keep the
 # workers and hand-started sessions off each other's issues. A session that ends
 # still holding its claim or the cluster lease gets them released. With nothing
-# ready, a worker stops.
+# ready, a worker stops, without waiting in admit: it asks (pick is read-only)
+# before admit as well as after, so an idle worker takes no session-start slot.
 #
 # Triage: with nothing ready, hack/relay-watch.sh starts one triage session
 # (--triage) on the open status/proposed issues, which relay sessions file
@@ -711,6 +712,9 @@ triage() {
     fi
   fi
   flush || { log "GitHub can't be reached; no triage"; untriaged; return 1; }
+  # List before admit too, so a triage with nothing to do takes no start slot.
+  list=$(gh_proposed 2>>"$LOG") || { log "could not list the proposed issues; no triage"; untriaged; return 1; }
+  [ -n "$list" ] || { log "no proposed issues; no triage"; return 0; }
   admit || { log "no triage"; untriaged; return 1; }
   list=$(gh_proposed 2>>"$LOG") || { log "could not list the proposed issues; no triage"; untriaged; return 1; }
   [ -n "$list" ] || { log "no proposed issues; no triage"; return 0; }
@@ -744,6 +748,17 @@ work() {
     fi
     flush || { log "GitHub can't be reached; stopping"; break; }
 
+    # Ask before admit too, so a worker with nothing to do stops without
+    # taking the start slot from a triage or a worker that has an issue; ask
+    # again after it, as the issue can be taken during the wait. While paused,
+    # wait in admit instead.
+    if ! paused >/dev/null; then
+      docker_gate
+      pick
+      rc=$?
+      [ "$rc" = 1 ] && { log "no issue ready; stopping"; break; }
+      [ "$rc" = 0 ] || { log "could not ask GitHub for the next issue; stopping"; break; }
+    fi
     admit || { log "stopping"; break; }
     docker_gate
     pick
