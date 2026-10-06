@@ -151,6 +151,7 @@ as the run's artifact); a failing release gets an issue titled
 | `manager.image`, `ui.image` | repository, tag (default `Chart.appVersion`), pullPolicy |
 | `manager.args` | the operator's flags (`go run ./cmd --help`); the defaults are the Kind environment's |
 | `ui.enabled` | install the UI (default true); `ui.service` and `ui.resources` |
+| `ui.allowedHosts` | host names the UI answers besides localhost, for an Ingress in front of it; any other Host is refused |
 | `ui.components` | the UI health view's components; an empty namespace is the release's |
 | `gitea.enabled` | install Gitea, the seed and the runners (default true); off, `gitProviders` point at a Gitea of your own |
 | `gitea.namespace`, `gitea.createNamespace` | Gitea's namespace (default `gitea`) and whether the chart makes it |

@@ -80,8 +80,8 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 	}
 	token, err := r.publishToken(ctx, crew.Namespace, facts.Secret)
 	if err != nil {
-		log.Error(err, "Failed to read the publish token")
-		return
+		// Not NotFound: a fact, so the Crew says why publishing stopped.
+		facts.SecretError = err.Error()
 	}
 	facts.SecretFound = token != ""
 

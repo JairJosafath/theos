@@ -91,11 +91,6 @@ owner:
 An agent never sends the owner a list of open questions. Designing is our job
 ([AGENTS.md](AGENTS.md)).
 
-Rollout ([docs/plans/maintainer.md](docs/plans/maintainer.md)): the maintainer
-session starts running with #246. Until #247 lands, agents escalate with
-`status/needs-human`, and the maintainer reviews every such issue an agent
-set before it reaches the owner.
-
 ## The owner stays in control
 
 - Overrule any decision by commenting on its issue.

@@ -23,9 +23,11 @@ type PublishFacts struct {
 	// Runs is the result of the release's runs (ReleaseRunResult).
 	Runs string
 	// Secret names the token's Secret, and SecretFound says it holds the key
-	// token.
+	// token. SecretError is why the Secret couldn't be read, other than it not
+	// being there (Forbidden, a timeout), or "".
 	Secret      string
 	SecretFound bool
+	SecretError string
 	// Failure is the GitHub call that failed in this pass, or nil.
 	Failure *PublishFailure
 	// Gitea is the Gitea release of Tag, nil until read.
@@ -120,6 +122,7 @@ const (
 	PublishPublished          = "Published"
 	PublishWaiting            = "Waiting"
 	PublishSecretMissing      = "SecretMissing"
+	PublishSecretUnreadable   = "SecretUnreadable"
 	PublishUnauthorized       = "Unauthorized"
 	PublishRepositoryNotFound = "RepositoryNotFound"
 	PublishEmptyRepository    = "EmptyRepository"
@@ -184,6 +187,9 @@ func NextPublishStep(f PublishFacts) PublishStep {
 	case f.Runs != RunSucceeded:
 		return PublishStep{Action: PublishWait, Reason: PublishWaiting, Message: fmt.Sprintf(
 			"%s is published once its release runs succeed; they are %s", f.Tag, runState(f.Runs))}
+	case f.SecretError != "":
+		return fail(PublishSecretUnreadable, "Secret %s can't be read: %s; %s is published once it can",
+			f.Secret, f.SecretError, f.Tag)
 	case !f.SecretFound:
 		return fail(PublishSecretMissing, "Secret %s with the key token is missing; %s is published once it is there",
 			f.Secret, f.Tag)

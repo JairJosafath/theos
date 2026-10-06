@@ -109,7 +109,11 @@ metrics-server (`make metrics-server`) the view shows states but no figures.
 `server.mjs` has no dependencies. Its upstream is `K8S_API` if set (for example
 `http://127.0.0.1:8001` for a `kubectl proxy`), otherwise the in-cluster API with
 the Pod's ServiceAccount token and CA. It listens on `PORT` (default 8080) and
-answers `/healthz`. The Vite dev server mounts the same handler, so `npm run dev`
+answers `/healthz`. It answers nothing else unless the request's `Host` is
+`localhost`, `127.0.0.1`, `[::1]` or a name in `UI_ALLOWED_HOSTS` (comma-separated,
+for an Ingress; the chart's `ui.allowedHosts`): a page on another site that
+rebinds its name to this address (DNS rebinding) sends a matching `Origin`, but
+its own name in `Host`, and gets 421. The Vite dev server mounts the same handler, so `npm run dev`
 behaves the same way.
 
 ### One connection for all watches

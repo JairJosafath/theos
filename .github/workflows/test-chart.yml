@@ -20,6 +20,7 @@ on:
       - config/**
       - '!config/samples/**'
       - Dockerfile
+      - .dockerignore
       - ui/Dockerfile
       - Makefile
       - hack/seed/**
