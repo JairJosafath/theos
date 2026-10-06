@@ -35,7 +35,7 @@ func TestDockerContextHasEmbeddedFiles(t *testing.T) {
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", ".claude", "bin", "node_modules", "templates", "testdata":
+			case ".git", ".claude", ".dev", "bin", "node_modules", "templates", "testdata":
 				return filepath.SkipDir
 			}
 			return nil
