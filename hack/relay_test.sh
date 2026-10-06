@@ -8,8 +8,8 @@
 # proposed issues and the maintainer's prompt, as dry runs; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing; and idle workers,
-# which stop without taking a session-start slot; and a maintainer sweep, which
-# records the activity it saw.
+# which stop without taking a session-start slot; the maintainer, which goes
+# first in admit; and a maintainer sweep, which records the activity it saw.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -68,6 +68,28 @@ meminfo 1
 MEM_WAIT=1 admit; check "admit: gives up" $? 1
 touch "$STOP"
 admit; check "admit: stop file" $? 1
+
+# The maintainer goes first (#262): while it waits in admit, no worker takes
+# the start slot; a crashed maintainer's file holds no one.
+rm -f "$STOP" "$DIR/admitted"
+meminfo 8
+: >"$LOG"
+sleep 30 &
+echo $! >"$DIR/admit-first"
+MEM_WAIT=2 admit; check "admit first: a worker waits for the maintainer" $? 1
+check "admit first: no slot taken" "$(test -e "$DIR/admitted" && echo taken)" ""
+grep -q "the maintainer waits for a start, and it goes first" "$LOG"; check "admit first: logs the wait" $? 0
+kill $!; wait $! 2>/dev/null
+admit; check "admit first: a dead maintainer holds no one" $? 0
+# A session just started; the maintainer waits, then a worker: the maintainer
+# takes the next slot, the worker the one after, and the file goes.
+: >"$T/order"
+(ADMIT_GAP=2 admit first; echo "maintainer $?" >>"$T/order") &
+until [ -s "$DIR/admit-first" ]; do sleep 0.1; done
+(ADMIT_GAP=2 admit; echo "worker $?" >>"$T/order") &
+wait
+check "admit first: the maintainer starts first" "$(paste -sd, "$T/order")" "maintainer 0,worker 0"
+check "admit first: its file goes" "$(test -e "$DIR/admit-first" && echo left)" ""
 
 # The flush: a session's kept handoff is posted and its claim released as
 # handed off, so the relay finds no claim left and logs no failed release.

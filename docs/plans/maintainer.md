@@ -69,7 +69,8 @@ Done when: the files are on main and `make check` passes.
   own worktree `.claude/worktrees/relay-maintainer` under its own lock
   (`.relay/maintain.lock`), not counted against `RELAY_MAX_WORKERS` (it must
   run while every worker is busy). It goes through `admit` (pause, memory,
-  start gap). Model opus. Its prompt: you are the project's maintainer; follow
+  start gap), and goes first: while it waits, no worker takes the start slot
+  (`.relay/admit-first`, #262). Model opus. Its prompt: you are the project's maintainer; follow
   GOVERNANCE.md and the maintainer skill; the time of the last sweep; the
   headless rules the triage prompt has; end with a short account. At its end it
   writes `.relay/maintained`: `<epoch> <activity>`.
