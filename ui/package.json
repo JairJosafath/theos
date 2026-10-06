@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Read-only UI for C4 Factory: draws the story from the custom resources, live through watches.",
-  "license": "Apache-2.0",
+  "license": "UNLICENSED",
   "type": "module",
   "engines": {
     "node": ">=22.12"

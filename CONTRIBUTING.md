@@ -30,3 +30,10 @@ Vulnerabilities go to [SECURITY.md](SECURITY.md), never to an issue.
   passes.
 - Report honestly: a failed check or a skipped step goes in the pull request,
   with the output.
+
+## License
+
+C4 Factory is proprietary; all rights are reserved ([LICENSE](LICENSE)). By
+contributing, you agree that the owner may use, license and relicense your
+contribution under any terms, including an open-source license later. Every
+new Go file starts with the header in `hack/boilerplate.go.txt`.

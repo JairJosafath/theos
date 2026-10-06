@@ -31,7 +31,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 | Git provider | Its own kind, `GitProvider`, per namespace. Every Container references one. |
 | Scaffolding | Once, at creation. Staying compliant afterwards is the Container owner's job. Status records the template versions used. |
 | Data stores | Their own kind, `DataStore`, backed by a Connector. A Relationship from a Container to a DataStore adds that Connector to the Container's scaffold. |
-| Shipping | Outside the operator. Deployment templates produce standard files that existing tools pick up. |
+| Shipping | Outside the operator. Deployment templates produce standard files that existing tools pick up. The one exception: the operator can copy a Container's releases to a GitHub repository the user names. |
 | Sessions | Devcontainers run anywhere. A small client inside registers a Session on its Container and reports minimal status. |
 | Status | v1 shows only the factory's own steps plus active Sessions. Runtime health comes later. |
 
@@ -325,6 +325,20 @@ model and context it needs.
   up never starts) are a Warning Event `ReleaseRunOverdue`, once per release,
   the log line `Release run overdue`, and a note on the `Released` condition's
   message until they end; the watch carries on and reports their end as usual.
+- **A release can be published to GitHub.** A Crew with
+  `spec.publishReleases.github` (`repository: owner/name`, and a Secret the
+  user creates holding a token for that one repository) copies its last release
+  there once the release runs succeed: the same tag (with an optional
+  `tagPrefix`), the same notes (the Gitea release's body, or the titles of the
+  release's merged issues, which the operator writes on both) and the same
+  files, streamed from the Gitea release. The operator does it, not CI, so the
+  token never reaches the code the agents write. It only adds releases: a draft
+  marked with the Container and tag, its files, then published, so a retry
+  carries on and nobody sees half a release; a release of that tag it didn't
+  make is left alone. `status.lastRelease.publish` and the condition
+  `Published` say how it went, with the reason; a failure is a Warning Event
+  `ReleasePublishFailed`, once per reason, and is retried each poll. See
+  [plans/release-publishing.md](plans/release-publishing.md).
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other
   issue, whatever its release, even when every place is taken (once running, it
@@ -411,7 +425,7 @@ make targets (`make gitea seed deploy`) and locally built images.
 
 ## Out of scope for v1
 
-- **Shipping.** No builds, registries or rollouts; existing tools pick up the scaffolded files.
+- **Shipping.** No builds, registries or rollouts; existing tools pick up the scaffolded files. Since v4 a Crew can copy its releases to a GitHub repository: a release target, not a git provider, where the factory never pushes.
 - **Runtime health of the apps.** Reading back from ArgoCD or monitoring comes later. (The factory watches its own health since v3.)
 - **Existing repositories and monorepos.** New work only, one repository per Container.
 - **Component and Code levels.** Dropped until Containers work end to end.
