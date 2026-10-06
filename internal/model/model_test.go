@@ -309,8 +309,8 @@ func TestTouchedPaths(t *testing.T) {
 		changed []string
 		want    []string
 	}{
-		{[]string{"lib/main.dart", "README.md"}, nil},
-		{[]string{".gitea/workflows/check.yaml", "lib/a.dart"}, []string{".gitea/workflows/check.yaml"}},
+		{[]string{"cmd/main.go", "README.md"}, nil},
+		{[]string{".gitea/workflows/check.yaml", "cmd/a.go"}, []string{".gitea/workflows/check.yaml"}},
 		{[]string{"Makefile"}, []string{"Makefile"}},
 		{[]string{"Makefile.local", "tools/Makefile", ".gitea"}, nil},
 	}

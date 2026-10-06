@@ -715,7 +715,7 @@ func NoFreeSlot(task string, now time.Time, waiting []SlotWaiter, maxSandboxes, 
 const maxCheckExcerpt = 4000
 
 // CheckFailures picks the lines of a CI log that say what failed: failed tests
-// (Flutter, Go, Vitest, pytest), compiler, vet and linter findings, panics, data
+// (Go, Vitest, pytest), compiler, vet and linter findings, panics, data
 // races and make errors, with the lines after a failed test or a panic that
 // explain it. The agent can't open the CI log from its sandbox, so this is what
 // it gets instead.
@@ -759,14 +759,13 @@ func CheckFailures(log string) string {
 
 var (
 	// sourceFinding is a compiler, vet or linter finding: path:line[:column]: message.
-	sourceFinding = regexp.MustCompile(`^\S+\.(go|dart|ts|tsx|js|mjs|py|rs):\d+(:\d+)?: `)
+	sourceFinding = regexp.MustCompile(`^\S+\.(go|ts|tsx|js|mjs|py|rs):\d+(:\d+)?: `)
 	// eslintFinding is a finding under ESLint's file heading: line:column error message.
 	eslintFinding = regexp.MustCompile(`^\s+\d+:\d+\s+(error|warning)\s`)
 )
 
 func isFailureLine(line string) bool {
-	for _, marker := range []string{"❌", "(failed)", "error •", "warning •", "info •", "make: ***",
-		"EXCEPTION CAUGHT", "Expected:", "Actual:", "Some tests failed", "Error:",
+	for _, marker := range []string{"make: ***", "Expected:", "Actual:", "Some tests failed", "Error:",
 		"--- FAIL:", "WARNING: DATA RACE", "error TS"} {
 		if strings.Contains(line, marker) {
 			return true
@@ -788,12 +787,11 @@ func isFailureLine(line string) bool {
 	return sourceFinding.MatchString(line) || eslintFinding.MatchString(line)
 }
 
-// startsBlock reports whether the lines after a failure line explain it: a
-// Flutter test's exception, a Go test's log or a panic's stack, a Vitest assertion.
+// startsBlock reports whether the lines after a failure line explain it: a Go
+// test's log or a panic's stack, a Vitest assertion.
 func startsBlock(line string) bool {
 	trimmed := strings.TrimSpace(line)
-	return strings.Contains(line, "(failed)") || strings.Contains(line, "EXCEPTION CAUGHT") ||
-		strings.HasPrefix(trimmed, "--- FAIL:") || strings.HasPrefix(trimmed, "panic:") ||
+	return strings.HasPrefix(trimmed, "--- FAIL:") || strings.HasPrefix(trimmed, "panic:") ||
 		strings.HasPrefix(trimmed, "WARNING: DATA RACE") || strings.HasPrefix(trimmed, "FAIL  ")
 }
 
@@ -804,7 +802,7 @@ func endsBlock(line string) bool {
 	if trimmed == "FAIL" || trimmed == "PASS" {
 		return true
 	}
-	for _, prefix := range []string{"✅", "::endgroup::", "=== ", "--- PASS", "--- SKIP", "ok  ", "FAIL\t", "⎯"} {
+	for _, prefix := range []string{"::endgroup::", "=== ", "--- PASS", "--- SKIP", "ok  ", "FAIL\t", "⎯"} {
 		if strings.HasPrefix(trimmed, prefix) {
 			return true
 		}
