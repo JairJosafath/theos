@@ -51,24 +51,6 @@ const (
 // release's runs are past model.ReleaseRunBound.
 const runOverdueNote = "; its runs have not ended an hour after tagging"
 
-// release watches the last release's runs and looks after the next release, as
-// the Crew's switches say. It returns the prepare issue it filed, as a ready
-// issue, or nil.
-func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
-	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) *model.Issue {
-	if crew.Spec.TagReleases {
-		r.watchReleaseRun(ctx, crew, status, provider, repo)
-	}
-	var filed *model.Issue
-	if crew.Spec.TagReleases || crew.Spec.PrepareReleases {
-		filed = r.tagRelease(ctx, crew, status, provider, repo, tasks)
-	}
-	if crew.Spec.TagReleases {
-		r.noteOverdueRun(ctx, crew, status)
-	}
-	return filed
-}
-
 // tagRelease looks after the Crew's first open release, as its switches say:
 // with prepareReleases, once the release is done with merged work and has no
 // prepare issue, it files one; with tagReleases, once it is done, it tags the
