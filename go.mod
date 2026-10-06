@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/go-git/go-billy/v5 v5.9.0
 	github.com/go-git/go-git/v5 v5.19.2
+	github.com/moby/patternmatcher v0.6.1
 	github.com/onsi/ginkgo/v2 v2.27.4
 	github.com/onsi/gomega v1.39.0
 	go.yaml.in/yaml/v3 v3.0.4
