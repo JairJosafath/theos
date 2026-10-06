@@ -1,11 +1,13 @@
 # Tests, the Kind cluster and deploying
 
-How to test and run the factory. The e2e tests run only against the dedicated
-Kind clusters of the device's pool (`c4factory`, `c4factory-2`, ...; `make
-cluster`), never a real cluster. Run `make e2e` only when the user explicitly
-asks for it; `make check` is the gate for every change. Every make target
-works on `KIND_CLUSTER`, by default the pool cluster this checkout leased,
-else `c4factory`; kubectl calls name it with `--context kind-<name>`.
+How to test and run the factory. Go tests are the gate: `make check` for
+every change. A Kind cluster exists only when a human asks to run tests in it;
+agents never create, lease or deploy to one, and never run `make e2e`. The
+human runs it against the dedicated Kind clusters of the device's pool
+(`c4factory`, `c4factory-2`, ...; `make cluster`), never a real cluster.
+Every make target works on `KIND_CLUSTER`, by default the pool cluster this
+checkout leased, else `c4factory`; kubectl calls name it with `--context
+kind-<name>`.
 
 ## Test tiers
 
@@ -13,17 +15,25 @@ Test a rule at the lowest tier that can see it ([design](../design.md#test-tiers
 
 | Tier | Runs | Verifies |
 | --- | --- | --- |
-| 1. Table tests | `make test`, no API server | `internal/model` decisions, `internal/scaffold` rendering of every template, the agent pod spec and the fence's NetworkPolicy (`sandbox_fence_unit_test.go`) |
+| 1. Table tests | `make test`, no API server | `internal/model` decisions, `internal/scaffold` rendering of every template, the Agent Sandbox and pod specs and the fence's NetworkPolicy (`sandbox_fence_unit_test.go`) |
 | 2. Offline YAML | `make validate-yaml`, in `make check` | samples, e2e fixtures, kustomize builds, the chart, rendered manifests, against the CRDs: valid YAML passes their create-time CEL rules |
 | 3. Local Gitea | `make test-gitea`, `make seed-local` | the Gitea API's real behaviour, the seed, template tags |
-| 4. envtest | `make test` | reconcilers, status, ownerReferences, the admission policy, every CEL rule's failing case (create-time and on `oldSelf`), the generated RBAC: the reconcilers run as the operator's ServiceAccount bound to `config/rbac/role.yaml` |
-| 5. Kind | `make e2e`, factory-ops | Agent Sandbox pods running, the fence enforced by a CNI, node and kubelet behaviour, Gitea Actions runners |
+| 4. envtest | `make test` | reconcilers, status, ownerReferences, the admission policy, every CEL rule's failing case (create-time and on `oldSelf`), the reaction to faked Sandbox and pod status, the generated RBAC: the reconcilers run as the operator's ServiceAccount bound to `config/rbac/role.yaml` |
+| 5. Kind | `make e2e`, factory-ops, only when a human asks | the whole loop on stand-in agents: four specs on the `hello-html` app in `test/e2e/testdata/apps` |
 
-Tiers 1 to 4 run on any device, lite ones included, with no lease. Only
-tier 5 needs a Kind cluster, and only issues that need it carry
-`needs/cluster`; Gitea work, YAML, templates and controller logic don't. Test
-output is the evidence for logic; Kind evidence (`kubectl get` output,
-screenshots of the running factory) is needed only for tier 5 behaviour.
+Tiers 1 to 4 run on any device, lite ones included, with no lease; `make
+check` runs 1, 2 and 4, and they are the gate. Tier 5 is a human's: no issue
+needs it, no agent runs it, and no workflow starts Kind except on
+`workflow_dispatch`. What only a real node would catch (Agent Sandbox pods
+running, the fence enforced by a CNI, node and kubelet behaviour, the Gitea
+Actions runner itself) is not tested before release; a customer's issue
+reports it. Test output is the evidence.
+
+The e2e suite runs only stand-in agents and needs no model keys: its
+`BeforeSuite` fails if any Agent's harness isn't `stand-in` or any Agent
+references a model credential Secret, and a unit test (no build tag) shows
+that guard failing. `go vet -tags=e2e ./test/e2e/...` checks the suite
+compiles without a cluster.
 
 The scripts in `hack/` (the relay, the heavy-job slots, the check cache, the
 cluster pool, the seed) have shell tests of their own, `hack/**/*_test.sh`.
@@ -215,7 +225,7 @@ hack/lib/github.sh pick            # the issue to work next
 hack/lib/github.sh show 14         # an issue, its newest handoff comment and what came after
 hack/lib/github.sh take 14         # claim it for this checkout; prints the agent's name and branch
 hack/lib/github.sh claims          # who holds which issue, with heartbeat age and branch
-hack/lib/github.sh cluster acquire # lease a pool cluster before deploying; prints its name (waits up to 30m; exit 4 names the holders)
+C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire # a human only: lease a pool cluster; prints its name (waits up to 30m; exit 4 names the holders, exit 5 without the opt-in)
 hack/lib/github.sh cluster acquire --fresh # the same, on a clean cluster: deletes and recreates the one it leased
 hack/lib/github.sh cluster acquire --fresh --bare # the same, with nothing installed: for a release install (getting-started)
 hack/lib/github.sh cluster name    # the cluster make uses in this checkout: its lease's, else c4factory
@@ -249,29 +259,32 @@ it. A handoff that couldn't reach GitHub waits in the worktree's
 
 ### Sharing the Kind clusters between checkouts
 
-Every checkout on the cluster device may work a `needs/cluster` issue. A
-deploy and its verification take a whole cluster: `make deploy` from a branch
+This is the human path: a person who wants to run Kind sets
+`C4_HUMAN_CLUSTER=1` in their own shell; without it `cluster acquire` exits 5
+and names the opt-in. The relay never sets it, and no prompt or skill tells an
+agent to. Two humans' checkouts (or a human's worktrees) may still run Kind at
+once. A deploy and its verification take a whole cluster: `make deploy` from a branch
 replaces the operator, CRDs and admission policies another session deployed,
 an outage test or `make down`/`make up` stops the node, and Standard tags land
 in Gitea's shared `templates` org. So the device runs a pool of
 `C4_CLUSTERS` Kind clusters (default 2): `c4factory`, `c4factory-2`, ...,
-each with its own Gitea and seeded templates, and a session leases one only
+each with its own Gitea and seeded templates, and a checkout leases one only
 around the steps that touch it:
 
 1. Do the work that needs no cluster first (code, `make check`, envtest).
-2. Right before the first cluster step, `hack/lib/github.sh cluster acquire`.
+2. Right before the first cluster step, `C4_HUMAN_CLUSTER=1
+   hack/lib/github.sh cluster acquire`.
    It leases this checkout the cluster it already holds, else a free one that
    exists, else the first free one, which it then creates
    (`make cluster gitea seed KIND_CLUSTER=<name>`, a few minutes). It prints
    the name on stdout; while other checkouts hold every cluster it waits up
-   to `--wait` (default 30m), then exits 4 naming them, and the session hands
-   off with only the cluster steps left. A pool cluster belongs to nobody
-   between leases: it keeps whatever the last session installed. When the
-   issue's "Done when" asks for a fresh cluster, or what is installed isn't
+   to `--wait` (default 30m), then exits 4 naming them. A pool cluster
+   belongs to nobody between leases: it keeps whatever the last checkout
+   installed. When you want a fresh cluster, or what is installed isn't
    yours, pass `--fresh`: it prefers a cluster not created yet, else deletes
    the one it leased (`make cluster-delete`) and creates it again as above.
    It touches only the cluster this checkout now leases, never one another
-   checkout holds; nothing else in a session deletes a pool cluster. To
+   checkout holds; nothing else deletes a pool cluster. To
    install a release on it ([getting-started](../getting-started.md), the
    chart), pass `--fresh --bare`: the same, created with `make cluster` only,
    no testenv Gitea, seed, `webshop` or `apps`; the chart brings its own

@@ -435,8 +435,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for
   each follow-up prompt. `make e2e` takes a Brief through two rounds that way,
-  with no token, and every release's *Verify Release* takes one through a
-  round on the published chart, whose Agent `stand-in` any project can name.
+  with no token, and *Verify Release*, when a human dispatches it, takes one
+  through a round on the published chart, whose Agent `stand-in` any project can name.
   How well a real planner plans an idea is the person's run.
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
@@ -503,11 +503,11 @@ Go tests are the gate: each rule is verified at the lowest tier that can see it,
 | Components (`make test-gitea`, `make seed-local`) | The Gitea API's behaviour, the seed and what Gitea shows of Actions, against the same Gitea binary the cluster runs, started per checkout. |
 | Kind (`make e2e`, only when a human asks) | The whole loop on stand-in agents with no model keys: a hello-world page scaffolded, planned from a Brief, a Task taken through two rounds to a merge, a Standard bump carried to main. |
 
-The plans that build these tiers are [verify-without-cluster.md](plans/done/verify-without-cluster.md) and [test-without-cluster.md](plans/test-without-cluster.md).
+The plans that build these tiers are [verify-without-cluster.md](plans/done/verify-without-cluster.md) and [test-without-cluster.md](plans/done/test-without-cluster.md).
 
 ## Test environment: the Kind cluster
 
-One kind cluster on a laptop holds Gitea, the operator, a sample project and a test Session, so the whole loop runs with nothing but Docker. Every part is picked to stay light on resources.
+One kind cluster on a laptop holds Gitea, the operator, a sample project and a test Session, so the whole loop runs with nothing but Docker. It is the Kind tier of [Test tiers](#test-tiers): a human creates it and runs `make e2e` in it when they ask to; agents never create, lease or deploy to it, and no change waits for it. Every part is picked to stay light on resources.
 
 &#91;embedded content: test environment · 1 cluster, 3 namespaces\]
 
@@ -539,7 +539,7 @@ Make targets:
 - `make seed`: run the seed job.
 - `make deploy`: build and install the operator. During development, `make run` runs it from the laptop instead.
 - `make sample`: apply the webshop sample.
-- `make e2e`: all of the above, plus the minimal toolchain, its CI runner, Agent Sandbox and the `apps` fixture, then check the result.
+- `make e2e`: all of the above, plus the minimal toolchain, its CI runner, Agent Sandbox and the `apps` fixture, then run the four specs: the page scaffolded, planned from a Brief, a Task taken through two rounds to a merge, a Standard bump carried to main. Every Agent in the fixture runs on the stand-in; the suite stops before it starts if one doesn't, or if one names a model credential Secret.
 
 Gitea keeps the cluster light: one container and SQLite, no separate database. To open a scaffolded repository in a local VS Code devcontainer, reach Gitea through `kubectl port-forward`.
 

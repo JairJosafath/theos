@@ -45,8 +45,8 @@ Log in once per machine: `gh auth login` and `gh auth setup-git` (machine-wide;
 The same actions are VS Code tasks (**Terminal → Run Task → Dev: …**).
 
 A lite device runs every test tier but Kind
-([docs/dev/testenv.md](docs/dev/testenv.md#test-tiers)), so it verifies most
-work:
+([docs/dev/testenv.md](docs/dev/testenv.md#test-tiers)), and those tiers are
+the gate, so it verifies every issue:
 
 - `make check`: the table tests, every template rendered, the YAML validated
   offline against the CRDs and their CEL rules, and envtest.
@@ -55,9 +55,11 @@ work:
   [docs/dev/testenv.md](docs/dev/testenv.md#local-gitea)), and `make
   seed-local`, which seeds that Gitea like Kind's.
 
-What it can't verify needs a real node (Agent Sandbox pods, node or kubelet
-behaviour, RBAC as deployed, Gitea Actions runners); those issues carry
-`needs/cluster`, and a lite device skips them.
+Kind runs only when a human asks (`C4_HUMAN_CLUSTER=1`; agents never lease a
+cluster), and no issue needs it: the `needs/cluster` label is gone, and `pick`
+hands a lite device every ready issue. What only a real node would catch
+(Agent Sandbox pods running, node or kubelet behaviour, the Gitea Actions
+runner itself) is not tested before release.
 
 ## What lives where
 
