@@ -65,6 +65,9 @@ rendered with `hack/render`. Built-in kinds are checked against the schemas of
 the envtest Kubernetes release, downloaded once next to the tools (`k8s-openapi-*`); our
 kinds against `config/crd/bases` and `test/crds/agent-sandbox`, create-time CEL
 rules included. Rules on `oldSelf` need an update, so envtest covers them.
+It also fails when a CRD in `dist/chart/templates/crd` differs from
+`config/crd/bases` beyond the chart's `crd.enabled` and `crd.keep` guard
+(`hack/chart-crds.sh`): an API change runs `make chart` and commits the chart.
 Every CEL rule has an envtest spec that expects its message: a create-time rule's
 spec creates an object that breaks it, a rule on `oldSelf` creates, patches and
 expects the message. A new rule adds one.
@@ -152,7 +155,7 @@ make gitea-forward     # then open http://localhost:3000
 
 The Kind test environment installs with kustomize. Devices install the Helm
 chart in `dist/chart/` instead ([its README](../../dist/chart/README.md)).
-After a change under `config/`, `make chart` regenerates it from the kustomize
+After a change under `config/` or `api/`, `make chart` regenerates it from the kustomize
 output and `make helm-lint` checks it; the *Test Chart* workflow installs it into
 a fresh Kind cluster on GitHub. Don't `helm install` it into the shared
 `c4factory` cluster: `make deploy` owns the CRDs there.
@@ -203,7 +206,8 @@ to the issue's branch; uncommitted changes a dead session left there are
 stashed, not dropped. Claims keep workers and hand-started sessions off each
 other's issues, so the relay starts right away. A session that ends still
 holding its claim gets it released; a worker stops when a session leaves no
-handoff comment and doesn't close the issue or set `status/needs-human`. With
+handoff comment and doesn't close the issue or escalate it
+(`status/needs-maintainer`; only the maintainer sets `status/needs-human`). With
 nothing ready a worker stops.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
@@ -268,7 +272,8 @@ checkout): `c4-cluster.lease` for `c4factory`, `c4-cluster-<name>.lease` for
 the others, naming the cluster, agent, issue and worktree. A checkout holds
 at most one. `beat` (the heartbeat hook) refreshes it, and it is stale after
 `C4_LEASE_TTL` (2h) or once its worktree is gone; `acquire` takes a stale one
-over. `release`, `handoff`, `close` and `status N needs-human` drop it, and
+over. `release`, `handoff`, `close`, `status N needs-maintainer` and
+`status N needs-human` drop it, and
 the relay drops one its session left behind, as it does a claim.
 `hack/heavy-guard.sh` denies `make deploy`, `sample`, `e2e`, `test-e2e`, `up`
 and `down` while another checkout holds the cluster the command targets
@@ -301,7 +306,7 @@ With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
 issues wait on each other in a cycle, `cycles --report` comments each of them
-once and moves the newest to `status/needs-human`.
+once and moves the newest to `status/needs-maintainer`.
 On every pass, busy or idle, it may start the maintainer
 (`hack/relay.sh --maintain`), a headless opus session that acts as the
 project's maintainer on the owner's behalf ([GOVERNANCE.md](../../GOVERNANCE.md),
@@ -312,7 +317,17 @@ commits nothing. The watch starts it when none runs, the last sweep is
 `WATCH_MAINTAIN` old (7200 s, 2h; 0 turns it off) and
 `hack/lib/github.sh activity` (the newest change to an issue or pull request,
 the report left out, and main's commit) differs from the one that sweep
-recorded in `.relay/maintained`, so a quiet night costs nothing. It runs in
+recorded in `.relay/maintained`, so a quiet night costs nothing.
+Agents escalate to the maintainer, never to the owner: a session, the triage,
+three failed sessions in a row and `cycles --report` set
+`status/needs-maintainer` (which releases the claim and lease, and ends the
+session as closing would); only the maintainer sets `status/needs-human`, for
+what [GOVERNANCE.md](../../GOVERNANCE.md) reserves to the owner. When an
+issue got `status/needs-maintainer` after the last full sweep started
+(`hack/lib/github.sh escalated` lists them, with when each got it), the watch
+starts the maintainer within a pass, however recent the last sweep, at most
+once per `WATCH_RETRY`; one the sweep left there waits for the next regular
+sweep, or for an agent to escalate it again. It runs in
 its own worktree, `.claude/worktrees/relay-maintainer`, on origin/main, under
 `.relay/maintain.lock`, and doesn't count against `RELAY_MAX_WORKERS`, but
 goes through `admit` like any session; it logs to `.relay/relay-maintainer.log`.

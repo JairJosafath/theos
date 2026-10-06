@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
@@ -273,6 +274,23 @@ var _ = Describe("Container Standard update", func() {
 		gitFake.setChecks(ns, "orders-api", second.Commit, "success")
 		eventuallyAt(ns, "v1.2.0")
 		Expect(mainFile(ns, makefile)).To(Equal("check:\n\tmake lint test\n"))
+	})
+
+	It("takes no step from a Container its cache has not caught up with", func() {
+		ns := newProjectNamespace()
+		updatableContainer(ns)
+		stale := getContainer(Default, ns)
+		bumpStandard(ns, "v1.1.0")
+		first := openedUpdate(ns, "v1.1.0")
+
+		// A reconcile queued before the update opened still reads no update in flight.
+		r := &ContainerReconciler{Client: k8sClient, Scheme: scheme.Scheme, APIReader: k8sClient, Git: gitFake,
+			ScaffoldTimeout: testScaffoldTimeout}
+		status := stale.Status.DeepCopy()
+		r.updateStandard(ctx, stale, status)
+		Expect(status.Standard).To(Equal(stale.Status.Standard))
+		Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
+			"Number": BeEquivalentTo(first.PullRequest), "HeadSHA": Equal(first.Commit), "State": Equal("open")})))
 	})
 
 	It("waits for a re-run when CI fails, and merges once it passes", func() {

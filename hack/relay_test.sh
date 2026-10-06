@@ -152,6 +152,23 @@ TABLE
 : >"$LOG"
 rm -f "$DOCKER"
 
+# A session escalates to the maintainer, never to the user.
+out=$(prompt 1 t u ready n b)
+check "prompt: escalates with needs-maintainer" "$(grep -c 'hack/lib/github.sh status 1 needs-maintainer' <<<"$out")" 1
+check "prompt: never sets needs-human" "$(grep -c 'status 1 needs-human' <<<"$out") $(grep -c 'Never set status/needs-human' <<<"$out")" "0 1"
+
+# outcome: needs-maintainer and needs-human end a session, as closed does.
+(
+  handoff_id() { echo 7; }
+  gh_api() { echo "$STATE"; }
+  STATE='open status/needs-maintainer,kind/bug'; check "outcome: needs-maintainer" "$(outcome 1 7)" needs-maintainer
+  STATE='open status/needs-human'; check "outcome: needs-human" "$(outcome 1 7)" needs-human
+  STATE='closed status/in-progress'; check "outcome: closed" "$(outcome 1 7)" closed
+  STATE='open status/in-progress'; check "outcome: nothing" "$(outcome 1 7)" nothing
+  STATE='open status/in-progress'; check "outcome: handed off" "$(outcome 1 6)" handed-off
+  exit $fail
+) || fail=1
+
 # Triage, as a dry run: the proposed issues go into its prompt; none, no session.
 rm -f "$STOP" "$DIR/admitted"
 meminfo 8
@@ -161,7 +178,9 @@ check "triage: names the issues" "$(grep -c 'status/proposed: #40 #41\.' <<<"$ou
 check "triage: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$out")" 1
 check "triage: needs-human stays the user's" "$(grep -c "needs-human stays the user's" <<<"$out")" 1
 check "triage: writes a missing Depends on itself" "$(grep -c 'a "Depends on #M" line it lacks' <<<"$out")" 1
-check "triage: sends a user's decision to needs-human" "$(grep -c 'hack/lib/github.sh status N needs-human' <<<"$out")" 1
+check "triage: escalates a user's decision to the maintainer" "$(grep -c 'hack/lib/github.sh status N needs-maintainer' <<<"$out")" 1
+check "triage: never sets needs-human" "$(grep -c 'status N needs-human' <<<"$out") $(grep -c 'never set status/needs-human' <<<"$out")" "0 1"
+check "triage: needs-maintainer is the maintainer's" "$(grep -c "needs-maintainer is the maintainer's" <<<"$out")" 1
 check "triage: readies an unsettled design as design work" "$(grep -c '^- Ready it as design work' <<<"$out")" 1
 check "triage: never asks how to build it" "$(grep -c 'Never ask how to' <<<"$out")" 1
 check "triage: a direction comes with the choice it would make" "$(grep -c 'says the choice you would make and why' <<<"$out")" 1
@@ -182,6 +201,8 @@ check "maintain: sets the report" "$(grep -c 'hack/lib/github.sh report FILE' <<
 check "maintain: commits nothing" "$(grep -c 'commit nothing' <<<"$out")" 1
 check "maintain: the owner's word wins" "$(grep -c "The owner's word wins" <<<"$out")" 1
 check "maintain: first sweep" "$(grep -c 'No sweep ran before this one' <<<"$out")" 1
+check "maintain: decides the escalations first" "$(grep -c 'hack/lib/github.sh escalated' <<<"$out")" 1
+check "maintain: only it sets needs-human" "$(grep -c 'Only you set status/needs-human' <<<"$out")" 1
 echo "86400 x y" >"$DIR/maintained"
 rm -f "$DIR/admitted"
 check "maintain: the last sweep's time" "$(DRY_RUN=1 maintain | grep -c "The last sweep was at $(date -d @86400 -Is);")" 1
@@ -259,11 +280,11 @@ check "login: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
 rm -f "$DIR/paused-until"
 
 # Failed sessions in a row: a handoff or a commit resets the count; the third
-# sets the issue to needs-human, with a comment naming each session.
+# escalates the issue to the maintainer, with a comment naming each session.
 echo fail >"$FAKE"
 work; work
 check "fails: two counted" "$(wc -l <"$DIR/fails-175")" 2
-check "fails: not yet the user's" "$(cat "$T/status" 2>/dev/null)" ""
+check "fails: not yet the maintainer's" "$(cat "$T/status" 2>/dev/null)" ""
 echo handoff >"$FAKE"
 work
 check "fails: a handoff resets" "$(test -e "$DIR/fails-175" && echo kept)" ""
@@ -275,16 +296,16 @@ check "fails: a commit resets" "$(test -e "$DIR/fails-175" && echo kept)" ""
 : >"$LOG"
 echo fail >"$FAKE"
 work; work
-check "fails: two, still not the user's" "$(cat "$T/status" 2>/dev/null)" ""
+check "fails: two, still not the maintainer's" "$(cat "$T/status" 2>/dev/null)" ""
 work
-check "fails: the third sets needs-human" "$(cat "$T/status")" "175 needs-human"
+check "fails: the third sets needs-maintainer" "$(cat "$T/status")" "175 needs-maintainer"
 check "fails: count cleared" "$(test -e "$DIR/fails-175" && echo kept)" ""
 for id in $(sed -n 's/.*session 1 start: id \([^,]*\),.*/\1/p' "$LOG"); do
   grep -q "^### Session \`$id\`: exit 0 after 0m$" "$T/comment"; check "fails: comment names $id" $? 0
 done
 check "fails: comment has each stderr" "$(grep -c '^boom ' "$T/comment")" 3
 check "fails: comment has each account" "$(grep -c '^gave up$' "$T/comment")" 3
-grep -q "#175 failed 3 sessions in a row; set it to status/needs-human: https://github.com/x/issues/175#issuecomment-9" "$LOG"
+grep -q "#175 failed 3 sessions in a row; set it to status/needs-maintainer: https://github.com/x/issues/175#issuecomment-9" "$LOG"
 check "fails: logged" $? 0
 
 # A session whose transcript stops growing is ended and counted as failed; one

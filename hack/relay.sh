@@ -25,11 +25,12 @@
 # waits on with Depends on #M), fills a gap it can write itself (a Depends on
 # #M line, the needs/cluster label) and readies the issue, comments on the
 # others what they lack, readies one the design doesn't settle as design work
-# (designing is ours, never a question for the user), sends one that waits
-# only on the user (a tag, access, credentials, money, or a direction it is
-# unsure of, with the choice it would make) to status/needs-human, closes
-# duplicates, and ends with an account of what it did. It never takes an
-# issue out of status/needs-human.
+# (designing is ours, never a question for the user), escalates one that
+# nothing it can write moves on (it needs a decision: something only the user
+# can give, or a direction it is unsure of, with the choice it would make) to
+# the maintainer (status/needs-maintainer), closes duplicates, and ends with an
+# account of what it did. It never takes an issue out of
+# status/needs-maintainer or status/needs-human.
 #
 # The maintainer: hack/relay-watch.sh starts one maintainer session
 # (--maintain) every 2 hours when anything changed, acting as the project's
@@ -39,9 +40,13 @@
 # count against RELAY_MAX_WORKERS: it must run while every worker is busy. It
 # goes through admit like any session. It takes no issue and commits nothing;
 # it decides, corrects, answers and keeps the pinned Maintainer report
-# (hack/lib/github.sh report). When it ends it writes .relay/maintained,
-# `<epoch> <activity>` (hack/lib/github.sh activity, read after the sweep so
-# its own comments don't count as new activity); a sweep that didn't run to
+# (hack/lib/github.sh report). Agents escalate to it, with
+# status/needs-maintainer; only it sets status/needs-human, for what
+# GOVERNANCE.md reserves to the owner (docs/plans/maintainer.md). When it
+# ends it writes .relay/maintained, `<epoch> <activity>`: when the sweep
+# started (so an issue escalated while it ran is still new to the watch) and
+# hack/lib/github.sh activity, read after the sweep so its own comments don't
+# count as new activity; a sweep that didn't run to
 # its end (no headroom, a limit, a crash, a timeout) leaves it as it was, and
 # the watch tries again after WATCH_RETRY.
 #
@@ -79,7 +84,10 @@
 # without picking or claiming, and the watch starts nothing. A session that
 # ends without a handoff and without a new commit on the issue's branch counts
 # as failed, in .relay/fails-<N>; at RELAY_MAX_FAILS (default 3) in a row the
-# relay sets the issue to status/needs-human with a comment naming each one. A
+# relay escalates the issue to the maintainer (status/needs-maintainer) with a
+# comment naming each one. A session that leaves its issue in
+# status/needs-maintainer or status/needs-human has finished, as one that
+# closes it or hands it off. A
 # handoff or a new commit resets the count; a paused session doesn't count.
 # A session whose transcript (under $CLAUDE_CONFIG_DIR/projects/) hasn't
 # changed for RELAY_IDLE (default 45m) is stuck: the relay ends it (SIGTERM,
@@ -230,12 +238,13 @@ Rules for this headless run:
     it with a merge commit once \`make check\` passes, and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue.
-  - Stuck without the user: \`hack/lib/github.sh status $n needs-human\` and a
-    comment saying why and what you need. The relay then picks the next issue.
-    How to build it is yours to decide (AGENTS.md, "Designing is our job"):
-    this is for what only the user can give (a tag, access, credentials,
-    money), or a direction you are unsure of, asked with the choice you would
-    make and why.
+  - Stuck on a decision: \`hack/lib/github.sh status $n needs-maintainer\` and
+    a comment saying why and what you need. The relay then picks the next
+    issue, and the maintainer decides it or takes it to the user. How to build
+    it is yours to decide (AGENTS.md, "Designing is our job"): this is for
+    what only the user can give (a tag, access, credentials, money), or a
+    direction you are unsure of, asked with the choice you would make and
+    why. Never set status/needs-human: only the maintainer does.
 $cluster
 - Work you find outside #$n: file it with
   \`hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>\`; don't
@@ -294,10 +303,12 @@ For each proposed issue, decide one of these:
   missing and nothing changed since, leave it without a new comment.
 - When nothing else can move it and it needs something only the user can give
   (a tag, access, credentials, money), or you are unsure which way the factory
-  should go, \`hack/lib/github.sh status N needs-human\` with a comment (first
-  line \`<!-- relay-triage -->\`) asking for it; for a direction, the comment
-  says the choice you would make and why, so the user can steer, never a list
-  of open questions.
+  should go, escalate it to the maintainer with
+  \`hack/lib/github.sh status N needs-maintainer\` and a comment (first line
+  \`<!-- relay-triage -->\`) saying what it needs; for a direction, the comment
+  says the choice you would make and why, never a list of open questions. The
+  maintainer decides it or takes it to the user; never set status/needs-human
+  yourself.
 - Close it as a duplicate, \`hack/lib/github.sh duplicate N M\`, when open
   issue #M covers the same work.
 
@@ -306,8 +317,8 @@ Rules for this headless run:
   the model when dispatching (sonnet or opus). Dispatch every subagent with
   run_in_background: false and never end your turn while one is running.
 - Touch only the issues listed as proposed: never set status/in-progress,
-  never take an issue out of status/needs-human
-  (needs-human stays the user's), never take an issue, edit a body only to
+  never take an issue out of status/needs-maintainer or status/needs-human
+  (needs-maintainer is the maintainer's, needs-human stays the user's), never take an issue, edit a body only to
   add a "Depends on #M" line, never a title, and file no new issues.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   your account.
@@ -337,7 +348,9 @@ FILE status/proposed kind/<kind>\`). The owner's word wins: an owner comment
 is binding and you never reverse it. Only what GOVERNANCE.md reserves to the
 owner, or a direction you are unsure of, goes to the owner, each item with the
 choice you would make and why, in the report's *Needs you*; never a list of
-open questions. End the sweep by writing the report and setting it with
+open questions. Agents escalate to you with status/needs-maintainer: decide
+each of those first (\`hack/lib/github.sh escalated\` lists them), and move
+it on. Only you set status/needs-human. End the sweep by writing the report and setting it with
 \`hack/lib/github.sh report FILE\` (the pinned *Maintainer report* issue).
 
 Rules for this headless run:
@@ -459,14 +472,15 @@ handoff_id() {
   [ -z "$json" ] || jq -r .id <<<"$json"
 }
 
-# outcome N BEFORE: how the session left issue N: closed, needs-human,
-# handed-off (a handoff comment newer than BEFORE) or nothing.
+# outcome N BEFORE: how the session left issue N: closed, needs-maintainer,
+# needs-human, handed-off (a handoff comment newer than BEFORE) or nothing.
 outcome() {
   local n=$1 before=$2 state latest
   state=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" \
     --jq '"\(.state) \(.labels | map(.name) | join(","))"') || return 1
   case $state in
     closed*) echo closed; return 0 ;;
+    *status/needs-maintainer*) echo needs-maintainer; return 0 ;;
     *status/needs-human*) echo needs-human; return 0 ;;
   esac
   latest=$(handoff_id "$n") || return 1
@@ -735,29 +749,30 @@ session() {
 
 # failed N ID OUT: count session ID (output OUT, with S_RC and S_MINS) as one
 # more failed session in a row on issue N, in .relay/fails-N; at
-# RELAY_MAX_FAILS, set N to status/needs-human with a comment naming them.
+# RELAY_MAX_FAILS, escalate N to the maintainer (status/needs-maintainer) with
+# a comment naming them.
 failed() {
   local n=$1 f="$DIR/fails-$1" count body url
   printf '%s\t%s\t%s\t%s\n' "$2" "$S_RC" "$S_MINS" "$3" >>"$f"
   count=$(wc -l <"$f")
   if [ "$count" -lt "$MAX_FAILS" ]; then
-    log "#$n: $count failed session(s) in a row; status/needs-human at $MAX_FAILS (RELAY_MAX_FAILS)"
+    log "#$n: $count failed session(s) in a row; status/needs-maintainer at $MAX_FAILS (RELAY_MAX_FAILS)"
     return 0
   fi
   body=$(fail_comment "$n" "$f")
-  if url=$(gh_comment "$n" - <<<"$body" 2>>"$LOG") && gh_set_status "$n" needs-human >/dev/null 2>>"$LOG"; then
-    log "#$n failed $count sessions in a row; set it to status/needs-human: $url"
+  if url=$(gh_comment "$n" - <<<"$body" 2>>"$LOG") && gh_set_status "$n" needs-maintainer >/dev/null 2>>"$LOG"; then
+    log "#$n failed $count sessions in a row; set it to status/needs-maintainer: $url"
     rm -f "$f"
   else
-    log "#$n failed $count sessions in a row, but setting it to status/needs-human failed; trying again after the next"
+    log "#$n failed $count sessions in a row, but setting it to status/needs-maintainer failed; trying again after the next"
   fi
 }
 
-# fail_comment N FILE: the comment that hands issue N to the user, naming each
+# fail_comment N FILE: the comment that hands issue N to the maintainer, naming each
 # failed session in FILE.
 fail_comment() {
   local id rc mins out
-  echo "The relay on host \`$(hostname)\` stopped working #$1: $(wc -l <"$2") sessions in a row ended without a handoff and without a new commit on its branch. Each session is below; \`claude --resume <id>\` in the worker's worktree opens it. Fix what stops them, then set the issue back to \`status/ready\`."
+  echo "The relay on host \`$(hostname)\` stopped working #$1: $(wc -l <"$2") sessions in a row ended without a handoff and without a new commit on its branch. Each session is below; \`claude --resume <id>\` in the worker's worktree opens it. Maintainer: find what stops them, fix it or file the fix, then set the issue back to \`status/ready\`; send it to the owner only if that needs them."
   while IFS=$'\t' read -r id rc mins out; do
     echo
     echo "### Session \`$id\`: exit $rc after ${mins}m"
@@ -814,14 +829,15 @@ triage() {
   session triage "$DIR/triage-$K-$(date +%Y%m%d-%H%M%S)" "$id" "$(triage_prompt "$list")"
 }
 
-# maintained ACTIVITY: tell the watch, and the next sweep's prompt, that a
-# sweep ended now and saw ACTIVITY. A sweep that didn't run to its end leaves
-# the file as it is, so the next one still looks back to the last full sweep.
-maintained() { [ -n "$DRY_RUN" ] || echo "$(date +%s) $1" >"$DIR/maintained"; }
+# maintained START ACTIVITY: tell the watch, and the next sweep's prompt, that
+# a sweep that started at START (epoch seconds) ran to its end and saw
+# ACTIVITY. A sweep that didn't run to its end leaves the file as it is, so the
+# next one still looks back to the last full sweep.
+maintained() { [ -n "$DRY_RUN" ] || echo "$1 $2" >"$DIR/maintained"; }
 
 # maintain: one maintainer session (see the header).
 maintain() {
-  local id last t act rc out
+  local id last t act rc out start
   if [ -z "$DRY_RUN" ]; then
     worktree || { log "could not prepare the worktree $WT; no sweep"; return 1; }
   fi
@@ -841,6 +857,7 @@ maintain() {
     { log "could not switch $WT to origin/main; no sweep"; return 1; }
   log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD)"
   out="$DIR/maintain-$(date +%Y%m%d-%H%M%S)"
+  start=$(date +%s)
   session maintainer "$out" "$id" "$(maintain_prompt "$last")"
   rc=$?
   # A limit, a crash, a timeout or an idle kill cut the sweep short: not recorded.
@@ -849,7 +866,7 @@ maintain() {
     return 1
   fi
   act=$(gh_activity 2>>"$LOG") || { log "could not read the activity after the sweep; not recorded"; return 1; }
-  maintained "$act"
+  maintained "$start" "$act"
 }
 
 # work: the worker's sessions, one after another (see the header).
@@ -936,10 +953,11 @@ work() {
       fi
     fi
     case $result in
-      closed | needs-human | handed-off) forget_fails "$ISSUE" ;;
+      closed | needs-maintainer | needs-human | handed-off) forget_fails "$ISSUE" ;;
     esac
     case $result in
       closed) log "session $i closed #$ISSUE" ;;
+      needs-maintainer) log "session $i escalated #$ISSUE to the maintainer (status/needs-maintainer)" ;;
       needs-human) log "session $i left #$ISSUE waiting for the user (status/needs-human)" ;;
       handed-off) log "session $i handed off #$ISSUE" ;;
       unknown) log "could not read #$ISSUE after session $i; stopping"; break ;;
