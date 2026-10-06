@@ -237,6 +237,14 @@ What B3, B8 and B10-B13 leave open, settled in step 5
   Deleting the bot user in Gitea needs a provider call that doesn't exist yet,
   filed as its own issue.
 - **A plan creating a Container named `brief-*`** is refused (`CheckPlan`).
+- **Settled while building it:** a round's start (`round`, `roundPrompts`) is
+  written to the status before its Task is made, guarded by the Brief's
+  `resourceVersion`, so a stale cache can't start a round twice. Containers
+  are created a reconcile after the Relationships that start from them, once
+  the cache the Container controller shares shows them, so the Connector is
+  in the scaffold. When a round ends the workspace is written again at once,
+  and a prompt that waited starts the next round in the same reconcile.
+  A plan's labels the factory doesn't define are made in grey (`#ededed`).
 
 ## Review focus
 

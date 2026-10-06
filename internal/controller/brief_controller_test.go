@@ -33,7 +33,7 @@ var _ = Describe("Brief", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })
 
-	It("reaches Pending, with the default Agents and GitProvider", func() {
+	It("waits for its planner Agent, with the default Agents and GitProvider", func() {
 		createFactory(ns)
 		brief := newBrief(ns, "cel-lens")
 		mustCreate(brief)
@@ -46,8 +46,11 @@ var _ = Describe("Brief", func() {
 		Expect(brief.Spec.GitProviderRef.Name).To(Equal("gitea"))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
-			g.Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefPending))
+			g.Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
+			g.Expect(condition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+				To(HaveField("Message", HavePrefix("Agent planner is missing: make it in namespace "+ns)))
 		}).Should(Succeed())
+		Expect(brief.Status.Round).To(BeZero(), "no round starts without a planner")
 	})
 
 	It("keeps Agents it is given", func() {
@@ -73,9 +76,9 @@ var _ = Describe("Brief", func() {
 				g.Expect(brief.Status.RepositoryURL).To(Equal(
 					"http://gitea.gitea.svc.cluster.local:3000/" + ns + "/" + repo))
 			}).Should(Succeed())
-			Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefPending))
+			Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput), "it has no planner Agent")
 			Expect(condition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
-				To(HaveField("Status", metav1.ConditionFalse))
+				To(HaveField("Message", HavePrefix("Agent planner is missing")))
 
 			Expect(gitFake.commitCount(ns, repo)).To(Equal(1))
 			Expect(file(model.BriefFile)).To(ContainSubstring("## Idea (**new**)\n\nA linter for CEL rules in CRDs.\n"))
@@ -182,10 +185,9 @@ var _ = Describe("Brief", func() {
 				StringData: map[string]string{"username": "c4admin", "token": "t"}})
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
-				g.Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefPending))
 				g.Expect(brief.Status.RepositoryURL).To(Equal("http://forgejo.invalid/" + ns + "/" + repo))
 				g.Expect(condition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
-					To(HaveField("Status", metav1.ConditionFalse))
+					To(HaveField("Message", HavePrefix("Agent planner is missing")), "the next thing it needs")
 			}).Should(Succeed())
 			Expect(gitFake.commitCount(ns, repo)).To(Equal(1))
 		})

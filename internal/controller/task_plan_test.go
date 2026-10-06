@@ -114,7 +114,11 @@ var _ = Describe("Plan Task run", func() {
 	roundTask := func(name string, rounds int32, round string) *c4v1alpha1.Task {
 		GinkgoHelper()
 		createFactory(ns)
-		mustCreate(newBrief(ns, "cel-lens"), &c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "planner"),
+		// The Brief's own planner is missing, so it plans no round of its own
+		// and leaves these Tasks to the test.
+		brief := newBrief(ns, "cel-lens")
+		brief.Spec.Agents.Planner.Name = "absent"
+		mustCreate(brief, &c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "planner"),
 			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}})
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "brief-cel-lens-git"), &corev1.Secret{})).To(Succeed())

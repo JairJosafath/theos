@@ -1,0 +1,486 @@
+/*
+Copyright 2026 JairJosafath. All rights reserved.
+
+This file is part of C4 Factory, which is proprietary. No license is granted
+to use, copy, modify or distribute it without the copyright holder's written
+permission. See the LICENSE file.
+*/
+
+package controller
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/model"
+)
+
+// briefLabelColor is the color of a label a planner asks for that the factory
+// doesn't define.
+const briefLabelColor = "#ededed"
+
+// roundApply is one reconcile's work on applying a round.
+type roundApply struct {
+	brief, orig *c4v1alpha1.Brief
+	round       string
+	// made are the objects this reconcile created, which the cache may not
+	// show yet.
+	made []c4v1alpha1.BriefObject
+}
+
+// applyRound applies the plan the Brief accepted (B8), in order and each step
+// idempotent, so a restart applies the rest: the story objects, then for each
+// Container the round waits for, once it is Ready, a new one's Crew and the
+// round's issues for it, and last the plan merged into the brief repository's main.
+func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha1.Brief, task *c4v1alpha1.Task) (
+	ctrl.Result, error) {
+	tree, ok, err := r.readPlan(ctx, brief, task.Status.Commit)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !ok {
+		return ctrl.Result{}, fmt.Errorf("branch %s moved past the accepted plan %s",
+			model.PlanBranch(int(brief.Status.Round)), task.Status.Commit)
+	}
+	plan, err := model.ParsePlan(planFiles(tree))
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("reading the accepted plan: %w", err)
+	}
+	if plan.NeedsInput != "" {
+		r.plannerNeedsInput(ctx, brief, task, plan)
+		return ctrl.Result{}, nil
+	}
+	if err := r.needAgents(ctx, brief, "implementer", "reviewer"); err != nil {
+		return ctrl.Result{}, err
+	}
+	current, err := r.currentModel(ctx, brief)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if missing := model.MissingCatalog(plan, current); len(missing) > 0 {
+		return ctrl.Result{}, errNeedsInput{fmt.Sprintf("The plan of round %d needs %s, missing in namespace %s: "+
+			"install it, so the Brief can apply the round", brief.Status.Round, strings.Join(missing, ", "), brief.Namespace)}
+	}
+
+	run := &roundApply{brief: brief, orig: orig, round: strconv.Itoa(int(brief.Status.Round))}
+	var created []string
+	newRelationships := false
+	for _, o := range model.ApplyOrder(plan.Objects) {
+		if o.Kind == model.KindContainer && newRelationships {
+			// A Container is scaffolded with the Relationships its controller
+			// sees; the cache it shares with this one must show them first.
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		isNew, err := r.applyObject(ctx, run, o)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("applying %s: %w", o.Ref(), err)
+		}
+		newRelationships = newRelationships || (isNew && o.Kind == model.KindRelationship)
+		if o.Kind == model.KindContainer && (isNew || r.madeByRound(ctx, run, o.Name)) {
+			created = append(created, o.Name)
+		}
+	}
+	waiting, err := r.finishContainers(ctx, run, model.RoundContainers(created, plan.Issues), created, plan.Issues)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if len(waiting) > 0 {
+		setCondition(&brief.Status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
+			"Applying", fmt.Sprintf("Round %d waits for %s to be Ready", brief.Status.Round, strings.Join(waiting, ", ")))
+		return ctrl.Result{RequeueAfter: r.needsInputRecheck()}, nil
+	}
+	if err := r.mergePlan(ctx, brief, task.Status.Commit); err != nil {
+		return ctrl.Result{}, fmt.Errorf("merging the plan: %w", err)
+	}
+	return ctrl.Result{}, r.roundApplied(ctx, run, task, plan)
+}
+
+// madeByRound reports whether the Container carries this round's label: a
+// restart finds the Containers an earlier reconcile created.
+func (r *BriefReconciler) madeByRound(ctx context.Context, run *roundApply, name string) bool {
+	var c c4v1alpha1.Container
+	if err := r.Get(ctx, client.ObjectKey{Namespace: run.brief.Namespace, Name: name}, &c); err != nil {
+		return false
+	}
+	return c.Labels[c4v1alpha1.LabelBrief] == run.brief.Name && c.Labels[c4v1alpha1.LabelBriefRound] == run.round
+}
+
+// finishContainers gives each of names that is Ready its Crew, when the round
+// created it, and its issues. It returns the ones that aren't Ready yet.
+func (r *BriefReconciler) finishContainers(ctx context.Context, run *roundApply, names, created []string,
+	issues []model.PlanIssue) ([]string, error) {
+	var waiting []string
+	for _, name := range names {
+		var c c4v1alpha1.Container
+		err := r.Get(ctx, client.ObjectKey{Namespace: run.brief.Namespace, Name: name}, &c)
+		if apierrors.IsNotFound(err) {
+			waiting = append(waiting, "Container "+name)
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if c.Status.Phase != c4v1alpha1.ContainerReady {
+			waiting = append(waiting, fmt.Sprintf("Container %s (%s)", name, c.Status.Phase))
+			continue
+		}
+		if slices.Contains(created, name) {
+			if err := r.ensureCrew(ctx, run, &c); err != nil {
+				return nil, fmt.Errorf("making the Crew of %s: %w", name, err)
+			}
+		}
+		if err := r.fileIssues(ctx, run, &c, model.IssuesFor(issues, name)); err != nil {
+			return nil, fmt.Errorf("filing the issues of %s: %w", name, err)
+		}
+	}
+	return waiting, nil
+}
+
+// applyObject creates a plan's object the namespace doesn't have, labelled
+// with the Brief and the round and with no ownerReference to the Brief (B8),
+// or brings an existing one's story text up to date. It reports whether it
+// is new: created now, or so recently the cache doesn't show it.
+func (r *BriefReconciler) applyObject(ctx context.Context, run *roundApply, o model.PlanObject) (bool, error) {
+	desired, err := storyObject(run.brief.Namespace, o)
+	if err != nil {
+		return false, err
+	}
+	existing, ok := desired.DeepCopyObject().(client.Object)
+	if !ok {
+		return false, fmt.Errorf("copying %s", o.Ref())
+	}
+	err = r.Get(ctx, client.ObjectKeyFromObject(desired), existing)
+	if apierrors.IsNotFound(err) {
+		desired.SetLabels(map[string]string{
+			c4v1alpha1.LabelBrief: run.brief.Name, c4v1alpha1.LabelBriefRound: run.round,
+		})
+		if err := r.Create(ctx, desired); apierrors.IsAlreadyExists(err) {
+			return true, nil // made by an earlier reconcile the cache doesn't show yet
+		} else if err != nil {
+			return false, err
+		}
+		run.made = append(run.made, c4v1alpha1.BriefObject{Kind: o.Kind, Name: o.Name})
+		logf.FromContext(ctx).Info("Created story object", "kind", o.Kind, "name", o.Name, "round", run.round)
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	orig, _ := existing.DeepCopyObject().(client.Object)
+	copyStoryText(existing, desired)
+	if equality.Semantic.DeepEqual(existing, orig) {
+		return false, nil
+	}
+	if err := r.Patch(ctx, existing, client.MergeFrom(orig)); err != nil {
+		return false, err
+	}
+	logf.FromContext(ctx).Info("Updated story text", "kind", o.Kind, "name", o.Name, "round", run.round)
+	return false, nil
+}
+
+// storyObject is a plan's object as the kind it is.
+func storyObject(ns string, o model.PlanObject) (client.Object, error) {
+	meta := metav1.ObjectMeta{Namespace: ns, Name: o.Name}
+	switch o.Kind {
+	case model.KindProject:
+		return &c4v1alpha1.Project{ObjectMeta: meta,
+			Spec: c4v1alpha1.ProjectSpec{DisplayName: o.DisplayName, Description: o.Description}}, nil
+	case model.KindPerson:
+		return &c4v1alpha1.Person{ObjectMeta: meta,
+			Spec: c4v1alpha1.PersonSpec{DisplayName: o.DisplayName, Description: o.Description}}, nil
+	case model.KindSoftwareSystem:
+		return &c4v1alpha1.SoftwareSystem{ObjectMeta: meta, Spec: c4v1alpha1.SoftwareSystemSpec{
+			DisplayName: o.DisplayName, Description: o.Description, Needs: o.Needs, KPIs: o.KPIs}}, nil
+	case model.KindContainer:
+		return &c4v1alpha1.Container{ObjectMeta: meta, Spec: c4v1alpha1.ContainerSpec{
+			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: o.SoftwareSystem},
+			DisplayName:       o.DisplayName, Description: o.Description,
+			Type:           c4v1alpha1.ContainerType(o.Type),
+			GitProviderRef: c4v1alpha1.LocalRef{Name: o.GitProvider},
+			FrameworkRef:   c4v1alpha1.LocalRef{Name: o.Framework},
+			StandardRef:    optionalLocalRef(o.Standard),
+			ComputeRef:     optionalLocalRef(o.Compute),
+			DeploymentRef:  optionalLocalRef(o.Deployment),
+		}}, nil
+	case model.KindDataStore:
+		return &c4v1alpha1.DataStore{ObjectMeta: meta, Spec: c4v1alpha1.DataStoreSpec{
+			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: o.SoftwareSystem},
+			DisplayName:       o.DisplayName, Description: o.Description,
+			ConnectorRef: c4v1alpha1.LocalRef{Name: o.Connector},
+		}}, nil
+	case model.KindRelationship:
+		return &c4v1alpha1.Relationship{ObjectMeta: meta, Spec: c4v1alpha1.RelationshipSpec{
+			Source:      c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementKind(o.Source.Kind), Name: o.Source.Name},
+			Target:      c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementKind(o.Target.Kind), Name: o.Target.Name},
+			Description: o.Description, Bundles: o.Bundles,
+		}}, nil
+	}
+	return nil, fmt.Errorf("a plan doesn't write %s", o.Kind)
+}
+
+func optionalLocalRef(name string) *c4v1alpha1.LocalRef {
+	if name == "" {
+		return nil
+	}
+	return &c4v1alpha1.LocalRef{Name: name}
+}
+
+// copyStoryText copies the story text a plan may change, displayName,
+// description, needs and kpis, from src to dst, of the same kind.
+func copyStoryText(dst, src client.Object) {
+	switch d := dst.(type) {
+	case *c4v1alpha1.Project:
+		s, _ := src.(*c4v1alpha1.Project)
+		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
+	case *c4v1alpha1.Person:
+		s, _ := src.(*c4v1alpha1.Person)
+		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
+	case *c4v1alpha1.SoftwareSystem:
+		s, _ := src.(*c4v1alpha1.SoftwareSystem)
+		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
+		d.Spec.Needs, d.Spec.KPIs = s.Spec.Needs, s.Spec.KPIs
+	case *c4v1alpha1.Container:
+		s, _ := src.(*c4v1alpha1.Container)
+		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
+	case *c4v1alpha1.DataStore:
+		s, _ := src.(*c4v1alpha1.DataStore)
+		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
+	case *c4v1alpha1.Relationship:
+		s, _ := src.(*c4v1alpha1.Relationship)
+		d.Spec.Description = s.Spec.Description
+	}
+}
+
+// ensureCrew makes the Crew of a Container the round created (B9): named
+// after it, with the Brief's implementer and reviewer, one Task at a time and
+// releases off. An existing Crew of that name is left alone.
+func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4v1alpha1.Container) error {
+	brief := run.brief
+	crew := &c4v1alpha1.Crew{
+		ObjectMeta: metav1.ObjectMeta{Namespace: c.Namespace, Name: c.Name, Labels: map[string]string{
+			c4v1alpha1.LabelBrief: brief.Name, c4v1alpha1.LabelBriefRound: run.round,
+		}},
+		Spec: c4v1alpha1.CrewSpec{
+			ContainerRef: c4v1alpha1.LocalRef{Name: c.Name},
+			Implementer:  brief.Spec.Agents.Implementer,
+			Reviewer:     brief.Spec.Agents.Reviewer,
+			Parallel:     1,
+		},
+	}
+	err := r.Get(ctx, client.ObjectKeyFromObject(crew), &c4v1alpha1.Crew{})
+	if err == nil {
+		return nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return err
+	}
+	if err := r.Create(ctx, crew); err != nil {
+		return client.IgnoreAlreadyExists(err)
+	}
+	run.made = append(run.made, c4v1alpha1.BriefObject{Kind: "Crew", Name: crew.Name})
+	logf.FromContext(ctx).Info("Created Crew", "crew", crew.Name, "round", run.round)
+	return nil
+}
+
+// fileIssues files the round's issues for a Container in its repository (B11):
+// status/ready, in no milestone, each body ending with its marker. An issue
+// already filed is found by its marker among the open issues, so a restart
+// files no duplicate. Each is recorded in the Brief's status right away.
+func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, c *c4v1alpha1.Container,
+	issues []model.PlanIssue) error {
+	if len(issues) == 0 {
+		return nil
+	}
+	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
+	if err != nil {
+		return err
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	repo := provider.Repository(c.Name)
+	if err := provider.EnsureLabels(gitCtx, repo, briefIssueLabels(issues)); err != nil {
+		return err
+	}
+	open, err := provider.ListIssues(gitCtx, repo, "")
+	if err != nil {
+		return err
+	}
+	brief, round := run.brief, int(run.brief.Status.Round)
+	for _, issue := range issues {
+		i := slices.IndexFunc(open, func(o gitprovider.Issue) bool {
+			return model.HasIssueMarker(o.Body, brief.Name, round, issue.N)
+		})
+		var filed gitprovider.Issue
+		if i >= 0 {
+			filed = open[i]
+		} else {
+			filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, model.BriefIssueBody(issue, brief.Name, round),
+				model.BriefIssueLabels(issue.Labels), 0)
+			if err != nil {
+				return err
+			}
+			logf.FromContext(ctx).Info("Filed Brief issue", "container", c.Name, "number", filed.Number, "round", round)
+		}
+		if err := r.recordIssue(ctx, run, repo.Owner+"/"+repo.Name, filed); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// briefIssueLabels are the labels the issues need: the factory's, and any
+// other the planner asked for.
+func briefIssueLabels(issues []model.PlanIssue) []gitprovider.Label {
+	labels := issueLabels()
+	for _, issue := range issues {
+		for _, name := range model.BriefIssueLabels(issue.Labels) {
+			if !slices.ContainsFunc(labels, func(l gitprovider.Label) bool { return l.Name == name }) {
+				labels = append(labels, gitprovider.Label{Name: name, Color: briefLabelColor})
+			}
+		}
+	}
+	return labels
+}
+
+// recordIssue adds a filed issue to the Brief's status, once, and writes the
+// status at once, so a restart knows it.
+func (r *BriefReconciler) recordIssue(ctx context.Context, run *roundApply, repository string,
+	issue gitprovider.Issue) error {
+	status := &run.brief.Status
+	if slices.ContainsFunc(status.Issues, func(i c4v1alpha1.BriefIssue) bool {
+		return i.Repository == repository && int(i.Number) == issue.Number
+	}) {
+		return nil
+	}
+	status.Issues = model.KeepNewest(append(status.Issues, c4v1alpha1.BriefIssue{
+		Repository: repository, Number: int32(issue.Number), URL: issue.URL, Title: model.Clip(issue.Title, 255),
+	}), 500)
+	if err := r.Status().Patch(ctx, run.brief, client.MergeFrom(run.orig)); err != nil {
+		return err
+	}
+	*run.orig = *run.brief.DeepCopy()
+	return nil
+}
+
+// mergePlan puts the round's plan on the brief repository's main, in place of
+// the earlier round's: one commit by the operator, pushed without force. A
+// plan main already holds is merged.
+func (r *BriefReconciler) mergePlan(ctx context.Context, brief *c4v1alpha1.Brief, commit string) error {
+	provider, err := r.briefGit(ctx, brief)
+	if err != nil {
+		return err
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	repo := provider.Repository(model.BriefRepository(brief.Name))
+	dir := []string{model.PlanDir + "/"}
+	plan, sha, err := provider.ReadFiles(gitCtx, repo, model.PlanBranch(int(brief.Status.Round)), dir)
+	if err != nil {
+		return err
+	}
+	if sha != commit {
+		return fmt.Errorf("branch %s is at %s, not the accepted plan %s", model.PlanBranch(int(brief.Status.Round)),
+			sha, commit)
+	}
+	onMain, head, err := provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, dir)
+	if err != nil {
+		return err
+	}
+	var removes []string
+	for p := range onMain {
+		if _, ok := plan[p]; !ok {
+			removes = append(removes, p)
+		}
+	}
+	slices.Sort(removes)
+	message := fmt.Sprintf("Plan round %d of Brief %s\n", brief.Status.Round, brief.Name)
+	_, err = provider.PushDefaultBranch(gitCtx, repo, head, plan, removes, message, briefAuthor())
+	if errors.Is(err, gitprovider.ErrEmptyChange) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	logf.FromContext(ctx).Info("Merged Brief plan", "round", brief.Status.Round, "commit", commit)
+	return nil
+}
+
+// roundApplied records an applied round: its history entry, the choices, the
+// prompts it took and everything the Brief made.
+func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, task *c4v1alpha1.Task,
+	plan model.Plan) error {
+	brief := run.brief
+	status := &brief.Status
+	created, err := r.createdObjects(ctx, run)
+	if err != nil {
+		return err
+	}
+	recordRound(status, task.Status.Summary, plan.Choices)
+	status.Choices = model.ClipList(plan.Choices, 50, 500)
+	status.PromptsPlanned = status.RoundPrompts
+	status.Created = created
+	message := fmt.Sprintf("Applied round %d", status.Round)
+	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionTrue,
+		model.ReasonApplied, message)
+	r.event(brief, corev1.EventTypeNormal, eventPlanned, "Apply",
+		fmt.Sprintf("%s: %d objects, %d issues. %s", message, len(plan.Objects), len(plan.Issues), task.Status.Summary))
+	logf.FromContext(ctx).Info("Applied Brief round", "round", status.Round, "issues", len(plan.Issues))
+	return nil
+}
+
+// createdObjects lists every story object and Crew labelled with the Brief,
+// with what this reconcile made and the cache may not show yet; at most the
+// 500 the status holds.
+func (r *BriefReconciler) createdObjects(ctx context.Context, run *roundApply) ([]c4v1alpha1.BriefObject, error) {
+	opts := []client.ListOption{client.InNamespace(run.brief.Namespace),
+		client.MatchingLabels{c4v1alpha1.LabelBrief: run.brief.Name}}
+	lists := []struct {
+		kind string
+		list client.ObjectList
+	}{
+		{model.KindProject, &c4v1alpha1.ProjectList{}}, {model.KindPerson, &c4v1alpha1.PersonList{}},
+		{model.KindSoftwareSystem, &c4v1alpha1.SoftwareSystemList{}}, {model.KindDataStore, &c4v1alpha1.DataStoreList{}},
+		{model.KindRelationship, &c4v1alpha1.RelationshipList{}}, {model.KindContainer, &c4v1alpha1.ContainerList{}},
+		{"Crew", &c4v1alpha1.CrewList{}},
+	}
+	out := slices.Clone(run.brief.Status.Created)
+	add := func(o c4v1alpha1.BriefObject) {
+		if !slices.Contains(out, o) {
+			out = append(out, o)
+		}
+	}
+	for _, l := range lists {
+		if err := r.List(ctx, l.list, opts...); err != nil {
+			return nil, err
+		}
+		items, err := metaItems(l.list)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			add(c4v1alpha1.BriefObject{Kind: l.kind, Name: item.GetName()})
+		}
+	}
+	for _, o := range run.made {
+		add(o)
+	}
+	if len(out) > 500 {
+		out = out[:500]
+	}
+	return out, nil
+}
