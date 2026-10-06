@@ -45,6 +45,7 @@ until_ok eval '! kill -0 $waiter 2>/dev/null'; check "ended job: the waiting job
 wait "$waiter"; check "waiting job: acquire succeeds" $? 0
 grep -q "got slot .*\`make test\` starts" "$T/wait"; check "waiting job: says it starts" $? 0
 "$SLOT" status | grep -q "pid $c "; check "waiting job: holds a slot" $? 0
+grep -q "unbound variable" "$T/wait"; check "waiting job: exits without an unbound variable" $? 1
 
 # A killed job frees its slot.
 kill -9 "$b"; wait "$b" 2>/dev/null
@@ -55,11 +56,13 @@ until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free, 0 waiting" ]'; chec
 # A waiter whose own job goes away stops waiting.
 job; a=$job; job; b=$job; job; c=$job
 "$SLOT" acquire "$a" x 2>/dev/null; "$SLOT" acquire "$b" y 2>/dev/null
-"$SLOT" acquire "$c" z 2>/dev/null &
+"$SLOT" acquire "$c" z 2>"$T/gone" &
 waiter=$!
 kill "$c"
 until_ok eval '! kill -0 $waiter 2>/dev/null'; check "waiter's job gone: stops waiting" $? 0
 wait "$waiter"; check "waiter's job gone: exit 1" $? 1
+check "waiter's job gone: removes its ticket" "$(ls "$HEAVY_SLOTS_DIR" | grep -c "^wait-")" 0
+grep -q "unbound variable" "$T/gone"; check "waiter's job gone: exits without an unbound variable" $? 1
 
 kill "$a" "$b"; wait "$a" "$b" 2>/dev/null
 until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free, 0 waiting" ]'
