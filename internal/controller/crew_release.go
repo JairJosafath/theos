@@ -72,7 +72,7 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		status.LastRelease = &c4v1alpha1.CrewRelease{Tag: step.Tag, Commit: step.Commit, Time: metav1.NewTime(r.now())}
 		r.setReleased(crew, status, metav1.ConditionTrue, reasonReleased, message)
 	case step.Held != "":
-		// The cached Crew can miss the condition the last poll wrote, so the
+		// The last poll's status write can fail after its Event, so the
 		// Reconciler remembers what it said too.
 		said := step.Reason + "\n" + step.Held
 		prev := apimeta.FindStatusCondition(status.Conditions, ConditionReleased)

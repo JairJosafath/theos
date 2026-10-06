@@ -61,7 +61,7 @@ const defaultCrewPoll = time.Minute
 type CrewReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
-	// APIReader reads Secrets and Tasks without the cache.
+	// APIReader reads the Crew, Secrets and Tasks without the cache.
 	APIReader client.Reader
 	// Git reaches the Git hosts.
 	Git GitClient
@@ -88,8 +88,11 @@ type CrewReconciler struct {
 // back to a person, and starts a Task for the next one.
 func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+	// Read live: a reconcile queued before the last status write would see the
+	// cached Crew without it, and a release whose milestone that write closed
+	// would turn back into "No open release is done".
 	var crew c4v1alpha1.Crew
-	if err := r.Get(ctx, req.NamespacedName, &crew); err != nil {
+	if err := r.APIReader.Get(ctx, req.NamespacedName, &crew); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !crew.DeletionTimestamp.IsZero() {
