@@ -183,6 +183,88 @@ func (a AppliedRelationship) StillApplied(dataStore, connector string) bool {
 	return a.DataStore == dataStore && (connector == "" || a.Connector == connector)
 }
 
+// Applied is whether a Relationship's Connector went into its source Container's
+// scaffold.
+type Applied int
+
+const (
+	// AppliedWaiting means the Container isn't scaffolded yet.
+	AppliedWaiting Applied = iota
+	// AppliedAtScaffold means the scaffold included the Connector.
+	AppliedAtScaffold
+	// AddedAfterScaffold means the Container was scaffolded without it: the link
+	// came later, or was recreated under the same name with another target.
+	// Scaffolding happens once.
+	AddedAfterScaffold
+)
+
+// ScaffoldedRelationship is what a Relationship's Applied condition depends on.
+type ScaffoldedRelationship struct {
+	// Name is the Relationship's name.
+	Name string
+	// ContainerReady is whether the source Container exists and is scaffolded.
+	ContainerReady bool
+	// AppliedNames are the Relationships the Container recorded as applied.
+	AppliedNames []string
+	// AppliedRecords are the Container's records with targets; a Container
+	// scaffolded before targets were recorded has none.
+	AppliedRecords []AppliedRelationship
+	// DataStore is the Relationship's current target.
+	DataStore string
+	// Connector is that DataStore's Connector, empty when the DataStore is gone.
+	Connector string
+}
+
+// RelationshipApplied decides a Relationship's Applied condition.
+func RelationshipApplied(r ScaffoldedRelationship) Applied {
+	if !r.ContainerReady {
+		return AppliedWaiting
+	}
+	if !slices.Contains(r.AppliedNames, r.Name) {
+		return AddedAfterScaffold
+	}
+	record := AppliedRelationship{Name: r.Name}
+	for _, a := range r.AppliedRecords {
+		if a.Name == r.Name {
+			record = a
+		}
+	}
+	if !record.StillApplied(r.DataStore, r.Connector) {
+		return AddedAfterScaffold
+	}
+	return AppliedAtScaffold
+}
+
+// ExistingHistory is what a scaffold does with a repository that already has
+// commits.
+type ExistingHistory int
+
+const (
+	// HistoryEmpty means the repository is new: scaffold it.
+	HistoryEmpty ExistingHistory = iota
+	// HistoryRecover means the only commit is this Container's own initial
+	// commit, pushed by an earlier attempt that didn't get to record it.
+	HistoryRecover
+	// HistoryForeign means commits the factory didn't make: it only scaffolds
+	// into a new, empty repository.
+	HistoryForeign
+)
+
+// ScaffoldHistory decides what to do with a repository's history before
+// scaffolding container (project/container). commits is how many commits the
+// repository has, counted up to two; initialFor is the Container the newest
+// commit's trailers name, empty when the factory didn't make it.
+func ScaffoldHistory(commits int, initialFor, container string) ExistingHistory {
+	switch {
+	case commits == 0:
+		return HistoryEmpty
+	case commits == 1 && initialFor != "" && initialFor == container:
+		return HistoryRecover
+	default:
+		return HistoryForeign
+	}
+}
+
 // DataStoreUse is what a Container picks up from its Relationships to DataStores.
 type DataStoreUse struct {
 	// Connectors are the unique Connector names, sorted. A Connector reached through
