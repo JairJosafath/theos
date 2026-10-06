@@ -6,7 +6,7 @@
 #   4. stores an admin access token as Secret gitea-credentials in each project's
 #      namespace;
 #   5. stores a runner registration token as Secret gitea/gitea-runner, unless
-#      RUNNER_SECRET is empty (the Helm chart makes that token itself).
+#      RUNNER_SECRET is empty (in the Helm chart, Gitea's pod makes that token).
 # With CREDENTIALS_DIR set (`make seed-local`), step 4 writes each project's
 # token to CREDENTIALS_DIR/PROJECT.env instead, step 5 is skipped, and the
 # script needs no kubectl.
