@@ -19,6 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -160,32 +161,79 @@ func (r *BriefReconciler) holdForBot(ctx context.Context, brief *c4v1alpha1.Brie
 	return nil
 }
 
+// botDeleteRetry is how often a deleted Brief tries again to delete its bot
+// on a Git host that refused or didn't answer.
+const botDeleteRetry = 30 * time.Second
+
+// Reasons of the Events about a Brief's bot.
+const (
+	eventBotNotDeleted = "BotNotDeleted"
+	eventBotLeft       = "BotLeft"
+)
+
 // deleteBot deletes the bot of a Brief being deleted from its Git host, then
 // lets the Brief go. Its repository and the model it made stay (B16). With
 // its GitProvider or credentials gone there is no host to reach, and the bot
-// is left.
-func (r *BriefReconciler) deleteBot(ctx context.Context, brief *c4v1alpha1.Brief) error {
+// is left. A host that fails the delete is tried again until the namespace is
+// terminating or BotDeleteTimeout has passed since the deletion; then the bot
+// is left too.
+func (r *BriefReconciler) deleteBot(ctx context.Context, brief *c4v1alpha1.Brief) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(brief, briefBotFinalizer) {
-		return nil
+		return ctrl.Result{}, nil
 	}
 	log := logf.FromContext(ctx)
 	user := model.AgentUsername(brief.Namespace, model.BriefRepository(brief.Name))
 	provider, err := r.briefGit(ctx, brief)
 	if sentence, unreachable := needsInputSentence(err); unreachable {
-		log.Info("Left the Brief's bot on the Git host", "user", user, "reason", sentence)
+		r.leaveBot(ctx, brief, user, sentence)
 	} else if err != nil {
-		return err
+		return ctrl.Result{}, err
 	} else {
 		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
-		defer cancel()
-		if err := provider.RemoveAgentAccess(gitCtx, provider.Repository(model.BriefRepository(brief.Name)), user); err != nil {
-			return err
+		err := provider.RemoveAgentAccess(gitCtx, provider.Repository(model.BriefRepository(brief.Name)), user)
+		cancel()
+		if err == nil {
+			log.Info("Deleted the Brief's bot", "user", user)
+		} else if why := r.giveUpOnBot(ctx, brief); why != "" {
+			r.leaveBot(ctx, brief, user, fmt.Sprintf("deleting it failed (%v), and %s", err, why))
+		} else {
+			deadline := brief.DeletionTimestamp.Add(r.botDeleteTimeout())
+			log.Info("Could not delete the Brief's bot; trying again", "user", user, "error", err.Error(),
+				"until", deadline.UTC().Format(time.RFC3339))
+			r.event(brief, corev1.EventTypeWarning, eventBotNotDeleted, "DeleteBot", fmt.Sprintf(
+				"Could not delete bot %s on the Git host: %v. Trying again until %s, then the bot is left there.",
+				user, err, deadline.UTC().Format(time.RFC3339)))
+			return ctrl.Result{RequeueAfter: min(botDeleteRetry, max(time.Until(deadline), time.Second))}, nil
 		}
-		log.Info("Deleted the Brief's bot", "user", user)
 	}
 	orig := brief.DeepCopy()
 	controllerutil.RemoveFinalizer(brief, briefBotFinalizer)
-	return client.IgnoreNotFound(r.Patch(ctx, brief, client.MergeFrom(orig)))
+	return ctrl.Result{}, client.IgnoreNotFound(r.Patch(ctx, brief, client.MergeFrom(orig)))
+}
+
+// giveUpOnBot says why a deleted Brief stops trying to delete its bot: its
+// namespace is terminating, or BotDeleteTimeout has passed. It is empty while
+// the Brief should try again.
+func (r *BriefReconciler) giveUpOnBot(ctx context.Context, brief *c4v1alpha1.Brief) string {
+	// An operator with only namespaced RBAC can't read the Namespace; the
+	// timeout still bounds its wait.
+	var ns corev1.Namespace
+	if err := r.APIReader.Get(ctx, client.ObjectKey{Name: brief.Namespace}, &ns); err == nil &&
+		(!ns.DeletionTimestamp.IsZero() || ns.Status.Phase == corev1.NamespaceTerminating) {
+		return fmt.Sprintf("namespace %s is terminating", brief.Namespace)
+	}
+	if time.Since(brief.DeletionTimestamp.Time) >= r.botDeleteTimeout() {
+		return fmt.Sprintf("the Brief has waited %s for it", r.botDeleteTimeout())
+	}
+	return ""
+}
+
+// leaveBot logs and records that the deleted Brief goes without deleting its
+// bot on the Git host, and why.
+func (r *BriefReconciler) leaveBot(ctx context.Context, brief *c4v1alpha1.Brief, user, reason string) {
+	logf.FromContext(ctx).Info("Left the Brief's bot on the Git host", "user", user, "reason", reason)
+	r.event(brief, corev1.EventTypeWarning, eventBotLeft, "LeaveBot", fmt.Sprintf(
+		"Left bot %s on the Git host: %s. Delete the user there by hand.", user, reason))
 }
 
 // writeWorkspace puts files on main: as its first commit in an empty

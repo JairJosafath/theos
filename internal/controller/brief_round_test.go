@@ -157,6 +157,19 @@ func briefEvents(g Gomega, ns string) []string {
 	return out
 }
 
+// briefEventNotes returns the notes of the Events about Brief cel-lens with reason.
+func briefEventNotes(g Gomega, ns, reason string) []string {
+	var events eventsv1.EventList
+	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+	var out []string
+	for _, e := range events.Items {
+		if e.Regarding.Kind == "Brief" && e.Regarding.Name == "cel-lens" && e.Reason == reason {
+			out = append(out, e.Note)
+		}
+	}
+	return out
+}
+
 // ownedByBrief reports whether obj has an ownerReference to a Brief.
 func ownedByBrief(obj client.Object) bool {
 	for _, ref := range obj.GetOwnerReferences() {

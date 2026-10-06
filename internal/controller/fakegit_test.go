@@ -399,6 +399,9 @@ type fakeAgentState struct {
 	// edits are what the commit PushBranch made on a branch changes on main,
 	// by owner/name@branch: a path's new file, or nil when it removes it.
 	edits map[string]map[string]*scaffold.File
+	// removeErrs are what RemoveAgentAccess returns for a bot user, as a host
+	// that refuses or doesn't answer would.
+	removeErrs map[string]error
 }
 
 func (g *fakeGit) agentState() *fakeAgentState {
@@ -409,7 +412,7 @@ func (g *fakeGit) agentState() *fakeAgentState {
 			agents: map[string]string{}, pulls: map[string][]*gitprovider.PullRequest{},
 			comments: map[string][]string{}, branches: map[string]string{}, authors: map[string]string{},
 			files: map[string][]string{}, forced: map[string][]int{},
-			edits: map[string]map[string]*scaffold.File{},
+			edits: map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{},
 		}
 	}
 	return g.agent
@@ -482,6 +485,13 @@ func (g *fakeGit) agentUser(owner, name string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.agentState().agents[owner+"/"+name]
+}
+
+// failAgentRemoval makes deleting bot user fail with err from now on.
+func (g *fakeGit) failAgentRemoval(user string, err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.agentState().removeErrs[user] = err
 }
 
 // commitCount returns how many commits main of owner/name has; 0 when the
@@ -577,6 +587,9 @@ func (p *fakeProvider) EnsureAgentAccess(_ context.Context, repo gitprovider.Rep
 func (p *fakeProvider) RemoveAgentAccess(_ context.Context, _ gitprovider.Repository, user string) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
+	if err := p.git.agentState().removeErrs[user]; err != nil {
+		return err
+	}
 	// Deleting the user takes it off every repository.
 	maps.DeleteFunc(p.git.agentState().agents, func(_, u string) bool { return u == user })
 	return nil

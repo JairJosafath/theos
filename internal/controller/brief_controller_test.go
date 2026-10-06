@@ -9,7 +9,9 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"errors"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -188,6 +190,50 @@ var _ = Describe("Brief", func() {
 				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
 			}).Should(BeTrue(), "the finalizer held the Brief")
 			Expect(gitFake.agentUser(ns, repo)).To(Equal(model.AgentUsername(ns, repo)))
+		})
+
+		It("leaves its bot when the Git host fails the delete for too long, saying why", func() {
+			createFactory(ns)
+			brief := newBrief(ns, "cel-lens")
+			mustCreate(brief)
+			user := model.AgentUsername(ns, repo)
+			Eventually(func() string { return gitFake.agentUser(ns, repo) }).Should(Equal(user))
+			gitFake.failAgentRemoval(user, errors.New("connection refused"))
+
+			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
+			Eventually(func(g Gomega) {
+				g.Expect(briefEventNotes(g, ns, "BotNotDeleted")).To(ContainElement(
+					And(ContainSubstring(user), ContainSubstring("connection refused"))))
+			}).Should(Succeed())
+			Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{})).To(Succeed(),
+				"the Brief went before its wait was over")
+
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
+			}).Should(BeTrue(), "the finalizer held the Brief past its wait")
+			Eventually(func(g Gomega) {
+				g.Expect(briefEventNotes(g, ns, "BotLeft")).To(ContainElement(And(ContainSubstring(user),
+					ContainSubstring("connection refused"), ContainSubstring("waited 5s"))))
+			}).Should(Succeed())
+			Expect(gitFake.agentUser(ns, repo)).To(Equal(user))
+		})
+
+		It("leaves its bot at once when the Git host fails the delete in a terminating namespace", func() {
+			createFactory(ns)
+			brief := newBrief(ns, "cel-lens")
+			mustCreate(brief)
+			user := model.AgentUsername(ns, repo)
+			Eventually(func() string { return gitFake.agentUser(ns, repo) }).Should(Equal(user))
+			gitFake.failAgentRemoval(user, errors.New("500 Internal Server Error"))
+
+			// envtest runs no namespace controller: the namespace stays
+			// Terminating and its Brief is deleted by hand.
+			Expect(k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
+			}).WithTimeout(3*time.Second).Should(BeTrue(), "the Brief waited out the timeout")
+			Expect(gitFake.agentUser(ns, repo)).To(Equal(user))
 		})
 
 		It("waits for a missing GitProvider, naming it", func() {
