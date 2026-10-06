@@ -237,6 +237,33 @@ func TestHasSlotTurn(t *testing.T) {
 	}
 }
 
+func TestNoFreeSlot(t *testing.T) {
+	t0 := time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC)
+	waiting := []SlotWaiter{{Name: "apps/bg-eraser", Since: t0}}
+	tests := []struct {
+		name                    string
+		task                    string
+		maxSandboxes, sandboxes int
+		want                    bool
+	}{
+		{"a free slot and no queue", "apps/bg-eraser", 2, 1, false},
+		{"every slot taken", "apps/bg-eraser", 2, 2, true},
+		{"more sandboxes than slots", "apps/bg-eraser", 2, 3, true},
+		{"the one free slot goes to the longer waiter", "apps/doc-scanner", 2, 1, true},
+		{"two free slots serve the newcomer too", "apps/doc-scanner", 3, 1, false},
+		{"no slots configured", "apps/bg-eraser", 0, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NoFreeSlot(tt.task, t0.Add(time.Hour), waiting, tt.maxSandboxes, tt.sandboxes)
+			if got != tt.want {
+				t.Errorf("NoFreeSlot(%s, max %d, running %d) = %v, want %v",
+					tt.task, tt.maxSandboxes, tt.sandboxes, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCheckFailures(t *testing.T) {
 	stamp := func(lines ...string) string {
 		for i, l := range lines {
