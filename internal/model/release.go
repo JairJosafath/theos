@@ -195,7 +195,8 @@ const (
 	RunFailed    = "Failed"
 )
 
-// ReleaseRunResult sums up the runs on a release's tag, newest first: Failed as
+// ReleaseRunResult sums up the runs on a release's tag, newest first, counting
+// only each workflow's newest run (a tag pushed again runs it again): Failed as
 // soon as one ended other than success or skipped, with that run, Running while
 // one hasn't ended, Succeeded once all ended well, Waiting while none started.
 // The run returned is the failed one, else the newest.
@@ -204,13 +205,16 @@ func ReleaseRunResult(runs []ReleaseRun) (string, ReleaseRun) {
 		return RunWaiting, ReleaseRun{}
 	}
 	result := RunSucceeded
+	seen := map[string]bool{}
 	for _, run := range runs {
 		switch {
+		case seen[run.Workflow]:
 		case run.Status != "completed":
 			result = RunRunning
 		case run.Conclusion != "success" && run.Conclusion != "skipped":
 			return RunFailed, run
 		}
+		seen[run.Workflow] = true
 	}
 	return result, runs[0]
 }

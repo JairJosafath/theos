@@ -171,9 +171,15 @@ func (r *CrewReconciler) watchReleaseRun(ctx context.Context, crew *c4v1alpha1.C
 	defer cancel()
 	found, err := provider.TagRuns(gitCtx, repo, release.Tag, release.Commit)
 	if err != nil {
-		log.Error(err, "Failed to read the release run", "tag", release.Tag)
+		// Each poll would fail alike while the host's Actions can't be read, so
+		// the Crew logs each error once.
+		if last, _ := r.runErrSaid.Load(crew.UID); last != err.Error() {
+			log.Error(err, "Failed to read the release run", "tag", release.Tag)
+		}
+		r.runErrSaid.Store(crew.UID, err.Error())
 		return
 	}
+	r.runErrSaid.Delete(crew.UID)
 	runs := make([]model.ReleaseRun, 0, len(found))
 	for _, run := range found {
 		runs = append(runs, model.ReleaseRun{Workflow: run.Workflow, Status: run.Status, Conclusion: run.Conclusion,

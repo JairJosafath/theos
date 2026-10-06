@@ -13,8 +13,9 @@ release run attached its files. GitHub issue #116, filed as a follow-up of
   tag's commit.
 - `status.lastRelease.run` sums them up: `Waiting` until one starts, `Running`
   while one hasn't ended, `Failed` as soon as one ended other than `success` or
-  `skipped`, `Succeeded` once all ended well. `status.lastRelease.runURL` links
-  to the failed run, else to the newest one.
+  `skipped`, `Succeeded` once all ended well, counting only each workflow's
+  newest run (a tag pushed again at the same commit runs it again).
+  `status.lastRelease.runURL` links to the failed run, else to the newest one.
 - The Crew watches `status.lastRelease` each poll while `spec.tagReleases` is
   on, until its runs `Succeeded`. A `Failed` release keeps being watched, so a
   run a person re-runs and fixes turns it `Succeeded`.
@@ -23,6 +24,8 @@ release run attached its files. GitHub issue #116, filed as a follow-up of
   On becoming `Succeeded`: a Normal Event `ReleaseRunSucceeded` and its log
   line. Each once per change, remembered like the held-release Warning since
   the cached Crew can lag behind its status.
+- An error reading the runs (Actions off, an old Gitea) is logged once per
+  error, not each poll.
 - **Known limit.** Only the last release is watched: a release tagged before
   the previous one's runs ended leaves those runs unwatched. A run that never
   starts (no runner for its labels) stays `Waiting` or `Running`, unreported.

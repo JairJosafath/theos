@@ -78,6 +78,8 @@ type CrewReconciler struct {
 	// runSaid is, by Crew UID, the tag and result of the last release run
 	// reported, so each change gets one Event.
 	runSaid sync.Map
+	// runErrSaid is, by Crew UID, the last error reading the release run logged.
+	runErrSaid sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
