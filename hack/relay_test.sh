@@ -7,7 +7,8 @@
 # docker faked; the triage of the
 # proposed issues, as a dry run; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
-# session the relay ends when its transcript stops growing.
+# session the relay ends when its transcript stops growing; and idle workers,
+# which stop without taking a session-start slot.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -301,5 +302,48 @@ IDLE=1.5h
 echo hang >"$FAKE"
 SESSION_TIMEOUT=4s work
 grep -q "RELAY_IDLE (1.5h) or RELAY_IDLE_KILL (2s) isn't like 45m; session 1 runs until the 4s timeout" "$LOG"; check "idle: a bad RELAY_IDLE logged" $? 0
+
+# Idle workers take no start slot (#242): pick asks before admit, so with one
+# ready issue N workers start one session, and the other N-1 stop without
+# touching .relay/admitted; a triage started next isn't held up by them.
+IDLE=45m
+echo commit >"$FAKE"
+pick() { [ -s "$T/ready" ] || return 1; ISSUE=$(cat "$T/ready") TITLE=t URL=u HOW=ready; }
+gh_take() { [ -s "$T/ready" ] || return 4; : >"$T/ready"; echo take >>"$T/takes"; printf 'otter-175\tb\n'; }
+: >"$LOG"
+rm -f "$T/takes" "$DIR/admitted" "$DIR/fails-175"
+echo 175 >"$T/ready"
+ADMIT_GAP=300
+work
+check "idle workers: one session" "$(takes)" 1
+started=$(stat -c %Y "$DIR/admitted")
+touch -d @$((started - 60)) "$DIR/admitted"
+: >"$LOG"
+for k in 2 3 4 5; do (K=$k work) & done
+t0=$(date +%s)
+wait
+check "idle workers: stop at once" "$(($(date +%s) - t0 < 5))" 1
+check "idle workers: no more sessions" "$(takes)" 1
+check "idle workers: all stopped" "$(grep -c "no issue ready; stopping" "$LOG")" 4
+check "idle workers: admitted untouched" "$(stat -c %Y "$DIR/admitted")" $((started - 60))
+grep -q "waiting: a session started" "$LOG"; check "idle workers: none waited" $? 1
+rm -f "$DIR/admitted"
+for k in 2 3 4; do (K=$k work) & done
+wait
+check "idle workers: no slot taken" "$(test -e "$DIR/admitted" && echo taken)" ""
+gh_proposed() { echo 40; }
+DRY_RUN=1 triage >/dev/null; check "idle workers: triage not held up" $? 0
+gh_proposed() { :; }
+DRY_RUN= triage; check "triage: none proposed, no slot" "$(test -e "$DIR/admitted" && echo taken)" ""
+# An issue taken while the worker waits in admit: it asks again and stops.
+: >"$LOG"
+echo 175 >"$T/ready"
+touch "$DIR/admitted"
+(sleep 2; : >"$T/ready") &
+ADMIT_GAP=4 work
+wait
+check "taken while waiting: no session" "$(takes)" 1
+grep -q "waiting: a session started" "$LOG"; check "taken while waiting: waited" $? 0
+check "taken while waiting: stopped" "$(grep -c "no issue ready; stopping" "$LOG")" 1
 
 exit $fail
