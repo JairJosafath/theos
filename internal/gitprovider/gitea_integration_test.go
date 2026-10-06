@@ -1,9 +1,14 @@
 package gitprovider
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -137,6 +142,121 @@ func TestGiteaIssuesIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+// TestGiteaReleasesIntegration reads a release, streams its asset and sets its
+// notes against the seeded Gitea, like TestGiteaIntegration.
+func TestGiteaReleasesIntegration(t *testing.T) {
+	base := os.Getenv("C4_GITEA_URL")
+	if base == "" {
+		t.Skip("C4_GITEA_URL not set")
+	}
+	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	p, err := Client{}.Provider(Config{URL: base, Owner: "webshop", Credentials: creds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("it-releases-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteRepo(t, base, "webshop", name, creds.Token) })
+	repo, err := p.EnsureRepository(ctx, name, "integration test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := p.PushInitialCommit(ctx, repo, scaffold.Tree{"README.md": {Data: []byte("hi")}}, "Scaffold\n", testAuthor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel, err := p.GetRelease(ctx, repo, "v0.1.0"); err != nil || rel != nil {
+		t.Fatalf("GetRelease() before any release = %+v, %v; want none", rel, err)
+	}
+
+	// The release run makes the release and attaches the files, as here.
+	id := createRelease(t, base, creds.Token, repo, "v0.1.0", commit)
+	file := strings.Repeat("orders-cli ", 100_000)
+	uploadAsset(t, base, creds.Token, repo, id, "orders-cli", file)
+
+	rel, err := p.GetRelease(ctx, repo, "v0.1.0")
+	if err != nil || rel == nil {
+		t.Fatalf("GetRelease() = %+v, %v", rel, err)
+	}
+	if rel.ID != id || rel.Tag != "v0.1.0" || rel.Body != "" || rel.Draft || len(rel.Assets) != 1 ||
+		rel.Assets[0].Name != "orders-cli" || rel.Assets[0].Size != int64(len(file)) {
+		t.Fatalf("GetRelease() = %+v, want release %d with orders-cli of %d bytes", rel, id, len(file))
+	}
+
+	body, size, err := p.OpenReleaseAsset(ctx, repo, rel.Assets[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(body)
+	_ = body.Close()
+	if err != nil || size != int64(len(file)) || string(data) != file {
+		t.Fatalf("OpenReleaseAsset() read %d bytes of %d, %v; want the uploaded file", len(data), size, err)
+	}
+
+	if err := p.SetReleaseBody(ctx, repo, id, "- Add orders (#3)\n"); err != nil {
+		t.Fatal(err)
+	}
+	if rel, err := p.GetRelease(ctx, repo, "v0.1.0"); err != nil || rel == nil || rel.Body != "- Add orders (#3)\n" ||
+		len(rel.Assets) != 1 {
+		t.Fatalf("GetRelease() after SetReleaseBody = %+v, %v; want the notes and the file kept", rel, err)
+	}
+}
+
+// createRelease releases tag at commit, as the release run does, and returns
+// the release's ID. It waits for Gitea to see the push: its "empty" flag lags
+// behind one.
+func createRelease(t *testing.T, base, token string, repo Repository, tag, commit string) int64 {
+	t.Helper()
+	body := fmt.Sprintf(`{"tag_name":%q,"target_commitish":%q,"name":%q}`, tag, commit, tag)
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/v1/repos/%s/%s/releases", base, repo.Owner,
+			repo.Name), strings.NewReader(body))
+		req.Header.Set("Authorization", "token "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		var rel struct {
+			ID int64 `json:"id"`
+		}
+		switch {
+		case resp.StatusCode == http.StatusCreated && json.Unmarshal(data, &rel) == nil:
+			return rel.ID
+		case resp.StatusCode == http.StatusUnprocessableEntity && apiMessage(data) == "repo is empty" &&
+			time.Now().Before(deadline):
+		default:
+			t.Fatalf("creating release %s: HTTP %d: %s", tag, resp.StatusCode, apiMessage(data))
+		}
+	}
+}
+
+// uploadAsset attaches a file called name to release id.
+func uploadAsset(t *testing.T, base, token string, repo Repository, id int64, name, content string) {
+	t.Helper()
+	var buf bytes.Buffer
+	form := multipart.NewWriter(&buf)
+	part, _ := form.CreateFormFile("attachment", name)
+	_, _ = part.Write([]byte(content))
+	_ = form.Close()
+	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/v1/repos/%s/%s/releases/%d/assets?name=%s",
+		base, repo.Owner, repo.Name, id, url.QueryEscape(name)), &buf)
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("uploading %s: HTTP %d", name, resp.StatusCode)
+	}
 }
 
 // addDependency makes issue blocked depend on blocker, as a person would in Gitea.
