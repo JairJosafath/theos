@@ -1,33 +1,16 @@
 {{- /*
-Hand-written: one GitProvider per gitProviders entry, in its namespace, with its
-credentials Secret unless the entry names an existing one. The chart's CRDs are
-templates, so Helm can map the GitProvider kind only once they are installed:
-these are post-install and post-upgrade hooks, built after the release.
+Hand-written: one GitProvider per gitProviders entry, in its namespace, reading
+the Secret existingSecret names. The user makes that Secret (the token is theirs
+alone); the chart renders none, so no token lands in a values file or in Helm's
+release record. The chart's CRDs are templates, so Helm can map the GitProvider
+kind only once they are installed: these are post-install and post-upgrade
+hooks, built after the release.
 */}}
 {{- range $i, $gp := .Values.gitProviders }}
 {{- $ns := required (printf "gitProviders[%d].namespace is required" $i) $gp.namespace }}
 {{- $name := $gp.name | default "git" }}
-{{- $secret := $gp.existingSecret | default (printf "%s-credentials" $name) }}
-{{- if not $gp.existingSecret }}
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ $secret }}
-  namespace: {{ $ns }}
-  labels:
-    app.kubernetes.io/managed-by: {{ $.Release.Service }}
-    app.kubernetes.io/instance: {{ $.Release.Name }}
-  annotations:
-    helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "-1"
-    helm.sh/hook-delete-policy: before-hook-creation
-type: Opaque
-stringData:
-  {{- with $gp.username }}
-  username: {{ . | quote }}
-  {{- end }}
-  token: {{ required (printf "gitProviders[%d] needs token or existingSecret" $i) $gp.token | quote }}
+{{- if or (hasKey $gp "token") (hasKey $gp "username") }}
+{{- fail (printf "gitProviders[%d].token and username are gone: create a Secret with keys username and token, and name it in gitProviders[%d].existingSecret" $i $i) }}
 {{- end }}
 ---
 apiVersion: c4.factory.io/v1alpha1
@@ -46,5 +29,5 @@ spec:
   url: {{ required (printf "gitProviders[%d].url is required" $i) $gp.url | quote }}
   owner: {{ required (printf "gitProviders[%d].owner is required" $i) $gp.owner | quote }}
   credentialsSecretRef:
-    name: {{ $secret }}
+    name: {{ required (printf "gitProviders[%d].existingSecret is required: a Secret you create with keys username and token" $i) $gp.existingSecret }}
 {{- end }}

@@ -15,5 +15,22 @@ Open the read-only UI on http://localhost:8080:
 {{- end }}
 {{- range .Values.gitProviders }}
 
-GitProvider {{ .name | default "git" }} in namespace {{ .namespace }} points at {{ .url }}.
+GitProvider {{ .name | default "git" }} in namespace {{ .namespace }} points at {{ .url }},
+with the token in Secret {{ .existingSecret }}. Make it if it is missing:
+
+  kubectl -n {{ .namespace }} create secret generic {{ .existingSecret }} \
+    --from-literal=username=<user> --from-literal=token=<token>
+{{- end }}
+{{- if .Values.gitea.enabled }}
+{{- $ns := include "c4-factory.giteaNamespace" . }}
+
+Gitea runs in namespace {{ $ns }} at {{ include "c4-factory.giteaURL" . }}, seeded
+with the tagged templates. Its admin password, and Gitea on http://localhost:3000:
+
+  kubectl -n {{ $ns }} get secret {{ include "c4-factory.giteaAdminSecret" . }} -o jsonpath='{.data.password}' | base64 -d; echo
+  kubectl -n {{ $ns }} port-forward svc/gitea 3000
+{{- range .Values.gitea.projects }}
+
+Project {{ . }}: organization {{ . }} in Gitea, GitProvider gitea in namespace {{ . }}.
+{{- end }}
 {{- end }}

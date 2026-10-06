@@ -81,7 +81,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
-		status.ReviewAttempts++
+		setProgress(status, model.RetryReview(progressOf(status)))
 		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionMerge:
@@ -94,13 +94,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 			return ctrl.Result{}, err
 		}
 		status.Review = review
-		status.Feedback = step.Feedback
-		status.ReviewAttempts = 0
-		status.Checks = nil
-		if status.StandardChange != nil {
-			status.StandardChange.ResumedRound = 0 // only the first run after a resume skips the empty-branch guard
-		}
-		status.Phase = c4v1alpha1.TaskImplementing
+		setProgress(status, model.ResolveConflicts(progressOf(status), step.Feedback))
 		r.progress(task, status, metav1.ConditionTrue, "ResolvingConflicts", step.Message)
 		log.Info("Sent an approved Task back to resolve conflicts", "round", status.Round)
 		return ctrl.Result{}, nil // the status write triggers the next step
@@ -109,7 +103,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
-		status.Reruns++
+		setProgress(status, model.Rerun(progressOf(status)))
 		r.progress(task, status, metav1.ConditionTrue, "Interrupted", step.Message)
 		log.Info("Rerunning an interrupted run", "round", status.Round, "reruns", status.Reruns)
 		return ctrl.Result{}, nil // the status write triggers the next step
@@ -118,10 +112,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
-		back := step.RetryAt
-		if now := r.now(); !back.After(now) {
-			back = now.Add(model.AgentRetryDelay)
-		}
+		back := model.AgentBackAt(step.RetryAt, r.now())
 		status.AgentBackAt = &metav1.Time{Time: back}
 		r.progress(task, status, metav1.ConditionTrue, "AgentUnavailable",
 			fmt.Sprintf("%s; trying again at %s", step.Message, back.UTC().Format(time.RFC3339)))
@@ -141,19 +132,13 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		if review != nil {
 			status.Review = review
 		}
-		status.Round++
-		status.Feedback = step.Feedback
-		status.ReviewAttempts = 0
-		status.Reruns = 0
-		status.Checks = nil
-		status.Phase = c4v1alpha1.TaskImplementing
+		setProgress(status, model.NextRound(progressOf(status), step.Feedback))
 		r.progress(task, status, metav1.ConditionTrue, "NextRound", step.Message)
 		log.Info("Started next round of Task", "round", status.Round, "feedback", firstLine(step.Feedback))
 		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionRefuseMerge:
-		return ctrl.Result{}, r.fail(ctx, task, status, container, "GatedMergeRefused",
-			"The gated merge was refused: "+step.Message)
+		return ctrl.Result{}, r.failWith(ctx, task, status, container, model.GatedMergeRefused(step.Message))
 
 	case model.ActionFail:
 		if review := r.reviewFrom(ctx, task, status); review != nil {
@@ -210,10 +195,9 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 		return ctrl.Result{}, err
 	}
 	log.Info("Opened pull request", "url", pr.URL, "commit", run.Result.Commit, "round", status.Round)
-	status.Commit, status.Summary = run.Result.Commit, run.Result.Summary
+	setProgress(status, model.OpenedPR(progressOf(status), run.Result.Commit))
+	status.Summary = run.Result.Summary
 	status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
-	status.Checks = nil
-	status.Phase = c4v1alpha1.TaskChecking
 	r.progress(task, status, metav1.ConditionTrue, "Checking", step.Message+"; waiting for checks")
 	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
 }
@@ -263,26 +247,18 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 			return ctrl.Result{}, err
 		}
 		if issue.State == stateClosed {
-			r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, "IssueClosed",
-				fmt.Sprintf("Issue #%d was closed before the Task finished", issue.Number))
+			r.end(task, status, model.IssueClosed(issue.Number))
 			return ctrl.Result{}, nil
 		}
 		status.IssueTitle, status.IssueURL = issue.Title, issue.URL
 		goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
-		if status.Round == 0 {
+		if model.FirstRun(progressOf(status)) {
 			r.announce(protectCtx, provider, repo, task, container, agents)
 		}
 	}
 
-	if status.Round == 0 {
-		status.Round = 1
-	}
+	setProgress(status, model.StartRun(progressOf(status), role))
 	status.Branch = model.TaskBranch(task.Name)
-	if role == model.RoleImplementer {
-		status.Phase = c4v1alpha1.TaskImplementing
-	} else {
-		status.Phase = c4v1alpha1.TaskReviewing
-	}
 	name := sandboxName(task, status, role)
 	story := c4Context(ctx, r.Client, container)
 	sandbox, err := buildSandbox(sandboxRun{
@@ -363,42 +339,42 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !pr.Merged && pr.State == stateClosed {
+	action := model.DecideMerge(model.PullFacts{Merged: pr.Merged, Closed: pr.State == stateClosed,
+		HeadSHA: pr.HeadSHA}, status.Commit)
+	switch action {
+	case model.MergeFailClosed:
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
-		r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, "PullRequestClosed",
-			"Pull request "+status.PullRequestURL+" was closed without merging")
+		r.end(task, status, model.PullRequestClosed(status.PullRequestURL))
 		return ctrl.Result{}, nil
-	}
-	if !pr.Merged {
-		if pr.HeadSHA != "" && pr.HeadSHA != status.Commit {
-			// Someone pushed after the review: check and review that commit instead.
-			status.Commit, status.Checks, status.Phase = pr.HeadSHA, nil, c4v1alpha1.TaskChecking
-			r.progress(task, status, metav1.ConditionTrue, "BranchMoved",
-				"The branch moved after the review; checking "+pr.HeadSHA)
-			return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
-		}
+	case model.MergeRecheck:
+		// Someone pushed after the review: check and review that commit instead.
+		setProgress(status, model.Recheck(progressOf(status), pr.HeadSHA))
+		r.progress(task, status, metav1.ConditionTrue, "BranchMoved",
+			"The branch moved after the review; checking "+pr.HeadSHA)
+		return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
+	case model.MergeSquash:
 		refusal, err := r.mergeReviewed(ctx, provider, repo, task, status, container, agents.reviewer)
-		if errors.Is(err, errChecksPending) {
+		pending := errors.Is(err, errChecksPending)
+		if err != nil && !pending {
+			return ctrl.Result{}, err
+		}
+		switch model.AfterSquash(pending, refusal) {
+		case model.SquashWaitForChecks:
 			// Waits while the review run lasts; if it ends first, the merge is refused.
 			r.progress(task, status, metav1.ConditionTrue, "WaitingForChecks",
 				"Approved; CI runs again on "+status.Commit+", merging once it passes")
 			return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
-		}
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if refusal != "" {
-			return ctrl.Result{}, r.fail(ctx, task, status, container, "GatedMergeRefused",
-				"The gated merge was refused: "+refusal)
+		case model.SquashRefused:
+			return ctrl.Result{}, r.failWith(ctx, task, status, container, model.GatedMergeRefused(refusal))
 		}
 	}
 	if err := r.endRun(ctx, task, status); err != nil {
 		return ctrl.Result{}, err
 	}
 	status.MergeCommit = pr.MergeCommit
-	if !pr.Merged {
+	if action == model.MergeSquash {
 		status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
 	}
 	if task.Spec.Issue > 0 {
@@ -490,6 +466,39 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, stat
 	return nil
 }
 
+// progressOf copies the part of status that the model's transitions change.
+func progressOf(status *c4v1alpha1.TaskStatus) model.TaskProgress {
+	p := model.TaskProgress{Phase: string(status.Phase), Round: int(status.Round),
+		ReviewAttempts: int(status.ReviewAttempts), Reruns: int(status.Reruns), Feedback: status.Feedback,
+		Commit: status.Commit, HasChecks: status.Checks != nil}
+	if status.StandardChange != nil {
+		p.ResumedRound = int(status.StandardChange.ResumedRound)
+	}
+	return p
+}
+
+// setProgress copies a transition's result back into status.
+func setProgress(status *c4v1alpha1.TaskStatus, p model.TaskProgress) {
+	status.Phase, status.Round = c4v1alpha1.TaskPhase(p.Phase), int32(p.Round)
+	status.ReviewAttempts, status.Reruns = int32(p.ReviewAttempts), int32(p.Reruns)
+	status.Feedback, status.Commit = p.Feedback, p.Commit
+	if !p.HasChecks {
+		status.Checks = nil
+	}
+	if status.StandardChange != nil {
+		status.StandardChange.ResumedRound = int32(p.ResumedRound)
+	}
+}
+
+// end finishes the Task as the model decided; only a merge succeeds.
+func (r *TaskReconciler) end(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, e model.TaskEnd) {
+	succeeded := metav1.ConditionFalse
+	if e.Phase == model.TaskMerged {
+		succeeded = metav1.ConditionTrue
+	}
+	r.finish(task, status, c4v1alpha1.TaskPhase(e.Phase), succeeded, e.Reason, e.Message)
+}
+
 func (r *TaskReconciler) finish(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, phase c4v1alpha1.TaskPhase,
 	succeeded metav1.ConditionStatus, reason, message string) {
 	now := metav1.NewTime(r.now())
@@ -511,6 +520,12 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1alpha1.Task, status
 	r.handBack(ctx, task, container, message)
 	logf.FromContext(ctx).Info("Failed Task", "reason", reason, "message", message)
 	return nil
+}
+
+// failWith fails the Task as the model decided.
+func (r *TaskReconciler) failWith(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container, e model.TaskEnd) error {
+	return r.fail(ctx, task, status, container, e.Reason, e.Message)
 }
 
 // comment adds a note to the Task's pull request, if it has one. The pull request

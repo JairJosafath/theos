@@ -8,7 +8,14 @@
 #
 #   hack/lib/github.sh labels            create the labels below, or update their descriptions (safe to repeat)
 #   hack/lib/github.sh pick              the issue to work next: NUMBER TITLE URL STATUS, tab-separated
-#   hack/lib/github.sh proposed          the open status/proposed issues' numbers, oldest first, one per line
+#   hack/lib/github.sh blocked [--unworked]
+#                                        what holds back each ready or in-progress issue pick skips: N waits on M
+#                                        (M's status, its claim, what M waits on); --unworked: only Ms nobody works
+#   hack/lib/github.sh cycles [--report] the open issues that wait on each other in a cycle, one cycle per line;
+#                                        --report comments each issue in one once, the newest to needs-human
+#   hack/lib/github.sh proposed [--since EPOCH]
+#                                        the open status/proposed issues' numbers, oldest first, one per line;
+#                                        with --since, N CHANGED CLOSED for the relay watch (see gh_proposed)
 #   hack/lib/github.sh show N            issue N, its newest handoff comment and the comments after it
 #   hack/lib/github.sh take N            claim N for this checkout and swap it to status/in-progress;
 #                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it,
@@ -39,6 +46,11 @@
 #   hack/lib/github.sh create TITLE FILE LABEL...
 #                                        file an issue, FILE as its body; prints its number. An open
 #                                        issue with the same title is left as it is.
+#   hack/lib/github.sh red WORKFLOW      whether WORKFLOW (its file, test.yml) is red on main: its two newest
+#                                        finished runs there failed (cancelled and skipped runs don't count)
+#                                        and none runs there now (it may be the fix).
+#                                        Prints an issue body naming the runs, their commits, the failing jobs
+#                                        and the newest run's last 40 failed log lines. Exit 1: not red
 #   hack/lib/github.sh intake N          label issue N by where it came from: a "### Reported by" name in its
 #                                        body gives user/<name> + source/user, else source/dev; adds
 #                                        status/proposed when it has no status. Only for issues from the
@@ -217,14 +229,160 @@ gh_pick() {
   echo "$row"
 }
 
-# gh_proposed: the open status/proposed issues' numbers, oldest first, one
-# per line, for the relay's triage. Exit 2: GitHub could not be asked.
+# jq definitions over open issues: deps, the issues one says it depends on.
+GH_DEPS_JQ='
+  def deps: [(.body // "") | scan("[Dd]epends on #([0-9]+)") | .[0] | tonumber] | unique;
+'
+
+# gh_open_issues: the open issues, not pull requests, oldest first, as one JSON array.
+gh_open_issues() {
+  local pages
+  pages=$(gh_api --paginate --slurp \
+    "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 1
+  jq -c '[.[][] | select(.pull_request | not)]' <<<"$pages"
+}
+
+# gh_blocked [--unworked]: what holds back each open status/ready or
+# status/in-progress issue that pick skips because it waits on an open issue
+# (and no live claim holds it): one line per issue it waits on, oldest first,
+#   N waits on M (STATUS, CLAIM[, waits on #X, #Y])
+# STATUS being M's status label (or "no status"), CLAIM "claimed by NAME" while
+# a live claim holds M, else "no claim", and the last part the open issues M
+# waits on itself. With --unworked, only the lines whose M nobody works (in
+# progress with a live claim). Exit 2: GitHub could not be asked.
+gh_blocked() {
+  local ttl issues claims unworked=false
+  case ${1:-} in
+    --unworked) unworked=true ;;
+    '') ;;
+    *) echo "usage: hack/lib/github.sh blocked [--unworked]" >&2; return 1 ;;
+  esac
+  ttl=$(gh_ttl) || return 2
+  issues=$(gh_open_issues) || return 2
+  claims=$(gh_recent_claims "$ttl") || return 2
+  jq -r --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" \
+    --argjson unworked "$unworked" "$GH_CLAIM_JQ$GH_DEPS_JQ"'
+    def has($l): .labels | any(.name == $l);
+    def isopen($n): any(.[]; .number == $n);
+    . as $all
+    | def holder($n): [$claims[] | select(live and .issue == $n)] | last | if . then cname else null end;
+      def waits($i): [$i | deps[] | select(. as $d | $all | isopen($d))];
+      .[] | select(has("status/ready") or has("status/in-progress"))
+      | select(holder(.number) == null)
+      | .number as $n | waits(.)[] as $d
+      | ($all[] | select(.number == $d)) as $m
+      | ([$m.labels[].name | select(startswith("status/"))] | first // "no status") as $status
+      | holder($d) as $h
+      | select($unworked and $status == "status/in-progress" and $h != null | not)
+      | waits($m) as $w
+      | "\($n) waits on \($d) (\($status), \(if $h then "claimed by \($h)" else "no claim" end)"
+        + (if $w == [] then "" else ", waits on \($w | map("#\(.)") | join(", "))" end) + ")"' <<<"$issues" || return 2
+}
+
+GH_CYCLE_MARKER='<!-- relay-cycle -->'
+
+# gh_cycles [--report]: the open issues that wait on each other in a cycle
+# (Depends on #M in their bodies), one cycle per line as #A #B ..., oldest
+# first. With --report, each issue in a cycle gets one comment naming it (an
+# issue that has that comment already is left alone) and, when one was posted
+# or no issue in the cycle is in status/needs-human, the newest goes there;
+# prints what it did.
+# Exit 2: GitHub could not be asked.
+gh_cycles() {
+  local issues cycles cycle report=false n posted newest all body
+  case ${1:-} in
+    --report) report=true ;;
+    '') ;;
+    *) echo "usage: hack/lib/github.sh cycles [--report]" >&2; return 1 ;;
+  esac
+  issues=$(gh_open_issues) || return 2
+  cycles=$(jq -r "$GH_DEPS_JQ"'
+    [.[].number] as $open
+    | (reduce .[] as $i ({}; .["\($i.number)"] = [$i | deps[] | select(. as $d | $open | any(. == $d))])) as $g
+    | def reach($n): {seen: [], todo: $g["\($n)"]}
+        | until(.todo == []; .todo[0] as $x | .todo |= .[1:]
+            | if (.seen | any(. == $x)) then . else .seen += [$x] | .todo += $g["\($x)"] end)
+        | .seen;
+      [$open[] as $n | reach($n) as $r | select($r | any(. == $n))
+        | [$r[] | select(. as $m | reach($m) | any(. == $n))] | sort] | unique
+    | .[] | map("#\(.)") | join(" ")' <<<"$issues") || return 2
+  if ! $report; then
+    [ -z "$cycles" ] || echo "$cycles"
+    return 0
+  fi
+  while IFS= read -r cycle; do
+    [ -n "$cycle" ] || continue
+    newest=${cycle##*#}
+    body="$GH_CYCLE_MARKER"$'\n'"${cycle// /, } wait on each other in a cycle (\`Depends on #M\` in their bodies), so pick skips each of them for good. Drop one \`Depends on\` line to break it; #$newest, the newest, goes to status/needs-human until then."
+    posted=
+    for n in $cycle; do
+      n=${n#\#}
+      all=$(gh_comments "$n") || return 2
+      jq -e --arg b "$body" 'any(.[]; .body == $b)' <<<"$all" >/dev/null && continue
+      printf '%s\n' "$body" | gh_comment "$n" - >/dev/null || return 2
+      posted+=" #$n"
+    done
+    # Also when an earlier round commented but failed to move the newest.
+    [ -n "$posted" ] || ! jq -e --arg c "$cycle" '[$c | scan("[0-9]+") | tonumber] as $m
+      | any(.[] | select(.number as $n | $m | any(. == $n)); .labels | any(.name == "status/needs-human"))' \
+      <<<"$issues" >/dev/null || continue
+    gh_set_status "$newest" needs-human >/dev/null || return 2
+    echo "cycle $cycle: ${posted:+commented on${posted}; }#$newest to status/needs-human"
+  done <<<"$cycles"
+}
+
+# gh_proposed [--since T]: the open status/proposed issues' numbers, oldest
+# first, one per line, for the relay's triage. With --since T (epoch seconds,
+# the last triage's start), each line is N CHANGED CLOSED for hack/relay-watch.sh:
+# CHANGED is when N last changed in a way the triage didn't (its body, title,
+# labels or a comment that isn't a triage's, <!-- relay-triage -->), CLOSED
+# when the newest issue it waits on closed (Depends on #M in its body, or an #M
+# in its newest triage comment); either is 0 when nothing after T says so.
+# Exit 2: GitHub could not be asked.
 gh_proposed() {
-  local issues
+  local issues since= comments closed n triage='[]' t
+  case ${1:-} in
+    --since) [[ ${2:-} =~ ^[0-9]+$ ]] || { echo "github: proposed --since takes epoch seconds" >&2; return 1; }
+      since=$(date -u -d "@$2" +%Y-%m-%dT%H:%M:%SZ) ;;
+    '') ;;
+    *) echo "usage: hack/lib/github.sh proposed [--since EPOCH]" >&2; return 1 ;;
+  esac
   issues=$(gh_api --paginate --slurp \
     "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
-  jq -r '.[][] | select(.pull_request | not) | select(.labels | any(.name == "status/proposed")) | .number' <<<"$issues" ||
+  issues=$(jq -c '[.[][] | select(.pull_request | not) | select(.labels | any(.name == "status/proposed"))]' <<<"$issues") ||
     return 2
+  if [ -z "$since" ]; then
+    jq -r '.[].number' <<<"$issues"
+    return
+  fi
+  comments=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/comments?since=$since&per_page=100") || return 2
+  closed=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues?state=closed&since=$since&per_page=100") || return 2
+  closed=$(jq -c --arg s "$since" '[.[][] | select(.closed_at != null and .closed_at > $s) | {number, closed_at}]' <<<"$closed") ||
+    return 2
+  # Only when something closed since T: each issue's newest triage comment, for the #M it names.
+  if [ "$closed" != '[]' ]; then
+    for n in $(jq -r '.[].number' <<<"$issues"); do
+      t=$(gh_comments "$n") || return 2
+      triage=$(jq -c --argjson n "$n" --argjson c "$t" \
+        '. + [{n: $n, body: ([$c[] | select(.body | startswith("<!-- relay-triage -->"))] | last | .body // "")}]' <<<"$triage")
+    done
+  fi
+  jq -r --arg s "$since" --argjson comments "$comments" --argjson closed "$closed" --argjson triage "$triage" '
+    def ep: fromdateiso8601;
+    def mine: .body | startswith("<!-- relay-triage -->");
+    [$comments[][] | select(.updated_at > $s) | . + {n: (.issue_url | sub(".*/"; "") | tonumber)}] as $since
+    | .[] | .number as $n
+    | [$since[] | select(.n == $n)] as $c
+    # The triage comment bumps the issue'"'"'s updated_at; a change in its few
+    # seconds is taken for the triage'"'"'s own.
+    | ([$c[] | select(mine) | .updated_at | ep] | max) as $tc
+    | ([$c[] | select(mine | not) | .updated_at | ep]
+        + (if (.updated_at | ep) > (($tc // 0) + 10) then [.updated_at | ep] else [] end)
+        | max // 0) as $changed
+    | ([(.body // "") | scan("[Dd]epends on #([0-9]+)") | .[0] | tonumber]
+        + [$triage[] | select(.n == $n) | .body | scan("#([0-9]+)") | .[0] | tonumber]) as $refs
+    | ([$closed[] | select(.number as $m | $refs | any(. == $m)) | .closed_at | ep] | max // 0) as $done
+    | "\($n) \($changed) \($done)"' <<<"$issues" || return 2
 }
 
 # gh_comments N: issue N's comments, oldest first, as one JSON array.
@@ -888,6 +1046,40 @@ gh_create() {
     gh_api --method POST "repos/$C4_GITHUB_REPO/issues" --input - --jq .number
 }
 
+# gh_red WORKFLOW: print an issue body when WORKFLOW's two newest finished runs
+# on main failed (see the usage above); exit 1 when it isn't red, 2 when GitHub
+# can't say.
+gh_red() {
+  local wf=${1:?usage: red WORKFLOW} runs n id
+  gh_token || return 2
+  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --workflow "$wf" --limit 10 \
+    --json databaseId,status,conclusion,headSha,displayTitle,url,createdAt,workflowName) || return 2
+  # A run still going on main may be the fix: wait for it.
+  [ "$(jq -r 'sort_by(.createdAt) | last | .status // "completed"' <<<"$runs")" = completed ] || return 1
+  runs=$(jq -c '[.[] | select(.conclusion != "cancelled" and .conclusion != "skipped")] | sort_by(.createdAt) | reverse | .[:2]' <<<"$runs") ||
+    return 2
+  n=$(jq '[.[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure")] | length' <<<"$runs")
+  [ "$n" = 2 ] || return 1
+  echo "\`$(jq -r '.[0].workflowName' <<<"$runs")\` (\`$wf\`) failed on main twice in a row; every pull request built on main fails with it."
+  echo
+  echo "## Runs"
+  echo
+  for id in $(jq -r '.[].databaseId' <<<"$runs"); do
+    jq -r --argjson id "$id" '.[] | select(.databaseId == $id) |
+      "- [\(.databaseId)](\(.url)) at \(.createdAt), \(.conclusion), commit \(.headSha[:7]): \(.displayTitle)"' <<<"$runs"
+    gh run view "$id" --repo "$C4_GITHUB_REPO" --json jobs \
+      --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | "  - failed job: \(.name)"' || return 2
+  done
+  echo
+  echo "## The newest run's failed log, last 40 lines"
+  echo
+  echo '```'
+  gh run view "$(jq -r '.[0].databaseId' <<<"$runs")" --repo "$C4_GITHUB_REPO" --log-failed 2>&1 | tail -40
+  echo '```'
+  echo
+  echo "Filed by hack/relay-watch.sh. The session that fixes main closes this issue; when the cause already has an open issue, close this one as its duplicate (\`hack/lib/github.sh duplicate N M\`)."
+}
+
 GH_USER_COLOR=fef2c0
 
 # gh_reporter: the name under the "### Reported by" heading of the issue body
@@ -954,7 +1146,9 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   case $cmd in
     labels) gh_labels ;;
     pick) gh_pick ;;
-    proposed) gh_proposed ;;
+    blocked) gh_blocked "$@" ;;
+    cycles) gh_cycles "$@" ;;
+    proposed) gh_proposed "$@" ;;
     show) gh_show "$@" ;;
     take) gh_take "$@" ;;
     release) gh_release "$@" ;;
@@ -970,6 +1164,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     duplicate) gh_duplicate "$@" ;;
     create) gh_create "$@" ;;
     intake) gh_intake "$@" ;;
+    red) gh_red "$@" ;;
     *)
       sed -n '2,/^$/{s/^# \{0,1\}//;p}' "$0"
       [ "$cmd" = help ] || exit 64

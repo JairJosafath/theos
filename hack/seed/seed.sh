@@ -6,7 +6,10 @@
 #   4. stores an admin access token as Secret gitea-credentials in each project's
 #      namespace;
 #   5. stores a runner registration token as Secret gitea/gitea-runner, unless
-#      RUNNER_SECRET is empty (the Helm chart makes that token itself).
+#      RUNNER_SECRET is empty (in the Helm chart, Gitea's pod makes that token).
+# With CREDENTIALS_DIR set (`make seed-local`), step 4 writes each project's
+# token to CREDENTIALS_DIR/PROJECT.env instead, step 5 is skipped, and the
+# script needs no kubectl.
 # Every step looks before it acts, so a second run changes nothing.
 set -euo pipefail
 
@@ -22,14 +25,20 @@ TEMPLATES_DIR=${TEMPLATES_DIR:-/templates}
 TEMPLATE_ORG=${TEMPLATE_ORG:-templates}
 # The projects, space-separated: each one's organization holds its Container
 # repositories, and its namespace (same name) gets the credentials Secret.
-PROJECTS=${PROJECTS:-${PROJECT:-webshop}}
+# PROJECTS="" seeds only the templates, with no kubectl (hack/gitea-local.sh).
+PROJECTS=${PROJECTS-${PROJECT:-webshop}}
 CREDENTIALS_SECRET=${CREDENTIALS_SECRET:-gitea-credentials}
 # Enough to create repositories in an organization and push to them over HTTP;
 # read:user lets the operator (and this script) check the token with GET /user;
 # write:admin lets the operator make each Container's agent bot user; write:issue
 # lets it label, comment on and close issues, and comment on pull requests.
 TOKEN_SCOPES=${TOKEN_SCOPES:-write:admin,write:issue,write:organization,write:repository,read:user}
+# File mode: each project's credentials go to CREDENTIALS_DIR/PROJECT.env (mode
+# 0600) as C4_GITEA_URL, C4_GITEA_USERNAME, C4_GITEA_TOKEN and
+# C4_GITEA_TOKEN_SCOPES, not to a Secret; there is no runner to register.
+CREDENTIALS_DIR=${CREDENTIALS_DIR:-}
 RUNNER_SECRET=${RUNNER_SECRET-gitea-runner}
+if [[ -n $CREDENTIALS_DIR ]]; then RUNNER_SECRET=""; fi
 RUNNER_NAMESPACE=${RUNNER_NAMESPACE:-gitea}
 
 export GIT_AUTHOR_NAME="C4 Factory seed" GIT_AUTHOR_EMAIL="seed@c4.factory.io"
@@ -172,25 +181,16 @@ seed_template() {
   log "Pushed template $repo $version (commit $(git -C "$src" rev-parse --short HEAD))"
 }
 
-# ensure_credentials PROJECT: Secret CREDENTIALS_SECRET in namespace PROJECT with
-# keys username and token. A token that still works and has the scopes asked for
-# (recorded on the Secret) is kept.
-ensure_credentials() {
-  local ns=$1 secret=$CREDENTIALS_SECRET token="" scopes="" token_name="c4factory-$1"
-  if token=$(kubectl -n "$ns" get secret "$secret" -o jsonpath='{.data.token}' 2>/dev/null | base64 -d) &&
-    [[ -n $token ]]; then
-    scopes=$(kubectl -n "$ns" get secret "$secret" -o jsonpath='{.metadata.annotations.c4\.factory\.io/token-scopes}')
-    if [[ $scopes != "$TOKEN_SCOPES" ]]; then
-      log "Secret $ns/$secret holds a token with scopes '${scopes:-unknown}'; replacing it"
-    elif [[ $(printf 'Authorization: token %s\n' "$token" |
-      curl -s -o /dev/null -w '%{http_code}' -H @- "$GITEA_URL/api/v1/user") == 200 ]]; then
-      log "Secret $ns/$secret holds a working token; keeping it"
-      return
-    else
-      log "Secret $ns/$secret holds a token Gitea rejects; replacing it"
-    fi
-  fi
+# token_works TOKEN: whether Gitea accepts TOKEN.
+token_works() {
+  [[ $(printf 'Authorization: token %s\n' "$1" |
+    curl -s -o /dev/null -w '%{http_code}' -H @- "$GITEA_URL/api/v1/user") == 200 ]]
+}
 
+# new_token PROJECT FILE: a new admin token c4factory-PROJECT with TOKEN_SCOPES,
+# written to FILE (mode 0600), replacing the previous one.
+new_token() {
+  local token_name="c4factory-$1" file=$2
   # Token names are unique per user, so drop our previous token first.
   api DELETE "/users/$GITEA_USERNAME/tokens/$token_name"
   expect "Deleting old token $token_name" 204 404
@@ -199,12 +199,63 @@ ensure_credentials() {
     '{name: $n, scopes: ($s | split(","))}')"
   expect "Creating token $token_name" 201
   log "Created token $token_name with scopes $TOKEN_SCOPES"
+  (umask 077 && jq -j .sha1 <<<"$BODY" > "$file")
+}
+
+# ensure_credentials_file PROJECT: CREDENTIALS_DIR/PROJECT.env with the URL,
+# username and token, for scripts and tests to source. A token that still works
+# and has the scopes asked for (recorded in the file) is kept.
+ensure_credentials_file() {
+  local project=$1 file="$CREDENTIALS_DIR/$1.env" token="" scopes=""
+  if [[ -f $file ]]; then
+    token=$(sed -n 's/^C4_GITEA_TOKEN=//p' "$file")
+    scopes=$(sed -n 's/^C4_GITEA_TOKEN_SCOPES=//p' "$file")
+    if [[ -z $token ]]; then
+      log "$file holds no token; replacing it"
+    elif [[ $scopes != "$TOKEN_SCOPES" ]]; then
+      log "$file holds a token with scopes '${scopes:-unknown}'; replacing it"
+    elif token_works "$token"; then
+      log "$file holds a working token; keeping it"
+      return
+    else
+      log "$file holds a token Gitea rejects; replacing it"
+    fi
+  fi
+  new_token "$project" "$WORK/token-$project"
+  mkdir -p "$CREDENTIALS_DIR"
+  # Written next to the file and moved, so a reader never sees half of it.
+  (umask 077 && {
+    printf 'C4_GITEA_URL=%s\n' "$GITEA_URL"
+    printf 'C4_GITEA_USERNAME=%s\n' "$GITEA_USERNAME"
+    printf 'C4_GITEA_TOKEN=%s\n' "$(cat "$WORK/token-$project")"
+    printf 'C4_GITEA_TOKEN_SCOPES=%s\n' "$TOKEN_SCOPES"
+  } > "$file.tmp")
+  mv "$file.tmp" "$file"
+  log "Stored the token in $file"
+}
+
+# ensure_credentials PROJECT: Secret CREDENTIALS_SECRET in namespace PROJECT with
+# keys username and token. A token that still works and has the scopes asked for
+# (recorded on the Secret) is kept.
+ensure_credentials() {
+  local ns=$1 secret=$CREDENTIALS_SECRET token="" scopes=""
+  if token=$(kubectl -n "$ns" get secret "$secret" -o jsonpath='{.data.token}' 2>/dev/null | base64 -d) &&
+    [[ -n $token ]]; then
+    scopes=$(kubectl -n "$ns" get secret "$secret" -o jsonpath='{.metadata.annotations.c4\.factory\.io/token-scopes}')
+    if [[ $scopes != "$TOKEN_SCOPES" ]]; then
+      log "Secret $ns/$secret holds a token with scopes '${scopes:-unknown}'; replacing it"
+    elif token_works "$token"; then
+      log "Secret $ns/$secret holds a working token; keeping it"
+      return
+    else
+      log "Secret $ns/$secret holds a token Gitea rejects; replacing it"
+    fi
+  fi
 
   # Secret values come from files, so the token never shows up in argv.
   local creds="$WORK/credentials-$ns"
-  (umask 077 && mkdir "$creds" &&
-    printf '%s' "$GITEA_USERNAME" > "$creds/username" &&
-    jq -j .sha1 <<<"$BODY" > "$creds/token")
+  (umask 077 && mkdir "$creds" && printf '%s' "$GITEA_USERNAME" > "$creds/username")
+  new_token "$ns" "$creds/token"
   # Server-side apply: no last-applied annotation carrying the token around.
   kubectl -n "$ns" create secret generic "$secret" --from-file="$creds" \
     --dry-run=client -o yaml |
@@ -242,10 +293,18 @@ main() {
   done 3<"$TEMPLATES_DIR/versions.txt"
 
   for project in $PROJECTS; do
-    ensure_credentials "$project"
+    if [[ -n $CREDENTIALS_DIR ]]; then
+      ensure_credentials_file "$project"
+    else
+      ensure_credentials "$project"
+    fi
   done
   if [[ -n $RUNNER_SECRET ]]; then ensure_runner_token; fi
-  log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials${RUNNER_SECRET:+ and runner token} stored"
+  if [[ -n $PROJECTS ]]; then
+    log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials${RUNNER_SECRET:+ and runner token} stored"
+  else
+    log "Done: organization $TEMPLATE_ORG, templates tagged${RUNNER_SECRET:+, runner token stored}"
+  fi
 }
 
 main "$@"

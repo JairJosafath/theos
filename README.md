@@ -71,9 +71,11 @@ devcontainer with Postgres, pushed as one commit. The repositories are public; t
 in, `make gitea-admin` prints the admin password, which `make gitea` generates for
 each cluster.
 
-To use c4factory on your own cluster instead, install a release: its Helm chart
-and images are published to GHCR by a version tag ([the chart's
-README](dist/chart/README.md)).
+To use c4factory on your own cluster instead, install a release: apply Agent
+Sandbox, then `helm install` the chart, which brings the operator, the UI and a
+seeded Gitea with its CI runners. The chart and images are published to GHCR by
+a version tag; [the chart's README](dist/chart/README.md) gives the install
+sequence and how to pull private images.
 
 ## A device without the cluster
 
@@ -107,7 +109,7 @@ To set one up:
    logs are in `.relay/relay-1.log` and `.relay/watch.log`, `touch .relay/stop`
    stops it.
 
-Opening the folder in VS Code empties Go's build cache when it has grown past
+Opening the folder in VS Code trims Go's build cache, oldest entries first, when it has grown past
 4 GB (`hack/trim-go-cache.sh`, `C4_GOCACHE_MAX_GB`), on every device.
 
 ## Report an issue

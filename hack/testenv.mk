@@ -105,13 +105,56 @@ cluster-delete: ## Delete the Kind cluster and everything in it.
 	$(KIND) delete cluster --name '$(KIND_CLUSTER)'
 
 .PHONY: test-gitea
-test-gitea: ## Run the gitprovider integration test against the seeded Gitea.
+test-gitea: ## Run the gitprovider integration tests: against C4_GITEA_URL if set, else a local Gitea (make gitea-local).
+	@if [ -n "$$C4_GITEA_URL" ]; then \
+		echo "Testing against C4_GITEA_URL=$$C4_GITEA_URL"; \
+	else \
+		$(MAKE) --no-print-directory gitea-local && hack/gitea-local.sh fixtures && \
+		set -a && . .gitea-local/credentials.env && set +a; \
+	fi && \
+	go test -count=1 -v ./internal/gitprovider/ -run Integration
+
+.PHONY: test-gitea-kind
+test-gitea-kind: ## Run the gitprovider integration tests against the seeded Gitea of the Kind cluster.
 	@$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea $(GITEA_PORT):3000 >/dev/null 2>&1 & pf=$$!; \
 	trap 'kill $$pf 2>/dev/null || true' EXIT; sleep 2; \
 	C4_GITEA_URL=http://localhost:$(GITEA_PORT) \
 	C4_GITEA_USERNAME="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d)" \
 	C4_GITEA_TOKEN="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.token}' | base64 -d)" \
 	go test -count=1 -v ./internal/gitprovider/ -run Integration
+
+##@ Local Gitea
+
+# The Gitea binary config/gitea runs (keep GITEA_VERSION in step with its image),
+# checked against the sha256 of the release. hack/gitea-local.sh runs it from
+# .gitea-local/ in this checkout, on a port of its own.
+LOCALBIN ?= $(shell pwd)/bin
+GITEA_VERSION ?= 1.27.3
+GITEA_SHA256_amd64 = 4da93c2c10b6980c359bcb86d5573ebfd7770e2e151756534edee24c8c12d971
+GITEA_SHA256_arm64 = 04c086d36dba793546e331484a9da34571763efdfa77dc526cc98e0f10917e7b
+GITEA_ARCH := $(patsubst x86_64,amd64,$(patsubst aarch64,arm64,$(shell uname -m)))
+GITEA_BIN ?= $(LOCALBIN)/gitea-$(GITEA_VERSION)
+
+$(GITEA_BIN):
+	@test "$$(uname -s)" = Linux -a -n "$(GITEA_SHA256_$(GITEA_ARCH))" || \
+		{ echo "No Gitea checksum for $$(uname -s)/$(GITEA_ARCH); make gitea-local runs on linux amd64 or arm64" >&2; exit 1; }
+	@mkdir -p "$(LOCALBIN)"
+	@echo "Downloading Gitea $(GITEA_VERSION) for linux/$(GITEA_ARCH)"
+	@curl -fsSL -o "$@.tmp" https://dl.gitea.com/gitea/$(GITEA_VERSION)/gitea-$(GITEA_VERSION)-linux-$(GITEA_ARCH)
+	@echo "$(GITEA_SHA256_$(GITEA_ARCH))  $@.tmp" | sha256sum -c --quiet - || { rm -f "$@.tmp"; exit 1; }
+	@chmod +x "$@.tmp" && mv "$@.tmp" "$@"
+
+.PHONY: gitea-local
+gitea-local: $(GITEA_BIN) ## Start this checkout's own Gitea from .gitea-local/ (no Kubernetes); credentials in .gitea-local/credentials.env.
+	@GITEA="$(GITEA_BIN)" hack/gitea-local.sh start
+
+.PHONY: seed-local
+seed-local: gitea-local ## Seed the local Gitea like make seed, no kubectl: templates and tags, webshop and its token in .gitea-local/webshop.env.
+	@hack/gitea-local.sh seed
+
+.PHONY: gitea-local-stop
+gitea-local-stop: ## Stop this checkout's local Gitea; its data stays in .gitea-local/.
+	@hack/gitea-local.sh stop
 
 .PHONY: kind-load
 kind-load: ## Load this checkout's build of the operator image into the Kind cluster as $(IMG).

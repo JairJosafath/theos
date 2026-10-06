@@ -11,8 +11,11 @@ tag=${1:?usage: k8s-openapi.sh TAG DIR}
 dir=${2:?usage: k8s-openapi.sh TAG DIR}
 [ -f "$dir/api/v1.json" ] && exit 0
 
-tmp="$dir.tmp"
-rm -rf "$tmp"
+# Worktrees share the tool directory, so each download goes to its own folder
+# and the first to finish is kept.
+mkdir -p "$(dirname "$dir")"
+tmp=$(mktemp -d "$dir.tmp.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/api" "$tmp/apis"
 echo "Downloading the Kubernetes $tag OpenAPI schemas into $dir"
 # The listing goes through the GitHub API, which limits anonymous calls; CI passes a token.
@@ -33,5 +36,4 @@ for name in $names; do
 	curl -fsSL -o "$tmp/$out" "https://raw.githubusercontent.com/kubernetes/kubernetes/$tag/api/openapi-spec/v3/$name"
 done
 [ -f "$tmp/api/v1.json" ] || { echo "no api/v1 schema for $tag" >&2; exit 1; }
-rm -rf "$dir"
-mv "$tmp" "$dir"
+[ -f "$dir/api/v1.json" ] || { rm -rf "$dir"; mv "$tmp" "$dir"; }
