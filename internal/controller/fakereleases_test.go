@@ -48,25 +48,24 @@ func (p *fakeProvider) ListMilestones(_ context.Context, repo gitprovider.Reposi
 	return out, nil
 }
 
-func (p *fakeProvider) MilestoneIssues(_ context.Context, repo gitprovider.Repository, id int64) (open,
-	closed []int, err error) {
+func (p *fakeProvider) MilestoneIssues(_ context.Context, repo gitprovider.Repository,
+	id int64) ([]gitprovider.Issue, error) {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	key := repo.Owner + "/" + repo.Name
 	title, err := p.git.milestoneTitle(key, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
+	var out []gitprovider.Issue
 	for _, issue := range p.git.issueState().issues[key] {
-		switch {
-		case issue.milestone != title:
-		case issue.State == "closed":
-			closed = append(closed, issue.Number)
-		default:
-			open = append(open, issue.Number)
+		if issue.milestone == title {
+			i := issue.Issue
+			i.Labels = slices.Clone(i.Labels)
+			out = append(out, i)
 		}
 	}
-	return open, closed, nil
+	return out, nil
 }
 
 func (p *fakeProvider) CloseMilestone(_ context.Context, repo gitprovider.Repository, id int64) error {

@@ -704,6 +704,13 @@ func HasSlotTurn(task string, now time.Time, waiting []SlotWaiter, free int) boo
 	return false
 }
 
+// NoFreeSlot reports whether task must wait for an agent slot: the running
+// sandboxes take all maxSandboxes, or Tasks that have waited longer take the
+// ones left (see HasSlotTurn).
+func NoFreeSlot(task string, now time.Time, waiting []SlotWaiter, maxSandboxes, sandboxes int) bool {
+	return !HasSlotTurn(task, now, waiting, maxSandboxes-sandboxes)
+}
+
 // maxCheckExcerpt bounds the CI log excerpt sent to the agent.
 const maxCheckExcerpt = 4000
 

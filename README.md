@@ -109,7 +109,7 @@ To set one up:
    logs are in `.relay/relay-1.log` and `.relay/watch.log`, `touch .relay/stop`
    stops it.
 
-Opening the folder in VS Code empties Go's build cache when it has grown past
+Opening the folder in VS Code trims Go's build cache, oldest entries first, when it has grown past
 4 GB (`hack/trim-go-cache.sh`, `C4_GOCACHE_MAX_GB`), on every device.
 
 ## Report an issue

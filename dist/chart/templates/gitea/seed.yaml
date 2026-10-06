@@ -3,7 +3,7 @@
 {{- $seed := .Values.gitea.seed }}
 # The seed (hack/seed/seed.sh): the templates organization and its tagged
 # template repositories, and an organization and Secret gitea-credentials for
-# each project. Not the runners' token: the chart makes that one. A hook
+# each project. Not the runners' token: Gitea's pod makes that one. A hook
 # after every install and upgrade: it changes nothing already in place, and a new
 # chart version brings new template tags. A failed Job stays for its log until
 # the next upgrade replaces it.

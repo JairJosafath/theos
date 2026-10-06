@@ -289,6 +289,17 @@ model and context it needs.
   release left to a person is a Warning Event, once per reason, and the Crew's
   `Released` condition says why. A paused Crew still tags: its release's work
   is already merged.
+- **The Crew prepares a release** when its `spec.prepareReleases` is true (off
+  by default, independent of `tagReleases`). Once the first open release is
+  done and an issue of it was merged by a Task, and the milestone has no issue
+  labelled `kind/release` (open or closed, whoever filed it), the Crew files
+  `Prepare vX.Y.Z` there, `kind/release` and `status/ready`, listing the merged
+  issues: its agents set the version files (`make release-version` checks them
+  against the tag) and write the changelog. Its merge is then the release's
+  newest, so the tag carries both. A release has one prepare issue; work merged
+  after it leaves the release to a person (`MergedAfterPrepare`), who files
+  another `kind/release` issue or tags it. A release with no merged work gets
+  none, so a milestone made ahead of its issues isn't released on its own.
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other
   issue, whatever its release, even when every place is taken (once running, it
@@ -362,8 +373,8 @@ release installs the whole factory:
 | --- | --- | --- |
 | Operator, CRDs, RBAC, admission policy | release namespace | always |
 | UI | release namespace | `ui.enabled`, on by default |
-| Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password generated in the cluster by Gitea's pod into Secret `gitea-admin`, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
-| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret and a GitProvider for each project in `gitea.projects`, the runners' registration token |
+| Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password and the runners' registration token generated in the cluster by Gitea's pod into Secrets `gitea-admin` and `gitea-runner` when missing, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
+| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret and a GitProvider for each project in `gitea.projects` |
 | CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values |
 

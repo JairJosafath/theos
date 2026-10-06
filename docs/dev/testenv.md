@@ -15,7 +15,9 @@ make check               # manifests, generate, fmt, vet, lint and test
 make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
-make test-gitea          # gitprovider against the seeded Gitea
+make gitea-local seed-local  # A Gitea of this checkout's own, seeded like Kind's (no kubectl)
+make test-gitea          # gitprovider against a local Gitea (make gitea-local), or C4_GITEA_URL if set
+make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind cluster
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain, CI runner (label base), Agent Sandbox, agent image
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
 make toolchain-go runner-go agent-image-go  # Go and Node toolchain, CI runner (label go) and agent image
@@ -37,6 +39,52 @@ template needs a row there. In tests, write with merge patches
 
 `make run` runs the operator on your machine, but it can't reach Gitea's in-cluster
 address; use `make deploy` for anything that scaffolds.
+
+## Local Gitea
+
+`make gitea-local` runs a Gitea of this checkout's own, with no Kubernetes or
+Docker, so the Gitea tests run on any device, lite ones included:
+
+- It downloads the Gitea binary `config/gitea` runs (`GITEA_VERSION`, linux
+  amd64 or arm64) into `bin/` and checks its sha256.
+- It starts it from `.gitea-local/` (gitignored): SQLite, `INSTALL_LOCK`,
+  offline, listening on 127.0.0.1 only, with Actions, mail, SSH and LFS off.
+- The first start picks a free port in 13000-13999 near one derived from the
+  checkout's path, so worktrees don't collide, and keeps it in
+  `.gitea-local/app.ini`. There is no lease.
+- It also creates admin `c4admin` with a random password and an access token
+  (the seed's scopes) and writes them to `.gitea-local/credentials.env`
+  (mode 0600; `C4_GITEA_URL`, `C4_GITEA_USERNAME`, `C4_GITEA_PASSWORD`,
+  `C4_GITEA_TOKEN`). Nothing prints them; source the file to use them.
+- Starting again while it runs is a no-op. `make gitea-local-stop` stops it
+  and keeps its data; after a stop, `rm -rf .gitea-local` starts over with a
+  new port and new credentials.
+
+`make test-gitea` starts it, seeds the templates (`hack/gitea-local.sh
+fixtures`: `hack/seed/seed.sh` with no projects, so no Secrets, plus the
+`webshop` organization) and runs the `Integration` tests in
+`internal/gitprovider`. A first run takes about three minutes, mostly
+pushing the templates; later runs take about half a minute. With
+`C4_GITEA_URL` set (and `C4_GITEA_USERNAME`, `C4_GITEA_TOKEN`) it tests that
+Gitea instead, for example the Kind one behind `make gitea-forward`;
+`make test-gitea-kind` does that forward and reads the token from the cluster.
+Sourcing `credentials.env` into your shell exports `C4_GITEA_URL` too, so
+`make test-gitea` then skips starting the local Gitea; unset it after a stop.
+
+`make seed-local` starts it and seeds it as `make seed` seeds Kind's, with no
+kubectl: the `templates` organization with every tag in
+`templates/versions.txt`, and the `webshop` organization. The seed's file mode
+(`CREDENTIALS_DIR` in `hack/seed/seed.sh`) writes webshop's token to
+`.gitea-local/webshop.env` (mode 0600; `C4_GITEA_URL`, `C4_GITEA_USERNAME`,
+`C4_GITEA_TOKEN`) instead of Secret `gitea-credentials`, and skips the runner
+token. Use it to check template work on any device: a wording fix, a new tag in
+`versions.txt`, or how the seed pushes and tags. A second run changes nothing,
+and warns when a template no longer matches its tag. `hack/seed_test.sh`
+covers the file mode against a stand-in Gitea.
+
+No workflow runs on pull requests, so run `make test-gitea` before merging a
+change to `internal/gitprovider` or the seed; the Tests workflow runs it on
+main.
 
 ## Deployment Workflow
 
@@ -149,7 +197,7 @@ around the steps that touch it:
    (`c4factory/operator:dev`). The toolchain base images
    (`c4factory/go:1.26`, `c4factory/base:dev`) stay shared: they change
    rarely and only from `hack/toolchain-*`.
-   `make gitea-forward` and `make test-gitea` use port 3000 for `c4factory`
+   `make gitea-forward` and `make test-gitea-kind` use port 3000 for `c4factory`
    and 3000+K-1 for `c4factory-K` (`GITEA_PORT`), so two forwards don't
    collide; the e2e tests pick a free one.
 4. `hack/lib/github.sh cluster release`.
@@ -178,7 +226,22 @@ an issue and a worker is free, runs `hack/relay.sh --workers N`, which leaves
 running workers alone. Asking first keeps the relay's logs free of a worker that
 starts, finds nothing and stops every minute. It logs only changes, to `.relay/watch.log`, pulls main every 5
 minutes and restarts itself when that changed its code.
-`hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked.
+With nothing ready, it starts a triage of the `status/proposed` issues: for a
+new one, for one that changed since the last triage or waits on an issue that
+closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
+`WATCH_TRIAGE` (30m). Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
+a workflow that runs on a push to main and failed its two newest finished runs
+there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
+ready and urgent, so the next session fixes main before anything else; a single
+failure files nothing.
+With nothing ready, it also logs, once per change, which skipped issue waits on
+which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
+alone lists every skipped issue's blockers, with status and claim), and when
+issues wait on each other in a cycle, `cycles --report` comments each of them
+once and moves the newest to `status/needs-human`.
+`hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
+the triage's reasons with `proposed --since` against a stubbed GitHub, and its
+CI rounds with `gh` faked.
 
 Install the watch once on each device that runs the relay overnight, from the
 main checkout: `hack/relay-watch.sh --install --workers N`. It writes the
