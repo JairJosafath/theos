@@ -106,8 +106,8 @@ What B3 and B5 leave open, settled in step 3:
   it and `briefRef`; Go keeps it a value (`omitzero`), so every existing
   reader of `containerRef.name` is unchanged, and the Task-by-Container index
   skips the empty one.
-- **The Task controller returns at once for a Plan Task** until step 5 gives
-  the Brief its rounds: no status, no owner, no labels.
+- **The Task controller left a Plan Task alone** until step 5 gave the Brief
+  its rounds; step 5 runs it (see below).
 - **The runner, `C4_ROLE=plan`,** takes `C4_BRIEF` in place of `C4_GOAL` and
   `C4_CONTAINER`; its branch is `plan/<C4_ROUND>`, and any other `C4_BRANCH`
   is refused. Each run starts from the base branch (`main`), removes `plan/`
