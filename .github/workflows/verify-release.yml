@@ -115,6 +115,11 @@ jobs:
       - name: Install Agent Sandbox
         run: |
           $KUBECTL apply --server-side -f "$AGENT_SANDBOX"
+          # A CRD read before it has any status fails the wait; try again.
+          for i in $(seq 1 10); do
+            $KUBECTL wait --for=condition=Established crd --all --timeout=60s && break
+            sleep 3
+          done
           $KUBECTL wait --for=condition=Established crd --all --timeout=60s
           $KUBECTL -n agent-sandbox-system rollout status deployment --timeout=300s
 
