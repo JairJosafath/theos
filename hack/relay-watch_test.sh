@@ -4,7 +4,10 @@
 # issues pick skips, with pick, blocked, cycles, the proposed list and
 # hack/relay.sh faked; when a triage reads a proposed issue again, with
 # hack/lib/github.sh's proposed against a stubbed GitHub; and when a CI round
-# files a "main is red" issue, with gh faked under the real hack/lib/github.sh.
+# files a "main is red" issue, with gh faked under the real hack/lib/github.sh;
+# --install and --uninstall with systemctl, loginctl and crontab faked; and the
+# stop file and the lock in a scratch copy of the watch, never this checkout's
+# .relay/.
 # Run: hack/relay-watch_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -280,6 +283,22 @@ round; round
 check "pick fails: no relay" "$(starts)" 5
 check "pick fails: logged once" "$(logged 'could not ask GitHub for the next issue (exit 2): github: no token')" 1
 
+# Trimming the build caches: at once, then again once TRIM_EVERY has passed;
+# only what the trim says is logged.
+TRIM_EVERY=1800 TRIM_OUT=
+trim_caches() { echo trim >>"$T/trims"; [ -z "$TRIM_OUT" ] || echo "$TRIM_OUT"; }
+trims() { cat "$T/trims" 2>/dev/null | wc -l | tr -d ' '; }
+now=$(date +%s)
+trim "$now"
+check "trim: on the first loop" "$(trims)" 1
+check "trim: under the limit, nothing logged" "$(logged 'trim-go-cache')" 0
+TRIM_OUT='trim-go-cache: /c was 9 MB, limit 4 MB; dropped 6 MB of entries unused for 2+ hours, now 3 MB'
+trim $((now + 60))
+check "trim: not again before TRIM_EVERY" "$(trims)" 1
+trim $((now + 1800))
+check "trim: again after TRIM_EVERY" "$(trims)" 2
+check "trim: logs what it dropped" "$(logged 'dropped 6 MB of entries unused for 2+ hours, now 3 MB')" 1
+
 # Paused for a limit: nothing starts, not even a triage, and the pause is logged
 # once; once it passes, the relay starts again.
 echo "$(($(date +%s) + 3600)) You've hit your session limit" >"$DIR/paused-until"
@@ -380,6 +399,115 @@ runs lint.yml failure cancelled timed_out
 ci_round
 check "ci: cancelled runs are skipped" "$(jq -r '.[1].title' "$T/issues.json")" "main is red: Lint"
 
+# --install with systemd: the unit for this checkout and WORKERS, enabled and
+# (re)started, linger on, and the stop file gone.
+mkdir -p "$T/bin" "$T/home"
+cat >"$T/bin/systemctl" <<'SH'
+#!/usr/bin/env bash
+echo "systemctl $*" >>"$FAKE/calls"
+[ -e "$FAKE/no-systemd" ] && exit 1
+exit 0
+SH
+cat >"$T/bin/loginctl" <<'SH'
+#!/usr/bin/env bash
+echo "loginctl $*" >>"$FAKE/calls"
+SH
+cat >"$T/bin/crontab" <<'SH'
+#!/usr/bin/env bash
+echo "crontab $*" >>"$FAKE/calls"
+case $1 in
+  -l) [ -e "$FAKE/crontab" ] || { echo "no crontab for you" >&2; exit 1; }; cat "$FAKE/crontab" ;;
+  -) t=$(cat); printf "%s\n" "$t" >"$FAKE/crontab" ;;
+esac
+SH
+chmod +x "$T/bin/"*
+SAVED_PATH=$PATH SAVED_HOME=$HOME
+export FAKE=$T PATH="$T/bin:$PATH" HOME=$T/home
+STOP=$DIR/stop REPO=$T/repo WORKERS=3
+mkdir -p "$REPO/.relay"
+touch "$STOP"
+RELAY_MAX_WORKERS=5 install_watch >/dev/null
+unit=$T/home/.config/systemd/user/c4factory-relay-watch.service
+check "install: writes the unit" "$([ -s "$unit" ] && echo yes)" yes
+check "install: runs this checkout's watch in the foreground" \
+  "$(grep -c "^ExecStart=\"$REPO/dev\" run \"$REPO/hack/relay-watch.sh\" --foreground --workers 3$" "$unit")" 1
+check "install: keeps the installer's PATH" "$(grep -cF "Environment=\"PATH=$PATH\"" "$unit")" 1
+check "install: restarts, but not after the stop file" \
+  "$(grep -E '^(Restart|RestartPreventExitStatus|KillMode)=' "$unit" | tr '\n' ' ')" \
+  "Restart=always RestartPreventExitStatus=0 KillMode=process "
+check "install: passes the relay settings" "$(grep -c '^Environment="RELAY_MAX_WORKERS=5"$' "$unit")" 1
+check "install: no placeholder left" "$(grep -c @ "$unit")" 0
+check "install: enables and starts it" \
+  "$(grep -E 'enable|restart|daemon-reload' "$T/calls" | tr '\n' ';')" \
+  "systemctl --user daemon-reload;systemctl --user enable c4factory-relay-watch.service;systemctl --user restart c4factory-relay-watch.service;loginctl enable-linger $(id -un);"
+check "install: removes the stop file" "$([ -e "$STOP" ] && echo there)" ""
+check "install: no crontab" "$([ -e "$T/crontab" ] && echo there)" ""
+
+# --uninstall without the user bus: the unit stays, and it says so.
+touch "$T/no-systemd"
+uninstall_watch 2>/dev/null
+check "uninstall without systemd: fails" $? 1
+check "uninstall without systemd: unit stays" "$([ -e "$unit" ] && echo there)" there
+rm "$T/no-systemd"
+
+# --uninstall: disabled, stopped and gone.
+: >"$T/calls"
+uninstall_watch >/dev/null
+check "uninstall: removes the unit" "$([ -e "$unit" ] && echo there)" ""
+check "uninstall: disables and stops it" "$(grep -c 'disable --now c4factory-relay-watch.service' "$T/calls")" 1
+
+# --install without systemd: two crontab lines that start the watch with --cron,
+# the user's other lines kept; installing again doesn't add more.
+touch "$T/no-systemd"
+echo '0 3 * * * backup' >"$T/crontab"
+mkdir -p "$REPO/hack"
+printf '#!/usr/bin/env bash\nshift; echo "$@" >>"%s/started"\n' "$T" >"$REPO/dev"
+chmod +x "$REPO/dev"
+RELAY_MAX_WORKERS=5 install_watch >/dev/null
+RELAY_MAX_WORKERS=5 install_watch >/dev/null
+check "cron: no unit" "$([ -e "$unit" ] && echo there)" ""
+check "cron: keeps the other lines" "$(grep -c backup "$T/crontab")" 1
+check "cron: at boot" "$(grep -c "^@reboot cd $REPO && PATH=.* ./dev run hack/relay-watch.sh --cron --workers 3 .*# c4factory relay watch: $REPO$" "$T/crontab")" 1
+check "cron: passes the relay settings" "$(grep -c ' RELAY_MAX_WORKERS=5 .*./dev run' "$T/crontab")" 2
+check "cron: every 5 minutes" "$(grep -c "^\*/5 \* \* \* \* cd $REPO && .* --cron --workers 3 " "$T/crontab")" 1
+check "cron: starts the watch now" "$(cat "$T/started")" $'hack/relay-watch.sh --cron --workers 3\nhack/relay-watch.sh --cron --workers 3'
+uninstall_watch >/dev/null
+check "cron uninstall: only the other lines left" "$(cat "$T/crontab")" "0 3 * * * backup"
+
+# --install from a worktree: refused, nothing written.
+git init -q "$T/main" && git -C "$T/main" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init &&
+  git -C "$T/main" worktree add -q "$T/wt" 2>/dev/null
+rm -f "$T/no-systemd"
+REPO=$T/wt install_watch 2>/dev/null
+check "worktree: refused" $? 1
+check "worktree: no unit" "$([ -e "$unit" ] && echo there)" ""
+export PATH=$SAVED_PATH HOME=$SAVED_HOME
+
+# The watch itself, in a scratch copy: a --cron start with the stop file starts
+# nothing; a --foreground watch waits while another holds the lock, takes over
+# when it ends, and exits 0 for the stop file, which the unit doesn't restart.
+S=$T/scratch
+mkdir -p "$S/hack" "$S/.relay"
+cp "$(dirname "$0")/relay-watch.sh" "$S/hack/"
+touch "$S/.relay/stop"
+bash "$S/hack/relay-watch.sh" --cron
+check "cron start with the stop file: nothing" "$([ -e "$S/.relay/watch.log" ] && echo started)" ""
+rm "$S/.relay/stop"
+flock "$S/.relay/watch.lock" sleep 2 &
+until ! flock -n "$S/.relay/watch.lock" true; do sleep 0.1; done
+WATCH_EVERY=1 WATCH_PULL_EVERY=999 bash "$S/hack/relay-watch.sh" --foreground 2>/dev/null &
+fg=$!
+sleep 1
+check "foreground: waits for the lock" "$(grep -c 'another watch holds the lock; pid .* waits' "$S/.relay/watch.log")" 1
+check "foreground: hasn't started" "$(grep -c 'watch started' "$S/.relay/watch.log")" 0
+wait %flock 2>/dev/null
+for _ in $(seq 30); do grep -q 'watch started' "$S/.relay/watch.log" && break; sleep 0.1; done
+check "foreground: takes over" "$(grep -c 'watch started: pid .*, under systemd' "$S/.relay/watch.log")" 1
+touch "$S/.relay/stop"
+wait "$fg"
+check "foreground: exits 0 for the stop file" $? 0
+check "foreground: says why" "$(grep -c 'stop file found; stopping' "$S/.relay/watch.log")" 1
+
 # Arguments.
 bash "$(dirname "$0")/relay-watch.sh" --workers 0 2>/dev/null
 check "--workers 0 refused" $? 64
@@ -388,5 +516,6 @@ bash "$(dirname "$0")/relay-watch.sh" --workers 100 2>/dev/null
 check "--workers 100 refused" $? 64
 bash "$(dirname "$0")/relay-watch.sh" --bogus 2>/dev/null
 check "unknown flag refused" $? 64
+check "--install --workers 4" "$(. "$(dirname "$0")/relay-watch.sh" --install --workers 4; echo "$MODE $WORKERS")" "install 4"
 
 exit $fail

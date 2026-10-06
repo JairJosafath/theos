@@ -115,6 +115,13 @@ version's operator and UI images. From a checkout, `helm install ... dist/chart`
 with `--set manager.image.tag=...` and `--set ui.image.tag=...` installs images
 you built and pushed yourself.
 
+Every release checks itself: after *Release*, the *Verify Release* workflow
+(`.github/workflows/verify-release.yml`) installs that version's chart from
+GHCR on Kind, as above, and scaffolds the webshop sample's `orders-api`. The
+result is on the repository's Actions page (Verify Release, with the evidence
+as the run's artifact); a failing release gets an issue titled
+`Release vX.Y.Z fails its check`.
+
 ## Values
 
 | Value | What it sets |

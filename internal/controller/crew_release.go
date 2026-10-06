@@ -42,6 +42,8 @@ const (
 	reasonNoReleaseDone     = "NoReleaseDone"
 	reasonReleaseGitFailure = "GitHostUnavailable"
 	reasonPreparingRelease  = "PreparingRelease"
+	reasonReleaseRunFailed  = "ReleaseRunFailed"
+	reasonReleaseRunPassed  = "ReleaseRunSucceeded"
 )
 
 // tagRelease looks after the Crew's first open release, as its switches say:
@@ -97,7 +99,8 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		message := fmt.Sprintf("Released %s at %s", step.Tag, step.Commit)
 		log.Info("Released milestone", "tag", step.Tag, "commit", step.Commit, "created", step.CreateTag)
 		r.event(crew, corev1.EventTypeNormal, reasonReleased, "TagRelease", message)
-		status.LastRelease = &c4v1alpha1.CrewRelease{Tag: step.Tag, Commit: step.Commit, Time: metav1.NewTime(r.now())}
+		status.LastRelease = &c4v1alpha1.CrewRelease{Tag: step.Tag, Commit: step.Commit, Time: metav1.NewTime(r.now()),
+			Run: model.RunWaiting}
 		r.releaseSaid.Store(crew.UID, reasonReleased+"\n"+message)
 		r.setReleased(crew, status, metav1.ConditionTrue, reasonReleased, message)
 	case step.Held != "":
@@ -217,4 +220,54 @@ func (r *CrewReconciler) event(crew *c4v1alpha1.Crew, eventType, reason, action,
 	if r.Recorder != nil {
 		r.Recorder.Eventf(crew, nil, eventType, reason, action, "%s", note)
 	}
+}
+
+// watchReleaseRun reads how the CI workflow runs on the Crew's last release
+// went, until they all ended well, and reports a run that failed with a Warning
+// Event and one that ended well with a Normal Event, once per change.
+func (r *CrewReconciler) watchReleaseRun(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+	provider gitprovider.Provider, repo gitprovider.Repository) {
+	release := status.LastRelease
+	if release == nil || release.Run == model.RunSucceeded {
+		return
+	}
+	log := logf.FromContext(ctx)
+	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	found, err := provider.TagRuns(gitCtx, repo, release.Tag, release.Commit)
+	if err != nil {
+		// Each poll would fail alike while the host's Actions can't be read, so
+		// the Crew logs each error once.
+		if last, _ := r.runErrSaid.Load(crew.UID); last != err.Error() {
+			log.Error(err, "Failed to read the release run", "tag", release.Tag)
+		}
+		r.runErrSaid.Store(crew.UID, err.Error())
+		return
+	}
+	r.runErrSaid.Delete(crew.UID)
+	runs := make([]model.ReleaseRun, 0, len(found))
+	for _, run := range found {
+		runs = append(runs, model.ReleaseRun{Workflow: run.Workflow, Status: run.Status, Conclusion: run.Conclusion,
+			URL: run.URL})
+	}
+	result, run := model.ReleaseRunResult(runs)
+	// The last poll's status write can fail after its Event, so the Reconciler
+	// remembers what it said too.
+	said := release.Tag + "\n" + result
+	last, _ := r.runSaid.Load(crew.UID)
+	if result != release.Run && last != said {
+		switch result {
+		case model.RunFailed:
+			log.Info("Release run failed", "tag", release.Tag, "workflow", run.Workflow,
+				"conclusion", run.Conclusion, "url", run.URL)
+			r.event(crew, corev1.EventTypeWarning, reasonReleaseRunFailed, "WatchReleaseRun",
+				fmt.Sprintf("Release run %s of %s ended %s: %s", run.Workflow, release.Tag, run.Conclusion, run.URL))
+		case model.RunSucceeded:
+			log.Info("Release run succeeded", "tag", release.Tag, "url", run.URL)
+			r.event(crew, corev1.EventTypeNormal, reasonReleaseRunPassed, "WatchReleaseRun",
+				fmt.Sprintf("Release runs of %s succeeded: %s", release.Tag, run.URL))
+		}
+	}
+	r.runSaid.Store(crew.UID, said)
+	release.Run, release.RunURL = result, run.URL
 }

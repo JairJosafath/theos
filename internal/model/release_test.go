@@ -247,3 +247,38 @@ func TestPrepareIssue(t *testing.T) {
 		t.Errorf("the prepare issue is not ready as filed: %s", msg)
 	}
 }
+
+func TestReleaseRunResult(t *testing.T) {
+	queued := ReleaseRun{Workflow: "release.yaml", Status: "queued", URL: "/runs/5"}
+	running := ReleaseRun{Workflow: "release.yaml", Status: "in_progress", URL: "/runs/5"}
+	passed := ReleaseRun{Workflow: "release.yaml", Status: "completed", Conclusion: "success", URL: "/runs/5"}
+	skipped := ReleaseRun{Workflow: "notes.yaml", Status: "completed", Conclusion: "skipped", URL: "/runs/6"}
+	failed := ReleaseRun{Workflow: "release.yaml", Status: "completed", Conclusion: "failure", URL: "/runs/7"}
+	notes := ReleaseRun{Workflow: "notes.yaml", Status: "in_progress", URL: "/runs/9"}
+	cancelled := ReleaseRun{Workflow: "release.yaml", Status: "completed", Conclusion: "cancelled", URL: "/runs/8"}
+	tests := []struct {
+		name       string
+		runs       []ReleaseRun
+		wantResult string
+		wantRun    ReleaseRun
+	}{
+		{"no run started yet", nil, RunWaiting, ReleaseRun{}},
+		{"a queued run", []ReleaseRun{queued}, RunRunning, queued},
+		{"a running run", []ReleaseRun{running}, RunRunning, running},
+		{"a run that passed", []ReleaseRun{passed}, RunSucceeded, passed},
+		{"a skipped run counts as ended well", []ReleaseRun{skipped, passed}, RunSucceeded, skipped},
+		{"one still running among passed", []ReleaseRun{passed, notes}, RunRunning, passed},
+		{"a failed run, even with another running", []ReleaseRun{notes, failed}, RunFailed, failed},
+		{"a cancelled run is a failure", []ReleaseRun{cancelled, passed}, RunFailed, cancelled},
+		{"a workflow's newer run passed after an older one failed", []ReleaseRun{passed, failed}, RunSucceeded, passed},
+		{"a workflow's newer run failed after an older one passed", []ReleaseRun{failed, passed}, RunFailed, failed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, run := ReleaseRunResult(tt.runs)
+			if result != tt.wantResult || run != tt.wantRun {
+				t.Errorf("ReleaseRunResult() = %s, %+v; want %s, %+v", result, run, tt.wantResult, tt.wantRun)
+			}
+		})
+	}
+}
