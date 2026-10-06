@@ -476,6 +476,8 @@ func (g *fakeGit) protectedBranches(owner, name string) []string {
 }
 
 // agentUser returns the bot user given write access to owner/name.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) agentUser(owner, name string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -570,6 +572,14 @@ func (p *fakeProvider) EnsureAgentAccess(_ context.Context, repo gitprovider.Rep
 	defer p.git.mu.Unlock()
 	p.git.agentState().agents[repo.Owner+"/"+repo.Name] = user
 	return gitprovider.Credentials{Username: user, Token: rand.Text()}, nil
+}
+
+func (p *fakeProvider) RemoveAgentAccess(_ context.Context, _ gitprovider.Repository, user string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	// Deleting the user takes it off every repository.
+	maps.DeleteFunc(p.git.agentState().agents, func(_, u string) bool { return u == user })
+	return nil
 }
 
 func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repository, head, _, _, _ string) (gitprovider.PullRequest, error) {
