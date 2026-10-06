@@ -15,6 +15,7 @@ import (
 
 // CrewSpec is who works on a Container's issues: the Agent that implements, the
 // Agent that reviews, and whether they pick up ready issues.
+// +kubebuilder:validation:XValidation:rule="!has(self.publishReleases) || (has(self.tagReleases) && self.tagReleases)",message="publishReleases needs tagReleases: only a release the Crew tagged is published"
 type CrewSpec struct {
 	// containerRef names the Container whose repository's issues the Crew works
 	// on. It can't change.
@@ -71,6 +72,43 @@ type CrewSpec struct {
 	// merged after it holds the tag for a person.
 	// +optional
 	PrepareReleases bool `json:"prepareReleases,omitempty"`
+
+	// publishReleases copies each release the Crew tags to another repository
+	// once its release runs succeed: the same tag, notes and files. It only adds
+	// releases there, never a commit. It needs tagReleases. Removing it stops
+	// publishing; what is published stays.
+	// +optional
+	PublishReleases *CrewPublishReleases `json:"publishReleases,omitempty"`
+}
+
+// CrewPublishReleases is where a Crew publishes its releases.
+type CrewPublishReleases struct {
+	// github is the GitHub repository the releases go to.
+	// +required
+	GitHub CrewPublishGitHub `json:"github"`
+
+	// tagPrefix goes before the Crew's tag on the target, such as "cli-" when
+	// two Containers publish to one repository: cli-v0.2.0.
+	// +kubebuilder:validation:MaxLength=40
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/-]*$`
+	// +optional
+	TagPrefix string `json:"tagPrefix,omitempty"`
+}
+
+// CrewPublishGitHub is a repository on github.com and the token that publishes
+// to it.
+type CrewPublishGitHub struct {
+	// repository is owner/name on github.com.
+	// +kubebuilder:validation:MaxLength=140
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$')",message="repository must be owner/name"
+	// +required
+	Repository string `json:"repository"`
+
+	// tokenSecretRef names a Secret in the Crew's namespace whose key token is
+	// a fine-grained token for that repository alone, with Contents read and
+	// write. The user creates it; the token never leaves the operator.
+	// +required
+	TokenSecretRef LocalRef `json:"tokenSecretRef"`
 }
 
 // CrewRelease is a release a Crew tagged.
@@ -104,6 +142,29 @@ type CrewRelease struct {
 	// +listMapKey=container
 	// +optional
 	Bumps []CrewReleaseBump `json:"bumps,omitempty"`
+
+	// publish is how publishing the release went, when spec.publishReleases is
+	// set.
+	// +optional
+	Publish *CrewReleasePublish `json:"publish,omitempty"`
+}
+
+// CrewReleasePublish is how publishing a release to its target went.
+type CrewReleasePublish struct {
+	// state is Pending until the release runs succeed, Publishing while the
+	// release is copied, Published once it is out and Failed while it can't
+	// be; a failure is tried again each poll.
+	// +kubebuilder:validation:Enum=Pending;Publishing;Published;Failed
+	// +required
+	State string `json:"state"`
+
+	// url is the published release.
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// message says what happened last, and why it failed.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // CrewReleaseBump is a bump issue filed in a Container that bundles the released
@@ -174,7 +235,8 @@ type CrewStatus struct {
 
 	// conditions: Ready says whether the Crew can pick up issues, and why not.
 	// Released, when spec.tagReleases is set, says whether the Crew's next
-	// release went out, and why not.
+	// release went out, and why not. Published, when spec.publishReleases is
+	// set, says how publishing the last release went, and why it failed.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

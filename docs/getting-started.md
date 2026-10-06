@@ -220,6 +220,75 @@ issue `status/needs-human` with the reason in a comment; label it
 | The Crew stays `Waiting` | `kubectl -n webshop get crew orders-cli -o yaml`: `status.conditions` says what it waits for, such as the Container. |
 | The agent says it isn't logged in | Secret `webshop/claude-credentials` is missing, empty (step 2's length check prints `0`), or its key isn't `CLAUDE_CODE_OAUTH_TOKEN`. |
 
+## Publish releases to GitHub
+
+A Crew with `spec.tagReleases` tags each release (a Gitea milestone titled
+`vMAJOR.MINOR.PATCH` with a due date) once its issues are merged, and the tag's
+release run attaches the files to a Gitea release. Those live in the cluster's
+Gitea. To have every release also show up on a GitHub repository, with the
+same tag, notes and files, give the Crew that repository and a token for it.
+The factory only adds releases there: it never pushes a commit or changes a
+file.
+
+1. **The token.** On GitHub, *Settings → Developer settings → Fine-grained
+   tokens → Generate new token*: *Repository access: Only select repositories*,
+   the one repository; *Repository permissions: Contents: Read and write*
+   (*Metadata: Read* comes with it). Nothing else. The repository needs a first
+   commit: a release's tag goes at its default branch's head.
+2. **The Secret**, in the Crew's namespace, with the key `token`:
+
+   ```bash
+   read -rsp 'GitHub token: ' GH_TOKEN; echo
+   kubectl -n webshop create secret generic orders-cli-github --from-literal=token="$GH_TOKEN"
+   unset GH_TOKEN
+   ```
+
+3. **The Crew field.** [config/samples/first-app/crew-publish.yaml](../config/samples/first-app/crew-publish.yaml)
+   is the Crew of step 3 with it; set your repository and apply it:
+
+   ```yaml
+   spec:
+     tagReleases: true          # publishReleases needs it
+     publishReleases:
+       github:
+         repository: your-name/orders-cli   # owner/name on github.com
+         tokenSecretRef: {name: orders-cli-github}
+       tagPrefix: ""            # optional: "cli-" publishes v0.2.0 as cli-v0.2.0
+   ```
+
+Once a release's runs succeed, the Crew copies it: the notes are the Gitea
+release's, or, when nobody wrote any, the titles of its merged issues, which it
+writes on the Gitea release too. It builds a draft, uploads each file, then
+publishes it, so a release is never seen half done. Only the last release is
+published; one tagged before the previous was published leaves that one to
+you, with a Warning Event `ReleaseNotPublished`. Removing `publishReleases`
+stops publishing; what is on GitHub stays.
+
+**Reading how it went:**
+
+```bash
+kubectl -n webshop get crew orders-cli -o jsonpath='{.status.lastRelease.publish}{"\n"}'
+kubectl -n webshop get crew orders-cli -o jsonpath='{.status.conditions[?(@.type=="Published")]}{"\n"}'
+kubectl -n webshop events --for crew/orders-cli
+```
+
+`publish.state` is `Pending` until the release runs succeed, `Publishing`,
+then `Published` with the release's `url`, or `Failed`. A failure is a Warning
+Event `ReleasePublishFailed`, once per reason, and is tried again every
+minute, so fixing the cause is enough. The `Published` condition's reason
+says what to fix:
+
+| Reason | What to do |
+| --- | --- |
+| `Waiting` | The release runs haven't succeeded yet; a failed run is published once a re-run succeeds. |
+| `SecretMissing` | Create the Secret of step 2, in the Crew's namespace, with the key `token`. |
+| `Unauthorized` | GitHub refused the token: expired, revoked, or without *Contents: Read and write*. Make a new one and replace the Secret. |
+| `RepositoryNotFound` | No such repository, or the token can't see it: check `repository` and the token's *Repository access*. |
+| `EmptyRepository` | The repository has no commit to tag; push one. |
+| `NoReleaseFiles` | The Gitea release of the tag is missing or has no files: check the tag's release run. |
+| `TagTaken` | The repository already has a release or tag of that name the factory didn't make; it leaves it alone. Delete it, or set a `tagPrefix`. |
+| `GitHubError` | GitHub failed, rate-limited, or couldn't be reached; it is tried again. |
+
 ## Next
 
 - Your own project: create its namespace (with the `ghcr` Secret and the

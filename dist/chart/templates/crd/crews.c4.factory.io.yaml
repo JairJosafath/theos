@@ -129,6 +129,51 @@ spec:
                   Its merge is then the release's newest, where tagReleases puts the tag; work
                   merged after it holds the tag for a person.
                 type: boolean
+              publishReleases:
+                description: |-
+                  publishReleases copies each release the Crew tags to another repository
+                  once its release runs succeed: the same tag, notes and files. It only adds
+                  releases there, never a commit. It needs tagReleases. Removing it stops
+                  publishing; what is published stays.
+                properties:
+                  github:
+                    description: github is the GitHub repository the releases go to.
+                    properties:
+                      repository:
+                        description: repository is owner/name on github.com.
+                        maxLength: 140
+                        type: string
+                        x-kubernetes-validations:
+                        - message: repository must be owner/name
+                          rule: self.matches('^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$')
+                      tokenSecretRef:
+                        description: |-
+                          tokenSecretRef names a Secret in the Crew's namespace whose key token is
+                          a fine-grained token for that repository alone, with Contents read and
+                          write. The user creates it; the token never leaves the operator.
+                        properties:
+                          name:
+                            description: name of the referenced object.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    required:
+                    - repository
+                    - tokenSecretRef
+                    type: object
+                  tagPrefix:
+                    description: |-
+                      tagPrefix goes before the Crew's tag on the target, such as "cli-" when
+                      two Containers publish to one repository: cli-v0.2.0.
+                    maxLength: 40
+                    pattern: ^[A-Za-z0-9._/-]*$
+                    type: string
+                required:
+                - github
+                type: object
               reviewer:
                 description: |-
                   reviewer names the Agent that reviews each round; usually a stronger model
@@ -155,6 +200,10 @@ spec:
             - implementer
             - reviewer
             type: object
+            x-kubernetes-validations:
+            - message: 'publishReleases needs tagReleases: only a release the Crew
+                tagged is published'
+              rule: '!has(self.publishReleases) || (has(self.tagReleases) && self.tagReleases)'
           status:
             description: status defines the observed state of Crew
             properties:
@@ -170,7 +219,8 @@ spec:
                 description: |-
                   conditions: Ready says whether the Crew can pick up issues, and why not.
                   Released, when spec.tagReleases is set, says whether the Crew's next
-                  release went out, and why not.
+                  release went out, and why not. Published, when spec.publishReleases is
+                  set, says how publishing the last release went, and why it failed.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -263,6 +313,31 @@ spec:
                   commit:
                     description: commit is the commit the tag names.
                     type: string
+                  publish:
+                    description: |-
+                      publish is how publishing the release went, when spec.publishReleases is
+                      set.
+                    properties:
+                      message:
+                        description: message says what happened last, and why it failed.
+                        type: string
+                      state:
+                        description: |-
+                          state is Pending until the release runs succeed, Publishing while the
+                          release is copied, Published once it is out and Failed while it can't
+                          be; a failure is tried again each poll.
+                        enum:
+                        - Pending
+                        - Publishing
+                        - Published
+                        - Failed
+                        type: string
+                      url:
+                        description: url is the published release.
+                        type: string
+                    required:
+                    - state
+                    type: object
                   run:
                     description: |-
                       run is how the CI workflow runs the tag started went: Waiting until one
