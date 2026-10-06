@@ -1,0 +1,28 @@
+# make check from a second worktree on the same commit, after a pass in relay-2
+$ cd /tmp/claude-1000/-home-asus-www-github-com-jairjosafath-c4factory--claude-worktrees-relay-2/949faaa0-bc50-4b3d-b657-a1d4487d4ecc/scratchpad/wt166  # a second worktree on 26d2aef
+$ time make check
+make check: passed on tree 568db7a50ea4a3b65ea76dc11fec8c4e16c328d5 at 2026-10-06 01:56 in /home/asus/www/github.com/jairjosafath/c4factory/.claude/worktrees/relay-2 by otter-166 (cached); FORCE=1 to rerun
+
+real	0m2.079s
+user	0m0.104s
+sys	0m1.117s
+
+$ hack/check-cache_test.sh
+ok   nothing recorded: miss
+ok   tree: of a clean checkout, HEAD's tree
+ok   record: exit 0
+ok   recorded: hit
+ok   hit: says the tree, when, where and who
+ok   FORCE=1: miss
+ok   tracked byte changed: miss
+ok   changed back: hit
+ok   untracked file: miss
+ok   lookup leaves the index alone
+ok   ignored file: hit
+ok   staged change, worktree back: hit (the worktree counts)
+ok   other worktree, same tree: hit
+ok   make check, not cached: waits for a slot
+ok   make check, cached: exit 0 without a slot
+ok   make check, cached: says so
+ok   FORCE=1 make check: waits for a slot
+ok   make manifests check: not answered from the cache

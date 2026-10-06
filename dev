@@ -8,6 +8,7 @@
 #   ./dev setup --upgrade  download the newest tool versions again
 #   ./dev shell            open the project shell (zsh, everything set up)
 #   ./dev run CMD...       run one command inside the project environment
+#   ./dev clean            delete the Makefile tools left in each checkout's bin/
 #   ./dev nuke             delete this project's Kind clusters and all of .dev/
 #
 # VS Code runs "./dev setup" by itself when you open the folder
@@ -276,6 +277,30 @@ cmd_setup() {
   echo "Ready. Open a new terminal in VS Code, or run ./dev shell."
 }
 
+# --- clean ---------------------------------------------------------------------
+
+# The Makefile installs its tools once per device, in the main checkout's
+# .dev/make/bin. Before that, every checkout and worktree had its own copy in
+# bin/; delete those, and leave bin/ itself (make build writes bin/manager).
+# Run it once no checkout's branch predates the change: those still use bin/.
+cmd_clean() {
+  local wt freed=0 kb
+  while read -r wt; do
+    [ -d "$wt/bin" ] || continue
+    local old=()
+    mapfile -t old < <(find "$wt/bin" -mindepth 1 -maxdepth 1 \( -name 'controller-gen*' \
+      -o -name 'kustomize*' -o -name 'setup-envtest*' -o -name 'golangci-lint*' -o -name k8s \))
+    [ ${#old[@]} -gt 0 ] || continue
+    kb="$(du -sck "${old[@]}" | tail -1 | cut -f1)"
+    freed=$((freed + kb))
+    chmod -R u+w "${old[@]}" 2>/dev/null || true
+    rm -rf "${old[@]}"
+    info "$wt/bin: removed $((kb / 1024)) MB of old tools"
+  done < <(git -C "$C4_ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | grep . ||
+    echo "$C4_ROOT")
+  [ "$freed" -gt 0 ] || info "no old tools in any bin/"
+}
+
 # --- shell, run, nuke ----------------------------------------------------------
 
 cmd_shell() {
@@ -326,6 +351,7 @@ case "${1:-}" in
   setup) shift; cmd_setup "$@" ;;
   shell) shift; cmd_shell ;;
   run) shift; cmd_run "$@" ;;
+  clean) shift; cmd_clean ;;
   nuke) shift; cmd_nuke ;;
-  *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

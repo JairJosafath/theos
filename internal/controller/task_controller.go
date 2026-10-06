@@ -331,8 +331,7 @@ func (r *TaskReconciler) noFreeSlot(ctx context.Context, task *c4v1alpha1.Task) 
 			waiting = append(waiting, model.SlotWaiter{Name: t.Namespace + "/" + t.Name, Since: t.Status.SlotWaitSince.Time})
 		}
 	}
-	free := r.MaxSandboxes - len(sandboxes.Items)
-	return !model.HasSlotTurn(task.Namespace+"/"+task.Name, r.now(), waiting, free), nil
+	return model.NoFreeSlot(task.Namespace+"/"+task.Name, r.now(), waiting, r.MaxSandboxes, len(sandboxes.Items)), nil
 }
 
 // conflicted reports whether the Task's pull request can no longer merge

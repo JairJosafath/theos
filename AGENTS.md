@@ -25,7 +25,9 @@ task. Read the rest when the task needs it:
 
 Business rules live in `internal/model` and `internal/scaffold` and must not
 import Kubernetes, controller-runtime, `net/http` or `api/`; `make lint` enforces
-the layering. Run `make check` before finishing a change.
+the layering. Run `make check` before finishing a change; a tree that already
+passed on this device answers from the cache, which counts as a pass
+(`FORCE=1 make check` reruns it).
 
 ## Critical Rules
 
@@ -153,7 +155,11 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   minute of an issue becoming ready. When nothing is ready, it starts a triage
   session (`hack/relay.sh --triage`) that readies the sound `status/proposed`
   issues and comments on the others what they lack; `status/needs-human`
-  stays the user's.
+  stays the user's. A usage limit or a failed login pauses the relay until it
+  resets (`.relay/paused-until`); an issue whose sessions end three times in a
+  row without a handoff or a commit goes to `status/needs-human`. A session
+  whose transcript stops changing for 45 minutes (`RELAY_IDLE`) is ended and
+  counts as one of those.
 - **On the cluster device, memory is the limit.** A session at rest is cheap;
   heavy jobs (`make check`, `test`, `lint`, `docker-build`, `deploy`, `e2e`) are
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
