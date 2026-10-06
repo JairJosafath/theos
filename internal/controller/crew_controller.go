@@ -82,6 +82,9 @@ type CrewReconciler struct {
 	runSaid sync.Map
 	// runErrSaid is, by Crew UID, the last error reading the release run logged.
 	runErrSaid sync.Map
+	// runLateSaid is, by Crew UID, the tag of the last release whose overdue
+	// runs were reported.
+	runLateSaid sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
@@ -171,13 +174,8 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 		// Before the Crew picks issues: a prepare issue filed now keeps its
 		// release the current one, so the next release's work waits for it.
-		if crew.Spec.TagReleases {
-			r.watchReleaseRun(ctx, &crew, status, provider, repo)
-		}
-		if crew.Spec.TagReleases || crew.Spec.PrepareReleases {
-			if filed := r.tagRelease(ctx, &crew, status, provider, repo, containerTasks); filed != nil {
-				facts.Issues = append(facts.Issues, *filed)
-			}
+		if filed := r.release(ctx, &crew, status, provider, repo, containerTasks); filed != nil {
+			facts.Issues = append(facts.Issues, *filed)
 		}
 	}
 

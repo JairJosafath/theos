@@ -28,7 +28,9 @@ release run attached its files. GitHub issue #116, filed as a follow-up of
   error, not each poll.
 - **Known limit.** Only the last release is watched: a release tagged before
   the previous one's runs ended leaves those runs unwatched. A run that never
-  starts (no runner for its labels) stays `Waiting` or `Running`, unreported.
+  starts (no runner for its labels) stays `Waiting` or `Running`; since #209,
+  runs not ended an hour after tagging are a Warning Event `ReleaseRunOverdue`
+  and a note on the `Released` condition.
 
 ## Steps (one pull request)
 
