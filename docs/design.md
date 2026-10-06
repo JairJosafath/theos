@@ -530,7 +530,7 @@ The webshop sample uses the smallest set of seeded templates that exercises ever
 
 The sample in `config/samples/webshop/` tells a small story: a `customer` Person uses `webshop-core`, whose `orders-api` service reads and writes the `orders-db` DataStore.
 
-The agent loop runs on a second project, the e2e fixture `apps` in `test/e2e/testdata/apps`: one hello-world Container scaffolded from the templates `hello` (Framework) and `hello-standard` (Standard), whose CI runner and stand-in agent use the minimal `c4factory/base:dev` toolchain (Node, bash, git, make). `make e2e` builds no Flutter or Go toolchain image.
+The agent loop runs on a second project, the e2e fixture `apps` in `test/e2e/testdata/apps`: one hello-world page scaffolded from the templates `hello-html` (Framework) and `hello-html-standard` (Standard, the agents' role guides), whose CI runner and stand-in agent use the minimal `c4factory/base:dev` toolchain (Node, bash, git, make). `make e2e` builds no Flutter or Go toolchain image.
 
 Make targets:
 

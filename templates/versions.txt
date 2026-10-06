@@ -10,3 +10,4 @@ gitea-release v1.0.0
 hello v1.0.0
 hello-standard v1.0.1
 hello-html v1.0.0
+hello-html-standard v1.0.0

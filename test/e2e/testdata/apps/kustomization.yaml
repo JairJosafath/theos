@@ -1,4 +1,4 @@
-# The e2e fixture: one hello-world Container scaffolded from the seeded templates.
+# The e2e fixture: one hello-world page (hello-html) scaffolded from the seeded templates.
 # Needs `make gitea seed runner-base agent-sandbox agent-image-base` first. The stand-in
 # Task in tasks/ is applied by the e2e test itself.
 apiVersion: kustomize.config.k8s.io/v1beta1

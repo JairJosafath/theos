@@ -40,11 +40,11 @@ func scaffoldCommits(repo string) int {
 	return n
 }
 
-// The Briefs milestone (plans/done/brief.md, step 8): a Brief taken through two
-// rounds by the stand-in planner, which plans from the catalog, so the whole
-// loop runs without a Claude token: the Plan Task's sandbox, the plan on the
-// brief repository, the check, the apply, the scaffold, the Crew and the
-// issues. `make e2e` builds everything it uses.
+// A Brief plans the hello page: the stand-in planner plans from the fixture's
+// catalog, so the loop runs without a model key: the Plan Task's sandbox, the
+// plan on the brief repository, the check, the apply, the scaffold of a
+// Container on hello-html, the Crew and its issue. Prompt rounds are covered
+// below Kind (StandInPlan's table test and brief_round_test.go).
 var _ = Describe("Briefs", Ordered, func() {
 	var ns, name string
 	var container c4v1alpha1.Container
@@ -75,7 +75,7 @@ var _ = Describe("Briefs", Ordered, func() {
 		})
 	})
 
-	It("plans the idea: a Container, its Crew and an issue the Crew picks up", func() {
+	It("plans a Container on hello-html, its Crew and an issue the Crew picks up", func() {
 		var brief c4v1alpha1.Brief
 		Eventually(func(g Gomega) {
 			g.Expect(k8s.Get(ctx, key(ns, name), &brief)).To(Succeed())
@@ -93,7 +93,8 @@ var _ = Describe("Briefs", Ordered, func() {
 
 		Expect(k8s.Get(ctx, key(ns, name), &container)).To(Succeed())
 		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
-		Expect(container.Spec.FrameworkRef.Name).To(Equal("hello"))
+		Expect(container.Spec.FrameworkRef.Name).To(Equal("hello-html"))
+		Expect(container.Spec.StandardRef).To(HaveField("Name", "hello-html-standard"))
 		Expect(scaffoldCommits(name)).To(Equal(1))
 
 		By("the Crew starting a Task for the issue")
@@ -106,33 +107,7 @@ var _ = Describe("Briefs", Ordered, func() {
 			})).To(Succeed())
 			g.Expect(tasks.Items).To(HaveLen(1))
 		}).WithTimeout(15 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
-		// The rest is the Crew's loop, which the Agent factory milestone covers.
+		// The rest is the Crew's loop, which the Task spec covers.
 		kubectl("-n", ns, "patch", "crew", name, "--type=merge", "-p", `{"spec":{"paused":true}}`)
-	})
-
-	It("plans a follow-up prompt as an issue, and changes no scaffolded Container", func() {
-		prompt := "Support ValidatingAdmissionPolicy files first."
-		kubectl("-n", ns, "patch", "brief", name, "--type=merge", "-p",
-			fmt.Sprintf(`{"spec":{"prompts":[%q]}}`, prompt))
-
-		var brief c4v1alpha1.Brief
-		Eventually(func(g Gomega) {
-			g.Expect(k8s.Get(ctx, key(ns, name), &brief)).To(Succeed())
-			g.Expect(brief.Status.Phase).NotTo(BeElementOf(c4v1alpha1.BriefFailed, c4v1alpha1.BriefNeedsInput),
-				"status: %+v", brief.Status)
-			g.Expect(brief.Status.Round).To(Equal(int32(2)))
-			g.Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(15 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
-		Expect(brief.Status.Issues).To(ContainElement(And(
-			HaveField("Repository", "apps/"+name), HaveField("Round", int32(2)),
-			HaveField("Title", "Stand-in: "+prompt))))
-
-		var containers c4v1alpha1.ContainerList
-		Expect(k8s.List(ctx, &containers, client.InNamespace(ns))).To(Succeed())
-		Expect(containers.Items).To(HaveLen(1))
-		after := containers.Items[0]
-		Expect(after.Generation).To(Equal(container.Generation), "round 2 changed the Container's spec")
-		Expect(after.Status.ScaffoldedFrom).To(Equal(container.Status.ScaffoldedFrom))
-		Expect(scaffoldCommits(name)).To(Equal(1))
 	})
 })

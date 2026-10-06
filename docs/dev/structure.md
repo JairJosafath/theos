@@ -42,6 +42,7 @@ test/chart/                        The chart against envtest: its upgrade-only h
 test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox)
 test/e2e/                          End-to-end tests against the Kind cluster (make e2e)
 test/e2e/testdata/apps/            The e2e fixture project: one hello-world Container, Agents and Tasks
+test/e2e/standin/                  The guard that keeps the e2e fixture's Agents on the stand-in (runs in make test)
 ui/                                Read-only UI (React + a GET-only proxy)
 docs/                              Design, architecture, plans and screenshots
 Makefile                           Build, test, cluster and deploy commands
