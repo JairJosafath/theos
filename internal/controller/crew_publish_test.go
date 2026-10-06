@@ -9,18 +9,41 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"context"
 	"crypto/rand"
+	"errors"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
+
+// unreadableSecrets holds the Secrets, namespace/name, the Crew reconciler is
+// refused, as if its role lacked them.
+var unreadableSecrets sync.Map
+
+// secretReader is the Crew reconciler's API reader, refused the Secrets of
+// unreadableSecrets.
+type secretReader struct{ client.Reader }
+
+func (r secretReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object,
+	opts ...client.GetOption) error {
+	if _, refused := unreadableSecrets.Load(key.String()); refused {
+		if _, ok := obj.(*corev1.Secret); ok {
+			return apierrors.NewForbidden(corev1.Resource("secrets"), key.Name, errors.New("the role lacks it"))
+		}
+	}
+	return r.Reader.Get(ctx, key, obj, opts...)
+}
 
 // publishingCrew makes a release v0.1.0 of orders-api whose runs succeeded,
 // with files in Gitea, and a Crew that tags it and publishes it to repository
@@ -149,6 +172,25 @@ var _ = Describe("Crew publishing releases", func() {
 		Expect(githubFake.releases(repository)).To(BeEmpty())
 
 		mustCreate(publishSecret(ns, token))
+		publishedTo(ns, repository, "- Validate orders (#1)\n", files)
+	})
+
+	It("fails while its Secret can't be read, and publishes once it can", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		token := rand.Text()
+		githubFake.addRepository(repository, token)
+		mustCreate(publishSecret(ns, token))
+		secret := ns + "/orders-api-github"
+		unreadableSecrets.Store(secret, true)
+		DeferCleanup(func() { unreadableSecrets.Delete(secret) })
+		files := publishingCrew(ns, repository)
+
+		publishFailedWith(ns, "SecretUnreadable", `Secret orders-api-github can't be read: `+
+			`secrets "orders-api-github" is forbidden: the role lacks it`)
+		Expect(githubFake.releases(repository)).To(BeEmpty())
+
+		unreadableSecrets.Delete(secret)
 		publishedTo(ns, repository, "- Validate orders (#1)\n", files)
 	})
 

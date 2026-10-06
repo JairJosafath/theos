@@ -141,7 +141,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			StandardChangeRecheck: time.Second},
 		&BriefReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
 			NeedsInputRecheck: time.Second},
-		&CrewReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, PollInterval: time.Second,
+		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: gitFake, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {

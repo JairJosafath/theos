@@ -292,6 +292,7 @@ says what to fix:
 | --- | --- |
 | `Waiting` | The release runs haven't succeeded yet; a failed run is published once a re-run succeeds. |
 | `SecretMissing` | Create the Secret of step 2, in the Crew's namespace, with the key `token`. |
+| `SecretUnreadable` | The operator couldn't read the Secret (Forbidden, a timeout); the message says why. Check the operator's role can read Secrets in the Crew's namespace. |
 | `Unauthorized` | GitHub refused the token: expired, revoked, or without *Contents: Read and write*. Make a new one and replace the Secret. |
 | `RepositoryNotFound` | No such repository, or the token can't see it: check `repository` and the token's *Repository access*. |
 | `EmptyRepository` | The repository has no commit to tag; push one. |
