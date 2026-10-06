@@ -25,12 +25,21 @@ tier 5 needs a Kind cluster, and only issues that need it carry
 output is the evidence for logic; Kind evidence (`kubectl get` output,
 screenshots of the running factory) is needed only for tier 5 behaviour.
 
+The scripts in `hack/` (the relay, the heavy-job slots, the check cache, the
+cluster pool, the seed) have shell tests of their own, `hack/**/*_test.sh`.
+Each fakes what it calls (docker, kind, kubectl, gh, claude, curl), so none
+needs a cluster or the network; `make test-hack` runs them all at once
+(`hack/test-hack.sh`), and `make check` runs that. A new `*_test.sh` under
+`hack/` joins it by its name alone; keep it free of a real cluster and the
+network.
+
 ## Testing & Development
 
 ```bash
 make test                # Unit and envtest tests (real K8s API + etcd, no cluster needed)
-make check               # manifests, generate, fmt, vet, lint, validate-yaml and test
+make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack and test
 make validate-yaml       # The YAML against the built-in schemas and our CRDs, offline
+make test-hack           # The shell tests of hack/ (hack/**/*_test.sh), all at once, about a minute
 make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client

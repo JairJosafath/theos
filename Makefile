@@ -90,6 +90,12 @@ endif
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
+# The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
+# calls, so none needs a cluster or the network. make check runs them.
+.PHONY: test-hack
+test-hack: ## Run the shell tests of the scripts in hack/.
+	@hack/test-hack.sh
+
 # The e2e tests run against the dedicated Kind cluster $(KIND_CLUSTER), never
 # another one. make e2e builds everything it needs first; it's safe to repeat.
 # KIND_CLUSTER defaults to the pool cluster this checkout leased
@@ -109,7 +115,7 @@ test-e2e: e2e ## Same as e2e.
 # generate and fmt, so a tree with stale generated files never hits the cache.
 .PHONY: check
 ifeq ($(CHECK_CACHED),)
-check: manifests generate fmt vet lint validate-yaml test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test.
+check: manifests generate fmt vet lint validate-yaml test-hack test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests too.
 	@git diff --quiet -- config/crd config/rbac api || \
 		{ echo "Generated files changed; commit them with your change:"; git diff --stat -- config/crd config/rbac api; }
 	@hack/check-cache.sh record
