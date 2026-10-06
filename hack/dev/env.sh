@@ -5,9 +5,10 @@
 : "${C4_ROOT:?set C4_ROOT to the repository root before sourcing hack/dev/env.sh}"
 export C4_DEV="$C4_ROOT/.dev"
 
-# Tools downloaded by ./dev setup, then the Makefile's bin/, first on PATH.
+# Tools downloaded by ./dev setup, then the Makefile's (versioned names), first
+# on PATH.
 for _c4_dir in "$C4_DEV/tools/node/bin" "$C4_DEV/tools/go/bin" "$C4_DEV/go/bin" \
-  "$C4_DEV/npm/bin" "$C4_DEV/bin" "$C4_ROOT/bin"; do
+  "$C4_DEV/npm/bin" "$C4_DEV/bin" "$C4_DEV/make/bin"; do
   case ":$PATH:" in
     *":$_c4_dir:"*) ;;
     *) PATH="$_c4_dir:$PATH" ;;

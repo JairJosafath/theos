@@ -45,8 +45,8 @@ a checkout and locally built `:dev` images (`imagePullPolicy: Never`).
 - **Runners:** `runners.base` and `runners.go` (each `enabled`, default on with
   Gitea, `image`, `resources`) are Deployments in Gitea's namespace on the
   released `gitea-runner-base` and `gitea-runner-go` images. Their
-  registration token is the chart's, in Secret `gitea-runner` (generated on
-  install, kept on upgrade), which Gitea takes as its global token on start
+  registration token is in Secret `gitea-runner`, which Gitea's pod makes in
+  the cluster when it is missing (#158), which Gitea takes as its global token on start
   (`GITEA_RUNNER_REGISTRATION_TOKEN`); the seed leaves it alone
   (`RUNNER_SECRET=""`). So the runners don't wait for a hook, and
   `helm install --wait` works. The `go` runner

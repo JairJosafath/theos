@@ -7,6 +7,10 @@
 #   hack/gitea-local.sh fixtures   what the gitprovider integration tests read: the
 #                                  templates organization with its pinned tags (the
 #                                  seed, without Secrets) and the webshop organization
+#   hack/gitea-local.sh seed       what `make seed` does in Kind, without kubectl: the
+#                                  templates organization with its pinned tags, and
+#                                  the webshop organization with its token in
+#                                  .gitea-local/webshop.env (hack/seed/seed.sh, file mode)
 #   hack/gitea-local.sh port       the port this checkout's Gitea listens on
 #
 # It runs the same Gitea version as config/gitea, with SQLite under .gitea-local/
@@ -237,7 +241,17 @@ fixtures() {
   fi
 }
 
+# seed: hack/seed/seed.sh against this Gitea, its credentials files in DIR.
+seed() {
+  running && healthy || die "Gitea is not running; run make gitea-local"
+  # shellcheck disable=SC1090
+  set -a && . "$CREDENTIALS" && set +a
+  GITEA_URL=$C4_GITEA_URL GITEA_USERNAME=$C4_GITEA_USERNAME GITEA_PASSWORD=$C4_GITEA_PASSWORD \
+    TEMPLATES_DIR=$TOP/templates PROJECTS=${PROJECTS:-webshop} CREDENTIALS_DIR=$DIR \
+    "$TOP/hack/seed/seed.sh"
+}
+
 case ${1:-} in
-start | stop | fixtures | port) "$1" ;;
-*) die "usage: $0 start|stop|fixtures|port" ;;
+start | stop | fixtures | seed | port) "$1" ;;
+*) die "usage: $0 start|stop|fixtures|seed|port" ;;
 esac
