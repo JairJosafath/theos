@@ -305,6 +305,7 @@ func main() {
 		Scheme:    mgr.GetScheme(),
 		APIReader: mgr.GetAPIReader(),
 		Git:       gitprovider.Client{},
+		Recorder:  mgr.GetEventRecorder("brief"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "brief")
 		os.Exit(1)

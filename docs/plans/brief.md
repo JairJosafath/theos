@@ -106,8 +106,8 @@ What B3 and B5 leave open, settled in step 3:
   it and `briefRef`; Go keeps it a value (`omitzero`), so every existing
   reader of `containerRef.name` is unchanged, and the Task-by-Container index
   skips the empty one.
-- **The Task controller returns at once for a Plan Task** until step 5 gives
-  the Brief its rounds: no status, no owner, no labels.
+- **The Task controller left a Plan Task alone** until step 5 gave the Brief
+  its rounds; step 5 runs it (see below).
 - **The runner, `C4_ROLE=plan`,** takes `C4_BRIEF` in place of `C4_GOAL` and
   `C4_CONTAINER`; its branch is `plan/<C4_ROUND>`, and any other `C4_BRANCH`
   is refused. Each run starts from the base branch (`main`), removes `plan/`
@@ -162,9 +162,103 @@ What B4 leaves open, settled in step 4 (`internal/model/brief_workspace.go`,
   records the repository it was given access to, so a moved repository gets
   its bot again.
 - **Left for step 5:** B16's deletion of the bot user in Gitea (the Secret
-  already goes with the Brief); refusing a plan that creates a Container named
+  already goes with the Brief; done in #326: a `c4.factory.io/brief-bot`
+  finalizer, put on before the bot is made, deletes the user through
+  `RemoveAgentAccess`, and lets the Brief go without it when its GitProvider
+  or credentials are gone); refusing a plan that creates a Container named
   `brief-*`; and NeedsInput from `needs-input.md`, which the operator's
   "has what it needs" must not clear: step 5 clears only the reasons it set.
+
+## Step 5: rounds, applying and filing
+
+What B3, B8 and B10-B13 leave open, settled in step 5
+(`internal/controller/brief_round.go`, `brief_apply.go`, `task_plan.go`,
+`internal/model/brief_round.go`):
+
+- **A round is one Plan Task,** `<brief>-plan-<round>`, owned by the Brief,
+  labelled `c4.factory.io/brief: <brief>` and `c4.factory.io/brief-round:
+  <round>`, its agent the Brief's planner. Its status rounds are the
+  planner's tries at that Brief round: `status.round` counts tries, and every
+  try pushes to the same `plan/<round>` (`C4_ROUND` is the Brief's round).
+- **The Task controller runs a Plan Task** with the Implement Task's machinery
+  (`NextTaskStep` with `Plan` set): no Container, protection or queue to wait
+  for; the sandbox clones the brief repository with the bot's Secret
+  `brief-<name>-git`; agent slots, `AgentUnavailable`, reruns and `maxRounds`
+  as for any Task. A try that pushes a plan goes to `Checking`, where it waits
+  for the Brief's verdict.
+- **The verdict is two annotations on the Task,** written by the Brief:
+  `c4.factory.io/plan-checked: <commit>` and, when refused,
+  `c4.factory.io/plan-refusals: <reasons>`. The Task controller acts on a
+  verdict for its `status.commit` only: accepted ends the Task `Merged`
+  ("the Brief accepted the plan"); refused starts its next try with the
+  reasons as feedback, or fails it after the planner's `maxRounds`. So the
+  Brief never writes a Task's status, and each controller keeps its own.
+- **A plan that doesn't parse** is refused like one `CheckPlan` refuses, with
+  the parse error as the reason. A plan with `needs-input.md` is accepted
+  unchecked and applies nothing.
+- **When a round starts:** when no round runs and either none ran yet or
+  `spec.prompts` has more than the last round took. The Brief records how many
+  it took in `status.roundPrompts` (added to B13) when it starts the round, so
+  one appended meanwhile waits for the next; `promptsPlanned` becomes it only
+  when the round applies. A round that failed or asked for input is over too:
+  the next prompt starts a new round, which takes every prompt not yet planned.
+- **The phase is derived,** each reconcile, from the round's Task, the
+  history and the Planned condition: no round yet `Pending`; Task running
+  `Planning`; Task `Merged`, round not in history `Applying`; round in history
+  `Planned`, `NeedsInput` or `Failed` as its outcome left the Planned
+  condition (reasons `Applied`, `PlannerNeedsInput`, `RoundFailed`). The
+  operator's own NeedsInput (below) shows over any of them while it lasts, and
+  clears only its own reasons, never the planner's.
+- **The operator's NeedsInput (B10):** before starting a round, a missing
+  planner Agent or an empty catalog (no Framework installed); before applying,
+  a missing implementer or reviewer Agent, or a catalog entry the plan names
+  that has gone; the GitProvider and its Secret as step 4. Nothing is applied
+  while it lasts; the Brief looks again each minute and on Agent changes.
+- **Applying (B8)** reads the plan again at the Task's commit, in order:
+  Project, Persons, SoftwareSystems, DataStores, Relationships, Containers.
+  Absent objects are created with the labels `c4.factory.io/brief` and
+  `c4.factory.io/brief-round`; present ones get only their story text. Every
+  step is idempotent, so a restart applies the rest.
+- **Then, per new Container and per Container an issue targets,** once it is
+  `Ready` (the round waits for each; a Container that isn't Ready keeps it
+  `Applying`, saying which): a new one (labelled with this round) gets its Crew first (B9; an existing Crew of that
+  name is left alone), then the round's issues for it, each found by its
+  marker among the repository's open issues before it is filed, and recorded
+  in `status.issues` right after. Labels: the planner's, with every
+  `status/*` replaced by `status/ready`. Crews have no designer yet, so
+  `CurrentModel.Designer` is false and a design idea needs acceptance criteria.
+- **Merging the plan** is a commit on the brief repository's `main` holding
+  `plan/` as on `plan/<round>` (the earlier round's plan files removed), pushed
+  by the operator like the workspace; an unchanged `plan/` means it merged.
+  Then the round is recorded: history entry, `choices`, `promptsPlanned`,
+  `created` (every story object and Crew labelled with the Brief), Planned
+  True, Event `Planned`.
+- **Events:** `Planned` when a round applies, `PlanRefused` per refused try,
+  `NeedsInput` when the Brief starts waiting for the person.
+- **Deleting a Brief** deletes its Tasks (owned) and its bot's Secret; the
+  model, the Crews and the repository carry no ownerReference to it and stay.
+  Deleting the bot user in Gitea needs a provider call that doesn't exist yet,
+  filed as its own issue.
+- **A plan creating a Container named `brief-*`** is refused (`CheckPlan`).
+- **Settled while building it:** a round's start (`round`, `roundPrompts`) is
+  written to the status before its Task is made, guarded by the Brief's
+  `resourceVersion`, so a stale cache can't start a round twice. Containers
+  are created a reconcile after the Relationships that start from them, once
+  the cache the Container controller shares shows them, so the Connector is
+  in the scaffold. When a round ends the workspace is written again at once,
+  and a prompt that waited starts the next round in the same reconcile.
+  A plan's labels the factory doesn't define are made in grey (`#ededed`).
+- **After review:** while a round runs, `brief.md` lists only the prompts it
+  took, so a later try never plans one meant for the next round. The idea
+  counts as planned once a round applied (each history entry keeps its
+  `outcome`, and the planner's question as `needsInput`, which comes back
+  when the operator's own wait ends). Each filed issue keeps its `round` and
+  `n`, so one recorded is never filed again, even once closed; the marker
+  covers only the window before the status write. Applying runs `CheckPlan`
+  again first and fails the round with the reasons when the namespace
+  changed. A plan the brief repository doesn't show at the Task's commit
+  after 10 minutes in `Checking` is refused ("push it again"). A round start
+  that finds the Brief stale writes nothing and reads it again.
 
 ## Review focus
 

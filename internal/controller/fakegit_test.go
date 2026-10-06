@@ -21,8 +21,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"testing"
 
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -224,25 +226,58 @@ func (g *fakeGit) newSHA() string {
 	return fmt.Sprintf("5a%038d", g.shas)
 }
 
-// ReadFiles reads main, the only branch whose files the fake keeps.
+// ReadFiles reads main, or a branch the fake has: main's files with the
+// edits PushBranch recorded for it, at the branch's head. A path ending in "/"
+// reads every file below that directory.
 func (p *fakeProvider) ReadFiles(_ context.Context, repo gitprovider.Repository, branch string,
 	paths []string) (scaffold.Tree, string, error) {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
-	r := p.git.repos[repo.Owner+"/"+repo.Name]
-	if branch != gitprovider.DefaultBranch {
-		return nil, "", fmt.Errorf("the fake reads %s only, not %s", gitprovider.DefaultBranch, branch)
-	}
+	key := repo.Owner + "/" + repo.Name
+	r := p.git.repos[key]
 	if r == nil || len(r.commits) == 0 {
 		return nil, "", fmt.Errorf("clone %s at %s: branch not found", repo.CloneURL, branch)
 	}
+	tree, sha := r.files, r.commits[len(r.commits)-1].Hash
+	if branch != gitprovider.DefaultBranch {
+		s := p.git.agentState()
+		head, ok := s.branches[key+"@"+branch]
+		if !ok {
+			return nil, "", fmt.Errorf("clone %s at %s: branch not found", repo.CloneURL, branch)
+		}
+		tree, sha = withEdits(r.files, s.edits[key+"@"+branch]), head
+	}
 	files := scaffold.Tree{}
 	for _, filePath := range paths {
-		if f, ok := r.files[filePath]; ok {
+		if dir, ok := strings.CutSuffix(filePath, "/"); ok {
+			for name, f := range tree {
+				if strings.HasPrefix(name, dir+"/") {
+					files[name] = f
+				}
+			}
+			continue
+		}
+		if f, ok := tree[filePath]; ok {
 			files[filePath] = f
 		}
 	}
-	return files, r.commits[len(r.commits)-1].Hash, nil
+	return files, sha, nil
+}
+
+// withEdits is files with edits applied: a path's new file, or nil to remove it.
+func withEdits(files scaffold.Tree, edits map[string]*scaffold.File) scaffold.Tree {
+	out := maps.Clone(files)
+	if out == nil {
+		out = scaffold.Tree{}
+	}
+	for filePath, f := range edits {
+		if f == nil {
+			delete(out, filePath)
+		} else {
+			out[filePath] = *f
+		}
+	}
+	return out
 }
 
 // PushBranch records branch with what its commit changes on main, which a
@@ -342,15 +377,7 @@ func (g *fakeGit) commitToMain(owner, name string, files scaffold.Tree) {
 // removes, each path of edits.
 func (g *fakeGit) applyToMain(key string, edits map[string]*scaffold.File, message string) {
 	r := g.repos[key]
-	files := maps.Clone(r.files)
-	for filePath, f := range edits {
-		if f == nil {
-			delete(files, filePath)
-		} else {
-			files[filePath] = *f
-		}
-	}
-	r.files = files
+	r.files = withEdits(r.files, edits)
 	r.commits = append(r.commits, gitprovider.Commit{Hash: g.newSHA(), Message: message})
 }
 
@@ -416,6 +443,32 @@ func (g *fakeGit) pushBranch(owner, name, branch, sha string) {
 	delete(g.agentState().edits, owner+"/"+name+"@"+branch)
 }
 
+// pushPlan pushes files as the plan of a Brief round, as the planner's run
+// would: branch plan/<round> is main without its plan/ and with files instead.
+// It returns the branch's head.
+func (g *fakeGit) pushPlan(owner, name string, round int, files scaffold.Tree) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	key := owner + "/" + name
+	edits := map[string]*scaffold.File{}
+	if r := g.repos[key]; r != nil {
+		for filePath := range r.files {
+			if strings.HasPrefix(filePath, "plan/") {
+				edits[filePath] = nil
+			}
+		}
+	}
+	for filePath, f := range files {
+		edits[filePath] = &f
+	}
+	sha := g.newSHA()
+	s := g.agentState()
+	branch := model.PlanBranch(round)
+	s.branches[key+"@"+branch] = sha
+	s.edits[key+"@"+branch] = edits
+	return sha
+}
+
 func (g *fakeGit) protectedBranches(owner, name string) []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -423,6 +476,8 @@ func (g *fakeGit) protectedBranches(owner, name string) []string {
 }
 
 // agentUser returns the bot user given write access to owner/name.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) agentUser(owner, name string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -517,6 +572,14 @@ func (p *fakeProvider) EnsureAgentAccess(_ context.Context, repo gitprovider.Rep
 	defer p.git.mu.Unlock()
 	p.git.agentState().agents[repo.Owner+"/"+repo.Name] = user
 	return gitprovider.Credentials{Username: user, Token: rand.Text()}, nil
+}
+
+func (p *fakeProvider) RemoveAgentAccess(_ context.Context, _ gitprovider.Repository, user string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	// Deleting the user takes it off every repository.
+	maps.DeleteFunc(p.git.agentState().agents, func(_, u string) bool { return u == user })
+	return nil
 }
 
 func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repository, head, _, _, _ string) (gitprovider.PullRequest, error) {
@@ -702,4 +765,43 @@ func (p *fakeProvider) CheckLog(_ context.Context, _ gitprovider.Repository, _ s
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	return p.git.agentState().log, nil
+}
+
+// The fake reads a plan branch as the planner leaves it: main with its plan/
+// replaced, at the branch's head.
+func TestFakeGitReadsAPlanBranch(t *testing.T) {
+	g := &fakeGit{repos: map[string]*fakeRepo{}, histories: map[string]int{}, hangs: map[string]chan struct{}{}}
+	p, _ := g.Provider(gitprovider.Config{URL: "http://gitea", Owner: "apps"})
+	ctx := context.Background()
+	repo, _ := p.EnsureRepository(ctx, "brief-cel-lens", "")
+	if _, err := p.PushInitialCommit(ctx, repo, scaffold.Tree{
+		"brief.md":       {Data: []byte("idea\n")},
+		"plan/plan.yaml": {Data: []byte("round 1\n")},
+		"plan/old.md":    {Data: []byte("gone in round 2\n")},
+	}, "Workspace", gitprovider.Signature{}); err != nil {
+		t.Fatal(err)
+	}
+	sha := g.pushPlan("apps", "brief-cel-lens", 2, scaffold.Tree{
+		"plan/plan.yaml":         {Data: []byte("round 2\n")},
+		"plan/issues/orders.yml": {Data: []byte("- title: x\n")},
+	})
+
+	files, at, err := p.ReadFiles(ctx, repo, "plan/2", []string{"plan/", "brief.md", "missing/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := scaffold.Tree{
+		"brief.md":               {Data: []byte("idea\n")},
+		"plan/plan.yaml":         {Data: []byte("round 2\n")},
+		"plan/issues/orders.yml": {Data: []byte("- title: x\n")},
+	}
+	if at != sha || !maps.EqualFunc(files, want, func(a, b scaffold.File) bool { return string(a.Data) == string(b.Data) }) {
+		t.Errorf("ReadFiles(plan/2) = %v at %s, want %v at %s", files, at, want, sha)
+	}
+	if main, _, _ := p.ReadFiles(ctx, repo, gitprovider.DefaultBranch, []string{"plan/"}); len(main) != 2 {
+		t.Errorf("ReadFiles(main) = %v, want main's own plan/", main)
+	}
+	if _, _, err := p.ReadFiles(ctx, repo, "plan/3", []string{"plan/"}); err == nil {
+		t.Error("ReadFiles() of a branch the fake doesn't have succeeded")
+	}
 }

@@ -125,6 +125,9 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 			return "", fmt.Errorf("protecting %s: %w", gitprovider.DefaultBranch, err)
 		}
 	}
+	if err := r.holdForBot(ctx, brief); err != nil {
+		return "", err
+	}
 	if _, err := ensureAgentSecret(ctx, r.Client, r.APIReader, brief, briefGitSecret(brief.Name),
 		map[string]string{c4v1alpha1.LabelProject: brief.Namespace, c4v1alpha1.LabelBrief: brief.Name},
 		map[string]string{"repository": repo.CloneURL},
@@ -135,6 +138,54 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 		return "", err
 	}
 	return repo.WebURL, nil
+}
+
+// briefBotFinalizer keeps a Brief until the operator deleted its bot on the
+// Git host.
+const briefBotFinalizer = "c4.factory.io/brief-bot"
+
+// holdForBot puts briefBotFinalizer on the Brief before it has a bot, so its
+// deletion waits for deleteBot.
+func (r *BriefReconciler) holdForBot(ctx context.Context, brief *c4v1alpha1.Brief) error {
+	if controllerutil.ContainsFinalizer(brief, briefBotFinalizer) {
+		return nil
+	}
+	// Patching only the metadata of a copy keeps brief's status for its own patch.
+	held := brief.DeepCopy()
+	controllerutil.AddFinalizer(held, briefBotFinalizer)
+	if err := r.Patch(ctx, held, client.MergeFrom(brief)); err != nil {
+		return err
+	}
+	brief.Finalizers, brief.ResourceVersion = held.Finalizers, held.ResourceVersion
+	return nil
+}
+
+// deleteBot deletes the bot of a Brief being deleted from its Git host, then
+// lets the Brief go. Its repository and the model it made stay (B16). With
+// its GitProvider or credentials gone there is no host to reach, and the bot
+// is left.
+func (r *BriefReconciler) deleteBot(ctx context.Context, brief *c4v1alpha1.Brief) error {
+	if !controllerutil.ContainsFinalizer(brief, briefBotFinalizer) {
+		return nil
+	}
+	log := logf.FromContext(ctx)
+	user := model.AgentUsername(brief.Namespace, model.BriefRepository(brief.Name))
+	provider, err := r.briefGit(ctx, brief)
+	if sentence, unreachable := needsInputSentence(err); unreachable {
+		log.Info("Left the Brief's bot on the Git host", "user", user, "reason", sentence)
+	} else if err != nil {
+		return err
+	} else {
+		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+		defer cancel()
+		if err := provider.RemoveAgentAccess(gitCtx, provider.Repository(model.BriefRepository(brief.Name)), user); err != nil {
+			return err
+		}
+		log.Info("Deleted the Brief's bot", "user", user)
+	}
+	orig := brief.DeepCopy()
+	controllerutil.RemoveFinalizer(brief, briefBotFinalizer)
+	return client.IgnoreNotFound(r.Patch(ctx, brief, client.MergeFrom(orig)))
 }
 
 // writeWorkspace puts files on main: as its first commit in an empty
@@ -167,12 +218,18 @@ func writeWorkspace(ctx context.Context, provider gitprovider.Provider, repo git
 // gatherWorkspace reads what the planner needs: the Brief, the namespace's
 // story, its catalog and its Containers' open issues.
 func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1.Brief) (model.BriefWorkspace, error) {
+	status := &brief.Status
+	outcomes := make([]string, 0, len(status.History))
+	for _, h := range status.History {
+		outcomes = append(outcomes, h.Outcome)
+	}
+	roundRuns := status.Round > 0 && !roundOver(status)
 	ws := model.BriefWorkspace{
 		Brief:          brief.Name,
 		Idea:           brief.Spec.Idea,
-		Prompts:        brief.Spec.Prompts,
-		PromptsPlanned: int(brief.Status.PromptsPlanned),
-		IdeaPlanned:    len(brief.Status.History) > 0,
+		Prompts:        model.WorkspacePrompts(brief.Spec.Prompts, int(status.RoundPrompts), roundRuns),
+		PromptsPlanned: int(status.PromptsPlanned),
+		IdeaPlanned:    model.IdeaPlanned(outcomes, int(status.PromptsPlanned)),
 		GitProvider:    brief.Spec.GitProviderRef.Name,
 	}
 	var err error

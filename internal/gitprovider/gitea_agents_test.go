@@ -50,6 +50,19 @@ func newAgentGitea(t *testing.T) (*agentGitea, Provider) {
 	return g, p
 }
 
+// serveBotUser reads or deletes the bot user photo-editor-agent.
+func (g *agentGitea) serveBotUser(method string, reply func(int, any)) {
+	switch {
+	case !g.users["photo-editor-agent"]:
+		reply(http.StatusNotFound, map[string]string{"message": "user does not exist"})
+	case method == http.MethodDelete:
+		delete(g.users, "photo-editor-agent")
+		reply(http.StatusNoContent, nil)
+	default:
+		reply(http.StatusOK, map[string]string{"login": "photo-editor-agent"})
+	}
+}
+
 // serveGatedPull serves pull request 7: its files, closing and merging.
 func (g *agentGitea) serveGatedPull(w http.ResponseWriter, r *http.Request, call string) {
 	switch {
@@ -118,12 +131,8 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "make: *** [Makefile:21: test] Error 1\n")
 	case strings.HasPrefix(call, "GET "+repo+"/commits/"):
 		_, _ = io.WriteString(w, g.statuses)
-	case call == "GET /api/v1/users/photo-editor-agent":
-		if !g.users["photo-editor-agent"] {
-			reply(http.StatusNotFound, map[string]string{"message": "user does not exist"})
-			return
-		}
-		reply(http.StatusOK, map[string]string{"login": "photo-editor-agent"})
+	case call == "GET /api/v1/users/photo-editor-agent", call == "DELETE /api/v1/admin/users/photo-editor-agent":
+		g.serveBotUser(r.Method, reply)
 	case call == "POST /api/v1/admin/users":
 		g.users[body["username"].(string)] = true
 		reply(http.StatusCreated, map[string]string{})
@@ -282,6 +291,26 @@ func TestEnsureAgentAccess(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(g.calls, "\n"), "PATCH /api/v1/admin/users/photo-editor-agent") {
 		t.Error("the second call did not reset the existing user's password")
+	}
+}
+
+func TestRemoveAgentAccess(t *testing.T) {
+	g, p := newAgentGitea(t)
+	ctx := context.Background()
+	repo := p.Repository("photo-editor")
+	if _, err := p.EnsureAgentAccess(ctx, repo, "photo-editor-agent"); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 2 { // the second finds the user gone
+		if err := p.RemoveAgentAccess(ctx, repo, "photo-editor-agent"); err != nil {
+			t.Fatalf("RemoveAgentAccess() #%d error = %v", i, err)
+		}
+	}
+	if g.users["photo-editor-agent"] {
+		t.Error("the bot user is still there")
+	}
+	if !strings.Contains(strings.Join(g.calls, "\n"), "DELETE /api/v1/admin/users/photo-editor-agent") {
+		t.Error("the bot user was not deleted")
 	}
 }
 

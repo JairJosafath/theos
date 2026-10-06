@@ -257,6 +257,20 @@ func (g *gitea) EnsureAgentAccess(ctx context.Context, repo Repository, user str
 	return Credentials{Username: user, Token: token.SHA1}, nil
 }
 
+// RemoveAgentAccess deletes the bot user EnsureAgentAccess made, which drops its
+// collaborator rights and tokens. It does not purge: what the bot wrote stays,
+// shown as Gitea's ghost user. It needs an admin token.
+func (g *gitea) RemoveAgentAccess(ctx context.Context, repo Repository, user string) error {
+	status, data, err := g.do(ctx, http.MethodDelete, "/api/v1/admin/users/"+url.PathEscape(user), nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusNoContent && status != http.StatusNotFound {
+		return fmt.Errorf("gitea: deleting agent user %s of %s failed (HTTP %d): %s", user, repoPath(repo), status, apiMessage(data))
+	}
+	return nil
+}
+
 type giteaPull struct {
 	Number    int    `json:"number"`
 	HTMLURL   string `json:"html_url"`

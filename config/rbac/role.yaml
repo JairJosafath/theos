@@ -114,8 +114,11 @@ rules:
   resources:
   - persons
   verbs:
+  - create
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - events.k8s.io

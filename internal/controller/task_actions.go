@@ -198,17 +198,10 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
 	container *c4v1alpha1.Container, agents taskAgents, role, message string) (ctrl.Result, error) {
 	agent := agents.forRole(role)
-	if ref := agent.Spec.CredentialsSecretRef; ref != nil {
-		var secret corev1.Secret
-		err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: ref.Name}, &secret)
-		if apierrors.IsNotFound(err) {
-			r.progress(task, status, metav1.ConditionFalse, "CredentialsNotFound",
-				fmt.Sprintf("Secret %s of Agent %s not found", ref.Name, agent.Name))
-			return ctrl.Result{RequeueAfter: taskSecretRecheck}, nil
-		}
-		if err != nil {
-			return ctrl.Result{}, err
-		}
+	if found, err := r.agentCredentials(ctx, task, status, agent); err != nil {
+		return ctrl.Result{}, err
+	} else if !found {
+		return ctrl.Result{RequeueAfter: taskSecretRecheck}, nil
 	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
@@ -269,6 +262,24 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", message, name))
 	logf.FromContext(ctx).Info("Started agent sandbox", "sandbox", name, "role", role, "round", status.Round)
 	return ctrl.Result{}, nil
+}
+
+// agentCredentials reports whether the Agent's credentials Secret, if it names
+// one, exists; when it doesn't, the Task says so and waits for it.
+func (r *TaskReconciler) agentCredentials(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	agent *c4v1alpha1.Agent) (bool, error) {
+	ref := agent.Spec.CredentialsSecretRef
+	if ref == nil {
+		return true, nil
+	}
+	var secret corev1.Secret
+	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: ref.Name}, &secret)
+	if apierrors.IsNotFound(err) {
+		r.progress(task, status, metav1.ConditionFalse, "CredentialsNotFound",
+			fmt.Sprintf("Secret %s of Agent %s not found", ref.Name, agent.Name))
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // ensureAgentGit returns the Secret with the Container's agent Git credentials,

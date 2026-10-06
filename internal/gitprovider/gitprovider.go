@@ -70,7 +70,9 @@ type Provider interface {
 	// It fails, without force, if the branch already exists.
 	PushInitialCommit(ctx context.Context, repo Repository, files scaffold.Tree, message string, author Signature) (string, error)
 	// ReadFiles returns branch's copy of those of paths it has, and the commit it
-	// read them at. A path it doesn't have is left out, not an error.
+	// read them at. A path it doesn't have is left out, not an error. A path
+	// ending in "/" reads every regular file below that directory, keyed by its
+	// full path; a missing directory gives nothing.
 	ReadFiles(ctx context.Context, repo Repository, branch string, paths []string) (scaffold.Tree, string, error)
 	// PushBranch commits files, and the removal of removes, on top of commit base
 	// of the default branch, and force-pushes the commit as branch, creating or
@@ -103,6 +105,10 @@ type Provider interface {
 	// EnsureAgentAccess makes user a bot that can write to repo only, and returns
 	// a fresh token for it.
 	EnsureAgentAccess(ctx context.Context, repo Repository, user string) (Credentials, error)
+	// RemoveAgentAccess takes away what EnsureAgentAccess gave user on repo: on
+	// Gitea it deletes the bot user, and its tokens with it. A user already gone
+	// is no error.
+	RemoveAgentAccess(ctx context.Context, repo Repository, user string) error
 	// OpenPullRequest opens a pull request from head into base, or returns the
 	// open one for head.
 	OpenPullRequest(ctx context.Context, repo Repository, head, base, title, body string) (PullRequest, error)

@@ -145,6 +145,17 @@ const (
 	LabelContainer      = "c4.factory.io/container"
 	// LabelBrief names the Brief an object came from.
 	LabelBrief = "c4.factory.io/brief"
+	// LabelBriefRound is the Brief round an object came from, or a Plan Task plans.
+	LabelBriefRound = "c4.factory.io/brief-round"
+)
+
+// The Brief's verdict on a Plan Task's plan, written by the Brief on the Task.
+const (
+	// AnnotationPlanChecked is the commit of the plan the Brief checked.
+	AnnotationPlanChecked = "c4.factory.io/plan-checked"
+	// AnnotationPlanRefusals are the Brief's reasons for refusing the checked
+	// plan; absent when it accepted it.
+	AnnotationPlanRefusals = "c4.factory.io/plan-refusals"
 )
 
 // AnnotationRetry, set or changed on a Failed Container, makes the operator try

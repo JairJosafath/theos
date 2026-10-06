@@ -140,8 +140,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&TaskReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second,
 			StandardChangeRecheck: time.Second},
 		&BriefReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
-			NeedsInputRecheck: time.Second},
-		&CrewReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, PollInterval: time.Second,
+			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, PlanCheckTimeout: 3 * time.Second},
+		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: gitFake, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {

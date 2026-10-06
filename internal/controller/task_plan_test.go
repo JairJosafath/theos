@@ -9,12 +9,15 @@ permission. See the LICENSE file.
 package controller
 
 import (
-	"time"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/agentrunner"
 )
 
 // newPlanTask is a planning round of the Brief cel-lens.
@@ -98,15 +101,166 @@ var _ = Describe("Plan Task", func() {
 			To(MatchError(ContainSubstring("kind is immutable; create a new Task")))
 	})
 
-	It("is left alone by the Task controller", func() {
-		task := newPlanTask(ns, "untouched")
+})
+
+// A Plan Task's run (docs/plans/brief.md, step 5): the planner pushes a plan,
+// and the Brief's verdict, two annotations, ends the try.
+var _ = Describe("Plan Task run", func() {
+	var ns string
+	BeforeEach(func() { ns = newProjectNamespace() })
+
+	// roundTask makes the Brief cel-lens with its repository and bot, the
+	// planner with rounds tries, and the Task planning the Brief's round.
+	roundTask := func(name string, rounds int32, round string) *c4v1alpha1.Task {
+		GinkgoHelper()
+		createFactory(ns)
+		// The Brief's own planner is missing, so it plans no round of its own
+		// and leaves these Tasks to the test.
+		brief := newBrief(ns, "cel-lens")
+		brief.Spec.Agents.Planner.Name = "absent"
+		mustCreate(brief, &c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "planner"),
+			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}})
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "brief-cel-lens-git"), &corev1.Secret{})).To(Succeed())
+		}).Should(Succeed())
+		task := newPlanTask(ns, name)
+		task.Labels = map[string]string{c4v1alpha1.LabelBrief: "cel-lens", c4v1alpha1.LabelBriefRound: round}
 		mustCreate(task)
+		return task
+	}
+	sandboxEnv := func(g Gomega, name string) []any {
+		sandbox := sandboxExists(g, ns, name)
+		containers, _, _ := unstructured.NestedSlice(sandbox.Object, "spec", "podTemplate", "spec", "containers")
+		g.Expect(containers).To(HaveLen(1))
+		env, _ := containers[0].(map[string]any)["env"].([]any)
+		return env
+	}
+	verdict := func(name, commit, refusals string) {
+		GinkgoHelper()
+		task := &c4v1alpha1.Task{}
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(patch(task, func() {
+			task.Annotations = map[string]string{c4v1alpha1.AnnotationPlanChecked: commit}
+			if refusals != "" {
+				task.Annotations[c4v1alpha1.AnnotationPlanRefusals] = refusals
+			}
+		})).To(Succeed())
+	}
+
+	It("runs the planner on the Brief's round and ends Merged when the Brief accepts the plan", func() {
+		roundTask("cel-lens-plan-2", 3, "2")
+
+		By("starting the planner on the brief repository with the Brief's bot")
+		var env []any
+		Eventually(func(g Gomega) {
+			env = sandboxEnv(g, "cel-lens-plan-2-r1-plan")
+			task := getTask(g, ns, "cel-lens-plan-2")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(task.Status.Branch).To(Equal("plan/2"))
+		}).Should(Succeed())
+		Expect(env).To(ContainElements(
+			map[string]any{"name": "C4_ROLE", "value": "plan"},
+			map[string]any{"name": "C4_ROUND", "value": "2"},
+			map[string]any{"name": "C4_BRANCH", "value": "plan/2"},
+			map[string]any{"name": "C4_BRIEF", "value": "cel-lens"},
+			map[string]any{"name": "C4_REPO_URL",
+				"value": "http://gitea.gitea.svc.cluster.local:3000/" + ns + "/brief-cel-lens.git"},
+			HaveKeyWithValue("valueFrom", HaveKeyWithValue("secretKeyRef",
+				HaveKeyWithValue("name", "brief-cel-lens-git"))),
+		))
+		Expect(env).NotTo(ContainElement(HaveKeyWithValue("name", "C4_CONTAINER")))
+		Expect(env).NotTo(ContainElement(HaveKeyWithValue("name", "C4_GOAL")))
+
+		By("waiting for the Brief's verdict on the pushed plan")
+		finishSandbox(ns, "cel-lens-plan-2-r1-plan", "cel-lens-plan-2",
+			&agentrunner.Result{Role: "plan", Commit: "sha-p1", Summary: "Planned the linter."}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "cel-lens-plan-2")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Commit).To(Equal("sha-p1"))
+			g.Expect(task.Status.Summary).To(Equal("Planned the linter."))
+			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).To(
+				HaveField("Message", "Waiting for the Brief to check the plan"))
+		}).Should(Succeed())
+
+		By("ignoring a verdict on another commit")
+		verdict("cel-lens-plan-2", "sha-other", "")
 		Consistently(func(g Gomega) {
-			var got c4v1alpha1.Task
-			g.Expect(k8sClient.Get(ctx, key(ns, task.Name), &got)).To(Succeed())
-			g.Expect(got.Status).To(Equal(c4v1alpha1.TaskStatus{}))
-			g.Expect(got.OwnerReferences).To(BeEmpty())
-			g.Expect(got.Labels).To(BeEmpty())
-		}, 3*time.Second, 200*time.Millisecond).Should(Succeed())
+			g.Expect(getTask(g, ns, "cel-lens-plan-2").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+		}, "1s").Should(Succeed())
+
+		By("ending Merged when the Brief accepts it")
+		verdict("cel-lens-plan-2", "sha-p1", "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "cel-lens-plan-2")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.CompletedAt).NotTo(BeNil())
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(And(
+				HaveField("Status", metav1.ConditionTrue), HaveField("Message", "The Brief accepted the plan")))
+		}).Should(Succeed())
+	})
+
+	It("tries again with the Brief's reasons, and fails after the planner's rounds", func() {
+		roundTask("cel-lens-plan-1", 2, "1")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "cel-lens-plan-1-r1-plan") }).Should(Succeed())
+		finishSandbox(ns, "cel-lens-plan-1-r1-plan", "cel-lens-plan-1",
+			&agentrunner.Result{Role: "plan", Commit: "sha-p1"}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "cel-lens-plan-1").Status.Commit).To(Equal("sha-p1"))
+		}).Should(Succeed())
+
+		By("starting the next try with the reasons as feedback")
+		verdict("cel-lens-plan-1", "sha-p1", "Container/web: type is missing")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "cel-lens-plan-1")
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Feedback).To(Equal("The Brief refused the plan:\nContainer/web: type is missing"))
+			g.Expect(sandboxEnv(g, "cel-lens-plan-1-r2-plan")).To(ContainElements(
+				map[string]any{"name": "C4_ROUND", "value": "1"},
+				map[string]any{"name": "C4_FEEDBACK", "value": task.Status.Feedback},
+			), "every try plans the same Brief round")
+		}).Should(Succeed())
+
+		By("waiting for a verdict on the new commit, not the old one")
+		finishSandbox(ns, "cel-lens-plan-1-r2-plan", "cel-lens-plan-1",
+			&agentrunner.Result{Role: "plan", Commit: "sha-p2"}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "cel-lens-plan-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Commit).To(Equal("sha-p2"))
+		}).Should(Succeed())
+
+		By("failing when the last try is refused too")
+		verdict("cel-lens-plan-1", "sha-p2", "Container/web: still no type")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "cel-lens-plan-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(And(
+				HaveField("Status", metav1.ConditionFalse), HaveField("Message", ContainSubstring("Failed after 2 rounds"))))
+		}).Should(Succeed())
+	})
+
+	It("waits for its Brief, and fails without the Brief's round", func() {
+		task := newPlanTask(ns, "orphan")
+		mustCreate(task)
+		Eventually(func(g Gomega) {
+			g.Expect(condition(getTask(g, ns, "orphan").Status.Conditions, ConditionProgressing)).To(And(
+				HaveField("Reason", "BriefNotFound"), HaveField("Status", metav1.ConditionFalse)))
+		}).Should(Succeed())
+
+		roundTask("unlabelled", 3, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "unlabelled")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(
+				HaveField("Message", ContainSubstring(c4v1alpha1.LabelBriefRound)))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			sandbox := newSandbox()
+			err := k8sClient.Get(ctx, key(ns, "unlabelled-r1-plan"), sandbox)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, "1s").Should(Succeed())
 	})
 })

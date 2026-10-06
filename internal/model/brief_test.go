@@ -279,6 +279,11 @@ func TestCheckPlan(t *testing.T) {
 		{"a Container of an unknown type", func(p *Plan, _ *CurrentModel) {
 			object(p, "Container/web").Type = "website"
 		}, "Container/web", `type "website" is not a Container type`},
+		{"a Container named as a Brief's repository", func(p *Plan, _ *CurrentModel) {
+			c := *object(p, "Container/web")
+			c.Name = "brief-notes"
+			p.Objects = append(p.Objects, c)
+		}, "Container/brief-notes", "a Container may not be named brief-*: that name is a Brief's repository"},
 		{"a Relationship to itself", func(p *Plan, _ *CurrentModel) {
 			object(p, "Relationship/api-to-db").Target = Ref{KindContainer, "api"}
 		}, "Relationship/api-to-db", "points to itself"},

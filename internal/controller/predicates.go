@@ -73,7 +73,7 @@ func containerPhaseChanges() builder.WatchesOption {
 
 // taskPhaseChanges passes a Task's creation, deletion and phase changes: a Task
 // finishing lets the next one on its Container start.
-func taskPhaseChanges() builder.WatchesOption {
+func taskPhaseChanges() builder.Predicates {
 	return builder.WithPredicates(predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldTask, ok1 := e.ObjectOld.(*c4v1alpha1.Task)

@@ -98,7 +98,7 @@ type TaskReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/finalizers,verbs=update
-// +kubebuilder:rbac:groups=c4.factory.io,resources=agents;softwaresystems,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=agents;softwaresystems;briefs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=agents.x-k8s.io,resources=sandboxes,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;patch
@@ -115,8 +115,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, nil
 	}
 	if task.Spec.Kind == c4v1alpha1.TaskPlan {
-		// A Brief runs its own planning rounds (docs/plans/brief.md, step 5).
-		return ctrl.Result{}, nil
+		return r.reconcilePlan(ctx, &task)
 	}
 	status := task.Status.DeepCopy()
 	if status.Phase == "" {
@@ -190,6 +189,13 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err != nil {
 		return result, err
 	}
+	r.queueForSlot(status, step, &result)
+	return result, r.writeStatus(ctx, &task, status)
+}
+
+// queueForSlot keeps the Task's place in the queue for an agent slot while its
+// step waits for one, and gives it up otherwise.
+func (r *TaskReconciler) queueForSlot(status *c4v1alpha1.TaskStatus, step model.TaskStep, result *ctrl.Result) {
 	if step.SlotWait {
 		// Queue for a slot. Sandboxes of other Tasks don't wake this one; look again.
 		if status.SlotWaitSince == nil {
@@ -202,7 +208,6 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		// waiting for anything else must not keep others from the slot.
 		status.SlotWaitSince = nil
 	}
-	return result, r.writeStatus(ctx, &task, status)
 }
 
 // facts gathers what the next step depends on.
