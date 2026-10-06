@@ -153,3 +153,44 @@ func TestStandInPlan(t *testing.T) {
 		})
 	}
 }
+
+// A Brief named brief-x plans its idea as Container x; a later prompt round
+// files the prompt for x, not for the model's first Container.
+func TestStandInPlanBriefNamedBrief(t *testing.T) {
+	catalog := []CatalogEntry{{Side: SideFramework, Name: "go-cli", SupportedTypes: []string{TypeCLI}}}
+	objects := []PlanObject{
+		{Kind: KindSoftwareSystem, Name: "tools"},
+		{Kind: KindContainer, Name: "api", SoftwareSystem: "tools", Type: TypeCLI, GitProvider: "gitea", Framework: "go-cli"},
+	}
+	round := func(ws BriefWorkspace) Plan {
+		t.Helper()
+		ws.Brief, ws.GitProvider, ws.Catalog = BriefRepository("x"), "gitea", catalog
+		workspace, err := BriefWorkspaceFiles(ws)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files, err := StandInPlan(workspace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := ParsePlan(files)
+		if err != nil {
+			t.Fatalf("ParsePlan: %v\n%v", err, files)
+		}
+		return plan
+	}
+
+	idea := round(BriefWorkspace{Idea: "Neighbours lend tools.", Objects: objects})
+	if len(idea.Issues) != 1 || idea.Issues[0].Container != "x" {
+		t.Fatalf("idea round issues %+v, want one for Container x", idea.Issues)
+	}
+	prompt := round(BriefWorkspace{Idea: "Neighbours lend tools.", IdeaPlanned: true, Objects: idea.Objects,
+		Prompts: []string{"Add a calendar."}})
+	got := make([]string, 0, len(prompt.Issues))
+	for _, i := range prompt.Issues {
+		got = append(got, i.Container+": "+i.Title)
+	}
+	if want := []string{"x: Stand-in: Add a calendar."}; !slices.Equal(got, want) {
+		t.Errorf("prompt round issues %q, want %q", got, want)
+	}
+}
