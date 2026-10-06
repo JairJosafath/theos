@@ -60,7 +60,8 @@ Only around the steps that touch one (deploys, samples, e2e, factory-ops,
    never `kind delete cluster` or `make cluster-delete` by hand. To install
    a release (`docs/getting-started.md`, the chart), pass `--fresh --bare`:
    the same, with nothing installed, since the chart brings its own Gitea
-   and helm can't take over the testenv's.
+   and helm can't take over the testenv's. A plain acquire never hands out
+   a bare cluster as is: it prefers others and recreates one it must take.
 3. Make targets now use it; kubectl takes `--context kind-<name>` on every
    call, never `kubectl config use-context` (every checkout shares the
    kubeconfig). `make deploy` this branch first: never trust what is deployed.
