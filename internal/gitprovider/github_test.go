@@ -135,7 +135,12 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 		id, _ := strconv.ParseInt(rest[0], 10, 64)
 		f.uploads = append(f.uploads, fmt.Sprintf("%s length=%d encoding=%v type=%s", r.URL.Query().Get("name"),
 			r.ContentLength, r.TransferEncoding, r.Header.Get("Content-Type")))
-		data, _ := io.ReadAll(r.Body)
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			// The client gave up mid-body; GitHub keeps no asset.
+			f.reply(w, http.StatusBadRequest, `{"message":"Bad Request"}`)
+			return
+		}
 		f.nextID++
 		a := githubAsset{ID: f.nextID, Name: r.URL.Query().Get("name"), Size: int64(len(data)), State: "uploaded"}
 		f.assets[id] = append(f.assets[id], a)
@@ -144,6 +149,14 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 		f.errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		f.reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
 	}
+}
+
+// setAssets replaces a release's assets under the lock: a handler the client
+// gave up on, such as a short upload's, can still be running.
+func (f *fakeGitHub) setAssets(id int64, assets []githubAsset) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.assets[id] = assets
 }
 
 func (f *fakeGitHub) release(id string) *githubRelease {
@@ -463,10 +476,12 @@ func TestGitHubReleasesAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.assets[draft.ID] = []githubAsset{{ID: 1, Name: "cli-linux", Size: 5, State: "starter"}}
+	held := make([]githubAsset, 0, 1+githubPageSize)
+	held = append(held, githubAsset{ID: 1, Name: "cli-linux", Size: 5, State: "starter"})
 	for i := range githubPageSize {
-		f.assets[draft.ID] = append(f.assets[draft.ID], githubAsset{ID: int64(10 + i), Name: fmt.Sprint(i), State: "uploaded"})
+		held = append(held, githubAsset{ID: int64(10 + i), Name: fmt.Sprint(i), State: "uploaded"})
 	}
+	f.setAssets(draft.ID, held)
 	assets, err := g.ListAssets(ctx, draft.ID)
 	if err != nil || len(assets) != githubPageSize+1 || assets[0].Uploaded || !assets[1].Uploaded {
 		t.Errorf("ListAssets() = %d assets, first %+v, %v; want %d, the first not uploaded", len(assets), assets, err, githubPageSize+1)
@@ -482,10 +497,11 @@ func TestGitHubReleasesAssets(t *testing.T) {
 		t.Errorf("UploadAsset() of fewer bytes than its size error = %v; want reason %s", err, ReasonGitHubError)
 	}
 
-	f.assets[draft.ID] = nil
+	held = make([]githubAsset, 0, githubMaxPages*githubPageSize)
 	for i := range githubMaxPages * githubPageSize {
-		f.assets[draft.ID] = append(f.assets[draft.ID], githubAsset{ID: int64(10 + i), Name: fmt.Sprint(i)})
+		held = append(held, githubAsset{ID: int64(10 + i), Name: fmt.Sprint(i)})
 	}
+	f.setAssets(draft.ID, held)
 	if _, err := g.ListAssets(ctx, draft.ID); ReleaseReason(err) != ReasonGitHubError || err == nil {
 		t.Errorf("ListAssets() past the limit error = %v; want one", err)
 	}
