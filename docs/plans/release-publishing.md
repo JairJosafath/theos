@@ -106,7 +106,10 @@ a port-forward, and are gone with the cluster. The repository they named is
   assets, the GitHub release found by marker and its assets) and returns one
   step: wait, write the notes, create the draft, upload an asset, publish the
   draft, done, or fail with a reason. The controller runs one step per poll,
-  like the Standard update.
+  like the Standard update: the reads (the Gitea release, the merged issues,
+  GitHub's releases) are steps too, asked for only when the decision needs
+  them, so a missing Secret or unfinished runs read nothing; a GitHub call
+  that fails goes back in as a fact and comes out as the failure's reason.
 
 ## Steps
 
