@@ -103,10 +103,27 @@ carries.
      with the reason.
    - The governance files and CONTRIBUTING.md must still match how the project
      works. A mismatch becomes a `kind/docs` issue.
+   - Milestones ([ROADMAP.md](../../../ROADMAP.md)): every open `kind/feature`
+     or `kind/bug` issue whose change ships (the CRDs, the operator, the UI,
+     the chart, templates, docs a user reads) has a milestone, or a comment
+     saying why none fits. Set one with `hack/lib/github.sh milestone N
+     "TITLE"` (the title as `hack/lib/github.sh milestones` prints it), and
+     clear a wrong one with `hack/lib/github.sh milestone N`. Work on the
+     relay, `hack/`, the skills or the governance files has none.
+   - A milestone whose *Done when* holds and whose issues are all closed gets
+     closed: `gh api -X PATCH repos/{owner}/{repo}/milestones/M -f
+     state=closed`. Then file the ROADMAP.md update that marks the outcome
+     reached (`kind/docs`, `status/ready`). One that is done in all but its
+     *Done when* gets an issue for what is missing.
 8. **Releases**
    ([docs/dev/testenv.md](../../../docs/dev/testenv.md#every-release-checks-itself)).
    Cut a release when `feat` or `fix` changes have landed since the last
-   tag, main is green, and no issue in progress is meant for this release.
+   tag, main is green, and no half-built feature would ship
+   ([ROADMAP.md](../../../ROADMAP.md)).
+   - Hold the release while a step is in progress (or ready) that turns on a
+     feature main already shows a user: a UI box, a chart value, a field that
+     does nothing yet. The only exception is a reporter waiting on the
+     release; then it ships, and its notes say what is a preview.
    - Release as often as that holds; there is no daily cap. Don't tag while
      the last release's *Verify Release* still runs, or its
      `Release vX.Y.Z fails its check` issue is open.
@@ -119,7 +136,8 @@ carries.
      (Added, Changed, Fixed, Security). *Release* drafts them from the pull
      requests merged since the previous tag (`hack/release-notes.sh`, which
      says what goes where); edit the draft on the release where it reads
-     wrong. `hack/release-notes.sh origin/main` previews the next one.
+     wrong, and add the milestones the release completes.
+     `hack/release-notes.sh origin/main` previews the next one.
    - A failure becomes a `kind/bug` issue, ready and `priority/urgent`.
 9. **The report:** write its body (format below) and set it with
    `hack/lib/github.sh report FILE`.
@@ -160,6 +178,7 @@ Updated 2026-10-07 03:10 · next sweep about 05:10
 ## Health
 Relay: 12 workers, 3 busy · main: green · last release: v0.3.1 (2026-10-06)
 Open: 4 ready, 3 in progress, 1 proposed
+Milestones: Briefs 3 open, 5 closed · Upgrades 6 open, 0 closed · 1.0 9 open, 0 closed
 
 ## Since 01:10
 - Decided: #N one line, and why
@@ -168,6 +187,9 @@ Open: 4 ready, 3 in progress, 1 proposed
 - Released: v0.3.1
 - Good work: #N what was good about it
 ```
+
+The *Milestones* line comes from `hack/lib/github.sh milestones`: each open
+milestone, a short form of its title, and its open and closed issue counts.
 
 An item stays under *Needs you* until the owner answers it or it no longer
 applies.
