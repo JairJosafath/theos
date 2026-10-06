@@ -166,7 +166,9 @@ What B4 leaves open, settled in step 4 (`internal/model/brief_workspace.go`,
   already goes with the Brief; done in #326: a `c4.factory.io/brief-bot`
   finalizer, put on before the bot is made, deletes the user through
   `RemoveAgentAccess`, and lets the Brief go without it when its GitProvider
-  or credentials are gone); refusing a plan that creates a Container named
+  or credentials are gone; #335: a host that fails the delete is retried
+  with a `BotNotDeleted` Event until the namespace is terminating or ten
+  minutes have passed, then the bot is left with a `BotLeft` Event); refusing a plan that creates a Container named
   `brief-*`; and NeedsInput from `needs-input.md`, which the operator's
   "has what it needs" must not clear: step 5 clears only the reasons it set.
 

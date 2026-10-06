@@ -37,8 +37,8 @@ type BriefReconciler struct {
 	// APIReader reads Secrets without caching them.
 	APIReader client.Reader
 	Git       GitClient
-	// Recorder emits the Brief's Events: Planned, NeedsInput and PlanRefused;
-	// nil emits none.
+	// Recorder emits the Brief's Events: Planned, NeedsInput, PlanRefused,
+	// BotNotDeleted and BotLeft; nil emits none.
 	Recorder events.EventRecorder
 	// GitTimeout bounds the Git calls of one reconcile; 0 means two minutes.
 	GitTimeout time.Duration
@@ -49,13 +49,24 @@ type BriefReconciler struct {
 	// Container to be Ready, looks again, as Secrets aren't watched; 0 means a
 	// minute.
 	NeedsInputRecheck time.Duration
+	// BotDeleteTimeout is how long a deleted Brief tries to delete its bot on a
+	// Git host that fails it before it goes without; 0 means ten minutes.
+	BotDeleteTimeout time.Duration
 }
 
 const (
 	defaultBriefGitTimeout        = 2 * time.Minute
 	defaultBriefNeedsInputRecheck = time.Minute
 	defaultPlanCheckTimeout       = 10 * time.Minute
+	defaultBotDeleteTimeout       = 10 * time.Minute
 )
+
+func (r *BriefReconciler) botDeleteTimeout() time.Duration {
+	if r.BotDeleteTimeout > 0 {
+		return r.BotDeleteTimeout
+	}
+	return defaultBotDeleteTimeout
+}
 
 func (r *BriefReconciler) gitTimeout() time.Duration {
 	if r.GitTimeout > 0 {
@@ -86,6 +97,7 @@ func (r *BriefReconciler) needsInputRecheck() time.Duration {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews;tasks,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=frameworks;standards;computes;deployments;connectors,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;patch
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile brings the Brief's repository up to date and takes the next step
@@ -97,7 +109,7 @@ func (r *BriefReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !brief.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.deleteBot(ctx, &brief)
+		return r.deleteBot(ctx, &brief)
 	}
 	orig := brief.DeepCopy()
 	brief.Status.ObservedGeneration = brief.Generation
