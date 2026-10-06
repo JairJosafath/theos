@@ -14,9 +14,9 @@ Test a rule at the lowest tier that can see it ([design](../design.md#test-tiers
 | Tier | Runs | Verifies |
 | --- | --- | --- |
 | 1. Table tests | `make test`, no API server | `internal/model` decisions, `internal/scaffold` rendering of every template |
-| 2. Offline YAML | `make validate-yaml`, in `make check` | samples, e2e fixtures, kustomize builds, the chart, rendered manifests, create-time CEL rules |
+| 2. Offline YAML | `make validate-yaml`, in `make check` | samples, e2e fixtures, kustomize builds, the chart, rendered manifests, against the CRDs: valid YAML passes their create-time CEL rules |
 | 3. Local Gitea | `make test-gitea`, `make seed-local` | the Gitea API's real behaviour, the seed, template tags |
-| 4. envtest | `make test` | reconcilers, status, ownerReferences, CEL rules on `oldSelf`, the admission policy |
+| 4. envtest | `make test` | reconcilers, status, ownerReferences, the admission policy, every CEL rule's failing case (create-time and on `oldSelf`) |
 | 5. Kind | `make e2e`, factory-ops | Agent Sandbox pods and the agent fence, node and kubelet behaviour, RBAC as deployed, Gitea Actions runners |
 
 Tiers 1 to 4 run on any device, lite ones included, with no lease. Only
@@ -64,7 +64,8 @@ template needs a row there. In tests, write with merge patches
 rendered with `hack/render`. Built-in kinds are checked against the schemas of
 the envtest Kubernetes release, downloaded once next to the tools (`k8s-openapi-*`); our
 kinds against `config/crd/bases` and `test/crds/agent-sandbox`, create-time CEL
-rules included. Rules on `oldSelf` need an update, so envtest covers them.
+rules included, so it shows that valid YAML passes them; it holds no YAML that
+breaks a rule. Rules on `oldSelf` need an update, so envtest covers them.
 It also fails when a CRD in `dist/chart/templates/crd` differs from
 `config/crd/bases` beyond the chart's `crd.enabled` and `crd.keep` guard
 (`hack/chart-crds.sh`): an API change runs `make chart` and commits the chart.

@@ -105,11 +105,12 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   they can steer.
 - **Test the rules where they live,** at the lowest tier that can see them:
   1. `internal/model` and `internal/scaffold` table tests (`make test`).
-  2. `make validate-yaml`: samples, fixtures, kustomize builds, the chart and
-     create-time CEL rules, offline.
+  2. `make validate-yaml`: samples, fixtures, kustomize builds and the chart,
+     offline, against the CRDs; the valid YAML passes their create-time CEL
+     rules.
   3. `make test-gitea` and `make seed-local`: a local Gitea, no Kubernetes.
-  4. envtest (`make test`): reconcilers, status, CEL rules on updates, the
-     admission policy.
+  4. envtest (`make test`): reconcilers, status, the admission policy, and
+     every CEL rule's failing case, create-time ones included.
   5. Kind and `make e2e`, only for what needs a real node: Agent Sandbox
      pods, node or kubelet behaviour, RBAC as deployed, Gitea Actions runners.
 
