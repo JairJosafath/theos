@@ -7,6 +7,24 @@ asks for it; `make check` is the gate for every change. Every make target
 works on `KIND_CLUSTER`, by default the pool cluster this checkout leased,
 else `c4factory`; kubectl calls name it with `--context kind-<name>`.
 
+## Test tiers
+
+Test a rule at the lowest tier that can see it ([design](../design.md#test-tiers)):
+
+| Tier | Runs | Verifies |
+| --- | --- | --- |
+| 1. Table tests | `make test`, no API server | `internal/model` decisions, `internal/scaffold` rendering of every template |
+| 2. Offline YAML | `make validate-yaml`, in `make check` | samples, e2e fixtures, kustomize builds, the chart, rendered manifests, create-time CEL rules |
+| 3. Local Gitea | `make test-gitea`, `make seed-local` | the Gitea API's real behaviour, the seed, template tags |
+| 4. envtest | `make test` | reconcilers, status, ownerReferences, CEL rules on `oldSelf`, the admission policy |
+| 5. Kind | `make e2e`, factory-ops | Agent Sandbox pods and the agent fence, node and kubelet behaviour, RBAC as deployed, Gitea Actions runners |
+
+Tiers 1 to 4 run on any device, lite ones included, with no lease. Only
+tier 5 needs a Kind cluster, and only issues that need it carry
+`needs/cluster`; Gitea work, YAML, templates and controller logic don't. Test
+output is the evidence for logic; Kind evidence (`kubectl get` output,
+screenshots of the running factory) is needed only for tier 5 behaviour.
+
 ## Testing & Development
 
 ```bash

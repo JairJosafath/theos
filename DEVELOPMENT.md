@@ -44,10 +44,20 @@ Log in once per machine: `gh auth login` and `gh auth setup-git` (machine-wide;
 
 The same actions are VS Code tasks (**Terminal → Run Task → Dev: …**).
 
-A lite device runs everything but the Kind cluster: `make check`, and
-`make test-gitea`, which tests `internal/gitprovider` against a Gitea of this
-checkout's own (`make gitea-local`, no Kubernetes; see
-[docs/dev/testenv.md](docs/dev/testenv.md#local-gitea)).
+A lite device runs every test tier but Kind
+([docs/dev/testenv.md](docs/dev/testenv.md#test-tiers)), so it verifies most
+work:
+
+- `make check`: the table tests, every template rendered, the YAML validated
+  offline against the CRDs and their CEL rules, and envtest.
+- `make test-gitea`, which tests `internal/gitprovider` against a Gitea of this
+  checkout's own (`make gitea-local`, no Kubernetes; see
+  [docs/dev/testenv.md](docs/dev/testenv.md#local-gitea)), and `make
+  seed-local`, which seeds that Gitea like Kind's.
+
+What it can't verify needs a real node (Agent Sandbox pods, node or kubelet
+behaviour, RBAC as deployed, Gitea Actions runners); those issues carry
+`needs/cluster`, and a lite device skips them.
 
 ## What lives where
 

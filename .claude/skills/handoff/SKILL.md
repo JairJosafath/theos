@@ -36,9 +36,13 @@ said to work it in this session; otherwise leave it to the relay.
 One `status/*` at a time, swapped with `hack/lib/github.sh status N <status>`:
 `proposed` (waits for the user), `ready`, `in-progress`, `needs-human` (the
 newest comment says why). `needs/cluster` marks work whose "Done when" needs a
-Kind cluster (`hack/lib/github.sh label N needs/cluster` when you find out
-mid-way); with `C4_CLUSTER=none`, land the code and tests, label it and hand
-off the rest.
+real Kubernetes node: Agent Sandbox pods, node or kubelet behaviour, RBAC as
+deployed, Gitea Actions runners (`hack/lib/github.sh label N needs/cluster`
+when you find out mid-way). Gitea work, YAML, templates and controller logic
+don't qualify: `make test-gitea`, `make seed-local`, `make validate-yaml` and
+envtest verify them on any device ([docs/dev/testenv.md](../../../docs/dev/testenv.md#test-tiers)).
+With `C4_CLUSTER=none`, land the code and tests, label it and hand off the
+rest.
 
 ## Lease a cluster
 
@@ -96,7 +100,7 @@ Lost claim (the heartbeat hook says so):
 - **Blocked on the user:** `hack/lib/github.sh status N needs-human` plus a
   comment saying what you need.
 - **Follow-up found:** `hack/lib/github.sh create TITLE FILE status/proposed
-  kind/<kind>` (add `needs/cluster` if it needs one; a body line
+  kind/<kind>` (add `needs/cluster` if it needs a real node; a body line
   `Depends on #M` if it waits on another issue). Don't start it in this
   session. Write it so the relay's triage can ready it: one piece of work, a
   checkable "Done when", and what it waits on.
