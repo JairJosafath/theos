@@ -211,6 +211,36 @@ function mediaType(req) {
   return (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
 }
 
+/** Host names the server always answers: a browser on this machine. */
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]']
+
+/**
+ * The host names the server answers: localhost and the comma-separated names in
+ * UI_ALLOWED_HOSTS (an Ingress's host, for example). Ports don't matter.
+ */
+export function allowedHostsFromEnv(env = process.env) {
+  const extra = (env.UI_ALLOWED_HOSTS ?? '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean)
+  return new Set([...LOCAL_HOSTS, ...extra])
+}
+
+/**
+ * True when the request's Host is one the server answers. A page on another
+ * site that rebinds its name to this address (DNS rebinding) sends its own name
+ * in Host, and in a matching Origin, so only the Host tells it apart.
+ */
+function isServedHost(req, allowed) {
+  const host = req.headers.host
+  if (!host) return false
+  try {
+    return allowed.has(new URL(`http://${host}`).hostname.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
 /** True when a browser sent the request from another site: its Origin names another host. */
 function isCrossSite(req) {
   const origin = req.headers.origin
@@ -579,14 +609,19 @@ async function serveStatic(res, root, pathname, method) {
 
 /**
  * Creates the server without starting it.
- * @param {{ distDir?: string, upstream?: ReturnType<typeof resolveUpstream>, log?: (msg: string) => void }} options
+ * @param {{ distDir?: string, upstream?: ReturnType<typeof resolveUpstream>, log?: (msg: string) => void, allowedHosts?: Set<string> }} options
  */
 export function createServer(options = {}) {
   const root = path.resolve(options.distDir ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist'))
   const api = createApiHandler(options)
+  const allowedHosts = options.allowedHosts ?? allowedHostsFromEnv()
 
   return http.createServer((req, res) => {
+    // The kubelet probes by Pod IP; /healthz says nothing and changes nothing.
     if ((req.url ?? '/').split('?')[0] === '/healthz') return send(res, 200, 'ok\n')
+    if (!isServedHost(req, allowedHosts)) {
+      return send(res, 421, 'Misdirected Request: this server does not answer for that host (UI_ALLOWED_HOSTS)\n')
+    }
     if (api(req, res)) return
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       return send(res, 405, 'Method Not Allowed\n', { allow: 'GET, HEAD' })
