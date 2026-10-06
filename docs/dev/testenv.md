@@ -302,6 +302,20 @@ which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
 issues wait on each other in a cycle, `cycles --report` comments each of them
 once and moves the newest to `status/needs-human`.
+On every pass, busy or idle, it may start the maintainer
+(`hack/relay.sh --maintain`), a headless opus session that acts as the
+project's maintainer on the owner's behalf ([GOVERNANCE.md](../../GOVERNANCE.md),
+the `maintainer` skill): it decides escalations, corrects agents, answers
+reporters, cuts releases and rewrites the pinned *Maintainer report* issue
+(label `maintainer/report`, set with `hack/lib/github.sh report FILE`), and
+commits nothing. The watch starts it when none runs, the last sweep is
+`WATCH_MAINTAIN` old (7200 s, 2h; 0 turns it off) and
+`hack/lib/github.sh activity` (the newest change to an issue or pull request,
+the report left out, and main's commit) differs from the one that sweep
+recorded in `.relay/maintained`, so a quiet night costs nothing. It runs in
+its own worktree, `.claude/worktrees/relay-maintainer`, on origin/main, under
+`.relay/maintain.lock`, and doesn't count against `RELAY_MAX_WORKERS`, but
+goes through `admit` like any session; it logs to `.relay/relay-maintainer.log`.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
 the triage's reasons with `proposed --since` against a stubbed GitHub, and its
 CI rounds with `gh` faked.

@@ -39,9 +39,17 @@
 # red main that lasts, or both devices' watches, file one issue; a single
 # failure files nothing. The session that fixes main closes it.
 #
+# Each pass, busy or idle, it may start the maintainer (hack/relay.sh
+# --maintain), which acts as the project's maintainer on the owner's behalf and
+# keeps the pinned Maintainer report: when none runs (.relay/maintain.lock),
+# the last sweep (.relay/maintained) is WATCH_MAINTAIN seconds old (default
+# 7200, 2h; 0 turns it off), and hack/lib/github.sh activity differs from the
+# one that sweep recorded, so quiet nights cost nothing. It asks at most every
+# WATCH_RETRY, and a sweep that doesn't run to its end is tried again then.
+#
 # While the relay is paused for a usage limit or a failed login
 # (.relay/paused-until, which hack/relay.sh writes), the watch starts nothing,
-# not even a triage, and logs the pause once.
+# not even a triage or the maintainer, and logs the pause once.
 #
 # Every 5 minutes it runs
 # hack/pull.sh, so pick never reads stale rules, and restarts itself when that
@@ -84,6 +92,7 @@ RETRIAGE=${WATCH_RETRIAGE:-10800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 CI_EVERY=${WATCH_CI_EVERY:-900}
 TRIM_EVERY=${WATCH_TRIM_EVERY:-1800}
+MAINTAIN_EVERY=${WATCH_MAINTAIN:-7200}
 
 WORKERS=1 MODE=start
 while [ $# -gt 0 ]; do
@@ -108,7 +117,11 @@ worker_free() {
   return 1
 }
 
-# pick_next, proposed, blocked, cycles, run_relay, run_triage and trim_caches:
+# maintaining: whether the maintainer runs (it holds its lock).
+maintaining() { [ -e "$DIR/maintain.lock" ] && ! flock -n "$DIR/maintain.lock" true; }
+
+# pick_next, proposed, blocked, cycles, activity, run_relay, run_triage,
+# run_maintain and trim_caches:
 # what the watch asks and starts (faked in the tests).
 pick_next() { "$REPO/hack/lib/github.sh" pick; }
 blocked() { "$REPO/hack/lib/github.sh" blocked --unworked; }
@@ -116,6 +129,8 @@ cycles() { "$REPO/hack/lib/github.sh" cycles --report; }
 proposed() { "$REPO/hack/lib/github.sh" proposed; }
 run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { "$REPO/hack/relay.sh" --triage --workers "$WORKERS"; }
+activity() { "$REPO/hack/lib/github.sh" activity; }
+run_maintain() { "$REPO/hack/relay.sh" --maintain; }
 trim_caches() { "$REPO/hack/trim-go-cache.sh"; }
 
 # trim NOW: trim the build caches when the last trim is TRIM_EVERY seconds old,
@@ -244,6 +259,35 @@ triage() {
   [ "$rc" = 0 ] || echo "$now" >"$DIR/triaged"
 }
 
+# maintain NOW: start the maintainer when it is on, none runs, the last sweep
+# is MAINTAIN_EVERY seconds old and the activity changed since (see the
+# header). .relay/maintained holds the last sweep's end and the activity it
+# saw; hack/relay.sh --maintain writes it, so the sweep's prompt reads when the
+# last one ran. MAINT_T keeps the watch from asking for the activity, or
+# repeating a start that didn't take, more often than every RETRY.
+MAINT_T=0 MAINT_ERR=
+maintain() {
+  local now=$1 t= seen= act out rc
+  [ "$MAINTAIN_EVERY" -gt 0 ] 2>/dev/null || return 0
+  [ $((now - MAINT_T)) -ge "$RETRY" ] || return 0
+  maintaining && return 0
+  [ -r "$DIR/maintained" ] && read -r t seen <"$DIR/maintained"
+  [[ $t =~ ^[0-9]+$ ]] || t=0
+  [ $((now - t)) -ge "$MAINTAIN_EVERY" ] || return 0
+  if ! act=$(activity 2>&1); then
+    [ -n "$MAINT_ERR" ] || log "could not read the activity for the maintainer: ${act//$'\n'/; }"
+    MAINT_ERR=1
+    return 0
+  fi
+  MAINT_ERR=
+  # Asked at most every RETRY, on a quiet night too.
+  MAINT_T=$now
+  [ "$act" != "$seen" ] || return 0
+  out=$(run_maintain 2>&1 8>&-)
+  rc=$?
+  log "maintainer: $([ "$t" = 0 ] && echo "no sweep recorded" || echo "activity since the sweep of $(date -d "@$t" -Is)") ($act); hack/relay.sh --maintain${out:+: ${out//$'\n'/; }}$([ "$rc" = 0 ] || echo " (failed, exit $rc; again after $((RETRY / 60))m)")"
+}
+
 # held: on an idle round, log what holds back the issues pick skips whose
 # blocker nobody works (hack/lib/github.sh blocked --unworked), once per
 # change, and report the issues that wait on each other in a cycle (cycles
@@ -288,6 +332,7 @@ round() {
     SAID=paused$until
     return 0
   fi
+  maintain "$now"
   worker_free || { SAID=busy; return 0; }
   row=$(pick_next 2>&1)
   rc=$?

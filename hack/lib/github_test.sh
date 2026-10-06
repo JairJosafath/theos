@@ -5,7 +5,7 @@
 # created, --fresh recreating only the cluster it leased, a bare cluster taken last and recreated; release on handoff, close and release),
 # for flush releasing the claim of the handoff it posts,
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
-# for proposed listing the issues the relay's triage reads, for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 unset C4_CLUSTER # ./dev setup --lite sets it; each test sets its own
@@ -421,4 +421,39 @@ check "create adds source/dev" "$(calls | jq -c '.labels' <<<"$(sed 's/^POST [^ 
 gh_create T "$T/body" source/user >/dev/null
 check "create keeps source/user" "$(sed 's/^POST [^ ]* //' "$T/calls" | jq -c .labels)" '["source/user"]'
 rm -f "$T/no-open"
+issue 96 OWNER 'maintainer/report' 'The report'; gh_intake 96 >/dev/null
+check "intake leaves the report issue alone" "$(calls)" ""
+
+# report: the first call creates the label, the issue and pins it; later calls
+# edit that issue's body. activity: the newest updated_at, the report left out,
+# and main's SHA. A fake GitHub keeps the report issue in $T/report.
+(
+  rm -f "$T/report" "$T/report-label"
+  : >"$T/calls"
+  gh_api() {
+    local url= a m=GET
+    for a in "$@"; do case $a in repos/*) url=$a ;; graphql) url=$a m=POST ;; POST | PATCH) m=$a ;; esac; done
+    [[ " $* " == *" --input - "* ]] && cat >"$T/in"
+    echo "$m $url" >>"$T/calls"
+    case "$m $url" in
+      "GET $R/issues?state=open&labels=maintainer%2Freport"*) [ ! -e "$T/report" ] || echo 7 ;;
+      "GET $R/labels/maintainer%2Freport") [ -e "$T/report-label" ] ;;
+      "POST $R/labels") touch "$T/report-label" ;;
+      "POST $R/issues") jq -c '{title, labels}' "$T/in" >"$T/report"; echo "N7 https://x/issues/7" ;;
+      "PATCH $R/issues/7") jq -r .body "$T/in" >"$T/body7"; echo https://x/issues/7 ;;
+      "POST graphql") ;;
+      "GET $R/issues?state=all"*) jq -r '[.[] | select(.labels | any(.name == "maintainer/report") | not) | .updated_at] | first // "none"' <<<'[{"updated_at":"2026-10-06T09:00:00Z","labels":[{"name":"maintainer/report"}]},{"updated_at":"2026-10-06T08:00:00Z","labels":[]}]' ;;
+      "GET $R/commits/main") echo abc123 ;;
+    esac
+  }
+  echo "first" >"$T/r1"
+  out=$(gh_report "$T/r1" 2>&1)
+  check "report: first call creates and pins" "$out | $(calls | tr '\n' ',')" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/labels/maintainer%2Freport,POST $R/labels,POST $R/issues,POST graphql,"
+  check "report: the issue's title and label" "$(cat "$T/report")" '{"title":"Maintainer report","labels":["maintainer/report"]}'
+  : >"$T/calls"
+  echo "second" | gh_report - >"$T/out" 2>&1
+  check "report: then edits it" "$(cat "$T/out") | $(calls | tr '\n' ',') | $(cat "$T/body7")" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,PATCH $R/issues/7, | second"
+  check "activity: newest change, the report left out, and main" "$(gh_activity)" "2026-10-06T08:00:00Z abc123"
+  exit $fail
+) || fail=1
 exit $fail

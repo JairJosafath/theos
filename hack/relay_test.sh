@@ -5,10 +5,11 @@
 # session's claim so the relay has none left to release; the cluster
 # lease a session leaves behind, which the relay drops; the Docker gate, with
 # docker faked; the triage of the
-# proposed issues, as a dry run; and, with claude faked, the pause a usage
+# proposed issues and the maintainer's prompt, as dry runs; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing; and idle workers,
-# which stop without taking a session-start slot.
+# which stop without taking a session-start slot; and a maintainer sweep, which
+# records the activity it saw.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -172,6 +173,20 @@ echo "1 40 41" >"$DIR/triaged"
 DRY_RUN= untriaged
 check "triage: never ran" "$(awk '{print NF}' "$DIR/triaged")" 1
 
+# The maintainer, as a dry run: its prompt names the charter, the skill and the
+# report, says it commits nothing, and gives the last sweep's time.
+rm -f "$DIR/admitted" "$DIR/maintained"
+out=$(DRY_RUN=1 maintain)
+check "maintain: follows GOVERNANCE.md" "$(grep -c 'follow GOVERNANCE.md and the maintainer skill' <<<"$out")" 1
+check "maintain: sets the report" "$(grep -c 'hack/lib/github.sh report FILE' <<<"$out")" 1
+check "maintain: commits nothing" "$(grep -c 'commit nothing' <<<"$out")" 1
+check "maintain: the owner's word wins" "$(grep -c "The owner's word wins" <<<"$out")" 1
+check "maintain: first sweep" "$(grep -c 'No sweep ran before this one' <<<"$out")" 1
+echo "86400 x y" >"$DIR/maintained"
+rm -f "$DIR/admitted"
+check "maintain: the last sweep's time" "$(DRY_RUN=1 maintain | grep -c "The last sweep was at $(date -d @86400 -Is);")" 1
+check "maintain: a dry run records nothing" "$(cat "$DIR/maintained")" "86400 x y"
+
 # The sessions, with claude faked (FAKE: limit, fail, handoff or commit) and
 # GitHub faked: one ready issue, #175 on branch b.
 WT=$T/wt
@@ -192,6 +207,7 @@ case $(cat "$FAKE") in
   quiet) sleep 4; echo '{"is_error":false,"result":"quiet","num_turns":1}' ;;
   limit) echo '{"is_error":true,"result":"You'"'"'ve hit your session limit · resets 3am (UTC)","num_turns":1}'; exit 1 ;;
   login) echo 'Not logged in · Please run /login' >&2; exit 1 ;;
+  crash) echo "crashed" >&2; exit 1 ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
   handoff) echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"handed off","num_turns":9}' ;;
   commit) git -c user.name=t -c user.email=t@t commit -q --allow-empty -m more; echo '{"is_error":false,"result":"committed","num_turns":9}' ;;
@@ -348,5 +364,27 @@ wait
 check "taken while waiting: no session" "$(takes)" 1
 grep -q "waiting: a session started" "$LOG"; check "taken while waiting: waited" $? 0
 check "taken while waiting: stopped" "$(grep -c "no issue ready; stopping" "$LOG")" 1
+
+# A maintainer sweep, with claude faked, on origin/main: it records the
+# activity after it; one cut short by a limit or a crash records nothing, so
+# the next one still looks back to the last full sweep.
+git -C "$WT" update-ref refs/remotes/origin/main HEAD
+gh_activity() { echo "2026-10-06T08:00:00Z abc123"; }
+rm -f "$DIR/paused-until" "$DIR/maintained"
+: >"$LOG"
+echo fail >"$FAKE"
+ADMIT_GAP=0 maintain
+check "maintain: records the activity" "$(cut -d' ' -f2- "$DIR/maintained")" "2026-10-06T08:00:00Z abc123"
+check "maintain: start logged" "$(grep -c 'maintainer start: id .*, last sweep never' "$LOG")" 1
+check "maintain: on origin/main" "$(git -C "$WT" rev-parse --abbrev-ref HEAD)" HEAD
+echo "86400 t0 sha0" >"$DIR/maintained"
+echo limit >"$FAKE"
+ADMIT_GAP=0 maintain
+check "maintain: a limit records nothing" "$(cat "$DIR/maintained")" "86400 t0 sha0"
+rm -f "$DIR/paused-until"
+echo crash >"$FAKE"
+ADMIT_GAP=0 maintain
+check "maintain: a crash records nothing" "$(cat "$DIR/maintained")" "86400 t0 sha0"
+check "maintain: says so" "$(grep -c "the sweep didn't run to its end" "$LOG")" 2
 
 exit $fail

@@ -5,6 +5,7 @@
 # hack/relay.sh faked; when a triage reads a proposed issue again, with
 # hack/lib/github.sh's proposed against a stubbed GitHub; and when a CI round
 # files a "main is red" issue, with gh faked under the real hack/lib/github.sh;
+# when it starts the maintainer, with the activity and hack/relay.sh --maintain faked;
 # --install and --uninstall with systemctl, loginctl and crontab faked; and the
 # stop file and the lock in a scratch copy of the watch, never this checkout's
 # .relay/.
@@ -27,6 +28,11 @@ blocked() { [ -n "$BLOCKED" ] && printf '%s\n' "$BLOCKED"; return "$BLOCKED_RC";
 cycles() { [ -n "$CYCLES" ] && ! grep -qxF "$CYCLES" "$T/cycles" 2>/dev/null && echo "$CYCLES" | tee -a "$T/cycles"; return 0; }
 run_relay() { echo started >>"$T/starts"; echo "worker 1 started"; return "$RELAY_RC"; }
 run_triage() { echo triage >>"$T/triages"; echo "triage started in worker 2"; return "$TRIAGE_RC"; }
+# The maintainer is off (WATCH_MAINTAIN=0) until its own tests below.
+MAINTAIN_EVERY=0 ACT='t1 sha1' ACT_RC=0 MAINT_RC=0
+activity() { echo "$ACT"; return "$ACT_RC"; }
+run_maintain() { echo maintain >>"$T/maintains"; echo "maintainer started (pid 1)"; return "$MAINT_RC"; }
+maintains() { cat "$T/maintains" 2>/dev/null | wc -l | tr -d ' '; }
 starts() { cat "$T/starts" 2>/dev/null | wc -l | tr -d ' '; }
 triages() { cat "$T/triages" 2>/dev/null | wc -l | tr -d ' '; }
 # aged: make the last triage WATCH_TRIAGE old.
@@ -314,6 +320,64 @@ check "paused: logged once" "$(logged "the relay is paused until .* (You've hit 
 echo "$(($(date +%s) - 1)) You've hit your session limit" >"$DIR/paused-until"
 round
 check "pause over: starts the relay" "$(starts)" 6
+
+# The maintainer: each pass, busy or idle, when on, not running, the last sweep
+# WATCH_MAINTAIN old and the activity changed since; never while paused.
+MAINTAIN_EVERY=7200 PICKED= PICK_RC=1 PROPOSED=
+now=$(date +%s)
+rm -f "$DIR/maintained"
+round
+check "maintain: no sweep yet: starts" "$(maintains)" 1
+check "maintain: one line" "$(logged 'maintainer: no sweep recorded (t1 sha1); hack/relay.sh --maintain: maintainer started (pid 1)$')" 1
+round
+check "maintain: not twice" "$(maintains)" 1
+# The sweep ends and records the activity it saw.
+MAINT_T=0
+echo "$((now - 7200)) t1 sha1" >"$DIR/maintained"
+round
+check "maintain: due, unchanged: no sweep" "$(maintains)" 1
+# Quiet: the activity is asked at most every WATCH_RETRY.
+ACT='t2 sha1'
+round
+check "maintain: quiet: not asked again before WATCH_RETRY" "$(maintains)" 1
+MAINT_T=0
+echo "$((now - 3600)) t1 sha1" >"$DIR/maintained"
+round
+check "maintain: changed, not due: no sweep" "$(maintains)" 1
+echo "$((now - 7200)) t1 sha1" >"$DIR/maintained"
+exec 5>"$DIR/maintain.lock"; flock 5
+MAINT_T=0
+round
+check "maintain: already running: no sweep" "$(maintains)" 1
+exec 5>&-
+echo "$(($(date +%s) + 3600)) You've hit your session limit" >"$DIR/paused-until"
+round
+check "maintain: paused: no sweep" "$(maintains)" 1
+rm -f "$DIR/paused-until"
+MAINTAIN_EVERY=0 round
+check "maintain: off: no sweep" "$(maintains)" 1
+# Every worker busy: the maintainer starts all the same.
+exec 5>"$DIR/lock-1" 6>"$DIR/lock-2"; flock 5; flock 6
+MAINT_T=0
+round
+check "maintain: due and changed, workers busy: starts" "$(maintains)" 2
+check "maintain: names the last sweep" "$(logged "maintainer: activity since the sweep of $(date -d "@$((now - 7200))" -Is) (t2 sha1)")" 1
+check "maintain: workers busy: no relay" "$(starts)" 6
+exec 5>&- 6>&-
+# A start that fails: logged, and tried again only after WATCH_RETRY.
+MAINT_T=0 MAINT_RC=1 ACT='t3 sha1'
+round; round
+check "maintain: failed start: once" "$(maintains)" 3
+check "maintain: failed start: logged" "$(logged 'hack/relay.sh --maintain: maintainer started (pid 1) (failed, exit 1; again after 10m)')" 1
+MAINT_T=$((MAINT_T - RETRY)) MAINT_RC=0
+round
+check "maintain: retried after WATCH_RETRY" "$(maintains)" 4
+# GitHub can't say: logged once, no sweep.
+MAINT_T=0 ACT_RC=1 ACT='boom'
+round; round
+check "maintain: no activity: no sweep" "$(maintains)" 4
+check "maintain: no activity: logged once" "$(logged 'could not read the activity for the maintainer: boom')" 1
+MAINTAIN_EVERY=0 ACT_RC=0
 
 # Main's CI, with gh faked: runs from $T/runs-<file>.json, open issues in
 # $T/issues.json, and every issue filed appended there.

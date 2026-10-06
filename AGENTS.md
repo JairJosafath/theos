@@ -178,7 +178,10 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   minute of an issue becoming ready. When nothing is ready, it starts a triage
   session (`hack/relay.sh --triage`) that readies the sound `status/proposed`
   issues and comments on the others what they lack; `status/needs-human`
-  stays the user's. A usage limit or a failed login pauses the relay until it
+  stays the user's. Every 2 hours when anything changed (`WATCH_MAINTAIN`),
+  busy or idle, it starts the maintainer (`hack/relay.sh --maintain`, the
+  `maintainer` skill), which decides for the owner and keeps the pinned
+  *Maintainer report* issue (`hack/lib/github.sh report`). A usage limit or a failed login pauses the relay until it
   resets (`.relay/paused-until`); an issue whose sessions end three times in a
   row without a handoff or a commit goes to `status/needs-human`. A session
   whose transcript stops changing for 45 minutes (`RELAY_IDLE`) is ended and
