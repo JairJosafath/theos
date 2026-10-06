@@ -101,16 +101,25 @@ down.
 
 The agents run Claude Code, which signs in with a long-lived token. Make one
 with `claude setup-token` and store it in Secret `claude-credentials` in the
-project namespace; the Agents name the Secret and hold no token. Paste the
-token at the prompt (it isn't echoed, and stays out of your shell history):
+project namespace; the Agents name the Secret and hold no token. Run
+`claude setup-token` on its own first, then the rest, and paste the token at
+the prompt (it isn't echoed, and stays out of your shell history):
 
 ```bash
 claude setup-token
+```
+
+```bash
 read -rs -p 'Claude token: ' CLAUDE_TOKEN; echo
-printf '%s' "$CLAUDE_TOKEN" | kubectl -n webshop create secret generic claude-credentials \
+[ -n "$CLAUDE_TOKEN" ] && printf '%s' "$CLAUDE_TOKEN" | kubectl -n webshop create secret generic claude-credentials \
   --from-file=CLAUDE_CODE_OAUTH_TOKEN=/dev/stdin
 unset CLAUDE_TOKEN
+kubectl -n webshop get secret claude-credentials -o go-template='{{len .data.CLAUDE_CODE_OAUTH_TOKEN}}{{"\n"}}'
 ```
+
+The last line prints the stored token's length in base64, never the token;
+`0` or an error means the paste didn't reach `read` (pasting both blocks at once does that): delete the
+Secret and run the second block again.
 
 With an API key instead, name the key `ANTHROPIC_API_KEY`: every key of the
 Secret becomes an environment variable in the agent's sandbox.
@@ -209,7 +218,7 @@ issue `status/needs-human` with the reason in a comment; label it
 | Container `orders-cli` not `Ready` | `kubectl -n webshop describe container orders-cli`: the condition's message says which template or GitProvider is missing. |
 | The issue is labelled `status/needs-human` before any Task | The Crew rejected it and said why in a comment, such as a missing checklist; fix the body and label it `status/ready` again. |
 | The Crew stays `Waiting` | `kubectl -n webshop get crew orders-cli -o yaml`: `status.conditions` says what it waits for, such as the Container. |
-| The agent says it isn't logged in | Secret `webshop/claude-credentials` is missing or its key isn't `CLAUDE_CODE_OAUTH_TOKEN`. |
+| The agent says it isn't logged in | Secret `webshop/claude-credentials` is missing, empty (step 2's length check prints `0`), or its key isn't `CLAUDE_CODE_OAUTH_TOKEN`. |
 
 ## Next
 
