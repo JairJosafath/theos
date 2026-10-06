@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -43,6 +44,10 @@ const (
 
 // ConditionReady says whether a Crew can pick up issues, and why not.
 const ConditionReady = "Ready"
+
+// crewWorkers is how many Crews reconcile at once; one Crew never runs twice
+// at once.
+const crewWorkers = 4
 
 // defaultCrewPoll is how often a Crew reads its Container's issues.
 const defaultCrewPoll = time.Minute
@@ -388,6 +393,8 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}
 				return crewsOf(ctx, task.Namespace, task.Spec.ContainerRef.Name)
 			}), taskPhaseChanges()).
+		// A Crew uploading a release file can take minutes; the others go on.
+		WithOptions(controller.Options{MaxConcurrentReconciles: crewWorkers}).
 		Named("crew").
 		Complete(r)
 }

@@ -146,7 +146,12 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 				log.Info("Created release draft", "draft", draft.ID)
 			}
 		case model.PublishUploadAsset:
-			err = uploadAsset(pubCtx, provider, repo, target, gitea, step)
+			var giteaErr error
+			if giteaErr, err = uploadAsset(pubCtx, provider, repo, target, gitea, step); giteaErr != nil {
+				// Gitea's side: not a GitHub failure, tried again on the next poll.
+				log.Error(giteaErr, "Failed to download a release file from Gitea", "file", step.Asset.Name)
+				return
+			}
 			if err == nil {
 				log.Info("Uploaded release file", "file", step.Asset.Name, "size", step.Asset.Size)
 			}
@@ -244,7 +249,7 @@ func targetReleases(ctx context.Context, target gitprovider.ReleaseTarget,
 }
 
 // sourceName is the name of the Gitea file GitHub stored as name: GitHub turns
-// a space into a dot.
+// a space, and other characters it doesn't keep in a file name, into a dot.
 func sourceName(gitea *model.SourceRelease, name string) string {
 	if gitea != nil {
 		for _, a := range gitea.Assets {
@@ -257,18 +262,20 @@ func sourceName(gitea *model.SourceRelease, name string) string {
 }
 
 func githubAssetName(name string) string {
-	return strings.ReplaceAll(name, " ", ".")
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', strings.ContainsRune("._+-", r):
+			return r
+		}
+		return '.'
+	}, name)
 }
 
 // uploadAsset streams a Gitea release file to the draft, deleting the draft's
-// file of that name first when it has one.
+// file of that name first when it has one. It returns Gitea's failure apart
+// from GitHub's.
 func uploadAsset(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	target gitprovider.ReleaseTarget, gitea *gitprovider.Release, step model.PublishStep) error {
-	if step.Replace != nil {
-		if err := target.DeleteAsset(ctx, step.Replace.ID); err != nil {
-			return err
-		}
-	}
+	target gitprovider.ReleaseTarget, gitea *gitprovider.Release, step model.PublishStep) (giteaErr, err error) {
 	var asset *gitprovider.ReleaseAsset
 	for i, a := range gitea.Assets {
 		if a.ID == step.Asset.ID {
@@ -276,15 +283,20 @@ func uploadAsset(ctx context.Context, provider gitprovider.Provider, repo gitpro
 		}
 	}
 	if asset == nil {
-		return fmt.Errorf("gitea release %s has no file %s", gitea.Tag, step.Asset.Name)
+		return fmt.Errorf("gitea release %s has no file %s", gitea.Tag, step.Asset.Name), nil
+	}
+	if step.Replace != nil {
+		if err := target.DeleteAsset(ctx, step.Replace.ID); err != nil {
+			return nil, err
+		}
 	}
 	body, size, err := provider.OpenReleaseAsset(ctx, repo, *asset)
 	if err != nil {
-		return fmt.Errorf("downloading %s from Gitea: %w", asset.Name, err)
+		return err, nil
 	}
 	defer func() { _ = body.Close() }()
 	_, err = target.UploadAsset(ctx, step.Release, asset.Name, size, body)
-	return err
+	return nil, err
 }
 
 // setPublish records how publishing the last release went, in its status and

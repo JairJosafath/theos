@@ -172,8 +172,13 @@ until step 4, since nothing reads `publishReleases` before it.
    issues are the closed issues of the tag's milestone (`EnsureMilestone` finds
    it closed); with none, the draft's body is the marker alone, since Gitea
    ignores an empty body and the notes would be written for ever. The draft's
-   files are matched to Gitea's by name, a space read as GitHub's dot; one
-   GitHub never finished counts as missing. A Gitea read that fails is logged
+   files are matched to Gitea's by name, read as GitHub stores it (a character
+   other than a letter, digit or `._+-` becomes a dot); one GitHub never
+   finished counts as missing. A file Gitea fails to send is logged and tried
+   on the next poll, not a `GitHubError`. `FindRelease` prefers a published
+   release with the marker over a draft with it, so a stray second draft
+   doesn't hold back a release that is out. Crews reconcile four at a time, so
+   one uploading a large file doesn't stop the others. A Gitea read that fails is logged
    and tried on the next poll, leaving the state as it was. `make
    validate-yaml` now also checks that each file in `test/invalid` is
    rejected with the message on its first line (`# expect: ...`).
