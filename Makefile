@@ -308,24 +308,26 @@ chart: ## Regenerate the Helm chart in dist/chart from the kustomize output.
 
 ## Every option of the chart on, for the check that it renders no Secret.
 HELM_ALL_ON ?= gitea.projects={apps},gitea.admin.existingSecret=gitea-admin,global.imagePullSecrets[0].name=ghcr,manager.imagePullSecrets[0].name=ghcr,gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].existingSecret=git-credentials,rbac.helpers.enabled=true,certManager.enabled=true,webhook.enabled=true,prometheus.enabled=true,networkPolicy.enabled=true
-## Secrets the chart still renders until #158 makes them in Gitea's pod; none may join them.
-HELM_SECRETS_ALLOWED ?= gitea/gitea-runner
+## Secrets the chart may render: none; a pod makes each in the cluster.
+HELM_SECRETS_ALLOWED ?=
 
 .PHONY: helm-lint
-helm-lint: ## Lint the Helm chart, render it without Gitea and with it, and fail if it renders a Secret with every option on.
+helm-lint: ## Lint the Helm chart, render it without Gitea and with it, and fail if it renders a Secret, with every option on or with Gitea's defaults.
 	$(HELM) lint $(HELM_CHART_DIR) --set gitea.enabled=false
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
 		--set 'gitea.enabled=false,gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].existingSecret=git-credentials' >/dev/null
 	$(HELM) lint $(HELM_CHART_DIR)
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
 		--set 'gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >/dev/null
-	@set -o pipefail; out=$$($(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) --set '$(HELM_ALL_ON)') || exit 1; \
+	@set -o pipefail; for set in '$(HELM_ALL_ON)' 'gitea.projects={apps}'; do \
+	out=$$($(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) --set "$$set") || exit 1; \
 	secrets=$$(echo "$$out" | awk '/^---/ { s = 0; n = ""; ns = "" } /^kind: Secret$$/ { s = 1 } \
 		/^  name: / && n == "" { n = $$2 } /^  namespace: / && ns == "" { ns = $$2 } \
 		s && n != "" && ns != "" { print ns "/" n; s = 0 }' | grep -vxF -e '$(HELM_SECRETS_ALLOWED)' || true); \
 	if [ -n "$$secrets" ]; then \
-		echo "helm template with every option on renders a Secret; make it in the cluster instead (the secrets skill):"; \
-		echo "$$secrets"; exit 1; fi
+		echo "helm template --set $$set renders a Secret; make it in the cluster instead (the secrets skill):"; \
+		echo "$$secrets"; exit 1; fi; \
+	done
 
 ## Helm binary to use for deploying the chart
 HELM ?= helm

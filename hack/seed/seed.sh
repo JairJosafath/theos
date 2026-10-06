@@ -6,7 +6,7 @@
 #   4. stores an admin access token as Secret gitea-credentials in each project's
 #      namespace;
 #   5. stores a runner registration token as Secret gitea/gitea-runner, unless
-#      RUNNER_SECRET is empty (the Helm chart makes that token itself).
+#      RUNNER_SECRET is empty (in the Helm chart, Gitea's pod makes that token).
 # Every step looks before it acts, so a second run changes nothing.
 set -euo pipefail
 

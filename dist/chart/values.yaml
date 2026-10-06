@@ -312,8 +312,15 @@ gitea:
     repository: gitea/gitea
     tag: 1.27.3-rootless
     pullPolicy: IfNotPresent
-  ## The admin: Secret gitea-admin, its password generated on install and kept
-  ## on upgrade; or existingSecret, a Secret with username, password and email.
+  ## The admin: Secret gitea-admin, which Gitea's pod makes in the cluster with
+  ## a random password when it is missing, from the username and email below
+  ## (a later change of them takes a new Secret); or existingSecret, your own
+  ## Secret with username, password and email, which the pod never changes.
+  ## The runners' registration token, Secret gitea-runner, is made the same way.
+  ## Neither is rendered, so helm template, Argo CD and Flux never see a value.
+  ## To rotate one: kubectl -n gitea delete secret gitea-admin (or gitea-runner),
+  ## then kubectl -n gitea rollout restart deployment/gitea; after gitea-runner,
+  ## restart the runner Deployments too.
   ##
   admin:
     username: c4admin
