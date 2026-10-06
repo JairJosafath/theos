@@ -22,7 +22,8 @@ TEMPLATES_DIR=${TEMPLATES_DIR:-/templates}
 TEMPLATE_ORG=${TEMPLATE_ORG:-templates}
 # The projects, space-separated: each one's organization holds its Container
 # repositories, and its namespace (same name) gets the credentials Secret.
-PROJECTS=${PROJECTS:-${PROJECT:-webshop}}
+# PROJECTS="" seeds only the templates, with no kubectl (hack/gitea-local.sh).
+PROJECTS=${PROJECTS-${PROJECT:-webshop}}
 CREDENTIALS_SECRET=${CREDENTIALS_SECRET:-gitea-credentials}
 # Enough to create repositories in an organization and push to them over HTTP;
 # read:user lets the operator (and this script) check the token with GET /user;
@@ -245,7 +246,11 @@ main() {
     ensure_credentials "$project"
   done
   if [[ -n $RUNNER_SECRET ]]; then ensure_runner_token; fi
-  log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials${RUNNER_SECRET:+ and runner token} stored"
+  if [[ -n $PROJECTS ]]; then
+    log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials${RUNNER_SECRET:+ and runner token} stored"
+  else
+    log "Done: organization $TEMPLATE_ORG, templates tagged${RUNNER_SECRET:+, runner token stored}"
+  fi
 }
 
 main "$@"
