@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
 
 var releaseDue = time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
@@ -224,6 +225,60 @@ var _ = Describe("Crew releases", func() {
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(condition(getCrew(g, ns).Status.Conditions, ConditionReleased)).To(BeNil())
+		}).Should(Succeed())
+	})
+
+	It("reports a release run that fails, once, and one that a person fixes", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			release := getCrew(g, ns).Status.LastRelease
+			g.Expect(release).NotTo(BeNil())
+			g.Expect(release.Run).To(Equal("Waiting"))
+		}).Should(Succeed())
+
+		runURL := "http://gitea/" + ns + "/orders-api/actions/runs/5"
+		run := gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "in_progress", URL: runURL}
+		gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", run)
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.LastRelease.Run).To(Equal("Running"))
+		}).Should(Succeed())
+
+		run.Status, run.Conclusion = "completed", "failure"
+		gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", run)
+		failed := And(HaveField("Type", "Warning"), HaveField("Reason", "ReleaseRunFailed"),
+			HaveField("Note", "Release run release.yaml of v0.1.0 ended failure: "+runURL))
+		Eventually(func(g Gomega) {
+			release := getCrew(g, ns).Status.LastRelease
+			g.Expect(release.Run).To(Equal("Failed"))
+			g.Expect(release.RunURL).To(Equal(runURL))
+			g.Expect(crewEvents(g, ns)).To(ContainElement(failed))
+		}).Should(Succeed())
+		// The Crew polls each second; a repeated Warning would be a second Event
+		// or a raised series count.
+		Consistently(func(g Gomega) {
+			var warnings []eventsv1.Event
+			for _, e := range crewEvents(g, ns) {
+				if e.Reason == "ReleaseRunFailed" {
+					warnings = append(warnings, e)
+				}
+			}
+			g.Expect(warnings).To(HaveLen(1))
+			g.Expect(warnings[0].Series).To(BeNil())
+		}, 3*time.Second).Should(Succeed())
+
+		run.Conclusion = "success"
+		gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", run)
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.LastRelease.Run).To(Equal("Succeeded"))
+			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
+				HaveField("Reason", "ReleaseRunSucceeded"))))
 		}).Should(Succeed())
 	})
 })

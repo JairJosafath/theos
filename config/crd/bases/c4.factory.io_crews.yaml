@@ -237,6 +237,21 @@ spec:
                   commit:
                     description: commit is the commit the tag names.
                     type: string
+                  run:
+                    description: |-
+                      run is how the CI workflow runs the tag started went: Waiting until one
+                      starts, Running while one hasn't ended, Failed as soon as one ended other
+                      than success or skipped, Succeeded once all ended well.
+                    enum:
+                    - Waiting
+                    - Running
+                    - Succeeded
+                    - Failed
+                    type: string
+                  runURL:
+                    description: runURL links to the failed run, else to the newest
+                      one.
+                    type: string
                   tag:
                     description: tag is the release's version, the milestone's title.
                     type: string
