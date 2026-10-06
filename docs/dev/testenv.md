@@ -180,6 +180,7 @@ hack/lib/github.sh take 14         # claim it for this checkout; prints the agen
 hack/lib/github.sh claims          # who holds which issue, with heartbeat age and branch
 hack/lib/github.sh cluster acquire # lease a pool cluster before deploying; prints its name (waits up to 30m; exit 4 names the holders)
 hack/lib/github.sh cluster acquire --fresh # the same, on a clean cluster: deletes and recreates the one it leased
+hack/lib/github.sh cluster acquire --fresh --bare # the same, with nothing installed: for a release install (getting-started)
 hack/lib/github.sh cluster name    # the cluster make uses in this checkout: its lease's, else c4factory
 hack/lib/github.sh cluster release # drop it once verification is done
 hack/lib/github.sh cluster holder  # who holds which cluster
@@ -232,7 +233,11 @@ around the steps that touch it:
    yours, pass `--fresh`: it prefers a cluster not created yet, else deletes
    the one it leased (`make cluster-delete`) and creates it again as above.
    It touches only the cluster this checkout now leases, never one another
-   checkout holds; nothing else in a session deletes a pool cluster.
+   checkout holds; nothing else in a session deletes a pool cluster. To
+   install a release on it ([getting-started](../getting-started.md), the
+   chart), pass `--fresh --bare`: the same, created with `make cluster` only,
+   no testenv Gitea, seed, `webshop` or `apps`; the chart brings its own
+   Gitea into `gitea`, and helm can't take over the testenv's.
 3. Deploy this branch's own build (`make deploy`; never trust what is
    deployed) and verify. Every make target in the checkout uses the leased
    cluster without being told (`hack/lib/github.sh cluster name`), and so do

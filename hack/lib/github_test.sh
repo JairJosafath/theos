@@ -184,6 +184,19 @@ gh_cluster acquire --wait 0 --fresh >/dev/null 2>"$T/err"; check "fresh, delete 
 check "fresh, delete fails: lease dropped" "$([ -e "$LEASE2" ] && echo kept || echo gone)" gone
 rm -f "$T/make-fails" "$LEASE" "$T/made"; echo c4factory >"$T/kind-clusters"
 
+# --bare, with or without --fresh: as --fresh, and created with make cluster
+# only: no testenv Gitea, no seed, for a release install.
+out=$(gh_cluster acquire --wait 0 --fresh --bare 2>"$T/err"); check "bare: a not-yet-created cluster first" "$? $out" "0 c4factory-2"
+check "bare, not created: make cluster only" "$(cat "$T/made")" "-C $T/main cluster KIND_CLUSTER=c4factory-2"
+grep -q "creating Kind cluster c4factory-2 with nothing installed" "$T/err"; check "bare: says it installs nothing" $? 0
+rm -f "$T/made"
+check "bare, own lease: recreated bare" "$(gh_cluster acquire --wait 0 --bare 2>/dev/null) $(cat "$T/made")" "c4factory-2 -C $T/main cluster-delete KIND_CLUSTER=c4factory-2
+-C $T/main cluster KIND_CLUSTER=c4factory-2"
+touch "$T/make-fails"; gh_cluster release >/dev/null; : >"$T/kind-clusters"
+gh_cluster acquire --wait 0 --bare >/dev/null 2>"$T/err"; check "bare, create fails: exit 1" $? 1
+check "bare, create fails: lease dropped" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
+rm -f "$T/make-fails" "$LEASE" "$LEASE2" "$T/made"; echo c4factory >"$T/kind-clusters"
+
 # needs/cluster issues are picked and taken while another checkout holds the lease.
 clear; lease "$T/wt2" 50 "$(date +%s)"
 check "pick, lease held elsewhere" "$(gh_pick | cut -f1)" 60

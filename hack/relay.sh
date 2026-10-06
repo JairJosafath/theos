@@ -155,7 +155,9 @@ prompt() {
   A pool cluster belongs to nobody between leases: when the \"Done when\" asks
   for a fresh cluster, or what is installed on it isn't yours, pass
   \`--fresh\` (\`cluster acquire --fresh\`): it deletes and recreates only the
-  cluster this checkout leased; never delete a cluster by hand.
+  cluster this checkout leased; never delete a cluster by hand. To install a
+  release (docs/getting-started.md, the chart), pass \`--fresh --bare\`: the
+  same, with nothing installed.
   Exit 4 from acquire means other checkouts hold every cluster: hand off with
   only the cluster steps left."
   fi

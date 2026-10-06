@@ -30,13 +30,15 @@
 #   hack/lib/github.sh flush             post the handoffs kept in .relay/ while GitHub was away, releasing their claims
 #   hack/lib/github.sh comment N FILE    post FILE as a comment on N
 #   hack/lib/github.sh label N LABEL...  add labels to N
-#   hack/lib/github.sh cluster acquire [--wait DURATION] [--fresh]
+#   hack/lib/github.sh cluster acquire [--wait DURATION] [--fresh] [--bare]
 #                                        lease one of this device's Kind clusters (C4_CLUSTERS, default 2) to this
 #                                        checkout and print its name, creating it if it does not exist yet; wait up
 #                                        to DURATION (default 30m) while other checkouts hold every one; exit 4 names them.
 #                                        --fresh: prefer one not created yet, else delete and recreate the leased one
 #                                        (only it); pass it when the issue asks for a fresh cluster or what is installed
-#                                        isn't yours: a pool cluster belongs to nobody between leases
+#                                        isn't yours: a pool cluster belongs to nobody between leases.
+#                                        --bare (implies --fresh): create it with make cluster only, no testenv Gitea
+#                                        or seed; pass it to install a release (docs/getting-started.md) on it
 #   hack/lib/github.sh cluster release   drop this checkout's cluster lease
 #   hack/lib/github.sh cluster name      the cluster this checkout's make targets use: its lease's, else c4factory
 #   hack/lib/github.sh cluster holder [NAME]
@@ -648,6 +650,8 @@ gh_label() {
 # cluster belongs to nobody between leases: what an earlier session installed
 # stays on it, so acquire --fresh deletes and recreates the cluster it leased
 # (make cluster-delete, then as above), and never one another checkout holds.
+# acquire --bare does the same and creates it with make cluster only: nothing
+# installed, for a release's chart, which brings its own Gitea.
 GH_LEASE_POLL=${GH_LEASE_POLL:-15} # seconds between tries while acquire waits
 GH_POOL_FIRST=c4factory
 
@@ -788,20 +792,22 @@ gh_lease_take() {
     >"$f.$$" && mv "$f.$$" "$f" && echo "$pick"
 }
 
-# gh_lease_acquire [--wait DURATION] [--fresh]: lease a pool cluster to this
-# checkout, waiting up to DURATION (default 30m) while other checkouts hold
-# every one; create it if it does not exist yet. --fresh prefers one that does
-# not exist yet, and deletes and recreates the leased one if it does. Prints
+# gh_lease_acquire [--wait DURATION] [--fresh] [--bare]: lease a pool cluster
+# to this checkout, waiting up to DURATION (default 30m) while other checkouts
+# hold every one; create it if it does not exist yet. --fresh prefers one that
+# does not exist yet, and deletes and recreates the leased one if it does.
+# --bare implies --fresh and creates it without Gitea and the seed. Prints
 # the cluster's name on stdout, the rest on stderr. Exit 4 naming the holders
 # when the wait runs out.
 gh_lease_acquire() {
-  local wait=30m secs t0 out said= fresh= l_name l_issue l_wt l_beat
+  local wait=30m secs t0 out said= fresh= bare= l_name l_issue l_wt l_beat
   while [ $# -gt 0 ]; do
     case $1 in
       --wait) wait=${2:-}; shift 2 || shift ;;
       --wait=*) wait=${1#*=}; shift ;;
       --fresh) fresh=1; shift ;;
-      *) echo "usage: cluster acquire [--wait DURATION] [--fresh]" >&2; return 64 ;;
+      --bare) fresh=1 bare=1; shift ;;
+      *) echo "usage: cluster acquire [--wait DURATION] [--fresh] [--bare]" >&2; return 64 ;;
     esac
   done
   secs=$(gh_seconds "$wait" --wait) || return 64
@@ -831,7 +837,14 @@ gh_lease_acquire() {
       return 1
     fi
   fi
-  if ! gh_kind_clusters | grep -qxF -- "$out"; then
+  if [ -n "$bare" ] && ! gh_kind_clusters | grep -qxF -- "$out"; then
+    echo "github: --bare: creating Kind cluster $out with nothing installed (make cluster KIND_CLUSTER=$out)" >&2
+    if ! "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" cluster "KIND_CLUSTER=$out" >&2; then
+      gh_lease_release >/dev/null
+      echo "github: could not create Kind cluster $out; released its lease" >&2
+      return 1
+    fi
+  elif ! gh_kind_clusters | grep -qxF -- "$out"; then
     echo "github: Kind cluster $out does not exist yet; creating it with Gitea and the seeded templates (make cluster gitea seed KIND_CLUSTER=$out)" >&2
     if ! "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" cluster gitea seed "KIND_CLUSTER=$out" >&2; then
       gh_lease_release >/dev/null
@@ -889,7 +902,7 @@ gh_lease_pool() {
   done
 }
 
-# gh_cluster acquire [--wait DURATION] [--fresh] | release | name | holder [NAME] | pool:
+# gh_cluster acquire [--wait DURATION] [--fresh] [--bare] | release | name | holder [NAME] | pool:
 # the cluster pool. name prints the cluster this checkout's make targets use:
 # its lease's, else c4factory. holder prints the live leases, or NAME's; exit
 # 1 when there is none.
@@ -908,7 +921,7 @@ gh_cluster() {
       done
       [ -n "$found" ]
       ;;
-    *) echo "usage: cluster acquire [--wait DURATION] [--fresh] | release | name | holder [NAME] | pool" >&2; return 64 ;;
+    *) echo "usage: cluster acquire [--wait DURATION] [--fresh] [--bare] | release | name | holder [NAME] | pool" >&2; return 64 ;;
   esac
 }
 
