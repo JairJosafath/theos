@@ -2,7 +2,10 @@
 **
 !**/*.go
 **/*_test.go
+# The files c4agent embeds with //go:embed; cmd/dockerignore_test.go fails
+# when one is missing here.
 !features/src/**
+!internal/model/planner.md
 !go.mod
 !go.sum
 

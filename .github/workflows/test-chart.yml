@@ -20,12 +20,14 @@ on:
       - config/**
       - '!config/samples/**'
       - Dockerfile
-      - .dockerignore
+      - '**/.dockerignore'
+      - '**/*.dockerignore'
       - ui/Dockerfile
       - Makefile
       - hack/seed/**
       - hack/runner/**
       - hack/toolchain-base/**
+      - hack/agent/**
       - .github/workflows/test-chart.yml
   workflow_dispatch:
 
@@ -85,6 +87,9 @@ jobs:
           docker build -t "$SEED_IMG" -f hack/seed/Dockerfile .
           docker build -t c4factory/base:chart-test hack/toolchain-base
           docker build -t "$RUNNER_IMG" --build-arg BASE=c4factory/base:chart-test -f hack/runner/Dockerfile .
+          # The chart doesn't run the agent, but Release builds it; its Go stage
+          # fails here, not at a tag, when its ignore file drops a file c4agent needs.
+          docker build --target build -f hack/agent/Dockerfile .
           kind load docker-image "$IMG" "$UI_IMG" "$SEED_IMG" "$RUNNER_IMG"
 
       - name: Install Agent Sandbox
