@@ -5,6 +5,7 @@
 # created, --fresh recreating only the cluster it leased, a bare cluster taken last and recreated; release on handoff, close and release),
 # for flush releasing the claim of the handoff it posts,
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
+# for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
@@ -33,6 +34,7 @@ gh_api() {
     [[ $url == */issues ]] && { echo 99; return 0; }
   fi
   case $url in
+    */issues/*/events*) local e=${url#*/issues/}; cat "$T/events-${e%%/*}.json" 2>/dev/null || echo '[[]]' ;;
     */issues/9[0-9]) cat "$T/issue-${url##*/}.json" ;;
     */labels/user%2Flaptop-2) echo '{}' ;;
     */labels/user%2F*) return 1 ;;
@@ -58,6 +60,7 @@ gh_api() {
     *) return 0 ;;
   esac
 }
+eval "real_set_status() $(declare -f gh_set_status | tail -n +2)"
 gh_set_status() { :; }
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
@@ -248,7 +251,33 @@ clear; lease "$T/main" 77 "$(date +%s)"
 echo h | gh_handoff 77 - >/dev/null 2>&1; check "handoff kept for later drops the lease" "$? $([ -e "$LEASE" ] && echo kept || echo gone)" "3 gone"
 clear; lease "$T/main" 73 "$(date +%s)"
 gh_release >/dev/null 2>&1; check "release without a claim drops the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
-rm -f "$LEASE" "$T/posted" "$T/edited"
+clear; claim "$T/main" 51 "$(date +%s)"; lease "$T/main" 51 "$(date +%s)"; : >"$T/calls"
+real_set_status 51 needs-maintainer >/dev/null 2>&1
+check "needs-maintainer drops the lease and the claim" \
+  "$([ -e "$LEASE" ] && echo kept || echo gone) $([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" "gone released"
+check "needs-maintainer swaps the status" "$(cat "$T/calls")" \
+  "DELETE repos/JairJosafath/c4factory/issues/51/labels/status%2Fin-progress
+POST repos/JairJosafath/c4factory/issues/51/labels {\"labels\":[\"status/needs-maintainer\"]}"
+clear; claim "$T/main" 51 "$(date +%s)"; lease "$T/main" 51 "$(date +%s)"
+real_set_status 51 needs-human >/dev/null 2>&1
+check "needs-human drops the lease and the claim" \
+  "$([ -e "$LEASE" ] && echo kept || echo gone) $([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" "gone released"
+real_set_status 51 bogus 2>/dev/null; check "status, unknown" $? 1
+rm -f "$LEASE" "$T/posted" "$T/edited" "$T/calls"
+
+# escalated: the open issues waiting on the maintainer, with when each last got
+# that label; one whose events don't say gets 0.
+echo '[[{"event":"labeled","label":{"name":"status/needs-maintainer"},"created_at":"2026-10-06T08:00:00Z"},
+  {"event":"commented","created_at":"2026-10-06T08:30:00Z"},
+  {"event":"labeled","label":{"name":"status/ready"},"created_at":"2026-10-06T08:40:00Z"},
+  {"event":"labeled","label":{"name":"status/needs-maintainer"},"created_at":"2026-10-06T09:00:00Z"}]]' >"$T/events-88.json"
+check "escalated" "$(OPEN='[[{"number":88,"labels":[{"name":"status/needs-maintainer"}]},
+  {"number":89,"labels":[{"name":"status/needs-maintainer"}]},
+  {"number":91,"labels":[{"name":"status/needs-human"}]},
+  {"number":92,"labels":[{"name":"status/needs-maintainer"}],"pull_request":{}}]]' gh_escalated)" \
+  "88 $(date -d 2026-10-06T09:00:00Z +%s)
+89 0"
+check "escalated, none" "$(OPEN='[[]]' gh_escalated)" ""
 
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted"
 flock "$T/main/.git/c4-take.lock" sleep 2 &
@@ -359,24 +388,26 @@ report() {
     OPEN=$(issues <<<"$dep") gh_cycles --report
   )
 }
-body="$GH_CYCLE_MARKER"$'\n#105, #106 wait on each other in a cycle (`Depends on #M` in their bodies), so pick skips each of them for good. Drop one `Depends on` line to break it; #106, the newest, goes to status/needs-human until then.'
+body="$GH_CYCLE_MARKER"$'\n#105, #106 wait on each other in a cycle (`Depends on #M` in their bodies), so pick skips each of them for good. Drop one `Depends on` line to break it; #106, the newest, goes to status/needs-maintainer until then.'
 jq -nc --arg b "$body" '{body: $b}' >"$cyc/105"
-check "cycles --report" "$(report)" "cycle #105 #106: commented on #106; #106 to status/needs-human
-cycle #110 #111 #112: commented on #110 #111 #112; #112 to status/needs-human"
+check "cycles --report" "$(report)" "cycle #105 #106: commented on #106; #106 to status/needs-maintainer
+cycle #110 #111 #112: commented on #110 #111 #112; #112 to status/needs-maintainer"
 check "cycles --report, what it did" "$(cat "$cyc/log")" "comment #106
-status #106 needs-human
+status #106 needs-maintainer
 comment #110
 comment #111
 comment #112
-status #112 needs-human"
+status #112 needs-maintainer"
 check "cycles --report, the comment names the cycle" "$(jq -r .body "$cyc/106")" "$body"
 : >"$cyc/log"
-dep=$(jq '(.[] | select(.[0] == 106 or .[0] == 112)) |= (.[1] = ["status/needs-human"])' <<<"$dep")
+# The maintainer may have sent one on to the owner: either status counts.
+dep=$(jq '(.[] | select(.[0] == 106)) |= (.[1] = ["status/needs-maintainer"])
+  | (.[] | select(.[0] == 112)) |= (.[1] = ["status/needs-human"])' <<<"$dep")
 check "cycles --report, once" "$(report)$(cat "$cyc/log")" ""
 dep=$(jq '(.[] | select(.[0] == 106)) |= (.[1] = ["status/ready"])
   | (.[] | select(.[0] == 112)) |= (.[1] = ["status/proposed"])' <<<"$dep")
-check "cycles --report, commented but not moved: moves the newest" "$(report)" "cycle #105 #106: #106 to status/needs-human
-cycle #110 #111 #112: #112 to status/needs-human"
+check "cycles --report, commented but not moved: moves the newest" "$(report)" "cycle #105 #106: #106 to status/needs-maintainer
+cycle #110 #111 #112: #112 to status/needs-maintainer"
 
 # Intake: labels an issue by where it came from.
 R=repos/JairJosafath/c4factory

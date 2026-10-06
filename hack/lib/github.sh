@@ -12,10 +12,12 @@
 #                                        what holds back each ready or in-progress issue pick skips: N waits on M
 #                                        (M's status, its claim, what M waits on); --unworked: only Ms nobody works
 #   hack/lib/github.sh cycles [--report] the open issues that wait on each other in a cycle, one cycle per line;
-#                                        --report comments each issue in one once, the newest to needs-human
+#                                        --report comments each issue in one once, the newest to needs-maintainer
 #   hack/lib/github.sh proposed [--since EPOCH]
 #                                        the open status/proposed issues' numbers, oldest first, one per line;
 #                                        with --since, N CHANGED CLOSED for the relay watch (see gh_proposed)
+#   hack/lib/github.sh escalated         the open status/needs-maintainer issues, oldest first: N SINCE, SINCE
+#                                        being when N got that label, in epoch seconds (the relay watch reads it)
 #   hack/lib/github.sh show N            issue N, its newest handoff comment and the comments after it
 #   hack/lib/github.sh take N            claim N for this checkout and swap it to status/in-progress;
 #                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it,
@@ -46,8 +48,9 @@
 #   hack/lib/github.sh cluster holder [NAME]
 #                                        the live cluster leases (or NAME's); exit 1: none
 #   hack/lib/github.sh cluster pool      each cluster in the pool: leased, free or not created yet, and bare
-#   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, needs-human
-#                                        (needs-human releases the claim and lease)
+#   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, needs-maintainer,
+#                                        needs-human. Agents escalate with needs-maintainer; only the maintainer
+#                                        sets needs-human (GOVERNANCE.md). Both release the claim and lease
 #   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, release the claim and lease
 #   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N
 #   hack/lib/github.sh create TITLE FILE LABEL...
@@ -84,8 +87,8 @@
 # touches a cluster, deploys its own branch (make deploy) to the cluster it got,
 # verifies, and runs `cluster release`. A lease lives in the git common dir,
 # beside every checkout, names the cluster, agent, issue and worktree, is
-# refreshed by beat and is stale after C4_LEASE_TTL. release, handoff, close
-# and needs-human drop it too.
+# refreshed by beat and is stale after C4_LEASE_TTL. release, handoff, close,
+# needs-maintainer and needs-human drop it too.
 # hack/lib/github_test.sh tests these rules against a stubbed GitHub.
 #
 # Claims (docs/plans/done/parallel-agents.md): taking an issue posts a comment that
@@ -130,7 +133,8 @@ GH_LABELS=(
   'status/proposed|c5def5|Proposed; the relay'"'"'s triage or the user readies it when it is sound'
   'status/ready|0e8a16|Ready: the next session may take it'
   'status/in-progress|fbca04|A session works on it; continue from its newest handoff comment'
-  'status/needs-human|d93f0b|Blocked on the user; the newest comment says why'
+  'status/needs-maintainer|e99695|Waits on the maintainer'"'"'s decision; the newest comment says what it needs'
+  'status/needs-human|d93f0b|Waits on the owner; only the maintainer sets it, and the newest comment says why'
   'priority/urgent|b60205|Picked before every other ready issue'
   'kind/bug|d73a4a|Something is broken'
   'kind/feature|a2eeef|New behaviour'
@@ -302,8 +306,9 @@ GH_CYCLE_MARKER='<!-- relay-cycle -->'
 # (Depends on #M in their bodies), one cycle per line as #A #B ..., oldest
 # first. With --report, each issue in a cycle gets one comment naming it (an
 # issue that has that comment already is left alone) and, when one was posted
-# or no issue in the cycle is in status/needs-human, the newest goes there;
-# prints what it did.
+# or no issue in the cycle waits on the maintainer or the owner
+# (status/needs-maintainer or status/needs-human), the newest goes to
+# status/needs-maintainer; prints what it did.
 # Exit 2: GitHub could not be asked.
 gh_cycles() {
   local issues cycles cycle report=false n posted newest all body
@@ -330,7 +335,7 @@ gh_cycles() {
   while IFS= read -r cycle; do
     [ -n "$cycle" ] || continue
     newest=${cycle##*#}
-    body="$GH_CYCLE_MARKER"$'\n'"${cycle// /, } wait on each other in a cycle (\`Depends on #M\` in their bodies), so pick skips each of them for good. Drop one \`Depends on\` line to break it; #$newest, the newest, goes to status/needs-human until then."
+    body="$GH_CYCLE_MARKER"$'\n'"${cycle// /, } wait on each other in a cycle (\`Depends on #M\` in their bodies), so pick skips each of them for good. Drop one \`Depends on\` line to break it; #$newest, the newest, goes to status/needs-maintainer until then."
     posted=
     for n in $cycle; do
       n=${n#\#}
@@ -341,10 +346,11 @@ gh_cycles() {
     done
     # Also when an earlier round commented but failed to move the newest.
     [ -n "$posted" ] || ! jq -e --arg c "$cycle" '[$c | scan("[0-9]+") | tonumber] as $m
-      | any(.[] | select(.number as $n | $m | any(. == $n)); .labels | any(.name == "status/needs-human"))' \
+      | any(.[] | select(.number as $n | $m | any(. == $n));
+          .labels | any(.name == "status/needs-maintainer" or .name == "status/needs-human"))' \
       <<<"$issues" >/dev/null || continue
-    gh_set_status "$newest" needs-human >/dev/null || return 2
-    echo "cycle $cycle: ${posted:+commented on${posted}; }#$newest to status/needs-human"
+    gh_set_status "$newest" needs-maintainer >/dev/null || return 2
+    echo "cycle $cycle: ${posted:+commented on${posted}; }#$newest to status/needs-maintainer"
   done <<<"$cycles"
 }
 
@@ -402,6 +408,24 @@ gh_proposed() {
     | "\($n) \($changed) \($done)"' <<<"$issues" || return 2
 }
 
+# gh_escalated: the open status/needs-maintainer issues, oldest first, one per
+# line as N SINCE, SINCE being when N last got that label (epoch seconds; 0
+# when its events don't say). hack/relay-watch.sh starts the maintainer for
+# one escalated after the last sweep started; the maintainer's own comments on
+# it don't count, so a sweep that leaves it there doesn't start another.
+gh_escalated() {
+  local pages n events
+  pages=$(gh_api --paginate --slurp \
+    "repos/$C4_GITHUB_REPO/issues?state=open&labels=status%2Fneeds-maintainer&sort=created&direction=asc&per_page=100") ||
+    return 1
+  for n in $(jq -r '.[][] | select(.pull_request | not) | select(.labels | any(.name == "status/needs-maintainer"))
+    | .number' <<<"$pages"); do
+    events=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$n/events?per_page=100") || return 1
+    jq -r --argjson n "$n" '[.[][] | select(.event == "labeled" and .label.name == "status/needs-maintainer")
+      | .created_at | fromdateiso8601] | "\($n) \(max // 0)"' <<<"$events" || return 1
+  done
+}
+
 # gh_comments N: issue N's comments, oldest first, as one JSON array.
 gh_comments() {
   local pages
@@ -447,8 +471,8 @@ gh_comment() {
 gh_set_status() {
   local n=${1:?usage: status N STATUS} want labels l
   case ${2:-} in
-    proposed | ready | in-progress | needs-human) want=status/$2 ;;
-    *) echo "github: status must be proposed, ready, in-progress or needs-human" >&2; return 1 ;;
+    proposed | ready | in-progress | needs-maintainer | needs-human) want=status/$2 ;;
+    *) echo "github: status must be proposed, ready, in-progress, needs-maintainer or needs-human" >&2; return 1 ;;
   esac
   labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n/labels?per_page=100" --jq '.[].name') || return 1
   while IFS= read -r l; do
@@ -459,7 +483,9 @@ gh_set_status() {
     jq -n --arg l "$want" '{labels: [$l]}' |
       gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
   fi
-  [ "$want" != status/needs-human ] || { gh_lease_release; gh_release_for "$n" needs-human; }
+  case $want in
+    status/needs-maintainer | status/needs-human) gh_lease_release; gh_release_for "$n" "${want#status/}" ;;
+  esac
 }
 
 # gh_edit_comment ID BODY: replace comment ID's body.
@@ -1275,6 +1301,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     blocked) gh_blocked "$@" ;;
     cycles) gh_cycles "$@" ;;
     proposed) gh_proposed "$@" ;;
+    escalated) gh_escalated ;;
     show) gh_show "$@" ;;
     take) gh_take "$@" ;;
     release) gh_release "$@" ;;

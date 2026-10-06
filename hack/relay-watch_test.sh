@@ -5,7 +5,8 @@
 # hack/relay.sh faked; when a triage reads a proposed issue again, with
 # hack/lib/github.sh's proposed against a stubbed GitHub; and when a CI round
 # files a "main is red" issue, with gh faked under the real hack/lib/github.sh;
-# when it starts the maintainer, with the activity and hack/relay.sh --maintain faked;
+# when it starts the maintainer, on a schedule or for an issue escalated to it,
+# with the activity, the escalated issues and hack/relay.sh --maintain faked;
 # --install and --uninstall with systemctl, loginctl and crontab faked; and the
 # stop file and the lock in a scratch copy of the watch, never this checkout's
 # .relay/.
@@ -31,6 +32,8 @@ run_triage() { echo triage >>"$T/triages"; echo "triage started in worker 2"; re
 # The maintainer is off (WATCH_MAINTAIN=0) until its own tests below.
 MAINTAIN_EVERY=0 ACT='t1 sha1' ACT_RC=0 MAINT_RC=0
 activity() { echo "$ACT"; return "$ACT_RC"; }
+ESC= ESC_RC=0
+escalated() { [ -n "$ESC" ] && printf '%s\n' "$ESC"; return "$ESC_RC"; }
 run_maintain() { echo maintain >>"$T/maintains"; echo "maintainer started (pid 1)"; return "$MAINT_RC"; }
 maintains() { cat "$T/maintains" 2>/dev/null | wc -l | tr -d ' '; }
 starts() { cat "$T/starts" 2>/dev/null | wc -l | tr -d ' '; }
@@ -377,6 +380,54 @@ MAINT_T=0 ACT_RC=1 ACT='boom'
 round; round
 check "maintain: no activity: no sweep" "$(maintains)" 4
 check "maintain: no activity: logged once" "$(logged 'could not read the activity for the maintainer: boom')" 1
+ACT_RC=0 ACT='t3 sha1'
+
+# An issue escalated to the maintainer (status/needs-maintainer) after the
+# last sweep started starts it within a pass, however recent that sweep; at most once
+# per WATCH_RETRY, and not again for an issue that sweep already saw.
+now=$(date +%s)
+echo "$((now - 600)) t3 sha1" >"$DIR/maintained"
+MAINT_T=0 ESC="247 $((now - 900))"
+round
+check "escalated before the last sweep started: no sweep" "$(maintains)" 4
+ESC="246 $((now - 900))
+247 $((now - 60))"
+round
+check "escalated after the sweep started: starts" "$(maintains)" 5
+check "escalated: one line" "$(logged 'maintainer: escalated #247 (status/needs-maintainer); hack/relay.sh --maintain: maintainer started (pid 1)$')" 1
+round
+check "escalated: not again before WATCH_RETRY" "$(maintains)" 5
+MAINT_T=$((MAINT_T - RETRY))
+exec 5>"$DIR/maintain.lock"; flock 5
+round
+check "escalated: already running: no sweep" "$(maintains)" 5
+exec 5>&-
+# A sweep that started after the escalation ran to its end: no sweep.
+echo "$now t3 sha1" >"$DIR/maintained"
+round
+check "escalated: the sweep saw it: no sweep" "$(maintains)" 5
+# A sweep that didn't end left the time as it was: again after WATCH_RETRY.
+echo "$((now - 600)) t3 sha1" >"$DIR/maintained"
+MAINT_T=0
+round
+check "escalated: sweep didn't end: again" "$(maintains)" 6
+echo "$(($(date +%s) + 3600)) You've hit your session limit" >"$DIR/paused-until"
+MAINT_T=0
+round
+check "escalated: paused: no sweep" "$(maintains)" 6
+rm -f "$DIR/paused-until"
+MAINTAIN_EVERY=0 MAINT_T=0 round
+check "escalated: off: no sweep" "$(maintains)" 6
+MAINTAIN_EVERY=7200
+# GitHub can't say: logged once, and the regular sweep still runs.
+MAINT_T=0 ESC=boom ESC_RC=1 ACT='t4 sha1'
+echo "$((now - 7200)) t3 sha1" >"$DIR/maintained"
+round
+echo "$((now - 7200)) t4 sha1" >"$DIR/maintained"
+MAINT_T=0; round
+check "escalated: can't list: logged once" "$(logged 'could not list the issues escalated to the maintainer: boom')" 1
+check "escalated: can't list: the regular sweep runs" "$(maintains)" 7
+ESC= ESC_RC=0
 MAINTAIN_EVERY=0 ACT_RC=0
 
 # Main's CI, with gh faked: runs from $T/runs-<file>.json, open issues in

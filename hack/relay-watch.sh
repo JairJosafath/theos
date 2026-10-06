@@ -24,12 +24,13 @@
 # comment that isn't the triage's own), when one waits on an issue that closed
 # after it (Depends on #M, or an #M in the triage's comment), and in any case
 # after WATCH_RETRIAGE seconds (default 10800, 3h); .relay/triaged keeps its
-# time and the issues it saw across restarts. status/needs-human stays the user's.
+# time and the issues it saw across restarts. status/needs-maintainer is the
+# maintainer's and status/needs-human stays the user's.
 #
 # On an idle round it also logs, once per change, what holds back the issues
 # pick skips for an open "Depends on #M" when nobody works #M (hack/lib/github.sh
 # blocked --unworked), and reports issues that wait on each other in a cycle:
-# a comment on each, the newest to status/needs-human (cycles --report).
+# a comment on each, the newest to status/needs-maintainer (cycles --report).
 #
 # Every WATCH_CI_EVERY seconds (default 900) it checks main's CI: each
 # workflow in .github/workflows that runs on a push to main and whose two
@@ -44,7 +45,11 @@
 # keeps the pinned Maintainer report: when none runs (.relay/maintain.lock),
 # the last sweep (.relay/maintained) is WATCH_MAINTAIN seconds old (default
 # 7200, 2h; 0 turns it off), and hack/lib/github.sh activity differs from the
-# one that sweep recorded, so quiet nights cost nothing. It asks at most every
+# one that sweep recorded, so quiet nights cost nothing. Agents escalate to the
+# maintainer with status/needs-maintainer: when an issue got that label after
+# the last sweep started (hack/lib/github.sh escalated), the watch starts it at
+# once, however recent that sweep. One the sweep looked at and left there
+# waits for the next regular sweep, or for an agent to escalate it again. It asks at most every
 # WATCH_RETRY, and a sweep that doesn't run to its end is tried again then.
 #
 # While the relay is paused for a usage limit or a failed login
@@ -120,8 +125,8 @@ worker_free() {
 # maintaining: whether the maintainer runs (it holds its lock).
 maintaining() { [ -e "$DIR/maintain.lock" ] && ! flock -n "$DIR/maintain.lock" true; }
 
-# pick_next, proposed, blocked, cycles, activity, run_relay, run_triage,
-# run_maintain and trim_caches:
+# pick_next, proposed, blocked, cycles, activity, escalated, run_relay,
+# run_triage, run_maintain and trim_caches:
 # what the watch asks and starts (faked in the tests).
 pick_next() { "$REPO/hack/lib/github.sh" pick; }
 blocked() { "$REPO/hack/lib/github.sh" blocked --unworked; }
@@ -130,6 +135,7 @@ proposed() { "$REPO/hack/lib/github.sh" proposed; }
 run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { "$REPO/hack/relay.sh" --triage --workers "$WORKERS"; }
 activity() { "$REPO/hack/lib/github.sh" activity; }
+escalated() { "$REPO/hack/lib/github.sh" escalated; }
 run_maintain() { "$REPO/hack/relay.sh" --maintain; }
 trim_caches() { "$REPO/hack/trim-go-cache.sh"; }
 
@@ -259,20 +265,37 @@ triage() {
   [ "$rc" = 0 ] || echo "$now" >"$DIR/triaged"
 }
 
-# maintain NOW: start the maintainer when it is on, none runs, the last sweep
+# maintain NOW: start the maintainer when it is on, none runs, and an issue
+# got status/needs-maintainer after the last sweep started, or the last sweep
 # is MAINTAIN_EVERY seconds old and the activity changed since (see the
-# header). .relay/maintained holds the last sweep's end and the activity it
-# saw; hack/relay.sh --maintain writes it, so the sweep's prompt reads when the
+# header). .relay/maintained holds the last full sweep's start and the
+# activity it saw; hack/relay.sh --maintain writes it, so the sweep's prompt reads when the
 # last one ran. MAINT_T keeps the watch from asking for the activity, or
 # repeating a start that didn't take, more often than every RETRY.
-MAINT_T=0 MAINT_ERR=
+MAINT_T=0 MAINT_ERR= ESC_ERR=
 maintain() {
-  local now=$1 t= seen= act out rc
+  local now=$1 t= seen= act out rc esc n u new=
   [ "$MAINTAIN_EVERY" -gt 0 ] 2>/dev/null || return 0
   [ $((now - MAINT_T)) -ge "$RETRY" ] || return 0
   maintaining && return 0
   [ -r "$DIR/maintained" ] && read -r t seen <"$DIR/maintained"
   [[ $t =~ ^[0-9]+$ ]] || t=0
+  if esc=$(escalated 2>&1); then
+    ESC_ERR=
+    while read -r n u; do
+      [[ $u =~ ^[0-9]+$ ]] && [ "$u" -gt "$t" ] && new+=" #$n"
+    done <<<"$esc"
+  else
+    [ -n "$ESC_ERR" ] || log "could not list the issues escalated to the maintainer: ${esc//$'\n'/; }"
+    ESC_ERR=1
+  fi
+  if [ -n "$new" ]; then
+    MAINT_T=$now
+    out=$(run_maintain 2>&1 8>&-)
+    rc=$?
+    log "maintainer: escalated${new} (status/needs-maintainer); hack/relay.sh --maintain${out:+: ${out//$'\n'/; }}$([ "$rc" = 0 ] || echo " (failed, exit $rc; again after $((RETRY / 60))m)")"
+    return 0
+  fi
   [ $((now - t)) -ge "$MAINTAIN_EVERY" ] || return 0
   if ! act=$(activity 2>&1); then
     [ -n "$MAINT_ERR" ] || log "could not read the activity for the maintainer: ${act//$'\n'/; }"
@@ -291,7 +314,7 @@ maintain() {
 # held: on an idle round, log what holds back the issues pick skips whose
 # blocker nobody works (hack/lib/github.sh blocked --unworked), once per
 # change, and report the issues that wait on each other in a cycle (cycles
-# --report: a comment on each, the newest to status/needs-human).
+# --report: a comment on each, the newest to status/needs-maintainer).
 HELD= HELD_ERR= CYCLES_ERR=
 held() {
   local out rc
