@@ -157,7 +157,7 @@ export FAKE=$T PATH="$T/bin:$PATH" HOME=$T/home
 STOP=$DIR/stop REPO=$T/repo WORKERS=3
 mkdir -p "$REPO/.relay"
 touch "$STOP"
-install_watch >/dev/null
+RELAY_MAX_WORKERS=5 install_watch >/dev/null
 unit=$T/home/.config/systemd/user/c4factory-relay-watch.service
 check "install: writes the unit" "$([ -s "$unit" ] && echo yes)" yes
 check "install: runs this checkout's watch in the foreground" \
@@ -166,12 +166,20 @@ check "install: keeps the installer's PATH" "$(grep -cF "Environment=\"PATH=$PAT
 check "install: restarts, but not after the stop file" \
   "$(grep -E '^(Restart|RestartPreventExitStatus|KillMode)=' "$unit" | tr '\n' ' ')" \
   "Restart=always RestartPreventExitStatus=0 KillMode=process "
+check "install: passes the relay settings" "$(grep -c '^Environment="RELAY_MAX_WORKERS=5"$' "$unit")" 1
 check "install: no placeholder left" "$(grep -c @ "$unit")" 0
 check "install: enables and starts it" \
   "$(grep -E 'enable|restart|daemon-reload' "$T/calls" | tr '\n' ';')" \
   "systemctl --user daemon-reload;systemctl --user enable c4factory-relay-watch.service;systemctl --user restart c4factory-relay-watch.service;loginctl enable-linger $(id -un);"
 check "install: removes the stop file" "$([ -e "$STOP" ] && echo there)" ""
 check "install: no crontab" "$([ -e "$T/crontab" ] && echo there)" ""
+
+# --uninstall without the user bus: the unit stays, and it says so.
+touch "$T/no-systemd"
+uninstall_watch 2>/dev/null
+check "uninstall without systemd: fails" $? 1
+check "uninstall without systemd: unit stays" "$([ -e "$unit" ] && echo there)" there
+rm "$T/no-systemd"
 
 # --uninstall: disabled, stopped and gone.
 : >"$T/calls"
@@ -186,15 +194,24 @@ echo '0 3 * * * backup' >"$T/crontab"
 mkdir -p "$REPO/hack"
 printf '#!/usr/bin/env bash\nshift; echo "$@" >>"%s/started"\n' "$T" >"$REPO/dev"
 chmod +x "$REPO/dev"
-install_watch >/dev/null
-install_watch >/dev/null
+RELAY_MAX_WORKERS=5 install_watch >/dev/null
+RELAY_MAX_WORKERS=5 install_watch >/dev/null
 check "cron: no unit" "$([ -e "$unit" ] && echo there)" ""
 check "cron: keeps the other lines" "$(grep -c backup "$T/crontab")" 1
 check "cron: at boot" "$(grep -c "^@reboot cd $REPO && PATH=.* ./dev run hack/relay-watch.sh --cron --workers 3 .*# c4factory relay watch: $REPO$" "$T/crontab")" 1
+check "cron: passes the relay settings" "$(grep -c ' RELAY_MAX_WORKERS=5 .*./dev run' "$T/crontab")" 2
 check "cron: every 5 minutes" "$(grep -c "^\*/5 \* \* \* \* cd $REPO && .* --cron --workers 3 " "$T/crontab")" 1
 check "cron: starts the watch now" "$(cat "$T/started")" $'hack/relay-watch.sh --cron --workers 3\nhack/relay-watch.sh --cron --workers 3'
 uninstall_watch >/dev/null
 check "cron uninstall: only the other lines left" "$(cat "$T/crontab")" "0 3 * * * backup"
+
+# --install from a worktree: refused, nothing written.
+git init -q "$T/main" && git -C "$T/main" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init &&
+  git -C "$T/main" worktree add -q "$T/wt" 2>/dev/null
+rm -f "$T/no-systemd"
+REPO=$T/wt install_watch 2>/dev/null
+check "worktree: refused" $? 1
+check "worktree: no unit" "$([ -e "$unit" ] && echo there)" ""
 export PATH=$SAVED_PATH HOME=$SAVED_HOME
 
 # The watch itself, in a scratch copy: a --cron start with the stop file starts

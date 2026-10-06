@@ -1,5 +1,6 @@
-# The relay watch as a systemd user unit; hack/relay-watch.sh --install fills in
-# @REPO@, @WORKERS@ and @PATH@ and writes it to ~/.config/systemd/user.
+# The relay watch as a systemd user unit. hack/relay-watch.sh --install fills in
+# the checkout, the worker count, the installer's PATH and relay settings, and
+# writes it to ~/.config/systemd/user.
 #
 # Restart=always brings the watch back after a crash, an OOM kill or a kill;
 # RestartPreventExitStatus=0 keeps it down when it exits for .relay/stop.
@@ -15,6 +16,7 @@ StartLimitIntervalSec=0
 Type=simple
 WorkingDirectory=@REPO@
 Environment="PATH=@PATH@"
+@ENV@
 ExecStart="@REPO@/dev" run "@REPO@/hack/relay-watch.sh" --foreground --workers @WORKERS@
 Restart=always
 RestartSec=15

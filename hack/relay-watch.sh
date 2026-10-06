@@ -36,7 +36,7 @@
 #                                      crontab line starts it at boot and every 5 minutes
 #   hack/relay-watch.sh --uninstall    remove the unit or the crontab lines
 #   touch .relay/stop                  stop the watch, and every worker after its current session; an
-#                                      installed watch stays down until --install starts it again
+#                                      installed watch stays down until hack/relay-watch.sh starts the unit
 #
 # The unit runs the watch with --foreground: in its own process, waiting for the
 # lock while a watch started by hand holds it. The crontab line runs it with
@@ -171,21 +171,35 @@ cron_tag() { echo "# c4factory relay watch: $REPO"; }
 # has_systemd: whether this user has a systemd user manager to run the unit.
 has_systemd() { command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; }
 
+# settings: the installer's relay settings, as NAME=VALUE lines, for the unit
+# and cron, whose environments have none. Credentials stay out: the watch gets
+# its GitHub token from the git credential helper, as hack/lib/github.sh does.
+settings() {
+  local v
+  for v in $(compgen -v | grep -E '^(RELAY_|WATCH_|HEAVY_JOBS$|C4_CLUSTER)'); do
+    printf '%s=%s\n' "$v" "${!v}"
+  done
+}
+
 # render_unit: the unit for this checkout and WORKERS, with the installer's PATH
-# (the user manager's own PATH lacks gh and claude).
+# (the user manager's own PATH lacks gh and claude) and relay settings.
 render_unit() {
-  local t
+  local t env= line
   t=$(<"$TEMPLATE")
   t=${t//@REPO@/"$REPO"}
   t=${t//@WORKERS@/"$WORKERS"}
   t=${t//@PATH@/"$PATH"}
+  while IFS= read -r line; do env+=$'\n'"Environment=\"$line\""; done < <(settings)
+  t=${t//$'\n'@ENV@/"$env"}
   printf '%s\n' "$t"
 }
 
 # cron_lines: the crontab without this checkout's lines (stdin), then them.
 cron_lines() {
   local cmd
-  cmd="cd $(printf %q "$REPO") && PATH=$(printf %q "$PATH") ./dev run hack/relay-watch.sh --cron --workers $WORKERS >>.relay/watch.out 2>&1"
+  local line env=
+  while IFS= read -r line; do env+="${line%%=*}=$(printf %q "${line#*=}") "; done < <(settings)
+  cmd="cd $(printf %q "$REPO") && PATH=$(printf %q "$PATH") $env./dev run hack/relay-watch.sh --cron --workers $WORKERS >>.relay/watch.out 2>&1"
   grep -vF "$(cron_tag)"
   echo "@reboot $cmd $(cron_tag)"
   echo "*/5 * * * * $cmd $(cron_tag)"
@@ -200,7 +214,17 @@ without_cron() {
   grep -vF "$(cron_tag)" <<<"$tab" | crontab -
 }
 
+# in_worktree: whether REPO is a linked git worktree, not the main checkout.
+in_worktree() {
+  local git common
+  git=$(git -C "$REPO" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+  common=$(cd "$REPO" && cd "$(git rev-parse --git-common-dir)" && pwd)
+  [ "$git" != "$common" ]
+}
+
 install_watch() {
+  # One unit per device: from a worktree it would run that worktree's watch.
+  in_worktree && { echo "relay-watch: install from the main checkout, not a worktree" >&2; return 1; }
   mkdir -p "$DIR"
   rm -f "$STOP"
   if has_systemd; then
@@ -220,14 +244,15 @@ install_watch() {
     echo "relay watch installed in the crontab (at boot and every 5 minutes) for $WORKERS worker(s): tail -f $LOG"
     (cd "$REPO" && ./dev run hack/relay-watch.sh --cron --workers "$WORKERS" >>"$DIR/watch.out" 2>&1)
   fi
-  echo "stop: touch $STOP; start again: hack/relay-watch.sh --install"
+  echo "stop: touch $STOP; start again: hack/relay-watch.sh"
 }
 
 uninstall_watch() {
   if [ -e "$(unit_file)" ]; then
-    has_systemd && systemctl --user disable --now "$UNIT"
+    has_systemd && systemctl --user disable --now "$UNIT" ||
+      { echo "relay-watch: systemctl --user failed; $(unit_file) stays" >&2; return 1; }
     rm -f "$(unit_file)"
-    has_systemd && systemctl --user daemon-reload
+    systemctl --user daemon-reload
     echo "removed $(unit_file); its watch is stopped"
   fi
   if command -v crontab >/dev/null && crontab -l 2>/dev/null | grep -qF "$(cron_tag)"; then
@@ -247,6 +272,15 @@ case $MODE in
   install) install_watch; exit ;;
   uninstall) uninstall_watch; exit ;;
 esac
+
+# Started from a terminal with the unit installed: start the unit (after a
+# stop file), so the watch stays supervised.
+if [ "$MODE" = start ] && [ "${C4_RELAY_WATCH_CHILD:-}" != 1 ] && [ -e "$(unit_file)" ] && has_systemd; then
+  rm -f "$STOP"
+  systemctl --user start "$UNIT" || exit 1
+  echo "relay watch started under systemd ($UNIT, its own worker count; --install --workers N changes it): tail -f $LOG"
+  exit 0
+fi
 
 # Started from a terminal or cron: start the watch, detached, and return.
 # From cron, a stop file stays and keeps the watch down.
