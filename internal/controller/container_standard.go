@@ -18,6 +18,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -67,6 +68,19 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 	if !found {
 		r.condition(container, status, c4v1alpha1.ConditionStandardUpdated, metav1.ConditionFalse,
 			c4v1alpha1.ReasonNotFound, notFoundMessage([]string{"Standard " + name}))
+		return
+	}
+
+	// The cache can lag behind our own status writes, and the steps act in Git
+	// from the update in status. Take them only from the live Container, so a
+	// reconcile queued during the last pass doesn't open an update a second time
+	// or leave the one it replaced open; the watch brings the newer one.
+	var live c4v1alpha1.Container
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(container), &live); err != nil {
+		logf.FromContext(ctx).Info("Could not read Container", "error", err.Error())
+		return
+	}
+	if live.ResourceVersion != container.ResourceVersion {
 		return
 	}
 
