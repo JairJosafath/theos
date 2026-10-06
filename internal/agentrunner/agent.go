@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // Agent does the work in a checked-out repository and answers in text.
@@ -74,7 +76,7 @@ func (a ClaudeAgent) Run(ctx context.Context, dir, prompt string) (string, error
 
 // FakeAgent stands in for a real agent in tests and demos. Implementing, it adds
 // a line to STAND-IN.md; reviewing, it approves, or first asks for changes, and
-// may file a follow-up.
+// may file a follow-up; planning, it plans to keep the model as it is.
 type FakeAgent struct {
 	Role  string
 	Round int
@@ -88,6 +90,9 @@ type FakeAgent struct {
 
 // Run does the scripted work.
 func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
+	if a.Role == RolePlan {
+		return a.plan(dir)
+	}
 	if a.Role == RoleReview {
 		if a.ChangesFirst && a.Round == 1 {
 			return `{"verdict": "changes", "summary": "Stand-in review: add a second line."}`, nil
@@ -149,4 +154,33 @@ func unavailable(output string, now time.Time) (bool, time.Time) {
 		}
 	}
 	return true, time.Time{}
+}
+
+// plan writes a plan that keeps the model as model/ has it, with one choice.
+func (a FakeAgent) plan(dir string) (string, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "model", "*.yaml"))
+	if err != nil {
+		return "", err
+	}
+	var current []string
+	for _, name := range files {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			return "", err
+		}
+		current = append(current, strings.TrimSpace(string(data)))
+	}
+	plan := map[string]string{
+		model.PlanModelFile:   strings.Join(current, "\n---\n") + "\n",
+		model.PlanChoicesFile: fmt.Sprintf("- Round %d of the stand-in planner: keep the model as it is.\n", a.Round),
+	}
+	for name, data := range plan {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			return "", err
+		}
+	}
+	return fmt.Sprintf("Round %d: the stand-in planner keeps the model as it is.", a.Round), nil
 }

@@ -1,7 +1,7 @@
 // Package agentrunner is the logic of c4agent, the program that runs inside an
 // agent's sandbox. It reads one job from its environment, clones the Container's
-// repository with a token scoped to that repository, runs the agent, and returns
-// one Result. It has no Kubernetes credentials: the operator reads the Result from
+// repository (or, planning, the Brief's) with a token scoped to that
+// repository, runs the agent, and returns one Result. It has no Kubernetes credentials: the operator reads the Result from
 // the sandbox pod's termination message.
 //
 // It must not import Kubernetes, controller-runtime, the api package or the Git
@@ -13,12 +13,16 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// Roles a sandbox can play in a Task round.
+// Roles a sandbox can play in a Task round. Plan is a Plan Task's round: it
+// plans a Brief in the Brief's repository.
 const (
 	RoleImplement = "implement"
 	RoleReview    = "review"
+	RolePlan      = "plan"
 )
 
 // Environment variables the operator sets on the sandbox.
@@ -53,6 +57,8 @@ const (
 	// EnvRelated lists the repositories of related Containers, as
 	// name=url pairs, comma-separated. They are cloned read-only.
 	EnvRelated = "C4_RELATED"
+	// EnvBrief is the Brief a plan run plans.
+	EnvBrief = "C4_BRIEF"
 )
 
 // Harnesses: the agent programs c4agent can run.
@@ -61,7 +67,8 @@ const (
 	HarnessStandIn    = "stand-in"
 )
 
-// Job is one sandbox run: implement a goal on a branch, or review that branch.
+// Job is one sandbox run: implement a goal on a branch, review that branch, or
+// plan a round of a Brief on plan/<round>.
 type Job struct {
 	Role     string
 	RepoURL  string
@@ -95,6 +102,8 @@ type Job struct {
 	Model   string
 	// Related are the repositories of related Containers, by Container name.
 	Related map[string]string
+	// Brief is the Brief a plan run plans; its repository is RepoURL.
+	Brief string
 }
 
 // JobFromEnv reads a Job from environment variables.
@@ -114,6 +123,7 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		Token:     getenv(EnvGitToken),
 		Harness:   getenv(EnvHarness),
 		Model:     getenv(EnvModel),
+		Brief:     getenv(EnvBrief),
 	}
 	if job.Base == "" {
 		job.Base = "main"
@@ -171,25 +181,51 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		}
 	}
 
-	var missing []string
-	for name, value := range map[string]string{
+	if err := job.check(); err != nil {
+		return Job{}, err
+	}
+	return job, nil
+}
+
+// check refuses a job that misses what its role needs, and sets a plan's branch.
+func (job *Job) check() error {
+	if job.Role == RolePlan {
+		// A round's plan always goes to its own branch.
+		if job.Branch == "" {
+			job.Branch = model.PlanBranch(job.Round)
+		}
+		if job.Branch != model.PlanBranch(job.Round) {
+			return fmt.Errorf("%s=%q: a plan of round %d goes to %s", EnvBranch, job.Branch, job.Round,
+				model.PlanBranch(job.Round))
+		}
+	}
+
+	required := map[string]string{
 		EnvRole: job.Role, EnvRepoURL: job.RepoURL, EnvBranch: job.Branch, EnvGoal: job.Goal,
 		EnvContainer: job.Container, EnvGitUsername: job.Username, EnvGitToken: job.Token,
-	} {
+	}
+	if job.Role == RolePlan {
+		// The brief repository holds the goal, and a Brief has no Container.
+		delete(required, EnvGoal)
+		delete(required, EnvContainer)
+		required[EnvBrief] = job.Brief
+	}
+	var missing []string
+	for name, value := range required {
 		if value == "" {
 			missing = append(missing, name)
 		}
 	}
 	if len(missing) > 0 {
-		return Job{}, fmt.Errorf("missing %s", strings.Join(sortedCopy(missing), ", "))
+		return fmt.Errorf("missing %s", strings.Join(sortedCopy(missing), ", "))
 	}
-	if job.Role != RoleImplement && job.Role != RoleReview {
-		return Job{}, fmt.Errorf("%s=%q: want %s or %s", EnvRole, job.Role, RoleImplement, RoleReview)
+	if job.Role != RoleImplement && job.Role != RoleReview && job.Role != RolePlan {
+		return fmt.Errorf("%s=%q: want %s, %s or %s", EnvRole, job.Role, RoleImplement, RoleReview, RolePlan)
 	}
 	if job.Branch == job.Base {
-		return Job{}, errors.New("the work branch must not be the base branch")
+		return errors.New("the work branch must not be the base branch")
 	}
-	return job, nil
+	return nil
 }
 
 // splitList splits a comma-separated list, trimming blanks and dropping empties.

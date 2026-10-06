@@ -49,7 +49,8 @@ func run(ctx context.Context, workdir string) agentrunner.Result {
 	if err != nil {
 		return agentrunner.Result{Role: os.Getenv(agentrunner.EnvRole), Error: "c4agent: " + err.Error()}
 	}
-	slog.Info("Starting job", "role", job.Role, "container", job.Container, "branch", job.Branch, "round", job.Round)
+	slog.Info("Starting job", "role", job.Role, "container", job.Container, "brief", job.Brief, "branch", job.Branch,
+		"round", job.Round)
 	if err := os.MkdirAll(workdir, 0o755); err != nil {
 		return agentrunner.Result{Role: job.Role, Error: err.Error()}
 	}
