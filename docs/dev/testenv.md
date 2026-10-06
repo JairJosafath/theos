@@ -172,7 +172,9 @@ a fresh Kind cluster on GitHub. Don't `helm install` it into the shared
 
 A pushed `vX.Y.Z` tag runs the *Release* workflow, which builds the operator,
 UI, toolchain, agent and runner images, pushes them and the chart to GHCR and
-creates the GitHub release ([plan](../plans/done/release-workflow.md)).
+creates the GitHub release ([plan](../plans/done/release-workflow.md)), its
+notes drafted by `hack/release-notes.sh` from the pull requests merged since
+the previous tag.
 
 GitHub workflows never run on pull requests. Lint, tests, UI checks and *Test
 Chart* run after a merge to main, each only when its paths change, or on demand;
