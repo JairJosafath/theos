@@ -33,7 +33,8 @@
 # can, labels it and hands it back for a device with one. On a device with the
 # cluster, any worker may work them; the checkouts share the cluster through a
 # lease (hack/lib/github.sh cluster) that a session holds only while it deploys
-# and verifies.
+# and verifies. A worker there that can't reach Docker (docker_gate) runs its
+# next session as C4_CLUSTER=none.
 #
 # Workers load their code once, from this checkout. Before each pick a worker
 # runs hack/pull.sh here, and when that changed hack/relay.sh or
@@ -104,6 +105,12 @@ MAX_FAILS=${RELAY_MAX_FAILS:-3}     # failed sessions in a row before an issue g
 IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change this long is ended
 IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
+DOCKER_WAIT=${RELAY_DOCKER_WAIT:-10} # seconds docker info may take before Docker counts as down
+# The device's C4_CLUSTER, which docker_gate sets per session; kept across the
+# worker's restarts, which inherit what docker_gate set.
+CLUSTER0=${C4_RELAY_CLUSTER0:-${C4_CLUSTER-unset}}
+export C4_RELAY_CLUSTER0=$CLUSTER0
+DOCKER_SAID=ok
 
 K=${C4_RELAY_WORKER:-1}
 WT="$REPO/.claude/worktrees/relay-$K"
@@ -120,7 +127,14 @@ GH_CLAIM_FILE="$GH_PENDING_DIR/claim"
 # N, worked by agent NAME on BRANCH.
 prompt() {
   local n=$1 title=$2 url=$3 how=$4 name=$5 branch=$6 start cluster
-  if [ "${C4_CLUSTER:-}" = none ]; then
+  if [ -n "${DOCKER_WHY:-}" ]; then
+    cluster="- This session can't reach Docker ($DOCKER_WHY), so it runs as
+  C4_CLUSTER=none: no deploys, factory-ops, Crews, kind or make e2e; make
+  check works (envtest needs no cluster). If the issue turns out to need the
+  cluster, land what you can, label it
+  (\`hack/lib/github.sh label $n needs/cluster\`) and hand off with what is
+  left (deploy and verify)."
+  elif [ "${C4_CLUSTER:-}" = none ]; then
     cluster="- This device has no Kind cluster (C4_CLUSTER=none): no deploys,
   factory-ops, Crews or make e2e; make check works (envtest needs no cluster).
   If the issue turns out to need the cluster, land what you can (the code pull
@@ -457,6 +471,38 @@ pause() {
   log "paused the relay until $(date -d "@$t" -Is): $1"
 }
 
+# docker_gate: on a device with the Kind cluster, check before each pick that
+# this worker reaches Docker (docker info, at most RELAY_DOCKER_WAIT seconds).
+# When it doesn't, the next session runs as C4_CLUSTER=none, so pick and take
+# skip needs/cluster issues instead of failing them: a worker started under a
+# systemd user manager that started before the user joined the docker group
+# lacks the group (docs/dev/testenv.md). Logs the reason once per change, and
+# when Docker answers again; DOCKER_WHY keeps the reason for the prompt.
+docker_gate() {
+  local out rc why=ok
+  [ "$CLUSTER0" = none ] && return 0
+  out=$(timeout "$DOCKER_WAIT" docker info --format '{{.ServerVersion}}' 2>&1 >/dev/null)
+  rc=$?
+  if [ "$rc" != 0 ]; then
+    case $rc:$out in
+      127:*) why="docker isn't installed" ;;
+      124:*) why="the Docker daemon didn't answer in ${DOCKER_WAIT}s" ;;
+      *[Pp]"ermission denied"*) why="permission denied on the Docker socket: the relay runs without the docker group (restart the systemd user manager; on WSL, wsl --shutdown)" ;;
+      *) why="the Docker daemon is down: $(head -n 1 <<<"$out" | cut -c1-200)" ;;
+    esac
+  fi
+  if [ "$why" = ok ]; then
+    DOCKER_WHY=
+    if [ "$CLUSTER0" = unset ]; then unset C4_CLUSTER; else export C4_CLUSTER=$CLUSTER0; fi
+    [ "$DOCKER_SAID" = ok ] || log "docker: reachable again; sessions take needs/cluster issues"
+  else
+    DOCKER_WHY=$why
+    export C4_CLUSTER=none
+    [ "$DOCKER_SAID" = "$why" ] || log "docker: $why; sessions run as C4_CLUSTER=none and skip needs/cluster issues"
+  fi
+  DOCKER_SAID=$why
+}
+
 # admit: wait until the device has headroom for one more session: no pause for
 # a limit (.relay/paused-until), MemAvailable at least RELAY_MIN_MEM_GIB, and
 # the last session start across workers at least RELAY_ADMIT_GAP seconds ago,
@@ -693,6 +739,7 @@ work() {
     flush || { log "GitHub can't be reached; stopping"; break; }
 
     admit || { log "stopping"; break; }
+    docker_gate
     pick
     rc=$?
     [ "$rc" = 1 ] && { log "no issue ready; stopping"; break; }

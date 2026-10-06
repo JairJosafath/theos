@@ -3,7 +3,8 @@
 # device with the Kind cluster, and the wait for headroom before a pick, with a
 # faked /proc/meminfo; the flush of a kept handoff, which releases the
 # session's claim so the relay has none left to release; the cluster
-# lease a session leaves behind, which the relay drops; the triage of the
+# lease a session leaves behind, which the relay drops; the Docker gate, with
+# docker faked; the triage of the
 # proposed issues, as a dry run; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing.
@@ -94,6 +95,60 @@ lease "$T/other"
 drop_lease "that session 1 left behind"
 check "lease: another checkout's kept" "$(jq -r .worktree "$C4_CLUSTER_LEASE")" "$T/other"
 check "lease: nothing logged" "$(cat "$LOG")" ""
+
+# The Docker gate, with docker faked (DOCKER: ok, denied, down, slow): a worker
+# that can't reach Docker runs its sessions as C4_CLUSTER=none and logs why
+# once per change; one that can keeps the device's C4_CLUSTER.
+mkdir -p "$T/bin"
+cat >"$T/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+case $(cat "$DOCKER" 2>/dev/null) in
+  denied) echo 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.47/info": dial unix /var/run/docker.sock: connect: permission denied' >&2; exit 1 ;;
+  down) echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?' >&2; exit 1 ;;
+  slow) sleep 5 ;;
+  *) echo 27.5.1 ;;
+esac
+FAKE
+chmod +x "$T/bin/docker"
+export DOCKER=$T/docker
+gate() { # gate CLUSTER0 STATE: run the gate on a worker started with C4_CLUSTER=CLUSTER0; print C4_CLUSTER after it
+  echo "$2" >"$DOCKER"
+  if [ "$1" = unset ]; then unset C4_CLUSTER; else export C4_CLUSTER=$1; fi
+  CLUSTER0=$1 PATH=$T/bin:$PATH DOCKER_WAIT=1 docker_gate
+  echo "${C4_CLUSTER-unset}"
+}
+: >"$LOG"
+while IFS='|' read -r what cluster0 state want reason; do
+  check "docker gate: $what" "$(gate "$cluster0" "$state")" "$want"
+  if [ -n "$reason" ]; then
+    grep -q "docker: $reason.*; sessions run as C4_CLUSTER=none and skip needs/cluster issues$" "$LOG"
+    check "docker gate: $what: logs why" $? 0
+  else
+    check "docker gate: $what: logs nothing" "$(cat "$LOG")" ""
+  fi
+  : >"$LOG"
+done <<'TABLE'
+reachable|unset|ok|unset|
+reachable, cluster named|c4factory|ok|c4factory|
+permission denied|unset|denied|none|permission denied on the Docker socket: the relay runs without the docker group
+daemon down|unset|down|none|the Docker daemon is down: Cannot connect
+no answer|unset|slow|none|the Docker daemon didn't answer in 1s
+no cluster on the device|none|denied|none|
+TABLE
+# Once per change, and back when Docker answers again, in one worker.
+(
+  gate unset denied >/dev/null; gate unset denied >/dev/null; gate unset denied >/dev/null
+  check "docker gate: logged once" "$(grep -c "docker: permission denied" "$LOG")" 1
+  gate unset down >/dev/null
+  check "docker gate: a new reason logged" "$(grep -c "docker: " "$LOG")" 2
+  check "docker gate: the prompt says why" "$(prompt 1 t u ready n b | grep -c "can't reach Docker (the Docker daemon is down")" 1
+  gate unset ok >/dev/null
+  check "docker gate: back" "${C4_CLUSTER-unset}" unset
+  check "docker gate: back logged" "$(grep -c "docker: reachable again" "$LOG")" 1
+  check "docker gate: the prompt is the cluster's again" "$(prompt 1 t u ready n b | grep -c "can't reach Docker")" 0
+)
+: >"$LOG"
+rm -f "$DOCKER"
 
 # Triage, as a dry run: the proposed issues go into its prompt; none, no session.
 rm -f "$STOP" "$DIR/admitted"
