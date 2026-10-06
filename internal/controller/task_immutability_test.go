@@ -23,9 +23,20 @@ import (
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 )
 
-// A Task's CEL transition rules (oldSelf) need an old object, so envtest tests
-// them; the create-time rules have failing fixtures in test/manifests/invalid,
-// which make validate-yaml checks offline.
+// A Task's CEL rules: the create-time ones refuse a bad Task, the transition
+// rules (oldSelf) refuse a change. The allowedProtectedPaths rules are in
+// task_standard_test.go.
+var _ = Describe("Task goal and issue", func() {
+	It("takes exactly one of them", func() {
+		ns := newProjectNamespace()
+		both := newTask(ns, "both", "Validate orders.")
+		both.Spec.Issue = 2
+		Expect(k8sClient.Create(ctx, both)).To(MatchError(ContainSubstring("set exactly one of goal and issue")))
+		Expect(k8sClient.Create(ctx, newTask(ns, "neither", ""))).
+			To(MatchError(ContainSubstring("set exactly one of goal and issue")))
+	})
+})
+
 var _ = Describe("Task immutability", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })
