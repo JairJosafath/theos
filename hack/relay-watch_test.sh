@@ -399,6 +399,32 @@ runs lint.yml failure cancelled timed_out
 ci_round
 check "ci: cancelled runs are skipped" "$(jq -r '.[1].title' "$T/issues.json")" "main is red: Lint"
 
+# The groups: a watch, or a user manager, without a group the user has in
+# /etc/group says so, with the fix; one with all of them says nothing.
+OWN="1000 4 27"
+id() {
+  case "$*" in
+    -un) echo math ;;
+    -u) echo 1000 ;;
+    "-G math") echo "1000 4 27 1001" ;;
+    "-Gn math") echo "math adm sudo docker" ;;
+    -G) echo "$OWN" ;;
+    *) command id "$@" ;;
+  esac
+}
+check "groups: missing" "$(missing_groups "$OWN")" docker
+check "groups: none missing" "$(missing_groups "4 1000 1001 27")" ""
+check "groups: two missing" "$(missing_groups "1000")" "adm sudo docker"
+: >"$LOG"
+own_groups
+check "groups: the watch logs the missing group" \
+  "$(logged 'this watch lacks the group(s) docker that math has in /etc/group: .*Restart the user manager: log out and in again, or on WSL run wsl --shutdown from Windows. Check: grep Groups /proc/\$(pgrep -u "\$USER" -x systemd)/status$')" 1
+: >"$LOG"
+OWN="1000 4 27 1001" own_groups
+check "groups: all there, nothing logged" "$(cat "$LOG")" ""
+MANAGER="1000 4 27"
+manager_groups() { echo "$MANAGER"; }
+
 # --install with systemd: the unit for this checkout and WORKERS, enabled and
 # (re)started, linger on, and the stop file gone.
 mkdir -p "$T/bin" "$T/home"
@@ -426,8 +452,10 @@ export FAKE=$T PATH="$T/bin:$PATH" HOME=$T/home
 STOP=$DIR/stop REPO=$T/repo WORKERS=3
 mkdir -p "$REPO/.relay"
 touch "$STOP"
-RELAY_MAX_WORKERS=5 install_watch >/dev/null
+RELAY_MAX_WORKERS=5 install_watch >/dev/null 2>"$T/install.err"
 unit=$T/home/.config/systemd/user/c4factory-relay-watch.service
+check "install: warns of the manager's missing group" \
+  "$(grep -c '^relay-watch: the systemd user manager lacks the group(s) docker that math has in /etc/group: .*wsl --shutdown' "$T/install.err")" 1
 check "install: writes the unit" "$([ -s "$unit" ] && echo yes)" yes
 check "install: runs this checkout's watch in the foreground" \
   "$(grep -c "^ExecStart=\"$REPO/dev\" run \"$REPO/hack/relay-watch.sh\" --foreground --workers 3$" "$unit")" 1

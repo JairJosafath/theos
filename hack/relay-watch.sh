@@ -64,6 +64,11 @@
 # lock while a watch started by hand holds it. The crontab line runs it with
 # --cron: started detached unless a watch runs or .relay/stop is there.
 #
+# At start, the watch logs a warning when it lacks one of the user's groups in
+# /etc/group, and --install prints it when the systemd user manager does: a
+# manager that started before the user joined docker passes its groups to the
+# watch, the workers and their sessions, which then can't reach Docker.
+#
 # Log: .relay/watch.log, one line per change; the workers log as usual, to
 # .relay/relay-<k>.log.
 set -uo pipefail
@@ -324,6 +329,44 @@ cron_tag() { echo "# c4factory relay watch: $REPO"; }
 # has_systemd: whether this user has a systemd user manager to run the unit.
 has_systemd() { command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; }
 
+# missing_groups GIDS: the groups the user has in /etc/group (id -G USER) that
+# GIDS, a process's groups, lack, by name, space-separated.
+missing_groups() {
+  local have=" $1 " user i gids names out=
+  user=$(id -un)
+  read -ra gids <<<"$(id -G "$user")"
+  read -ra names <<<"$(id -Gn "$user")"
+  for i in "${!gids[@]}"; do
+    [[ $have == *" ${gids[$i]} "* ]] || out+=" ${names[$i]:-${gids[$i]}}"
+  done
+  echo "${out# }"
+}
+
+# group_warning WHO GIDS: the warning when WHO, with groups GIDS, lacks a group
+# the user has. A process keeps the groups it started with, so a systemd user
+# manager that started before the user joined docker, and every watch, worker
+# and session it starts, can't reach Docker.
+group_warning() {
+  local missing
+  missing=$(missing_groups "$2")
+  [ -n "$missing" ] || return 0
+  echo "$1 lacks the group(s) $missing that $(id -un) has in /etc/group: it inherits the groups of the systemd user manager, which started before $(id -un) joined them, so its sessions can't reach Docker and skip needs/cluster issues. Restart the user manager: log out and in again, or on WSL run wsl --shutdown from Windows. Check: grep Groups /proc/\$(pgrep -u \"\$USER\" -x systemd)/status"
+}
+
+# own_groups: log the warning when this watch lacks one of the user's groups.
+own_groups() {
+  local warning
+  warning=$(group_warning "this watch" "$(id -G)")
+  [ -z "$warning" ] || log "$warning"
+}
+
+# manager_groups: the groups of this user's systemd user manager.
+manager_groups() {
+  local pid
+  pid=$(pgrep -u "$(id -u)" -x systemd | head -n 1) && [ -n "$pid" ] || return 1
+  awk '/^Groups:/ { $1 = ""; print }' "/proc/$pid/status"
+}
+
 # settings: the installer's relay settings, as NAME=VALUE lines, for the unit
 # and cron, whose environments have none. Credentials stay out: the watch gets
 # its GitHub token from the git credential helper, as hack/lib/github.sh does.
@@ -376,6 +419,7 @@ in_worktree() {
 }
 
 install_watch() {
+  local groups
   # One unit per device: from a worktree it would run that worktree's watch.
   in_worktree && { echo "relay-watch: install from the main checkout, not a worktree" >&2; return 1; }
   mkdir -p "$DIR"
@@ -391,6 +435,7 @@ install_watch() {
     loginctl enable-linger "$(id -un)" 2>/dev/null ||
       echo "relay-watch: loginctl enable-linger failed; the watch starts at the first login, not at boot" >&2
     echo "relay watch installed as $(unit_file) for $WORKERS worker(s): tail -f $LOG"
+    groups=$(manager_groups) && group_warning "relay-watch: the systemd user manager" "$groups" >&2
   else
     command -v crontab >/dev/null || { echo "relay-watch: neither systemd nor crontab here" >&2; return 1; }
     { crontab -l 2>/dev/null || true; } | cron_lines | crontab - || { echo "relay-watch: crontab failed" >&2; return 1; }
@@ -469,6 +514,7 @@ fi
 unset C4_RELAY_WATCH_CHILD C4_RELAY_WATCH_RESTART
 CODE_SUM=$(code_sum)
 log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}$([ "$MODE" = foreground ] && echo ", under systemd"), HEAD $(git rev-parse --short HEAD 2>/dev/null), $WORKERS worker(s), asks GitHub every ${EVERY}s"
+own_groups
 PULL_T=0 PULLED= CI_T=0
 while :; do
   [ -e "$STOP" ] && { log "stop file found; stopping"; exit 0; }

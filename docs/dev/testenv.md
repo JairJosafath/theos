@@ -288,6 +288,21 @@ cron get your `PATH` and `RELAY_*`, `WATCH_*`, `HEAVY_JOBS` and `C4_CLUSTER*`
 settings, and the GitHub token from the git credential helper, not `GH_TOKEN`. `systemctl --user status
 c4factory-relay-watch` shows the unit.
 
+On the device with the Kind cluster, the systemd user manager must have the
+`docker` group: the watch, its workers and their sessions inherit the
+manager's groups, and a process keeps the groups it started with, so a manager
+that started before you joined `docker` can't reach Docker however
+`/etc/group` reads now. Check it with
+`grep Groups /proc/$(pgrep -u "$USER" -x systemd)/status`: the list must hold
+the gid of `docker` (`getent group docker`). If it doesn't, restart the user
+manager: log out and in again, or on WSL run `wsl --shutdown` from Windows.
+`--install` warns when the manager lacks one of your groups, and the watch logs
+it when it starts. Until then, `hack/relay.sh` checks Docker (`docker info`,
+`RELAY_DOCKER_WAIT` seconds, default 10) before each pick and, when it can't
+reach it, runs that session as `C4_CLUSTER=none`, so it skips `needs/cluster`
+issues instead of failing them; its log says why once (permission denied,
+daemon down or not answering) and again when Docker answers.
+
 ### Every release checks itself
 
 The relay can't pull a release (the GHCR packages are private and no device's
