@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Pick up, claim, hand off or finish a GitHub issue on JairJosafath/c4factory with hack/lib/github.sh - pick and take, lease a Kind cluster, write the handoff comment, close or mark needs-human, file a follow-up. Use when taking or continuing a factory issue, when the context grows past about 100k tokens between tasks, when work stops mid-way, or when the user asks to hand off, pause, wrap up or continue later.
+description: Pick up, claim, hand off or finish a GitHub issue on JairJosafath/c4factory with hack/lib/github.sh - pick and take, lease a Kind cluster, write the handoff comment, close or escalate to the maintainer (needs-maintainer), file a follow-up. Use when taking or continuing a factory issue, when the context grows past about 100k tokens between tasks, when work stops mid-way, or when the user asks to hand off, pause, wrap up or continue later.
 ---
 
 # Handoff
@@ -34,8 +34,10 @@ said to work it in this session; otherwise leave it to the relay.
 ## Labels
 
 One `status/*` at a time, swapped with `hack/lib/github.sh status N <status>`:
-`proposed` (waits for the user), `ready`, `in-progress`, `needs-human` (the
-newest comment says why). `needs/cluster` marks work whose "Done when" needs a
+`proposed` (waits for the user), `ready`, `in-progress`, `needs-maintainer`
+(an agent escalated it; the newest comment says what it needs),
+`needs-human` (the maintainer sent it to the owner; only the maintainer sets
+it, [GOVERNANCE.md](../../../GOVERNANCE.md)). Both release your claim and lease. `needs/cluster` marks work whose "Done when" needs a
 real Kubernetes node: Agent Sandbox pods, node or kubelet behaviour, RBAC as
 deployed, Gitea Actions runners (`hack/lib/github.sh label N needs/cluster`
 when you find out mid-way). Gitea work, YAML, templates and controller logic
@@ -106,11 +108,14 @@ Lost claim (the heartbeat hook says so):
 - **Landed:** the pull request says `Closes #N` and is merged as AGENTS.md
   ("How to Work") says. If N is still open: `hack/lib/github.sh close N FILE`,
   FILE naming the pull request, SHAs and evidence.
-- **Blocked on the user:** `hack/lib/github.sh status N needs-human` plus a
-  comment saying what you need: something only the user can give (a tag,
-  access, credentials, money), or a direction you're unsure of, with the
-  choice you'd make and why. How to build it is ours to decide (AGENTS.md,
-  "Designing is our job"), never a question for the user.
+- **Stuck on a decision:** escalate to the maintainer,
+  `hack/lib/github.sh status N needs-maintainer`, plus a comment saying what
+  you need: something only the user can give (a tag, access, credentials,
+  money), or a direction you're unsure of, with the choice you'd make and why.
+  The relay's watch starts the maintainer within a minute; it decides, or
+  sends the issue on to the owner (`status/needs-human`, which only it sets).
+  How to build it is ours to decide (AGENTS.md, "Designing is our job"),
+  never a question for the user.
 - **Follow-up found:** `hack/lib/github.sh create TITLE FILE status/proposed
   kind/<kind>` (add `needs/cluster` if it needs a real node; a body line
   `Depends on #M` if it waits on another issue). Don't start it in this
