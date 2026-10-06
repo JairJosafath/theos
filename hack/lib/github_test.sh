@@ -6,7 +6,7 @@
 # for flush releasing the claim of the handoff it posts,
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails, for close, duplicate and closed dropping the status labels, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 unset C4_CLUSTER # ./dev setup --lite sets it; each test sets its own
@@ -40,6 +40,7 @@ gh_api() {
     */labels/user%2F*) return 1 ;;
     */issues/50/labels*) printf 'needs/cluster\nstatus/in-progress\n' ;;
     */issues/51/labels*) printf 'status/in-progress\n' ;;
+    */issues/7[2-4]/labels*) printf 'kind/bug\nstatus/in-progress\nstatus/ready\n' ;;
     */issues/60) echo '{"number":60,"title":"Deploy","labels":[{"name":"needs/cluster"},{"name":"kind/feature"}]}' ;;
     */issues/71) return 1 ;; # closing #71 fails
     */issues/73) echo closed ;; # --jq .state, as take asks
@@ -305,9 +306,24 @@ rm -rf "$T"/{main,wt2,wt3}/.relay
 claim "$T/main" 71 "$(date +%s)"
 echo landed | gh_close 71 - >/dev/null 2>&1; check "close fails" $? 1
 check "close fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 71
-claim "$T/main" 72 "$(date +%s)"
+claim "$T/main" 72 "$(date +%s)"; : >"$T/calls"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close" $? 0
 check "close, claim released" "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" released
+R=repos/$C4_GITHUB_REPO
+check "close drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/72/labels/status%2Fin-progress
+DELETE $R/issues/72/labels/status%2Fready"
+: >"$T/calls"
+gh_duplicate 72 61 >/dev/null 2>&1; check "duplicate" $? 0
+check "duplicate drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/72/labels/status%2Fin-progress
+DELETE $R/issues/72/labels/status%2Fready"
+# closed: what the Issue closed workflow runs after a pull request's Closes #N.
+: >"$T/calls"
+gh_closed 73 >/dev/null 2>&1; check "closed" $? 0
+check "closed drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/73/labels/status%2Fin-progress
+DELETE $R/issues/73/labels/status%2Fready"
+: >"$T/calls"
+gh_closed 74 >/dev/null 2>&1; check "closed, open issue" "$? $(cat "$T/calls")" "0 "
+gh_closed x 2>/dev/null; check "closed, not a number" $? 1
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
 claim "$T/main" 73 "$(date +%s)"
 gh_take 61 >/dev/null 2>&1; check "take, own claim on a closed issue" $? 0

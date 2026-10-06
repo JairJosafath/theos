@@ -217,10 +217,17 @@ func NextPublishStep(f PublishFacts) PublishStep {
 		if f.Issues == nil {
 			return PublishStep{Action: PublishReadIssues}
 		}
-		return PublishStep{Action: PublishWriteNotes, Tag: f.Tag, Body: ReleaseNotes(f.Issues)}
+		// With no issue to name there are no notes to write, and a body set
+		// to "" is ignored, so the draft carries the marker alone.
+		if len(f.Issues) > 0 {
+			return PublishStep{Action: PublishWriteNotes, Tag: f.Tag, Body: ReleaseNotes(f.Issues)}
+		}
 	}
-	return PublishStep{Action: PublishCreateDraft, Tag: tag,
-		Body: strings.TrimRight(notes, "\n") + "\n\n" + marker + "\n"}
+	body := marker + "\n"
+	if strings.TrimSpace(notes) != "" {
+		body = strings.TrimRight(notes, "\n") + "\n\n" + body
+	}
+	return PublishStep{Action: PublishCreateDraft, Tag: tag, Body: body}
 }
 
 // draftStep uploads the first of Gitea's assets the draft lacks, or has at a

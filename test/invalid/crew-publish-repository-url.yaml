@@ -1,0 +1,19 @@
+# expect: repository must be owner/name
+apiVersion: c4.factory.io/v1alpha1
+kind: Crew
+metadata:
+  name: orders-cli
+  namespace: webshop
+spec:
+  containerRef:
+    name: orders-cli
+  implementer:
+    name: claude-implementer
+  reviewer:
+    name: claude-reviewer
+  tagReleases: true
+  publishReleases:
+    github:
+      repository: https://github.com/acme/orders-cli
+      tokenSecretRef:
+        name: orders-cli-github
