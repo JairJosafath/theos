@@ -48,6 +48,15 @@ func clone(ctx context.Context, job Job, dir string) (*repo, error) {
 			return nil, err
 		}
 	}
+	if job.Role == RolePlan {
+		// Each run plans afresh from the brief on the base branch; a rerun of the
+		// round replaces the branch.
+		if _, err := r.git(ctx, dir, "checkout", "--quiet", "-b", job.Branch, "origin/"+job.Base); err != nil {
+			return nil, err
+		}
+		r.start, err = r.head(ctx)
+		return r, err
+	}
 	err = retryTransient(ctx, networkRetryDelays, func() error {
 		_, err := r.git(ctx, dir, "ls-remote", "--exit-code", "--heads", "origin", job.Branch)
 		return err
@@ -199,6 +208,35 @@ func (r *repo) commitStaged(ctx context.Context, message string) error {
 	}
 	_, err := r.git(ctx, r.dir, "commit", "--quiet", "--no-verify", "-m", message)
 	return err
+}
+
+// keepOnly makes the work branch one commit on origin/<base> that holds dir as
+// the work head has it, and nothing else of the work head.
+func (r *repo) keepOnly(ctx context.Context, base, branch, dir, message string) error {
+	head, err := r.head(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := r.git(ctx, r.dir, "checkout", "--quiet", "-B", branch, "origin/"+base); err != nil {
+		return err
+	}
+	if _, err := r.git(ctx, r.dir, "rm", "-r", "--quiet", "--ignore-unmatch", "--", dir); err != nil {
+		return err
+	}
+	if _, err := r.git(ctx, r.dir, "cat-file", "-e", head+":"+dir); err == nil {
+		if _, err := r.git(ctx, r.dir, "checkout", head, "--", dir); err != nil {
+			return err
+		}
+	}
+	return r.commitStaged(ctx, message)
+}
+
+// forcePush replaces branch on the remote with HEAD.
+func (r *repo) forcePush(ctx context.Context, branch string) error {
+	return retryTransient(ctx, networkRetryDelays, func() error {
+		_, err := r.git(ctx, r.dir, "push", "--quiet", "--force", "origin", "HEAD:refs/heads/"+branch)
+		return err
+	})
 }
 
 func (r *repo) push(ctx context.Context, branch string) error {

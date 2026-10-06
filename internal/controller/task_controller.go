@@ -114,6 +114,10 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if !task.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
+	if task.Spec.Kind == c4v1alpha1.TaskPlan {
+		// A Brief runs its own planning rounds (docs/plans/brief.md, step 5).
+		return ctrl.Result{}, nil
+	}
 	status := task.Status.DeepCopy()
 	if status.Phase == "" {
 		status.Phase = c4v1alpha1.TaskPending
