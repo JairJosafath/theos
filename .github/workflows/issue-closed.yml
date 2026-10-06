@@ -1,0 +1,24 @@
+name: Issue closed
+
+# A closed issue carries no status/* label. hack/lib/github.sh close and
+# duplicate drop them themselves; this catches the rest, such as a merged pull
+# request's Closes #N or the close button.
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  unstatus:
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Drop the issue's status labels
+        run: hack/lib/github.sh closed "$ISSUE"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          C4_GITHUB_REPO: ${{ github.repository }}

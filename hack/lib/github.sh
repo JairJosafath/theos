@@ -51,8 +51,11 @@
 #   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, needs-maintainer,
 #                                        needs-human. Agents escalate with needs-maintainer; only the maintainer
 #                                        sets needs-human (GOVERNANCE.md). Both release the claim and lease
-#   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, release the claim and lease
-#   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N
+#   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, drop its status labels,
+#                                        release the claim and lease
+#   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N; drops N's status labels
+#   hack/lib/github.sh closed N          drop closed issue N's status/* labels (open N is left alone); the
+#                                        Issue closed workflow runs it, for issues a pull request's Closes #N closes
 #   hack/lib/github.sh create TITLE FILE LABEL...
 #                                        file an issue, FILE as its body; prints its number. An open
 #                                        issue with the same title is left as it is.
@@ -486,6 +489,25 @@ gh_set_status() {
   case $want in
     status/needs-maintainer | status/needs-human) gh_lease_release; gh_release_for "$n" "${want#status/}" ;;
   esac
+}
+
+# gh_unstatus N: drop every status/* label from N.
+gh_unstatus() {
+  local n=${1:?usage: closed N} labels l
+  labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n/labels?per_page=100" --jq '.[].name') || return 1
+  while IFS= read -r l; do
+    [[ $l == status/* ]] || continue
+    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/$n/labels/${l//\//%2F}" >/dev/null || return 1
+  done <<<"$labels"
+}
+
+# gh_closed N: drop closed issue N's status labels; an open N is left alone.
+gh_closed() {
+  local n=${1:?usage: closed N} state
+  [[ $n =~ ^[0-9]+$ ]] || { echo "github: closed takes an issue number" >&2; return 1; }
+  state=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq .state) || return 1
+  [ "$state" = closed ] || { echo "github: #$n is open; its status labels stay" >&2; return 0; }
+  gh_unstatus "$n"
 }
 
 # gh_edit_comment ID BODY: replace comment ID's body.
@@ -1111,25 +1133,28 @@ gh_flush() {
   return $rc
 }
 
-# gh_close N FILE: comment what landed, close N as completed, then release the
-# claim and the cluster lease. Closing comes first: if it fails, the claim stays live, so pick does
+# gh_close N FILE: comment what landed, close N as completed, drop its status
+# labels, then release the claim and the cluster lease. Closing comes first: if it fails, the claim stays live, so pick does
 # not offer the open, in-progress issue again as abandoned work.
 gh_close() {
   local n=${1:?usage: close N FILE}
   gh_comment "$n" "${2:--}" || return 1
   gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
     -f state=closed -f state_reason=completed --jq '"closed #\(.number)"' || return 1
+  gh_unstatus "$n" || echo "github: closed #$n but could not drop its status labels" >&2
   gh_lease_release
   gh_release_for "$n" finished
 }
 
-# gh_duplicate N M: comment on N that it duplicates M, and close N as not planned.
+# gh_duplicate N M: comment on N that it duplicates M, close N as not planned
+# and drop its status labels.
 gh_duplicate() {
   local n=${1:?usage: duplicate N M} m=${2:?usage: duplicate N M}
   [[ $n =~ ^[0-9]+$ && $m =~ ^[0-9]+$ && $n != "$m" ]] || { echo "github: duplicate takes two issue numbers" >&2; return 1; }
   echo "Duplicate of #$m." | gh_comment "$n" - >/dev/null || return 1
   gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
-    -f state=closed -f state_reason=not_planned --jq '"closed #\(.number) as a duplicate of #'"$m"'"'
+    -f state=closed -f state_reason=not_planned --jq '"closed #\(.number) as a duplicate of #'"$m"'"' || return 1
+  gh_unstatus "$n"
 }
 
 # gh_create TITLE FILE LABEL...: file an issue and print its number. An open
@@ -1315,6 +1340,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     status) gh_set_status "$@" ;;
     close) gh_close "$@" ;;
     duplicate) gh_duplicate "$@" ;;
+    closed) gh_closed "$@" ;;
     create) gh_create "$@" ;;
     intake) gh_intake "$@" ;;
     red) gh_red "$@" ;;
