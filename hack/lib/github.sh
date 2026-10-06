@@ -20,8 +20,7 @@
 #                                        being when N got that label, in epoch seconds (the relay watch reads it)
 #   hack/lib/github.sh show N            issue N, its newest handoff comment and the comments after it
 #   hack/lib/github.sh take N            claim N for this checkout and swap it to status/in-progress;
-#                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it,
-#                                        or it needs the cluster and this device has none (C4_CLUSTER=none).
+#                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it.
 #                                        This checkout's claim on a closed issue is released first
 #   hack/lib/github.sh release [REASON]  release this checkout's claim and cluster lease (default reason: released)
 #   hack/lib/github.sh claims            the live and stale claims on open issues
@@ -38,7 +37,8 @@
 #   hack/lib/github.sh milestones        the open milestones, by due date: TITLE OPEN CLOSED DUE, tab-separated,
 #                                        OPEN and CLOSED being their issue counts, DUE the date or empty
 #   hack/lib/github.sh cluster acquire [--wait DURATION] [--fresh] [--bare]
-#                                        lease one of this device's Kind clusters (C4_CLUSTERS, default 2) to this
+#                                        for a human only: refused (exit 5) unless C4_HUMAN_CLUSTER=1, which the
+#                                        relay never sets. Lease one of this device's Kind clusters (C4_CLUSTERS, default 2) to this
 #                                        checkout and print its name, creating it if it does not exist yet; wait up
 #                                        to DURATION (default 30m) while other checkouts hold every one; exit 4 names them.
 #                                        --fresh: prefer one not created yet, else delete and recreate the leased one
@@ -85,15 +85,13 @@
 # while #M is open, are skipped. A handoff comment starts with the line
 # <!-- relay-handoff -->.
 #
-# The Kind cluster: issues whose work needs a real Kubernetes node (Agent
-# Sandbox pods, kubelet, RBAC as deployed, Gitea Actions runners) carry
-# needs/cluster. On a device
-# without one (C4_CLUSTER=none) pick skips them and take refuses them. On a
-# device with one, any checkout may work them, and the checkouts share a pool
-# of Kind clusters through leases: a session does the work that needs no
-# cluster first, runs `cluster acquire` right before its first step that
-# touches a cluster, deploys its own branch (make deploy) to the cluster it got,
-# verifies, and runs `cluster release`. A lease lives in the git common dir,
+# The Kind cluster: agents never create, lease or deploy to one; Go tests,
+# validate-yaml, envtest and the local Gitea are the gate, and Kind is a tier
+# only a human runs. So `cluster acquire` refuses unless the human sets
+# C4_HUMAN_CLUSTER=1 (the relay never does), and pick and take hand out every
+# issue whether or not the device has a cluster (C4_CLUSTER=none). The human's
+# checkouts share a pool of Kind clusters through leases: acquire, deploy the
+# branch (make deploy) to the cluster it got, verify, `cluster release`. A lease lives in the git common dir,
 # beside every checkout, names the cluster, agent, issue and worktree, is
 # refreshed by beat and is stale after C4_LEASE_TTL. release, handoff, close,
 # needs-maintainer and needs-human drop it too.
@@ -151,7 +149,6 @@ GH_LABELS=(
   'kind/improvement|84b6eb|Make something that works better'
   'source/dev|bfd4f2|Made while developing c4factory'
   'source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it'
-  'needs/cluster|1d76db|Needs a real Kubernetes node: Agent Sandbox pods, kubelet, RBAC as deployed, Gitea Actions runners'
   'maintainer/report|5319e7|The pinned Maintainer report; the maintainer rewrites it each sweep'
 )
 GH_REPORT_LABEL=maintainer/report
@@ -232,14 +229,12 @@ gh_recent_claims() {
 # STATUS being in-progress, ready-urgent or ready. Exit 1: nothing to pick;
 # exit 2: GitHub could not be asked.
 gh_pick() {
-  local ttl issues claims row nocluster=false
+  local ttl issues claims row
   ttl=$(gh_ttl) || return 2
-  [ "${C4_CLUSTER:-}" != none ] || nocluster=true
   issues=$(gh_api --paginate --slurp \
     "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
-  row=$(jq -r --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" \
-    --argjson nocluster "$nocluster" "$GH_CLAIM_JQ"'
+  row=$(jq -r --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" "$GH_CLAIM_JQ"'
     def has($l): .labels | any(. == $l);
     [.[][]] as $all
     | [$all[].number] as $open
@@ -248,8 +243,7 @@ gh_pick() {
         | select(.number as $n | $taken | any(. == $n) | not)
         | select([(.body // "") | scan("[Dd]epends on #([0-9]+)") | .[0] | tonumber]
             | any(. as $d | $open | any(. == $d)) | not)
-        | {number, title, html_url, labels: [.labels[].name]}
-        | select($nocluster and has("needs/cluster") | not)] as $free
+        | {number, title, html_url, labels: [.labels[].name]}] as $free
     | [($free[] | select(has("status/in-progress")) | . + {how: "in-progress"}),
        ($free[] | select(has("status/ready") and has("priority/urgent")) | . + {how: "ready-urgent"}),
        ($free[] | select(has("status/ready")) | . + {how: "ready"})]
@@ -626,10 +620,6 @@ gh_take_locked() {
   fi
 
   issue=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n") || return 1
-  if [ "${C4_CLUSTER:-}" = none ] && jq -e '.labels | any(.name == "needs/cluster")' <<<"$issue" >/dev/null; then
-    echo "github: #$n needs the Kind cluster (needs/cluster) and this device has none (C4_CLUSTER=none)" >&2
-    return 4
-  fi
   all=$(gh_comments "$n") || return 1
   local q=(--arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl")
 
@@ -907,9 +897,14 @@ gh_lease_take() {
 # it bare. Without either, a newly leased cluster marked bare is recreated with
 # them; one this checkout already held is kept, with a warning. Prints
 # the cluster's name on stdout, the rest on stderr. Exit 4 naming the holders
-# when the wait runs out.
+# when the wait runs out. Exit 5 without C4_HUMAN_CLUSTER=1: only a human
+# runs Kind; agents never lease a cluster.
 gh_lease_acquire() {
   local wait=30m secs t0 out said= fresh= bare= held= l_name l_issue l_wt l_beat
+  if [ "${C4_HUMAN_CLUSTER:-}" != 1 ]; then
+    echo "github: cluster acquire is for a human only: set C4_HUMAN_CLUSTER=1 to run Kind yourself. Agents never lease a cluster; make check (Go tests, validate-yaml, envtest) is the gate" >&2
+    return 5
+  fi
   while [ $# -gt 0 ]; do
     case $1 in
       --wait) wait=${2:-}; shift 2 || shift ;;

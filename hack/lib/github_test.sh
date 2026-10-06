@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests for the needs/cluster rules in hack/lib/github.sh (pick, take, label)
+# Tests for pick and take handing out former needs/cluster issues on a device without a cluster,
+# acquire refusing without the human opt-in (C4_HUMAN_CLUSTER=1),
 # and the cluster pool's leases (acquire, wait, exit 4, stale lease, two leases
 # on two clusters, a third waiting, a released cluster reused, a missing one
 # created, --fresh recreating only the cluster it leased, a bare cluster taken last and recreated; release on handoff, close and release, and kept when marking, handing off or closing another issue),
@@ -10,7 +11,7 @@
 # for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails, for close, duplicate and closed dropping the status labels, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
-unset C4_CLUSTER # ./dev setup --lite sets it; each test sets its own
+unset C4_CLUSTER C4_HUMAN_CLUSTER # ./dev setup --lite sets the one, a human the other; each test sets its own
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 git init -q "$T/main"
@@ -97,6 +98,10 @@ check "second cluster's lease beside it" "$(as "$T/wt2" gh_lease_file c4factory-
 as "$T/wt2" gh_cluster holder >/dev/null; check "holder, none" $? 1
 check "name, no lease: the default" "$(as "$T/wt2" gh_cluster name)" c4factory
 claim "$T/wt2" 50 "$(date +%s)"
+out=$(as "$T/wt2" gh_cluster acquire --wait 0 2>"$T/err"); check "acquire, no human opt-in: refused" "$?|$out|$([ -e "$LEASE" ] && echo leased)" "5||"
+grep -q "C4_HUMAN_CLUSTER=1" "$T/err"; check "acquire, no human opt-in: names it" $? 0
+C4_HUMAN_CLUSTER=0 as "$T/wt2" gh_cluster acquire --wait 0 >/dev/null 2>&1; check "acquire, opt-in not 1: refused" $? 5
+export C4_HUMAN_CLUSTER=1 # the rest of the pool tests are a human's
 out=$(as "$T/wt2" gh_cluster acquire --wait 0 2>"$T/err"); check "acquire, free" "$? $out" "0 c4factory"
 case $(cat "$T/err") in "github: Kind cluster c4factory is leased to heron-50 (#50, $T/wt2), heartbeat 0m ago."*) r=yes ;; *) r=no ;; esac
 check "acquire names the lease" $r yes
@@ -231,11 +236,12 @@ grep -q "which this checkout already leased, was created bare (acquire --bare): 
 gh_cluster acquire --wait 0 --fresh >/dev/null 2>&1; check "fresh: a bare cluster becomes a testenv one" "$([ -e "$BARE" ] && echo kept || echo gone) $(tail -1 "$T/made")" "gone -C $T/main cluster gitea seed KIND_CLUSTER=c4factory"
 rm -f "$LEASE" "$LEASE2" "$BARE" "$BARE2" "$T/made"; echo c4factory >"$T/kind-clusters"
 
-# needs/cluster issues are picked and taken while another checkout holds the lease.
+# A former needs/cluster issue (60) is picked and taken like any other: without a cluster, or while another checkout holds the lease.
 clear; lease "$T/wt2" 50 "$(date +%s)"
 check "pick, lease held elsewhere" "$(gh_pick | cut -f1)" 60
-check "pick, no cluster" "$(C4_CLUSTER=none gh_pick | cut -f1)" 61
-rm -f "$T/posted"; C4_CLUSTER=none gh_take 60 >/dev/null 2>&1; check "take 60, no cluster" $? 4
+check "pick, no cluster: a needs/cluster issue" "$(C4_CLUSTER=none gh_pick | cut -f1)" 60
+rm -f "$T/posted"; out=$(C4_CLUSTER=none gh_take 60 2>/dev/null); check "take 60, no cluster" "$? $(cut -f1 <<<"$out" | grep -c .)" "0 1"
+rm -f "$T/main/.relay/claim"
 rm -f "$T/posted"; gh_take 60 >/dev/null 2>&1; check "take 60, lease held elsewhere" $? 0
 rm -f "$T/main/.relay/claim"
 gh_label 61 needs/cluster >/dev/null 2>&1; check "label needs/cluster, lease held elsewhere" $? 0
