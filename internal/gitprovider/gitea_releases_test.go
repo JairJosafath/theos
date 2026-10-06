@@ -2,7 +2,9 @@ package gitprovider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -142,5 +144,126 @@ func TestTagRuns(t *testing.T) {
 	if _, err := p.TagRuns(context.Background(), p.Repository("payments"), "v0.2.0", "694db57"); err == nil ||
 		!strings.Contains(err.Error(), "HTTP 404") {
 		t.Errorf("TagRuns() of a missing repository error = %v, want HTTP 404", err)
+	}
+}
+
+func TestReleases(t *testing.T) {
+	const asset = "#!/bin/sh\necho orders\n"
+	var patches []map[string]string
+	var downloadAuth string
+	body := "Built by the Crew."
+	mux := http.NewServeMux()
+	const repo = "/api/v1/repos/webshop/orders-api"
+	mux.HandleFunc("GET "+repo+"/releases/tags/v0.2.0", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"id":12,"tag_name":"v0.2.0","name":"v0.2.0","body":%q,"draft":false,
+			"html_url":"http://gitea/webshop/orders-api/releases/tag/v0.2.0","assets":[
+			{"id":1,"name":"orders","size":%d,"uuid":"c863-0fd1","browser_download_url":"http://elsewhere/x"},
+			{"id":2,"name":"SHA256SUMS","size":3,"uuid":"short"},
+			{"id":3,"name":"gone","size":3,"uuid":"gone"}]}`, body, len(asset))
+	})
+	mux.HandleFunc("PATCH "+repo+"/releases/12", func(w http.ResponseWriter, r *http.Request) {
+		var p map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&p)
+		patches = append(patches, p)
+		body = p["body"]
+		_, _ = w.Write([]byte(`{"id":12}`))
+	})
+	mux.HandleFunc("GET /attachments/c863-0fd1", func(w http.ResponseWriter, r *http.Request) {
+		downloadAuth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(asset))
+	})
+	mux.HandleFunc("GET /attachments/short", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("abcdef"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	orders := p.Repository("orders-api")
+
+	if rel, err := p.GetRelease(ctx, orders, "v0.1.0"); err != nil || rel != nil {
+		t.Errorf("GetRelease() of a missing release = %+v, %v; want none", rel, err)
+	}
+	rel, err := p.GetRelease(ctx, orders, "v0.2.0")
+	if err != nil || rel == nil {
+		t.Fatalf("GetRelease() = %+v, %v", rel, err)
+	}
+	want := Release{ID: 12, Tag: "v0.2.0", Name: "v0.2.0", Body: "Built by the Crew.",
+		URL: "http://gitea/webshop/orders-api/releases/tag/v0.2.0", Assets: []ReleaseAsset{
+			{ID: 1, Name: "orders", Size: int64(len(asset)), UUID: "c863-0fd1"},
+			{ID: 2, Name: "SHA256SUMS", Size: 3, UUID: "short"},
+			{ID: 3, Name: "gone", Size: 3, UUID: "gone"}}}
+	if !reflect.DeepEqual(*rel, want) {
+		t.Fatalf("GetRelease() = %+v, want %+v", *rel, want)
+	}
+
+	r, size, err := p.OpenReleaseAsset(ctx, orders, rel.Assets[0])
+	if err != nil {
+		t.Fatalf("OpenReleaseAsset() error = %v", err)
+	}
+	data, _ := io.ReadAll(r)
+	_ = r.Close()
+	if string(data) != asset || size != int64(len(asset)) {
+		t.Errorf("OpenReleaseAsset() = %q, %d; want %q, %d", data, size, asset, len(asset))
+	}
+	if downloadAuth != "token secret" {
+		t.Errorf("download Authorization = %q, want the provider's token", downloadAuth)
+	}
+	if _, _, err := p.OpenReleaseAsset(ctx, orders, rel.Assets[1]); err == nil || !strings.Contains(err.Error(), "6 bytes") {
+		t.Errorf("OpenReleaseAsset() of a file of another size error = %v, want its size", err)
+	}
+	if _, _, err := p.OpenReleaseAsset(ctx, orders, rel.Assets[2]); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
+		t.Errorf("OpenReleaseAsset() of a missing file error = %v, want HTTP 404", err)
+	}
+
+	if err := p.SetReleaseBody(ctx, orders, 12, "- Add orders (#3)\n"); err != nil {
+		t.Fatalf("SetReleaseBody() error = %v", err)
+	}
+	if len(patches) != 1 || !reflect.DeepEqual(patches[0], map[string]string{"body": "- Add orders (#3)\n"}) {
+		t.Errorf("release patches = %v, want one setting only the body", patches)
+	}
+	if err := p.SetReleaseBody(ctx, orders, 13, "notes"); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
+		t.Errorf("SetReleaseBody() of a missing release error = %v, want HTTP 404", err)
+	}
+}
+
+// TestReleaseAssetWithoutLength reads downloads sent without Content-Length, as
+// a gzipping host or proxy sends them: their size is the release's, and a body
+// of another size fails as it is read.
+func TestReleaseAssetWithoutLength(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.TrimPrefix(r.URL.Path, "/attachments/")))
+		w.(http.Flusher).Flush() // chunked: no Content-Length
+	}))
+	t.Cleanup(srv.Close)
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		body    string
+		size    int64
+		wantErr string
+	}{
+		{body: "abcdef", size: 6},
+		{body: "abc", size: 6, wantErr: "3 bytes short"},
+		{body: "abcdefgh", size: 6, wantErr: "longer than the release says"},
+	} {
+		r, size, err := p.OpenReleaseAsset(context.Background(), p.Repository("orders-api"),
+			ReleaseAsset{Name: "orders", Size: tc.size, UUID: tc.body})
+		if err != nil || size != tc.size {
+			t.Fatalf("OpenReleaseAsset(%s) = %d, %v; want size %d", tc.body, size, err, tc.size)
+		}
+		data, err := io.ReadAll(r)
+		_ = r.Close()
+		switch {
+		case tc.wantErr == "" && (err != nil || string(data) != tc.body):
+			t.Errorf("reading %s = %q, %v; want it all", tc.body, data, err)
+		case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)):
+			t.Errorf("reading %s error = %v, want %q", tc.body, err, tc.wantErr)
+		}
 	}
 }

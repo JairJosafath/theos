@@ -126,6 +126,12 @@ until step 4, since nothing reads `publishReleases` before it.
    release's body; local-Gitea tests (`make test-gitea`).
    *Done when:* `make test-gitea` reads a release and streams its asset
    against the local Gitea, and `make check` passes.
+   *Landed:* `Provider.GetRelease` (nil when the tag has no release; drafts
+   are found too), `OpenReleaseAsset` and `SetReleaseBody`. An asset downloads
+   from `/attachments/<uuid>` on the configured base URL, not the API's
+   `browser_download_url`, which follows Gitea's `ROOT_URL`; a download whose
+   size differs from the release's record is an error. Gitea ignores an empty
+   body on edit, so notes can be set but not cleared.
 3. **GitHub's side.** `internal/gitprovider`: the `ReleaseTarget` interface
    and its GitHub implementation, tested against an `httptest` server with a
    generated token (`rand.Text()`): the calls, streaming upload with
