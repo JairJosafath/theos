@@ -1,0 +1,18 @@
+# make gitea-local seed-local (issue #350): the seed pushes and tags hello-html
+13:38:39 seed: Created repository templates/hello-standard
+13:38:40 seed: Pushed template templates/hello-standard v1.0.1 (commit d6110eb)
+13:38:40 seed: Created repository templates/hello-html
+13:38:41 seed: Pushed template templates/hello-html v1.0.0 (commit d15a8e9)
+13:38:41 seed: Done: organizations templates and webshop, templates tagged, credentials stored
+
+# GET /api/v1/repos/templates/hello-html/tags, then /contents
+v1.0.0 d15a8e9
+.c4factory
+.gitea
+Makefile
+README.md.tmpl
+index.html
+
+# go test ./internal/scaffold -run TestEveryTemplate -v
+    --- PASS: TestEveryTemplateRenders/hello_html (0.00s)
+--- PASS: TestEveryTemplateHasACombo (0.00s)
