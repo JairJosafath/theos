@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tests for hack/relay-watch.sh: when a round starts the relay, and when it
 # starts a triage of the proposed issues, with pick, the proposed list and
-# hack/relay.sh faked; and when a triage reads a proposed issue again, with
-# hack/lib/github.sh's proposed against a stubbed GitHub.
+# hack/relay.sh faked; when a triage reads a proposed issue again, with
+# hack/lib/github.sh's proposed against a stubbed GitHub; and when a CI round
+# files a "main is red" issue, with gh faked under the real hack/lib/github.sh.
 # Run: hack/relay-watch_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -244,6 +245,90 @@ PICKED='github: no token' PICK_RC=2
 round; round
 check "pick fails: no relay" "$(starts)" 5
 check "pick fails: logged once" "$(logged 'could not ask GitHub for the next issue (exit 2): github: no token')" 1
+
+# Main's CI, with gh faked: runs from $T/runs-<file>.json, open issues in
+# $T/issues.json, and every issue filed appended there.
+HERE=$(cd "$(dirname "$0")" && pwd)
+REPO=$T/repo
+mkdir -p "$REPO/.github/workflows" "$T/bin"
+printf 'name: Tests\non:\n  push:\n    branches: [main]\n  pull_request:\n' >"$REPO/.github/workflows/test.yml"
+printf 'name: Lint\non:\n  push:\n    branches:\n      - main\n' >"$REPO/.github/workflows/lint.yml"
+printf 'name: Release\non:\n  push:\n    tags: [main]\n' >"$REPO/.github/workflows/release.yml"
+printf 'name: E2E\non:\n  workflow_dispatch:\n  pull_request:\n    branches: [main]\n' >"$REPO/.github/workflows/e2e.yml"
+github() { "$HERE/lib/github.sh" "$@"; }
+echo '[]' >"$T/issues.json"
+cat >"$T/bin/gh" <<'GH'
+#!/usr/bin/env bash
+q= wf= id=
+args=("$@")
+for ((i = 0; i < $#; i++)); do
+  case ${args[i]} in
+    --jq) q=${args[i + 1]} ;;
+    --workflow) wf=${args[i + 1]} ;;
+  esac
+done
+case "$1 $2 $* " in
+  "run list"*) cat "$FAKE/runs-$wf.json" 2>/dev/null || echo '[]' ;;
+  "run view"*)
+    if [[ " $* " == *" --log-failed "* ]]; then seq -f 'log line %g' 1 50
+    else echo '{"jobs":[{"name":"Run on Ubuntu","conclusion":"failure"},{"name":"Setup","conclusion":"success"}]}' | jq -r "$q"; fi ;;
+  *" --method POST "*)
+    n=$(($(jq length "$FAKE/issues.json") + 100))
+    jq --argjson n "$n" '. + [input + {number: $n}]' "$FAKE/issues.json" - >"$FAKE/issues.new" &&
+      mv "$FAKE/issues.new" "$FAKE/issues.json" && echo "$n" ;;
+  *) jq -r "$q" "$FAKE/issues.json" ;;
+esac
+GH
+chmod +x "$T/bin/gh"
+export FAKE=$T PATH=$T/bin:$PATH GH_TOKEN=fake
+# runs FILE CONCLUSION...: FILE's runs on main, newest first; "" runs still.
+runs() {
+  local f=$1 i=0 c
+  shift
+  for c in "$@"; do
+    i=$((i + 1))
+    jq -n --arg c "$c" --argjson i "$i" '{databaseId: (900 - $i), status: (if $c == "" then "in_progress" else "completed" end), conclusion: $c, headSha: "abcdef\($i)123456",
+      displayTitle: "Merge pull request #\($i)", url: "https://x/runs/\(900 - $i)",
+      createdAt: "2026-10-05T23:\(50 - $i):00Z", workflowName: "Tests"}'
+  done | jq -s . >"$T/runs-$f.json"
+}
+filed() { jq length "$T/issues.json"; }
+
+check "ci: the workflows that run on a push to main" "$(ci_workflows | tr '\t\n' ':,')" "lint.yml:Lint,test.yml:Tests,"
+
+runs test.yml success failure failure
+runs lint.yml failure success
+ci_round
+check "ci: a pass, or a single failure, files nothing" "$(filed)" 0
+
+runs test.yml failure success failure
+runs lint.yml failure cancelled success
+ci_round
+check "ci: one failure after a pass files nothing" "$(filed)" 0
+
+runs test.yml "" failure failure
+ci_round
+check "ci: a run still going on main files nothing" "$(filed)" 0
+
+runs test.yml failure failure success
+ci_round
+check "ci: two failures file one issue" "$(filed)" 1
+check "ci: its title" "$(jq -r '.[0].title' "$T/issues.json")" "main is red: Tests"
+check "ci: its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/ready priority/urgent kind/bug source/dev"
+body=$(jq -r '.[0].body' "$T/issues.json")
+check "ci: the body names both runs and commits" "$(grep -c '^- \[89[89]\](https://x/runs/89[89]) .*, failure, commit abcdef[12]: Merge pull request #[12]$' <<<"$body")" 2
+check "ci: the body names the failing jobs" "$(grep -cx '  - failed job: Run on Ubuntu' <<<"$body")" 2
+check "ci: the body has the last 40 log lines" "$(grep -c '^log line' <<<"$body"):$(grep -m1 '^log line' <<<"$body")" "40:log line 11"
+check "ci: logged" "$(logged 'main is red: Tests; issue #100$')" 1
+
+ci_round
+check "ci: a second round files no other issue" "$(filed)" 1
+check "ci: a red main that lasts is logged once" "$(logged 'main is red: Tests')" 1
+
+# Cancelled runs don't count: the two newest that ran both failed.
+runs lint.yml failure cancelled timed_out
+ci_round
+check "ci: cancelled runs are skipped" "$(jq -r '.[1].title' "$T/issues.json")" "main is red: Lint"
 
 # Arguments.
 bash "$(dirname "$0")/relay-watch.sh" --workers 0 2>/dev/null

@@ -41,6 +41,11 @@
 #   hack/lib/github.sh create TITLE FILE LABEL...
 #                                        file an issue, FILE as its body; prints its number. An open
 #                                        issue with the same title is left as it is.
+#   hack/lib/github.sh red WORKFLOW      whether WORKFLOW (its file, test.yml) is red on main: its two newest
+#                                        finished runs there failed (cancelled and skipped runs don't count)
+#                                        and none runs there now (it may be the fix).
+#                                        Prints an issue body naming the runs, their commits, the failing jobs
+#                                        and the newest run's last 40 failed log lines. Exit 1: not red
 #   hack/lib/github.sh intake N          label issue N by where it came from: a "### Reported by" name in its
 #                                        body gives user/<name> + source/user, else source/dev; adds
 #                                        status/proposed when it has no status. Only for issues from the
@@ -934,6 +939,40 @@ gh_create() {
     gh_api --method POST "repos/$C4_GITHUB_REPO/issues" --input - --jq .number
 }
 
+# gh_red WORKFLOW: print an issue body when WORKFLOW's two newest finished runs
+# on main failed (see the usage above); exit 1 when it isn't red, 2 when GitHub
+# can't say.
+gh_red() {
+  local wf=${1:?usage: red WORKFLOW} runs n id
+  gh_token || return 2
+  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --workflow "$wf" --limit 10 \
+    --json databaseId,status,conclusion,headSha,displayTitle,url,createdAt,workflowName) || return 2
+  # A run still going on main may be the fix: wait for it.
+  [ "$(jq -r 'sort_by(.createdAt) | last | .status // "completed"' <<<"$runs")" = completed ] || return 1
+  runs=$(jq -c '[.[] | select(.conclusion != "cancelled" and .conclusion != "skipped")] | sort_by(.createdAt) | reverse | .[:2]' <<<"$runs") ||
+    return 2
+  n=$(jq '[.[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure")] | length' <<<"$runs")
+  [ "$n" = 2 ] || return 1
+  echo "\`$(jq -r '.[0].workflowName' <<<"$runs")\` (\`$wf\`) failed on main twice in a row; every pull request built on main fails with it."
+  echo
+  echo "## Runs"
+  echo
+  for id in $(jq -r '.[].databaseId' <<<"$runs"); do
+    jq -r --argjson id "$id" '.[] | select(.databaseId == $id) |
+      "- [\(.databaseId)](\(.url)) at \(.createdAt), \(.conclusion), commit \(.headSha[:7]): \(.displayTitle)"' <<<"$runs"
+    gh run view "$id" --repo "$C4_GITHUB_REPO" --json jobs \
+      --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | "  - failed job: \(.name)"' || return 2
+  done
+  echo
+  echo "## The newest run's failed log, last 40 lines"
+  echo
+  echo '```'
+  gh run view "$(jq -r '.[0].databaseId' <<<"$runs")" --repo "$C4_GITHUB_REPO" --log-failed 2>&1 | tail -40
+  echo '```'
+  echo
+  echo "Filed by hack/relay-watch.sh. The session that fixes main closes this issue; when the cause already has an open issue, close this one as its duplicate (\`hack/lib/github.sh duplicate N M\`)."
+}
+
 GH_USER_COLOR=fef2c0
 
 # gh_reporter: the name under the "### Reported by" heading of the issue body
@@ -1016,6 +1055,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     duplicate) gh_duplicate "$@" ;;
     create) gh_create "$@" ;;
     intake) gh_intake "$@" ;;
+    red) gh_red "$@" ;;
     *)
       sed -n '2,/^$/{s/^# \{0,1\}//;p}' "$0"
       [ "$cmd" = help ] || exit 64

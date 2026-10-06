@@ -26,6 +26,14 @@
 # after WATCH_RETRIAGE seconds (default 10800, 3h); .relay/triaged keeps its
 # time and the issues it saw across restarts. status/needs-human stays the user's.
 #
+# Every WATCH_CI_EVERY seconds (default 900) it checks main's CI: each
+# workflow in .github/workflows that runs on a push to main and whose two
+# newest finished runs on main failed (hack/lib/github.sh red) gets an issue
+# titled "main is red: <workflow>", status/ready and priority/urgent, so pick
+# takes it first. hack/lib/github.sh create skips a title that is open, so a
+# red main that lasts, or both devices' watches, file one issue; a single
+# failure files nothing. The session that fixes main closes it.
+#
 # Every 5 minutes it runs
 # hack/pull.sh, so pick never reads stale rules, and restarts itself when that
 # changed this script.
@@ -48,6 +56,7 @@ RETRY=${WATCH_RETRY:-600}
 TRIAGE_EVERY=${WATCH_TRIAGE:-1800}
 RETRIAGE=${WATCH_RETRIAGE:-10800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
+CI_EVERY=${WATCH_CI_EVERY:-900}
 
 WORKERS=1
 while [ $# -gt 0 ]; do
@@ -77,6 +86,59 @@ pick_next() { "$REPO/hack/lib/github.sh" pick; }
 proposed() { "$REPO/hack/lib/github.sh" proposed; }
 run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { "$REPO/hack/relay.sh" --triage --workers "$WORKERS"; }
+github() { "$REPO/hack/lib/github.sh" "$@"; }
+
+# ci_workflows: FILE<tab>NAME of each workflow that runs on a push to main.
+ci_workflows() {
+  local f
+  for f in "$REPO"/.github/workflows/*.yml "$REPO"/.github/workflows/*.yaml; do
+    [ -f "$f" ] || continue
+    awk -v file="${f##*/}" '
+      /^name:/ { n = $0; sub(/^name:[ \t]*/, "", n); gsub(/["\047]/, "", n) }
+      /^on:/ { on = 1; next }
+      on && /^[^ \t#]/ { on = 0 }
+      on && /^  [a-z_]+:/ { push = ($0 ~ /^  push:/); br = 0; next }
+      on && push && /^    [a-z_-]+:/ { br = ($0 ~ /^    branches:/) }
+      on && push && br && (/[[ ,]main[],]/ || /^ +- *[\047"]?main[\047"]? *$/) { found = 1 }
+      END { if (found) print file "\t" (n == "" ? file : n) }
+    ' "$f"
+  done
+}
+
+# ci_round: file an urgent issue for each workflow that is red on main.
+# CI_SAID holds the workflows whose state was logged, so a state that lasts is
+# logged once.
+CI_SAID=
+ci_round() {
+  local file name body rc out said=
+  while IFS=$'\t' read -r file name; do
+    [ -n "$file" ] || continue
+    body=$(github red "$file" 2>&1)
+    rc=$?
+    case $rc in
+      0)
+        out=$(github create "main is red: $name" - status/ready priority/urgent kind/bug source/dev <<<"$body" 2>&1)
+        rc=$?
+        if [ "$rc" != 0 ]; then
+          said+=" fail:$file"
+          [[ " $CI_SAID " == *" fail:$file "* ]] ||
+            log "main is red: $name; could not file its issue (exit $rc): ${out//$'\n'/; }"
+        else
+          said+=" red:$file"
+          [[ " $CI_SAID " == *" red:$file "* ]] ||
+            log "main is red: $name; issue #${out##*$'\n'}"
+        fi
+        ;;
+      1) ;;
+      *)
+        said+=" err:$file"
+        [[ " $CI_SAID " == *" err:$file "* ]] ||
+          log "could not read main's CI for $name (exit $rc): ${body//$'\n'/; }"
+        ;;
+    esac
+  done < <(ci_workflows)
+  CI_SAID=$said
+}
 
 # start WHY: log WHY and run hack/relay.sh for the workers that aren't running.
 start() {
@@ -203,10 +265,14 @@ fi
 unset C4_RELAY_WATCH_CHILD C4_RELAY_WATCH_RESTART
 CODE_SUM=$(code_sum)
 log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, HEAD $(git rev-parse --short HEAD), $WORKERS worker(s), asks GitHub every ${EVERY}s"
-PULL_T=0 PULLED=
+PULL_T=0 PULLED= CI_T=0
 while :; do
   [ -e "$STOP" ] && { log "stop file found; stopping"; exit 0; }
   now=$(date +%s)
+  if [ $((now - CI_T)) -ge "$CI_EVERY" ]; then
+    CI_T=$now
+    ci_round
+  fi
   if [ $((now - PULL_T)) -ge "$PULL_EVERY" ]; then
     PULL_T=$now
     out=$("$REPO/hack/pull.sh" 2>&1)
