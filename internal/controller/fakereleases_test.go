@@ -207,3 +207,32 @@ func (g *fakeGit) failCloses(n int) {
 	defer g.mu.Unlock()
 	g.releaseState().closeFailures = n
 }
+
+// setGiteaRelease makes the Gitea release of tag, with body and files by name,
+// in the order given.
+func (g *fakeGit) setGiteaRelease(owner, name, tag, body string, files ...fakeFile) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := g.releaseState()
+	rel := &gitprovider.Release{ID: int64(len(s.published) + 1), Tag: tag, Name: tag, Body: body}
+	for i, f := range files {
+		uuid := fmt.Sprintf("%s-%s-%s-%d", owner, name, tag, i)
+		s.assets[uuid] = f.data
+		rel.Assets = append(rel.Assets, gitprovider.ReleaseAsset{ID: int64(100 + i), Name: f.name,
+			Size: int64(len(f.data)), UUID: uuid})
+	}
+	s.published[owner+"/"+name+"@"+tag] = rel
+}
+
+// giteaReleaseBody returns the notes of the Gitea release of tag.
+func (g *fakeGit) giteaReleaseBody(owner, name, tag string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().published[owner+"/"+name+"@"+tag].Body
+}
+
+// fakeFile is a file attached to a release.
+type fakeFile struct {
+	name string
+	data []byte
+}

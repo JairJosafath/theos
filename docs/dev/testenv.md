@@ -331,7 +331,9 @@ once per `WATCH_RETRY`; one the sweep left there waits for the next regular
 sweep, or for an agent to escalate it again. It runs in
 its own worktree, `.claude/worktrees/relay-maintainer`, on origin/main, under
 `.relay/maintain.lock`, and doesn't count against `RELAY_MAX_WORKERS`, but
-goes through `admit` like any session; it logs to `.relay/relay-maintainer.log`.
+goes through `admit` like any session, except that it goes first: while it
+waits, `.relay/admit-first` holds its PID and no worker takes the start slot
+(#262). It logs to `.relay/relay-maintainer.log`.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
 the triage's reasons with `proposed --since` against a stubbed GitHub, and its
 CI rounds with `gh` faked.

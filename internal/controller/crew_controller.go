@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -44,6 +45,10 @@ const (
 // ConditionReady says whether a Crew can pick up issues, and why not.
 const ConditionReady = "Ready"
 
+// crewWorkers is how many Crews reconcile at once; one Crew never runs twice
+// at once.
+const crewWorkers = 4
+
 // defaultCrewPoll is how often a Crew reads its Container's issues.
 const defaultCrewPoll = time.Minute
 
@@ -63,6 +68,9 @@ type CrewReconciler struct {
 	Now func() time.Time
 	// Recorder emits the Crew's Events about releases; nil emits none.
 	Recorder events.EventRecorder
+	// Publish reaches the repositories releases are published to; nil means
+	// gitprovider.Client{}.
+	Publish ReleaseTargets
 
 	// releaseSaid is, by Crew UID, the reason and message of the last release
 	// the Crew tagged or left to a person, so each held one gets one Warning and
@@ -77,6 +85,9 @@ type CrewReconciler struct {
 	// runLateSaid is, by Crew UID, the tag of the last release whose overdue
 	// runs were reported.
 	runLateSaid sync.Map
+	// publishSaid is, by Crew UID, the tag and reason of the last publish
+	// failure or success reported, so each gets one Event.
+	publishSaid sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
@@ -85,6 +96,7 @@ type CrewReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers;agents;gitproviders;relationships,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile reads the Crew's Container and its ready issues, hands unclear ones
 // back to a person, and starts a Task for the next one.
@@ -228,9 +240,8 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 }
 
 // release watches the last release's run, prepares or tags the next release,
-// reports the last release's overdue runs and files its bumps, as the Crew's
-// switches say. It returns the
-// prepare issue filed now, if any.
+// reports the last release's overdue runs, files its bumps and publishes it, as
+// the Crew's switches say. It returns the prepare issue filed now, if any.
 func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) *model.Issue {
 	if crew.Spec.TagReleases {
@@ -244,6 +255,7 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, sta
 		r.noteOverdueRun(ctx, crew, status)
 		r.fileBumps(ctx, crew, status, repo)
 	}
+	r.publishRelease(ctx, crew, status, provider, repo)
 	return filed
 }
 
@@ -381,6 +393,8 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}
 				return crewsOf(ctx, task.Namespace, task.Spec.ContainerRef.Name)
 			}), taskPhaseChanges()).
+		// A Crew uploading a release file can take minutes; the others go on.
+		WithOptions(controller.Options{MaxConcurrentReconciles: crewWorkers}).
 		Named("crew").
 		Complete(r)
 }

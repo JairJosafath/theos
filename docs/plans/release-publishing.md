@@ -165,6 +165,23 @@ until step 4, since nothing reads `publishReleases` before it.
    and a 404 ending `Failed` with their reasons and Events, and a retry after
    the Secret appears ending `Published`; the CEL rules are tested in
    `make validate-yaml`; `make check` passes.
+   *As built:* `internal/controller/crew_publish.go`, after the run watch, the
+   tagging and the bumps on each poll. The Secret is read live, so a Secret
+   made after a failure is used on the next poll. While a step writes, the
+   state is `Publishing` and the condition's reason `Publishing`. The notes'
+   issues are the closed issues of the tag's milestone (`EnsureMilestone` finds
+   it closed); with none, the draft's body is the marker alone, since Gitea
+   ignores an empty body and the notes would be written for ever. The draft's
+   files are matched to Gitea's by name, read as GitHub stores it (a character
+   other than a letter, digit or `._+-` becomes a dot); one GitHub never
+   finished counts as missing. A file Gitea fails to send is logged and tried
+   on the next poll, not a `GitHubError`. `FindRelease` prefers a published
+   release with the marker over a draft with it, so a stray second draft
+   doesn't hold back a release that is out. Crews reconcile four at a time, so
+   one uploading a large file doesn't stop the others. A Gitea read that fails is logged
+   and tried on the next poll, leaving the state as it was. `make
+   validate-yaml` now also checks that each file in `test/invalid` is
+   rejected with the message on its first line (`# expect: ...`).
 
 Trying it on the real `JairJosafath/cel-lens` needs the reporter's token and a
 release; that is the reporter's, on their device, once step 4 ships in a

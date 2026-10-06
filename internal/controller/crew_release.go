@@ -96,6 +96,7 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		message := fmt.Sprintf("Released %s at %s", step.Tag, step.Commit)
 		log.Info("Released milestone", "tag", step.Tag, "commit", step.Commit, "created", step.CreateTag)
 		r.event(crew, corev1.EventTypeNormal, reasonReleased, "TagRelease", message)
+		r.notePublishSkipped(ctx, crew, status.LastRelease)
 		status.LastRelease = &c4v1alpha1.CrewRelease{Tag: step.Tag, Commit: step.Commit, Time: metav1.NewTime(r.now()),
 			Run: model.RunWaiting}
 		r.releaseSaid.Store(crew.UID, reasonReleased+"\n"+message)

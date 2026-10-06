@@ -1,0 +1,24 @@
+# The Crew of crew.yaml, tagging its releases and publishing each one to a
+# GitHub repository once its release runs succeed (docs/getting-started.md,
+# "Publish releases to GitHub"). It needs Secret orders-cli-github, with the
+# key token, which you create yourself. Not in kustomization.yaml: apply it
+# in place of crew.yaml with kubectl apply -n webshop -f crew-publish.yaml.
+apiVersion: c4.factory.io/v1alpha1
+kind: Crew
+metadata:
+  name: orders-cli
+spec:
+  containerRef:
+    name: orders-cli
+  displayName: Orders CLI crew
+  description: Builds orders-cli issue by issue, and releases it.
+  implementer:
+    name: claude-implementer
+  reviewer:
+    name: claude-reviewer
+  tagReleases: true
+  publishReleases:
+    github:
+      repository: your-name/orders-cli
+      tokenSecretRef:
+        name: orders-cli-github

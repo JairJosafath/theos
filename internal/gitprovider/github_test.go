@@ -324,6 +324,13 @@ func TestGitHubReleasesFindRelease(t *testing.T) {
 	if err != nil || got == nil || got.ID != 9 || !got.Draft {
 		t.Errorf("FindRelease() = %+v, %v; want the marked draft 9", got, err)
 	}
+	// A published marked release after it comes first: a stray second draft
+	// doesn't hold back a release already out.
+	f.releases = append(f.releases, &githubRelease{ID: 8, TagName: "v0.2.0", Body: "notes\n" + testMarker})
+	got, err = g.FindRelease(ctx, "v0.2.0", testMarker)
+	if err != nil || got == nil || got.ID != 8 || got.Draft {
+		t.Errorf("FindRelease() = %+v, %v; want the published release 8", got, err)
+	}
 	got, err = g.FindRelease(ctx, "v9.9.9", "<!-- c4factory: shop/cel-lens v9.9.9 -->")
 	if err != nil || got != nil {
 		t.Errorf("FindRelease(v9.9.9) = %+v, %v; want nil", got, err)

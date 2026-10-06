@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # make validate-yaml: checks the factory's YAML offline with kubectl-validate,
 # against the built-in schemas of the envtest Kubernetes version and our CRDs,
-# create-time CEL rules included. Each CEL rule's failing case is an envtest
-# spec. The Makefile passes the tools and folders in the environment; OUT
+# create-time CEL rules included, and that each file in test/invalid is
+# rejected with the message it expects. Each CEL rule's failing case is an
+# envtest spec too. The Makefile passes the tools and folders in the environment; OUT
 # already holds the chart renders of make helm-lint.
 set -euo pipefail
 
@@ -42,3 +43,27 @@ if ! env -u KUBERNETES_SERVICE_HOST -u KUBERNETES_SERVICE_PORT KUBECONFIG=/dev/n
 	exit 1
 fi
 echo "All valid"
+
+# test/invalid holds YAML each create-time CEL rule must reject: each file's
+# first line says "# expect: <message>", which the rejection must contain.
+checked=0
+for f in test/invalid/*.yaml; do
+	want=$(sed -n '1s/^# expect: //p' "$f")
+	if [ -z "$want" ]; then
+		echo "$f: its first line must be '# expect: <message>'" >&2
+		exit 1
+	fi
+	if out=$(env -u KUBERNETES_SERVICE_HOST -u KUBERNETES_SERVICE_PORT KUBECONFIG=/dev/null \
+		"$KUBECTL_VALIDATE" --version "$KUBECTL_VALIDATE_K8S_VERSION" --local-schemas "$K8S_OPENAPI" \
+		--local-crds config/crd/bases "$f" 2>&1); then
+		echo "$f: valid, but should be rejected with: $want" >&2
+		exit 1
+	fi
+	if ! grep -qF -- "$want" <<<"$out"; then
+		echo "$f: rejected, but not with: $want" >&2
+		echo "$out" >&2
+		exit 1
+	fi
+	checked=$((checked + 1))
+done
+echo "All $checked invalid files rejected"

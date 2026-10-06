@@ -193,9 +193,11 @@ func (a githubAsset) asset() TargetAsset {
 	return TargetAsset{ID: a.ID, Name: a.Name, Size: a.Size, Uploaded: a.State == "uploaded"}
 }
 
-// FindRelease lists the releases, since a draft can't be read by its tag.
+// FindRelease lists the releases, since a draft can't be read by its tag. A
+// published release with the marker comes before a draft with it, so a second
+// draft left behind never holds back a release already out.
 func (g *githubReleases) FindRelease(ctx context.Context, tag, marker string) (*TargetRelease, error) {
-	var tagged *TargetRelease
+	var tagged, draft *TargetRelease
 	for page := 1; page <= githubMaxPages; page++ {
 		var batch []githubRelease
 		if err := g.list(ctx, g.releases, page, "listing releases", &batch); err != nil {
@@ -204,7 +206,13 @@ func (g *githubReleases) FindRelease(ctx context.Context, tag, marker string) (*
 		for _, r := range batch {
 			rel := r.release()
 			if marker != "" && strings.Contains(r.Body, marker) {
-				return &rel, nil
+				if !r.Draft {
+					return &rel, nil
+				}
+				if draft == nil {
+					draft = &rel
+				}
+				continue
 			}
 			// Several drafts can share a tag; only a published one takes it.
 			if tagged == nil && r.TagName == tag && !r.Draft {
@@ -212,6 +220,9 @@ func (g *githubReleases) FindRelease(ctx context.Context, tag, marker string) (*
 			}
 		}
 		if len(batch) < githubPageSize {
+			if draft != nil {
+				return draft, nil
+			}
 			return tagged, nil
 		}
 	}
