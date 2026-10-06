@@ -65,9 +65,9 @@ rendered with `hack/render`. Built-in kinds are checked against the schemas of
 the envtest Kubernetes release, downloaded once next to the tools (`k8s-openapi-*`); our
 kinds against `config/crd/bases` and `test/crds/agent-sandbox`, create-time CEL
 rules included. Rules on `oldSelf` need an update, so envtest covers them.
-Every CEL rule has a test. A create-time rule has a file in `test/manifests/invalid`
-that must fail with the message on its `# expect:` line; a rule on `oldSelf` has an
-envtest spec that creates, patches and expects the message. A new rule adds one.
+Every CEL rule has an envtest spec that expects its message: a create-time rule's
+spec creates an object that breaks it, a rule on `oldSelf` creates, patches and
+expects the message. A new rule adds one.
 `config/agent-sandbox` and `config/metrics-server` fetch remote URLs and are
 skipped. What it rendered is in `bin/yaml/`.
 

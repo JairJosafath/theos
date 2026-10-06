@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # make validate-yaml: checks the factory's YAML offline with kubectl-validate,
 # against the built-in schemas of the envtest Kubernetes version and our CRDs,
-# create-time CEL rules included. Rules on oldSelf need an update, so they stay
-# in envtest. The files in test/manifests/invalid must each fail with the
-# message on their "# expect:" line. The Makefile passes the tools and folders
-# in the environment; OUT already holds the chart renders of make helm-lint.
+# create-time CEL rules included. Each CEL rule's failing case is an envtest
+# spec. The Makefile passes the tools and folders in the environment; OUT
+# already holds the chart renders of make helm-lint.
 set -euo pipefail
 
 : "${KUBECTL_VALIDATE:?}" "${KUSTOMIZE:?}" "${K8S_OPENAPI:?}" "${KUBECTL_VALIDATE_K8S_VERSION:?}" "${OUT:?}"
@@ -43,31 +42,3 @@ if ! env -u KUBERNETES_SERVICE_HOST -u KUBERNETES_SERVICE_PORT KUBECONFIG=/dev/n
 	exit 1
 fi
 echo "All valid"
-
-# Each fixture in test/manifests/invalid breaks one create-time CEL rule and
-# must fail with that rule's message, from its "# expect:" line.
-shopt -s nullglob
-invalid=(test/manifests/invalid/*.yaml)
-shopt -u nullglob
-[ "${#invalid[@]}" -gt 0 ] || { echo "No files in test/manifests/invalid" >&2; exit 1; }
-echo "Expecting ${#invalid[@]} invalid files to fail"
-failed=0
-for f in "${invalid[@]}"; do
-	want=$(sed -n 's/^# expect: //p' "$f" | head -n 1)
-	if [ -z "$want" ]; then
-		echo "$f: no \"# expect: <message>\" line" >&2
-		failed=1
-		continue
-	fi
-	if got=$(env -u KUBERNETES_SERVICE_HOST -u KUBERNETES_SERVICE_PORT KUBECONFIG=/dev/null \
-		"$KUBECTL_VALIDATE" --version "$KUBECTL_VALIDATE_K8S_VERSION" --local-schemas "$K8S_OPENAPI" \
-		--local-crds config/crd/bases "$f" 2>&1); then
-		echo "$f: passed, want it to fail with: $want" >&2
-		failed=1
-	elif ! grep -qF -- "$want" <<<"$got"; then
-		printf '%s: failed without: %s\n%s\n' "$f" "$want" "$got" >&2
-		failed=1
-	fi
-done
-[ "$failed" = 0 ] || exit 1
-echo "All invalid files fail as expected"
