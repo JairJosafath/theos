@@ -72,7 +72,9 @@ gitea-admin: ## Print the Gitea admin's username and generated password, for sig
 .PHONY: seed
 seed: ## Seed Gitea: orgs, tagged template repos, Secret gitea-credentials.
 	$(call build-load,$(SEED_IMG),-f hack/seed/Dockerfile .)
-	for ns in webshop apps; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | $(TESTENV_KUBECTL) apply -f -; done
+	@# Labeled, so the operator copies its shared Secrets (claude-credentials) into them.
+	for ns in webshop apps; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | \
+		$(TESTENV_KUBECTL) label --local -f - c4.factory.io/shared-secrets=true -o yaml | $(TESTENV_KUBECTL) apply -f -; done
 	$(TESTENV_KUBECTL) apply -f hack/seed/rbac.yaml
 	@# Foreground: the old pods are gone before the new Job starts.
 	$(TESTENV_KUBECTL) -n gitea delete job seed --ignore-not-found --cascade=foreground --wait=true
@@ -224,23 +226,20 @@ agent-sandbox: ## Install Agent Sandbox (config/agent-sandbox, v1.0.4), which ru
 	$(TESTENV_KUBECTL) apply --server-side -k config/agent-sandbox
 	$(TESTENV_KUBECTL) -n agent-sandbox-system rollout status deployment --timeout=300s
 
-CLAUDE_NAMESPACE ?= apps
+# Where make claude-secret stores the token: the operator's namespace, from
+# which it copies Secret claude-credentials into every project namespace labeled
+# c4.factory.io/shared-secrets=true (config/manager, make seed). A project of its
+# own token: CLAUDE_NAMESPACE=<project>, where a Secret the operator didn't make
+# is left alone.
+CLAUDE_NAMESPACE ?= c4-factory-system
 
 # The Claude token make claude-secret reads when CLAUDE_TOKEN is not given: one
 # file per device, outside git, mode 0600 (docs/dev/testenv.md).
 CLAUDE_TOKEN_FILE ?= $(TOOLS_ROOT)/.dev/secrets/claude-token
 
 .PHONY: claude-secret
-claude-secret: ## Store the agents' Claude token, from CLAUDE_TOKEN or the 0600 file CLAUDE_TOKEN_FILE (.dev/secrets/claude-token).
+claude-secret: ## Store the agents' Claude token once, for every project, from CLAUDE_TOKEN or the 0600 file CLAUDE_TOKEN_FILE (.dev/secrets/claude-token).
 	@KUBECTL="$(TESTENV_KUBECTL)" CLAUDE_TOKEN_FILE="$(CLAUDE_TOKEN_FILE)" hack/claude-secret.sh $(CLAUDE_NAMESPACE)
-
-.PHONY: claude-secret-copy
-claude-secret-copy: ## Copy the Claude Secret between projects: make claude-secret-copy FROM=webshop TO=apps.
-	@test -n "$(FROM)" -a -n "$(TO)" || { echo "Set FROM and TO namespaces" >&2; exit 1; }
-	@$(TESTENV_KUBECTL) -n $(FROM) get secret claude-credentials -o json | \
-		jq --arg ns "$(TO)" '{apiVersion, kind, type, data, metadata: {name: .metadata.name, namespace: $$ns}}' | \
-		$(TESTENV_KUBECTL) apply --server-side --field-manager=c4factory-testenv -f - >/dev/null
-	@echo "Copied Secret claude-credentials from $(FROM) to $(TO)"
 
 .PHONY: e2e-apps
 e2e-apps: ## Apply the e2e fixture project: one hello-world Container (test/e2e/testdata/apps).
