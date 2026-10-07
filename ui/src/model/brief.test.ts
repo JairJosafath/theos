@@ -162,6 +162,7 @@ describe('describeBrief', () => {
     ['exhausted', 'Agents tried it as often as a Crew does.'],
     ['failed', 'Its last Task failed.'],
     ['person', 'Handed back by a person; see the issue.'],
+    ['byHand', 'Needs a person; see the issue.'],
   ])('gives a %s issue a reason when the operator gave none', (kind, reason) => {
     expect(describeFailedIssue({ container: 'api', number: 1, kind, reason: '  ' }).reason).toBe(reason)
   })

@@ -122,6 +122,50 @@ var _ = Describe("Brief failed issues", func() {
 		}).Should(Succeed())
 	})
 
+	// #474: a by-hand issue needs a person, so a plan may close it but never retry it.
+	It("lists a by-hand issue as byHand, refuses a plan that retries it and closes it when one closes it", func() {
+		createFactory(ns)
+		briefAgents(ns, 2)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, linterPlan(ns, 0))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+
+		title, body := model.ByHandIssue("Lint rule 1", 1, "http://gitea/pulls/2", "linter-1", "Agent `reviewer`",
+			[]model.OpenCriterion{{Criterion: "The README has a screenshot of the editor", Why: "No desktop editor."}})
+		n := gitFake.addIssue(ns, "linter", title, body, []string{model.LabelByHand, model.LabelNeedsHuman})
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Failed).To(ConsistOf(And(HaveField("Number", int32(n)),
+				HaveField("Kind", model.FailedByHand), HaveField("Reason", "Needs a person: No desktop editor."))))
+			failed := string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
+			g.Expect(failed).To(ContainSubstring("kind: byHand"))
+		}).Should(Succeed())
+
+		By("refusing a plan that retries it")
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"I added the screenshot."} })).To(Succeed())
+		planRound(ns, 2, 1, failedPlan(ns,
+			fmt.Sprintf("- {container: linter, issue: %d, answer: retry, why: Try it again.}\n", n)))
+		Eventually(func(g Gomega) {
+			g.Expect(briefEventNotes(g, ns, eventPlanRefused)).To(ContainElement(And(
+				ContainSubstring(fmt.Sprintf("retries linter#%d", n)), ContainSubstring("needs a person, not agents"))))
+		}).Should(Succeed())
+		Expect(gitFake.issue(ns, "linter", n).State).To(Equal("open"))
+
+		By("closing it when a plan closes it")
+		planRound(ns, 2, 2, failedPlan(ns,
+			fmt.Sprintf("- {container: linter, issue: %d, answer: close, why: The prompt says the screenshot is in.}\n", n)))
+		Eventually(func(g Gomega) {
+			issue := gitFake.issue(ns, "linter", n)
+			g.Expect(issue.State).To(Equal("closed"))
+			g.Expect(issue.comments).To(ContainElement(ContainSubstring("Closed for Brief `cel-lens` in round 2.")))
+			g.Expect(getBrief(g, ns).Status.Failed).To(BeEmpty())
+		}).Should(Succeed())
+	})
+
 	It("retries one failed issue with a clarification and closes another as a prompt says", func() {
 		createFactory(ns)
 		briefAgents(ns, 2)

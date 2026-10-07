@@ -150,6 +150,9 @@ Push the branch `plan/<round>` with these files:
       a new issue.
     - `exhausted`: agents tried it three times. It can't be retried: close it
       and file it again, clarified or split.
+    - `byHand`: criteria only a person can do (a screenshot of a desktop
+      app, a run on a device). It can't be retried: close it once a prompt
+      says the person did it or dropped it.
     - `failed` or `person`: retry it, with a `clarify` when the prompt says
       something the agent needs, or close it.
     Leave a failed issue no prompt speaks to unanswered: it waits for the

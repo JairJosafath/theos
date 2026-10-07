@@ -72,15 +72,18 @@ func (r *TaskReconciler) review(ctx context.Context, task *c4v1alpha1.Task, stat
 }
 
 // closeIssue reports the merge on the issue, files the reviewer's follow-ups as
-// proposed issues in the Later milestone, outside any release, and closes it. It
-// returns the follow-ups' addresses.
+// proposed issues and the criteria the review left open as one kind/by-hand
+// issue for a person (status.byHand), both in the Later milestone, outside any
+// release, and closes it. It returns the follow-ups' addresses.
 func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, reviewer *c4v1alpha1.Agent, followUps []model.FollowUp) []string {
+	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, reviewer *c4v1alpha1.Agent, followUps []model.FollowUp,
+	open []model.OpenCriterion) []string {
 	n := int(task.Spec.Issue)
 	var filed []string
 	var notes []error
 	var milestone int64
-	if len(followUps) > 0 {
+	byHand := len(open) > 0 && status.ByHand == ""
+	if len(followUps) > 0 || byHand {
 		err := r.gitCall(ctx, func(ctx context.Context) (err error) {
 			milestone, err = provider.EnsureMilestone(ctx, repo, model.FollowUpMilestone, model.FollowUpMilestoneDescription)
 			return err
@@ -88,8 +91,14 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Pr
 		if err != nil {
 			milestone = 0 // file them without it
 		}
+		labels := issueLabels()
+		if byHand {
+			l := model.ByHandLabel()
+			labels = append(labels,
+				gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+		}
 		notes = append(notes, r.gitCall(ctx, func(ctx context.Context) error {
-			return provider.EnsureLabels(ctx, repo, issueLabels())
+			return provider.EnsureLabels(ctx, repo, labels)
 		}), err)
 	}
 	for _, f := range followUps {
@@ -104,13 +113,54 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Pr
 			filed = append(filed, issue.URL)
 		}
 	}
+	if byHand {
+		url, err := r.fileByHand(ctx, provider, repo, task, status, reviewer, open, milestone)
+		notes = append(notes, err)
+		if err == nil {
+			status.ByHand = url
+			logf.FromContext(ctx).Info("Filed the open criteria for a person", "url", url, "criteria", len(open))
+		}
+	}
 	comment := fmt.Sprintf("Merged in %s after %d %s.", status.PullRequestURL, status.Round, plural(int(status.Round), "round", "rounds"))
+	if status.ByHand != "" {
+		comment += "\n\nThe reviewer accepted criteria that need a person as open; they wait in " + status.ByHand +
+			", " + model.LabelByHand + "."
+	}
 	if len(filed) > 0 {
 		comment += "\n\nThe reviewer suggested follow-ups, filed as " + model.LabelProposed + ":\n- " + strings.Join(filed, "\n- ")
 	}
 	notes = append(notes, r.endIssue(ctx, provider, repo, n, comment)...)
 	logNotes(ctx, task, notes)
 	return filed
+}
+
+// fileByHand files the open criteria as the Task's kind/by-hand issue,
+// status/needs-human so no Crew picks it, and returns its address. When the
+// Task's status lost the address, the issue is found again by its marker.
+func (r *TaskReconciler) fileByHand(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, reviewer *c4v1alpha1.Agent, open []model.OpenCriterion,
+	milestone int64) (string, error) {
+	var existing []gitprovider.Issue
+	if err := r.gitCall(ctx, func(ctx context.Context) (err error) {
+		existing, err = provider.ListIssues(ctx, repo, model.LabelByHand)
+		return err
+	}); err != nil {
+		return "", err
+	}
+	for _, issue := range existing {
+		if model.HasByHandMarker(issue.Body, task.Name) {
+			return issue.URL, nil
+		}
+	}
+	title, body := model.ByHandIssue(status.IssueTitle, int(task.Spec.Issue), status.PullRequestURL, task.Name,
+		agentName(reviewer), open)
+	var issue gitprovider.Issue
+	err := r.gitCall(ctx, func(ctx context.Context) (err error) {
+		issue, err = provider.CreateIssue(ctx, repo, title, body, []string{model.LabelByHand, model.LabelNeedsHuman},
+			milestone)
+		return err
+	})
+	return issue.URL, err
 }
 
 // endIssue says on an issue how its Task ended, takes it out of progress and
