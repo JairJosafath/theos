@@ -1,0 +1,52 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` command-line program of {{ .SoftwareSystem }}, in project {{ .Project }}:
+a command in Python 3.12 or later, managed with [uv](https://docs.astral.sh/uv/) and
+scaffolded by C4 Factory.
+
+## Use it
+
+```sh
+{{ .Container }} --name Ada   # Hello, Ada!
+{{ .Container }} --version
+{{ .Container }} --help
+```
+
+A release is a wheel, `{{ snake .Container }}-<version>-py3-none-any.whl`, and its source,
+`{{ snake .Container }}-<version>.tar.gz`. Install the wheel with
+`uv tool install ./{{ snake .Container }}-<version>-py3-none-any.whl` (or `pipx install`),
+which puts `{{ .Container }}` on your `PATH` in an environment of its own.
+
+## Develop
+
+Open the repository in its devcontainer (`.devcontainer/`), which installs uv and runs
+`uv sync` for you. Anywhere else, [install uv](https://docs.astral.sh/uv/getting-started/installation/) first.
+
+```sh
+uv sync                          # create .venv from pyproject.toml and uv.lock
+uv run {{ .Container }} -n Ada   # run it
+uv run pytest                    # unit tests
+{{- if .Standard }}
+make check                       # what CI runs: lint, formatting, types, tests and the build
+make dist                        # the release wheel and sdist in dist/
+make help                        # every target
+{{- else }}
+uv build                         # the release wheel and sdist in dist/
+{{- end }}
+```
+
+`uv.lock` pins every package; commit it with `pyproject.toml` whenever `uv add` changes them.
+
+## Layout
+
+- `app/cli.py` is the command line: `main`, the `[project.scripts]` entry point in
+  `pyproject.toml`, parses the flags with the standard library's `argparse`, writes
+  results to stdout and errors to stderr, and returns the exit code (argparse exits 2
+  for a wrong command line). Tests call it directly.
+- `app/*.py` are the program's modules; `app/__main__.py` runs it as `python -m app`.
+- `tests/` holds the pytest tests, one file per module.
+- The name and version the program prints come from `pyproject.toml`.
+{{- if .Standard }}
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}
