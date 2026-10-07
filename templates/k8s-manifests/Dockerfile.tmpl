@@ -1,3 +1,4 @@
+{{- if eq .Framework "python-fastapi" -}}
 # syntax=docker/dockerfile:1
 # Image for a uv project that serves an ASGI app at app.main:app on port 8000
 # (the python-fastapi Framework layout). Build it with: docker build -t <image> .
@@ -28,3 +29,28 @@ ENV PATH="/app/.venv/bin:${PATH}" \
 USER 1000:1000
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+{{- else if eq .Framework "react-vite" -}}
+# syntax=docker/dockerfile:1
+# Image for a Vite web app (the react-vite Framework layout): npm builds the
+# static site into dist/, and an unprivileged nginx serves it on port 8080.
+# Build it with: docker build -t <image> .
+
+ARG NODE_IMAGE=node:24-bookworm-slim
+ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.29-alpine
+
+FROM ${NODE_IMAGE} AS build
+WORKDIR /app
+# Dependencies first, so this layer stays cached while only the code changes.
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund
+COPY . .
+RUN npm run build
+
+FROM ${NGINX_IMAGE}
+COPY --from=build /app/dist /usr/share/nginx/html
+# The image's own user (nginx, 101), named by number so Kubernetes can check
+# runAsNonRoot.
+USER 101
+EXPOSE 8080
+{{- end }}
