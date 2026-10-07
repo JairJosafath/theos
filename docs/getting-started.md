@@ -41,39 +41,36 @@ kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/downl
 ```
 
 **Namespaces.** The release goes in `c4-factory-system` and Gitea in `gitea`.
-Each project lives in a namespace of its own name; this guide's is `webshop`:
+Each project lives in a namespace of its own name, which the chart makes; this
+guide's is `webshop`:
 
 ```bash
-for ns in c4-factory-system gitea webshop; do
+for ns in c4-factory-system gitea; do
   kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
 done
 ```
 
 **Registry login and the pull secret** (skip them once the chart and the
 images on GHCR are public). Your GitHub token, with `read:packages`, logs Helm
-in to GHCR, so it can pull the chart, and goes in a Secret named `ghcr` in each
-namespace that pulls an image: the release's, Gitea's and the project's. You
-run this yourself; the factory never sees the token anywhere else.
+in to GHCR, so it can pull the chart, and goes in a Secret named `ghcr` in the
+release's namespace and Gitea's. The operator copies it into each project
+namespace and names it in the agents' pods, so a project needs no pull secret
+or ServiceAccount patch of its own. You run this yourself; the factory never
+sees the token anywhere else.
 
 ```bash
 gh auth refresh -s read:packages
 gh auth token | helm registry login ghcr.io -u "$(gh api user -q .login)" --password-stdin
-for ns in c4-factory-system gitea webshop; do
+for ns in c4-factory-system gitea; do
   kubectl -n $ns create secret docker-registry ghcr --docker-server=ghcr.io \
     --docker-username="$(gh api user -q .login)" --docker-password="$(gh auth token)"
 done
 ```
 
-The agents run in the project namespace, in pods the operator makes outside the
-chart. They run as the namespace's `default` ServiceAccount, so they pull with
-the secrets it lists:
-
-```bash
-kubectl -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr"}]}'
-```
-
-**The release.** `gitea.projects` lists the project namespaces: for each one
-the seed makes a Gitea organization, Secret `gitea-credentials` with its token
+**The release.** `gitea.projects` lists the projects: for each one the chart
+makes its namespace, labeled `c4.factory.io/shared-secrets=true` so the
+operator shares the pull secret and the agents' token into it, and the seed
+makes a Gitea organization, Secret `gitea-credentials` with its token
 and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
 pushed, pinned to their tags: Frameworks `go-cli`, `node-cli`,
 `python-fastapi`, `react-vite` and `vscode-extension`, Standards `go-standard` and `ts-standard`, Compute `small`,
@@ -112,8 +109,10 @@ down.
 ## 2. The agents' token
 
 The agents run Claude Code, which signs in with a long-lived token. Make one
-with `claude setup-token` and store it in Secret `claude-credentials` in the
-project namespace; the Agents name the Secret and hold no token. Run
+with `claude setup-token` and store it once in Secret `claude-credentials` in
+the release's namespace, `c4-factory-system`; the operator copies it into
+every project namespace and keeps the copies in step, so a new token reaches
+every project. The Agents name the Secret and hold no token. Run
 `claude setup-token` on its own first, then the rest, and paste the token at
 the prompt (it isn't echoed, and stays out of your shell history):
 
@@ -123,10 +122,10 @@ claude setup-token
 
 ```bash
 read -rs -p 'Claude token: ' CLAUDE_TOKEN; echo
-[ -n "$CLAUDE_TOKEN" ] && printf '%s' "$CLAUDE_TOKEN" | kubectl -n webshop create secret generic claude-credentials \
+[ -n "$CLAUDE_TOKEN" ] && printf '%s' "$CLAUDE_TOKEN" | kubectl -n c4-factory-system create secret generic claude-credentials \
   --from-file=CLAUDE_CODE_OAUTH_TOKEN=/dev/stdin
 unset CLAUDE_TOKEN
-kubectl -n webshop get secret claude-credentials -o go-template='{{len .data.CLAUDE_CODE_OAUTH_TOKEN}}{{"\n"}}'
+kubectl -n c4-factory-system get secret claude-credentials -o go-template='{{len .data.CLAUDE_CODE_OAUTH_TOKEN}}{{"\n"}}'
 ```
 
 The last line prints the stored token's length in base64, never the token;
@@ -136,15 +135,18 @@ Secret and run the second block again.
 With an API key instead, name the key `ANTHROPIC_API_KEY`: every key of the
 Secret becomes an environment variable in the agent's sandbox.
 
+A project on a token of its own: make `claude-credentials` in its namespace
+instead. The operator never changes or deletes a Secret it didn't copy, and
+each Project's condition `SecretsShared` says which one it uses.
+
 ## The short path: describe the app
 
 From the release after `0.3.0`, steps 1 and 2 are all you do by hand: install
 the factory, make the token Secret, and describe the app in plain words. A
 planner Agent writes the model, a Crew per Container and the first issues, and
 says what it chose; steps 3 to 5 show the same loop written by hand. For a
-project of its own, say `cel-lens`, put `cel-lens` where step 1 says
-`webshop` (the namespace, the pull secret, `gitea.projects={cel-lens}`) and
-make step 2's Secret in it. The seed makes Project `cel-lens`, so the UI
+project of its own, say `cel-lens`, set `gitea.projects={cel-lens}` where
+step 1 says `webshop`. The seed makes Project `cel-lens`, so the UI
 offers the project.
 
 Open the UI:
@@ -306,13 +308,13 @@ issue `status/needs-human` with the reason in a comment; label it
 | What you see | Why, and what to do |
 | --- | --- |
 | A pod in `ImagePullBackOff` in `c4-factory-system` or `gitea` | The images are private and that namespace has no `ghcr` Secret, or the install lacks the `imagePullSecrets` settings. |
-| A sandbox pod in `ImagePullBackOff` in `webshop` | ServiceAccount `webshop/default` doesn't list `ghcr`, or Secret `webshop/ghcr` is missing; patch it, then delete the pod. |
+| A sandbox pod in `ImagePullBackOff` in `webshop` | Secret `c4-factory-system/ghcr` is missing, the install lacks `global.imagePullSecrets`, or namespace `webshop` lacks the label `c4.factory.io/shared-secrets=true`; `kubectl -n webshop get project webshop -o jsonpath='{.status.conditions[?(@.type=="SecretsShared")].message}'` says which. Fix it, then delete the pod. |
 | `helm install` times out | Gitea's image is still pulling; `kubectl -n gitea get pods`, then `helm upgrade` with the same settings. |
 | Container `orders-cli` not `Ready` | `kubectl -n webshop describe container orders-cli`: the condition's message says which template or GitProvider is missing. |
 | The issue is labelled `status/needs-human` before any Task | The Crew rejected it and said why in a comment, such as a missing checklist; fix the body and label it `status/ready` again. |
 | The Crew stays `Waiting` | `kubectl -n webshop get crew orders-cli -o yaml`: `status.conditions` says what it waits for, such as the Container. |
 | A Brief stays `NeedsInput` | `kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions[?(@.type=="NeedsInput")].message}'` (or its card in the UI) says what it waits for in one sentence, such as Secret `claude-credentials` missing (step 2); it goes on within a minute of the fix. |
-| The agent says it isn't logged in | Secret `webshop/claude-credentials` is missing, empty (step 2's length check prints `0`), or its key isn't `CLAUDE_CODE_OAUTH_TOKEN`. |
+| The agent says it isn't logged in | Secret `c4-factory-system/claude-credentials` (or the project's own `webshop/claude-credentials`) is missing, empty (step 2's length check prints `0`), or its key isn't `CLAUDE_CODE_OAUTH_TOKEN`. |
 
 ## Publish releases to GitHub
 
@@ -445,9 +447,7 @@ on the Crew named after the Container.
 
 ## Next
 
-- Your own project: create its namespace (with the `ghcr` Secret and the
-  `default` ServiceAccount patch), add it to `gitea.projects`, `helm upgrade`
-  with the same settings, and copy `claude-credentials` into it.
+- Your own project: add it to `gitea.projects` and `helm upgrade`.
 - [docs/design.md](design.md) explains the model, the catalog, Crews and
   Standards; [the chart's README](../dist/chart/README.md) lists its values.
 - A problem with the release: [report it](https://github.com/JairJosafath/c4factory/issues/new?template=user-report.yml).
