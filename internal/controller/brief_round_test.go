@@ -655,7 +655,7 @@ spec:
 			g.Expect(b.Status.Issues[0]).To(And(HaveField("Round", int32(1)), HaveField("N", int32(1))))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(
 				HaveField("Message", ContainSubstring("Container checker")))
-		}).Should(Succeed())
+		}).WithTimeout(wholeRound).Should(Succeed())
 		Expect(gitFake.closeIssue(ns, "linter", int(getBrief(Default, ns).Status.Issues[0].Number))).To(Succeed())
 
 		By("a reconcile reading a cached Brief that doesn't show the recorded issue yet (#501)")

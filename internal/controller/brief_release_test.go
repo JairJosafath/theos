@@ -79,7 +79,8 @@ func linterCrew(g Gomega, ns string) *c4v1alpha1.Crew {
 // wholeRound is how long a spec waits for a round to apply end to end: the
 // plan accepted, the Container scaffolded, its Crew made, the issues filed
 // and the plan merged, each by an event to the next controller. That takes
-// about 3s on an idle device and was seen past 10s on a loaded one (#501).
+// about 3s on an idle device and was seen past 10s on a loaded one, an API
+// call alone taking 8s (#501).
 const wholeRound = 30 * time.Second
 
 // Step 4 of docs/plans/done/brief-releases.md: a released app's Crew tags, prepares
