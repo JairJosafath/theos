@@ -349,7 +349,7 @@ func (r *TaskReconciler) conflicted(ctx context.Context, container *c4v1alpha1.C
 	if err != nil {
 		return false, err
 	}
-	return pr.State == "open" && !pr.Merged && !pr.Mergeable, nil
+	return pr.State == stateOpen && !pr.Merged && !pr.Mergeable, nil
 }
 
 // runRole is the role of the sandbox a phase waits on.

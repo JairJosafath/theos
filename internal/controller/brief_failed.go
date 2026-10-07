@@ -220,7 +220,7 @@ func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1alpha1.Br
 		if err != nil {
 			return retried, closed, fmt.Errorf("reading %s#%d: %w", a.Container, a.Issue, err)
 		}
-		if issue.State != "open" || !model.IsFailedIssue(issue.Labels) {
+		if issue.State != stateOpen || !model.IsFailedIssue(issue.Labels) {
 			continue // answered by an earlier try, or by a person on the Git host
 		}
 		if err := answerFailedIssue(gitCtx, provider, repo, issue, a, round,

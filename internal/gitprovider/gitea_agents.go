@@ -297,7 +297,7 @@ func (p giteaPull) pullRequest() PullRequest {
 // OpenPullRequest opens a pull request from head into base, or returns the open
 // one that already exists for head.
 func (g *gitea) OpenPullRequest(ctx context.Context, repo Repository, head, base, title, body string) (PullRequest, error) {
-	payload, _ := json.Marshal(map[string]string{"head": head, "base": base, "title": title, "body": body})
+	payload, _ := json.Marshal(map[string]string{"head": head, "base": base, "title": title, fieldBody: body})
 	status, data, err := g.do(ctx, http.MethodPost, "/api/v1/repos/"+repoPath(repo)+"/pulls", payload)
 	if err != nil {
 		return PullRequest{}, err

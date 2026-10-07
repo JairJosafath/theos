@@ -55,6 +55,9 @@ const (
 // stateClosed is the state of a closed issue, pull request or milestone.
 const stateClosed = "closed"
 
+// fieldBody is the JSON field of an issue's, pull request's or release's text.
+const fieldBody = "body"
+
 // labelLocks holds one lock per repository, by URL, for EnsureLabels. Gitea
 // takes two labels with one name and then filters issues by neither, so two
 // reconcilers making sure of a new repository's labels at once (a Brief filing
@@ -383,7 +386,7 @@ func (g *gitea) CloseIssue(ctx context.Context, repo Repository, number int) err
 
 // EditIssueBody replaces an issue's body.
 func (g *gitea) EditIssueBody(ctx context.Context, repo Repository, number int, body string) error {
-	return g.editIssue(ctx, repo, number, map[string]any{"body": body})
+	return g.editIssue(ctx, repo, number, map[string]any{fieldBody: body})
 }
 
 // SetIssueMilestone moves an issue into the milestone with ID milestone, or

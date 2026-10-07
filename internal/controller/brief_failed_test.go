@@ -124,7 +124,7 @@ var _ = Describe("Brief failed issues", func() {
 
 	It("retries one failed issue with a clarification and closes another as a prompt says", func() {
 		createFactory(ns)
-		briefAgents(ns, 1)
+		briefAgents(ns, 2)
 		brief := newBrief(ns, "cel-lens")
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 0))
