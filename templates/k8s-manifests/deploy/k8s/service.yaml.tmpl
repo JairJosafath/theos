@@ -1,4 +1,4 @@
-{{- if eq .Type "service" -}}
+{{- if or (eq .Type "service") (eq .Type "static-site") -}}
 apiVersion: v1
 kind: Service
 metadata:
