@@ -20,7 +20,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
-import { chromium } from 'playwright'
+import { launchChromiumOrExit } from './browser.mjs'
 import { ansiToHtmlLines, DEFAULT_BG, DEFAULT_FG, escapeHtml } from './ansi.mjs'
 
 const { values, positionals } = parseArgs({
@@ -99,7 +99,7 @@ const html = renderPage(ansiToHtmlLines(text), {
 })
 if (values.html) await writeFile(values.html, html)
 
-const browser = await chromium.launch()
+const browser = await launchChromiumOrExit()
 try {
   const page = await browser.newPage({
     // The height grows with the content; the screenshot takes the full page.
