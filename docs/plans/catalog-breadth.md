@@ -57,30 +57,31 @@ without a Standard.
 Each step is its own issue and pull request and leaves main working.
 
 1. **The design.** (#399) This plan. *Done when:* merged.
-2. **The planner says when the catalog can't build the idea.** C1 in
+2. **The planner says when the catalog can't build the idea.** (#446) C1 in
    `internal/model/planner.md`. *Done when:* `make check` passes with a test
    that the embedded guide states the rule.
-3. **uv in the toolchain images.** C2: a pinned uv in both toolchain
+3. **uv in the toolchain images.** (#447) C2: a pinned uv in both toolchain
    Dockerfiles, the version in one place, the `gitea-release` and runner docs
    saying so. *Done when:* `make check` passes and both toolchain images build with
    `docker build` and run `uv --version` (where the device has Docker; the
    pull request says if it didn't). Kind would show a Python check passing on
    a runner; that is for a human.
-4. **python-standard.** C3, for `python-fastapi`. Depends on step 3. *Done
+4. **python-standard.** (#450) C3, for `python-fastapi`. Depends on step 3. *Done
    when:* `make check` passes with the combo rendered, `make validate-yaml`
    with the chart entry, and the scaffolded `python-fastapi` repository's
    `make check` passing locally under the Standard (`uv` on the device).
-5. **react-vite.** C4: the Framework, the `ts-standard` bump. *Done when:*
+5. **react-vite.** (#448) C4: the Framework, the `ts-standard` bump. *Done when:*
    `make check` passes with the combo rendered and the scaffolded
    repository's `make check` passing locally.
-6. **k8s-manifests for a static site.** C5. Depends on step 5. *Done when:*
+6. **k8s-manifests for a static site.** (#451) C5. Depends on step 5. *Done when:*
    `make check` passes with both Dockerfiles rendered by combo, and, where
    the device has Docker, the scaffolded `react-vite` repository's image
    builds and serves its page.
-7. **python-cli.** C6, under `python-standard` and `gitea-release`. Depends on
+7. **python-cli.** (#452) C6, under `python-standard` and `gitea-release`. Depends on
    step 4. *Done when:* `make check` passes and the scaffolded repository's
    `make check` and `make dist` pass locally.
-8. **node-cli.** C6, under `ts-standard` and `gitea-release`. *Done when:*
+8. **node-cli.** (#449) C6, under `ts-standard` and `gitea-release`. Depends
+   on step 5 (both bump `ts-standard`). *Done when:*
    `make check` passes and the scaffolded repository's `make check` and
    `make dist` pass locally.
 
