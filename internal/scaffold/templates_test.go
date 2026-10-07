@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,6 +31,7 @@ var templateCombos = []struct {
 }{
 	{"fastapi service with postgres", "service", []side{
 		{model.SideFramework, "python-fastapi"},
+		{model.SideStandard, "python-standard"},
 		{model.SideCompute, "small"},
 		{model.SideDeployment, "k8s-manifests"},
 		{model.SideConnector, "postgres"},
@@ -90,21 +92,24 @@ func TestEveryTemplateRenders(t *testing.T) {
 }
 
 // TestK8sManifestsFollowsTheFramework checks that k8s-manifests writes the
-// Dockerfile, port and probes of the Framework's image, and no Dockerfile for
-// a Framework it has none for.
+// Dockerfile, .dockerignore, port and probes of the Framework's image, and no
+// Dockerfile for a Framework it has none for.
 func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 	cases := []struct {
 		framework, typ string
 		standard       string
 		dockerfile     []string // substrings of the Dockerfile; nil: no Dockerfile
+		dockerignore   []string // lines of .dockerignore
 		deployment     []string // substrings of deploy/k8s/deployment.yaml
 	}{
 		{"python-fastapi", "service", "", []string{"ghcr.io/astral-sh/uv", "uvicorn", "EXPOSE 8000"},
+			[]string{".venv", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".uv", "dist"},
 			[]string{"containerPort: 8000", "path: /healthz"}},
 		{"react-vite", "static-site", "ts-standard",
 			[]string{"npm ci", "npm run build", "nginxinc/nginx-unprivileged", "/app/dist", "USER 101", "EXPOSE 8080"},
+			[]string{"node_modules", "dist", "coverage"},
 			[]string{"containerPort: 8080", "path: /\n"}},
-		{"go-cli", "service", "", nil, []string{"containerPort: 8000"}},
+		{"go-cli", "service", "", nil, nil, []string{"containerPort: 8000"}},
 	}
 	for _, c := range cases {
 		t.Run(c.framework, func(t *testing.T) {
@@ -121,6 +126,12 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 			}
 			if c.dockerfile != nil {
 				assertContains(t, "Dockerfile", string(result.Files["Dockerfile"].Data), c.dockerfile)
+				lines := strings.Split(string(result.Files[".dockerignore"].Data), "\n")
+				for _, w := range c.dockerignore {
+					if !slices.Contains(lines, w) {
+						t.Errorf(".dockerignore doesn't list %q:\n%s", w, result.Files[".dockerignore"].Data)
+					}
+				}
 			}
 			assertContains(t, "deploy/k8s/deployment.yaml", string(result.Files["deploy/k8s/deployment.yaml"].Data),
 				c.deployment)

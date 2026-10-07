@@ -88,6 +88,13 @@ type CrewReconciler struct {
 	// publishSaid is, by Crew UID, the tag and reason of the last publish
 	// failure or success reported, so each gets one Event.
 	publishSaid sync.Map
+	// moduleSaid is, by Crew UID, the tag and outcome of the last Go module
+	// publish reported, so each gets one Event or log line.
+	moduleSaid sync.Map
+	// tagged is, by Crew UID, the tag of the last release the Crew tagged, so
+	// a cached Crew that lags behind its status doesn't publish, or write the
+	// module of, an earlier release over the newer one.
+	tagged sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
@@ -235,13 +242,14 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	setCondition(&status.Conditions, crew.Generation, ConditionReady, ready, reason, step.Message)
 	if !crew.Spec.TagReleases {
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
+		apimeta.RemoveStatusCondition(&status.Conditions, ConditionModulePublished)
 	}
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 }
 
 // release watches the last release's run, prepares or tags the next release,
-// reports the last release's overdue runs, files its bumps and publishes it, as
-// the Crew's switches say. It returns the prepare issue filed now, if any.
+// reports the last release's overdue runs, publishes its Go module, files its
+// bumps and publishes it, as the Crew's switches say. It returns the prepare issue filed now, if any.
 func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) *model.Issue {
 	if crew.Spec.TagReleases {
@@ -253,6 +261,7 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, sta
 	}
 	if crew.Spec.TagReleases {
 		r.noteOverdueRun(ctx, crew, status)
+		r.publishGoModule(ctx, crew, status, provider, repo)
 		r.fileBumps(ctx, crew, status, repo)
 	}
 	r.publishRelease(ctx, crew, status, provider, repo)
@@ -363,9 +372,9 @@ func int32s(in []int) []int32 {
 	return out
 }
 
-// SetupWithManager sets up the controller with the Manager. A Task ending, or the
-// Container becoming Ready, wakes the Container's Crews at once; otherwise they
-// poll the Git host.
+// SetupWithManager sets up the controller with the Manager. A Task ending, the
+// Container becoming Ready, or an Agent coming or going wakes the Container's
+// Crews at once; otherwise they poll the Git host.
 func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	crewsOf := func(ctx context.Context, ns, container string) []reconcile.Request {
 		var crews c4v1alpha1.CrewList
@@ -393,6 +402,22 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}
 				return crewsOf(ctx, task.Namespace, task.Spec.ContainerRef.Name)
 			}), taskPhaseChanges()).
+		// A Crew read before its Agents were in the cache waits on AgentNotFound
+		// with no requeue; their creation wakes it.
+		Watches(&c4v1alpha1.Agent{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, obj client.Object) []reconcile.Request {
+				var crews c4v1alpha1.CrewList
+				if err := mgr.GetClient().List(ctx, &crews, client.InNamespace(obj.GetNamespace())); err != nil {
+					return nil
+				}
+				var reqs []reconcile.Request
+				for _, c := range crews.Items {
+					if c.Spec.Implementer.Name == obj.GetName() || c.Spec.Reviewer.Name == obj.GetName() {
+						reqs = append(reqs, requestFor(c.Namespace, c.Name))
+					}
+				}
+				return reqs
+			}), createOrDelete()).
 		// A Crew uploading a release file can take minutes; the others go on.
 		WithOptions(controller.Options{MaxConcurrentReconciles: crewWorkers}).
 		Named("crew").

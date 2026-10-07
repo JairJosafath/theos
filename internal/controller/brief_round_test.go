@@ -666,7 +666,7 @@ spec:
 		Expect(k8sClient.Get(ctx, key(ns, "linter"), linter)).To(Succeed())
 		r := &BriefReconciler{Client: k8sClient, APIReader: k8sClient, Git: gitFake}
 		run := &roundApply{brief: stale, orig: stale.DeepCopy(), round: "1"}
-		Expect(r.fileIssues(ctx, run, linter, []model.PlanIssue{
+		Expect(r.fileIssues(ctx, run, map[string]*c4v1alpha1.Container{"linter": linter}, []model.PlanIssue{
 			{N: 1, Container: "linter", Title: "Lint rule 1", Body: linterIssue(1)}})).To(Succeed())
 		Expect(gitFake.openIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
 		Expect(getBrief(Default, ns).Status.Issues).To(Equal(recorded))
