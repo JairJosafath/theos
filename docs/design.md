@@ -434,6 +434,18 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   becomes an issue in its repository; a new Container is added and scaffolded;
   a Relationship added from a scaffolded Container shows `AddedAfterScaffold`
   and its wiring becomes an issue.
+- **A Brief's apps are released when the plan says so.** A plan names the
+  Containers that ship releases (`plan/releases.yaml`); the Crew the Brief
+  made for each then tags and prepares releases, and each round files that
+  Container's issues in a release milestone of its own, the next minor
+  version, so a release follows once they are done. A person turns releases on
+  with a prompt, or by naming the Container in `spec.releases` with a GitHub
+  repository and a Secret holding a token for that repository only, which
+  also has the Crew publish its releases there. Releases only turn on; a Crew
+  the Brief didn't make is left alone. `status.apps` and the Brief's card show
+  each app's latest release and where it went, and say plainly when releases
+  are off and how to turn them on. See
+  [plans/brief-releases.md](plans/brief-releases.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for
