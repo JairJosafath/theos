@@ -25,7 +25,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// A Brief tends its own handed-back work (docs/plans/brief-autopilot.md): while
+// A Brief tends its own handed-back work (docs/plans/done/brief-autopilot.md): while
 // its autopilot is Ask or On, each reconcile classifies what it made as
 // healing or needing the person, and a failed issue that is due starts a
 // tending round, a round with no new prompt that decides it.

@@ -25,10 +25,14 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
+// newBrief makes a Brief whose autopilot is Off, so a handed-back issue starts
+// no tending round in the specs of other things; brief_tend_test.go covers
+// Ask, On and none set.
 func newBrief(ns, name string, prompts ...string) *c4v1alpha1.Brief {
 	return &c4v1alpha1.Brief{
 		ObjectMeta: objectMeta(ns, name),
-		Spec:       c4v1alpha1.BriefSpec{Idea: "A linter for CEL rules in CRDs.", Prompts: prompts},
+		Spec: c4v1alpha1.BriefSpec{Idea: "A linter for CEL rules in CRDs.", Prompts: prompts,
+			Autopilot: model.AutopilotOff},
 	}
 }
 

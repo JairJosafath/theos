@@ -161,8 +161,8 @@ export function describeBrief(brief: Brief): BriefView {
   }
 }
 
-/** The operator's mode for a Brief that sets none (docs/plans/brief-autopilot.md, decision 1). */
-export const DEFAULT_AUTOPILOT: BriefAutopilot = 'Off'
+/** The operator's mode for a Brief that sets none (docs/plans/done/brief-autopilot.md, decision 1). */
+export const DEFAULT_AUTOPILOT: BriefAutopilot = 'Ask'
 
 /** A Brief's autopilot mode as a label and one-line explanation; unset says it is the default. */
 export interface AutopilotInfo {

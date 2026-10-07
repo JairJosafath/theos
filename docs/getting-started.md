@@ -200,6 +200,25 @@ factory adds what you said to the issue and readies it for the Crew. One the
 agents already tried three times is filed again, reworded or split, in place
 of being tried as it is.
 
+You don't have to answer each one yourself. The Brief's autopilot, `Ask`
+unless you set it, looks after what it handed back: what heals by itself (a
+usage limit, an agent slot, a Standard change in review) it leaves alone for
+a while, and for a failed issue it runs a tending round, a planner round with
+no new prompt, that decides to retry it, close or split it, or wait. In `Ask`
+it applies none of that: each answer goes under *Needs you* on the card
+(`kubectl get brief` shows how many) with what the Brief would do and why,
+and a prompt such as "Do what you suggest." or "Close the CLI issue instead."
+answers them. *Needs you* also holds what only you can decide, such as a Crew
+whose Agent is missing. Set `On` to have the Brief apply its answers itself,
+or `Off` for nothing without a prompt, in the create form or with:
+
+```bash
+kubectl -n cel-lens patch brief cel-lens --type merge -p '{"spec":{"autopilot":"On"}}'
+```
+
+Either way the Crew's three tries hold, and each tending round is in the
+Brief's history, so a prompt can overrule it.
+
 ### Without a token
 
 To watch the loop before making the token Secret, name Agent `stand-in` for

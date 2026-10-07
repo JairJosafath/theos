@@ -155,54 +155,57 @@ var _ = Describe("Brief autopilot", func() {
 		}).Should(Succeed())
 	})
 
-	It("in Ask, lists the answer under Needs you and applies nothing until a prompt answers it", func() {
-		autopilotBrief(ns, model.AutopilotAsk)
-		n := failedLinterIssue(ns, 1)
-		awaitTendRound(ns, 2)
-		planRound(ns, 2, 1, tendPlan(fmt.Sprintf(
-			"- {container: linter, issue: %d, answer: retry, why: The checker it needs is merged now.}\n", n)))
+	// #506: a Brief that sets no autopilot is in Ask.
+	for mode, set := range map[string]string{"in Ask": model.AutopilotAsk, "with no autopilot set": ""} {
+		It(mode+", lists the answer under Needs you and applies nothing until a prompt answers it", func() {
+			autopilotBrief(ns, set)
+			n := failedLinterIssue(ns, 1)
+			awaitTendRound(ns, 2)
+			planRound(ns, 2, 1, tendPlan(fmt.Sprintf(
+				"- {container: linter, issue: %d, answer: retry, why: The checker it needs is merged now.}\n", n)))
 
-		By("listing it under Needs you with the recommendation, and leaving the issue handed back")
-		name := fmt.Sprintf("linter#%d", n)
-		Eventually(func(g Gomega) {
-			b := getBrief(g, ns)
-			g.Expect(b.Status.History).To(HaveLen(2))
-			g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
-			g.Expect(b.Status.NeedsYou).To(ConsistOf(And(HaveField("Kind", model.AttentionIssue),
-				HaveField("Name", name), HaveField("Recommend", "Try it again."),
-				HaveField("Why", "The checker it needs is merged now."))))
-			g.Expect(b.Status.NeedsYouWaiting).To(Equal(int32(1)))
-			cond := condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)
-			g.Expect(cond).NotTo(BeNil())
-			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-			g.Expect(cond.Message).To(And(ContainSubstring(name), ContainSubstring("Try it again.")))
-			g.Expect(briefEventNotes(g, ns, eventNeedsYou)).To(ConsistOf(ContainSubstring(name)))
-			g.Expect(briefEventNotes(g, ns, eventTended)).To(ContainElement(ContainSubstring("asks you about 1")))
-		}).Should(Succeed())
-		Consistently(func(g Gomega) {
-			issue := gitFake.issue(ns, "linter", n)
-			g.Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
-			g.Expect(issue.comments).NotTo(ContainElement(ContainSubstring("Tried again")))
-			g.Expect(getBrief(g, ns).Status.Round).To(Equal(int32(2)), "an asked issue starts no other round")
-		}, "3s").Should(Succeed())
-		Expect(string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)).To(
-			And(ContainSubstring("asked:"), ContainSubstring("recommend:")))
+			By("listing it under Needs you with the recommendation, and leaving the issue handed back")
+			name := fmt.Sprintf("linter#%d", n)
+			Eventually(func(g Gomega) {
+				b := getBrief(g, ns)
+				g.Expect(b.Status.History).To(HaveLen(2))
+				g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
+				g.Expect(b.Status.NeedsYou).To(ConsistOf(And(HaveField("Kind", model.AttentionIssue),
+					HaveField("Name", name), HaveField("Recommend", "Try it again."),
+					HaveField("Why", "The checker it needs is merged now."))))
+				g.Expect(b.Status.NeedsYouWaiting).To(Equal(int32(1)))
+				cond := condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(cond.Message).To(And(ContainSubstring(name), ContainSubstring("Try it again.")))
+				g.Expect(briefEventNotes(g, ns, eventNeedsYou)).To(ConsistOf(ContainSubstring(name)))
+				g.Expect(briefEventNotes(g, ns, eventTended)).To(ContainElement(ContainSubstring("asks you about 1")))
+			}).Should(Succeed())
+			Consistently(func(g Gomega) {
+				issue := gitFake.issue(ns, "linter", n)
+				g.Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
+				g.Expect(issue.comments).NotTo(ContainElement(ContainSubstring("Tried again")))
+				g.Expect(getBrief(g, ns).Status.Round).To(Equal(int32(2)), "an asked issue starts no other round")
+			}, "3s").Should(Succeed())
+			Expect(string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)).To(
+				And(ContainSubstring("asked:"), ContainSubstring("recommend:")))
 
-		By("a prompt answering it")
-		brief := getBrief(Default, ns)
-		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Do what you suggest."} })).To(Succeed())
-		planRound(ns, 3, 1, failedPlan(ns,
-			fmt.Sprintf("- {container: linter, issue: %d, answer: retry, why: The prompt says do what you suggest.}\n", n)))
-		Eventually(func(g Gomega) {
-			b := getBrief(g, ns)
-			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
-			g.Expect(b.Status.NeedsYou).To(BeEmpty())
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)).To(
-				HaveField("Status", metav1.ConditionFalse))
-		}).Should(Succeed())
-		Expect(gitFake.issue(ns, "linter", n).comments).To(ContainElement(
-			ContainSubstring("Tried again for Brief `cel-lens` in round 3")))
-	})
+			By("a prompt answering it")
+			brief := getBrief(Default, ns)
+			Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Do what you suggest."} })).To(Succeed())
+			planRound(ns, 3, 1, failedPlan(ns,
+				fmt.Sprintf("- {container: linter, issue: %d, answer: retry, why: The prompt says do what you suggest.}\n", n)))
+			Eventually(func(g Gomega) {
+				b := getBrief(g, ns)
+				g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
+				g.Expect(b.Status.NeedsYou).To(BeEmpty())
+				g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)).To(
+					HaveField("Status", metav1.ConditionFalse))
+			}).Should(Succeed())
+			Expect(gitFake.issue(ns, "linter", n).comments).To(ContainElement(
+				ContainSubstring("Tried again for Brief `cel-lens` in round 3")))
+		})
+	}
 
 	It("leaves a Task waiting for its agent alone inside its window and lists it under Needs you past it", func() {
 		autopilotBrief(ns, model.AutopilotOn)

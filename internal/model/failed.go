@@ -37,7 +37,7 @@ const (
 
 // Answers to a failed issue: try it again or close it, or leave it handed
 // back, waiting until something changed or asking the person
-// (plans/brief-autopilot.md, decision 6).
+// (plans/done/brief-autopilot.md, decision 6).
 const (
 	AnswerRetry = "retry"
 	AnswerClose = "close"
