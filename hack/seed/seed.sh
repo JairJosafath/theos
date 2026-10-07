@@ -34,8 +34,9 @@ CREDENTIALS_SECRET=${CREDENTIALS_SECRET:-gitea-credentials}
 # Enough to create repositories in an organization and push to them over HTTP;
 # read:user lets the operator (and this script) check the token with GET /user;
 # write:admin lets the operator make each Container's agent bot user; write:issue
-# lets it label, comment on and close issues, and comment on pull requests.
-TOKEN_SCOPES=${TOKEN_SCOPES:-write:admin,write:issue,write:organization,write:repository,read:user}
+# lets it label, comment on and close issues, and comment on pull requests;
+# write:package lets it publish a released Container's Go module.
+TOKEN_SCOPES=${TOKEN_SCOPES:-write:admin,write:issue,write:organization,write:package,write:repository,read:user}
 # File mode: each project's credentials go to CREDENTIALS_DIR/PROJECT.env (mode
 # 0600) as C4_GITEA_URL, C4_GITEA_USERNAME, C4_GITEA_TOKEN and
 # C4_GITEA_TOKEN_SCOPES, not to a Secret; there is no runner to register.

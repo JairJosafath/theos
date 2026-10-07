@@ -204,6 +204,11 @@ type Provider interface {
 	// SetReleaseBody replaces the notes of release id with body; a body of ""
 	// leaves them as they are.
 	SetReleaseBody(ctx context.Context, repo Repository, id int64, body string) error
+	// PublishGoModule publishes the Go module at the root of repo, as of tag, to
+	// the owner's Go package registry, at tag's version. No go.mod, a version
+	// published before and a module that can't be published at tag are
+	// outcomes, not errors; a repeat publishes nothing.
+	PublishGoModule(ctx context.Context, repo Repository, tag string) (GoModule, error)
 }
 
 // BranchRule is what a protected branch requires of a pull request.
