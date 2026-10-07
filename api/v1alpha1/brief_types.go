@@ -196,6 +196,68 @@ type BriefSuggestion struct {
 	Criteria bool `json:"criteria,omitempty"`
 }
 
+// BriefApp is a Container the Brief made, or one spec.releases names, and how
+// its releases go: copied from the Crew, which holds every fact.
+type BriefApp struct {
+	// container names the Container.
+	// +kubebuilder:validation:MaxLength=253
+	// +required
+	Container string `json:"container"`
+
+	// crew names the Container's Crew; empty while it has none.
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	Crew string `json:"crew,omitempty"`
+
+	// releases is On when the Crew tags releases, else Off.
+	// +kubebuilder:validation:Enum=On;Off
+	// +required
+	Releases string `json:"releases"`
+
+	// publishTo is the GitHub repository, owner/name, the Crew publishes its
+	// releases to; empty when it publishes none.
+	// +kubebuilder:validation:MaxLength=140
+	// +optional
+	PublishTo string `json:"publishTo,omitempty"`
+
+	// lastRelease is the Crew's latest release.
+	// +optional
+	LastRelease *BriefAppRelease `json:"lastRelease,omitempty"`
+
+	// message says in one plain sentence how the app's releases go.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
+// BriefAppRelease is an app's latest release, from its Crew's status.lastRelease.
+type BriefAppRelease struct {
+	// tag is the release's version.
+	// +required
+	Tag string `json:"tag"`
+
+	// url is the release's page on the Git host.
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// time is when the Crew tagged the release.
+	// +optional
+	Time *metav1.Time `json:"time,omitempty"`
+
+	// run is how the tag's CI runs went: Waiting, Running, Succeeded or Failed.
+	// +optional
+	Run string `json:"run,omitempty"`
+
+	// publishState is how publishing the release went: Pending, Publishing,
+	// Published or Failed; empty when the Crew publishes none.
+	// +optional
+	PublishState string `json:"publishState,omitempty"`
+
+	// publishedURL is the published release.
+	// +optional
+	PublishedURL string `json:"publishedURL,omitempty"`
+}
+
 // BriefRound is one round of planning: the idea, or a batch of new prompts.
 type BriefRound struct {
 	// round is the round's number, from 1.
@@ -289,6 +351,14 @@ type BriefStatus struct {
 	// +optional
 	SuggestionsWaiting int32 `json:"suggestionsWaiting,omitempty"`
 
+	// apps has a line per Container the Brief made, then one per spec.releases
+	// entry naming no Container it made: whether its releases are on, where
+	// they are published, the latest one, and a sentence on how they go.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=100
+	// +optional
+	Apps []BriefApp `json:"apps,omitempty"`
+
 	// history has an entry per round, oldest first; the newest 20 are kept.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=20
@@ -329,6 +399,7 @@ type BriefStatus struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Round",type=integer,JSONPath=".status.round"
 // +kubebuilder:printcolumn:name="Suggestions",type=integer,JSONPath=".status.suggestionsWaiting"
+// +kubebuilder:printcolumn:name="Releases",type=string,JSONPath=".status.apps[*].lastRelease.tag"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // Brief is an app idea in plain words and its follow-up prompts. A planner

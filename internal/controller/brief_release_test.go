@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -266,3 +268,114 @@ var _ = Describe("Brief releases", func() {
 		})
 	})
 })
+
+// briefApp returns the line of container in Brief cel-lens's status.apps.
+func briefApp(g Gomega, ns, container string) c4v1alpha1.BriefApp {
+	for _, app := range getBrief(g, ns).Status.Apps {
+		if app.Container == container {
+			return app
+		}
+	}
+	g.Expect(container).To(BeEmpty(), "Brief cel-lens has no app line for it")
+	return c4v1alpha1.BriefApp{}
+}
+
+// setLinterRelease sets the linter Crew's latest release as tagging it would.
+func setLinterRelease(ns, tag string) {
+	Eventually(func(g Gomega) {
+		crew := linterCrew(g, ns)
+		crew.Status.LastRelease = &c4v1alpha1.CrewRelease{Tag: tag, Commit: "abc123", Time: metav1.Now(),
+			Run: "Succeeded"}
+		g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
+	}).Should(Succeed())
+}
+
+// Step 5 of docs/plans/brief-releases.md: the Brief's status shows each app's
+// releases, from the Crew it made.
+var _ = Describe("Brief apps", func() {
+	var ns string
+	BeforeEach(func() { ns = newProjectNamespace() })
+
+	It("copies a Crew's latest release to the Brief, and says an entry's app isn't made", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		brief := newBrief(ns, "cel-lens")
+		server := linterRelease("acme/cel-lens-server")
+		server.Container = "server"
+		brief.Spec.Releases = []c4v1alpha1.BriefRelease{linterRelease("acme/cel-lens"), server}
+		mustCreate(brief)
+		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			apps := getBrief(g, ns).Status.Apps
+			g.Expect(apps).To(HaveLen(2))
+			g.Expect(apps[0]).To(Equal(c4v1alpha1.BriefApp{Container: "linter", Crew: "linter", Releases: "On",
+				PublishTo: "acme/cel-lens",
+				Message:   "Releases are on: the next one follows once the issues of its milestone are merged."}))
+			g.Expect(apps[1]).To(Equal(c4v1alpha1.BriefApp{Container: "server", Releases: "Off",
+				Message: "The Brief hasn't made a Container named server: its releases start once a round makes it."}))
+		}).Should(Succeed())
+
+		By("showing the Crew's new release on the Brief")
+		var repoURL string
+		Eventually(func(g Gomega) {
+			var c c4v1alpha1.Container
+			g.Expect(k8sClient.Get(ctx, key(ns, "linter"), &c)).To(Succeed())
+			repoURL = c.Status.RepositoryURL
+			g.Expect(repoURL).NotTo(BeEmpty())
+		}).Should(Succeed())
+		setLinterRelease(ns, "v0.1.0")
+		Eventually(func(g Gomega) {
+			release := briefApp(g, ns, "linter").LastRelease
+			g.Expect(release).NotTo(BeNil())
+			g.Expect(release.Tag).To(Equal("v0.1.0"))
+			g.Expect(release.URL).To(Equal(repoURL + "/releases/tag/v0.1.0"))
+			g.Expect(release.Time).NotTo(BeNil())
+		}).Should(Succeed())
+
+		By("following the Crew's next release")
+		setLinterRelease(ns, "v0.2.0")
+		Eventually(func(g Gomega) {
+			app := briefApp(g, ns, "linter")
+			g.Expect(app.LastRelease).NotTo(BeNil())
+			g.Expect(app.LastRelease.Tag).To(Equal("v0.2.0"))
+			crew := linterCrew(g, ns).Status.LastRelease
+			g.Expect(app.LastRelease.Run).To(Equal(crew.Run))
+		}).Should(Succeed())
+	})
+
+	It("says how to turn releases on for an app whose Crew doesn't release", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		mustCreate(newBrief(ns, "cel-lens"))
+		planRound(ns, 1, 1, linterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Apps).To(Equal([]c4v1alpha1.BriefApp{{Container: "linter",
+				Crew: "linter", Releases: "Off", Message: MessageReleasesOff}}))
+		}).Should(Succeed())
+		Expect(MessageReleasesOff).To(Equal(
+			"Releases are off: ask for them in a prompt, or name this app in spec.releases."))
+	})
+})
+
+var _ = DescribeTable("appMessage",
+	func(app c4v1alpha1.BriefApp, briefsCrew bool, want string) {
+		Expect(appMessage(&app, briefsCrew)).To(Equal(want))
+	},
+	Entry("off on a Crew another owner made", c4v1alpha1.BriefApp{Crew: "linter", Releases: "Off"}, false,
+		"Releases are off, and they are for the owner of Crew linter to turn on: the Brief didn't make it."),
+	Entry("a failed run", c4v1alpha1.BriefApp{Releases: "On",
+		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", Run: "Failed"}}, true,
+		"Release v0.1.0 was tagged, but its CI run failed."),
+	Entry("published", c4v1alpha1.BriefApp{Releases: "On", PublishTo: "acme/lens",
+		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", Run: "Succeeded", PublishState: "Published"}}, true,
+		"Released v0.1.0 and published it to acme/lens."),
+	Entry("publishing failed", c4v1alpha1.BriefApp{Releases: "On", PublishTo: "acme/lens",
+		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", PublishState: "Failed"}}, true,
+		"Release v0.1.0 could not be published to acme/lens; the Crew says why and tries again."),
+	Entry("released, not published", c4v1alpha1.BriefApp{Releases: "On",
+		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", Run: "Running"}}, true, "Released v0.1.0."),
+)

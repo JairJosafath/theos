@@ -419,8 +419,20 @@ Releases only turn on: a later plan that leaves a Container out, or an entry
 removed from `spec.releases`, changes nothing on its Crew, and what is on
 GitHub stays. To stop releasing, edit the Crew. A Crew the Brief didn't make,
 such as one you made for a Container of your own, is never changed: its
-releases are yours. Reading how a release went is as in *Publish releases to
-GitHub*, on the Crew named after the Container.
+releases are yours.
+
+The Brief shows each app's releases in `status.apps`: whether they are on,
+where they are published, the latest tag with links to its Gitea and GitHub
+releases, and a sentence on how they go, such as how to turn them on.
+`kubectl get brief` prints the latest tags:
+
+```bash
+kubectl -n cel-lens get brief cel-lens
+kubectl -n cel-lens get brief cel-lens -o jsonpath='{range .status.apps[*]}{.container}: {.message}{"\n"}{end}'
+```
+
+Why a release run or a publish failed is as in *Publish releases to GitHub*,
+on the Crew named after the Container.
 
 ## Next
 
