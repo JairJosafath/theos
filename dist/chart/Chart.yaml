@@ -3,10 +3,10 @@ name: c4-factory
 description: A Helm chart to distribute c4-factory
 type: application
 
-# The newest release. Cutting one bumps it, and docs/getting-started.md's
+# The newest release. hack/release.sh bumps it, and docs/getting-started.md's
 # VERSION with it, before the tag: Release refuses a tag that differs, and
 # test/chart/guide_version_test.go a guide that does (#370).
-version: 0.5.0
+version: 0.6.0
 appVersion: "dev"
 
 keywords:

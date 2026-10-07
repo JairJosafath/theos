@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { DEMO_NAMESPACE, demoStory } from '../demo/fixture'
 import type { BriefWriter } from '../k8s/briefs'
+import type { Brief } from '../k8s/types'
 import { Briefs } from './Briefs'
 
 const writer: BriefWriter = { create: async () => {}, addPrompt: async () => {} }
@@ -29,5 +30,42 @@ describe('the Brief card', () => {
   it('shows an app with releases off with its message', () => {
     expect(html).toContain('Releases off')
     expect(html).toContain('Releases are off: ask for them in a prompt, or name this app in spec.releases.')
+  })
+})
+
+describe('the Brief card with failed issues', () => {
+  const now = Date.parse('2026-10-07T12:00:00Z')
+  const failedBrief: Brief = {
+    metadata: { name: 'lens', creationTimestamp: '2026-10-07T10:00:00Z' },
+    spec: { idea: 'A CEL lens' },
+    status: {
+      phase: 'Planned',
+      issues: [{ repository: 'lens/cel-lens-cli', number: 1, url: 'http://g/cli/1', title: 'CLI' }],
+      failed: [
+        {
+          container: 'cel-lens-cli',
+          number: 1,
+          url: 'http://g/cli/1',
+          kind: 'exhausted',
+          reason: 'Tasks cel-lens-cli-1, -2 and -3 failed.',
+          tries: 3,
+        },
+      ],
+      failedWaiting: 1,
+    },
+  }
+  const html = renderToStaticMarkup(
+    createElement(Briefs, { briefs: [failedBrief], namespace: DEMO_NAMESPACE, canCreate: false, writer, now }),
+  )
+
+  it('lists each failed issue with its link and reason, and says to answer in a prompt', () => {
+    expect(html).toContain('Failed issues (1)')
+    expect(html).toContain('Tasks cel-lens-cli-1, -2 and -3 failed.')
+    expect(html).toContain('it will be filed again')
+    expect(html).toContain('Say in a prompt whether to try again')
+  })
+
+  it('marks the failed issue in the issue list', () => {
+    expect(html).toContain('brief-issue-failed')
   })
 })

@@ -1,0 +1,16 @@
+--- PASS: TestGiteaGoProxyIntegration (1.47s)
+    --- PASS: TestGiteaGoProxyIntegration/the_registry_answers_the_agent (0.08s)
+    --- PASS: TestGiteaGoProxyIntegration/the_go_command_fetches_through_it_over_http (0.20s)
+    --- PASS: TestGiteaGoProxyIntegration/the_go_command_fetches_through_it_over_https,_with_the_.netrc (0.26s)
+--- PASS: TestGiteaIntegration (2.57s)
+    --- PASS: TestGiteaIntegration/fetches_a_seeded_template_at_its_tag (0.04s)
+    --- PASS: TestGiteaIntegration/creates,_fills_and_reads_a_repository (1.91s)
+    --- PASS: TestGiteaIntegration/gives_a_bot_a_repository_and_deletes_it (0.61s)
+--- PASS: TestGiteaTemplatesIntegration (0.84s)
+--- PASS: TestGiteaChecksIntegration (1.81s)
+--- PASS: TestGiteaIssuesIntegration (0.59s)
+    --- PASS: TestGiteaIssuesIntegration/labels,_links_and_closes_issues (0.59s)
+--- PASS: TestGiteaReleasesIntegration (3.20s)
+--- PASS: TestGiteaMilestonesIntegration (0.31s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/gitprovider	10.810s

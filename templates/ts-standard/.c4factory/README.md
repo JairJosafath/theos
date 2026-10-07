@@ -1,18 +1,20 @@
 # ts-standard (Standard)
 
-How a TypeScript VS Code extension or React web app in a C4 Factory Container
-is written, checked and reviewed: typescript-eslint's strictest configs, Prettier, the agent
+How a TypeScript VS Code extension, React web app or Node command-line
+program in a C4 Factory Container is written, checked and reviewed: typescript-eslint's strictest configs, Prettier, the agent
 guide and role guides, offline style digests, issue and pull request templates,
 and the `make check` contract CI runs.
 
-- **Supports:** `extension` and `static-site`; Frameworks: `vscode-extension`
-  and `react-vite`
+- **Supports:** `extension`, `static-site` and `cli`; Frameworks:
+  `vscode-extension`, `react-vite` and `node-cli`
 - **Per Framework:** every file but the workflow, `.editorconfig` and
   `.prettierrc.json` renders `.Framework`: the lint rules,
   the `Makefile`'s build and release targets, `AGENTS.md`'s review rules and
   the role guides' notes. `docs/style/vscode.md` is written only for
-  `vscode-extension`, `docs/style/react.md` only for `react-vite`. What a
-  `vscode-extension` Container gets is the same as in v1.1.3.
+  `vscode-extension`, `docs/style/react.md` only for `react-vite`,
+  `docs/style/node.md` only for `node-cli`. What a `vscode-extension`
+  Container gets is the same as in v1.1.3, what a `react-vite` one gets the
+  same as in v1.2.0.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/agents/implementer.md`, `docs/agents/reviewer.md`,
@@ -26,11 +28,13 @@ and the `make check` contract CI runs.
   `eslint-plugin-react-hooks`' recommended preset too (the Rules of Hooks and
   the React Compiler's checks of the Rules of React), with `exhaustive-deps`
   an error, and Node's globals and `node:` imports refused in `src/`,
-  which runs in the browser. Prettier formats everything but
+  which runs in the browser. For `node-cli`, `process.exit` refused, so
+  output flushes. Prettier formats everything but
   the platform's files and the lockfile.
 - **Check contract:** `make check` = `npm ci`, `prettier --check`,
   `eslint --max-warnings 0`, `tsc --noEmit`, `vitest run`, and `vsce package`
-  (`vscode-extension`) or `vite build` (`react-vite`) into a temporary
+  (`vscode-extension`), `vite build` (`react-vite`) or `npm pack` and a run
+  of the packed program's `--version` (`node-cli`) into a temporary
   directory, so a packaging or build problem fails CI.
   `.gitea/workflows/check.yaml` runs it on pull requests and on `main` on a
   runner labelled `go`, under the status context `check / check`, which the
@@ -40,7 +44,9 @@ and the `make check` contract CI runs.
   `dist/<container>-1.2.3.vsix` and fails when the tag doesn't match
   `package.json`'s `version`; gitea-release attaches it to the release. For
   `react-vite`, `make dist` builds the site into `dist/`, which a Deployment
-  ships.
+  ships. For `node-cli`, `make dist VERSION=v1.2.3` packs
+  `dist/<container>-1.2.3.tgz` with `npm pack`, with the same tag check;
+  `npm install --global` installs it.
 - **Framework contract:** the Framework owns `package.json`, which must list
   this Standard's tools with exact versions (`eslint`, `@eslint/js`,
   `typescript-eslint`, `prettier`, `typescript`, `vitest`, `@vscode/vsce`) and a
@@ -49,7 +55,11 @@ and the `make check` contract CI runs.
   `esbuild.mjs`. vscode-extension does all of this. react-vite lists `eslint`,
   `@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `prettier`,
   `typescript`, `vitest` and `vite`, and owns `tsconfig.json` (with
-  `vite.config.ts` in its `include`) and `vite.config.ts`.
+  `vite.config.ts` in its `include`) and `vite.config.ts`. node-cli lists
+  `eslint`, `@eslint/js`, `typescript-eslint`, `prettier`, `typescript`,
+  `vitest` and `esbuild`, a `prepack` script that writes the bundle `bin`
+  points at, and owns `tsconfig.json` (with `vitest.config.mts` in its
+  `include`), `vitest.config.mts` and `esbuild.mjs`.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
 - **Issues:** `.gitea/ISSUE_TEMPLATE/task.md` has the sections the factory needs;
@@ -59,7 +69,10 @@ and the `make check` contract CI runs.
   principles; for `vscode-extension`, VS Code's extension and UX guidelines,
   activation events, bundling, the language server guide and LSP 3.17; for
   `react-vite`, the Rules of React, react.dev's guides on state and effects,
-  Vite's guides, WCAG 2.2 and Testing Library. Every rule is marked `[lint]` or
+  Vite's guides, WCAG 2.2 and Testing Library; for `node-cli`, Node's `util`,
+  `process` and `fs` docs, the Command Line Interface Guidelines, GNU's
+  command-line standards, npm's `package.json` and `npm pack`, esbuild's API
+  and NO_COLOR. Every rule is marked `[lint]` or
   `[review]`; `docs/style/SOURCES.md` lists the sources with dates.
 - **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`,
   `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/` and

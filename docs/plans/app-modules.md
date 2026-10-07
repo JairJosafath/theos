@@ -65,6 +65,18 @@ choices under it.
    lets an agent pod reach Gitea's namespace. The go-standard Standard's CI
    (`check.yaml`) sets the same, with the job's `gitea.token` in `~/.netrc`,
    so a pull request that uses the module passes CI.
+
+   What step 2 found (#459, `make test-gitea`): the go command sends `.netrc`
+   credentials over https only, on the first request; over plain http, which
+   the in-cluster Gitea is, it fetches without them, and a public owner's
+   packages allow that. Over https, a token without a package scope gets a
+   401 (`reqPackageAccess`) for every module, which stops the go command where
+   a 404 lets it go on. So the agent bot's token is made with
+   `write:repository,read:package` (`gitprovider.AgentTokenScopes`), and the
+   agent's Secret keeps the scopes, so a token made before is made again on the
+   next run. The proxy URL is on `gitprovider.Repository` (`GoProxy`), built
+   from the GitProvider's URL and owner; the planner's pod doesn't get it, as
+   it builds no code.
 5. **The plan says who uses whom.** An issue file's front matter takes
    `uses:`, the Containers whose released code it builds on:
 

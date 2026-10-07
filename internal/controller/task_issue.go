@@ -24,8 +24,12 @@ import (
 // how it went, pull requests carry the reviews. None of it decides what the Task
 // does next, so a failed note is logged and the Task goes on.
 
-// stateClosed is the state of a closed issue or pull request on the Git host.
-const stateClosed = "closed"
+// stateOpen and stateClosed are the states of an issue or pull request on the
+// Git host.
+const (
+	stateOpen   = "open"
+	stateClosed = "closed"
+)
 
 // agentName is how comments name an Agent: its name, and its model when set.
 func agentName(agent *c4v1alpha1.Agent) string {

@@ -372,9 +372,9 @@ func int32s(in []int) []int32 {
 	return out
 }
 
-// SetupWithManager sets up the controller with the Manager. A Task ending, or the
-// Container becoming Ready, wakes the Container's Crews at once; otherwise they
-// poll the Git host.
+// SetupWithManager sets up the controller with the Manager. A Task ending, the
+// Container becoming Ready, or an Agent coming or going wakes the Container's
+// Crews at once; otherwise they poll the Git host.
 func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	crewsOf := func(ctx context.Context, ns, container string) []reconcile.Request {
 		var crews c4v1alpha1.CrewList
@@ -402,6 +402,22 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}
 				return crewsOf(ctx, task.Namespace, task.Spec.ContainerRef.Name)
 			}), taskPhaseChanges()).
+		// A Crew read before its Agents were in the cache waits on AgentNotFound
+		// with no requeue; their creation wakes it.
+		Watches(&c4v1alpha1.Agent{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, obj client.Object) []reconcile.Request {
+				var crews c4v1alpha1.CrewList
+				if err := mgr.GetClient().List(ctx, &crews, client.InNamespace(obj.GetNamespace())); err != nil {
+					return nil
+				}
+				var reqs []reconcile.Request
+				for _, c := range crews.Items {
+					if c.Spec.Implementer.Name == obj.GetName() || c.Spec.Reviewer.Name == obj.GetName() {
+						reqs = append(reqs, requestFor(c.Namespace, c.Name))
+					}
+				}
+				return reqs
+			}), createOrDelete()).
 		// A Crew uploading a release file can take minutes; the others go on.
 		WithOptions(controller.Options{MaxConcurrentReconciles: crewWorkers}).
 		Named("crew").

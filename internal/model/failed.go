@@ -170,15 +170,55 @@ type FailedAnswer struct {
 	Clarify string `yaml:"clarify,omitempty"`
 }
 
+// clarifiable reports whether some clarify could give body acceptance
+// criteria. The Crew reads only the first "Acceptance criteria" section, so a
+// body whose own section has no checklist can't be fixed by one appended below.
+func clarifiable(body string) bool {
+	return missingCriteria(ClarifiedBody(body, 0, "## Acceptance criteria\n\n- [ ] done\n")) == ""
+}
+
 // ClarifiedBody is a retried issue's body: body with clarify appended under a
 // heading naming the Brief's round. The Crew reads the whole of it, so an
-// unclear issue's acceptance criteria are checked here.
+// unclear issue's acceptance criteria are checked here. A body that has the
+// round's heading already is left as it is, so a try that stops part way
+// doesn't append it twice.
 func ClarifiedBody(body string, round int, clarify string) string {
 	clarify = strings.TrimSpace(clarify)
-	if clarify == "" {
+	heading := fmt.Sprintf("## Clarification (Brief round %d)", round)
+	if clarify == "" || round > 0 && strings.Contains(body, heading) {
 		return body
 	}
-	return fmt.Sprintf("%s\n\n## Clarification (Brief round %d)\n\n%s\n", strings.TrimRight(body, "\n"), round, clarify)
+	return fmt.Sprintf("%s\n\n%s\n\n%s\n", strings.TrimRight(body, "\n"), heading, clarify)
+}
+
+// FailedComment is what the operator writes on a failed issue it answers for
+// Brief brief in round: the answer, the planner's why and the round's
+// prompts, quoted; a close also names the issues the round filed, which may
+// carry its work on.
+func FailedComment(a FailedAnswer, brief string, round int, prompts, filed []string) string {
+	var b strings.Builder
+	if a.Answer == AnswerRetry {
+		fmt.Fprintf(&b, "Tried again for Brief `%s` in round %d: the Crew picks it up as %s.", brief, round, LabelReady)
+		if strings.TrimSpace(a.Clarify) != "" {
+			fmt.Fprintf(&b, " The issue's body has a clarification for round %d.", round)
+		}
+	} else {
+		fmt.Fprintf(&b, "Closed for Brief `%s` in round %d.", brief, round)
+	}
+	fmt.Fprintf(&b, "\n\nThe planner: %s", oneParagraph(a.Why))
+	if a.Answer == AnswerClose && len(filed) > 0 {
+		b.WriteString("\n\nThe round filed:\n")
+		for _, f := range filed {
+			fmt.Fprintf(&b, "\n- %s", f)
+		}
+	}
+	if len(prompts) > 0 {
+		b.WriteString("\n\nThe round's prompts:\n")
+		for _, p := range prompts {
+			fmt.Fprintf(&b, "\n> %s\n", oneParagraph(p))
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // parseFailedAnswers reads plan/failed.yaml: a list of answers.
@@ -225,7 +265,11 @@ func CheckFailedAnswers(answers []FailedAnswer, waiting []FailedIssue) []Refusal
 				refuse("retries %s, which agents tried %d times: close it, and file it again as a new issue, "+
 					"clarified or split", subject, MaxIssueAttempts)
 			case FailedUnclear:
-				if strings.TrimSpace(a.Clarify) == "" || missingCriteria(ClarifiedBody(waiting[i].Body, 0, a.Clarify)) != "" {
+				switch {
+				case !clarifiable(waiting[i].Body):
+					refuse("retries %s, whose own \"Acceptance criteria\" section has no checklist, so no clarify "+
+						"can add one: close it, and file it again as a new issue with criteria", subject)
+				case strings.TrimSpace(a.Clarify) == "" || missingCriteria(ClarifiedBody(waiting[i].Body, 0, a.Clarify)) != "":
 					refuse("retries %s, which has no acceptance criteria, without adding them: clarify it with an "+
 						"\"## Acceptance criteria\" checklist (\"- [ ] ...\")", subject)
 				}

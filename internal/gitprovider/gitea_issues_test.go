@@ -141,26 +141,10 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		}
 	})
 	mux.HandleFunc("PATCH "+repo+"/issues/{n}", func(w http.ResponseWriter, r *http.Request) {
-		i := issue(w, r)
-		if i == nil {
-			return
+		if i := issue(w, r); i != nil {
+			i.edit(r)
+			reply(w, http.StatusCreated, i.giteaIssue)
 		}
-		var body struct {
-			State     string   `json:"state"`
-			Assignees []string `json:"assignees"`
-			Milestone *int64   `json:"milestone"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body.Milestone != nil {
-			i.milestone = body.Milestone
-		}
-		if body.State != "" {
-			i.State = body.State
-		}
-		if body.Assignees != nil {
-			i.assignees = body.Assignees
-		}
-		reply(w, http.StatusCreated, i.giteaIssue)
 	})
 	mux.HandleFunc("GET "+repo+"/issues/{n}/labels", func(w http.ResponseWriter, r *http.Request) {
 		if i := issue(w, r); i != nil {
@@ -252,6 +236,29 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 }
 
 // handleReleases serves the milestone edits and tags of the issueHost.
+// edit applies the fields an issue PATCH sets.
+func (i *hostIssue) edit(r *http.Request) {
+	var body struct {
+		State     string   `json:"state"`
+		Body      *string  `json:"body"`
+		Assignees []string `json:"assignees"`
+		Milestone *int64   `json:"milestone"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if body.Body != nil {
+		i.Body = *body.Body
+	}
+	if body.Milestone != nil {
+		i.milestone = body.Milestone
+	}
+	if body.State != "" {
+		i.State = body.State
+	}
+	if body.Assignees != nil {
+		i.assignees = body.Assignees
+	}
+}
+
 func (h *issueHost) handleReleases(mux *http.ServeMux, repo string, reply func(http.ResponseWriter, int, any)) {
 	mux.HandleFunc("PATCH "+repo+"/milestones/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -498,6 +505,27 @@ func TestCreateIssueMilestone(t *testing.T) {
 	}
 	if m := h.issues[2].milestone; m != nil {
 		t.Errorf("issue 2 filed with milestone %d, want none sent", *m)
+	}
+}
+
+func TestEditIssueBody(t *testing.T) {
+	h, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	if _, err := p.CreateIssue(ctx, repo, "Validate addresses", "body", nil, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EditIssueBody(ctx, repo, 1, "body\n\n## Clarification\n\nUse the checker."); err != nil {
+		t.Fatalf("EditIssueBody() error = %v", err)
+	}
+	if got := h.issues[1].Body; got != "body\n\n## Clarification\n\nUse the checker." {
+		t.Errorf("body after EditIssueBody() = %q", got)
+	}
+	if m := h.issues[1].milestone; m == nil || *m != 3 {
+		t.Errorf("EditIssueBody() changed the milestone to %v", m)
+	}
+	if err := p.EditIssueBody(ctx, repo, 9, "body"); err == nil {
+		t.Error("EditIssueBody() of a missing issue succeeded")
 	}
 }
 

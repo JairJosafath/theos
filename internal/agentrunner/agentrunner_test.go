@@ -310,6 +310,16 @@ func TestRunReview(t *testing.T) {
 	if followUp.Verdict != VerdictApprove || len(followUp.FollowUps) != 1 || len(followUp.FollowUps[0].Criteria) == 0 {
 		t.Errorf("review with a follow-up = %+v", followUp)
 	}
+
+	open := Run(ctx, testJob(t, url, RoleReview, 1), FakeAgent{Role: RoleReview, Round: 1, Open: true}, t.TempDir())
+	want := []model.OpenCriterion{{Criterion: "A screenshot of the editor", Why: "no desktop in the sandbox"}}
+	if open.Verdict != VerdictApprove || !reflect.DeepEqual(open.Open, want) {
+		t.Errorf("review with an open criterion = %+v, want open %v", open, want)
+	}
+	var back Result
+	if err := json.Unmarshal(open.Encode(), &back); err != nil || !reflect.DeepEqual(back.Open, want) {
+		t.Errorf("the encoded result's open = %v, want %v, %v", back.Open, want, err)
+	}
 }
 
 // editAgent changes one file.
@@ -350,7 +360,9 @@ func TestIssuePrompts(t *testing.T) {
 	ws := Workspace{Guide: "Write the failing test first.", Related: []RelatedRepo{{Name: "vscode-extension", Dir: "/workspace/related/vscode-extension"}}}
 	implement := ImplementPrompt(job, ws)
 	for _, want := range []string{"issue #3", "- [ ] finds rules", "every acceptance criterion", "Write the failing test first.",
-		"docs/agents/implementer.md", "/workspace/related/vscode-extension", "Makefile, docs/agents/"} {
+		"docs/agents/implementer.md", "/workspace/related/vscode-extension", "Makefile, docs/agents/",
+		"Never make up evidence", "no drawn or generated image, recording or sample output",
+		"no message, log or output the code doesn't give", "left open, never faked", `"Open: <criterion>: <why>"`} {
 		if !strings.Contains(implement, want) {
 			t.Errorf("implement prompt lacks %q", want)
 		}
@@ -358,14 +370,21 @@ func TestIssuePrompts(t *testing.T) {
 	ws.Guide = "Check the criteria first."
 	review := ReviewPrompt(job, ws)
 	for _, want := range []string{"issue #3", "each acceptance criterion", "Check the criteria first.", "docs/agents/reviewer.md",
-		`"followUps"`, `"criteria"`, "at most 200 characters", "/workspace/related/vscode-extension"} {
+		`"followUps"`, `"criteria"`, "at most 200 characters", "/workspace/related/vscode-extension",
+		"Made-up evidence is a required change", "Open every image the change\nadds",
+		"check every quoted\nmessage, output or log against the code", `"Open: <criterion>: <why>"`,
+		"a person's desktop or device, an account, a purchase", `"open": [{"criterion": "...", "why": "..."}]`} {
 		if !strings.Contains(review, want) {
 			t.Errorf("review prompt lacks %q", want)
 		}
 	}
 	plain, _ := JobFromEnv(env(nil))
-	if strings.Contains(ImplementPrompt(plain, Workspace{}), "acceptance criterion") {
-		t.Error("a Task with a written goal is asked about acceptance criteria")
+	if p := ImplementPrompt(plain, Workspace{}); strings.Contains(p, "acceptance criterion") || strings.Contains(p, "Open:") ||
+		!strings.Contains(p, "Never make up evidence") {
+		t.Error("a Task with a written goal is asked about acceptance criteria, or not told never to invent evidence")
+	}
+	if !strings.Contains(ReviewPrompt(plain, Workspace{}), "Made-up evidence is a required change") {
+		t.Error("the reviewer of a Task with a written goal is not told made-up evidence is a required change")
 	}
 }
 
@@ -381,6 +400,55 @@ func TestParseVerdictFollowUps(t *testing.T) {
 		Criteria: []string{"Parsed once per file", "A test counts parses", "Three"}}, {Title: "B"}, {Title: "C"}}
 	if v.Verdict != VerdictApprove || !reflect.DeepEqual(v.FollowUps, want) {
 		t.Errorf("ParseVerdict() = %+v, want follow-ups %v (untitled dropped, three at most, blank criteria dropped)", v, want)
+	}
+}
+
+func TestParseVerdictOpen(t *testing.T) {
+	open := `"open": [{"criterion": " A GIF of hover ", "why": " no desktop "}, {"criterion": " ", "why": "blank"},` +
+		` {"criterion": "B"}, {"criterion": "C", "why": "c"}, {"criterion": "D", "why": "d"}]`
+	for _, tc := range []struct {
+		name, out string
+		want      []model.OpenCriterion
+	}{
+		{"approve keeps them, trimmed, blank dropped, three at most", `{"verdict": "approve", "summary": "Good.", ` + open + `}`,
+			[]model.OpenCriterion{{Criterion: "A GIF of hover", Why: "no desktop"}, {Criterion: "B"}, {Criterion: "C", Why: "c"}}},
+		{"changes drops them", `{"verdict": "changes", "summary": "Fix it.", ` + open + `}`, nil},
+		{"none", `{"verdict": "approve", "summary": "Good."}`, nil},
+	} {
+		v, err := ParseVerdict(tc.out)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if !reflect.DeepEqual(v.Open, tc.want) {
+			t.Errorf("%s: ParseVerdict() open = %#v, want %#v", tc.name, v.Open, tc.want)
+		}
+	}
+}
+
+func TestResultEncodeKeepsOpenShort(t *testing.T) {
+	long := strings.Repeat("word ", 100)
+	f := model.FollowUp{Title: strings.Repeat("t", 100), Body: strings.Repeat("b", 400), Criteria: []string{long, long, long}}
+	o := model.OpenCriterion{Criterion: long, Why: long}
+	r := Result{Role: RoleReview, Verdict: VerdictApprove, Summary: strings.Repeat("s", 3000),
+		FollowUps: []model.FollowUp{f, f, f}, Open: []model.OpenCriterion{o, o, o}}
+	data := r.Encode()
+	var back Result
+	if err := json.Unmarshal(data, &back); err != nil || len(data) > MaxResultBytes {
+		t.Fatalf("Encode() = %d bytes, %v", len(data), err)
+	}
+	if len(back.Open) != 3 || len(back.Open[0].Criterion) > maxFollowUpCriterion || len(back.Open[0].Why) > maxFollowUpCriterion {
+		t.Errorf("Encode() open = %#v, want all three, each shortened", back.Open)
+	}
+	if len(back.FollowUps) == 3 {
+		t.Error("Encode() kept every follow-up over the summary; the test no longer squeezes the result")
+	}
+	if r.Open[0].Criterion != long {
+		t.Error("Encode() changed the caller's open criteria")
+	}
+	changes := Result{Role: RoleReview, Verdict: VerdictChanges, Summary: strings.Repeat("s", 3500), Open: []model.OpenCriterion{o, o, o}}
+	var backChanges Result
+	if err := json.Unmarshal(changes.Encode(), &backChanges); err != nil || backChanges.Open != nil {
+		t.Errorf("Encode() of changes kept open criteria (%d) over the summary, %v", len(backChanges.Open), err)
 	}
 }
 

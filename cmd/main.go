@@ -297,13 +297,14 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.TaskReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		APIReader:       mgr.GetAPIReader(),
-		Git:             gitprovider.Client{},
-		MaxSandboxes:    maxAgentSandboxes,
-		WorkspaceMemory: workspaceQuantity,
-		SandboxGoCache:  sandboxGoCache,
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		APIReader:         mgr.GetAPIReader(),
+		Git:               gitprovider.Client{},
+		MaxSandboxes:      maxAgentSandboxes,
+		WorkspaceMemory:   workspaceQuantity,
+		SandboxGoCache:    sandboxGoCache,
+		SharedPullSecrets: sharedPullSecrets,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
 		os.Exit(1)
@@ -319,11 +320,13 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.BriefReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		APIReader: mgr.GetAPIReader(),
-		Git:       gitprovider.Client{},
-		Recorder:  mgr.GetEventRecorder("brief"),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		APIReader:       mgr.GetAPIReader(),
+		Git:             gitprovider.Client{},
+		Recorder:        mgr.GetEventRecorder("brief"),
+		SharedSecrets:   sharedSecrets,
+		SourceNamespace: podNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "brief")
 		os.Exit(1)

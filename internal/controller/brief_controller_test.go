@@ -200,20 +200,28 @@ var _ = Describe("Brief", func() {
 			Eventually(func() string { return gitFake.agentUser(ns, repo) }).Should(Equal(user))
 			gitFake.failAgentRemoval(user, errors.New("connection refused"))
 
+			deleted := time.Now()
 			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
 			Eventually(func(g Gomega) {
 				g.Expect(briefEventNotes(g, ns, "BotNotDeleted")).To(ContainElement(
 					And(ContainSubstring(user), ContainSubstring("connection refused"))))
 			}).Should(Succeed())
-			Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{})).To(Succeed(),
-				"the Brief went before its wait was over")
+			// The deletion timestamp has whole seconds, so the wait may end up
+			// to a second early; past that, the Brief may rightly be gone.
+			if time.Since(deleted) < testBotDeleteTimeout-2*time.Second {
+				Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{})).To(Succeed(),
+					"the Brief went before its wait was over")
+			}
 
+			// The wait runs from the deletion, then a requeue lets the Brief go;
+			// on a loaded runner both take longer than the default timeout.
 			Eventually(func() bool {
 				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
-			}).Should(BeTrue(), "the finalizer held the Brief past its wait")
+			}).WithTimeout(testBotDeleteTimeout+20*time.Second).Should(BeTrue(),
+				"the finalizer held the Brief past its wait")
 			Eventually(func(g Gomega) {
 				g.Expect(briefEventNotes(g, ns, "BotLeft")).To(ContainElement(And(ContainSubstring(user),
-					ContainSubstring("connection refused"), ContainSubstring("waited 5s"))))
+					ContainSubstring("connection refused"), ContainSubstring("waited "+testBotDeleteTimeout.String()))))
 			}).Should(Succeed())
 			Expect(gitFake.agentUser(ns, repo)).To(Equal(user))
 		})

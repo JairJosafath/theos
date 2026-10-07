@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -563,6 +565,66 @@ func TestBuildSandboxImplementEnv(t *testing.T) {
 	}
 }
 
+// The Go module proxy comes from the GitProvider's URL and owner, in cluster
+// or not; the Agent's own setting comes last, so it wins.
+func TestBuildSandboxGoProxy(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, url string
+		own       []corev1.EnvVar
+		want      []corev1.EnvVar
+	}{
+		{name: "an in-cluster Gitea", url: "http://gitea.gitea.svc.cluster.local:3000", want: []corev1.EnvVar{
+			{Name: "GOPROXY", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/go," +
+				"https://proxy.golang.org,direct"},
+			{Name: "GONOSUMDB", Value: "c4factory.local"},
+		}},
+		{name: "an external Gitea", url: "https://git.example.com/", want: []corev1.EnvVar{
+			{Name: "GOPROXY", Value: "https://git.example.com/api/packages/apps/go,https://proxy.golang.org,direct"},
+			{Name: "GONOSUMDB", Value: "c4factory.local"},
+		}},
+		{name: "the Agent's own", url: "https://git.example.com", own: []corev1.EnvVar{{Name: "GOPROXY", Value: "off"}},
+			want: []corev1.EnvVar{
+				{Name: "GOPROXY", Value: "https://git.example.com/api/packages/apps/go,https://proxy.golang.org,direct"},
+				{Name: "GONOSUMDB", Value: "c4factory.local"},
+				{Name: "GOPROXY", Value: "off"},
+			}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, err := gitprovider.Client{}.Provider(gitprovider.Config{URL: tt.url, Owner: "apps",
+				Credentials: gitprovider.Credentials{Token: "t"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			repo := provider.Repository("image-shrink")
+			agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")}
+			agent.Spec.Env = tt.own
+			sandbox, err := buildSandbox(sandboxRun{
+				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+				status:    &c4v1alpha1.TaskStatus{Round: 1, Branch: "task/add-crop"},
+				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				agent:     agent, name: "add-crop-r1-implement", role: model.RoleImplementer,
+				repoURL: repo.CloneURL, gitSecret: "image-shrink-agent-git", goProxy: repo.GoProxy,
+			}, scheme, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []corev1.EnvVar
+			for _, e := range podOf(t, sandbox).Containers[0].Env {
+				if strings.HasPrefix(e.Name, "GO") {
+					got = append(got, e)
+				}
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Go env %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildSandboxPlanEnv(t *testing.T) {
 	if model.RolePlanner != agentrunner.RolePlan {
 		t.Fatalf("model.RolePlanner = %q, but c4agent plans as %q", model.RolePlanner, agentrunner.RolePlan)
@@ -631,6 +693,50 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 				LabelAgentSandbox: "true", c4v1alpha1.LabelBrief: "cel-lens"}
 			if got := sandbox.GetLabels(); !reflect.DeepEqual(got, want) {
 				t.Errorf("labels %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestBuildSandboxSharedPullSecrets(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	implement := sandboxRun{
+		task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+		status:    &c4v1alpha1.TaskStatus{Round: 1},
+		container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+		agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+		name:      "add-crop-r1-implement", role: model.RoleImplementer,
+	}
+	plan := sandboxRun{
+		task:   &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "plan-shop")},
+		status: &c4v1alpha1.TaskStatus{Round: 1},
+		agent:  &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "planner")},
+		name:   "plan-shop-r1-plan", role: model.RolePlanner, brief: "shop", briefRound: 1,
+	}
+	for _, tt := range []struct {
+		name    string
+		run     sandboxRun
+		secrets []string
+		want    []corev1.LocalObjectReference
+	}{
+		{name: "none without --shared-pull-secret", run: implement},
+		{name: "an implement run lists them", run: implement, secrets: []string{"ghcr", "quay"},
+			want: []corev1.LocalObjectReference{{Name: "ghcr"}, {Name: "quay"}}},
+		{name: "a plan run lists them", run: plan, secrets: []string{"ghcr"},
+			want: []corev1.LocalObjectReference{{Name: "ghcr"}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			run := tt.run
+			run.pullSecrets = tt.secrets
+			sandbox, err := buildSandbox(run, scheme, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := podOf(t, sandbox).ImagePullSecrets; !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("imagePullSecrets %v, want %v", got, tt.want)
 			}
 		})
 	}

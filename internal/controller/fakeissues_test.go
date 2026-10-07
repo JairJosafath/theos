@@ -44,6 +44,20 @@ type fakeIssueState struct {
 	late bool
 	// listErrs makes ListIssues of an owner/name fail.
 	listErrs map[string]error
+	// depErrs makes AddIssueDependency on an issue of an owner/name fail.
+	depErrs map[string]error
+}
+
+// failDependencies makes adding a dependency to an issue of owner/name fail
+// with err from now on; a nil err adds them again.
+func (g *fakeGit) failDependencies(owner, name string, err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := g.issueState()
+	if s.depErrs == nil {
+		s.depErrs = map[string]error{}
+	}
+	s.depErrs[owner+"/"+name] = err
 }
 
 // failListIssues makes listing the issues of owner/name fail with err from
@@ -211,6 +225,9 @@ func (p *fakeProvider) AddIssueDependency(_ context.Context, repo gitprovider.Re
 	blockerRepo gitprovider.Repository, blocker int) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
+	if err := p.git.issueState().depErrs[repo.Owner+"/"+repo.Name]; err != nil {
+		return err
+	}
 	i, err := p.issueOf(repo, number)
 	if err != nil {
 		return err
@@ -316,6 +333,20 @@ func (p *fakeProvider) CloseIssue(ctx context.Context, repo gitprovider.Reposito
 		return err
 	}
 	i.State = "closed"
+	return nil
+}
+
+func (p *fakeProvider) EditIssueBody(ctx context.Context, repo gitprovider.Repository, number int, body string) error {
+	if err := ctx.Err(); err != nil {
+		return err // a request on a spent context fails, as over HTTP
+	}
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	i, err := p.issueOf(repo, number)
+	if err != nil {
+		return err
+	}
+	i.Body = body
 	return nil
 }
 

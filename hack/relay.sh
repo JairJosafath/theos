@@ -44,7 +44,12 @@
 # the pinned Maintainer report
 # (hack/lib/github.sh report). Agents escalate to it, with
 # status/needs-maintainer; only it sets status/needs-human, for what
-# GOVERNANCE.md reserves to the owner (docs/plans/done/maintainer.md). When it
+# GOVERNANCE.md reserves to the owner (docs/plans/done/maintainer.md). It runs
+# once per project, not once per device (#526): before its session it takes the
+# maintainer lease on the report issue (gh_maint_take in hack/lib/github.sh),
+# keeps it fresh while the session runs and releases it at the end; while
+# another device holds a live lease it starts nothing and logs the holder, and
+# a lease past C4_LEASE_TTL is taken over. When it
 # ends it writes .relay/maintained, `<epoch> <activity>`: when the sweep
 # started (so an issue escalated while it ran is still new to the watch) and
 # hack/lib/github.sh activity, read after the sweep so its own comments don't
@@ -254,7 +259,12 @@ For each proposed issue, decide one of these:
   line \`<!-- relay-triage -->\`) that its session makes the design choices,
   writes them and why in a plan in docs/plans/ (and the change to
   docs/design.md), and files the steps as status/proposed issues, each with
-  its own "Done when"; that is its "Done when". Then ready it.
+  its own "Done when". The plan is not the issue's deliverable: its pull
+  request says \`Refs #N\`, never \`Closes #N\`; the issue stays open and
+  status/in-progress, its body a "Depends on #S" line per step, and the last
+  step's pull request closes #N too. Say that in the comment: the session is
+  done when the plan is merged and its steps are filed, the issue when its
+  last step lands. Then ready it.
 - Fill the gap and ready it, when the only thing missing is something you
   can write yourself: a "Depends on #M" line it lacks (add it to the body with
   \`gh issue edit N --repo $C4_GITHUB_REPO --body-file FILE\`, keeping the
@@ -641,17 +651,13 @@ transcript() {
   echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/${WT//[^a-zA-Z0-9]/-}/$1.jsonl"
 }
 
-# idle_watch WHAT PID FILE MARK: end session WHAT (process group PID) once its
-# transcript FILE and its subagents' haven't changed for RELAY_IDLE: SIGTERM,
-# then SIGKILL after RELAY_IDLE_KILL, with MARK touched so the relay counts it
-# as failed. A transcript that never appears leaves the session to
-# SESSION_TIMEOUT.
+# idle_watch WHAT PID FILE MARK IDLE KILL: end session WHAT (process group PID)
+# once its transcript FILE and its subagents' haven't changed for IDLE seconds
+# (RELAY_IDLE): SIGTERM, then SIGKILL after KILL seconds (RELAY_IDLE_KILL),
+# with MARK touched so the relay counts it as failed. A transcript that never
+# appears leaves the session to SESSION_TIMEOUT.
 idle_watch() {
-  local what=$1 pid=$2 f=$3 idle kill_after t0 last m now missing= i
-  if ! idle=$(seconds "$IDLE") || ! kill_after=$(seconds "$IDLE_KILL"); then
-    log "RELAY_IDLE ($IDLE) or RELAY_IDLE_KILL ($IDLE_KILL) isn't like 45m; $what runs until the $SESSION_TIMEOUT timeout"
-    return 0
-  fi
+  local what=$1 pid=$2 f=$3 idle=$5 kill_after=$6 t0 last m now missing= i
   t0=$(date +%s) last=$t0
   while sleep "$IDLE_POLL"; do
     kill -0 "$pid" 2>/dev/null || return 0
@@ -683,8 +689,14 @@ idle_watch() {
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after
   t0=$(date +%s)
+  # Checked here, not in the watch: a session that ends before the watch runs
+  # would take the log line with it.
+  if ! idle=$(seconds "$IDLE") || ! kill_after=$(seconds "$IDLE_KILL"); then
+    log "RELAY_IDLE ($IDLE) or RELAY_IDLE_KILL ($IDLE_KILL) isn't like 45m; $what runs until the $SESSION_TIMEOUT timeout"
+    idle=
+  fi
   # timeout leads its own process group, so the idle watch can end claude and
   # every process it started. Neither gets the worker's lock (fd 9): a process
   # the session leaves behind would hold it after the worker exits, and the
@@ -693,12 +705,16 @@ session() {
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
-  idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" 9>&- &
-  watch=$!
+  if [ -n "$idle" ]; then
+    idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" "$idle" "$kill_after" 9>&- &
+    watch=$!
+  fi
   wait "$pid"
   rc=$?
-  kill "$watch" 2>/dev/null
-  wait "$watch" 2>/dev/null
+  if [ -n "$watch" ]; then
+    kill "$watch" 2>/dev/null
+    wait "$watch" 2>/dev/null
+  fi
   S_IDLE=
   [ -e "$out.idle" ] && S_IDLE=1
   mins=$((($(date +%s) - t0) / 60))
@@ -808,7 +824,7 @@ maintained() { [ -n "$DRY_RUN" ] || echo "$1 $2" >"$DIR/maintained"; }
 
 # maintain: one maintainer session (see the header).
 maintain() {
-  local id last t act rc out start
+  local id last t act rc out start lease beat
   if [ -z "$DRY_RUN" ]; then
     worktree || { log "could not prepare the worktree $WT; no sweep"; return 1; }
   fi
@@ -826,11 +842,35 @@ maintain() {
   fi
   git -C "$WT" switch -q --detach origin/main 2>>"$LOG" ||
     { log "could not switch $WT to origin/main; no sweep"; return 1; }
-  log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD)"
+  # One maintainer per project (#526): another device's live lease means no sweep here.
+  lease=$(gh_maint_take 2>>"$LOG")
+  case $? in
+    0) ;;
+    4) log "another device's maintainer holds the lease: $lease; no sweep"; return 0 ;;
+    *) log "could not take the maintainer lease; no sweep"; return 1 ;;
+  esac
+  log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD), lease $lease"
   out="$DIR/maintain-$(date +%Y%m%d-%H%M%S)"
   start=$(date +%s)
+  # The heartbeat; its sleep ends with it.
+  (s=
+    trap 'kill $s 2>/dev/null; exit 0' TERM
+    while :; do
+      sleep "$GH_BEAT_EVERY" &
+      s=$!
+      wait "$s"
+      gh_maint_beat "$lease" 2>>"$LOG" || log "could not refresh the maintainer lease $lease"
+    done) 9>&- &
+  beat=$!
   session maintainer "$out" "$id" "$(maintain_prompt "$last")"
   rc=$?
+  kill "$beat" 2>/dev/null
+  wait "$beat" 2>/dev/null
+  if gh_maint_release "$lease" 2>>"$LOG"; then
+    log "released the maintainer lease $lease"
+  else
+    log "could not release the maintainer lease $lease; it goes stale after $C4_LEASE_TTL"
+  fi
   # A limit, a crash, a timeout or an idle kill cut the sweep short: not recorded.
   if [ "$rc" != 0 ] || [ "$S_RC" != 0 ] || [ -n "$S_IDLE" ] || [ ! -s "$out.md" ]; then
     log "the sweep didn't run to its end; not recorded, so the watch starts one again"

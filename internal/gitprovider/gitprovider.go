@@ -43,6 +43,9 @@ type Repository struct {
 	Name     string
 	CloneURL string
 	WebURL   string
+	// GoProxy is the Go module proxy of the owner's package registry, where the
+	// owner's released Go modules are fetched from; empty when the host has none.
+	GoProxy string
 }
 
 // Commit is one commit on the default branch.
@@ -161,6 +164,8 @@ type Provider interface {
 	CommentIssue(ctx context.Context, repo Repository, number int, body string) error
 	// CloseIssue closes an issue.
 	CloseIssue(ctx context.Context, repo Repository, number int) error
+	// EditIssueBody replaces an issue's body.
+	EditIssueBody(ctx context.Context, repo Repository, number int, body string) error
 	// SetIssueMilestone moves an issue into the milestone with ID milestone, or
 	// out of every milestone when it is 0.
 	SetIssueMilestone(ctx context.Context, repo Repository, number int, milestone int64) error

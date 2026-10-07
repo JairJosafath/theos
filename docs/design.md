@@ -84,7 +84,7 @@ spec:
 status:
   phase: Ready
   repositoryURL: http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api
-  scaffoldedFrom: [python-fastapi@v1.2.1, small@v1.0.0, k8s-manifests@v1.1.0, postgres@v1.1.0]
+  scaffoldedFrom: [python-fastapi@v1.2.1, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
   activeSessions: 1
 ---
 kind: DataStore
@@ -382,6 +382,19 @@ model and context it needs.
   that must be shortened to fit ends at a whole word with "…", never mid-word.
   For a Brief's apps, the person answers them in a prompt instead
   ([Briefs](#briefs-an-idea-in-plain-words)).
+- **Evidence is never made up** (#467). The implementer never presents a
+  drawn or generated picture, a recording or a message as the product's: a
+  screenshot comes from running the product, a quoted message from the code.
+  A criterion that needs what no agent's sandbox has (a desktop editor, a
+  device, an account) is left open with why, never faked. The reviewer opens
+  every image the change adds (the runner lists them with their sizes), checks
+  quoted output against the code, and requires a change for made-up evidence;
+  it approves an honestly open criterion of that kind and reports it in the
+  verdict's `open`. On merge the operator files those criteria as one
+  `kind/by-hand` issue, `status/needs-human` in the Later milestone, so a
+  person does them; a Brief lists it with its failed issues and may close it,
+  never retry it. The planner doesn't give agents a person's work. See
+  [plans/honest-evidence.md](plans/honest-evidence.md).
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the agent of a client reads the service it calls.
@@ -463,7 +476,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   depend in Gitea on each blocker (across repositories too), names them in its
   body, and only then labels it ready; the Crew waits for open dependencies, so
   the issue starts once its blockers' pull requests merge. See
-  [plans/brief-issue-order.md](plans/brief-issue-order.md).
+  [plans/done/brief-issue-order.md](plans/done/brief-issue-order.md).
 - **One app uses another's release, never its branch** (#430). Apps stay one
   repository each and share code the way separate repositories do: an issue
   that builds on another Container's code names it in its front matter,
@@ -533,6 +546,20 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   round, the operator labels a retried issue `status/ready` in place of
   `status/needs-human`, or closes it, with a comment quoting the why and the
   round's prompts. See [plans/brief-failed-issues.md](plans/brief-failed-issues.md).
+- **A Brief looks after its own handed-back work** (#486, planned).
+  `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. The Brief watches
+  only what it made: failed issues, its Containers' Tasks and Crews. What
+  heals by itself (a usage limit, an agent-slot queue, a Standard change in
+  review, a Git host coming back) is left alone for a window from one table
+  in `internal/model`. When a failed issue is due, a tending round, a planner
+  round with no new prompt, answers it `retry`, `close` (with new issues to
+  split), `wait` (until a Task merges, an app releases or 24h pass) or `ask`;
+  in `Ask` every answer waits for the person. Everything else that is due,
+  and every `ask`, is one entry in `status.needsYou` with the choice the
+  Brief would make and why. The Crew's three tries still hold, an issue is
+  answered once per failure, and tending rounds come at most hourly. Each
+  is a history entry, outcome `Tended`, so a prompt can overrule it. See
+  [plans/brief-autopilot.md](plans/brief-autopilot.md).
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a
@@ -549,7 +576,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   Agents. A person gives the Agents' token once, as a Secret in the release
   namespace, and the operator shares it with every project; a project with a
   Secret of that name of its own keeps it
-  ([plan](plans/shared-project-credentials.md)).
+  ([plan](plans/shared-project-credentials.md)). A Brief whose Agent's token
+  is missing says where to give it: in the release namespace for every
+  project, or in its own for this one, and names the namespace label when
+  its namespace hasn't opted in.
 
 ## Distribution and issues
 
@@ -629,7 +659,7 @@ The webshop sample uses the smallest set of seeded templates that exercises ever
 
 - `python-fastapi` (Framework): a uv project with FastAPI, ruff and pytest, plus the base devcontainer settings.
 - `small` (Compute): resource requests and limits for the manifests, as a `deploy/k8s/compute.yaml` patch.
-- `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests. It patches in `compute.yaml` when a Compute is chosen, and lists `connector-<name>.yaml` for each Connector, so a Connector used with it ships that file.
+- `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests. The Dockerfile follows the Framework: uvicorn for `python-fastapi`, a Vite build served by an unprivileged nginx for `react-vite` (type `static-site`). It patches in `compute.yaml` when a Compute is chosen, and lists `connector-<name>.yaml` for each Connector, so a Connector used with it ships that file.
 - `postgres` (Connector): a compose service for the devcontainer and connection settings in `deploy/k8s/connector-postgres.yaml`.
 
 The sample in `config/samples/webshop/` tells a small story: a `customer` Person uses `webshop-core`, whose `orders-api` service reads and writes the `orders-db` DataStore.
