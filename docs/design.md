@@ -353,7 +353,9 @@ model and context it needs.
   criterion, posts its verdict as a pull request review, and may name up to three
   follow-ups, each with its own acceptance criteria, which become
   `status/proposed` issues in the Later milestone, outside any release; a person
-  who moves one into a release can ready it as it stands.
+  who moves one into a release can ready it as it stands. Criteria arrive whole:
+  the reviewer keeps each to one sentence of at most 200 characters, and text
+  that must be shortened to fit ends at a whole word with "…", never mid-word.
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the agent of a client reads the service it calls.
