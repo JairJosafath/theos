@@ -1,0 +1,73 @@
+# Reviewer guide
+
+You review one pull request against the issue it closes: its acceptance
+criteria, the diff, CI's result and the C4 context. You judge the change; you
+don't rewrite it. Your task prompt says how to give your verdict; this guide
+says what to check.
+
+## Checklist, in priority order
+
+1. **Acceptance criteria.** Report each one as met or not met, naming the test
+   that proves it. A criterion is met only when a test would fail without the
+   change. Missing or untested is not met.
+2. **Correctness and edge cases.** Empty, `None`, malformed and huge input;
+   Unicode; boundaries (first and last item, zero-length ranges); timeouts;
+   concurrent requests; every error handled.
+3. **Tests.** They test behaviour through the package's API, would fail without
+   the change, cover the edge cases above, and are deterministic: no sleeps, no
+   wall-clock bounds, no order dependence, no network.
+   Timing logic is tested with an injected clock.
+4. **Design.** Module boundaries and layering (`AGENTS.md` rule 1); names; no
+   dead code; no speculative generality (unused options, a base class or `Protocol` with
+   one implementation and no fake, config nobody sets); the change stays in the
+   issue's scope.
+5. **Errors and resources.** Exceptions specific, chained with `from`, carrying
+   context, and handled once; files, connections and clients closed on every
+   path (`with`); no traceback reaches a user on bad input.
+6. **Performance.** Budgets from the issue or the system's needs, measured by a
+   benchmark, never by a test with a time bound; no work that grows badly with input size, such as re-reading a
+   whole document on every change.
+7. **Docs and DX.** README, the API docs or `--help`, and docstrings match the behaviour; error
+   messages tell a user what was wrong, where, and what to do.
+8. **Security.** Untrusted input can't escape its directory, exhaust memory or
+   run commands; no secrets or whole documents in logs.
+
+## Verdict
+
+- **Blocking** means the change would ship a defect or break a stated need or
+  acceptance criterion. Request changes only for blocking findings, and for a
+  red CI (quote the failing step).
+- **Everything else is non-blocking:** list it and approve.
+- Each finding says what is wrong, where (`file:line`), the input that shows it,
+  and what would fix it. No vague advice.
+- Don't ask for style the linters already enforce, or for rules `docs/style/`
+  doesn't have.
+
+## Follow-ups
+
+Name up to three issues worth filing later: non-blocking points that deserve
+their own work. Each is a title and one to three sentences saying what and why.
+The factory files them as `status/proposed` issues when the pull request merges.
+A blocking problem is never a follow-up.
+
+## Standard changes
+
+- **In a normal pull request,** don't require a change to a protected file
+  (listed in `AGENTS.md`). Those change through a Standard change, a separate
+  Task. An implementer's `Standard change:` line in the summary is only a note.
+- **In a pull request that carries a Standard change,** it may change only the
+  paths its issue names. Require changes unless all three hold:
+  - it weakens no check, and turns none off;
+  - it works with this change alone, without another branch;
+  - it does no more than its issue asks.
+
+## Python notes
+
+- `make check` passed, and CI is green on the last commit.
+- Look for: `Any`, `cast()` or `# type: ignore` hiding a real type error;
+  `# noqa` without a real reason; `except Exception` or a bare `except` that
+  keeps going; mutable default arguments or module-level state; work at import
+  time; a blocking call inside `async def`; dicts where a dataclass or pydantic
+  model belongs; a public name whose docstring says nothing.
+- A new dependency in `pyproject.toml` is part of the diff: it needs a reason,
+  types, a fitting licence, and its `uv.lock` change.

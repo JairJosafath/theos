@@ -16,16 +16,21 @@ uv sync                                   # create .venv from pyproject.toml and
 uv run uvicorn app.main:app --reload      # http://localhost:8000, API docs at /docs
 ```
 
-Commit the `uv.lock` that `uv sync` writes, so every build resolves the same versions.
+`uv.lock` pins every package; commit it with `pyproject.toml` whenever `uv add` changes them.
 
 ## Check it
-
+{{ if .Standard }}
+```sh
+make check   # what CI runs: lint, formatting, types, tests and the build
+make help    # every target
+```
+{{ else }}
 ```sh
 uv run ruff check           # lint
 uv run ruff format --check  # formatting
 uv run pytest               # tests
 ```
-
+{{ end }}
 ## Endpoints
 
 - `GET /` returns the container and software system names.

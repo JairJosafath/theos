@@ -84,7 +84,7 @@ spec:
 status:
   phase: Ready
   repositoryURL: http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api
-  scaffoldedFrom: [python-fastapi@v1.2.1, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
+  scaffoldedFrom: [python-fastapi@v1.3.0, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
   activeSessions: 1
 ---
 kind: DataStore
