@@ -120,7 +120,7 @@ After `make deploy`, `make claude-secret` stores it as Secret
 operator's namespace) of the leased cluster, without the token in its argv or
 transcript. The test environment shares it like the release: `config/manager`
 runs the operator with `--shared-secret=claude-credentials` and `POD_NAMESPACE`,
-and the operator copies the Secret into every namespace that has a Project and
+and the operator copies the Secret into every namespace with
 the label `c4.factory.io/shared-secrets: "true"`, keeping each copy in step
 with it. `make seed` labels `webshop` and `apps`, and the webshop sample and
 the e2e fixture label theirs, so one Secret serves every project; a rotated
@@ -677,7 +677,11 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   `${{ github.workflow }}-${{ github.ref }}` without `cancel-in-progress`: a
   running job always finishes, so main keeps getting a verdict while merges
   come in, and only the newest pending run per workflow waits; GitHub cancels
-  the older pending ones. The "main is red" watch (`gh_red` in `hack/lib/github.sh`) skips cancelled runs. *Issue intake*
+  the older pending ones. The "main is red" watch (`gh_red` in `hack/lib/github.sh`) skips cancelled runs,
+  and failed runs a self-hosted runner lost (`gh_lost`): a runner stopped
+  mid-job cancels its step ("The operation was canceled.", Ginkgo prints
+  "Interrupted by User"), and a job no runner took is cancelled without steps.
+  Neither says anything about the code. *Issue intake*
   and *Issue closed* have no group, since each issue event must run.
   `hack/check-workflows.sh` fails a workflow on pushes to a branch without the
   group, or with `cancel-in-progress`.

@@ -543,8 +543,19 @@ spec:
 		}).Should(Succeed())
 	})
 
-	It("says where to give a token the operator shares: the label first, then its namespace", func() {
-		// No Project here, so the operator copies nothing in and the message stays.
+	It("says where to give a token the operator shares, and gets the copy with no Project yet", func() {
+		// The source starts missing; the suite's other specs share it, so it is
+		// put back as it was.
+		source := &corev1.Secret{}
+		if err := k8sClient.Get(ctx, key(operatorNamespace, sharedToken), source); err == nil {
+			Expect(k8sClient.Delete(ctx, source)).To(Succeed())
+			DeferCleanup(func() {
+				mustCreate(&corev1.Secret{ObjectMeta: objectMeta(operatorNamespace, sharedToken),
+					Type: source.Type, Data: source.Data})
+			})
+		} else {
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}
 		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "shared-"}}
 		Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
 		shared := namespace.Name
@@ -567,7 +578,7 @@ spec:
 					", or make it in "+shared+" for this project only")))
 		}).Should(Succeed())
 
-		By("naming the operator's namespace once it has opted in")
+		By("naming the operator's namespace once it has opted in, while the source is missing")
 		Expect(k8sClient.Get(ctx, key("", shared), namespace)).To(Succeed())
 		Expect(patch(namespace, func() {
 			namespace.Labels = map[string]string{c4v1alpha1.LabelSharedSecrets: "true"}
@@ -579,6 +590,32 @@ spec:
 				Equal("Secret "+sharedToken+" of Agent planner is missing: make it in namespace "+operatorNamespace+
 					", which the factory shares with every project, or in "+shared+" for this project only")))
 			g.Expect(b.Status.Round).To(BeZero())
+		}).Should(Succeed())
+
+		By("copying the source in, with no Project, and starting round 1")
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(shared, shared), &c4v1alpha1.Project{}))).To(BeTrue())
+		mine := &corev1.Secret{ObjectMeta: objectMeta(operatorNamespace, sharedToken),
+			Data: map[string][]byte{"token": []byte("first")}}
+		Expect(k8sClient.Create(ctx, mine)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, mine))).To(Succeed()) })
+		Eventually(func(g Gomega) {
+			var copied corev1.Secret
+			g.Expect(k8sClient.Get(ctx, key(shared, sharedToken), &copied)).To(Succeed())
+			g.Expect(copied.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelSharedFrom, sharedToken))
+			g.Expect(copied.Data).To(HaveKeyWithValue("token", []byte("first")))
+			g.Expect(copied.OwnerReferences).To(BeEmpty())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			b := getBrief(g, shared)
+			g.Expect(b.Status.Round).To(Equal(int32(1)))
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
+		}).Should(Succeed())
+
+		By("deleting the copy when the namespace opts out")
+		Expect(k8sClient.Get(ctx, key("", shared), namespace)).To(Succeed())
+		Expect(patch(namespace, func() { namespace.Labels = nil })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(shared, sharedToken), &corev1.Secret{}))).To(BeTrue())
 		}).Should(Succeed())
 	})
 
@@ -655,8 +692,22 @@ spec:
 			g.Expect(b.Status.Issues[0]).To(And(HaveField("Round", int32(1)), HaveField("N", int32(1))))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(
 				HaveField("Message", ContainSubstring("Container checker")))
-		}).Should(Succeed())
+		}).WithTimeout(wholeRound).Should(Succeed())
 		Expect(gitFake.closeIssue(ns, "linter", int(getBrief(Default, ns).Status.Issues[0].Number))).To(Succeed())
+
+		By("a reconcile reading a cached Brief that doesn't show the recorded issue yet (#501)")
+		stale := getBrief(Default, ns)
+		recorded := stale.Status.Issues
+		stale.Status.Issues = nil
+		linter := &c4v1alpha1.Container{}
+		Expect(k8sClient.Get(ctx, key(ns, "linter"), linter)).To(Succeed())
+		r := &BriefReconciler{Client: k8sClient, APIReader: k8sClient, Git: gitFake}
+		run := &roundApply{brief: stale, orig: stale.DeepCopy(), round: "1"}
+		Expect(r.fileIssues(ctx, run, map[string]*c4v1alpha1.Container{"linter": linter}, []model.PlanIssue{
+			{N: 1, Container: "linter", Title: "Lint rule 1", Body: linterIssue(1)}})).To(Succeed())
+		Expect(gitFake.openIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
+		Expect(getBrief(Default, ns).Status.Issues).To(Equal(recorded))
+
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.openIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefApplying))

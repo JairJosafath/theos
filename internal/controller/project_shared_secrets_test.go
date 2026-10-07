@@ -101,6 +101,35 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 		}).Should(Succeed())
 	})
 
+	It("shares into a namespace made opted in before it has a Project, which then adopts the copies", func() {
+		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "early-",
+			Labels: map[string]string{c4v1alpha1.LabelSharedSecrets: "true"}}}
+		Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
+		ns := namespace.Name
+		DeferCleanup(stopPolling, ns)
+
+		Eventually(func(g Gomega) {
+			var copied corev1.Secret
+			g.Expect(k8sClient.Get(ctx, key(ns, sharedToken), &copied)).To(Succeed())
+			g.Expect(copied.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelSharedFrom, sharedToken))
+			g.Expect(copied.OwnerReferences).To(BeEmpty())
+		}).Should(Succeed())
+
+		mustCreate(&c4v1alpha1.Project{ObjectMeta: objectMeta(ns, ns),
+			Spec: c4v1alpha1.ProjectSpec{DisplayName: "Early"}})
+		Eventually(func(g Gomega) {
+			g.Expect(secretsShared(g, ns).Reason).To(Equal("Shared"))
+			var project c4v1alpha1.Project
+			g.Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+			for _, name := range []string{sharedToken, sharedPullSecret} {
+				var copied corev1.Secret
+				g.Expect(k8sClient.Get(ctx, key(ns, name), &copied)).To(Succeed())
+				g.Expect(metav1.IsControlledBy(&copied, &project)).To(BeTrue(), name)
+			}
+		}).Should(Succeed())
+		optIn(ns, false)
+	})
+
 	It("leaves the project's own Secret of a shared name alone", func() {
 		ns := newProjectNamespace()
 		own := &corev1.Secret{ObjectMeta: objectMeta(ns, sharedToken), Data: map[string][]byte{"token": []byte("own")}}

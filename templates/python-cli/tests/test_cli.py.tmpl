@@ -1,0 +1,40 @@
+import pytest
+
+from app.cli import main
+
+
+def test_greets_by_name(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--name", "Ada"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "Hello, Ada!\n"
+    assert captured.err == ""
+
+
+def test_greets_the_world_without_a_name(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main([]) == 0
+    assert capsys.readouterr().out == "Hello, world!\n"
+
+
+def test_version_prints_name_and_version(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--version"])
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out.startswith("{{ .Container }} ")
+
+
+def test_help_lists_the_flags(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--help"])
+    assert exit_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "--name" in out
+    assert "--version" in out
+
+
+def test_unknown_flag_is_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--colour"])
+    assert exit_info.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "unrecognized arguments: --colour" in captured.err

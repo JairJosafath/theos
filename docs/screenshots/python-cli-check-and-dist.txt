@@ -1,0 +1,81 @@
+# python-cli v1.0.0 under python-standard v1.1.0 and gitea-release v1.0.3, rendered with
+# go run ./hack/render -out rel -container todo-cli -display-name 'Todo CLI' -type cli Framework=python-cli Standard=python-standard Deployment=gitea-release
+# and run as the check and release workflows run it (UV_CACHE_DIR and UV_PYTHON_INSTALL_DIR in .uv/), uv 0.12.23, 2026-10-07.
+
+$ make check
+uv sync --locked
+Using CPython 3.12.15
+Creating virtual environment at: .venv
+uv run --no-sync ruff format --diff .
+16 files already formatted
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+uv run --no-sync mypy .
+Success: no issues found in 6 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+rootdir: rel
+configfile: pyproject.toml
+testpaths: tests
+collected 10 items
+
+tests/test_cli.py .....                                                  [ 50%]
+tests/test_greeting.py .....                                             [100%]
+
+============================== 10 passed in 0.03s ==============================
+
+$ make dist VERSION=v0.1.0
+uv sync --locked
+Resolved 14 packages in 1ms
+Checked 13 packages in 0.29ms
+rm -rf dist
+uv build --out-dir dist
+warning: The cache directory `.uv/cache` is inside the build source directory `.` and may be included in distributions
+Building source distribution...
+Building wheel from source distribution...
+Successfully built dist/todo_cli-0.1.0.tar.gz
+Successfully built dist/todo_cli-0.1.0-py3-none-any.whl
+
+$ ls dist
+todo_cli-0.1.0-py3-none-any.whl
+todo_cli-0.1.0.tar.gz
+
+$ make dist VERSION=v0.2.0
+Tag v0.2.0 does not match version 0.1.0 in pyproject.toml.
+Set version = "0.2.0" there (uv version 0.2.0), then tag again.
+make: *** [Makefile:48: release-version] Error 1
+
+$ uvx --from dist/todo_cli-0.1.0-py3-none-any.whl todo-cli --name Ada
+Hello, Ada!
+$ todo-cli --version
+todo-cli 0.1.0
+$ todo-cli --colour; echo $?
+usage: todo-cli [-h] [-n NAME] [--version]
+todo-cli: error: unrecognized arguments: --colour
+2
+
+# uv warns that .uv/cache "may be included"; uv_build packs only the module and metadata:
+$ tar tzf dist/todo_cli-0.1.0.tar.gz
+todo_cli-0.1.0/PKG-INFO
+todo_cli-0.1.0/pyproject.toml
+todo_cli-0.1.0/pyproject.toml.orig
+todo_cli-0.1.0/
+todo_cli-0.1.0/README.md
+todo_cli-0.1.0/app
+todo_cli-0.1.0/app/__init__.py
+todo_cli-0.1.0/app/__main__.py
+todo_cli-0.1.0/app/cli.py
+todo_cli-0.1.0/app/greeting.py
+$ python3 -m zipfile -l dist/todo_cli-0.1.0-py3-none-any.whl
+File
+app/
+app/__init__.py
+app/__main__.py
+app/cli.py
+app/greeting.py
+todo_cli-0.1.0.dist-info/
+todo_cli-0.1.0.dist-info/WHEEL
+todo_cli-0.1.0.dist-info/entry_points.txt
+todo_cli-0.1.0.dist-info/METADATA
+todo_cli-0.1.0.dist-info/RECORD

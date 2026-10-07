@@ -17,6 +17,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -67,7 +68,14 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	log := logf.FromContext(ctx)
 
 	var project c4v1alpha1.Project
-	if err := r.Get(ctx, req.NamespacedName, &project); err != nil {
+	err := r.Get(ctx, req.NamespacedName, &project)
+	if apierrors.IsNotFound(err) && req.Name == req.Namespace {
+		// A Brief gets its Project from its first round, whose planner needs
+		// the shared token, so an opted-in namespace is shared into before.
+		recheck, err := r.shareBeforeProject(ctx, req.Namespace)
+		return ctrl.Result{RequeueAfter: recheck}, err
+	}
+	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	status := project.Status.DeepCopy()
@@ -202,7 +210,8 @@ func metaItems(list client.ObjectList) ([]client.Object, error) {
 // named after the namespace. Only what adoption and the roll-up read passes:
 // creations and deletions, and a Container or Session changing phase. A
 // Namespace maps to the Project named after it when its shared-secrets label
-// changes.
+// changes, or when it is made with it: the reconcile shares into an opted-in
+// namespace that has no Project yet.
 func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	toProject := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
 		return []reconcile.Request{requestFor(obj.GetNamespace(), obj.GetNamespace())}

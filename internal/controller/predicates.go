@@ -99,10 +99,11 @@ func podFinished() builder.WatchesOption {
 	})
 }
 
-// labelChanged passes only updates that change one label's value.
+// labelChanged passes only updates that change one label's value, and
+// creations that carry the label, such as a namespace made already labeled.
 func labelChanged(label string) builder.WatchesOption {
 	return builder.WithPredicates(predicate.Funcs{
-		CreateFunc: func(event.CreateEvent) bool { return false },
+		CreateFunc: func(e event.CreateEvent) bool { return e.Object.GetLabels()[label] != "" },
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			return e.ObjectOld.GetLabels()[label] != e.ObjectNew.GetLabels()[label]
 		},

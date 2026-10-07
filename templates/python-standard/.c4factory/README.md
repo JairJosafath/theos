@@ -5,7 +5,7 @@ ruff with every rule, ruff's formatter, mypy `--strict`, pytest, the agent guide
 and role guides, offline style digests, issue and pull request templates, and
 the `make check` contract CI runs.
 
-- **Supports:** `service`; Frameworks: `python-fastapi`
+- **Supports:** `service`, `cli`; Frameworks: `python-fastapi`, `python-cli`
 - **Writes:** `ruff.toml`, `mypy.ini`, `.editorconfig`, `Makefile`, `AGENTS.md`,
   `docs/style/`, `docs/agents/implementer.md`, `docs/agents/reviewer.md`,
   `.gitea/workflows/check.yaml`, `.gitea/ISSUE_TEMPLATE/task.md`,
@@ -31,20 +31,21 @@ the `make check` contract CI runs.
   the protected `main` requires (`model.CheckContexts`).
 - **Releases:** `make dist VERSION=v1.2.3` builds `dist/<name>-1.2.3.tar.gz`
   and the wheel, and fails when the tag doesn't match `pyproject.toml`'s
-  `version`.
+  `version`; gitea-release attaches both for a CLI.
 - **Framework contract:** the Framework owns `pyproject.toml`, `uv.lock` and
   `.python-version`. `pyproject.toml` lists this Standard's tools in its `dev`
   dependency group with exact versions (`ruff`, `mypy`, `pytest`), has a
   `[build-system]` that `uv build` can use, and sets pytest's `testpaths`;
   `uv.lock` matches it. Its code passes every check. python-fastapi (v1.3.0
-  and later) does all of this.
+  and later) and python-cli do all of this.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
 - **Issues:** `.gitea/ISSUE_TEMPLATE/task.md` has the sections the factory needs;
   an issue without an unchecked item under "Acceptance criteria" is never picked up.
 - **Style digests:** `docs/style/` distils PEP 8, PEP 257, the Google Python
   Style Guide, the typing and mypy docs, pytest's good practices and the
-  FastAPI tutorial, plus cross-language principles. Every rule is marked
+  FastAPI tutorial (for services) and the `argparse` docs (for CLIs), plus
+  cross-language principles. Every rule is marked
   `[lint]` or `[review]`; `docs/style/SOURCES.md` lists the sources with dates.
 - **Protect:** list `AGENTS.md`, `Makefile`, `ruff.toml`, `mypy.ini`,
   `.editorconfig`, `docs/style/` and `docs/agents/` in the catalog entry's

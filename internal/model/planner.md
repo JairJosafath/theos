@@ -45,8 +45,8 @@ Push the branch `plan/<round>` with these files:
 - `plan/needs-input.md`: only when you are stuck (see below).
 - `plan/suggestions.yaml`: only when a new prompt answers reviewers'
   suggestions (see below).
-- `plan/failed.yaml`: only when a new prompt answers failed issues (see
-  below).
+- `plan/failed.yaml`: only when a new prompt answers failed issues, or in a
+  tending round (see below).
 
 ## The rules
 
@@ -183,7 +183,44 @@ Push the branch `plan/<round>` with these files:
     - `failed` or `person`: retry it, with a `clarify` when the prompt says
       something the agent needs, or close it.
     Leave a failed issue no prompt speaks to unanswered: it waits for the
-    person.
+    person. An entry of `model/failed.yaml` with `asked` and `recommend` is
+    one an earlier round asked the person about, with what it would do: a
+    prompt such as "do what you suggest" answers it with that.
+    `model/tended.yaml` lists what rounds answered the issues still handed
+    back; a new prompt may overrule them.
+
+12. **A tending round has no new prompt.** `brief.md` says so under *Tending
+    round*: the Brief's autopilot asks you to decide the failed issues in
+    `model/failed.yaml` by yourself. Write only `plan/failed.yaml`,
+    `plan/summary.md` and, to split an issue you close, new issues in
+    `plan/issues/`; a tending round has no say on the story, so any other
+    file, `plan/model.yaml` and `plan/needs-input.md` too, refuses the plan.
+    Answer each issue with what you learned from its `reason`, its body and
+    the other issues, as above, or with one of two more answers:
+
+    ```yaml
+    - container: cel-lens-cli
+      issue: 2
+      answer: wait
+      why: It needs the engine's next release, which isn't out yet.
+    - container: cel-lens-cli
+      issue: 3
+      answer: ask
+      why: It needs a paid API key, which only the person can get.
+      recommend:
+        answer: close     # or retry, with clarify, or wait
+        why: Without a key the feature can't work; file it again once there is one.
+    ```
+
+    `wait` leaves the issue handed back until a Task merges, an app releases
+    or a day passes, then asks you again. `ask` puts it on the person's
+    *Needs you* list with your recommendation: use it for what only the
+    person can decide (product direction, money, access). Retry an issue only
+    when something changed since its last try, or with a `clarify` that says
+    what the agent missed; an `exhausted` one still can't be retried.
+    `plan/summary.md` says in a sentence or two what you did; without it the
+    Brief says one line per answer. An issue you leave unanswered counts as
+    an `ask` with no recommendation.
 
 ## The plan's format
 

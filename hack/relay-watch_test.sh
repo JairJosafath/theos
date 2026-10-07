@@ -637,6 +637,37 @@ unstarted 898 5898
 ci_round
 check "ci: an older never-started run doesn't count as a failure" "$(filed)" 0
 
+# A run its self-hosted runner lost says nothing about the code: one stopped
+# mid-step (its step cancelled), or one no runner took (its job cancelled,
+# without steps), counts no more than a cancelled run.
+rm -f "$T"/jobs-*.json "$T"/annotations-*.json
+lost() {
+  echo '{"jobs":[{"databaseId":1,"name":"Run on Ubuntu","conclusion":"failure","steps":[{"name":"Set up job","conclusion":"success"},
+    {"name":"Running Tests","conclusion":"cancelled"},{"name":"Complete job","conclusion":"success"}]}]}' >"$T/jobs-$1.json"
+}
+unacquired() { echo '{"jobs":[{"databaseId":2,"name":"Run on Ubuntu","conclusion":"cancelled","steps":[]}]}' >"$T/jobs-$1.json"; }
+runs lint.yml success
+runs test.yml failure failure success
+unacquired 899
+lost 898
+ci_round
+check "ci: runs the runner lost don't count" "$(filed)" 0
+runs test.yml failure failure failure failure
+unacquired 899
+lost 898
+ci_round
+check "ci: a red main skips the runs its runner lost" "$(filed)" 1
+check "ci: it names the two runs that failed for the code" \
+  "$(jq -r '.[0].body' "$T/issues.json" | grep -o '^- \[[0-9]*\]' | tr '\n' ' ')" "- [897] - [896] "
+echo '{"jobs":[{"databaseId":3,"name":"Run on Ubuntu","conclusion":"timed_out","steps":[{"name":"Running Tests","conclusion":"cancelled"}]}]}' >"$T/jobs-899.json"
+echo '[]' >"$T/issues.json"
+rm -f "$T/jobs-898.json"
+runs test.yml failure failure
+ci_round
+check "ci: a job that timed out counts" "$(filed)" 1
+echo '[]' >"$T/issues.json"
+rm -f "$T"/jobs-*.json
+
 # The groups: a watch, or a user manager, without a group the user has in
 # /etc/group says so, with the fix; one with all of them says nothing.
 OWN="1000 4 27"

@@ -228,7 +228,7 @@ func TestClarifiedBody(t *testing.T) {
 func TestFailedComment(t *testing.T) {
 	prompts := []string{"Try the CLI again now that\nthe checker is merged."}
 	retry := FailedComment(FailedAnswer{Answer: AnswerRetry, Why: "The prompt says so.", Clarify: "Import it."},
-		"lens", 2, prompts, []string{"lens-cli#4"})
+		"lens", 2, false, prompts, []string{"lens-cli#4"})
 	for _, s := range []string{"Tried again for Brief `lens` in round 2", LabelReady, "clarification for round 2",
 		"The planner: The prompt says so.", "> Try the CLI again now that the checker is merged."} {
 		if !strings.Contains(retry, s) {
@@ -238,13 +238,20 @@ func TestFailedComment(t *testing.T) {
 	if strings.Contains(retry, "lens-cli#4") {
 		t.Errorf("retry comment names the round's issues:\n%s", retry)
 	}
-	closed := FailedComment(FailedAnswer{Answer: AnswerClose, Why: "Split in two."}, "lens", 2, prompts,
+	closed := FailedComment(FailedAnswer{Answer: AnswerClose, Why: "Split in two."}, "lens", 2, false, prompts,
 		[]string{"lens-cli#4 Parse flags", "lens-cli#5 Print results"})
 	for _, s := range []string{"Closed for Brief `lens` in round 2.", "The planner: Split in two.",
 		"- lens-cli#4 Parse flags", "- lens-cli#5 Print results", "> Try the CLI again"} {
 		if !strings.Contains(closed, s) {
 			t.Errorf("close comment lacks %q:\n%s", s, closed)
 		}
+	}
+	tended := FailedComment(FailedAnswer{Answer: AnswerRetry, Why: "The checker is merged now."}, "lens", 3, true,
+		nil, nil)
+	want := "Tried again by Brief `lens` in tending round 3, with no prompt: its autopilot is On. " +
+		"The Crew picks it up as " + LabelReady + ".\n\nThe planner: The checker is merged now."
+	if tended != want {
+		t.Errorf("tending comment:\n%s\nwant:\n%s", tended, want)
 	}
 }
 

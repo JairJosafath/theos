@@ -218,7 +218,10 @@ Container's Tasks get `C4_GO_REGISTRY=<gitea>/api/packages/<owner>/go`,
 `gitprovider.Repository.GoProxy`). c4agent serves `agentrunner.GoProxy` there
 while the agent works: `c4factory.local/` paths go to the registry and nowhere
 else, with the bot's credentials over https (`gitprovider.AgentTokenScopes`
-lets it read the owner's packages), and every other path to
+lets it read the owner's packages; the token's name carries its scopes, so an
+operator upgrade that changes them makes a new token beside the old one
+instead of revoking what a running sandbox of the Container holds, and the old
+one goes with the bot user), and every other path to
 proxy.golang.org. The go command has no per-path proxy, and with a list of
 the registry, then the public proxy, it would ask the public proxy for a
 factory module the registry lacks (it goes on after a 404), leaking the

@@ -78,7 +78,8 @@
 #                                        file an issue, FILE as its body; prints its number. An open
 #                                        issue with the same title is left as it is.
 #   hack/lib/github.sh red WORKFLOW      whether WORKFLOW (its file, test.yml) is red on main: its two newest
-#                                        finished runs there failed (cancelled and skipped runs don't count)
+#                                        finished runs there failed (cancelled and skipped runs, and runs its
+#                                        runner lost, don't count: see gh_lost)
 #                                        and none runs there now (it may be the fix).
 #                                        Prints an issue body naming the runs, their commits, the failing jobs
 #                                        and the newest run's last 40 failed log lines. Exit 1: not red
@@ -1540,8 +1541,24 @@ gh_red() {
     --json databaseId,status,conclusion,headSha,displayTitle,url,createdAt,workflowName) || return 2
   # A run still going on main may be the fix: wait for it.
   [ "$(jq -r 'sort_by(.createdAt) | last | .status // "completed"' <<<"$runs")" = completed ] || return 1
-  runs=$(jq -c '[.[] | select(.conclusion != "cancelled" and .conclusion != "skipped")] | sort_by(.createdAt) | reverse | .[:2]' <<<"$runs") ||
+  runs=$(jq -c '[.[] | select(.conclusion != "cancelled" and .conclusion != "skipped")] | sort_by(.createdAt) | reverse' <<<"$runs") ||
     return 2
+  # A failed run its runner lost says nothing about the code either: drop it
+  # like a cancelled one, and keep the two newest left.
+  local kept='[]' run
+  while IFS= read -r run; do
+    [ "$(jq length <<<"$kept")" -lt 2 ] || break
+    if jq -e '.conclusion == "failure"' <<<"$run" >/dev/null; then
+      gh_lost "$(jq -r .databaseId <<<"$run")"
+      case $? in
+        0) continue ;;
+        1) ;;
+        *) return 2 ;;
+      esac
+    fi
+    kept=$(jq -c --argjson r "$run" '. + [$r]' <<<"$kept")
+  done < <(jq -c '.[]' <<<"$runs")
+  runs=$kept
   n=$(jq '[.[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure")] | length' <<<"$runs")
   [ "$n" = 2 ] || return 1
   # A run whose jobs GitHub never started says nothing about the code: when
@@ -1588,6 +1605,20 @@ gh_red() {
   echo '```'
   echo
   echo "Filed by hack/relay-watch.sh. The session that fixes main closes this issue; when the cause already has an open issue, close this one as its duplicate (\`hack/lib/github.sh duplicate N M\`)."
+}
+
+# gh_lost RUN: exit 0 when failed RUN failed for its runner, not its code: a
+# self-hosted runner stopped mid-job (its step is cancelled, "The operation
+# was canceled.") or never took the job (the job is cancelled, without steps,
+# "not acquired by Runner"). No job timed out, none has a failed step, and none
+# failed without steps (that is gh_unstarted's). Exit 1 otherwise, 2 when
+# GitHub can't say.
+gh_lost() {
+  local jobs
+  jobs=$(gh run view "${1:?usage: gh_lost RUN}" --repo "$C4_GITHUB_REPO" --json jobs --jq '.jobs') || return 2
+  jq -e 'length > 0 and all(.[]; .conclusion != "timed_out"
+    and (((.steps // []) | length > 0) or .conclusion != "failure")
+    and all((.steps // [])[]; .conclusion != "failure"))' <<<"$jobs" >/dev/null || return 1
 }
 
 # gh_unstarted RUN: print the annotations of RUN's failed jobs and exit 0 when
