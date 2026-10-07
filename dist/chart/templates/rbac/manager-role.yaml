@@ -14,11 +14,6 @@ rules:
   - ""
   resources:
   - namespaces
-  verbs:
-  - get
-- apiGroups:
-  - ""
-  resources:
   - pods
   verbs:
   - get
@@ -30,6 +25,7 @@ rules:
   - secrets
   verbs:
   - create
+  - delete
   - get
   - patch
   - update

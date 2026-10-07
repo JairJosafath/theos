@@ -21,6 +21,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -59,6 +61,13 @@ var (
 	// managerCfg is cfg as the operator's ServiceAccount, bound to the generated
 	// role: a call the role doesn't grant fails the reconciler that makes it.
 	managerCfg *rest.Config
+)
+
+// The operator's namespace in the suite, and the Secrets it shares from there.
+const (
+	operatorNamespace = "c4-factory-system"
+	sharedToken       = "shared-token"
+	sharedPullSecret  = "shared-pull"
 )
 
 // managerUser is the operator's ServiceAccount in config/rbac/role_binding.yaml.
@@ -117,6 +126,9 @@ var _ = BeforeSuite(func() {
 	managerCfg = rest.CopyConfig(cfg)
 	managerCfg.Impersonate = rest.ImpersonationConfig{UserName: managerUser}
 
+	By("making the operator's namespace, the source of shared Secrets")
+	Expect(k8sClient.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: operatorNamespace}})).To(Succeed())
+
 	By("starting the manager with every reconciler, as that ServiceAccount")
 	mgr, err := ctrl.NewManager(managerCfg, ctrl.Options{
 		Scheme:  scheme.Scheme,
@@ -143,7 +155,9 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		return err
 	}
 	for _, r := range []interface{ SetupWithManager(ctrl.Manager) error }{
-		&ProjectReconciler{Client: c, Scheme: s},
+		&ProjectReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
+			SharedSecrets: []string{sharedToken}, SharedPullSecrets: []string{sharedPullSecret},
+			SourceNamespace: operatorNamespace, SharedSecretsRecheck: time.Second},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout},

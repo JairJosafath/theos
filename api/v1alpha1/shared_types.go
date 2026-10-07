@@ -149,6 +149,17 @@ const (
 	LabelBriefRound = "c4.factory.io/brief-round"
 )
 
+// Shared credentials: the operator copies Secrets from its own namespace into
+// the project namespaces that opt in.
+const (
+	// LabelSharedSecrets on a Namespace, "true", opts it in. Only an admin or
+	// the chart can label a Namespace, so a Project alone receives nothing.
+	LabelSharedSecrets = "c4.factory.io/shared-secrets"
+	// LabelSharedFrom marks a Secret the operator copied, naming its source.
+	// A Secret without it is the project's own, which the operator never touches.
+	LabelSharedFrom = "c4.factory.io/shared-from"
+)
+
 // The Brief's verdict on a Plan Task's plan, written by the Brief on the Task.
 const (
 	// AnnotationPlanChecked is the commit of the plan the Brief checked.
