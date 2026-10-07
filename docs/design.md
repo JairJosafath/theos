@@ -380,7 +380,9 @@ model and context it needs.
   verdict's `open`. On merge the operator files those criteria as one
   `kind/by-hand` issue, `status/needs-human` in the Later milestone, so a
   person does them; a Brief lists it with its failed issues and may close it,
-  never retry it. The planner doesn't give agents a person's work. See
+  never retry it. The planner doesn't give agents a person's work: it files
+  it as its own plan issue labelled `kind/by-hand`, which the operator files
+  `status/needs-human` in Later, and no issue waits on it. See
   [plans/honest-evidence.md](plans/honest-evidence.md).
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related

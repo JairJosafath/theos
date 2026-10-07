@@ -369,12 +369,16 @@ type issueRepo struct {
 	repo      gitprovider.Repository
 	open      []gitprovider.Issue
 	milestone int64
+	// later is the Later milestone's ID, once a by-hand issue needs it.
+	later int64
 }
 
 // fileIssues files the round's issues of the Ready Containers in their
 // repositories (B11), blockers first: status/ready, each body ending with its
 // marker, in the round's release milestone when the round releases the
-// Container (R6) and else in none. An issue with after: is filed only once
+// Container (R6) and else in none. A by-hand issue, a person's work, is
+// labelled status/needs-human instead, in the Later milestone, and never
+// ready. An issue with after: is filed only once
 // each issue it names is filed and recorded; until then it waits with the
 // Container that isn't Ready. It is filed without status/ready, made to
 // depend in the Git host on each of them, across repositories, and only then
@@ -446,6 +450,7 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 	}
 	brief, round := run.brief, int(run.brief.Status.Round)
 	provider, repo := ir.provider, ir.repo
+	byHand := model.IsByHand(issue.Labels)
 	// Filed, but not recorded before a restart: found by its marker.
 	i := slices.IndexFunc(ir.open, func(o gitprovider.Issue) bool {
 		return model.HasIssueMarker(o.Body, brief.Name, round, issue.N)
@@ -455,9 +460,20 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 		filed = ir.open[i]
 	} else {
 		// Made only once an issue is to be filed: a release with no work
-		// is never released (R7).
+		// is never released (R7). A person's work waits in Later, so no
+		// release waits on it.
 		var err error
-		if run.released[c.Name] && ir.milestone == 0 {
+		milestone := &ir.milestone
+		switch {
+		case byHand:
+			milestone = &ir.later
+			if ir.later == 0 {
+				if ir.later, err = provider.EnsureMilestone(gitCtx, repo, model.FollowUpMilestone,
+					model.FollowUpMilestoneDescription); err != nil {
+					return err
+				}
+			}
+		case run.released[c.Name] && ir.milestone == 0:
 			if ir.milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, round); err != nil {
 				return err
 			}
@@ -467,7 +483,7 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 			labels = slices.DeleteFunc(labels, func(l string) bool { return l == model.LabelReady })
 		}
 		body := model.BriefIssueBody(issue, brief.Name, round, buildsOn...)
-		filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, body, labels, ir.milestone)
+		filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, body, labels, *milestone)
 		if err != nil {
 			return err
 		}
@@ -481,7 +497,7 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 				return fmt.Errorf("making it depend on %s#%d: %w", b.Repository, b.Number, err)
 			}
 		}
-		if !slices.Contains(filed.Labels, model.LabelReady) {
+		if !byHand && !slices.Contains(filed.Labels, model.LabelReady) {
 			if err := provider.AddIssueLabel(gitCtx, repo, filed.Number, model.LabelReady); err != nil {
 				return err
 			}
@@ -498,7 +514,13 @@ func briefIssueLabels(issues []model.PlanIssue) []gitprovider.Label {
 	labels := issueLabels()
 	for _, issue := range issues {
 		for _, name := range model.BriefIssueLabels(issue.Labels) {
-			if !slices.ContainsFunc(labels, func(l gitprovider.Label) bool { return l.Name == name }) {
+			switch {
+			case slices.ContainsFunc(labels, func(l gitprovider.Label) bool { return l.Name == name }):
+			case name == model.LabelByHand:
+				l := model.ByHandLabel()
+				labels = append(labels,
+					gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+			default:
 				labels = append(labels, gitprovider.Label{Name: name, Color: briefLabelColor})
 			}
 		}

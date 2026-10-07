@@ -137,6 +137,43 @@ var _ = Describe("Brief issue order", func() {
 			HaveField("Repository", ns+"/core"), HaveField("Repository", ns+"/cli")))
 	})
 
+	It("files a person's work for the person, in Later, never ready, after the work it shows", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		mustCreate(newBrief(ns, "cel-lens"))
+		plan := orderedPlan(ns)
+		plan["plan/issues/02-cli.md"] = scaffold.File{Data: []byte(`---
+title: Record the CLI in a terminal for the README
+labels: [kind/docs, kind/by-hand, status/ready]
+after: [1]
+---
+## Goal
+
+The README shows the CLI checking a file.
+
+## Acceptance criteria
+
+- [ ] The README has a recording of the CLI reporting a broken rule
+`)}
+		planRound(ns, 1, 1, plan)
+
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+		core, cli := gitFake.issue(ns, "core", 1), gitFake.issue(ns, "cli", 1)
+		Expect(core.milestone).To(BeEmpty())
+		Expect(cli.Labels).To(ConsistOf(model.LabelNeedsHuman, "kind/docs", model.LabelByHand),
+			"no Crew may pick a person's work")
+		Expect(cli.milestone).To(Equal(model.FollowUpMilestone))
+		Expect(cli.blockers).To(Equal([]string{ns + "/core#1"}))
+
+		By("listing it with the Brief's failed issues, for the person")
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Failed).To(ContainElement(And(HaveField("Container", "cli"),
+				HaveField("Number", int32(1)), HaveField("Kind", model.FailedByHand))))
+		}).Should(Succeed())
+	})
+
 	It("finishes an issue a restart left filed but not ready, adding nothing twice", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)

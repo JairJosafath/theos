@@ -458,6 +458,17 @@ func TestCheckPlan(t *testing.T) {
 			p.Issues[0].Body, p.Issues[0].Labels = "A calm page for orders", []string{LabelDesign}
 			p.Issues[0].After = []int{2}
 		}, "plan/issues/01-web.md", "is a design idea (status/design) and has after:"},
+		{"a person's work, after the agents' work it shows", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].Labels = []string{LabelByHand}
+			p.Issues[0].After = []int{2}
+		}, "", ""},
+		{"a person's work without acceptance criteria", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].Body, p.Issues[0].Labels = "A screenshot of the shop", []string{LabelByHand}
+		}, "plan/issues/01-web.md", "MissingAcceptanceCriteria"},
+		{"after: naming a person's work", func(p *Plan, _ *CurrentModel) {
+			p.Issues[1].Labels = []string{"kind/docs", LabelByHand}
+			p.Issues[0].After = []int{2}
+		}, "plan/issues/01-web.md", "after: names 2, a person's work (kind/by-hand)"},
 		{"after: naming more than 10 issues", func(p *Plan, _ *CurrentModel) {
 			p.Issues[0].After = []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
 		}, "plan/issues/01-web.md", "after: names 11 issues; it may name at most 10"},
