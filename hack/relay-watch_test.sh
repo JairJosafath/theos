@@ -797,15 +797,19 @@ touch "$S/.relay/stop"
 bash "$S/hack/relay-watch.sh" --cron
 check "cron start with the stop file: nothing" "$([ -e "$S/.relay/watch.log" ] && echo started)" ""
 rm "$S/.relay/stop"
-flock "$S/.relay/watch.lock" sleep 2 &
+# The other watch holds the lock until the test has seen this one wait (at
+# most 30 seconds), so a loaded device can't start this one after it ended.
+flock "$S/.relay/watch.lock" bash -c "for _ in \$(seq 300); do [ -e '$S/release' ] && break; sleep 0.1; done" &
+holder=$!
 until ! flock -n "$S/.relay/watch.lock" true; do sleep 0.1; done
 WATCH_EVERY=1 WATCH_PULL_EVERY=999 bash "$S/hack/relay-watch.sh" --foreground 2>/dev/null &
 fg=$!
-sleep 1
-check "foreground: waits for the lock" "$(grep -c 'another watch holds the lock; pid .* waits' "$S/.relay/watch.log")" 1
-check "foreground: hasn't started" "$(grep -c 'watch started' "$S/.relay/watch.log")" 0
-wait %flock 2>/dev/null
-for _ in $(seq 30); do grep -q 'watch started' "$S/.relay/watch.log" && break; sleep 0.1; done
+for _ in $(seq 100); do grep -qs 'another watch holds the lock' "$S/.relay/watch.log" && break; sleep 0.1; done
+check "foreground: waits for the lock" "$(grep -cs 'another watch holds the lock; pid .* waits' "$S/.relay/watch.log")" 1
+check "foreground: hasn't started" "$(grep -cs 'watch started' "$S/.relay/watch.log")" 0
+touch "$S/release"
+wait "$holder"
+for _ in $(seq 100); do grep -qs 'watch started' "$S/.relay/watch.log" && break; sleep 0.1; done
 check "foreground: takes over" "$(grep -c 'watch started: pid .*, under systemd' "$S/.relay/watch.log")" 1
 touch "$S/.relay/stop"
 wait "$fg"
