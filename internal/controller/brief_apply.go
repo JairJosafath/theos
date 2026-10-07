@@ -48,6 +48,9 @@ type roundApply struct {
 	took, skipped int
 	// retried and closed count the failed issues the round answered.
 	retried, closed int
+	// issuesRead says the issues the API server's Brief records were taken
+	// in, as they are once before an issue is filed.
+	issuesRead bool
 }
 
 // applyRound applies the plan the Brief accepted (B8), in order and each step
@@ -385,7 +388,9 @@ type issueRepo struct {
 // labelled ready, so no Crew picks it up before its order is there. An issue
 // already filed is found by its marker among the open issues, so a restart
 // files no duplicate and finishes what it left. Each is recorded in the
-// Brief's status once done.
+// Brief's status once done, and an issue the cached Brief doesn't show
+// recorded is looked up in the API server's before it is filed, so a closed
+// one is never filed again.
 func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, ready map[string]*c4v1alpha1.Container,
 	issues []model.PlanIssue) error {
 	repos := map[string]*issueRepo{}
@@ -459,6 +464,18 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 	if i >= 0 {
 		filed = ir.open[i]
 	} else {
+		// The cached Brief can lag the status an earlier reconcile wrote, and
+		// a closed issue isn't among the open ones: read what is recorded
+		// from the API server before filing (#501).
+		if !run.issuesRead {
+			if err := r.takeRecordedIssues(ctx, run); err != nil {
+				return err
+			}
+			run.issuesRead = true
+			if run.filed(issue.N) != nil {
+				return nil
+			}
+		}
 		// Made only once an issue is to be filed: a release with no work
 		// is never released (R7). A person's work waits in Later, so no
 		// release waits on it.
@@ -526,6 +543,26 @@ func briefIssueLabels(issues []model.PlanIssue) []gitprovider.Label {
 		}
 	}
 	return labels
+}
+
+// takeRecordedIssues adds to the run's Brief, and to the copy its status
+// patches are made from, the issues the API server's Brief records that the
+// cached one doesn't show yet, so none is filed again and the next patch keeps them.
+func (r *BriefReconciler) takeRecordedIssues(ctx context.Context, run *roundApply) error {
+	var current c4v1alpha1.Brief
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(run.brief), &current); err != nil {
+		return err
+	}
+	for _, status := range []*c4v1alpha1.BriefStatus{&run.brief.Status, &run.orig.Status} {
+		for _, i := range current.Status.Issues {
+			if !slices.ContainsFunc(status.Issues, func(o c4v1alpha1.BriefIssue) bool {
+				return o.Repository == i.Repository && o.Number == i.Number
+			}) {
+				status.Issues = append(status.Issues, i)
+			}
+		}
+	}
+	return nil
 }
 
 // recordIssue adds a filed issue to the Brief's status, once, with its round
