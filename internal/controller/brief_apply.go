@@ -348,9 +348,10 @@ func copyStoryText(dst, src client.Object) {
 }
 
 // ensureCrew makes the Crew of a Container the round created (B9): named
-// after it, with the Brief's implementer and reviewer, one Task at a time, and
-// releases on only when the round releases the Container (R4, R5). An
-// existing Crew of that name is left alone.
+// after it, with the Brief's implementer and reviewer, as many Tasks at a time
+// as the Brief says (briefParallel), and releases on only when the round
+// releases the Container (R4, R5). An existing Crew of that name is left
+// alone here; syncParallel keeps the parallel of one the Brief made.
 func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4v1alpha1.Container) error {
 	brief := run.brief
 	crew := &c4v1alpha1.Crew{
@@ -361,7 +362,7 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 			ContainerRef: c4v1alpha1.LocalRef{Name: c.Name},
 			Implementer:  brief.Spec.Agents.Implementer,
 			Reviewer:     brief.Spec.Agents.Reviewer,
-			Parallel:     1,
+			Parallel:     briefParallel(brief),
 		},
 	}
 	if run.released[c.Name] {

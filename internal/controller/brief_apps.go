@@ -84,6 +84,7 @@ func (r *BriefReconciler) app(ctx context.Context, brief *c4v1alpha1.Brief, cont
 		return app, err
 	}
 	app.Crew = crew.Name
+	app.Parallel = crew.Spec.Parallel
 	if crew.Spec.TagReleases {
 		app.Releases = releasesOn
 	}

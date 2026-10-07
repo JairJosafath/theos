@@ -64,6 +64,14 @@ type BriefSpec struct {
 	// +kubebuilder:validation:Enum=Off;Ask;On
 	// +optional
 	Autopilot string `json:"autopilot,omitempty"`
+
+	// parallel is how many issues each Crew the Brief made works on at once,
+	// set on those Crews every reconcile, earlier rounds' included
+	// (docs/plans/brief-parallel.md). Unset is the operator's default, 3.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=5
+	// +optional
+	Parallel int32 `json:"parallel,omitempty"`
 }
 
 // BriefRelease is where a Container's releases are published: the fields of a
@@ -390,6 +398,13 @@ type BriefApp struct {
 	// +kubebuilder:validation:Enum=On;Off
 	// +required
 	Releases string `json:"releases"`
+
+	// parallel is how many issues the Crew works on at once; 0 while it has
+	// no Crew.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=5
+	// +optional
+	Parallel int32 `json:"parallel,omitempty"`
 
 	// publishTo is the GitHub repository, owner/name, the Crew publishes its
 	// releases to; empty when it publishes none.

@@ -166,6 +166,15 @@ spec:
                 x-kubernetes-validations:
                 - message: idea is immutable; add a prompt
                   rule: self == oldSelf
+              parallel:
+                description: |-
+                  parallel is how many issues each Crew the Brief made works on at once,
+                  set on those Crews every reconcile, earlier rounds' included
+                  (docs/plans/brief-parallel.md). Unset is the operator's default, 3.
+                format: int32
+                maximum: 5
+                minimum: 1
+                type: integer
               prompts:
                 description: |-
                   prompts are follow-ups in plain words, oldest first. A prompt is only
@@ -309,6 +318,14 @@ spec:
                         releases go.
                       maxLength: 1000
                       type: string
+                    parallel:
+                      description: |-
+                        parallel is how many issues the Crew works on at once; 0 while it has
+                        no Crew.
+                      format: int32
+                      maximum: 5
+                      minimum: 0
+                      type: integer
                     publishTo:
                       description: |-
                         publishTo is the GitHub repository, owner/name, the Crew publishes its

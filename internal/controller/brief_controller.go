@@ -187,11 +187,15 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 		logf.FromContext(ctx).Info("Prepared the Brief's repository", "url", url)
 		brief.Status.RepositoryURL = url
 	}
-	// A Crew that can't take its releases doesn't stop the rounds; the
-	// reconcile tries it again after them.
-	releasesErr := r.syncReleases(ctx, brief)
-	if releasesErr != nil {
-		logf.FromContext(ctx).Info("Could not bring a Crew's releases up to date", "error", releasesErr.Error())
+	// A Crew that can't take its releases or parallel doesn't stop the
+	// rounds; the reconcile tries it again after them.
+	syncErr := r.syncReleases(ctx, brief)
+	if syncErr != nil {
+		logf.FromContext(ctx).Info("Could not bring a Crew's releases up to date", "error", syncErr.Error())
+	}
+	if parallelErr := r.syncParallel(ctx, brief); parallelErr != nil {
+		logf.FromContext(ctx).Info("Could not bring a Crew's parallel up to date", "error", parallelErr.Error())
+		syncErr = errors.Join(syncErr, parallelErr)
 	}
 	result, err := r.reconcileRound(ctx, brief, orig)
 	if err == nil {
@@ -212,8 +216,8 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 		// Brief's Containers may start waiting: look again now and then.
 		result = sooner(result, ctrl.Result{RequeueAfter: r.suggestionsRecheck()})
 	}
-	if err == nil && releasesErr != nil {
-		return ctrl.Result{}, releasesErr
+	if err == nil && syncErr != nil {
+		return ctrl.Result{}, syncErr
 	}
 	return result, err
 }
@@ -283,7 +287,8 @@ func (r *BriefReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.GitProvider{}, allInNamespace, createOrDelete()).
 		Watches(&c4v1alpha1.Agent{}, allInNamespace, createOrDelete()).
 		Watches(&c4v1alpha1.Container{}, fromBriefLabel, containerPhaseChanges()).
-		// A Crew the Brief made changing its releases changes the Brief's apps;
+		// A Crew the Brief made changing its spec (its releases, or a hand
+		// edit of its parallel) or its latest release changes the Brief's apps;
 		// one it didn't make is read again with the suggestions.
 		Watches(&c4v1alpha1.Crew{}, fromBriefLabel, crewReleaseChanges()).
 		Named("brief").
