@@ -50,12 +50,14 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 
 	// The cache can lag behind our own status writes. Check the live object, so a
 	// reconcile queued during the last attempt doesn't scaffold a second time.
+	// That reconcile took the place of the requeue ready asked for, so ask
+	// again: a status write alone doesn't bring the Container back.
 	var live c4v1alpha1.Container
 	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(container), &live); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if live.Status.Phase == c4v1alpha1.ContainerReady {
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
 	}
 
 	// Show progress before the slow part.

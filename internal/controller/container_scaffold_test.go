@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -169,6 +170,24 @@ var _ = Describe("Container scaffolding", func() {
 			g.Expect(container.Status.Conditions).To(Equal(before.Conditions))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1))
+	})
+
+	It("comes back to a Container its cache has not seen Ready yet", func() {
+		ns := newProjectNamespace()
+		createWebshop(ns)
+		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		pushes := gitFake.pushCount()
+
+		// An event queued during the scaffold absorbs the requeue ready asked
+		// for, and its reconcile still reads the Container as Scaffolding.
+		stale := container.DeepCopy()
+		stale.Status.Phase = c4v1alpha1.ContainerScaffolding
+		r := &ContainerReconciler{Client: k8sClient, Scheme: scheme.Scheme, APIReader: k8sClient, Git: gitFake,
+			ScaffoldTimeout: testScaffoldTimeout}
+		result, err := r.scaffold(ctx, stale, resolved{}, stale.Status.DeepCopy())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0), "nothing else reconciles a Ready Container")
+		Expect(gitFake.pushCount()).To(Equal(pushes))
 	})
 
 	It("writes manifests that name only files it wrote, with or without a Compute", func() {
