@@ -132,9 +132,9 @@ func lastFailed(brief *c4v1alpha1.Brief, name string) []model.FailedIssue {
 
 // failedToCheck are the Brief's waiting failed issues, as its status lists
 // them, for model.CheckFailedAnswers. The status keeps no bodies, so an
-// unclear one the answers retry is read from the Git host: its clarification
-// must make the whole body pass the Crew's check. One that is gone is checked
-// without its body.
+// unclear one the answers retry, or recommend retrying, is read from the Git
+// host: its clarification must make the whole body pass the Crew's check. One
+// that is gone is checked without its body.
 func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.Brief,
 	answers []model.FailedAnswer) ([]model.FailedIssue, error) {
 	out := make([]model.FailedIssue, 0, len(brief.Status.Failed))
@@ -146,7 +146,7 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.B
 	defer cancel()
 	for i, f := range out {
 		if f.Kind != model.FailedUnclear || !slices.ContainsFunc(answers, func(a model.FailedAnswer) bool {
-			return a.Container == f.Container && a.Issue == f.Number && a.Answer == model.AnswerRetry
+			return a.Container == f.Container && a.Issue == f.Number && a.Retries()
 		}) {
 			continue
 		}
@@ -199,6 +199,9 @@ func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1alpha1.Br
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	for _, a := range answers {
+		if !a.Applies() {
+			continue // a wait or an ask leaves it handed back
+		}
 		forgetFailed(brief, a.Container, a.Issue)
 		var c c4v1alpha1.Container
 		err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c)
