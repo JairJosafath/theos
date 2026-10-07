@@ -1179,12 +1179,17 @@ gh_flush() {
 
 # gh_close N FILE: comment what landed, close N as completed, drop its status
 # labels, then release the claim and the cluster lease if they are on N. Closing comes first: if it fails, the claim stays live, so pick does
-# not offer the open, in-progress issue again as abandoned work.
+# not offer the open, in-progress issue again as abandoned work. A close that
+# fails because a merged pull request's Closes #N already closed N (GitHub
+# answers 422) still drops the labels and releases.
 gh_close() {
   local n=${1:?usage: close N FILE}
   gh_comment "$n" "${2:--}" || return 1
-  gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
-    -f state=closed -f state_reason=completed --jq '"closed #\(.number)"' || return 1
+  if ! gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
+    -f state=closed -f state_reason=completed --jq '"closed #\(.number)"'; then
+    [ "$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq .state 2>/dev/null)" = closed ] || return 1
+    echo "#$n was already closed"
+  fi
   gh_unstatus "$n" || echo "github: closed #$n but could not drop its status labels" >&2
   gh_lease_release_for "$n"
   gh_release_for "$n" finished

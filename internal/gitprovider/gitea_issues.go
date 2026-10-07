@@ -241,6 +241,9 @@ func (g *gitea) GetIssue(ctx context.Context, repo Repository, number int) (Issu
 	if err != nil {
 		return Issue{}, err
 	}
+	if status == http.StatusNotFound {
+		return Issue{}, fmt.Errorf("gitea: issue %d of %s: %w", number, repoPath(repo), ErrIssueNotFound)
+	}
 	var issue giteaIssue
 	if status != http.StatusOK || json.Unmarshal(data, &issue) != nil {
 		return Issue{}, fmt.Errorf("gitea: reading issue %d of %s failed (HTTP %d): %s", number, repoPath(repo), status, apiMessage(data))
@@ -366,6 +369,12 @@ func (g *gitea) CommentIssue(ctx context.Context, repo Repository, number int, b
 // CloseIssue closes an issue.
 func (g *gitea) CloseIssue(ctx context.Context, repo Repository, number int) error {
 	return g.editIssue(ctx, repo, number, map[string]any{"state": stateClosed})
+}
+
+// SetIssueMilestone moves an issue into the milestone with ID milestone, or
+// out of every milestone when it is 0.
+func (g *gitea) SetIssueMilestone(ctx context.Context, repo Repository, number int, milestone int64) error {
+	return g.editIssue(ctx, repo, number, map[string]any{"milestone": milestone})
 }
 
 // AssignIssue makes users the issue's assignees.

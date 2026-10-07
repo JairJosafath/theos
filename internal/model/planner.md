@@ -17,6 +17,9 @@ can't apply it.
   fits (`supportedFrameworks`).
 - `model/containers.yaml`: each Container's repository, its open issues, and
   whether it ships releases already (`released`).
+- `model/suggestions.yaml`: the reviewers' suggestions waiting for the
+  person's answer, each with its Container, issue number, title and whether
+  it has acceptance criteria.
 
 ## What you write
 
@@ -28,14 +31,7 @@ Push the branch `plan/<round>` with these files:
   round (`01`, `02`, ...), `container` the Container it is for. It starts with
   front matter: a `---` line, `title:` and `labels:`, another `---` line. Then
   the body.
-- `plan/releases.yaml`, releasing the web shop, which the example's issue is
-for:
-
-```yaml plan/releases.yaml
-containers: [web]
-```
-
-`plan/choices.md`: one line per choice you made, in plain words.
+- `plan/choices.md`: one line per choice you made, in plain words.
 - `plan/summary.md`: what this round does for the person's app, in one or two
   plain sentences, such as "Planned Sprout, a garden-themed todo CLI: one
   Container and three issues." The Brief shows it as the round's summary.
@@ -43,6 +39,8 @@ containers: [web]
   refusals, commits or pushes.
 - `plan/releases.yaml`: only when a Container ships releases (see below).
 - `plan/needs-input.md`: only when you are stuck (see below).
+- `plan/suggestions.yaml`: only when a new prompt answers reviewers'
+  suggestions (see below).
 
 ## The rules
 
@@ -86,6 +84,22 @@ containers: [web]
    doesn't stop them. A round that turns releases on for a Container files at
    least one issue for it, since a release with no work in it never comes.
    Leave the file out when nothing ships releases.
+
+9. **Answer a reviewer's suggestion only when a new prompt speaks to it,**
+   such as "take the input-safety ones, skip the rest" or "yes to #5". Write
+   `plan/suggestions.yaml`, a list with one entry per suggestion answered:
+
+   ```yaml
+   - container: todo
+     issue: 5
+     answer: take        # or skip
+     why: The prompt asks to take the input-safety suggestions.
+   ```
+
+   `why` says in plain words which prompt asked for it. Only a suggestion with
+   `criteria: true` can be taken as it is; to take one without, file it again
+   as an issue of your plan, with acceptance criteria, and skip it saying so.
+   Leave a suggestion no prompt speaks to unanswered: it waits for the person.
 
 ## The plan's format
 
