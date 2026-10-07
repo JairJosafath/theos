@@ -633,6 +633,15 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   memory. `hack/check-workflows.sh` (in `make check`) fails a job whose
   `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
   without the label.
+- **Superseded runs on main are dropped.** *Tests*, *Lint* and *UI* run on
+  every push to main and carry the `concurrency` group
+  `${{ github.workflow }}-${{ github.ref }}` without `cancel-in-progress`: a
+  running job always finishes, so main keeps getting a verdict while merges
+  come in, and only the newest pending run per workflow waits; GitHub cancels
+  the older pending ones. The "main is red" watch (`gh_red` in `hack/lib/github.sh`) skips cancelled runs. *Issue intake*
+  and *Issue closed* have no group, since each issue event must run.
+  `hack/check-workflows.sh` fails a workflow on pushes to a branch without the
+  group, or with `cancel-in-progress`.
 - Jobs use the device's Docker through its socket, on the host's network, so
   `docker build` and Kind work and a Kind cluster a job makes answers on
   127.0.0.1. The socket is root on the device, which is acceptable for a

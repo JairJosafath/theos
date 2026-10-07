@@ -28,6 +28,12 @@ on:
       - .github/workflows/test.yml
   workflow_dispatch:
 
+# One pending run per branch: a running one finishes, so main keeps getting a
+# verdict, and GitHub cancels the older pending ones when a newer push comes
+# (hack/check-workflows.sh, docs/dev/testenv.md).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
 permissions: {}
 
 jobs:

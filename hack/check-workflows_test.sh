@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests for hack/check-workflows.sh: the repository's workflows pass, and a job
 # off vars.RUNS_ON, without runs-on, or making a Kind cluster without the
-# c4factory-kind label fails.
+# c4factory-kind label fails, and so does a workflow on pushes to a branch
+# without the concurrency group, or one that cancels the run in progress.
 # Run: hack/check-workflows_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -54,5 +55,45 @@ $kind
       - run: kind create cluster --wait 120s"
 "$CHECK" "$T/wf" 2>/dev/null
 check "Kind with the label passes" "$?" 0
+
+# pushwf NAME CONCURRENCY: a workflow on pushes to main with CONCURRENCY as its
+# top-level lines, alone in a directory.
+pushwf() { rm -rf "$T/wf" && mkdir "$T/wf" && printf 'name: x\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\n%s\njobs:\n  a:\n%s\n' "$2" "$good" >"$T/wf/$1.yml"; }
+group='  group: ${{ github.workflow }}-${{ github.ref }}'
+
+pushwf grouped "concurrency:
+$group
+"
+"$CHECK" "$T/wf" 2>/dev/null
+check "push with the group passes" "$?" 0
+
+pushwf inline "concurrency: '\${{ github.workflow }}-\${{ github.ref }}'
+"
+"$CHECK" "$T/wf" 2>/dev/null
+check "push with the group inline passes" "$?" 0
+
+pushwf ungrouped ""
+out=$("$CHECK" "$T/wf" 2>&1)
+check "push without the group fails" "$?" 1
+check "push without the group says so" "$(grep -c 'without the concurrency group' <<<"$out")" 1
+
+pushwf other "concurrency:
+  group: ci
+"
+"$CHECK" "$T/wf" 2>/dev/null
+check "push with another group fails" "$?" 1
+
+pushwf cancel "concurrency:
+$group
+  cancel-in-progress: true
+"
+out=$("$CHECK" "$T/wf" 2>&1)
+check "cancel-in-progress fails" "$?" 1
+check "cancel-in-progress says so" "$(grep -c 'cancels the run in progress' <<<"$out")" 1
+
+# An issue event or a tag push needs no group: each must run.
+rm -rf "$T/wf" && mkdir "$T/wf" && printf 'name: x\non:\n  issues:\n    types: [opened]\n  push:\n    tags: [v1]\n\njobs:\n  a:\n%s\n' "$good" >"$T/wf/x.yml"
+"$CHECK" "$T/wf" 2>/dev/null
+check "issues and tag pushes need no group" "$?" 0
 
 exit $fail
