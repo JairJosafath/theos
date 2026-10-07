@@ -146,12 +146,13 @@ GH_CLAIM_JQ='
   def age: (now - (.updated_at | fromdateiso8601)) / 60 | floor | "\(.)m ago";
 '
 
-# name|color|description, the same words the factory uses in Gitea.
+# name|color|description, the same words the factory uses in Gitea. GitHub
+# refuses a description longer than 100 characters.
 GH_LABELS=(
   'status/proposed|c5def5|Proposed; the relay'"'"'s triage or the user readies it when it is sound'
   'status/ready|0e8a16|Ready: the next session may take it'
   'status/in-progress|fbca04|A session works on it; continue from its newest handoff comment'
-  'status/waiting|bfdadc|A plan'"'"'s parent: waits on its steps (Depends on #S), not on an agent; closes itself when the last one closes'
+  'status/waiting|bfdadc|A plan'"'"'s parent: waits on its steps (Depends on #S), closes itself after the last'
   'status/needs-maintainer|e99695|Waits on the maintainer'"'"'s decision; the newest comment says what it needs'
   'status/needs-human|d93f0b|Waits on the owner; only the maintainer sets it, and the newest comment says why'
   'priority/urgent|b60205|Picked before every other ready issue'
