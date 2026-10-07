@@ -44,7 +44,7 @@ func zipNames(t *testing.T, data []byte) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
+	names := make([]string, 0, len(r.File))
 	for _, f := range r.File {
 		names = append(names, f.Name)
 	}
