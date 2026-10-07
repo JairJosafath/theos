@@ -91,7 +91,7 @@ type sandboxRun struct {
 	// sandboxes share.
 	goCache string
 	// goProxy, when set, is the Git host's Go module proxy for the owner's
-	// released modules, which the go command asks before the public proxy.
+	// released modules, the only one c4agent asks for the factory's modules.
 	goProxy string
 	// brief is the Brief a plan run plans, and briefRound the Brief's round it
 	// plans: C4_ROUND, while the Task's own round counts the planner's tries.
@@ -108,11 +108,6 @@ const (
 	goCacheVolume    = "go-cache"
 	goCachePrepShell = "command -v c4-go-cache >/dev/null || exit 0; exec c4-go-cache " + goCacheMount
 )
-
-// factoryModules is the prefix of the module path the Go templates give an
-// app (c4factory.local/<project>/<container>); the public checksum database
-// has never heard of it.
-const factoryModules = "c4factory.local"
 
 // buildSandbox returns the Sandbox for one run, owned by the Task. Its pod has no
 // ServiceAccount token: it reports through its termination message.
@@ -148,13 +143,16 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			corev1.EnvVar{Name: "GOLANGCI_LINT_CACHE", Value: goCacheMount + "/golangci-lint"})
 	}
 	if run.goProxy != "" {
-		// The Git host first, so the factory's module paths never go to the public
-		// proxy; a module it lacks is a 404, and the go command goes on to the next.
-		// Not GOPRIVATE: it would fetch those paths directly, from a host that
+		// c4agent's loopback proxy sends the factory's module paths to the Git
+		// host's registry and nowhere else, and the rest to the public proxy.
+		// Not a list of the two: the go command asks the next proxy after a 404,
+		// so a module the registry lacks would be asked of the public one. Not
+		// GOPRIVATE: it would fetch those paths directly, from a host that
 		// doesn't exist.
 		env = append(env,
-			corev1.EnvVar{Name: "GOPROXY", Value: run.goProxy + ",https://proxy.golang.org,direct"},
-			corev1.EnvVar{Name: "GONOSUMDB", Value: factoryModules})
+			corev1.EnvVar{Name: agentrunner.EnvGoRegistry, Value: run.goProxy},
+			corev1.EnvVar{Name: "GOPROXY", Value: agentrunner.GoProxyURL},
+			corev1.EnvVar{Name: "GONOSUMDB", Value: agentrunner.FactoryModules})
 	}
 	env = append(env, agent.Spec.Env...)
 	var envFrom []corev1.EnvFromSource
@@ -384,7 +382,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 		if term.Message != "" && json.Unmarshal([]byte(term.Message), &result) == nil {
 			state.Result = &model.RunResult{
 				Commit: result.Commit, Summary: result.Summary, Verdict: result.Verdict, Error: result.Error,
-				Proposal: result.Proposal, Empty: result.Empty,
+				Proposal: result.Proposal, Empty: result.Empty, Blocked: result.Blocked,
 				FollowUps: result.FollowUps, Open: result.Open, Unavailable: result.Unavailable,
 			}
 			// A result c4agent wrote before an outage stands.

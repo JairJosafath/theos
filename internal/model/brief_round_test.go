@@ -72,6 +72,7 @@ func TestBriefIssueLabels(t *testing.T) {
 		{"every status replaced", []string{"status/design", "kind/feature", "status/proposed"},
 			[]string{LabelReady, "kind/feature"}},
 		{"each once", []string{"kind/feature", " kind/feature", "status/ready", ""}, []string{LabelReady, "kind/feature"}},
+		{"by hand, for a person", []string{"status/ready", LabelByHand}, []string{LabelNeedsHuman, LabelByHand}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := BriefIssueLabels(tc.labels); !reflect.DeepEqual(got, tc.want) {

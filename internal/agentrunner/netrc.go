@@ -9,7 +9,8 @@ import (
 
 // WriteNetrc writes home/.netrc with the job's Git credentials for the Git
 // host, so the go command can fetch modules from the host's package registry
-// (GOPROXY in the pod's environment). Go reads it for https only: over plain
+// when an Agent's own GOPROXY names it; GoProxy sends the job's credentials
+// itself. Go reads it for https only: over plain
 // http it fetches without credentials, which a public owner's packages allow.
 // The file is the agent's own, mode 0600; one already there is replaced.
 func WriteNetrc(home string, job Job) error {

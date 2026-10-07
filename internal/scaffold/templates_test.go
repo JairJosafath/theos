@@ -144,6 +144,59 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 	}
 }
 
+// TestGoStandardCIKeepsFactoryModulesOffPublicProxies checks go-standard's CI:
+// the factory's c4factory.local modules come from the owner's package registry
+// alone, before make check, and make check never asks a proxy for them. A
+// GOPROXY list of the registry, then the public proxy, would ask the public one
+// for a module the registry lacks: the go command goes on after a 404.
+func TestGoStandardCIKeepsFactoryModulesOffPublicProxies(t *testing.T) {
+	_, result := renderCombo(t, "cli", []side{
+		{model.SideFramework, "go-cli"},
+		{model.SideStandard, "go-standard"},
+		{model.SideDeployment, "gitea-release"},
+	})
+	const registry = "${{ gitea.server_url }}/api/packages/${{ gitea.repository_owner }}/go"
+	var workflow struct {
+		Jobs map[string]struct {
+			Env   map[string]string `yaml:"env"`
+			Steps []struct {
+				Name string            `yaml:"name"`
+				Env  map[string]string `yaml:"env"`
+				Run  string            `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(result.Files[".gitea/workflows/check.yaml"].Data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	job := workflow.Jobs["check"]
+	if job.Env["GOPRIVATE"] != "c4factory.local" || strings.Contains(job.Env["GOPROXY"], "/api/packages/") {
+		t.Errorf("job env %v: want GOPRIVATE=c4factory.local and the public proxy only", job.Env)
+	}
+	fetched, checked := -1, -1
+	for i, step := range job.Steps {
+		if step.Env["GOPROXY"] != "" {
+			// GOPRIVATE set and empty: the job's would send the paths direct.
+			private, set := step.Env["GOPRIVATE"]
+			if step.Env["GOPROXY"] != registry || !set || private != "" ||
+				step.Env["GONOSUMDB"] != "c4factory.local" {
+				t.Errorf("step %q env %v: want GOPROXY=%s alone, an empty GOPRIVATE, GONOSUMDB=c4factory.local",
+					step.Name, step.Env, registry)
+			}
+			if !strings.Contains(step.Run, "go.sum") || !strings.Contains(step.Run, "go mod download") {
+				t.Errorf("step %q doesn't download the factory's modules:\n%s", step.Name, step.Run)
+			}
+			fetched = i
+		}
+		if strings.TrimSpace(step.Run) == "make check" {
+			checked = i
+		}
+	}
+	if fetched < 0 || checked < fetched {
+		t.Errorf("the registry step is #%d and make check #%d; want the registry first", fetched, checked)
+	}
+}
+
 func assertContains(t *testing.T, name, got string, want []string) {
 	t.Helper()
 	for _, w := range want {

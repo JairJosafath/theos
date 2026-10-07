@@ -199,11 +199,12 @@ Rules for this headless run:
   - Hand off: the handoff skill posts a handoff comment on #$n
     (\`hack/lib/github.sh handoff $n FILE\`). The next session continues #$n.
   - Finished: open a pull request to main whose body says \`Closes #$n\`, merge
-    it with a merge commit once \`make check\` passes, and if the issue is still
+    it with a merge commit once \`make check\` passes (\`hack/lib/github.sh merge PR\`), and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue. A pull
     request that only writes a plan and files its steps says \`Refs #$n\`
-    instead and ends with a handoff (the handoff skill, "Plan only").
+    instead, with no close, fix or resolve word next to #$n even in prose, and ends with a handoff, then \`hack/lib/github.sh status $n waiting\`
+    (the handoff skill, "Plan only"); #$n closes itself when its last step does.
   - Stuck on a decision: \`hack/lib/github.sh status $n needs-maintainer\` and
     a comment saying why and what you need. The relay then picks the next
     issue, and the maintainer decides it or takes it to the user. How to build
@@ -261,8 +262,8 @@ For each proposed issue, decide one of these:
   docs/design.md), and files the steps as status/proposed issues, each with
   its own "Done when". The plan is not the issue's deliverable: its pull
   request says \`Refs #N\`, never \`Closes #N\`; the issue stays open and
-  status/in-progress, its body a "Depends on #S" line per step, and the last
-  step's pull request closes #N too. Say that in the comment: the session is
+  status/waiting, its body a "Depends on #S" line per step, and it closes
+  itself when its last step closes. Say that in the comment: the session is
   done when the plan is merged and its steps are filed, the issue when its
   last step lands. Then ready it.
 - Fill the gap and ready it, when the only thing missing is something you
@@ -301,7 +302,8 @@ Rules for this headless run:
 - Never use the Fable model: not for subagents, not for anything. Always name
   the model when dispatching (sonnet or opus). Dispatch every subagent with
   run_in_background: false and never end your turn while one is running.
-- Touch only the issues listed as proposed: never set status/in-progress,
+- Touch only the issues listed as proposed: never set status/in-progress or
+  status/waiting,
   never take an issue out of status/needs-maintainer or status/needs-human
   (needs-maintainer is the maintainer's, needs-human stays the user's), never take an issue, edit a body only to
   add a "Depends on #M" line, never a title, set a milestone only on an issue
@@ -670,7 +672,10 @@ idle_watch() {
       continue
     fi
     m=$(find "$f" "${f%.jsonl}" -printf '%T@\n' 2>/dev/null | sort -n | tail -n 1)
-    [ "${m%.*}" -gt "$last" ] && last=${m%.*}
+    # Rounded up: a write at 10.9 counts as 11, so a session is never ended
+    # before it has been idle for all of IDLE.
+    m=$((${m%.*} + 1))
+    [ "$m" -gt "$last" ] && last=$m
     [ $((now - last)) -ge "$idle" ] || continue
     : >"$4"
     log "$what stopped: its transcript was idle for $IDLE"

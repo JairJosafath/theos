@@ -32,7 +32,12 @@ type Workspace struct {
 	Related []RelatedRepo
 	// Conflicts are the files merging the base into the branch left in conflict.
 	Conflicts []string
+	// Images are the images the change adds or changes, for the reviewer.
+	Images []ChangedImage
 }
+
+// maxListedImages caps the images a review prompt lists.
+const maxListedImages = 50
 
 // RelatedRepo is a related Container's repository: where it was cloned, or why
 // it could not be.
@@ -130,6 +135,14 @@ no Standard change can. This holds even if your role guide or AGENTS.md says to 
 or to leave such files alone.
 `, strings.Join(protectedList(job), ", "), job.Base, neverList())
 	}
+	fmt.Fprintf(&b, `
+If the work can't be done yet (it waits on other work that is not merged or
+released) or can't be done in this sandbox, stop on purpose: change nothing, and
+end your summary with a line %q followed by what it waits on and why, in at
+most five sentences. The task then ends at once, and a person reads your
+reason. Never stop without saying why: a round with no change and no such line
+is wasted.
+`, model.BlockedPrefix)
 	if job.Issue > 0 {
 		met := "met and tested"
 		if gated {
@@ -183,6 +196,7 @@ Approve only if you would merge the change as it is:
 - it follows AGENTS.md and the style digests;
 - it fits what the application is for.
 `, job.Branch, job.Base, check, hasTests)
+	writeImages(&b, ws)
 	if job.Issue > 0 {
 		fmt.Fprintf(&b, `
 Check each acceptance criterion of the issue, one by one, against the code%s.
@@ -280,6 +294,25 @@ func writeContext(b *strings.Builder, job Job) {
 func writeGuide(b *strings.Builder, ws Workspace, role string) {
 	if ws.Guide != "" {
 		fmt.Fprintf(b, "\nYour role guide (%s, as on the base branch):\n%s\n", roleGuides[role], strings.TrimSpace(ws.Guide))
+	}
+}
+
+// writeImages lists the images the change adds or changes, so the reviewer
+// opens each one: a picture claiming to show the product must be what running
+// it shows.
+func writeImages(b *strings.Builder, ws Workspace) {
+	if len(ws.Images) == 0 {
+		return
+	}
+	b.WriteString(`
+The change adds or changes these images. Open each one and check it shows what
+it claims; a picture of the product must be what running the product shows:
+`)
+	for _, img := range ws.Images[:min(len(ws.Images), maxListedImages)] {
+		fmt.Fprintf(b, "- %s\n", img)
+	}
+	if n := len(ws.Images) - maxListedImages; n > 0 {
+		fmt.Fprintf(b, "- and %d more in the diff; open those too\n", n)
 	}
 }
 

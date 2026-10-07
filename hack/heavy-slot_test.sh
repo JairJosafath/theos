@@ -12,8 +12,8 @@ fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 # job: start a stand-in heavy job; its PID in $job.
 job() { sleep 60 & job=$!; }
-# until_ok CMD...: retry CMD for up to 5 seconds.
-until_ok() { local i; for i in $(seq 50); do "$@" && return 0; sleep 0.1; done; return 1; }
+# until_ok CMD...: retry CMD for up to 5 seconds (UNTIL, in tenths).
+until_ok() { local i; for i in $(seq "${UNTIL:-50}"); do "$@" && return 0; sleep 0.1; done; return 1; }
 free() { "$SLOT" status | head -1; }
 
 check "status: all free" "$(free)" "heavy-slot: 2 of 2 slots free, 0 waiting"
@@ -31,9 +31,8 @@ check "status: none free" "$(free)" "heavy-slot: 0 of 2 slots free, 0 waiting"
 "$SLOT" acquire "$a" "make check" 2>/dev/null; check "same job again: does not wait on itself" $? 0
 "$SLOT" acquire "$c" "make test" 2>"$T/wait" &
 waiter=$!
-sleep 1
+until_ok grep -q "all 2 heavy-job slots on this device are taken" "$T/wait"; check "third job: says it waits" $? 0
 kill -0 "$waiter" 2>/dev/null; check "third job: waits" $? 0
-grep -q "all 2 heavy-job slots on this device are taken" "$T/wait"; check "third job: says it waits" $? 0
 grep -q "not a hang" "$T/wait"; check "third job: says waiting is not a hang" $? 0
 grep -q "pid $a .*make check" "$T/wait" && grep -q "pid $b .*make lint" "$T/wait"
 check "third job: names who holds the slots" $? 0
@@ -85,9 +84,8 @@ grep -q "with 2 job(s) waiting ahead" "$T/newer"; check "newer waiter: says two 
 "$SLOT" status | grep -q "waiting 3: pid $e .*\`newer\`"; check "status: the newest waiter last" $? 0
 kill "$a"; wait "$a" 2>/dev/null
 until_ok eval '! kill -0 $older 2>/dev/null'; check "freed slot: the oldest waiter takes it" $? 0
-sleep 1
+until_ok grep -q "with 1 job(s) waiting ahead" "$T/newer"; check "newer waiter: says one waits ahead now" $? 0
 kill -0 "$newer" 2>/dev/null; check "freed slot: the newer waiter keeps waiting" $? 0
-grep -q "with 1 job(s) waiting ahead" "$T/newer"; check "newer waiter: says one waits ahead now" $? 0
 kill -9 "$dead"; wait "$dead" 2>/dev/null
 kill "$b"; wait "$b" 2>/dev/null
 until_ok eval '! kill -0 $newer 2>/dev/null'; check "dead waiter: skipped, the newer one takes the slot" $? 0
@@ -104,15 +102,29 @@ job; a=$job; job; b=$job
 job; c=$job
 HEAVY_JOBS=0 "$SLOT" acquire "$c" z 2>/dev/null; check "HEAVY_JOBS=0: no wait" $? 0
 
-# The Makefile queues its heavy goals for a slot, not its light ones.
+# The Makefile queues its heavy goals for a slot, not its light ones. A loaded
+# device can take seconds to read the Makefile (its `go env`s), so the tests
+# wait for make to say it waits, not for a fixed time; the timeouts only end a
+# make that hangs.
 cd "$HACK/.."
-timeout 3 make -n lint >/dev/null 2>"$T/make"; check "make lint, slots taken: waits" $? 124
-grep -q '`make lint` waits for one' "$T/make"; check "make lint: says it waits" $? 0
-timeout 3 make -n manifests generate check >/dev/null 2>&1; check "make manifests generate check: waits" $? 124
-timeout 10 make -n manifests generate >/dev/null 2>&1; check "make manifests generate: no wait" $? 0
-C4_HEAVY_SLOT=1 timeout 10 make -n lint >/dev/null 2>&1; check "sub-make of a job with a slot: no wait" $? 0
+# make_waits GOALS...: run make -n GOALS until it says it waits for a slot, or
+# for up to 60 seconds; its stderr in $T/make. Whether it said so and still waits.
+make_waits() {
+  local m rc
+  timeout 120 make -n "$@" >/dev/null 2>"$T/make" &
+  m=$!
+  UNTIL=600 until_ok grep -q "\`make $*\` waits for one" "$T/make"
+  rc=$?
+  [ "$rc" = 0 ] && { kill -0 "$m" 2>/dev/null || rc=1; }
+  kill "$m" 2>/dev/null; wait "$m" 2>/dev/null
+  return "$rc"
+}
+make_waits lint; check "make lint, slots taken: says it waits, and waits" $? 0
+make_waits manifests generate check; check "make manifests generate check: says it waits, and waits" $? 0
+timeout 120 make -n manifests generate >/dev/null 2>&1; check "make manifests generate: no wait" $? 0
+C4_HEAVY_SLOT=1 timeout 120 make -n lint >/dev/null 2>&1; check "sub-make of a job with a slot: no wait" $? 0
 kill "$a"; wait "$a" 2>/dev/null
 until_ok eval '[ "$(free)" = "heavy-slot: 1 of 2 slots free, 0 waiting" ]'
-timeout 10 make -n lint >/dev/null 2>&1; check "make lint, a slot free: runs" $? 0
+timeout 120 make -n lint >/dev/null 2>&1; check "make lint, a slot free: runs" $? 0
 
 exit $fail
