@@ -63,7 +63,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 		return ctrl.Result{}, fmt.Errorf("reading the accepted plan: %w", err)
 	}
 	if plan.NeedsInput != "" {
-		r.plannerNeedsInput(ctx, brief, plan)
+		r.plannerNeedsInput(ctx, brief, task, plan)
 		return ctrl.Result{}, nil
 	}
 	if err := r.needAgents(ctx, brief, "implementer", "reviewer"); err != nil {
@@ -81,7 +81,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	// an object of the same name, or one the plan doesn't keep. What this
 	// round applied already is in the plan as it is, so a restart passes.
 	if refusals := model.CheckPlan(plan, current); len(refusals) > 0 {
-		endRoundFailed(ctx, brief, task.Status.Summary,
+		endRoundFailed(ctx, brief, task,
 			"the plan no longer fits the namespace:\n"+model.RefusalText(refusals))
 		return ctrl.Result{}, nil
 	}
@@ -116,7 +116,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if err := r.mergePlan(ctx, brief, task.Status.Commit); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "merging the plan", err)
 	}
-	return ctrl.Result{}, r.roundApplied(ctx, run, plan)
+	return ctrl.Result{}, r.roundApplied(ctx, run, task, plan)
 }
 
 // applyFailed says why applying the round stopped, so the Brief never looks
@@ -463,7 +463,8 @@ func (r *BriefReconciler) mergePlan(ctx context.Context, brief *c4v1alpha1.Brief
 
 // roundApplied records an applied round: its history entry, the choices, the
 // prompts it took and everything the Brief made.
-func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, plan model.Plan) error {
+func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, task *c4v1alpha1.Task,
+	plan model.Plan) error {
 	brief := run.brief
 	status := &brief.Status
 	created, err := r.createdObjects(ctx, run)
@@ -471,7 +472,7 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, pla
 		return err
 	}
 	summary := model.RoundSummary(plan)
-	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices})
+	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices})
 	status.Choices = model.ClipList(plan.Choices, 50, 500)
 	status.PromptsPlanned = status.RoundPrompts
 	status.Created = created

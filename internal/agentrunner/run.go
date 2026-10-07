@@ -44,6 +44,9 @@ type Result struct {
 	// eviction, a preemption) before the run finished: the infrastructure ended
 	// it, not the agent.
 	Interrupted bool `json:"interrupted,omitempty"`
+	// CostMilliUSD is what the run's agent calls cost, in thousandths of a US
+	// dollar; nil when the agent didn't report it.
+	CostMilliUSD *int64 `json:"costMilliUSD,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
@@ -160,7 +163,9 @@ var stopGrace = 2 * time.Second
 // is cancelled, or within stopGrace after, is Interrupted: c4agent was told to
 // stop, and the kill of the agent that comes with it is not the agent's failure.
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
-	result := run(ctx, job, agent, dir)
+	meter := &costMeter{agent: agent}
+	result := run(ctx, job, meter, dir)
+	result.CostMilliUSD = meter.total()
 	if result.Error != "" && !result.Unavailable && stoppedWithin(ctx, stopGrace) {
 		result.Interrupted = true
 	}

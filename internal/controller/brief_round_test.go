@@ -147,12 +147,23 @@ func getBrief(g Gomega, ns string) *c4v1alpha1.Brief {
 // files to plan/<round> and ends the try's sandbox with the commit.
 func planRound(ns string, round, try int, files scaffold.Tree) string {
 	GinkgoHelper()
+	return planRoundCosting(ns, round, try, files, new(planCost))
+}
+
+// planCost is what planRound's planner says each try cost.
+const planCost int64 = 120
+
+// planRoundCosting is planRound with a planner that says the try cost
+// milliUSD, or doesn't say when it is nil.
+func planRoundCosting(ns string, round, try int, files scaffold.Tree, milliUSD *int64) string {
+	GinkgoHelper()
 	task := fmt.Sprintf("cel-lens-plan-%d", round)
 	sandbox := fmt.Sprintf("%s-r%d-plan", task, try)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, sandbox) }).Should(Succeed())
 	sha := gitFake.pushPlan(ns, briefRepo, round, files)
 	finishSandbox(ns, sandbox, task, &agentrunner.Result{Role: "plan", Commit: sha,
-		Summary: "I've rewritten the plan in `plan/` with the refusal fixed. Nothing is committed or pushed."}, "")
+		Summary:      "I've rewritten the plan in `plan/` with the refusal fixed. Nothing is committed or pushed.",
+		CostMilliUSD: milliUSD}, "")
 	return sha
 }
 
@@ -228,7 +239,10 @@ var _ = Describe("Brief rounds", func() {
 		brief = getBrief(Default, ns)
 		Expect(brief.Status.History).To(Equal([]c4v1alpha1.BriefRound{{Round: 1,
 			Summary: "Planned cel-lens, a linter for CEL rules: one Container and its first issues.",
-			Choices: []string{"A service lints the rules", "Postgres keeps them"}, Outcome: model.ReasonApplied}}))
+			Choices: []string{"A service lints the rules", "Postgres keeps them"}, CostMilliUSD: planCost,
+			Outcome: model.ReasonApplied}}))
+		Expect(brief.Status.CostMilliUSD).To(Equal(planCost), "what the planner said the round cost")
+		Expect(brief.Status.RunsWithoutCost).To(BeZero())
 		Expect(brief.Status.Choices).To(Equal([]string{"A service lints the rules", "Postgres keeps them"}))
 		Expect(brief.Status.PromptsPlanned).To(BeZero())
 		Expect(brief.Status.Created).To(ConsistOf(
@@ -369,7 +383,8 @@ spec:
   description: %s
 `, strings.Repeat("x", 1001)) + linterDocs[strings.Index(linterDocs, "---\napiVersion: c4.factory.io/v1alpha1\nkind: SoftwareSystem"):])}
 
-		planRound(ns, 1, 1, bad)
+		By("refusing the first try, whose planner doesn't say what it cost")
+		planRoundCosting(ns, 1, 1, bad, nil)
 		By("starting the Task's next try with every reason")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-1")
@@ -391,7 +406,10 @@ spec:
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionFalse), HaveField("Reason", model.ReasonRoundFailed),
 				HaveField("Message", And(HavePrefix("Round 1 failed: "), ContainSubstring("Failed after 2 rounds")))))
-			g.Expect(b.Status.History).To(HaveLen(1))
+			g.Expect(b.Status.History).To(ConsistOf(And(HaveField("CostMilliUSD", planCost),
+				HaveField("RunsWithoutCost", int32(1)))), "the second try's cost, and the first's not reported")
+			g.Expect(b.Status.CostMilliUSD).To(Equal(planCost))
+			g.Expect(b.Status.RunsWithoutCost).To(Equal(int32(1)))
 		}).Should(Succeed())
 
 		By("starting round 2 for a new prompt")

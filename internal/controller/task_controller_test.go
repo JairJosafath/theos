@@ -212,6 +212,34 @@ var _ = Describe("Task", func() {
 			"Implementing r2", "Checking r2", "Reviewing r2", "Merged r2"}))
 	})
 
+	It("adds up what its runs cost, and counts the runs whose agent didn't say", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(312))}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(312)))
+			g.Expect(task.Status.RunsWithoutCost).To(BeZero())
+		}).Should(Succeed())
+
+		By("counting a review whose agent didn't report its cost")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
+		finishSandbox(ns, "add-crop-r1-review-a1", "add-crop",
+			&agentrunner.Result{Role: "review", Verdict: "changes", Summary: "Test an empty image."}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(312)))
+			g.Expect(task.Status.RunsWithoutCost).To(Equal(int32(1)))
+		}).Should(Succeed())
+	})
+
 	It("sends failed checks back to the implementer", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
@@ -241,6 +269,7 @@ var _ = Describe("Task", func() {
 			cond := condition(task.Status.Conditions, ConditionSucceeded)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Message).To(ContainSubstring("ended without a result: OOMKilled"))
+			g.Expect(task.Status.RunsWithoutCost).To(Equal(int32(1)), "a run without a result reported no cost")
 		}).Should(Succeed())
 	})
 

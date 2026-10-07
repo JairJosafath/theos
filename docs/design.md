@@ -225,6 +225,12 @@ without kubectl, and cheaply: it lives on a laptop.
   phase, round or Progressing reason changes (the newest 64), so where a Task's
   time went stays readable after it ends. A Task waiting for an agent slot says
   `WaitingForSlot`.
+- **A Task says what its runs cost.** Each agent run reports its cost as the
+  agent says it (for Claude Code, `total_cost_usd` in its JSON output); the
+  Task adds them up in `status.costMilliUSD`. A run whose agent didn't say, or
+  that ended without a result, counts in `status.runsWithoutCost`, and the UI
+  says the cost wasn't reported instead of leaving it blank. A Brief's rounds
+  take their Plan Task's.
 - **The UI has a Factory view** next to the story, across all projects: component
   health with CPU and memory, the last hour, the Tasks on a board by stage with
   their timelines, where the time goes, agent slots, and what needs a look.

@@ -527,6 +527,64 @@ func TestClaudeAgentPassesTheModel(t *testing.T) {
 	}
 }
 
+func TestClaudeAgentReportsTheCost(t *testing.T) {
+	// A shell script stands in for the CLI: it prints what the CLI would.
+	tests := []struct {
+		name, output string
+		want         Cost
+		wantErr      bool
+	}{
+		{"a reported cost", `{"result": "done", "total_cost_usd": 0.31234}`, Cost{MilliUSD: 312, Reported: true}, false},
+		{"a reported cost of nothing", `{"result": "done", "total_cost_usd": 0}`, Cost{Reported: true}, false},
+		{"a failed call's cost", `{"result": "stopped", "is_error": true, "subtype": "error_max_turns", "total_cost_usd": 1.5}`,
+			Cost{MilliUSD: 1500, Reported: true}, true},
+		{"no cost in the output", `{"result": "done"}`, Cost{}, false},
+		{"plain text", `done`, Cost{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := ClaudeAgent{Command: []string{"sh", "-c", "cat >/dev/null; printf '%s' '" + tt.output + "'"}}
+			answer, cost, err := agent.RunReportingCost(context.Background(), t.TempDir(), "plan it")
+			if cost != tt.want || (err != nil) != tt.wantErr || answer == "" {
+				t.Errorf("RunReportingCost() = %q, %+v, %v; want cost %+v", answer, cost, err, tt.want)
+			}
+		})
+	}
+}
+
+// costAgent approves, and says each call cost milliUSD.
+type costAgent struct{ milliUSD int64 }
+
+func (a costAgent) Run(ctx context.Context, dir, prompt string) (string, error) {
+	answer, _, err := a.RunReportingCost(ctx, dir, prompt)
+	return answer, err
+}
+
+func (a costAgent) RunReportingCost(context.Context, string, string) (string, Cost, error) {
+	return `{"verdict": "approve", "summary": "fine"}`, Cost{MilliUSD: a.milliUSD, Reported: true}, nil
+}
+
+func TestRunReportsTheCost(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	ctx := context.Background()
+	Run(ctx, testJob(t, url, RoleImplement, 1), FakeAgent{Role: RoleImplement, Round: 1}, t.TempDir())
+
+	reported := Run(ctx, testJob(t, url, RoleReview, 1), costAgent{milliUSD: 42}, t.TempDir())
+	if reported.CostMilliUSD == nil || *reported.CostMilliUSD != 42 {
+		t.Errorf("a reporting agent's run = %+v, want a cost of 42", reported)
+	}
+	var decoded Result
+	if err := json.Unmarshal(reported.Encode(), &decoded); err != nil || decoded.CostMilliUSD == nil ||
+		*decoded.CostMilliUSD != 42 {
+		t.Errorf("decoded = %+v, %v; want the cost kept", decoded, err)
+	}
+
+	unreported := Run(ctx, testJob(t, url, RoleReview, 1), FakeAgent{Role: RoleReview, Round: 1}, t.TempDir())
+	if unreported.Verdict != VerdictApprove || unreported.CostMilliUSD != nil {
+		t.Errorf("a run whose agent doesn't report its cost = %+v, want no cost", unreported)
+	}
+}
+
 func TestUnavailable(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 	tests := []struct {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,8 +39,28 @@ var DefaultClaudeCommand = []string{
 	"claude", "-p", "--dangerously-skip-permissions", "--output-format", "json",
 }
 
+// Cost is what one agent call cost, as the agent reported it.
+type Cost struct {
+	MilliUSD int64
+	// Reported is false when the agent's output didn't say what the call cost.
+	Reported bool
+}
+
+// CostReporter is an Agent that says what each call cost. The calls of an
+// Agent that isn't one leave the run's cost unreported.
+type CostReporter interface {
+	RunReportingCost(ctx context.Context, dir, prompt string) (string, Cost, error)
+}
+
 // Run runs the agent in dir and returns its final answer.
 func (a ClaudeAgent) Run(ctx context.Context, dir, prompt string) (string, error) {
+	answer, _, err := a.RunReportingCost(ctx, dir, prompt)
+	return answer, err
+}
+
+// RunReportingCost runs the agent in dir and returns its final answer and what
+// the call cost, from the total_cost_usd of the CLI's JSON output.
+func (a ClaudeAgent) RunReportingCost(ctx context.Context, dir, prompt string) (string, Cost, error) {
 	command := a.Command
 	if len(command) == 0 {
 		command = DefaultClaudeCommand
@@ -59,19 +80,54 @@ func (a ClaudeAgent) Run(ctx context.Context, dir, prompt string) (string, error
 		Result  string `json:"result"`
 		IsError bool   `json:"is_error"`
 		Subtype string `json:"subtype"`
+		// CostUSD is missing when the CLI doesn't report it.
+		CostUSD *float64 `json:"total_cost_usd"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
 		if runErr != nil {
-			return "", fmt.Errorf("%s failed: %v: %s", command[0], runErr, tail(stderr.String()+stdout.String(), 1500))
+			return "", Cost{}, fmt.Errorf("%s failed: %v: %s", command[0], runErr, tail(stderr.String()+stdout.String(), 1500))
 		}
 		// Plain text output, from a custom command.
-		return strings.TrimSpace(stdout.String()), nil
+		return strings.TrimSpace(stdout.String()), Cost{}, nil
+	}
+	var cost Cost
+	if out.CostUSD != nil && *out.CostUSD >= 0 {
+		cost = Cost{MilliUSD: int64(math.Round(*out.CostUSD * 1000)), Reported: true}
 	}
 	if out.IsError || runErr != nil {
-		return out.Result, fmt.Errorf("%s ended with %s: %s", command[0], orDefault(out.Subtype, "an error"),
+		return out.Result, cost, fmt.Errorf("%s ended with %s: %s", command[0], orDefault(out.Subtype, "an error"),
 			tail(out.Result+" "+stderr.String(), 1500))
 	}
-	return out.Result, nil
+	return out.Result, cost, nil
+}
+
+// costMeter adds up what an Agent's calls in one run cost. One call that
+// doesn't report its cost leaves the whole run's cost unreported.
+type costMeter struct {
+	agent      Agent
+	milliUSD   int64
+	unreported bool
+}
+
+func (m *costMeter) Run(ctx context.Context, dir, prompt string) (string, error) {
+	reporter, ok := m.agent.(CostReporter)
+	if !ok {
+		m.unreported = true
+		return m.agent.Run(ctx, dir, prompt)
+	}
+	answer, cost, err := reporter.RunReportingCost(ctx, dir, prompt)
+	m.milliUSD += cost.MilliUSD
+	m.unreported = m.unreported || !cost.Reported
+	return answer, err
+}
+
+// total is what the run cost in thousandths of a US dollar, or nil when a call
+// didn't report its cost. A run that called no agent cost nothing.
+func (m *costMeter) total() *int64 {
+	if m.unreported {
+		return nil
+	}
+	return &m.milliUSD
 }
 
 // FakeAgent stands in for a real agent in tests and demos. Implementing, it adds
