@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -425,6 +426,7 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 		if reason := checkDNSLabel(o.Name); reason != "" {
 			refuse(subject, "%s", reason)
 		}
+		checkSpecLimits(o, refuse)
 	}
 	for _, o := range current.Objects {
 		if !seen[o.Ref()] {
@@ -483,6 +485,51 @@ func checkCreated(plan Plan, current CurrentModel, o PlanObject, refuse func(str
 		}
 	case KindRelationship:
 		checkCreatedRelationship(plan, current, o, refuse)
+	}
+}
+
+// specLimit is one of the CRDs' limits on a story object's spec: at most max
+// characters, or max items when items is set. The API server refuses an object
+// over one, so the plan check does first, naming the field (#382).
+type specLimit struct {
+	field string
+	max   int
+	items bool
+	value func(PlanObject) any
+}
+
+// specLimits are the limits of kind's spec, as its CRD's markers in
+// api/v1alpha1 set them; a test holds the two together.
+func specLimits(kind string) []specLimit {
+	displayName := specLimit{"displayName", 100, false, func(o PlanObject) any { return o.DisplayName }}
+	description := specLimit{"description", 1000, false, func(o PlanObject) any { return o.Description }}
+	switch kind {
+	case KindProject, KindPerson, KindContainer, KindDataStore:
+		return []specLimit{displayName, description}
+	case KindSoftwareSystem:
+		return []specLimit{displayName, description,
+			{"needs", 20, true, func(o PlanObject) any { return o.Needs }},
+			{"kpis", 20, true, func(o PlanObject) any { return o.KPIs }}}
+	case KindRelationship:
+		return []specLimit{{"description", 200, false, func(o PlanObject) any { return o.Description }}}
+	}
+	return nil
+}
+
+func checkSpecLimits(o PlanObject, refuse func(string, string, ...any)) {
+	for _, limit := range specLimits(o.Kind) {
+		switch v := limit.value(o).(type) {
+		case string:
+			if n := utf8.RuneCountInString(v); n > limit.max {
+				refuse(o.Ref().String(), "spec.%s is %d characters; it may be at most %d, so shorten it",
+					limit.field, n, limit.max)
+			}
+		case []string:
+			if n := len(v); n > limit.max {
+				refuse(o.Ref().String(), "spec.%s has %d items; it may have at most %d, so keep the most important ones",
+					limit.field, n, limit.max)
+			}
+		}
 	}
 }
 

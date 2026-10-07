@@ -185,6 +185,9 @@ What each kind's `spec` takes, and nothing else:
   of the target Container. A Relationship has no technology field: say how
   in its `description`.
 
+A `displayName` is at most 100 characters and a `description` at most 1000
+(a Relationship's at most 200); `needs` and `kpis` have at most 20 items each.
+
 An issue, such as `plan/issues/01-web.md`:
 
 ```markdown plan/issues/01-web.md
