@@ -8,7 +8,7 @@
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -568,6 +568,66 @@ check "intake leaves the report issue alone" "$(calls)" ""
   check "milestone: an unknown title fails and sets nothing" "$? $out | $(calls | grep -c PATCH)" '1 github: no open milestone is titled "Upgrades"; open: Briefs, 1.0: a stable API | 0'
   check "milestones: title, open, closed, due" "$(gh_milestones)" "Briefs	3	2	2026-10-09
 1.0: a stable API	0	0	"
+  exit $fail
+) || fail=1
+# closes-check and close: a plan's parent closes with its last step, never
+# before. #467 waits on its steps #472 to #475 (#475 open, #474 open while
+# $T/474-open exists); #468's steps are all closed. A fake GitHub notes each
+# call in $T/calls.
+(
+  : >"$T/calls"
+  rm -f "$T/474-open"
+  gh_api() {
+    local url= a m=GET
+    for a in "$@"; do case $a in repos/*) url=$a ;; POST | PATCH) m=$a ;; esac; done
+    [[ " $* " == *" --input - "* ]] && cat >/dev/null
+    echo "$m $url" >>"$T/calls"
+    case "$m $url" in
+      "GET $R/issues/467") printf 'Plan: docs/plans/x.md\nDepends on #472\nDepends on #473\r\n- depends on #474, the docs\nDepends on #475\n' ;;
+      "GET $R/issues/468") printf 'Depends on #472\nDepends on #473\n' ;;
+      "GET $R/issues/486") echo 'The plan is #510.' ;;
+      "GET $R/issues/474") [ -e "$T/474-open" ] && echo open || echo closed ;;
+      "GET $R/issues/475") echo open ;;
+      "GET $R/issues/47"[23]) echo closed ;;
+      "GET $R/pulls/510") printf 'docs(486): plan\nRefs #486\n' ;;
+      "GET $R/pulls/510/commits"*) printf 'docs(486): plan\n\nSteps: #506 (turn on Ask by default, closes #486)\n' ;;
+      "POST $R/issues/"*/comments) echo u ;;
+      "PATCH $R/issues/"*) echo "closed #${url##*/}" ;;
+    esac
+  }
+  out=$(printf 'docs(486): plan\n\nRefs #486\n\n- #506 (turn on `Ask` by default, closes #486)\n' | gh_closes_check - 2>&1)
+  check "closes-check: closes #N in prose beside Refs #N is refused, naming the line" "$? $out" \
+    '1 github: refused: "- #506 (turn on `Ask` by default, closes #486)" closes #486 at merge, and the same text says Refs #486. A plan'"'"'s pull request only refers to its parent: reword the line so no close, fix or resolve word sits before #486.'
+  check "closes-check: asks GitHub only for the body of the issue it closes" "$(cat "$T/calls")" "GET $R/issues/486"
+  : >"$T/calls"
+  out=$(printf 'feat(486): ask\n\nRefs #486\n' | gh_closes_check - 2>&1)
+  check "closes-check: no closing keyword asks GitHub nothing" "$? $out $(grep -c . "$T/calls")" "0  0"
+  out=$(echo 'Resolves: https://github.com/JairJosafath/c4factory/issues/486 (Refs #486)' | gh_closes_check - 2>&1)
+  check "closes-check: an issue URL after a keyword closes it too" "$? $(grep -c 'closes #486 at merge' <<<"$out")" "1 1"
+  out=$(echo 'Fixes other/repo#486, see https://github.com/other/repo/issues/467' | gh_closes_check - 2>&1)
+  check "closes-check: another repository's issue is not ours" "$? $out" "0 "
+  out=$(gh_pr_check 510 2>&1)
+  check "pr-check: a commit message's closes #N beside the body's Refs #N is refused" "$? $(grep -c 'refused: "Steps: #506' <<<"$out")" "1 1"
+  : >"$T/calls"
+  printf 'feat(475): the last step\n\nCloses #475\ncloses #467\n' >"$T/last"
+  out=$(gh_closes_check "$T/last" 2>&1)
+  check "closes-check: the last step's Closes #N, its other steps closed, passes" "$? $out" "0 "
+  out=$(printf 'feat(475): the last step\n\nRefs #467\n\nCloses #475\nCloses #467\n' | gh_closes_check - 2>&1)
+  check "closes-check: the last step may say Refs #N in a commit too" "$? $out" "0 "
+  touch "$T/474-open"
+  out=$(gh_closes_check "$T/last" 2>&1)
+  check "closes-check: Closes #N while another step is open is refused, naming the step" "$? $out" \
+    '1 github: refused: "closes #467" closes #467 at merge, but its step #474 is open ("- depends on #474, the docs" in #467'"'"'s body). The parent of a plan closes with its last step'"'"'s pull request, once every other step is closed.'
+  : >"$T/calls"
+  out=$(echo landed | gh_close 467 - 2>&1)
+  check "close: a parent with an open step is refused, naming each" "$? $out" \
+    '1 github: refused to close #467: its step #474 is open ("- depends on #474, the docs" in #467'"'"'s body). The parent of a plan closes with its last step'"'"'s pull request (Closes #S and Closes #467), never by hand.
+github: refused to close #467: its step #475 is open ("Depends on #475" in #467'"'"'s body). The parent of a plan closes with its last step'"'"'s pull request (Closes #S and Closes #467), never by hand.'
+  check "close: refused, nothing posted or closed" "$(grep -cE '^(POST|PATCH)' "$T/calls")" 0
+  : >"$T/calls"
+  out=$(echo landed | gh_close 468 - 2>&1)
+  check "close: a parent whose steps are all closed closes" "$? $(grep -E '^(POST|PATCH)' "$T/calls" | tr '\n' ,)" \
+    "0 POST $R/issues/468/comments,PATCH $R/issues/468,"
   exit $fail
 ) || fail=1
 exit $fail

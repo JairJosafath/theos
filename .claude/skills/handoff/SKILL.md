@@ -115,12 +115,18 @@ Lost claim (the heartbeat hook says so):
   FILE naming the pull request, SHAs and evidence.
 - **Plan only:** when N is split into a plan and step issues, the plan's
   pull request says `Refs #N`, never `Closes #N`: nothing N asked for has
-  shipped. Once it merges, add a `Depends on #S` line per step to N's body
+  shipped. No close, fix or resolve word may sit before `#N` anywhere in it
+  or its commits, prose like "#S (the last step, closes #N)" included: GitHub
+  closes N at merge. Once it merges, add a `Depends on #S` line per step to N's body
   (`gh issue edit N --body-file FILE`, the rest kept), leave N open and
   `status/in-progress`, so `pick` skips it until every step closes, and post
   a handoff naming the plan and the steps. Each step's body names N; the last
   step's pull request says `Closes #S` and `Closes #N`. Steps never say
-  `Depends on #N` (that is a cycle).
+  `Depends on #N` (that is a cycle). Never close the parent of a plan by
+  hand, even when "its work was the design": it closes with its last step.
+  `hack/close-guard.sh` (a hook) denies a `gh pr create`, `edit`, `merge` or
+  `git commit` that would close it while a step is open, naming the line, and
+  `hack/lib/github.sh close N` refuses it, naming the open step.
 - **Plan finished:** when the issue you close finishes a plan's last step,
   move the plan to `docs/plans/done/` in the same pull request (`git mv`),
   fix the relative links inside it, and update every link to it

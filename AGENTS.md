@@ -133,9 +133,13 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   commit once `make check` passes. No long-lived or stacked branches: each plan
   step lands on its own and leaves main working, with new behaviour off until
   the step that turns it on. When an issue is split into a plan and steps,
-  the plan's pull request says `Refs #N`, never `Closes #N`; the issue stays
+  the plan's pull request says `Refs #N`, never `Closes #N`, and no close, fix
+  or resolve word before `#N` anywhere, prose included; the issue stays
   open, `status/in-progress`, its body a `Depends on #S` line per step so
   `pick` skips it, and the last step's pull request says `Closes #N` too.
+  Never close the parent of a plan by hand: `hack/close-guard.sh` denies a
+  pull request or commit, and `hack/lib/github.sh close` an issue, that would
+  close it while a step is open.
 - **Main keeps itself current.** `hack/pull.sh` fast-forwards local main when
   that is safe and never touches a branch or uncommitted work. VS Code runs it
   every 5 minutes, Claude Code at session start, the relay before each session;
