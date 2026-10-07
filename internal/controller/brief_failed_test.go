@@ -244,4 +244,75 @@ var _ = Describe("Brief failed issues", func() {
 			g.Expect(task.Spec.Issue).To(Equal(int32(cli)))
 		}).Should(Succeed())
 	})
+
+	// #568: a wait or an ask leaves a failed issue handed back, for a person.
+	It("leaves a failed issue handed back when a prompt round answers wait or ask", func() {
+		createFactory(ns)
+		briefAgents(ns, 1)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, linterPlan(ns, 0))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+
+		By("two issues failing a Task each: the linter has no Standard to protect it")
+		waited := gitFake.addIssue(ns, "linter", "Lint rule 1", linterIssue(1), []string{model.LabelReady})
+		failLinterTask(ns, model.IssueTaskName("linter", waited, 1), waited)
+		asked := gitFake.addIssue(ns, "linter", "Lint rule 2", linterIssue(2), []string{model.LabelReady})
+		failLinterTask(ns, model.IssueTaskName("linter", asked, 1), asked)
+		var failed []c4v1alpha1.BriefFailedIssue
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.FailedWaiting).To(Equal(int32(2)))
+			g.Expect(b.Status.Failed).To(HaveLen(2))
+			failed = b.Status.Failed
+		}).Should(Succeed())
+		comments := map[int]int{waited: len(gitFake.issue(ns, "linter", waited).comments),
+			asked: len(gitFake.issue(ns, "linter", asked).comments)}
+
+		By("a prompt round waiting on one and asking about the other, recommending a retry")
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() {
+			brief.Spec.Prompts = []string{"Hold rule 1 until the engine lands; what about rule 2?"}
+		})).To(Succeed())
+		planRound(ns, 2, 1, failedPlan(ns, fmt.Sprintf(`
+- container: linter
+  issue: %d
+  answer: wait
+  why: The prompt holds rule 1 until the engine lands.
+- container: linter
+  issue: %d
+  answer: ask
+  why: The prompt asks what to do about rule 2.
+  recommend:
+    answer: retry
+    why: The checker may be merged by now.
+    clarify: |
+      Import the engine's checker.
+`, waited, asked)))
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
+		}).Should(Succeed())
+
+		By("leaving both open, handed back, untouched and on the Brief's failed list, with no new Task")
+		Consistently(func(g Gomega) {
+			for _, n := range []int{waited, asked} {
+				issue := gitFake.issue(ns, "linter", n)
+				g.Expect(issue.State).To(Equal("open"))
+				g.Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
+				g.Expect(issue.Labels).NotTo(ContainElement(model.LabelReady))
+				g.Expect(issue.Body).NotTo(ContainSubstring("Clarification"))
+				g.Expect(issue.comments).To(HaveLen(comments[n]))
+				var task c4v1alpha1.Task
+				g.Expect(k8sClient.Get(ctx, key(ns, model.IssueTaskName("linter", n, 2)), &task)).NotTo(Succeed())
+			}
+			b := getBrief(g, ns)
+			g.Expect(b.Status.FailedWaiting).To(Equal(int32(2)))
+			g.Expect(b.Status.Failed).To(Equal(failed))
+		}, "2s").Should(Succeed())
+		Expect(briefEventNotes(Default, ns, eventPlanned)).NotTo(ContainElement(ContainSubstring("failed issues")))
+	})
 })
