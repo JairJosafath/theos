@@ -672,7 +672,10 @@ idle_watch() {
       continue
     fi
     m=$(find "$f" "${f%.jsonl}" -printf '%T@\n' 2>/dev/null | sort -n | tail -n 1)
-    [ "${m%.*}" -gt "$last" ] && last=${m%.*}
+    # Rounded up: a write at 10.9 counts as 11, so a session is never ended
+    # before it has been idle for all of IDLE.
+    m=$((${m%.*} + 1))
+    [ "$m" -gt "$last" ] && last=$m
     [ $((now - last)) -ge "$idle" ] || continue
     : >"$4"
     log "$what stopped: its transcript was idle for $IDLE"
