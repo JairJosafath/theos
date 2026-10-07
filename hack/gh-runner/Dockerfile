@@ -74,6 +74,16 @@ ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache \
     LOCALBIN=/home/runner/.cache/make-bin
 
 COPY entrypoint.sh /usr/local/bin/gh-runner-entrypoint
+
+# The container takes job after job, so before each one the job-started hook
+# resets what an earlier job may have left: the work directory made writable
+# for the checkout's clean, and the runner's home emptied of all but the
+# caches, the runner and what the image put there (the list record writes,
+# last, so it sees everything above).
+COPY job-started.sh /usr/local/bin/gh-runner-job-started
+ENV ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/bin/gh-runner-job-started
+RUN HOME=/home/runner gh-runner-job-started record
+
 USER runner
 WORKDIR /home/runner
 ENTRYPOINT ["/usr/local/bin/gh-runner-entrypoint"]

@@ -653,6 +653,27 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   into is a volume per runner (`c4factory-gh-runner-i-toolcache`): two runners
   unpacking one Go version into it at once would race. The workflows skip
   GitHub's cache on self-hosted runners. `make gh-runner-down` keeps the caches.
+- **What a job leaves behind.** The containers live on, job after job, so the
+  caches stay warm. Between jobs the runner empties `_temp`, and before each
+  job the image's job-started hook (`hack/gh-runner/job-started.sh`, set as
+  `ACTIONS_RUNNER_HOOK_JOB_STARTED`) resets the rest a job could leave:
+  - it makes the work directory writable again (and the runner's, through
+    `sudo`, where a container wrote as root), so `actions/checkout` can clean
+    it;
+  - it empties the runner's home of everything the image didn't put there
+    (the list in `/etc/gh-runner/home.list`, recorded at build time): the
+    `docker login` and `helm registry login` of *Release* and *Verify
+    Release*, `~/.kube/config` with the contexts of deleted Kind clusters,
+    `gh`'s login and any other file.
+
+  What persists: `~/.cache` (the shared cache volume, `LOCALBIN` included),
+  the tool cache, the runner itself with its registration, logs and updates,
+  and the image's own files, as the last job left them. Kind clusters and
+  images on the device's Docker are out of the hook's reach; the Kind
+  workflows delete their cluster before making it and after the job. What the
+  hook can't reset is a warning in the job's *Set up runner* log, not a
+  failed job. `hack/gh-runner/job-started_test.sh` checks it on a seeded home
+  and work directory.
 - The image pins the runner (`RUNNER_VERSION` in `hack/gh-runner/Dockerfile`),
   which updates itself when GitHub asks. Bump the pin to
   `gh api repos/actions/runner/releases/latest --jq .tag_name` now and then
