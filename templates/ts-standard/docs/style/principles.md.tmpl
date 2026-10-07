@@ -1,8 +1,9 @@
 # Cross-language principles
 
 Distilled from long-lived style guides. Each rule names its sources (keys at the
-bottom). TypeScript and VS Code specifics live in `typescript.md` and
-`vscode.md`; where they are stricter, they win.
+bottom). {{ if eq .Framework "react-vite" }}TypeScript and React specifics live in `typescript.md` and
+`react.md`{{ else }}TypeScript and VS Code specifics live in `typescript.md` and
+`vscode.md`{{ end }}; where they are stricter, they win.
 
 ## Consistency
 
@@ -73,11 +74,17 @@ bottom). TypeScript and VS Code specifics live in `typescript.md` and
 
 ## Resource ownership
 
-- **Every resource has exactly one owner that releases it**: in an extension,
+{{ if eq .Framework "react-vite" }}- **Every resource has exactly one owner that releases it**: in a component,
+  the effect that subscribes, starts a timer or opens a connection returns the
+  cleanup that ends it. [CppCG R.1, P.8], [React]
+- **Acquire and hand to the owner in one step:** write the cleanup in the same
+  effect that acquires the resource. [CppCG R.12]
+{{- else }}- **Every resource has exactly one owner that releases it**: in an extension,
   everything disposable goes into `context.subscriptions` or is disposed by
   the object that created it. [CppCG R.1, P.8], [VSCode]
 - **Acquire and hand to the owner in one step:** push a registration into
   `subscriptions` in the same statement that creates it. [CppCG R.12]
+{{- end }}
 - **Single source of truth.** Don't copy live state; derive it. [review]
 
 ## Errors
@@ -89,7 +96,7 @@ bottom). TypeScript and VS Code specifics live in `typescript.md` and
 - **"Impossible" branches are bugs**: throw, don't return a fake value.
   [GNU 4.2], [LLVM `llvm_unreachable`]
 - **Useful error messages**: what happened, with which input, what to do next.
-  [GNU 4.2, 4.4], [LLVM], [VSCodeUX]
+  [GNU 4.2, 4.4], [LLVM]{{ if ne .Framework "react-vite" }}, [VSCodeUX]{{ end }}
 - **Handle all input**: empty, huge, unicode, malformed. No arbitrary limits;
   never silently truncate. [GNU 4.2]
 - **Log only actionable messages**; never log user data. [review]
@@ -102,8 +109,11 @@ bottom). TypeScript and VS Code specifics live in `typescript.md` and
   remembers. [review; lint: tsc noUnusedLocals, noUnusedParameters]
 - **Don't reinvent helpers**; use the platform's. [Kernel §18], [CppCG P.13]
 - **Encapsulate messy code** behind one clean interface. [CppCG P.11]
-- **Respect layering**: pure modules don't import `vscode`; `extension.ts` wires
+{{ if eq .Framework "react-vite" }}- **Respect layering**: pure modules import neither React nor the DOM;
+  components wire them to the page. [LLVM "Library layering"]
+{{- else }}- **Respect layering**: pure modules don't import `vscode`; `extension.ts` wires
   them to VS Code. [LLVM "Library layering"]
+{{- end }}
 
 ## Tests
 
@@ -124,5 +134,7 @@ bottom). TypeScript and VS Code specifics live in `typescript.md` and
 - [GNU] https://www.gnu.org/prep/standards/standards.html
 - [GoogleTS] https://google.github.io/styleguide/tsguide.html
 - [TSHandbook] https://www.typescriptlang.org/docs/handbook/declaration-files/do-s-and-don-ts.html
-- [VSCode] https://code.visualstudio.com/api/references/extension-guidelines
+{{ if eq .Framework "react-vite" }}- [React] https://react.dev/learn/synchronizing-with-effects
+{{- else }}- [VSCode] https://code.visualstudio.com/api/references/extension-guidelines
 - [VSCodeUX] https://code.visualstudio.com/api/ux-guidelines/notifications
+{{- end }}

@@ -10,6 +10,36 @@ says what to check.
 1. **Acceptance criteria.** Report each one as met or not met, naming the test
    that proves it. A criterion is met only when a test would fail without the
    change. Missing or untested is not met.
+{{ if eq .Framework "react-vite" -}}
+2. **Correctness and edge cases.** Empty, huge, malformed and non-ASCII
+   input; the first render and every later one; requests that fail, are slow
+   or answer out of order (an effect ignores or aborts a stale one); every
+   error handled and shown to the user.
+3. **Tests.** They test behaviour through exports, would fail without the
+   change, cover the edge cases above, and are deterministic: no real timers
+   or real-time bounds (fake timers instead), no network. Component tests
+   query by role and label, never by implementation details.
+4. **Design.** Logic in pure modules, components only rendering and wiring;
+   no state that can be derived from props or other state; effects only to
+   sync with something outside React; names; no dead code; no speculative
+   generality (options nobody needs, abstractions with one use); the change
+   stays in the issue's scope.
+5. **Errors and resources.** Every effect that subscribes, starts a timer or
+   opens a connection returns the cleanup that ends it; promises are awaited
+   or deliberately voided; errors reach the user on the page, saying what to
+   do, never only in the console.
+6. **Performance.** Nothing heavy runs on every render or keystroke; long
+   lists have stable keys; a large dependency or page is loaded with `lazy`
+   when it isn't needed at first; budgets from the issue or the system's
+   needs are measured by a bench, never by a test with a time bound.
+7. **Accessibility and docs.** Semantic elements, every input labelled, images
+   with `alt`, everything usable by keyboard (WCAG 2.2 AA,
+   `docs/style/react.md`); README and the CHANGELOG match the behaviour;
+   messages tell a user what happened and what to do.
+8. **Security.** No `dangerouslySetInnerHTML` or `javascript:` URLs from
+   untrusted input; no secrets in `import.meta.env` or anywhere in the
+   bundle; no user data in logs; new install scripts justified.
+{{- else -}}
 2. **Correctness and edge cases.** Empty, huge, malformed and non-ASCII
    documents; positions at the first and last line and in multi-byte text (LSP
    counts UTF-16 code units); the server missing, slow or crashing;
@@ -32,6 +62,7 @@ says what to check.
 8. **Security.** No shell commands built from user input or settings; workspace
    content never executed; no secrets or document contents in logs; new
    install scripts justified.
+{{- end }}
 
 ## Verdict
 
@@ -62,6 +93,20 @@ A blocking problem is never a follow-up.
   - it works with this change alone, without another branch;
   - it does no more than its issue asks.
 
+{{ if eq .Framework "react-vite" -}}
+## TypeScript and React notes
+
+- `make check` built the site, and CI is green on the last commit.
+- Look for: state copied from props or computed from other state; effects
+  that only transform data or respond to an event; a fetch in an effect
+  without an ignore flag or `AbortController`; missing effect cleanups;
+  `as` casts or disable comments that hide a real type error; `console`
+  logging; inputs without labels; values in `VITE_` variables that must stay
+  secret.
+- Behaviour only a real browser can show (layout, focus order, screen
+  readers) is "could not be verified" unless a person tried it: say so rather
+  than approving on faith.
+{{- else -}}
 ## TypeScript and VS Code notes
 
 - `make check` packaged the `.vsix`, and CI is green on the last commit.
@@ -73,3 +118,4 @@ A blocking problem is never a follow-up.
 - Behaviour only a real editor can show (highlighting, the status bar) is
   "could not be verified" unless a person tried it: say so rather than
   approving on faith.
+{{- end }}
