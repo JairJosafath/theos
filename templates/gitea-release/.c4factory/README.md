@@ -1,7 +1,8 @@
 # gitea-release (Deployment)
 
 Ships a Container's release files on a Gitea release whenever a version tag is
-pushed: binaries for a CLI, a `.vsix` for an extension. No registry, no store:
+pushed: binaries for a Go CLI, an npm tarball for a Node CLI, a `.vsix` for an
+extension. No registry, no store:
 download them from the release page.
 
 - **Supports:** `cli`, `extension`
@@ -9,7 +10,8 @@ download them from the release page.
 - **Contract:** the repository's `Makefile` has a `dist` target that takes
   `VERSION=<tag>` and writes the release files, and only those, into `dist/`.
   go-standard's cross-compiles the binaries plus `SHA256SUMS`; ts-standard's
-  packages the `.vsix` and fails when the tag doesn't match `package.json`.
+  packages the `.vsix` (`vscode-extension`) or packs the `.tgz` with `npm pack`
+  (`node-cli`), and fails when the tag doesn't match `package.json`.
 - **Needs:** a runner labelled `go` (the Go and Node toolchain image, with uv
   for Python projects), which the checks use too. The workflow token creates the release and uploads the files;
   no secrets.

@@ -1,9 +1,10 @@
 # Agent guide
 
 This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` {{ if eq .Framework "react-vite" }}web app of {{ .SoftwareSystem }}: a page in React
-and TypeScript, built with Vite{{ else }}extension of {{ .SoftwareSystem }}: one VS
+and TypeScript, built with Vite{{ else if eq .Framework "node-cli" }}command-line program of {{ .SoftwareSystem }}: a
+command in TypeScript for Node{{ else }}extension of {{ .SoftwareSystem }}: one VS
 Code extension in TypeScript{{ end }}, scaffolded by C4 Factory with the `{{ .Standard }}`
-Standard. Build it to the rules below. What the {{ if eq .Framework "react-vite" }}app{{ else }}extension{{ end }} is for, and what it must
+Standard. Build it to the rules below. What the {{ if eq .Framework "react-vite" }}app{{ else if eq .Framework "node-cli" }}program{{ else }}extension{{ end }} is for, and what it must
 never do, is in the issue you were given and the system's needs: follow those.
 
 ## The one rule
@@ -12,7 +13,8 @@ never do, is in the issue you were given and the system's needs: follow those.
 `package-lock.json`, then runs Prettier (check), ESLint with `eslint.config.mjs`
 (typescript-eslint strict, no warnings allowed), `tsc` with the strict
 `tsconfig.json`, the vitest unit tests, and {{ if eq .Framework "react-vite" }}builds the site to prove it
-still builds.{{ else }}packages the `.vsix` to prove it
+still builds.{{ else if eq .Framework "node-cli" }}packs the package and runs
+its program to prove it still works.{{ else }}packages the `.vsix` to prove it
 still packages.{{ end }} CI runs the same command, and nothing reaches `main` without it
 passing and a review. Never commit red.
 
@@ -30,7 +32,7 @@ passing and a review. Never commit red.
    request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
    `Makefile`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
    `.editorconfig`, `AGENTS.md`, `docs/style/` and `docs/agents/` belong to the
-   Standard. `tsconfig.json` and {{ if eq .Framework "react-vite" }}`vite.config.ts`{{ else }}`vitest.config.mts`{{ end }} decide what the checks check: don't
+   Standard. `tsconfig.json` and {{ if eq .Framework "react-vite" }}`vite.config.ts`{{ else if eq .Framework "node-cli" }}`vitest.config.mts`{{ else }}`vitest.config.mts`{{ end }} decide what the checks check: don't
    loosen them.
 
 ## Lints
@@ -42,7 +44,9 @@ passing and a review. Never commit red.
 - Add packages with `npm install --save-exact` (`--save-dev` for tools), and
   commit `package-lock.json`. {{ if eq .Framework "react-vite" }}Vite bundles what the page imports, so
   `node_modules` never ships; what the page imports is a `dependency`, tools
-  are `devDependencies`. Prefer the platform, React and the browser's APIs; then few,{{ else }}esbuild bundles what the extension imports, so
+  are `devDependencies`. Prefer the platform, React and the browser's APIs; then few,{{ else if eq .Framework "node-cli" }}esbuild bundles what the program imports into
+  `out/cli.js`, so the package has no `dependencies` and `node_modules` never
+  ships. Prefer Node's own modules (`util.parseArgs`, `fs/promises`); then few,{{ else }}esbuild bundles what the extension imports, so
   `node_modules` never ships. Prefer the platform and the VS Code API; then few,{{ end }}
   maintained, well-known packages with a licence that fits. A new install
   script needs an `allowScripts` entry in `package.json`: allow it only when the
@@ -69,6 +73,28 @@ passing and a review. Never commit red.
 6. **Never a secret in the bundle:** every `VITE_` variable and everything the
    page imports is public. Untrusted input never reaches
    `dangerouslySetInnerHTML` or a `javascript:` URL.
+{{- else if eq .Framework "node-cli" -}}
+1. **Streams:** results go to stdout, everything else (errors, warnings,
+   progress) to stderr, so the output pipes cleanly into other programs. Only
+   `src/main.ts` touches `process`; everything else writes through the
+   `Output` that `run` is given, never `console`.
+2. **Exit codes:** 0 for success (`--help` and `--version` too), 2 for a wrong
+   command line, 1 for any other failure; set through `process.exitCode`,
+   never `process.exit()` in the middle of the program, so output flushes.
+3. **The command line:** `util.parseArgs` with `strict: true`; every flag has a
+   long name, and the help lists it. An error names the bad input, says what
+   to do and points at `--help`. A program that reads files takes `-` for
+   stdin; nothing waits for a prompt unless stdin is a terminal.
+4. **Errors users see** never are a stack trace: `run` catches what it
+   expects and reports one line naming the thing that failed; a real bug may
+   crash.
+5. **Asynchronous work** is awaited or returned, never left floating; a
+   long-running command stops cleanly on SIGINT. Files are read and written
+   with `node:fs/promises`; paths are resolved from the arguments, never from
+   where the program is installed.
+6. **Configuration** comes from flags, then environment variables named after
+   the program (`{{ upper (snake .Container) }}_*`), each listed in the help and the README. Never
+   print a secret.
 {{- else -}}
 1. **Activation:** the narrowest activation events (`onLanguage:yaml`), never
    `*`. `activate()` returns quickly: no synchronous I/O, no network, no work the
@@ -96,6 +122,11 @@ passing and a review. Never commit red.
 {{ if eq .Framework "react-vite" }}8. **Pure modules:** logic lives in modules that import neither React nor the
    DOM, tested with plain vitest. A component test brings its own DOM
    (`// @vitest-environment jsdom`) and queries by role and label.
+{{- else if eq .Framework "node-cli" -}}
+8. **Testable through `run`:** command behaviour is tested by calling `run`
+   with arguments and a recording `Output`, checking the exit code and both
+   streams; logic lives in modules that don't touch `process`. Tests that need
+   files use a fresh temporary directory.
 {{- else }}8. **Pure modules:** logic lives in modules that don't import `vscode`, tested
    with plain vitest. Code that needs `vscode` is tested against
    `test/vscode.ts`; extend the stand-in with `satisfies` types.
@@ -108,6 +139,10 @@ passing and a review. Never commit red.
 {{ if eq .Framework "react-vite" }}11. **Input:** empty, huge, malformed and non-ASCII input never breaks the
     page; lists have stable keys from the data, never the index of a list
     that changes.
+{{- else if eq .Framework "node-cli" -}}
+11. **Input:** empty, huge, malformed and non-ASCII arguments, files and
+    stdin never crash the program; large input is streamed, not read whole
+    when it can be big.
 {{- else }}11. **Input:** empty, huge, malformed and non-ASCII documents never crash the
     extension; LSP positions count UTF-16 code units.
 {{- end }}
@@ -126,6 +161,9 @@ Offline digests (read the one for what you are touching):
   don'ts and typescript-eslint, each rule marked [lint] or [review]
 {{ if eq .Framework "react-vite" }}- `docs/style/react.md`: components, hooks, state, effects, accessibility,
   performance, Vite, security and tests
+{{- else if eq .Framework "node-cli" -}}
+- `docs/style/node.md`: the command line, streams, exit codes, errors,
+  files, signals, bundling, packaging and tests
 {{- else }}- `docs/style/vscode.md`: activation, disposal, the language client, LSP 3.17,
   UX, bundling and tests
 {{- end }}
@@ -137,6 +175,10 @@ Online (canonical): https://google.github.io/styleguide/tsguide.html ·
 https://typescript-eslint.io/rules/ · https://react.dev/reference/rules ·
 https://react.dev/learn/you-might-not-need-an-effect ·
 https://vite.dev/guide/ · https://www.w3.org/WAI/WCAG22/quickref/
+{{- else if eq .Framework "node-cli" -}}
+Online (canonical): https://google.github.io/styleguide/tsguide.html ·
+https://typescript-eslint.io/rules/ · https://nodejs.org/api/util.html#utilparseargsconfig ·
+https://clig.dev/ · https://docs.npmjs.com/cli/v11/configuring-npm/package-json
 {{- else -}}
 Online (canonical): https://google.github.io/styleguide/tsguide.html ·
 https://typescript-eslint.io/rules/ · https://code.visualstudio.com/api/ux-guidelines/overview ·
