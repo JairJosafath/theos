@@ -3,7 +3,9 @@
 # the Makefile's use of them, with the slots in a temporary directory.
 # Run: hack/heavy-slot_test.sh
 T=$(mktemp -d)
-trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
+# Only this shell cleans up (#544): a job killed just after it is forked, before
+# it resets the traps it inherits, runs this trap too, and would remove $T.
+trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
 HACK="$(cd "$(dirname "$0")" && pwd)"
 SLOT=$HACK/heavy-slot.sh
 export HEAVY_SLOTS_DIR=$T/slots HEAVY_JOBS=2 HEAVY_POLL=0.2

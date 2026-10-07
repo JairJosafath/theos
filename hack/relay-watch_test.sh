@@ -12,7 +12,9 @@
 # .relay/.
 # Run: hack/relay-watch_test.sh
 T=$(mktemp -d)
-trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
+# Only this shell cleans up (#544): a job killed just after it is forked, before
+# it resets the traps it inherits, runs this trap too, and would remove $T.
+trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
 unset C4_CLUSTER
 # shellcheck source=hack/relay-watch.sh
 . "$(dirname "$0")/relay-watch.sh"
