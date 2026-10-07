@@ -63,6 +63,23 @@ if grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart-gitea-bare.yaml" |
 fi
 echo "The chart's catalog matches templates/versions.txt; off, it renders no catalog or Agents"
 
+# The test environment shares the Claude token (make claude-secret): the
+# manager names it and its own namespace, and the namespaces make seed and the
+# samples make opt in.
+for want in '--shared-secret=claude-credentials' 'name: POD_NAMESPACE' 'fieldPath: metadata.namespace'; do
+	if ! grep -qF -- "$want" "$OUT/kustomize-default.yaml"; then
+		echo "config/default's manager lacks $want: the test environment wouldn't share claude-credentials" >&2
+		exit 1
+	fi
+done
+for f in config/samples/webshop/namespace.yaml test/e2e/testdata/apps/namespace.yaml; do
+	if ! grep -qF 'c4.factory.io/shared-secrets: "true"' "$f"; then
+		echo "$f lacks label c4.factory.io/shared-secrets: \"true\": the operator wouldn't share claude-credentials into it" >&2
+		exit 1
+	fi
+done
+echo "The manager shares claude-credentials into the labeled sample namespaces"
+
 # test/invalid holds YAML each create-time CEL rule must reject: each file's
 # first line says "# expect: <message>", which the rejection must contain.
 checked=0
