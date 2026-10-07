@@ -17,11 +17,14 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 )
@@ -54,7 +57,7 @@ func run(ctx context.Context, workdir string) agentrunner.Result {
 	if err := os.MkdirAll(workdir, 0o755); err != nil {
 		return agentrunner.Result{Role: job.Role, Error: err.Error()}
 	}
-	// The go command fetches the project's modules from the Git host with it.
+	// For an Agent whose own GOPROXY names the Git host's registry.
 	home, err := os.UserHomeDir()
 	if err == nil {
 		err = agentrunner.WriteNetrc(home, job)
@@ -62,7 +65,28 @@ func run(ctx context.Context, workdir string) agentrunner.Result {
 	if err != nil {
 		return agentrunner.Result{Role: job.Role, Error: "c4agent: .netrc: " + err.Error()}
 	}
+	stopProxy, err := serveGoProxy(job)
+	if err != nil {
+		return agentrunner.Result{Role: job.Role, Error: "c4agent: Go module proxy: " + err.Error()}
+	}
+	defer stopProxy()
 	return agentrunner.Run(ctx, job, agentFor(job), workdir)
+}
+
+// serveGoProxy serves the job's Go module proxy on loopback, where GOPROXY
+// points, while the agent works; the returned func stops it.
+func serveGoProxy(job agentrunner.Job) (func(), error) {
+	proxy, err := agentrunner.NewGoProxy(job)
+	if err != nil || proxy == nil {
+		return func() {}, err
+	}
+	ln, err := net.Listen("tcp", agentrunner.GoProxyAddr)
+	if err != nil {
+		return nil, err
+	}
+	server := &http.Server{Handler: proxy, ReadHeaderTimeout: 30 * time.Second}
+	go func() { _ = server.Serve(ln) }()
+	return func() { _ = server.Close() }, nil
 }
 
 // agentFor picks the agent: the stand-in for the stand-in harness (or when

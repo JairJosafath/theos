@@ -393,7 +393,9 @@ model and context it needs.
   verdict's `open`. On merge the operator files those criteria as one
   `kind/by-hand` issue, `status/needs-human` in the Later milestone, so a
   person does them; a Brief lists it with its failed issues and may close it,
-  never retry it. The planner doesn't give agents a person's work. See
+  never retry it. The planner doesn't give agents a person's work: it files
+  it as its own plan issue labelled `kind/by-hand`, which the operator files
+  `status/needs-human` in Later, and no issue waits on it. See
   [plans/honest-evidence.md](plans/honest-evidence.md).
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
@@ -545,7 +547,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   filed again, reworded or split, so the Crew's guard stays. Applying the
   round, the operator labels a retried issue `status/ready` in place of
   `status/needs-human`, or closes it, with a comment quoting the why and the
-  round's prompts. See [plans/brief-failed-issues.md](plans/brief-failed-issues.md).
+  round's prompts. See [plans/brief-failed-issues.md](plans/done/brief-failed-issues.md).
 - **A Brief looks after its own handed-back work** (#486, planned).
   `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. The Brief watches
   only what it made: failed issues, its Containers' Tasks and Crews. What

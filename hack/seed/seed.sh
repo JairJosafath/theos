@@ -9,7 +9,10 @@
 #      RUNNER_SECRET is empty (in the Helm chart, Gitea's pod makes that token);
 #   6. with PROJECT_OBJECTS=true (the Helm chart), creates Project PROJECT in
 #      each project's namespace when it has none, so the UI can take a Brief
-#      there; it never changes or deletes one.
+#      there; it never changes or deletes one;
+#   7. with SHARE_SECRETS=true (the Helm chart), labels each project's namespace
+#      c4.factory.io/shared-secrets=true, which opts it in to the Secrets the
+#      operator shares (claude-credentials, the pull Secrets).
 # With CREDENTIALS_DIR set (`make seed-local`), step 4 writes each project's
 # token to CREDENTIALS_DIR/PROJECT.env instead, step 5 is skipped, and the
 # script needs no kubectl.
@@ -46,6 +49,9 @@ if [[ -n $CREDENTIALS_DIR ]]; then RUNNER_SECRET=""; fi
 RUNNER_NAMESPACE=${RUNNER_NAMESPACE:-gitea}
 PROJECT_OBJECTS=${PROJECT_OBJECTS:-false}
 if [[ -n $CREDENTIALS_DIR ]]; then PROJECT_OBJECTS=false; fi
+SHARE_SECRETS=${SHARE_SECRETS:-false}
+if [[ -n $CREDENTIALS_DIR ]]; then SHARE_SECRETS=false; fi
+SHARED_LABEL=c4.factory.io/shared-secrets
 
 export GIT_AUTHOR_NAME="C4 Factory seed" GIT_AUTHOR_EMAIL="seed@c4.factory.io"
 export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
@@ -304,6 +310,18 @@ EOF
   log "Created Project $ns/$ns"
 }
 
+# ensure_shared_label PROJECT: label namespace PROJECT to receive the shared
+# Secrets. The chart's Namespaces have the label; one made by hand gets it here.
+ensure_shared_label() {
+  local ns=$1
+  if [[ $(kubectl get namespace "$ns" -o jsonpath='{.metadata.labels.c4\.factory\.io/shared-secrets}') == true ]]; then
+    log "Namespace $ns has $SHARED_LABEL=true"
+    return
+  fi
+  kubectl label namespace "$ns" "$SHARED_LABEL=true" --overwrite >/dev/null
+  log "Labeled namespace $ns $SHARED_LABEL=true"
+}
+
 main() {
   wait_for_gitea
   ensure_org "$TEMPLATE_ORG" "Template repositories for the C4 Factory catalog"
@@ -326,6 +344,7 @@ main() {
       ensure_credentials "$project"
     fi
     if [[ $PROJECT_OBJECTS == true ]]; then ensure_project "$project"; fi
+    if [[ $SHARE_SECRETS == true ]]; then ensure_shared_label "$project"; fi
   done
   if [[ -n $RUNNER_SECRET ]]; then ensure_runner_token; fi
   if [[ -n $PROJECTS ]]; then
