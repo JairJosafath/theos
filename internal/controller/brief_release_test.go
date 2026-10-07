@@ -277,6 +277,8 @@ var _ = Describe("Brief releases", func() {
 })
 
 // briefApp returns the line of container in Brief cel-lens's status.apps.
+//
+//nolint:unparam // names the container like the other helpers
 func briefApp(g Gomega, ns, container string) c4v1alpha1.BriefApp {
 	for _, app := range getBrief(g, ns).Status.Apps {
 		if app.Container == container {
@@ -320,8 +322,8 @@ var _ = Describe("Brief apps", func() {
 			apps := getBrief(g, ns).Status.Apps
 			g.Expect(apps).To(HaveLen(2))
 			g.Expect(apps[0]).To(Equal(c4v1alpha1.BriefApp{Container: "linter", Crew: "linter", Releases: "On",
-				PublishTo: "acme/cel-lens",
-				Message:   "Releases are on: the next one follows once the issues of its milestone are merged."}))
+				Parallel: model.BriefParallelDefault, PublishTo: "acme/cel-lens",
+				Message: "Releases are on: the next one follows once the issues of its milestone are merged."}))
 			g.Expect(apps[1]).To(Equal(c4v1alpha1.BriefApp{Container: "server", Releases: "Off",
 				Message: "The Brief hasn't made a Container named server: its releases start once a round makes it."}))
 		}).Should(Succeed())
@@ -361,7 +363,8 @@ var _ = Describe("Brief apps", func() {
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Apps).To(Equal([]c4v1alpha1.BriefApp{{Container: "linter",
-				Crew: "linter", Releases: "Off", Message: MessageReleasesOff}}))
+				Crew: "linter", Parallel: model.BriefParallelDefault, Releases: "Off",
+				Message: MessageReleasesOff}}))
 		}).Should(Succeed())
 		Expect(MessageReleasesOff).To(Equal(
 			"Releases are off: ask for them in a prompt, or name this app in spec.releases."))

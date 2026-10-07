@@ -469,9 +469,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   else refuses it, and the planner's next round gets the reasons. The operator
   applies it (Relationships before the Containers they start from, so their
   Connectors are part of the scaffold), makes a Crew for each new Container
-  with the Brief's Agents and one place (#533 changes it), and files the issues in each
-  Container's repository once it is Ready, ready for its Crew. What it made
-  carries the label `c4.factory.io/brief`; deleting the Brief keeps it. When
+  with the Brief's Agents and as many places as the Brief says (below), and
+  files the issues in each Container's repository once it is Ready, ready for
+  its Crew. What it made carries the label `c4.factory.io/brief`; deleting the
+  Brief keeps it. When
   a step fails, the Brief stays `Applying` and tries again, and its `Planned`
   condition, reason `ApplyFailed`, and an `ApplyFailed` Event say where it
   stopped and why: a Brief never looks busy without a reason.
@@ -505,12 +506,14 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   models, a Crew's size, GitProviders and credentials are never the planner's
   to make or change. When it needs one, or can't go on without a decision, the
   Brief's condition `NeedsInput` says what in one sentence, and the round waits.
-- **A Brief says how much its Crews build at once** (#533, planned). The
+- **A Brief says how much its Crews build at once** (#533). The
   Brief owns the `parallel` of the Crews it made and sets it every reconcile,
   earlier rounds' Crews included; a Crew it didn't make is left alone.
   `spec.parallel` (1 to 5) wins; else the number a prompt gave, which the
   planner relays in `plan/parallel.yaml` only when a new prompt asks, never
-  of its own accord; else the operator's default, 3. The agent-slot queue
+  of its own accord (#555, planned); else the operator's default, 3. A hand
+  edit of such a Crew's `parallel` is set back, and `status.apps` shows each
+  Crew's. The agent-slot queue
   still caps how many agents run. See
   [plans/brief-parallel.md](plans/brief-parallel.md).
 - **Follow-ups keep scaffold once.** A change to a scaffolded Container

@@ -283,13 +283,13 @@ var _ = Describe("Brief rounds", func() {
 		Expect(condition(rel.Status.Conditions, c4v1alpha1.ConditionApplied)).
 			NotTo(HaveField("Reason", c4v1alpha1.ReasonAddedAfterScaffold))
 
-		By("giving the Crew the Brief's Agents, one Task at a time")
+		By("giving the Crew the Brief's Agents, three Tasks at a time by default")
 		crew := &c4v1alpha1.Crew{}
 		Expect(k8sClient.Get(ctx, key(ns, "linter"), crew)).To(Succeed())
 		Expect(crew.Spec.ContainerRef.Name).To(Equal("linter"))
 		Expect(crew.Spec.Implementer.Name).To(Equal("implementer"))
 		Expect(crew.Spec.Reviewer.Name).To(Equal("reviewer"))
-		Expect(crew.Spec.Parallel).To(Equal(int32(1)))
+		Expect(crew.Spec.Parallel).To(Equal(model.BriefParallelDefault))
 		Expect(crew.Spec.TagReleases || crew.Spec.PrepareReleases).To(BeFalse())
 
 		By("labelling what it made with the Brief and the round, owned by none of it (B16)")
