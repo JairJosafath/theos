@@ -87,15 +87,18 @@ type (
 		Milestone int64   `json:"milestone,omitempty"`
 	}
 	giteaMilestoneOption struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
+		Title       string     `json:"title"`
+		Description string     `json:"description"`
+		DueOn       *time.Time `json:"due_on,omitempty"`
 	}
 )
 
 type giteaMilestone struct {
-	ID    int64      `json:"id"`
-	Title string     `json:"title"`
-	DueOn *time.Time `json:"due_on"`
+	ID          int64      `json:"id"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	State       string     `json:"state"`
+	DueOn       *time.Time `json:"due_on"`
 }
 
 type giteaIssue struct {
@@ -193,35 +196,17 @@ func (g *gitea) labels(ctx context.Context, repo Repository) (map[string]int64, 
 // and creates it, open and with description, if there is none. It leaves an
 // existing milestone as it is.
 func (g *gitea) EnsureMilestone(ctx context.Context, repo Repository, title, description string) (int64, error) {
-	for page := 1; page <= maxIssuePages; page++ {
-		path := fmt.Sprintf("/api/v1/repos/%s/milestones?state=all&limit=%d&page=%d", repoPath(repo), issuePageSize, page)
-		status, data, err := g.do(ctx, http.MethodGet, path, nil)
-		if err != nil {
-			return 0, err
-		}
-		var milestones []giteaMilestone
-		if status != http.StatusOK || json.Unmarshal(data, &milestones) != nil {
-			return 0, fmt.Errorf("gitea: listing milestones of %s failed (HTTP %d): %s", repoPath(repo), status, apiMessage(data))
-		}
-		for _, m := range milestones {
-			if m.Title == title {
-				return m.ID, nil
-			}
-		}
-		if len(milestones) < issuePageSize {
-			break
-		}
-	}
-	payload, _ := json.Marshal(giteaMilestoneOption{Title: title, Description: description})
-	status, data, err := g.do(ctx, http.MethodPost, "/api/v1/repos/"+repoPath(repo)+"/milestones", payload)
+	milestones, err := g.ListAllMilestones(ctx, repo)
 	if err != nil {
 		return 0, err
 	}
-	var created giteaMilestone
-	if status != http.StatusCreated || json.Unmarshal(data, &created) != nil {
-		return 0, fmt.Errorf("gitea: creating milestone %s in %s failed (HTTP %d): %s", title, repoPath(repo), status, apiMessage(data))
+	for _, m := range milestones {
+		if m.Title == title {
+			return m.ID, nil
+		}
 	}
-	return created.ID, nil
+	created, err := g.CreateMilestone(ctx, repo, title, description, time.Time{})
+	return created.ID, err
 }
 
 // ListIssues returns the open issues of repo labelled label, without pull requests.

@@ -54,7 +54,9 @@ Each step is its own pull request and leaves main working. Nothing reads
    that aren't versions ignored) and the workspace files.
 3. **Gitea's side.** (#388) `internal/gitprovider`: list a repository's milestones
    open and closed with their descriptions, and create one with a due date
-   and a description (R6); local-Gitea tests.
+   and a description (R6); local-Gitea tests. Gitea clears the due date of a
+   milestone an edit gives none, so closing one sends its due date back, which
+   Gitea keeps to the end of its day.
    *Done when:* `make test-gitea` creates a dated milestone and finds it again
    by its description, and `make check` passes.
 4. **The Brief releases.** (#390) API: `spec.releases` with its CEL rules (unique
