@@ -578,8 +578,11 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   tending round's plan holds only `plan/failed.yaml`, `plan/summary.md` and
   new issues; it leaves the story, the `Planned` condition and the prompts
   planned as the last prompt round left them, and none starts while that
-  round failed or asked for input: a prompt goes first. See
-  [plans/brief-autopilot.md](plans/brief-autopilot.md).
+  round failed or asked for input: a prompt goes first. The Brief's card
+  shows one *Needs you* box (`needsYou` with `NeedsInput`), its tending
+  rounds and its mode, and the create form lets the person choose the mode;
+  the Factory view's *Needs a look* names the Brief that watches an item and
+  when it acts. See [plans/brief-autopilot.md](plans/brief-autopilot.md).
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a

@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { demoFactory, demoHealth } from '../demo/factoryFixture'
 import type { FactoryHealth } from '../k8s/health'
-import type { Agent, Container, Crew, Session, Task, TaskTransition } from '../k8s/types'
+import type { Agent, Brief, Container, Crew, Session, Task, TaskTransition } from '../k8s/types'
 import {
   activeCrewTasks,
   agentBackAt,
   agentRole,
   attention,
   boardColumns,
+  briefOn,
   crewDoing,
   crewSummaries,
   crewSummary,
@@ -346,6 +347,57 @@ describe('attention', () => {
         detail: 'Waiting for Container vscode-extension to be Ready',
       },
     ])
+  })
+
+  it('names the Brief that watches an item, and when it acts', () => {
+    const now = new Date(2026, 9, 2, 12, 0).getTime()
+    const watcher: Brief = {
+      metadata: { name: 'cel-lens', namespace: 'tools' },
+      spec: { idea: 'A CEL lens', autopilot: 'On' },
+      status: {
+        attention: [
+          {
+            kind: 'Task',
+            name: 'cel-language-server-3',
+            reason: 'Its agent is back after a usage limit.',
+            actsAt: new Date(2026, 9, 2, 14, 0).toISOString(),
+          },
+          { kind: 'Container', name: 'quiet', reason: 'It acts once this changes.' },
+        ],
+        needsYou: [{ kind: 'Crew', name: 'vscode-extension', question: 'Its Agent is missing.' }],
+      },
+    }
+    // Same names in another namespace are another Brief's business.
+    const elsewhere: Brief = { ...watcher, metadata: { name: 'other', namespace: 'apps' } }
+    const waiting = issueTask({
+      phase: 'Implementing',
+      agentBackAt: new Date(2026, 9, 2, 13, 0).toISOString(),
+      conditions: [{ type: 'Progressing', status: 'True', reason: 'AgentUnavailable', message: 'Usage limit' }],
+    })
+    const blocked = crew(
+      'vscode-extension',
+      {},
+      { conditions: [{ type: 'Ready', status: 'False', reason: 'AgentNotFound', message: 'No Agent' }] },
+    )
+    const items = attention({
+      tasks: [waiting],
+      containers: [],
+      sessions: [],
+      crews: [blocked],
+      briefs: [elsewhere, watcher],
+      now,
+    })
+    expect(items.map((i) => i.brief)).toEqual([
+      { name: 'cel-lens', note: 'On Brief cel-lens’s Needs you list.' },
+      { name: 'cel-lens', note: 'Brief cel-lens acts after 14:00 if this hasn’t healed.' },
+    ])
+    expect(briefOn([watcher], 'Container', 'tools', 'quiet', now)).toEqual({
+      name: 'cel-lens',
+      note: 'Brief cel-lens leaves it alone until it changes.',
+    })
+    // A Task by that name is not the Container; nothing names an item no Brief lists.
+    expect(briefOn([watcher], 'Task', 'tools', 'quiet', now)).toBeUndefined()
+    expect(attention({ tasks: [waiting], containers: [], sessions: [], now })[0].brief).toBeUndefined()
   })
 
   it('forgets failures older than a day', () => {
@@ -695,6 +747,12 @@ describe('the demo', () => {
     const titles = attention({ ...data, health: demoHealth(T0), now: T0 }).map((i) => i.title)
     expect(titles).toContainEqual(expect.stringMatching(/^Task webshop\/orders-api-14 is waiting for the agent until /))
     expect(titles).toContain('Crew webshop/catalog-api can’t pick up issues')
+  })
+
+  it('names the webshop Brief on the agent wait', () => {
+    const items = attention({ ...data, health: demoHealth(T0), now: T0 })
+    const wait = items.find((i) => i.task === 'webshop/orders-api-14')
+    expect(wait?.brief?.note).toMatch(/^Brief webshop acts after .* if this hasn’t healed\.$/)
   })
 })
 

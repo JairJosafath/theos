@@ -2,16 +2,24 @@
 // prompt to one. server.mjs passes exactly these two requests on and nothing
 // else; the CRD's rules decide whether they are accepted.
 
-import { GROUP, VERSION, resourcePath, RESOURCES, type Brief } from './types'
+import { GROUP, VERSION, resourcePath, RESOURCES, type Brief, type BriefAutopilot } from './types'
 import { errorFromResponse } from './watch'
 
 /** Longest idea and prompt the Brief CRD accepts. */
 export const MAX_IDEA = 4000
 export const MAX_PROMPT = 2000
 
-/** The Brief to POST: only its name and idea; the factory fills in the rest. */
-export function briefManifest(namespace: string, name: string, idea: string): Brief {
-  return { apiVersion: `${GROUP}/${VERSION}`, kind: 'Brief', metadata: { name, namespace }, spec: { idea } }
+/**
+ * The Brief to POST: only its name, idea and, when chosen, its autopilot mode;
+ * the factory fills in the rest.
+ */
+export function briefManifest(namespace: string, name: string, idea: string, autopilot?: BriefAutopilot): Brief {
+  return {
+    apiVersion: `${GROUP}/${VERSION}`,
+    kind: 'Brief',
+    metadata: { name, namespace },
+    spec: autopilot ? { idea, autopilot } : { idea },
+  }
 }
 
 /** The JSON patch that appends one prompt; the only patch server.mjs passes on. */
@@ -65,7 +73,8 @@ export function nameFromIdea(idea: string, taken: string[]): string {
 
 /** Creates Briefs and adds prompts to them; rejects with the API's message when it refuses. */
 export interface BriefWriter {
-  create(namespace: string, name: string, idea: string): Promise<void>
+  /** Unset autopilot leaves the factory's default. */
+  create(namespace: string, name: string, idea: string, autopilot?: BriefAutopilot): Promise<void>
   addPrompt(namespace: string, name: string, prompt: string): Promise<void>
 }
 
@@ -79,11 +88,11 @@ export class LiveBriefWriter implements BriefWriter {
     this.fetchImpl = fetchImpl
   }
 
-  async create(namespace: string, name: string, idea: string): Promise<void> {
+  async create(namespace: string, name: string, idea: string, autopilot?: BriefAutopilot): Promise<void> {
     await this.send(`${this.baseUrl}${resourcePath(RESOURCES.briefs, namespace)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(briefManifest(namespace, name, idea)),
+      body: JSON.stringify(briefManifest(namespace, name, idea, autopilot)),
     })
   }
 

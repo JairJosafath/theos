@@ -247,13 +247,15 @@ export interface FactoryData {
   containers: Container[]
   sessions: Session[]
   crews: Crew[]
+  /** To name the Brief that watches an item on the Needs a look list. */
+  briefs: Brief[]
 }
 
 export function emptyFactory(): FactoryData {
-  return { projects: [], tasks: [], agents: [], containers: [], sessions: [], crews: [] }
+  return { projects: [], tasks: [], agents: [], containers: [], sessions: [], crews: [], briefs: [] }
 }
 
-/** Watches the work of the factory in every namespace: Tasks, Agents, Containers, Sessions and Crews. */
+/** Watches the work of the factory in every namespace: Tasks, Agents, Containers, Sessions, Crews and Briefs. */
 export class LiveFactorySource extends WatchingSource<FactoryData> {
   constructor(api: Api) {
     super(
@@ -265,6 +267,7 @@ export class LiveFactorySource extends WatchingSource<FactoryData> {
         { what: 'sessions', watcher: watcher(api, RESOURCES.sessions) },
         // Optional, so a cluster without the Crew kind still shows its Tasks.
         { what: 'crews', watcher: watcher(api, RESOURCES.crews), optional: true },
+        { what: 'briefs', watcher: watcher(api, RESOURCES.briefs), optional: true },
       ],
       emptyFactory(),
     )
@@ -278,6 +281,7 @@ export class LiveFactorySource extends WatchingSource<FactoryData> {
       containers: this.items<Container>(3),
       sessions: this.items<Session>(4),
       crews: this.items<Crew>(5),
+      briefs: this.items<Brief>(6),
     }
   }
 }

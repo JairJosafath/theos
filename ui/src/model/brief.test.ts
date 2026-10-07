@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Brief, BriefApp, BriefFailedKind, BriefPhase } from '../k8s/types'
 import {
+  describeAutopilot,
   describeBrief,
   describeBriefApp,
   describeBriefPhase,
@@ -321,5 +322,192 @@ describe('describeBriefApp', () => {
       ['web', 'Releases off', 'Releases are off.'],
     ])
     expect(describeBrief(brief('none', '2026-01-01T00:00:00Z')).apps).toEqual([])
+  })
+})
+
+describe('the Needs you box', () => {
+  const needsInput = {
+    type: 'NeedsInput',
+    status: 'True' as const,
+    reason: 'AgentNotFound',
+    message: 'Agent planner is missing: create it.',
+  }
+
+  it('lists what the Brief waits for first, then each item with its recommendation and why', () => {
+    const view = describeBrief({
+      ...brief('lens', '2026-01-01T00:00:00Z'),
+      spec: { idea: 'A lens', autopilot: 'Ask' },
+      status: {
+        phase: 'NeedsInput',
+        failed: [{ container: 'cli', number: 3, url: 'http://git/cli/issues/3', kind: 'failed' }],
+        needsYou: [
+          {
+            kind: 'Issue',
+            name: 'cli#3',
+            question: 'Its Task failed twice on the checker. ',
+            recommend: 'Try it again once core#8 merges.',
+            why: 'core#8 adds the checker.',
+            since: '2026-01-02T00:00:00Z',
+          },
+          {
+            kind: 'Task',
+            name: 'core-8',
+            question: 'It has waited 26h for Standard change #27.',
+            recommend: 'Review or close it.',
+          },
+        ],
+        needsYouWaiting: 4,
+        conditions: [needsInput],
+      },
+    })
+    expect(view.needsYou).toEqual([
+      { kind: 'Input', label: 'The Brief', question: 'Agent planner is missing: create it.' },
+      {
+        kind: 'Issue',
+        label: 'cli #3',
+        url: 'http://git/cli/issues/3',
+        question: 'Its Task failed twice on the checker.',
+        recommend: 'Try it again once core#8 merges.',
+        why: 'core#8 adds the checker.',
+        since: '2026-01-02T00:00:00Z',
+      },
+      {
+        kind: 'Task',
+        label: 'Task core-8',
+        url: undefined,
+        question: 'It has waited 26h for Standard change #27.',
+        recommend: 'Review or close it.',
+        why: undefined,
+        since: undefined,
+      },
+    ])
+    // The four the operator counts, and the Brief's own input.
+    expect(view.needsYouWaiting).toBe(5)
+    expect(view.needsInput).toBe('Agent planner is missing: create it.')
+  })
+
+  it('is empty when nothing needs the person', () => {
+    const view = describeBrief({ ...brief('lens', '2026-01-01T00:00:00Z'), status: { phase: 'Planned' } })
+    expect(view.needsYou).toEqual([])
+    expect(view.needsYouWaiting).toBe(0)
+  })
+
+  it('holds NeedsInput alone while autopilot is off', () => {
+    const view = describeBrief({
+      ...brief('lens', '2026-01-01T00:00:00Z'),
+      status: { phase: 'NeedsInput', conditions: [needsInput] },
+    })
+    expect(view.needsYou.map((n) => n.kind)).toEqual(['Input'])
+    expect(view.needsYouWaiting).toBe(1)
+  })
+
+  it('counts the items in the phase explanation', () => {
+    const view = describeBrief({
+      ...brief('lens', '2026-01-01T00:00:00Z'),
+      status: {
+        phase: 'Planned',
+        needsYou: [{ kind: 'Crew', name: 'cli', question: 'Its Agent is missing.' }],
+        failedWaiting: 2,
+      },
+    })
+    expect(view.phase.explanation).toBe(
+      'The last round is done; 1 item under Needs you and 2 failed issues wait for your answer in a prompt.',
+    )
+  })
+
+  it('doesn’t count a failed issue twice once the Brief tends them', () => {
+    const view = describeBrief({
+      ...brief('lens', '2026-01-01T00:00:00Z'),
+      spec: { idea: 'A lens', autopilot: 'Ask' },
+      status: {
+        phase: 'Planned',
+        failed: [{ container: 'cli', number: 3, kind: 'failed' }],
+        failedWaiting: 1,
+        needsYou: [{ kind: 'Issue', name: 'cli#3', question: 'Issue cli#3 needs you.' }],
+      },
+    })
+    expect(view.phase.explanation).toBe(
+      'The last round is done; 1 item under Needs you waits for your answer in a prompt.',
+    )
+  })
+})
+
+describe('what the Brief did by itself', () => {
+  it('lists its tending rounds newest first, with each answer and why', () => {
+    const view = describeBrief({
+      ...brief('lens', '2026-01-01T00:00:00Z'),
+      spec: { idea: 'A lens', autopilot: 'On' },
+      status: {
+        failed: [{ container: 'cli', number: 1, url: 'http://git/cli/issues/1', kind: 'failed' }],
+        history: [
+          { round: 1, outcome: 'Applied', summary: 'Planned the lens' },
+          { round: 2, outcome: 'Tended', summary: 'Retried the CLI issue ' },
+          { round: 3, outcome: 'Applied' },
+          { round: 4, outcome: 'Tended' },
+        ],
+        tended: [
+          { container: 'cli', number: 1, answer: 'retry', why: 'The checker is merged now.', at: 'x', round: 2 },
+          { container: 'core', number: 2, answer: 'close', at: 'x', round: 2 },
+          {
+            container: 'core',
+            number: 5,
+            answer: 'ask',
+            why: 'It needs a paid API key.',
+            recommend: { answer: 'close' },
+            at: 'x',
+            round: 4,
+          },
+          { container: 'core', number: 6, answer: 'wait', why: 'No engine release yet.', at: 'x', round: 4 },
+        ],
+      },
+    })
+    expect(view.tended).toEqual([
+      {
+        round: 4,
+        summary: undefined,
+        answers: [
+          { label: 'core #5', url: undefined, text: 'Asked you; it would close it: It needs a paid API key.' },
+          { label: 'core #6', url: undefined, text: 'Waits: No engine release yet.' },
+        ],
+      },
+      {
+        round: 2,
+        summary: 'Retried the CLI issue',
+        answers: [
+          { label: 'cli #1', url: 'http://git/cli/issues/1', text: 'Tried again: The checker is merged now.' },
+          { label: 'core #2', url: undefined, text: 'Closed' },
+        ],
+      },
+    ])
+  })
+
+  it('is empty before any tending round', () => {
+    expect(describeBrief(brief('lens', '2026-01-01T00:00:00Z')).tended).toEqual([])
+  })
+})
+
+describe('describeAutopilot', () => {
+  it.each<['Off' | 'Ask' | 'On', string]>([
+    ['Off', 'Autopilot off'],
+    ['Ask', 'Autopilot asks'],
+    ['On', 'Autopilot on'],
+  ])('%s', (mode, label) => {
+    expect(describeAutopilot(mode)).toMatchObject({ mode, isDefault: false, label })
+  })
+
+  it('says when the factory’s default applies', () => {
+    const info = describeAutopilot(undefined)
+    expect(info).toMatchObject({ mode: 'Off', isDefault: true, label: 'Autopilot off' })
+    expect(info.explanation).toMatch(/default\.$/)
+  })
+
+  it('points failed issues at a prompt only while it is off', () => {
+    const failed = { failed: [{ container: 'cli', number: 1, kind: 'failed' as const }] }
+    const hint = (autopilot?: 'Off' | 'Ask' | 'On') =>
+      describeBrief({ ...brief('lens', '2026-01-01T00:00:00Z'), spec: { idea: 'x', autopilot }, status: failed })
+        .failedHint
+    expect(hint()).toMatch(/^Say in a prompt whether to try again/)
+    expect(hint('Ask')).toMatch(/Needs you/)
+    expect(hint('On')).toMatch(/by itself; a prompt overrules it/)
   })
 })

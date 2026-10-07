@@ -655,10 +655,11 @@ export function demoStory(now: number): StoryData {
           implementer: { name: 'claude-implementer' },
           reviewer: { name: 'claude-reviewer' },
         },
+        autopilot: 'Ask',
       },
       status: {
         phase: 'Planned',
-        round: 2,
+        round: 3,
         promptsPlanned: 1,
         choices: [
           'Reorder is a button on each past order in the storefront, served by orders-api.',
@@ -750,11 +751,47 @@ export function demoStory(now: number): StoryData {
         history: [
           { round: 1, summary: 'Planned the shop: storefront, orders and catalog', costMilliUSD: 312 },
           { round: 2, summary: 'Added one-click reorder', costMilliUSD: 148 },
+          { round: 3, summary: 'Decided the failed reorder button', costMilliUSD: 41, outcome: 'Tended' },
         ],
+        // In Ask, the tending round's answer waits under Needs you.
+        tended: [
+          {
+            container: 'storefront',
+            number: 3,
+            answer: 'ask',
+            why: 'Its Task failed on the cart API, which orders-api#14 adds.',
+            recommend: { answer: 'wait', why: 'orders-api#14 is in review.' },
+            tries: 1,
+            at: ago(20 * 60),
+            round: 3,
+          },
+        ],
+        needsYou: [
+          {
+            kind: 'Issue',
+            name: 'storefront#3',
+            question: 'Its Task failed on the cart API; try it again, or wait for orders-api#14?',
+            recommend: 'Wait until orders-api#14 merges, then try it again.',
+            why: 'The button calls the cart API that orders-api#14 adds.',
+            since: ago(20 * 60),
+          },
+        ],
+        needsYouWaiting: 1,
+        // The agent's usage limit resets on its own: the Brief waits an hour past it.
+        attention: [
+          {
+            kind: 'Task',
+            name: 'orders-api-14',
+            reason: 'Its agent is back after a usage limit.',
+            actsAt: new Date(back + 60 * MIN).toISOString(),
+          },
+        ],
+        lastTendTime: ago(25 * 60),
+        tendRound: 3,
         repositoryURL: `${GITEA_WEB}/webshop/brief-webshop`,
-        costMilliUSD: 460,
+        costMilliUSD: 501,
         conditions: [
-          cond('Planned', 'True', 'Applied', 'Round 2 is applied', ago(1800)),
+          cond('Planned', 'True', 'Applied', 'Round 3 is applied', ago(1800)),
           cond('NeedsInput', 'False', 'NothingAsked', 'Nothing is asked', ago(1800)),
         ],
       },

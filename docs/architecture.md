@@ -292,10 +292,11 @@ lives in the catalog's templates.
    sandboxes by their label, and reads the operator's `--max-agent-sandboxes`.
 3. It returns states, restarts, usage and the last hour of samples, never a pod
    spec.
-4. The browser combines that with the Tasks, Agents, Containers, Sessions and
-   Crews it watches (`src/model/factory.ts`): the board, each Task's timeline
+4. The browser combines that with the Tasks, Agents, Containers, Sessions,
+   Crews and Briefs it watches (`src/model/factory.ts`): the board, each Task's timeline
    from `status.history`, the Crews, the time per stage and the "Needs a look"
-   list.
+   list, each item naming the Brief whose `status.attention` or `needsYou`
+   lists it.
 
 The Task controller writes `status.history` in `writeStatus`, through
 `model.RecordTransition`.

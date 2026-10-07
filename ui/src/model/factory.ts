@@ -2,7 +2,18 @@
 // their time goes, and what needs attention. Plain functions over resources and
 // the /factory/health summary, so they are tested without React.
 
-import type { Agent, Container, Crew, CrewPhase, Session, Task, TaskPhase, TaskTransition } from '../k8s/types'
+import type {
+  Agent,
+  Brief,
+  BriefItemKind,
+  Container,
+  Crew,
+  CrewPhase,
+  Session,
+  Task,
+  TaskPhase,
+  TaskTransition,
+} from '../k8s/types'
 import { findCondition } from '../k8s/types'
 import { plural, titleOf } from './describe'
 import type { FactoryHealth } from '../k8s/health'
@@ -347,6 +358,41 @@ export interface Attention {
   detail: string
   /** The Task it is about, if any (namespace/name). */
   task?: string
+  /** The Brief that watches the item, and what it will do about it. */
+  brief?: { name: string; note: string }
+}
+
+/**
+ * The Brief that watches a Task, Crew or Container, from its status.attention
+ * (healing: when it acts) or status.needsYou (on its list); undefined when no
+ * Brief in the namespace lists it.
+ */
+export function briefOn(
+  briefs: Brief[],
+  kind: Exclude<BriefItemKind, 'Issue'>,
+  namespace: string | undefined,
+  name: string,
+  now: number,
+): { name: string; note: string } | undefined {
+  for (const brief of briefs) {
+    if (brief.metadata.namespace !== namespace) continue
+    const briefName = brief.metadata.name
+    if ((brief.status?.needsYou ?? []).some((n) => n.kind === kind && n.name === name)) {
+      return { name: briefName, note: `On Brief ${briefName}’s Needs you list.` }
+    }
+    const healing = (brief.status?.attention ?? []).find((h) => h.kind === kind && h.name === name)
+    if (healing) {
+      const at = time(healing.actsAt)
+      return {
+        name: briefName,
+        note:
+          at === undefined
+            ? `Brief ${briefName} leaves it alone until it changes.`
+            : `Brief ${briefName} acts after ${formatClock(at, now)} if this hasn’t healed.`,
+      }
+    }
+  }
+  return undefined
 }
 
 /** Everything that needs a look, errors first. */
@@ -355,10 +401,12 @@ export function attention(input: {
   containers: Container[]
   sessions: Session[]
   crews?: Crew[]
+  /** The Briefs, to name the one that watches an item. */
+  briefs?: Brief[]
   health?: FactoryHealth
   now: number
 }): Attention[] {
-  const { tasks, containers, sessions, crews = [], health, now } = input
+  const { tasks, containers, sessions, crews = [], briefs = [], health, now } = input
   const items: Attention[] = []
 
   if (health) {
@@ -418,6 +466,7 @@ export function attention(input: {
       level: 'error',
       title: `Container ${c.metadata.namespace}/${c.metadata.name} failed`,
       detail: failedCondition?.message ?? 'Scaffolding failed.',
+      brief: briefOn(briefs, 'Container', c.metadata.namespace, c.metadata.name, now),
     })
   }
 
@@ -428,11 +477,13 @@ export function attention(input: {
       level: 'warning',
       title: `Crew ${crew.metadata.namespace}/${crew.metadata.name} can’t pick up issues`,
       detail: ready.message?.trim() || 'Its Ready condition is False.',
+      brief: briefOn(briefs, 'Crew', crew.metadata.namespace, crew.metadata.name, now),
     })
   }
 
   for (const task of tasks) {
     const key = taskKey(task)
+    const brief = briefOn(briefs, 'Task', task.metadata.namespace, task.metadata.name, now)
     if (task.status?.phase === 'Failed') {
       const done = time(task.status.completedAt)
       if (done !== undefined && now - done < RECENT_FAILURE_MS) {
@@ -441,6 +492,7 @@ export function attention(input: {
           title: `Task ${key} failed`,
           detail: findCondition(task.status.conditions, 'Succeeded')?.message ?? 'See the Task.',
           task: key,
+          brief,
         })
       }
       continue
@@ -456,6 +508,7 @@ export function attention(input: {
           findCondition(task.status?.conditions, 'Progressing')?.message ??
           'Its agent’s service is unavailable: a usage limit, an overload or refused credentials.',
         task: key,
+        brief,
       })
       continue
     }
@@ -468,6 +521,7 @@ export function attention(input: {
         title: `Task ${key} has been ${label} for ${formatDuration(now - since)}`,
         detail: findCondition(task.status?.conditions, 'Progressing')?.message ?? '',
         task: key,
+        brief,
       })
     }
   }
