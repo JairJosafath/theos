@@ -62,9 +62,10 @@ var _ = Describe("Task whose agent can't start its issue", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			// The next round's feedback, which its prompt carries, says so; the
+			// Progressing message has moved on to round 2 by now.
+			g.Expect(task.Status.Feedback).To(Equal(model.NoChangeNoReason))
 			g.Expect(task.Status.Feedback).To(ContainSubstring("gave no reason"))
-			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).To(
-				HaveField("Message", ContainSubstring("Round 1 was not accepted (the agent made no changes and gave no reason")))
 		}).Should(Succeed())
 	})
 })
