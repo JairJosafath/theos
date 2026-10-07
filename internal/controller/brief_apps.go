@@ -25,7 +25,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// The Brief's apps (docs/plans/brief-releases.md, R8): a line per Container the
+// The Brief's apps (docs/plans/done/brief-releases.md, R8): a line per Container the
 // Brief made, copied from its Crew, so the person sees each app's latest
 // release and where it went without reading the Crews.
 

@@ -455,7 +455,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   the Brief didn't make is left alone. `status.apps` and the Brief's card show
   each app's latest release and where it went, and say plainly when releases
   are off and how to turn them on. See
-  [plans/brief-releases.md](plans/brief-releases.md).
+  [plans/done/brief-releases.md](plans/done/brief-releases.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for

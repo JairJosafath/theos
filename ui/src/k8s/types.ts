@@ -324,6 +324,32 @@ export interface Crew extends K8sObject {
 
 export type BriefPhase = 'Pending' | 'Planning' | 'Applying' | 'Planned' | 'NeedsInput' | 'Failed'
 
+/** A Container the Brief made, or one spec.releases names, and how its releases go: copied from its Crew. */
+export interface BriefApp {
+  container: string
+  /** The Container's Crew; empty while it has none. */
+  crew?: string
+  /** On when the Crew tags releases. */
+  releases: 'On' | 'Off'
+  /** The GitHub repository, owner/name, the Crew publishes its releases to; empty when it publishes none. */
+  publishTo?: string
+  /** The Crew's latest release. */
+  lastRelease?: {
+    tag: string
+    /** The release's page on the Git host. */
+    url?: string
+    time?: string
+    /** How the tag's CI runs went. */
+    run?: 'Waiting' | 'Running' | 'Succeeded' | 'Failed'
+    /** How publishing it went; empty when the Crew publishes none. */
+    publishState?: 'Pending' | 'Publishing' | 'Published' | 'Failed'
+    /** The published release. */
+    publishedURL?: string
+  }
+  /** One plain sentence on how the app's releases go. */
+  message?: string
+}
+
 /** An app idea in plain words, steered by follow-up prompts; a planner Agent turns it into the model, round by round. */
 export interface Brief extends K8sObject {
   spec: {
@@ -352,6 +378,8 @@ export interface Brief extends K8sObject {
     suggestions?: { container: string; number: number; title?: string; url?: string; criteria?: boolean }[]
     /** How many reviewer suggestions wait in all; can exceed the listed ones. */
     suggestionsWaiting?: number
+    /** A line per Container the Brief made, then one per spec.releases entry naming none it made. */
+    apps?: BriefApp[]
     /** One entry per round, oldest first. */
     history?: {
       round: number

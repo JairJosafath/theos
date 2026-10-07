@@ -2567,6 +2567,53 @@ textarea.input {
   color: var(--text-2);
 }
 
+.brief-apps {
+  padding: 0;
+  list-style: none;
+}
+
+.brief-app {
+  padding: 4px 0;
+}
+
+.brief-app-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.brief-app-head .mono {
+  font-size: 12.5px;
+}
+
+.brief-app-release a,
+.brief-app-release .mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.brief-app-release a {
+  color: var(--link);
+}
+
+.brief-app-published {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+a.brief-app-published {
+  color: var(--link);
+}
+
+.brief-app-message {
+  margin: 2px 0 0;
+  color: var(--text-2);
+}
+
 .brief-prompts li {
   display: flex;
   align-items: baseline;

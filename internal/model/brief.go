@@ -121,7 +121,7 @@ type Plan struct {
 	// in a sentence or two.
 	Summary string
 	// Releases are the Containers releases.yaml says ship releases, sorted,
-	// each once (plans/brief-releases.md, R1).
+	// each once (plans/done/brief-releases.md, R1).
 	Releases []string
 }
 

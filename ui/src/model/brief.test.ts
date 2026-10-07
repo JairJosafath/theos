@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Brief, BriefPhase } from '../k8s/types'
-import { describeBrief, describeBriefPhase, describeCost, formatCost, sortBriefs } from './brief'
+import type { Brief, BriefApp, BriefPhase } from '../k8s/types'
+import { describeBrief, describeBriefApp, describeBriefPhase, describeCost, formatCost, sortBriefs } from './brief'
 
 function brief(name: string, created: string, extra: Partial<Brief> = {}): Brief {
   return { metadata: { name, creationTimestamp: created }, spec: { idea: `Idea ${name}` }, ...extra }
@@ -143,5 +143,81 @@ describe('describeCost', () => {
       status: { phase: 'Planned', round: 1, runsWithoutCost: 1 },
     })
     expect(view.cost).toBe('cost not reported by the agent')
+  })
+})
+
+describe('describeBriefApp', () => {
+  const released: BriefApp = {
+    container: 'api',
+    crew: 'api',
+    releases: 'On',
+    publishTo: 'acme/api',
+    lastRelease: {
+      tag: 'v1.0.0',
+      url: 'http://g/acme/api/releases/tag/v1.0.0',
+      time: '2026-01-01T00:00:00Z',
+      run: 'Succeeded',
+      publishState: 'Published',
+      publishedURL: 'https://github.com/acme/api/releases/tag/v1.0.0',
+    },
+    message: 'Released v1.0.0 and published it to acme/api.',
+  }
+
+  it('links a released and published app to both releases', () => {
+    expect(describeBriefApp(released)).toEqual({
+      container: 'api',
+      releasesOn: true,
+      label: 'Releases on',
+      tone: 'ok',
+      message: 'Released v1.0.0 and published it to acme/api.',
+      release: { tag: 'v1.0.0', url: 'http://g/acme/api/releases/tag/v1.0.0', time: '2026-01-01T00:00:00Z' },
+      publishTo: 'acme/api',
+      publishedURL: 'https://github.com/acme/api/releases/tag/v1.0.0',
+    })
+  })
+
+  it('shows an app with releases off, muted, with its message', () => {
+    const view = describeBriefApp({ container: 'web', crew: 'web', releases: 'Off', message: 'Releases are off.' })
+    expect(view).toMatchObject({
+      releasesOn: false,
+      label: 'Releases off',
+      tone: 'unknown',
+      message: 'Releases are off.',
+    })
+    expect(view.release).toBeUndefined()
+    expect(view.publishTo).toBeUndefined()
+  })
+
+  it.each<[string, Partial<NonNullable<BriefApp['lastRelease']>> | undefined, string]>([
+    ['no release yet', undefined, 'waiting'],
+    ['CI running', { run: 'Running', publishState: undefined }, 'progress'],
+    ['CI failed', { run: 'Failed', publishState: undefined }, 'error'],
+    ['publishing', { publishState: 'Publishing', publishedURL: undefined }, 'progress'],
+    ['publish failed', { publishState: 'Failed', publishedURL: undefined }, 'error'],
+    ['released, not published', { publishState: undefined, publishedURL: undefined }, 'ok'],
+  ])('tones %s as %s', (_, change, tone) => {
+    const lastRelease = change && { ...released.lastRelease!, ...change }
+    expect(describeBriefApp({ ...released, lastRelease }).tone).toBe(tone)
+  })
+
+  it('links the published release only once it is published', () => {
+    const view = describeBriefApp({
+      ...released,
+      lastRelease: { ...released.lastRelease!, publishState: 'Publishing' },
+    })
+    expect(view.publishedURL).toBeUndefined()
+    expect(view.publishTo).toBe('acme/api')
+  })
+
+  it('is listed on the Brief, in order', () => {
+    const view = describeBrief({
+      ...brief('shop', '2026-01-01T00:00:00Z'),
+      status: { apps: [released, { container: 'web', releases: 'Off' }] },
+    })
+    expect(view.apps.map((a) => [a.container, a.label, a.message])).toEqual([
+      ['api', 'Releases on', 'Released v1.0.0 and published it to acme/api.'],
+      ['web', 'Releases off', 'Releases are off.'],
+    ])
+    expect(describeBrief(brief('none', '2026-01-01T00:00:00Z')).apps).toEqual([])
   })
 })

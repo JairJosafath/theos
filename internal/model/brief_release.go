@@ -8,7 +8,7 @@ import (
 )
 
 // ReleaseMilestoneDue is how long after it is made a Brief's release
-// milestone is due; the date only orders releases (plans/brief-releases.md, R6).
+// milestone is due; the date only orders releases (plans/done/brief-releases.md, R6).
 const ReleaseMilestoneDue = 7 * 24 * time.Hour
 
 // ReleaseMilestoneTitle is the title of the release milestone a Brief's round
