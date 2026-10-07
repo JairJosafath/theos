@@ -62,11 +62,16 @@ RUN if [ "$(id -u runner):$(id -g runner)" != "${RUNNER_UID}:${RUNNER_GID}" ]; t
 
 # Volumes keep these across jobs and containers: the registration in
 # /runner-state, the tool cache setup-go and setup-node fill, and the Go, npm
-# and golangci-lint caches under ~/.cache.
+# and golangci-lint caches under ~/.cache. So does the Makefile's LOCALBIN
+# (controller-gen, golangci-lint, the envtest binaries, Gitea): in the
+# checkout's .dev/, actions/checkout's clean would delete it before every job.
+# Its tools have versioned names and install through a temporary directory,
+# so the runners share it as the worktrees of a device share .dev/.
 ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache \
     AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache \
     GOMODCACHE=/home/runner/.cache/go-mod \
-    npm_config_cache=/home/runner/.cache/npm
+    npm_config_cache=/home/runner/.cache/npm \
+    LOCALBIN=/home/runner/.cache/make-bin
 
 COPY entrypoint.sh /usr/local/bin/gh-runner-entrypoint
 USER runner
