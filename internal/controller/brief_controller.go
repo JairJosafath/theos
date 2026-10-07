@@ -151,10 +151,17 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 		logf.FromContext(ctx).Info("Prepared the Brief's repository", "url", url)
 		brief.Status.RepositoryURL = url
 	}
-	if err := r.syncReleases(ctx, brief); err != nil {
-		return ctrl.Result{}, err
+	// A Crew that can't take its releases doesn't stop the rounds; the
+	// reconcile tries it again after them.
+	releasesErr := r.syncReleases(ctx, brief)
+	if releasesErr != nil {
+		logf.FromContext(ctx).Info("Could not bring a Crew's releases up to date", "error", releasesErr.Error())
 	}
-	return r.reconcileRound(ctx, brief, orig)
+	result, err := r.reconcileRound(ctx, brief, orig)
+	if err == nil && releasesErr != nil {
+		return ctrl.Result{}, releasesErr
+	}
+	return result, err
 }
 
 // writeStatus patches the Brief's status when it changed.
