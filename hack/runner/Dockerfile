@@ -2,6 +2,7 @@
 # (BASE), running jobs in host mode, so CI checks with exactly the tools the
 # agents use. Jobs pick it with `runs-on: <label>`: `make runner-base` builds it
 # on the minimal image (label base), `make runner-go` on the Go and Node one (label go).
+# Both images have uv, so a Python project checks on either and releases on go.
 ARG BASE=c4factory/base:dev
 FROM ${BASE}
 ARG RUNNER_VERSION=3.5.0
