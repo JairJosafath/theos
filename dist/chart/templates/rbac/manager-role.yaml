@@ -63,7 +63,6 @@ rules:
   - deployments
   - frameworks
   - gitproviders
-  - people
   - standards
   verbs:
   - get
@@ -124,7 +123,7 @@ rules:
 - apiGroups:
   - c4.factory.io
   resources:
-  - persons
+  - people
   verbs:
   - create
   - get

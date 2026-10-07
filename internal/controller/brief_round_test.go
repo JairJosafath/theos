@@ -10,6 +10,7 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -48,9 +49,18 @@ spec:
 `, ns)
 }
 
-// linterDocs are the objects of the cel-lens plan: its system, the Container
-// linter, the DataStore rules-db and the Relationship between them.
+// linterDocs are the objects of the cel-lens plan: the Person rule-author, its
+// system, the Container linter, the DataStore rules-db and the Relationship
+// between them. A real planner's model starts with a Person, which the
+// operator's role must let it create (#371).
 const linterDocs = `---
+apiVersion: c4.factory.io/v1alpha1
+kind: Person
+metadata:
+  name: rule-author
+spec:
+  displayName: Rule author
+---
 apiVersion: c4.factory.io/v1alpha1
 kind: SoftwareSystem
 metadata:
@@ -219,6 +229,7 @@ var _ = Describe("Brief rounds", func() {
 		Expect(brief.Status.Choices).To(Equal([]string{"A service lints the rules", "Postgres keeps them"}))
 		Expect(brief.Status.PromptsPlanned).To(BeZero())
 		Expect(brief.Status.Created).To(ConsistOf(
+			c4v1alpha1.BriefObject{Kind: "Person", Name: "rule-author"},
 			c4v1alpha1.BriefObject{Kind: "SoftwareSystem", Name: "cel-lens"},
 			c4v1alpha1.BriefObject{Kind: "Container", Name: "linter"},
 			c4v1alpha1.BriefObject{Kind: "DataStore", Name: "rules-db"},
@@ -265,11 +276,13 @@ var _ = Describe("Brief rounds", func() {
 		Expect(crew.Spec.TagReleases || crew.Spec.PrepareReleases).To(BeFalse())
 
 		By("labelling what it made with the Brief and the round, owned by none of it (B16)")
+		person := &c4v1alpha1.Person{}
+		Expect(k8sClient.Get(ctx, key(ns, "rule-author"), person)).To(Succeed())
 		system := &c4v1alpha1.SoftwareSystem{}
 		Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), system)).To(Succeed())
 		store := &c4v1alpha1.DataStore{}
 		Expect(k8sClient.Get(ctx, key(ns, "rules-db"), store)).To(Succeed())
-		for _, obj := range []client.Object{system, container, store, rel, crew} {
+		for _, obj := range []client.Object{person, system, container, store, rel, crew} {
 			Expect(obj.GetLabels()).To(And(HaveKeyWithValue(c4v1alpha1.LabelBrief, "cel-lens"),
 				HaveKeyWithValue(c4v1alpha1.LabelBriefRound, "1")), obj.GetName())
 			Expect(ownedByBrief(obj)).To(BeFalse(), obj.GetName())
@@ -581,6 +594,38 @@ spec:
 		}).Should(Succeed())
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.SoftwareSystem{}))).
 			To(BeTrue(), "nothing is applied")
+	})
+
+	It("says in its status and an Event why applying stopped, and stays Applying while it tries again (#371)", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		mustCreate(newBrief(ns, "cel-lens"))
+		files := linterPlan(ns, 1)
+		files[model.PlanModelFile] = scaffold.File{Data: []byte(projectDoc(ns) + fmt.Sprintf(`---
+apiVersion: c4.factory.io/v1alpha1
+kind: Person
+metadata:
+  name: rule-author
+spec:
+  description: %s
+`, strings.Repeat("x", 1001)) + linterDocs[strings.Index(linterDocs, "---\napiVersion: c4.factory.io/v1alpha1\nkind: SoftwareSystem"):])}
+		planRound(ns, 1, 1, files)
+
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefApplying))
+			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
+				HaveField("Status", metav1.ConditionFalse), HaveField("Reason", model.ReasonApplyFailed),
+				HaveField("Message", And(ContainSubstring("Round 1 could not be applied at Person/rule-author"),
+					ContainSubstring("spec.description"), ContainSubstring("tries again")))))
+			g.Expect(briefEventNotes(g, ns, "ApplyFailed")).To(ContainElement(
+				ContainSubstring("at Person/rule-author")))
+		}).Should(Succeed())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.SoftwareSystem{}))).
+			To(BeTrue(), "the objects after the Person wait for it")
+		Consistently(func(g Gomega) {
+			g.Expect(briefEventNotes(g, ns, "ApplyFailed")).To(HaveLen(1), "one Event while the message holds")
+		}, "2s").Should(Succeed())
 	})
 
 	It("finishes a round a restart left halfway, with no duplicate issue or Crew", func() {

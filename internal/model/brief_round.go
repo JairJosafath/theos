@@ -23,6 +23,10 @@ const (
 	ReasonRoundFailed       = "RoundFailed"
 )
 
+// ReasonApplyFailed is the reason of a Brief's Planned condition while its
+// round's plan fails to apply and the operator tries again.
+const ReasonApplyFailed = "ApplyFailed"
+
 // The Plan Task phases a Brief's round reads.
 const (
 	planTaskMerged = "Merged"
