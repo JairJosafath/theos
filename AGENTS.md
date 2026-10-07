@@ -108,17 +108,19 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   unsure which way to go, ask the user with the choice you'd make and why, so
   they can steer.
 - **Test the rules where they live,** at the lowest tier that can see them:
-  1. `internal/model` and `internal/scaffold` table tests, and the Agent
-     Sandbox and pod specs the controllers build, the fence included
-     (`make test`).
+  1. `internal/model` and `internal/scaffold` table tests, the Agent
+     Sandbox and pod specs the controllers build, the fence included, and
+     the generated RBAC role naming only real CRD resources and
+     subresources (`make test`).
   2. `make validate-yaml`: samples, fixtures, kustomize builds and the chart,
      offline, against the CRDs; the valid YAML passes their create-time CEL
      rules.
   3. `make test-gitea` and `make seed-local`: a local Gitea, no Kubernetes.
   4. envtest (`make test`): reconcilers, status, the admission policy, and
      every CEL rule's failing case, create-time ones included, the reaction
-     to faked Sandbox and pod status, and the generated RBAC role against
-     the calls the controllers make.
+     to faked Sandbox and pod status. The reconcilers run under the
+     generated RBAC role, so a call a spec makes that the role doesn't
+     grant fails that spec; a call no spec makes goes unchecked.
   5. Kind and `make e2e`, only when a human asks: the whole loop on stand-in
      agents. No agent runs it, and nothing waits for it.
 

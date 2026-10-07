@@ -15,10 +15,10 @@ Test a rule at the lowest tier that can see it ([design](../design.md#test-tiers
 
 | Tier | Runs | Verifies |
 | --- | --- | --- |
-| 1. Table tests | `make test`, no API server | `internal/model` decisions, `internal/scaffold` rendering of every template, the Agent Sandbox and pod specs and the fence's NetworkPolicy (`sandbox_fence_unit_test.go`) |
+| 1. Table tests | `make test`, no API server | `internal/model` decisions, `internal/scaffold` rendering of every template, the Agent Sandbox and pod specs and the fence's NetworkPolicy (`sandbox_fence_unit_test.go`), the generated RBAC role naming only CRD plurals and subresources they have (`rbac_unit_test.go`) |
 | 2. Offline YAML | `make validate-yaml`, in `make check` | samples, e2e fixtures, kustomize builds, the chart, rendered manifests, against the CRDs: valid YAML passes their create-time CEL rules |
 | 3. Local Gitea | `make test-gitea`, `make seed-local` | the Gitea API's real behaviour, the seed, template tags |
-| 4. envtest | `make test` | reconcilers, status, ownerReferences, the admission policy, every CEL rule's failing case (create-time and on `oldSelf`), the reaction to faked Sandbox and pod status, the generated RBAC: the reconcilers run as the operator's ServiceAccount bound to `config/rbac/role.yaml` |
+| 4. envtest | `make test` | reconcilers, status, ownerReferences, the admission policy, every CEL rule's failing case (create-time and on `oldSelf`), the reaction to faked Sandbox and pod status, the generated RBAC, for the calls the specs make: the reconcilers run as the operator's ServiceAccount bound to `config/rbac/role.yaml`, so a call no spec makes is not checked |
 | 5. Kind | `make e2e`, factory-ops, only when a human asks | the whole loop on stand-in agents: four specs on the `hello-html` app in `test/e2e/testdata/apps` |
 
 Tiers 1 to 4 run on any device, lite ones included, with no lease; `make
