@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -96,7 +97,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 		}
 		isNew, err := r.applyObject(ctx, run, o)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("applying %s: %w", o.Ref(), err)
+			return ctrl.Result{}, r.applyFailed(ctx, brief, "at "+o.Ref().String(), err)
 		}
 		newRelationships = newRelationships || (isNew && o.Kind == model.KindRelationship)
 		if o.Kind == model.KindContainer && (isNew || r.madeByRound(ctx, run, o.Name)) {
@@ -105,7 +106,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	}
 	waiting, err := r.finishContainers(ctx, run, model.RoundContainers(created, plan.Issues), created, plan.Issues)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, r.applyFailed(ctx, brief, "making the Crews and filing the issues", err)
 	}
 	if len(waiting) > 0 {
 		setCondition(&brief.Status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
@@ -113,9 +114,32 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 		return ctrl.Result{RequeueAfter: r.needsInputRecheck()}, nil
 	}
 	if err := r.mergePlan(ctx, brief, task.Status.Commit); err != nil {
-		return ctrl.Result{}, fmt.Errorf("merging the plan: %w", err)
+		return ctrl.Result{}, r.applyFailed(ctx, brief, "merging the plan", err)
 	}
 	return ctrl.Result{}, r.roundApplied(ctx, run, task, plan)
+}
+
+// applyFailed says why applying the round stopped, so the Brief never looks
+// busy without a reason (#371): its Planned condition, reason ApplyFailed,
+// names where and the error, and an ApplyFailed Event says it once per
+// message. It returns err, wrapped, for the reconcile to try again; the
+// Brief stays Applying until a try gets past it. The operator's own
+// NeedsInput and a stale Brief are left to finishReconcile.
+func (r *BriefReconciler) applyFailed(ctx context.Context, brief *c4v1alpha1.Brief, where string, err error) error {
+	if _, needsInput := needsInputSentence(err); needsInput || errors.Is(err, errStaleBrief) {
+		return err
+	}
+	message := model.Clip(fmt.Sprintf("Round %d could not be applied %s: %v. The operator tries again.",
+		brief.Status.Round, where, err), 1000)
+	cond := meta.FindStatusCondition(brief.Status.Conditions, c4v1alpha1.ConditionPlanned)
+	if cond == nil || cond.Reason != model.ReasonApplyFailed || cond.Message != message {
+		logf.FromContext(ctx).Info("Could not apply the round", "round", brief.Status.Round, "where", where,
+			"error", err.Error())
+		r.event(brief, corev1.EventTypeWarning, eventApplyFailed, "Apply", message)
+	}
+	setCondition(&brief.Status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
+		model.ReasonApplyFailed, message)
+	return fmt.Errorf("applying round %d %s: %w", brief.Status.Round, where, err)
 }
 
 // madeByRound reports whether the Container carries this round's label: a
@@ -203,19 +227,19 @@ func (r *BriefReconciler) applyObject(ctx context.Context, run *roundApply, o mo
 
 // storyObject is a plan's object as the kind it is.
 func storyObject(ns string, o model.PlanObject) (client.Object, error) {
-	meta := metav1.ObjectMeta{Namespace: ns, Name: o.Name}
+	objMeta := metav1.ObjectMeta{Namespace: ns, Name: o.Name}
 	switch o.Kind {
 	case model.KindProject:
-		return &c4v1alpha1.Project{ObjectMeta: meta,
+		return &c4v1alpha1.Project{ObjectMeta: objMeta,
 			Spec: c4v1alpha1.ProjectSpec{DisplayName: o.DisplayName, Description: o.Description}}, nil
 	case model.KindPerson:
-		return &c4v1alpha1.Person{ObjectMeta: meta,
+		return &c4v1alpha1.Person{ObjectMeta: objMeta,
 			Spec: c4v1alpha1.PersonSpec{DisplayName: o.DisplayName, Description: o.Description}}, nil
 	case model.KindSoftwareSystem:
-		return &c4v1alpha1.SoftwareSystem{ObjectMeta: meta, Spec: c4v1alpha1.SoftwareSystemSpec{
+		return &c4v1alpha1.SoftwareSystem{ObjectMeta: objMeta, Spec: c4v1alpha1.SoftwareSystemSpec{
 			DisplayName: o.DisplayName, Description: o.Description, Needs: o.Needs, KPIs: o.KPIs}}, nil
 	case model.KindContainer:
-		return &c4v1alpha1.Container{ObjectMeta: meta, Spec: c4v1alpha1.ContainerSpec{
+		return &c4v1alpha1.Container{ObjectMeta: objMeta, Spec: c4v1alpha1.ContainerSpec{
 			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: o.SoftwareSystem},
 			DisplayName:       o.DisplayName, Description: o.Description,
 			Type:           c4v1alpha1.ContainerType(o.Type),
@@ -226,13 +250,13 @@ func storyObject(ns string, o model.PlanObject) (client.Object, error) {
 			DeploymentRef:  optionalLocalRef(o.Deployment),
 		}}, nil
 	case model.KindDataStore:
-		return &c4v1alpha1.DataStore{ObjectMeta: meta, Spec: c4v1alpha1.DataStoreSpec{
+		return &c4v1alpha1.DataStore{ObjectMeta: objMeta, Spec: c4v1alpha1.DataStoreSpec{
 			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: o.SoftwareSystem},
 			DisplayName:       o.DisplayName, Description: o.Description,
 			ConnectorRef: c4v1alpha1.LocalRef{Name: o.Connector},
 		}}, nil
 	case model.KindRelationship:
-		return &c4v1alpha1.Relationship{ObjectMeta: meta, Spec: c4v1alpha1.RelationshipSpec{
+		return &c4v1alpha1.Relationship{ObjectMeta: objMeta, Spec: c4v1alpha1.RelationshipSpec{
 			Source:      c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementKind(o.Source.Kind), Name: o.Source.Name},
 			Target:      c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementKind(o.Target.Kind), Name: o.Target.Name},
 			Description: o.Description, Bundles: o.Bundles,

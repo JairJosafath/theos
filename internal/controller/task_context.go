@@ -19,7 +19,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=persons;relationships;datastores,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=people;relationships;datastores,verbs=get;list;watch
 
 // c4Context gathers a Container's place in the story for its agents: its system,
 // the system's users, and the Container's Relationships with their other ends.

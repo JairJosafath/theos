@@ -35,6 +35,7 @@ const (
 	eventPlanned     = "Planned"
 	eventNeedsInput  = "NeedsInput"
 	eventPlanRefused = "PlanRefused"
+	eventApplyFailed = "ApplyFailed"
 )
 
 // planPushRecheck is how often a Brief looks again for a plan its Task says

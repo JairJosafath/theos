@@ -422,7 +422,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   Connectors are part of the scaffold), makes a Crew for each new Container
   with the Brief's Agents and one place, and files the issues in each
   Container's repository once it is Ready, ready for its Crew. What it made
-  carries the label `c4.factory.io/brief`; deleting the Brief keeps it.
+  carries the label `c4.factory.io/brief`; deleting the Brief keeps it. When
+  a step fails, the Brief stays `Applying` and tries again, and its `Planned`
+  condition, reason `ApplyFailed`, and an `ApplyFailed` Event say where it
+  stopped and why: a Brief never looks busy without a reason.
 - **It asks only for what costs money or touches access.** Agents, their
   models, a Crew's size, GitProviders and credentials are never the planner's
   to make or change. When it needs one, or can't go on without a decision, the

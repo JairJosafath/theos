@@ -38,7 +38,7 @@ type BriefReconciler struct {
 	APIReader client.Reader
 	Git       GitClient
 	// Recorder emits the Brief's Events: Planned, NeedsInput, PlanRefused,
-	// BotNotDeleted and BotLeft; nil emits none.
+	// ApplyFailed, BotNotDeleted and BotLeft; nil emits none.
 	Recorder events.EventRecorder
 	// GitTimeout bounds the Git calls of one reconcile; 0 means two minutes.
 	GitTimeout time.Duration
@@ -93,7 +93,7 @@ func (r *BriefReconciler) needsInputRecheck() time.Duration {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=briefs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=briefs/finalizers,verbs=update
 // +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;agents,verbs=get;list;watch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=projects;persons;softwaresystems;containers;datastores;relationships,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=projects;people;softwaresystems;containers;datastores;relationships,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews;tasks,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=frameworks;standards;computes;deployments;connectors,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;patch
