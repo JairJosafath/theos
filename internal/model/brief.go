@@ -37,6 +37,7 @@ const (
 	PlanChoicesFile    = "plan/choices.md"
 	PlanNeedsInputFile = "plan/needs-input.md"
 	PlanSummaryFile    = "plan/summary.md"
+	PlanReleasesFile   = "plan/releases.yaml"
 	planIssuesDir      = "plan/issues/"
 )
 
@@ -116,6 +117,9 @@ type Plan struct {
 	// Summary is summary.md's text: what the round does for the person's app,
 	// in a sentence or two.
 	Summary string
+	// Releases are the Containers releases.yaml says ship releases, sorted,
+	// each once (plans/brief-releases.md, R1).
+	Releases []string
 }
 
 // maxRoundSummary is the most of a round's summary a Brief's history keeps.
@@ -175,6 +179,11 @@ func ParsePlan(files map[string]string) (Plan, error) {
 		return Plan{}, fmt.Errorf("%s is missing: a plan writes the whole story model there", PlanModelFile)
 	}
 	plan.Summary = strings.TrimSpace(files[PlanSummaryFile])
+	releases, err := parsePlanReleases(files[PlanReleasesFile])
+	if err != nil {
+		return Plan{}, fmt.Errorf("%s: %w", PlanReleasesFile, err)
+	}
+	plan.Releases = releases
 	for line := range strings.SplitSeq(files[PlanChoicesFile], "\n") {
 		line = strings.TrimSpace(line)
 		for _, marker := range []string{"-", "*", "[ ]", "[x]"} {
@@ -205,6 +214,22 @@ func ParsePlan(files map[string]string) (Plan, error) {
 		}
 	}
 	return plan, nil
+}
+
+// parsePlanReleases reads releases.yaml, `containers: [name, ...]`, strictly.
+// An absent or empty file releases nothing.
+func parsePlanReleases(s string) ([]string, error) {
+	var releases struct {
+		Containers []string `yaml:"containers"`
+	}
+	dec := yaml.NewDecoder(strings.NewReader(s))
+	dec.KnownFields(true)
+	if err := dec.Decode(&releases); err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%w; the file holds only containers: [name, ...]", err)
+	}
+	names := slices.Clone(releases.Containers)
+	slices.Sort(names)
+	return slices.Compact(names), nil
 }
 
 type planManifest struct {
@@ -487,6 +512,12 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 	}
 	for _, issue := range plan.Issues {
 		checkPlanIssue(plan, current, issue, refuse)
+	}
+	for _, name := range plan.Releases {
+		if _, ok := findObject(plan.Objects, Ref{KindContainer, name}); !ok {
+			refuse(PlanReleasesFile, "names %q, which is not a Container of %s; release only the plan's Containers",
+				name, PlanModelFile)
+		}
 	}
 	return out
 }

@@ -8,12 +8,15 @@ can't apply it.
 ## What you read
 
 - `brief.md`: the idea and the prompts. Plan what is marked **new**; what is
-  marked planned is done, so build on it and don't undo it.
+  marked planned is done, so build on it and don't undo it. Its *Releases*
+  section, when it has one, names the Containers whose releases the person
+  asked for.
 - `model/model.yaml`: the namespace's story now, as manifests.
 - `model/catalog.yaml`: the installed catalog. Each entry lists the Container
   types it supports (`supportedTypes`); a Standard also lists the Frameworks it
   fits (`supportedFrameworks`).
-- `model/containers.yaml`: each Container's repository and its open issues.
+- `model/containers.yaml`: each Container's repository, its open issues, and
+  whether it ships releases already (`released`).
 
 ## What you write
 
@@ -25,12 +28,20 @@ Push the branch `plan/<round>` with these files:
   round (`01`, `02`, ...), `container` the Container it is for. It starts with
   front matter: a `---` line, `title:` and `labels:`, another `---` line. Then
   the body.
-- `plan/choices.md`: one line per choice you made, in plain words.
+- `plan/releases.yaml`, releasing the web shop, which the example's issue is
+for:
+
+```yaml plan/releases.yaml
+containers: [web]
+```
+
+`plan/choices.md`: one line per choice you made, in plain words.
 - `plan/summary.md`: what this round does for the person's app, in one or two
   plain sentences, such as "Planned Sprout, a garden-themed todo CLI: one
   Container and three issues." The Brief shows it as the round's summary.
   Write it about the app, not about your work: never mention earlier tries,
   refusals, commits or pushes.
+- `plan/releases.yaml`: only when a Container ships releases (see below).
 - `plan/needs-input.md`: only when you are stuck (see below).
 
 ## The rules
@@ -64,6 +75,16 @@ Push the branch `plan/<round>` with these files:
    the catalog doesn't have. Write one sentence saying what and why, and leave
    the other files out. Everything else is yours to decide: choose, and say
    why in `choices.md`.
+8. **Name the Containers that ship releases in `releases.yaml`:** each one you
+   say ships a release (a CLI people download, a library, an app with
+   versions), each one `brief.md`'s *Releases* section names, and each one a
+   prompt asks to release. Each name is a Container of `plan/model.yaml`. Its
+   Crew then tags and prepares releases, and the round's issues for it go
+   into the next release. Releases only turn on: a Container `released`
+   already stays released, so you needn't list it again, and leaving it out
+   doesn't stop them. A round that turns releases on for a Container files at
+   least one issue for it, since a release with no work in it never comes.
+   Leave the file out when nothing ships releases.
 
 ## The plan's format
 
@@ -205,10 +226,18 @@ Shoppers see what the shop sells on the first page.
 - [ ] A product without a price shows "Ask us"
 ```
 
+`plan/releases.yaml`, releasing the web shop, which the example's issue is
+for:
+
+```yaml plan/releases.yaml
+containers: [web]
+```
+
 `plan/choices.md`:
 
 ```markdown plan/choices.md
 - A static site for the shop's pages, since shoppers only read them and order.
 - A Go service keeps the orders, so the pages stay simple.
 - Postgres keeps the orders, because the catalog's Postgres connector fits the service.
+- The web shop ships releases, so each version of its pages is tagged and has a changelog.
 ```

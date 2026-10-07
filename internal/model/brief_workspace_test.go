@@ -60,6 +60,21 @@ func TestBriefWorkspaceBrief(t *testing.T) {
 			not:  []string{"## Idea (**new**)"},
 		},
 		{
+			name: "without spec.releases there is no Releases section",
+			ws:   BriefWorkspace{Brief: "b", Idea: "Idea.", GitProvider: "gitea"},
+			not:  []string{"## Releases", "releases.yaml"},
+		},
+		{
+			name: "spec.releases entries are listed by Container",
+			ws: BriefWorkspace{Brief: "b", Idea: "Idea.", GitProvider: "gitea", Releases: []WorkspaceRelease{
+				{Container: "sprout", Repository: "gray/sprout"},
+				{Container: "cel-lens", Repository: "JairJosafath/cel-lens", TagPrefix: "cli-"},
+			}},
+			want: []string{"## Releases\n", "`plan/releases.yaml`",
+				"- `cel-lens`, published to github.com/JairJosafath/cel-lens with tag prefix `cli-`\n" +
+					"- `sprout`, published to github.com/gray/sprout\n"},
+		},
+		{
 			name: "a prompt's line breaks stay inside its list item",
 			ws:   BriefWorkspace{Brief: "b", Idea: "Idea.", IdeaPlanned: true, Prompts: []string{"first line\n\n- not a list"}},
 			want: []string{"1. (**new**) first line - not a list\n"},
@@ -208,8 +223,14 @@ func TestBriefWorkspaceContainers(t *testing.T) {
 				{Name: "web", Repository: "http://gitea/o/web", Issues: []WorkspaceIssue{{7, "Style"}, {2, "Login\npage"}}},
 				{Name: "api", Repository: "http://gitea/o/api"},
 			},
-			want: []string{"- name: api\n  repository: http://gitea/o/api\n  openIssues: []\n" +
-				"- name: web\n  repository: http://gitea/o/web\n  openIssues:\n    - '#2 Login page'\n    - '#7 Style'\n"},
+			want: []string{"- name: api\n  repository: http://gitea/o/api\n  released: false\n  openIssues: []\n" +
+				"- name: web\n  repository: http://gitea/o/web\n  released: false\n  openIssues:\n" +
+				"    - '#2 Login page'\n    - '#7 Style'\n"},
+		},
+		{
+			name:       "a released Container says so",
+			containers: []WorkspaceContainer{{Name: "sprout", Repository: "r", Released: true}, {Name: "api", Repository: "r"}},
+			want:       []string{"- name: api\n  repository: r\n  released: false\n", "- name: sprout\n  repository: r\n  released: true\n"},
 		},
 		{
 			name:       "unread issues say so",
