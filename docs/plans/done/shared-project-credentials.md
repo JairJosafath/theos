@@ -131,6 +131,26 @@ Each lands on its own, with new behaviour off until the step that turns it on.
    once into the operator's namespace; `config/` sets the flags and labels
    the sample project namespaces). Depends on step 1.
 
+## Evidence
+
+Test output in
+[../../screenshots/shared-project-credentials.txt](../../screenshots/shared-project-credentials.txt):
+
+- `internal/controller/project_shared_secrets_test.go` (envtest, #435): a copy
+  is made in an opted-in namespace and follows its source, a namespace opted in
+  before its Project gets the copies and the Project adopts them, a project's
+  own Secret of a shared name is left alone, nothing is shared without the
+  label, a missing source is reported.
+- `internal/controller/brief_round_test.go` (envtest, #437): the Brief says
+  where to give a token the operator shares.
+- `TestBuildSandboxSharedPullSecrets` (#436): sandbox pods name the shared pull
+  Secrets.
+- `make validate-yaml` (#438, #439): the chart makes the project Namespaces,
+  lets the seed label them and turns sharing on; `config/` labels the sample
+  namespaces.
+- `hack/claude-secret_test.sh` (#439): `make claude-secret` writes the token
+  once, into the operator's namespace.
+
 ## What a human run of Kind would check
 
 That a `helm upgrade` adding `cel-lens` to a v0.5.0 install takes over nothing
