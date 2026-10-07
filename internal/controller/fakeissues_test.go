@@ -118,7 +118,7 @@ func (s *fakeIssueState) find(key string, number int) *fakeIssue {
 func (p *fakeProvider) issueOf(repo gitprovider.Repository, number int) (*fakeIssue, error) {
 	i := p.git.issueState().find(repo.Owner+"/"+repo.Name, number)
 	if i == nil {
-		return nil, fmt.Errorf("issue %d of %s/%s not found", number, repo.Owner, repo.Name)
+		return nil, fmt.Errorf("issue %d of %s/%s: %w", number, repo.Owner, repo.Name, gitprovider.ErrIssueNotFound)
 	}
 	return i, nil
 }
@@ -293,6 +293,25 @@ func (p *fakeProvider) CloseIssue(ctx context.Context, repo gitprovider.Reposito
 		return err
 	}
 	i.State = "closed"
+	return nil
+}
+
+func (p *fakeProvider) SetIssueMilestone(_ context.Context, repo gitprovider.Repository, number int, milestone int64) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	i, err := p.issueOf(repo, number)
+	if err != nil {
+		return err
+	}
+	titles := p.git.issueState().milestones[repo.Owner+"/"+repo.Name]
+	switch {
+	case milestone == 0:
+		i.milestone = ""
+	case int(milestone) <= len(titles):
+		i.milestone = titles[milestone-1]
+	default:
+		return fmt.Errorf("no milestone %d", milestone)
+	}
 	return nil
 }
 

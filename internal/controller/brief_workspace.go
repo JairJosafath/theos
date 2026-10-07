@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -89,6 +90,9 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 	if err != nil {
 		return "", err
 	}
+	recordSuggestions(ctx, brief, ws.Suggestions, slices.ContainsFunc(ws.Containers,
+		func(c model.WorkspaceContainer) bool { return c.IssuesUnread }))
+	ws.Suggestions = waitingSuggestions(brief)
 	rendered, err := model.BriefWorkspaceFiles(ws)
 	if err != nil {
 		return "", err
@@ -287,38 +291,52 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1
 	if ws.Catalog, err = installedCatalog(ctx, r.Client, brief.Namespace); err != nil {
 		return ws, err
 	}
-	ws.Containers, err = r.containerIssues(ctx, brief.Namespace)
+	ws.Containers, ws.Suggestions, err = r.containerIssues(ctx, brief)
 	return ws, err
 }
 
 // containerIssues lists each Container that has a repository, with its open
-// issues. Issues that can't be read are marked so, not an error: one broken
-// repository doesn't stop the Brief.
-func (r *BriefReconciler) containerIssues(ctx context.Context, ns string) ([]model.WorkspaceContainer, error) {
+// issues, and the reviewers' suggestions waiting in the ones the Brief made.
+// Issues that can't be read are marked so, not an error: one broken
+// repository doesn't stop the Brief, and its suggestions are the ones the
+// Brief last saw.
+func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1.Brief) (
+	[]model.WorkspaceContainer, []model.Suggestion, error) {
 	var containers c4v1alpha1.ContainerList
-	if err := r.List(ctx, &containers, client.InNamespace(ns)); err != nil {
-		return nil, err
+	if err := r.List(ctx, &containers, client.InNamespace(brief.Namespace)); err != nil {
+		return nil, nil, err
 	}
 	providers := map[string]gitprovider.Provider{}
 	var out []model.WorkspaceContainer
+	var suggestions []model.Suggestion
 	for _, c := range containers.Items {
 		if c.Status.RepositoryURL == "" {
 			continue
 		}
+		mine := c.Labels[c4v1alpha1.LabelBrief] == brief.Name
 		entry := model.WorkspaceContainer{Name: c.Name, Repository: c.Status.RepositoryURL}
 		issues, err := r.openIssues(ctx, providers, &c)
 		if err != nil {
 			logf.FromContext(ctx).Info("Could not read a Container's issues", "container", c.Name, "error", err.Error())
 			entry.IssuesUnread = true
+			if mine {
+				suggestions = append(suggestions, lastSuggestions(brief, c.Name)...)
+			}
 		}
-		entry.Issues = issues
+		for _, i := range issues {
+			entry.Issues = append(entry.Issues, model.WorkspaceIssue{Number: i.Number, Title: i.Title})
+			if mine && model.IsSuggestion(i.Labels, i.Body) {
+				suggestions = append(suggestions, model.Suggestion{Container: c.Name, Number: i.Number, Title: i.Title,
+					URL: i.URL, Criteria: model.MissingAcceptanceCriteria(i.Body) == ""})
+			}
+		}
 		out = append(out, entry)
 	}
-	return out, nil
+	return out, suggestions, nil
 }
 
 func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]gitprovider.Provider,
-	c *c4v1alpha1.Container) ([]model.WorkspaceIssue, error) {
+	c *c4v1alpha1.Container) ([]gitprovider.Issue, error) {
 	name := c.Spec.GitProviderRef.Name
 	provider, ok := providers[name]
 	if !ok {
@@ -330,15 +348,7 @@ func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]g
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
 	defer cancel()
-	issues, err := provider.ListIssues(gitCtx, provider.Repository(c.Name), "")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]model.WorkspaceIssue, 0, len(issues))
-	for _, i := range issues {
-		out = append(out, model.WorkspaceIssue{Number: i.Number, Title: i.Title})
-	}
-	return out, nil
+	return provider.ListIssues(gitCtx, provider.Repository(c.Name), "")
 }
 
 // storyObjects reads the namespace's story kinds, the ones a plan may write.

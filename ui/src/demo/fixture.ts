@@ -702,6 +702,22 @@ export function demoStory(now: number): StoryData {
             title: 'Reorder button on past orders',
           },
         ],
+        suggestionsWaiting: 2,
+        suggestions: [
+          {
+            container: 'orders-api',
+            number: 17,
+            url: issueURL('orders-api', 17),
+            title: 'Reject orders with a negative quantity',
+            criteria: true,
+          },
+          {
+            container: 'storefront',
+            number: 4,
+            url: issueURL('storefront', 4),
+            title: 'Escape the product names on the list page',
+          },
+        ],
         history: [
           { round: 1, summary: 'Planned the shop: storefront, orders and catalog', costMilliUSD: 312 },
           { round: 2, summary: 'Added one-click reorder', costMilliUSD: 148 },

@@ -181,6 +181,13 @@ one into an issue in its repository. When the planner can't go on without
 you, such as an Agent it needs is missing, the phase is `NeedsInput` and the
 card says what in one sentence.
 
+While the Crew builds, its reviewer may suggest more work. The card lists the
+suggestions waiting under *Reviewer suggestions* (`kubectl get brief` shows
+how many), and nothing is built from one until you say so: answer them in a
+prompt, such as "Take the reviewer's suggestions about input safety, skip the
+rest." or "Yes to linter #5, no to the others.". The factory readies the ones
+you take for the Crew and closes the others with your words quoted.
+
 ### Without a token
 
 To watch the loop before making the token Secret, name Agent `stand-in` for

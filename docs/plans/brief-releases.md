@@ -63,7 +63,9 @@ Each step is its own pull request and leaves main working. Nothing reads
    `container`, DNS label, `owner/name`), `make manifests generate`; the
    controller: a released Container's Brief-made Crew gets `tagReleases`,
    `prepareReleases` and `publishReleases` (R4, R5), its round's issues go
-   into the release milestone (R6), the workspace gets the inputs of step 2;
+   into the release milestone (R6), and so do the reviewers' suggestions the
+   round takes for it (#375 takes them into no milestone, `answerSuggestion`
+   in `brief_suggestions.go`), the workspace gets the inputs of step 2;
    envtest with the fake provider: a plan releasing its Container makes a
    releasing Crew and files the issues in `v0.1.0`; a second round files in
    `v0.2.0`; a restart after making the milestone makes no second one; a

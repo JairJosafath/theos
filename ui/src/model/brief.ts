@@ -2,7 +2,7 @@
 // its prompts the planner has taken, and what it made.
 
 import { findCondition, type Brief, type BriefPhase } from '../k8s/types'
-import type { PhaseInfo } from './describe'
+import { plural, type PhaseInfo } from './describe'
 
 /** The Brief phase as a badge label, colour tone and one-line explanation. */
 export function describeBriefPhase(phase: BriefPhase | undefined): PhaseInfo {
@@ -52,6 +52,10 @@ export interface BriefView {
   choices: string[]
   created: { kind: string; name: string }[]
   issues: { repository: string; number: number; url?: string; title?: string }[]
+  /** Reviewers' suggestions that wait for an answer in a prompt, as far as listed. */
+  suggestions: { container: string; number: number; title?: string; url?: string }[]
+  /** How many suggestions wait in all; can exceed the listed ones. */
+  suggestionsWaiting: number
   repositoryURL?: string
   /** Planning cost over all rounds, such as "$0.42", or that the agent didn't report it. */
   cost?: string
@@ -64,10 +68,21 @@ export function describeBrief(brief: Brief): BriefView {
   const planned = findCondition(conditions, 'Planned')
   const taken = status.promptsPlanned ?? 0
   const prompts = (brief.spec.prompts ?? []).map((text, i) => ({ text, planned: i < taken }))
+  const suggestions = (status.suggestions ?? []).map(({ container, number, title, url }) => ({
+    container,
+    number,
+    title,
+    url,
+  }))
+  const suggestionsWaiting = status.suggestionsWaiting ?? suggestions.length
+  const phase = describeBriefPhase(status.phase)
+  if (status.phase === 'Planned' && suggestionsWaiting > 0) {
+    phase.explanation = `The last round is done; ${plural(suggestionsWaiting, 'reviewer suggestion waits', 'reviewer suggestions wait')} for your answer in a prompt.`
+  }
   return {
     name: brief.metadata.name,
     idea: brief.spec.idea,
-    phase: describeBriefPhase(status.phase),
+    phase,
     needsInput: needs?.status === 'True' ? needs.message?.trim() || 'It waits for you.' : undefined,
     failure: status.phase === 'Failed' ? planned?.message?.trim() || undefined : undefined,
     round: status.round ?? 0,
@@ -76,6 +91,8 @@ export function describeBrief(brief: Brief): BriefView {
     choices: status.choices ?? [],
     created: status.created ?? [],
     issues: status.issues ?? [],
+    suggestions,
+    suggestionsWaiting,
     repositoryURL: status.repositoryURL,
     cost: describeCost(status.costMilliUSD, status.runsWithoutCost),
   }
