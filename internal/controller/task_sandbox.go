@@ -94,6 +94,8 @@ type sandboxRun struct {
 	// plans: C4_ROUND, while the Task's own round counts the planner's tries.
 	brief      string
 	briefRound int
+	// pullSecrets are the shared pull Secrets the pod lists in imagePullSecrets.
+	pullSecrets []string
 }
 
 // Where a sandbox mounts the shared Go build cache, and the variables pointing
@@ -186,11 +188,20 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			VolumeMounts:    []corev1.VolumeMount{mount},
 		})
 	}
+	// A namespace that hasn't opted in to shared Secrets lacks the copies; the
+	// kubelet skips a pull Secret it can't find. A pod that lists pull Secrets
+	// doesn't get its ServiceAccount's, so a v0.5.0 namespace's hand-made ghcr
+	// keeps working only under the shared name, which the chart gives it.
+	var pullSecrets []corev1.LocalObjectReference
+	for _, name := range run.pullSecrets {
+		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
+	}
 	pod := corev1.PodSpec{
 		RestartPolicy:                corev1.RestartPolicyNever,
 		AutomountServiceAccountToken: &no,
 		EnableServiceLinks:           &no,
 		ActiveDeadlineSeconds:        &deadline,
+		ImagePullSecrets:             pullSecrets,
 		InitContainers:               initContainers,
 		Containers: []corev1.Container{{
 			Name:                     agentContainer,
