@@ -342,6 +342,10 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, re
 		return result
 	}
 	result.Commit = head
+	if ws.Images, err = r.changedImages(ctx, job.Base); err != nil {
+		result.Error = err.Error()
+		return result
+	}
 	output, err := agent.Run(ctx, r.dir, ReviewPrompt(job, ws))
 	if err != nil {
 		return agentFailed(result, err)

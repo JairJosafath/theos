@@ -1,10 +1,15 @@
 package agentrunner
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/jpeg"
+	"image/png"
+	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -1077,5 +1082,73 @@ func TestStandardChangePrompts(t *testing.T) {
 				t.Errorf("%s prompt contains %q", c.name, w)
 			}
 		}
+	}
+}
+
+// encoded returns a w×h image encoded by encode.
+func encoded(t *testing.T, w, h int, encode func(io.Writer, image.Image) error) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := encode(&buf, image.NewRGBA(image.Rect(0, 0, w, h))); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestReviewIsShownTheChangedImages(t *testing.T) {
+	jpg := func(w io.Writer, m image.Image) error { return jpeg.Encode(w, m, nil) }
+	url := bareRepo(t, map[string]string{"README.md": "hi\n", "shot.jpg": string(encoded(t, 4, 4, jpg)),
+		"same.png": string(encoded(t, 8, 8, png.Encode))})
+	ctx := context.Background()
+	added, changed := encoded(t, 936, 189, png.Encode), encoded(t, 640, 480, jpg)
+	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)
+	implement := filesAgent{files: map[string]string{"added.png": string(added), "shot.jpg": string(changed),
+		"Logo.SVG": string(svg), "broken.gif": "not a gif", "notes.md": "no image\n"}, summary: "done"}
+	if got := Run(ctx, testJob(t, url, RoleImplement, 1), implement, t.TempDir()); got.Error != "" {
+		t.Fatalf("implement = %+v", got)
+	}
+
+	agent := &promptAgent{reply: `{"verdict": "approve", "summary": "ok"}`}
+	if got := Run(ctx, testJob(t, url, RoleReview, 1), agent, t.TempDir()); got.Error != "" {
+		t.Fatalf("review = %+v", got)
+	}
+	for _, want := range []string{"Open each one",
+		"- added.png: 936×189 pixels, " + strconv.Itoa(len(added)) + " bytes\n",
+		"- shot.jpg: 640×480 pixels, " + strconv.Itoa(len(changed)) + " bytes\n",
+		"- Logo.SVG: " + strconv.Itoa(len(svg)) + " bytes\n",
+		"- broken.gif: 9 bytes, not a readable image\n"} {
+		if !strings.Contains(agent.prompt, want) {
+			t.Errorf("review prompt lacks %q:\n%s", want, agent.prompt)
+		}
+	}
+	for _, unwanted := range []string{"same.png", "notes.md"} {
+		if strings.Contains(agent.prompt, unwanted) {
+			t.Errorf("review prompt lists %s, which the change doesn't add or change as an image", unwanted)
+		}
+	}
+}
+
+func TestReviewWithoutChangedImagesHasNoImageSection(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n", "same.png": string(encoded(t, 8, 8, png.Encode))})
+	ctx := context.Background()
+	if got := Run(ctx, testJob(t, url, RoleImplement, 1), FakeAgent{Role: RoleImplement, Round: 1}, t.TempDir()); got.Error != "" {
+		t.Fatalf("implement = %+v", got)
+	}
+	agent := &promptAgent{reply: `{"verdict": "approve", "summary": "ok"}`}
+	Run(ctx, testJob(t, url, RoleReview, 1), agent, t.TempDir())
+	if agent.prompt == "" || strings.Contains(agent.prompt, "images") || strings.Contains(agent.prompt, "same.png") {
+		t.Errorf("review prompt of a change without images has an image section:\n%s", agent.prompt)
+	}
+}
+
+func TestImageListIsCapped(t *testing.T) {
+	images := make([]ChangedImage, maxListedImages+3)
+	for i := range images {
+		images[i] = ChangedImage{Path: "img" + strconv.Itoa(i) + ".svg", Bytes: 1}
+	}
+	job, _ := JobFromEnv(env(nil))
+	prompt := ReviewPrompt(job, Workspace{Images: images})
+	if strings.Count(prompt, ".svg: 1 bytes") != maxListedImages || !strings.Contains(prompt, "and 3 more") {
+		t.Errorf("review prompt lists %d images and no overflow line:\n%s", strings.Count(prompt, ".svg:"), prompt)
 	}
 }
