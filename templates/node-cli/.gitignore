@@ -1,0 +1,5 @@
+node_modules/
+# The bundle (npm run build) and the release (make dist)
+/out/
+/dist/
+*.tgz

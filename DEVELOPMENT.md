@@ -72,6 +72,7 @@ runner itself) is not tested before release.
 | `.dev/kube/config` | Contexts of the Kind clusters created from this folder |
 | `.dev/zsh/` | oh-my-zsh, plugins and shell history |
 | `.dev/claude/` | Claude Code login, settings and history for this project |
+| `.dev/secrets/claude-token` | The agents' Claude token, mode 0600; `make claude-secret` stores it once in the Kind cluster's `c4-factory-system`, and the operator shares it with every project namespace ([docs/dev/testenv.md](docs/dev/testenv.md)) |
 | `.dev/make/bin/` | Tools the Makefile downloads (controller-gen, golangci-lint, kustomize, setup-envtest and the envtest binaries in `k8s/`), under versioned names |
 | `bin/` | What `make build` writes (`bin/manager`) |
 

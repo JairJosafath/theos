@@ -262,6 +262,13 @@ func TestGiteaIssuesIntegration(t *testing.T) {
 		if err := p.CommentIssue(ctx, repo, blocked.Number, "Picked up"); err != nil {
 			t.Fatal(err)
 		}
+		if err := p.EditIssueBody(ctx, repo, blocked.Number, "body\n\n## Clarification\n\nMore."); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := p.GetIssue(ctx, repo, blocked.Number); err != nil || got.Body != "body\n\n## Clarification\n\nMore." ||
+			strings.Join(got.Labels, ",") != "status/in-progress" {
+			t.Fatalf("after EditIssueBody() = %+v, %v; want the new body, labels kept", got, err)
+		}
 		if err := p.RemoveIssueLabel(ctx, repo, blocked.Number, "status/in-progress"); err != nil {
 			t.Fatal(err)
 		}

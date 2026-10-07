@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // esbuild bundles; tsc only type-checks.
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    // The program reads its name and version from package.json, which esbuild
+    // bundles.
+    "resolveJsonModule": true,
+    // engines.node >=22, which has all of ES2023.
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "vitest.config.mts"]
+}

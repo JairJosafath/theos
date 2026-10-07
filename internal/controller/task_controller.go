@@ -93,6 +93,10 @@ type TaskReconciler struct {
 	// SandboxGoCache, when set, is a directory on the node that sandboxes share as
 	// their Go build cache.
 	SandboxGoCache string
+	// SharedPullSecrets name the pull Secrets the Project reconciler shares into
+	// project namespaces; every sandbox pod lists them, so pulling a private image
+	// needs no patched default ServiceAccount.
+	SharedPullSecrets []string
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create;update;patch;delete
@@ -349,7 +353,7 @@ func (r *TaskReconciler) conflicted(ctx context.Context, container *c4v1alpha1.C
 	if err != nil {
 		return false, err
 	}
-	return pr.State == "open" && !pr.Merged && !pr.Mergeable, nil
+	return pr.State == stateOpen && !pr.Merged && !pr.Mergeable, nil
 }
 
 // runRole is the role of the sandbox a phase waits on.

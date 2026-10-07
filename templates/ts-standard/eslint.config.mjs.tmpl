@@ -1,4 +1,4 @@
-// Lint config for the {{ if eq .Framework "react-vite" }}web app{{ else }}extension{{ end }}'s TypeScript: typescript-eslint's strictest
+// Lint config for the {{ if eq .Framework "react-vite" }}web app{{ else if eq .Framework "node-cli" }}program{{ else }}extension{{ end }}'s TypeScript: typescript-eslint's strictest
 // type-checked presets, plus the rules below. `make lint` runs ESLint with
 // --max-warnings 0, so any finding fails `make check`. Every rule turned off
 // or changed here says why. Changing this file is the Standard's job, not a
@@ -13,6 +13,8 @@ import tseslint from 'typescript-eslint';
 export default defineConfig(
 {{- if eq .Framework "react-vite" }}
   globalIgnores(['dist/']),
+{{- else if eq .Framework "node-cli" }}
+  globalIgnores(['out/', 'dist/']),
 {{- else }}
   globalIgnores(['out/', 'dist/', '.vscode-test/']),
 {{- end }}
@@ -57,6 +59,19 @@ export default defineConfig(
       // An effect that misses a dependency runs on stale values. The preset
       // only warns.
       'react-hooks/exhaustive-deps': 'error',
+{{- else if eq .Framework "node-cli" }}
+      // The program writes through the Output run is given, so tests see
+      // what it prints.
+      'no-console': 'error',
+      // process.exit() drops output still buffered for a pipe.
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'process',
+          property: 'exit',
+          message: 'Set process.exitCode and return, so output flushes.',
+        },
+      ],
 {{- else }}
       // Users see an OutputChannel, never the extension host's console.
       'no-console': 'error',

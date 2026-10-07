@@ -8,6 +8,14 @@ BIN := node_modules/.bin
 
 .DEFAULT_GOAL := help
 .PHONY: help check deps fmt fmt-check lint typecheck test build-check dist clean
+{{- else if eq .Framework "node-cli" }}
+# The program's version is the one in package.json. A release passes its tag,
+# which must match: make dist VERSION=v1.2.3
+PACKAGE_VERSION := $(shell node -p "require('./package.json').version")
+VERSION ?= v$(PACKAGE_VERSION)
+
+.DEFAULT_GOAL := help
+.PHONY: help check deps fmt fmt-check lint typecheck test build pack-check dist release-version clean
 {{- else }}
 # The extension's version is the one in package.json. A release passes its tag,
 # which must match: make dist VERSION=v1.2.3
@@ -25,6 +33,8 @@ help: ## List the targets.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 {{ if eq .Framework "react-vite" }}
 check: deps fmt-check lint typecheck test build-check ## Everything CI checks.
+{{- else if eq .Framework "node-cli" }}
+check: deps fmt-check lint typecheck test pack-check ## Everything CI checks.
 {{- else }}
 check: deps fmt-check lint typecheck test package-check ## Everything CI checks.
 {{- end }}
@@ -57,6 +67,30 @@ dist: deps ## Build the site into dist/ for a release.
 
 clean: ## Remove build output.
 	rm -rf dist
+{{- else if eq .Framework "node-cli" }}
+build: ## Bundle the program into out/cli.js.
+	node esbuild.mjs
+
+pack-check: ## Fail when the package does not pack or its program does not run.
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		npm pack --silent --pack-destination "$$tmp" > /dev/null && \
+		tar -xzf "$$tmp"/*.tgz -C "$$tmp" && \
+		node "$$tmp/package/out/cli.js" --version
+
+dist: release-version deps ## Pack dist/{{ .Container }}-<version>.tgz for a release.
+	rm -rf dist
+	mkdir -p dist
+	npm pack --pack-destination dist
+
+release-version: # Fail when VERSION is not package.json's version.
+	@if [ "$(VERSION)" != "v$(PACKAGE_VERSION)" ]; then \
+		echo "Tag $(VERSION) does not match version $(PACKAGE_VERSION) in package.json." >&2; \
+		echo "Set \"version\": \"$(VERSION:v%=%)\" there, add its CHANGELOG.md entry, then tag again." >&2; \
+		exit 1; \
+	fi
+
+clean: ## Remove build output.
+	rm -rf out dist
 {{- else }}
 build: ## Bundle the extension into out/, minified.
 	node esbuild.mjs --production
