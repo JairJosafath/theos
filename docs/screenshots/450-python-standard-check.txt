@@ -1,0 +1,55 @@
+# #450: a scaffolded python-fastapi repository under python-standard (otter-450, 2026-10-07, Docker 29.8.2)
+# Rendered the way the operator scaffolds, then the CI step of .gitea/workflows/check.yaml
+# run in the base toolchain image (hack/toolchain-base, uv 0.12.21) the base runner is built on.
+$ go run ./hack/render -out ci1 -container orders-api -type service Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres
+Rendered 33 files from python-fastapi@local, python-standard@local, small@local, k8s-manifests@local, postgres@local into ci1
+$ docker build -t c4factory/base:otter-450 hack/toolchain-base
+$ docker run --rm -v $PWD/ci1:/data/work/job -w /data/work/job c4factory/base:otter-450 bash -c 'git init && git add -A && git commit -m scaffold && export UV_CACHE_DIR="$PWD/.uv/cache" UV_PYTHON_INSTALL_DIR="$PWD/.uv/python" && uv --version && make check && make dist && du -sh .uv .venv && git status --short && echo CLEAN'
+uv 0.12.21 (x86_64-unknown-linux-musl)
+uv sync --locked
+Downloading cpython-3.12.14-linux-x86_64-gnu (download) (32.7MiB)
+Using CPython 3.12.14
+Creating virtual environment at: .venv
+Resolved 40 packages in 0.90ms
+   Building orders-api @ file:///data/work/job
+      Built orders-api @ file:///data/work/job
+Downloading ast-serialize (1.3MiB)
+Downloading pydantic-core (2.0MiB)
+Downloading uvloop (4.3MiB)
+Downloading ruff (9.9MiB)
+Downloading pygments (1.2MiB)
+Downloading mypy (14.8MiB)
+Downloading psycopg-binary (5.0MiB)
+Prepared 37 packages in 15.11s
+Installed 37 packages in 324ms
+uv run --no-sync ruff format --diff .
+12 files already formatted
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+uv run --no-sync mypy .
+Success: no issues found in 3 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /data/work/job
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1
+collected 4 items
+tests/test_main.py ....                                                  [100%]
+============================== 4 passed in 1.05s ===============================
+uv sync --locked
+Resolved 40 packages in 4ms
+Checked 37 packages in 1ms
+rm -rf dist
+uv build --out-dir dist
+warning: The cache directory `.uv/cache` is inside the build source directory `.` and may be included in distributions
+Building source distribution...
+Building wheel from source distribution...
+Successfully built dist/orders_api-0.1.0.tar.gz
+Successfully built dist/orders_api-0.1.0-py3-none-any.whl
+250M	.uv
+7.4M	.venv
+CLEAN
+$ docker build -t probe ci1 && docker run -p 18450:8000 probe; curl localhost:18450/healthz   # the k8s-manifests image, uv_build installing the project
+{"status":"ok"}

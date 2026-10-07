@@ -66,12 +66,14 @@ printf '%s' "$body" >"$out"
 $fail && ((code >= 400)) && exit 22
 exit 0
 CURL
-# kubectl logs its calls; get finds no Secret, the rest pass their input on.
+# kubectl logs its calls; get finds no Secret, label reads nothing, the rest
+# pass their input on.
 cat >"$T/bin/kubectl" <<'KUBECTL'
 #!/usr/bin/env bash
 echo "kubectl $*" >>"$GITEA_STATE/kubectl"
 [[ " $* " == *" get "* ]] && exit 1
 [[ " $* " == *" create "* ]] && { echo "kind: Secret"; exit 0; }
+[[ " $* " == *" label "* ]] && exit 0
 cat
 KUBECTL
 chmod +x "$T/bin/curl" "$T/bin/kubectl"
@@ -140,5 +142,16 @@ grep -q "kubectl -n webshop get projects.c4.factory.io webshop" "$T/gitea/kubect
 grep -q "Created Project webshop/webshop" "$T/out"; check "project objects: creates Project webshop" $? 0
 PROJECT_OBJECTS=true CREDENTIALS_DIR=$CREDS "$SEED" >"$T/out" 2>&1; check "project objects, file mode: succeeds" $? 0
 grep -q "Project" "$T/out"; check "project objects, file mode: no Project" $? 1
+
+# The chart's seed (SHARE_SECRETS=true) labels each project namespace to
+# receive the shared Secrets; get finds no label here. Off, it never touches one.
+grep -q "namespace" "$T/gitea/kubectl"; check "share secrets off: no namespace label" $? 1
+: >"$T/gitea/kubectl"
+SHARE_SECRETS=true "$SEED" >"$T/out" 2>&1; check "share secrets: succeeds" $? 0
+grep -q "kubectl label namespace webshop c4.factory.io/shared-secrets=true --overwrite" "$T/gitea/kubectl"
+check "share secrets: labels namespace webshop" $? 0
+: >"$T/gitea/kubectl"
+SHARE_SECRETS=true CREDENTIALS_DIR=$CREDS "$SEED" >"$T/out" 2>&1; check "share secrets, file mode: succeeds" $? 0
+grep -q "namespace" "$T/gitea/kubectl"; check "share secrets, file mode: no kubectl" $? 1
 
 exit $fail

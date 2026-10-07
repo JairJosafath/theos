@@ -372,6 +372,15 @@ which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
 issues wait on each other in a cycle, `cycles --report` comments each of them
 once and moves the newest to `status/needs-maintainer`.
+Every `WATCH_PARENTS` seconds (600; 0 turns it off), busy or idle, it tends the
+plans' parents (`hack/lib/github.sh parents --apply`): an issue in progress or
+waiting, with a `Depends on #S` line per step and a merged pull request that
+says `Refs #N` and adds its plan in `docs/plans/`, closes with a comment naming
+the steps once every step closed; while a step is open, one no live claim holds
+goes to `status/waiting`, with a comment naming the steps left. `pick` takes
+neither. `close` and the *Issue closed* workflow do the same as each step
+closes; the watch catches what they missed while the relay was down.
+`parents` alone lists each parent and the steps it still waits on.
 On every pass, busy or idle, it may start the maintainer
 (`hack/relay.sh --maintain`), a headless opus session that acts as the
 project's maintainer on the owner's behalf ([GOVERNANCE.md](../../GOVERNANCE.md),
@@ -397,7 +406,13 @@ its own worktree, `.claude/worktrees/relay-maintainer`, on origin/main, under
 `.relay/maintain.lock`, and doesn't count against `RELAY_MAX_WORKERS`, but
 goes through `admit` like any session, except that it goes first: while it
 waits, `.relay/admit-first` holds its PID and no worker takes the start slot
-(#262). It logs to `.relay/relay-maintainer.log`.
+(#262). It runs once per project, not once per device (#526): before its
+session it takes the maintainer lease, a `<!-- c4-maintainer -->` comment on
+the Maintainer report issue that it refreshes every `GH_BEAT_EVERY` seconds
+and deletes when the session ends. While another device holds a live one it
+starts nothing and logs the holder; one past `C4_LEASE_TTL`, or this host's
+own (a crashed maintainer's), is taken over. It logs to
+`.relay/relay-maintainer.log`.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
 the triage's reasons with `proposed --since` against a stubbed GitHub, and its
 CI rounds with `gh` faked.
@@ -433,6 +448,18 @@ it when it starts. Until then its sessions can't reach Docker, so
 `make test-gitea` fails in them; they never need a cluster.
 
 ### Checking a release
+
+The maintainer cuts a release from a sweep with one command:
+`hack/release.sh minor`, `patch` or `X.Y.Z`. From origin/main, in a worktree
+of its own, it names the version in `dist/chart/Chart.yaml` and in
+`docs/getting-started.md` (its `VERSION` and the release its prose names),
+merges that bump as a pull request of its own with a merge commit, and pushes
+the tag `vX.Y.Z` on the merge commit, so the guide at a tag installs that
+tag's release (#370). It refuses a version that isn't above the chart's, or
+whose tag already exists. The tag starts *Release*, which first runs
+`hack/release.sh --check vX.Y.Z` and builds nothing when the chart or the
+guide names another version; `hack/release_test.sh` holds both to that, and
+`test/chart/guide_version_test.go` keeps main's guide on the chart's version.
 
 The relay can't pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. Once *Release* has

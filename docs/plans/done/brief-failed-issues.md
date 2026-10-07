@@ -1,7 +1,7 @@
 # A Brief shows its failed issues and tries them again
 
 GitHub issue #429, reported by gray-lenovo on v0.5.0. Agent: otter-429.
-Related: #428 ([done/brief-issue-order.md](done/brief-issue-order.md)) orders a round's
+Related: #428 ([brief-issue-order.md](brief-issue-order.md)) orders a round's
 issues so fewer fail for want of another app's work; this plan is about what
 happens once one has failed anyway.
 
@@ -97,8 +97,9 @@ Task; and the card shows the failed issues and says to answer them in a prompt.
    append the clarification under "## Clarification (Brief round N)" (new
    `Provider.EditIssueBody`; the agent's goal is the title and body,
    `IssueGoal`, so a comment wouldn't reach it), comment quoting the why and
-   the round's prompts, remove `status/needs-human`, then label it
-   `status/ready`. Close: comment, then close. The Crew starts the next Task on
+   the round's prompts, label it `status/ready`, then remove
+   `status/needs-human`, in that order, so a failure between the two never
+   leaves the issue with neither label. Close: comment, then close. The Crew starts the next Task on
    its next poll; the attempt count is the Crew's, unchanged. The `Planned`
    Event counts what was retried and closed.
 9. **The card.** The Brief's card lists the failed issues above the
@@ -129,6 +130,22 @@ Each lands on its own and leaves main working.
    the Crew starts `<container>-<n>-2`.
 4. **The card** (#456) (`ui/`): failed issues with their reasons, and the issue
    list marking them; `ui/src/model/brief.test.ts`.
+
+## Evidence
+
+Test output in
+[../../screenshots/brief-failed-issues.txt](../../screenshots/brief-failed-issues.txt):
+
+- `internal/model/failed_test.go` (#453, #455): what a failed issue is, its
+  reason, the workspace file, parsing and checking the plan's answers, the
+  clarified body and the comments.
+- `internal/gitprovider/gitea_issues_test.go`: `EditIssueBody` (#455).
+- `internal/controller/brief_failed_test.go` (envtest, #454, #455): a Brief
+  lists an issue whose Task failed with the Task's message and not a person's
+  in another app; a prompt retries one with a clarification and closes
+  another.
+- `ui/src/model/brief.test.ts` (#456): the card's failed issues, their
+  reasons and the issue list marking them.
 
 What only a human run on Kind would show: a real planner reading a prompt as
 a retry, and a real agent doing better with the clarification.

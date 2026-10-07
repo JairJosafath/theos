@@ -40,8 +40,9 @@ const (
 
 // failedIssue is an open issue of Container name that was handed back to a
 // person, with why, decided from the Container's Tasks.
-func failedIssue(name string, number int, title, url, body string, tasks []model.IssueTask) model.FailedIssue {
-	kind, reason, tries := model.FailedReason(number, body, tasks)
+func failedIssue(name string, number int, title, url string, labels []string, body string,
+	tasks []model.IssueTask) model.FailedIssue {
+	kind, reason, tries := model.FailedReason(number, labels, body, tasks)
 	return model.FailedIssue{Container: name, Number: number, Title: title, URL: url, Body: body, Kind: kind,
 		Reason: reason, Tries: tries}
 }

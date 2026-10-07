@@ -236,6 +236,12 @@ spec:
               branch:
                 description: branch is where the agent works.
                 type: string
+              byHand:
+                description: |-
+                  byHand is the address of the kind/by-hand issue filed on merge for the
+                  criteria the approved review left open, which need a person. A rerun of
+                  the merge step that finds it set files none again.
+                type: string
               checks:
                 description: checks is the CI result on commit.
                 properties:

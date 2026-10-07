@@ -70,6 +70,16 @@ Each step is its own issue and pull request and leaves main working.
    when:* `make check` passes with the combo rendered, `make validate-yaml`
    with the chart entry, and the scaffolded `python-fastapi` repository's
    `make check` passing locally under the Standard (`uv` on the device).
+   *Choices made in the step:* the Standard writes `ruff.toml` and
+   `mypy.ini`, which ruff and mypy read before `pyproject.toml`, so the rules
+   are protected while the Framework keeps `pyproject.toml` (agents must add
+   packages); python-fastapi drops its `[tool.ruff]` tables when a Standard is
+   chosen. ruff selects `ALL` less four rules, pinned exactly so a ruff bump
+   is a Standard change. python-fastapi ships `uv.lock.tmpl`, as
+   vscode-extension ships its `package-lock.json`, so `uv sync --locked` passes
+   on the first commit to `main`. CI keeps uv's cache and Python in `.uv/` in
+   the checkout: the `base` runner's `/tmp` (256 MiB) can't hold them, and its
+   disk is what the ts-standard workflow keeps npm off.
 5. **react-vite.** (#448) C4: the Framework, the `ts-standard` bump. *Done when:*
    `make check` passes with the combo rendered and the scaffolded
    repository's `make check` passing locally.

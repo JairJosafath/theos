@@ -225,9 +225,10 @@ type BriefFailedIssue struct {
 	// kind says why it was handed back: unclear (no acceptance criteria),
 	// merged (a Task merged it already), exhausted (agents tried it as often
 	// as a Crew does), failed (its last Task failed), blocked (its last
-	// Task's agent said it can't start the issue yet, and why) or person (a
-	// person handed it back).
-	// +kubebuilder:validation:Enum=unclear;merged;exhausted;failed;blocked;person
+	// Task's agent said it can't start the issue yet, and why), person (a
+	// person handed it back) or byHand (a kind/by-hand issue: criteria only a
+	// person can do, which a plan may close but never retry).
+	// +kubebuilder:validation:Enum=unclear;merged;exhausted;failed;blocked;person;byHand
 	// +required
 	Kind string `json:"kind"`
 

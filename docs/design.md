@@ -84,7 +84,7 @@ spec:
 status:
   phase: Ready
   repositoryURL: http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api
-  scaffoldedFrom: [python-fastapi@v1.2.1, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
+  scaffoldedFrom: [python-fastapi@v1.3.0, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
   activeSessions: 1
 ---
 kind: DataStore
@@ -343,6 +343,19 @@ model and context it needs.
   up never starts) are a Warning Event `ReleaseRunOverdue`, once per release,
   the log line `Release run overdue`, and a note on the `Released` condition's
   message until they end; the watch carries on and reports their end as usual.
+- **A released Go app is a module others can fetch.** Right after the Crew
+  tags a release, it publishes the repository's Go module at that tag to the
+  Git host's Go package registry (Gitea's, per owner), under the module path
+  `go.mod` declares and with the tag as its version, so another app can
+  `go get` that release. A version is published once and never replaced;
+  `status.lastRelease.goModule` records the path, version and state
+  (`Published`, `NotGo` for a repository with no `go.mod` at its root,
+  `Invalid` for a version Go refuses, such as a `v2.0.0` whose path lacks
+  `/v2`, and `Failed` while the host can't be reached, retried each poll), and
+  the condition `ModulePublished` says why it isn't published. An upload is a
+  Normal Event `ModulePublished` and the log line `Published Go module`; an
+  invalid module is a Warning Event `InvalidModule`, once per release. See
+  [plans/app-modules.md](plans/app-modules.md).
 - **A release can be published to GitHub.** A Crew with
   `spec.publishReleases.github` (`repository: owner/name`, and a Secret the
   user creates holding a token for that one repository) copies its last release
@@ -386,7 +399,9 @@ model and context it needs.
   verdict's `open`. On merge the operator files those criteria as one
   `kind/by-hand` issue, `status/needs-human` in the Later milestone, so a
   person does them; a Brief lists it with its failed issues and may close it,
-  never retry it. The planner doesn't give agents a person's work. See
+  never retry it. The planner doesn't give agents a person's work: it files
+  it as its own plan issue labelled `kind/by-hand`, which the operator files
+  `status/needs-human` in Later, and no issue waits on it. See
   [plans/honest-evidence.md](plans/honest-evidence.md).
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
@@ -538,7 +553,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   filed again, reworded or split, so the Crew's guard stays. Applying the
   round, the operator labels a retried issue `status/ready` in place of
   `status/needs-human`, or closes it, with a comment quoting the why and the
-  round's prompts. See [plans/brief-failed-issues.md](plans/brief-failed-issues.md).
+  round's prompts. See [plans/brief-failed-issues.md](plans/done/brief-failed-issues.md).
 - **A Brief looks after its own handed-back work** (#486, planned).
   `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. The Brief watches
   only what it made: failed issues, its Containers' Tasks and Crews. What

@@ -41,7 +41,9 @@ The maintainer decides these without asking the owner, following the
   says.
 
 The maintainer changes no code or docs and commits nothing. Changes go through
-issues that the relay works.
+issues that the relay works. The one exception is a release's version bump:
+the maintainer runs `hack/release.sh`, which makes and merges only that
+pull request and tags it.
 
 ## Reserved to the owner
 

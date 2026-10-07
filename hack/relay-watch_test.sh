@@ -2,7 +2,7 @@
 # Tests for hack/relay-watch.sh: when a round starts the relay, and when it
 # starts a triage of the proposed issues, and what an idle round logs of the
 # issues pick skips, with pick, blocked, cycles, the proposed list and
-# hack/relay.sh faked; when a triage reads a proposed issue again, with
+# hack/relay.sh faked; that it tends the plans' parents (parents faked); when a triage reads a proposed issue again, with
 # hack/lib/github.sh's proposed against a stubbed GitHub; and when a CI round
 # files a "main is red" issue, with gh faked under the real hack/lib/github.sh;
 # when it starts the maintainer, on a schedule or for an issue escalated to it,
@@ -27,6 +27,10 @@ proposed() { echo "$*" >"$T/proposed-args"; [ -n "$PROPOSED" ] && printf '%s\n' 
 blocked() { [ -n "$BLOCKED" ] && printf '%s\n' "$BLOCKED"; return "$BLOCKED_RC"; }
 # cycles reports a cycle once, as hack/lib/github.sh cycles --report does.
 cycles() { [ -n "$CYCLES" ] && ! grep -qxF "$CYCLES" "$T/cycles" 2>/dev/null && echo "$CYCLES" | tee -a "$T/cycles"; return 0; }
+# parents --apply: what it did, and the parents still waiting.
+PARENTS= PARENTS_RC=0
+parents() { echo x >>"$T/tends"; [ -n "$PARENTS" ] && printf '%s\n' "$PARENTS"; return "$PARENTS_RC"; }
+tends() { cat "$T/tends" 2>/dev/null | wc -l | tr -d ' '; }
 run_relay() { echo started >>"$T/starts"; echo "worker 1 started"; return "$RELAY_RC"; }
 run_triage() { echo triage >>"$T/triages"; echo "triage started in worker 2"; return "$TRIAGE_RC"; }
 # The maintainer is off (WATCH_MAINTAIN=0) until its own tests below.
@@ -246,6 +250,28 @@ round; round
 check "cycle: a failure logged once" "$(logged 'github: no token (cycles --report failed, exit 2)$')" 1
 cycles() { [ -n "$CYCLES" ] && ! grep -qxF "$CYCLES" "$T/cycles" 2>/dev/null && echo "$CYCLES" | tee -a "$T/cycles"; return 0; }
 CYCLES=
+
+# The plans' parents: tended every WATCH_PARENTS seconds, busy or idle; what
+# it closed or marked is logged, the parents still waiting are not, and a
+# failure is logged once.
+TEND_T=0 PARENTS_EVERY=600
+PARENTS=$'#120 closed: its steps #121, #122 closed; plan #130\n#123 to status/waiting: waits on #124 (of #124, #125; plan #131)\n#128 waits on #124 (of #124; plan #131)'
+before=$(tends)
+round; round
+check "parents: tended once per WATCH_PARENTS" "$(($(tends) - before))" 1
+check "parents: what it did is logged" "$(logged "plans' parents: #120 closed: its steps #121, #122 closed; plan #130; #123 to status/waiting: waits on #124 (of #124, #125; plan #131)$")" 1
+TEND_T=0 PARENTS='github: no token' PARENTS_RC=2
+round; TEND_T=0; round
+check "parents: a failure logged once" "$(logged "could not tend the plans' parents (parents --apply, exit 2): github: no token$")" 1
+TEND_T=0 PARENTS='#128 waits on #124 (of #124; plan #131)' PARENTS_RC=0
+before=$(grep -c "plans' parents" "$LOG")
+round
+check "parents: only waiting ones, nothing logged" "$(grep -c "plans' parents" "$LOG")" "$before"
+PARENTS_EVERY=0 TEND_T=0 PARENTS=
+before=$(tends)
+round
+check "parents: WATCH_PARENTS=0 turns it off" "$(tends)" "$before"
+PARENTS_EVERY=600
 
 # An issue is ready: start the relay, and log the issue and its output.
 PICKED=$'12\tFix the guides\thttps://github.com/x/y/issues/12\tready' PICK_RC=0
