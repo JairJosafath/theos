@@ -390,6 +390,16 @@ check "pick, then ready" "$(OPEN=$(jq 'map(select(.[0] < 83))' <<<"$all" | issue
 OPEN=$(jq 'map(select(.[0] < 82))' <<<"$all" | issues) gh_pick >/dev/null
 check "pick, only proposed and needs-human" $? 1
 
+# A parent issue split into a plan and steps stays open and in progress with
+# no claim, its body a "Depends on #S" line per step: pick skips it while a
+# step is open and offers it again once every step closed.
+parent='[[90, ["status/in-progress"], "Plan: docs/plans/p.md\nDepends on #91\nDepends on #92"],
+  [91, ["status/ready"]], [92, ["status/proposed"]]]'
+check "pick, parent waits on its steps" "$(OPEN=$(issues <<<"$parent") gh_pick | cut -f1,4)" "91	ready"
+OPEN=$(jq 'map(select(.[0] != 91))' <<<"$parent" | issues) gh_pick >/dev/null
+check "pick, parent waits on its last step" $? 1
+check "pick, parent once its steps closed" "$(OPEN=$(jq 'map(select(.[0] == 90))' <<<"$parent" | issues) gh_pick | cut -f1,4)" "90	in-progress"
+
 # Proposed: the open status/proposed issues, oldest first, for the relay's triage.
 check "proposed" "$(OPEN=$(jq '. + [[86, ["status/proposed", "kind/bug"]]]' <<<"$all" | issues) gh_proposed | tr '\n' ' ')" "81 86 "
 check "proposed, none" "$(OPEN=$(jq 'map(select(.[0] != 81))' <<<"$all" | issues) gh_proposed)" ""
