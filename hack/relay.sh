@@ -196,7 +196,9 @@ Rules for this headless run:
   - Finished: open a pull request to main whose body says \`Closes #$n\`, merge
     it with a merge commit once \`make check\` passes, and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
-    request, commit SHAs). The relay then picks the next issue.
+    request, commit SHAs). The relay then picks the next issue. A pull
+    request that only writes a plan and files its steps says \`Refs #$n\`
+    instead and ends with a handoff (the handoff skill, "Plan only").
   - Stuck on a decision: \`hack/lib/github.sh status $n needs-maintainer\` and
     a comment saying why and what you need. The relay then picks the next
     issue, and the maintainer decides it or takes it to the user. How to build
@@ -252,7 +254,12 @@ For each proposed issue, decide one of these:
   line \`<!-- relay-triage -->\`) that its session makes the design choices,
   writes them and why in a plan in docs/plans/ (and the change to
   docs/design.md), and files the steps as status/proposed issues, each with
-  its own "Done when"; that is its "Done when". Then ready it.
+  its own "Done when". The plan is not the issue's deliverable: its pull
+  request says \`Refs #N\`, never \`Closes #N\`; the issue stays open and
+  status/in-progress, its body a "Depends on #S" line per step, and the last
+  step's pull request closes #N too. Say that in the comment: the session is
+  done when the plan is merged and its steps are filed, the issue when its
+  last step lands. Then ready it.
 - Fill the gap and ready it, when the only thing missing is something you
   can write yourself: a "Depends on #M" line it lacks (add it to the body with
   \`gh issue edit N --repo $C4_GITHUB_REPO --body-file FILE\`, keeping the
@@ -639,17 +646,13 @@ transcript() {
   echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/${WT//[^a-zA-Z0-9]/-}/$1.jsonl"
 }
 
-# idle_watch WHAT PID FILE MARK: end session WHAT (process group PID) once its
-# transcript FILE and its subagents' haven't changed for RELAY_IDLE: SIGTERM,
-# then SIGKILL after RELAY_IDLE_KILL, with MARK touched so the relay counts it
-# as failed. A transcript that never appears leaves the session to
-# SESSION_TIMEOUT.
+# idle_watch WHAT PID FILE MARK IDLE KILL: end session WHAT (process group PID)
+# once its transcript FILE and its subagents' haven't changed for IDLE seconds
+# (RELAY_IDLE): SIGTERM, then SIGKILL after KILL seconds (RELAY_IDLE_KILL),
+# with MARK touched so the relay counts it as failed. A transcript that never
+# appears leaves the session to SESSION_TIMEOUT.
 idle_watch() {
-  local what=$1 pid=$2 f=$3 idle kill_after t0 last m now missing= i
-  if ! idle=$(seconds "$IDLE") || ! kill_after=$(seconds "$IDLE_KILL"); then
-    log "RELAY_IDLE ($IDLE) or RELAY_IDLE_KILL ($IDLE_KILL) isn't like 45m; $what runs until the $SESSION_TIMEOUT timeout"
-    return 0
-  fi
+  local what=$1 pid=$2 f=$3 idle=$5 kill_after=$6 t0 last m now missing= i
   t0=$(date +%s) last=$t0
   while sleep "$IDLE_POLL"; do
     kill -0 "$pid" 2>/dev/null || return 0
@@ -681,8 +684,14 @@ idle_watch() {
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after
   t0=$(date +%s)
+  # Checked here, not in the watch: a session that ends before the watch runs
+  # would take the log line with it.
+  if ! idle=$(seconds "$IDLE") || ! kill_after=$(seconds "$IDLE_KILL"); then
+    log "RELAY_IDLE ($IDLE) or RELAY_IDLE_KILL ($IDLE_KILL) isn't like 45m; $what runs until the $SESSION_TIMEOUT timeout"
+    idle=
+  fi
   # timeout leads its own process group, so the idle watch can end claude and
   # every process it started. Neither gets the worker's lock (fd 9): a process
   # the session leaves behind would hold it after the worker exits, and the
@@ -691,12 +700,16 @@ session() {
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
-  idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" 9>&- &
-  watch=$!
+  if [ -n "$idle" ]; then
+    idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" "$idle" "$kill_after" 9>&- &
+    watch=$!
+  fi
   wait "$pid"
   rc=$?
-  kill "$watch" 2>/dev/null
-  wait "$watch" 2>/dev/null
+  if [ -n "$watch" ]; then
+    kill "$watch" 2>/dev/null
+    wait "$watch" 2>/dev/null
+  fi
   S_IDLE=
   [ -e "$out.idle" ] && S_IDLE=1
   mins=$((($(date +%s) - t0) / 60))

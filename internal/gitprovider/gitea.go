@@ -89,7 +89,8 @@ func (g *gitea) Repository(name string) Repository { return g.repository(name) }
 // the API's, which follow the Host the request came in on.
 func (g *gitea) repository(name string) Repository {
 	web := g.base.JoinPath(g.owner, name).String()
-	return Repository{Owner: g.owner, Name: name, WebURL: web, CloneURL: web + ".git"}
+	return Repository{Owner: g.owner, Name: name, WebURL: web, CloneURL: web + ".git",
+		GoProxy: g.base.JoinPath("api/packages", g.owner, "go").String()}
 }
 
 // History reads the default branch over Git, which is up to date at once; the

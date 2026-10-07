@@ -192,6 +192,13 @@ func (p *fakeProvider) SetReleaseBody(_ context.Context, repo gitprovider.Reposi
 	return fmt.Errorf("no release %d in %s/%s", id, repo.Owner, repo.Name)
 }
 
+// PublishGoModule finds no go.mod: no reconciler publishes yet (#460 gives the
+// fake its modules).
+func (p *fakeProvider) PublishGoModule(_ context.Context, _ gitprovider.Repository, tag string) (
+	gitprovider.GoModule, error) {
+	return gitprovider.GoModule{Outcome: gitprovider.GoModuleNoGoMod, Version: tag}, nil
+}
+
 // setRuns sets the workflow runs a push of tag at commit started, newest first.
 //
 //nolint:unparam // takes owner and name like the other helpers

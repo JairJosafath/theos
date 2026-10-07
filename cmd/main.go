@@ -11,8 +11,10 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -66,6 +68,7 @@ func main() {
 	var workspaceMemory string
 	var sandboxGoCache string
 	var sessionFeature, sessionBinaryURL string
+	var sharedSecrets, sharedPullSecrets stringList
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -111,10 +114,21 @@ func main() {
 			"none, or a feature reference such as an OCI image.")
 	flag.StringVar(&sessionBinaryURL, "session-binary-url", "",
 		"URL of a linux c4session binary for the feature to download; ${arch} becomes amd64 or arm64.")
+	flag.Var(&sharedSecrets, "shared-secret",
+		"A Secret in the operator's namespace (POD_NAMESPACE) to copy into every project namespace labeled "+
+			"c4.factory.io/shared-secrets=true, such as claude-credentials; repeatable. None: nothing is shared.")
+	flag.Var(&sharedPullSecrets, "shared-pull-secret",
+		"An image pull Secret in the operator's namespace to share like --shared-secret; repeatable.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	podNamespace := os.Getenv("POD_NAMESPACE")
+	if podNamespace == "" && len(sharedSecrets)+len(sharedPullSecrets) > 0 {
+		setupLog.Error(nil, "--shared-secret and --shared-pull-secret need POD_NAMESPACE, the operator's namespace")
+		os.Exit(1)
+	}
 
 	var workspaceQuantity *resource.Quantity
 	if workspaceMemory != "" {
@@ -228,8 +242,12 @@ func main() {
 	}
 
 	if err := (&controller.ProjectReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		APIReader:         mgr.GetAPIReader(),
+		SharedSecrets:     sharedSecrets,
+		SharedPullSecrets: sharedPullSecrets,
+		SourceNamespace:   podNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "project")
 		os.Exit(1)
@@ -301,11 +319,13 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.BriefReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		APIReader: mgr.GetAPIReader(),
-		Git:       gitprovider.Client{},
-		Recorder:  mgr.GetEventRecorder("brief"),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		APIReader:       mgr.GetAPIReader(),
+		Git:             gitprovider.Client{},
+		Recorder:        mgr.GetEventRecorder("brief"),
+		SharedSecrets:   sharedSecrets,
+		SourceNamespace: podNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "brief")
 		os.Exit(1)
@@ -326,4 +346,17 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+}
+
+// stringList is a repeatable string flag.
+type stringList []string
+
+func (l *stringList) String() string { return strings.Join(*l, ",") }
+
+func (l *stringList) Set(v string) error {
+	if v == "" {
+		return errors.New("must not be empty")
+	}
+	*l = append(*l, v)
+	return nil
 }

@@ -66,7 +66,9 @@ carries.
 4. **Agents' writing:** triage comments, handoffs, closing notes, cycle
    notes, issues agents filed, and pull request bodies. Check them against
    AGENTS.md: designing is ours, report honestly, show don't claim, one issue
-   per pull request with `Closes #N`, and a checkable "Done when". When one is
+   per pull request with `Closes #N` (a plan-only one says `Refs #N`, and
+   the parent stays open waiting on its steps), and a checkable "Done
+   when". When one is
    wrong:
    - Mark the comment outdated. Get its id from
      `gh api repos/{owner}/{repo}/issues/comments/ID --jq .node_id`, then run
@@ -132,7 +134,8 @@ carries.
      feature main already shows a user: a UI box, a chart value, a field that
      does nothing yet. The only exception is a reporter waiting on the
      release; then it ships, and its notes say what is a preview.
-   - Release as often as that holds; there is no daily cap. Don't tag while
+   - Release on every sweep where that holds; there is no daily cap, and
+     changes aren't batched into a bigger release. Don't tag while
      a *Verify Release* run still runs, or a
      `Release vX.Y.Z fails its check` issue is open.
    - Name the next version: [SemVer](https://semver.org/), pre-1.0, so

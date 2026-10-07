@@ -107,7 +107,14 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        volumeMounts: []
-      volumes: []
+        # The root filesystem is read-only; a Go module is repacked through
+        # files here when a release publishes it (internal/gitprovider).
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

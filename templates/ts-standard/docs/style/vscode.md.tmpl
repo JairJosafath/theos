@@ -1,3 +1,4 @@
+{{ if eq .Framework "vscode-extension" -}}
 # VS Code extension digest
 
 Distilled from VS Code's extension guidelines, UX guidelines, activation events,
@@ -116,3 +117,4 @@ yourself.
 - Integration tests in a real VS Code (`@vscode/test-electron`) only when an
   issue needs them; they download VS Code and need a display, so they are not
   part of `make check`. [review]
+{{- end }}

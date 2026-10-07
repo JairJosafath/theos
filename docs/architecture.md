@@ -208,6 +208,18 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    `go-standard` and `ts-standard` (v1.1.0 and later) and `python-standard` ship guides
    that describe Standard changes.
 
+## Go modules of the factory's apps
+
+An app's Go module path is `c4factory.local/<project>/<container>` (the Go
+templates' `go.mod`), which no public proxy knows. Agent sandboxes of a
+Container's Tasks get `GOPROXY=<gitea>/api/packages/<owner>/go,https://proxy.golang.org,direct`
+and `GONOSUMDB=c4factory.local` (`buildSandbox`, from the GitProvider's URL
+and owner through `gitprovider.Repository.GoProxy`); c4agent writes `~/.netrc`
+for the Git host from its Git credentials, and the bot's token can read the
+owner's packages (`gitprovider.AgentTokenScopes`). go-standard's CI does the
+same with the job's token. A module Gitea lacks is a 404, and the go command
+goes on to the public proxy. [plans/app-modules.md](plans/app-modules.md) has why.
+
 ## Go build caches
 
 A Go Task runs `make check` three or four times a round: the agent while it

@@ -1,5 +1,5 @@
 // Many watches over few connections. Browsers allow six HTTP/1.1 connections
-// per host, and a page watches about ten kinds, so each ResourceWatcher asks the
+// per host, and a page watches a dozen kinds or more, so each ResourceWatcher asks the
 // WatchMux instead of fetching its own watch. Watches asked for within a few
 // milliseconds of each other share one GET /k8s-watch request (see server.mjs),
 // and the answer is split back into one event stream per watch.

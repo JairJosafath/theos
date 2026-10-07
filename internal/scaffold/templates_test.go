@@ -49,6 +49,10 @@ var templateCombos = []struct {
 		{model.SideStandard, "ts-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"react web app", "static-site", []side{
+		{model.SideFramework, "react-vite"},
+		{model.SideStandard, "ts-standard"},
+	}},
 	{"hello", "cli", []side{
 		{model.SideFramework, "hello"},
 		{model.SideStandard, "hello-standard"},

@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -266,6 +268,50 @@ func TestGiteaIssuesIntegration(t *testing.T) {
 	})
 }
 
+// TestGiteaCrossRepositoryDependencyIntegration makes an issue depend on an
+// issue of another repository against the seeded Gitea, like
+// TestGiteaIntegration: a CLI's issue on its engine's.
+func TestGiteaCrossRepositoryDependencyIntegration(t *testing.T) {
+	base := os.Getenv("C4_GITEA_URL")
+	if base == "" {
+		t.Skip("C4_GITEA_URL not set")
+	}
+	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	p, err := Client{}.Provider(Config{URL: base, Owner: "webshop", Credentials: creds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Now().UnixNano()
+	var repos [2]Repository
+	for i, name := range []string{fmt.Sprintf("it-deps-cli-%d", stamp), fmt.Sprintf("it-deps-engine-%d", stamp)} {
+		t.Cleanup(func() { deleteRepo(t, base, "webshop", name, creds.Token) })
+		if repos[i], err = p.EnsureRepository(ctx, name, "integration test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cli, engine := repos[0], repos[1]
+	blocker, err := p.CreateIssue(ctx, engine, "Engine first", "body", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := p.CreateIssue(ctx, cli, "CLI after", "body", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("webshop/%s#%d", engine.Name, blocker.Number)
+	for range 2 {
+		if err := p.AddIssueDependency(ctx, cli, blocked.Number, engine, blocker.Number); err != nil {
+			t.Fatalf("AddIssueDependency() = %v", err)
+		}
+		if open, err := p.OpenBlockers(ctx, cli, blocked.Number); err != nil || len(open) != 1 || open[0] != want {
+			t.Fatalf("OpenBlockers() = %v, %v; want [%s] once", open, err, want)
+		}
+	}
+}
+
 // TestGiteaReleasesIntegration reads a release, streams its asset and sets its
 // notes against the seeded Gitea, like TestGiteaIntegration.
 func TestGiteaReleasesIntegration(t *testing.T) {
@@ -512,4 +558,79 @@ func deleteRepo(t *testing.T, base, owner, name, token string) {
 		return
 	}
 	_ = resp.Body.Close()
+}
+
+// TestGiteaGoModuleIntegration publishes a tagged repository's Go module to the
+// seeded Gitea's registry and fetches it with the go command through that
+// registry alone, like TestGiteaIntegration.
+func TestGiteaGoModuleIntegration(t *testing.T) {
+	base := os.Getenv("C4_GITEA_URL")
+	if base == "" {
+		t.Skip("C4_GITEA_URL not set")
+	}
+	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	p, err := Client{}.Provider(Config{URL: base, Owner: "webshop", Credentials: creds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("it-gomod-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteRepo(t, base, "webshop", name, creds.Token) })
+	repo, err := p.EnsureRepository(ctx, name, "integration test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	modPath := "c4factory.local/webshop/" + name
+	commit, err := p.PushInitialCommit(ctx, repo, scaffold.Tree{
+		"go.mod":           {Data: []byte("module " + modPath + "\n\ngo 1.24\n")},
+		"greet/greet.go":   {Data: []byte("package greet\n\nfunc Hello() string { return \"hello\" }\n")},
+		"tools/go.mod":     {Data: []byte("module " + modPath + "/tools\n\ngo 1.24\n")},
+		"tools/gen/gen.go": {Data: []byte("package gen\n")},
+	}, "Scaffold\n", testAuthor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The tag waits for Gitea to see the push, as a release does.
+	createRelease(t, base, creds.Token, repo, "v0.1.0", commit)
+
+	got, err := p.PublishGoModule(ctx, repo, "v0.1.0")
+	if want := (GoModule{Outcome: GoModulePublished, Path: modPath, Version: "v0.1.0"}); err != nil || got != want {
+		t.Fatalf("PublishGoModule() = %+v, %v; want %+v", got, err, want)
+	}
+
+	// The go command fetches it from the registry alone, signed in with a netrc
+	// as an agent pod is.
+	home := t.TempDir()
+	u, _ := url.Parse(base)
+	netrc := filepath.Join(home, ".netrc")
+	if err := os.WriteFile(netrc, []byte(fmt.Sprintf("machine %s login %s password %s\n", u.Hostname(),
+		creds.Username, creds.Token)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	modCache := filepath.Join(home, "mod")
+	cmd := exec.CommandContext(ctx, "go", "mod", "download", "-json", modPath+"@v0.1.0")
+	cmd.Dir = home
+	cmd.Env = append(os.Environ(), "GOPROXY="+strings.TrimSuffix(base, "/")+"/api/packages/webshop/go",
+		"GONOSUMDB=c4factory.local", "GOFLAGS=-modcacherw", "GOMODCACHE="+modCache, "NETRC="+netrc,
+		"GOWORK=off", "GO111MODULE=on", "GOTOOLCHAIN=local")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go mod download: %v\n%s", err, out)
+	}
+	var downloaded struct{ Dir string }
+	if err := json.Unmarshal(out, &downloaded); err != nil || downloaded.Dir == "" {
+		t.Fatalf("go mod download printed %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(downloaded.Dir, "greet", "greet.go")); err != nil {
+		t.Errorf("the module misses greet/greet.go: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(downloaded.Dir, "tools")); !os.IsNotExist(err) {
+		t.Errorf("the module has the nested module tools/: %v", err)
+	}
+
+	if got, err := p.PublishGoModule(ctx, repo, "v0.1.0"); err != nil || got.Outcome != GoModuleExists {
+		t.Fatalf("PublishGoModule() again = %+v, %v; want %s", got, err, GoModuleExists)
+	}
 }

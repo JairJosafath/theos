@@ -1,0 +1,41 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` web app of {{ .SoftwareSystem }}, in project {{ .Project }}: a page in
+React and TypeScript, built with Vite, scaffolded by C4 Factory.
+
+## Use it
+
+The app is a static site: `npm run build` writes it to `dist/`, which any web
+server can serve as files. Open `index.html` through a server, not from disk.
+
+## Develop
+
+Open the repository in its devcontainer, which has Node 24 and the Go toolchain.
+
+```sh
+npm ci               # install the exact packages in package-lock.json
+npm run dev          # serve the page with hot reload on http://localhost:5173
+npm test             # unit tests with vitest; no browser needed
+{{- if .Standard }}
+make check           # what CI runs: format, lint, type check, test, build
+make dist            # the site in dist/
+make help            # every target
+{{- else }}
+npm run build        # the site in dist/
+{{- end }}
+```
+
+## Layout
+
+- `index.html` is the page Vite serves and builds; its `<title>` is the app's
+  name, which the page shows as its heading.
+- `src/main.tsx` mounts the app; `src/app.tsx` is the page.
+- `src/*.ts` are the app's modules. Keep logic in modules that import neither
+  React nor the DOM, so plain unit tests cover it; tests sit next to them as
+  `*.test.ts`.
+- `public/` is copied into the site as is (the icon).
+- `vite.config.ts` configures the build and the tests.
+{{- if .Standard }}
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}

@@ -29,6 +29,9 @@ spec:
     - jsonPath: .status.suggestionsWaiting
       name: Suggestions
       type: integer
+    - jsonPath: .status.failedWaiting
+      name: Failed
+      type: integer
     - jsonPath: .status.apps[*].lastRelease.tag
       name: Releases
       type: string
@@ -409,6 +412,70 @@ spec:
                 maxItems: 500
                 type: array
                 x-kubernetes-list-type: atomic
+              failed:
+                description: |-
+                  failed are the issues handed back to a person in the repositories of
+                  the Containers the Brief made, by Container and number; at most 50. A
+                  prompt says whether to try them again.
+                items:
+                  description: |-
+                    BriefFailedIssue is an issue handed back to a person (status/needs-human) in
+                    the repository of a Container the Brief made, and why.
+                  properties:
+                    container:
+                      description: container is the Container whose repository has
+                        the issue.
+                      maxLength: 253
+                      type: string
+                    kind:
+                      description: |-
+                        kind says why it was handed back: unclear (no acceptance criteria),
+                        merged (a Task merged it already), exhausted (agents tried it as often
+                        as a Crew does), failed (its last Task failed) or person (a person
+                        handed it back).
+                      enum:
+                      - unclear
+                      - merged
+                      - exhausted
+                      - failed
+                      - person
+                      type: string
+                    number:
+                      description: number of the issue in its repository.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    reason:
+                      description: reason says why in a sentence, such as the failed
+                        Task's message.
+                      maxLength: 1000
+                      type: string
+                    title:
+                      description: title of the issue.
+                      maxLength: 255
+                      type: string
+                    tries:
+                      description: tries is how many Tasks the issue has had.
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    url:
+                      description: url is the issue's address.
+                      type: string
+                  required:
+                  - container
+                  - kind
+                  - number
+                  type: object
+                maxItems: 50
+                type: array
+                x-kubernetes-list-type: atomic
+              failedWaiting:
+                description: |-
+                  failedWaiting is how many failed issues wait for an answer, those past
+                  the 50 listed too.
+                format: int32
+                type: integer
               history:
                 description: history has an entry per round, oldest first; the newest
                   20 are kept.
