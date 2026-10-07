@@ -266,6 +266,50 @@ func TestGiteaIssuesIntegration(t *testing.T) {
 	})
 }
 
+// TestGiteaCrossRepositoryDependencyIntegration makes an issue depend on an
+// issue of another repository against the seeded Gitea, like
+// TestGiteaIntegration: a CLI's issue on its engine's.
+func TestGiteaCrossRepositoryDependencyIntegration(t *testing.T) {
+	base := os.Getenv("C4_GITEA_URL")
+	if base == "" {
+		t.Skip("C4_GITEA_URL not set")
+	}
+	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	p, err := Client{}.Provider(Config{URL: base, Owner: "webshop", Credentials: creds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Now().UnixNano()
+	var repos [2]Repository
+	for i, name := range []string{fmt.Sprintf("it-deps-cli-%d", stamp), fmt.Sprintf("it-deps-engine-%d", stamp)} {
+		t.Cleanup(func() { deleteRepo(t, base, "webshop", name, creds.Token) })
+		if repos[i], err = p.EnsureRepository(ctx, name, "integration test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cli, engine := repos[0], repos[1]
+	blocker, err := p.CreateIssue(ctx, engine, "Engine first", "body", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := p.CreateIssue(ctx, cli, "CLI after", "body", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("webshop/%s#%d", engine.Name, blocker.Number)
+	for range 2 {
+		if err := p.AddIssueDependency(ctx, cli, blocked.Number, engine, blocker.Number); err != nil {
+			t.Fatalf("AddIssueDependency() = %v", err)
+		}
+		if open, err := p.OpenBlockers(ctx, cli, blocked.Number); err != nil || len(open) != 1 || open[0] != want {
+			t.Fatalf("OpenBlockers() = %v, %v; want [%s] once", open, err, want)
+		}
+	}
+}
+
 // TestGiteaReleasesIntegration reads a release, streams its asset and sets its
 // notes against the seeded Gitea, like TestGiteaIntegration.
 func TestGiteaReleasesIntegration(t *testing.T) {

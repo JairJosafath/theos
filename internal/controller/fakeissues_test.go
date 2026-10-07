@@ -188,15 +188,21 @@ func (p *fakeProvider) GetIssue(_ context.Context, repo gitprovider.Repository, 
 	return out, nil
 }
 
-// AddIssueDependency makes an issue depend on another of the same repository.
-func (p *fakeProvider) AddIssueDependency(_ context.Context, repo gitprovider.Repository, number, blocker int) error {
+// AddIssueDependency makes an issue depend on another, of the same repository
+// ("#3") or another ("owner/name#3").
+func (p *fakeProvider) AddIssueDependency(_ context.Context, repo gitprovider.Repository, number int,
+	blockerRepo gitprovider.Repository, blocker int) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	i, err := p.issueOf(repo, number)
 	if err != nil {
 		return err
 	}
-	if ref := fmt.Sprintf("#%d", blocker); !slices.Contains(i.blockers, ref) {
+	ref := fmt.Sprintf("#%d", blocker)
+	if blockerRepo.Owner != repo.Owner || blockerRepo.Name != repo.Name {
+		ref = blockerRepo.Owner + "/" + blockerRepo.Name + ref
+	}
+	if !slices.Contains(i.blockers, ref) {
 		i.blockers = append(i.blockers, ref)
 	}
 	return nil
