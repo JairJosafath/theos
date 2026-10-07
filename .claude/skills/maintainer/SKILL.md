@@ -66,7 +66,9 @@ carries.
 4. **Agents' writing:** triage comments, handoffs, closing notes, cycle
    notes, issues agents filed, and pull request bodies. Check them against
    AGENTS.md: designing is ours, report honestly, show don't claim, one issue
-   per pull request with `Closes #N`, and a checkable "Done when". When one is
+   per pull request with `Closes #N` (a plan-only one says `Refs #N`, and
+   the parent stays open waiting on its steps), and a checkable "Done
+   when". When one is
    wrong:
    - Mark the comment outdated. Get its id from
      `gh api repos/{owner}/{repo}/issues/comments/ID --jq .node_id`, then run

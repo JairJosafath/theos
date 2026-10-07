@@ -113,6 +113,14 @@ Lost claim (the heartbeat hook says so):
 - **Landed:** the pull request says `Closes #N` and is merged as AGENTS.md
   ("How to Work") says. If N is still open: `hack/lib/github.sh close N FILE`,
   FILE naming the pull request, SHAs and evidence.
+- **Plan only:** when N is split into a plan and step issues, the plan's
+  pull request says `Refs #N`, never `Closes #N`: nothing N asked for has
+  shipped. Once it merges, add a `Depends on #S` line per step to N's body
+  (`gh issue edit N --body-file FILE`, the rest kept), leave N open and
+  `status/in-progress`, so `pick` skips it until every step closes, and post
+  a handoff naming the plan and the steps. Each step's body names N; the last
+  step's pull request says `Closes #S` and `Closes #N`. Steps never say
+  `Depends on #N` (that is a cycle).
 - **Plan finished:** when the issue you close finishes a plan's last step,
   move the plan to `docs/plans/done/` in the same pull request (`git mv`),
   fix the relative links inside it, and update every link to it
