@@ -67,6 +67,10 @@
 #                                        (a plan's parent, waiting on its steps) release the claim and lease
 #   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, drop its status labels,
 #                                        release the claim and lease, then close the plan parents N finishes (parents)
+#   hack/lib/github.sh merge PR          merge pull request PR with a merge commit. Refused (exit 1) when its body
+#                                        says Refs #N and a closing word next to #N (closes #N, fixed #N, even in
+#                                        prose or a commit message) or GitHub's closingIssuesReferences would
+#                                        still close N: a plan's pull request must not close its parent
 #   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N; drops N's status labels
 #   hack/lib/github.sh closed N          drop closed issue N's status/* labels (open N is left alone); the
 #                                        Issue closed workflow runs it, for issues a pull request's Closes #N closes
@@ -146,12 +150,13 @@ GH_CLAIM_JQ='
   def age: (now - (.updated_at | fromdateiso8601)) / 60 | floor | "\(.)m ago";
 '
 
-# name|color|description, the same words the factory uses in Gitea.
+# name|color|description, the same words the factory uses in Gitea. GitHub
+# refuses a description longer than 100 characters.
 GH_LABELS=(
   'status/proposed|c5def5|Proposed; the relay'"'"'s triage or the user readies it when it is sound'
   'status/ready|0e8a16|Ready: the next session may take it'
   'status/in-progress|fbca04|A session works on it; continue from its newest handoff comment'
-  'status/waiting|bfdadc|A plan'"'"'s parent: waits on its steps (Depends on #S), not on an agent; closes itself when the last one closes'
+  'status/waiting|bfdadc|A plan'"'"'s parent: waits on its steps (Depends on #S), closes itself after the last'
   'status/needs-maintainer|e99695|Waits on the maintainer'"'"'s decision; the newest comment says what it needs'
   'status/needs-human|d93f0b|Waits on the owner; only the maintainer sets it, and the newest comment says why'
   'priority/urgent|b60205|Picked before every other ready issue'
@@ -1324,6 +1329,40 @@ gh_close() {
   gh_parents --apply "$n" || echo "github: closed #$n but could not close the plan parents waiting on it (hack/lib/github.sh parents --apply)" >&2
 }
 
+# GitHub's closing keywords, optionally with a colon, before #N or OWNER/REPO#N.
+GH_CLOSE_WORDS='(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+([[:alnum:]_.-]+/[[:alnum:]_.-]+)?#'
+
+# gh_merge PR: merge pull request PR with a merge commit, unless it would close
+# an issue its body says Refs #N to. GitHub reads a closing keyword next to #N
+# anywhere in the body or a commit message, prose included ("its PR closes
+# #N"), so a plan's pull request would close its parent with the steps
+# unbuilt. Refused (exit 1) when such a phrase is there or GraphQL's
+# closingIssuesReferences lists N; the message names the phrase to reword.
+gh_merge() {
+  local pr=${1:?usage: merge PR} view text refs closing n phrase bad=
+  [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
+  view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
+    query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
+      body closingIssuesReferences(first: 100) { nodes { number } } commits(last: 100) { nodes { commit { message } } } } } }' \
+    --jq .data.repository.pullRequest) || return 1
+  text=$(jq -r '.body // "", (.commits.nodes[]?.commit.message)' <<<"$view")
+  closing=$(jq -r '.closingIssuesReferences.nodes[]?.number' <<<"$view")
+  refs=$(jq -r '.body // ""' <<<"$view" | grep -oiE '\brefs:?[[:space:]]+#[0-9]+\b' | grep -oE '[0-9]+$' | sort -un)
+  for n in $refs; do
+    phrase=$(grep -oiE "\\b$GH_CLOSE_WORDS$n\\b" <<<"$text" | head -1)
+    if [ -n "$phrase" ]; then
+      echo "github: #$pr says Refs #$n, but \"$phrase\" in it closes #$n on merge; reword it (no close, fix or resolve word before #$n)" >&2
+      bad=1
+    elif grep -qx "$n" <<<"$closing"; then
+      echo "github: #$pr says Refs #$n, but GitHub would close #$n on merge (closingIssuesReferences); drop the link or the closing word before it" >&2
+      bad=1
+    fi
+  done
+  [ -z "$bad" ] || return 1
+  gh_token || return 1
+  gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge
+}
+
 # gh_duplicate N M: comment on N that it duplicates M, close N as not planned
 # and drop its status labels.
 gh_duplicate() {
@@ -1657,6 +1696,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     cluster) gh_cluster "$@" ;;
     status) gh_set_status "$@" ;;
     close) gh_close "$@" ;;
+    merge) gh_merge "$@" ;;
     duplicate) gh_duplicate "$@" ;;
     closed) gh_closed "$@" ;;
     create) gh_create "$@" ;;

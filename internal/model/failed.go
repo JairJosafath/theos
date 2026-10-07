@@ -26,6 +26,9 @@ const (
 	FailedExhausted = "exhausted"
 	// FailedTask is a failed Task's: its newest failed Task's message.
 	FailedTask = "failed"
+	// FailedBlocked is a blocked Task's: its agent said it can't start the
+	// issue yet, and why. Retry it once its blocker lands.
+	FailedBlocked = "blocked"
 	// FailedPerson was handed back by a person.
 	FailedPerson = "person"
 	// FailedByHand is a by-hand issue: criteria only a person can do.
@@ -83,6 +86,8 @@ type IssueTask struct {
 	// Merged and Failed say how a finished Task ended; neither while it works.
 	Merged bool
 	Failed bool
+	// Blocked means it failed because its agent said it can't start the issue.
+	Blocked bool
 	// Message is the Task's status message.
 	Message string
 	Created time.Time
@@ -92,8 +97,9 @@ type IssueTask struct {
 // back, from its Container's Tasks, the first that holds: labelled kind/by-hand
 // (byHand, with the whys its body gives); no acceptance criteria (unclear); a
 // Task merged it (merged); MaxIssueAttempts Tasks failed (exhausted); its
-// newest failed Task's message (failed); else a person (person). Tries counts
-// the issue's Tasks.
+// newest failed Task's message (blocked, when its agent said it can't start
+// the issue; else failed); else a person (person). Tries counts the issue's
+// Tasks.
 func FailedReason(number int, labels []string, body string, tasks []IssueTask) (kind, reason string, tries int) {
 	var mine []IssueTask
 	for _, t := range tasks {
@@ -137,11 +143,14 @@ func FailedReason(number int, labels []string, body string, tasks []IssueTask) (
 		if !t.Failed {
 			continue
 		}
-		reason := fmt.Sprintf("Task `%s` failed", t.Name)
+		kind, reason := FailedTask, fmt.Sprintf("Task `%s` failed", t.Name)
+		if t.Blocked {
+			kind, reason = FailedBlocked, fmt.Sprintf("Task `%s` is blocked", t.Name)
+		}
 		if msg := oneParagraph(t.Message); msg != "" {
 			reason += ": " + msg
 		}
-		return FailedTask, reason, tries
+		return kind, reason, tries
 	}
 	return FailedPerson, "Handed back by a person; see the issue.", tries
 }

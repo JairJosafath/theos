@@ -135,6 +135,14 @@ no Standard change can. This holds even if your role guide or AGENTS.md says to 
 or to leave such files alone.
 `, strings.Join(protectedList(job), ", "), job.Base, neverList())
 	}
+	fmt.Fprintf(&b, `
+If the work can't be done yet (it waits on other work that is not merged or
+released) or can't be done in this sandbox, stop on purpose: change nothing, and
+end your summary with a line %q followed by what it waits on and why, in at
+most five sentences. The task then ends at once, and a person reads your
+reason. Never stop without saying why: a round with no change and no such line
+is wasted.
+`, model.BlockedPrefix)
 	if job.Issue > 0 {
 		met := "met and tested"
 		if gated {

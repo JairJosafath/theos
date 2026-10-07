@@ -39,7 +39,9 @@ Task; and the card shows the failed issues and says to answer them in a prompt.
    - `MaxIssueAttempts` Tasks failed: kind `exhausted`, naming them;
    - otherwise the newest failed Task's message, kind `failed`, as
      "Task `cel-lens-cli-1` failed: Failed after 3 rounds: the agent made no
-     changes";
+     changes"; kind `blocked` instead when that Task failed with reason
+     `Blocked`, its agent having said it can't start the issue yet (#492), so
+     the planner retries it once its blocker lands;
    - none of these (a person labelled it): kind `person`, "handed back by a
      person; see the issue".
    Each entry also carries `tries`, the Tasks the issue has had.

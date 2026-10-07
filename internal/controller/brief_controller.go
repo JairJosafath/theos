@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -166,6 +167,10 @@ func (r *BriefReconciler) finishReconcile(ctx context.Context, brief, orig *c4v1
 	}
 	r.setPhase(ctx, brief)
 	if patchErr := r.writeStatus(ctx, brief, orig); patchErr != nil {
+		if errors.Is(patchErr, errStaleBrief) {
+			logf.FromContext(ctx).V(1).Info("Brief changed since it was read; reading it again")
+			return ctrl.Result{RequeueAfter: staleBriefRetry}, nil
+		}
 		return ctrl.Result{}, patchErr
 	}
 	return result, err
@@ -229,12 +234,22 @@ func madeContainers(brief *c4v1alpha1.Brief) bool {
 	})
 }
 
-// writeStatus patches the Brief's status when it changed.
+// writeStatus patches the Brief's status when it changed. A reconcile that
+// ends a round writes only the Brief it read: one that read a stale copy, from
+// before an earlier reconcile ended the round, would end it again against a
+// namespace that has changed since, and overwrite how it ended (#540).
 func (r *BriefReconciler) writeStatus(ctx context.Context, brief, orig *c4v1alpha1.Brief) error {
 	if equality.Semantic.DeepEqual(brief.Status, orig.Status) {
 		return nil
 	}
-	return r.Status().Patch(ctx, brief, client.MergeFrom(orig))
+	if !roundOver(&brief.Status) || roundOver(&orig.Status) {
+		return r.Status().Patch(ctx, brief, client.MergeFrom(orig))
+	}
+	err := r.Status().Patch(ctx, brief, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{}))
+	if apierrors.IsConflict(err) {
+		return fmt.Errorf("%w: %w", errStaleBrief, err)
+	}
+	return err
 }
 
 // SetupWithManager sets up the controller with the Manager.

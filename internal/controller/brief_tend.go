@@ -276,7 +276,7 @@ func (r *BriefReconciler) applyTend(ctx context.Context, brief, orig *c4v1alpha1
 		return ctrl.Result{}, err
 	}
 	if refusals := model.CheckTendPlan(plan, current); len(refusals) > 0 {
-		r.endRoundFailed(ctx, brief, task, "the plan no longer fits the namespace:\n"+model.RefusalText(refusals))
+		r.endRoundFailed(ctx, brief, task, "the plan no longer fits the namespace: "+model.RefusalText(refusals))
 		return ctrl.Result{}, nil
 	}
 	run := &roundApply{brief: brief, orig: orig, round: fmt.Sprint(brief.Status.Round)}
