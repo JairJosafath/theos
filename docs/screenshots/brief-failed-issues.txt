@@ -1,0 +1,45 @@
+Brief failed issues (#429, steps #453-#456): the tests that cover the plan
+docs/plans/done/brief-failed-issues.md. Run 2026-10-07 on main at f33ba0e by otter-521.
+
+== #453 model, #455 checking and applying the answers (internal/model) ==
+$ go test ./internal/model/ -run "Failed|ClarifiedBody" -v
+--- PASS: TestIsFailedIssue (0.00s)
+--- PASS: TestFailedReason (0.00s)
+--- PASS: TestParsePlanFailedAnswers (0.00s)
+--- PASS: TestCheckFailedAnswers (0.00s)
+--- PASS: TestClarifiedBody (0.00s)
+--- PASS: TestFailedComment (0.00s)
+--- PASS: TestPlannerGuideFailedExample (0.00s)
+--- PASS: TestWorkspaceFailed (0.00s)
+--- PASS: TestBriefWorkspaceFailed (0.00s)
+--- PASS: TestFailedMessage (0.00s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/model	0.008s
+
+== #455 Provider.EditIssueBody (Gitea client) ==
+$ go test ./internal/gitprovider/ -run TestEditIssueBody -v
+--- PASS: TestEditIssueBody (0.00s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/gitprovider	0.009s
+
+== #454 the Brief lists its failed issues, #455 a prompt retries and closes them (envtest) ==
+$ go test ./internal/controller/ -run TestControllers -v -ginkgo.v -ginkgo.focus 'Brief failed issues'
+Brief failed issues lists an issue whose Task failed with the Task's message, and not a person's in another app
+Brief failed issues retries one failed issue with a clarification and closes another as a prompt says
+Ran 2 of 191 Specs in 19.802 seconds
+SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 189 Skipped
+--- PASS: TestControllers (19.81s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/controller	19.831s
+
+== #456 the card (ui/) ==
+$ (cd ui && npx vitest run src/model/brief.test.ts -t failed --reporter=verbose)
+ ✓ src/model/brief.test.ts > describeBrief > lists the failed issues with their reasons and marks them in the issue list 3ms
+ ✓ src/model/brief.test.ts > describeBrief > counts failed issues and suggestions together, and the listed ones when no total is given 1ms
+ ✓ src/model/brief.test.ts > describeBrief > has no failed issues by default and marks none 0ms
+ ✓ src/model/brief.test.ts > describeBrief > gives a failed issue a reason when the operator gave none 0ms
+ ✓ src/model/brief.test.ts > describeBrief > says why a failed round failed, from the Planned condition 0ms
+ ✓ src/model/brief.test.ts > describeBriefApp > tones CI failed as { run: 'Failed', …(1) } 0ms
+ ✓ src/model/brief.test.ts > describeBriefApp > tones publish failed as { publishState: 'Failed', …(1) } 0ms
+ Test Files  1 passed (1)
+      Tests  7 passed | 36 skipped (43)
