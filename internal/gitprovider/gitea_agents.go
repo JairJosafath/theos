@@ -48,6 +48,13 @@ type PullRequest struct {
 // agentTokenName is the name of the access token made for an agent bot user.
 const agentTokenName = "c4factory-agent"
 
+// AgentTokenScopes are what an agent bot's token may do, comma-separated: push
+// to its repository, and read the owner's packages, where the go command
+// fetches the factory's released modules (Gitea answers a token without it
+// with a 401, which stops the go command where a 404 lets it go on). A token
+// made with other scopes is out of date.
+const AgentTokenScopes = "write:repository,read:package"
+
 // ProtectBranch makes branch accept changes only through pull requests whose
 // status checks matching statusContexts (glob patterns) pass.
 func (g *gitea) ProtectBranch(ctx context.Context, repo Repository, branch string, rule BranchRule) error {
@@ -240,7 +247,7 @@ func (g *gitea) EnsureAgentAccess(ctx context.Context, repo Repository, user str
 	if _, _, err := as.do(ctx, http.MethodDelete, tokens+"/"+agentTokenName, nil); err != nil {
 		return Credentials{}, err
 	}
-	body, _ = json.Marshal(map[string]any{"name": agentTokenName, "scopes": []string{"write:repository"}})
+	body, _ = json.Marshal(map[string]any{"name": agentTokenName, "scopes": strings.Split(AgentTokenScopes, ",")})
 	status, data, err = as.do(ctx, http.MethodPost, tokens, body)
 	if err != nil {
 		return Credentials{}, err
@@ -297,7 +304,7 @@ func (p giteaPull) pullRequest() PullRequest {
 // OpenPullRequest opens a pull request from head into base, or returns the open
 // one that already exists for head.
 func (g *gitea) OpenPullRequest(ctx context.Context, repo Repository, head, base, title, body string) (PullRequest, error) {
-	payload, _ := json.Marshal(map[string]string{"head": head, "base": base, "title": title, "body": body})
+	payload, _ := json.Marshal(map[string]string{"head": head, "base": base, "title": title, fieldBody: body})
 	status, data, err := g.do(ctx, http.MethodPost, "/api/v1/repos/"+repoPath(repo)+"/pulls", payload)
 	if err != nil {
 		return PullRequest{}, err

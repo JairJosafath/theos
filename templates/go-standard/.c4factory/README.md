@@ -19,7 +19,11 @@ issue and pull request templates, and the `make check` contract CI runs.
   requests and on `main` on a runner labelled `go`, under the status context
   `check / check`, which the protected `main` requires (`model.CheckContexts`).
   It keeps the toolchain image's Go build cache, which the image ships warm;
-  nothing in this Standard redirects `GOCACHE`.
+  nothing in this Standard redirects `GOCACHE`. It fetches modules from the
+  owner's Gitea package registry first (`GOPROXY`, with the job's token in
+  `~/.netrc`), where the factory publishes its apps' released modules, then
+  from the public proxy; `GONOSUMDB=c4factory.local`. The factory's agent pods
+  set the same.
 - **Releases:** `make build` writes `bin/<container>`; `make dist` cross-compiles
   `dist/<container>_<os>_<arch>[.exe]` for Linux, macOS and Windows on amd64 and
   arm64, with `CGO_ENABLED=0`, `-trimpath`, `-X main.version=$(VERSION)` and a

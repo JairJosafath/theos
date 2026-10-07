@@ -2567,6 +2567,15 @@ textarea.input {
   color: var(--text-2);
 }
 
+.brief-issue-failed {
+  margin-left: 6px;
+}
+
+.brief-failed-reason {
+  color: var(--error);
+  font-size: 12px;
+}
+
 .brief-apps {
   padding: 0;
   list-style: none;

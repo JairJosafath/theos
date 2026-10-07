@@ -11,9 +11,10 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
    don't ask for. Out of scope stays out.
 2. **Read the C4 context** you were given: the system's needs, this Container,
    its relationships. Needs bind every change, even ones the issue doesn't
-   repeat (such as {{ if eq .Framework "react-vite" }}"works without a mouse"{{ else }}"never gets in the way of other YAML tooling"{{ end }}).
+   repeat (such as {{ if eq .Framework "react-vite" }}"works without a mouse"{{ else if eq .Framework "node-cli" }}"its output pipes into other tools"{{ else }}"never gets in the way of other YAML tooling"{{ end }}).
 3. **Read the related repositories** under `/workspace/related/<name>`, if any:
    the parts this issue touches, such as {{ if eq .Framework "react-vite" }}the API this page calls and
+   the shape of its responses{{ else if eq .Framework "node-cli" }}the API this program calls and
    the shape of its responses{{ else }}the language server's command line
    and the LSP features it offers{{ end }}. They are read-only; never change them or
    copy their code.
@@ -32,7 +33,8 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
   Commits.
 - **Update what users read** in the same change when behaviour they see
   changes: {{ if eq .Framework "react-vite" }}`README.md` (how to use and configure the app) and a
-  `CHANGELOG.md` entry under "Unreleased".{{ else }}`README.md` (settings, commands), the setting and command
+  `CHANGELOG.md` entry under "Unreleased".{{ else if eq .Framework "node-cli" }}`README.md` (flags, environment variables), the
+  help text in `src/cli.ts`, and a `CHANGELOG.md` entry under "Unreleased".{{ else }}`README.md` (settings, commands), the setting and command
   descriptions in `package.json`, and a `CHANGELOG.md` entry under "Unreleased".{{ end }}
 - **`make check` green before every commit.** When a rule fires, fix the code.
 - **Protected files** (the Standard's and the platform's, listed in
@@ -84,6 +86,34 @@ Task that reviews and merges it. Then:
 - You can't open a browser here. Say which behaviour needs a person to try in
   a real browser (layout, focus, screen readers).
 
+{{- else if eq .Framework "node-cli" -}}
+## TypeScript and Node notes
+
+- Command behaviour is tested by calling `run` with arguments and a recording
+  `Output`, checking the exit code, stdout and stderr; logic lives in modules
+  that don't touch `process`, tested with plain vitest. Keep
+  `src/main.ts` to wiring.
+- Write results through `out.stdout` and diagnostics through `out.stderr`,
+  never `console`; return the exit code from `run`.
+- New flags go in `parseArgs`'s `options`, the help text and the README;
+  every flag has a long name.
+- Iterate with `npx vitest` and `npx tsc --noEmit`, and run the program with
+  `npm run build && node out/cli.js`; finish with `make check`, which also
+  packs the package and runs it.
+- Tests that read or write files use a fresh directory from
+  `fs.mkdtemp(path.join(os.tmpdir(), ...))`, removed afterwards; never the
+  repository or the home directory.
+- Tests never measure time: no real timers or `setTimeout` waits, no bounds
+  such as "finishes within 500 ms" on `performance.now()` or `Date.now()`.
+  They pass in your sandbox and fail on the shared CI runner.
+- A budget in the issue or the needs ("within 200 ms", "a 1 GB file") gets a
+  vitest `bench` on realistic input, not a test; put the numbers and the
+  input size in the summary.
+- Timing logic (timeouts, retries) is tested with fake timers
+  (`vi.useFakeTimers()`, then `vi.advanceTimersByTime`), or by awaiting the
+  event it fires.
+- Say which behaviour needs a person to try in a real terminal (colours,
+  prompts, Ctrl-C).
 {{- else -}}
 ## TypeScript and VS Code notes
 
@@ -118,6 +148,6 @@ Your summary becomes the pull request description, in the shape of
 - **Each acceptance criterion:** met or not met; where (file and function);
   the test that proves it (test name).
 - **How it was checked:** `make check`, numbers for any budget, manual runs.
-- **Could not be verified:** what and why (needs a real {{ if eq .Framework "react-vite" }}browser{{ else }}editor{{ end }}, a display, the
+- **Could not be verified:** what and why (needs a real {{ if eq .Framework "react-vite" }}browser{{ else if eq .Framework "node-cli" }}terminal{{ else }}editor{{ end }}, a display, the
   network). Never claim what you didn't run.
 - **Follow-ups:** problems you saw outside the issue's scope.

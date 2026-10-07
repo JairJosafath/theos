@@ -39,6 +39,33 @@ says what to check.
 8. **Security.** No `dangerouslySetInnerHTML` or `javascript:` URLs from
    untrusted input; no secrets in `import.meta.env` or anywhere in the
    bundle; no user data in logs; new install scripts justified.
+{{- else if eq .Framework "node-cli" -}}
+2. **Correctness and edge cases.** Empty, huge, malformed and non-ASCII
+   arguments, files and stdin; flags given twice, in `--flag=value` form and
+   after `--`; missing files and unwritable output; every error reported on
+   stderr with the right exit code.
+3. **Tests.** They test behaviour through `run` and other exports, check the
+   exit code and both streams, would fail without the change, cover the edge
+   cases above, and are deterministic: no real timers or real-time bounds
+   (fake timers instead), no network, files only in a fresh temporary
+   directory.
+4. **Design.** Logic in modules that don't touch `process`, `main.ts` only
+   wiring; names; no dead code; no speculative generality (flags nobody
+   needs, abstractions with one use); the change stays in the issue's scope.
+5. **Errors and resources.** Promises are awaited or deliberately voided;
+   files and streams are closed on every path; a failure is one line on
+   stderr naming what failed and the exit code is not 0; no stack trace for
+   an expected error.
+6. **Performance.** Start-up stays fast (no heavy work before the flags are
+   parsed); big input is streamed; budgets from the issue or the system's
+   needs are measured by a bench, never by a test with a time bound.
+7. **Docs and DX.** `--help`, the README and the CHANGELOG match the
+   behaviour; results on stdout, diagnostics on stderr; messages tell a user
+   what happened and what to do.
+8. **Security.** No shell commands built from arguments or files
+   (`execFile` with an argument list, never `exec`); paths from arguments
+   never escape where the program is told to write; no secrets in output or
+   errors; new install scripts justified.
 {{- else -}}
 2. **Correctness and edge cases.** Empty, huge, malformed and non-ASCII
    documents; positions at the first and last line and in multi-byte text (LSP
@@ -106,6 +133,19 @@ A blocking problem is never a follow-up.
 - Behaviour only a real browser can show (layout, focus order, screen
   readers) is "could not be verified" unless a person tried it: say so rather
   than approving on faith.
+{{- else if eq .Framework "node-cli" -}}
+## TypeScript and Node notes
+
+- `make check` packed the package and ran its program, and CI is green on the
+  last commit.
+- Look for: `console` or `process.stdout` used past the `Output` that `run`
+  is given; `process.exit()`; floating promises hidden behind `void` without a
+  reason; `as` casts or disable comments that hide a real type error;
+  synchronous `fs` calls on big files; a new `dependency` instead of a
+  bundled `devDependency`; flags missing from `--help` or the README.
+- Behaviour only a real terminal can show (colours, prompts, Ctrl-C) is
+  "could not be verified" unless a person tried it: say so rather than
+  approving on faith.
 {{- else -}}
 ## TypeScript and VS Code notes
 

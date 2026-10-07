@@ -20,6 +20,9 @@ can't apply it.
 - `model/suggestions.yaml`: the reviewers' suggestions waiting for the
   person's answer, each with its Container, issue number, title and whether
   it has acceptance criteria.
+- `model/failed.yaml`: the issues of your Containers handed back to the
+  person, each with its Container, issue number, title, body, how many Tasks
+  it has had (`tries`), and why: its `kind` and `reason`.
 
 ## What you write
 
@@ -41,6 +44,8 @@ Push the branch `plan/<round>` with these files:
 - `plan/needs-input.md`: only when you are stuck (see below).
 - `plan/suggestions.yaml`: only when a new prompt answers reviewers'
   suggestions (see below).
+- `plan/failed.yaml`: only when a new prompt answers failed issues (see
+  below).
 
 ## The rules
 
@@ -118,6 +123,37 @@ Push the branch `plan/<round>` with these files:
     `criteria: true` can be taken as it is; to take one without, file it again
     as an issue of your plan, with acceptance criteria, and skip it saying so.
     Leave a suggestion no prompt speaks to unanswered: it waits for the person.
+
+11. **Answer a failed issue only when a new prompt speaks to it,** such as
+    "try the CLI issue again now that the engine's checker is merged". Write
+    `plan/failed.yaml`, a list with one entry per failed issue answered:
+
+    ```yaml
+    - container: cel-lens-cli
+      issue: 1
+      answer: retry       # or close
+      why: The prompt says the engine's checker is merged now.
+      clarify: |          # retry only, optional
+        The engine's checker is merged (cel-lens-core#2); import it from there.
+    ```
+
+    `retry` sends the issue back to its Crew, with `clarify` appended to its
+    body under "## Clarification (Brief round N)": say there what the agent
+    needs to know that the issue doesn't, in at most 4000 characters.
+    `close` closes it; to split it, close it and file the parts as issues of
+    your plan, saying so in `why`. `why` says in plain words which prompt
+    asked for it. By `kind`:
+    - `unclear`: it has no acceptance criteria. Retry it only with a
+      `clarify` that adds an `## Acceptance criteria` checklist
+      (`- [ ] ...`).
+    - `merged`: a Task merged it already. Close it, and file what is left as
+      a new issue.
+    - `exhausted`: agents tried it three times. It can't be retried: close it
+      and file it again, clarified or split.
+    - `failed` or `person`: retry it, with a `clarify` when the prompt says
+      something the agent needs, or close it.
+    Leave a failed issue no prompt speaks to unanswered: it waits for the
+    person.
 
 ## The plan's format
 

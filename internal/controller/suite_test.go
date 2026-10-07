@@ -48,6 +48,9 @@ const testStaleAfter = 3 * time.Second
 // testScaffoldTimeout bounds a scaffold attempt in tests; the fake Git host answers at once.
 const testScaffoldTimeout = 3 * time.Second
 
+// testBotDeleteTimeout is how long a deleted Brief tries to delete its bot in tests.
+const testBotDeleteTimeout = 5 * time.Second
+
 var (
 	// gitFake is the Git host every test scaffolds into.
 	gitFake *fakeGit
@@ -168,7 +171,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			StandardChangeRecheck: time.Second},
 		&BriefReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
-			BotDeleteTimeout: 5 * time.Second},
+			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: gitFake, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake},
 	} {

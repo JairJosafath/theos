@@ -336,6 +336,20 @@ func (p *fakeProvider) CloseIssue(ctx context.Context, repo gitprovider.Reposito
 	return nil
 }
 
+func (p *fakeProvider) EditIssueBody(ctx context.Context, repo gitprovider.Repository, number int, body string) error {
+	if err := ctx.Err(); err != nil {
+		return err // a request on a spent context fails, as over HTTP
+	}
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	i, err := p.issueOf(repo, number)
+	if err != nil {
+		return err
+	}
+	i.Body = body
+	return nil
+}
+
 func (p *fakeProvider) SetIssueMilestone(_ context.Context, repo gitprovider.Repository, number int, milestone int64) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()

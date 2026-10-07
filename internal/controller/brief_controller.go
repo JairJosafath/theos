@@ -59,6 +59,12 @@ type BriefReconciler struct {
 	// BotDeleteTimeout is how long a deleted Brief tries to delete its bot on a
 	// Git host that fails it before it goes without; 0 means ten minutes.
 	BotDeleteTimeout time.Duration
+	// SharedSecrets name the Secrets the operator shares from SourceNamespace,
+	// its own, into opted-in project namespaces, as the ProjectReconciler's
+	// do: a missing Agent token of one of these names says it can be given
+	// there.
+	SharedSecrets   []string
+	SourceNamespace string
 }
 
 const (

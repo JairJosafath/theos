@@ -97,3 +97,18 @@ func TestProviderConfig(t *testing.T) {
 		t.Error("a missing owner was accepted")
 	}
 }
+
+func TestRepositoryGoProxy(t *testing.T) {
+	for _, tt := range []struct{ url, want string }{
+		{"http://gitea.gitea.svc.cluster.local:3000", "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/go"},
+		{"https://git.example.com/gitea/", "https://git.example.com/gitea/api/packages/apps/go"},
+	} {
+		p, err := Client{}.Provider(Config{URL: tt.url, Owner: "apps", Credentials: Credentials{Token: "t"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p.Repository("image-shrink").GoProxy; got != tt.want {
+			t.Errorf("GoProxy for %s = %q, want %q", tt.url, got, tt.want)
+		}
+	}
+}

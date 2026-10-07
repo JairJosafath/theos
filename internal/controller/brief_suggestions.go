@@ -115,7 +115,7 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, brief *c4v1alph
 		if err != nil {
 			return took, skipped, fmt.Errorf("reading %s#%d: %w", a.Container, a.Issue, err)
 		}
-		if issue.State != "open" || !model.IsSuggestion(issue.Labels, issue.Body) {
+		if issue.State != stateOpen || !model.IsSuggestion(issue.Labels, issue.Body) {
 			continue // answered by an earlier try, or by a person on the Git host
 		}
 		if err := answerSuggestion(gitCtx, provider, repo, issue, a,
