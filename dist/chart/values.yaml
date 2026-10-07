@@ -458,18 +458,18 @@ catalog:
         protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
     - kind: Compute
       name: small
-      ref: v1.0.0
+      ref: v1.0.1
       spec:
         displayName: Small
         description: 50m CPU and 64Mi requested, 250m and 256Mi at most.
-        supportedTypes: [service, worker, job]
+        supportedTypes: [service, worker, job, static-site]
     - kind: Deployment
       name: k8s-manifests
-      ref: v1.1.0
+      ref: v1.2.0
       spec:
         displayName: Kubernetes manifests
-        description: A Dockerfile and plain Kubernetes manifests, built with kustomize.
-        supportedTypes: [service, worker]
+        description: A Dockerfile for the Framework (python-fastapi or react-vite) and plain Kubernetes manifests, built with kustomize.
+        supportedTypes: [service, worker, static-site]
     - kind: Deployment
       name: gitea-release
       ref: v1.0.1

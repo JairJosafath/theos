@@ -616,7 +616,7 @@ The webshop sample uses the smallest set of seeded templates that exercises ever
 
 - `python-fastapi` (Framework): a uv project with FastAPI, ruff and pytest, plus the base devcontainer settings.
 - `small` (Compute): resource requests and limits for the manifests, as a `deploy/k8s/compute.yaml` patch.
-- `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests. It patches in `compute.yaml` when a Compute is chosen, and lists `connector-<name>.yaml` for each Connector, so a Connector used with it ships that file.
+- `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests. The Dockerfile follows the Framework: uvicorn for `python-fastapi`, a Vite build served by an unprivileged nginx for `react-vite` (type `static-site`). It patches in `compute.yaml` when a Compute is chosen, and lists `connector-<name>.yaml` for each Connector, so a Connector used with it ships that file.
 - `postgres` (Connector): a compose service for the devcontainer and connection settings in `deploy/k8s/connector-postgres.yaml`.
 
 The sample in `config/samples/webshop/` tells a small story: a `customer` Person uses `webshop-core`, whose `orders-api` service reads and writes the `orders-db` DataStore.

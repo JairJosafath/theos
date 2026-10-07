@@ -25,6 +25,11 @@ rm -rf "$OUT/orders-api"
 go run ./hack/render -out "$OUT/orders-api" -type service -container orders-api -display-name "Orders API" \
 	Framework=python-fastapi Compute=small Deployment=k8s-manifests Connector=postgres >/dev/null
 "$KUSTOMIZE" build "$OUT/orders-api/deploy/k8s" >"$OUT/orders-api.yaml"
+# A react-vite web app on the same Compute and Deployment, served by nginx.
+rm -rf "$OUT/storefront"
+go run ./hack/render -out "$OUT/storefront" -type static-site -container storefront -display-name "Storefront" \
+	Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests >/dev/null
+"$KUSTOMIZE" build "$OUT/storefront/deploy/k8s" >"$OUT/storefront.yaml"
 
 files=()
 while IFS= read -r f; do files+=("$f"); done < <(
