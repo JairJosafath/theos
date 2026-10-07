@@ -88,13 +88,34 @@ check "  merged with a merge commit" "$(grep -c 'pr merge https://github.com/o/c
 check "  the bump branch is gone" "$(git -C "$T/origin.git" branch --list 'chore/*' | wc -l)" 0
 check "  the clone's checkout is untouched" "$(sed -n 's/^version: //p' "$T/clone/dist/chart/Chart.yaml")" 1.2.0
 check "  no worktree is left" "$(git -C "$T/clone" worktree list | wc -l)" 1
-# Where the repository deletes merged branches itself, the release still tags.
+# Where the repository deletes merged branches itself, the delete fails because
+# the branch is already gone (#580), and the release still checks and tags.
 git -C "$T/origin.git" tag -d v1.2.1 >/dev/null
 git -C "$T/origin.git" update-ref refs/heads/main main~1
 touch "$T/autodelete"
 run patch
 check "patch, GitHub deletes the merged branch: still tags" $? 0
 check "  the tag is origin's main" "$(git -C "$T/origin.git" rev-parse v1.2.1^{commit})" "$(git -C "$T/origin.git" rev-parse main)"
+check "  it says it tagged" "$(grep -c '^tagged .* as v1.2.1' "$T/out")" 1
+check "  and asks no one to delete the branch" "$(grep -c 'delete it by hand' "$T/out")" 0
+# A delete origin refuses while the branch stays: the release says so and tags.
+git -C "$T/origin.git" tag -d v1.2.1 >/dev/null
+git -C "$T/origin.git" update-ref refs/heads/main main~1
+rm "$T/autodelete"
+cat >"$T/origin.git/hooks/pre-receive" <<'HOOK'
+#!/usr/bin/env bash
+while read -r _ new ref; do
+  [ "$ref" = refs/heads/chore/release-v1.2.1 ] && [ "$new" = 0000000000000000000000000000000000000000 ] && exit 1
+done
+exit 0
+HOOK
+chmod +x "$T/origin.git/hooks/pre-receive"
+run patch
+check "patch, origin refuses the branch delete: still tags" $? 0
+check "  the tag is origin's main" "$(git -C "$T/origin.git" rev-parse v1.2.1^{commit})" "$(git -C "$T/origin.git" rev-parse main)"
+check "  it says to delete the branch by hand" "$(grep -c "couldn't delete chore/release-v1.2.1 on origin" "$T/out")" 1
+rm "$T/origin.git/hooks/pre-receive"
+git -C "$T/origin.git" branch --quiet -D chore/release-v1.2.1
 run 1.2.1
 check "the version just released is refused" $? 1
 git -C "$T/origin.git" tag v1.3.0 main
