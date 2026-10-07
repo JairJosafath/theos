@@ -188,6 +188,15 @@ prompt, such as "Take the reviewer's suggestions about input safety, skip the
 rest." or "Yes to linter #5, no to the others.". The factory readies the ones
 you take for the Crew and closes the others with your words quoted.
 
+When an issue fails, its agents having given up on it or the Crew having
+refused it, the card lists it under *Failed issues*, above the suggestions,
+with why in a sentence, and marks it in the issue list (`kubectl get brief`
+shows how many under `Failed`). Say in a prompt whether to try it again, such
+as "Try the CLI issue again now that the engine's checker is merged.": the
+factory adds what you said to the issue and readies it for the Crew. One the
+agents already tried three times is filed again, reworded or split, in place
+of being tried as it is.
+
 ### Without a token
 
 To watch the loop before making the token Secret, name Agent `stand-in` for
