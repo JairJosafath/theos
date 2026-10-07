@@ -147,10 +147,14 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		}
 		var body struct {
 			State     string   `json:"state"`
+			Body      *string  `json:"body"`
 			Assignees []string `json:"assignees"`
 			Milestone *int64   `json:"milestone"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Body != nil {
+			i.Body = *body.Body
+		}
 		if body.Milestone != nil {
 			i.milestone = body.Milestone
 		}
@@ -498,6 +502,27 @@ func TestCreateIssueMilestone(t *testing.T) {
 	}
 	if m := h.issues[2].milestone; m != nil {
 		t.Errorf("issue 2 filed with milestone %d, want none sent", *m)
+	}
+}
+
+func TestEditIssueBody(t *testing.T) {
+	h, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	if _, err := p.CreateIssue(ctx, repo, "Validate addresses", "body", nil, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EditIssueBody(ctx, repo, 1, "body\n\n## Clarification\n\nUse the checker."); err != nil {
+		t.Fatalf("EditIssueBody() error = %v", err)
+	}
+	if got := h.issues[1].Body; got != "body\n\n## Clarification\n\nUse the checker." {
+		t.Errorf("body after EditIssueBody() = %q", got)
+	}
+	if m := h.issues[1].milestone; m == nil || *m != 3 {
+		t.Errorf("EditIssueBody() changed the milestone to %v", m)
+	}
+	if err := p.EditIssueBody(ctx, repo, 9, "body"); err == nil {
+		t.Error("EditIssueBody() of a missing issue succeeded")
 	}
 }
 

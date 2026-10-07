@@ -381,6 +381,11 @@ func (g *gitea) CloseIssue(ctx context.Context, repo Repository, number int) err
 	return g.editIssue(ctx, repo, number, map[string]any{"state": stateClosed})
 }
 
+// EditIssueBody replaces an issue's body.
+func (g *gitea) EditIssueBody(ctx context.Context, repo Repository, number int, body string) error {
+	return g.editIssue(ctx, repo, number, map[string]any{"body": body})
+}
+
 // SetIssueMilestone moves an issue into the milestone with ID milestone, or
 // out of every milestone when it is 0.
 func (g *gitea) SetIssueMilestone(ctx context.Context, repo Repository, number int, milestone int64) error {

@@ -20,7 +20,25 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
+
+// failedPlan is the linter's plan with answers to failed issues.
+func failedPlan(ns, answers string) scaffold.Tree {
+	plan := linterPlan(ns, 0)
+	plan[model.PlanFailedFile] = scaffold.File{Data: []byte(answers)}
+	return plan
+}
+
+// failLinterTask waits for Task name on the linter's issue n to fail and hand
+// the issue back.
+func failLinterTask(ns, name string, n int) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		g.Expect(getTask(g, ns, name).Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+		g.Expect(gitFake.issue(ns, "linter", n).Labels).To(ContainElement(model.LabelNeedsHuman))
+	}).Should(Succeed())
+}
 
 // #454: a Brief lists the issues of its apps handed back to a person, and why.
 var _ = Describe("Brief failed issues", func() {
@@ -101,6 +119,85 @@ var _ = Describe("Brief failed issues", func() {
 			g.Expect(b.Status.FailedWaiting).To(BeZero())
 			g.Expect(b.Status.Failed).To(BeEmpty())
 			g.Expect(meta.IsStatusConditionFalse(b.Status.Conditions, c4v1alpha1.ConditionIssuesFailed)).To(BeTrue())
+		}).Should(Succeed())
+	})
+
+	It("retries one failed issue with a clarification and closes another as a prompt says", func() {
+		createFactory(ns)
+		briefAgents(ns, 1)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, linterPlan(ns, 0))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+
+		By("an issue failing three Tasks, and another failing one: the linter has no Standard to protect it")
+		tired := gitFake.addIssue(ns, "linter", "Lint rule 1", linterIssue(1), []string{model.LabelReady})
+		failLinterTask(ns, model.IssueTaskName("linter", tired, 1), tired)
+		for attempt := 2; attempt <= model.MaxIssueAttempts; attempt++ {
+			Expect(gitFake.labelIssue(ns, "linter", tired, model.LabelReady)).To(Succeed())
+			failLinterTask(ns, model.IssueTaskName("linter", tired, attempt), tired)
+		}
+		cli := gitFake.addIssue(ns, "linter", "Lint rule 2", linterIssue(2), []string{model.LabelReady})
+		failLinterTask(ns, model.IssueTaskName("linter", cli, 1), cli)
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.FailedWaiting).To(Equal(int32(2)))
+			g.Expect(b.Status.Failed).To(HaveLen(2))
+			g.Expect(b.Status.Failed[0].Kind).To(Equal(model.FailedExhausted))
+			g.Expect(b.Status.Failed[1].Kind).To(Equal(model.FailedTask))
+		}).Should(Succeed())
+
+		By("refusing a plan that retries the exhausted one, with the reason")
+		brief = getBrief(Default, ns)
+		prompt := "The engine's checker is merged now: try rule 2 again, and drop rule 1."
+		Expect(patch(brief, func() { brief.Spec.Prompts = []string{prompt} })).To(Succeed())
+		planRound(ns, 2, 1, failedPlan(ns,
+			fmt.Sprintf("- {container: linter, issue: %d, answer: retry, why: Try it all again.}\n", tired)))
+		Eventually(func(g Gomega) {
+			g.Expect(briefEventNotes(g, ns, eventPlanRefused)).To(ContainElement(And(
+				ContainSubstring(model.PlanFailedFile), ContainSubstring(fmt.Sprintf("retries linter#%d", tired)),
+				ContainSubstring("agents tried 3 times"))))
+		}).Should(Succeed())
+		Expect(gitFake.issue(ns, "linter", tired).State).To(Equal("open"))
+
+		By("retrying one with its clarification and closing the other, both with the prompt quoted")
+		planRound(ns, 2, 2, failedPlan(ns, fmt.Sprintf(`
+- container: linter
+  issue: %d
+  answer: retry
+  why: The prompt says the engine's checker is merged now.
+  clarify: |
+    The engine's checker is merged; import it.
+- container: linter
+  issue: %d
+  answer: close
+  why: The prompt drops rule 1.
+`, cli, tired)))
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
+		}).Should(Succeed())
+		retried := gitFake.issue(ns, "linter", cli)
+		Expect(retried.State).To(Equal("open"))
+		Expect(retried.Body).To(And(HavePrefix(strings.TrimRight(linterIssue(2), "\n")),
+			HaveSuffix("\n\n## Clarification (Brief round 2)\n\nThe engine's checker is merged; import it.\n")))
+		Expect(retried.comments).To(ContainElement(And(ContainSubstring("Tried again for Brief `cel-lens` in round 2"),
+			ContainSubstring("The planner: The prompt says the engine's checker is merged now."),
+			ContainSubstring("> "+prompt))))
+		closed := gitFake.issue(ns, "linter", tired)
+		Expect(closed.State).To(Equal("closed"))
+		Expect(closed.comments).To(ContainElement(And(ContainSubstring("Closed for Brief `cel-lens` in round 2."),
+			ContainSubstring("The planner: The prompt drops rule 1."), ContainSubstring("> "+prompt))))
+		Expect(briefEventNotes(Default, ns, eventPlanned)).To(ContainElement(
+			ContainSubstring("retried 1 and closed 1 failed issues")))
+
+		By("the Crew starting the retried issue's next Task")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, model.IssueTaskName("linter", cli, 2))
+			g.Expect(task.Spec.Issue).To(Equal(int32(cli)))
 		}).Should(Succeed())
 	})
 })
