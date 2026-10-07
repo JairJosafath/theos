@@ -143,7 +143,7 @@ func renderCombo(t *testing.T, typ string, sides []side) ([]Layer, Result) {
 		DisplayName:    "Sample App",
 		Type:           typ,
 	}
-	var layers []Layer
+	layers := make([]Layer, 0, len(sides))
 	for _, l := range sides {
 		files, err := ReadTree(os.DirFS(filepath.Join(templatesDir, l.Name)))
 		if err != nil {
