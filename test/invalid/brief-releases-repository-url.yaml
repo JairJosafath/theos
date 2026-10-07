@@ -1,0 +1,14 @@
+# expect: repository must be owner/name
+apiVersion: c4.factory.io/v1alpha1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: webshop
+spec:
+  idea: A linter for CEL rules.
+  releases:
+  - container: linter
+    github:
+      repository: https://github.com/acme/cel-lens
+      tokenSecretRef:
+        name: cel-lens-github

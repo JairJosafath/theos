@@ -161,6 +161,71 @@ spec:
                     or go'
                   rule: size(self) >= size(oldSelf) && oldSelf.all(i, p, self[i] ==
                     p)
+              releases:
+                description: |-
+                  releases name the Containers whose releases the person asks for, and the
+                  GitHub repository each one's releases are published to. An entry turns
+                  releases on for its Container and sets the publishReleases of the Crew
+                  the Brief made for it; removing it leaves that Crew as it is.
+                items:
+                  description: |-
+                    BriefRelease is where a Container's releases are published: the fields of a
+                    Crew's publishReleases, for the Crew the Brief made for the Container.
+                  properties:
+                    container:
+                      description: container names the Container, a DNS label.
+                      maxLength: 63
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: 'container must be a DNS label: lowercase letters,
+                          digits and ''-'''
+                        rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+                    github:
+                      description: github is the GitHub repository the releases go
+                        to.
+                      properties:
+                        repository:
+                          description: repository is owner/name on github.com.
+                          maxLength: 140
+                          type: string
+                          x-kubernetes-validations:
+                          - message: repository must be owner/name
+                            rule: self.matches('^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$')
+                        tokenSecretRef:
+                          description: |-
+                            tokenSecretRef names a Secret in the Crew's namespace whose key token is
+                            a fine-grained token for that repository alone, with Contents read and
+                            write. The user creates it; the token never leaves the operator.
+                          properties:
+                            name:
+                              description: name of the referenced object.
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          type: object
+                      required:
+                      - repository
+                      - tokenSecretRef
+                      type: object
+                    tagPrefix:
+                      description: |-
+                        tagPrefix goes before the Crew's tag on the target, such as "cli-" when
+                        two Containers publish to one repository: cli-v0.2.0.
+                      maxLength: 40
+                      pattern: ^[A-Za-z0-9._/-]*$
+                      type: string
+                  required:
+                  - container
+                  - github
+                  type: object
+                maxItems: 10
+                type: array
+                x-kubernetes-list-map-keys:
+                - container
+                x-kubernetes-list-type: map
             required:
             - idea
             type: object

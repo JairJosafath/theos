@@ -375,6 +375,53 @@ says what to fix:
 | `TagTaken` | The repository already has a release or tag of that name the factory didn't make; it leaves it alone. Delete it, or set a `tagPrefix`. |
 | `GitHubError` | GitHub failed, rate-limited, or couldn't be reached; it is tried again. |
 
+## Release a Brief's app
+
+A Brief's app is released when its plan says so: the planner names the
+Containers that ship releases in `plan/releases.yaml`, and the Crew the Brief
+made for each then tags and prepares releases (`tagReleases` and
+`prepareReleases`). Each round files that Container's issues in a release
+milestone of its own, the next minor version (`v0.1.0`, then `v0.2.0`, ...),
+due a week later, so once the round's issues are merged the Crew prepares the
+release (version files and a changelog), tags it and its release run makes the
+Gitea release. Nothing on the Crew needs editing by hand.
+
+1. **Ask for it.** If the Brief's choices don't say a Container ships
+   releases, add a prompt, such as "Release the CLI.". The next round turns
+   releases on and files at least one issue for it: a release with no merged
+   work is never made.
+2. **Say where they go**, for releases on GitHub as well. Make the token and
+   the Secret as in steps 1 and 2 of *Publish releases to GitHub*, in the
+   Brief's namespace, then name the Container in the Brief's `spec.releases`:
+
+   ```yaml
+   spec:
+     releases:
+     - container: linter                    # the Container, as the plan names it
+       github:
+         repository: your-name/cel-lens     # owner/name on github.com
+         tokenSecretRef: {name: cel-lens-github}
+       tagPrefix: ""                        # optional, as on a Crew
+   ```
+
+   ```bash
+   kubectl -n cel-lens patch brief cel-lens --type merge -p \
+     '{"spec":{"releases":[{"container":"linter","github":{"repository":"your-name/cel-lens","tokenSecretRef":{"name":"cel-lens-github"}}}]}}'
+   ```
+
+   An entry turns releases on for its Container by itself, and sets the
+   `publishReleases` of the Crew the Brief made for it at once, without
+   waiting for a round; the next round's planner sees it too and names the
+   Container if the plan hasn't made it yet. Up to 10 entries, one per
+   Container. The UI doesn't set them: use kubectl or GitOps, like the Secret.
+
+Releases only turn on: a later plan that leaves a Container out, or an entry
+removed from `spec.releases`, changes nothing on its Crew, and what is on
+GitHub stays. To stop releasing, edit the Crew. A Crew the Brief didn't make,
+such as one you made for a Container of your own, is never changed: its
+releases are yours. Reading how a release went is as in *Publish releases to
+GitHub*, on the Crew named after the Container.
+
 ## Next
 
 - Your own project: create its namespace (with the `ghcr` Secret and the

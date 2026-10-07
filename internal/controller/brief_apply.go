@@ -42,6 +42,8 @@ type roundApply struct {
 	// made are the objects this reconcile created, which the cache may not
 	// show yet.
 	made []c4v1alpha1.BriefObject
+	// released are the Containers the round releases.
+	released map[string]bool
 	// took and skipped count the reviewers' suggestions the round answered.
 	took, skipped int
 }
@@ -106,6 +108,11 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 			created = append(created, o.Name)
 		}
 	}
+	released, err := r.releasedContainers(ctx, brief, plan)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	run.released = released
 	waiting, err := r.finishContainers(ctx, run, model.RoundContainers(created, plan.Issues), created, plan.Issues)
 	if err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "making the Crews and filing the issues", err)
@@ -114,6 +121,13 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 		setCondition(&brief.Status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
 			"Applying", fmt.Sprintf("Round %d waits for %s to be Ready", brief.Status.Round, strings.Join(waiting, ", ")))
 		return ctrl.Result{RequeueAfter: r.needsInputRecheck()}, nil
+	}
+	// A Container the plan releases that the round neither made nor files
+	// issues for still gets releases on its Crew.
+	for _, name := range plan.Releases {
+		if err := r.releaseCrew(ctx, brief, name); err != nil {
+			return ctrl.Result{}, r.applyFailed(ctx, brief, "turning on the releases of Crew "+name, err)
+		}
 	}
 	if run.took, run.skipped, err = r.answerSuggestions(ctx, brief, plan.Answers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the reviewers' suggestions", err)
@@ -179,6 +193,11 @@ func (r *BriefReconciler) finishContainers(ctx context.Context, run *roundApply,
 		if slices.Contains(created, name) {
 			if err := r.ensureCrew(ctx, run, &c); err != nil {
 				return nil, fmt.Errorf("making the Crew of %s: %w", name, err)
+			}
+		}
+		if run.released[name] {
+			if err := r.releaseCrew(ctx, run.brief, name); err != nil {
+				return nil, fmt.Errorf("turning on the releases of Crew %s: %w", name, err)
 			}
 		}
 		if err := r.fileIssues(ctx, run, &c, model.IssuesFor(issues, name)); err != nil {
@@ -304,8 +323,9 @@ func copyStoryText(dst, src client.Object) {
 }
 
 // ensureCrew makes the Crew of a Container the round created (B9): named
-// after it, with the Brief's implementer and reviewer, one Task at a time and
-// releases off. An existing Crew of that name is left alone.
+// after it, with the Brief's implementer and reviewer, one Task at a time, and
+// releases on only when the round releases the Container (R4, R5). An
+// existing Crew of that name is left alone.
 func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4v1alpha1.Container) error {
 	brief := run.brief
 	crew := &c4v1alpha1.Crew{
@@ -318,6 +338,9 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 			Reviewer:     brief.Spec.Agents.Reviewer,
 			Parallel:     1,
 		},
+	}
+	if run.released[c.Name] {
+		releaseSpec(&crew.Spec, briefRelease(brief, c.Name))
 	}
 	err := r.Get(ctx, client.ObjectKeyFromObject(crew), &c4v1alpha1.Crew{})
 	if err == nil {
@@ -335,7 +358,8 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 }
 
 // fileIssues files the round's issues for a Container in its repository (B11):
-// status/ready, in no milestone, each body ending with its marker. An issue
+// status/ready, each body ending with its marker, in the round's release
+// milestone when the round releases the Container (R6) and else in none. An issue
 // already filed is found by its marker among the open issues, so a restart
 // files no duplicate. Each is recorded in the Brief's status right away.
 func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, c *c4v1alpha1.Container,
@@ -359,6 +383,7 @@ func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, c *c4
 	}
 	brief, round := run.brief, int(run.brief.Status.Round)
 	repository := repo.Owner + "/" + repo.Name
+	var milestone int64
 	for _, issue := range issues {
 		if slices.ContainsFunc(brief.Status.Issues, func(i c4v1alpha1.BriefIssue) bool {
 			return i.Repository == repository && int(i.Round) == round && int(i.N) == issue.N
@@ -373,8 +398,15 @@ func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, c *c4
 		if i >= 0 {
 			filed = open[i]
 		} else {
+			// Made only once an issue is to be filed: a release with no work
+			// is never released (R7).
+			if run.released[c.Name] && milestone == 0 {
+				if milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, round); err != nil {
+					return err
+				}
+			}
 			filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, model.BriefIssueBody(issue, brief.Name, round),
-				model.BriefIssueLabels(issue.Labels), 0)
+				model.BriefIssueLabels(issue.Labels), milestone)
 			if err != nil {
 				return err
 			}

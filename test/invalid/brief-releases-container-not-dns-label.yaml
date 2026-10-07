@@ -1,0 +1,14 @@
+# expect: container must be a DNS label
+apiVersion: c4.factory.io/v1alpha1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: webshop
+spec:
+  idea: A linter for CEL rules.
+  releases:
+  - container: Linter_CLI
+    github:
+      repository: acme/cel-lens
+      tokenSecretRef:
+        name: cel-lens-github

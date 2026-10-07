@@ -165,10 +165,19 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 		logf.FromContext(ctx).Info("Prepared the Brief's repository", "url", url)
 		brief.Status.RepositoryURL = url
 	}
+	// A Crew that can't take its releases doesn't stop the rounds; the
+	// reconcile tries it again after them.
+	releasesErr := r.syncReleases(ctx, brief)
+	if releasesErr != nil {
+		logf.FromContext(ctx).Info("Could not bring a Crew's releases up to date", "error", releasesErr.Error())
+	}
 	result, err := r.reconcileRound(ctx, brief, orig)
 	if err == nil && result.IsZero() && madeContainers(brief) {
 		// A person may answer a suggestion on the Git host: look again now and then.
 		result.RequeueAfter = r.suggestionsRecheck()
+	}
+	if err == nil && releasesErr != nil {
+		return ctrl.Result{}, releasesErr
 	}
 	return result, err
 }
