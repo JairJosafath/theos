@@ -19,10 +19,11 @@
 # may rewrite or update), and the image's own files.
 #
 # Best effort: what it can't reset is a warning in the job's log, not a failed
-# job. Environment (for the tests):
+# job. The runner runs a hook with bash -e -o pipefail, so -e goes first.
+# The runner runs a hook only when its path ends in .sh. Environment (for the tests):
 #   GH_RUNNER_HOME_LIST   the list record writes (default /etc/gh-runner/home.list)
 #   GH_RUNNER_WORK        the work directory (default workFolder of ~/.runner)
-set -uo pipefail
+set +e -uo pipefail
 export LC_ALL=C
 
 home=${HOME:?}
@@ -32,13 +33,15 @@ warn() { echo "::warning::gh-runner job-started hook: $*"; }
 
 # entries: every path under the home, relative to it, one per line, sorted;
 # the caches and the runner's own top-level entries are left out with all
-# under them.
+# under them. The runner's top-level scripts and templates are left out by
+# pattern, so a file a self-update adds stays.
 entries() {
   (cd "$home" && find . -mindepth 1 \( -path ./.cache \
     -o -path ./bin -o -path './bin.*' -o -path ./externals -o -path './externals.*' \
     -o -path ./_diag -o -path ./_work -o -path './_update*' \
     -o -path './.runner*' -o -path './.credentials*' -o -path ./.env -o -path ./.path \
-    -o -path ./.service \) -prune -o -printf '%P\n' 2>/dev/null) | sort
+    -o -path ./.service -o -path ./.setup_info \
+    -o -regex '\./[^/]*\.\(sh\|template\)' \) -prune -o -printf '%P\n' 2>/dev/null) | sort
 }
 
 if [ "${1:-}" = record ]; then
@@ -47,14 +50,14 @@ if [ "${1:-}" = record ]; then
 fi
 
 # The work directory: directories a job made read-only get their write bit
-# back; anything not the runner's (a container wrote it as root) becomes the
+# back, each before find reads it, so those under it are reached too; anything not the runner's (a container wrote it as root) becomes the
 # runner's, through sudo.
-work=${GH_RUNNER_WORK:-$(jq -r '.workFolder // empty' "$home/.runner" 2>/dev/null)}
+work=${GH_RUNNER_WORK:-$(jq -r '.workFolder // empty' "$home/.runner" 2>/dev/null || true)}
 if [ -n "$work" ] && [ -d "$work" ]; then
-  find "$work" -type d ! -perm -u=rwx -exec chmod u+rwx {} + 2>/dev/null
+  find "$work" -type d ! -perm -u=rwx -exec chmod u+rwx {} \; 2>/dev/null
   if [ -n "$(find "$work" ! -user "$(id -u)" -print -quit 2>/dev/null)" ]; then
     sudo -n chown -R "$(id -u):$(id -g)" "$work" 2>/dev/null &&
-      find "$work" -type d ! -perm -u=rwx -exec chmod u+rwx {} + 2>/dev/null
+      find "$work" -type d ! -perm -u=rwx -exec chmod u+rwx {} \; 2>/dev/null
   fi
   if [ -n "$(find "$work" \( ! -user "$(id -u)" -o -type d ! -perm -u=rwx \) -print -quit 2>/dev/null)" ]; then
     warn "$work keeps entries the runner can't delete; the checkout may fail to clean"

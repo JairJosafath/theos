@@ -79,10 +79,11 @@ COPY entrypoint.sh /usr/local/bin/gh-runner-entrypoint
 # resets what an earlier job may have left: the work directory made writable
 # for the checkout's clean, and the runner's home emptied of all but the
 # caches, the runner and what the image put there (the list record writes,
-# last, so it sees everything above).
-COPY job-started.sh /usr/local/bin/gh-runner-job-started
-ENV ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/bin/gh-runner-job-started
-RUN HOME=/home/runner gh-runner-job-started record
+# last, so it sees everything above). The runner runs a hook only when its
+# path ends in .sh.
+COPY job-started.sh /usr/local/bin/gh-runner-job-started.sh
+ENV ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/bin/gh-runner-job-started.sh
+RUN HOME=/home/runner gh-runner-job-started.sh record
 
 USER runner
 WORKDIR /home/runner
