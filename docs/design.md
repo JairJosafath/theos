@@ -439,6 +439,16 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   a step fails, the Brief stays `Applying` and tries again, and its `Planned`
   condition, reason `ApplyFailed`, and an `ApplyFailed` Event say where it
   stopped and why: a Brief never looks busy without a reason.
+- **A round's issues keep the plan's order** (#428). An issue that needs
+  another issue's work merged first names it in its front matter, `after:`
+  with the round numbers of its blockers, in any of the round's Containers.
+  The plan is refused when `after:` names no issue of the round, the issue
+  itself or a design idea, or makes a cycle. Applying the round, the operator
+  files blockers first, files an ordered issue without `status/ready`, makes it
+  depend in Gitea on each blocker (across repositories too), names them in its
+  body, and only then labels it ready; the Crew waits for open dependencies, so
+  the issue starts once its blockers' pull requests merge. See
+  [plans/brief-issue-order.md](plans/brief-issue-order.md).
 - **It asks only for what costs money or touches access.** Agents, their
   models, a Crew's size, GitProviders and credentials are never the planner's
   to make or change. When it needs one, or can't go on without a decision, the
