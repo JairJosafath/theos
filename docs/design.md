@@ -337,6 +337,19 @@ model and context it needs.
   up never starts) are a Warning Event `ReleaseRunOverdue`, once per release,
   the log line `Release run overdue`, and a note on the `Released` condition's
   message until they end; the watch carries on and reports their end as usual.
+- **A released Go app is a module others can fetch.** Right after the Crew
+  tags a release, it publishes the repository's Go module at that tag to the
+  Git host's Go package registry (Gitea's, per owner), under the module path
+  `go.mod` declares and with the tag as its version, so another app can
+  `go get` that release. A version is published once and never replaced;
+  `status.lastRelease.goModule` records the path, version and state
+  (`Published`, `NotGo` for a repository with no `go.mod` at its root,
+  `Invalid` for a version Go refuses, such as a `v2.0.0` whose path lacks
+  `/v2`, and `Failed` while the host can't be reached, retried each poll), and
+  the condition `ModulePublished` says why it isn't published. An upload is a
+  Normal Event `ModulePublished` and the log line `Published Go module`; an
+  invalid module is a Warning Event `InvalidModule`, once per release. See
+  [plans/app-modules.md](plans/app-modules.md).
 - **A release can be published to GitHub.** A Crew with
   `spec.publishReleases.github` (`repository: owner/name`, and a Secret the
   user creates holding a token for that one repository) copies its last release

@@ -129,6 +129,10 @@ Each step is a GitHub issue, `status/proposed`, one pull request each.
    Done when envtest, on the fake Git, shows a released Go Container's module
    published once, a non-Go one skipped, and a `v2.0.0` without `/v2`
    reported.
+   As built: `status.lastRelease.goModule` (state `Published`, `NotGo`,
+   `Invalid` or `Failed`, path, version, message) and a Crew condition
+   `ModulePublished` in place of `Progressing`, which only Tasks have; step 4
+   reads both.
 4. **Plans say `uses:`, and the round waits for the release**
    (#461, `internal/model`, `internal/controller`, the planner guide; depends on
    #459, #460 and #442). `PlanIssue.Uses`, decision 6's refusals in
