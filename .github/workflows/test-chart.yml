@@ -22,7 +22,9 @@ jobs:
     permissions:
       contents: read
     name: Run on Ubuntu
-    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    # On self-hosted runners (make gh-runner) only runner 1 of a device carries
+    # c4factory-kind, so a device makes one Kind cluster at a time.
+    runs-on: ${{ vars.RUNS_ON == 'self-hosted' && fromJSON('["self-hosted", "c4factory-kind"]') || vars.RUNS_ON || 'ubuntu-latest' }}
     # A cluster and image tags of its own: on a self-hosted runner (make
     # gh-runner) it shares the device's Docker with the Kind pool and its :dev
     # images.
