@@ -654,7 +654,9 @@ cat >"$T/bin/crontab" <<'SH'
 #!/usr/bin/env bash
 echo "crontab $*" >>"$FAKE/calls"
 case $1 in
-  -l) [ -e "$FAKE/crontab" ] || { echo "no crontab for you" >&2; exit 1; }; cat "$FAKE/crontab" ;;
+  -l) [ -e "$FAKE/crontab" ] || { echo "no crontab for you" >&2; exit 1; }; cat "$FAKE/crontab"
+      # A slow producer: still writing after the reader has what it needs.
+      [ -e "$FAKE/slow-crontab" ] && { sleep 0.5; echo; } ;;
   -) t=$(cat); printf "%s\n" "$t" >"$FAKE/crontab" ;;
 esac
 SH
@@ -711,7 +713,10 @@ check "cron: at boot" "$(grep -c "^@reboot cd $REPO && PATH=.* ./dev run hack/re
 check "cron: passes the relay settings" "$(grep -c ' RELAY_MAX_WORKERS=5 .*./dev run' "$T/crontab")" 2
 check "cron: every 5 minutes" "$(grep -c "^\*/5 \* \* \* \* cd $REPO && .* --cron --workers 3 " "$T/crontab")" 1
 check "cron: starts the watch now" "$(cat "$T/started")" $'hack/relay-watch.sh --cron --workers 3\nhack/relay-watch.sh --cron --workers 3'
+# A crontab -l still writing when the tag is found doesn't fail the uninstall.
+touch "$T/slow-crontab"
 uninstall_watch >/dev/null
+rm "$T/slow-crontab"
 check "cron uninstall: only the other lines left" "$(cat "$T/crontab")" "0 3 * * * backup"
 
 # --install from a worktree: refused, nothing written.

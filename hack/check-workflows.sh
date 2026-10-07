@@ -3,8 +3,12 @@
 # runners (hack/gh-runner, docs/dev/testenv.md): its runs-on uses vars.RUNS_ON,
 # and a job that makes a Kind cluster (kind create cluster, the e2e target)
 # asks for the label c4factory-kind, which only runner 1 of a device carries,
-# so a device runs one of them at a time. Prints each job that doesn't and
-# exits 1. hack/check-workflows_test.sh runs it in make check.
+# so a device runs one of them at a time. A workflow that runs on pushes to a
+# branch keeps one pending run per branch: it carries the concurrency group
+# ${{ github.workflow }}-${{ github.ref }} without cancel-in-progress, so a
+# running job finishes and GitHub drops the superseded pending runs. Prints
+# each job or workflow that doesn't and exits 1. hack/check-workflows_test.sh
+# runs it in make check.
 #
 #   hack/check-workflows.sh [DIR]   the workflows in DIR (default .github/workflows)
 set -euo pipefail
@@ -35,5 +39,30 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
     job != "" && /kind create cluster|make e2e/ { kind = 1 }
     END { flush() }
   ' "$f")
+
+  # The workflow's push branches (push or -) and its concurrency group and
+  # cancel-in-progress (- when absent).
+  IFS=$'\t' read -r push group cancel < <(awk '
+    /^[^ #]/ { top = $0; sub(/:.*/, "", top); inpush = 0 }
+    /^concurrency:[[:space:]]*[^[:space:]]/ { group = $0; sub(/^concurrency:[[:space:]]*/, "", group) }
+    top == "on" && /^  push:/ { inpush = 1; next }
+    top == "on" && /^  [^ ]/ { inpush = 0 }
+    inpush && /^    branches:/ { push = 1 }
+    top == "concurrency" && /^  group:/ { group = $0; sub(/^  group:[[:space:]]*/, "", group) }
+    top == "concurrency" && /^  cancel-in-progress:/ { cancel = $0; sub(/^  cancel-in-progress:[[:space:]]*/, "", cancel) }
+    END { print (push ? "push" : "-") "\t" (group != "" ? group : "-") "\t" (cancel != "" ? cancel : "-") }
+  ' "$f")
+  if [ "$push" = push ]; then
+    # shellcheck disable=SC2016 # the expression is GitHub's, not the shell's
+    want='${{ github.workflow }}-${{ github.ref }}'
+    group=${group//\'/} group=${group//\"/}
+    if [ "$group" != "$want" ]; then
+      echo "$f: runs on pushes to a branch without the concurrency group $want" >&2
+      fail=1
+    elif [ "$cancel" != - ] && [ "$cancel" != false ]; then
+      echo "$f: cancels the run in progress (cancel-in-progress: $cancel); a running job on main must finish" >&2
+      fail=1
+    fi
+  fi
 done
 exit $fail

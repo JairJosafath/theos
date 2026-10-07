@@ -11,6 +11,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -165,10 +166,24 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 		logf.FromContext(ctx).Info("Prepared the Brief's repository", "url", url)
 		brief.Status.RepositoryURL = url
 	}
+	// A Crew that can't take its releases doesn't stop the rounds; the
+	// reconcile tries it again after them.
+	releasesErr := r.syncReleases(ctx, brief)
+	if releasesErr != nil {
+		logf.FromContext(ctx).Info("Could not bring a Crew's releases up to date", "error", releasesErr.Error())
+	}
 	result, err := r.reconcileRound(ctx, brief, orig)
+	if apps, appsErr := r.listApps(ctx, brief); appsErr == nil {
+		brief.Status.Apps = apps
+	} else if err == nil {
+		return ctrl.Result{}, fmt.Errorf("reading the apps' Crews: %w", appsErr)
+	}
 	if err == nil && result.IsZero() && madeContainers(brief) {
 		// A person may answer a suggestion on the Git host: look again now and then.
 		result.RequeueAfter = r.suggestionsRecheck()
+	}
+	if err == nil && releasesErr != nil {
+		return ctrl.Result{}, releasesErr
 	}
 	return result, err
 }
@@ -220,6 +235,9 @@ func (r *BriefReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.GitProvider{}, allInNamespace, createOrDelete()).
 		Watches(&c4v1alpha1.Agent{}, allInNamespace, createOrDelete()).
 		Watches(&c4v1alpha1.Container{}, fromBriefLabel, containerPhaseChanges()).
+		// A Crew the Brief made changing its releases changes the Brief's apps;
+		// one it didn't make is read again with the suggestions.
+		Watches(&c4v1alpha1.Crew{}, fromBriefLabel, crewReleaseChanges()).
 		Named("brief").
 		Complete(r)
 }

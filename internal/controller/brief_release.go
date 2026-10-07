@@ -1,0 +1,145 @@
+/*
+Copyright 2026 JairJosafath. All rights reserved.
+
+This file is part of C4 Factory, which is proprietary. No license is granted
+to use, copy, modify or distribute it without the copyright holder's written
+permission. See the LICENSE file.
+*/
+
+package controller
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/model"
+)
+
+// The Brief's releases (docs/plans/brief-releases.md): a released Container's
+// Crew that the Brief made tags and prepares releases, and publishes them where
+// spec.releases says; its rounds' issues go into a release milestone.
+
+// briefRelease returns the Brief's spec.releases entry for container, or nil.
+func briefRelease(brief *c4v1alpha1.Brief, container string) *c4v1alpha1.BriefRelease {
+	for i := range brief.Spec.Releases {
+		if brief.Spec.Releases[i].Container == container {
+			return &brief.Spec.Releases[i]
+		}
+	}
+	return nil
+}
+
+// releaseSpec turns releases on in a Crew's spec (R4), publishing them as
+// entry says when there is one (R5). It never turns anything off (R2).
+func releaseSpec(spec *c4v1alpha1.CrewSpec, entry *c4v1alpha1.BriefRelease) {
+	spec.TagReleases = true
+	spec.PrepareReleases = true
+	if entry != nil {
+		publish := *entry.CrewPublishReleases.DeepCopy()
+		spec.PublishReleases = &publish
+	}
+}
+
+// releaseCrew turns releases on for the Crew the Brief made for container. A
+// Crew it didn't make, or none yet, is left alone: releases on the first are
+// its owner's, and the second gets them when the Brief makes it.
+func (r *BriefReconciler) releaseCrew(ctx context.Context, brief *c4v1alpha1.Brief, container string) error {
+	var crew c4v1alpha1.Crew
+	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: container}, &crew)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if crew.Labels[c4v1alpha1.LabelBrief] != brief.Name {
+		return nil
+	}
+	orig := crew.DeepCopy()
+	releaseSpec(&crew.Spec, briefRelease(brief, container))
+	if equality.Semantic.DeepEqual(crew.Spec, orig.Spec) {
+		return nil
+	}
+	if err := r.Patch(ctx, &crew, client.MergeFrom(orig)); err != nil {
+		return err
+	}
+	publishTo := ""
+	if crew.Spec.PublishReleases != nil {
+		publishTo = crew.Spec.PublishReleases.GitHub.Repository
+	}
+	logf.FromContext(ctx).Info("Turned on the Crew's releases", "crew", crew.Name, "publishTo", publishTo)
+	return nil
+}
+
+// syncReleases brings the Crews the Brief made for its spec.releases entries
+// up to date, whatever its round is doing: an entry added or changed later
+// reaches the Crew without waiting for a round.
+func (r *BriefReconciler) syncReleases(ctx context.Context, brief *c4v1alpha1.Brief) error {
+	for _, entry := range brief.Spec.Releases {
+		if err := r.releaseCrew(ctx, brief, entry.Container); err != nil {
+			return fmt.Errorf("turning on the releases of Crew %s: %w", entry.Container, err)
+		}
+	}
+	return nil
+}
+
+// releasedContainers are the Containers a round releases: those its plan
+// names, those spec.releases names, and those whose Crew the Brief made
+// already tags releases, as one released once stays released (R2).
+func (r *BriefReconciler) releasedContainers(ctx context.Context, brief *c4v1alpha1.Brief, plan model.Plan) (
+	map[string]bool, error) {
+	released := map[string]bool{}
+	for _, name := range plan.Releases {
+		released[name] = true
+	}
+	for _, entry := range brief.Spec.Releases {
+		released[entry.Container] = true
+	}
+	var crews c4v1alpha1.CrewList
+	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace),
+		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		return nil, err
+	}
+	for _, crew := range crews.Items {
+		if crew.Spec.TagReleases {
+			released[crew.Spec.ContainerRef.Name] = true
+		}
+	}
+	return released, nil
+}
+
+// releaseMilestone returns the ID of the release milestone of the Brief's
+// round in repo (R6): the one whose description carries the round's marker,
+// open or closed, so a restart makes no second one, or a new one titled the
+// next minor version, due ReleaseMilestoneDue from now.
+func releaseMilestone(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, brief string,
+	round int) (int64, error) {
+	milestones, err := provider.ListAllMilestones(ctx, repo)
+	if err != nil {
+		return 0, err
+	}
+	titles := make([]string, 0, len(milestones))
+	for _, m := range milestones {
+		if model.HasReleaseMilestoneMarker(m.Description, brief, round) {
+			return m.ID, nil
+		}
+		titles = append(titles, m.Title)
+	}
+	title := model.ReleaseMilestoneTitle(titles)
+	m, err := provider.CreateMilestone(ctx, repo, title, model.ReleaseMilestoneDescription(brief, round),
+		time.Now().Add(model.ReleaseMilestoneDue))
+	if err != nil {
+		return 0, err
+	}
+	logf.FromContext(ctx).Info("Made the round's release milestone", "repository", repo.Owner+"/"+repo.Name,
+		"milestone", title, "round", round)
+	return m.ID, nil
+}

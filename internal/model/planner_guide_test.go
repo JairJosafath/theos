@@ -32,6 +32,7 @@ func guideExampleFiles(t *testing.T, guide string) map[string]string {
 // with the entries the guide's example names.
 func guideExampleCurrent() CurrentModel {
 	return CurrentModel{
+		Namespace: "shop",
 		Catalog: []CatalogEntry{
 			{Side: SideFramework, Name: "react-site", SupportedTypes: []string{TypeStaticSite}},
 			{Side: SideFramework, Name: "go-service", SupportedTypes: []string{TypeService}},

@@ -74,8 +74,9 @@ github_runner() {
     --jq ".runners[] | select(.name == \"$name\") | $pick"
 }
 
-# Its labels as GitHub lists them, without the ones the runner adds itself.
-own_labels='.labels | map(.name) | map(select(. != "self-hosted" and . != "linux" and . != "x64")) | sort | join(",")'
+# Its labels as GitHub lists them, without the ones the runner adds itself
+# (self-hosted, Linux, X64), which GitHub marks read-only.
+own_labels='[.labels[] | select(.type == "custom") | .name] | sort | join(",")'
 
 # remove_container: stop the runner so it closes its session on GitHub (a
 # killed one leaves it open, and the next start waits minutes for it to
