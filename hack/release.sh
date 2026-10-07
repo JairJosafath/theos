@@ -118,7 +118,10 @@ url=$(cd "$WT" && gh pr create --base main --head "$branch" --title "chore: rele
   --body "Names $tag in \`$CHART\` and \`$GUIDE\`, so the guide at the tag installs that release (#370). Made by \`hack/release.sh\`.")
 echo "opened $url"
 (cd "$WT" && gh pr merge "$url" --merge)
-git -C "$WT" push --quiet "$REMOTE" --delete "$branch"
+# GitHub deletes a merged branch itself where the repository says so.
+if git -C "$ROOT" ls-remote --exit-code --heads "$REMOTE" "$branch" >/dev/null; then
+  git -C "$WT" push --quiet "$REMOTE" --delete "$branch"
+fi
 sha=$(cd "$WT" && gh pr view "$url" --json mergeCommit -q .mergeCommit.oid)
 if [ -z "$sha" ]; then
   echo "$url has no merge commit; nothing tagged" >&2

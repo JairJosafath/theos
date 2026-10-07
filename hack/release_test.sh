@@ -69,6 +69,7 @@ case "\$1 \$2" in
   git clone --quiet "$T/origin.git" "$T/merge"
   git -C "$T/merge" -c user.name=t -c user.email=t@t merge --quiet --no-ff -m merged origin/chore/release-v1.2.1
   git -C "$T/merge" push --quiet origin main
+  if [ -e "$T/autodelete" ]; then git -C "$T/origin.git" branch --quiet -D chore/release-v1.2.1; fi
   ;;
 "pr view") git -C "$T/origin.git" rev-parse main ;;
 esac
@@ -87,6 +88,13 @@ check "  merged with a merge commit" "$(grep -c 'pr merge https://github.com/o/c
 check "  the bump branch is gone" "$(git -C "$T/origin.git" branch --list 'chore/*' | wc -l)" 0
 check "  the clone's checkout is untouched" "$(sed -n 's/^version: //p' "$T/clone/dist/chart/Chart.yaml")" 1.2.0
 check "  no worktree is left" "$(git -C "$T/clone" worktree list | wc -l)" 1
+# Where the repository deletes merged branches itself, the release still tags.
+git -C "$T/origin.git" tag -d v1.2.1 >/dev/null
+git -C "$T/origin.git" update-ref refs/heads/main main~1
+touch "$T/autodelete"
+run patch
+check "patch, GitHub deletes the merged branch: still tags" $? 0
+check "  the tag is origin's main" "$(git -C "$T/origin.git" rev-parse v1.2.1^{commit})" "$(git -C "$T/origin.git" rev-parse main)"
 run 1.2.1
 check "the version just released is refused" $? 1
 git -C "$T/origin.git" tag v1.3.0 main
