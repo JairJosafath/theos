@@ -545,7 +545,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   filed again, reworded or split, so the Crew's guard stays. Applying the
   round, the operator labels a retried issue `status/ready` in place of
   `status/needs-human`, or closes it, with a comment quoting the why and the
-  round's prompts. See [plans/brief-failed-issues.md](plans/brief-failed-issues.md).
+  round's prompts. See [plans/brief-failed-issues.md](plans/done/brief-failed-issues.md).
 - **A Brief looks after its own handed-back work** (#486, planned).
   `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. The Brief watches
   only what it made: failed issues, its Containers' Tasks and Crews. What

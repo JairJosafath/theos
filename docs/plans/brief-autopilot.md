@@ -1,7 +1,7 @@
 # A Brief looks after its own handed-back work
 
 GitHub issue #486, reported by gray-lenovo on v0.5.0. Agent: otter-486.
-Builds on [brief-failed-issues.md](brief-failed-issues.md) (#429): that plan
+Builds on [done/brief-failed-issues.md](done/brief-failed-issues.md) (#429): that plan
 lists a Brief's failed issues and lets a prompt retry or close them. This plan
 has the Brief do that by itself, the way this repository's maintainer decides
 for its owner, and bring the person only what only they can decide.
