@@ -11,7 +11,7 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
    don't ask for. Out of scope stays out.
 2. **Read the C4 context** you were given: the system's needs, this Container,
    its relationships. Needs bind every change, even ones the issue doesn't
-   repeat (such as "never gets in the way of other YAML tooling").
+   repeat (such as {{ if eq .Framework "react-vite" }}"works without a mouse"{{ else }}"never gets in the way of other YAML tooling"{{ end }}).
 3. **Read the related repositories** under `/workspace/related/<name>`, if any:
    the parts this issue touches, such as {{ if eq .Framework "react-vite" }}the API this page calls and
    the shape of its responses{{ else }}the language server's command line
@@ -118,6 +118,6 @@ Your summary becomes the pull request description, in the shape of
 - **Each acceptance criterion:** met or not met; where (file and function);
   the test that proves it (test name).
 - **How it was checked:** `make check`, numbers for any budget, manual runs.
-- **Could not be verified:** what and why (needs a real editor, a display, the
+- **Could not be verified:** what and why (needs a real {{ if eq .Framework "react-vite" }}browser{{ else }}editor{{ end }}, a display, the
   network). Never claim what you didn't run.
 - **Follow-ups:** problems you saw outside the issue's scope.

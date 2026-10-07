@@ -29,7 +29,7 @@ says so.
 
 - ES modules only: no `require`, no `namespace`. [lint: @typescript-eslint/no-require-imports, no-namespace]
 - Named exports only; default exports only where a tool demands one
-  (`eslint.config.mjs`, `vitest.config.mts`). [review]
+  (`eslint.config.mjs`, {{ if eq .Framework "react-vite" }}`vite.config.ts`{{ else }}`vitest.config.mts`{{ end }}). [review]
 - `import type` for type-only imports. [lint: tsc verbatimModuleSyntax]
 - Relative imports within `src/`. [review]
 - Export only what other modules use; unused locals fail the type check. [lint: tsc noUnusedLocals; exports review]

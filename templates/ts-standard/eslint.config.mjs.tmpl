@@ -65,6 +65,26 @@ export default defineConfig(
       curly: ['error', 'all'],
     },
   },
+{{- if eq .Framework "react-vite" }}
+  {
+    // The page runs in the browser, where Node's globals and modules don't
+    // exist; tsconfig.json has Node's types only for vite.config.ts.
+    files: ['src/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...['process', 'Buffer', 'global', '__dirname', '__filename', 'require'].map((name) => ({
+          name,
+          message: 'The page runs in the browser, not Node.',
+        })),
+      ],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['node:*'], message: 'The page runs in the browser, not Node.' }] },
+      ],
+    },
+  },
+{{- end }}
   {
     // Build and config scripts are plain JavaScript, outside tsconfig.json.
     files: ['**/*.mjs'],

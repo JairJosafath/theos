@@ -42,8 +42,7 @@ passing and a review. Never commit red.
 - Add packages with `npm install --save-exact` (`--save-dev` for tools), and
   commit `package-lock.json`. {{ if eq .Framework "react-vite" }}Vite bundles what the page imports, so
   `node_modules` never ships; what the page imports is a `dependency`, tools
-  are `devDependencies`. Prefer the platform, React and the browser's APIs;
-  then few,{{ else }}esbuild bundles what the extension imports, so
+  are `devDependencies`. Prefer the platform, React and the browser's APIs; then few,{{ else }}esbuild bundles what the extension imports, so
   `node_modules` never ships. Prefer the platform and the VS Code API; then few,{{ end }}
   maintained, well-known packages with a licence that fits. A new install
   script needs an `allowScripts` entry in `package.json`: allow it only when the

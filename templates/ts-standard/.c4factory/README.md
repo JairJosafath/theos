@@ -7,8 +7,8 @@ and the `make check` contract CI runs.
 
 - **Supports:** `extension` and `static-site`; Frameworks: `vscode-extension`
   and `react-vite`
-- **Per Framework:** every file but the workflow, `.editorconfig`, the
-  Prettier files and `typescript.md` renders `.Framework`: the lint rules,
+- **Per Framework:** every file but the workflow, `.editorconfig` and
+  `.prettierrc.json` renders `.Framework`: the lint rules,
   the `Makefile`'s build and release targets, `AGENTS.md`'s review rules and
   the role guides' notes. `docs/style/vscode.md` is written only for
   `vscode-extension`, `docs/style/react.md` only for `react-vite`. What a
@@ -25,7 +25,8 @@ and the `make check` contract CI runs.
   `curly`; unused disable comments are errors. For `react-vite`,
   `eslint-plugin-react-hooks`' recommended preset too (the Rules of Hooks and
   the React Compiler's checks of the Rules of React), with `exhaustive-deps`
-  an error. Prettier formats everything but
+  an error, and Node's globals and `node:` imports refused in `src/`,
+  which runs in the browser. Prettier formats everything but
   the platform's files and the lockfile.
 - **Check contract:** `make check` = `npm ci`, `prettier --check`,
   `eslint --max-warnings 0`, `tsc --noEmit`, `vitest run`, and `vsce package`

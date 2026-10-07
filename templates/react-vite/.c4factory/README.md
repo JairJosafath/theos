@@ -6,7 +6,7 @@ of its own.
 
 - **Supports:** `static-site`
 - **Layout:** `index.html` is the entry Vite builds; `src/main.tsx` mounts the
-  app, `src/App.tsx` is the page; logic in `src/*.ts` modules that import
+  app, `src/app.tsx` is the page; logic in `src/*.ts` modules that import
   neither React nor the DOM, tests next to them (`*.test.ts`); `public/` is
   copied as is.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
@@ -34,7 +34,7 @@ of its own.
   `package.json`. No package has an install script.
 - **Standard:** lists ts-standard's tools in `devDependencies` with exact
   versions: `eslint`, `@eslint/js`, `typescript-eslint`, `prettier`,
-  `typescript`, `vitest`, and `eslint-plugin-react-hooks`, which ts-standard
+  `typescript`, `vitest`, `vite`, and `eslint-plugin-react-hooks`, which ts-standard
   turns on for this Framework. TypeScript is 6.0.3 because typescript-eslint
   8.71 supports `<6.1.0`.
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
