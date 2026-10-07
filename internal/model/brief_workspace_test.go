@@ -276,3 +276,22 @@ func TestPlannerGuide(t *testing.T) {
 		}
 	}
 }
+
+// PLANNER.md says what #399 asks of the planner: the idea picks the kind of
+// app, and a kind the catalog can't build is a question, not another kind.
+func TestPlannerGuideChoosesTheKindOfAppByTheIdea(t *testing.T) {
+	guide := strings.Join(strings.Fields(plannerGuideText), " ")
+	for _, s := range []string{
+		"Choose the kind of app by the idea, not by the catalog",
+		"Container type a person picturing the idea would expect",
+		"When no Framework in `model/catalog.yaml` supports that type, write `needs-input.md`",
+		"the catalog can't build it yet",
+		"don't build another kind instead",
+		`("a CLI is fine")`,
+		`never what the catalog lacks ("the catalog only has ...")`,
+	} {
+		if !strings.Contains(guide, s) {
+			t.Errorf("PLANNER.md lacks %q", s)
+		}
+	}
+}
