@@ -520,6 +520,20 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   round, the operator labels a retried issue `status/ready` in place of
   `status/needs-human`, or closes it, with a comment quoting the why and the
   round's prompts. See [plans/brief-failed-issues.md](plans/brief-failed-issues.md).
+- **A Brief looks after its own handed-back work** (#486, planned).
+  `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. The Brief watches
+  only what it made: failed issues, its Containers' Tasks and Crews. What
+  heals by itself (a usage limit, an agent-slot queue, a Standard change in
+  review, a Git host coming back) is left alone for a window from one table
+  in `internal/model`. When a failed issue is due, a tending round, a planner
+  round with no new prompt, answers it `retry`, `close` (with new issues to
+  split), `wait` (until a Task merges, an app releases or 24h pass) or `ask`;
+  in `Ask` every answer waits for the person. Everything else that is due,
+  and every `ask`, is one entry in `status.needsYou` with the choice the
+  Brief would make and why. The Crew's three tries still hold, an issue is
+  answered once per failure, and tending rounds come at most hourly. Each
+  is a history entry, outcome `Tended`, so a prompt can overrule it. See
+  [plans/brief-autopilot.md](plans/brief-autopilot.md).
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a
