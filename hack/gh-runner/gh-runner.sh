@@ -198,7 +198,7 @@ up() {
   # The image is built again, and the containers made again, only when what
   # they are made from changed: a cached build still gets a new image ID.
   local rev i
-  rev=$({ cat "$here/Dockerfile" "$here/entrypoint.sh"; id -u; id -g; } | sha256sum | cut -c1-12)
+  rev=$({ cat "$here/Dockerfile" "$here/entrypoint.sh" "$here/job-started.sh"; id -u; id -g; } | sha256sum | cut -c1-12)
   if [ "$(docker image inspect -f "$rev_label" "$image" 2>/dev/null)" != "$rev" ]; then
     say "building $image"
     docker build -q -t "$image" --label "c4factory.gh-runner.rev=$rev" \
