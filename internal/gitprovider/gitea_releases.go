@@ -19,6 +19,17 @@ type Milestone struct {
 	Title string
 	// Due is the milestone's due date, zero when it has none.
 	Due time.Time
+	// Description is the milestone's description, and Closed whether it is closed.
+	Description string
+	Closed      bool
+}
+
+func (m giteaMilestone) milestone() Milestone {
+	out := Milestone{ID: m.ID, Title: m.Title, Description: m.Description, Closed: m.State == stateClosed}
+	if m.DueOn != nil {
+		out.Due = *m.DueOn
+	}
+	return out
 }
 
 func milestonePath(repo Repository, id int64) string {
@@ -27,9 +38,20 @@ func milestonePath(repo Repository, id int64) string {
 
 // ListMilestones returns repo's open milestones.
 func (g *gitea) ListMilestones(ctx context.Context, repo Repository) ([]Milestone, error) {
+	return g.listMilestones(ctx, repo, "open")
+}
+
+// ListAllMilestones returns repo's milestones, open and closed.
+func (g *gitea) ListAllMilestones(ctx context.Context, repo Repository) ([]Milestone, error) {
+	return g.listMilestones(ctx, repo, "all")
+}
+
+// listMilestones returns repo's milestones in state: open, closed or all.
+func (g *gitea) listMilestones(ctx context.Context, repo Repository, state string) ([]Milestone, error) {
 	var out []Milestone
 	for page := 1; page <= maxIssuePages; page++ {
-		path := fmt.Sprintf("/api/v1/repos/%s/milestones?state=open&limit=%d&page=%d", repoPath(repo), issuePageSize, page)
+		path := fmt.Sprintf("/api/v1/repos/%s/milestones?state=%s&limit=%d&page=%d", repoPath(repo), state,
+			issuePageSize, page)
 		status, data, err := g.do(ctx, http.MethodGet, path, nil)
 		if err != nil {
 			return nil, err
@@ -39,17 +61,35 @@ func (g *gitea) ListMilestones(ctx context.Context, repo Repository) ([]Mileston
 			return nil, fmt.Errorf("gitea: listing milestones of %s failed (HTTP %d): %s", repoPath(repo), status, apiMessage(data))
 		}
 		for _, m := range milestones {
-			ms := Milestone{ID: m.ID, Title: m.Title}
-			if m.DueOn != nil {
-				ms.Due = *m.DueOn
-			}
-			out = append(out, ms)
+			out = append(out, m.milestone())
 		}
 		if len(milestones) < issuePageSize {
 			break
 		}
 	}
 	return out, nil
+}
+
+// CreateMilestone creates an open milestone in repo with description, due at
+// due, or with no due date when due is zero, and returns it. It doesn't look for
+// one of the same title first: a repeat makes a second milestone.
+func (g *gitea) CreateMilestone(ctx context.Context, repo Repository, title, description string,
+	due time.Time) (Milestone, error) {
+	option := giteaMilestoneOption{Title: title, Description: description}
+	if !due.IsZero() {
+		option.DueOn = &due
+	}
+	payload, _ := json.Marshal(option)
+	status, data, err := g.do(ctx, http.MethodPost, "/api/v1/repos/"+repoPath(repo)+"/milestones", payload)
+	if err != nil {
+		return Milestone{}, err
+	}
+	var created giteaMilestone
+	if status != http.StatusCreated || json.Unmarshal(data, &created) != nil {
+		return Milestone{}, fmt.Errorf("gitea: creating milestone %s in %s failed (HTTP %d): %s", title, repoPath(repo),
+			status, apiMessage(data))
+	}
+	return created.milestone(), nil
 }
 
 // MilestoneIssues returns the numbers of the open and the closed issues in
@@ -84,12 +124,26 @@ func (g *gitea) MilestoneIssues(ctx context.Context, repo Repository, id int64) 
 	}
 }
 
-// CloseMilestone closes milestone id. It is safe to repeat.
+// CloseMilestone closes milestone id, keeping its due date's day. It is safe to
+// repeat.
+//
+// Gitea clears the due date of a milestone it edits unless the edit gives one,
+// so the due date read first goes along; Gitea keeps that one to the end of
+// its day.
 func (g *gitea) CloseMilestone(ctx context.Context, repo Repository, id int64) error {
+	status, data, err := g.do(ctx, http.MethodGet, milestonePath(repo, id), nil)
+	if err != nil {
+		return err
+	}
+	var current giteaMilestone
+	if status != http.StatusOK || json.Unmarshal(data, &current) != nil {
+		return fmt.Errorf("gitea: reading milestone %d of %s failed (HTTP %d): %s", id, repoPath(repo), status, apiMessage(data))
+	}
 	payload, _ := json.Marshal(struct {
-		State string `json:"state"`
-	}{stateClosed})
-	status, data, err := g.do(ctx, http.MethodPatch, milestonePath(repo, id), payload)
+		State string     `json:"state"`
+		DueOn *time.Time `json:"due_on,omitempty"`
+	}{stateClosed, current.DueOn})
+	status, data, err = g.do(ctx, http.MethodPatch, milestonePath(repo, id), payload)
 	if err != nil {
 		return err
 	}
