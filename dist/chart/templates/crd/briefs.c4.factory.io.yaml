@@ -29,6 +29,9 @@ spec:
     - jsonPath: .status.suggestionsWaiting
       name: Suggestions
       type: integer
+    - jsonPath: .status.apps[*].lastRelease.tag
+      name: Releases
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -236,6 +239,78 @@ spec:
           status:
             description: status defines the observed state of Brief
             properties:
+              apps:
+                description: |-
+                  apps has a line per Container the Brief made, then one per spec.releases
+                  entry naming no Container it made: whether its releases are on, where
+                  they are published, the latest one, and a sentence on how they go.
+                items:
+                  description: |-
+                    BriefApp is a Container the Brief made, or one spec.releases names, and how
+                    its releases go: copied from the Crew, which holds every fact.
+                  properties:
+                    container:
+                      description: container names the Container.
+                      maxLength: 253
+                      type: string
+                    crew:
+                      description: crew names the Container's Crew; empty while it
+                        has none.
+                      maxLength: 253
+                      type: string
+                    lastRelease:
+                      description: lastRelease is the Crew's latest release.
+                      properties:
+                        publishState:
+                          description: |-
+                            publishState is how publishing the release went: Pending, Publishing,
+                            Published or Failed; empty when the Crew publishes none.
+                          type: string
+                        publishedURL:
+                          description: publishedURL is the published release.
+                          type: string
+                        run:
+                          description: 'run is how the tag''s CI runs went: Waiting,
+                            Running, Succeeded or Failed.'
+                          type: string
+                        tag:
+                          description: tag is the release's version.
+                          type: string
+                        time:
+                          description: time is when the Crew tagged the release.
+                          format: date-time
+                          type: string
+                        url:
+                          description: url is the release's page on the Git host.
+                          type: string
+                      required:
+                      - tag
+                      type: object
+                    message:
+                      description: message says in one plain sentence how the app's
+                        releases go.
+                      maxLength: 1000
+                      type: string
+                    publishTo:
+                      description: |-
+                        publishTo is the GitHub repository, owner/name, the Crew publishes its
+                        releases to; empty when it publishes none.
+                      maxLength: 140
+                      type: string
+                    releases:
+                      description: releases is On when the Crew tags releases, else
+                        Off.
+                      enum:
+                      - "On"
+                      - "Off"
+                      type: string
+                  required:
+                  - container
+                  - releases
+                  type: object
+                maxItems: 100
+                type: array
+                x-kubernetes-list-type: atomic
               choices:
                 description: choices are what the planner chose in the last round,
                   in plain words.
