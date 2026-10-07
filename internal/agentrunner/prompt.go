@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -207,9 +208,10 @@ points after "Non-blocking:" in the summary and approve.
 	b.WriteString(`
 Work worth doing later that is outside this change can go in "followUps": up to
 three, each a title, a few sentences saying what and why, and one to three
-"criteria": short checks a reviewer could verify to call it done (each becomes an
-"Acceptance criteria" checklist item on the issue). Never use a follow-up for
-something this change must fix.
+"criteria": short checks a reviewer could verify to call it done, each one
+sentence of at most ` + strconv.Itoa(maxCriterionChars) + ` characters (each becomes an "Acceptance criteria"
+checklist item on the issue). Never use a follow-up for something this change
+must fix.
 
 End your reply with one line of JSON and nothing after it:
 {"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>", "followUps": [{"title": "...", "body": "...", "criteria": ["..."]}]}
@@ -238,11 +240,12 @@ func PlanPrompt(job Job, guide, brief string) string {
 	}
 	fmt.Fprintf(&b, `
 Write the whole plan in %[1]s/, as the guide says: %[2]s, one file per issue in
-%[1]s/issues/ and %[3]s. Only when you cannot go on without the person, write
+%[1]s/issues/, %[3]s and %[6]s. Only when you cannot go on without the person, write
 %[4]s instead: one sentence saying what you need and why. Do not commit or
 push: c4agent pushes %[1]s/ to %[5]s. End your reply with a short summary of the
 plan, in a few plain sentences.
-`, model.PlanDir, model.PlanModelFile, model.PlanChoicesFile, model.PlanNeedsInputFile, job.Branch)
+`, model.PlanDir, model.PlanModelFile, model.PlanChoicesFile, model.PlanNeedsInputFile, job.Branch,
+		model.PlanSummaryFile)
 	return b.String()
 }
 

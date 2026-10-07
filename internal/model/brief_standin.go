@@ -121,6 +121,7 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 	_, story, _ = strings.Cut(story, "\n") // the workspace's "copy it" header
 	files[PlanModelFile] = story
 	files[PlanChoicesFile] = "- " + strings.Join(choices, "\n- ") + "\n"
+	files[PlanSummaryFile] = fmt.Sprintf("The stand-in planner files %s.\n", count(len(issues), "issue"))
 	return files, nil
 }
 

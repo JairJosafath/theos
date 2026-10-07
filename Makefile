@@ -376,19 +376,20 @@ include hack/ui.mk
 
 ##@ GitHub Actions runner
 
-# A self-hosted runner for this repository's workflows, in a container on this
-# device's Docker (hack/gh-runner). The workflows run on it while the repository
-# variable RUNS_ON is self-hosted (docs/dev/testenv.md).
+# Self-hosted runners for this repository's workflows, in containers on this
+# device's Docker (hack/gh-runner). The workflows run on them while the
+# repository variable RUNS_ON is self-hosted (docs/dev/testenv.md).
+RUNNERS ?= 1
 .PHONY: gh-runner
-gh-runner: ## Build and start the self-hosted GitHub Actions runner; it registers once.
-	@hack/gh-runner/gh-runner.sh up
+gh-runner: ## Build and start RUNNERS self-hosted GitHub Actions runners (default 1); each registers once, extra ones go.
+	@RUNNERS=$(RUNNERS) hack/gh-runner/gh-runner.sh up
 
 .PHONY: gh-runner-down
-gh-runner-down: ## Stop the GitHub Actions runner and remove it from GitHub.
+gh-runner-down: ## Stop every GitHub Actions runner of this device and remove them from GitHub.
 	@hack/gh-runner/gh-runner.sh down
 
 .PHONY: gh-runner-status
-gh-runner-status: ## Show the GitHub Actions runner's container and its status on GitHub.
+gh-runner-status: ## Show the GitHub Actions runners' containers and their status on GitHub.
 	@hack/gh-runner/gh-runner.sh status
 
 ##@ Helm Deployment

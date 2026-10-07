@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -36,6 +37,7 @@ const (
 	PlanModelFile      = "plan/model.yaml"
 	PlanChoicesFile    = "plan/choices.md"
 	PlanNeedsInputFile = "plan/needs-input.md"
+	PlanSummaryFile    = "plan/summary.md"
 	planIssuesDir      = "plan/issues/"
 )
 
@@ -112,6 +114,43 @@ type Plan struct {
 	Choices []string
 	// NeedsInput is needs-input.md's sentence; a plan that has one is not applied.
 	NeedsInput string
+	// Summary is summary.md's text: what the round does for the person's app,
+	// in a sentence or two.
+	Summary string
+}
+
+// maxRoundSummary is the most of a round's summary a Brief's history keeps.
+const maxRoundSummary = 1000
+
+// RoundSummary is what a Brief's history says the plan's round did, for the
+// person: the planner's summary.md, or else what the plan holds. It ends on a
+// whole sentence and fits the history.
+func RoundSummary(plan Plan) string {
+	if plan.NeedsInput != "" {
+		return "Asked for input before planning."
+	}
+	if plan.Summary != "" {
+		return ClipSentences(strings.Join(strings.Fields(plan.Summary), " "), maxRoundSummary)
+	}
+	containers := 0
+	for _, o := range plan.Objects {
+		if o.Kind == KindContainer {
+			containers++
+		}
+	}
+	return fmt.Sprintf("The model has %s; the round files %s.", count(containers, "Container"),
+		count(len(plan.Issues), "issue"))
+}
+
+// count says n things, such as "one issue" or "3 issues".
+func count(n int, thing string) string {
+	switch n {
+	case 0:
+		return "no " + thing + "s"
+	case 1:
+		return "one " + thing
+	}
+	return fmt.Sprintf("%d %ss", n, thing)
 }
 
 var issueFile = regexp.MustCompile(`^plan/issues/(\d+)-([a-z0-9]([-a-z0-9]*[a-z0-9])?)\.md$`)
@@ -136,6 +175,7 @@ func ParsePlan(files map[string]string) (Plan, error) {
 	} else if plan.NeedsInput == "" {
 		return Plan{}, fmt.Errorf("%s is missing: a plan writes the whole story model there", PlanModelFile)
 	}
+	plan.Summary = strings.TrimSpace(files[PlanSummaryFile])
 	for line := range strings.SplitSeq(files[PlanChoicesFile], "\n") {
 		line = strings.TrimSpace(line)
 		for _, marker := range []string{"-", "*", "[ ]", "[x]"} {
@@ -425,6 +465,7 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 		if reason := checkDNSLabel(o.Name); reason != "" {
 			refuse(subject, "%s", reason)
 		}
+		checkSpecLimits(o, refuse)
 	}
 	for _, o := range current.Objects {
 		if !seen[o.Ref()] {
@@ -483,6 +524,51 @@ func checkCreated(plan Plan, current CurrentModel, o PlanObject, refuse func(str
 		}
 	case KindRelationship:
 		checkCreatedRelationship(plan, current, o, refuse)
+	}
+}
+
+// specLimit is one of the CRDs' limits on a story object's spec: at most max
+// characters, or max items when items is set. The API server refuses an object
+// over one, so the plan check does first, naming the field (#382).
+type specLimit struct {
+	field string
+	max   int
+	items bool
+	value func(PlanObject) any
+}
+
+// specLimits are the limits of kind's spec, as its CRD's markers in
+// api/v1alpha1 set them; a test holds the two together.
+func specLimits(kind string) []specLimit {
+	displayName := specLimit{"displayName", 100, false, func(o PlanObject) any { return o.DisplayName }}
+	description := specLimit{"description", 1000, false, func(o PlanObject) any { return o.Description }}
+	switch kind {
+	case KindProject, KindPerson, KindContainer, KindDataStore:
+		return []specLimit{displayName, description}
+	case KindSoftwareSystem:
+		return []specLimit{displayName, description,
+			{"needs", 20, true, func(o PlanObject) any { return o.Needs }},
+			{"kpis", 20, true, func(o PlanObject) any { return o.KPIs }}}
+	case KindRelationship:
+		return []specLimit{{"description", 200, false, func(o PlanObject) any { return o.Description }}}
+	}
+	return nil
+}
+
+func checkSpecLimits(o PlanObject, refuse func(string, string, ...any)) {
+	for _, limit := range specLimits(o.Kind) {
+		switch v := limit.value(o).(type) {
+		case string:
+			if n := utf8.RuneCountInString(v); n > limit.max {
+				refuse(o.Ref().String(), "spec.%s is %d characters; it may be at most %d, so shorten it",
+					limit.field, n, limit.max)
+			}
+		case []string:
+			if n := len(v); n > limit.max {
+				refuse(o.Ref().String(), "spec.%s has %d items; it may have at most %d, so keep the most important ones",
+					limit.field, n, limit.max)
+			}
+		}
 	}
 }
 

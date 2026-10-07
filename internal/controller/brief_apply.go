@@ -471,8 +471,8 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	if err != nil {
 		return err
 	}
-	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: task.Status.Summary,
-		Choices: plan.Choices})
+	summary := model.RoundSummary(plan)
+	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices})
 	status.Choices = model.ClipList(plan.Choices, 50, 500)
 	status.PromptsPlanned = status.RoundPrompts
 	status.Created = created
@@ -480,7 +480,7 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionTrue,
 		model.ReasonApplied, message)
 	r.event(brief, corev1.EventTypeNormal, eventPlanned, "Apply",
-		fmt.Sprintf("%s: %d objects, %d issues. %s", message, len(plan.Objects), len(plan.Issues), task.Status.Summary))
+		fmt.Sprintf("%s: %d objects, %d issues. %s", message, len(plan.Objects), len(plan.Issues), summary))
 	logf.FromContext(ctx).Info("Applied Brief round", "round", status.Round, "issues", len(plan.Issues))
 	return nil
 }

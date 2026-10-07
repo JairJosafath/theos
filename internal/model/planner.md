@@ -26,6 +26,11 @@ Push the branch `plan/<round>` with these files:
   front matter: a `---` line, `title:` and `labels:`, another `---` line. Then
   the body.
 - `plan/choices.md`: one line per choice you made, in plain words.
+- `plan/summary.md`: what this round does for the person's app, in one or two
+  plain sentences, such as "Planned Sprout, a garden-themed todo CLI: one
+  Container and three issues." The Brief shows it as the round's summary.
+  Write it about the app, not about your work: never mention earlier tries,
+  refusals, commits or pushes.
 - `plan/needs-input.md`: only when you are stuck (see below).
 
 ## The rules
@@ -184,6 +189,9 @@ What each kind's `spec` takes, and nothing else:
   and `bundles: true` only when the source Container ships a pinned release
   of the target Container. A Relationship has no technology field: say how
   in its `description`.
+
+A `displayName` is at most 100 characters and a `description` at most 1000
+(a Relationship's at most 200); `needs` and `kpis` have at most 20 items each.
 
 An issue, such as `plan/issues/01-web.md`:
 

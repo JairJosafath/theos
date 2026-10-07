@@ -53,10 +53,14 @@ type Result struct {
 const MaxResultBytes = 4000
 
 // Follow-ups share the termination message with the verdict, so they stay short.
+// A criterion is a checklist item the work is judged by, so it gets room for a
+// whole sentence: the reviewer is asked for at most maxCriterionChars, and the
+// rest is margin.
 const (
 	maxFollowUpTitle     = 100
 	maxFollowUpBody      = 400
-	maxFollowUpCriterion = 120
+	maxFollowUpCriterion = 240
+	maxCriterionChars    = 200
 )
 
 // Encode returns the Result as JSON of at most MaxResultBytes, shortening the
@@ -64,11 +68,11 @@ const (
 func (r Result) Encode() []byte {
 	r.FollowUps = slices.Clone(r.FollowUps)
 	for i := range r.FollowUps {
-		r.FollowUps[i].Title = shorten(r.FollowUps[i].Title, maxFollowUpTitle)
-		r.FollowUps[i].Body = shorten(r.FollowUps[i].Body, maxFollowUpBody)
+		r.FollowUps[i].Title = shortenWords(r.FollowUps[i].Title, maxFollowUpTitle)
+		r.FollowUps[i].Body = shortenWords(r.FollowUps[i].Body, maxFollowUpBody)
 		r.FollowUps[i].Criteria = slices.Clone(r.FollowUps[i].Criteria)
 		for j, c := range r.FollowUps[i].Criteria {
-			r.FollowUps[i].Criteria[j] = shorten(c, maxFollowUpCriterion)
+			r.FollowUps[i].Criteria[j] = shortenWords(c, maxFollowUpCriterion)
 		}
 	}
 	if r.Proposal != nil {
@@ -124,6 +128,26 @@ func shorten(s string, n int) string {
 		n--
 	}
 	return s[:n] + "…"
+}
+
+// shortenWords is s in at most n bytes: whole, or cut after its last whole word
+// that fits and ended with "…", so text a person reads is never cut mid-word. A
+// single word longer than n is cut at a rune.
+func shortenWords(s string, n int) string {
+	const ellipsis = "…"
+	if len(s) <= n {
+		return s
+	}
+	cut := max(n-len(ellipsis), 0)
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	if i := strings.LastIndexAny(s[:cut+1], " \t\n"); i > 0 {
+		if word := strings.TrimRight(s[:i], " \t\n,.;:"); word != "" {
+			return word + ellipsis
+		}
+	}
+	return s[:cut] + ellipsis
 }
 
 // checkFixAttempts is how often the agent is sent back when the check fails.
