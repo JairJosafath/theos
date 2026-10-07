@@ -205,10 +205,10 @@ t=$CLAUDE_CONFIG_DIR/projects/${PWD//[^a-zA-Z0-9]/-}/$id.jsonl
 case $(cat "$FAKE") in
   leftover) sleep 600 >/dev/null 2>&1 & echo $! >"$FAKE.child"; echo '{"is_error":false,"result":"left","num_turns":1}' ;;
   hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 60 & echo $! >"$FAKE.child"; wait ;;
-  busy) mkdir -p "${t%/*}"; for _ in 1 2 3 4 5 6; do echo '{}' >>"$t"; sleep 1; done
+  busy) mkdir -p "${t%/*}"; for _ in $(seq 30); do echo '{}' >>"$t"; sleep 0.2; done
     echo '{"is_error":false,"result":"busy","num_turns":9}' ;;
   agent) mkdir -p "${t%.jsonl}/subagents"; echo '{}' >"$t"
-    for _ in 1 2 3 4 5 6; do echo '{}' >>"${t%.jsonl}/subagents/agent-1.jsonl"; sleep 1; done
+    for _ in $(seq 30); do echo '{}' >>"${t%.jsonl}/subagents/agent-1.jsonl"; sleep 0.2; done
     echo '{"is_error":false,"result":"agent","num_turns":9}' ;;
   quiet) sleep 4; echo '{"is_error":false,"result":"quiet","num_turns":1}' ;;
   limit) echo '{"is_error":true,"result":"You'"'"'ve hit your session limit · resets 3am (UTC)","num_turns":1}'; exit 1 ;;

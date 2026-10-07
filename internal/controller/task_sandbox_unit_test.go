@@ -565,8 +565,11 @@ func TestBuildSandboxImplementEnv(t *testing.T) {
 	}
 }
 
-// The Go module proxy comes from the GitProvider's URL and owner, in cluster
-// or not; the Agent's own setting comes last, so it wins.
+// The Go package registry comes from the GitProvider's URL and owner, in
+// cluster or not, and goes to c4agent; the go command asks only c4agent's
+// loopback proxy, never a list with the public proxy after the registry, which
+// it would ask for a factory module the registry lacks. The Agent's own setting
+// comes last, so it wins.
 func TestBuildSandboxGoProxy(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
@@ -578,17 +581,19 @@ func TestBuildSandboxGoProxy(t *testing.T) {
 		want      []corev1.EnvVar
 	}{
 		{name: "an in-cluster Gitea", url: "http://gitea.gitea.svc.cluster.local:3000", want: []corev1.EnvVar{
-			{Name: "GOPROXY", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/go," +
-				"https://proxy.golang.org,direct"},
+			{Name: "C4_GO_REGISTRY", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/go"},
+			{Name: "GOPROXY", Value: "http://127.0.0.1:3127,direct"},
 			{Name: "GONOSUMDB", Value: "c4factory.local"},
 		}},
 		{name: "an external Gitea", url: "https://git.example.com/", want: []corev1.EnvVar{
-			{Name: "GOPROXY", Value: "https://git.example.com/api/packages/apps/go,https://proxy.golang.org,direct"},
+			{Name: "C4_GO_REGISTRY", Value: "https://git.example.com/api/packages/apps/go"},
+			{Name: "GOPROXY", Value: "http://127.0.0.1:3127,direct"},
 			{Name: "GONOSUMDB", Value: "c4factory.local"},
 		}},
 		{name: "the Agent's own", url: "https://git.example.com", own: []corev1.EnvVar{{Name: "GOPROXY", Value: "off"}},
 			want: []corev1.EnvVar{
-				{Name: "GOPROXY", Value: "https://git.example.com/api/packages/apps/go,https://proxy.golang.org,direct"},
+				{Name: "C4_GO_REGISTRY", Value: "https://git.example.com/api/packages/apps/go"},
+				{Name: "GOPROXY", Value: "http://127.0.0.1:3127,direct"},
 				{Name: "GONOSUMDB", Value: "c4factory.local"},
 				{Name: "GOPROXY", Value: "off"},
 			}},
@@ -614,7 +619,7 @@ func TestBuildSandboxGoProxy(t *testing.T) {
 			}
 			var got []corev1.EnvVar
 			for _, e := range podOf(t, sandbox).Containers[0].Env {
-				if strings.HasPrefix(e.Name, "GO") {
+				if strings.HasPrefix(e.Name, "GO") || e.Name == "C4_GO_REGISTRY" {
 					got = append(got, e)
 				}
 			}

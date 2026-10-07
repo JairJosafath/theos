@@ -145,6 +145,49 @@ func TestGiteaGoProxyIntegration(t *testing.T) {
 			}
 		})
 	}
+
+	// What the pod's go command asks: c4agent's proxy, which sends the factory's
+	// modules to the registry and nothing of them to the public proxy, here a
+	// fake that records what it is asked.
+	t.Run("the go command fetches through c4agent's proxy", func(t *testing.T) {
+		var leaked atomic.Int32
+		public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "c4factory.local") {
+				leaked.Add(1)
+			}
+			http.NotFound(w, r)
+		}))
+		t.Cleanup(public.Close)
+		proxy, err := agentrunner.NewGoProxy(agentrunner.Job{GoRegistry: repo.GoProxy,
+			Username: bot.Username, Token: bot.Token})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if proxy.Public, err = url.Parse(public.URL); err != nil {
+			t.Fatal(err)
+		}
+		local := httptest.NewServer(proxy)
+		t.Cleanup(local.Close)
+		home := t.TempDir()
+		goCmd := func(args ...string) (string, error) {
+			cmd := exec.CommandContext(ctx, goBin, args...)
+			cmd.Dir = home
+			cmd.Env = append(os.Environ(), "HOME="+home, "GOPROXY="+local.URL+",off",
+				"GONOSUMDB=c4factory.local", "GOMODCACHE="+filepath.Join(home, "mod"), "GOFLAGS=-modcacherw",
+				"GOTOOLCHAIN=local", "GOWORK=off", "GO111MODULE=on")
+			out, err := cmd.CombinedOutput()
+			return string(out), err
+		}
+		if out, err := goCmd("mod", "download", "-json", module+"@v0.1.0"); err != nil {
+			t.Fatalf("go mod download %s@v0.1.0: %v\n%s", module, err, out)
+		}
+		if out, err := goCmd("mod", "download", module+"-missing@v0.1.0"); err == nil {
+			t.Errorf("a missing module was found:\n%s", out)
+		}
+		if n := leaked.Load(); n != 0 {
+			t.Errorf("the public proxy was asked %d times for a factory module", n)
+		}
+	})
 }
 
 // putModule uploads a module zip of module at version to a Gitea Go registry.

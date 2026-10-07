@@ -93,7 +93,7 @@ test: manifests generate fmt vet setup-envtest install-helm ## Run tests.
 # The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
 # calls, so none needs a cluster or the network. make check runs them.
 .PHONY: test-hack
-test-hack: ## Run the shell tests of the scripts in hack/.
+test-hack: install-helm ## Run the shell tests of the scripts in hack/.
 	@hack/test-hack.sh
 
 # The e2e tests run against the dedicated Kind cluster $(KIND_CLUSTER), never
@@ -140,11 +140,12 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 # (hack/validate-yaml.sh): samples, e2e fixtures, the kustomize builds, the chart
 # renders of helm-lint, the seed and session manifests and a rendered repository.
 .PHONY: validate-yaml
-validate-yaml: manifests kustomize kubectl-validate k8s-openapi helm-lint ## Validate the YAML against the built-in schemas and our CRDs, offline, and check the chart's CRDs and manager role match them.
+validate-yaml: manifests kustomize kubectl-validate k8s-openapi helm-lint ## Validate the YAML against the built-in schemas and our CRDs, offline, and check the chart's CRDs and manager role match them and its manager keeps what make chart drops.
 	@KUBECTL_VALIDATE="$(KUBECTL_VALIDATE)" KUSTOMIZE="$(KUSTOMIZE)" K8S_OPENAPI="$(K8S_OPENAPI)" \
 		KUBECTL_VALIDATE_K8S_VERSION="$(KUBECTL_VALIDATE_K8S_VERSION)" OUT="$(YAML_OUT)" hack/validate-yaml.sh
 	@hack/chart-crds.sh
 	@hack/chart-role.sh
+	@hack/chart-manager.sh "$(YAML_OUT)/chart-gitea.yaml"
 
 ##@ Build
 
@@ -400,9 +401,18 @@ gh-runner-status: ## Show the GitHub Actions runners' containers and their statu
 # The chart is dist/chart, generated from dist/install.yaml by kubebuilder's helm
 # plugin. Its templates/ui/, templates/gitea/, templates/gitprovider/ and values.yaml are written
 # by hand and survive a regeneration (docs/plans/done/helm-chart.md).
+## The chart's manager template, kept by hand: the plugin regenerates it
+## without the /tmp mount, POD_NAMESPACE and the shared Secrets, so make chart
+## restores it, and make validate-yaml checks them (hack/chart-manager.sh, #543).
+CHART_MANAGER ?= $(HELM_CHART_DIR)/templates/manager/manager.yaml
+
 .PHONY: chart
-chart: ## Regenerate the Helm chart in dist/chart from the kustomize output.
+chart: ## Regenerate the Helm chart in dist/chart from the kustomize output, keeping its manager template.
+	@mkdir -p "$(YAML_OUT)" && cp "$(CHART_MANAGER)" "$(YAML_OUT)/manager.kept.yaml"
 	kubebuilder edit --plugins=helm.kubebuilder.io/v2-alpha
+	@if ! diff -u --label kept --label plugin "$(YAML_OUT)/manager.kept.yaml" "$(CHART_MANAGER)" >"$(YAML_OUT)/manager.plugin.diff"; then \
+		cp "$(YAML_OUT)/manager.kept.yaml" "$(CHART_MANAGER)"; \
+		echo "make chart kept $(CHART_MANAGER); what the plugin would change is in $(YAML_OUT)/manager.plugin.diff, port what applies by hand"; fi
 
 ## Every option of the chart on, for the check that it renders no Secret.
 HELM_ALL_ON ?= gitea.projects={apps},gitea.admin.existingSecret=gitea-admin,global.imagePullSecrets[0].name=ghcr,manager.imagePullSecrets[0].name=ghcr,gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].existingSecret=git-credentials,rbac.helpers.enabled=true,certManager.enabled=true,webhook.enabled=true,prometheus.enabled=true,networkPolicy.enabled=true,ui.allowedHosts={factory.example.com}
@@ -419,7 +429,7 @@ helm-lint: install-helm ## Lint the Helm chart, render it without Gitea, with it
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
 		--set 'gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >"$(YAML_OUT)/chart-gitea.yaml"
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
-		--set 'gitea.projects={apps},catalog.enabled=false,agents.enabled=false' >"$(YAML_OUT)/chart-gitea-bare.yaml"
+		--set 'gitea.projects={apps},catalog.enabled=false,agents.enabled=false,projectNamespaces.create=false' >"$(YAML_OUT)/chart-gitea-bare.yaml"
 	@if $(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --set 'gitea.projects={apps},agents.reviewer.model=claude-fable-5-1' >/dev/null 2>&1; then \
 		echo "helm template renders an Agent on a Fable model; the chart must refuse it"; exit 1; fi
 	@set -o pipefail; for set in '$(HELM_ALL_ON)' 'gitea.projects={apps}'; do \

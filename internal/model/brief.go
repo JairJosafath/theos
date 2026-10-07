@@ -730,9 +730,11 @@ func checkPlanIssue(plan Plan, current CurrentModel, issue PlanIssue, refuse fun
 }
 
 // checkAfter refuses an after: that names no issue of the plan, the issue
-// itself, a number two issues share, a design idea, a number twice or more
-// than MaxPlanIssues issues; and a design idea that has an after:. A design
-// idea goes to a designer, not a Crew's Task, and no merge closes it.
+// itself, a number two issues share, a design idea, a by-hand issue, a number
+// twice or more than MaxPlanIssues issues; and a design idea that has an
+// after:. A design idea goes to a designer and a by-hand issue to a person,
+// not a Crew's Task, so no merge closes them. A by-hand issue may wait on
+// agents' work: the screenshot of a screen once the screen is built.
 func checkAfter(plan Plan, issue PlanIssue, refuse func(string, string, ...any)) {
 	if len(issue.After) == 0 {
 		return
@@ -766,6 +768,9 @@ func checkAfter(plan Plan, issue PlanIssue, refuse func(string, string, ...any))
 		case slices.Contains(blockers[0].Labels, LabelDesign):
 			refuse(issue.File, "after: names %d, a design idea (%s); nothing waits on a design idea, "+
 				"since no merge closes it", n, LabelDesign)
+		case IsByHand(blockers[0].Labels):
+			refuse(issue.File, "after: names %d, a person's work (%s); nothing waits on it, "+
+				"since no Task merges it", n, LabelByHand)
 		}
 	}
 }

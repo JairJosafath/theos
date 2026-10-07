@@ -212,13 +212,20 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
 
 An app's Go module path is `c4factory.local/<project>/<container>` (the Go
 templates' `go.mod`), which no public proxy knows. Agent sandboxes of a
-Container's Tasks get `GOPROXY=<gitea>/api/packages/<owner>/go,https://proxy.golang.org,direct`
-and `GONOSUMDB=c4factory.local` (`buildSandbox`, from the GitProvider's URL
-and owner through `gitprovider.Repository.GoProxy`); c4agent writes `~/.netrc`
-for the Git host from its Git credentials, and the bot's token can read the
-owner's packages (`gitprovider.AgentTokenScopes`). go-standard's CI does the
-same with the job's token. A module Gitea lacks is a 404, and the go command
-goes on to the public proxy. [plans/app-modules.md](plans/app-modules.md) has why.
+Container's Tasks get `C4_GO_REGISTRY=<gitea>/api/packages/<owner>/go`,
+`GOPROXY=http://127.0.0.1:3127,direct` and `GONOSUMDB=c4factory.local`
+(`buildSandbox`, from the GitProvider's URL and owner through
+`gitprovider.Repository.GoProxy`). c4agent serves `agentrunner.GoProxy` there
+while the agent works: `c4factory.local/` paths go to the registry and nowhere
+else, with the bot's credentials over https (`gitprovider.AgentTokenScopes`
+lets it read the owner's packages), and every other path to
+proxy.golang.org. The go command has no per-path proxy, and with a list of
+the registry, then the public proxy, it would ask the public proxy for a
+factory module the registry lacks (it goes on after a 404), leaking the
+project's and Container's names. go-standard's CI (v1.1.5) downloads the
+`c4factory.local/` modules of `go.sum` with `GOPROXY` set to the registry
+alone, then runs `make check` with `GOPRIVATE=c4factory.local`, so no proxy is
+asked for them. [plans/app-modules.md](plans/app-modules.md) has why.
 
 ## Go build caches
 

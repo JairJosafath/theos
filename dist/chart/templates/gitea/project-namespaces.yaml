@@ -1,0 +1,26 @@
+{{- if and .Values.gitea.enabled .Values.projectNamespaces.create }}
+{{- $skip := list .Release.Namespace (include "c4-factory.giteaNamespace" .) }}
+{{- range .Values.gitea.projects | uniq }}
+{{- if not (has . $skip) }}
+{{- $existing := lookup "v1" "Namespace" "" . }}
+{{- $annotations := dig "metadata" "annotations" (dict) $existing }}
+{{- $ours := and (eq (get $annotations "meta.helm.sh/release-name") $.Release.Name) (eq (get $annotations "meta.helm.sh/release-namespace") $.Release.Namespace) }}
+{{- if or (not $existing) $ours }}
+---
+# The namespace of project {{ . }}. Kept on uninstall: it holds the project's model
+# and Briefs. Rendered only when it is missing or already this release's: Helm
+# won't take over one made by hand (v0.5.0), so the seed labels that one. The
+# label opts it in to the Secrets the operator shares (--shared-secret).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "project" "context" $) | nindent 4 }}
+    c4.factory.io/shared-secrets: "true"
+  annotations:
+    helm.sh/resource-policy: keep
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

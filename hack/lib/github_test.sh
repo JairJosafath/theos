@@ -6,9 +6,10 @@
 # created, --fresh recreating only the cluster it leased, a bare cluster taken last and recreated; release on handoff, close and release, and kept when marking, handing off or closing another issue),
 # for flush releasing the claim of the handoff it posts,
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
+# for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -546,6 +547,97 @@ check "intake leaves the report issue alone" "$(calls)" ""
   exit $fail
 ) || fail=1
 
+# Labels: GitHub refuses a description longer than 100 characters.
+long=$(for l in "${GH_LABELS[@]}"; do d=${l#*|}; d=${d#*|}; [ ${#d} -le 100 ] || echo "${l%%|*}"; done)
+check "labels: descriptions fit GitHub's 100 characters" "$long" ""
+
+# parents: a plan's parent (in progress or waiting, Depends on #S per step, a
+# merged pull request that says Refs #N and adds its plan in docs/plans/)
+# closes with a comment once every step closed; one with a step open stays
+# open and, unclaimed, goes to status/waiting; Depends on lines without a
+# merged plan close nothing. pick skips a waiting parent, and blocked tells it
+# apart from an issue an agent works.
+(
+  : >"$T/calls"
+  gh_set_status() { real_set_status "$@"; }
+  # timeline N: merged (M) or open (O) pull requests P that say Refs #N.
+  xref() { local n=$1 out= x; shift; for x; do out+="${out:+,}{\"event\":\"cross-referenced\",\"source\":{\"issue\":{\"number\":${x#?},\"body\":\"Plan.\\nRefs #$n\",\"pull_request\":{\"merged_at\":$([ "${x:0:1}" = M ] && echo '"t"' || echo null)}}}}"; done; echo "[[{\"event\":\"labeled\"},$out]]"; }
+  gh_api() {
+    local url= a m=GET in=
+    for a in "$@"; do case $a in repos/*) url=$a ;; PATCH | POST | DELETE) m=$a ;; esac; done
+    [ "$m" = GET ] || echo "$m $url" >>"$T/calls"
+    [[ " $* " != *" --input - "* ]] || in=$(jq -r '.body // empty')
+    case "$m $url" in
+      "GET $R/issues?state=open"*) echo "$OPEN" ;;
+      "GET $R/issues/comments?since"*) echo "${CLAIMS:-[[]]}" ;;
+      "GET $R/issues/120/timeline"*) xref 120 M130 ;;
+      "GET $R/issues/"12[389]/timeline* | "GET $R/issues/"14[024]/timeline*) a=${url#*issues/}; xref "${a%%/*}" M131 ;;
+      "GET $R/issues/126/timeline"*) xref 126 O132 M133 ;;
+      "GET $R/issues/"*/timeline*) echo '[[]]' ;;
+      "GET $R/pulls/"13[01]/files*) printf 'docs/plans/p.md\nhack/x.sh\n' ;;
+      "GET $R/pulls/"*/files*) echo hack/x.sh ;;
+      "GET $R/issues/"12[1257]) echo "closed completed" ;;
+      "GET $R/issues/141") echo "closed not_planned" ;;
+      "GET $R/issues/143") return 1 ;;
+      "GET $R/issues/"*/labels*) echo status/in-progress ;;
+      "GET $R/issues/"[0-9]*) echo open ;;
+      "POST $R/issues/"*/comments) a=${url#*issues/}; echo "$in" >"$T/comment-${a%%/*}"; echo "https://x/c" ;;
+      "PATCH $R/issues/"*) echo "closed #${url##*/}" ;;
+    esac
+  }
+  R=repos/$C4_GITHUB_REPO
+  plans='[[120, ["status/in-progress"], "Plan: docs/plans/p.md\nDepends on #121\nDepends on #122"],
+    [123, ["status/in-progress"], "Depends on #124\nDepends on #125"], [124, ["status/ready"]],
+    [126, ["status/in-progress"], "Depends on #127"],
+    [128, ["status/waiting"], "Depends on #124"],
+    [129, ["status/in-progress"], "Depends on #124"]]'
+  export OPEN; OPEN=$(issues <<<"$plans")
+  check "parents: what each does" "$(gh_parents)" "#120 closes: its steps #121, #122 closed; plan #130
+#123 waits on #124 (of #124, #125; plan #131)
+#128 waits on #124 (of #124; plan #131)
+#129 waits on #124 (of #124; plan #131)"
+  check "parents: asking changes nothing" "$(cat "$T/calls")" ""
+  out=$(CLAIMS=$(claimed 129) gh_parents --apply 2>&1)
+  check "parents --apply: closes the finished one, marks the waiting one" "$out" "#120 closed: its steps #121, #122 closed; plan #130
+#123 to status/waiting: waits on #124 (of #124, #125; plan #131)"
+  check "parents --apply: the close comment names the steps" "$(cat "$T/comment-120")" "<!-- relay-parent -->
+Its steps #121, #122 are all closed and its plan's pull request #130 merged: nothing it waits on is left, so the relay closes it."
+  check "parents --apply: the waiting comment names the steps left" "$(sed -n 2p "$T/comment-123")" "Waiting on its steps, not on an agent: #124 still open (of #124, #125). Its plan's pull request #131 merged, so it is status/waiting: pick skips it, and it closes itself when its last step closes."
+  check "parents --apply: what it changed" "$(cat "$T/calls")" "POST $R/issues/120/comments
+PATCH $R/issues/120
+DELETE $R/issues/120/labels/status%2Fin-progress
+POST $R/issues/123/comments
+DELETE $R/issues/123/labels/status%2Fin-progress
+POST $R/issues/123/labels"
+  : >"$T/calls"
+  check "parents --apply M: only M's parents" "$(gh_parents --apply 125 2>&1)" "#123 to status/waiting: waits on #124 (of #124, #125; plan #131)"
+  check "parents --apply M: a step without parents" "$(gh_parents --apply 999 2>&1)" ""
+  check "parents --apply M: a plain wait closes nothing" "$(gh_parents --apply 127 2>&1)$(grep -c 126 "$T/calls")" "0"
+  gh_parents --bogus 2>/dev/null; check "parents, bad argument" $? 1
+  # Not closed: a step closed as not planned, a step GitHub can't show, a
+  # parent its plan's session still holds.
+  : >"$T/calls"
+  odd=$(issues <<<'[[140, ["status/in-progress"], "Depends on #141"], [142, ["status/in-progress"], "Depends on #143"],
+    [144, ["status/in-progress"], "Depends on #121"]]')
+  out=$(OPEN=$odd CLAIMS=$(claimed 140 142 144) gh_parents --apply 2>"$T/err")
+  check "parents --apply: not planned, missing or held stays open" "$? $out | $(cat "$T/calls")" "0  | "
+  check "parents --apply: says which step it could not see" "$(cat "$T/err")" "github: #142 depends on #143, which GitHub could not show; #142 stays open"
+  check "parents: lists them as waiting" "$(OPEN=$odd gh_parents 2>/dev/null)" "#140 waits on #141 (of #141; plan #131)
+#142 waits on #143 (of #143; plan #131)
+#144 closes: its steps #121 closed; plan #131"
+  # close tends the parents of the issue it closed.
+  : >"$T/calls"
+  echo landed | gh_close 122 - >/dev/null 2>&1
+  check "close closes the parent its last step finishes" "$(grep -c "PATCH $R/issues/120" "$T/calls")" 1
+  # A waiting parent: pick skips it, even with its steps closed; blocked lists
+  # the in-progress one and not the waiting one.
+  check "pick skips a waiting parent" "$(OPEN=$(jq -c '[[.[][] | select(.number == 128) | .body = ""]]' <<<"$OPEN") gh_pick; echo $?)" 1
+  waiting=$(issues <<<'[[123, ["status/waiting"], "Depends on #124"], [124, ["status/ready"]], [129, ["status/in-progress"], "Depends on #124"]]')
+  check "blocked tells a waiting parent from a worked one" "$(OPEN=$waiting gh_blocked | cut -d' ' -f1-4)" "129 waits on 124"
+  real_set_status 123 bogus 2>/dev/null; check "status waiting is known, bogus not" "$?$(real_set_status 123 waiting >/dev/null 2>&1; echo $?)" 10
+  exit $fail
+) || fail=1
+
 # milestone: sets an issue's milestone by the open milestone's title, clears it
 # without one, and refuses a title no open milestone has; milestones lists them.
 (
@@ -568,6 +660,33 @@ check "intake leaves the report issue alone" "$(calls)" ""
   check "milestone: an unknown title fails and sets nothing" "$? $out | $(calls | grep -c PATCH)" '1 github: no open milestone is titled "Upgrades"; open: Briefs, 1.0: a stable API | 0'
   check "milestones: title, open, closed, due" "$(gh_milestones)" "Briefs	3	2	2026-10-09
 1.0: a stable API	0	0	"
+  exit $fail
+) || fail=1
+# merge refuses a plan's pull request that would close the parent it refers to.
+(
+  # PR is the pull request GraphQL shows: body, closing references, commit messages.
+  gh_api() { [ "$1" = graphql ] || return 1; echo "$PR"; }
+  gh_token() { :; }
+  gh() { echo "gh $*" >>"$T/merged"; }
+  pr() { jq -n --arg b "$1" --argjson c "${2:-[]}" --arg m "${3:-feat: plan}" \
+    '{body: $b, closingIssuesReferences: {nodes: [$c[] | {number: .}]}, commits: {nodes: [{commit: {message: $m}}]}}'; }
+  rm -f "$T/merged"
+  out=$(PR=$(pr $'Refs #7\n\n#9 (the prompt path; its PR closes #7)' '[7]') gh_merge 12 2>&1)
+  check "merge: refuses Refs #7 plus prose that closes #7" "$? $(cat "$T/merged" 2>/dev/null)" "1 "
+  check "merge: names the phrase to reword" "$out" 'github: #12 says Refs #7, but "closes #7" in it closes #7 on merge; reword it (no close, fix or resolve word before #7)'
+  out=$(PR=$(pr $'Refs #7\n\nFixed: o/r#7 in step two' '[]') gh_merge 12 2>&1)
+  check "merge: any closing word, colon and OWNER/REPO#N too" "$? $out" '1 github: #12 says Refs #7, but "Fixed: o/r#7" in it closes #7 on merge; reword it (no close, fix or resolve word before #7)'
+  out=$(PR=$(pr 'Refs #7' '[]' $'docs: plan\n\nresolves #7') gh_merge 12 2>&1)
+  check "merge: a commit message counts" "$? $out" '1 github: #12 says Refs #7, but "resolves #7" in it closes #7 on merge; reword it (no close, fix or resolve word before #7)'
+  out=$(PR=$(pr 'Refs #7, see https://github.com/o/r/issues/7' '[7]') gh_merge 12 2>&1)
+  check "merge: closingIssuesReferences alone refuses" "$? $out" '1 github: #12 says Refs #7, but GitHub would close #7 on merge (closingIssuesReferences); drop the link or the closing word before it'
+  check "merge: nothing merged while refused" "$(cat "$T/merged" 2>/dev/null)" ""
+  out=$(PR=$(pr $'Refs #7\n\nSteps: #8 (finishes #7), #9; closes #70' '[70]') gh_merge 12 2>&1)
+  check "merge: only Refs #7 merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 12 --repo $C4_GITHUB_REPO --merge"
+  rm -f "$T/merged"
+  out=$(PR=$(pr 'Closes #565' '[565]') gh_merge 13 2>&1)
+  check "merge: a step's Closes #N merges" "$? $(cat "$T/merged")" "0 gh pr merge 13 --repo $C4_GITHUB_REPO --merge"
+  gh_merge abc 2>/dev/null; check "merge: bad argument" $? 1
   exit $fail
 ) || fail=1
 exit $fail
