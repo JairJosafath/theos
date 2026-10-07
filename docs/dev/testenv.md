@@ -120,7 +120,7 @@ After `make deploy`, `make claude-secret` stores it as Secret
 operator's namespace) of the leased cluster, without the token in its argv or
 transcript. The test environment shares it like the release: `config/manager`
 runs the operator with `--shared-secret=claude-credentials` and `POD_NAMESPACE`,
-and the operator copies the Secret into every namespace that has a Project and
+and the operator copies the Secret into every namespace with
 the label `c4.factory.io/shared-secrets: "true"`, keeping each copy in step
 with it. `make seed` labels `webshop` and `apps`, and the webshop sample and
 the e2e fixture label theirs, so one Secret serves every project; a rotated

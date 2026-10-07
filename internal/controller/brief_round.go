@@ -194,7 +194,8 @@ func (r *BriefReconciler) needAgents(ctx context.Context, brief *c4v1alpha1.Brie
 // missingAgentSecret returns errNeedsInput saying where to give Agent name's
 // missing token Secret: in the project namespace, or, when the operator shares
 // a Secret of that name, once in its own namespace for every project, naming
-// the label the project namespace needs when it hasn't opted in.
+// the label the project namespace needs when it hasn't opted in. When the
+// source is there, it says the copy is on its way.
 func (r *BriefReconciler) missingAgentSecret(ctx context.Context, namespace, secret, name, role string) error {
 	if r.SourceNamespace == "" || !slices.Contains(r.SharedSecrets, secret) {
 		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s with the "+
@@ -208,6 +209,16 @@ func (r *BriefReconciler) missingAgentSecret(ctx context.Context, namespace, sec
 		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: label namespace %s %s=%s, so the "+
 			"factory shares it from namespace %s, or make it in %s for this project only",
 			secret, name, namespace, c4v1alpha1.LabelSharedSecrets, sharedSecretsOptIn, r.SourceNamespace, namespace)}
+	}
+	// The Project reconciler copies it in, Project or not; a source that is
+	// there is a copy on its way.
+	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: r.SourceNamespace, Name: secret}, &corev1.Secret{})
+	if err == nil {
+		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is not in namespace %s yet: the factory is "+
+			"copying it from namespace %s, so the Brief's %s can start", secret, name, namespace, r.SourceNamespace, role)}
+	}
+	if !apierrors.IsNotFound(err) {
+		return err
 	}
 	return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s, which the "+
 		"factory shares with every project, or in %s for this project only", secret, name, r.SourceNamespace, namespace)}
