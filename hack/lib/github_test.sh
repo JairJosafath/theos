@@ -547,6 +547,10 @@ check "intake leaves the report issue alone" "$(calls)" ""
   exit $fail
 ) || fail=1
 
+# Labels: GitHub refuses a description longer than 100 characters.
+long=$(for l in "${GH_LABELS[@]}"; do d=${l#*|}; d=${d#*|}; [ ${#d} -le 100 ] || echo "${l%%|*}"; done)
+check "labels: descriptions fit GitHub's 100 characters" "$long" ""
+
 # parents: a plan's parent (in progress or waiting, Depends on #S per step, a
 # merged pull request that says Refs #N and adds its plan in docs/plans/)
 # closes with a comment once every step closed; one with a step open stays
