@@ -32,6 +32,12 @@
 # blocked --unworked), and reports issues that wait on each other in a cycle:
 # a comment on each, the newest to status/needs-maintainer (cycles --report).
 #
+# Every WATCH_PARENTS seconds (default 600; 0 turns it off), busy or idle, it
+# tends the plans' parents (hack/lib/github.sh parents --apply): one whose
+# steps all closed is closed, one in progress that waits on its steps goes to
+# status/waiting. close and the Issue closed workflow do it as each step
+# closes; the watch catches the ones they missed, while the relay was down.
+#
 # Every WATCH_CI_EVERY seconds (default 900) it checks main's CI: each
 # workflow in .github/workflows that runs on a push to main and whose two
 # newest finished runs on main failed (hack/lib/github.sh red) gets an issue
@@ -103,6 +109,7 @@ PULL_EVERY=${WATCH_PULL_EVERY:-300}
 CI_EVERY=${WATCH_CI_EVERY:-900}
 TRIM_EVERY=${WATCH_TRIM_EVERY:-1800}
 MAINTAIN_EVERY=${WATCH_MAINTAIN:-7200}
+PARENTS_EVERY=${WATCH_PARENTS:-600}
 
 WORKERS=1 MODE=start
 while [ $# -gt 0 ]; do
@@ -130,12 +137,13 @@ worker_free() {
 # maintaining: whether the maintainer runs (it holds its lock).
 maintaining() { [ -e "$DIR/maintain.lock" ] && ! flock -n "$DIR/maintain.lock" true; }
 
-# pick_next, proposed, blocked, cycles, activity, escalated, run_relay,
+# pick_next, proposed, blocked, cycles, parents, activity, escalated, run_relay,
 # run_triage, run_maintain and trim_caches:
 # what the watch asks and starts (faked in the tests).
 pick_next() { "$REPO/hack/lib/github.sh" pick; }
 blocked() { "$REPO/hack/lib/github.sh" blocked --unworked; }
 cycles() { "$REPO/hack/lib/github.sh" cycles --report; }
+parents() { "$REPO/hack/lib/github.sh" parents --apply; }
 proposed() { "$REPO/hack/lib/github.sh" proposed; }
 run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { "$REPO/hack/relay.sh" --triage --workers "$WORKERS"; }
@@ -154,6 +162,26 @@ trim() {
   out=$(trim_caches 2>&1 8>&-)
   [ -n "$out" ] && log "${out//$'\n'/; }"
   return 0
+}
+
+# tend NOW: when the last look is PARENTS_EVERY seconds old, close the plans'
+# parents whose steps all closed and mark the waiting ones (parents --apply),
+# logging what it did; a failure is logged once until it works again.
+TEND_T=0 TEND_ERR=
+tend() {
+  local out rc
+  [ "$PARENTS_EVERY" -gt 0 ] && [ $(($1 - TEND_T)) -ge "$PARENTS_EVERY" ] || return 0
+  TEND_T=$1
+  out=$(parents 2>&1 8>&-)
+  rc=$?
+  if [ "$rc" != 0 ]; then
+    [ -n "$TEND_ERR" ] || log "could not tend the plans' parents (parents --apply, exit $rc): ${out//$'\n'/; }"
+    TEND_ERR=1
+    return 0
+  fi
+  TEND_ERR=
+  out=$(grep -Ev '^#[0-9]+ waits on ' <<<"$out")
+  [ -z "$out" ] || log "plans' parents: ${out//$'\n'/; }"
 }
 
 github() { "$REPO/hack/lib/github.sh" "$@"; }
@@ -402,6 +430,7 @@ round() {
     return 0
   fi
   maintain "$now"
+  tend "$now"
   worker_free || { SAID=busy; return 0; }
   row=$(pick_next 2>&1)
   rc=$?

@@ -97,7 +97,8 @@ carries.
    - The relay: errors and pauses in `.relay/watch.log` and `.relay/relay-*.log`
      (`tail`, `grep`; never whole files), and in `.relay/paused-until`.
    - Claims: stale ones in `hack/lib/github.sh claims`, issues in progress
-     with no activity for 6 hours, and the same issue failing session after
+     with no activity for 6 hours (a `status/waiting` parent is not stale: it
+     waits on its steps, which `hack/lib/github.sh parents` lists), and the same issue failing session after
      session. Fix what you can and file the rest.
 7. **Hygiene**
    ([Kubernetes triage](https://www.kubernetes.dev/docs/guide/issue-triage/)):
