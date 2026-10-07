@@ -37,7 +37,7 @@ GITEA_PORT ?= $(if $(filter c4factory-%,$(KIND_CLUSTER)),$(shell \
 
 .PHONY: cluster
 cluster: ## Create the Kind cluster (hack/kind.yaml) if it does not exist.
-	@if $(KIND) get clusters 2>/dev/null | grep -qx '$(KIND_CLUSTER)'; then \
+	@if $(KIND) get clusters 2>/dev/null | grep -x '$(KIND_CLUSTER)' >/dev/null; then \
 		echo "Kind cluster '$(KIND_CLUSTER)' already exists"; \
 	else \
 		hack/kind.sh keep-context $(KIND) create cluster --name '$(KIND_CLUSTER)' --config hack/kind.yaml --wait 120s; \

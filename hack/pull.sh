@@ -68,7 +68,7 @@ pull() {
 
 # pull_once: fetch, then fast-forward main if it is safe.
 pull_once() {
-  local before remote branch n
+  local before remote branch n worktrees
   if ! timeout 60 git fetch -q --prune origin 2>/dev/null; then
     say "could not fetch origin; main left as it is"
     return 1
@@ -98,7 +98,13 @@ pull_once() {
       say "could not fast-forward main (untracked files in the way?); left alone"
       return 0
     fi
-  elif git worktree list --porcelain | grep -qx 'branch refs/heads/main'; then
+  elif ! worktrees=$(git worktree list --porcelain); then
+    say "could not list the worktrees; main left alone"
+    return 0
+  elif grep -qx 'branch refs/heads/main' <<<"$worktrees"; then
+    # Read whole first: grep -q on git's pipe can exit while git still writes
+    # (one write per 64 KiB, so many worktrees), and pipefail turns its
+    # SIGPIPE into a "no".
     say "main is checked out in another worktree; its own pull moves it"
     return 0
   elif rebasing_main; then

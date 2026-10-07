@@ -33,7 +33,9 @@ case "$1" in
     case "$3" in *rev*) cat "$S/containers/$c" ;; *StartedAt*) echo 2026-10-07T00:00:00Z ;; esac ;;
   stop|start) [ -e "$S/containers/$2" ] ;;
   rm) rm "$S/containers/$2" ;;
-  logs) echo "Listening for Jobs" ;;
+  # More than a pipe holds after the line: a grep -q on its pipe would exit
+  # early and, under the script's pipefail, read a "no".
+  logs) echo "Listening for Jobs"; seq 100000 ;;
   run)
     shift
     detach=false name= vol= rname= rlabels=
@@ -81,6 +83,8 @@ esac
 FAKE
 
 printf '#!/bin/sh\necho 999\n' >"$T/bin/stat"
+# sleep only records: up waits on a runner that does not show as online.
+printf '#!/bin/sh\necho "$*" >>"$S/slept"\n' >"$T/bin/sleep"
 chmod +x "$T/bin/"*
 
 gh_runner() { PATH="$T/bin:$PATH" GH_RUNNER_NAME=c4factory-dev GH_RUNNER_WORK="$T/work" "$SCRIPT" "$@"; }
@@ -98,6 +102,7 @@ check "up 3: registrations" "$(regs)" "c4factory-dev-1 c4factory,c4factory-kind;
 check "up 3: work directories" "$(ls "$T/work" | paste -sd' ')" "1 2 3"
 check "up 3: one shared cache" "$(ls "$S/volumes" | grep -c '^c4factory-gh-runner-cache$')" 1
 check "up 3: status says all online" "$(grep -c ' online ' "$T/out")" 3
+check "up 3: no wait for a runner that listens" "$(cat "$S/slept" 2>/dev/null)" ""
 
 # Again: nothing registers again or restarts.
 RUNNERS=3 gh_runner up >"$T/out" 2>&1
