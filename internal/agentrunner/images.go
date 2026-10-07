@@ -54,7 +54,7 @@ func (r *repo) changedImages(ctx context.Context, base string) ([]ChangedImage, 
 		return nil, err
 	}
 	var images []ChangedImage
-	for _, path := range strings.Split(out, "\x00") {
+	for path := range strings.SplitSeq(out, "\x00") {
 		if path == "" || !isImage(path) {
 			continue
 		}
