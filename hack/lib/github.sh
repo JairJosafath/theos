@@ -374,12 +374,30 @@ gh_parents() {
     [ -n "$pr" ] || continue
     steps=$(sed 's/[0-9][0-9]*/#&/g; s/ /, /g' <<<"$all")
     if [ -z "$left" ]; then
-      # Not among the open issues: closed, or a pull request; ask each.
+      # Not among the open issues: closed, or a pull request; ask each. A step
+      # closed as not planned (a duplicate) did not finish the plan, and one
+      # GitHub can't answer for (no such issue) keeps the parent open too.
       for d in $all; do
-        says=$(gh_api "repos/$C4_GITHUB_REPO/issues/$d" --jq .state) || return 2
-        [ "$says" = closed ] || left+=" $d"
+        if ! says=$(gh_api "repos/$C4_GITHUB_REPO/issues/$d" --jq '"\(.state) \(.state_reason // "")"' 2>/dev/null); then
+          echo "github: #$n depends on #$d, which GitHub could not show; #$n stays open" >&2
+          left+=" $d"
+          continue
+        fi
+        [[ $says == closed* && $says != "closed not_planned" ]] || left+=" $d"
       done
       left=${left# }
+    fi
+    # An agent that still holds it (the plan's own session, before its
+    # handoff) keeps it as it is.
+    if $apply && { [ -z "$left" ] || [ "$st" = in-progress ]; }; then
+      if [ -z "$claims" ]; then
+        ttl=$(gh_ttl) || return 2
+        claims=$(gh_recent_claims "$ttl") || return 2
+      fi
+      if jq -e --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson n "$n" "$GH_CLAIM_JQ"'
+        any(.[]; live and .issue == $n)' <<<"$claims" >/dev/null; then
+        continue
+      fi
     fi
     if [ -z "$left" ]; then
       if $apply; then
@@ -397,14 +415,6 @@ gh_parents() {
       echo "#$n waits on $open (of $steps; plan #$pr)"
       continue
     fi
-    # In progress: an agent that still holds it (the plan's own session,
-    # before its handoff) keeps it.
-    if [ -z "$claims" ]; then
-      ttl=$(gh_ttl) || return 2
-      claims=$(gh_recent_claims "$ttl") || return 2
-    fi
-    jq -e --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson n "$n" "$GH_CLAIM_JQ"'
-      any(.[]; live and .issue == $n)' <<<"$claims" >/dev/null && continue
     printf '%s\n%s\n' "$GH_PARENT_MARKER" \
       "Waiting on its steps, not on an agent: $open still open (of $steps). Its plan's pull request #$pr merged, so it is status/waiting: pick skips it, and it closes itself when its last step closes." |
       gh_comment "$n" - >/dev/null || return 2

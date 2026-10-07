@@ -567,12 +567,14 @@ check "intake leaves the report issue alone" "$(calls)" ""
       "GET $R/issues?state=open"*) echo "$OPEN" ;;
       "GET $R/issues/comments?since"*) echo "${CLAIMS:-[[]]}" ;;
       "GET $R/issues/120/timeline"*) xref 120 M130 ;;
-      "GET $R/issues/"12[389]/timeline*) a=${url#*issues/}; xref "${a%%/*}" M131 ;;
+      "GET $R/issues/"12[389]/timeline* | "GET $R/issues/"14[024]/timeline*) a=${url#*issues/}; xref "${a%%/*}" M131 ;;
       "GET $R/issues/126/timeline"*) xref 126 O132 M133 ;;
       "GET $R/issues/"*/timeline*) echo '[[]]' ;;
       "GET $R/pulls/"13[01]/files*) printf 'docs/plans/p.md\nhack/x.sh\n' ;;
       "GET $R/pulls/"*/files*) echo hack/x.sh ;;
-      "GET $R/issues/"12[1257]) echo closed ;;
+      "GET $R/issues/"12[1257]) echo "closed completed" ;;
+      "GET $R/issues/141") echo "closed not_planned" ;;
+      "GET $R/issues/143") return 1 ;;
       "GET $R/issues/"*/labels*) echo status/in-progress ;;
       "GET $R/issues/"[0-9]*) echo open ;;
       "POST $R/issues/"*/comments) a=${url#*issues/}; echo "$in" >"$T/comment-${a%%/*}"; echo "https://x/c" ;;
@@ -608,6 +610,17 @@ POST $R/issues/123/labels"
   check "parents --apply M: a step without parents" "$(gh_parents --apply 999 2>&1)" ""
   check "parents --apply M: a plain wait closes nothing" "$(gh_parents --apply 127 2>&1)$(grep -c 126 "$T/calls")" "0"
   gh_parents --bogus 2>/dev/null; check "parents, bad argument" $? 1
+  # Not closed: a step closed as not planned, a step GitHub can't show, a
+  # parent its plan's session still holds.
+  : >"$T/calls"
+  odd=$(issues <<<'[[140, ["status/in-progress"], "Depends on #141"], [142, ["status/in-progress"], "Depends on #143"],
+    [144, ["status/in-progress"], "Depends on #121"]]')
+  out=$(OPEN=$odd CLAIMS=$(claimed 140 142 144) gh_parents --apply 2>"$T/err")
+  check "parents --apply: not planned, missing or held stays open" "$? $out | $(cat "$T/calls")" "0  | "
+  check "parents --apply: says which step it could not see" "$(cat "$T/err")" "github: #142 depends on #143, which GitHub could not show; #142 stays open"
+  check "parents: lists them as waiting" "$(OPEN=$odd gh_parents 2>/dev/null)" "#140 waits on #141 (of #141; plan #131)
+#142 waits on #143 (of #143; plan #131)
+#144 closes: its steps #121 closed; plan #131"
   # close tends the parents of the issue it closed.
   : >"$T/calls"
   echo landed | gh_close 122 - >/dev/null 2>&1
