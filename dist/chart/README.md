@@ -42,7 +42,7 @@ pull request.
 
    ```bash
    helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version VERSION \
-     -n c4-factory-system --wait --timeout 10m \
+     -n c4-factory-system --create-namespace --wait --timeout 10m \
      --set 'gitea.projects={webshop}'
    ```
 
@@ -54,7 +54,10 @@ That is the whole factory. The chart made namespace `webshop`, labeled
 `c4.factory.io/shared-secrets=true` and kept on uninstall like Gitea's; a
 project namespace that already exists and the release didn't make (by hand, as
 on v0.5.0) is left as it is, and the seed only adds the label
-(`projectNamespaces.create=false`: you make every one). The operator copies
+(`projectNamespaces.create=false`: you make every one). Upgrading from v0.5.0,
+the `claude-credentials` and `ghcr` you made in a project namespace by hand
+stay that project's own, so a token rotated in `c4-factory-system` doesn't
+reach it; delete them there to take the shared ones. The operator copies
 the release namespace's `claude-credentials` and pull secrets into each
 labeled namespace. Gitea runs in namespace `gitea`, at
 `http://gitea.gitea.svc.cluster.local:3000` inside the cluster; the seed Job,
