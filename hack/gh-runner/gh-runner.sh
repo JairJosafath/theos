@@ -10,7 +10,8 @@
 # Runner i is container c4factory-gh-runner-i, named c4factory-<hostname>-i on
 # GitHub, with its registration and tool cache on volumes of its own and its own
 # work directory. The Go, npm and golangci-lint caches are one volume they
-# share: those tools lock what they write. Only runner 1 carries the label
+# share: those tools lock what they write. The Makefile's tools (LOCALBIN) are
+# kept there too, out of the checkout a job cleans. Only runner 1 carries the label
 # c4factory-kind, which the jobs that make a Kind cluster ask for, so a device
 # runs one of them at a time. up with fewer runners than are there removes the
 # extra ones; a runner from before there were several (container
