@@ -318,8 +318,10 @@ check "seconds: 45m" "$(seconds 45m)" 2700
 check "seconds: 1d" "$(seconds 1d)" 86400
 seconds 1.5h >/dev/null; check "seconds: 1.5h refused" $? 1
 : >"$LOG"
+# A session that ends at once still logs it (#479): the relay checks RELAY_IDLE
+# before the session starts, not in the watch the session's end cuts short.
 IDLE=1.5h
-echo hang >"$FAKE"
+echo fail >"$FAKE"
 SESSION_TIMEOUT=4s work
 grep -q "RELAY_IDLE (1.5h) or RELAY_IDLE_KILL (2s) isn't like 45m; session 1 runs until the 4s timeout" "$LOG"; check "idle: a bad RELAY_IDLE logged" $? 0
 
