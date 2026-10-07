@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -35,12 +36,14 @@ type agentGitea struct {
 	files string
 	// botToken is the token Gitea issues for the agent's bot account.
 	botToken string
+	// botTokens are the names of the bot account's tokens.
+	botTokens map[string]bool
 }
 
 func newAgentGitea(t *testing.T) (*agentGitea, Provider) {
 	t.Helper()
 	g := &agentGitea{t: t, bodies: map[string]map[string]any{}, users: map[string]bool{}, rules: map[string]bool{},
-		botToken: rand.Text()}
+		botToken: rand.Text(), botTokens: map[string]bool{}}
 	srv := httptest.NewServer(g)
 	t.Cleanup(srv.Close)
 	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "apps", Credentials: Credentials{Username: "c4admin", Token: rand.Text()}})
@@ -61,6 +64,27 @@ func (g *agentGitea) serveBotUser(method string, reply func(int, any)) {
 	default:
 		reply(http.StatusOK, map[string]string{"login": "photo-editor-agent"})
 	}
+}
+
+// serveBotTokens deletes or makes a token of the bot user photo-editor-agent,
+// by name.
+func (g *agentGitea) serveBotTokens(call string, body map[string]any, reply func(int, any)) {
+	if name, ok := strings.CutPrefix(call, "DELETE /api/v1/users/photo-editor-agent/tokens/"); ok {
+		if !g.botTokens[name] {
+			reply(http.StatusNotFound, map[string]string{"message": "token not found"})
+			return
+		}
+		delete(g.botTokens, name)
+		reply(http.StatusNoContent, nil)
+		return
+	}
+	name, _ := body["name"].(string)
+	if g.botTokens[name] {
+		reply(http.StatusUnprocessableEntity, map[string]string{"message": "access token name has been used already"})
+		return
+	}
+	g.botTokens[name] = true
+	reply(http.StatusCreated, map[string]string{"sha1": g.botToken})
 }
 
 // serveGatedPull serves pull request 7: its files, closing and merging.
@@ -140,16 +164,11 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(http.StatusOK, map[string]string{})
 	case call == "PUT "+repo+"/collaborators/photo-editor-agent":
 		w.WriteHeader(http.StatusNoContent)
-	case strings.HasPrefix(call, "DELETE /api/v1/users/photo-editor-agent/tokens/"):
+	case strings.HasPrefix(r.URL.Path, "/api/v1/users/photo-editor-agent/tokens"):
 		if !basic || user != "photo-editor-agent" {
 			g.t.Errorf("%s without the bot's basic auth", call)
 		}
-		w.WriteHeader(http.StatusNotFound)
-	case call == "POST /api/v1/users/photo-editor-agent/tokens":
-		if !basic || user != "photo-editor-agent" {
-			g.t.Errorf("%s without the bot's basic auth", call)
-		}
-		reply(http.StatusCreated, map[string]string{"sha1": g.botToken})
+		g.serveBotTokens(call, body, reply)
 	case call == "POST "+repo+"/pulls":
 		for _, p := range g.pulls {
 			if p.Head.Ref == body["head"] {
@@ -291,6 +310,30 @@ func TestEnsureAgentAccess(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(g.calls, "\n"), "PATCH /api/v1/admin/users/photo-editor-agent") {
 		t.Error("the second call did not reset the existing user's password")
+	}
+}
+
+// An operator upgrade that changes the scopes makes a new token beside the one
+// the operator made before, which a running sandbox of the Container may still
+// use (#519).
+func TestEnsureAgentAccessKeepsTokensOfOtherScopes(t *testing.T) {
+	g, p := newAgentGitea(t)
+	g.users["photo-editor-agent"] = true
+	g.botTokens["c4factory-agent"] = true // made before the token carried read:package
+	repo := p.Repository("photo-editor")
+	for i := range 2 {
+		if _, err := p.EnsureAgentAccess(context.Background(), repo, "photo-editor-agent"); err != nil {
+			t.Fatalf("EnsureAgentAccess() #%d error = %v", i, err)
+		}
+	}
+	if slices.Contains(g.calls, "DELETE /api/v1/users/photo-editor-agent/tokens/c4factory-agent") {
+		t.Error("EnsureAgentAccess revoked the token made with other scopes")
+	}
+	if !g.botTokens[agentTokenName] || len(g.botTokens) != 2 {
+		t.Errorf("tokens = %v, want the old one and %s", g.botTokens, agentTokenName)
+	}
+	if !strings.Contains(strings.Join(g.calls, "\n"), "DELETE /api/v1/users/photo-editor-agent/tokens/"+agentTokenName) {
+		t.Error("the second call did not rotate the token of these scopes")
 	}
 }
 
