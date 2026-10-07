@@ -143,6 +143,8 @@ type FakeAgent struct {
 	NoChange bool
 	// FollowUp makes the approval file one follow-up with acceptance criteria.
 	FollowUp bool
+	// Open makes the approval accept one criterion as left open, for a person.
+	Open bool
 }
 
 // Run does the scripted work.
@@ -159,6 +161,10 @@ func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 				`"followUps": [{"title": "Stand-in follow-up: add a third line", ` +
 				`"body": "The stand-in reviewer files this to show a follow-up.", ` +
 				`"criteria": ["STAND-IN.md has a third line", "make check passes"]}]}`, nil
+		}
+		if a.Open {
+			return `Looked at it.` + "\n" + `{"verdict": "approve", "summary": "Stand-in review: fine, one criterion open.", ` +
+				`"open": [{"criterion": "A screenshot of the editor", "why": "no desktop in the sandbox"}]}`, nil
 		}
 		return `Looked at it.` + "\n" + `{"verdict": "approve", "summary": "Stand-in review: fine."}`, nil
 	}
