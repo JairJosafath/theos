@@ -112,20 +112,20 @@ Task; and the card shows the failed issues and says to answer them in a prompt.
 
 Each lands on its own and leaves main working.
 
-1. **Model** (`internal/model`): `FailedIssue`, `FailedReason`, the
+1. **Model** (#453) (`internal/model`): `FailedIssue`, `FailedReason`, the
    `model/failed.yaml` workspace file, `plan/failed.yaml` parsing and
    `CheckFailedAnswers`, with table tests; nothing calls it yet.
-2. **The Brief lists its failed issues**: API fields `status.failed`,
+2. **The Brief lists its failed issues** (#454): API fields `status.failed`,
    `status.failedWaiting`, the `Failed` column, the `IssuesFailed` condition,
    the `IssueFailed` Event and the workspace file; the hand-back comment on
    a Brief's Container adds "or say in a prompt on Brief `<name>`"; envtest
    with a failed Task.
-3. **A prompt retries or closes them**: `Provider.EditIssueBody` (Gitea and
+3. **A prompt retries or closes them** (#455): `Provider.EditIssueBody` (Gitea and
    the fake, `make test-gitea`), checking the answers with the plan, applying
    them, and the planner guide (`internal/model/planner.md`); envtest takes a
    failed issue back to ready with its clarification and closes another, and
    the Crew starts `<container>-<n>-2`.
-4. **The card** (`ui/`): failed issues with their reasons, and the issue
+4. **The card** (#456) (`ui/`): failed issues with their reasons, and the issue
    list marking them; `ui/src/model/brief.test.ts`.
 
 What only a human run on Kind would show: a real planner reading a prompt as
