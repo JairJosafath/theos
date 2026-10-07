@@ -88,7 +88,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	// round applied already is in the plan as it is, so a restart passes.
 	if refusals := model.CheckPlan(plan, current); len(refusals) > 0 {
 		endRoundFailed(ctx, brief, task,
-			"the plan no longer fits the namespace:\n"+model.RefusalText(refusals))
+			"the plan no longer fits the namespace: "+model.RefusalText(refusals))
 		return ctrl.Result{}, nil
 	}
 
