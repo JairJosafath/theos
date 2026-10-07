@@ -42,9 +42,10 @@ func TestBriefWorkspaceBrief(t *testing.T) {
 	}{
 		{
 			name: "the first round plans the idea",
-			ws:   BriefWorkspace{Brief: "cel-lens", Idea: "  A linter for CEL rules.\n", GitProvider: "gitea"},
+			ws: BriefWorkspace{Brief: "cel-lens", Idea: "  A linter for CEL rules.\n", Namespace: "lint",
+				GitProvider: "gitea"},
 			want: []string{"# Brief cel-lens\n", "## Idea (**new**)\n\nA linter for CEL rules.\n",
-				"`gitProviderRef: {name: gitea}`"},
+				"a Project the plan makes is named `lint`", "`gitProviderRef: {name: gitea}`"},
 			not: []string{"## Prompts"},
 		},
 		{
