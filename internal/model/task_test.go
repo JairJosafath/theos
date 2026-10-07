@@ -39,6 +39,12 @@ func TestNextTaskStep(t *testing.T) {
 			Run: done(RunResult{Error: "the agent made no changes"})},
 			want: ActionRetry, feedback: "the agent made no changes",
 			message: "Round 1 was not accepted (the agent made no changes); starting round 2"},
+		{name: "a blocked agent fails the Task at once", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: done(RunResult{Blocked: "cel-lens#10 must be released first"})},
+			want: ActionFail, message: "The agent can't start the issue: cel-lens#10 must be released first"},
+		{name: "a blocked note outweighs an error", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: done(RunResult{Blocked: "waits on the engine", Error: "boom"})},
+			want: ActionFail, message: "waits on the engine"},
 		{name: "the next round says why, in short", facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
 			Run: done(RunResult{Verdict: "changes", Summary: "\nTest an empty image.\nAnd more."})},
 			want: ActionRetry, message: "(The reviewer asked for changes: Test an empty image.)"},
@@ -138,6 +144,9 @@ func TestNextTaskStep(t *testing.T) {
 			}
 			if !strings.Contains(got.Message, tt.message) {
 				t.Errorf("Message = %q, want it to contain %q", got.Message, tt.message)
+			}
+			if blocked := tt.facts.Run.Result != nil && tt.facts.Run.Result.Blocked != ""; blocked != (got.Reason == ReasonBlocked) {
+				t.Errorf("Reason = %q for a run blocked %v", got.Reason, blocked)
 			}
 		})
 	}

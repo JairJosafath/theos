@@ -52,6 +52,9 @@ type RunResult struct {
 	Proposal *Proposal
 	// Empty means a resumed branch equals the base: the Standard change did it all.
 	Empty bool
+	// Blocked is the agent's blocked note (BlockedNote): it can't start the
+	// issue, and says why. The Task fails at once.
+	Blocked string
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []FollowUp
 	// Unavailable means the agent's service couldn't work: a usage limit, an
@@ -401,6 +404,8 @@ type TaskStep struct {
 	SlotWait bool
 	// RetryAt is when to try an unavailable agent again; zero means the default delay.
 	RetryAt time.Time
+	// Reason is a failed Task's reason, when not ReasonFailed.
+	Reason string
 }
 
 // NextTaskStep decides what happens next to a Task. Starting a sandbox waits
@@ -511,6 +516,9 @@ func implementingStep(f TaskFacts) TaskStep {
 		return roundFailed(f, "The agent's sandbox ended without a result: "+orUnknown(f.Run.Failure))
 	case f.Run.Result.Unavailable:
 		return agentUnavailable(f)
+	case f.Run.Result.Blocked != "" && !f.Plan:
+		// The agent says the issue can't start yet: more rounds won't change that.
+		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Message: BlockedMessage(f.Run.Result.Blocked)}
 	case f.Run.Result.Error != "":
 		return roundFailed(f, f.Run.Result.Error)
 	case f.Plan:

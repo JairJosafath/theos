@@ -155,6 +155,22 @@ func TestResultEncodeFitsTerminationMessage(t *testing.T) {
 	}
 }
 
+func TestResultEncodeKeepsTheBlockedNote(t *testing.T) {
+	note := strings.Repeat("<engine> ", model.MaxBlockedNote/9)
+	r := Result{Role: RoleImplement, Summary: strings.Repeat("é", 5000) + "\nBlocked: " + note, Blocked: note}
+	data := r.Encode()
+	if len(data) > MaxResultBytes {
+		t.Fatalf("Encode() = %d bytes, want at most %d", len(data), MaxResultBytes)
+	}
+	var back Result
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatalf("Encode() is not JSON: %v", err)
+	}
+	if len(back.Blocked) < 200 || !strings.HasPrefix(note, strings.TrimSuffix(back.Blocked, "…")) {
+		t.Errorf("Encode() cut the blocked note to %q", back.Blocked)
+	}
+}
+
 // bareRepo makes a bare repository with one commit on main and returns its URL.
 func bareRepo(t *testing.T, files map[string]string) string {
 	t.Helper()
@@ -244,11 +260,23 @@ func TestRunImplementFailures(t *testing.T) {
 	t.Run("no change", func(t *testing.T) {
 		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
 		got := Run(ctx, testJob(t, url, RoleImplement, 1), FakeAgent{Role: RoleImplement, NoChange: true}, t.TempDir())
-		if got.Error != "the agent made no changes" {
+		if !strings.HasPrefix(got.Error, "the agent made no changes and gave no reason;") ||
+			!strings.Contains(got.Error, `"Blocked: ..."`) {
 			t.Errorf("Error = %q", got.Error)
 		}
 		if branchHead(t, url, "task/add-crop") != "" {
 			t.Error("an empty change was pushed")
+		}
+	})
+	t.Run("blocked", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		agent := blockedAgent{note: "engine#10 must be merged and released first."}
+		got := Run(ctx, testJob(t, url, RoleImplement, 1), agent, t.TempDir())
+		if got.Blocked != agent.note || got.Error != "" || got.Commit != "" {
+			t.Errorf("result = %+v, want blocked with the agent's note", got)
+		}
+		if branchHead(t, url, "task/add-crop") != "" {
+			t.Error("a blocked round pushed what it left")
 		}
 	})
 	t.Run("protected path", func(t *testing.T) {
@@ -317,6 +345,14 @@ type editAgent struct{ path string }
 
 func (a editAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	return "edited", os.WriteFile(filepath.Join(dir, a.path), []byte("changed\n"), 0o644)
+}
+
+// blockedAgent leaves a stray file and says it can't start the issue.
+type blockedAgent struct{ note string }
+
+func (a blockedAgent) Run(_ context.Context, dir, _ string) (string, error) {
+	return "I changed nothing.\n" + model.BlockedPrefix + " " + a.note,
+		os.WriteFile(filepath.Join(dir, "stray.txt"), []byte("x\n"), 0o644)
 }
 
 // countingAgent changes a file on every call.

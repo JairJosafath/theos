@@ -53,6 +53,7 @@ func issueTasks(tasks []c4v1alpha1.Task) map[string][]model.IssueTask {
 			Failed: t.Status.Phase == c4v1alpha1.TaskFailed, Created: t.CreationTimestamp.Time}
 		if cond := meta.FindStatusCondition(t.Status.Conditions, ConditionSucceeded); cond != nil {
 			it.Message = cond.Message
+			it.Blocked = it.Failed && cond.Reason == model.ReasonBlocked
 		}
 		out[t.Spec.ContainerRef.Name] = append(out[t.Spec.ContainerRef.Name], it)
 	}

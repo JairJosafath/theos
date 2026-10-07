@@ -34,6 +34,9 @@ type Result struct {
 	Proposal *model.Proposal `json:"proposal,omitempty"`
 	// Empty is set when the round leaves nothing for the Task branch.
 	Empty bool `json:"empty,omitempty"`
+	// Blocked is the implementer's blocked note (model.BlockedNote): it can't
+	// start the issue, and says why.
+	Blocked string `json:"blocked,omitempty"`
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []model.FollowUp `json:"followUps,omitempty"`
 	// Unavailable means the agent's service couldn't work (a limit, an overload,
@@ -92,6 +95,8 @@ func (r Result) Encode() []byte {
 			r.Summary = shorten(r.Summary, len(r.Summary)-(len(data)-MaxResultBytes)-16)
 		case len(r.Error) > 200:
 			r.Error = shorten(r.Error, len(r.Error)-(len(data)-MaxResultBytes)-16)
+		case len(r.Blocked) > 200:
+			r.Blocked = shortenWords(r.Blocked, len(r.Blocked)-(len(data)-MaxResultBytes)-16)
 		case r.Proposal != nil && len(r.Proposal.Reason) > 200:
 			r.Proposal.Reason = shorten(r.Proposal.Reason, len(r.Proposal.Reason)-(len(data)-MaxResultBytes)-16)
 		case len(r.FollowUps) > 0:
@@ -208,6 +213,11 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	if err != nil {
 		return agentFailed(result, err)
 	}
+	if note := model.BlockedNote(summary); note != "" {
+		// The agent can't start the issue and says why: nothing it left is kept.
+		result.Blocked = note
+		return result
+	}
 
 	checkOutput, checkErr := runCheck(ctx, job, r.dir)
 	for attempt := 1; checkErr != nil && attempt <= checkFixAttempts && ctx.Err() == nil; attempt++ {
@@ -230,7 +240,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		return result
 	}
 	if head == start && !job.Resumed {
-		result.Error = "the agent made no changes"
+		result.Error = model.NoChangeNoReason
 		return result
 	}
 	if job.Resumed {

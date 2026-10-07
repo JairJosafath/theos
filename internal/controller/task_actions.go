@@ -136,7 +136,11 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 			status.Review = review
 		}
 		status.Feedback = step.Feedback
-		return ctrl.Result{}, r.fail(ctx, task, status, container, "Failed", step.Message)
+		reason := model.ReasonFailed
+		if step.Reason != "" {
+			reason = step.Reason
+		}
+		return ctrl.Result{}, r.fail(ctx, task, status, container, reason, step.Message)
 	}
 	return ctrl.Result{}, nil
 }

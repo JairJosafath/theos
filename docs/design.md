@@ -200,7 +200,13 @@ enforces.
   branch `task/<name>`; opens a pull request; waits for CI; runs the Agent again as
   reviewer; and squash-merges on approval. Failed checks, requested changes or a
   failed run start the next round with that feedback, up to the Agent's
-  `maxRounds`. The Container's Crew decides how many Tasks run at once.
+  `maxRounds`. An implementer that finds its issue can't be done yet (it waits
+  on work not merged or released) or can't be done in the sandbox changes
+  nothing and ends its summary with a line `Blocked: <what it waits on and
+  why>`; the Task then fails at once, reason `Blocked`, with those words in its
+  message and on the issue, and the Brief lists the issue as kind `blocked`. A
+  round with no change and no such line says the agent gave no reason. The
+  Container's Crew decides how many Tasks run at once.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
   repository only; `main` takes no pushes, only the operator merges (the reviewed
