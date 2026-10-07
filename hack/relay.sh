@@ -44,7 +44,12 @@
 # the pinned Maintainer report
 # (hack/lib/github.sh report). Agents escalate to it, with
 # status/needs-maintainer; only it sets status/needs-human, for what
-# GOVERNANCE.md reserves to the owner (docs/plans/done/maintainer.md). When it
+# GOVERNANCE.md reserves to the owner (docs/plans/done/maintainer.md). It runs
+# once per project, not once per device (#526): before its session it takes the
+# maintainer lease on the report issue (gh_maint_take in hack/lib/github.sh),
+# keeps it fresh while the session runs and releases it at the end; while
+# another device holds a live lease it starts nothing and logs the holder, and
+# a lease past C4_LEASE_TTL is taken over. When it
 # ends it writes .relay/maintained, `<epoch> <activity>`: when the sweep
 # started (so an issue escalated while it ran is still new to the watch) and
 # hack/lib/github.sh activity, read after the sweep so its own comments don't
@@ -821,7 +826,7 @@ maintained() { [ -n "$DRY_RUN" ] || echo "$1 $2" >"$DIR/maintained"; }
 
 # maintain: one maintainer session (see the header).
 maintain() {
-  local id last t act rc out start
+  local id last t act rc out start lease beat
   if [ -z "$DRY_RUN" ]; then
     worktree || { log "could not prepare the worktree $WT; no sweep"; return 1; }
   fi
@@ -839,11 +844,35 @@ maintain() {
   fi
   git -C "$WT" switch -q --detach origin/main 2>>"$LOG" ||
     { log "could not switch $WT to origin/main; no sweep"; return 1; }
-  log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD)"
+  # One maintainer per project (#526): another device's live lease means no sweep here.
+  lease=$(gh_maint_take 2>>"$LOG")
+  case $? in
+    0) ;;
+    4) log "another device's maintainer holds the lease: $lease; no sweep"; return 0 ;;
+    *) log "could not take the maintainer lease; no sweep"; return 1 ;;
+  esac
+  log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD), lease $lease"
   out="$DIR/maintain-$(date +%Y%m%d-%H%M%S)"
   start=$(date +%s)
+  # The heartbeat; its sleep ends with it.
+  (s=
+    trap 'kill $s 2>/dev/null; exit 0' TERM
+    while :; do
+      sleep "$GH_BEAT_EVERY" &
+      s=$!
+      wait "$s"
+      gh_maint_beat "$lease" 2>>"$LOG" || log "could not refresh the maintainer lease $lease"
+    done) 9>&- &
+  beat=$!
   session maintainer "$out" "$id" "$(maintain_prompt "$last")"
   rc=$?
+  kill "$beat" 2>/dev/null
+  wait "$beat" 2>/dev/null
+  if gh_maint_release "$lease" 2>>"$LOG"; then
+    log "released the maintainer lease $lease"
+  else
+    log "could not release the maintainer lease $lease; it goes stale after $C4_LEASE_TTL"
+  fi
   # A limit, a crash, a timeout or an idle kill cut the sweep short: not recorded.
   if [ "$rc" != 0 ] || [ "$S_RC" != 0 ] || [ -n "$S_IDLE" ] || [ ! -s "$out.md" ]; then
     log "the sweep didn't run to its end; not recorded, so the watch starts one again"

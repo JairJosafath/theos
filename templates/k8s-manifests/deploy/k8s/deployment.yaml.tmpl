@@ -1,3 +1,8 @@
+{{- /* The port and health check of the image the Dockerfile builds: uvicorn
+on 8000 with GET /healthz, or for react-vite nginx on 8080, where serving the
+page is the check. */ -}}
+{{- $port := 8000 }}{{ $probe := "/healthz" -}}
+{{- if eq .Framework "react-vite" }}{{ $port = 8080 }}{{ $probe = "/" }}{{ end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,7 +31,7 @@ spec:
           image: {{ .Container }}:dev
           ports:
             - name: http
-              containerPort: 8000
+              containerPort: {{ $port }}
 {{- if .Connectors }}
           # Connection settings, one ConfigMap per Connector.
           envFrom:
@@ -37,11 +42,11 @@ spec:
 {{- end }}
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: {{ $probe }}
               port: http
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: {{ $probe }}
               port: http
             initialDelaySeconds: 10
           securityContext:

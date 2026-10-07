@@ -9,7 +9,9 @@
 # limit sets, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
-# first in admit; and a maintainer sweep, which records the activity it saw.
+# first in admit; the maintainer lease, which keeps a second device's
+# maintainer from starting while one runs; and a maintainer sweep, which
+# records the activity it saw.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
@@ -214,6 +216,7 @@ case $(cat "$FAKE") in
   crash) echo "crashed" >&2; exit 1 ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
   handoff) echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"handed off","num_turns":9}' ;;
+  lease) sleep 3; cp "$LEASES" "$LEASES.during"; echo '{"is_error":false,"result":"swept","num_turns":9}' ;;
   commit) git -c user.name=t -c user.email=t@t commit -q --allow-empty -m more; echo '{"is_error":false,"result":"committed","num_turns":9}' ;;
 esac
 FAKE
@@ -380,11 +383,91 @@ check "taken while waiting: no session" "$(takes)" 1
 grep -q "waiting: a session started" "$LOG"; check "taken while waiting: waited" $? 0
 check "taken while waiting: stopped" "$(grep -c "no issue ready; stopping" "$LOG")" 1
 
+# The maintainer lease (#526), on a fake GitHub that keeps the report issue's
+# (#7) comments in $LEASES. lease HOST ID AGE: a lease comment of HOST, edited
+# AGE seconds ago.
+export LEASES=$T/leases.json
+echo '[]' >"$LEASES"
+gh_token() { :; }
+gh_api() {
+  local url= a m=GET prev= id
+  for a in "$@"; do
+    case $a in repos/*) url=${a#repos/x/} ;; esac
+    [ "$prev" = --method ] && m=$a
+    prev=$a
+  done
+  case "$m $url" in
+    "GET issues?state=open&labels=maintainer%2Freport"*) echo 7 ;;
+    "GET issues/7/comments"*) jq -c '[.]' "$LEASES" ;;
+    "POST issues/7/comments")
+      id=$(($(cat "$T/next-id" 2>/dev/null || echo 10) + 1))
+      echo "$id" >"$T/next-id"
+      jq --argjson id "$id" --arg b "$(jq -r .body)" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        '. + [{id: $id, created_at: $t, updated_at: $t, html_url: "u", user: {login: "x"}, body: $b}]' "$LEASES" >"$LEASES.new" &&
+        mv "$LEASES.new" "$LEASES"
+      echo "$id"
+      # A second host posted at the same moment, a little earlier.
+      if [ -e "$T/race" ]; then rm "$T/race"; lease raced 5 0; fi ;;
+    "PATCH issues/comments/"*)
+      jq -e --argjson id "${url##*/}" 'any(.id == $id)' "$LEASES" >/dev/null || { echo "HTTP 404" >&2; return 1; }
+      echo PATCH >>"$T/beats"
+      jq --argjson id "${url##*/}" --arg b "$(jq -r .body)" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        'map(if .id == $id then .body = $b | .updated_at = $t else . end)' "$LEASES" >"$LEASES.new" && mv "$LEASES.new" "$LEASES" ;;
+    "DELETE issues/comments/"*)
+      jq -e --argjson id "${url##*/}" 'any(.id == $id)' "$LEASES" >/dev/null || { echo "HTTP 404" >&2; return 1; }
+      jq --argjson id "${url##*/}" 'map(select(.id != $id))' "$LEASES" >"$LEASES.new" && mv "$LEASES.new" "$LEASES" ;;
+    *) echo "unfaked: $m $url" >&2; return 1 ;;
+  esac
+}
+lease() {
+  jq --arg h "$1" --argjson id "$2" --arg t "$(date -u -d "@$(($(date +%s) - $3))" +%Y-%m-%dT%H:%M:%SZ)" \
+    '. + [{id: $id, created_at: $t, updated_at: $t, html_url: "u", user: {login: "x"},
+      body: "<!-- c4-maintainer -->\n**maintainer** sweeps · host `\($h)` · pid `42`\nHeartbeat: x"}]' \
+    "$LEASES" >"$LEASES.new" && mv "$LEASES.new" "$LEASES"
+}
+C4_GITHUB_REPO=x C4_HOST=here C4_LEASE_TTL=1h GH_CLAIM_SETTLE=0
+git -C "$WT" update-ref refs/remotes/origin/main HEAD
+gh_activity() { echo "2026-10-06T08:00:00Z abc123"; }
+rm -f "$DIR/paused-until" "$DIR/maintained"
+# Another device holds a live lease: nothing starts, and the log names it.
+lease there 10 300 # the fake numbers the comments it is posted from 11
+: >"$LOG"
+echo fail >"$FAKE"
+ADMIT_GAP=0 maintain
+check "lease: held elsewhere, no sweep" "$(grep -c 'maintainer start' "$LOG")" 0
+grep -q "another device's maintainer holds the lease: host there (pid 42), heartbeat 5m ago; no sweep" "$LOG"
+check "lease: held elsewhere, the holder logged" $? 0
+check "lease: held elsewhere, theirs kept and nothing recorded" "$(jq -c 'map(.id)' "$LEASES") $(test -e "$DIR/maintained" && echo recorded)" "[10] "
+# A stale lease is taken over, the lease is beaten while the session runs and
+# released when it ends.
+echo '[]' >"$LEASES"
+lease there 10 7200
+rm -f "$T/beats"
+echo lease >"$FAKE"
+GH_BEAT_EVERY=1 ADMIT_GAP=0 maintain
+check "lease: a stale one taken over" "$(grep -c 'maintainer start: .*, lease 11$' "$LOG")" 1
+check "lease: held during the session, the stale one gone" "$(jq -c 'map({id, host: (.body | capture("host `(?<h>[^`]+)`").h)})' "$LEASES.during")" '[{"id":11,"host":"here"}]'
+check "lease: beaten while the session runs" "$(test -s "$T/beats" && echo yes)" yes
+check "lease: released when the session ends" "$(jq -c . "$LEASES") $(grep -c 'released the maintainer lease 11' "$LOG")" "[] 1"
+# A live lease of this host is a crashed maintainer's: taken over.
+lease here 20 60
+echo 20 >"$T/next-id"
+: >"$LOG"
+echo fail >"$FAKE"
+ADMIT_GAP=0 maintain
+check "lease: this host's crashed one taken over" "$(grep -c 'maintainer start: .*, lease 21$' "$LOG") $(jq -c . "$LEASES")" "1 []"
+# Two hosts post at once: the older lease wins and the other starts nothing.
+: >"$LOG"
+touch "$T/race"
+ADMIT_GAP=0 maintain
+check "lease: a lost race, no sweep" "$(grep -c 'maintainer start' "$LOG")" 0
+grep -q "another device's maintainer holds the lease: host raced (pid 42), heartbeat 0m ago; no sweep" "$LOG"
+check "lease: a lost race, the winner logged and ours deleted" "$? $(jq -c 'map(.id)' "$LEASES")" "0 [5]"
+echo '[]' >"$LEASES"
+
 # A maintainer sweep, with claude faked, on origin/main: it records the
 # activity after it; one cut short by a limit or a crash records nothing, so
 # the next one still looks back to the last full sweep.
-git -C "$WT" update-ref refs/remotes/origin/main HEAD
-gh_activity() { echo "2026-10-06T08:00:00Z abc123"; }
 rm -f "$DIR/paused-until" "$DIR/maintained"
 : >"$LOG"
 echo fail >"$FAKE"

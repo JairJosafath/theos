@@ -431,14 +431,16 @@ spec:
                       description: |-
                         kind says why it was handed back: unclear (no acceptance criteria),
                         merged (a Task merged it already), exhausted (agents tried it as often
-                        as a Crew does), failed (its last Task failed) or person (a person
-                        handed it back).
+                        as a Crew does), failed (its last Task failed), person (a person
+                        handed it back) or byHand (a kind/by-hand issue: criteria only a person
+                        can do, which a plan may close but never retry).
                       enum:
                       - unclear
                       - merged
                       - exhausted
                       - failed
                       - person
+                      - byHand
                       type: string
                     number:
                       description: number of the issue in its repository.

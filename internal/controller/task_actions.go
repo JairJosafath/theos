@@ -251,6 +251,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
 		protectedPaths: protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
 		workspaceMemory: r.WorkspaceMemory, goCache: r.SandboxGoCache, goProxy: repo.GoProxy,
+		pullSecrets: r.SharedPullSecrets,
 	}, r.Scheme, r.now())
 	if err != nil {
 		return ctrl.Result{}, err
@@ -353,10 +354,11 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 	}
 	if task.Spec.Issue > 0 {
 		var followUps []model.FollowUp
+		var open []model.OpenCriterion
 		if reviewRun != nil {
-			followUps = reviewRun.FollowUps
+			followUps, open = reviewRun.FollowUps, reviewRun.Open
 		}
-		status.FollowUps = r.closeIssue(ctx, provider, repo, task, status, agents.reviewer, followUps)
+		status.FollowUps = r.closeIssue(ctx, provider, repo, task, status, agents.reviewer, followUps, open)
 	}
 	r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, "Merged", step.Message)
 	logf.FromContext(ctx).Info("Merged Task", "url", status.PullRequestURL, "round", status.Round)

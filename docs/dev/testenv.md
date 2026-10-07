@@ -59,8 +59,7 @@ make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind clus
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain (with uv), CI runner (label base), Agent Sandbox, agent image
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
 make toolchain-go runner-go agent-image-go  # Go, Node and uv toolchain, CI runner (label go) and agent image
-make claude-secret       # The real agent's token, from .dev/secrets/claude-token (below) or CLAUDE_TOKEN=...
-make claude-secret-copy FROM=webshop TO=apps  # Reuse that Secret in another project
+make claude-secret       # The real agent's token, once for every project, from .dev/secrets/claude-token (below) or CLAUDE_TOKEN=...
 make e2e                 # Only when the user asks: all of the above but the Go images, then check the whole loop in Kind
 make down / make up       # Stop the factory to free the machine; bring it back healthy
 make doctor              # Check every part of the factory and say what is wrong
@@ -116,12 +115,22 @@ mkdir -p .dev/secrets && install -m 600 /dev/stdin .dev/secrets/claude-token
 # paste the token, then Enter and Ctrl-D
 ```
 
-`make claude-secret` then stores it as Secret `claude-credentials` in
-`CLAUDE_NAMESPACE` (default `apps`) of the leased cluster, so a session on a fresh
-cluster makes the Secret without the token in its argv or transcript. It fails,
-naming the path, when the file is missing, empty, or readable by group or others;
-it never prints the token. `CLAUDE_TOKEN=...` on the command line or in the
-environment wins over the file; `CLAUDE_TOKEN_FILE` names another file.
+After `make deploy`, `make claude-secret` stores it as Secret
+`claude-credentials` in `CLAUDE_NAMESPACE` (default `c4-factory-system`, the
+operator's namespace) of the leased cluster, without the token in its argv or
+transcript. The test environment shares it like the release: `config/manager`
+runs the operator with `--shared-secret=claude-credentials` and `POD_NAMESPACE`,
+and the operator copies the Secret into every namespace that has a Project and
+the label `c4.factory.io/shared-secrets: "true"`, keeping each copy in step
+with it. `make seed` labels `webshop` and `apps`, and the webshop sample and
+the e2e fixture label theirs, so one Secret serves every project; a rotated
+token reaches them all within five minutes. Another namespace opts in with
+`kubectl label namespace NAME c4.factory.io/shared-secrets=true`. A project
+with a token of its own runs `make claude-secret CLAUDE_NAMESPACE=NAME`: the
+operator leaves a Secret it didn't make alone. `make claude-secret` fails,
+naming the path, when the file is missing, empty, or readable by group or
+others; it never prints the token. `CLAUDE_TOKEN=...` on the command line or in
+the environment wins over the file; `CLAUDE_TOKEN_FILE` names another file.
 
 `make run` runs the operator on your machine, but it can't reach Gitea's in-cluster
 address; use `make deploy` for anything that scaffolds.
@@ -397,7 +406,13 @@ its own worktree, `.claude/worktrees/relay-maintainer`, on origin/main, under
 `.relay/maintain.lock`, and doesn't count against `RELAY_MAX_WORKERS`, but
 goes through `admit` like any session, except that it goes first: while it
 waits, `.relay/admit-first` holds its PID and no worker takes the start slot
-(#262). It logs to `.relay/relay-maintainer.log`.
+(#262). It runs once per project, not once per device (#526): before its
+session it takes the maintainer lease, a `<!-- c4-maintainer -->` comment on
+the Maintainer report issue that it refreshes every `GH_BEAT_EVERY` seconds
+and deletes when the session ends. While another device holds a live one it
+starts nothing and logs the holder; one past `C4_LEASE_TTL`, or this host's
+own (a crashed maintainer's), is taken over. It logs to
+`.relay/relay-maintainer.log`.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
 the triage's reasons with `proposed --since` against a stubbed GitHub, and its
 CI rounds with `gh` faked.
@@ -433,6 +448,18 @@ it when it starts. Until then its sessions can't reach Docker, so
 `make test-gitea` fails in them; they never need a cluster.
 
 ### Checking a release
+
+The maintainer cuts a release from a sweep with one command:
+`hack/release.sh minor`, `patch` or `X.Y.Z`. From origin/main, in a worktree
+of its own, it names the version in `dist/chart/Chart.yaml` and in
+`docs/getting-started.md` (its `VERSION` and the release its prose names),
+merges that bump as a pull request of its own with a merge commit, and pushes
+the tag `vX.Y.Z` on the merge commit, so the guide at a tag installs that
+tag's release (#370). It refuses a version that isn't above the chart's, or
+whose tag already exists. The tag starts *Release*, which first runs
+`hack/release.sh --check vX.Y.Z` and builds nothing when the chart or the
+guide names another version; `hack/release_test.sh` holds both to that, and
+`test/chart/guide_version_test.go` keeps main's guide on the chart's version.
 
 The relay can't pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. Once *Release* has

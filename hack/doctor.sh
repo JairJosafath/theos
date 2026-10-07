@@ -142,7 +142,7 @@ for ns in $projects; do
       ok "$ns: Agent $agent has its Secret $secret"
     else
       warn "$ns: Agent $agent is missing Secret $secret; its Tasks wait"
-      hint "make claude-secret (the token from .dev/secrets/claude-token; docs/dev/testenv.md)"
+      hint "make claude-secret, shared with namespaces labeled c4.factory.io/shared-secrets=true (docs/dev/testenv.md)"
     fi
   done < <("${KUBECTL[@]}" -n "$ns" get agents.c4.factory.io \
     -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.credentialsSecretRef.name}{"\n"}{end}' 2>/dev/null)
