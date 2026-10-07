@@ -226,3 +226,18 @@ func TestPlanPrompt(t *testing.T) {
 		}
 	}
 }
+
+// A tending round's planner writes only its answers, the summary and new issues.
+func TestPlanPromptTending(t *testing.T) {
+	job := Job{Role: RolePlan, Brief: "cel-lens", Project: "apps", Branch: "plan/4", Round: 1}
+	prompt := PlanPrompt(job, "The guide.", "# Brief\n\n"+model.TendingHeading+"\n\nNo new prompt.\n")
+	for _, want := range []string{"tending round", model.WorkspaceFailedFile, model.PlanFailedFile,
+		model.PlanSummaryFile, "plan/4"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("PlanPrompt() lacks %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, model.PlanModelFile) {
+		t.Errorf("a tending round's prompt asks for %s:\n%s", model.PlanModelFile, prompt)
+	}
+}

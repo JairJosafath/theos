@@ -61,7 +61,7 @@ func TestStartRoundOnAStaleBriefWritesNothing(t *testing.T) {
 	statusWrites = 0
 
 	orig := stale.DeepCopy()
-	err := r.startRound(ctx, &stale, orig)
+	err := r.startRound(ctx, &stale, orig, false)
 	if !errors.Is(err, errStaleBrief) {
 		t.Fatalf("startRound on a stale Brief = %v, want errStaleBrief", err)
 	}
@@ -135,7 +135,7 @@ func TestEndingARoundOnAStaleBriefWritesNothing(t *testing.T) {
 	}
 
 	orig := stale.DeepCopy()
-	endRoundFailed(ctx, &stale, &c4v1alpha1.Task{}, "the plan no longer fits the namespace: "+
+	r.endRoundFailed(ctx, &stale, &c4v1alpha1.Task{}, "the plan no longer fits the namespace: "+
 		model.RefusalText([]model.Refusal{{Subject: "Container/orders-api", Reason: "is in the namespace"}}))
 	result, err := r.finishReconcile(ctx, &stale, orig, ctrl.Result{}, nil)
 	if err != nil || result.RequeueAfter == 0 {

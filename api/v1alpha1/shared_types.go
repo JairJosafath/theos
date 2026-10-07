@@ -147,7 +147,13 @@ const (
 	LabelBrief = "c4.factory.io/brief"
 	// LabelBriefRound is the Brief round an object came from, or a Plan Task plans.
 	LabelBriefRound = "c4.factory.io/brief-round"
+	// LabelBriefRoundKind on a Plan Task is "tend" when its round is a tending
+	// round: no new prompt, it decides the Brief's failed issues.
+	LabelBriefRoundKind = "c4.factory.io/brief-round-kind"
 )
+
+// BriefRoundKindTend is LabelBriefRoundKind's value on a tending round's Plan Task.
+const BriefRoundKindTend = "tend"
 
 // Shared credentials: the operator copies Secrets from its own namespace into
 // the project namespaces that opt in.

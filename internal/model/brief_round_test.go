@@ -222,6 +222,7 @@ func TestIdeaPlanned(t *testing.T) {
 		{"a round that asked", []string{ReasonPlannerNeedsInput}, 0, false},
 		{"an applied round", []string{ReasonRoundFailed, ReasonApplied}, 0, true},
 		{"prompts planned, the round gone from the history", []string{ReasonRoundFailed}, 2, true},
+		{"tending rounds only, the applied one gone from the history", []string{ReasonTended, ReasonRoundFailed}, 0, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := IdeaPlanned(tc.outcomes, tc.planned); got != tc.want {

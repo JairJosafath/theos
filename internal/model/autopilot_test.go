@@ -1,6 +1,7 @@
 package model
 
 import (
+	"maps"
 	"reflect"
 	"strings"
 	"testing"
@@ -417,5 +418,74 @@ func TestFailedAnswerRetriesAndApplies(t *testing.T) {
 		if tc.a.Retries() != tc.retries || tc.a.Applies() != tc.applies {
 			t.Errorf("%+v: retries %v, applies %v", tc.a, tc.a.Retries(), tc.a.Applies())
 		}
+	}
+}
+
+func TestParseTendPlan(t *testing.T) {
+	files := map[string]string{
+		PlanFailedFile:          "- {container: api, issue: 3, answer: close, why: Split in two.}\n",
+		PlanSummaryFile:         "Split the API's flags issue in two.\n",
+		"plan/issues/01-api.md": readyIssue,
+		"plan/issues/.gitkeep":  "",
+		"brief.md":              "not part of the plan",
+	}
+	plan, err := ParseTendPlan(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.FailedAnswers) != 1 || len(plan.Issues) != 1 || plan.Summary == "" || len(plan.Objects) != 0 {
+		t.Errorf("plan = %+v", plan)
+	}
+	if refusals := CheckTendPlan(plan, happyCurrent()); len(refusals) > 0 {
+		t.Errorf("refused: %v", refusals)
+	}
+	for _, extra := range []string{PlanModelFile, PlanChoicesFile, PlanNeedsInputFile, PlanSuggestionsFile,
+		PlanReleasesFile} {
+		withExtra := maps.Clone(files)
+		withExtra[extra] = "anything"
+		_, err := ParseTendPlan(withExtra)
+		if err == nil || !strings.Contains(err.Error(), "leave out "+extra) {
+			t.Errorf("with %s: err = %v, want it refused", extra, err)
+		}
+	}
+	plan.Issues[0].Container = "web"
+	if refusals := CheckTendPlan(plan, happyCurrent()); len(refusals) == 0 {
+		t.Error("an issue for a Container the namespace lacks passed")
+	}
+}
+
+func TestTendSummaryAndCounts(t *testing.T) {
+	answers := []FailedAnswer{
+		{Container: "cli", Issue: 1, Answer: AnswerRetry, Why: "The engine is merged now"},
+		{Container: "cli", Issue: 2, Answer: AnswerWait, Why: "The engine has no release yet."},
+		{Container: "cli", Issue: 3, Answer: AnswerAsk, Why: "It needs a paid API."},
+	}
+	want := "Tried cli#1 again: The engine is merged now. Waits on cli#2: The engine has no release yet. " +
+		"Asks you about cli#3: It needs a paid API."
+	if got := TendSummary("", answers); got != want {
+		t.Errorf("summary = %q, want %q", got, want)
+	}
+	if got := TendSummary(" Retried\nthe CLI. ", answers); got != "Retried the CLI." {
+		t.Errorf("summary with summary.md = %q", got)
+	}
+	if got := TendSummary("", nil); got != "Decided nothing." {
+		t.Errorf("empty summary = %q", got)
+	}
+	if r, c, w, a := TendCounts(answers); r != 1 || c != 0 || w != 1 || a != 1 {
+		t.Errorf("counts = %d %d %d %d", r, c, w, a)
+	}
+}
+
+func TestNeedsYouMessage(t *testing.T) {
+	listed := []NeedsYou{{Question: "Crew `x` can't start.", Recommend: "Create it."}, {Question: "Another."}}
+	if got := NeedsYouMessage(listed, 3); got != "Crew `x` can't start. Create it. (2 more)" {
+		t.Errorf("message = %q", got)
+	}
+	if got := NeedsYouMessage(listed[:1], 1); got != "Crew `x` can't start. Create it." {
+		t.Errorf("message = %q", got)
+	}
+	a := BriefAttention(AttentionFacts{Containers: []WatchedContainer{{Name: "a", Phase: "Failed"}}}, t0)
+	if a.Waiting != 1 {
+		t.Errorf("waiting = %d, want 1", a.Waiting)
 	}
 }

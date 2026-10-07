@@ -166,7 +166,7 @@ func renderBrief(ws BriefWorkspace) string {
 	}
 	switch {
 	case ws.Tending:
-		fmt.Fprintf(&b, "\n## Tending round\n\nNo new prompt: decide the failed issues in `%s`.\n",
+		fmt.Fprintf(&b, "\n%s\n\nNo new prompt: decide the failed issues in `%s`.\n", TendingHeading,
 			WorkspaceFailedFile)
 	case len(ws.Failed) > 0:
 		fmt.Fprintf(&b, "\n## Failed issues\n\n%d were handed back to the person, listed with why in `%s`. "+

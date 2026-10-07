@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -182,6 +183,8 @@ type Attention struct {
 	NeedsYou []NeedsYou
 	// Due are the failed issues a tending round decides: due and unanswered.
 	Due []FailedIssue
+	// Waiting counts the Needs you entries, those past the MaxNeedsYou listed too.
+	Waiting int
 }
 
 // BriefAttention classifies a Brief's watched items at now (decisions 3, 4,
@@ -246,6 +249,7 @@ func BriefAttention(f AttentionFacts, now time.Time) Attention {
 			"A failed Container doesn't heal by itself.", c.Since})
 	}
 	slices.SortStableFunc(a.NeedsYou, func(x, y NeedsYou) int { return x.Since.Compare(y.Since) })
+	a.Waiting = len(a.NeedsYou)
 	a.NeedsYou = a.NeedsYou[:min(len(a.NeedsYou), MaxNeedsYou)]
 	return a
 }
@@ -454,6 +458,116 @@ func Tended(earlier []TendedIssue, answers []FailedAnswer, failed []FailedIssue,
 		return a.Issue - b.Issue
 	})
 	return out[:min(len(out), MaxFailedIssues)]
+}
+
+// TendingHeading heads the section of a tending round's brief.md.
+const TendingHeading = "## Tending round"
+
+// IsTendingBrief reports whether brief.md is a tending round's.
+func IsTendingBrief(brief string) bool {
+	return slices.Contains(strings.Split(brief, "\n"), TendingHeading)
+}
+
+// ReasonTended is the outcome of a tending round that applied.
+const ReasonTended = "Tended"
+
+// ParseTendPlan reads a tending round's plan (decision 5): plan/failed.yaml,
+// plan/summary.md and new issues in plan/issues/, nothing else. A tending
+// round has no say on the story, so any other file refuses it, a
+// plan/needs-input.md too: it asks the person with an ask answer instead.
+func ParseTendPlan(files map[string]string) (Plan, error) {
+	var other []string
+	for p := range files {
+		switch base := path.Base(p); {
+		case !strings.HasPrefix(p, PlanDir+"/"):
+		case p == PlanFailedFile, p == PlanSummaryFile, strings.HasPrefix(base, "."):
+		case strings.HasPrefix(p, planIssuesDir) && !strings.Contains(strings.TrimPrefix(p, planIssuesDir), "/"):
+		default:
+			other = append(other, p)
+		}
+	}
+	if len(other) > 0 {
+		slices.Sort(other)
+		return Plan{}, fmt.Errorf("a tending round writes only %s, %s and new issues in %s; it has no say on the "+
+			"story, so leave out %s; to ask the person, answer an issue %s", PlanFailedFile, PlanSummaryFile,
+			planIssuesDir, strings.Join(other, ", "), AnswerAsk)
+	}
+	return parsePlan(files, false)
+}
+
+// CheckTendPlan checks a tending round's plan against the namespace: the
+// story stays as it is, so only its issues are checked, as CheckPlan checks a
+// plan's.
+func CheckTendPlan(plan Plan, current CurrentModel) []Refusal {
+	plan.Objects = make([]PlanObject, 0, len(current.Objects))
+	for _, o := range current.Objects {
+		o.APIVersion = PlanAPIVersion
+		plan.Objects = append(plan.Objects, o)
+	}
+	plan.Choices = []string{"Tended the failed issues"}
+	return CheckPlan(plan, current)
+}
+
+// TendSummary is what a Brief's history says a tending round did: the
+// planner's summary.md, or else one sentence per answer.
+func TendSummary(summary string, answers []FailedAnswer) string {
+	if s := strings.Join(strings.Fields(summary), " "); s != "" {
+		return ClipSentences(s, maxRoundSummary)
+	}
+	if len(answers) == 0 {
+		return "Decided nothing."
+	}
+	lines := make([]string, 0, len(answers))
+	for _, a := range answers {
+		name := fmt.Sprintf("%s#%d", a.Container, a.Issue)
+		var what string
+		switch a.Answer {
+		case AnswerRetry:
+			what = "Tried " + name + " again"
+		case AnswerClose:
+			what = "Closed " + name
+		case AnswerWait:
+			what = "Waits on " + name
+		default:
+			what = "Asks you about " + name
+		}
+		lines = append(lines, what+": "+sentence(a.Why, "no reason given"))
+	}
+	return ClipSentences(strings.Join(lines, " "), maxRoundSummary)
+}
+
+// TendCounts counts a tending round's answers: retried, closed, waited on and
+// asked about.
+func TendCounts(answers []FailedAnswer) (retried, closed, waited, asked int) {
+	for _, a := range answers {
+		switch a.Answer {
+		case AnswerRetry:
+			retried++
+		case AnswerClose:
+			closed++
+		case AnswerWait:
+			waited++
+		default:
+			asked++
+		}
+	}
+	return retried, closed, waited, asked
+}
+
+// NeedsYouMessage is the NeedsYou condition's message: the first entry's
+// question, and how many more wait.
+func NeedsYouMessage(listed []NeedsYou, waiting int) string {
+	if len(listed) == 0 {
+		return "Nothing needs you"
+	}
+	msg := listed[0].Question
+	if listed[0].Recommend != "" {
+		msg += " " + listed[0].Recommend
+	}
+	if more := waiting - 1; more > 0 {
+		msg += fmt.Sprintf(" (%d more)", more)
+	}
+	return msg
 }
 
 // sentence is s on one line ending in a period, or fallback's when s is empty.
