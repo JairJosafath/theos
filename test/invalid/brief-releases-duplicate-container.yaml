@@ -1,0 +1,19 @@
+# expect: Duplicate value
+apiVersion: c4.factory.io/v1alpha1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: webshop
+spec:
+  idea: A linter for CEL rules.
+  releases:
+  - container: linter
+    github:
+      repository: acme/cel-lens
+      tokenSecretRef:
+        name: cel-lens-github
+  - container: linter
+    github:
+      repository: acme/cel-lens-2
+      tokenSecretRef:
+        name: cel-lens-github

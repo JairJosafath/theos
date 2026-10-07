@@ -151,6 +151,9 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 		logf.FromContext(ctx).Info("Prepared the Brief's repository", "url", url)
 		brief.Status.RepositoryURL = url
 	}
+	if err := r.syncReleases(ctx, brief); err != nil {
+		return ctrl.Result{}, err
+	}
 	return r.reconcileRound(ctx, brief, orig)
 }
 

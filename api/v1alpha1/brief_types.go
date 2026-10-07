@@ -45,6 +45,31 @@ type BriefSpec struct {
 	// +kubebuilder:default={name: gitea}
 	// +optional
 	GitProviderRef LocalRef `json:"gitProviderRef,omitzero"`
+
+	// releases name the Containers whose releases the person asks for, and the
+	// GitHub repository each one's releases are published to. An entry turns
+	// releases on for its Container and sets the publishReleases of the Crew
+	// the Brief made for it; removing it leaves that Crew as it is.
+	// +listType=map
+	// +listMapKey=container
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	Releases []BriefRelease `json:"releases,omitempty"`
+}
+
+// BriefRelease is where a Container's releases are published: the fields of a
+// Crew's publishReleases, for the Crew the Brief made for the Container.
+type BriefRelease struct {
+	// container names the Container, a DNS label.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="container must be a DNS label: lowercase letters, digits and '-'"
+	// +required
+	Container string `json:"container"`
+
+	// The GitHub repository, its token Secret in the Brief's namespace, and
+	// the tag prefix, as in a Crew's publishReleases.
+	CrewPublishReleases `json:",inline"`
 }
 
 // BriefAgents names the Agent for each role: the planner turns the Brief into

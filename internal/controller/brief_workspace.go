@@ -280,6 +280,10 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1
 		IdeaPlanned:    model.IdeaPlanned(outcomes, int(status.PromptsPlanned)),
 		GitProvider:    brief.Spec.GitProviderRef.Name,
 	}
+	for _, entry := range brief.Spec.Releases {
+		ws.Releases = append(ws.Releases, model.WorkspaceRelease{Container: entry.Container,
+			Repository: entry.GitHub.Repository, TagPrefix: entry.TagPrefix})
+	}
 	var err error
 	if ws.Objects, err = storyObjects(ctx, r.Client, brief.Namespace); err != nil {
 		return ws, err
@@ -292,12 +296,22 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1
 }
 
 // containerIssues lists each Container that has a repository, with its open
-// issues. Issues that can't be read are marked so, not an error: one broken
+// issues and whether a Crew of it tags releases. Issues that can't be read are marked so, not an error: one broken
 // repository doesn't stop the Brief.
 func (r *BriefReconciler) containerIssues(ctx context.Context, ns string) ([]model.WorkspaceContainer, error) {
 	var containers c4v1alpha1.ContainerList
 	if err := r.List(ctx, &containers, client.InNamespace(ns)); err != nil {
 		return nil, err
+	}
+	var crews c4v1alpha1.CrewList
+	if err := r.List(ctx, &crews, client.InNamespace(ns)); err != nil {
+		return nil, err
+	}
+	released := map[string]bool{}
+	for _, crew := range crews.Items {
+		if crew.Spec.TagReleases {
+			released[crew.Spec.ContainerRef.Name] = true
+		}
 	}
 	providers := map[string]gitprovider.Provider{}
 	var out []model.WorkspaceContainer
@@ -305,7 +319,7 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, ns string) ([]mod
 		if c.Status.RepositoryURL == "" {
 			continue
 		}
-		entry := model.WorkspaceContainer{Name: c.Name, Repository: c.Status.RepositoryURL}
+		entry := model.WorkspaceContainer{Name: c.Name, Repository: c.Status.RepositoryURL, Released: released[c.Name]}
 		issues, err := r.openIssues(ctx, providers, &c)
 		if err != nil {
 			logf.FromContext(ctx).Info("Could not read a Container's issues", "container", c.Name, "error", err.Error())
