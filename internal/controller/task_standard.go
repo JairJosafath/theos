@@ -80,7 +80,7 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, sta
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	notes := []error{provider.AddIssueDependency(gitCtx, repo, n, filed.Number)}
+	notes := []error{provider.AddIssueDependency(gitCtx, repo, n, repo, filed.Number)}
 	if isNew {
 		// Said once: a repeated step finds the issue, and the comment, already there.
 		notes = append(notes, provider.CommentIssue(gitCtx, repo, n, fmt.Sprintf(

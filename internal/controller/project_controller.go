@@ -11,6 +11,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -35,15 +36,29 @@ const ConditionNameMatchesNamespace = "NameMatchesNamespace"
 
 // ProjectReconciler adopts the kinds a Project owns directly (Person,
 // SoftwareSystem, GitProvider, the catalog entries and Agents), gives the namespace the
-// Session client's ServiceAccount, and rolls up status.
+// Session client's ServiceAccount, shares the operator's Secrets into it when it
+// opts in, and rolls up status.
 type ProjectReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// APIReader reads Secrets and Namespaces without caching them.
+	APIReader client.Reader
+	// SharedSecrets and SharedPullSecrets name the Secrets in SourceNamespace,
+	// the operator's own, that it copies into every opted-in project
+	// namespace. With none, it shares nothing.
+	SharedSecrets     []string
+	SharedPullSecrets []string
+	SourceNamespace   string
+	// SharedSecretsRecheck is how often an opted-in Project looks at its
+	// sources again; DefaultSharedSecretsRecheck when zero.
+	SharedSecretsRecheck time.Duration
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;delete
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=people;gitproviders;frameworks;standards;computes;deployments;connectors;agents,verbs=get;list;watch;update;patch
 
@@ -75,10 +90,14 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.ensureAgentNetwork(ctx, &project); err != nil {
 		return ctrl.Result{}, err
 	}
+	recheck, err := r.shareSecrets(ctx, &project, status)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	if err := r.rollUp(ctx, &project, status); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, r.writeStatus(ctx, &project, status)
+	return ctrl.Result{RequeueAfter: recheck}, r.writeStatus(ctx, &project, status)
 }
 
 // adoptChildren sets the Project as owner of every kind it owns directly. These
@@ -181,7 +200,9 @@ func metaItems(list client.ObjectList) ([]client.Object, error) {
 // SetupWithManager sets up the controller with the Manager. Anything in the
 // namespace can change the adoption or the roll-up, so it all maps to the Project
 // named after the namespace. Only what adoption and the roll-up read passes:
-// creations and deletions, and a Container or Session changing phase.
+// creations and deletions, and a Container or Session changing phase. A
+// Namespace maps to the Project named after it when its shared-secrets label
+// changes.
 func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	toProject := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
 		return []reconcile.Request{requestFor(obj.GetNamespace(), obj.GetNamespace())}
@@ -203,6 +224,10 @@ func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.Agent{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Container{}, toProject, containerPhaseChanges()).
 		Watches(&c4v1alpha1.Session{}, toProject, sessionPhaseChanges()).
+		WatchesMetadata(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(
+			func(_ context.Context, obj client.Object) []reconcile.Request {
+				return []reconcile.Request{requestFor(obj.GetName(), obj.GetName())}
+			}), labelChanged(c4v1alpha1.LabelSharedSecrets)).
 		Named("project").
 		Complete(r)
 }

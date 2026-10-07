@@ -98,3 +98,15 @@ func podFinished() builder.WatchesOption {
 		},
 	})
 }
+
+// labelChanged passes only updates that change one label's value.
+func labelChanged(label string) builder.WatchesOption {
+	return builder.WithPredicates(predicate.Funcs{
+		CreateFunc: func(event.CreateEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return e.ObjectOld.GetLabels()[label] != e.ObjectNew.GetLabels()[label]
+		},
+		DeleteFunc:  func(event.DeleteEvent) bool { return false },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+	})
+}

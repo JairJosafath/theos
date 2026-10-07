@@ -224,7 +224,11 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		h.depPosts = append(h.depPosts, body)
 		blocker, _ := body["index"].(float64)
-		i.deps = append(i.deps, giteaIssue{Number: int(blocker), State: "open"})
+		d := giteaIssue{Number: int(blocker), State: "open"}
+		owner, _ := body["owner"].(string)
+		name, _ := body["repo"].(string)
+		d.Repository.FullName = owner + "/" + name
+		i.deps = append(i.deps, d)
 		reply(w, http.StatusCreated, i.giteaIssue)
 	})
 	mux.HandleFunc("POST "+repo+"/pulls/{n}/reviews", func(w http.ResponseWriter, r *http.Request) {
@@ -548,20 +552,27 @@ func TestReviewPullRequest(t *testing.T) {
 func TestAddIssueDependency(t *testing.T) {
 	h, p := newIssueHost(t)
 	ctx := context.Background()
-	repo := p.Repository("orders-api")
+	repo, engine := p.Repository("orders-api"), p.Repository("orders-engine")
 	h.issues[4] = &hostIssue{giteaIssue: giteaIssue{Number: 4, State: "open"}}
-	if err := p.AddIssueDependency(ctx, repo, 4, 31); err != nil {
-		t.Fatalf("AddIssueDependency() error = %v", err)
+	// An older dependency Gitea lists without its repository is of the issue's own.
+	h.issues[4].deps = []giteaIssue{{Number: 2, State: "open"}}
+	for range 2 {
+		if err := p.AddIssueDependency(ctx, repo, 4, repo, 31); err != nil {
+			t.Fatalf("AddIssueDependency() error = %v", err)
+		}
+		if err := p.AddIssueDependency(ctx, repo, 4, engine, 31); err != nil {
+			t.Fatalf("AddIssueDependency() of another repository error = %v", err)
+		}
+		if err := p.AddIssueDependency(ctx, repo, 4, repo, 2); err != nil {
+			t.Fatalf("AddIssueDependency() of a listed dependency error = %v", err)
+		}
 	}
-	want := []map[string]any{{"owner": "webshop", "repo": "orders-api", "index": float64(31)}}
+	want := []map[string]any{
+		{"owner": "webshop", "repo": "orders-api", "index": float64(31)},
+		{"owner": "webshop", "repo": "orders-engine", "index": float64(31)},
+	}
 	if !reflect.DeepEqual(h.depPosts, want) {
-		t.Fatalf("dependency POSTs = %v, want %v", h.depPosts, want)
-	}
-	if err := p.AddIssueDependency(ctx, repo, 4, 31); err != nil {
-		t.Fatalf("second AddIssueDependency() error = %v", err)
-	}
-	if len(h.depPosts) != 1 {
-		t.Errorf("the second call posted again: %v", h.depPosts)
+		t.Errorf("dependency POSTs = %v, want each dependency posted once: %v", h.depPosts, want)
 	}
 }
 
