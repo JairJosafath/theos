@@ -3,7 +3,9 @@ package gitprovider
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -45,8 +47,16 @@ type PullRequest struct {
 	MergeCommit string
 }
 
-// agentTokenName is the name of the access token made for an agent bot user.
-const agentTokenName = "c4factory-agent"
+// agentTokenName is the name of the access token made for an agent bot user
+// with AgentTokenScopes. The name carries the scopes, so a token made with
+// other ones, by an operator before an upgrade, keeps its own name: making the
+// new one doesn't revoke the old one a running sandbox may still use. Old
+// tokens grant no more than their bot's collaborator rights and go with the bot
+// user when its Container goes.
+var agentTokenName = func() string {
+	sum := sha256.Sum256([]byte(AgentTokenScopes))
+	return "c4factory-agent-" + hex.EncodeToString(sum[:4])
+}()
 
 // AgentTokenScopes are what an agent bot's token may do, comma-separated: push
 // to its repository, and read the owner's packages, where the go command
@@ -187,7 +197,8 @@ func (g *gitea) CombinedStatus(ctx context.Context, repo Repository, ref string)
 
 // EnsureAgentAccess makes user a restricted bot account that can write to repo
 // and nothing else, and returns a fresh access token for it. It needs an admin
-// token. Calling it again rotates the token.
+// token. Calling it again rotates the token of these scopes and leaves
+// tokens made with other scopes alone (see agentTokenName).
 func (g *gitea) EnsureAgentAccess(ctx context.Context, repo Repository, user string) (Credentials, error) {
 	password, err := randomSecret()
 	if err != nil {
