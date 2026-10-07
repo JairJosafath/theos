@@ -369,6 +369,19 @@ model and context it needs.
   that must be shortened to fit ends at a whole word with "…", never mid-word.
   For a Brief's apps, the person answers them in a prompt instead
   ([Briefs](#briefs-an-idea-in-plain-words)).
+- **Evidence is never made up** (#467). The implementer never presents a
+  drawn or generated picture, a recording or a message as the product's: a
+  screenshot comes from running the product, a quoted message from the code.
+  A criterion that needs what no agent's sandbox has (a desktop editor, a
+  device, an account) is left open with why, never faked. The reviewer opens
+  every image the change adds (the runner lists them with their sizes), checks
+  quoted output against the code, and requires a change for made-up evidence;
+  it approves an honestly open criterion of that kind and reports it in the
+  verdict's `open`. On merge the operator files those criteria as one
+  `kind/by-hand` issue, `status/needs-human` in the Later milestone, so a
+  person does them; a Brief lists it with its failed issues and may close it,
+  never retry it. The planner doesn't give agents a person's work. See
+  [plans/honest-evidence.md](plans/honest-evidence.md).
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the agent of a client reads the service it calls.
