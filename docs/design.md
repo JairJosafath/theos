@@ -449,6 +449,17 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   body, and only then labels it ready; the Crew waits for open dependencies, so
   the issue starts once its blockers' pull requests merge. See
   [plans/brief-issue-order.md](plans/brief-issue-order.md).
+- **One app uses another's release, never its branch** (#430). Apps stay one
+  repository each and share code the way separate repositories do: an issue
+  that builds on another Container's code names it in its front matter,
+  `uses:`. The plan is refused when the used Container is the issue's own, has
+  no Relationship from the issue's Container, or has no release planned or
+  made. When the Crew tags a release of a repository with a `go.mod` at its
+  root, the operator publishes the module to the owner's Go registry in Gitea;
+  agent pods and the Go Standard's CI fetch `c4factory.local/...` modules
+  through it. A `uses:` issue is labelled ready only once each app it uses has
+  a published version, which its body names to pin. See
+  [plans/app-modules.md](plans/app-modules.md).
 - **It asks only for what costs money or touches access.** Agents, their
   models, a Crew's size, GitProviders and credentials are never the planner's
   to make or change. When it needs one, or can't go on without a decision, the
