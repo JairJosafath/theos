@@ -13,8 +13,8 @@ never do, is in the issue you were given and the system's needs: follow those.
 `package-lock.json`, then runs Prettier (check), ESLint with `eslint.config.mjs`
 (typescript-eslint strict, no warnings allowed), `tsc` with the strict
 `tsconfig.json`, the vitest unit tests, and {{ if eq .Framework "react-vite" }}builds the site to prove it
-still builds.{{ else if eq .Framework "node-cli" }}packs the package and runs
-its program to prove it still works.{{ else }}packages the `.vsix` to prove it
+still builds.{{ else if eq .Framework "node-cli" }}packs the package and
+runs its program.{{ else }}packages the `.vsix` to prove it
 still packages.{{ end }} CI runs the same command, and nothing reaches `main` without it
 passing and a review. Never commit red.
 

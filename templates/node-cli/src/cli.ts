@@ -4,8 +4,8 @@ import { name, version } from '../package.json';
 import { greeting } from './greeting';
 
 /** Exit codes, as shells and CI read them. */
-export const exitOK = 0; // success, including --help and --version
-export const exitUsage = 2; // the command line was wrong
+export const EXIT_OK = 0; // success, including --help and --version
+export const EXIT_USAGE = 2; // the command line was wrong
 
 /** Where `run` writes: results to stdout, diagnostics to stderr. */
 export interface Output {
@@ -19,7 +19,7 @@ const options = {
   help: { type: 'boolean', short: 'h', default: false },
 } as const;
 
-const usage = `Usage: ${name} [flags]
+const USAGE = `Usage: ${name} [flags]
 
 Prints a greeting.
 
@@ -41,16 +41,16 @@ export function run(args: readonly string[], out: Output): number {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     out.stderr(`${name}: ${message}\nRun '${name} --help' for usage.\n`);
-    return exitUsage;
+    return EXIT_USAGE;
   }
   if (values.help) {
-    out.stdout(usage);
-    return exitOK;
+    out.stdout(USAGE);
+    return EXIT_OK;
   }
   if (values.version) {
     out.stdout(`${name} ${version}\n`);
-    return exitOK;
+    return EXIT_OK;
   }
   out.stdout(`${greeting(values.name)}\n`);
-  return exitOK;
+  return EXIT_OK;
 }

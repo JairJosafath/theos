@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { name, version } from '../package.json';
-import { exitOK, exitUsage, run } from './cli';
+import { EXIT_OK, EXIT_USAGE, run } from './cli';
 
 /** Runs the program on `args` and returns its exit code and output. */
 function runWith(args: string[]): { code: number; stdout: string; stderr: string } {
@@ -25,12 +25,12 @@ describe('run', () => {
     { args: ['-n', 'Zoë'], want: 'Hello, Zoë!\n' },
     { args: ['--name=Grace'], want: 'Hello, Grace!\n' },
   ])('greets for $args', ({ args, want }) => {
-    expect(runWith(args)).toEqual({ code: exitOK, stdout: want, stderr: '' });
+    expect(runWith(args)).toEqual({ code: EXIT_OK, stdout: want, stderr: '' });
   });
 
   it('prints the version from package.json', () => {
     expect(runWith(['--version'])).toEqual({
-      code: exitOK,
+      code: EXIT_OK,
       stdout: `${name} ${version}\n`,
       stderr: '',
     });
@@ -38,7 +38,7 @@ describe('run', () => {
 
   it.each([['--help'], ['-h']])('prints the help for %s', (flag) => {
     const got = runWith([flag]);
-    expect(got.code).toBe(exitOK);
+    expect(got.code).toBe(EXIT_OK);
     expect(got.stdout).toContain(`Usage: ${name} [flags]`);
     expect(got.stderr).toBe('');
   });
@@ -49,7 +49,7 @@ describe('run', () => {
     { args: ['--name'], says: "Option '-n, --name <value>' argument missing" },
   ])('rejects $args', ({ args, says }) => {
     const got = runWith(args);
-    expect(got.code).toBe(exitUsage);
+    expect(got.code).toBe(EXIT_USAGE);
     expect(got.stdout).toBe('');
     expect(got.stderr).toContain(says);
     expect(got.stderr).toContain(`Run '${name} --help' for usage.`);
