@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -181,14 +182,35 @@ func (r *BriefReconciler) needAgents(ctx context.Context, brief *c4v1alpha1.Brie
 		secret := agent.Spec.CredentialsSecretRef.Name
 		err = r.APIReader.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: secret}, &corev1.Secret{})
 		if apierrors.IsNotFound(err) {
-			return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s with the "+
-				"Agents' token, so the Brief's %s can start", secret, name, brief.Namespace, role)}
+			return r.missingAgentSecret(ctx, brief.Namespace, secret, name, role)
 		}
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// missingAgentSecret returns errNeedsInput saying where to give Agent name's
+// missing token Secret: in the project namespace, or, when the operator shares
+// a Secret of that name, once in its own namespace for every project, naming
+// the label the project namespace needs when it hasn't opted in.
+func (r *BriefReconciler) missingAgentSecret(ctx context.Context, namespace, secret, name, role string) error {
+	if r.SourceNamespace == "" || !slices.Contains(r.SharedSecrets, secret) {
+		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s with the "+
+			"Agents' token, so the Brief's %s can start", secret, name, namespace, role)}
+	}
+	var ns corev1.Namespace
+	if err := r.APIReader.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
+		return err
+	}
+	if ns.Labels[c4v1alpha1.LabelSharedSecrets] != sharedSecretsOptIn {
+		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: label namespace %s %s=%s, so the "+
+			"factory shares it from namespace %s, or make it in %s for this project only",
+			secret, name, namespace, c4v1alpha1.LabelSharedSecrets, sharedSecretsOptIn, r.SourceNamespace, namespace)}
+	}
+	return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s, which the "+
+		"factory shares with every project, or in %s for this project only", secret, name, r.SourceNamespace, namespace)}
 }
 
 // startRound starts the Brief's next round, which takes every prompt it has
