@@ -43,6 +43,9 @@ type Repository struct {
 	Name     string
 	CloneURL string
 	WebURL   string
+	// GoProxy is the Go module proxy of the owner's package registry, where the
+	// owner's released Go modules are fetched from; empty when the host has none.
+	GoProxy string
 }
 
 // Commit is one commit on the default branch.
