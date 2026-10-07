@@ -28,7 +28,7 @@ import (
 )
 
 var ordersAPIScaffoldedFrom = []string{
-	"python-fastapi@v1.3.0", "small@v1.0.0", "k8s-manifests@v1.1.0", "postgres@v1.1.0",
+	"python-fastapi@v1.3.0", "small@v1.0.1", "k8s-manifests@v1.2.1", "postgres@v1.1.0",
 }
 
 // createWebshop creates the sample story in ns: webshop-core with orders-api
