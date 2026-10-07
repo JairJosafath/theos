@@ -207,7 +207,10 @@ enforces.
   passes, after its own checks) and keeps `v*` tags to the operator; a per-project
   NetworkPolicy allows only DNS, the Git host and public HTTPS; each run has a
   deadline. The Claude token is readable inside the sandbox; Agent Substrate's
-  egress credential injection is the later fix.
+  egress credential injection is the later fix. The token's one source is a
+  Secret in the release namespace that the operator copies into project
+  namespaces, so the fix reads one Secret; a namespace receives copies only
+  with a label a namespace's own users can't set.
 - **App values are needs, not platform rules.** "Works offline, no login, no ads"
   is a need on a SoftwareSystem, not a rule of the platform; the agents get the
   needs with every Task.
@@ -488,8 +491,11 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   and cost. A round's summary is written for the person, about what the round
   did for their app: the planner's `plan/summary.md`, or what the plan holds
   when it wrote none, never the planner's reply. A summary too long for the
-  history ends on its last whole sentence, never mid-word. The chart makes each project's Project, catalog and four default
-  Agents, so a person makes only the Agents' token Secret by hand.
+  history ends on its last whole sentence, never mid-word. The chart makes each project's namespace, Project, catalog and four default
+  Agents. A person gives the Agents' token once, as a Secret in the release
+  namespace, and the operator shares it with every project; a project with a
+  Secret of that name of its own keeps it
+  ([plan](plans/shared-project-credentials.md)).
 
 ## Distribution and issues
 
@@ -512,14 +518,17 @@ release installs the whole factory:
 | Operator, CRDs, RBAC, admission policy | release namespace | always |
 | UI | release namespace | `ui.enabled`, on by default |
 | Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password and the runners' registration token generated in the cluster by Gitea's pod into Secrets `gitea-admin` and `gitea-runner` when missing, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
-| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret, a GitProvider and, when the namespace has none, a Project for each project in `gitea.projects` |
+| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret, a GitProvider and, when the namespace has none, a Project for each project in `gitea.projects`; labels a project namespace the chart didn't make so it receives the shared Secrets |
+| Project namespaces | each of `gitea.projects` | `projectNamespaces.create`, on by default; made when missing, labeled `c4.factory.io/shared-secrets: "true"` and kept on uninstall; a namespace that already exists is left to the person |
+| Shared Secrets | the release namespace, copied to each project namespace | the Agents' token Secret (`agents.credentialsSecret`) and the pull Secrets (`global.imagePullSecrets`), which the person makes once; the operator copies each into every labeled namespace with a Project, keeps its copies in step with the source, and never touches a Secret of that name it didn't make, which is how a project keeps a token of its own; Task sandboxes list the pull Secrets |
 | CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values |
 
 A device installs itself only what is another project's or its own: Agent
-Sandbox (its controller and CRDs) before the chart, the namespaces of its
-projects, and, while the GHCR packages are private, a pull secret or the images
-loaded into its cluster. The Kind test environment of this repository keeps its
+Sandbox (its controller and CRDs) before the chart, the Agents' token in the
+release namespace, and, while the GHCR packages are private, a pull secret in
+the release namespace and Gitea's or the images loaded into its cluster. Adding
+a project is adding its name to `gitea.projects`. The Kind test environment of this repository keeps its
 make targets (`make gitea seed deploy`) and locally built images.
 
 ## Out of scope for v1
