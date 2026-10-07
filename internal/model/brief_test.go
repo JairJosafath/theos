@@ -82,6 +82,7 @@ func happyFiles() map[string]string {
 		"plan/issues/01-web.md":   readyIssue,
 		"plan/issues/02-api.md":   strings.Replace(readyIssue, "Show the orders", "Serve the orders", 1),
 		PlanChoicesFile:           "- A static site for the shop\n- Postgres keeps orders\n",
+		PlanSummaryFile:           "\nPlanned the shop: a web site and an API.\n",
 		"brief.md":                "not part of the plan",
 		"plan/issues/.gitkeep":    "",
 		"model/containers/api.md": "not part of the plan",
@@ -146,6 +147,39 @@ func TestParsePlan(t *testing.T) {
 	}
 	if plan.NeedsInput != "" {
 		t.Errorf("needs input %q", plan.NeedsInput)
+	}
+	if plan.Summary != "Planned the shop: a web site and an API." {
+		t.Errorf("summary %q", plan.Summary)
+	}
+}
+
+func TestRoundSummary(t *testing.T) {
+	plan, err := ParsePlan(happyFiles())
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("Planned the shop. ", 60) + "It sells thi"
+	for _, tc := range []struct {
+		name string
+		plan Plan
+		want string
+	}{
+		{"the planner's summary, on one line", Plan{Summary: "Planned the shop:\n  a web site."},
+			"Planned the shop: a web site."},
+		{"a long one ends on a whole sentence", Plan{Summary: long},
+			strings.TrimSpace(strings.Repeat("Planned the shop. ", 55))},
+		{"without summary.md, what the plan holds", Plan{Objects: plan.Objects, Issues: plan.Issues},
+			"The model has 2 Containers; the round files 2 issues."},
+		{"one of each", Plan{Objects: plan.Objects[2:3], Issues: plan.Issues[:1]},
+			"The model has one Container; the round files one issue."},
+		{"a question is not a plan", Plan{Summary: "Planned the shop.", NeedsInput: "Which payment provider?"},
+			"Asked for input before planning."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := RoundSummary(tc.plan); got != tc.want {
+				t.Errorf("RoundSummary = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

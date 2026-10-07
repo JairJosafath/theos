@@ -401,11 +401,10 @@ func endRoundFailed(ctx context.Context, brief *c4v1alpha1.Brief, summary, messa
 }
 
 // plannerNeedsInput records a round whose planner asked the person for input.
-func (r *BriefReconciler) plannerNeedsInput(ctx context.Context, brief *c4v1alpha1.Brief, task *c4v1alpha1.Task,
-	plan model.Plan) {
+func (r *BriefReconciler) plannerNeedsInput(ctx context.Context, brief *c4v1alpha1.Brief, plan model.Plan) {
 	status := &brief.Status
 	sentence := model.Clip(plan.NeedsInput, 1000)
-	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonPlannerNeedsInput, Summary: task.Status.Summary,
+	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonPlannerNeedsInput, Summary: model.RoundSummary(plan),
 		Choices: plan.Choices, NeedsInput: sentence})
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput, metav1.ConditionTrue,
 		model.ReasonPlannerNeedsInput, sentence)
@@ -421,7 +420,7 @@ func recordRound(status *c4v1alpha1.BriefStatus, entry c4v1alpha1.BriefRound) {
 		return
 	}
 	entry.Round = status.Round
-	entry.Summary = model.Clip(entry.Summary, 1000)
+	entry.Summary = model.ClipSentences(entry.Summary, 1000)
 	entry.Choices = model.ClipList(entry.Choices, 50, 500)
 	status.History = model.KeepNewest(append(status.History, entry), 20)
 }

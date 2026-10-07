@@ -165,6 +165,29 @@ func TestClip(t *testing.T) {
 	}
 }
 
+func TestClipSentences(t *testing.T) {
+	for _, tc := range []struct {
+		name, s string
+		n       int
+		want    string
+	}{
+		{"fits", "  Planned Sprout.\n", 20, "Planned Sprout."},
+		{"ends on the last whole sentence", "Planned Sprout. It is a todo app for one person, t", 30, "Planned Sprout."},
+		{"keeps every sentence that fits", "One. Two! Three? Four.", 17, "One. Two! Three?"},
+		{"a dot inside a word ends no sentence", "Uses v1.5 now and more", 12, "Uses v1.5…"},
+		{"no whole sentence: the whole words", "A tiny garden-themed todo app", 18, "A tiny…"},
+		{"a cut on a space keeps the word before", "Plan Sprout now", 10, "Plan…"},
+		{"never past n, on a character", "héé", 4, "h…"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ClipSentences(tc.s, tc.n)
+			if got != tc.want || len(got) > tc.n {
+				t.Errorf("ClipSentences(%q, %d) = %q, want %q", tc.s, tc.n, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestWorkspacePrompts(t *testing.T) {
 	prompts := []string{"one", "two", "three"}
 	for _, tc := range []struct {
