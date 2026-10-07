@@ -748,12 +748,23 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   out=$(PR=$(pr 'Refs #7, see https://github.com/o/r/issues/7' '[7]') gh_merge 12 2>&1)
   check "merge: closingIssuesReferences alone refuses" "$? $out" '1 github: #12 says Refs #7, but GitHub would close #7 on merge (closingIssuesReferences); drop the link or the closing word before it'
   check "merge: nothing merged while refused" "$(cat "$T/merged" 2>/dev/null)" ""
-  out=$(PR=$(pr $'Refs #7\n\nSteps: #8 (finishes #7), #9; closes #70' '[70]') gh_merge 12 2>&1)
+  out=$(PR=$(pr $'Refs #7\n\nSteps: #8 (finishes #7), #9\nCloses #70' '[70]') gh_merge 12 2>&1)
   check "merge: only Refs #7 merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 12 --repo $C4_GITHUB_REPO --merge"
   rm -f "$T/merged"
   out=$(PR=$(pr 'Closes #565' '[565]') gh_merge 13 2>&1)
   check "merge: a step's Closes #N merges" "$? $(cat "$T/merged")" "0 gh pr merge 13 --repo $C4_GITHUB_REPO --merge"
   gh_merge abc 2>/dev/null; check "merge: bad argument" $? 1
+  rm -f "$T/merged"
+  out=$(PR=$(pr $'Closes #5\n\nFollows #8; its PR closes #9.' '[5, 9]') gh_merge 15 2>&1)
+  check "merge: refuses prose that closes an issue no Closes line names" "$? $out $(cat "$T/merged" 2>/dev/null)" \
+    '1 github: #15 would close #9 on merge: "Follows #8; its PR closes #9." names it with a closing word, and no line starts with Closes #9; reword it (no close, fix or resolve word before #9), or put Closes #9 on its own line '
+  out=$(PR=$(pr 'Closes #5' '[5]' $'fix: thing\n\nThis fixes #9 too.') gh_merge 15 2>&1)
+  check "merge: a commit message's prose counts" "$? $(grep -c '"This fixes #9 too." names it' <<<"$out")" "1 1"
+  out=$(PR=$(pr 'Closes #5' '[5, 9]') gh_merge 15 2>&1)
+  check "merge: a linked issue with no Closes line refuses" "$? $out" '1 github: #15 would close #9 on merge (closingIssuesReferences), and no line starts with Closes #9; unlink #9, or put Closes #9 on its own line'
+  check "merge: nothing merged while prose closes" "$(cat "$T/merged" 2>/dev/null)" ""
+  out=$(PR=$(pr $'Closes #5\n  fixes: #6\nResolves '"$C4_GITHUB_REPO#7" '[5, 6, 7]') gh_merge 15 2>&1)
+  check "merge: only Closes, Fixes, Resolves lines merge" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 15 --repo $C4_GITHUB_REPO --merge"
   rm -f "$T/merged"
   printf 'Depends on #571\nDepends on #572\n' >"$T/body-570"
   touch "$T/open-571" "$T/open-572"

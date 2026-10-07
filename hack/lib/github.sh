@@ -79,7 +79,9 @@
 #   hack/lib/github.sh merge PR          merge pull request PR with a merge commit. Refused (exit 1) when its body
 #                                        says Refs #N and a closing word next to #N (closes #N, fixed #N, even in
 #                                        prose or a commit message) or GitHub's closingIssuesReferences would
-#                                        still close N: a plan's pull request must not close its parent
+#                                        still close N: a plan's pull request must not close its parent. Refused too
+#                                        when it would close an issue no line starts with Closes, Fixes or Resolves #N
+#                                        for (prose such as "its PR closes #9"), naming the line to reword
 #   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N; drops N's status labels
 #   hack/lib/github.sh closed N          drop closed issue N's status/* labels (open N is left alone); the
 #                                        Issue closed workflow runs it, for issues a pull request's Closes #N closes
@@ -1452,10 +1454,13 @@ GH_CLOSE_WORDS='(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+([[:alnum:]_.
 # #N"), so a plan's pull request would close its parent with the steps
 # unbuilt. Refused (exit 1) when such a phrase is there or GraphQL's
 # closingIssuesReferences lists N; the message names the phrase to reword.
+# Refused as well when it would close any issue that no line of the body or a
+# commit message starts with Closes, Fixes or Resolves #N for: a step's or a
+# fix's prose ("its PR closes #9") closes #9 too, and the message names the line.
 # Refused too when it would close an issue with a "Depends on #S" step still
 # open (gh_closes_check), or GitHub can't be asked whether it would.
 gh_merge() {
-  local pr=${1:?usage: merge PR} view text refs closing n phrase bad=
+  local pr=${1:?usage: merge PR} view text refs closing meant line n phrase bad=
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
@@ -1473,6 +1478,21 @@ gh_merge() {
       echo "github: #$pr says Refs #$n, but GitHub would close #$n on merge (closingIssuesReferences); drop the link or the closing word before it" >&2
       bad=1
     fi
+  done
+  [ -z "$bad" ] || return 1
+  # It closes only what a line starts with Closes, Fixes or Resolves #N names.
+  meant=$(grep -oiE '^[[:space:]]*(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+(https?://github\.com/[[:alnum:]_.-]+/[[:alnum:]_.-]+/issues/[0-9]+|([[:alnum:]_.-]+/[[:alnum:]_.-]+)?#[0-9]+)' <<<"$text" | gh_closing_refs | sort -un)
+  for n in $( { gh_closing_refs <<<"$text"; echo "$closing"; } | sort -un); do
+    grep -qxF -- "$n" <<<"$meant" && continue
+    line=$(while IFS= read -r line; do
+      grep -qxF -- "$n" <<<"$(gh_closing_refs <<<"$line")" && { sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$line"; break; }
+    done <<<"$text")
+    if [ -n "$line" ]; then
+      echo "github: #$pr would close #$n on merge: \"$line\" names it with a closing word, and no line starts with Closes #$n; reword it (no close, fix or resolve word before #$n), or put Closes #$n on its own line" >&2
+    else
+      echo "github: #$pr would close #$n on merge (closingIssuesReferences), and no line starts with Closes #$n; unlink #$n, or put Closes #$n on its own line" >&2
+    fi
+    bad=1
   done
   [ -z "$bad" ] || return 1
   # Nor may it close an issue with a Depends on step still open (closes-check).
