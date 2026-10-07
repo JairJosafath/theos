@@ -261,6 +261,16 @@ type TaskStatus struct {
 	// +optional
 	StandardChange *TaskStandardChange `json:"standardChange,omitempty"`
 
+	// costMilliUSD is what the Task's agent runs cost so far, over all rounds,
+	// in thousandths of a US dollar, as the agents reported it.
+	// +optional
+	CostMilliUSD int64 `json:"costMilliUSD,omitempty"`
+
+	// runsWithoutCost counts the Task's agent runs whose agent didn't report
+	// what they cost; costMilliUSD leaves them out.
+	// +optional
+	RunsWithoutCost int32 `json:"runsWithoutCost,omitempty"`
+
 	// sandbox names the Sandbox running now, if any.
 	// +optional
 	Sandbox string `json:"sandbox,omitempty"`

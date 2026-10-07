@@ -388,13 +388,13 @@ func (r *BriefReconciler) failRound(ctx context.Context, brief *c4v1alpha1.Brief
 	if cond := meta.FindStatusCondition(task.Status.Conditions, ConditionSucceeded); cond != nil && cond.Message != "" {
 		message = cond.Message
 	}
-	endRoundFailed(ctx, brief, task.Status.Summary, message)
+	endRoundFailed(ctx, brief, task, message)
 }
 
 // endRoundFailed records a round that failed, and why.
-func endRoundFailed(ctx context.Context, brief *c4v1alpha1.Brief, summary, message string) {
+func endRoundFailed(ctx context.Context, brief *c4v1alpha1.Brief, task *c4v1alpha1.Task, message string) {
 	status := &brief.Status
-	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonRoundFailed, Summary: summary})
+	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonRoundFailed, Summary: task.Status.Summary})
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
 		model.ReasonRoundFailed, model.Clip(fmt.Sprintf("Round %d failed: %s", status.Round, message), 32768))
 	logf.FromContext(ctx).Info("Brief round failed", "round", status.Round, "message", firstLine(message))
@@ -405,7 +405,7 @@ func (r *BriefReconciler) plannerNeedsInput(ctx context.Context, brief *c4v1alph
 	plan model.Plan) {
 	status := &brief.Status
 	sentence := model.Clip(plan.NeedsInput, 1000)
-	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonPlannerNeedsInput, Summary: task.Status.Summary,
+	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonPlannerNeedsInput, Summary: task.Status.Summary,
 		Choices: plan.Choices, NeedsInput: sentence})
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput, metav1.ConditionTrue,
 		model.ReasonPlannerNeedsInput, sentence)
@@ -415,11 +415,14 @@ func (r *BriefReconciler) plannerNeedsInput(ctx context.Context, brief *c4v1alph
 }
 
 // recordRound adds the running round to the history as entry says it ended,
-// once; the newest 20 are kept.
-func recordRound(status *c4v1alpha1.BriefStatus, entry c4v1alpha1.BriefRound) {
+// with what its Plan Task cost, once; the newest 20 are kept.
+func recordRound(status *c4v1alpha1.BriefStatus, task *c4v1alpha1.Task, entry c4v1alpha1.BriefRound) {
 	if roundOver(status) {
 		return
 	}
+	entry.CostMilliUSD, entry.RunsWithoutCost = task.Status.CostMilliUSD, task.Status.RunsWithoutCost
+	status.CostMilliUSD += entry.CostMilliUSD
+	status.RunsWithoutCost += entry.RunsWithoutCost
 	entry.Round = status.Round
 	entry.Summary = model.Clip(entry.Summary, 1000)
 	entry.Choices = model.ClipList(entry.Choices, 50, 500)

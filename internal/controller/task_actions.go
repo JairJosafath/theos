@@ -422,10 +422,15 @@ func (r *TaskReconciler) reviewRun(ctx context.Context, task *c4v1alpha1.Task,
 	return run.Result
 }
 
-// endRun deletes the current sandbox, once its result is in status.
+// endRun deletes the current sandbox, once its result is in status, and adds
+// what the run cost to the Task's.
 func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) error {
 	if status.Sandbox == "" {
 		return nil
+	}
+	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
+	if err != nil {
+		return err
 	}
 	sandbox := newSandbox()
 	sandbox.SetNamespace(task.Namespace)
@@ -434,6 +439,9 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, stat
 		!apierrors.IsNotFound(err) {
 		return err
 	}
+	milliUSD, withoutCost := run.Cost()
+	status.CostMilliUSD += milliUSD
+	status.RunsWithoutCost += withoutCost
 	status.Sandbox, status.SandboxPod = "", ""
 	return nil
 }

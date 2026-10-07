@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 import type { FactoryData } from '../k8s/sources'
 import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../k8s/health'
 import { findCondition, LABEL_CREW, type Agent, type Task } from '../k8s/types'
+import { describeCost } from '../model/brief'
 import { plural, timeAgo } from '../model/describe'
 import { AgentName, CrewPhaseBadge } from './bits'
 import {
@@ -553,6 +554,7 @@ function TaskPanel({
   const byStage = timeByStage(segments)
   const back = agentBackAt(task)
   const followUps = followUpLinks(task)
+  const cost = describeCost(task.status?.costMilliUSD, task.status?.runsWithoutCost)
   const standardChange = standardChangeLink(task)
   const crew = task.metadata.labels?.[LABEL_CREW]
   return (
@@ -631,6 +633,12 @@ function TaskPanel({
         </dd>
         <dt>Started</dt>
         <dd>{timeAgo(task.metadata.creationTimestamp, now)}</dd>
+        {cost ? (
+          <>
+            <dt>Cost</dt>
+            <dd>{cost}</dd>
+          </>
+        ) : null}
         {task.status?.completedAt ? (
           <>
             <dt>Took</dt>

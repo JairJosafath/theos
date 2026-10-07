@@ -260,6 +260,10 @@ export interface Task extends K8sObject {
     review?: { verdict?: string; summary?: string }
     summary?: string
     feedback?: string
+    /** What the Task's agent runs cost over all rounds, in thousandths of a US dollar. */
+    costMilliUSD?: number
+    /** The Task's agent runs whose agent didn't report their cost. */
+    runsWithoutCost?: number
     sandbox?: string
     sandboxPod?: string
     /** When an unavailable agent is tried again; Progressing's reason is then AgentUnavailable. */
@@ -350,6 +354,8 @@ export interface Brief extends K8sObject {
       summary?: string
       choices?: string[]
       costMilliUSD?: number
+      /** The round's planner runs whose agent didn't report their cost. */
+      runsWithoutCost?: number
       /** Applied, PlannerNeedsInput or RoundFailed. */
       outcome?: 'Applied' | 'PlannerNeedsInput' | 'RoundFailed'
       /** The planner's question, when the round asked for input. */
@@ -359,6 +365,8 @@ export interface Brief extends K8sObject {
     repositoryURL?: string
     /** What planning cost over all rounds, in thousandths of a US dollar. */
     costMilliUSD?: number
+    /** The planner runs, over all rounds, whose agent didn't report their cost. */
+    runsWithoutCost?: number
     observedGeneration?: number
     /** Planned, and NeedsInput: while True, its message says what the Brief waits for. */
     conditions?: Condition[]

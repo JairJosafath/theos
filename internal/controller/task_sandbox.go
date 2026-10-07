@@ -364,6 +364,9 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 			if result.RetryAt != nil {
 				state.Result.RetryAt = *result.RetryAt
 			}
+			if result.CostMilliUSD != nil {
+				state.Result.CostMilliUSD, state.Result.CostReported = *result.CostMilliUSD, true
+			}
 			return state, nil
 		}
 		state.Failure = term.Reason
