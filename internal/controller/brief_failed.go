@@ -130,16 +130,48 @@ func lastFailed(brief *c4v1alpha1.Brief, name string) []model.FailedIssue {
 	return out
 }
 
-// waitingFailed are the Brief's waiting failed issues, as its status lists
-// them, without their bodies: an unclear one's clarification must bring the
-// acceptance criteria itself.
-func waitingFailed(brief *c4v1alpha1.Brief) []model.FailedIssue {
+// failedToCheck are the Brief's waiting failed issues, as its status lists
+// them, for model.CheckFailedAnswers. The status keeps no bodies, so an
+// unclear one the answers retry is read from the Git host: its clarification
+// must make the whole body pass the Crew's check. One that is gone is checked
+// without its body.
+func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.Brief,
+	answers []model.FailedAnswer) ([]model.FailedIssue, error) {
 	out := make([]model.FailedIssue, 0, len(brief.Status.Failed))
 	for _, f := range brief.Status.Failed {
 		out = append(out, model.FailedIssue{Container: f.Container, Number: int(f.Number), Title: f.Title, URL: f.URL,
 			Kind: f.Kind, Reason: f.Reason, Tries: int(f.Tries)})
 	}
-	return out
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	for i, f := range out {
+		if f.Kind != model.FailedUnclear || !slices.ContainsFunc(answers, func(a model.FailedAnswer) bool {
+			return a.Container == f.Container && a.Issue == f.Number && a.Answer == model.AnswerRetry
+		}) {
+			continue
+		}
+		var c c4v1alpha1.Container
+		err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: f.Container}, &c)
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading Container %s: %w", f.Container, err)
+		}
+		provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
+		if err != nil {
+			return nil, err
+		}
+		issue, err := provider.GetIssue(gitCtx, provider.Repository(c.Name), f.Number)
+		if errors.Is(err, gitprovider.ErrIssueNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading %s#%d: %w", f.Container, f.Number, err)
+		}
+		out[i].Body = issue.Body
+	}
+	return out, nil
 }
 
 // answerFailed does what the plan's answers to failed issues say: one to
@@ -208,8 +240,8 @@ func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1alpha1.Br
 
 // answerFailedIssue retries or closes one failed issue. What marks it
 // answered, the ready label in place of needs-human or the closing, comes
-// last, so a try that stops part way is done again whole; the clarification
-// is appended once a round.
+// last, so a try that stops part way is done again, its comment maybe twice;
+// the clarification is appended once a round.
 func answerFailedIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
 	issue gitprovider.Issue, a model.FailedAnswer, round int, comment string) error {
 	if a.Answer == model.AnswerRetry {
