@@ -1,5 +1,6 @@
 # The Go and Node runner: the Gitea runner on the Go and Node toolchain
 # (hack/toolchain-go), labelled go, for Containers written in Go or TypeScript.
+# It has uv too, so a Python project checks and releases here as well.
 # `make runner-go` builds it and applies this, it is applied by that target alone.
 # It registers with the token the seed Job stores in Secret gitea/gitea-runner.
 #

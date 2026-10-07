@@ -33,8 +33,8 @@ hack/testenv.mk                    Make targets for the Kind test environment
 hack/dev/                          The project shell's environment and zsh setup, for ./dev
 hack/seed/                         The seed job image and manifests
 hack/session/                      The Session client image and the test Session pod
-hack/toolchain-base/               The minimal toolchain (Node, bash, git, make) for the e2e hello-world Container
-hack/toolchain-go/                 The Go and Node toolchain, with a warm build cache, for Go and TypeScript Containers
+hack/toolchain-base/               The minimal toolchain (Node, uv, bash, git, make) for the e2e hello-world Container and Python
+hack/toolchain-go/                 The Go, Node and uv toolchain, with a warm Go build cache, for Go, TypeScript and Python Containers
 hack/runner/, hack/agent/          The CI runner and agent images, built on the toolchain
 hack/gh-runner/                    Self-hosted GitHub Actions runners for this repository (make gh-runner RUNNERS=N)
 hack/render/                       Renders templates locally, the way the operator scaffolds

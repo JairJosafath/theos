@@ -192,7 +192,9 @@ enforces.
   the Framework it lists. A Container with a Standard gets `main` protected by
   required checks at scaffold time, and `status.checks` reports CI on `main`.
 - **CI in Gitea.** Gitea Actions with a runner in the cluster on the same toolchain
-  image the agents and devcontainers use.
+  image the agents and devcontainers use. Both toolchain images, `base` and `go`,
+  carry one pinned uv, so a Python project checks on either runner and releases
+  on `go`, with the Python its `.python-version` pins.
 - **Task: a goal for a Container.** The operator runs the Agent in an
   [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox), which works on
   branch `task/<name>`; opens a pull request; waits for CI; runs the Agent again as

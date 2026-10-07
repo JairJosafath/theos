@@ -1,6 +1,14 @@
-# The Go and Node toolchain: Go, golangci-lint and Node with npm, for Containers
-# written in Go or TypeScript. CI (runner label `go`), agents and devcontainers all use it, so an
-# agent checks its work with exactly the tools CI uses.
+# The Go and Node toolchain: Go, golangci-lint, Node with npm and uv, for
+# Containers written in Go, TypeScript or Python. CI (runner label `go`), agents
+# and devcontainers all use it, so an agent checks its work with exactly the
+# tools CI uses. uv installs the Python a project's `.python-version` pins on
+# first use.
+#
+# UV_VERSION is the one hack/toolchain-base/Dockerfile pins;
+# hack/toolchain-uv_test.sh (make check) fails when they differ.
+ARG UV_VERSION=0.12.21
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
 FROM golang:1.26-bookworm
 
 ARG NODE_VERSION=24.21.0
@@ -19,6 +27,9 @@ RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-l
 RUN curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
       | tar -xz -C /usr/local/bin --strip-components=1 "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint" \
  && golangci-lint version
+
+COPY --from=uv /uv /uvx /usr/local/bin/
+RUN uv --version
 
 ENV GOTOOLCHAIN=local \
     GOFLAGS=-modcacherw \

@@ -465,7 +465,7 @@ catalog:
         supportedTypes: [service, worker]
     - kind: Deployment
       name: gitea-release
-      ref: v1.0.0
+      ref: v1.0.1
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix) on a Gitea release for each version tag.

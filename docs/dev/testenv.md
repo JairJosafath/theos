@@ -56,9 +56,9 @@ make session             # Run the test Session pod; make session-kill kills its
 make gitea-local seed-local  # A Gitea of this checkout's own, seeded like Kind's (no kubectl)
 make test-gitea          # gitprovider against a local Gitea (make gitea-local), or C4_GITEA_URL if set
 make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind cluster
-make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain, CI runner (label base), Agent Sandbox, agent image
+make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain (with uv), CI runner (label base), Agent Sandbox, agent image
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
-make toolchain-go runner-go agent-image-go  # Go and Node toolchain, CI runner (label go) and agent image
+make toolchain-go runner-go agent-image-go  # Go, Node and uv toolchain, CI runner (label go) and agent image
 make claude-secret       # The real agent's token, from .dev/secrets/claude-token (below) or CLAUDE_TOKEN=...
 make claude-secret-copy FROM=webshop TO=apps  # Reuse that Secret in another project
 make e2e                 # Only when the user asks: all of the above but the Go images, then check the whole loop in Kind

@@ -10,8 +10,8 @@ download them from the release page.
   `VERSION=<tag>` and writes the release files, and only those, into `dist/`.
   go-standard's cross-compiles the binaries plus `SHA256SUMS`; ts-standard's
   packages the `.vsix` and fails when the tag doesn't match `package.json`.
-- **Needs:** a runner labelled `go` (the Go and Node toolchain image), which the
-  checks use too. The workflow token creates the release and uploads the files;
+- **Needs:** a runner labelled `go` (the Go and Node toolchain image, with uv
+  for Python projects), which the checks use too. The workflow token creates the release and uploads the files;
   no secrets.
 - **Release:** `git tag v0.1.0 && git push origin v0.1.0`, or create the tag in
   Gitea. Only the operator's Git user may push `v*` tags to a protected
