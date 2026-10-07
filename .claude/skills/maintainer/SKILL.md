@@ -139,12 +139,14 @@ carries.
      a *Verify Release* run still runs, or a
      `Release vX.Y.Z fails its check` issue is open.
    - Name the next version: [SemVer](https://semver.org/), pre-1.0, so
-     `feat` bumps the minor and `fix` the patch. Bump `version` in
-     `dist/chart/Chart.yaml` and `VERSION` (with the release its prose
-     names) in `docs/getting-started.md` to it in one pull request, so the
-     guide at the tag installs that release; `make check` fails when the
-     two differ. Once it is merged, tag that commit of origin/main;
-     *Release* refuses a tag that isn't the chart's version.
+     `feat` bumps the minor and `fix` the patch. Then run
+     `hack/release.sh minor` (or `patch`, or `X.Y.Z`), the one commit you
+     make: it bumps `version` in `dist/chart/Chart.yaml` and `VERSION` (with
+     the release its prose names) in `docs/getting-started.md` in a pull
+     request of their own, merges it with a merge commit, and tags that
+     commit, so the guide at the tag installs that release. The tag starts
+     *Release*, which refuses a tag the chart or the guide doesn't name
+     (`hack/release.sh --check`). No relay session or issue is needed.
    - Watch *Release*. *Verify Release* starts Kind, so it runs only when a
      human dispatches it; never dispatch it yourself. Read its runs when
      there are any.

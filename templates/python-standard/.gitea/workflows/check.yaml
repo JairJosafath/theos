@@ -1,0 +1,28 @@
+# Runs the quality contract on every pull request and on main. The branch
+# protection of main requires a passing "check" context before a merge.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: base
+    steps:
+      - name: Check out
+        run: |
+          git init -q .
+          git -c http.extraHeader="Authorization: token ${{ gitea.token }}" \
+            fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
+          git checkout -q FETCH_HEAD
+      # uv's cache and the Python it installs (about 250 MB) go in the
+      # checkout, which is in memory and goes with the job: on the runner's
+      # disk they would stall the node, and with it the whole cluster, and in
+      # its /tmp (256 MiB) they wouldn't fit. On the same filesystem the
+      # virtual environment links to the cache instead of copying it.
+      - name: make check
+        run: |
+          export UV_CACHE_DIR="$PWD/.uv/cache" UV_PYTHON_INSTALL_DIR="$PWD/.uv/python"
+          make check

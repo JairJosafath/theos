@@ -1391,6 +1391,98 @@ gh_report() {
   echo "$url"
 }
 
+# The maintainer lease (#526): the maintainer runs once per project, not once
+# per device. Before hack/relay.sh --maintain starts a session it takes the
+# lease, a comment on the pinned Maintainer report issue that starts with
+# <!-- c4-maintainer --> and names the host and pid. It is live while it was
+# edited within C4_LEASE_TTL, as a claim is; the relay refreshes it every
+# GH_BEAT_EVERY seconds while the session runs and deletes it when the session
+# ends. Only the relay's maintainer, under its device lock
+# (.relay/maintain.lock), takes it, so a live lease of this host is one a
+# crashed maintainer left: it is taken over like a stale one.
+GH_MAINT_MARKER='<!-- c4-maintainer -->'
+GH_MAINT_JQ='
+  def lease: .body | sub("^\\s+"; "") | startswith($mm);
+  def lfield($f): [.body | capture($f + " `(?<v>[^`]+)`") | .v] | first // "";
+  def fresh: (.updated_at | fromdateiso8601) > (now - $ttl);
+  def mine: lfield("host") == $host;
+  def age: (now - (.updated_at | fromdateiso8601)) / 60 | floor | "\(.)m ago";
+'
+
+# gh_report_issue: the Maintainer report issue's number, creating it (with a
+# placeholder the first sweep replaces) when there is none.
+gh_report_issue() {
+  local n
+  n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
+    --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+  if [ -z "$n" ]; then
+    gh_report - <<<"No sweep has written this report yet." >/dev/null || return 1
+    n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
+      --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+  fi
+  [ -n "$n" ] || { echo "github: no Maintainer report issue to hold the lease" >&2; return 1; }
+  echo "$n"
+}
+
+# gh_maint_body: the lease comment's body.
+gh_maint_body() {
+  printf '%s\n**maintainer** sweeps · host `%s` · pid `%s`\nHeartbeat: %s\n' \
+    "$GH_MAINT_MARKER" "${C4_HOST:-$(hostname)}" "${GH_MAINT_PID:-$$}" "$(date -u +%Y-%m-%dT%H:%MZ)"
+}
+
+# gh_maint_take: take the maintainer lease and print its comment's ID. Exit 4:
+# another host holds a live one, or won the race to it; prints who, as "host
+# H (pid P), heartbeat 5m ago". Exit 1: GitHub could not be asked.
+gh_maint_take() {
+  local ttl n all id holder winner
+  ttl=$(gh_ttl) || return 1
+  n=$(gh_report_issue) || return 1
+  all=$(gh_comments "$n") || return 1
+  local q=(--arg mm "$GH_MAINT_MARKER" --argjson ttl "$ttl" --arg host "${C4_HOST:-$(hostname)}")
+  holder=$(jq -r "${q[@]}" "$GH_MAINT_JQ"'
+    [.[] | select(lease and fresh and (mine | not))] | min_by(.id) // empty
+    | "host \(lfield("host")) (pid \(lfield("pid"))), heartbeat \(age)"' <<<"$all")
+  if [ -n "$holder" ]; then
+    echo "$holder"
+    return 4
+  fi
+  # Stale leases, and this host's (its maintainer crashed), are deleted.
+  while read -r id; do
+    [ -n "$id" ] || continue
+    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null || return 1
+  done < <(jq -r "${q[@]}" "$GH_MAINT_JQ"'.[] | select(lease and ((fresh | not) or mine)) | .id' <<<"$all")
+  # Post, wait, and keep it only if it is the oldest live lease.
+  id=$(gh_maint_body | jq -Rs '{body: .}' |
+    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+  sleep "$GH_CLAIM_SETTLE"
+  if ! all=$(gh_comments "$n"); then
+    gh_maint_release "$id"
+    return 1
+  fi
+  winner=$(jq -r "${q[@]}" "$GH_MAINT_JQ"'
+    [.[] | select(lease and fresh)] | min_by(.id) // empty
+    | "\(.id)\thost \(lfield("host")) (pid \(lfield("pid"))), heartbeat \(age)"' <<<"$all")
+  if [ "${winner%%$'\t'*}" != "$id" ]; then
+    gh_maint_release "$id"
+    echo "${winner#*$'\t'}"
+    return 4
+  fi
+  echo "$id"
+}
+
+# gh_maint_beat ID: refresh lease ID's heartbeat. Exit 1: it is gone (another
+# host took it over as stale) or GitHub could not be asked.
+gh_maint_beat() { gh_edit_comment "${1:?usage: gh_maint_beat ID}" "$(gh_maint_body)"; }
+
+# gh_maint_release ID: delete lease ID; one already gone is released too.
+gh_maint_release() {
+  local out
+  out=$(gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/${1:?usage: gh_maint_release ID}" 2>&1) && return 0
+  grep -q 'HTTP 404' <<<"$out" && return 0
+  echo "$out" >&2
+  return 1
+}
+
 # gh_red WORKFLOW: print an issue body when WORKFLOW's two newest finished runs
 # on main failed (see the usage above); exit 1 when it isn't red, 2 when GitHub
 # can't say.

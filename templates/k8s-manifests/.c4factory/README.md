@@ -3,16 +3,22 @@
 A Dockerfile and plain Kubernetes manifests, built with kustomize. Shipping stays
 outside C4 Factory: Argo CD, Flux or a pipeline picks these files up.
 
-- **Supports:** `service`, `worker`
+- **Supports:** `service`, `worker`, `static-site`
 - **Writes:** `Dockerfile`, `.dockerignore`, and in `deploy/k8s/`: `kustomization.yaml`,
-  `deployment.yaml`, and `service.yaml` for type `service` only.
+  `deployment.yaml`, and `service.yaml` for types `service` and `static-site`.
 - **Expects from other layers:** `deploy/k8s/compute.yaml` from the Compute layer (a
   patch listed under `patches`), and `deploy/k8s/connector-<name>.yaml` from each
   Connector (listed under `resources`). The Deployment loads a ConfigMap
   `<container>-<connector>` per Connector through `envFrom`.
-- **v1 limitation:** the Dockerfile assumes the python-fastapi Framework: a uv project
-  with an ASGI app at `app.main:app`, served by uvicorn on port 8000 with `GET /healthz`.
-  Other Frameworks need their own Deployment template or a Dockerfile of their own.
+- **The Dockerfile follows the Framework** (`.Framework`):
+  - `python-fastapi`: a uv project with an ASGI app at `app.main:app`, served by
+    uvicorn on port 8000 as user 1000; the probes ask `GET /healthz`.
+  - `react-vite`: `npm ci` and `npm run build` on Node 24, then
+    `nginxinc/nginx-unprivileged` serves `dist/` on port 8080 as user 101; the
+    probes ask `GET /`, the page itself.
+  - Any other Framework gets no `Dockerfile` or `.dockerignore`: the
+    repository brings its own, and the manifests assume port 8000 and
+    `GET /healthz`.
 
 The Deployment runs container `app` from image `<container>:dev`, a placeholder to
 override with `kustomize edit set image`. Labels: `app.kubernetes.io/name` (the

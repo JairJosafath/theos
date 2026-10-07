@@ -162,12 +162,14 @@ const FAILED_REASONS: Record<BriefFailedKind, string> = {
   exhausted: 'Agents tried it as often as a Crew does.',
   failed: 'Its last Task failed.',
   person: 'Handed back by a person; see the issue.',
+  byHand: 'Needs a person; see the issue.',
 }
 
 /** The kinds a prompt can't send back to work as they are: the next round closes them. */
 const FAILED_NOTES: Partial<Record<BriefFailedKind, string>> = {
   exhausted: 'It won’t be tried again as it is: it will be filed again, reworded or split.',
   merged: 'It won’t be tried again: it will be closed, and what is left filed as a new issue.',
+  byHand: 'Agents can’t do it: once you have done it or dropped it, say so in a prompt to close it.',
 }
 
 /**
