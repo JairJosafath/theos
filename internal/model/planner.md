@@ -59,3 +59,151 @@ Push the branch `plan/<round>` with these files:
    the catalog doesn't have. Write one sentence saying what and why, and leave
    the other files out. Everything else is yours to decide: choose, and say
    why in `choices.md`.
+
+## The plan's format
+
+The operator reads your files strictly: a field it doesn't know refuses the
+plan. These examples are the whole format; a test runs them through the same
+check your plan gets, so they are right. Copy their shape, and take the names
+of Frameworks, Standards, Computes, Deployments, Connectors and the Git
+provider from `model/catalog.yaml` and `brief.md`, not from here.
+
+`plan/model.yaml` holds one document per object, split by `---` lines. Every
+document has `apiVersion: c4.factory.io/v1alpha1`, a `kind`, a
+`metadata.name` and a `spec`. This one has every kind and every field a plan
+may write:
+
+```yaml plan/model.yaml
+apiVersion: c4.factory.io/v1alpha1
+kind: Project
+metadata:
+  name: shop
+spec:
+  displayName: Shop
+  description: Everything the shop's team builds.
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Person
+metadata:
+  name: shopper
+spec:
+  displayName: Shopper
+  description: Someone who buys from the shop.
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: shop
+spec:
+  displayName: Shop
+  description: Sells things online.
+  needs:
+    - Shoppers find a product and order it.
+  kpis:
+    - Orders per day
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: web
+spec:
+  displayName: Web shop
+  description: The pages shoppers order from.
+  softwareSystemRef: {name: shop}
+  type: static-site
+  gitProviderRef: {name: gitea}
+  frameworkRef: {name: react-site}
+  standardRef: {name: web-standard}
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: api
+spec:
+  displayName: Orders API
+  description: Takes and keeps the orders.
+  softwareSystemRef: {name: shop}
+  type: service
+  gitProviderRef: {name: gitea}
+  frameworkRef: {name: go-service}
+  computeRef: {name: k8s}
+  deploymentRef: {name: helm}
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: DataStore
+metadata:
+  name: orders-db
+spec:
+  displayName: Orders database
+  description: Every order.
+  softwareSystemRef: {name: shop}
+  connectorRef: {name: postgres}
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: shopper-uses-web
+spec:
+  source: {kind: Person, name: shopper}
+  target: {kind: Container, name: web}
+  description: Orders products
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: web-calls-api
+spec:
+  source: {kind: Container, name: web}
+  target: {kind: Container, name: api}
+  description: Sends orders
+  bundles: false
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: api-keeps-orders
+spec:
+  source: {kind: Container, name: api}
+  target: {kind: DataStore, name: orders-db}
+  description: Keeps orders
+```
+
+What each kind's `spec` takes, and nothing else:
+
+- Project and Person: `displayName`, `description`.
+- SoftwareSystem: those two, `needs` and `kpis`, each a list of strings.
+- Container: those two, `softwareSystemRef`, `type` (one of `static-site`,
+  `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`),
+  `gitProviderRef` and `frameworkRef`, and when you choose them
+  `standardRef`, `computeRef` and `deploymentRef`. Every `...Ref` is
+  `{name: ...}` alone.
+- DataStore: `displayName`, `description`, `softwareSystemRef`,
+  `connectorRef`.
+- Relationship: `source` and `target`, each `{kind: ..., name: ...}` naming a
+  Person, SoftwareSystem, Container or DataStore of the plan; `description`;
+  and `bundles: true` only when the source Container ships a pinned release
+  of the target Container. A Relationship has no technology field: say how
+  in its `description`.
+
+An issue, such as `plan/issues/01-web.md`:
+
+```markdown plan/issues/01-web.md
+---
+title: Show the products
+labels: [kind/feature]
+---
+Shoppers see what the shop sells on the first page.
+
+## Acceptance criteria
+
+- [ ] The first page lists every product with its name and price
+- [ ] A product without a price shows "Ask us"
+```
+
+`plan/choices.md`:
+
+```markdown plan/choices.md
+- A static site for the shop's pages, since shoppers only read them and order.
+- A Go service keeps the orders, so the pages stay simple.
+- Postgres keeps the orders, because the catalog's Postgres connector fits the service.
+```
