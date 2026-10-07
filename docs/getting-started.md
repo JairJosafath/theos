@@ -75,8 +75,8 @@ kubectl -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name"
 **The release.** `gitea.projects` lists the project namespaces: for each one
 the seed makes a Gitea organization, Secret `gitea-credentials` with its token
 and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
-pushed, pinned to their tags: Frameworks `go-cli`, `python-fastapi` and
-`vscode-extension`, Standards `go-standard` and `ts-standard`, Compute `small`,
+pushed, pinned to their tags: Frameworks `go-cli`, `python-fastapi`,
+`react-vite` and `vscode-extension`, Standards `go-standard` and `ts-standard`, Compute `small`,
 Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four
 Agents on the release's `agent-go` image: `planner`, `designer` and `reviewer`
 on Opus, `implementer` on Sonnet. The Agents read Secret `claude-credentials`,

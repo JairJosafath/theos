@@ -13,8 +13,9 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
    its relationships. Needs bind every change, even ones the issue doesn't
    repeat (such as "never gets in the way of other YAML tooling").
 3. **Read the related repositories** under `/workspace/related/<name>`, if any:
-   the parts this issue touches, such as the language server's command line
-   and the LSP features it offers. They are read-only; never change them or
+   the parts this issue touches, such as {{ if eq .Framework "react-vite" }}the API this page calls and
+   the shape of its responses{{ else }}the language server's command line
+   and the LSP features it offers{{ end }}. They are read-only; never change them or
    copy their code.
 4. **Read the code** you'll change and its tests. Find where each criterion lands.
 5. **Plan briefly:** for each criterion, the test that will prove it and the
@@ -30,8 +31,9 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
 - **Keep the change focused:** one issue, one pull request, small Conventional
   Commits.
 - **Update what users read** in the same change when behaviour they see
-  changes: `README.md` (settings, commands), the setting and command
-  descriptions in `package.json`, and a `CHANGELOG.md` entry under "Unreleased".
+  changes: {{ if eq .Framework "react-vite" }}`README.md` (how to use and configure the app) and a
+  `CHANGELOG.md` entry under "Unreleased".{{ else }}`README.md` (settings, commands), the setting and command
+  descriptions in `package.json`, and a `CHANGELOG.md` entry under "Unreleased".{{ end }}
 - **`make check` green before every commit.** When a rule fires, fix the code.
 - **Protected files** (the Standard's and the platform's, listed in
   `AGENTS.md`) change only through a Standard change, below. The Git host
@@ -55,6 +57,34 @@ Task that reviews and merges it. Then:
 - When your own Task is the Standard change, change only the paths the issue
   names, and nothing else. Do not propose another Standard change.
 
+{{ if eq .Framework "react-vite" -}}
+## TypeScript and React notes
+
+- Put logic in modules that import neither React nor the DOM and test them
+  with plain vitest; keep components to rendering and wiring events to that
+  logic.
+- A test that must render a component brings its own DOM: add `jsdom` and
+  `@testing-library/react` with `npm install --save-dev --save-exact`, put
+  `// @vitest-environment jsdom` at the top of that test file, and query by
+  role and label as a user would.
+- Iterate with `npx vitest` and `npx tsc --noEmit`, and look at the page with
+  `npm run dev`; finish with `make check`, which also builds the site.
+- Follow `docs/style/react.md`: pure components, effects only to sync with
+  something outside React, every input labelled, nothing secret in
+  `import.meta.env` (the build puts every `VITE_` value in the page).
+- Tests never measure time: no real timers or `setTimeout` waits, no bounds
+  such as "renders within 500 ms" on `performance.now()` or `Date.now()`.
+  They pass in your sandbox and fail on the shared CI runner.
+- A budget in the issue or the needs ("within 200 ms", "a 10,000-row list")
+  gets a vitest `bench` on realistic input, not a test; put the numbers and
+  the input size in the summary.
+- Timing logic (debounce, timeouts, retries) is tested with fake timers
+  (`vi.useFakeTimers()`, then `vi.advanceTimersByTime`), or by awaiting the
+  event it fires.
+- You can't open a browser here. Say which behaviour needs a person to try in
+  a real browser (layout, focus, screen readers).
+
+{{- else -}}
 ## TypeScript and VS Code notes
 
 - Put logic in modules that don't import `vscode` and test them with plain
@@ -77,6 +107,7 @@ Task that reviews and merges it. Then:
   event it fires.
 - You can't open VS Code here. Say which behaviour needs a person to try in a
   real editor.
+{{- end }}
 
 ## Your summary
 
