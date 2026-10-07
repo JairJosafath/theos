@@ -81,14 +81,14 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, brief *c4v1alph
 		return 0, 0, nil
 	}
 	status := &brief.Status
-	prompts := brief.Spec.Prompts[min(int(status.PromptsPlanned), len(brief.Spec.Prompts)):min(int(status.RoundPrompts),
-		len(brief.Spec.Prompts))]
+	prompts := model.RoundPrompts(brief.Spec.Prompts[:min(max(int(status.RoundPrompts), 0), len(brief.Spec.Prompts))],
+		int(status.PromptsPlanned))
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	for _, a := range answers {
 		var c c4v1alpha1.Container
 		if err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c); err != nil {
-			return took, skipped, fmt.Errorf("Container %s: %w", a.Container, err)
+			return took, skipped, fmt.Errorf("reading Container %s: %w", a.Container, err)
 		}
 		provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
 		if err != nil {

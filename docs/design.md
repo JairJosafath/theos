@@ -353,7 +353,8 @@ model and context it needs.
   criterion, posts its verdict as a pull request review, and may name up to three
   follow-ups, each with its own acceptance criteria, which become
   `status/proposed` issues in the Later milestone, outside any release; a person
-  who moves one into a release can ready it as it stands.
+  who moves one into a release can ready it as it stands. For a Brief's apps,
+  the person answers them in a prompt instead ([Briefs](#briefs-an-idea-in-plain-words)).
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the agent of a client reads the service it calls.
@@ -441,6 +442,19 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   with no token, and *Verify Release*, when a human dispatches it, takes one
   through a round on the published chart, whose Agent `stand-in` any project can name.
   How well a real planner plans an idea is the person's run.
+- **The person answers the reviewers' suggestions in a prompt** (#375). A
+  reviewer's follow-up waiting, `status/proposed`, in the repository of a
+  Container the Brief made is listed in the Brief's `status.suggestions` and
+  card, and in the workspace's `model/suggestions.yaml`; the Brief reads them
+  every reconcile, when one of those Containers' Tasks ends, and every ten
+  minutes. A plan answers only the ones a new prompt speaks to, in
+  `plan/suggestions.yaml`: `take`, which needs acceptance criteria, or `skip`,
+  each with why. The operator checks the answers with the plan; applying the
+  round, it takes a suggestion out of the Later milestone and labels it
+  `status/ready`, or closes it, with a comment quoting the planner's why and the
+  round's prompts. A suggestion no prompt answers keeps waiting: nothing is
+  built without the person's say, and labels and milestones stay the
+  operator's.
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a
