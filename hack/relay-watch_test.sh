@@ -455,7 +455,12 @@ case "$1 $2 $* " in
   "run list"*) cat "$FAKE/runs-$wf.json" 2>/dev/null || echo '[]' ;;
   "run view"*)
     if [[ " $* " == *" --log-failed "* ]]; then seq -f 'log line %g' 1 50
-    else echo '{"jobs":[{"name":"Run on Ubuntu","conclusion":"failure"},{"name":"Setup","conclusion":"success"}]}' | jq -r "$q"; fi ;;
+    elif [ -f "$FAKE/jobs-$3.json" ]; then jq -r "$q" "$FAKE/jobs-$3.json"
+    else echo '{"jobs":[{"databaseId":1,"name":"Run on Ubuntu","conclusion":"failure","steps":[{"name":"Test","conclusion":"failure"}]},
+      {"databaseId":2,"name":"Setup","conclusion":"success","steps":[{"name":"Set up","conclusion":"success"}]}]}' | jq -r "$q"; fi ;;
+  *"/check-runs/"*)
+    for a in "$@"; do [[ $a == */check-runs/* ]] && id=${a##*/check-runs/} id=${id%%/*}; done
+    jq -r "$q" "$FAKE/annotations-$id.json" 2>/dev/null || echo '[]' | jq -r "$q" ;;
   *" --method POST "*)
     n=$(($(jq length "$FAKE/issues.json") + 100))
     jq --argjson n "$n" '. + [input + {number: $n}]' "$FAKE/issues.json" - >"$FAKE/issues.new" &&
@@ -513,6 +518,50 @@ check "ci: a red main that lasts is logged once" "$(logged 'main is red: Tests')
 runs lint.yml failure cancelled timed_out
 ci_round
 check "ci: cancelled runs are skipped" "$(jq -r '.[1].title' "$T/issues.json")" "main is red: Lint"
+
+# A run whose jobs GitHub never started (failed payments): its failed jobs
+# have no steps and an annotation saying so. The watch files one issue for the
+# maintainer, shared by every such workflow, and no "main is red".
+NOTSTARTED='The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the '"'"'Billing & plans'"'"' section of your settings'
+unstarted() {
+  echo '{"jobs":[{"databaseId":'"$2"',"name":"Run on Ubuntu","conclusion":"failure","steps":[]}]}' >"$T/jobs-$1.json"
+  jq -n --arg m "$NOTSTARTED" '[{message: $m, annotation_level: "failure"}]' >"$T/annotations-$2.json"
+}
+echo '[]' >"$T/issues.json"
+: >"$LOG"
+CI_SAID=
+runs test.yml failure failure
+runs lint.yml failure failure
+runs_test=$(jq -r '.[].databaseId' "$T/runs-test.yml.json")
+for id in $runs_test; do unstarted "$id" "5$id"; done
+ci_round
+check "ci: unstarted jobs file one issue for both workflows" "$(filed)" 1
+check "ci: its title" "$(jq -r '.[0].title' "$T/issues.json")" "GitHub Actions starts no jobs"
+check "ci: its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/needs-maintainer kind/bug source/dev"
+body=$(jq -r '.[0].body' "$T/issues.json")
+check "ci: the body carries the annotation" "$(grep -cxF "> $NOTSTARTED" <<<"$body")" 1
+check "ci: the body names the run" "$(grep -c '^Run: \[899\](https://x/runs/899) ' <<<"$body")" 1
+check "ci: no main is red" "$(jq '[.[] | select(.title | startswith("main is red"))] | length' "$T/issues.json")" 0
+check "ci: logged once per workflow" "$(logged 'GitHub Actions started no job of Tests; issue #100$'):$(logged 'GitHub Actions started no job of Lint; issue #100$')" 1:1
+ci_round
+check "ci: a later round files no other issue" "$(filed)" 1
+check "ci: unstarted jobs that last are logged once" "$(logged 'GitHub Actions started no job')" 2
+
+# A failed job with no steps but no such annotation is code work, and so is a
+# never-started run before the newest; the newest decides.
+echo '[]' >"$T/issues.json"
+rm -f "$T"/jobs-*.json "$T"/annotations-*.json
+runs lint.yml failure failure
+echo '{"jobs":[{"databaseId":7,"name":"Run on Ubuntu","conclusion":"failure","steps":[]}]}' >"$T/jobs-899.json"
+echo '[{"message":"Process completed with exit code 1."}]' >"$T/annotations-7.json"
+runs test.yml failure failure
+ci_round
+check "ci: failed jobs that started stay main is red" "$(jq -r '[.[].title] | sort | join(",")' "$T/issues.json")" "main is red: Lint,main is red: Tests"
+echo '[]' >"$T/issues.json"
+rm -f "$T"/jobs-*.json "$T"/annotations-*.json
+unstarted 898 5898
+ci_round
+check "ci: an older never-started run doesn't count as a failure" "$(filed)" 0
 
 # The groups: a watch, or a user manager, without a group the user has in
 # /etc/group says so, with the fix; one with all of them says nothing.

@@ -351,7 +351,11 @@ closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
 a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
 ready and urgent, so the next session fixes main before anything else; a single
-failure files nothing.
+failure files nothing. When GitHub started none of the newest failed run's
+jobs (no steps, an annotation saying the job was not started: failed
+payments, a spending limit), no code is at fault: the watch files one
+`GitHub Actions starts no jobs` issue in `status/needs-maintainer`, carrying
+the annotation, and no `main is red`.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when

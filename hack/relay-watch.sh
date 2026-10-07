@@ -38,7 +38,11 @@
 # titled "main is red: <workflow>", status/ready and priority/urgent, so pick
 # takes it first. hack/lib/github.sh create skips a title that is open, so a
 # red main that lasts, or both devices' watches, file one issue; a single
-# failure files nothing. The session that fixes main closes it.
+# failure files nothing. The session that fixes main closes it. When GitHub
+# started none of the newest failed run's jobs (no steps, an annotation saying
+# the job was not started: failed payments, a spending limit), no code is at
+# fault: the watch files one "GitHub Actions starts no jobs" issue in
+# status/needs-maintainer, with the annotation, and no "main is red".
 #
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh
 # --maintain), which acts as the project's maintainer on the owner's behalf and
@@ -170,10 +174,13 @@ ci_workflows() {
   done
 }
 
-# ci_round: file an urgent issue for each workflow that is red on main.
-# CI_SAID holds the workflows whose state was logged, so a state that lasts is
-# logged once.
+# ci_round: file an urgent issue for each workflow that is red on main. When
+# GitHub started none of a workflow's jobs (red exits 3), the code isn't at
+# fault: it files one "GitHub Actions starts no jobs" issue for the maintainer
+# instead, which every such workflow shares. CI_SAID holds the workflows whose
+# state was logged, so a state that lasts is logged once.
 CI_SAID=
+CI_STOPPED_TITLE='GitHub Actions starts no jobs'
 ci_round() {
   local file name body rc out said=
   while IFS=$'\t' read -r file name; do
@@ -195,6 +202,19 @@ ci_round() {
         fi
         ;;
       1) ;;
+      3)
+        out=$(github create "$CI_STOPPED_TITLE" - status/needs-maintainer kind/bug source/dev <<<"$body" 2>&1)
+        rc=$?
+        if [ "$rc" != 0 ]; then
+          said+=" stopfail:$file"
+          [[ " $CI_SAID " == *" stopfail:$file "* ]] ||
+            log "GitHub Actions started no job of $name; could not file its issue (exit $rc): ${out//$'\n'/; }"
+        else
+          said+=" stopped:$file"
+          [[ " $CI_SAID " == *" stopped:$file "* ]] ||
+            log "GitHub Actions started no job of $name; issue #${out##*$'\n'}"
+        fi
+        ;;
       *)
         said+=" err:$file"
         [[ " $CI_SAID " == *" err:$file "* ]] ||
