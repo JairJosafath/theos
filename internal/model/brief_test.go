@@ -2,9 +2,13 @@ package model
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 const happyModel = `apiVersion: c4.factory.io/v1alpha1
@@ -357,6 +361,43 @@ func TestCheckPlan(t *testing.T) {
 			c.Objects = append(c.Objects, PlanObject{Kind: KindRelationship, Name: "api-to-db",
 				Source: Ref{KindContainer, "api"}, Target: Ref{KindSoftwareSystem, "shop"}})
 		}, "Relationship/api-to-db", `target can't change (from "SoftwareSystem/shop" to "DataStore/db")`},
+		{"a Project's displayName over 100 characters", func(p *Plan, _ *CurrentModel) {
+			object(p, "Project/shop").DisplayName = strings.Repeat("x", 101)
+		}, "Project/shop", "spec.displayName is 101 characters; it may be at most 100"},
+		{"a Person's description over 1000 characters", func(p *Plan, _ *CurrentModel) {
+			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindPerson, Name: "ann",
+				Description: strings.Repeat("x", 1001)})
+		}, "Person/ann", "spec.description is 1001 characters; it may be at most 1000"},
+		{"a description of 1000 characters, some of them two bytes", func(p *Plan, _ *CurrentModel) {
+			object(p, "SoftwareSystem/shop").Description = strings.Repeat("é", 1000)
+		}, "", ""},
+		{"a SoftwareSystem's displayName over 100 characters", func(p *Plan, _ *CurrentModel) {
+			object(p, "SoftwareSystem/shop").DisplayName = strings.Repeat("x", 101)
+		}, "SoftwareSystem/shop", "spec.displayName is 101 characters"},
+		{"a SoftwareSystem's description over 1000 characters", func(p *Plan, _ *CurrentModel) {
+			object(p, "SoftwareSystem/shop").Description = strings.Repeat("x", 1001)
+		}, "SoftwareSystem/shop", "spec.description is 1001 characters"},
+		{"a SoftwareSystem with more than 20 needs", func(p *Plan, _ *CurrentModel) {
+			object(p, "SoftwareSystem/shop").Needs = make([]string, 21)
+		}, "SoftwareSystem/shop", "spec.needs has 21 items; it may have at most 20"},
+		{"a SoftwareSystem with more than 20 kpis", func(p *Plan, _ *CurrentModel) {
+			object(p, "SoftwareSystem/shop").KPIs = make([]string, 21)
+		}, "SoftwareSystem/shop", "spec.kpis has 21 items; it may have at most 20"},
+		{"a new Container's displayName over 100 characters", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").DisplayName = strings.Repeat("x", 101)
+		}, "Container/web", "spec.displayName is 101 characters"},
+		{"an existing Container's description over 1000 characters", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/api").Description = strings.Repeat("x", 1001)
+		}, "Container/api", "spec.description is 1001 characters"},
+		{"a DataStore's displayName over 100 characters", func(p *Plan, _ *CurrentModel) {
+			object(p, "DataStore/db").DisplayName = strings.Repeat("x", 101)
+		}, "DataStore/db", "spec.displayName is 101 characters"},
+		{"a DataStore's description over 1000 characters", func(p *Plan, _ *CurrentModel) {
+			object(p, "DataStore/db").Description = strings.Repeat("x", 1001)
+		}, "DataStore/db", "spec.description is 1001 characters"},
+		{"a Relationship's description over 200 characters", func(p *Plan, _ *CurrentModel) {
+			object(p, "Relationship/api-to-db").Description = strings.Repeat("x", 201)
+		}, "Relationship/api-to-db", "spec.description is 201 characters; it may be at most 200"},
 		{"a deletion", func(p *Plan, _ *CurrentModel) {
 			p.Objects = slicesDelete(p.Objects, "Container/api")
 			p.Objects = slicesDelete(p.Objects, "Relationship/api-to-db")
@@ -515,6 +556,61 @@ func TestIssueMarker(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := HasIssueMarker(tt.body, tt.brief, tt.round, tt.n); got != tt.wanted {
 				t.Errorf("got %v, want %v in %q", got, tt.wanted, tt.body)
+			}
+		})
+	}
+}
+
+// TestSpecLimitsMatchTheCRDs holds the plan check's limits to the CRDs' own,
+// both ways, so a marker changed in api/v1alpha1 can't drift from them (#382).
+func TestSpecLimitsMatchTheCRDs(t *testing.T) {
+	plural := map[string]string{KindProject: "projects", KindPerson: "people", KindSoftwareSystem: "softwaresystems",
+		KindContainer: "containers", KindDataStore: "datastores", KindRelationship: "relationships"}
+	for _, kind := range planKinds {
+		t.Run(kind, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("..", "..", "config", "crd", "bases", "c4.factory.io_"+plural[kind]+".yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var crd struct {
+				Spec struct {
+					Versions []struct {
+						Schema struct {
+							OpenAPIV3Schema struct {
+								Properties struct {
+									Spec struct {
+										Properties map[string]struct {
+											MaxLength *int `yaml:"maxLength"`
+											MaxItems  *int `yaml:"maxItems"`
+										} `yaml:"properties"`
+									} `yaml:"spec"`
+								} `yaml:"properties"`
+							} `yaml:"openAPIV3Schema"`
+						} `yaml:"schema"`
+					} `yaml:"versions"`
+				} `yaml:"spec"`
+			}
+			if err := yaml.Unmarshal(data, &crd); err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]string{}
+			for field, schema := range crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties.Spec.Properties {
+				switch {
+				case schema.MaxLength != nil:
+					want[field] = fmt.Sprintf("%d characters", *schema.MaxLength)
+				case schema.MaxItems != nil:
+					want[field] = fmt.Sprintf("%d items", *schema.MaxItems)
+				}
+			}
+			got := map[string]string{}
+			for _, limit := range specLimits(kind) {
+				got[limit.field] = fmt.Sprintf("%d characters", limit.max)
+				if limit.items {
+					got[limit.field] = fmt.Sprintf("%d items", limit.max)
+				}
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("the plan check's limits are %v, the CRD's %v", got, want)
 			}
 		})
 	}

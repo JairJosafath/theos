@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -359,6 +360,14 @@ var _ = Describe("Brief rounds", func() {
 		bad := linterPlan(ns, 1)
 		bad[model.PlanChoicesFile] = scaffold.File{Data: []byte("\n")}
 		bad["plan/issues/01-linter.md"] = scaffold.File{Data: []byte("---\ntitle: Lint\n---\nJust lint.\n")}
+		bad[model.PlanModelFile] = scaffold.File{Data: []byte(projectDoc(ns) + fmt.Sprintf(`---
+apiVersion: c4.factory.io/v1alpha1
+kind: Person
+metadata:
+  name: rule-author
+spec:
+  description: %s
+`, strings.Repeat("x", 1001)) + linterDocs[strings.Index(linterDocs, "---\napiVersion: c4.factory.io/v1alpha1\nkind: SoftwareSystem"):])}
 
 		planRound(ns, 1, 1, bad)
 		By("starting the Task's next try with every reason")
@@ -366,7 +375,8 @@ var _ = Describe("Brief rounds", func() {
 			task := getTask(g, ns, "cel-lens-plan-1")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(task.Status.Feedback).To(And(ContainSubstring("plan/choices.md: is empty"),
-				ContainSubstring("MissingAcceptanceCriteria")))
+				ContainSubstring("MissingAcceptanceCriteria"),
+				ContainSubstring("Person/rule-author: spec.description is 1001 characters; it may be at most 1000")))
 		}).Should(Succeed())
 		Eventually(func(g Gomega) { g.Expect(briefEvents(g, ns)).To(ContainElement("PlanRefused")) }).Should(Succeed())
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "linter"), &c4v1alpha1.Container{}))).
@@ -605,16 +615,14 @@ spec:
 		createFactory(ns)
 		briefAgents(ns, 3)
 		mustCreate(newBrief(ns, "cel-lens"))
-		files := linterPlan(ns, 1)
-		files[model.PlanModelFile] = scaffold.File{Data: []byte(projectDoc(ns) + fmt.Sprintf(`---
-apiVersion: c4.factory.io/v1alpha1
-kind: Person
-metadata:
-  name: rule-author
-spec:
-  description: %s
-`, strings.Repeat("x", 1001)) + linterDocs[strings.Index(linterDocs, "---\napiVersion: c4.factory.io/v1alpha1\nkind: SoftwareSystem"):])}
-		planRound(ns, 1, 1, files)
+		By("a ResourceQuota that allows no Person, which the plan check can't see")
+		quota := &corev1.ResourceQuota{ObjectMeta: objectMeta(ns, "no-people"), Spec: corev1.ResourceQuotaSpec{
+			Hard: corev1.ResourceList{"count/people.c4.factory.io": resource.MustParse("0")}}}
+		mustCreate(quota)
+		quota.Status = corev1.ResourceQuotaStatus{Hard: quota.Spec.Hard,
+			Used: corev1.ResourceList{"count/people.c4.factory.io": resource.MustParse("0")}}
+		Expect(k8sClient.Status().Update(ctx, quota)).To(Succeed())
+		planRound(ns, 1, 1, linterPlan(ns, 1))
 
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
@@ -622,7 +630,7 @@ spec:
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionFalse), HaveField("Reason", model.ReasonApplyFailed),
 				HaveField("Message", And(ContainSubstring("Round 1 could not be applied at Person/rule-author"),
-					ContainSubstring("spec.description"), ContainSubstring("tries again")))))
+					ContainSubstring("exceeded quota: no-people"), ContainSubstring("tries again")))))
 			g.Expect(briefEventNotes(g, ns, "ApplyFailed")).To(ContainElement(
 				ContainSubstring("at Person/rule-author")))
 		}).Should(Succeed())
