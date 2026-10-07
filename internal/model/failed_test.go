@@ -2,6 +2,7 @@ package model
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -185,5 +186,61 @@ func TestWorkspaceFailed(t *testing.T) {
 	}
 	if got, err := marshalDocument(workspaceFailed(nil)); err != nil || got != "[]\n" {
 		t.Errorf("with none: %q, %v", got, err)
+	}
+}
+
+func TestBriefWorkspaceFailed(t *testing.T) {
+	failed := []FailedIssue{{Container: "cli", Number: 1, Title: "The CLI", Kind: FailedTask,
+		Reason: "Task `cli-1` failed: no changes", Tries: 1, Body: "Add a CLI.\n"}}
+	files, err := BriefWorkspaceFiles(BriefWorkspace{Brief: "todo", Idea: "A todo list", GitProvider: "gitea",
+		Failed: failed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(files[WorkspaceFailedFile], "issue: 1") ||
+		!strings.Contains(files[BriefFile], "## Failed issues\n\n1 were handed back") {
+		t.Errorf("%s:\n%s\nbrief.md:\n%s", WorkspaceFailedFile, files[WorkspaceFailedFile], files[BriefFile])
+	}
+	if !slices.Contains(WorkspaceFiles, WorkspaceFailedFile) {
+		t.Errorf("WorkspaceFiles lacks %s", WorkspaceFailedFile)
+	}
+	files, err = BriefWorkspaceFiles(BriefWorkspace{Brief: "todo", Idea: "A todo list", GitProvider: "gitea"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files[WorkspaceFailedFile] != "[]\n" || strings.Contains(files[BriefFile], "Failed issues") {
+		t.Errorf("with none: %s = %q, brief.md:\n%s", WorkspaceFailedFile, files[WorkspaceFailedFile], files[BriefFile])
+	}
+
+	many := make([]FailedIssue, MaxFailedIssues+3)
+	for i := range many {
+		many[i] = FailedIssue{Container: "cli", Number: len(many) - i, Kind: FailedPerson}
+	}
+	out := workspaceFailed(many)
+	if len(out) != MaxFailedIssues || out[0].Issue != 1 || out[len(out)-1].Issue != MaxFailedIssues {
+		t.Errorf("workspaceFailed of %d lists %d, from #%d to #%d", len(many), len(out), out[0].Issue,
+			out[len(out)-1].Issue)
+	}
+}
+
+func TestFailedMessage(t *testing.T) {
+	cli := FailedIssue{Container: "cli", Number: 1, Title: "The\nCLI", Kind: FailedTask,
+		Reason: "Task `cli-1` failed: Failed after 3 rounds: the agent made no changes."}
+	for _, tc := range []struct {
+		name    string
+		listed  []FailedIssue
+		waiting int
+		want    string
+	}{
+		{"none", nil, 0, ""},
+		{"one", []FailedIssue{cli}, 1, "Issue cli#1 \"The CLI\" was handed back: Task `cli-1` failed: Failed after 3 " +
+			"rounds: the agent made no changes. Say in a prompt whether to try again."},
+		{"more", []FailedIssue{cli, {Container: "web", Number: 2}}, 3, "Issue cli#1 \"The CLI\" was handed back: " +
+			"Task `cli-1` failed: Failed after 3 rounds: the agent made no changes; and 2 more. " +
+			"Say in a prompt whether to try again."},
+	} {
+		if got := FailedMessage(tc.listed, tc.waiting); got != tc.want {
+			t.Errorf("%s: FailedMessage =\n%q\nwant\n%q", tc.name, got, tc.want)
+		}
 	}
 }
