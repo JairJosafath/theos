@@ -56,6 +56,9 @@ type roundApply struct {
 // round's issues for it, and last the plan merged into the brief repository's main.
 func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha1.Brief, task *c4v1alpha1.Task) (
 	ctrl.Result, error) {
+	if tending(&brief.Status) {
+		return r.applyTend(ctx, brief, orig, task)
+	}
 	tree, ok, err := r.readPlan(ctx, brief, task.Status.Commit)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -87,7 +90,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	// an object of the same name, or one the plan doesn't keep. What this
 	// round applied already is in the plan as it is, so a restart passes.
 	if refusals := model.CheckPlan(plan, current); len(refusals) > 0 {
-		endRoundFailed(ctx, brief, task,
+		r.endRoundFailed(ctx, brief, task,
 			"the plan no longer fits the namespace:\n"+model.RefusalText(refusals))
 		return ctrl.Result{}, nil
 	}
@@ -134,7 +137,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if run.took, run.skipped, err = r.answerSuggestions(ctx, brief, plan.Answers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the reviewers' suggestions", err)
 	}
-	if run.retried, run.closed, err = r.answerFailed(ctx, brief, plan.FailedAnswers); err != nil {
+	if run.retried, run.closed, err = r.answerFailedRemembering(ctx, brief, plan.FailedAnswers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the failed issues", err)
 	}
 	if err := r.mergePlan(ctx, brief, task.Status.Commit); err != nil {
@@ -148,13 +151,22 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 // names where and the error, and an ApplyFailed Event says it once per
 // message. It returns err, wrapped, for the reconcile to try again; the
 // Brief stays Applying until a try gets past it. The operator's own
-// NeedsInput and a stale Brief are left to finishReconcile.
+// NeedsInput and a stale Brief are left to finishReconcile. A tending
+// round says it in the Event alone and leaves Planned as it is.
 func (r *BriefReconciler) applyFailed(ctx context.Context, brief *c4v1alpha1.Brief, where string, err error) error {
 	if _, needsInput := needsInputSentence(err); needsInput || errors.Is(err, errStaleBrief) {
 		return err
 	}
 	message := model.Clip(fmt.Sprintf("Round %d could not be applied %s: %v. The operator tries again.",
 		brief.Status.Round, where, err), 1000)
+	if tending(&brief.Status) {
+		// A tending round leaves the Planned condition the last prompt
+		// round's; its Event says why it stopped.
+		logf.FromContext(ctx).Info("Could not apply the tending round", "round", brief.Status.Round, "where", where,
+			"error", err.Error())
+		r.event(brief, corev1.EventTypeWarning, eventApplyFailed, "Apply", message)
+		return fmt.Errorf("applying tending round %d %s: %w", brief.Status.Round, where, err)
+	}
 	cond := meta.FindStatusCondition(brief.Status.Conditions, c4v1alpha1.ConditionPlanned)
 	if cond == nil || cond.Reason != model.ReasonApplyFailed || cond.Message != message {
 		logf.FromContext(ctx).Info("Could not apply the round", "round", brief.Status.Round, "where", where,

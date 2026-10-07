@@ -568,7 +568,11 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   and every `ask`, is one entry in `status.needsYou` with the choice the
   Brief would make and why. The Crew's three tries still hold, an issue is
   answered once per failure, and tending rounds come at most hourly. Each
-  is a history entry, outcome `Tended`, so a prompt can overrule it. See
+  is a history entry, outcome `Tended`, so a prompt can overrule it. A
+  tending round's plan holds only `plan/failed.yaml`, `plan/summary.md` and
+  new issues; it leaves the story, the `Planned` condition and the prompts
+  planned as the last prompt round left them, and none starts while that
+  round failed or asked for input: a prompt goes first. See
   [plans/brief-autopilot.md](plans/brief-autopilot.md).
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,

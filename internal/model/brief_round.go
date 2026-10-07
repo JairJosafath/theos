@@ -272,7 +272,8 @@ func WorkspacePrompts(prompts []string, roundPrompts int, roundRuns bool) []stri
 
 // IdeaPlanned reports whether a round of the Brief applied, given the
 // outcomes of the rounds in its history and how many prompts the last applied
-// round took. A round that failed or asked for input planned nothing.
+// round took. A round that failed or asked for input planned nothing; a
+// tending round comes only after one that applied.
 func IdeaPlanned(outcomes []string, promptsPlanned int) bool {
-	return promptsPlanned > 0 || slices.Contains(outcomes, ReasonApplied)
+	return promptsPlanned > 0 || slices.Contains(outcomes, ReasonApplied) || slices.Contains(outcomes, ReasonTended)
 }

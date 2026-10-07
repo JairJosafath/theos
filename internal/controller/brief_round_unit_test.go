@@ -61,7 +61,7 @@ func TestStartRoundOnAStaleBriefWritesNothing(t *testing.T) {
 	statusWrites = 0
 
 	orig := stale.DeepCopy()
-	err := r.startRound(ctx, &stale, orig)
+	err := r.startRound(ctx, &stale, orig, false)
 	if !errors.Is(err, errStaleBrief) {
 		t.Fatalf("startRound on a stale Brief = %v, want errStaleBrief", err)
 	}

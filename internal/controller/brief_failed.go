@@ -228,7 +228,7 @@ func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1alpha1.Br
 			continue // answered by an earlier try, or by a person on the Git host
 		}
 		if err := answerFailedIssue(gitCtx, provider, repo, issue, a, round,
-			model.FailedComment(a, brief.Name, round, prompts, filed)); err != nil {
+			model.FailedComment(a, brief.Name, round, tending(status), prompts, filed)); err != nil {
 			return retried, closed, fmt.Errorf("answering %s#%d: %w", a.Container, a.Issue, err)
 		}
 		logf.FromContext(ctx).Info("Answered a failed issue", "container", a.Container, "number", a.Issue,

@@ -225,16 +225,20 @@ func ClarifiedBody(body string, round int, clarify string) string {
 // FailedComment is what the operator writes on a failed issue it answers for
 // Brief brief in round: the answer, the planner's why and the round's
 // prompts, quoted; a close also names the issues the round filed, which may
-// carry its work on.
-func FailedComment(a FailedAnswer, brief string, round int, prompts, filed []string) string {
+// carry its work on. A tending round has no prompt and says so.
+func FailedComment(a FailedAnswer, brief string, round int, tending bool, prompts, filed []string) string {
 	var b strings.Builder
+	by := fmt.Sprintf("for Brief `%s` in round %d", brief, round)
+	if tending {
+		by = fmt.Sprintf("by Brief `%s` in tending round %d, with no prompt: its autopilot is On", brief, round)
+	}
 	if a.Answer == AnswerRetry {
-		fmt.Fprintf(&b, "Tried again for Brief `%s` in round %d: the Crew picks it up as %s.", brief, round, LabelReady)
+		fmt.Fprintf(&b, "Tried again %s. The Crew picks it up as %s.", by, LabelReady)
 		if strings.TrimSpace(a.Clarify) != "" {
 			fmt.Fprintf(&b, " The issue's body has a clarification for round %d.", round)
 		}
 	} else {
-		fmt.Fprintf(&b, "Closed for Brief `%s` in round %d.", brief, round)
+		fmt.Fprintf(&b, "Closed %s.", by)
 	}
 	fmt.Fprintf(&b, "\n\nThe planner: %s", oneParagraph(a.Why))
 	if a.Answer == AnswerClose && len(filed) > 0 {

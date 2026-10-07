@@ -266,6 +266,16 @@ func PlanPrompt(job Job, guide, brief string) string {
 	if job.MaxRounds > 0 && job.Round >= job.MaxRounds {
 		b.WriteString("\nThis is the last round: a plan refused now ends the brief's round with nothing applied.\n")
 	}
+	if model.IsTendingBrief(brief) {
+		fmt.Fprintf(&b, `
+This is a tending round: there is no new prompt. Decide the failed issues in
+%[1]s as the guide says, writing only %[2]s, %[3]s and, to split an issue you
+close, new issues in %[4]s/issues/. Do not commit or push: c4agent pushes %[4]s/
+to %[5]s. End your reply with a short summary of what you decided, in a few
+plain sentences.
+`, model.WorkspaceFailedFile, model.PlanFailedFile, model.PlanSummaryFile, model.PlanDir, job.Branch)
+		return b.String()
+	}
 	fmt.Fprintf(&b, `
 Write the whole plan in %[1]s/, as the guide says: %[2]s, one file per issue in
 %[1]s/issues/, %[3]s and %[6]s. Only when you cannot go on without the person, write

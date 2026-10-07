@@ -194,3 +194,25 @@ func TestStandInPlanBriefNamedBrief(t *testing.T) {
 		t.Errorf("prompt round issues %q, want %q", got, want)
 	}
 }
+
+// In a tending round the stand-in decides nothing, and the plan is a tending
+// round's.
+func TestStandInPlanTending(t *testing.T) {
+	workspace, err := BriefWorkspaceFiles(BriefWorkspace{Brief: "lens", GitProvider: "gitea", Idea: "A linter.",
+		IdeaPlanned: true, Tending: true,
+		Failed: []FailedIssue{{Container: "cli", Number: 1, Title: "Flags", Kind: FailedTask, Tries: 1}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := StandInPlan(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := ParseTendPlan(files)
+	if err != nil {
+		t.Fatalf("ParseTendPlan: %v\n%v", err, files)
+	}
+	if len(plan.FailedAnswers) != 0 || plan.Summary != StandInTendSummary {
+		t.Errorf("plan = %+v, want no answers and the stand-in's summary", plan)
+	}
+}
