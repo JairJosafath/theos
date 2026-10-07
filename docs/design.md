@@ -225,6 +225,12 @@ without kubectl, and cheaply: it lives on a laptop.
   phase, round or Progressing reason changes (the newest 64), so where a Task's
   time went stays readable after it ends. A Task waiting for an agent slot says
   `WaitingForSlot`.
+- **A Task says what its runs cost.** Each agent run reports its cost as the
+  agent says it (for Claude Code, `total_cost_usd` in its JSON output); the
+  Task adds them up in `status.costMilliUSD`. A run whose agent didn't say, or
+  that ended without a result, counts in `status.runsWithoutCost`, and the UI
+  says the cost wasn't reported instead of leaving it blank. A Brief's rounds
+  take their Plan Task's.
 - **The UI has a Factory view** next to the story, across all projects: component
   health with CPU and memory, the last hour, the Tasks on a board by stage with
   their timelines, where the time goes, agent slots, and what needs a look.
@@ -353,8 +359,11 @@ model and context it needs.
   criterion, posts its verdict as a pull request review, and may name up to three
   follow-ups, each with its own acceptance criteria, which become
   `status/proposed` issues in the Later milestone, outside any release; a person
-  who moves one into a release can ready it as it stands. For a Brief's apps,
-  the person answers them in a prompt instead ([Briefs](#briefs-an-idea-in-plain-words)).
+  who moves one into a release can ready it as it stands. Criteria arrive whole:
+  the reviewer keeps each to one sentence of at most 200 characters, and text
+  that must be shortened to fit ends at a whole word with "…", never mid-word.
+  For a Brief's apps, the person answers them in a prompt instead
+  ([Briefs](#briefs-an-idea-in-plain-words)).
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the agent of a client reads the service it calls.
@@ -435,6 +444,18 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   becomes an issue in its repository; a new Container is added and scaffolded;
   a Relationship added from a scaffolded Container shows `AddedAfterScaffold`
   and its wiring becomes an issue.
+- **A Brief's apps are released when the plan says so.** A plan names the
+  Containers that ship releases (`plan/releases.yaml`); the Crew the Brief
+  made for each then tags and prepares releases, and each round files that
+  Container's issues in a release milestone of its own, the next minor
+  version, so a release follows once they are done. A person turns releases on
+  with a prompt, or by naming the Container in `spec.releases` with a GitHub
+  repository and a Secret holding a token for that repository only, which
+  also has the Crew publish its releases there. Releases only turn on; a Crew
+  the Brief didn't make is left alone. `status.apps` and the Brief's card show
+  each app's latest release and where it went, and say plainly when releases
+  are off and how to turn them on. See
+  [plans/brief-releases.md](plans/brief-releases.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for
@@ -464,7 +485,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   GitProvider or credentials are gone leaves its bot at once.
 - **The Brief's status tells the story of the plan:** its phase, the last
   round's choices, what it created, the issues it filed, each round's summary
-  and cost. The chart makes each project's Project, catalog and four default
+  and cost. A round's summary is written for the person, about what the round
+  did for their app: the planner's `plan/summary.md`, or what the plan holds
+  when it wrote none, never the planner's reply. A summary too long for the
+  history ends on its last whole sentence, never mid-word. The chart makes each project's Project, catalog and four default
   Agents, so a person makes only the Agents' token Secret by hand.
 
 ## Distribution and issues

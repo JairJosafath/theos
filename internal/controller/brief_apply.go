@@ -83,7 +83,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	// an object of the same name, or one the plan doesn't keep. What this
 	// round applied already is in the plan as it is, so a restart passes.
 	if refusals := model.CheckPlan(plan, current); len(refusals) > 0 {
-		endRoundFailed(ctx, brief, task.Status.Summary,
+		endRoundFailed(ctx, brief, task,
 			"the plan no longer fits the namespace:\n"+model.RefusalText(refusals))
 		return ctrl.Result{}, nil
 	}
@@ -476,8 +476,8 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	if err != nil {
 		return err
 	}
-	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: task.Status.Summary,
-		Choices: plan.Choices})
+	summary := model.RoundSummary(plan)
+	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices})
 	status.Choices = model.ClipList(plan.Choices, 50, 500)
 	status.PromptsPlanned = status.RoundPrompts
 	status.Created = created
@@ -490,7 +490,7 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	}
 	r.event(brief, corev1.EventTypeNormal, eventPlanned, "Apply",
 		fmt.Sprintf("%s: %d objects, %d issues%s. %s", message, len(plan.Objects), len(plan.Issues), answered,
-			task.Status.Summary))
+			summary))
 	logf.FromContext(ctx).Info("Applied Brief round", "round", status.Round, "issues", len(plan.Issues),
 		"suggestionsTaken", run.took, "suggestionsSkipped", run.skipped)
 	return nil

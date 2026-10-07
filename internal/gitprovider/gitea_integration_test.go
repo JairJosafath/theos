@@ -328,6 +328,78 @@ func TestGiteaReleasesIntegration(t *testing.T) {
 	}
 }
 
+func TestGiteaMilestonesIntegration(t *testing.T) {
+	base := os.Getenv("C4_GITEA_URL")
+	if base == "" {
+		t.Skip("C4_GITEA_URL not set")
+	}
+	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	p, err := Client{}.Provider(Config{URL: base, Owner: "webshop", Credentials: creds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("it-milestones-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteRepo(t, base, "webshop", name, creds.Token) })
+	repo, err := p.EnsureRepository(ctx, name, "integration test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.EnsureMilestone(ctx, repo, "Later", "Not part of any release"); err != nil {
+		t.Fatal(err)
+	}
+	const marker = "<!-- c4-brief: cel-lens/1 -->"
+	// Noon, so the day is the same in the server's time zone.
+	y, m, d := time.Now().UTC().AddDate(0, 0, 7).Date()
+	due := time.Date(y, m, d, 12, 0, 0, 0, time.UTC)
+	made, err := p.CreateMilestone(ctx, repo, "v0.1.0", "The first release.\n\n"+marker, due)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Closing keeps the due date's day, due at its end.
+	sameDay := func(a, b time.Time) bool {
+		ay, am, ad := a.UTC().Date()
+		by, bm, bd := b.UTC().Date()
+		return ay == by && am == bm && ad == bd
+	}
+	if made.Title != "v0.1.0" || made.Closed || !sameDay(made.Due, due) {
+		t.Fatalf("CreateMilestone() = %+v, want v0.1.0, open, due %v", made, due)
+	}
+
+	find := func() Milestone {
+		t.Helper()
+		all, err := p.ListAllMilestones(ctx, repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found []Milestone
+		for _, m := range all {
+			if strings.HasSuffix(m.Description, marker) {
+				found = append(found, m)
+			}
+		}
+		if len(all) != 2 || len(found) != 1 || found[0].ID != made.ID || found[0].Title != "v0.1.0" ||
+			!sameDay(found[0].Due, due) {
+			t.Fatalf("ListAllMilestones() = %+v, want Later and v0.1.0 found by its description", all)
+		}
+		return found[0]
+	}
+	if m := find(); m.Closed {
+		t.Errorf("milestone %+v closed before CloseMilestone", m)
+	}
+	if err := p.CloseMilestone(ctx, repo, made.ID); err != nil {
+		t.Fatal(err)
+	}
+	if m := find(); !m.Closed {
+		t.Errorf("milestone %+v open after CloseMilestone", m)
+	}
+	if open, err := p.ListMilestones(ctx, repo); err != nil || len(open) != 1 || open[0].Title != "Later" {
+		t.Errorf("ListMilestones() after closing = %+v, %v; want Later only", open, err)
+	}
+}
+
 // createRelease releases tag at commit, as the release run does, and returns
 // the release's ID. It waits for Gitea to see the push: its "empty" flag lags
 // behind one.

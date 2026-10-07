@@ -59,6 +59,10 @@ type RunResult struct {
 	Unavailable bool
 	// RetryAt is when the service said it is back; zero when it didn't say.
 	RetryAt time.Time
+	// CostMilliUSD is what the run cost, in thousandths of a US dollar, when
+	// CostReported; the agent didn't say otherwise.
+	CostMilliUSD int64
+	CostReported bool
 }
 
 // FollowUp is work a reviewer suggests for later, outside the change it reviewed:
@@ -120,6 +124,20 @@ type RunState struct {
 	// restart, an eviction, a preemption, a cluster outage), not the agent: an
 	// out-of-memory kill is the agent's.
 	Interrupted bool
+}
+
+// Cost is what a run adds to its Task's cost: what its agent reported, or one
+// run without a cost when the agent ran and didn't say. A sandbox that is gone
+// adds nothing; whoever ended it counted it.
+func (s RunState) Cost() (milliUSD int64, withoutCost int32) {
+	switch {
+	case !s.Started:
+		return 0, 0
+	case s.Result != nil && s.Result.CostReported:
+		return s.Result.CostMilliUSD, 0
+	default:
+		return 0, 1
+	}
 }
 
 // ShutdownSlack is how late Agent Sandbox may notice a sandbox's shutdown time

@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -120,6 +121,7 @@ func linterPlan(ns string, issues int) scaffold.Tree {
 	files := scaffold.Tree{
 		model.PlanModelFile:   {Data: []byte(projectDoc(ns) + linterDocs)},
 		model.PlanChoicesFile: {Data: []byte("- A service lints the rules\n- Postgres keeps them\n")},
+		model.PlanSummaryFile: {Data: []byte("Planned cel-lens, a linter for CEL rules:\none Container and its first issues.\n")},
 	}
 	for n := 1; n <= issues; n++ {
 		files[fmt.Sprintf("plan/issues/%02d-linter.md", n)] = scaffold.File{Data: []byte(linterIssue(n))}
@@ -145,12 +147,23 @@ func getBrief(g Gomega, ns string) *c4v1alpha1.Brief {
 // files to plan/<round> and ends the try's sandbox with the commit.
 func planRound(ns string, round, try int, files scaffold.Tree) string {
 	GinkgoHelper()
+	return planRoundCosting(ns, round, try, files, new(planCost))
+}
+
+// planCost is what planRound's planner says each try cost.
+const planCost int64 = 120
+
+// planRoundCosting is planRound with a planner that says the try cost
+// milliUSD, or doesn't say when it is nil.
+func planRoundCosting(ns string, round, try int, files scaffold.Tree, milliUSD *int64) string {
+	GinkgoHelper()
 	task := fmt.Sprintf("cel-lens-plan-%d", round)
 	sandbox := fmt.Sprintf("%s-r%d-plan", task, try)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, sandbox) }).Should(Succeed())
 	sha := gitFake.pushPlan(ns, briefRepo, round, files)
 	finishSandbox(ns, sandbox, task, &agentrunner.Result{Role: "plan", Commit: sha,
-		Summary: fmt.Sprintf("Planned round %d.", round)}, "")
+		Summary:      "I've rewritten the plan in `plan/` with the refusal fixed. Nothing is committed or pushed.",
+		CostMilliUSD: milliUSD}, "")
 	return sha
 }
 
@@ -224,8 +237,12 @@ var _ = Describe("Brief rounds", func() {
 				HaveField("Status", metav1.ConditionTrue), HaveField("Reason", model.ReasonApplied)))
 		}).Should(Succeed())
 		brief = getBrief(Default, ns)
-		Expect(brief.Status.History).To(Equal([]c4v1alpha1.BriefRound{{Round: 1, Summary: "Planned round 1.",
-			Choices: []string{"A service lints the rules", "Postgres keeps them"}, Outcome: model.ReasonApplied}}))
+		Expect(brief.Status.History).To(Equal([]c4v1alpha1.BriefRound{{Round: 1,
+			Summary: "Planned cel-lens, a linter for CEL rules: one Container and its first issues.",
+			Choices: []string{"A service lints the rules", "Postgres keeps them"}, CostMilliUSD: planCost,
+			Outcome: model.ReasonApplied}}))
+		Expect(brief.Status.CostMilliUSD).To(Equal(planCost), "what the planner said the round cost")
+		Expect(brief.Status.RunsWithoutCost).To(BeZero())
 		Expect(brief.Status.Choices).To(Equal([]string{"A service lints the rules", "Postgres keeps them"}))
 		Expect(brief.Status.PromptsPlanned).To(BeZero())
 		Expect(brief.Status.Created).To(ConsistOf(
@@ -333,6 +350,8 @@ var _ = Describe("Brief rounds", func() {
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 		}).Should(Succeed())
+		Expect(getBrief(Default, ns).Status.History).To(HaveEach(HaveField("Summary",
+			"The model has no Containers; the round files no issues.")), "a plan without summary.md says what it holds")
 		Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).
 			To(ContainSubstring("1. (planned) Support VAP files first.\n"), "brief.md marks it planned")
 
@@ -355,14 +374,24 @@ var _ = Describe("Brief rounds", func() {
 		bad := linterPlan(ns, 1)
 		bad[model.PlanChoicesFile] = scaffold.File{Data: []byte("\n")}
 		bad["plan/issues/01-linter.md"] = scaffold.File{Data: []byte("---\ntitle: Lint\n---\nJust lint.\n")}
+		bad[model.PlanModelFile] = scaffold.File{Data: []byte(projectDoc(ns) + fmt.Sprintf(`---
+apiVersion: c4.factory.io/v1alpha1
+kind: Person
+metadata:
+  name: rule-author
+spec:
+  description: %s
+`, strings.Repeat("x", 1001)) + linterDocs[strings.Index(linterDocs, "---\napiVersion: c4.factory.io/v1alpha1\nkind: SoftwareSystem"):])}
 
-		planRound(ns, 1, 1, bad)
+		By("refusing the first try, whose planner doesn't say what it cost")
+		planRoundCosting(ns, 1, 1, bad, nil)
 		By("starting the Task's next try with every reason")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-1")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(task.Status.Feedback).To(And(ContainSubstring("plan/choices.md: is empty"),
-				ContainSubstring("MissingAcceptanceCriteria")))
+				ContainSubstring("MissingAcceptanceCriteria"),
+				ContainSubstring("Person/rule-author: spec.description is 1001 characters; it may be at most 1000")))
 		}).Should(Succeed())
 		Eventually(func(g Gomega) { g.Expect(briefEvents(g, ns)).To(ContainElement("PlanRefused")) }).Should(Succeed())
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "linter"), &c4v1alpha1.Container{}))).
@@ -377,7 +406,10 @@ var _ = Describe("Brief rounds", func() {
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionFalse), HaveField("Reason", model.ReasonRoundFailed),
 				HaveField("Message", And(HavePrefix("Round 1 failed: "), ContainSubstring("Failed after 2 rounds")))))
-			g.Expect(b.Status.History).To(HaveLen(1))
+			g.Expect(b.Status.History).To(ConsistOf(And(HaveField("CostMilliUSD", planCost),
+				HaveField("RunsWithoutCost", int32(1)))), "the second try's cost, and the first's not reported")
+			g.Expect(b.Status.CostMilliUSD).To(Equal(planCost))
+			g.Expect(b.Status.RunsWithoutCost).To(Equal(int32(1)))
 		}).Should(Succeed())
 
 		By("starting round 2 for a new prompt")
@@ -424,6 +456,7 @@ var _ = Describe("Brief rounds", func() {
 			g.Expect(briefEvents(g, ns)).To(ContainElement("NeedsInput"))
 		}).Should(Succeed())
 		Expect(getTask(Default, ns, "cel-lens-plan-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+		Expect(getBrief(Default, ns).Status.History).To(ConsistOf(HaveField("Summary", "Asked for input before planning.")))
 		Consistently(func(g Gomega) {
 			err := k8sClient.Get(ctx, key(ns, "linter"), &c4v1alpha1.Container{})
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "nothing is applied")
@@ -600,16 +633,14 @@ spec:
 		createFactory(ns)
 		briefAgents(ns, 3)
 		mustCreate(newBrief(ns, "cel-lens"))
-		files := linterPlan(ns, 1)
-		files[model.PlanModelFile] = scaffold.File{Data: []byte(projectDoc(ns) + fmt.Sprintf(`---
-apiVersion: c4.factory.io/v1alpha1
-kind: Person
-metadata:
-  name: rule-author
-spec:
-  description: %s
-`, strings.Repeat("x", 1001)) + linterDocs[strings.Index(linterDocs, "---\napiVersion: c4.factory.io/v1alpha1\nkind: SoftwareSystem"):])}
-		planRound(ns, 1, 1, files)
+		By("a ResourceQuota that allows no Person, which the plan check can't see")
+		quota := &corev1.ResourceQuota{ObjectMeta: objectMeta(ns, "no-people"), Spec: corev1.ResourceQuotaSpec{
+			Hard: corev1.ResourceList{"count/people.c4.factory.io": resource.MustParse("0")}}}
+		mustCreate(quota)
+		quota.Status = corev1.ResourceQuotaStatus{Hard: quota.Spec.Hard,
+			Used: corev1.ResourceList{"count/people.c4.factory.io": resource.MustParse("0")}}
+		Expect(k8sClient.Status().Update(ctx, quota)).To(Succeed())
+		planRound(ns, 1, 1, linterPlan(ns, 1))
 
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
@@ -617,7 +648,7 @@ spec:
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionFalse), HaveField("Reason", model.ReasonApplyFailed),
 				HaveField("Message", And(ContainSubstring("Round 1 could not be applied at Person/rule-author"),
-					ContainSubstring("spec.description"), ContainSubstring("tries again")))))
+					ContainSubstring("exceeded quota: no-people"), ContainSubstring("tries again")))))
 			g.Expect(briefEventNotes(g, ns, "ApplyFailed")).To(ContainElement(
 				ContainSubstring("at Person/rule-author")))
 		}).Should(Succeed())

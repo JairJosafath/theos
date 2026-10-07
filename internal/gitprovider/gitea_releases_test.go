@@ -34,6 +34,50 @@ func TestListMilestones(t *testing.T) {
 	}
 }
 
+func TestListAllMilestones(t *testing.T) {
+	h, p := newIssueHost(t)
+	due := time.Date(2026, 10, 12, 23, 59, 59, 0, time.UTC)
+	h.milestones = []hostMilestone{
+		{ID: 1, Title: "v0.1.0", State: "closed", DueOn: &due, Description: "<!-- c4-brief: cel-lens/1 -->"},
+		{ID: 2, Title: "Later", State: "open"},
+	}
+	got, err := p.ListAllMilestones(context.Background(), p.Repository("orders-api"))
+	want := []Milestone{
+		{ID: 1, Title: "v0.1.0", Due: due, Description: "<!-- c4-brief: cel-lens/1 -->", Closed: true},
+		{ID: 2, Title: "Later"},
+	}
+	if err != nil || len(got) != len(want) {
+		t.Fatalf("ListAllMilestones() = %+v, %v; want %+v", got, err, want)
+	}
+	for i := range want {
+		if got[i].ID != want[i].ID || got[i].Title != want[i].Title || !got[i].Due.Equal(want[i].Due) ||
+			got[i].Description != want[i].Description || got[i].Closed != want[i].Closed {
+			t.Errorf("ListAllMilestones()[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestCreateMilestone(t *testing.T) {
+	ctx := context.Background()
+	due := time.Date(2026, 10, 14, 9, 30, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		name string
+		due  time.Time
+	}{{"dated", due}, {"undated", time.Time{}}} {
+		t.Run(tt.name, func(t *testing.T) {
+			h, p := newIssueHost(t)
+			got, err := p.CreateMilestone(ctx, p.Repository("orders-api"), "v0.1.0", "Brief\n<!-- c4-brief: b/1 -->", tt.due)
+			if err != nil || got.ID != 1 || got.Title != "v0.1.0" || got.Description != "Brief\n<!-- c4-brief: b/1 -->" ||
+				!got.Due.Equal(tt.due) || got.Closed {
+				t.Fatalf("CreateMilestone() = %+v, %v; want milestone 1, open, due %v", got, err, tt.due)
+			}
+			if m := h.milestones[0]; (m.DueOn == nil) != tt.due.IsZero() || (m.DueOn != nil && !m.DueOn.Equal(tt.due)) {
+				t.Errorf("milestone sent due %v, want %v", m.DueOn, tt.due)
+			}
+		})
+	}
+}
+
 func TestMilestoneIssues(t *testing.T) {
 	h, p := newIssueHost(t)
 	ctx := context.Background()
@@ -65,14 +109,25 @@ func TestCloseMilestone(t *testing.T) {
 	h, p := newIssueHost(t)
 	ctx := context.Background()
 	repo := p.Repository("orders-api")
-	h.milestones = []hostMilestone{{ID: 1, Title: "v0.1.0", State: "open"}}
+	due := time.Date(2026, 10, 14, 9, 30, 0, 0, time.UTC)
+	h.milestones = []hostMilestone{{ID: 1, Title: "v0.1.0", State: "open", DueOn: &due}, {ID: 2, Title: "Later", State: "open"}}
 	for range 2 {
-		if err := p.CloseMilestone(ctx, repo, 1); err != nil {
-			t.Fatalf("CloseMilestone() error = %v", err)
+		for id := int64(1); id <= 2; id++ {
+			if err := p.CloseMilestone(ctx, repo, id); err != nil {
+				t.Fatalf("CloseMilestone(%d) error = %v", id, err)
+			}
 		}
 	}
-	if h.milestones[0].State != "closed" {
-		t.Errorf("milestone state = %s, want closed", h.milestones[0].State)
+	for _, m := range h.milestones {
+		if m.State != "closed" {
+			t.Errorf("milestone %s state = %s, want closed", m.Title, m.State)
+		}
+	}
+	if d := h.milestones[0].DueOn; d == nil || !d.Equal(due) {
+		t.Errorf("v0.1.0 due %v after closing, want %v kept", d, due)
+	}
+	if d := h.milestones[1].DueOn; d != nil {
+		t.Errorf("Later due %v after closing, want none", d)
 	}
 	if err := p.CloseMilestone(ctx, repo, 7); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
 		t.Errorf("CloseMilestone() of a missing milestone error = %v, want HTTP 404", err)

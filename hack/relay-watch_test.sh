@@ -455,12 +455,19 @@ case "$1 $2 $* " in
   "run list"*) cat "$FAKE/runs-$wf.json" 2>/dev/null || echo '[]' ;;
   "run view"*)
     if [[ " $* " == *" --log-failed "* ]]; then seq -f 'log line %g' 1 50
-    else echo '{"jobs":[{"name":"Run on Ubuntu","conclusion":"failure"},{"name":"Setup","conclusion":"success"}]}' | jq -r "$q"; fi ;;
+    elif [ -f "$FAKE/jobs-$3.json" ]; then jq -r "$q" "$FAKE/jobs-$3.json"
+    else echo '{"jobs":[{"databaseId":1,"name":"Run on Ubuntu","conclusion":"failure","steps":[{"name":"Test","conclusion":"failure"}]},
+      {"databaseId":2,"name":"Setup","conclusion":"success","steps":[{"name":"Set up","conclusion":"success"}]}]}' | jq -r "$q"; fi ;;
+  *"/check-runs/"*)
+    for a in "$@"; do [[ $a == */check-runs/* ]] && id=${a##*/check-runs/} id=${id%%/*}; done
+    jq -r "$q" "$FAKE/annotations-$id.json" 2>/dev/null || echo '[]' | jq -r "$q" ;;
   *" --method POST "*)
     n=$(($(jq length "$FAKE/issues.json") + 100))
     jq --argjson n "$n" '. + [input + {number: $n}]' "$FAKE/issues.json" - >"$FAKE/issues.new" &&
       mv "$FAKE/issues.new" "$FAKE/issues.json" && echo "$n" ;;
-  *) jq -r "$q" "$FAKE/issues.json" ;;
+  *) # $FAKE/listed.json, when there, stands for a list of open issues that
+    # lags behind the creates, or that a close took an issue out of.
+    if [ -f "$FAKE/listed.json" ]; then jq -r "$q" "$FAKE/listed.json"; else jq -r "$q" "$FAKE/issues.json"; fi ;;
 esac
 GH
 chmod +x "$T/bin/gh"
@@ -513,6 +520,96 @@ check "ci: a red main that lasts is logged once" "$(logged 'main is red: Tests')
 runs lint.yml failure cancelled timed_out
 ci_round
 check "ci: cancelled runs are skipped" "$(jq -r '.[1].title' "$T/issues.json")" "main is red: Lint"
+
+# A run whose jobs GitHub never started (failed payments): its failed jobs
+# have no steps and an annotation saying so. The watch files one issue for the
+# maintainer, shared by every such workflow, and no "main is red".
+NOTSTARTED='The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the '"'"'Billing & plans'"'"' section of your settings'
+unstarted() {
+  echo '{"jobs":[{"databaseId":'"$2"',"name":"Run on Ubuntu","conclusion":"failure","steps":[]}]}' >"$T/jobs-$1.json"
+  jq -n --arg m "$NOTSTARTED" '[{message: $m, annotation_level: "failure"}]' >"$T/annotations-$2.json"
+}
+echo '[]' >"$T/issues.json"
+: >"$LOG"
+CI_SAID=
+runs test.yml failure failure
+runs lint.yml failure failure
+runs_test=$(jq -r '.[].databaseId' "$T/runs-test.yml.json")
+for id in $runs_test; do unstarted "$id" "5$id"; done
+ci_round
+check "ci: unstarted jobs file one issue for both workflows" "$(filed)" 1
+check "ci: its title" "$(jq -r '.[0].title' "$T/issues.json")" "GitHub Actions starts no jobs"
+check "ci: its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/needs-maintainer kind/bug source/dev"
+body=$(jq -r '.[0].body' "$T/issues.json")
+check "ci: the body carries the annotation" "$(grep -cxF "> $NOTSTARTED" <<<"$body")" 1
+check "ci: the body names the run" "$(grep -c '^Run: \[899\](https://x/runs/899) ' <<<"$body")" 1
+check "ci: no main is red" "$(jq '[.[] | select(.title | startswith("main is red"))] | length' "$T/issues.json")" 0
+check "ci: logged once per workflow" "$(logged 'GitHub Actions started no job of Tests; issue #100$'):$(logged 'GitHub Actions started no job of Lint; issue #100$')" 1:1
+ci_round
+check "ci: a later round files no other issue" "$(filed)" 1
+check "ci: unstarted jobs that last are logged once" "$(logged 'GitHub Actions started no job')" 2
+
+# GitHub's open-issue list lags the create: the round still files one issue.
+echo '[]' >"$T/issues.json"
+echo '[]' >"$T/listed.json"
+rm -f "$DIR/ci-stopped"
+: >"$LOG"
+CI_SAID=
+ci_round
+check "ci: a lagging open-issue list still files one issue" "$(filed)" 1
+check "ci: both workflows name it" "$(logged 'GitHub Actions started no job of Tests; issue #100$'):$(logged 'GitHub Actions started no job of Lint; issue #100$')" 1:1
+check "ci: its number is kept" "$(cat "$DIR/ci-stopped")" 100
+# The maintainer closed it as a duplicate (not_planned): no open issue has
+# its title, and while the outage lasts, nothing is filed again, even after
+# the watch restarts (CI_SAID empty).
+CI_SAID=
+ci_round
+check "ci: after a close as duplicate, the outage files nothing" "$(filed)" 1
+# Every workflow ran its jobs again: the outage is over, and the next one
+# files anew.
+rm -f "$T"/jobs-*.json "$T"/annotations-*.json
+runs test.yml failure success
+runs lint.yml success
+ci_round
+check "ci: the end of the outage forgets the issue" "$([ -e "$DIR/ci-stopped" ] && echo kept || echo gone)" gone
+for id in $runs_test; do unstarted "$id" "5$id"; done
+runs test.yml failure failure
+runs lint.yml failure failure
+ci_round
+check "ci: the next outage files anew" "$(filed)" 2
+# An unreadable workflow doesn't end the outage.
+mv "$T/bin/gh" "$T/bin/gh.ok"
+printf '#!/usr/bin/env bash\nexit 1\n' >"$T/bin/gh"
+chmod +x "$T/bin/gh"
+ci_round
+mv "$T/bin/gh.ok" "$T/bin/gh"
+check "ci: an unreadable CI keeps the issue" "$(cat "$DIR/ci-stopped" 2>/dev/null)" 101
+
+# The outage already has an open issue in status/needs-human: it is reused
+# and its labels left alone.
+rm -f "$DIR/ci-stopped" "$T/listed.json"
+jq -n '[{number: 379, title: "GitHub Actions starts no jobs", labels: ["status/needs-human", "kind/bug", "source/dev"]}]' >"$T/issues.json"
+ci_round
+check "ci: a needs-human issue: nothing filed" "$(filed)" 1
+check "ci: a needs-human issue keeps its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/needs-human kind/bug source/dev"
+check "ci: a needs-human issue is the one kept" "$(cat "$DIR/ci-stopped")" 379
+rm -f "$DIR/ci-stopped"
+
+# A failed job with no steps but no such annotation is code work, and so is a
+# never-started run before the newest; the newest decides.
+echo '[]' >"$T/issues.json"
+rm -f "$T"/jobs-*.json "$T"/annotations-*.json
+runs lint.yml failure failure
+echo '{"jobs":[{"databaseId":7,"name":"Run on Ubuntu","conclusion":"failure","steps":[]}]}' >"$T/jobs-899.json"
+echo '[{"message":"Process completed with exit code 1."}]' >"$T/annotations-7.json"
+runs test.yml failure failure
+ci_round
+check "ci: failed jobs that started stay main is red" "$(jq -r '[.[].title] | sort | join(",")' "$T/issues.json")" "main is red: Lint,main is red: Tests"
+echo '[]' >"$T/issues.json"
+rm -f "$T"/jobs-*.json "$T"/annotations-*.json
+unstarted 898 5898
+ci_round
+check "ci: an older never-started run doesn't count as a failure" "$(filed)" 0
 
 # The groups: a watch, or a user manager, without a group the user has in
 # /etc/group says so, with the fix; one with all of them says nothing.

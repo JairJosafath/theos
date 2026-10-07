@@ -15,10 +15,10 @@ Test a rule at the lowest tier that can see it ([design](../design.md#test-tiers
 
 | Tier | Runs | Verifies |
 | --- | --- | --- |
-| 1. Table tests | `make test`, no API server | `internal/model` decisions, `internal/scaffold` rendering of every template, the Agent Sandbox and pod specs and the fence's NetworkPolicy (`sandbox_fence_unit_test.go`) |
+| 1. Table tests | `make test`, no API server | `internal/model` decisions, `internal/scaffold` rendering of every template, the Agent Sandbox and pod specs and the fence's NetworkPolicy (`sandbox_fence_unit_test.go`), the generated RBAC role naming only CRD plurals and subresources they have (`rbac_unit_test.go`) |
 | 2. Offline YAML | `make validate-yaml`, in `make check` | samples, e2e fixtures, kustomize builds, the chart, rendered manifests, against the CRDs: valid YAML passes their create-time CEL rules |
 | 3. Local Gitea | `make test-gitea`, `make seed-local` | the Gitea API's real behaviour, the seed, template tags |
-| 4. envtest | `make test` | reconcilers, status, ownerReferences, the admission policy, every CEL rule's failing case (create-time and on `oldSelf`), the reaction to faked Sandbox and pod status, the generated RBAC: the reconcilers run as the operator's ServiceAccount bound to `config/rbac/role.yaml` |
+| 4. envtest | `make test` | reconcilers, status, ownerReferences, the admission policy, every CEL rule's failing case (create-time and on `oldSelf`), the reaction to faked Sandbox and pod status, the generated RBAC, for the calls the specs make: the reconcilers run as the operator's ServiceAccount bound to `config/rbac/role.yaml`, so a call no spec makes is not checked |
 | 5. Kind | `make e2e`, factory-ops, only when a human asks | the whole loop on stand-in agents: four specs on the `hello-html` app in `test/e2e/testdata/apps` |
 
 Tiers 1 to 4 run on any device, lite ones included, with no lease; `make
@@ -351,7 +351,13 @@ closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
 a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
 ready and urgent, so the next session fixes main before anything else; a single
-failure files nothing.
+failure files nothing. When GitHub started none of the newest failed run's
+jobs (no steps, an annotation saying the job was not started: failed
+payments, a spending limit), no code is at fault: the watch files one
+`GitHub Actions starts no jobs` issue in `status/needs-maintainer`, carrying
+the annotation, and no `main is red`. It keeps that issue's number in
+`.relay/ci-stopped` until every workflow runs its jobs again, and files no
+other while the outage lasts, even after the issue is closed as a duplicate.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
@@ -586,42 +592,65 @@ hold its own:
   and its liveness probe restarted it just before that release (#17). It
   stays without a limit, so it can use idle cores.
 
-## GitHub Actions on a self-hosted runner
+## GitHub Actions on self-hosted runners
 
-When GitHub's hosted runners are slow to start, the workflows can run on a
-runner in a container on a device's Docker (`hack/gh-runner/`). Every
-workflow's `runs-on` is `${{ vars.RUNS_ON || 'ubuntu-latest' }}`, so switching
-needs no code change.
+When GitHub's hosted runners are slow to start or start no jobs, the workflows
+can run on runners in containers on a device's Docker (`hack/gh-runner/`).
+Every workflow's `runs-on` uses the repository variable `RUNS_ON`, so switching
+needs no code change. On the device, with `gh` logged in to the repository:
 
 ```bash
-make gh-runner                              # build, register c4factory-<hostname> once, start it
-make gh-runner-status                       # its container, and whether GitHub sees it online
-make gh-runner-down                         # stop it and remove it from GitHub
-gh variable set RUNS_ON --body self-hosted  # every job goes to it
+make gh-runner RUNNERS=3                    # build, register c4factory-<hostname>-1..3 once, start them
+gh variable set RUNS_ON --body self-hosted  # every job goes to them
+make gh-runner-status                       # their containers, and whether GitHub sees them online
 gh variable delete RUNS_ON                  # back to ubuntu-latest
-docker logs -f c4factory-gh-runner          # what it is doing
+make gh-runner-down                         # stop them all and remove them from GitHub
+docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
 ```
 
-- It registers with the labels `self-hosted`, `linux`, `x64` and `c4factory`,
-  with a token from the device's `gh` login. The registration lives on a
-  volume, so `docker restart`, a reboot and a new image keep it. GitHub drops
-  a runner that stays offline for 14 days; `make gh-runner` then registers it
-  again. With `RUNS_ON` set and the runner down, jobs wait in the queue.
+- Runner *i* is the container `c4factory-gh-runner-i`, registered as
+  `c4factory-<hostname>-i` with the labels `self-hosted`, `linux`, `x64` and
+  `c4factory`, with a token from the device's `gh` login. Its registration
+  lives on a volume of its own (`c4factory-gh-runner-i-config`), so `docker
+  restart`, a reboot and a new image keep it. GitHub drops a runner that stays
+  offline for 14 days; `make gh-runner` then registers it again. With
+  `RUNS_ON` set and the runners down, jobs wait in the queue.
+- `make gh-runner RUNNERS=N` again with a smaller N removes the runners above
+  N, from Docker and from GitHub; `RUNNERS` defaults to 1. A device that ran
+  the single runner from before (container `c4factory-gh-runner`, named
+  `c4factory-<hostname>`) has it removed and registered again as runner 1 on
+  the first `make gh-runner`.
+- **One Kind job per device.** *Test Chart*, *E2E Tests* and *Verify Release*
+  make Kind clusters with fixed names (`chart-test`, `ci-e2e`,
+  `release-<check>`) and take several GB of the device's memory. Only runner 1
+  of a device carries the label `c4factory-kind`, and while `RUNS_ON` is
+  `self-hosted` those jobs ask for it (`runs-on: ${{ vars.RUNS_ON ==
+  'self-hosted' && fromJSON('["self-hosted", "c4factory-kind"]') || ... }}`),
+  so a device runs one of them at a time and two devices run one each. A
+  label, not a `concurrency` group: a group spans the repository, not a
+  device, and keeps only the newest pending run, cancelling the others; and
+  per-runner cluster names would still put two clusters in one device's
+  memory. `hack/check-workflows.sh` (in `make check`) fails a job whose
+  `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
+  without the label.
 - Jobs use the device's Docker through its socket, on the host's network, so
   `docker build` and Kind work and a Kind cluster a job makes answers on
   127.0.0.1. The socket is root on the device, which is acceptable for a
-  private repository with one owner. The work directory
-  (`~/.cache/c4factory/gh-runner/work`) has the same path in the container, so
-  a job's bind mounts resolve.
-- One runner, so jobs go one at a time. They run on the device's Docker
+  private repository with one owner. Runner *i*'s work directory
+  (`~/.cache/c4factory/gh-runner/work/i`) has the same path in the container,
+  so a job's bind mounts resolve.
+- Each runner takes one job at a time. They run on the device's Docker
   outside the `HEAVY_JOBS` slots: a release builds eight images and *Tests*
-  runs `make test` whatever the device's sessions are doing.
-- The tool cache (setup-go, setup-node) and the Go, npm and golangci-lint
-  caches stay on volumes, so the workflows skip GitHub's cache there. *Test
-  Chart* and *E2E Tests* make Kind clusters of their own (`chart-test`,
-  `ci-e2e`) and delete them after, never one of the pool.
+  runs `make test` whatever the device's sessions are doing, so pick N for the
+  device's memory.
+- The Go module, build and golangci-lint caches and the npm cache are one
+  volume the runners share (`c4factory-gh-runner-cache`): Go, golangci-lint and
+  npm lock what they write there. The tool cache setup-go and setup-node unpack
+  into is a volume per runner (`c4factory-gh-runner-i-toolcache`): two runners
+  unpacking one Go version into it at once would race. The workflows skip
+  GitHub's cache on self-hosted runners. `make gh-runner-down` keeps the caches.
 - The image pins the runner (`RUNNER_VERSION` in `hack/gh-runner/Dockerfile`),
   which updates itself when GitHub asks. Bump the pin to
   `gh api repos/actions/runner/releases/latest --jq .tag_name` now and then
-  and run `make gh-runner`: it rebuilds the image and starts a new container
-  on the same registration.
+  and run `make gh-runner`: it rebuilds the image and starts new containers
+  on the same registrations.

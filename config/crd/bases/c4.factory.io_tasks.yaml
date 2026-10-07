@@ -314,6 +314,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              costMilliUSD:
+                description: |-
+                  costMilliUSD is what the Task's agent runs cost so far, over all rounds,
+                  in thousandths of a US dollar, as the agents reported it.
+                format: int64
+                type: integer
               feedback:
                 description: |-
                   feedback is what the next round must address: review findings, failed
@@ -438,6 +444,12 @@ spec:
               round:
                 description: round is the implement round, from 1 up to the Agent's
                   maxRounds.
+                format: int32
+                type: integer
+              runsWithoutCost:
+                description: |-
+                  runsWithoutCost counts the Task's agent runs whose agent didn't report
+                  what they cost; costMilliUSD leaves them out.
                 format: int32
                 type: integer
               sandbox:

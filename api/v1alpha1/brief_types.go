@@ -195,6 +195,11 @@ type BriefRound struct {
 	// +optional
 	CostMilliUSD int64 `json:"costMilliUSD,omitempty"`
 
+	// runsWithoutCost counts the round's planner runs whose agent didn't report
+	// what they cost; costMilliUSD leaves them out.
+	// +optional
+	RunsWithoutCost int32 `json:"runsWithoutCost,omitempty"`
+
 	// outcome is how the round ended: Applied, PlannerNeedsInput or RoundFailed.
 	// +kubebuilder:validation:Enum=Applied;PlannerNeedsInput;RoundFailed
 	// +optional
@@ -274,6 +279,11 @@ type BriefStatus struct {
 	// thousandths of a US dollar.
 	// +optional
 	CostMilliUSD int64 `json:"costMilliUSD,omitempty"`
+
+	// runsWithoutCost counts the planner runs, over all rounds, whose agent
+	// didn't report what they cost; costMilliUSD leaves them out.
+	// +optional
+	RunsWithoutCost int32 `json:"runsWithoutCost,omitempty"`
 
 	// observedGeneration is the spec generation the status reflects.
 	// +optional

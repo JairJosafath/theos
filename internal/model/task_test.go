@@ -723,3 +723,29 @@ func TestEndedAtDeadline(t *testing.T) {
 		t.Error("EndedAtDeadline() without a deadline = false, want true")
 	}
 }
+
+func TestRunStateCost(t *testing.T) {
+	tests := []struct {
+		name        string
+		run         RunState
+		milliUSD    int64
+		withoutCost int32
+	}{
+		{"no sandbox", RunState{}, 0, 0},
+		{"a reported cost", RunState{Started: true, Done: true,
+			Result: &RunResult{CostMilliUSD: 312, CostReported: true}}, 312, 0},
+		{"a reported cost of nothing", RunState{Started: true, Done: true,
+			Result: &RunResult{CostReported: true}}, 0, 0},
+		{"a result without a cost", RunState{Started: true, Done: true, Result: &RunResult{}}, 0, 1},
+		{"no result", RunState{Started: true, Done: true, Failure: "OOMKilled"}, 0, 1},
+		{"ended while running", RunState{Started: true}, 0, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			milliUSD, withoutCost := tt.run.Cost()
+			if milliUSD != tt.milliUSD || withoutCost != tt.withoutCost {
+				t.Errorf("Cost() = %d, %d; want %d, %d", milliUSD, withoutCost, tt.milliUSD, tt.withoutCost)
+			}
+		})
+	}
+}

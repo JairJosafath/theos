@@ -69,6 +69,9 @@
 #                                        and none runs there now (it may be the fix).
 #                                        Prints an issue body naming the runs, their commits, the failing jobs
 #                                        and the newest run's last 40 failed log lines. Exit 1: not red
+#                                        (a run whose jobs never started doesn't count). Exit 3: GitHub
+#                                        started none of the newest run's failed jobs (failed payments, a
+#                                        spending limit); prints an issue body with their annotation
 #   hack/lib/github.sh activity          one line that changes whenever an issue or pull request changes (the
 #                                        Maintainer report excluded) or main moves; the relay watch compares it
 #   hack/lib/github.sh report FILE       set FILE as the body of the pinned Maintainer report issue (label
@@ -1276,6 +1279,32 @@ gh_red() {
     return 2
   n=$(jq '[.[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure")] | length' <<<"$runs")
   [ "$n" = 2 ] || return 1
+  # A run whose jobs GitHub never started says nothing about the code: when
+  # the newest is one, Actions is at fault (exit 3); when only the older is,
+  # main hasn't failed twice.
+  local why rc
+  why=$(gh_unstarted "$(jq -r '.[0].databaseId' <<<"$runs")")
+  rc=$?
+  case $rc in
+    0)
+      echo "GitHub Actions started no job of \`$(jq -r '.[0].workflowName' <<<"$runs")\` (\`$wf\`) on main, so main's CI says nothing about the code. Its annotation:"
+      echo
+      sed 's/^/> /' <<<"$why"
+      echo
+      jq -r '.[0] | "Run: [\(.databaseId)](\(.url)) at \(.createdAt), commit \(.headSha[:7]): \(.displayTitle)"' <<<"$runs"
+      echo
+      echo "Only the owner can fix this (the account's billing or spending limit, or Actions settings); no code change will. Filed by hack/relay-watch.sh, which files no \"main is red\" issue while it lasts. Close this issue once Actions runs jobs again."
+      return 3
+      ;;
+    1) ;;
+    *) return 2 ;;
+  esac
+  why=$(gh_unstarted "$(jq -r '.[1].databaseId' <<<"$runs")")
+  case $? in
+    0) return 1 ;;
+    1) ;;
+    *) return 2 ;;
+  esac
   echo "\`$(jq -r '.[0].workflowName' <<<"$runs")\` (\`$wf\`) failed on main twice in a row; every pull request built on main fails with it."
   echo
   echo "## Runs"
@@ -1294,6 +1323,25 @@ gh_red() {
   echo '```'
   echo
   echo "Filed by hack/relay-watch.sh. The session that fixes main closes this issue; when the cause already has an open issue, close this one as its duplicate (\`hack/lib/github.sh duplicate N M\`)."
+}
+
+# gh_unstarted RUN: print the annotations of RUN's failed jobs and exit 0 when
+# GitHub never started any of them: RUN has failed jobs, none has a step, and
+# each has an annotation saying the job was not started (failed payments, a
+# spending limit). Exit 1 when a failed job started, 2 when GitHub can't say.
+gh_unstarted() {
+  local run=${1:?usage: gh_unstarted RUN} jobs id msg out=
+  jobs=$(gh run view "$run" --repo "$C4_GITHUB_REPO" --json jobs \
+    --jq '[.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure")]') ||
+    return 2
+  [ "$(jq length <<<"$jobs")" -gt 0 ] || return 1
+  [ "$(jq '[.[] | select((.steps // []) | length > 0)] | length' <<<"$jobs")" = 0 ] || return 1
+  for id in $(jq -r '.[].databaseId' <<<"$jobs"); do
+    msg=$(gh_api "repos/$C4_GITHUB_REPO/check-runs/$id/annotations" --jq '.[].message') || return 2
+    grep -qi 'was not started' <<<"$msg" || return 1
+    [[ $'\n'"$out"$'\n' == *$'\n'"$msg"$'\n'* ]] || out+=${out:+$'\n'}$msg
+  done
+  printf '%s\n' "$out"
 }
 
 GH_USER_COLOR=fef2c0

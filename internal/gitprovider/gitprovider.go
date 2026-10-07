@@ -171,10 +171,18 @@ type Provider interface {
 
 	// ListMilestones returns repo's open milestones.
 	ListMilestones(ctx context.Context, repo Repository) ([]Milestone, error)
+	// ListAllMilestones returns repo's milestones, open and closed, with their
+	// descriptions.
+	ListAllMilestones(ctx context.Context, repo Repository) ([]Milestone, error)
+	// CreateMilestone creates an open milestone in repo with description, due at
+	// due, or with no due date when due is zero, and returns it. It doesn't look
+	// for one of the same title first: a repeat makes a second milestone.
+	CreateMilestone(ctx context.Context, repo Repository, title, description string, due time.Time) (Milestone, error)
 	// MilestoneIssues returns the open and the closed issues in milestone id,
 	// without pull requests.
 	MilestoneIssues(ctx context.Context, repo Repository, id int64) ([]Issue, error)
-	// CloseMilestone closes milestone id. It is safe to repeat.
+	// CloseMilestone closes milestone id, keeping the day it is due. It is safe
+	// to repeat.
 	CloseMilestone(ctx context.Context, repo Repository, id int64) error
 	// GetTag returns the commit tag points at, or "" when repo has no such tag.
 	GetTag(ctx context.Context, repo Repository, tag string) (string, error)

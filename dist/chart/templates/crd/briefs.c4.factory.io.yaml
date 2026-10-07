@@ -308,6 +308,12 @@ spec:
                       format: int32
                       minimum: 1
                       type: integer
+                    runsWithoutCost:
+                      description: |-
+                        runsWithoutCost counts the round's planner runs whose agent didn't report
+                        what they cost; costMilliUSD leaves them out.
+                      format: int32
+                      type: integer
                     summary:
                       description: summary says in a few words what the round did.
                       maxLength: 1000
@@ -391,6 +397,12 @@ spec:
               roundPrompts:
                 description: roundPrompts is how many of spec.prompts the running
                   or last round took.
+                format: int32
+                type: integer
+              runsWithoutCost:
+                description: |-
+                  runsWithoutCost counts the planner runs, over all rounds, whose agent
+                  didn't report what they cost; costMilliUSD leaves them out.
                 format: int32
                 type: integer
               suggestions:

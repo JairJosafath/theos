@@ -25,13 +25,16 @@ type fakeReleaseState struct {
 	assets    map[string][]byte
 	// closeFailures is how many CloseMilestone calls fail before one succeeds.
 	closeFailures int
+	// created is the milestones CreateMilestone made, by owner/name#ID, for
+	// their descriptions and due dates.
+	created map[string]gitprovider.Milestone
 }
 
 func (g *fakeGit) releaseState() *fakeReleaseState {
 	if g.releases == nil {
 		g.releases = &fakeReleaseState{closed: map[string][]string{}, tags: map[string]string{},
 			runs: map[string][]gitprovider.WorkflowRun{}, published: map[string]*gitprovider.Release{},
-			assets: map[string][]byte{}}
+			assets: map[string][]byte{}, created: map[string]gitprovider.Milestone{}}
 	}
 	return g.releases
 }
@@ -40,22 +43,52 @@ func (p *fakeProvider) ListMilestones(_ context.Context, repo gitprovider.Reposi
 	error) {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
+	return p.git.milestones(repo.Owner+"/"+repo.Name, false), nil
+}
+
+func (p *fakeProvider) ListAllMilestones(_ context.Context, repo gitprovider.Repository) ([]gitprovider.Milestone,
+	error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	return p.git.milestones(repo.Owner+"/"+repo.Name, true), nil
+}
+
+func (p *fakeProvider) CreateMilestone(_ context.Context, repo gitprovider.Repository, title, description string,
+	due time.Time) (gitprovider.Milestone, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
 	key := repo.Owner + "/" + repo.Name
 	s := p.git.issueState()
+	s.milestones[key] = append(s.milestones[key], title)
+	m := gitprovider.Milestone{ID: int64(len(s.milestones[key])), Title: title, Description: description, Due: due}
+	p.git.releaseState().created[fmt.Sprintf("%s#%d", key, m.ID)] = m
+	return m, nil
+}
+
+// milestones returns the milestones of owner/name: the open ones, or all of
+// them. A milestone CreateMilestone made has its description and due date; any
+// other is due when its issues were given one with setIssueRelease.
+func (g *fakeGit) milestones(key string, all bool) []gitprovider.Milestone {
+	s := g.issueState()
 	var out []gitprovider.Milestone
 	for i, title := range s.milestones[key] {
-		if slices.Contains(p.git.releaseState().closed[key], title) {
+		closed := slices.Contains(g.releaseState().closed[key], title)
+		if closed && !all {
 			continue
 		}
-		var due time.Time
-		for _, issue := range s.issues[key] {
-			if issue.milestone == title && !issue.MilestoneDue.IsZero() {
-				due = issue.MilestoneDue
+		m, made := g.releaseState().created[fmt.Sprintf("%s#%d", key, i+1)]
+		if !made {
+			m = gitprovider.Milestone{ID: int64(i + 1), Title: title}
+			for _, issue := range s.issues[key] {
+				if issue.milestone == title && !issue.MilestoneDue.IsZero() {
+					m.Due = issue.MilestoneDue
+				}
 			}
 		}
-		out = append(out, gitprovider.Milestone{ID: int64(i + 1), Title: title, Due: due})
+		m.Closed = closed
+		out = append(out, m)
 	}
-	return out, nil
+	return out
 }
 
 func (p *fakeProvider) MilestoneIssues(_ context.Context, repo gitprovider.Repository,

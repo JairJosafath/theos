@@ -44,16 +44,23 @@ type Result struct {
 	// eviction, a preemption) before the run finished: the infrastructure ended
 	// it, not the agent.
 	Interrupted bool `json:"interrupted,omitempty"`
+	// CostMilliUSD is what the run's agent calls cost, in thousandths of a US
+	// dollar; nil when the agent didn't report it.
+	CostMilliUSD *int64 `json:"costMilliUSD,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
 const MaxResultBytes = 4000
 
 // Follow-ups share the termination message with the verdict, so they stay short.
+// A criterion is a checklist item the work is judged by, so it gets room for a
+// whole sentence: the reviewer is asked for at most maxCriterionChars, and the
+// rest is margin.
 const (
 	maxFollowUpTitle     = 100
 	maxFollowUpBody      = 400
-	maxFollowUpCriterion = 120
+	maxFollowUpCriterion = 240
+	maxCriterionChars    = 200
 )
 
 // Encode returns the Result as JSON of at most MaxResultBytes, shortening the
@@ -61,11 +68,11 @@ const (
 func (r Result) Encode() []byte {
 	r.FollowUps = slices.Clone(r.FollowUps)
 	for i := range r.FollowUps {
-		r.FollowUps[i].Title = shorten(r.FollowUps[i].Title, maxFollowUpTitle)
-		r.FollowUps[i].Body = shorten(r.FollowUps[i].Body, maxFollowUpBody)
+		r.FollowUps[i].Title = shortenWords(r.FollowUps[i].Title, maxFollowUpTitle)
+		r.FollowUps[i].Body = shortenWords(r.FollowUps[i].Body, maxFollowUpBody)
 		r.FollowUps[i].Criteria = slices.Clone(r.FollowUps[i].Criteria)
 		for j, c := range r.FollowUps[i].Criteria {
-			r.FollowUps[i].Criteria[j] = shorten(c, maxFollowUpCriterion)
+			r.FollowUps[i].Criteria[j] = shortenWords(c, maxFollowUpCriterion)
 		}
 	}
 	if r.Proposal != nil {
@@ -123,6 +130,26 @@ func shorten(s string, n int) string {
 	return s[:n] + "…"
 }
 
+// shortenWords is s in at most n bytes: whole, or cut after its last whole word
+// that fits and ended with "…", so text a person reads is never cut mid-word. A
+// single word longer than n is cut at a rune.
+func shortenWords(s string, n int) string {
+	const ellipsis = "…"
+	if len(s) <= n {
+		return s
+	}
+	cut := max(n-len(ellipsis), 0)
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	if i := strings.LastIndexAny(s[:cut+1], " \t\n"); i > 0 {
+		if word := strings.TrimRight(s[:i], " \t\n,.;:"); word != "" {
+			return word + ellipsis
+		}
+	}
+	return s[:cut] + ellipsis
+}
+
 // checkFixAttempts is how often the agent is sent back when the check fails.
 const checkFixAttempts = 2
 
@@ -136,7 +163,9 @@ var stopGrace = 2 * time.Second
 // is cancelled, or within stopGrace after, is Interrupted: c4agent was told to
 // stop, and the kill of the agent that comes with it is not the agent's failure.
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
-	result := run(ctx, job, agent, dir)
+	meter := &costMeter{agent: agent}
+	result := run(ctx, job, meter, dir)
+	result.CostMilliUSD = meter.total()
 	if result.Error != "" && !result.Unavailable && stoppedWithin(ctx, stopGrace) {
 		result.Interrupted = true
 	}

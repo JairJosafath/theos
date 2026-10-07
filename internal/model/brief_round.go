@@ -212,6 +212,38 @@ func Clip(s string, n int) string {
 	return s[:n]
 }
 
+// ClipSentences cuts s to at most n bytes for a person to read: after the
+// last whole sentence that fits, or, when not even the first one does, after
+// the last whole word, with "…".
+func ClipSentences(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	head := Clip(s, n)
+	end := -1
+	for i := range len(head) {
+		if !strings.ContainsRune(".!?", rune(head[i])) {
+			continue
+		}
+		if next := i + 1; next == len(s) || s[next] == ' ' || s[next] == '\n' {
+			end = next
+		}
+	}
+	if end > 0 {
+		return head[:end]
+	}
+	const ellipsis = "…"
+	if n < len(ellipsis) {
+		return head
+	}
+	head = Clip(s, n-len(ellipsis))
+	if i := strings.LastIndexAny(head, " \n"); i > 0 && s[len(head)] != ' ' && s[len(head)] != '\n' {
+		head = head[:i]
+	}
+	return strings.TrimRight(head, " \n,;:") + ellipsis
+}
+
 // ClipList keeps the first max items of list, each clipped to n bytes.
 func ClipList(list []string, maxItems, n int) []string {
 	if len(list) > maxItems {

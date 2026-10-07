@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Brief, BriefPhase } from '../k8s/types'
-import { describeBrief, describeBriefPhase, formatCost, sortBriefs } from './brief'
+import { describeBrief, describeBriefPhase, describeCost, formatCost, sortBriefs } from './brief'
 
 function brief(name: string, created: string, extra: Partial<Brief> = {}): Brief {
   return { metadata: { name, creationTimestamp: created }, spec: { idea: `Idea ${name}` }, ...extra }
@@ -123,5 +123,25 @@ describe('sortBriefs', () => {
       brief('pending', ''),
     ])
     expect(sorted.map((b) => b.metadata.name)).toEqual(['a', 'b', 'old', 'pending'])
+  })
+})
+
+describe('describeCost', () => {
+  it.each([
+    [undefined, undefined, undefined],
+    [1234, 0, '$1.23'],
+    [0, 2, 'cost not reported by the agent'],
+    [1234, 1, '$1.23, plus 1 run whose cost the agent didn’t report'],
+    [1234, 3, '$1.23, plus 3 runs whose cost the agent didn’t report'],
+  ])('%s with %s runs not reported is %s', (milli, without, want) => {
+    expect(describeCost(milli, without)).toBe(want)
+  })
+
+  it('says on the Brief when the agent reported no cost', () => {
+    const view = describeBrief({
+      ...brief('shop', '2026-01-01T00:00:00Z'),
+      status: { phase: 'Planned', round: 1, runsWithoutCost: 1 },
+    })
+    expect(view.cost).toBe('cost not reported by the agent')
   })
 })

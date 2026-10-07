@@ -57,7 +57,7 @@ export interface BriefView {
   /** How many suggestions wait in all; can exceed the listed ones. */
   suggestionsWaiting: number
   repositoryURL?: string
-  /** Planning cost over all rounds, such as "$0.42". */
+  /** Planning cost over all rounds, such as "$0.42", or that the agent didn't report it. */
   cost?: string
 }
 
@@ -94,8 +94,19 @@ export function describeBrief(brief: Brief): BriefView {
     suggestions,
     suggestionsWaiting,
     repositoryURL: status.repositoryURL,
-    cost: status.costMilliUSD ? formatCost(status.costMilliUSD) : undefined,
+    cost: describeCost(status.costMilliUSD, status.runsWithoutCost),
   }
+}
+
+/**
+ * What runs cost, as their agents reported it: dollars and cents, or that the
+ * agent didn't report it for some or all runs. Undefined before any run.
+ */
+export function describeCost(milliUSD = 0, runsWithoutCost = 0): string | undefined {
+  if (runsWithoutCost === 0) return milliUSD ? formatCost(milliUSD) : undefined
+  if (!milliUSD) return 'cost not reported by the agent'
+  const runs = runsWithoutCost === 1 ? '1 run' : `${runsWithoutCost} runs`
+  return `${formatCost(milliUSD)}, plus ${runs} whose cost the agent didn’t report`
 }
 
 /** Thousandths of a US dollar as dollars and cents; under a cent shows as "<$0.01". */

@@ -18,8 +18,8 @@ import (
 
 // issueHost is an in-memory Gitea with labels, milestones, issues, dependencies,
 // reviews and tags, for repository webshop/orders-api. Exclusive scoped labels replace
-// their siblings, and milestone lists show only open ones unless asked for all,
-// as in Gitea.
+// their siblings, milestone lists show only open ones unless asked for all, and
+// a milestone edit clears the due date unless it gives one, as in Gitea.
 type issueHost struct {
 	mu         sync.Mutex
 	labels     []giteaLabel
@@ -256,11 +256,22 @@ func (h *issueHost) handleReleases(mux *http.ServeMux, repo string, reply func(h
 			reply(w, http.StatusNotFound, map[string]string{"message": "no milestone"})
 			return
 		}
+		// As in Gitea, an edit that gives no due date clears it.
 		var body struct {
-			State string `json:"state"`
+			State string     `json:"state"`
+			DueOn *time.Time `json:"due_on"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		h.milestones[idx].State = body.State
+		h.milestones[idx].State, h.milestones[idx].DueOn = body.State, body.DueOn
+		reply(w, http.StatusOK, h.milestones[idx])
+	})
+	mux.HandleFunc("GET "+repo+"/milestones/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		idx := slices.IndexFunc(h.milestones, func(m hostMilestone) bool { return m.ID == id })
+		if idx < 0 {
+			reply(w, http.StatusNotFound, map[string]string{"message": "no milestone"})
+			return
+		}
 		reply(w, http.StatusOK, h.milestones[idx])
 	})
 	mux.HandleFunc("GET "+repo+"/tags/{tag}", func(w http.ResponseWriter, r *http.Request) {

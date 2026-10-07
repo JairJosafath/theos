@@ -36,7 +36,7 @@ hack/session/                      The Session client image and the test Session
 hack/toolchain-base/               The minimal toolchain (Node, bash, git, make) for the e2e hello-world Container
 hack/toolchain-go/                 The Go and Node toolchain, with a warm build cache, for Go and TypeScript Containers
 hack/runner/, hack/agent/          The CI runner and agent images, built on the toolchain
-hack/gh-runner/                    A self-hosted GitHub Actions runner for this repository (make gh-runner)
+hack/gh-runner/                    Self-hosted GitHub Actions runners for this repository (make gh-runner RUNNERS=N)
 hack/render/                       Renders templates locally, the way the operator scaffolds
 test/chart/                        The chart against envtest: its upgrade-only hooks (make test)
 test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox)

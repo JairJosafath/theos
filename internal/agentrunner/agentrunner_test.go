@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -357,7 +358,7 @@ func TestIssuePrompts(t *testing.T) {
 	ws.Guide = "Check the criteria first."
 	review := ReviewPrompt(job, ws)
 	for _, want := range []string{"issue #3", "each acceptance criterion", "Check the criteria first.", "docs/agents/reviewer.md",
-		`"followUps"`, `"criteria"`, "/workspace/related/vscode-extension"} {
+		`"followUps"`, `"criteria"`, "at most 200 characters", "/workspace/related/vscode-extension"} {
 		if !strings.Contains(review, want) {
 			t.Errorf("review prompt lacks %q", want)
 		}
@@ -396,11 +397,58 @@ func TestResultEncodeKeepsFollowUpsShort(t *testing.T) {
 	if len(back.FollowUps) != 3 || back.Verdict != VerdictApprove {
 		t.Errorf("Encode() lost follow-ups or the verdict: %+v", back)
 	}
-	if c := back.FollowUps[0].Criteria; len(c) != 2 || len(c[0]) > maxFollowUpCriterion+len("…") || c[1] != "Short" {
+	if c := back.FollowUps[0].Criteria; len(c) != 2 || len(c[0]) > maxFollowUpCriterion || c[1] != "Short" {
 		t.Errorf("Encode() criteria = %q, want both, the long one shortened", c)
 	}
 	if len(r.FollowUps[0].Criteria[0]) != 500 {
 		t.Error("Encode() changed the caller's criteria")
+	}
+}
+
+// A suggested issue's criteria are the checklist its work is judged by (#378):
+// one the reviewer kept within bounds reaches the issue whole, and a longer one
+// ends at a whole word with a marker, never mid-word.
+func TestFollowUpCriteriaReachTheIssueWhole(t *testing.T) {
+	whole := "sprout plant with text containing a newline or an ESC character either fails with exit 2 " +
+		"and a clear message, or the text is stored with the control characters escaped"
+	long := strings.Repeat("checks every flag of the plant command ", 10)
+	out := `{"verdict": "approve", "summary": "Good.", "followUps": [{"title": "Reject control characters", ` +
+		`"body": "Todo text may hold control characters.", "criteria": [` + strconv.Quote(whole) + `, ` + strconv.Quote(long) + `]}]}`
+	v, err := ParseVerdict(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Result
+	if err := json.Unmarshal(Result{Role: RoleReview, Verdict: v.Verdict, Summary: v.Summary, FollowUps: v.FollowUps}.Encode(), &back); err != nil {
+		t.Fatal(err)
+	}
+	body := model.FollowUpIssue(back.FollowUps[0], "reviewer", "PR 7", 5, "task-5")
+	if !strings.Contains(body, "- [ ] "+whole+"\n") {
+		t.Errorf("the issue lost part of a criterion within bounds:\n%s", body)
+	}
+	got := back.FollowUps[0].Criteria[1]
+	words := strings.Fields(strings.TrimSuffix(got, "…"))
+	if !strings.HasSuffix(got, "…") || len(got) > maxFollowUpCriterion || !strings.HasPrefix(long, strings.Join(words, " ")+" ") ||
+		!slices.Contains(strings.Fields(long), words[len(words)-1]) {
+		t.Errorf("a long criterion = %q, want it cut at a whole word with a marker, at most %d bytes", got, maxFollowUpCriterion)
+	}
+}
+
+func TestShortenWords(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"short", 10, "short"},
+		{"fails with exit 2, or the text is stored", 22, "fails with exit 2…"},
+		{"fails with exit 2, or the text is stored", 28, "fails with exit 2, or the…"},
+		{"one" + strings.Repeat("o", 40), 10, "oneoooo…"},
+		{"héé héé héé", 9, "héé…"},
+	} {
+		if got := shortenWords(tc.in, tc.n); got != tc.want || len(got) > max(tc.n, len(tc.in)) {
+			t.Errorf("shortenWords(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
+		}
 	}
 }
 
@@ -476,6 +524,64 @@ func TestClaudeAgentPassesTheModel(t *testing.T) {
 	out, err := ClaudeAgent{Command: []string{"echo", "-p"}, Model: "claude-sonnet-5-5"}.Run(context.Background(), t.TempDir(), "")
 	if err != nil || out != "-p --model claude-sonnet-5-5" {
 		t.Errorf("Run() = %q, %v", out, err)
+	}
+}
+
+func TestClaudeAgentReportsTheCost(t *testing.T) {
+	// A shell script stands in for the CLI: it prints what the CLI would.
+	tests := []struct {
+		name, output string
+		want         Cost
+		wantErr      bool
+	}{
+		{"a reported cost", `{"result": "done", "total_cost_usd": 0.31234}`, Cost{MilliUSD: 312, Reported: true}, false},
+		{"a reported cost of nothing", `{"result": "done", "total_cost_usd": 0}`, Cost{Reported: true}, false},
+		{"a failed call's cost", `{"result": "stopped", "is_error": true, "subtype": "error_max_turns", "total_cost_usd": 1.5}`,
+			Cost{MilliUSD: 1500, Reported: true}, true},
+		{"no cost in the output", `{"result": "done"}`, Cost{}, false},
+		{"plain text", `done`, Cost{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := ClaudeAgent{Command: []string{"sh", "-c", "cat >/dev/null; printf '%s' '" + tt.output + "'"}}
+			answer, cost, err := agent.RunReportingCost(context.Background(), t.TempDir(), "plan it")
+			if cost != tt.want || (err != nil) != tt.wantErr || answer == "" {
+				t.Errorf("RunReportingCost() = %q, %+v, %v; want cost %+v", answer, cost, err, tt.want)
+			}
+		})
+	}
+}
+
+// costAgent approves, and says each call cost milliUSD.
+type costAgent struct{ milliUSD int64 }
+
+func (a costAgent) Run(ctx context.Context, dir, prompt string) (string, error) {
+	answer, _, err := a.RunReportingCost(ctx, dir, prompt)
+	return answer, err
+}
+
+func (a costAgent) RunReportingCost(context.Context, string, string) (string, Cost, error) {
+	return `{"verdict": "approve", "summary": "fine"}`, Cost{MilliUSD: a.milliUSD, Reported: true}, nil
+}
+
+func TestRunReportsTheCost(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	ctx := context.Background()
+	Run(ctx, testJob(t, url, RoleImplement, 1), FakeAgent{Role: RoleImplement, Round: 1}, t.TempDir())
+
+	reported := Run(ctx, testJob(t, url, RoleReview, 1), costAgent{milliUSD: 42}, t.TempDir())
+	if reported.CostMilliUSD == nil || *reported.CostMilliUSD != 42 {
+		t.Errorf("a reporting agent's run = %+v, want a cost of 42", reported)
+	}
+	var decoded Result
+	if err := json.Unmarshal(reported.Encode(), &decoded); err != nil || decoded.CostMilliUSD == nil ||
+		*decoded.CostMilliUSD != 42 {
+		t.Errorf("decoded = %+v, %v; want the cost kept", decoded, err)
+	}
+
+	unreported := Run(ctx, testJob(t, url, RoleReview, 1), FakeAgent{Role: RoleReview, Round: 1}, t.TempDir())
+	if unreported.Verdict != VerdictApprove || unreported.CostMilliUSD != nil {
+		t.Errorf("a run whose agent doesn't report its cost = %+v, want no cost", unreported)
 	}
 }
 
