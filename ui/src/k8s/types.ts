@@ -350,6 +350,22 @@ export interface BriefApp {
   message?: string
 }
 
+/** Why an issue was handed back: no acceptance criteria, merged already, tried as often as a Crew does, its last Task failed, or a person did. */
+export type BriefFailedKind = 'unclear' | 'merged' | 'exhausted' | 'failed' | 'person'
+
+/** An issue handed back to a person in the repository of a Container the Brief made, and why. */
+export interface BriefFailedIssue {
+  container: string
+  number: number
+  title?: string
+  url?: string
+  kind: BriefFailedKind
+  /** Why, in a sentence, such as the failed Task's message. */
+  reason?: string
+  /** How many Tasks the issue has had. */
+  tries?: number
+}
+
 /** An app idea in plain words, steered by follow-up prompts; a planner Agent turns it into the model, round by round. */
 export interface Brief extends K8sObject {
   spec: {
@@ -378,6 +394,10 @@ export interface Brief extends K8sObject {
     suggestions?: { container: string; number: number; title?: string; url?: string; criteria?: boolean }[]
     /** How many reviewer suggestions wait in all; can exceed the listed ones. */
     suggestionsWaiting?: number
+    /** Issues handed back to a person (status/needs-human) in the repositories of the Containers the Brief made: at most 50, by container then number. */
+    failed?: BriefFailedIssue[]
+    /** How many failed issues wait for an answer in all; can exceed the listed ones. */
+    failedWaiting?: number
     /** A line per Container the Brief made, then one per spec.releases entry naming none it made. */
     apps?: BriefApp[]
     /** One entry per round, oldest first. */
