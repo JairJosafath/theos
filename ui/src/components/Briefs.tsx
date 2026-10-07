@@ -273,10 +273,47 @@ function BriefDetails({ view, now }: { view: BriefView; now: number }) {
                     <span className="mono">{label}</span>
                   )}
                   {i.title ? <span className="brief-issue-title"> {i.title}</span> : null}
+                  {i.failed ? (
+                    <span className="badge badge-error badge-sm brief-issue-failed" title="Handed back to a person">
+                      failed
+                    </span>
+                  ) : null}
                 </li>
               )
             })}
           />
+        </>
+      ) : null}
+      {view.failedWaiting ? (
+        <>
+          <h4 className="section-title">Failed issues ({view.failedWaiting})</h4>
+          <Clipped
+            className="brief-list brief-issues brief-failed"
+            items={view.failed.map((f) => {
+              const label = `${f.container} #${f.number}`
+              return (
+                <li key={label}>
+                  {f.url ? (
+                    <a href={f.url} target="_blank" rel="noreferrer">
+                      {label}
+                    </a>
+                  ) : (
+                    <span className="mono">{label}</span>
+                  )}
+                  {f.title ? <span className="brief-issue-title"> {f.title}</span> : null}
+                  <div className="brief-failed-reason">{f.reason}</div>
+                  {f.note ? <div className="field-hint">{f.note}</div> : null}
+                </li>
+              )
+            })}
+          />
+          {view.failedWaiting > view.failed.length ? (
+            <p className="field-hint">{view.failedWaiting - view.failed.length} more wait than are listed here.</p>
+          ) : null}
+          <p className="field-hint">
+            Say in a prompt whether to try again, such as "try the CLI issue again now that the engine's checker is
+            merged".
+          </p>
         </>
       ) : null}
       {view.suggestionsWaiting ? (

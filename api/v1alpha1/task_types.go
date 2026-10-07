@@ -216,6 +216,12 @@ type TaskStatus struct {
 	// +optional
 	FollowUps []string `json:"followUps,omitempty"`
 
+	// byHand is the address of the kind/by-hand issue filed on merge for the
+	// criteria the approved review left open, which need a person. A rerun of
+	// the merge step that finds it set files none again.
+	// +optional
+	ByHand string `json:"byHand,omitempty"`
+
 	// branch is where the agent works.
 	// +optional
 	Branch string `json:"branch,omitempty"`

@@ -84,7 +84,7 @@ spec:
 status:
   phase: Ready
   repositoryURL: http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api
-  scaffoldedFrom: [python-fastapi@v1.2.1, small@v1.0.0, k8s-manifests@v1.1.0, postgres@v1.1.0]
+  scaffoldedFrom: [python-fastapi@v1.3.0, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
   activeSessions: 1
 ---
 kind: DataStore
@@ -337,6 +337,19 @@ model and context it needs.
   up never starts) are a Warning Event `ReleaseRunOverdue`, once per release,
   the log line `Release run overdue`, and a note on the `Released` condition's
   message until they end; the watch carries on and reports their end as usual.
+- **A released Go app is a module others can fetch.** Right after the Crew
+  tags a release, it publishes the repository's Go module at that tag to the
+  Git host's Go package registry (Gitea's, per owner), under the module path
+  `go.mod` declares and with the tag as its version, so another app can
+  `go get` that release. A version is published once and never replaced;
+  `status.lastRelease.goModule` records the path, version and state
+  (`Published`, `NotGo` for a repository with no `go.mod` at its root,
+  `Invalid` for a version Go refuses, such as a `v2.0.0` whose path lacks
+  `/v2`, and `Failed` while the host can't be reached, retried each poll), and
+  the condition `ModulePublished` says why it isn't published. An upload is a
+  Normal Event `ModulePublished` and the log line `Published Go module`; an
+  invalid module is a Warning Event `InvalidModule`, once per release. See
+  [plans/app-modules.md](plans/app-modules.md).
 - **A release can be published to GitHub.** A Crew with
   `spec.publishReleases.github` (`repository: owner/name`, and a Secret the
   user creates holding a token for that one repository) copies its last release
@@ -463,7 +476,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   depend in Gitea on each blocker (across repositories too), names them in its
   body, and only then labels it ready; the Crew waits for open dependencies, so
   the issue starts once its blockers' pull requests merge. See
-  [plans/brief-issue-order.md](plans/brief-issue-order.md).
+  [plans/done/brief-issue-order.md](plans/done/brief-issue-order.md).
 - **One app uses another's release, never its branch** (#430). Apps stay one
   repository each and share code the way separate repositories do: an issue
   that builds on another Container's code names it in its front matter,
@@ -646,7 +659,7 @@ The webshop sample uses the smallest set of seeded templates that exercises ever
 
 - `python-fastapi` (Framework): a uv project with FastAPI, ruff and pytest, plus the base devcontainer settings.
 - `small` (Compute): resource requests and limits for the manifests, as a `deploy/k8s/compute.yaml` patch.
-- `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests. It patches in `compute.yaml` when a Compute is chosen, and lists `connector-<name>.yaml` for each Connector, so a Connector used with it ships that file.
+- `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests. The Dockerfile follows the Framework: uvicorn for `python-fastapi`, a Vite build served by an unprivileged nginx for `react-vite` (type `static-site`). It patches in `compute.yaml` when a Compute is chosen, and lists `connector-<name>.yaml` for each Connector, so a Connector used with it ships that file.
 - `postgres` (Connector): a compose service for the devcontainer and connection settings in `deploy/k8s/connector-postgres.yaml`.
 
 The sample in `config/samples/webshop/` tells a small story: a `customer` Person uses `webshop-core`, whose `orders-api` service reads and writes the `orders-db` DataStore.

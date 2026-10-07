@@ -147,6 +147,36 @@ type CrewRelease struct {
 	// set.
 	// +optional
 	Publish *CrewReleasePublish `json:"publish,omitempty"`
+
+	// goModule is the Go module the release published to the Git host's
+	// package registry, under the module path its go.mod declares and with the
+	// tag as its version.
+	// +optional
+	GoModule *CrewReleaseGoModule `json:"goModule,omitempty"`
+}
+
+// CrewReleaseGoModule is how publishing a release's Go module went.
+type CrewReleaseGoModule struct {
+	// state is Published once the module's version is in the registry, NotGo
+	// when the repository has no go.mod at its root at the tag, Invalid when Go
+	// can't take the module at that version, such as a v2.0.0 whose module path
+	// lacks /v2, and Failed while the Git host can't be reached; a failure is
+	// tried again each poll.
+	// +kubebuilder:validation:Enum=Published;NotGo;Invalid;Failed
+	// +required
+	State string `json:"state"`
+
+	// path is the module path go.mod declares.
+	// +optional
+	Path string `json:"path,omitempty"`
+
+	// version is the module's version, the release's tag.
+	// +optional
+	Version string `json:"version,omitempty"`
+
+	// message says what happened last, and why the module isn't published.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // CrewReleasePublish is how publishing a release to its target went.
@@ -237,6 +267,8 @@ type CrewStatus struct {
 	// Released, when spec.tagReleases is set, says whether the Crew's next
 	// release went out, and why not. Published, when spec.publishReleases is
 	// set, says how publishing the last release went, and why it failed.
+	// ModulePublished, when spec.tagReleases is set and a release was tagged,
+	// says whether the last release's Go module is in the registry, and why not.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

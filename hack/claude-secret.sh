@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Stores the agents' Claude token as Secret claude-credentials in a project
-# namespace. make claude-secret runs it.
+# Stores the agents' Claude token as Secret claude-credentials in a namespace:
+# the operator's, which shares it with every labeled project namespace, or a
+# project's, for a token of its own. make claude-secret runs it.
 #
 #   KUBECTL="kubectl --context kind-c4factory" hack/claude-secret.sh NAMESPACE
 #

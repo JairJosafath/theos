@@ -17,11 +17,11 @@ metadata:
   name: python-fastapi
 spec:
   displayName: Python, FastAPI (uv)
-  description: A uv project with FastAPI, ruff and pytest.
+  description: A uv project with FastAPI, ruff, mypy and pytest, and its lock file.
   supportedTypes: [service]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-fastapi
-    ref: v1.2.1
+    ref: v1.3.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Compute
@@ -30,10 +30,10 @@ metadata:
 spec:
   displayName: Small
   description: 50m CPU and 64Mi requested, 250m and 256Mi at most.
-  supportedTypes: [service, worker, job]
+  supportedTypes: [service, worker, job, static-site]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/small
-    ref: v1.0.0
+    ref: v1.0.1
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Deployment
@@ -41,11 +41,11 @@ metadata:
   name: k8s-manifests
 spec:
   displayName: Kubernetes manifests
-  description: A Dockerfile and plain Kubernetes manifests, built with kustomize.
-  supportedTypes: [service, worker]
+  description: A Dockerfile for the Framework (python-fastapi or react-vite) and plain Kubernetes manifests, built with kustomize.
+  supportedTypes: [service, worker, static-site]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/k8s-manifests
-    ref: v1.1.0
+    ref: v1.2.1
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Connector

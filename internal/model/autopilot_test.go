@@ -163,6 +163,16 @@ func TestBriefAttentionHealWindows(t *testing.T) {
 	}
 }
 
+// A by-hand issue is the person's: under Needs you, never due.
+func TestBriefAttentionByHand(t *testing.T) {
+	a := BriefAttention(AttentionFacts{Failed: []FailedIssue{{Container: "web", Number: 3, Title: "Screenshot",
+		Kind: FailedByHand, Reason: "Needs a screenshot of the store page."}}}, t0)
+	if len(a.Due) != 0 || len(a.NeedsYou) != 1 || a.NeedsYou[0].Name != "web#3" ||
+		!strings.Contains(a.NeedsYou[0].Question, "needs a person: Needs a screenshot of the store page.") {
+		t.Errorf("attention = %+v", a)
+	}
+}
+
 func TestBriefAttentionIgnores(t *testing.T) {
 	a := BriefAttention(AttentionFacts{Containers: []WatchedContainer{{Name: "cli", Phase: "Ready"}}}, t0)
 	if len(a.Healing)+len(a.NeedsYou)+len(a.Due) != 0 {

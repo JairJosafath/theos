@@ -184,14 +184,24 @@ type Attention struct {
 	Due []FailedIssue
 }
 
-// BriefAttention classifies a Brief's watched items at now (decisions 3, 4
-// and 7). A failed issue is due unless a round answered it and it hasn't
+// BriefAttention classifies a Brief's watched items at now (decisions 3, 4,
+// 7 and 11). A by-hand failed issue is the person's, under Needs you. Any
+// other failed issue is due unless a round answered it and it hasn't
 // changed since: it waits (healing until the wait lapses), it asks (Needs you),
 // or it came back with no new try (Needs you). A Task, Crew or Container
 // heals inside its window and is listed under Needs you past it.
 func BriefAttention(f AttentionFacts, now time.Time) Attention {
 	var a Attention
 	for _, issue := range f.Failed {
+		if issue.Kind == FailedByHand {
+			// A person's by design (decision 11): never tended.
+			a.NeedsYou = append(a.NeedsYou, NeedsYou{AttentionIssue, fmt.Sprintf("%s#%d", issue.Container, issue.Number),
+				fmt.Sprintf("Issue %s#%d %q needs a person: %s", issue.Container, issue.Number,
+					oneParagraph(issue.Title), sentence(issue.Reason, "see the issue")),
+				"Do it by hand and close it, or say in a prompt to drop it.", "Agents can't do what it asks.",
+				time.Time{}})
+			continue
+		}
 		i := slices.IndexFunc(f.Tended, func(t TendedIssue) bool {
 			return t.Container == issue.Container && t.Issue == issue.Number
 		})

@@ -15,11 +15,13 @@ app = FastAPI(title={{ printf "%q" .DisplayName }})
 
 @app.get("/")
 def root() -> dict[str, str]:
+    """Name this container and its software system."""
     return {"container": CONTAINER, "softwareSystem": SOFTWARE_SYSTEM}
 
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
+    """Report that the process is up."""
     return {"status": "ok"}
 {{- if has .Connectors "postgres" }}
 

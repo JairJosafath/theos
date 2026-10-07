@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { Brief, BriefApp, BriefPhase } from '../k8s/types'
-import { describeBrief, describeBriefApp, describeBriefPhase, describeCost, formatCost, sortBriefs } from './brief'
+import type { Brief, BriefApp, BriefFailedKind, BriefPhase } from '../k8s/types'
+import {
+  describeBrief,
+  describeBriefApp,
+  describeBriefPhase,
+  describeCost,
+  describeFailedIssue,
+  formatCost,
+  sortBriefs,
+} from './brief'
 
 function brief(name: string, created: string, extra: Partial<Brief> = {}): Brief {
   return { metadata: { name, creationTimestamp: created }, spec: { idea: `Idea ${name}` }, ...extra }
@@ -63,6 +71,100 @@ describe('describeBrief', () => {
     const none = describeBrief({ ...brief('shop', ''), status: { phase: 'Planned' } })
     expect(none).toMatchObject({ suggestions: [], suggestionsWaiting: 0 })
     expect(none.phase.explanation).toBe('The last round is done and no prompt is waiting.')
+  })
+
+  it('lists the failed issues with their reasons and marks them in the issue list', () => {
+    const view = describeBrief({
+      ...brief('lens', ''),
+      status: {
+        phase: 'Planned',
+        issues: [
+          { repository: 'lens/cel-lens-cli', number: 1, url: 'http://g/cli/1', title: 'CLI' },
+          { repository: 'lens/cel-lens-core', number: 1, title: 'Checker' },
+          { repository: 'lens/cel-lens-core', number: 2, title: 'Parser' },
+        ],
+        failed: [
+          {
+            container: 'cel-lens-cli',
+            number: 1,
+            url: 'http://g/cli/1',
+            title: 'CLI',
+            kind: 'failed',
+            reason: 'Task cel-lens-cli-1 failed: the agent made no changes',
+            tries: 1,
+          },
+          { container: 'cel-lens-core', number: 2, kind: 'exhausted', reason: '', tries: 3 },
+        ],
+        failedWaiting: 2,
+      },
+    })
+    expect(view.failed).toEqual([
+      {
+        container: 'cel-lens-cli',
+        number: 1,
+        url: 'http://g/cli/1',
+        title: 'CLI',
+        kind: 'failed',
+        reason: 'Task cel-lens-cli-1 failed: the agent made no changes',
+        tries: 1,
+        note: undefined,
+      },
+      {
+        container: 'cel-lens-core',
+        number: 2,
+        url: undefined,
+        title: undefined,
+        kind: 'exhausted',
+        reason: 'Agents tried it as often as a Crew does.',
+        tries: 3,
+        note: 'It won’t be tried again as it is: it will be filed again, reworded or split.',
+      },
+    ])
+    expect(view.failedWaiting).toBe(2)
+    expect(view.issues.map((i) => i.failed)).toEqual([true, false, true])
+    expect(view.phase.explanation).toBe('The last round is done; 2 failed issues wait for your answer in a prompt.')
+  })
+
+  it('counts failed issues and suggestions together, and the listed ones when no total is given', () => {
+    const view = describeBrief({
+      ...brief('lens', ''),
+      status: {
+        phase: 'Planned',
+        failed: [{ container: 'api', number: 3, kind: 'merged' }],
+        suggestionsWaiting: 2,
+      },
+    })
+    expect(view.failedWaiting).toBe(1)
+    expect(view.failed[0]).toMatchObject({ reason: 'A Task merged it already.', tries: 0 })
+    expect(view.failed[0].note).toContain('closed')
+    expect(view.phase.explanation).toBe(
+      'The last round is done; 1 failed issue and 2 reviewer suggestions wait for your answer in a prompt.',
+    )
+    const one = describeBrief({
+      ...brief('lens', ''),
+      status: { phase: 'Planned', failed: [{ container: 'api', number: 3, kind: 'person' }] },
+    })
+    expect(one.phase.explanation).toBe('The last round is done; 1 failed issue waits for your answer in a prompt.')
+  })
+
+  it('has no failed issues by default and marks none', () => {
+    const none = describeBrief({
+      ...brief('lens', ''),
+      status: { phase: 'Planned', issues: [{ repository: 'lens/api', number: 1 }] },
+    })
+    expect(none).toMatchObject({ failed: [], failedWaiting: 0 })
+    expect(none.issues[0].failed).toBe(false)
+  })
+
+  it.each<[BriefFailedKind, string]>([
+    ['unclear', 'It has no acceptance criteria.'],
+    ['merged', 'A Task merged it already.'],
+    ['exhausted', 'Agents tried it as often as a Crew does.'],
+    ['failed', 'Its last Task failed.'],
+    ['person', 'Handed back by a person; see the issue.'],
+    ['byHand', 'Needs a person; see the issue.'],
+  ])('gives a %s issue a reason when the operator gave none', (kind, reason) => {
+    expect(describeFailedIssue({ container: 'api', number: 1, kind, reason: '  ' }).reason).toBe(reason)
   })
 
   it('takes the NeedsInput sentence only while it is True', () => {

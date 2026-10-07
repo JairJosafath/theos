@@ -28,6 +28,8 @@ const (
 	FailedTask = "failed"
 	// FailedPerson was handed back by a person.
 	FailedPerson = "person"
+	// FailedByHand is a by-hand issue: criteria only a person can do.
+	FailedByHand = "byHand"
 )
 
 // Answers to a failed issue: try it again or close it, or leave it handed
@@ -86,12 +88,13 @@ type IssueTask struct {
 	Created time.Time
 }
 
-// FailedReason decides why issue number, with body, was handed back, from its
-// Container's Tasks, the first that holds: no acceptance criteria (unclear); a
+// FailedReason decides why issue number, with labels and body, was handed
+// back, from its Container's Tasks, the first that holds: labelled kind/by-hand
+// (byHand, with the whys its body gives); no acceptance criteria (unclear); a
 // Task merged it (merged); MaxIssueAttempts Tasks failed (exhausted); its
 // newest failed Task's message (failed); else a person (person). Tries counts
 // the issue's Tasks.
-func FailedReason(number int, body string, tasks []IssueTask) (kind, reason string, tries int) {
+func FailedReason(number int, labels []string, body string, tasks []IssueTask) (kind, reason string, tries int) {
 	var mine []IssueTask
 	for _, t := range tasks {
 		if t.Issue == number {
@@ -114,6 +117,9 @@ func FailedReason(number int, body string, tasks []IssueTask) (kind, reason stri
 		case t.Failed:
 			failed = append(failed, t.Name)
 		}
+	}
+	if IsByHand(labels) {
+		return FailedByHand, ByHandReason(body), tries
 	}
 	if r := missingCriteria(body); r != "" {
 		return FailedUnclear, r + " Say in a prompt what it should do, so it can be tried again with acceptance criteria.",
@@ -260,7 +266,7 @@ func parseFailedAnswers(s string) ([]FailedAnswer, error) {
 // CheckFailedAnswers returns every reason a plan's answers to failed issues
 // can't be applied: each answers a waiting failed issue once, retries, closes,
 // waits on or asks about it and says why, and retries only one the Crew would
-// take: not merged, not exhausted, and an unclear one only with a
+// take: not merged, not exhausted, not by hand, and an unclear one only with a
 // clarification that has acceptance criteria. An ask recommends one of the
 // other answers, checked the same way.
 func CheckFailedAnswers(answers []FailedAnswer, waiting []FailedIssue) []Refusal {
@@ -356,6 +362,9 @@ func checkAnswer(answer, clarify string, f FailedIssue, subject string) []string
 	case FailedExhausted:
 		out = append(out, fmt.Sprintf("retries %s, which agents tried %d times: close it, and file it again as "+
 			"a new issue, clarified or split", subject, MaxIssueAttempts))
+	case FailedByHand:
+		out = append(out, fmt.Sprintf("retries %s, which needs a person, not agents: close it once the person "+
+			"did it or dropped it", subject))
 	case FailedUnclear:
 		switch {
 		case !clarifiable(f.Body):

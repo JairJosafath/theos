@@ -78,6 +78,11 @@ make -s -C "$ROOT" claude-secret KUBECTL="$T/kubectl" KIND_CLUSTER=test CLAUDE_T
 check "command line: succeeds without the file" "$?" 0
 check "command line: its token" "$(cat "$T/applied")" "token: $cli_token"
 
+# By default the token goes to the operator's namespace, which shares it.
+rm -f "$T/calls" "$T/applied"
+make -s -C "$ROOT" claude-secret KUBECTL="$T/kubectl" KIND_CLUSTER=test CLAUDE_TOKEN_FILE="$file" >"$T/out" 2>&1
+check "default: the operator's namespace" "$(cat "$T/out")" "Stored Secret c4-factory-system/claude-credentials"
+
 # An empty file fails.
 chmod 600 "$file"; : >"$file"
 run

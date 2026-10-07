@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -206,6 +207,53 @@ var _ = Describe("Crew", func() {
 		}).Should(Succeed())
 	})
 
+	// #474: an approved review's open criteria go to a person as their own issue.
+	It("files the criteria an approved review left open as a by-hand issue for a person, and closes the issue", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		n := gitFake.addIssue(ns, "orders-api", "Show orders in the README", clearIssue, []string{model.LabelReady})
+		mustCreate(newCrew(ns))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
+			&agentrunner.Result{Role: "implement", Commit: "sha-1",
+				Summary: "Listed the orders.\n\nOpen: a screenshot of the dashboard: no browser here."}, "")
+		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }).Should(Succeed())
+		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1", &agentrunner.Result{Role: "review",
+			Verdict: "approve", Summary: "Every criterion met but the screenshot.", Open: []model.OpenCriterion{
+				{Criterion: "The README has a screenshot of the dashboard", Why: "No browser in the sandbox."}}}, "")
+
+		var byHand string
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.ByHand).NotTo(BeEmpty())
+			byHand = task.Status.ByHand
+		}).Should(Succeed())
+		var filed []fakeIssue
+		for _, i := range gitFake.openIssues(ns, "orders-api") {
+			if model.IsByHand(i.Labels) {
+				filed = append(filed, i)
+			}
+		}
+		Expect(filed).To(HaveLen(1), "one by-hand issue")
+		issue := filed[0]
+		Expect(issue.URL).To(Equal(byHand))
+		Expect(issue.Title).To(Equal("By hand: Show orders in the README"))
+		Expect(issue.Labels).To(ConsistOf(model.LabelByHand, model.LabelNeedsHuman), "no Crew picks it")
+		Expect(issue.milestone).To(Equal("Later"), "no release waits on it")
+		pr := gitFake.pullRequests(ns, "orders-api")[0]
+		Expect(issue.Body).To(And(ContainSubstring(pr.URL), ContainSubstring(fmt.Sprintf("for #%d", n)),
+			ContainSubstring("- [ ] The README has a screenshot of the dashboard\n  Needs a person: No browser in the sandbox."),
+			ContainSubstring(model.ByHandMarker("orders-api-1"))))
+
+		merged := gitFake.issue(ns, "orders-api", n)
+		Expect(merged.State).To(Equal("closed"), "its pull request did the agents' part")
+		Expect(merged.comments).To(ContainElement(And(ContainSubstring("Merged in"), ContainSubstring(byHand))))
+	})
+
 	It("works on several issues at once, each on its own branch", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
@@ -334,6 +382,14 @@ var _ = Describe("Crew", func() {
 			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReady)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Reason).To(Equal("AgentNotFound"))
+		}).Should(Succeed())
+
+		By("starting once its Agents exist, without waiting for a poll")
+		crewAgents(ns, 1)
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.Phase).To(Equal(c4v1alpha1.CrewIdle))
+			g.Expect(condition(crew.Status.Conditions, ConditionReady).Status).To(Equal(metav1.ConditionTrue))
 		}).Should(Succeed())
 	})
 })

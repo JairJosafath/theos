@@ -154,7 +154,7 @@ export function demoStory(now: number): StoryData {
       {
         phase: 'Ready',
         repositoryURL: `${GITEA}/webshop/orders-api`,
-        scaffoldedFrom: ['python-fastapi@v1.2.1', 'small@v1.0.0', 'k8s-manifests@v1.1.0', 'postgres@v1.1.0'],
+        scaffoldedFrom: ['python-fastapi@v1.3.0', 'small@v1.0.0', 'k8s-manifests@v1.1.0', 'postgres@v1.1.0'],
         appliedRelationships: ['orders-api-to-orders-db'],
         appliedConnectors: [{ relationship: 'orders-api-to-orders-db', dataStore: 'orders-db', connector: 'postgres' }],
         activeSessions: 1,
@@ -632,7 +632,7 @@ export function demoStory(now: number): StoryData {
     }),
   ]
 
-  const frameworks = [catalog('Framework', 'python-fastapi', 'Python, FastAPI (uv)', ['service'], 'v1.2.1', created)]
+  const frameworks = [catalog('Framework', 'python-fastapi', 'Python, FastAPI (uv)', ['service'], 'v1.3.0', created)]
   const connectors = [
     catalog('Connector', 'postgres', 'PostgreSQL', ['service', 'worker', 'job'], 'v1.1.0', created),
     catalog('Connector', 'redis', 'Redis', ['service', 'worker'], 'v1.0.0', created),

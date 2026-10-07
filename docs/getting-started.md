@@ -76,7 +76,8 @@ kubectl -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name"
 the seed makes a Gitea organization, Secret `gitea-credentials` with its token
 and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
 pushed, pinned to their tags: Frameworks `go-cli`, `node-cli`,
-`python-fastapi`, `react-vite` and `vscode-extension`, Standards `go-standard` and `ts-standard`, Compute `small`,
+`python-fastapi`, `react-vite` and `vscode-extension`, Standards `go-standard`,
+`ts-standard` and `python-standard`, Compute `small`,
 Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four
 Agents on the release's `agent-go` image: `planner`, `designer` and `reviewer`
 on Opus, `implementer` on Sonnet. The Agents read Secret `claude-credentials`,
@@ -187,6 +188,15 @@ how many), and nothing is built from one until you say so: answer them in a
 prompt, such as "Take the reviewer's suggestions about input safety, skip the
 rest." or "Yes to linter #5, no to the others.". The factory readies the ones
 you take for the Crew and closes the others with your words quoted.
+
+When an issue fails, its agents having given up on it or the Crew having
+refused it, the card lists it under *Failed issues*, above the suggestions,
+with why in a sentence, and marks it in the issue list (`kubectl get brief`
+shows how many under `Failed`). Say in a prompt whether to try it again, such
+as "Try the CLI issue again now that the engine's checker is merged.": the
+factory adds what you said to the issue and readies it for the Crew. One the
+agents already tried three times is filed again, reworded or split, in place
+of being tried as it is.
 
 ### Without a token
 
