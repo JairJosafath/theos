@@ -33,7 +33,8 @@ Push the branch `plan/<round>` with these files:
 - `plan/issues/<nn>-<container>.md`: one file per issue, `nn` its number in the
   round (`01`, `02`, ...), `container` the Container it is for. It starts with
   front matter: a `---` line, `title:`, `labels:` and, when it needs another
-  issue's work merged first, `after:`, then another `---` line. Then the body.
+  issue's work merged first, `after:`, and when it builds on another
+  Container's released code, `uses:`, then another `---` line. Then the body.
 - `plan/choices.md`: one line per choice you made, in plain words.
 - `plan/summary.md`: what this round does for the person's app, in one or two
   plain sentences, such as "Planned Sprout, a garden-themed todo CLI: one
@@ -98,6 +99,21 @@ Push the branch `plan/<round>` with these files:
    issue itself, and no loop (2 after 3 after 2). Leave `after:` out when the
    issues can be worked at the same time; it is never needed for a design
    idea, which isn't ordered.
+   **Say which app's release an issue builds on.** Each Container is its own
+   repository, so one app never imports another's code from a branch or a
+   path: a Go app depends on a released version of the other's module, as
+   separate repositories do. When an issue's code imports another
+   Container's Go module, list that Container in its `uses:`
+   (`uses: [cel-lens-core]`). The issue is filed but not ready until the used
+   Container's release has published its module, then it is readied with a
+   line naming the version to `go get`. The used Container must be another
+   Container of `plan/model.yaml`, a Relationship must go from the issue's
+   Container to it, and it must have made a release or be released by this
+   round (`releases.yaml`, with at least one issue of the round for it). Put
+   the used Container's work for the release in this round's issues for it,
+   and leave `after:` out for that work: `uses:` already waits for it. An
+   issue that reuses another app's packages without `uses:` can't build: the
+   module isn't there to fetch.
 7. **Explain each choice in `choices.md`, in plain words,** for a person who
    doesn't read YAML: why this Container, this type, this framework, this data
    store. One line each; `choices.md` is never empty. Say why the type fits
@@ -394,6 +410,50 @@ The README shows the product page with its Order button, as a shopper sees it.
 ## Acceptance criteria
 
 - [ ] The README has a screenshot of a product page in a browser, with its Order button
+```
+
+An issue that builds on another app's released code names it in `uses:`.
+In a CEL rule checker, the engine `cel-lens-core` is a Go library and
+`cel-lens-cli` a command line on it; `plan/model.yaml` has a Relationship
+from `cel-lens-cli` to `cel-lens-core`, and `releases.yaml` names
+`cel-lens-core`:
+
+`plan/issues/01-cel-lens-core.md`:
+
+```markdown
+---
+title: Check a rule
+labels: [kind/feature]
+---
+The engine checks a CEL rule and reports what is wrong with it.
+
+## Acceptance criteria
+
+- [ ] Check returns no problems for a valid rule
+- [ ] Check reports a syntax error with its position
+```
+
+`plan/issues/02-cel-lens-cli.md`:
+
+```markdown
+---
+title: Check a file from the command line
+labels: [kind/feature]
+uses: [cel-lens-core]
+---
+`cel-lens check <file>` checks each rule in the file with the engine's Check.
+
+## Acceptance criteria
+
+- [ ] A file of valid rules exits 0
+- [ ] A broken rule is printed with its line and the engine's message
+```
+
+The CLI's issue is readied once `cel-lens-core`'s release, say `v0.1.0`, has
+published `c4factory.local/<project>/cel-lens-core`, and its body then says:
+
+```
+Uses c4factory.local/<project>/cel-lens-core v0.1.0: go get it at that version.
 ```
 
 `plan/releases.yaml`, releasing the web shop, which the example's issue is

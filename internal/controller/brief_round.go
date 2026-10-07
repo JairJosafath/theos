@@ -328,8 +328,19 @@ func (r *BriefReconciler) currentModel(ctx context.Context, brief *c4v1alpha1.Br
 	if current.Objects, err = storyObjects(ctx, r.Client, brief.Namespace); err != nil {
 		return current, err
 	}
-	current.Catalog, err = installedCatalog(ctx, r.Client, brief.Namespace)
-	return current, err
+	if current.Catalog, err = installedCatalog(ctx, r.Client, brief.Namespace); err != nil {
+		return current, err
+	}
+	var crews c4v1alpha1.CrewList
+	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace)); err != nil {
+		return current, err
+	}
+	for _, crew := range crews.Items {
+		if crew.Status.LastRelease != nil && !slices.Contains(current.Released, crew.Spec.ContainerRef.Name) {
+			current.Released = append(current.Released, crew.Spec.ContainerRef.Name)
+		}
+	}
+	return current, nil
 }
 
 // checkPlan checks the plan the round's Task pushed and writes the verdict on

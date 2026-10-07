@@ -119,6 +119,18 @@ func TestPlannerGuideExampleOrdersItsIssues(t *testing.T) {
 	}
 }
 
+func TestPlannerGuideShowsUses(t *testing.T) {
+	for _, want := range []string{"uses: [cel-lens-core]", "go get it at that version."} {
+		if !strings.Contains(plannerGuideText, want) {
+			t.Errorf("PLANNER.md doesn't show %q", want)
+		}
+	}
+	if UsesLine(UsedModule{Path: "c4factory.local/<project>/cel-lens-core", Version: "v0.1.0"}) !=
+		"Uses c4factory.local/<project>/cel-lens-core v0.1.0: go get it at that version." {
+		t.Error("the guide's Uses line no longer matches the one the operator writes")
+	}
+}
+
 func TestPlannerGuideExampleHasEveryField(t *testing.T) {
 	model := guideExampleFiles(t, plannerGuideText)[PlanModelFile]
 	for _, tag := range planSpecTags() {
