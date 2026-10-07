@@ -1,4 +1,4 @@
-# Prettier also skips what .gitignore lists (node_modules/, out/, dist/).
+# Prettier also skips what .gitignore lists (node_modules/, {{ if eq .Framework "react-vite" }}{{ else }}out/, {{ end }}dist/).
 
 # Written by the platform, which agents can't change.
 .c4factory.yaml
