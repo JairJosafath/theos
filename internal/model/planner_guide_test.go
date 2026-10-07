@@ -155,3 +155,25 @@ func TestPlannerGuideExampleWithARenamedFieldIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestPlannerGuideGivesAgentsOnlyCriteriaTheyCanMeet(t *testing.T) {
+	guide := strings.Join(strings.Fields(plannerGuideText), " ")
+	for _, rule := range []string{
+		"**Give agents only criteria they can meet.**",
+		"each criterion is one an agent can meet there and a reviewer can check there",
+		"A screenshot of a desktop app, a recording, a run on a phone or other device",
+		"labelled `kind/by-hand`",
+		"Where a text sample serves, ask the agent for that instead",
+	} {
+		if !strings.Contains(guide, rule) {
+			t.Errorf("PLANNER.md doesn't say %q", rule)
+		}
+	}
+	plan, err := ParsePlan(guideExampleFiles(t, plannerGuideText))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(plan.Issues, func(i PlanIssue) bool { return IsByHand(i.Labels) && len(i.After) > 0 }) {
+		t.Error("the example plan has no kind/by-hand issue after the agents' work it shows")
+	}
+}

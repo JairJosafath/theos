@@ -3,7 +3,8 @@
 {{- $seed := .Values.gitea.seed }}
 # The seed (hack/seed/seed.sh): the templates organization and its tagged
 # template repositories, and an organization, Secret gitea-credentials and,
-# when its namespace has none, a Project for each project. Not the runners' token: Gitea's pod makes that one. A hook
+# when its namespace has none, a Project for each project, whose namespace it
+# labels to receive the Secrets the operator shares. Not the runners' token: Gitea's pod makes that one. A hook
 # after every install and upgrade: it changes nothing already in place, and a new
 # chart version brings new template tags. A failed Job stays for its log until
 # the next upgrade replaces it.
@@ -49,6 +50,8 @@ spec:
               value: ""
             - name: PROJECT_OBJECTS
               value: "true"
+            - name: SHARE_SECRETS
+              value: "true"
             - name: GITEA_USERNAME
               valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: username}}
             - name: GITEA_PASSWORD
@@ -75,6 +78,38 @@ metadata:
   namespace: {{ $ns }}
   labels:
     {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+{{- with .Values.gitea.projects | uniq }}
+---
+# The seed labels each project's namespace c4.factory.io/shared-secrets=true,
+# which opts it in to the Secrets the operator shares: the chart's own
+# Namespaces have the label, one made by hand doesn't. Only these namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "c4-factory.resourceName" (dict "suffix" "seed-namespaces" "context" $) }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    resourceNames: [{{ join ", " . }}]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "c4-factory.resourceName" (dict "suffix" "seed-namespaces" "context" $) }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "c4-factory.resourceName" (dict "suffix" "seed-namespaces" "context" $) }}
+subjects:
+  - kind: ServiceAccount
+    name: seed
+    namespace: {{ $ns }}
+{{- end }}
 {{- range .Values.gitea.projects | uniq }}
 ---
 # The seed may create Secret gitea-credentials and change only that one, and

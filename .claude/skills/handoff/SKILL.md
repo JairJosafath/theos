@@ -111,15 +111,22 @@ Lost claim (the heartbeat hook says so):
 ## Finish
 
 - **Landed:** the pull request says `Closes #N` and is merged as AGENTS.md
-  ("How to Work") says. If N is still open: `hack/lib/github.sh close N FILE`,
+  ("How to Work") says, with `hack/lib/github.sh merge PR` (a merge commit). If N is still open: `hack/lib/github.sh close N FILE`,
   FILE naming the pull request, SHAs and evidence.
 - **Plan only:** when N is split into a plan and step issues, the plan's
   pull request says `Refs #N`, never `Closes #N`: nothing N asked for has
-  shipped. Once it merges, add a `Depends on #S` line per step to N's body
-  (`gh issue edit N --body-file FILE`, the rest kept), leave N open and
-  `status/in-progress`, so `pick` skips it until every step closes, and post
-  a handoff naming the plan and the steps. Each step's body names N; the last
-  step's pull request says `Closes #S` and `Closes #N`. Steps never say
+  shipped. Nor may a close, fix or resolve word (closes, fixed, resolves...)
+  stand next to `#N` anywhere in its body or commit messages, even in prose:
+  GitHub reads "#S (its PR closes #N)" as closing N. Write "#S finishes #N"
+  instead. `hack/lib/github.sh merge PR` refuses such a pull request and names
+  the phrase to reword. Once it merges, add a `Depends on #S` line per step to N's body
+  (`gh issue edit N --body-file FILE`, the rest kept), post a handoff naming
+  the plan and the steps, then `hack/lib/github.sh status N waiting`: N stays
+  open, waiting on its steps rather than on an agent, and `pick` skips it.
+  When its last step closes, N closes itself with a comment naming the steps
+  (`close`, the *Issue closed* workflow and the relay watch run
+  `hack/lib/github.sh parents --apply`; the watch also moves a parent you left
+  in progress to waiting). Each step's body names N. Steps never say
   `Depends on #N` (that is a cycle).
 - **Plan finished:** when the issue you close finishes a plan's last step,
   move the plan to `docs/plans/done/` in the same pull request (`git mv`),

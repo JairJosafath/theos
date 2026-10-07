@@ -84,7 +84,7 @@ spec:
 status:
   phase: Ready
   repositoryURL: http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api
-  scaffoldedFrom: [python-fastapi@v1.2.1, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
+  scaffoldedFrom: [python-fastapi@v1.3.0, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
   activeSessions: 1
 ---
 kind: DataStore
@@ -200,7 +200,13 @@ enforces.
   branch `task/<name>`; opens a pull request; waits for CI; runs the Agent again as
   reviewer; and squash-merges on approval. Failed checks, requested changes or a
   failed run start the next round with that feedback, up to the Agent's
-  `maxRounds`. The Container's Crew decides how many Tasks run at once.
+  `maxRounds`. An implementer that finds its issue can't be done yet (it waits
+  on work not merged or released) or can't be done in the sandbox changes
+  nothing and ends its summary with a line `Blocked: <what it waits on and
+  why>`; the Task then fails at once, reason `Blocked`, with those words in its
+  message and on the issue, and the Brief lists the issue as kind `blocked`. A
+  round with no change and no such line says the agent gave no reason. The
+  Container's Crew decides how many Tasks run at once.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
   repository only; `main` takes no pushes, only the operator merges (the reviewed
@@ -393,7 +399,9 @@ model and context it needs.
   verdict's `open`. On merge the operator files those criteria as one
   `kind/by-hand` issue, `status/needs-human` in the Later milestone, so a
   person does them; a Brief lists it with its failed issues and may close it,
-  never retry it. The planner doesn't give agents a person's work. See
+  never retry it. The planner doesn't give agents a person's work: it files
+  it as its own plan issue labelled `kind/by-hand`, which the operator files
+  `status/needs-human` in Later, and no issue waits on it. See
   [plans/honest-evidence.md](plans/honest-evidence.md).
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
@@ -461,7 +469,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   else refuses it, and the planner's next round gets the reasons. The operator
   applies it (Relationships before the Containers they start from, so their
   Connectors are part of the scaffold), makes a Crew for each new Container
-  with the Brief's Agents and one place, and files the issues in each
+  with the Brief's Agents and one place (#533 changes it), and files the issues in each
   Container's repository once it is Ready, ready for its Crew. What it made
   carries the label `c4.factory.io/brief`; deleting the Brief keeps it. When
   a step fails, the Brief stays `Applying` and tries again, and its `Planned`
@@ -497,6 +505,14 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   models, a Crew's size, GitProviders and credentials are never the planner's
   to make or change. When it needs one, or can't go on without a decision, the
   Brief's condition `NeedsInput` says what in one sentence, and the round waits.
+- **A Brief says how much its Crews build at once** (#533, planned). The
+  Brief owns the `parallel` of the Crews it made and sets it every reconcile,
+  earlier rounds' Crews included; a Crew it didn't make is left alone.
+  `spec.parallel` (1 to 5) wins; else the number a prompt gave, which the
+  planner relays in `plan/parallel.yaml` only when a new prompt asks, never
+  of its own accord; else the operator's default, 3. The agent-slot queue
+  still caps how many agents run. See
+  [plans/brief-parallel.md](plans/brief-parallel.md).
 - **Follow-ups keep scaffold once.** A change to a scaffolded Container
   becomes an issue in its repository; a new Container is added and scaffolded;
   a Relationship added from a scaffolded Container shows `AddedAfterScaffold`
@@ -550,7 +566,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   filed again, reworded or split, so the Crew's guard stays. Applying the
   round, the operator labels a retried issue `status/ready` in place of
   `status/needs-human`, or closes it, with a comment quoting the why and the
-  round's prompts. See [plans/brief-failed-issues.md](plans/brief-failed-issues.md).
+  round's prompts. See [plans/brief-failed-issues.md](plans/done/brief-failed-issues.md).
 - **A Brief looks after its own handed-back work** (#486, planned).
   `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. The Brief watches
   only what it made: failed issues, its Containers' Tasks and Crews. What

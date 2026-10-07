@@ -297,12 +297,24 @@ gitProviders: []
 
 ## Pull secrets for the pods of the UI (unless ui.imagePullSecrets is set),
 ## Gitea, the seed and the runners; the operator's are manager.imagePullSecrets.
-## Each must exist in the namespace the pod runs in. Private GHCR packages:
-## dist/chart/README.md, "Private images".
+## Each must exist in the namespace the pod runs in. The operator copies each
+## from the release namespace into every project namespace and names it in the
+## agents' sandbox pods, so you make it once, in the release namespace (and in
+## Gitea's for its pods). Private GHCR packages: dist/chart/README.md,
+## "Private images".
 ##
 global:
   imagePullSecrets: []
   #  - name: ghcr
+
+## The namespace of each of gitea.projects, labeled to receive the Secrets the
+## operator shares (agents.credentialsSecret and global.imagePullSecrets) and
+## kept on uninstall. One that exists and the release didn't make (by hand, as
+## on v0.5.0) is left as it is, and the seed only labels it. Off: you make
+## each namespace before the install; the seed still labels it.
+##
+projectNamespaces:
+  create: true
 
 ## Gitea, the Git host the factory scaffolds into, with the seed Job and the CI
 ## runners. Off: gitProviders point at a Gitea the release does not run.
@@ -349,9 +361,10 @@ gitea:
   ## More settings as GITEA__<section>__<KEY>: value, over the chart's.
   ##
   config: {}
-  ## Project names: for each, the seed creates its organization and stores Secret
-  ## gitea-credentials in the namespace of that name (which must exist), and the
-  ## chart creates GitProvider gitea there. helm upgrade to add one.
+  ## Project names: for each, the chart makes the namespace of that name (see
+  ## projectNamespaces), the seed creates its organization and stores Secret
+  ## gitea-credentials there, and the chart creates GitProvider gitea there.
+  ## helm upgrade to add one.
   ##
   projects: []
   #  - webshop
@@ -418,10 +431,10 @@ catalog:
         supportedTypes: [cli]
     - kind: Framework
       name: python-fastapi
-      ref: v1.2.1
+      ref: v1.3.0
       spec:
         displayName: Python, FastAPI (uv)
-        description: A uv project with FastAPI, ruff and pytest.
+        description: A uv project with FastAPI, ruff, mypy and pytest, and its lock file.
         supportedTypes: [service]
     - kind: Framework
       name: vscode-extension
@@ -446,7 +459,7 @@ catalog:
         supportedTypes: [cli]
     - kind: Standard
       name: go-standard
-      ref: v1.1.4
+      ref: v1.1.5
       spec:
         displayName: Go quality standard
         description: Strict golangci-lint, gofumpt, race-checked tests, role guides for agents and the make check CI.
@@ -463,6 +476,15 @@ catalog:
         supportedTypes: [extension, static-site, cli]
         supportedFrameworks: [vscode-extension, react-vite, node-cli]
         protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
+    - kind: Standard
+      name: python-standard
+      ref: v1.0.0
+      spec:
+        displayName: Python quality standard
+        description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
+        supportedTypes: [service]
+        supportedFrameworks: [python-fastapi]
+        protectedPaths: [AGENTS.md, Makefile, ruff.toml, mypy.ini, .editorconfig, docs/style/, docs/agents/]
     - kind: Compute
       name: small
       ref: v1.0.1
@@ -495,8 +517,11 @@ catalog:
 ## For each of gitea.projects, the four Agents a Brief's plan and its Crews use
 ## by default: Claude Code on the release's Go and Node toolchain image, reading
 ## Secret claude-credentials (key CLAUDE_CODE_OAUTH_TOKEN, from
-## `claude setup-token`), which you create in the project's namespace. Never a
-## Fable model: the chart refuses one. Off: make your own Agents.
+## `claude setup-token`), which you create once in the release namespace: the
+## operator copies it into every project namespace and keeps the copies in step.
+## A project with its own token makes the Secret in its namespace instead.
+## Never a Fable model: the chart refuses one. Off: make your own Agents, and
+## the operator shares no token.
 ##
 agents:
   enabled: true

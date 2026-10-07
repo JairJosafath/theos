@@ -59,6 +59,9 @@ const (
 	EnvRelated = "C4_RELATED"
 	// EnvBrief is the Brief a plan run plans.
 	EnvBrief = "C4_BRIEF"
+	// EnvGoRegistry is the owner's Go package registry, where GoProxy sends
+	// the factory's module paths.
+	EnvGoRegistry = "C4_GO_REGISTRY"
 )
 
 // Harnesses: the agent programs c4agent can run.
@@ -104,26 +107,29 @@ type Job struct {
 	Related map[string]string
 	// Brief is the Brief a plan run plans; its repository is RepoURL.
 	Brief string
+	// GoRegistry is the owner's Go package registry; empty: no GoProxy.
+	GoRegistry string
 }
 
 // JobFromEnv reads a Job from environment variables.
 func JobFromEnv(getenv func(string) string) (Job, error) {
 	job := Job{
-		Role:      getenv(EnvRole),
-		RepoURL:   getenv(EnvRepoURL),
-		Branch:    getenv(EnvBranch),
-		Base:      getenv(EnvBase),
-		Goal:      getenv(EnvGoal),
-		Feedback:  getenv(EnvFeedback),
-		Context:   getenv(EnvContext),
-		Project:   getenv(EnvProject),
-		Container: getenv(EnvContainer),
-		Task:      getenv(EnvTask),
-		Username:  getenv(EnvGitUsername),
-		Token:     getenv(EnvGitToken),
-		Harness:   getenv(EnvHarness),
-		Model:     getenv(EnvModel),
-		Brief:     getenv(EnvBrief),
+		Role:       getenv(EnvRole),
+		RepoURL:    getenv(EnvRepoURL),
+		Branch:     getenv(EnvBranch),
+		Base:       getenv(EnvBase),
+		Goal:       getenv(EnvGoal),
+		Feedback:   getenv(EnvFeedback),
+		Context:    getenv(EnvContext),
+		Project:    getenv(EnvProject),
+		Container:  getenv(EnvContainer),
+		Task:       getenv(EnvTask),
+		Username:   getenv(EnvGitUsername),
+		Token:      getenv(EnvGitToken),
+		Harness:    getenv(EnvHarness),
+		Model:      getenv(EnvModel),
+		Brief:      getenv(EnvBrief),
+		GoRegistry: getenv(EnvGoRegistry),
 	}
 	if job.Base == "" {
 		job.Base = "main"

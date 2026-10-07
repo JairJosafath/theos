@@ -103,3 +103,53 @@ func TestClearOperatorNeedsInputRestoresThePlannersQuestion(t *testing.T) {
 		t.Errorf("NeedsInput = %+v, want resolved once a new round runs", cond)
 	}
 }
+
+// #540: a reconcile on a copy of the Brief from before its round was applied
+// must not fail the round again, over the newer status that says it applied.
+func TestEndingARoundOnAStaleBriefWritesNothing(t *testing.T) {
+	scheme := briefScheme(t)
+	brief := &c4v1alpha1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
+		Spec: c4v1alpha1.BriefSpec{Idea: "A linter."}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1alpha1.Brief{}).
+		WithObjects(brief).Build()
+	r := &BriefReconciler{Client: c, Scheme: scheme}
+	ctx := context.Background()
+
+	var stale c4v1alpha1.Brief
+	if err := c.Get(ctx, client.ObjectKeyFromObject(brief), &stale); err != nil {
+		t.Fatal(err)
+	}
+	stale.Status.Round = 1
+	if err := c.Status().Update(ctx, &stale); err != nil {
+		t.Fatal(err)
+	}
+	var current c4v1alpha1.Brief
+	if err := c.Get(ctx, client.ObjectKeyFromObject(brief), &current); err != nil {
+		t.Fatal(err)
+	}
+	current.Status.History = []c4v1alpha1.BriefRound{{Round: 1, Outcome: model.ReasonApplied}}
+	setCondition(&current.Status.Conditions, current.Generation, c4v1alpha1.ConditionPlanned,
+		metav1.ConditionTrue, model.ReasonApplied, "Round 1 applied")
+	if err := c.Status().Update(ctx, &current); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := stale.DeepCopy()
+	endRoundFailed(ctx, &stale, &c4v1alpha1.Task{}, "the plan no longer fits the namespace: "+
+		model.RefusalText([]model.Refusal{{Subject: "Container/orders-api", Reason: "is in the namespace"}}))
+	result, err := r.finishReconcile(ctx, &stale, orig, ctrl.Result{}, nil)
+	if err != nil || result.RequeueAfter == 0 {
+		t.Errorf("finishReconcile = %+v, %v; want a requeue and no error", result, err)
+	}
+	var got c4v1alpha1.Brief
+	if err := c.Get(ctx, client.ObjectKeyFromObject(brief), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Status.History) != 1 || got.Status.History[0].Outcome != model.ReasonApplied {
+		t.Errorf("history = %+v, want round 1 applied", got.Status.History)
+	}
+	if cond := meta.FindStatusCondition(got.Status.Conditions, c4v1alpha1.ConditionPlanned); cond == nil ||
+		cond.Reason != model.ReasonApplied {
+		t.Errorf("Planned = %+v, want reason %s", cond, model.ReasonApplied)
+	}
+}

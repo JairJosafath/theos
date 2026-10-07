@@ -80,6 +80,17 @@ Push the branch `plan/<round>` with these files:
    `## Acceptance criteria` heading with a checklist under it (`- [ ] ...`),
    each item one thing a reviewer can check. Don't file what
    `model/containers.yaml` already lists as open.
+   **Give agents only criteria they can meet.** An agent works in a sandbox
+   with the repository and a terminal, and the reviewer checks its work in the
+   repository: each criterion is one an agent can meet there and a reviewer
+   can check there. A screenshot of a desktop app, a recording, a run on a
+   phone or other device, or anything that needs a person's account goes in
+   its own issue labelled `kind/by-hand`, for the person, with its own
+   acceptance criteria, never in an agent's issue. No Crew picks it up: it
+   waits for the person in the Later milestone, and it may be `after:` the
+   agents' issue it shows, but no issue is `after:` it. Where a text sample
+   serves, ask the agent for that instead: a command's real output in a code
+   block of the README.
    **Say the order the work needs.** When an issue builds on another issue's
    work, of the same Container or another, list that issue's number in its
    `after:` (`after: [2]`), so it starts only once that work is merged: a
@@ -345,6 +356,23 @@ Shoppers order a product from its page, through the service's /orders.
 
 - [ ] Each product has an Order button that places the order
 - [ ] The page says when the order is taken, or why it was refused
+```
+
+A person's work is its own issue, labelled `kind/by-hand`. Here the
+README's screenshot of the order page, which a person takes once the button is
+built:
+
+```markdown plan/issues/04-web.md
+---
+title: Screenshot the order page for the README
+labels: [kind/docs, kind/by-hand]
+after: [3]
+---
+The README shows the product page with its Order button, as a shopper sees it.
+
+## Acceptance criteria
+
+- [ ] The README has a screenshot of a product page in a browser, with its Order button
 ```
 
 An issue that builds on another app's released code names it in `uses:`.
