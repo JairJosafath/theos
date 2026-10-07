@@ -53,6 +53,17 @@ type BriefWorkspace struct {
 	Catalog []CatalogEntry
 	// Containers are the namespace's Containers that have a repository.
 	Containers []WorkspaceContainer
+	// Releases are the Brief's spec.releases entries (plans/brief-releases.md, R5).
+	Releases []WorkspaceRelease
+}
+
+// WorkspaceRelease is a spec.releases entry: the person asks for the
+// Container's releases, published to a GitHub repository.
+type WorkspaceRelease struct {
+	Container string
+	// Repository is the GitHub repository, owner/name.
+	Repository string
+	TagPrefix  string
 }
 
 // WorkspaceContainer is a Container's repository and its open issues.
@@ -62,6 +73,8 @@ type WorkspaceContainer struct {
 	// Issues are its open issues; IssuesUnread says they couldn't be read.
 	Issues       []WorkspaceIssue
 	IssuesUnread bool
+	// Released says the Container ships releases already.
+	Released bool
 }
 
 // WorkspaceIssue is one open issue of a Container.
@@ -116,6 +129,19 @@ func renderBrief(ws BriefWorkspace) string {
 		}
 	}
 	fmt.Fprintf(&b, "\n## Git provider\n\nEvery new Container names `gitProviderRef: {name: %s}`.\n", ws.GitProvider)
+	if len(ws.Releases) > 0 {
+		b.WriteString("\n## Releases\n\nThe person asked for these Containers' releases. Name each in " +
+			"`plan/releases.yaml`; plan the Container under that name if it isn't in the model yet.\n\n")
+		releases := slices.Clone(ws.Releases)
+		slices.SortFunc(releases, func(a, b WorkspaceRelease) int { return strings.Compare(a.Container, b.Container) })
+		for _, r := range releases {
+			fmt.Fprintf(&b, "- `%s`, published to github.com/%s", r.Container, r.Repository)
+			if r.TagPrefix != "" {
+				fmt.Fprintf(&b, " with tag prefix `%s`", r.TagPrefix)
+			}
+			b.WriteString("\n")
+		}
+	}
 	return b.String()
 }
 
@@ -274,8 +300,10 @@ func workspaceCatalog(catalog []CatalogEntry) catalogOut {
 }
 
 type containerFileOut struct {
-	Name       string   `yaml:"name"`
-	Repository string   `yaml:"repository"`
+	Name       string `yaml:"name"`
+	Repository string `yaml:"repository"`
+	// Released says the Container ships releases already.
+	Released   bool     `yaml:"released"`
 	OpenIssues []string `yaml:"openIssues"`
 	// MoreIssues counts the open issues past MaxWorkspaceIssues.
 	MoreIssues int `yaml:"moreIssues,omitempty"`
@@ -292,7 +320,8 @@ func workspaceContainers(containers []WorkspaceContainer) []containerFileOut {
 	for _, c := range sorted {
 		issues := slices.Clone(c.Issues)
 		slices.SortFunc(issues, func(a, b WorkspaceIssue) int { return a.Number - b.Number })
-		entry := containerFileOut{Name: c.Name, Repository: c.Repository, OpenIssues: []string{}, Unread: c.IssuesUnread}
+		entry := containerFileOut{Name: c.Name, Repository: c.Repository, OpenIssues: []string{}, Unread: c.IssuesUnread,
+			Released: c.Released}
 		if len(issues) > MaxWorkspaceIssues {
 			entry.MoreIssues = len(issues) - MaxWorkspaceIssues
 			issues = issues[:MaxWorkspaceIssues]
