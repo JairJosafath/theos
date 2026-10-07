@@ -34,10 +34,12 @@ type fakeReleaseState struct {
 	// owner/name; a repository without one has no go.mod. uploads counts the
 	// module versions uploaded, by path@version (a repeat finds one there and
 	// uploads nothing), and moduleFailures how many PublishGoModule calls fail
-	// before one gets through, by owner/name.
-	goMods         map[string]string
-	uploads        map[string]int
-	moduleFailures map[string]int
+	// before one gets through, by owner/name. modulePublishes counts the
+	// PublishGoModule calls, by owner/name@tag.
+	goMods          map[string]string
+	uploads         map[string]int
+	moduleFailures  map[string]int
+	modulePublishes map[string]int
 }
 
 func (g *fakeGit) releaseState() *fakeReleaseState {
@@ -45,7 +47,8 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 		g.releases = &fakeReleaseState{closed: map[string][]string{}, tags: map[string]string{},
 			runs: map[string][]gitprovider.WorkflowRun{}, published: map[string]*gitprovider.Release{},
 			assets: map[string][]byte{}, created: map[string]gitprovider.Milestone{},
-			goMods: map[string]string{}, uploads: map[string]int{}, moduleFailures: map[string]int{}}
+			goMods: map[string]string{}, uploads: map[string]int{}, moduleFailures: map[string]int{},
+			modulePublishes: map[string]int{}}
 	}
 	return g.releases
 }
@@ -212,6 +215,7 @@ func (p *fakeProvider) PublishGoModule(_ context.Context, repo gitprovider.Repos
 	s := p.git.releaseState()
 	out := gitprovider.GoModule{Outcome: gitprovider.GoModuleNoGoMod, Version: tag}
 	key := repo.Owner + "/" + repo.Name
+	s.modulePublishes[key+"@"+tag]++
 	if s.moduleFailures[key] > 0 {
 		s.moduleFailures[key]--
 		return out, fmt.Errorf("gitea unavailable")
@@ -245,6 +249,14 @@ func (g *fakeGit) failModulePublishes(owner, name string, n int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.releaseState().moduleFailures[owner+"/"+name] = n
+}
+
+// modulePublishes is how many times the Crew asked to publish owner/name's
+// module at tag.
+func (g *fakeGit) modulePublishes(owner, name, tag string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().modulePublishes[owner+"/"+name+"@"+tag]
 }
 
 // modulePublishFailuresLeft is how many PublishGoModule calls of owner/name

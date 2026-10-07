@@ -66,9 +66,12 @@ var _ = Describe("Crew Go modules", func() {
 			g.Expect(moduleEvents(g, ns, "ModulePublished")).To(ConsistOf(And(HaveField("Type", "Normal"),
 				HaveField("Note", "Published "+ordersModule(ns)+" v0.1.0"))))
 		}).Should(Succeed())
-		// The Crew polls each second; a second upload or Event would show.
+		// The Crew polls each second; publishing each poll, or a second Event,
+		// would show. A Crew read from a cache that lags its status may ask once
+		// more, and finds the version there.
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.moduleUploads(ordersModule(ns), "v0.1.0")).To(Equal(1))
+			g.Expect(gitFake.modulePublishes(ns, "orders-api", "v0.1.0")).To(BeNumerically("<=", 2))
 			events := moduleEvents(g, ns, "ModulePublished")
 			g.Expect(events).To(HaveLen(1))
 			g.Expect(events[0].Series).To(BeNil())
@@ -98,7 +101,8 @@ var _ = Describe("Crew Go modules", func() {
 		Consistently(func(g Gomega) {
 			g.Expect(moduleEvents(g, ns, "ModulePublished")).To(BeEmpty())
 			g.Expect(moduleEvents(g, ns, "InvalidModule")).To(BeEmpty())
-		}, 2*time.Second).Should(Succeed())
+			g.Expect(gitFake.modulePublishes(ns, "orders-api", "v0.1.0")).To(BeNumerically("<=", 2))
+		}, 3*time.Second).Should(Succeed())
 	})
 
 	It("reports a v2.0.0 whose module path lacks /v2, once, and publishes nothing", func() {
@@ -127,6 +131,7 @@ var _ = Describe("Crew Go modules", func() {
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.moduleUploads(ordersModule(ns), "v2.0.0")).To(BeZero())
+			g.Expect(gitFake.modulePublishes(ns, "orders-api", "v2.0.0")).To(BeNumerically("<=", 2))
 			events := moduleEvents(g, ns, "InvalidModule")
 			g.Expect(events).To(HaveLen(1))
 			g.Expect(events[0].Series).To(BeNil())

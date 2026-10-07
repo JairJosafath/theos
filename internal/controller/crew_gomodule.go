@@ -56,6 +56,10 @@ func (r *CrewReconciler) publishGoModule(ctx context.Context, crew *c4v1alpha1.C
 	if release == nil {
 		return
 	}
+	if tag, ok := r.tagged.Load(crew.UID); ok && tag != release.Tag {
+		// The cached Crew predates the newer release.
+		return
+	}
 	if m := release.GoModule; m != nil && m.State != moduleStateFailed {
 		r.setModuleCondition(crew, status, m)
 		return

@@ -91,6 +91,10 @@ type CrewReconciler struct {
 	// moduleSaid is, by Crew UID, the tag and outcome of the last Go module
 	// publish reported, so each gets one Event or log line.
 	moduleSaid sync.Map
+	// tagged is, by Crew UID, the tag of the last release the Crew tagged, so
+	// a cached Crew that lags behind its status doesn't publish, or write the
+	// module of, an earlier release over the newer one.
+	tagged sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
