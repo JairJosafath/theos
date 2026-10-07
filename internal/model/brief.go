@@ -112,6 +112,8 @@ type Plan struct {
 	Choices []string
 	// NeedsInput is needs-input.md's sentence; a plan that has one is not applied.
 	NeedsInput string
+	// Answers are the plan's answers to reviewers' suggestions.
+	Answers []SuggestionAnswer
 }
 
 var issueFile = regexp.MustCompile(`^plan/issues/(\d+)-([a-z0-9]([-a-z0-9]*[a-z0-9])?)\.md$`)
@@ -144,6 +146,13 @@ func ParsePlan(files map[string]string) (Plan, error) {
 		if line != "" && !strings.HasPrefix(line, "#") {
 			plan.Choices = append(plan.Choices, line)
 		}
+	}
+	if s, ok := files[PlanSuggestionsFile]; ok {
+		answers, err := parseAnswers(s)
+		if err != nil {
+			return Plan{}, fmt.Errorf("%s: %w", PlanSuggestionsFile, err)
+		}
+		plan.Answers = answers
 	}
 	paths := make([]string, 0, len(files))
 	for path := range files {

@@ -23,6 +23,9 @@ spec:
     - jsonPath: .status.round
       name: Round
       type: integer
+    - jsonPath: .status.suggestionsWaiting
+      name: Suggestions
+      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -385,6 +388,52 @@ spec:
               roundPrompts:
                 description: roundPrompts is how many of spec.prompts the running
                   or last round took.
+                format: int32
+                type: integer
+              suggestions:
+                description: |-
+                  suggestions are the reviewers' suggestions waiting in the repositories
+                  of the Containers the Brief made, oldest first; at most 50. A prompt
+                  answers them: the operator takes the ones it says to take, ready for
+                  the Crew, and closes the ones it says to skip.
+                items:
+                  description: |-
+                    BriefSuggestion is a reviewer's suggestion waiting in the repository of a
+                    Container the Brief made, for the person to answer in a prompt.
+                  properties:
+                    container:
+                      description: container is the Container whose repository has
+                        the suggestion.
+                      maxLength: 253
+                      type: string
+                    criteria:
+                      description: |-
+                        criteria says the suggestion has acceptance criteria, so a prompt can
+                        take it as it stands.
+                      type: boolean
+                    number:
+                      description: number of the suggestion's issue in its repository.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    title:
+                      description: title of the suggestion.
+                      maxLength: 255
+                      type: string
+                    url:
+                      description: url is the suggestion's address.
+                      type: string
+                  required:
+                  - container
+                  - number
+                  type: object
+                maxItems: 50
+                type: array
+                x-kubernetes-list-type: atomic
+              suggestionsWaiting:
+                description: |-
+                  suggestionsWaiting is how many reviewers' suggestions wait for an
+                  answer, those past the 50 listed too.
                 format: int32
                 type: integer
             type: object

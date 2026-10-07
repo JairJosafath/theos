@@ -147,8 +147,12 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		var body struct {
 			State     string   `json:"state"`
 			Assignees []string `json:"assignees"`
+			Milestone *int64   `json:"milestone"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Milestone != nil {
+			i.milestone = body.Milestone
+		}
 		if body.State != "" {
 			i.State = body.State
 		}
@@ -478,6 +482,24 @@ func TestCreateIssueMilestone(t *testing.T) {
 	}
 	if m := h.issues[2].milestone; m != nil {
 		t.Errorf("issue 2 filed with milestone %d, want none sent", *m)
+	}
+}
+
+func TestSetIssueMilestone(t *testing.T) {
+	h, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	if _, err := p.CreateIssue(ctx, repo, "Validate addresses", "body", nil, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SetIssueMilestone(ctx, repo, 1, 0); err != nil {
+		t.Fatalf("SetIssueMilestone(0) error = %v", err)
+	}
+	if m := h.issues[1].milestone; m == nil || *m != 0 {
+		t.Errorf("after SetIssueMilestone(0), milestone sent = %v, want 0", m)
+	}
+	if err := p.SetIssueMilestone(ctx, repo, 9, 0); err == nil {
+		t.Error("SetIssueMilestone() of a missing issue succeeded")
 	}
 }
 

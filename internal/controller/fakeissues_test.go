@@ -296,6 +296,25 @@ func (p *fakeProvider) CloseIssue(ctx context.Context, repo gitprovider.Reposito
 	return nil
 }
 
+func (p *fakeProvider) SetIssueMilestone(_ context.Context, repo gitprovider.Repository, number int, milestone int64) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	i, err := p.issueOf(repo, number)
+	if err != nil {
+		return err
+	}
+	titles := p.git.issueState().milestones[repo.Owner+"/"+repo.Name]
+	switch {
+	case milestone == 0:
+		i.milestone = ""
+	case int(milestone) <= len(titles):
+		i.milestone = titles[milestone-1]
+	default:
+		return fmt.Errorf("no milestone %d", milestone)
+	}
+	return nil
+}
+
 func (p *fakeProvider) AssignIssue(_ context.Context, repo gitprovider.Repository, number int, users []string) error {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()

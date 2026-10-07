@@ -14,6 +14,9 @@ can't apply it.
   types it supports (`supportedTypes`); a Standard also lists the Frameworks it
   fits (`supportedFrameworks`).
 - `model/containers.yaml`: each Container's repository and its open issues.
+- `model/suggestions.yaml`: the reviewers' suggestions waiting for the
+  person's answer, each with its Container, issue number, title and whether
+  it has acceptance criteria.
 
 ## What you write
 
@@ -27,6 +30,8 @@ Push the branch `plan/<round>` with these files:
   the body.
 - `plan/choices.md`: one line per choice you made, in plain words.
 - `plan/needs-input.md`: only when you are stuck (see below).
+- `plan/suggestions.yaml`: only when a new prompt answers reviewers'
+  suggestions (see below).
 
 ## The rules
 
@@ -59,3 +64,18 @@ Push the branch `plan/<round>` with these files:
    the catalog doesn't have. Write one sentence saying what and why, and leave
    the other files out. Everything else is yours to decide: choose, and say
    why in `choices.md`.
+8. **Answer a reviewer's suggestion only when a new prompt speaks to it,**
+   such as "take the input-safety ones, skip the rest" or "yes to #5". Write
+   `plan/suggestions.yaml`, a list with one entry per suggestion answered:
+
+   ```yaml
+   - container: todo
+     issue: 5
+     answer: take        # or skip
+     why: The prompt asks to take the input-safety suggestions.
+   ```
+
+   `why` says in plain words which prompt asked for it. Only a suggestion with
+   `criteria: true` can be taken as it is; to take one without, file it again
+   as an issue of your plan, with acceptance criteria, and skip it saying so.
+   Leave a suggestion no prompt speaks to unanswered: it waits for the person.

@@ -383,6 +383,12 @@ func (g *gitea) CloseIssue(ctx context.Context, repo Repository, number int) err
 	return g.editIssue(ctx, repo, number, map[string]any{"state": stateClosed})
 }
 
+// SetIssueMilestone moves an issue into the milestone with ID milestone, or
+// out of every milestone when it is 0.
+func (g *gitea) SetIssueMilestone(ctx context.Context, repo Repository, number int, milestone int64) error {
+	return g.editIssue(ctx, repo, number, map[string]any{"milestone": milestone})
+}
+
 // AssignIssue makes users the issue's assignees.
 func (g *gitea) AssignIssue(ctx context.Context, repo Repository, number int, users []string) error {
 	return g.editIssue(ctx, repo, number, map[string]any{"assignees": users})

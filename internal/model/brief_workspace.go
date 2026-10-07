@@ -19,7 +19,8 @@ const (
 
 // WorkspaceFiles are every file BriefWorkspaceFiles writes, so the operator can
 // read them back to see whether main is already up to date.
-var WorkspaceFiles = []string{BriefFile, PlannerGuide, WorkspaceModelFile, WorkspaceCatalogFile, WorkspaceContainersFile}
+var WorkspaceFiles = []string{BriefFile, PlannerGuide, WorkspaceModelFile, WorkspaceCatalogFile, WorkspaceContainersFile,
+	WorkspaceSuggestionsFile}
 
 // MaxWorkspaceIssues is how many open issue titles model/containers.yaml lists
 // per Container; the rest are counted, not listed.
@@ -53,6 +54,9 @@ type BriefWorkspace struct {
 	Catalog []CatalogEntry
 	// Containers are the namespace's Containers that have a repository.
 	Containers []WorkspaceContainer
+	// Suggestions are the reviewers' suggestions waiting in the Brief's
+	// Containers' repositories, for the person to answer in a prompt.
+	Suggestions []Suggestion
 }
 
 // WorkspaceContainer is a Container's repository and its open issues.
@@ -86,12 +90,17 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceContainersFile, err)
 	}
+	suggestions, err := marshalDocument(workspaceSuggestions(ws.Suggestions))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", WorkspaceSuggestionsFile, err)
+	}
 	return map[string]string{
-		BriefFile:               renderBrief(ws),
-		PlannerGuide:            plannerGuideText,
-		WorkspaceModelFile:      story,
-		WorkspaceCatalogFile:    catalog,
-		WorkspaceContainersFile: containers,
+		BriefFile:                renderBrief(ws),
+		PlannerGuide:             plannerGuideText,
+		WorkspaceModelFile:       story,
+		WorkspaceCatalogFile:     catalog,
+		WorkspaceContainersFile:  containers,
+		WorkspaceSuggestionsFile: suggestions,
 	}, nil
 }
 
@@ -114,6 +123,10 @@ func renderBrief(ws BriefWorkspace) string {
 			}
 			fmt.Fprintf(&b, "%d. (%s) %s\n", i+1, mark, oneParagraph(p))
 		}
+	}
+	if len(ws.Suggestions) > 0 {
+		fmt.Fprintf(&b, "\n## Reviewer suggestions\n\n%d wait for the person's answer, listed in `%s`. "+
+			"Answer one only when a **new** prompt speaks to it.\n", len(ws.Suggestions), WorkspaceSuggestionsFile)
 	}
 	fmt.Fprintf(&b, "\n## Git provider\n\nEvery new Container names `gitProviderRef: {name: %s}`.\n", ws.GitProvider)
 	return b.String()

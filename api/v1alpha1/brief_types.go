@@ -143,6 +143,34 @@ type BriefIssue struct {
 	N int32 `json:"n,omitempty"`
 }
 
+// BriefSuggestion is a reviewer's suggestion waiting in the repository of a
+// Container the Brief made, for the person to answer in a prompt.
+type BriefSuggestion struct {
+	// container is the Container whose repository has the suggestion.
+	// +kubebuilder:validation:MaxLength=253
+	// +required
+	Container string `json:"container"`
+
+	// number of the suggestion's issue in its repository.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Number int32 `json:"number"`
+
+	// title of the suggestion.
+	// +kubebuilder:validation:MaxLength=255
+	// +optional
+	Title string `json:"title,omitempty"`
+
+	// url is the suggestion's address.
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// criteria says the suggestion has acceptance criteria, so a prompt can
+	// take it as it stands.
+	// +optional
+	Criteria bool `json:"criteria,omitempty"`
+}
+
 // BriefRound is one round of planning: the idea, or a batch of new prompts.
 type BriefRound struct {
 	// round is the round's number, from 1.
@@ -217,6 +245,20 @@ type BriefStatus struct {
 	// +optional
 	Issues []BriefIssue `json:"issues,omitempty"`
 
+	// suggestions are the reviewers' suggestions waiting in the repositories
+	// of the Containers the Brief made, oldest first; at most 50. A prompt
+	// answers them: the operator takes the ones it says to take, ready for
+	// the Crew, and closes the ones it says to skip.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=50
+	// +optional
+	Suggestions []BriefSuggestion `json:"suggestions,omitempty"`
+
+	// suggestionsWaiting is how many reviewers' suggestions wait for an
+	// answer, those past the 50 listed too.
+	// +optional
+	SuggestionsWaiting int32 `json:"suggestionsWaiting,omitempty"`
+
 	// history has an entry per round, oldest first; the newest 20 are kept.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=20
@@ -251,6 +293,7 @@ type BriefStatus struct {
 // +kubebuilder:resource:scope=Namespaced,categories=c4
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Round",type=integer,JSONPath=".status.round"
+// +kubebuilder:printcolumn:name="Suggestions",type=integer,JSONPath=".status.suggestionsWaiting"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // Brief is an app idea in plain words and its follow-up prompts. A planner

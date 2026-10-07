@@ -160,6 +160,9 @@ type Provider interface {
 	CommentIssue(ctx context.Context, repo Repository, number int, body string) error
 	// CloseIssue closes an issue.
 	CloseIssue(ctx context.Context, repo Repository, number int) error
+	// SetIssueMilestone moves an issue into the milestone with ID milestone, or
+	// out of every milestone when it is 0.
+	SetIssueMilestone(ctx context.Context, repo Repository, number int, milestone int64) error
 	// AssignIssue makes users the issue's assignees.
 	AssignIssue(ctx context.Context, repo Repository, number int, users []string) error
 	// CreateIssue files an issue with labels, which must exist in the repository,
