@@ -9,7 +9,9 @@ follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)
 - **Briefs**, above the views: a _Describe an app_ box that creates a Brief (an
   idea and a name, suggested from the idea), and a card per Brief with its
   phase, what it waits for when it needs input, the planner's latest choices,
-  the objects and issues it made, its prompts (those not yet planned marked
+  the objects and issues it made, each app's releases (on or off, the
+  latest tag linking to its Gitea release, and where it was published, linking to
+  the GitHub release), its prompts (those not yet planned marked
   _next round_), its repository and cost, and a field to add a prompt. The API's
   answer shows as is when it refuses. Only shown in a namespace with a Project.
 - **System context** (C4 level 1): the People and SoftwareSystems, the

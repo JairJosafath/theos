@@ -5,7 +5,7 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { isBriefName, MAX_IDEA, MAX_PROMPT, nameFromIdea, type BriefWriter } from '../k8s/briefs'
 import type { Brief } from '../k8s/types'
-import { describeBrief, sortBriefs, type BriefView } from '../model/brief'
+import { describeBrief, sortBriefs, type BriefAppView, type BriefView } from '../model/brief'
 import { plural, timeAgo } from '../model/describe'
 import { ExternalLinkIcon, RepoIcon, WarningIcon } from './icons'
 
@@ -217,14 +217,14 @@ function BriefCard({
         </div>
       ) : null}
 
-      <BriefDetails view={view} />
+      <BriefDetails view={view} now={now} />
 
       <PromptForm namespace={namespace} name={view.name} writer={writer} needsInput={Boolean(view.needsInput)} />
     </article>
   )
 }
 
-function BriefDetails({ view }: { view: BriefView }) {
+function BriefDetails({ view, now }: { view: BriefView; now: number }) {
   return (
     <>
       {view.choices.length ? (
@@ -308,6 +308,19 @@ function BriefDetails({ view }: { view: BriefView }) {
           <p className="field-hint">Answer in a prompt, such as "take the input-safety ones, skip the rest".</p>
         </>
       ) : null}
+      {view.apps.length ? (
+        <>
+          <h4 className="section-title">
+            Releases <span className="section-hint">{view.apps.length}</span>
+          </h4>
+          <Clipped
+            className="brief-list brief-apps"
+            items={view.apps.map((a) => (
+              <AppLine key={a.container} app={a} now={now} />
+            ))}
+          />
+        </>
+      ) : null}
       {view.prompts.length ? (
         <>
           <h4 className="section-title">
@@ -333,6 +346,49 @@ function BriefDetails({ view }: { view: BriefView }) {
         </a>
       ) : null}
     </>
+  )
+}
+
+/** An app of the Brief: releases on or off, its latest release and where it was published. */
+function AppLine({ app, now }: { app: BriefAppView; now: number }) {
+  return (
+    <li className="brief-app">
+      <div className="brief-app-head">
+        <span className="mono">{app.container}</span>
+        <span className={`badge badge-${app.tone} badge-sm`}>
+          <span className="badge-dot" aria-hidden="true" />
+          {app.label}
+        </span>
+        {app.release ? (
+          <span className="brief-app-release">
+            {app.release.url ? (
+              <a href={app.release.url} target="_blank" rel="noreferrer" title={`Release ${app.release.tag} on Gitea`}>
+                {app.release.tag}
+              </a>
+            ) : (
+              <span className="mono">{app.release.tag}</span>
+            )}
+            {app.release.time ? <span className="brief-issue-title"> {timeAgo(app.release.time, now)}</span> : null}
+          </span>
+        ) : null}
+        {app.publishedURL ? (
+          <a
+            className="brief-app-published"
+            href={app.publishedURL}
+            target="_blank"
+            rel="noreferrer"
+            title={`Release ${app.release?.tag ?? ''} on GitHub`}
+          >
+            {app.publishTo ?? 'GitHub'} <ExternalLinkIcon size={11} />
+          </a>
+        ) : app.publishTo ? (
+          <span className="brief-app-published" title="Where its releases are published">
+            to {app.publishTo}
+          </span>
+        ) : null}
+      </div>
+      <p className="brief-app-message">{app.message}</p>
+    </li>
   )
 }
 

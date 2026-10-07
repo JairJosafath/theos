@@ -59,7 +59,7 @@ type BriefWorkspace struct {
 	// Suggestions are the reviewers' suggestions waiting in the Brief's
 	// Containers' repositories, for the person to answer in a prompt.
 	Suggestions []Suggestion
-	// Releases are the Brief's spec.releases entries (plans/brief-releases.md, R5).
+	// Releases are the Brief's spec.releases entries (plans/done/brief-releases.md, R5).
 	Releases []WorkspaceRelease
 }
 

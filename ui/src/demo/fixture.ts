@@ -718,6 +718,35 @@ export function demoStory(now: number): StoryData {
             title: 'Escape the product names on the list page',
           },
         ],
+        // orders-api releases and publishes them to GitHub; storefront's are off.
+        apps: [
+          {
+            container: 'orders-api',
+            crew: 'orders-api',
+            releases: 'On',
+            publishTo: 'webshop-co/orders-api',
+            lastRelease: {
+              tag: 'v0.2.0',
+              url: `${GITEA_WEB}/webshop/orders-api/releases/tag/v0.2.0`,
+              time: ago(3 * 3600),
+              run: 'Succeeded',
+              publishState: 'Published',
+              publishedURL: 'https://github.com/webshop-co/orders-api/releases/tag/v0.2.0',
+            },
+            message: 'Released v0.2.0 and published it to webshop-co/orders-api.',
+          },
+          {
+            container: 'storefront',
+            crew: 'storefront',
+            releases: 'Off',
+            message: 'Releases are off: ask for them in a prompt, or name this app in spec.releases.',
+          },
+          {
+            container: 'catalog-api',
+            releases: 'Off',
+            message: 'The app has no Crew yet, so nothing releases it.',
+          },
+        ],
         history: [
           { round: 1, summary: 'Planned the shop: storefront, orders and catalog', costMilliUSD: 312 },
           { round: 2, summary: 'Added one-click reorder', costMilliUSD: 148 },

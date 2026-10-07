@@ -1,8 +1,8 @@
 // A Brief for display: its phase in plain words, what it waits for, which of
 // its prompts the planner has taken, and what it made.
 
-import { findCondition, type Brief, type BriefPhase } from '../k8s/types'
-import { plural, type PhaseInfo } from './describe'
+import { findCondition, type Brief, type BriefApp, type BriefPhase } from '../k8s/types'
+import { plural, type PhaseInfo, type Tone } from './describe'
 
 /** The Brief phase as a badge label, colour tone and one-line explanation. */
 export function describeBriefPhase(phase: BriefPhase | undefined): PhaseInfo {
@@ -56,6 +56,8 @@ export interface BriefView {
   suggestions: { container: string; number: number; title?: string; url?: string }[]
   /** How many suggestions wait in all; can exceed the listed ones. */
   suggestionsWaiting: number
+  /** Each app's releases: a line per Container the Brief made, then per spec.releases entry. */
+  apps: BriefAppView[]
   repositoryURL?: string
   /** Planning cost over all rounds, such as "$0.42", or that the agent didn't report it. */
   cost?: string
@@ -93,9 +95,52 @@ export function describeBrief(brief: Brief): BriefView {
     issues: status.issues ?? [],
     suggestions,
     suggestionsWaiting,
+    apps: (status.apps ?? []).map(describeBriefApp),
     repositoryURL: status.repositoryURL,
     cost: describeCost(status.costMilliUSD, status.runsWithoutCost),
   }
+}
+
+/** An app of a Brief and how its releases go, for display. */
+export interface BriefAppView {
+  container: string
+  releasesOn: boolean
+  /** "Releases on" or "Releases off", toned by how the latest release went. */
+  label: string
+  tone: Tone
+  /** The operator's sentence on how the releases go. */
+  message: string
+  /** The latest release, linking to its page on the Git host. */
+  release?: { tag: string; url?: string; time?: string }
+  /** Where the releases are published, owner/name, linking to the published release once there is one. */
+  publishTo?: string
+  publishedURL?: string
+}
+
+export function describeBriefApp(app: BriefApp): BriefAppView {
+  const releasesOn = app.releases === 'On'
+  const last = app.lastRelease
+  return {
+    container: app.container,
+    releasesOn,
+    label: releasesOn ? 'Releases on' : 'Releases off',
+    tone: releaseTone(app),
+    message: app.message?.trim() || (releasesOn ? 'Releases are on.' : 'Releases are off.'),
+    release: last ? { tag: last.tag, url: last.url || undefined, time: last.time } : undefined,
+    publishTo: app.publishTo || undefined,
+    publishedURL: last?.publishState === 'Published' ? last.publishedURL || undefined : undefined,
+  }
+}
+
+/** Off is muted; on is ok once the latest release ran and published, an error when either failed. */
+function releaseTone(app: BriefApp): Tone {
+  if (app.releases !== 'On') return 'unknown'
+  const last = app.lastRelease
+  if (!last) return 'waiting'
+  if (last.run === 'Failed' || last.publishState === 'Failed') return 'error'
+  if (last.run === 'Waiting' || last.run === 'Running') return 'progress'
+  if (last.publishState === 'Pending' || last.publishState === 'Publishing') return 'progress'
+  return 'ok'
 }
 
 /**

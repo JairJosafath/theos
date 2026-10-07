@@ -23,7 +23,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// The Brief's releases (docs/plans/brief-releases.md): a released Container's
+// The Brief's releases (docs/plans/done/brief-releases.md): a released Container's
 // Crew that the Brief made tags and prepares releases, and publishes them where
 // spec.releases says; its rounds' issues go into a release milestone.
 

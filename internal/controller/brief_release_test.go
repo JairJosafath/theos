@@ -76,7 +76,7 @@ func linterCrew(g Gomega, ns string) *c4v1alpha1.Crew {
 	return crew
 }
 
-// Step 4 of docs/plans/brief-releases.md: a released app's Crew tags, prepares
+// Step 4 of docs/plans/done/brief-releases.md: a released app's Crew tags, prepares
 // and publishes, and its rounds' issues go into release milestones.
 var _ = Describe("Brief releases", func() {
 	var ns string
@@ -290,7 +290,7 @@ func setLinterRelease(ns, tag string) {
 	}).Should(Succeed())
 }
 
-// Step 5 of docs/plans/brief-releases.md: the Brief's status shows each app's
+// Step 5 of docs/plans/done/brief-releases.md: the Brief's status shows each app's
 // releases, from the Crew it made.
 var _ = Describe("Brief apps", func() {
 	var ns string
