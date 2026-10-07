@@ -93,6 +93,10 @@ type TaskReconciler struct {
 	// SandboxGoCache, when set, is a directory on the node that sandboxes share as
 	// their Go build cache.
 	SandboxGoCache string
+	// SharedPullSecrets name the pull Secrets the Project reconciler shares into
+	// project namespaces; every sandbox pod lists them, so pulling a private image
+	// needs no patched default ServiceAccount.
+	SharedPullSecrets []string
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create;update;patch;delete
