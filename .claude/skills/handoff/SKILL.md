@@ -127,7 +127,11 @@ Lost claim (the heartbeat hook says so):
   (`close`, the *Issue closed* workflow and the relay watch run
   `hack/lib/github.sh parents --apply`; the watch also moves a parent you left
   in progress to waiting). Each step's body names N. Steps never say
-  `Depends on #N` (that is a cycle).
+  `Depends on #N` (that is a cycle). Never close the parent of a plan by
+  hand, even when "its work was the design": it closes with its last step.
+  `hack/close-guard.sh` (a hook) denies a `gh pr create`, `edit`, `merge` or
+  `git commit` that would close it while a step is open, naming the line, and
+  `hack/lib/github.sh close N` refuses it, naming the open step.
 - **Plan finished:** when the issue you close finishes a plan's last step,
   move the plan to `docs/plans/done/` in the same pull request (`git mv`),
   fix the relative links inside it, and update every link to it

@@ -66,7 +66,16 @@
 #                                        the maintainer sets needs-human (GOVERNANCE.md). Those two and waiting
 #                                        (a plan's parent, waiting on its steps) release the claim and lease
 #   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, drop its status labels,
-#                                        release the claim and lease, then close the plan parents N finishes (parents)
+#                                        release the claim and lease, then close the plan parents N finishes (parents).
+#                                        Refused (exit 1) while a "Depends on #S" line of N's body names an open S:
+#                                        a plan's parent closes itself when its last step closes
+#   hack/lib/github.sh closes-check FILE whether a pull request body or commit message (FILE, - for stdin) may
+#                                        close what it names: refused (exit 1, naming the line) when a closing
+#                                        keyword (closes, fixed, resolves, ..., any case, prose too) names an issue
+#                                        the text also says Refs, or one with a Depends on step still open that the
+#                                        text doesn't close too. Exit 2: GitHub could not be asked. hack/close-guard.sh
+#                                        runs it before a session's gh pr create, edit or merge and git commit
+#   hack/lib/github.sh pr-check PR       closes-check over pull request PR's title, body and commit messages
 #   hack/lib/github.sh merge PR          merge pull request PR with a merge commit. Refused (exit 1) when its body
 #                                        says Refs #N and a closing word next to #N (closes #N, fixed #N, even in
 #                                        prose or a commit message) or GitHub's closingIssuesReferences would
@@ -1310,14 +1319,118 @@ gh_flush() {
   return $rc
 }
 
+# gh_closing_refs: the issues the text on stdin closes, one number per line:
+# a GitHub closing keyword (close[sd], fix(e[sd]), resolve[sd], any case, an
+# optional colon) before #N, OWNER/REPO#N or the issue's URL, of this
+# repository. A pull request body, or a commit message that reaches main,
+# saying one closes N at merge, wherever the words sit, prose included.
+gh_closing_refs() {
+  local m ref repo
+  grep -oiE '(^|[^[:alnum:]_])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+(https?://github\.com/[[:alnum:]_.-]+/[[:alnum:]_.-]+/issues/[0-9]+|([[:alnum:]_.-]+/[[:alnum:]_.-]+)?#[0-9]+)' |
+    while IFS= read -r m; do
+      ref=${m##*[[:space:]]}
+      if [[ $ref =~ github\.com/([^/]+/[^/]+)/issues/([0-9]+)$ ]]; then
+        repo=${BASH_REMATCH[1]} ref=${BASH_REMATCH[2]}
+      else
+        repo=${ref%#*} ref=${ref##*#}
+      fi
+      [ -z "$repo" ] || [ "${repo,,}" = "${C4_GITHUB_REPO,,}" ] || continue
+      echo "$ref"
+    done
+}
+
+# gh_steps N [SKIP...]: N's steps, the "Depends on #S" lines of its body, one
+# per line as S<TAB>STATE<TAB>LINE, STATE being S's (open or closed), or
+# closing for a SKIP, which GitHub is not asked about.
+gh_steps() {
+  local n=$1 body line s state
+  shift
+  body=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
+  while IFS= read -r line; do
+    line=$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$line")
+    for s in $(grep -oiE 'depends on #[0-9]+' <<<"$line" | grep -oE '[0-9]+'); do
+      if [[ " $* " == *" $s "* ]]; then
+        state=closing
+      else
+        state=$(gh_api "repos/$C4_GITHUB_REPO/issues/$s" --jq .state) || return 1
+      fi
+      printf '%s\t%s\t%s\n' "$s" "$state" "$line"
+    done
+  done < <(grep -iE 'depends on #[0-9]+' <<<"$body" | tr -d '\r')
+  return 0
+}
+
+# gh_closes_check FILE: refuse a pull request body or commit message (FILE, or
+# - for stdin) that would close the parent of a plan too early: a closing
+# keyword for an issue with a "Depends on #S" step still open, or for one the
+# same text names with Refs #N while it has no steps yet (a plan's pull
+# request, whose steps are filed after it merges). Steps the same text closes
+# count as closed, so a last step's Closes #S and Closes #N passes.
+# Each refusal names the line, on stderr. Exit 1: refused; 2: GitHub could
+# not be asked. Text without a closing keyword never asks GitHub.
+gh_closes_check() {
+  local text refs closes line n s state dline rc=0
+  text=$(gh_read "${1:--}") || return 2
+  closes=$(gh_closing_refs <<<"$text" | sort -nu)
+  [ -n "$closes" ] || return 0
+  refs=$(grep -oiE '(^|[^[:alnum:]_])refs:?[[:space:]]+#[0-9]+([[:space:]]*(,|and)[[:space:]]*#[0-9]+)*' <<<"$text" |
+    grep -oE '#[0-9]+' | tr -d '#' | sort -nu)
+  local -A steps=()
+  for n in $closes; do
+    # shellcheck disable=SC2086 # one SKIP per closed issue
+    steps[$n]=$(gh_steps "$n" $closes) || return 2
+  done
+  while IFS= read -r line; do
+    for n in $(gh_closing_refs <<<"$line" | sort -nu); do
+      line=$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$line")
+      if [ -z "${steps[$n]}" ] && grep -qxF -- "$n" <<<"$refs"; then
+        echo "github: refused: \"$line\" closes #$n at merge, and the same text says Refs #$n. A plan's pull request only refers to its parent: reword the line so no close, fix or resolve word sits before #$n." >&2
+        rc=1
+        continue
+      fi
+      while IFS=$'\t' read -r s state dline; do
+        [ "$state" = open ] || continue
+        echo "github: refused: \"$line\" closes #$n at merge, but its step #$s is open (\"$dline\" in #$n's body). The parent of a plan closes itself when its last step closes." >&2
+        rc=1
+      done <<<"${steps[$n]}"
+    done
+  done <<<"$text"
+  return $rc
+}
+
+# gh_pr_text PR: what merging pull request PR puts on main that can close an
+# issue: its title (the merge commit's), body and commit messages.
+gh_pr_text() {
+  local pr=${1:?usage: pr-check PR}
+  gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq '.title, (.body // "")' || return 1
+  gh_api --paginate "repos/$C4_GITHUB_REPO/pulls/$pr/commits?per_page=100" --jq '.[].commit.message' || return 1
+}
+
+# gh_pr_check PR: gh_closes_check over pull request PR's title, body and commits.
+gh_pr_check() {
+  local text
+  text=$(gh_pr_text "$@") || return 2
+  gh_closes_check - <<<"$text"
+}
+
 # gh_close N FILE: comment what landed, close N as completed, drop its status
 # labels, then release the claim and the cluster lease if they are on N. Closing comes first: if it fails, the claim stays live, so pick does
 # not offer the open, in-progress issue again as abandoned work. A close that
 # fails because a merged pull request's Closes #N already closed N (GitHub
 # answers 422) still drops the labels and releases. Last, the plan parents
 # whose last step N was close too (gh_parents); that failing is only said.
+# An N whose body has a "Depends on #S" step still open is refused, naming
+# it: the parent of a plan closes itself when its last step closes, never by hand.
 gh_close() {
-  local n=${1:?usage: close N FILE}
+  local n=${1:?usage: close N FILE} steps s line
+  steps=$(gh_steps "$n") || return 1
+  steps=$(awk -F'\t' '$2 == "open" { print $1 "\t" $3 }' <<<"$steps")
+  if [ -n "$steps" ]; then
+    while IFS=$'\t' read -r s line; do
+      echo "github: refused to close #$n: its step #$s is open (\"$line\" in #$n's body). The parent of a plan closes itself when its last step closes, never by hand." >&2
+    done <<<"$steps"
+    return 1
+  fi
   gh_comment "$n" "${2:--}" || return 1
   if ! gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
     -f state=closed -f state_reason=completed --jq '"closed #\(.number)"'; then
@@ -1339,6 +1452,8 @@ GH_CLOSE_WORDS='(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+([[:alnum:]_.
 # #N"), so a plan's pull request would close its parent with the steps
 # unbuilt. Refused (exit 1) when such a phrase is there or GraphQL's
 # closingIssuesReferences lists N; the message names the phrase to reword.
+# Refused too when it would close an issue with a "Depends on #S" step still
+# open (gh_closes_check), or GitHub can't be asked whether it would.
 gh_merge() {
   local pr=${1:?usage: merge PR} view text refs closing n phrase bad=
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
@@ -1360,6 +1475,8 @@ gh_merge() {
     fi
   done
   [ -z "$bad" ] || return 1
+  # Nor may it close an issue with a Depends on step still open (closes-check).
+  gh_closes_check - <<<"$text" || return 1
   gh_token || return 1
   gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge
 }
@@ -1727,6 +1844,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     cluster) gh_cluster "$@" ;;
     status) gh_set_status "$@" ;;
     close) gh_close "$@" ;;
+    closes-check) gh_closes_check "$@" ;;
+    pr-check) gh_pr_check "$@" ;;
     merge) gh_merge "$@" ;;
     duplicate) gh_duplicate "$@" ;;
     closed) gh_closed "$@" ;;

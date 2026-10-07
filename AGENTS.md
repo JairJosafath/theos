@@ -138,7 +138,9 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   ("its PR closes #N" closes N; `merge` refuses it); the issue stays
   open, `status/waiting` (waiting on its steps, not on an agent), its body a
   `Depends on #S` line per step so `pick` skips it, and it closes itself when
-  its last step closes (`hack/lib/github.sh parents`).
+  its last step closes (`hack/lib/github.sh parents`). Never close it by
+  hand: `hack/close-guard.sh` denies a pull request or commit, and
+  `hack/lib/github.sh close` an issue, that would close it while a step is open.
 - **Main keeps itself current.** `hack/pull.sh` fast-forwards local main when
   that is safe and never touches a branch or uncommitted work. VS Code runs it
   every 5 minutes, Claude Code at session start, the relay before each session;

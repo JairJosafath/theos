@@ -204,7 +204,8 @@ Rules for this headless run:
     request, commit SHAs). The relay then picks the next issue. A pull
     request that only writes a plan and files its steps says \`Refs #$n\`
     instead, with no close, fix or resolve word next to #$n even in prose, and ends with a handoff, then \`hack/lib/github.sh status $n waiting\`
-    (the handoff skill, "Plan only"); #$n closes itself when its last step does.
+    (the handoff skill, "Plan only"); #$n closes itself when its last step does:
+    never close it by hand.
   - Stuck on a decision: \`hack/lib/github.sh status $n needs-maintainer\` and
     a comment saying why and what you need. The relay then picks the next
     issue, and the maintainer decides it or takes it to the user. How to build
