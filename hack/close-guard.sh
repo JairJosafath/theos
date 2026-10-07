@@ -54,7 +54,9 @@ if [[ $what == *merge ]]; then
   # The pull request is the first word after merge that is not a flag or a
   # flag's value: a number, a URL or a branch.
   arg= repo= skip=
-  read -ra words <<<"${cmd#*pr*merge}"
+  rest=
+  [[ $cmd =~ gh[[:blank:]]+pr[[:blank:]]+merge([^$nl]*) ]] && rest=${BASH_REMATCH[1]}
+  read -ra words <<<"$rest"
   for w in "${words[@]}"; do
     [[ $w =~ ^[\;\&\|\)] ]] && break
     end=

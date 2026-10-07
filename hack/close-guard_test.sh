@@ -90,6 +90,8 @@ hook 'gh pr merge feat/439-shared-credentials-step-5 --merge'
 check "pr merge: a branch is asked of gh pr view, not read as a number" "$(decision) $(grep -c 'pr view feat/439-shared-credentials-step-5' "$CALLED")" "none 1"
 hook 'gh pr merge 510 -R someone/else --merge'
 check "pr merge: another repository's pull request, not guarded" "$(decision)" none
+hook "cat pr.json | jq -r '.mergeable_state' && gh pr merge 511 --merge"
+check "pr merge: an earlier word with merge in it is not the merge" "$(decision) $(grep -c "pr view" "$CALLED")" "none 0"
 hook 'gh pr merge 510; echo done'
 check "pr merge: a number before a separator" "$(decision)" deny
 echo 510 >"$FAKE/current"
