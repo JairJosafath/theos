@@ -42,6 +42,20 @@ type fakeIssueState struct {
 	// late makes CreateIssue file the issue but answer only once the caller has
 	// given up, as a host under load does.
 	late bool
+	// listErrs makes ListIssues of an owner/name fail.
+	listErrs map[string]error
+}
+
+// failListIssues makes listing the issues of owner/name fail with err from
+// now on; a nil err lists them again.
+func (g *fakeGit) failListIssues(owner, name string, err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := g.issueState()
+	if s.listErrs == nil {
+		s.listErrs = map[string]error{}
+	}
+	s.listErrs[owner+"/"+name] = err
 }
 
 func (g *fakeGit) issueState() *fakeIssueState {
@@ -165,6 +179,9 @@ func (p *fakeProvider) EnsureMilestone(_ context.Context, repo gitprovider.Repos
 func (p *fakeProvider) ListIssues(_ context.Context, repo gitprovider.Repository, label string) ([]gitprovider.Issue, error) {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
+	if err := p.git.issueState().listErrs[repo.Owner+"/"+repo.Name]; err != nil {
+		return nil, err
+	}
 	var out []gitprovider.Issue
 	for _, i := range p.git.issueState().issues[repo.Owner+"/"+repo.Name] {
 		if i.State == "open" && (label == "" || slices.Contains(i.Labels, label)) {

@@ -134,6 +134,22 @@ func FailedReason(number int, body string, tasks []IssueTask) (kind, reason stri
 	return FailedPerson, "Handed back by a person; see the issue.", tries
 }
 
+// FailedMessage is the sentence a Brief says its failed issues in: the first
+// of listed and its reason, how many more of waiting there are, and that a
+// prompt answers them. It is empty when none waits.
+func FailedMessage(listed []FailedIssue, waiting int) string {
+	if waiting <= 0 || len(listed) == 0 {
+		return ""
+	}
+	first := listed[0]
+	msg := fmt.Sprintf("Issue %s#%d %q was handed back: %s", first.Container, first.Number, oneParagraph(first.Title),
+		strings.TrimRight(oneParagraph(first.Reason), "."))
+	if more := waiting - 1; more > 0 {
+		msg += fmt.Sprintf("; and %d more", more)
+	}
+	return msg + ". Say in a prompt whether to try again."
+}
+
 // quoted lists names as `a`, `b`.
 func quoted(names []string) string {
 	out := make([]string, len(names))
@@ -243,8 +259,8 @@ type failedOut struct {
 	Body      string `yaml:"body"`
 }
 
-// workspaceFailed renders model/failed.yaml: the waiting failed issues, by
-// Container and number.
+// workspaceFailed renders model/failed.yaml: the first MaxFailedIssues
+// waiting failed issues, by Container and number.
 func workspaceFailed(failed []FailedIssue) []failedOut {
 	sorted := slices.Clone(failed)
 	slices.SortFunc(sorted, func(a, b FailedIssue) int {
@@ -253,6 +269,7 @@ func workspaceFailed(failed []FailedIssue) []failedOut {
 		}
 		return a.Number - b.Number
 	})
+	sorted = sorted[:min(len(sorted), MaxFailedIssues)]
 	out := make([]failedOut, 0, len(sorted))
 	for _, f := range sorted {
 		out = append(out, failedOut{f.Container, f.Number, oneParagraph(f.Title), f.Kind, oneParagraph(f.Reason),

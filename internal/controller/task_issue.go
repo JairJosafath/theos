@@ -133,8 +133,12 @@ func (r *TaskReconciler) handBack(ctx context.Context, task *c4v1alpha1.Task, co
 		return
 	}
 	n := int(task.Spec.Issue)
-	comment := fmt.Sprintf("Task `%s` failed: %s\n\nTo try again, clarify or split the issue and label it %s; "+
-		"a Crew tries an issue up to %d times.", task.Name, why, model.LabelReady, model.MaxIssueAttempts)
+	again := fmt.Sprintf("clarify or split the issue and label it %s", model.LabelReady)
+	if brief := container.Labels[c4v1alpha1.LabelBrief]; brief != "" {
+		again += fmt.Sprintf(", or say in a prompt on Brief `%s`", brief)
+	}
+	comment := fmt.Sprintf("Task `%s` failed: %s\n\nTo try again, %s; a Crew tries an issue up to %d times.",
+		task.Name, why, again, model.MaxIssueAttempts)
 	logNotes(ctx, task, []error{
 		r.gitCall(ctx, func(ctx context.Context) error { return provider.EnsureLabels(ctx, repo, issueLabels()) }),
 		r.gitCall(ctx, func(ctx context.Context) error { return provider.AddIssueLabel(ctx, repo, n, model.LabelNeedsHuman) }),
