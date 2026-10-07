@@ -95,7 +95,7 @@ func (r *BriefReconciler) reconcileRound(ctx context.Context, brief, orig *c4v1a
 	}
 	facts := roundFacts(brief, task)
 	if model.StartsRound(facts) {
-		return ctrl.Result{}, r.startRound(ctx, brief, orig)
+		return ctrl.Result{}, r.startRound(ctx, brief, orig, false)
 	}
 	if facts.RoundOver {
 		return ctrl.Result{}, nil
@@ -130,7 +130,7 @@ func (r *BriefReconciler) reconcileRound(ctx context.Context, brief, orig *c4v1a
 		return ctrl.Result{}, err
 	}
 	if model.StartsRound(roundFacts(brief, task)) {
-		return ctrl.Result{}, r.startRound(ctx, brief, orig)
+		return ctrl.Result{}, r.startRound(ctx, brief, orig, false)
 	}
 	return result, nil
 }
@@ -194,7 +194,8 @@ func (r *BriefReconciler) needAgents(ctx context.Context, brief *c4v1alpha1.Brie
 // missingAgentSecret returns errNeedsInput saying where to give Agent name's
 // missing token Secret: in the project namespace, or, when the operator shares
 // a Secret of that name, once in its own namespace for every project, naming
-// the label the project namespace needs when it hasn't opted in.
+// the label the project namespace needs when it hasn't opted in. When the
+// source is there, it says the copy is on its way.
 func (r *BriefReconciler) missingAgentSecret(ctx context.Context, namespace, secret, name, role string) error {
 	if r.SourceNamespace == "" || !slices.Contains(r.SharedSecrets, secret) {
 		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s with the "+
@@ -209,15 +210,26 @@ func (r *BriefReconciler) missingAgentSecret(ctx context.Context, namespace, sec
 			"factory shares it from namespace %s, or make it in %s for this project only",
 			secret, name, namespace, c4v1alpha1.LabelSharedSecrets, sharedSecretsOptIn, r.SourceNamespace, namespace)}
 	}
+	// The Project reconciler copies it in, Project or not; a source that is
+	// there is a copy on its way.
+	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: r.SourceNamespace, Name: secret}, &corev1.Secret{})
+	if err == nil {
+		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is not in namespace %s yet: the factory is "+
+			"copying it from namespace %s, so the Brief's %s can start", secret, name, namespace, r.SourceNamespace, role)}
+	}
+	if !apierrors.IsNotFound(err) {
+		return err
+	}
 	return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s, which the "+
 		"factory shares with every project, or in %s for this project only", secret, name, r.SourceNamespace, namespace)}
 }
 
 // startRound starts the Brief's next round, which takes every prompt it has
-// now: it records the round, then makes its Plan Task. The record is written
-// first, guarded by the Brief's resourceVersion, so a reconcile on a stale
-// copy can't start the same round twice.
-func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1alpha1.Brief) error {
+// now, or a tending round, which has none: it records the round, then makes
+// its Plan Task. The record is written first, guarded by the Brief's
+// resourceVersion, so a reconcile on a stale copy can't start the same round
+// twice.
+func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1alpha1.Brief, tend bool) error {
 	if err := r.needAgents(ctx, brief, "planner"); err != nil {
 		return err
 	}
@@ -233,6 +245,9 @@ func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1alpha
 	taken := model.RoundPrompts(brief.Spec.Prompts, int(status.PromptsPlanned))
 	status.Round++
 	status.RoundPrompts = int32(len(brief.Spec.Prompts))
+	if tend {
+		status.TendRound, status.LastTendTime = status.Round, &metav1.Time{Time: r.now()}
+	}
 	// A new round answers the planner's question, if it had one.
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput,
 		metav1.ConditionFalse, c4v1alpha1.ReasonResolved, "The Brief has what it needs")
@@ -243,7 +258,7 @@ func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1alpha
 		return err
 	}
 	*orig = *brief.DeepCopy()
-	logf.FromContext(ctx).Info("Started Brief round", "round", status.Round, "newPrompts", len(taken))
+	logf.FromContext(ctx).Info("Started Brief round", "round", status.Round, "newPrompts", len(taken), "tending", tend)
 	return r.ensureRoundTask(ctx, brief)
 }
 
@@ -263,6 +278,9 @@ func (r *BriefReconciler) ensureRoundTask(ctx context.Context, brief *c4v1alpha1
 			BriefRef: &c4v1alpha1.LocalRef{Name: brief.Name},
 			AgentRef: brief.Spec.Agents.Planner,
 		},
+	}
+	if tending(&brief.Status) {
+		task.Labels[c4v1alpha1.LabelBriefRoundKind] = c4v1alpha1.BriefRoundKindTend
 	}
 	if err := controllerutil.SetControllerReference(brief, task, r.Scheme); err != nil {
 		return err
@@ -331,6 +349,13 @@ func (r *BriefReconciler) checkPlan(ctx context.Context, brief *c4v1alpha1.Brief
 		return r.awaitPlan(ctx, brief, task, err)
 	}
 	var refusals string
+	if tending(&brief.Status) {
+		refusals, err = r.checkTendPlan(ctx, brief, tree)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		return r.verdict(ctx, brief, task, commit, refusals)
+	}
 	plan, err := model.ParsePlan(planFiles(tree))
 	switch {
 	case err != nil:
@@ -348,6 +373,33 @@ func (r *BriefReconciler) checkPlan(ctx context.Context, brief *c4v1alpha1.Brief
 			append(model.CheckAnswers(plan.Answers, waitingSuggestions(brief)),
 				model.CheckFailedAnswers(plan.FailedAnswers, failed)...)...))
 	}
+	return r.verdict(ctx, brief, task, commit, refusals)
+}
+
+// checkTendPlan checks a tending round's plan: only answers to the failed
+// issues and new issues, which CheckFailedAnswers and CheckTendPlan check.
+func (r *BriefReconciler) checkTendPlan(ctx context.Context, brief *c4v1alpha1.Brief, tree scaffold.Tree) (
+	string, error) {
+	plan, err := model.ParseTendPlan(planFiles(tree))
+	if err != nil {
+		return err.Error(), nil
+	}
+	current, err := r.currentModel(ctx, brief)
+	if err != nil {
+		return "", err
+	}
+	failed, err := r.failedToCheck(ctx, brief, plan.FailedAnswers)
+	if err != nil {
+		return "", err
+	}
+	return model.RefusalText(append(model.CheckTendPlan(plan, current),
+		model.CheckFailedAnswers(plan.FailedAnswers, failed)...)), nil
+}
+
+// verdict writes the Brief's verdict on the plan at commit on its Task, and
+// says a refusal in an Event.
+func (r *BriefReconciler) verdict(ctx context.Context, brief *c4v1alpha1.Brief, task *c4v1alpha1.Task, commit,
+	refusals string) (ctrl.Result, error) {
 	if err := r.writeVerdict(ctx, task, commit, refusals); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -416,12 +468,24 @@ func (r *BriefReconciler) failRound(ctx context.Context, brief *c4v1alpha1.Brief
 	if cond := meta.FindStatusCondition(task.Status.Conditions, ConditionSucceeded); cond != nil && cond.Message != "" {
 		message = cond.Message
 	}
-	endRoundFailed(ctx, brief, task, message)
+	r.endRoundFailed(ctx, brief, task, message)
 }
 
-// endRoundFailed records a round that failed, and why.
-func endRoundFailed(ctx context.Context, brief *c4v1alpha1.Brief, task *c4v1alpha1.Task, message string) {
+// endRoundFailed records a round that failed, and why. A tending round that
+// failed leaves the Planned condition, the last prompt round's, as it is and
+// says why in a Warning Event; the next waits TendInterval.
+func (r *BriefReconciler) endRoundFailed(ctx context.Context, brief *c4v1alpha1.Brief, task *c4v1alpha1.Task,
+	message string) {
 	status := &brief.Status
+	if tending(status) {
+		if !roundOver(status) {
+			r.event(brief, corev1.EventTypeWarning, eventTended, "Tend",
+				fmt.Sprintf("Tending round %d failed: %s", status.Round, message))
+		}
+		recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonRoundFailed, Summary: task.Status.Summary})
+		logf.FromContext(ctx).Info("Tending round failed", "round", status.Round, "message", firstLine(message))
+		return
+	}
 	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonRoundFailed, Summary: task.Status.Summary})
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
 		model.ReasonRoundFailed, model.Clip(fmt.Sprintf("Round %d failed: %s", status.Round, message), 32768))

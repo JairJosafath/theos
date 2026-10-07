@@ -32,6 +32,9 @@ spec:
     - jsonPath: .status.failedWaiting
       name: Failed
       type: integer
+    - jsonPath: .status.needsYouWaiting
+      name: Needs you
+      type: integer
     - jsonPath: .status.apps[*].lastRelease.tag
       name: Releases
       type: string
@@ -126,6 +129,18 @@ spec:
                     - name
                     type: object
                 type: object
+              autopilot:
+                description: |-
+                  autopilot says whether the Brief tends its failed issues by itself, in
+                  tending rounds with no new prompt (docs/plans/brief-autopilot.md): Off
+                  tends nothing; Ask decides them and lists each answer under
+                  status.needsYou for a prompt to confirm; On applies them. Unset is the
+                  operator's default, Off for now.
+                enum:
+                - "Off"
+                - Ask
+                - "On"
+                type: string
               gitProviderRef:
                 default:
                   name: gitea
@@ -314,6 +329,45 @@ spec:
                 maxItems: 100
                 type: array
                 x-kubernetes-list-type: atomic
+              attention:
+                description: |-
+                  attention lists what the Brief made that it leaves alone for now, as
+                  it may heal by itself, and when it acts if it hasn't; at most 100.
+                  Empty while autopilot is Off.
+                items:
+                  description: |-
+                    BriefHealing is an item the Brief watches and leaves alone for now, as it
+                    may heal by itself, and when the Brief acts if it hasn't.
+                  properties:
+                    actsAt:
+                      description: |-
+                        actsAt is when the Brief acts if it hasn't healed; unset when it acts
+                        only once the item changes.
+                      format: date-time
+                      type: string
+                    kind:
+                      description: 'kind of the item: Issue, Task, Crew or Container.'
+                      enum:
+                      - Issue
+                      - Task
+                      - Crew
+                      - Container
+                      type: string
+                    name:
+                      description: name of the item; container#number for an issue.
+                      maxLength: 320
+                      type: string
+                    reason:
+                      description: reason says why it is left alone, in a sentence.
+                      maxLength: 1000
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
+                maxItems: 100
+                type: array
+                x-kubernetes-list-type: atomic
               choices:
                 description: choices are what the planner chose in the last round,
                   in plain words.
@@ -327,7 +381,8 @@ spec:
                 description: |-
                   conditions: Planned says whether the last round's plan is applied, and
                   why not. NeedsInput, while True, says in one sentence what the Brief
-                  waits for from the person.
+                  waits for from the person. NeedsYou, while True, says the first of
+                  needsYou and how many more.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -431,14 +486,16 @@ spec:
                       description: |-
                         kind says why it was handed back: unclear (no acceptance criteria),
                         merged (a Task merged it already), exhausted (agents tried it as often
-                        as a Crew does), failed (its last Task failed), person (a person
-                        handed it back) or byHand (a kind/by-hand issue: criteria only a person
-                        can do, which a plan may close but never retry).
+                        as a Crew does), failed (its last Task failed), blocked (its last
+                        Task's agent said it can't start the issue yet, and why), person (a
+                        person handed it back) or byHand (a kind/by-hand issue: criteria only a
+                        person can do, which a plan may close but never retry).
                       enum:
                       - unclear
                       - merged
                       - exhausted
                       - failed
+                      - blocked
                       - person
                       - byHand
                       type: string
@@ -505,12 +562,14 @@ spec:
                       maxLength: 1000
                       type: string
                     outcome:
-                      description: 'outcome is how the round ended: Applied, PlannerNeedsInput
-                        or RoundFailed.'
+                      description: |-
+                        outcome is how the round ended: Applied, PlannerNeedsInput or
+                        RoundFailed; Tended for a tending round that applied.
                       enum:
                       - Applied
                       - PlannerNeedsInput
                       - RoundFailed
+                      - Tended
                       type: string
                     round:
                       description: round is the round's number, from 1.
@@ -570,6 +629,62 @@ spec:
                 maxItems: 500
                 type: array
                 x-kubernetes-list-type: atomic
+              lastTendTime:
+                description: lastTendTime is when the last tending round started.
+                format: date-time
+                type: string
+              needsYou:
+                description: |-
+                  needsYou lists what only the person can decide, oldest first, each
+                  with what the Brief would do; at most 50. A prompt answers it. Empty
+                  while autopilot is Off.
+                items:
+                  description: |-
+                    BriefNeedsYou is an item only the person can decide: the question, what the
+                    Brief would do and why. A prompt answers it.
+                  properties:
+                    kind:
+                      description: 'kind of the item: Issue, Task, Crew or Container.'
+                      enum:
+                      - Issue
+                      - Task
+                      - Crew
+                      - Container
+                      type: string
+                    name:
+                      description: name of the item; container#number for an issue.
+                      maxLength: 320
+                      type: string
+                    question:
+                      description: question says in one sentence what needs the person.
+                      maxLength: 1000
+                      type: string
+                    recommend:
+                      description: recommend is what the Brief would do.
+                      maxLength: 1000
+                      type: string
+                    since:
+                      description: since when the item needs the person.
+                      format: date-time
+                      type: string
+                    why:
+                      description: why the Brief would do it.
+                      maxLength: 1000
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  - question
+                  type: object
+                maxItems: 50
+                type: array
+                x-kubernetes-list-type: atomic
+              needsYouWaiting:
+                description: |-
+                  needsYouWaiting is how many items need the person, those past the 50
+                  listed too.
+                format: int32
+                type: integer
               observedGeneration:
                 description: observedGeneration is the spec generation the status
                   reflects.
@@ -660,6 +775,91 @@ spec:
                   answer, those past the 50 listed too.
                 format: int32
                 type: integer
+              tendRound:
+                description: |-
+                  tendRound is the last tending round: a round with no new prompt that
+                  decides the failed issues.
+                format: int32
+                type: integer
+              tended:
+                description: |-
+                  tended are the failed issues rounds answered and the Brief remembers,
+                  so it raises one again only when its tries grow or a wait lapses; at
+                  most 50.
+                items:
+                  description: |-
+                    BriefTendedIssue is a failed issue a round answered, as the Brief remembers
+                    it: it is not raised again until its tries grow or a wait lapses.
+                  properties:
+                    answer:
+                      description: answer is retry, close, wait or ask.
+                      enum:
+                      - retry
+                      - close
+                      - wait
+                      - ask
+                      type: string
+                    at:
+                      description: at is when it was answered.
+                      format: date-time
+                      type: string
+                    container:
+                      description: container is the Container whose repository has
+                        the issue.
+                      maxLength: 253
+                      type: string
+                    number:
+                      description: number of the issue in its repository.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    recommend:
+                      description: recommend is what an ask recommends.
+                      properties:
+                        answer:
+                          description: answer is retry, close or wait.
+                          enum:
+                          - retry
+                          - close
+                          - wait
+                          type: string
+                        clarify:
+                          description: clarify is the clarification a retry would
+                            append to the issue's body.
+                          maxLength: 4000
+                          type: string
+                        why:
+                          description: why the round would do it.
+                          maxLength: 1000
+                          type: string
+                      required:
+                      - answer
+                      type: object
+                    round:
+                      description: round is the round that answered it.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    tries:
+                      description: tries is how many Tasks the issue had when it was
+                        answered.
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    why:
+                      description: why the round answered so.
+                      maxLength: 1000
+                      type: string
+                  required:
+                  - answer
+                  - at
+                  - container
+                  - number
+                  - round
+                  type: object
+                maxItems: 50
+                type: array
+                x-kubernetes-list-type: atomic
             type: object
         required:
         - spec

@@ -1,0 +1,18 @@
+import pytest
+
+from app.greeting import greeting
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Ada", "Hello, Ada!"),
+        ("  Ada ", "Hello, Ada!"),
+        ("", "Hello, world!"),
+        ("   ", "Hello, world!"),
+        ("Zoë", "Hello, Zoë!"),
+    ],
+    ids=["name", "trimmed", "empty", "blank", "non-ascii"],
+)
+def test_greeting(name: str, expected: str) -> None:
+    assert greeting(name) == expected

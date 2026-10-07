@@ -1,7 +1,8 @@
 # Python digest
 
 Distilled from PEP 8, PEP 257, the Google Python Style Guide, the typing and
-mypy docs, pytest's good practices and the FastAPI tutorial (see `SOURCES.md`).
+mypy docs, pytest's good practices, the FastAPI tutorial and the `argparse`
+docs (see `SOURCES.md`).
 `[lint: x]` = enforced by `make check`: a ruff rule in `ruff.toml` (code
 shown), a mypy flag in `mypy.ini`, or the formatter. `[review]` = no tool;
 check it yourself. Where a tool and a guide disagree, the tool wins and the
@@ -182,3 +183,27 @@ rule says so.
   plain `def`, which FastAPI runs in a thread. [lint: ASYNC210, ASYNC230, ASYNC251; choice review]
 - Test with `TestClient` and plain `def` tests, `assert` on status and JSON. [review]
 - `/healthz` stays cheap and calls no dependency. [review]
+
+## Command-line programs (applies to CLIs)
+
+- Parse the command line with the standard library's `argparse`: one
+  `ArgumentParser` with `prog` and `description`, a `help` for every
+  argument. No third-party parser unless the issue needs one. [review]
+- The `[project.scripts]` function is `main(argv: Sequence[str] | None = None)
+  -> int`: it parses, calls the code that does the work and maps its errors to
+  an exit code; logic lives in other modules, which never read `sys.argv` or
+  exit. [review]
+- Results go to stdout, diagnostics to stderr: `sys.stdout.write`, never
+  `print`. [lint: T201, T203; streams review]
+- Exit 0 on success, 1 on a failure, 2 on bad usage (`parser.error`, which
+  argparse also uses for unknown flags); `--help` and `--version` exit 0. [review]
+- The version comes from the installed metadata (`importlib.metadata.version`),
+  so `pyproject.toml` stays the one place it is set. [review]
+- An error message names the program, what was wrong and the input, on one
+  line; no traceback for an error the user can fix. [review]
+- A flag is a choice, not a mode switch inside a function: no boolean
+  positional parameters. [lint: FBT001, FBT002]
+- Never prompt unless the issue asks for it; a program run in a pipe must not
+  wait for input. [review]
+- Test `main` with an argument list and `capsys`; usage errors with
+  `pytest.raises(SystemExit)` and the exit code. [review]

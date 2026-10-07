@@ -55,6 +55,15 @@ type BriefSpec struct {
 	// +kubebuilder:validation:MaxItems=10
 	// +optional
 	Releases []BriefRelease `json:"releases,omitempty"`
+
+	// autopilot says whether the Brief tends its failed issues by itself, in
+	// tending rounds with no new prompt (docs/plans/brief-autopilot.md): Off
+	// tends nothing; Ask decides them and lists each answer under
+	// status.needsYou for a prompt to confirm; On applies them. Unset is the
+	// operator's default, Off for now.
+	// +kubebuilder:validation:Enum=Off;Ask;On
+	// +optional
+	Autopilot string `json:"autopilot,omitempty"`
 }
 
 // BriefRelease is where a Container's releases are published: the fields of a
@@ -127,6 +136,9 @@ const (
 	// handed back to the person, waiting for a prompt to say whether to try
 	// them again.
 	ConditionIssuesFailed = "IssuesFailed"
+	// ConditionNeedsYou is True while status.needsYou lists something only
+	// the person can decide; it says the first and how many more.
+	ConditionNeedsYou = "NeedsYou"
 )
 
 // BriefObject names an object a Brief created.
@@ -224,10 +236,11 @@ type BriefFailedIssue struct {
 
 	// kind says why it was handed back: unclear (no acceptance criteria),
 	// merged (a Task merged it already), exhausted (agents tried it as often
-	// as a Crew does), failed (its last Task failed), person (a person
-	// handed it back) or byHand (a kind/by-hand issue: criteria only a person
-	// can do, which a plan may close but never retry).
-	// +kubebuilder:validation:Enum=unclear;merged;exhausted;failed;person;byHand
+	// as a Crew does), failed (its last Task failed), blocked (its last
+	// Task's agent said it can't start the issue yet, and why), person (a
+	// person handed it back) or byHand (a kind/by-hand issue: criteria only a
+	// person can do, which a plan may close but never retry).
+	// +kubebuilder:validation:Enum=unclear;merged;exhausted;failed;blocked;person;byHand
 	// +required
 	Kind string `json:"kind"`
 
@@ -240,6 +253,124 @@ type BriefFailedIssue struct {
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	Tries int32 `json:"tries,omitempty"`
+}
+
+// BriefHealing is an item the Brief watches and leaves alone for now, as it
+// may heal by itself, and when the Brief acts if it hasn't.
+type BriefHealing struct {
+	// kind of the item: Issue, Task, Crew or Container.
+	// +kubebuilder:validation:Enum=Issue;Task;Crew;Container
+	// +required
+	Kind string `json:"kind"`
+
+	// name of the item; container#number for an issue.
+	// +kubebuilder:validation:MaxLength=320
+	// +required
+	Name string `json:"name"`
+
+	// reason says why it is left alone, in a sentence.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// actsAt is when the Brief acts if it hasn't healed; unset when it acts
+	// only once the item changes.
+	// +optional
+	ActsAt *metav1.Time `json:"actsAt,omitempty"`
+}
+
+// BriefNeedsYou is an item only the person can decide: the question, what the
+// Brief would do and why. A prompt answers it.
+type BriefNeedsYou struct {
+	// kind of the item: Issue, Task, Crew or Container.
+	// +kubebuilder:validation:Enum=Issue;Task;Crew;Container
+	// +required
+	Kind string `json:"kind"`
+
+	// name of the item; container#number for an issue.
+	// +kubebuilder:validation:MaxLength=320
+	// +required
+	Name string `json:"name"`
+
+	// question says in one sentence what needs the person.
+	// +kubebuilder:validation:MaxLength=1000
+	// +required
+	Question string `json:"question"`
+
+	// recommend is what the Brief would do.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Recommend string `json:"recommend,omitempty"`
+
+	// why the Brief would do it.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Why string `json:"why,omitempty"`
+
+	// since when the item needs the person.
+	// +optional
+	Since *metav1.Time `json:"since,omitempty"`
+}
+
+// BriefRecommendation is what a round would do with a failed issue it asks
+// the person about.
+type BriefRecommendation struct {
+	// answer is retry, close or wait.
+	// +kubebuilder:validation:Enum=retry;close;wait
+	// +required
+	Answer string `json:"answer"`
+
+	// why the round would do it.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Why string `json:"why,omitempty"`
+
+	// clarify is the clarification a retry would append to the issue's body.
+	// +kubebuilder:validation:MaxLength=4000
+	// +optional
+	Clarify string `json:"clarify,omitempty"`
+}
+
+// BriefTendedIssue is a failed issue a round answered, as the Brief remembers
+// it: it is not raised again until its tries grow or a wait lapses.
+type BriefTendedIssue struct {
+	// container is the Container whose repository has the issue.
+	// +kubebuilder:validation:MaxLength=253
+	// +required
+	Container string `json:"container"`
+
+	// number of the issue in its repository.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Number int32 `json:"number"`
+
+	// answer is retry, close, wait or ask.
+	// +kubebuilder:validation:Enum=retry;close;wait;ask
+	// +required
+	Answer string `json:"answer"`
+
+	// why the round answered so.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Why string `json:"why,omitempty"`
+
+	// recommend is what an ask recommends.
+	// +optional
+	Recommend *BriefRecommendation `json:"recommend,omitempty"`
+
+	// tries is how many Tasks the issue had when it was answered.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Tries int32 `json:"tries,omitempty"`
+
+	// at is when it was answered.
+	// +required
+	At metav1.Time `json:"at"`
+
+	// round is the round that answered it.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Round int32 `json:"round"`
 }
 
 // BriefApp is a Container the Brief made, or one spec.releases names, and how
@@ -333,8 +464,9 @@ type BriefRound struct {
 	// +optional
 	RunsWithoutCost int32 `json:"runsWithoutCost,omitempty"`
 
-	// outcome is how the round ended: Applied, PlannerNeedsInput or RoundFailed.
-	// +kubebuilder:validation:Enum=Applied;PlannerNeedsInput;RoundFailed
+	// outcome is how the round ended: Applied, PlannerNeedsInput or
+	// RoundFailed; Tended for a tending round that applied.
+	// +kubebuilder:validation:Enum=Applied;PlannerNeedsInput;RoundFailed;Tended
 	// +optional
 	Outcome string `json:"outcome,omitempty"`
 
@@ -410,6 +542,44 @@ type BriefStatus struct {
 	// +optional
 	FailedWaiting int32 `json:"failedWaiting,omitempty"`
 
+	// attention lists what the Brief made that it leaves alone for now, as
+	// it may heal by itself, and when it acts if it hasn't; at most 100.
+	// Empty while autopilot is Off.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=100
+	// +optional
+	Attention []BriefHealing `json:"attention,omitempty"`
+
+	// needsYou lists what only the person can decide, oldest first, each
+	// with what the Brief would do; at most 50. A prompt answers it. Empty
+	// while autopilot is Off.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=50
+	// +optional
+	NeedsYou []BriefNeedsYou `json:"needsYou,omitempty"`
+
+	// needsYouWaiting is how many items need the person, those past the 50
+	// listed too.
+	// +optional
+	NeedsYouWaiting int32 `json:"needsYouWaiting,omitempty"`
+
+	// tended are the failed issues rounds answered and the Brief remembers,
+	// so it raises one again only when its tries grow or a wait lapses; at
+	// most 50.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=50
+	// +optional
+	Tended []BriefTendedIssue `json:"tended,omitempty"`
+
+	// tendRound is the last tending round: a round with no new prompt that
+	// decides the failed issues.
+	// +optional
+	TendRound int32 `json:"tendRound,omitempty"`
+
+	// lastTendTime is when the last tending round started.
+	// +optional
+	LastTendTime *metav1.Time `json:"lastTendTime,omitempty"`
+
 	// apps has a line per Container the Brief made, then one per spec.releases
 	// entry naming no Container it made: whether its releases are on, where
 	// they are published, the latest one, and a sentence on how they go.
@@ -445,7 +615,8 @@ type BriefStatus struct {
 
 	// conditions: Planned says whether the last round's plan is applied, and
 	// why not. NeedsInput, while True, says in one sentence what the Brief
-	// waits for from the person.
+	// waits for from the person. NeedsYou, while True, says the first of
+	// needsYou and how many more.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -459,6 +630,7 @@ type BriefStatus struct {
 // +kubebuilder:printcolumn:name="Round",type=integer,JSONPath=".status.round"
 // +kubebuilder:printcolumn:name="Suggestions",type=integer,JSONPath=".status.suggestionsWaiting"
 // +kubebuilder:printcolumn:name="Failed",type=integer,JSONPath=".status.failedWaiting"
+// +kubebuilder:printcolumn:name="Needs you",type=integer,JSONPath=".status.needsYouWaiting"
 // +kubebuilder:printcolumn:name="Releases",type=string,JSONPath=".status.apps[*].lastRelease.tag"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 

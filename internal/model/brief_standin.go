@@ -28,6 +28,9 @@ var (
 // that exists, so CheckPlan takes it; with no Framework to plan the idea on,
 // it asks for one. It runs the whole loop without a model, for tests and
 // demos (plans/done/brief.md, step 8).
+// StandInTendSummary is the stand-in planner's summary of a tending round.
+const StandInTendSummary = "The stand-in planner decides no failed issue: each waits for the person."
+
 func StandInPlan(workspace map[string]string) (map[string]string, error) {
 	brief := workspace[BriefFile]
 	m, provider := briefHeading.FindStringSubmatch(brief), briefGitProvider.FindStringSubmatch(brief)
@@ -35,6 +38,11 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 		return nil, fmt.Errorf("%s names no Brief or no Git provider", BriefFile)
 	}
 	name := m[1]
+	if IsTendingBrief(brief) {
+		// It decides nothing (plans/brief-autopilot.md, decision 12): every
+		// due issue counts as an ask.
+		return map[string]string{PlanSummaryFile: StandInTendSummary + "\n"}, nil
+	}
 	objects, err := parsePlanModel(workspace[WorkspaceModelFile])
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceModelFile, err)

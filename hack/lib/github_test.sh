@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -547,6 +547,10 @@ check "intake leaves the report issue alone" "$(calls)" ""
   exit $fail
 ) || fail=1
 
+# Labels: GitHub refuses a description longer than 100 characters.
+long=$(for l in "${GH_LABELS[@]}"; do d=${l#*|}; d=${d#*|}; [ ${#d} -le 100 ] || echo "${l%%|*}"; done)
+check "labels: descriptions fit GitHub's 100 characters" "$long" ""
+
 # parents: a plan's parent (in progress or waiting, Depends on #S per step, a
 # merged pull request that says Refs #N and adds its plan in docs/plans/)
 # closes with a comment once every step closed; one with a step open stays
@@ -716,6 +720,48 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   out=$(echo landed | gh_close 468 - 2>&1)
   check "close: a parent whose steps are all closed closes" "$? $(grep -E '^(POST|PATCH)' "$T/calls" | tr '\n' ,)" \
     "0 POST $R/issues/468/comments,PATCH $R/issues/468,"
+  exit $fail
+) || fail=1
+
+# merge refuses a plan's pull request that would close the parent it refers to.
+(
+  # PR is the pull request GraphQL shows: body, closing references, commit messages.
+  # Issue N's body is $T/body-N, its state open when $T/open-N exists.
+  gh_api() {
+    local a
+    [ "$1" = graphql ] && { echo "$PR"; return; }
+    for a in "$@"; do case $a in repos/*/issues/*) a=${a##*/}; [[ " $* " == *" .state "* ]] && { [ -e "$T/open-$a" ] && echo open || echo closed; } || cat "$T/body-$a" 2>/dev/null; return 0 ;; esac; done
+    return 1
+  }
+  gh_token() { :; }
+  gh() { echo "gh $*" >>"$T/merged"; }
+  pr() { jq -n --arg b "$1" --argjson c "${2:-[]}" --arg m "${3:-feat: plan}" \
+    '{body: $b, closingIssuesReferences: {nodes: [$c[] | {number: .}]}, commits: {nodes: [{commit: {message: $m}}]}}'; }
+  rm -f "$T/merged"
+  out=$(PR=$(pr $'Refs #7\n\n#9 (the prompt path; its PR closes #7)' '[7]') gh_merge 12 2>&1)
+  check "merge: refuses Refs #7 plus prose that closes #7" "$? $(cat "$T/merged" 2>/dev/null)" "1 "
+  check "merge: names the phrase to reword" "$out" 'github: #12 says Refs #7, but "closes #7" in it closes #7 on merge; reword it (no close, fix or resolve word before #7)'
+  out=$(PR=$(pr $'Refs #7\n\nFixed: o/r#7 in step two' '[]') gh_merge 12 2>&1)
+  check "merge: any closing word, colon and OWNER/REPO#N too" "$? $out" '1 github: #12 says Refs #7, but "Fixed: o/r#7" in it closes #7 on merge; reword it (no close, fix or resolve word before #7)'
+  out=$(PR=$(pr 'Refs #7' '[]' $'docs: plan\n\nresolves #7') gh_merge 12 2>&1)
+  check "merge: a commit message counts" "$? $out" '1 github: #12 says Refs #7, but "resolves #7" in it closes #7 on merge; reword it (no close, fix or resolve word before #7)'
+  out=$(PR=$(pr 'Refs #7, see https://github.com/o/r/issues/7' '[7]') gh_merge 12 2>&1)
+  check "merge: closingIssuesReferences alone refuses" "$? $out" '1 github: #12 says Refs #7, but GitHub would close #7 on merge (closingIssuesReferences); drop the link or the closing word before it'
+  check "merge: nothing merged while refused" "$(cat "$T/merged" 2>/dev/null)" ""
+  out=$(PR=$(pr $'Refs #7\n\nSteps: #8 (finishes #7), #9; closes #70' '[70]') gh_merge 12 2>&1)
+  check "merge: only Refs #7 merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 12 --repo $C4_GITHUB_REPO --merge"
+  rm -f "$T/merged"
+  out=$(PR=$(pr 'Closes #565' '[565]') gh_merge 13 2>&1)
+  check "merge: a step's Closes #N merges" "$? $(cat "$T/merged")" "0 gh pr merge 13 --repo $C4_GITHUB_REPO --merge"
+  gh_merge abc 2>/dev/null; check "merge: bad argument" $? 1
+  rm -f "$T/merged"
+  printf 'Depends on #571\nDepends on #572\n' >"$T/body-570"
+  touch "$T/open-571" "$T/open-572"
+  out=$(PR=$(pr $'Closes #572\nCloses #570' '[572, 570]') gh_merge 14 2>&1)
+  check "merge: refuses closing a parent while another step is open" "$? $(grep -c 'its step #571 is open' <<<"$out") $(cat "$T/merged" 2>/dev/null)" "1 1 "
+  rm "$T/open-571"
+  out=$(PR=$(pr $'Closes #572\nCloses #570' '[572, 570]') gh_merge 14 2>&1)
+  check "merge: the last step closes its parent" "$? $(cat "$T/merged")" "0 gh pr merge 14 --repo $C4_GITHUB_REPO --merge"
   exit $fail
 ) || fail=1
 exit $fail

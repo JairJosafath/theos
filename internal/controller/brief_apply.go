@@ -48,6 +48,9 @@ type roundApply struct {
 	took, skipped int
 	// retried and closed count the failed issues the round answered.
 	retried, closed int
+	// issuesRead says the issues the API server's Brief records were taken
+	// in, as they are once before an issue is filed.
+	issuesRead bool
 }
 
 // applyRound applies the plan the Brief accepted (B8), in order and each step
@@ -56,6 +59,9 @@ type roundApply struct {
 // round's issues for it, and last the plan merged into the brief repository's main.
 func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha1.Brief, task *c4v1alpha1.Task) (
 	ctrl.Result, error) {
+	if tending(&brief.Status) {
+		return r.applyTend(ctx, brief, orig, task)
+	}
 	tree, ok, err := r.readPlan(ctx, brief, task.Status.Commit)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -87,8 +93,8 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	// an object of the same name, or one the plan doesn't keep. What this
 	// round applied already is in the plan as it is, so a restart passes.
 	if refusals := model.CheckPlan(plan, current); len(refusals) > 0 {
-		endRoundFailed(ctx, brief, task,
-			"the plan no longer fits the namespace:\n"+model.RefusalText(refusals))
+		r.endRoundFailed(ctx, brief, task,
+			"the plan no longer fits the namespace: "+model.RefusalText(refusals))
 		return ctrl.Result{}, nil
 	}
 
@@ -134,7 +140,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if run.took, run.skipped, err = r.answerSuggestions(ctx, brief, plan.Answers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the reviewers' suggestions", err)
 	}
-	if run.retried, run.closed, err = r.answerFailed(ctx, brief, plan.FailedAnswers); err != nil {
+	if run.retried, run.closed, err = r.answerFailedRemembering(ctx, brief, plan.FailedAnswers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the failed issues", err)
 	}
 	if err := r.mergePlan(ctx, brief, task.Status.Commit); err != nil {
@@ -148,13 +154,22 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 // names where and the error, and an ApplyFailed Event says it once per
 // message. It returns err, wrapped, for the reconcile to try again; the
 // Brief stays Applying until a try gets past it. The operator's own
-// NeedsInput and a stale Brief are left to finishReconcile.
+// NeedsInput and a stale Brief are left to finishReconcile. A tending
+// round says it in the Event alone and leaves Planned as it is.
 func (r *BriefReconciler) applyFailed(ctx context.Context, brief *c4v1alpha1.Brief, where string, err error) error {
 	if _, needsInput := needsInputSentence(err); needsInput || errors.Is(err, errStaleBrief) {
 		return err
 	}
 	message := model.Clip(fmt.Sprintf("Round %d could not be applied %s: %v. The operator tries again.",
 		brief.Status.Round, where, err), 1000)
+	if tending(&brief.Status) {
+		// A tending round leaves the Planned condition the last prompt
+		// round's; its Event says why it stopped.
+		logf.FromContext(ctx).Info("Could not apply the tending round", "round", brief.Status.Round, "where", where,
+			"error", err.Error())
+		r.event(brief, corev1.EventTypeWarning, eventApplyFailed, "Apply", message)
+		return fmt.Errorf("applying tending round %d %s: %w", brief.Status.Round, where, err)
+	}
 	cond := meta.FindStatusCondition(brief.Status.Conditions, c4v1alpha1.ConditionPlanned)
 	if cond == nil || cond.Reason != model.ReasonApplyFailed || cond.Message != message {
 		logf.FromContext(ctx).Info("Could not apply the round", "round", brief.Status.Round, "where", where,
@@ -385,7 +400,9 @@ type issueRepo struct {
 // labelled ready, so no Crew picks it up before its order is there. An issue
 // already filed is found by its marker among the open issues, so a restart
 // files no duplicate and finishes what it left. Each is recorded in the
-// Brief's status once done.
+// Brief's status once done, and an issue the cached Brief doesn't show
+// recorded is looked up in the API server's before it is filed, so a closed
+// one is never filed again.
 func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, ready map[string]*c4v1alpha1.Container,
 	issues []model.PlanIssue) error {
 	repos := map[string]*issueRepo{}
@@ -459,6 +476,18 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 	if i >= 0 {
 		filed = ir.open[i]
 	} else {
+		// The cached Brief can lag the status an earlier reconcile wrote, and
+		// a closed issue isn't among the open ones: read what is recorded
+		// from the API server before filing (#501).
+		if !run.issuesRead {
+			if err := r.takeRecordedIssues(ctx, run); err != nil {
+				return err
+			}
+			run.issuesRead = true
+			if run.filed(issue.N) != nil {
+				return nil
+			}
+		}
 		// Made only once an issue is to be filed: a release with no work
 		// is never released (R7). A person's work waits in Later, so no
 		// release waits on it.
@@ -526,6 +555,26 @@ func briefIssueLabels(issues []model.PlanIssue) []gitprovider.Label {
 		}
 	}
 	return labels
+}
+
+// takeRecordedIssues adds to the run's Brief, and to the copy its status
+// patches are made from, the issues the API server's Brief records that the
+// cached one doesn't show yet, so none is filed again and the next patch keeps them.
+func (r *BriefReconciler) takeRecordedIssues(ctx context.Context, run *roundApply) error {
+	var current c4v1alpha1.Brief
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(run.brief), &current); err != nil {
+		return err
+	}
+	for _, status := range []*c4v1alpha1.BriefStatus{&run.brief.Status, &run.orig.Status} {
+		for _, i := range current.Status.Issues {
+			if !slices.ContainsFunc(status.Issues, func(o c4v1alpha1.BriefIssue) bool {
+				return o.Repository == i.Repository && o.Number == i.Number
+			}) {
+				status.Issues = append(status.Issues, i)
+			}
+		}
+	}
+	return nil
 }
 
 // recordIssue adds a filed issue to the Brief's status, once, with its round

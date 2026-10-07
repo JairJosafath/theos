@@ -90,6 +90,16 @@ Each step is its own issue and pull request and leaves main working.
 7. **python-cli.** (#452) C6, under `python-standard` and `gitea-release`. Depends on
    step 4. *Done when:* `make check` passes and the scaffolded repository's
    `make check` and `make dist` pass locally.
+   *Choices made in the step:* the package is `app` whatever the Container
+   is called, as in python-fastapi, because template paths are never
+   rendered; a CLI installs into its own environment (`uv tool install`), so
+   the name doesn't collide. `main(argv=None) -> int` lets argparse exit for
+   `--help`, `--version` and usage errors, the idiom its docs show, and tests
+   catch that `SystemExit`. The version is read from the installed metadata,
+   so `pyproject.toml` stays the one place it is set. python-standard v1.1.0
+   adds a command-line section to `python.md`; gitea-release v1.0.3 puts uv's
+   cache and Python in `.uv/` in the checkout, as the check workflow does,
+   since the `go` runner's disk would stall the node.
 8. **node-cli.** (#449) C6, under `ts-standard` and `gitea-release`. Depends
    on step 5 (both bump `ts-standard`). *Done when:*
    `make check` passes and the scaffolded repository's `make check` and

@@ -382,7 +382,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 		if term.Message != "" && json.Unmarshal([]byte(term.Message), &result) == nil {
 			state.Result = &model.RunResult{
 				Commit: result.Commit, Summary: result.Summary, Verdict: result.Verdict, Error: result.Error,
-				Proposal: result.Proposal, Empty: result.Empty,
+				Proposal: result.Proposal, Empty: result.Empty, Blocked: result.Blocked,
 				FollowUps: result.FollowUps, Open: result.Open, Unavailable: result.Unavailable,
 			}
 			// A result c4agent wrote before an outage stands.

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -41,7 +42,7 @@ type BriefReconciler struct {
 	APIReader client.Reader
 	Git       GitClient
 	// Recorder emits the Brief's Events: Planned, NeedsInput, PlanRefused,
-	// ApplyFailed, BotNotDeleted and BotLeft; nil emits none.
+	// ApplyFailed, BotNotDeleted, BotLeft, Tended and NeedsYou; nil emits none.
 	Recorder events.EventRecorder
 	// GitTimeout bounds the Git calls of one reconcile; 0 means two minutes.
 	GitTimeout time.Duration
@@ -65,6 +66,16 @@ type BriefReconciler struct {
 	// there.
 	SharedSecrets   []string
 	SourceNamespace string
+	// Now tells the time of the Brief's heal windows and tending rounds; nil
+	// means time.Now.
+	Now func() time.Time
+}
+
+func (r *BriefReconciler) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
 }
 
 const (
@@ -156,6 +167,10 @@ func (r *BriefReconciler) finishReconcile(ctx context.Context, brief, orig *c4v1
 	}
 	r.setPhase(ctx, brief)
 	if patchErr := r.writeStatus(ctx, brief, orig); patchErr != nil {
+		if errors.Is(patchErr, errStaleBrief) {
+			logf.FromContext(ctx).V(1).Info("Brief changed since it was read; reading it again")
+			return ctrl.Result{RequeueAfter: staleBriefRetry}, nil
+		}
 		return ctrl.Result{}, patchErr
 	}
 	return result, err
@@ -179,19 +194,36 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 		logf.FromContext(ctx).Info("Could not bring a Crew's releases up to date", "error", releasesErr.Error())
 	}
 	result, err := r.reconcileRound(ctx, brief, orig)
+	if err == nil {
+		// What the Brief made is tended once the round's step is taken, so a
+		// round that just ended starts the tending round that follows it.
+		var tendResult ctrl.Result
+		if tendResult, err = r.tendRound(ctx, brief, orig); err == nil {
+			result = sooner(result, tendResult)
+		}
+	}
 	if apps, appsErr := r.listApps(ctx, brief); appsErr == nil {
 		brief.Status.Apps = apps
 	} else if err == nil {
 		return ctrl.Result{}, fmt.Errorf("reading the apps' Crews: %w", appsErr)
 	}
-	if err == nil && result.IsZero() && madeContainers(brief) {
-		// A person may answer a suggestion on the Git host: look again now and then.
-		result.RequeueAfter = r.suggestionsRecheck()
+	if err == nil && madeContainers(brief) {
+		// A person may answer a suggestion on the Git host, and a Task of the
+		// Brief's Containers may start waiting: look again now and then.
+		result = sooner(result, ctrl.Result{RequeueAfter: r.suggestionsRecheck()})
 	}
 	if err == nil && releasesErr != nil {
 		return ctrl.Result{}, releasesErr
 	}
 	return result, err
+}
+
+// sooner is the result that looks again first.
+func sooner(a, b ctrl.Result) ctrl.Result {
+	if a.RequeueAfter == 0 || (b.RequeueAfter > 0 && b.RequeueAfter < a.RequeueAfter) {
+		return b
+	}
+	return a
 }
 
 // madeContainers reports whether the Brief made a Container, whose repository
@@ -202,12 +234,22 @@ func madeContainers(brief *c4v1alpha1.Brief) bool {
 	})
 }
 
-// writeStatus patches the Brief's status when it changed.
+// writeStatus patches the Brief's status when it changed. A reconcile that
+// ends a round writes only the Brief it read: one that read a stale copy, from
+// before an earlier reconcile ended the round, would end it again against a
+// namespace that has changed since, and overwrite how it ended (#540).
 func (r *BriefReconciler) writeStatus(ctx context.Context, brief, orig *c4v1alpha1.Brief) error {
 	if equality.Semantic.DeepEqual(brief.Status, orig.Status) {
 		return nil
 	}
-	return r.Status().Patch(ctx, brief, client.MergeFrom(orig))
+	if !roundOver(&brief.Status) || roundOver(&orig.Status) {
+		return r.Status().Patch(ctx, brief, client.MergeFrom(orig))
+	}
+	err := r.Status().Patch(ctx, brief, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{}))
+	if apierrors.IsConflict(err) {
+		return fmt.Errorf("%w: %w", errStaleBrief, err)
+	}
+	return err
 }
 
 // SetupWithManager sets up the controller with the Manager.

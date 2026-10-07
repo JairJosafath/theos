@@ -20,7 +20,7 @@ const (
 // WorkspaceFiles are every file BriefWorkspaceFiles writes, so the operator can
 // read them back to see whether main is already up to date.
 var WorkspaceFiles = []string{BriefFile, PlannerGuide, WorkspaceModelFile, WorkspaceCatalogFile, WorkspaceContainersFile,
-	WorkspaceSuggestionsFile, WorkspaceFailedFile}
+	WorkspaceSuggestionsFile, WorkspaceFailedFile, WorkspaceTendedFile}
 
 // MaxWorkspaceIssues is how many open issue titles model/containers.yaml lists
 // per Container; the rest are counted, not listed.
@@ -62,6 +62,12 @@ type BriefWorkspace struct {
 	// Failed are the issues handed back to a person in the Brief's
 	// Containers' repositories, for the person to answer in a prompt.
 	Failed []FailedIssue
+	// Tended are the failed issues rounds answered, as the Brief remembers
+	// them; an ask's recommendation shows in model/failed.yaml too.
+	Tended []TendedIssue
+	// Tending says the round is a tending round: no new prompt, it decides
+	// the failed issues (plans/brief-autopilot.md, decision 5).
+	Tending bool
 	// Releases are the Brief's spec.releases entries (plans/done/brief-releases.md, R5).
 	Releases []WorkspaceRelease
 }
@@ -112,9 +118,13 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceSuggestionsFile, err)
 	}
-	failed, err := marshalDocument(workspaceFailed(ws.Failed))
+	failed, err := marshalDocument(workspaceFailed(ws.Failed, ws.Tended))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceFailedFile, err)
+	}
+	tended, err := marshalDocument(workspaceTended(ws.Tended))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", WorkspaceTendedFile, err)
 	}
 	return map[string]string{
 		BriefFile:                renderBrief(ws),
@@ -124,6 +134,7 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 		WorkspaceContainersFile:  containers,
 		WorkspaceSuggestionsFile: suggestions,
 		WorkspaceFailedFile:      failed,
+		WorkspaceTendedFile:      tended,
 	}, nil
 }
 
@@ -153,7 +164,11 @@ func renderBrief(ws BriefWorkspace) string {
 		fmt.Fprintf(&b, "\n## Reviewer suggestions\n\n%d wait for the person's answer, listed in `%s`. "+
 			"Answer one only when a **new** prompt speaks to it.\n", len(ws.Suggestions), WorkspaceSuggestionsFile)
 	}
-	if len(ws.Failed) > 0 {
+	switch {
+	case ws.Tending:
+		fmt.Fprintf(&b, "\n%s\n\nNo new prompt: decide the failed issues in `%s`.\n", TendingHeading,
+			WorkspaceFailedFile)
+	case len(ws.Failed) > 0:
 		fmt.Fprintf(&b, "\n## Failed issues\n\n%d were handed back to the person, listed with why in `%s`. "+
 			"Answer one only when a **new** prompt speaks to it.\n", len(ws.Failed), WorkspaceFailedFile)
 	}

@@ -76,6 +76,10 @@
 #                                        text doesn't close too. Exit 2: GitHub could not be asked. hack/close-guard.sh
 #                                        runs it before a session's gh pr create, edit or merge and git commit
 #   hack/lib/github.sh pr-check PR       closes-check over pull request PR's title, body and commit messages
+#   hack/lib/github.sh merge PR          merge pull request PR with a merge commit. Refused (exit 1) when its body
+#                                        says Refs #N and a closing word next to #N (closes #N, fixed #N, even in
+#                                        prose or a commit message) or GitHub's closingIssuesReferences would
+#                                        still close N: a plan's pull request must not close its parent
 #   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N; drops N's status labels
 #   hack/lib/github.sh closed N          drop closed issue N's status/* labels (open N is left alone); the
 #                                        Issue closed workflow runs it, for issues a pull request's Closes #N closes
@@ -83,7 +87,8 @@
 #                                        file an issue, FILE as its body; prints its number. An open
 #                                        issue with the same title is left as it is.
 #   hack/lib/github.sh red WORKFLOW      whether WORKFLOW (its file, test.yml) is red on main: its two newest
-#                                        finished runs there failed (cancelled and skipped runs don't count)
+#                                        finished runs there failed (cancelled and skipped runs, and runs its
+#                                        runner lost, don't count: see gh_lost)
 #                                        and none runs there now (it may be the fix).
 #                                        Prints an issue body naming the runs, their commits, the failing jobs
 #                                        and the newest run's last 40 failed log lines. Exit 1: not red
@@ -155,12 +160,13 @@ GH_CLAIM_JQ='
   def age: (now - (.updated_at | fromdateiso8601)) / 60 | floor | "\(.)m ago";
 '
 
-# name|color|description, the same words the factory uses in Gitea.
+# name|color|description, the same words the factory uses in Gitea. GitHub
+# refuses a description longer than 100 characters.
 GH_LABELS=(
   'status/proposed|c5def5|Proposed; the relay'"'"'s triage or the user readies it when it is sound'
   'status/ready|0e8a16|Ready: the next session may take it'
   'status/in-progress|fbca04|A session works on it; continue from its newest handoff comment'
-  'status/waiting|bfdadc|A plan'"'"'s parent: waits on its steps (Depends on #S), not on an agent; closes itself when the last one closes'
+  'status/waiting|bfdadc|A plan'"'"'s parent: waits on its steps (Depends on #S), closes itself after the last'
   'status/needs-maintainer|e99695|Waits on the maintainer'"'"'s decision; the newest comment says what it needs'
   'status/needs-human|d93f0b|Waits on the owner; only the maintainer sets it, and the newest comment says why'
   'priority/urgent|b60205|Picked before every other ready issue'
@@ -1437,6 +1443,44 @@ gh_close() {
   gh_parents --apply "$n" || echo "github: closed #$n but could not close the plan parents waiting on it (hack/lib/github.sh parents --apply)" >&2
 }
 
+# GitHub's closing keywords, optionally with a colon, before #N or OWNER/REPO#N.
+GH_CLOSE_WORDS='(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+([[:alnum:]_.-]+/[[:alnum:]_.-]+)?#'
+
+# gh_merge PR: merge pull request PR with a merge commit, unless it would close
+# an issue its body says Refs #N to. GitHub reads a closing keyword next to #N
+# anywhere in the body or a commit message, prose included ("its PR closes
+# #N"), so a plan's pull request would close its parent with the steps
+# unbuilt. Refused (exit 1) when such a phrase is there or GraphQL's
+# closingIssuesReferences lists N; the message names the phrase to reword.
+# Refused too when it would close an issue with a "Depends on #S" step still
+# open (gh_closes_check), or GitHub can't be asked whether it would.
+gh_merge() {
+  local pr=${1:?usage: merge PR} view text refs closing n phrase bad=
+  [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
+  view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
+    query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
+      body closingIssuesReferences(first: 100) { nodes { number } } commits(last: 100) { nodes { commit { message } } } } } }' \
+    --jq .data.repository.pullRequest) || return 1
+  text=$(jq -r '.body // "", (.commits.nodes[]?.commit.message)' <<<"$view")
+  closing=$(jq -r '.closingIssuesReferences.nodes[]?.number' <<<"$view")
+  refs=$(jq -r '.body // ""' <<<"$view" | grep -oiE '\brefs:?[[:space:]]+#[0-9]+\b' | grep -oE '[0-9]+$' | sort -un)
+  for n in $refs; do
+    phrase=$(grep -oiE "\\b$GH_CLOSE_WORDS$n\\b" <<<"$text" | head -1)
+    if [ -n "$phrase" ]; then
+      echo "github: #$pr says Refs #$n, but \"$phrase\" in it closes #$n on merge; reword it (no close, fix or resolve word before #$n)" >&2
+      bad=1
+    elif grep -qx "$n" <<<"$closing"; then
+      echo "github: #$pr says Refs #$n, but GitHub would close #$n on merge (closingIssuesReferences); drop the link or the closing word before it" >&2
+      bad=1
+    fi
+  done
+  [ -z "$bad" ] || return 1
+  # Nor may it close an issue with a Depends on step still open (closes-check).
+  gh_closes_check - <<<"$text" || return 1
+  gh_token || return 1
+  gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge
+}
+
 # gh_duplicate N M: comment on N that it duplicates M, close N as not planned
 # and drop its status labels.
 gh_duplicate() {
@@ -1614,8 +1658,24 @@ gh_red() {
     --json databaseId,status,conclusion,headSha,displayTitle,url,createdAt,workflowName) || return 2
   # A run still going on main may be the fix: wait for it.
   [ "$(jq -r 'sort_by(.createdAt) | last | .status // "completed"' <<<"$runs")" = completed ] || return 1
-  runs=$(jq -c '[.[] | select(.conclusion != "cancelled" and .conclusion != "skipped")] | sort_by(.createdAt) | reverse | .[:2]' <<<"$runs") ||
+  runs=$(jq -c '[.[] | select(.conclusion != "cancelled" and .conclusion != "skipped")] | sort_by(.createdAt) | reverse' <<<"$runs") ||
     return 2
+  # A failed run its runner lost says nothing about the code either: drop it
+  # like a cancelled one, and keep the two newest left.
+  local kept='[]' run
+  while IFS= read -r run; do
+    [ "$(jq length <<<"$kept")" -lt 2 ] || break
+    if jq -e '.conclusion == "failure"' <<<"$run" >/dev/null; then
+      gh_lost "$(jq -r .databaseId <<<"$run")"
+      case $? in
+        0) continue ;;
+        1) ;;
+        *) return 2 ;;
+      esac
+    fi
+    kept=$(jq -c --argjson r "$run" '. + [$r]' <<<"$kept")
+  done < <(jq -c '.[]' <<<"$runs")
+  runs=$kept
   n=$(jq '[.[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure")] | length' <<<"$runs")
   [ "$n" = 2 ] || return 1
   # A run whose jobs GitHub never started says nothing about the code: when
@@ -1662,6 +1722,20 @@ gh_red() {
   echo '```'
   echo
   echo "Filed by hack/relay-watch.sh. The session that fixes main closes this issue; when the cause already has an open issue, close this one as its duplicate (\`hack/lib/github.sh duplicate N M\`)."
+}
+
+# gh_lost RUN: exit 0 when failed RUN failed for its runner, not its code: a
+# self-hosted runner stopped mid-job (its step is cancelled, "The operation
+# was canceled.") or never took the job (the job is cancelled, without steps,
+# "not acquired by Runner"). No job timed out, none has a failed step, and none
+# failed without steps (that is gh_unstarted's). Exit 1 otherwise, 2 when
+# GitHub can't say.
+gh_lost() {
+  local jobs
+  jobs=$(gh run view "${1:?usage: gh_lost RUN}" --repo "$C4_GITHUB_REPO" --json jobs --jq '.jobs') || return 2
+  jq -e 'length > 0 and all(.[]; .conclusion != "timed_out"
+    and (((.steps // []) | length > 0) or .conclusion != "failure")
+    and all((.steps // [])[]; .conclusion != "failure"))' <<<"$jobs" >/dev/null || return 1
 }
 
 # gh_unstarted RUN: print the annotations of RUN's failed jobs and exit 0 when
@@ -1772,6 +1846,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     close) gh_close "$@" ;;
     closes-check) gh_closes_check "$@" ;;
     pr-check) gh_pr_check "$@" ;;
+    merge) gh_merge "$@" ;;
     duplicate) gh_duplicate "$@" ;;
     closed) gh_closed "$@" ;;
     create) gh_create "$@" ;;

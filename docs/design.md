@@ -200,7 +200,13 @@ enforces.
   branch `task/<name>`; opens a pull request; waits for CI; runs the Agent again as
   reviewer; and squash-merges on approval. Failed checks, requested changes or a
   failed run start the next round with that feedback, up to the Agent's
-  `maxRounds`. The Container's Crew decides how many Tasks run at once.
+  `maxRounds`. An implementer that finds its issue can't be done yet (it waits
+  on work not merged or released) or can't be done in the sandbox changes
+  nothing and ends its summary with a line `Blocked: <what it waits on and
+  why>`; the Task then fails at once, reason `Blocked`, with those words in its
+  message and on the issue, and the Brief lists the issue as kind `blocked`. A
+  round with no change and no such line says the agent gave no reason. The
+  Container's Crew decides how many Tasks run at once.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
   repository only; `main` takes no pushes, only the operator merges (the reviewed
@@ -463,7 +469,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   else refuses it, and the planner's next round gets the reasons. The operator
   applies it (Relationships before the Containers they start from, so their
   Connectors are part of the scaffold), makes a Crew for each new Container
-  with the Brief's Agents and one place, and files the issues in each
+  with the Brief's Agents and one place (#533 changes it), and files the issues in each
   Container's repository once it is Ready, ready for its Crew. What it made
   carries the label `c4.factory.io/brief`; deleting the Brief keeps it. When
   a step fails, the Brief stays `Applying` and tries again, and its `Planned`
@@ -494,6 +500,14 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   models, a Crew's size, GitProviders and credentials are never the planner's
   to make or change. When it needs one, or can't go on without a decision, the
   Brief's condition `NeedsInput` says what in one sentence, and the round waits.
+- **A Brief says how much its Crews build at once** (#533, planned). The
+  Brief owns the `parallel` of the Crews it made and sets it every reconcile,
+  earlier rounds' Crews included; a Crew it didn't make is left alone.
+  `spec.parallel` (1 to 5) wins; else the number a prompt gave, which the
+  planner relays in `plan/parallel.yaml` only when a new prompt asks, never
+  of its own accord; else the operator's default, 3. The agent-slot queue
+  still caps how many agents run. See
+  [plans/brief-parallel.md](plans/brief-parallel.md).
 - **Follow-ups keep scaffold once.** A change to a scaffolded Container
   becomes an issue in its repository; a new Container is added and scaffolded;
   a Relationship added from a scaffolded Container shows `AddedAfterScaffold`
@@ -560,7 +574,11 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   and every `ask`, is one entry in `status.needsYou` with the choice the
   Brief would make and why. The Crew's three tries still hold, an issue is
   answered once per failure, and tending rounds come at most hourly. Each
-  is a history entry, outcome `Tended`, so a prompt can overrule it. See
+  is a history entry, outcome `Tended`, so a prompt can overrule it. A
+  tending round's plan holds only `plan/failed.yaml`, `plan/summary.md` and
+  new issues; it leaves the story, the `Planned` condition and the prompts
+  planned as the last prompt round left them, and none starts while that
+  round failed or asked for input: a prompt goes first. See
   [plans/brief-autopilot.md](plans/brief-autopilot.md).
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
@@ -578,7 +596,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   Agents. A person gives the Agents' token once, as a Secret in the release
   namespace, and the operator shares it with every project; a project with a
   Secret of that name of its own keeps it
-  ([plan](plans/shared-project-credentials.md)). A Brief whose Agent's token
+  ([plan](plans/done/shared-project-credentials.md)). A Brief whose Agent's token
   is missing says where to give it: in the release namespace for every
   project, or in its own for this one, and names the namespace label when
   its namespace hasn't opted in.
@@ -606,7 +624,7 @@ release installs the whole factory:
 | Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password and the runners' registration token generated in the cluster by Gitea's pod into Secrets `gitea-admin` and `gitea-runner` when missing, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
 | Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret, a GitProvider and, when the namespace has none, a Project for each project in `gitea.projects`; labels a project namespace the chart didn't make so it receives the shared Secrets |
 | Project namespaces | each of `gitea.projects` | `projectNamespaces.create`, on by default; made when missing, labeled `c4.factory.io/shared-secrets: "true"` and kept on uninstall; a namespace that already exists is left to the person |
-| Shared Secrets | the release namespace, copied to each project namespace | the Agents' token Secret (`agents.credentialsSecret`) and the pull Secrets (`global.imagePullSecrets`), which the person makes once; the operator copies each into every labeled namespace with a Project, keeps its copies in step with the source, and never touches a Secret of that name it didn't make, which is how a project keeps a token of its own; Task sandboxes list the pull Secrets |
+| Shared Secrets | the release namespace, copied to each project namespace | the Agents' token Secret (`agents.credentialsSecret`) and the pull Secrets (`global.imagePullSecrets`), which the person makes once; the operator copies each into every labeled namespace, before it has a Project too (a Brief there needs the token for the round that makes it), keeps its copies in step with the source, and never touches a Secret of that name it didn't make, which is how a project keeps a token of its own; Task sandboxes list the pull Secrets |
 | CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values |
 

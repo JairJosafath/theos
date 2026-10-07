@@ -1,0 +1,14 @@
+"""The greeting the program prints."""
+
+
+def greeting(name: str) -> str:
+    """Greet `name`, or the world when `name` is empty or only whitespace.
+
+    Args:
+        name: Who to greet; surrounding whitespace is dropped.
+
+    Returns:
+        The greeting, without a trailing newline.
+    """
+    who = name.strip() or "world"
+    return f"Hello, {who}!"

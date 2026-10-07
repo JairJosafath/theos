@@ -199,14 +199,13 @@ Rules for this headless run:
   - Hand off: the handoff skill posts a handoff comment on #$n
     (\`hack/lib/github.sh handoff $n FILE\`). The next session continues #$n.
   - Finished: open a pull request to main whose body says \`Closes #$n\`, merge
-    it with a merge commit once \`make check\` passes, and if the issue is still
+    it with a merge commit once \`make check\` passes (\`hack/lib/github.sh merge PR\`), and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue. A pull
     request that only writes a plan and files its steps says \`Refs #$n\`
-    instead, with no close, fix or resolve word before #$n anywhere in it,
-    and ends with a handoff, then \`hack/lib/github.sh status $n waiting\`
-    (the handoff skill, "Plan only"); #$n closes itself when its last step
-    does: never close it by hand.
+    instead, with no close, fix or resolve word next to #$n even in prose, and ends with a handoff, then \`hack/lib/github.sh status $n waiting\`
+    (the handoff skill, "Plan only"); #$n closes itself when its last step does:
+    never close it by hand.
   - Stuck on a decision: \`hack/lib/github.sh status $n needs-maintainer\` and
     a comment saying why and what you need. The relay then picks the next
     issue, and the maintainer decides it or takes it to the user. How to build
@@ -674,7 +673,10 @@ idle_watch() {
       continue
     fi
     m=$(find "$f" "${f%.jsonl}" -printf '%T@\n' 2>/dev/null | sort -n | tail -n 1)
-    [ "${m%.*}" -gt "$last" ] && last=${m%.*}
+    # Rounded up: a write at 10.9 counts as 11, so a session is never ended
+    # before it has been idle for all of IDLE.
+    m=$((${m%.*} + 1))
+    [ "$m" -gt "$last" ] && last=$m
     [ $((now - last)) -ge "$idle" ] || continue
     : >"$4"
     log "$what stopped: its transcript was idle for $IDLE"

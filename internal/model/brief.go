@@ -168,7 +168,10 @@ var issueFile = regexp.MustCompile(`^plan/issues/(\d+)-([a-z0-9]([-a-z0-9]*[a-z0
 
 // ParsePlan reads a plan from the files of its branch, by path. Files outside
 // the plan are ignored. Malformed input gives an error naming the file.
-func ParsePlan(files map[string]string) (Plan, error) {
+func ParsePlan(files map[string]string) (Plan, error) { return parsePlan(files, true) }
+
+// parsePlan is ParsePlan; a plan without needModel may leave plan/model.yaml out.
+func parsePlan(files map[string]string, needModel bool) (Plan, error) {
 	var plan Plan
 	if s, ok := files[PlanNeedsInputFile]; ok {
 		plan.NeedsInput = strings.TrimSpace(s)
@@ -183,7 +186,7 @@ func ParsePlan(files map[string]string) (Plan, error) {
 			return Plan{}, fmt.Errorf("%s: %w", PlanModelFile, err)
 		}
 		plan.Objects = objects
-	} else if plan.NeedsInput == "" {
+	} else if plan.NeedsInput == "" && needModel {
 		return Plan{}, fmt.Errorf("%s is missing: a plan writes the whole story model there", PlanModelFile)
 	}
 	plan.Summary = strings.TrimSpace(files[PlanSummaryFile])

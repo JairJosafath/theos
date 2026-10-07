@@ -1,0 +1,42 @@
+"""The command line: parse the flags, do the work, return the exit code."""
+
+import argparse
+import sys
+from collections.abc import Sequence
+from importlib.metadata import version
+
+from app.greeting import greeting
+
+PROG = "{{ .Container }}"
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog=PROG, description="Print a greeting.")
+    parser.add_argument("-n", "--name", default="", help="who to greet")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"{PROG} {version(PROG)}",
+        help="print the version and exit",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the program, the `[project.scripts]` entry point.
+
+    Results go to stdout, diagnostics to stderr.
+
+    Args:
+        argv: The command line without the program name; `sys.argv[1:]` when None.
+
+    Returns:
+        The exit code: 0 on success.
+
+    Raises:
+        SystemExit: As argparse does: code 0 after `--help` or `--version`,
+            2 with the error on stderr for a wrong command line.
+    """
+    args = _parser().parse_args(argv)
+    sys.stdout.write(greeting(args.name) + "\n")
+    return 0
