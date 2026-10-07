@@ -282,6 +282,7 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1
 		Prompts:        model.WorkspacePrompts(brief.Spec.Prompts, int(status.RoundPrompts), roundRuns),
 		PromptsPlanned: int(status.PromptsPlanned),
 		IdeaPlanned:    model.IdeaPlanned(outcomes, int(status.PromptsPlanned)),
+		Namespace:      brief.Namespace,
 		GitProvider:    brief.Spec.GitProviderRef.Name,
 	}
 	for _, entry := range brief.Spec.Releases {
