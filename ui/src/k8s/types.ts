@@ -351,7 +351,7 @@ export interface BriefApp {
 }
 
 /** Why an issue was handed back: no acceptance criteria, merged already, tried as often as a Crew does, its last Task failed, or a person did. */
-export type BriefFailedKind = 'unclear' | 'merged' | 'exhausted' | 'failed' | 'person'
+export type BriefFailedKind = 'unclear' | 'merged' | 'exhausted' | 'failed' | 'person' | 'byHand'
 
 /** An issue handed back to a person in the repository of a Container the Brief made, and why. */
 export interface BriefFailedIssue {

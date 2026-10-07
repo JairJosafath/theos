@@ -44,7 +44,12 @@
 # the pinned Maintainer report
 # (hack/lib/github.sh report). Agents escalate to it, with
 # status/needs-maintainer; only it sets status/needs-human, for what
-# GOVERNANCE.md reserves to the owner (docs/plans/done/maintainer.md). When it
+# GOVERNANCE.md reserves to the owner (docs/plans/done/maintainer.md). It runs
+# once per project, not once per device (#526): before its session it takes the
+# maintainer lease on the report issue (gh_maint_take in hack/lib/github.sh),
+# keeps it fresh while the session runs and releases it at the end; while
+# another device holds a live lease it starts nothing and logs the holder, and
+# a lease past C4_LEASE_TTL is taken over. When it
 # ends it writes .relay/maintained, `<epoch> <activity>`: when the sweep
 # started (so an issue escalated while it ran is still new to the watch) and
 # hack/lib/github.sh activity, read after the sweep so its own comments don't
@@ -198,7 +203,8 @@ Rules for this headless run:
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue. A pull
     request that only writes a plan and files its steps says \`Refs #$n\`
-    instead and ends with a handoff (the handoff skill, "Plan only").
+    instead and ends with a handoff, then \`hack/lib/github.sh status $n waiting\`
+    (the handoff skill, "Plan only"); #$n closes itself when its last step does.
   - Stuck on a decision: \`hack/lib/github.sh status $n needs-maintainer\` and
     a comment saying why and what you need. The relay then picks the next
     issue, and the maintainer decides it or takes it to the user. How to build
@@ -256,8 +262,8 @@ For each proposed issue, decide one of these:
   docs/design.md), and files the steps as status/proposed issues, each with
   its own "Done when". The plan is not the issue's deliverable: its pull
   request says \`Refs #N\`, never \`Closes #N\`; the issue stays open and
-  status/in-progress, its body a "Depends on #S" line per step, and the last
-  step's pull request closes #N too. Say that in the comment: the session is
+  status/waiting, its body a "Depends on #S" line per step, and it closes
+  itself when its last step closes. Say that in the comment: the session is
   done when the plan is merged and its steps are filed, the issue when its
   last step lands. Then ready it.
 - Fill the gap and ready it, when the only thing missing is something you
@@ -296,7 +302,8 @@ Rules for this headless run:
 - Never use the Fable model: not for subagents, not for anything. Always name
   the model when dispatching (sonnet or opus). Dispatch every subagent with
   run_in_background: false and never end your turn while one is running.
-- Touch only the issues listed as proposed: never set status/in-progress,
+- Touch only the issues listed as proposed: never set status/in-progress or
+  status/waiting,
   never take an issue out of status/needs-maintainer or status/needs-human
   (needs-maintainer is the maintainer's, needs-human stays the user's), never take an issue, edit a body only to
   add a "Depends on #M" line, never a title, set a milestone only on an issue
@@ -665,7 +672,10 @@ idle_watch() {
       continue
     fi
     m=$(find "$f" "${f%.jsonl}" -printf '%T@\n' 2>/dev/null | sort -n | tail -n 1)
-    [ "${m%.*}" -gt "$last" ] && last=${m%.*}
+    # Rounded up: a write at 10.9 counts as 11, so a session is never ended
+    # before it has been idle for all of IDLE.
+    m=$((${m%.*} + 1))
+    [ "$m" -gt "$last" ] && last=$m
     [ $((now - last)) -ge "$idle" ] || continue
     : >"$4"
     log "$what stopped: its transcript was idle for $IDLE"
@@ -819,7 +829,7 @@ maintained() { [ -n "$DRY_RUN" ] || echo "$1 $2" >"$DIR/maintained"; }
 
 # maintain: one maintainer session (see the header).
 maintain() {
-  local id last t act rc out start
+  local id last t act rc out start lease beat
   if [ -z "$DRY_RUN" ]; then
     worktree || { log "could not prepare the worktree $WT; no sweep"; return 1; }
   fi
@@ -837,11 +847,35 @@ maintain() {
   fi
   git -C "$WT" switch -q --detach origin/main 2>>"$LOG" ||
     { log "could not switch $WT to origin/main; no sweep"; return 1; }
-  log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD)"
+  # One maintainer per project (#526): another device's live lease means no sweep here.
+  lease=$(gh_maint_take 2>>"$LOG")
+  case $? in
+    0) ;;
+    4) log "another device's maintainer holds the lease: $lease; no sweep"; return 0 ;;
+    *) log "could not take the maintainer lease; no sweep"; return 1 ;;
+  esac
+  log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD), lease $lease"
   out="$DIR/maintain-$(date +%Y%m%d-%H%M%S)"
   start=$(date +%s)
+  # The heartbeat; its sleep ends with it.
+  (s=
+    trap 'kill $s 2>/dev/null; exit 0' TERM
+    while :; do
+      sleep "$GH_BEAT_EVERY" &
+      s=$!
+      wait "$s"
+      gh_maint_beat "$lease" 2>>"$LOG" || log "could not refresh the maintainer lease $lease"
+    done) 9>&- &
+  beat=$!
   session maintainer "$out" "$id" "$(maintain_prompt "$last")"
   rc=$?
+  kill "$beat" 2>/dev/null
+  wait "$beat" 2>/dev/null
+  if gh_maint_release "$lease" 2>>"$LOG"; then
+    log "released the maintainer lease $lease"
+  else
+    log "could not release the maintainer lease $lease; it goes stale after $C4_LEASE_TTL"
+  fi
   # A limit, a crash, a timeout or an idle kill cut the sweep short: not recorded.
   if [ "$rc" != 0 ] || [ "$S_RC" != 0 ] || [ -n "$S_IDLE" ] || [ ! -s "$out.md" ]; then
     log "the sweep didn't run to its end; not recorded, so the watch starts one again"

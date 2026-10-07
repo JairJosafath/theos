@@ -18,6 +18,14 @@
 #                                        with --since, N CHANGED CLOSED for the relay watch (see gh_proposed)
 #   hack/lib/github.sh escalated         the open status/needs-maintainer issues, oldest first: N SINCE, SINCE
 #                                        being when N got that label, in epoch seconds (the relay watch reads it)
+#   hack/lib/github.sh parents [--apply] [M]
+#                                        the plan parents: open status/in-progress or status/waiting issues whose body
+#                                        says Depends on #S and that have a merged pull request saying Refs #N (their
+#                                        plan), one line each: N closes (every step closed) or N waits on #S...; with
+#                                        M, only those that depend on M. --apply closes the first kind with a comment
+#                                        naming the steps, and moves an in-progress one no live claim holds to
+#                                        status/waiting with a comment naming the steps left. close, the Issue closed
+#                                        workflow and the relay watch run it with --apply
 #   hack/lib/github.sh show N            issue N, its newest handoff comment and the comments after it
 #   hack/lib/github.sh take N            claim N for this checkout and swap it to status/in-progress;
 #                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it.
@@ -53,11 +61,12 @@
 #   hack/lib/github.sh cluster holder [NAME]
 #                                        the live cluster leases (or NAME's); exit 1: none
 #   hack/lib/github.sh cluster pool      each cluster in the pool: leased, free or not created yet, and bare
-#   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, needs-maintainer,
-#                                        needs-human. Agents escalate with needs-maintainer; only the maintainer
-#                                        sets needs-human (GOVERNANCE.md). Both release the claim and lease
+#   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, waiting,
+#                                        needs-maintainer, needs-human. Agents escalate with needs-maintainer; only
+#                                        the maintainer sets needs-human (GOVERNANCE.md). Those two and waiting
+#                                        (a plan's parent, waiting on its steps) release the claim and lease
 #   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, drop its status labels,
-#                                        release the claim and lease
+#                                        release the claim and lease, then close the plan parents N finishes (parents)
 #   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N; drops N's status labels
 #   hack/lib/github.sh closed N          drop closed issue N's status/* labels (open N is left alone); the
 #                                        Issue closed workflow runs it, for issues a pull request's Closes #N closes
@@ -142,6 +151,7 @@ GH_LABELS=(
   'status/proposed|c5def5|Proposed; the relay'"'"'s triage or the user readies it when it is sound'
   'status/ready|0e8a16|Ready: the next session may take it'
   'status/in-progress|fbca04|A session works on it; continue from its newest handoff comment'
+  'status/waiting|bfdadc|A plan'"'"'s parent: waits on its steps (Depends on #S), not on an agent; closes itself when the last one closes'
   'status/needs-maintainer|e99695|Waits on the maintainer'"'"'s decision; the newest comment says what it needs'
   'status/needs-human|d93f0b|Waits on the owner; only the maintainer sets it, and the newest comment says why'
   'priority/urgent|b60205|Picked before every other ready issue'
@@ -303,6 +313,114 @@ gh_blocked() {
       | waits($m) as $w
       | "\($n) waits on \($d) (\($status), \(if $h then "claimed by \($h)" else "no claim" end)"
         + (if $w == [] then "" else ", waits on \($w | map("#\(.)") | join(", "))" end) + ")"' <<<"$issues" || return 2
+}
+
+GH_PARENT_MARKER='<!-- relay-parent -->'
+
+# gh_plan_pr N: N's plan: the newest merged pull request whose body says
+# Refs #N (or Closes, Fixes, Resolves #N), found in N's timeline, and that
+# adds or changes a file in docs/plans/; nothing if none. The plan file is
+# what tells a plan from a step's partial work that says Refs #N.
+gh_plan_pr() {
+  local pages pr files
+  pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$1/timeline?per_page=100") || return 1
+  for pr in $(jq -r --argjson n "$1" '[.[][] | select(.event == "cross-referenced") | .source.issue // empty
+    | select(.pull_request.merged_at != null)
+    | select((.body // "") | test("(?i)\\b(refs|closes|fixes|resolves) #\($n)\\b"))
+    | .number] | unique | reverse | .[]' <<<"$pages"); do
+    files=$(gh_api --paginate "repos/$C4_GITHUB_REPO/pulls/$pr/files?per_page=100" --jq '.[].filename') || return 1
+    grep -q '^docs/plans/' <<<"$files" && { echo "$pr"; return 0; }
+  done
+  return 0
+}
+
+# gh_parents [--apply] [M]: the plan parents (AGENTS.md, "Small pull requests
+# to main"): open status/in-progress or status/waiting issues whose body says
+# Depends on #S, one per step, and that have a merged plan pull request
+# (gh_plan_pr). One line each, oldest first: "#N closes: ..." when every step
+# is closed, else "#N waits on #S, ... (of #S, ...; plan #P)". With M, only the
+# parents that depend on M (close passes the issue it closed). --apply closes
+# the first kind with a comment naming the steps (gh_close, which tends their
+# own parents in turn), and moves an in-progress one that no live claim holds
+# to status/waiting with a comment naming the steps left: pick takes neither
+# status/waiting nor an issue with an open Depends on, so a waiting parent is
+# never handed out. An issue with Depends on lines but no merged plan is a
+# plain wait and is left alone. Exit 2: GitHub could not be asked.
+gh_parents() {
+  local apply=false only=null issues rows n deps left all pr d st claims= ttl steps open says
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --apply) apply=true ;;
+      *[!0-9]* | '') echo "usage: hack/lib/github.sh parents [--apply] [M]" >&2; return 1 ;;
+      *) only=$1 ;;
+    esac
+    shift
+  done
+  issues=$(gh_open_issues) || return 2
+  # NUMBER, STATUS, its steps and its open steps; with --apply, a waiting
+  # parent with steps left has nothing to do.
+  rows=$(jq -r --argjson only "$only" --argjson apply "$apply" "$GH_DEPS_JQ"'
+    def has($l): .labels | any(.name == $l);
+    [.[].number] as $open
+    | .[] | select(has("status/in-progress") or has("status/waiting"))
+    | select(deps != [] and ($only == null or (deps | any(. == $only))))
+    | [deps[] | select(. as $d | $open | any(. == $d))] as $left
+    | (if has("status/waiting") then "waiting" else "in-progress" end) as $s
+    | select(($apply and $s == "waiting" and $left != []) | not)
+    | [.number, $s, (deps | map(tostring) | join(" ")), ($left | map(tostring) | join(" "))] | @tsv' <<<"$issues") || return 2
+  while IFS=$'\t' read -r n st all left; do
+    [ -n "$n" ] || continue
+    pr=$(gh_plan_pr "$n") || return 2
+    [ -n "$pr" ] || continue
+    steps=$(sed 's/[0-9][0-9]*/#&/g; s/ /, /g' <<<"$all")
+    if [ -z "$left" ]; then
+      # Not among the open issues: closed, or a pull request; ask each. A step
+      # closed as not planned (a duplicate) did not finish the plan, and one
+      # GitHub can't answer for (no such issue) keeps the parent open too.
+      for d in $all; do
+        if ! says=$(gh_api "repos/$C4_GITHUB_REPO/issues/$d" --jq '"\(.state) \(.state_reason // "")"' 2>/dev/null); then
+          echo "github: #$n depends on #$d, which GitHub could not show; #$n stays open" >&2
+          left+=" $d"
+          continue
+        fi
+        [[ $says == closed* && $says != "closed not_planned" ]] || left+=" $d"
+      done
+      left=${left# }
+    fi
+    # An agent that still holds it (the plan's own session, before its
+    # handoff) keeps it as it is.
+    if $apply && { [ -z "$left" ] || [ "$st" = in-progress ]; }; then
+      if [ -z "$claims" ]; then
+        ttl=$(gh_ttl) || return 2
+        claims=$(gh_recent_claims "$ttl") || return 2
+      fi
+      if jq -e --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson n "$n" "$GH_CLAIM_JQ"'
+        any(.[]; live and .issue == $n)' <<<"$claims" >/dev/null; then
+        continue
+      fi
+    fi
+    if [ -z "$left" ]; then
+      if $apply; then
+        printf '%s\n%s\n' "$GH_PARENT_MARKER" \
+          "Its steps $steps are all closed and its plan's pull request #$pr merged: nothing it waits on is left, so the relay closes it." |
+          gh_close "$n" - >/dev/null || return 2
+        echo "#$n closed: its steps $steps closed; plan #$pr"
+      else
+        echo "#$n closes: its steps $steps closed; plan #$pr"
+      fi
+      continue
+    fi
+    open=$(sed 's/[0-9][0-9]*/#&/g; s/ /, /g' <<<"$left")
+    if ! $apply || [ "$st" = waiting ]; then
+      echo "#$n waits on $open (of $steps; plan #$pr)"
+      continue
+    fi
+    printf '%s\n%s\n' "$GH_PARENT_MARKER" \
+      "Waiting on its steps, not on an agent: $open still open (of $steps). Its plan's pull request #$pr merged, so it is status/waiting: pick skips it, and it closes itself when its last step closes." |
+      gh_comment "$n" - >/dev/null || return 2
+    gh_set_status "$n" waiting >/dev/null || return 2
+    echo "#$n to status/waiting: waits on $open (of $steps; plan #$pr)"
+  done <<<"$rows"
 }
 
 GH_CYCLE_MARKER='<!-- relay-cycle -->'
@@ -476,8 +594,8 @@ gh_comment() {
 gh_set_status() {
   local n=${1:?usage: status N STATUS} want labels l
   case ${2:-} in
-    proposed | ready | in-progress | needs-maintainer | needs-human) want=status/$2 ;;
-    *) echo "github: status must be proposed, ready, in-progress, needs-maintainer or needs-human" >&2; return 1 ;;
+    proposed | ready | in-progress | waiting | needs-maintainer | needs-human) want=status/$2 ;;
+    *) echo "github: status must be proposed, ready, in-progress, waiting, needs-maintainer or needs-human" >&2; return 1 ;;
   esac
   labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n/labels?per_page=100" --jq '.[].name') || return 1
   while IFS= read -r l; do
@@ -489,7 +607,7 @@ gh_set_status() {
       gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
   fi
   case $want in
-    status/needs-maintainer | status/needs-human) gh_lease_release_for "$n"; gh_release_for "$n" "${want#status/}" ;;
+    status/waiting | status/needs-maintainer | status/needs-human) gh_lease_release_for "$n"; gh_release_for "$n" "${want#status/}" ;;
   esac
 }
 
@@ -1190,7 +1308,8 @@ gh_flush() {
 # labels, then release the claim and the cluster lease if they are on N. Closing comes first: if it fails, the claim stays live, so pick does
 # not offer the open, in-progress issue again as abandoned work. A close that
 # fails because a merged pull request's Closes #N already closed N (GitHub
-# answers 422) still drops the labels and releases.
+# answers 422) still drops the labels and releases. Last, the plan parents
+# whose last step N was close too (gh_parents); that failing is only said.
 gh_close() {
   local n=${1:?usage: close N FILE}
   gh_comment "$n" "${2:--}" || return 1
@@ -1202,6 +1321,7 @@ gh_close() {
   gh_unstatus "$n" || echo "github: closed #$n but could not drop its status labels" >&2
   gh_lease_release_for "$n"
   gh_release_for "$n" finished
+  gh_parents --apply "$n" || echo "github: closed #$n but could not close the plan parents waiting on it (hack/lib/github.sh parents --apply)" >&2
 }
 
 # gh_duplicate N M: comment on N that it duplicates M, close N as not planned
@@ -1277,6 +1397,98 @@ gh_report() {
   gh_api graphql -f query='mutation($id: ID!) { pinIssue(input: {issueId: $id}) { issue { number } } }' \
     -f id="$id" >/dev/null || echo "github: created $url but could not pin it; pin it by hand" >&2
   echo "$url"
+}
+
+# The maintainer lease (#526): the maintainer runs once per project, not once
+# per device. Before hack/relay.sh --maintain starts a session it takes the
+# lease, a comment on the pinned Maintainer report issue that starts with
+# <!-- c4-maintainer --> and names the host and pid. It is live while it was
+# edited within C4_LEASE_TTL, as a claim is; the relay refreshes it every
+# GH_BEAT_EVERY seconds while the session runs and deletes it when the session
+# ends. Only the relay's maintainer, under its device lock
+# (.relay/maintain.lock), takes it, so a live lease of this host is one a
+# crashed maintainer left: it is taken over like a stale one.
+GH_MAINT_MARKER='<!-- c4-maintainer -->'
+GH_MAINT_JQ='
+  def lease: .body | sub("^\\s+"; "") | startswith($mm);
+  def lfield($f): [.body | capture($f + " `(?<v>[^`]+)`") | .v] | first // "";
+  def fresh: (.updated_at | fromdateiso8601) > (now - $ttl);
+  def mine: lfield("host") == $host;
+  def age: (now - (.updated_at | fromdateiso8601)) / 60 | floor | "\(.)m ago";
+'
+
+# gh_report_issue: the Maintainer report issue's number, creating it (with a
+# placeholder the first sweep replaces) when there is none.
+gh_report_issue() {
+  local n
+  n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
+    --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+  if [ -z "$n" ]; then
+    gh_report - <<<"No sweep has written this report yet." >/dev/null || return 1
+    n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
+      --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+  fi
+  [ -n "$n" ] || { echo "github: no Maintainer report issue to hold the lease" >&2; return 1; }
+  echo "$n"
+}
+
+# gh_maint_body: the lease comment's body.
+gh_maint_body() {
+  printf '%s\n**maintainer** sweeps · host `%s` · pid `%s`\nHeartbeat: %s\n' \
+    "$GH_MAINT_MARKER" "${C4_HOST:-$(hostname)}" "${GH_MAINT_PID:-$$}" "$(date -u +%Y-%m-%dT%H:%MZ)"
+}
+
+# gh_maint_take: take the maintainer lease and print its comment's ID. Exit 4:
+# another host holds a live one, or won the race to it; prints who, as "host
+# H (pid P), heartbeat 5m ago". Exit 1: GitHub could not be asked.
+gh_maint_take() {
+  local ttl n all id holder winner
+  ttl=$(gh_ttl) || return 1
+  n=$(gh_report_issue) || return 1
+  all=$(gh_comments "$n") || return 1
+  local q=(--arg mm "$GH_MAINT_MARKER" --argjson ttl "$ttl" --arg host "${C4_HOST:-$(hostname)}")
+  holder=$(jq -r "${q[@]}" "$GH_MAINT_JQ"'
+    [.[] | select(lease and fresh and (mine | not))] | min_by(.id) // empty
+    | "host \(lfield("host")) (pid \(lfield("pid"))), heartbeat \(age)"' <<<"$all")
+  if [ -n "$holder" ]; then
+    echo "$holder"
+    return 4
+  fi
+  # Stale leases, and this host's (its maintainer crashed), are deleted.
+  while read -r id; do
+    [ -n "$id" ] || continue
+    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null || return 1
+  done < <(jq -r "${q[@]}" "$GH_MAINT_JQ"'.[] | select(lease and ((fresh | not) or mine)) | .id' <<<"$all")
+  # Post, wait, and keep it only if it is the oldest live lease.
+  id=$(gh_maint_body | jq -Rs '{body: .}' |
+    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+  sleep "$GH_CLAIM_SETTLE"
+  if ! all=$(gh_comments "$n"); then
+    gh_maint_release "$id"
+    return 1
+  fi
+  winner=$(jq -r "${q[@]}" "$GH_MAINT_JQ"'
+    [.[] | select(lease and fresh)] | min_by(.id) // empty
+    | "\(.id)\thost \(lfield("host")) (pid \(lfield("pid"))), heartbeat \(age)"' <<<"$all")
+  if [ "${winner%%$'\t'*}" != "$id" ]; then
+    gh_maint_release "$id"
+    echo "${winner#*$'\t'}"
+    return 4
+  fi
+  echo "$id"
+}
+
+# gh_maint_beat ID: refresh lease ID's heartbeat. Exit 1: it is gone (another
+# host took it over as stale) or GitHub could not be asked.
+gh_maint_beat() { gh_edit_comment "${1:?usage: gh_maint_beat ID}" "$(gh_maint_body)"; }
+
+# gh_maint_release ID: delete lease ID; one already gone is released too.
+gh_maint_release() {
+  local out
+  out=$(gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/${1:?usage: gh_maint_release ID}" 2>&1) && return 0
+  grep -q 'HTTP 404' <<<"$out" && return 0
+  echo "$out" >&2
+  return 1
 }
 
 # gh_red WORKFLOW: print an issue body when WORKFLOW's two newest finished runs
@@ -1430,6 +1642,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     cycles) gh_cycles "$@" ;;
     proposed) gh_proposed "$@" ;;
     escalated) gh_escalated ;;
+    parents) gh_parents "$@" ;;
     show) gh_show "$@" ;;
     take) gh_take "$@" ;;
     release) gh_release "$@" ;;

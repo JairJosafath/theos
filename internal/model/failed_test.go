@@ -26,6 +26,7 @@ func TestFailedReason(t *testing.T) {
 	}
 	tests := []struct {
 		name      string
+		labels    []string
 		body      string
 		tasks     []IssueTask
 		kind      string
@@ -33,27 +34,31 @@ func TestFailedReason(t *testing.T) {
 		tries     int
 		notReason string
 	}{
-		{"no acceptance criteria", "Add a CLI.", nil, FailedUnclear,
+		{"no acceptance criteria", nil, "Add a CLI.", nil, FailedUnclear,
 			[]string{`no "Acceptance criteria" section`, "Say in a prompt"}, 0, LabelReady},
-		{"no body, after a failed Task", "", []IssueTask{failed("cli-1", 1, "no changes")}, FailedUnclear,
+		{"no body, after a failed Task", nil, "", []IssueTask{failed("cli-1", 1, "no changes")}, FailedUnclear,
 			[]string{"no description"}, 1, ""},
-		{"merged", clearBody, []IssueTask{failed("cli-1", 1, "x"), {Name: "cli-1-2", Issue: 1, Merged: true, Created: at(2)}},
+		{"merged", nil, clearBody, []IssueTask{failed("cli-1", 1, "x"), {Name: "cli-1-2", Issue: 1, Merged: true, Created: at(2)}},
 			FailedMerged, []string{"Task `cli-1-2` already merged it", "close it"}, 2, ""},
-		{"exhausted", clearBody, []IssueTask{failed("cli-1-3", 3, "c"), failed("cli-1", 1, "a"), failed("cli-1-2", 2, "b")},
+		{"exhausted", nil, clearBody, []IssueTask{failed("cli-1-3", 3, "c"), failed("cli-1", 1, "a"), failed("cli-1-2", 2, "b")},
 			FailedExhausted, []string{"tried it 3 times (Tasks `cli-1`, `cli-1-2`, `cli-1-3`)"}, 3, ""},
-		{"the newest failed Task", clearBody, []IssueTask{
+		{"the newest failed Task", nil, clearBody, []IssueTask{
 			failed("cli-1-2", 2, "Failed after 3 rounds:\nthe agent made no changes"), failed("cli-1", 1, "older"),
 			{Name: "cli-2", Issue: 2, Failed: true, Message: "another issue's", Created: at(5)}},
 			FailedTask, []string{"Task `cli-1-2` failed: Failed after 3 rounds: the agent made no changes"}, 2, "older"},
-		{"a failed Task without a message", clearBody, []IssueTask{failed("cli-1", 1, "")},
+		{"a failed Task without a message", nil, clearBody, []IssueTask{failed("cli-1", 1, "")},
 			FailedTask, []string{"Task `cli-1` failed"}, 1, ":"},
-		{"a person, a Task still working", clearBody, []IssueTask{{Name: "cli-1", Issue: 1, Created: at(1)}},
+		{"a person, a Task still working", nil, clearBody, []IssueTask{{Name: "cli-1", Issue: 1, Created: at(1)}},
 			FailedPerson, []string{"Handed back by a person"}, 1, ""},
-		{"a person, no Tasks", clearBody, []IssueTask{{Name: "goal", Failed: true}}, FailedPerson, nil, 0, ""},
+		{"by hand", []string{LabelNeedsHuman, LabelByHand}, byHandBody, []IssueTask{failed("cli-1", 1, "x")}, FailedByHand,
+			[]string{"Needs a person: No desktop editor in the sandbox; no phone."}, 1, "failed"},
+		{"by hand without a why", []string{LabelByHand}, clearBody, nil, FailedByHand,
+			[]string{"Needs a person; see the issue."}, 0, ""},
+		{"a person, no Tasks", nil, clearBody, []IssueTask{{Name: "goal", Failed: true}}, FailedPerson, nil, 0, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			kind, reason, tries := FailedReason(1, tc.body, tc.tasks)
+			kind, reason, tries := FailedReason(1, tc.labels, tc.body, tc.tasks)
 			if kind != tc.kind || tries != tc.tries {
 				t.Errorf("kind, tries = %s, %d; want %s, %d (reason %q)", kind, tries, tc.kind, tc.tries, reason)
 			}
@@ -99,6 +104,16 @@ func TestParsePlanFailedAnswers(t *testing.T) {
 	}
 }
 
+// fa is a plan's answer to cli or web's issue number.
+func fa(container string, number int, answer, why, clarify string) FailedAnswer {
+	return FailedAnswer{Container: container, Issue: number, Answer: answer, Why: why, Clarify: clarify}
+}
+
+// ask is an ask about cli's issue number recommending r.
+func ask(number int, r *Recommendation) FailedAnswer {
+	return FailedAnswer{Container: "cli", Issue: number, Answer: AnswerAsk, Why: "It needs a paid API key.", Recommend: r}
+}
+
 func TestCheckFailedAnswers(t *testing.T) {
 	waiting := []FailedIssue{
 		{Container: "cli", Number: 1, Kind: FailedTask},
@@ -107,6 +122,7 @@ func TestCheckFailedAnswers(t *testing.T) {
 		{Container: "cli", Number: 4, Kind: FailedUnclear, Body: "Add a CLI."},
 		{Container: "cli", Number: 5, Kind: FailedPerson},
 		{Container: "cli", Number: 6, Kind: FailedUnclear, Body: "Add a CLI.\n\n## Acceptance criteria\n\nIt works.\n"},
+		{Container: "cli", Number: 7, Kind: FailedByHand},
 	}
 	const criteria = "Use the engine's checker.\n\n## Acceptance criteria\n\n- [ ] `lens check` uses it\n"
 	tests := []struct {
@@ -115,35 +131,63 @@ func TestCheckFailedAnswers(t *testing.T) {
 		want    []string // substrings, one per refusal
 	}{
 		{"retry and close", []FailedAnswer{
-			{"cli", 1, AnswerRetry, "The checker is merged now.", "Import it from cel-lens-core."},
-			{"cli", 2, AnswerClose, "Merged already.", ""},
-			{"cli", 3, AnswerClose, "Filed again as #9, split.", ""},
-			{"cli", 4, AnswerRetry, "The prompt says what it does.", criteria},
-			{"cli", 5, AnswerRetry, "The prompt asks to try it again.", ""}}, nil},
+			fa("cli", 1, AnswerRetry, "The checker is merged now.", "Import it from cel-lens-core."),
+			fa("cli", 2, AnswerClose, "Merged already.", ""),
+			fa("cli", 3, AnswerClose, "Filed again as #9, split.", ""),
+			fa("cli", 4, AnswerRetry, "The prompt says what it does.", criteria),
+			fa("cli", 5, AnswerRetry, "The prompt asks to try it again.", ""),
+			fa("cli", 7, AnswerClose, "The prompt says the screenshot is in.", "")}, nil},
 		{"none", nil, nil},
-		{"unknown issue", []FailedAnswer{{"cli", 7, AnswerClose, "why", ""}}, []string{"cli#7, which is not a waiting"}},
-		{"another Container's number", []FailedAnswer{{"web", 1, AnswerClose, "why", ""}}, []string{"web#1"}},
-		{"answered twice", []FailedAnswer{{"cli", 1, AnswerClose, "why", ""}, {"cli", 1, AnswerRetry, "why", ""}},
+		{"unknown issue", []FailedAnswer{fa("cli", 8, AnswerClose, "why", "")}, []string{"cli#8, which is not a waiting"}},
+		{"another Container's number", []FailedAnswer{fa("web", 1, AnswerClose, "why", "")}, []string{"web#1"}},
+		{"answered twice", []FailedAnswer{fa("cli", 1, AnswerClose, "why", ""), fa("cli", 1, AnswerRetry, "why", "")},
 			[]string{"twice"}},
-		{"no why", []FailedAnswer{{"cli", 1, AnswerRetry, " ", ""}}, []string{"no why"}},
-		{"long why", []FailedAnswer{{"cli", 1, AnswerClose, strings.Repeat("a", MaxAnswerWhy+1), ""}},
+		{"no why", []FailedAnswer{fa("cli", 1, AnswerRetry, " ", "")}, []string{"no why"}},
+		{"long why", []FailedAnswer{fa("cli", 1, AnswerClose, strings.Repeat("a", MaxAnswerWhy+1), "")},
 			[]string{"keep it under"}},
-		{"unknown answer", []FailedAnswer{{"cli", 1, "split", "why", ""}}, []string{`"split"`}},
-		{"retry merged", []FailedAnswer{{"cli", 2, AnswerRetry, "why", ""}}, []string{"merged already"}},
-		{"retry exhausted", []FailedAnswer{{"cli", 3, AnswerRetry, "why", criteria}}, []string{"tried 3 times"}},
-		{"retry unclear without clarify", []FailedAnswer{{"cli", 4, AnswerRetry, "why", ""}},
+		{"unknown answer", []FailedAnswer{fa("cli", 1, "split", "why", "")}, []string{`"split"`}},
+		{"retry merged", []FailedAnswer{fa("cli", 2, AnswerRetry, "why", "")}, []string{"merged already"}},
+		{"retry by hand", []FailedAnswer{fa("cli", 7, AnswerRetry, "why", criteria)}, []string{"needs a person, not agents"}},
+		{"retry exhausted", []FailedAnswer{fa("cli", 3, AnswerRetry, "why", criteria)}, []string{"tried 3 times"}},
+		{"retry unclear without clarify", []FailedAnswer{fa("cli", 4, AnswerRetry, "why", "")},
 			[]string{"no acceptance criteria"}},
 		{"retry unclear, clarify without a checklist", []FailedAnswer{
-			{"cli", 4, AnswerRetry, "why", "## Acceptance criteria\n\nIt works.\n"}}, []string{"no acceptance criteria"}},
-		{"retry unclear whose empty criteria come first", []FailedAnswer{{"cli", 6, AnswerRetry, "why", criteria}},
+			fa("cli", 4, AnswerRetry, "why", "## Acceptance criteria\n\nIt works.\n")}, []string{"no acceptance criteria"}},
+		{"retry unclear whose empty criteria come first", []FailedAnswer{fa("cli", 6, AnswerRetry, "why", criteria)},
 			[]string{"no clarify can add one: close it, and file it again as a new issue with criteria"}},
-		{"retry unclear whose empty criteria come first, without clarify", []FailedAnswer{{"cli", 6, AnswerRetry, "why", ""}},
+		{"retry unclear whose empty criteria come first, without clarify", []FailedAnswer{fa("cli", 6, AnswerRetry, "why", "")},
 			[]string{"close it, and file it again"}},
-		{"close unclear whose empty criteria come first", []FailedAnswer{{"cli", 6, AnswerClose, "Filed again as #9.", ""}},
+		{"close unclear whose empty criteria come first", []FailedAnswer{fa("cli", 6, AnswerClose, "Filed again as #9.", "")},
 			nil},
-		{"long clarify", []FailedAnswer{{"cli", 1, AnswerRetry, "why", strings.Repeat("a", MaxClarify+1)}},
+		{"long clarify", []FailedAnswer{fa("cli", 1, AnswerRetry, "why", strings.Repeat("a", MaxClarify+1))},
 			[]string{"keep it under"}},
-		{"close with clarify", []FailedAnswer{{"cli", 1, AnswerClose, "why", "More."}}, []string{"only a retry clarifies"}},
+		{"close with clarify", []FailedAnswer{fa("cli", 1, AnswerClose, "why", "More.")}, []string{"only a retry clarifies"}},
+		{"wait and ask", []FailedAnswer{
+			fa("cli", 1, AnswerWait, "The engine has no release yet.", ""),
+			ask(2, &Recommendation{Answer: AnswerClose, Why: "Merged already."}),
+			ask(4, &Recommendation{Answer: AnswerRetry, Why: "Say what it does.", Clarify: criteria}),
+			ask(5, &Recommendation{Answer: AnswerWait, Why: "Until the key is there."})}, nil},
+		{"wait with clarify", []FailedAnswer{fa("cli", 1, AnswerWait, "why", "More.")},
+			[]string{"waits on cli#1 with a clarify"}},
+		{"wait with no why", []FailedAnswer{fa("cli", 1, AnswerWait, "", "")}, []string{"no why"}},
+		{"wait with a recommend", []FailedAnswer{{Container: "cli", Issue: 1, Answer: AnswerWait, Why: "why",
+			Recommend: &Recommendation{Answer: AnswerClose, Why: "why"}}}, []string{"only an ask recommends"}},
+		{"ask with no recommend", []FailedAnswer{ask(1, nil)}, []string{"no recommend"}},
+		{"ask recommending an ask", []FailedAnswer{ask(1, &Recommendation{Answer: AnswerAsk, Why: "why"})},
+			[]string{`recommending "ask"`}},
+		{"ask recommending with no why", []FailedAnswer{ask(1, &Recommendation{Answer: AnswerClose})},
+			[]string{"recommends for cli#1 with no why"}},
+		{"ask with a clarify", []FailedAnswer{{Container: "cli", Issue: 1, Answer: AnswerAsk, Why: "why", Clarify: "More.",
+			Recommend: &Recommendation{Answer: AnswerRetry, Why: "why"}}}, []string{"put it in the recommend"}},
+		{"ask recommending a retry of an exhausted issue", []FailedAnswer{
+			ask(3, &Recommendation{Answer: AnswerRetry, Why: "why", Clarify: criteria})},
+			[]string{"recommends: retries cli#3, which agents tried 3 times"}},
+		{"ask recommending a retry of a merged issue", []FailedAnswer{
+			ask(2, &Recommendation{Answer: AnswerRetry, Why: "why"})}, []string{"merged already"}},
+		{"ask recommending a retry of an unclear issue without criteria", []FailedAnswer{
+			ask(4, &Recommendation{Answer: AnswerRetry, Why: "why"})}, []string{"no acceptance criteria"}},
+		{"ask recommending a close with clarify", []FailedAnswer{
+			ask(1, &Recommendation{Answer: AnswerClose, Why: "why", Clarify: "More."})}, []string{"only a retry clarifies"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -224,7 +268,7 @@ func TestWorkspaceFailed(t *testing.T) {
 			Body: clearBody, URL: "http://gitea/apps/web/issues/2"},
 		{Container: "cli", Number: 1, Title: "The CLI", Kind: FailedTask, Reason: "Task `cli-1` failed:\nno changes",
 			Tries: 1, Body: "Add a CLI.\n"},
-	}))
+	}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +280,7 @@ func TestWorkspaceFailed(t *testing.T) {
 	if got != want {
 		t.Errorf("%s =\n%s\nwant\n%s", WorkspaceFailedFile, got, want)
 	}
-	if got, err := marshalDocument(workspaceFailed(nil)); err != nil || got != "[]\n" {
+	if got, err := marshalDocument(workspaceFailed(nil, nil)); err != nil || got != "[]\n" {
 		t.Errorf("with none: %q, %v", got, err)
 	}
 }
@@ -268,7 +312,7 @@ func TestBriefWorkspaceFailed(t *testing.T) {
 	for i := range many {
 		many[i] = FailedIssue{Container: "cli", Number: len(many) - i, Kind: FailedPerson}
 	}
-	out := workspaceFailed(many)
+	out := workspaceFailed(many, nil)
 	if len(out) != MaxFailedIssues || out[0].Issue != 1 || out[len(out)-1].Issue != MaxFailedIssues {
 		t.Errorf("workspaceFailed of %d lists %d, from #%d to #%d", len(many), len(out), out[0].Issue,
 			out[len(out)-1].Issue)

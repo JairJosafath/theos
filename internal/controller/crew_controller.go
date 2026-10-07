@@ -88,6 +88,13 @@ type CrewReconciler struct {
 	// publishSaid is, by Crew UID, the tag and reason of the last publish
 	// failure or success reported, so each gets one Event.
 	publishSaid sync.Map
+	// moduleSaid is, by Crew UID, the tag and outcome of the last Go module
+	// publish reported, so each gets one Event or log line.
+	moduleSaid sync.Map
+	// tagged is, by Crew UID, the tag of the last release the Crew tagged, so
+	// a cached Crew that lags behind its status doesn't publish, or write the
+	// module of, an earlier release over the newer one.
+	tagged sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
@@ -235,13 +242,14 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	setCondition(&status.Conditions, crew.Generation, ConditionReady, ready, reason, step.Message)
 	if !crew.Spec.TagReleases {
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
+		apimeta.RemoveStatusCondition(&status.Conditions, ConditionModulePublished)
 	}
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 }
 
 // release watches the last release's run, prepares or tags the next release,
-// reports the last release's overdue runs, files its bumps and publishes it, as
-// the Crew's switches say. It returns the prepare issue filed now, if any.
+// reports the last release's overdue runs, publishes its Go module, files its
+// bumps and publishes it, as the Crew's switches say. It returns the prepare issue filed now, if any.
 func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) *model.Issue {
 	if crew.Spec.TagReleases {
@@ -253,6 +261,7 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, sta
 	}
 	if crew.Spec.TagReleases {
 		r.noteOverdueRun(ctx, crew, status)
+		r.publishGoModule(ctx, crew, status, provider, repo)
 		r.fileBumps(ctx, crew, status, repo)
 	}
 	r.publishRelease(ctx, crew, status, provider, repo)
