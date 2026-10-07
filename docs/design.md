@@ -462,7 +462,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   GitProvider or credentials are gone leaves its bot at once.
 - **The Brief's status tells the story of the plan:** its phase, the last
   round's choices, what it created, the issues it filed, each round's summary
-  and cost. The chart makes each project's Project, catalog and four default
+  and cost. A round's summary is written for the person, about what the round
+  did for their app: the planner's `plan/summary.md`, or what the plan holds
+  when it wrote none, never the planner's reply. A summary too long for the
+  history ends on its last whole sentence, never mid-word. The chart makes each project's Project, catalog and four default
   Agents, so a person makes only the Agents' token Secret by hand.
 
 ## Distribution and issues

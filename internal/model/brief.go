@@ -36,6 +36,7 @@ const (
 	PlanModelFile      = "plan/model.yaml"
 	PlanChoicesFile    = "plan/choices.md"
 	PlanNeedsInputFile = "plan/needs-input.md"
+	PlanSummaryFile    = "plan/summary.md"
 	planIssuesDir      = "plan/issues/"
 )
 
@@ -112,6 +113,43 @@ type Plan struct {
 	Choices []string
 	// NeedsInput is needs-input.md's sentence; a plan that has one is not applied.
 	NeedsInput string
+	// Summary is summary.md's text: what the round does for the person's app,
+	// in a sentence or two.
+	Summary string
+}
+
+// maxRoundSummary is the most of a round's summary a Brief's history keeps.
+const maxRoundSummary = 1000
+
+// RoundSummary is what a Brief's history says the plan's round did, for the
+// person: the planner's summary.md, or else what the plan holds. It ends on a
+// whole sentence and fits the history.
+func RoundSummary(plan Plan) string {
+	if plan.NeedsInput != "" {
+		return "Asked for input before planning."
+	}
+	if plan.Summary != "" {
+		return ClipSentences(strings.Join(strings.Fields(plan.Summary), " "), maxRoundSummary)
+	}
+	containers := 0
+	for _, o := range plan.Objects {
+		if o.Kind == KindContainer {
+			containers++
+		}
+	}
+	return fmt.Sprintf("The model has %s; the round files %s.", count(containers, "Container"),
+		count(len(plan.Issues), "issue"))
+}
+
+// count says n things, such as "one issue" or "3 issues".
+func count(n int, thing string) string {
+	switch n {
+	case 0:
+		return "no " + thing + "s"
+	case 1:
+		return "one " + thing
+	}
+	return fmt.Sprintf("%d %ss", n, thing)
 }
 
 var issueFile = regexp.MustCompile(`^plan/issues/(\d+)-([a-z0-9]([-a-z0-9]*[a-z0-9])?)\.md$`)
@@ -136,6 +174,7 @@ func ParsePlan(files map[string]string) (Plan, error) {
 	} else if plan.NeedsInput == "" {
 		return Plan{}, fmt.Errorf("%s is missing: a plan writes the whole story model there", PlanModelFile)
 	}
+	plan.Summary = strings.TrimSpace(files[PlanSummaryFile])
 	for line := range strings.SplitSeq(files[PlanChoicesFile], "\n") {
 		line = strings.TrimSpace(line)
 		for _, marker := range []string{"-", "*", "[ ]", "[x]"} {

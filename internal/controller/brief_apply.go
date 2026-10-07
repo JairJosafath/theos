@@ -63,7 +63,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 		return ctrl.Result{}, fmt.Errorf("reading the accepted plan: %w", err)
 	}
 	if plan.NeedsInput != "" {
-		r.plannerNeedsInput(ctx, brief, task, plan)
+		r.plannerNeedsInput(ctx, brief, plan)
 		return ctrl.Result{}, nil
 	}
 	if err := r.needAgents(ctx, brief, "implementer", "reviewer"); err != nil {
@@ -116,7 +116,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if err := r.mergePlan(ctx, brief, task.Status.Commit); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "merging the plan", err)
 	}
-	return ctrl.Result{}, r.roundApplied(ctx, run, task, plan)
+	return ctrl.Result{}, r.roundApplied(ctx, run, plan)
 }
 
 // applyFailed says why applying the round stopped, so the Brief never looks
@@ -463,16 +463,15 @@ func (r *BriefReconciler) mergePlan(ctx context.Context, brief *c4v1alpha1.Brief
 
 // roundApplied records an applied round: its history entry, the choices, the
 // prompts it took and everything the Brief made.
-func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, task *c4v1alpha1.Task,
-	plan model.Plan) error {
+func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, plan model.Plan) error {
 	brief := run.brief
 	status := &brief.Status
 	created, err := r.createdObjects(ctx, run)
 	if err != nil {
 		return err
 	}
-	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: task.Status.Summary,
-		Choices: plan.Choices})
+	summary := model.RoundSummary(plan)
+	recordRound(status, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices})
 	status.Choices = model.ClipList(plan.Choices, 50, 500)
 	status.PromptsPlanned = status.RoundPrompts
 	status.Created = created
@@ -480,7 +479,7 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionTrue,
 		model.ReasonApplied, message)
 	r.event(brief, corev1.EventTypeNormal, eventPlanned, "Apply",
-		fmt.Sprintf("%s: %d objects, %d issues. %s", message, len(plan.Objects), len(plan.Issues), task.Status.Summary))
+		fmt.Sprintf("%s: %d objects, %d issues. %s", message, len(plan.Objects), len(plan.Issues), summary))
 	logf.FromContext(ctx).Info("Applied Brief round", "round", status.Round, "issues", len(plan.Issues))
 	return nil
 }
