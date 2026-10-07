@@ -150,22 +150,22 @@ until something changed. The card shows *Needs you* and what the Brief did.
 Each lands on its own and leaves main working; `autopilot` unset means `Off`
 until step 4.
 
-1. **Model** (`internal/model`): `BriefAttention` and the heal-window table,
+1. **Model** (#503) (`internal/model`): `BriefAttention` and the heal-window table,
    the *Needs you* entries and their recommendations, `StartsTend` (decisions
    5 and 7), `wait` and `ask` in `plan/failed.yaml` and `CheckFailedAnswers`,
    `Ask` turning answers into asks, `model/tended.yaml`; table tests. Nothing
    calls it yet. Depends on #455.
-2. **The Brief tends its failed issues** (API and controller):
+2. **The Brief tends its failed issues** (#504) (API and controller):
    `spec.autopilot`, `status.attention`, `status.needsYou`, `status.tended`,
    the `NeedsYou` condition, column and Event; tending rounds, applying their
    answers by mode, the `Tended` outcome and Event; the planner guide's
    section on tending rounds; envtest for `On`, `Ask`, the exhausted guard,
    `wait`, and Tasks inside and past their windows. Depends on step 1.
-3. **The card and the Factory view** (`ui/`): the Brief's *Needs you* box
+3. **The card and the Factory view** (#505) (`ui/`): the Brief's *Needs you* box
    (with `NeedsInput`) and what it did, the autopilot mode and the create
    form's choice, and *Needs a look* naming the Brief; `ui/src/model` tests.
    Depends on step 2 and #456.
-4. **Turn it on**: unset `autopilot` means `Ask`; `docs/design.md` and the
+4. **Turn it on** (#506): unset `autopilot` means `Ask`; `docs/design.md` and the
    getting-started guide say so; envtest of a Brief with no field set.
    Depends on step 3. Closes #486.
 
