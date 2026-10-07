@@ -250,7 +250,8 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		repoURL: repo.CloneURL, gitSecret: gitSecret, context: story.Text(), goal: goal,
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
 		protectedPaths: protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
-		workspaceMemory: r.WorkspaceMemory, goCache: r.SandboxGoCache, pullSecrets: r.SharedPullSecrets,
+		workspaceMemory: r.WorkspaceMemory, goCache: r.SandboxGoCache, goProxy: repo.GoProxy,
+		pullSecrets: r.SharedPullSecrets,
 	}, r.Scheme, r.now())
 	if err != nil {
 		return ctrl.Result{}, err
@@ -289,8 +290,10 @@ func (r *TaskReconciler) ensureAgentGit(ctx context.Context, container *c4v1alph
 	provider gitprovider.Provider, repo gitprovider.Repository) (string, error) {
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
+	// The scopes are kept with the token, so a token made with fewer is made again.
 	return ensureAgentSecret(ctx, r.Client, r.APIReader, container, container.Name+"-agent-git",
-		map[string]string{c4v1alpha1.LabelProject: container.Namespace, c4v1alpha1.LabelContainer: container.Name}, nil,
+		map[string]string{c4v1alpha1.LabelProject: container.Namespace, c4v1alpha1.LabelContainer: container.Name},
+		map[string]string{"scopes": gitprovider.AgentTokenScopes},
 		func() (gitprovider.Credentials, error) {
 			return provider.EnsureAgentAccess(gitCtx, repo, model.AgentUsername(container.Namespace, container.Name))
 		})

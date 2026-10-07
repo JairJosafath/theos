@@ -54,6 +54,14 @@ func run(ctx context.Context, workdir string) agentrunner.Result {
 	if err := os.MkdirAll(workdir, 0o755); err != nil {
 		return agentrunner.Result{Role: job.Role, Error: err.Error()}
 	}
+	// The go command fetches the project's modules from the Git host with it.
+	home, err := os.UserHomeDir()
+	if err == nil {
+		err = agentrunner.WriteNetrc(home, job)
+	}
+	if err != nil {
+		return agentrunner.Result{Role: job.Role, Error: "c4agent: .netrc: " + err.Error()}
+	}
 	return agentrunner.Run(ctx, job, agentFor(job), workdir)
 }
 

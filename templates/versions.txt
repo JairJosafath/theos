@@ -3,11 +3,12 @@ small v1.0.0
 k8s-manifests v1.1.0
 postgres v1.1.0
 go-cli v1.0.0
-go-standard v1.1.3
+go-standard v1.1.4
 vscode-extension v1.0.0
 react-vite v1.0.0
-ts-standard v1.2.0
-gitea-release v1.0.1
+node-cli v1.0.0
+ts-standard v1.3.0
+gitea-release v1.0.2
 hello v1.0.0
 hello-standard v1.0.1
 hello-html v1.0.0

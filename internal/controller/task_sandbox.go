@@ -90,6 +90,9 @@ type sandboxRun struct {
 	// goCache, when set, is the directory on the node of the Go build cache the
 	// sandboxes share.
 	goCache string
+	// goProxy, when set, is the Git host's Go module proxy for the owner's
+	// released modules, which the go command asks before the public proxy.
+	goProxy string
 	// brief is the Brief a plan run plans, and briefRound the Brief's round it
 	// plans: C4_ROUND, while the Task's own round counts the planner's tries.
 	brief      string
@@ -105,6 +108,11 @@ const (
 	goCacheVolume    = "go-cache"
 	goCachePrepShell = "command -v c4-go-cache >/dev/null || exit 0; exec c4-go-cache " + goCacheMount
 )
+
+// factoryModules is the prefix of the module path the Go templates give an
+// app (c4factory.local/<project>/<container>); the public checksum database
+// has never heard of it.
+const factoryModules = "c4factory.local"
 
 // buildSandbox returns the Sandbox for one run, owned by the Task. Its pod has no
 // ServiceAccount token: it reports through its termination message.
@@ -138,6 +146,15 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		env = append(env,
 			corev1.EnvVar{Name: "GOCACHE", Value: goCacheMount + "/build"},
 			corev1.EnvVar{Name: "GOLANGCI_LINT_CACHE", Value: goCacheMount + "/golangci-lint"})
+	}
+	if run.goProxy != "" {
+		// The Git host first, so the factory's module paths never go to the public
+		// proxy; a module it lacks is a 404, and the go command goes on to the next.
+		// Not GOPRIVATE: it would fetch those paths directly, from a host that
+		// doesn't exist.
+		env = append(env,
+			corev1.EnvVar{Name: "GOPROXY", Value: run.goProxy + ",https://proxy.golang.org,direct"},
+			corev1.EnvVar{Name: "GONOSUMDB", Value: factoryModules})
 	}
 	env = append(env, agent.Spec.Env...)
 	var envFrom []corev1.EnvFromSource
