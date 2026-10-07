@@ -136,7 +136,11 @@ func TestCheckFailedAnswers(t *testing.T) {
 		{"retry unclear, clarify without a checklist", []FailedAnswer{
 			{"cli", 4, AnswerRetry, "why", "## Acceptance criteria\n\nIt works.\n"}}, []string{"no acceptance criteria"}},
 		{"retry unclear whose empty criteria come first", []FailedAnswer{{"cli", 6, AnswerRetry, "why", criteria}},
-			[]string{"no acceptance criteria"}},
+			[]string{"no clarify can add one: close it, and file it again as a new issue with criteria"}},
+		{"retry unclear whose empty criteria come first, without clarify", []FailedAnswer{{"cli", 6, AnswerRetry, "why", ""}},
+			[]string{"close it, and file it again"}},
+		{"close unclear whose empty criteria come first", []FailedAnswer{{"cli", 6, AnswerClose, "Filed again as #9.", ""}},
+			nil},
 		{"long clarify", []FailedAnswer{{"cli", 1, AnswerRetry, "why", strings.Repeat("a", MaxClarify+1)}},
 			[]string{"keep it under"}},
 		{"close with clarify", []FailedAnswer{{"cli", 1, AnswerClose, "why", "More."}}, []string{"only a retry clarifies"}},
