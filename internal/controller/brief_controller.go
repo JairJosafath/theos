@@ -11,6 +11,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -25,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // BriefReconciler turns a Brief's idea and prompts into the model, a round at
@@ -49,6 +51,10 @@ type BriefReconciler struct {
 	// Container to be Ready, looks again, as Secrets aren't watched; 0 means a
 	// minute.
 	NeedsInputRecheck time.Duration
+	// SuggestionsRecheck is how often a Brief that made a Container reads its
+	// repositories again for reviewers' suggestions, besides when one of their
+	// Tasks ends; 0 means ten minutes.
+	SuggestionsRecheck time.Duration
 	// BotDeleteTimeout is how long a deleted Brief tries to delete its bot on a
 	// Git host that fails it before it goes without; 0 means ten minutes.
 	BotDeleteTimeout time.Duration
@@ -59,7 +65,15 @@ const (
 	defaultBriefNeedsInputRecheck = time.Minute
 	defaultPlanCheckTimeout       = 10 * time.Minute
 	defaultBotDeleteTimeout       = 10 * time.Minute
+	defaultSuggestionsRecheck     = 10 * time.Minute
 )
+
+func (r *BriefReconciler) suggestionsRecheck() time.Duration {
+	if r.SuggestionsRecheck > 0 {
+		return r.SuggestionsRecheck
+	}
+	return defaultSuggestionsRecheck
+}
 
 func (r *BriefReconciler) botDeleteTimeout() time.Duration {
 	if r.BotDeleteTimeout > 0 {
@@ -158,10 +172,22 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 		logf.FromContext(ctx).Info("Could not bring a Crew's releases up to date", "error", releasesErr.Error())
 	}
 	result, err := r.reconcileRound(ctx, brief, orig)
+	if err == nil && result.IsZero() && madeContainers(brief) {
+		// A person may answer a suggestion on the Git host: look again now and then.
+		result.RequeueAfter = r.suggestionsRecheck()
+	}
 	if err == nil && releasesErr != nil {
 		return ctrl.Result{}, releasesErr
 	}
 	return result, err
+}
+
+// madeContainers reports whether the Brief made a Container, whose repository
+// may get reviewers' suggestions.
+func madeContainers(brief *c4v1alpha1.Brief) bool {
+	return slices.ContainsFunc(brief.Status.Created, func(o c4v1alpha1.BriefObject) bool {
+		return o.Kind == model.KindContainer
+	})
 }
 
 // writeStatus patches the Brief's status when it changed.
@@ -197,6 +223,9 @@ func (r *BriefReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.Brief{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&c4v1alpha1.Task{}, taskPhaseChanges()).
+		// A Task on a Container the Brief made may file reviewers' suggestions.
+		Watches(&c4v1alpha1.Task{}, handler.EnqueueRequestsFromMapFunc(briefOfTaskContainer(mgr.GetClient())),
+			taskPhaseChanges()).
 		Watches(&c4v1alpha1.GitProvider{}, allInNamespace, createOrDelete()).
 		Watches(&c4v1alpha1.Agent{}, allInNamespace, createOrDelete()).
 		Watches(&c4v1alpha1.Container{}, fromBriefLabel, containerPhaseChanges()).

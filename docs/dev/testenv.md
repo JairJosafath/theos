@@ -645,7 +645,11 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   device's memory.
 - The Go module, build and golangci-lint caches and the npm cache are one
   volume the runners share (`c4factory-gh-runner-cache`): Go, golangci-lint and
-  npm lock what they write there. The tool cache setup-go and setup-node unpack
+  npm lock what they write there. The Makefile's tools (controller-gen,
+  golangci-lint, the envtest binaries, Gitea) are kept there too, in
+  `~/.cache/make-bin` (`LOCALBIN`), since `actions/checkout` deletes the
+  checkout's `.dev/` before each job; they install through a temporary
+  directory, as when worktrees share `.dev/`. The tool cache setup-go and setup-node unpack
   into is a volume per runner (`c4factory-gh-runner-i-toolcache`): two runners
   unpacking one Go version into it at once would race. The workflows skip
   GitHub's cache on self-hosted runners. `make gh-runner-down` keeps the caches.
