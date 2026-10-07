@@ -355,7 +355,7 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1
 					URL: i.URL, Criteria: model.MissingAcceptanceCriteria(i.Body) == ""})
 			}
 			if mine && model.IsFailedIssue(i.Labels) {
-				failed = append(failed, failedIssue(c.Name, i.Number, i.Title, i.URL, i.Body, tasks[c.Name]))
+				failed = append(failed, failedIssue(c.Name, i.Number, i.Title, i.URL, i.Labels, i.Body, tasks[c.Name]))
 			}
 		}
 		out = append(out, entry)

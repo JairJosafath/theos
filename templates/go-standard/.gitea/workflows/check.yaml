@@ -12,12 +12,16 @@ jobs:
     runs-on: go
     # Go's build cache stays where the toolchain image puts it: the image ships
     # it warm, so the Kubernetes libraries aren't compiled on every run.
-    # Modules come from the owner's package registry first, where the factory
-    # publishes its apps' releases, then from the public proxy; the checksum
-    # database has never heard of the factory's c4factory.local module paths.
+    # The factory publishes its apps' releases to the owner's package registry,
+    # under c4factory.local module paths no public proxy or checksum database
+    # knows. Those come from the registry alone, in the step before make check;
+    # with GOPRIVATE, make check never asks a proxy for them, so a module the
+    # registry lacks fails on a host that doesn't exist instead of going to
+    # proxy.golang.org. Not a GOPROXY list of the registry, then the public
+    # proxy: the go command asks the next proxy after a 404.
     env:
-      GOPROXY: ${{ gitea.server_url }}/api/packages/${{ gitea.repository_owner }}/go,https://proxy.golang.org,direct
-      GONOSUMDB: c4factory.local
+      GOPROXY: https://proxy.golang.org,direct
+      GOPRIVATE: c4factory.local
     steps:
       - name: Check out
         run: |
@@ -34,5 +38,19 @@ jobs:
           host=${SERVER#*://}
           umask 077
           printf 'machine %s\nlogin %s\npassword %s\n' "${host%%/*}" "${{ gitea.actor }}" "$TOKEN" > "$HOME/.netrc"
+      - name: The factory's modules, from the package registry only
+        env:
+          GOPROXY: ${{ gitea.server_url }}/api/packages/${{ gitea.repository_owner }}/go
+          GOPRIVATE: ""
+          GONOSUMDB: c4factory.local
+        # From go.sum, not go.mod's require lines: go mod tidy also loads the
+        # test imports of dependencies, which only go.sum lists; a module
+        # replaced by a local directory has no line there.
+        run: |
+          mods=$( [ ! -f go.sum ] || awk '$1 ~ /^c4factory\.local\// { sub("/go.mod$", "", $2); print $1 "@" $2 }' go.sum | sort -u)
+          if [ -n "$mods" ]; then
+            # Outside the module, so only these are fetched.
+            cd "$(mktemp -d)" && go mod download $mods
+          fi
       - name: make check
         run: make check

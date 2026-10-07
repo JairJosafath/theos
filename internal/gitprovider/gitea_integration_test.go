@@ -34,7 +34,7 @@ func TestGiteaIntegration(t *testing.T) {
 	client := Client{}
 
 	t.Run("fetches a seeded template at its tag", func(t *testing.T) {
-		tree, err := client.FetchTemplate(ctx, base+"/templates/python-fastapi", "v1.2.1", nil)
+		tree, err := client.FetchTemplate(ctx, base+"/templates/python-fastapi", "v1.3.0", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

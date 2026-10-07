@@ -4,7 +4,16 @@ A Python service with [FastAPI](https://fastapi.tiangolo.com/), managed with
 [uv](https://docs.astral.sh/uv/), linted with ruff and tested with pytest.
 
 - **Supports:** `service`
-- **Writes:** `pyproject.toml`, `.python-version`, `app/`, `tests/`, `README.md`, `.gitignore`
+- **Writes:** `pyproject.toml`, `uv.lock`, `.python-version`, `app/`, `tests/`, `README.md`, `.gitignore`
+- **Standard:** fits python-standard's contract: its `dev` group pins `ruff`,
+  `mypy` and `pytest` exactly, `uv_build` builds it, and its code passes ruff
+  with every rule and mypy `--strict`. With a Standard, `pyproject.toml` leaves
+  out its own `[tool.ruff]` tables (the Standard's `ruff.toml` decides).
+- **Lock:** `uv.lock.tmpl` is what `uv lock` writes for the rendered project,
+  with the Container's name and the `postgres` packages templated. After
+  changing the dependencies, render both variants (`go run ./hack/render`),
+  run `uv lock` in each, and rebuild the template from the two locks; the
+  lock is right when `uv lock --check` passes in each render.
 - **Devcontainer:** `.c4factory/devcontainer.json` holds the base settings: the
   `mcr.microsoft.com/devcontainers/python:3.12` image, uv installed with pipx, `uv sync`
   after create, and the Python and ruff VS Code extensions. The operator merges it

@@ -440,6 +440,18 @@ it when it starts. Until then its sessions can't reach Docker, so
 
 ### Checking a release
 
+The maintainer cuts a release from a sweep with one command:
+`hack/release.sh minor`, `patch` or `X.Y.Z`. From origin/main, in a worktree
+of its own, it names the version in `dist/chart/Chart.yaml` and in
+`docs/getting-started.md` (its `VERSION` and the release its prose names),
+merges that bump as a pull request of its own with a merge commit, and pushes
+the tag `vX.Y.Z` on the merge commit, so the guide at a tag installs that
+tag's release (#370). It refuses a version that isn't above the chart's, or
+whose tag already exists. The tag starts *Release*, which first runs
+`hack/release.sh --check vX.Y.Z` and builds nothing when the chart or the
+guide names another version; `hack/release_test.sh` holds both to that, and
+`test/chart/guide_version_test.go` keeps main's guide on the chart's version.
+
 The relay can't pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. Once *Release* has
 published `vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`)
