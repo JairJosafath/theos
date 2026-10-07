@@ -148,9 +148,10 @@ type Provider interface {
 	// OpenBlockers returns the open issues an issue depends on: "#3" in the same
 	// repository, "owner/name#3" in another.
 	OpenBlockers(ctx context.Context, repo Repository, number int) ([]string, error)
-	// AddIssueDependency makes issue number depend on issue blocker of the same
-	// repository. It is safe to repeat.
-	AddIssueDependency(ctx context.Context, repo Repository, number, blocker int) error
+	// AddIssueDependency makes issue number of repo depend on issue blocker of
+	// blockerRepo, which may be repo itself or another repository. It is safe
+	// to repeat.
+	AddIssueDependency(ctx context.Context, repo Repository, number int, blockerRepo Repository, blocker int) error
 	// AddIssueLabel adds a label to an issue by name. An exclusive scoped label
 	// replaces the issue's other labels of its scope.
 	AddIssueLabel(ctx context.Context, repo Repository, number int, label string) error
