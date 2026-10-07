@@ -14,10 +14,16 @@
 # records the activity it saw.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
-trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
+# Only this shell cleans up (#544): a job killed just after it is forked, before
+# it resets the traps it inherits, runs this trap too, and would remove $T.
+trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
 unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
+# Jobs killed as soon as they start, as maintain kills its heartbeat and
+# session its idle watch when claude ends at once, leave $T.
+{ for _ in $(seq 100); do (sleep 9) & kill $!; wait $!; done; } 2>/dev/null
+check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" kept
 # The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
 # 2 GiB free and 120s between session starts.
 check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP")" "9 2 120"
