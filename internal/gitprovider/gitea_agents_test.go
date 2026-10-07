@@ -66,6 +66,27 @@ func (g *agentGitea) serveBotUser(method string, reply func(int, any)) {
 	}
 }
 
+// serveBotTokens deletes or makes a token of the bot user photo-editor-agent,
+// by name.
+func (g *agentGitea) serveBotTokens(call string, body map[string]any, reply func(int, any)) {
+	if name, ok := strings.CutPrefix(call, "DELETE /api/v1/users/photo-editor-agent/tokens/"); ok {
+		if !g.botTokens[name] {
+			reply(http.StatusNotFound, map[string]string{"message": "token not found"})
+			return
+		}
+		delete(g.botTokens, name)
+		reply(http.StatusNoContent, nil)
+		return
+	}
+	name, _ := body["name"].(string)
+	if g.botTokens[name] {
+		reply(http.StatusUnprocessableEntity, map[string]string{"message": "access token name has been used already"})
+		return
+	}
+	g.botTokens[name] = true
+	reply(http.StatusCreated, map[string]string{"sha1": g.botToken})
+}
+
 // serveGatedPull serves pull request 7: its files, closing and merging.
 func (g *agentGitea) serveGatedPull(w http.ResponseWriter, r *http.Request, call string) {
 	switch {
@@ -143,28 +164,11 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(http.StatusOK, map[string]string{})
 	case call == "PUT "+repo+"/collaborators/photo-editor-agent":
 		w.WriteHeader(http.StatusNoContent)
-	case strings.HasPrefix(call, "DELETE /api/v1/users/photo-editor-agent/tokens/"):
+	case strings.HasPrefix(r.URL.Path, "/api/v1/users/photo-editor-agent/tokens"):
 		if !basic || user != "photo-editor-agent" {
 			g.t.Errorf("%s without the bot's basic auth", call)
 		}
-		name := strings.TrimPrefix(call, "DELETE /api/v1/users/photo-editor-agent/tokens/")
-		if !g.botTokens[name] {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		delete(g.botTokens, name)
-		w.WriteHeader(http.StatusNoContent)
-	case call == "POST /api/v1/users/photo-editor-agent/tokens":
-		if !basic || user != "photo-editor-agent" {
-			g.t.Errorf("%s without the bot's basic auth", call)
-		}
-		name, _ := body["name"].(string)
-		if g.botTokens[name] {
-			reply(http.StatusUnprocessableEntity, map[string]string{"message": "access token name has been used already"})
-			return
-		}
-		g.botTokens[name] = true
-		reply(http.StatusCreated, map[string]string{"sha1": g.botToken})
+		g.serveBotTokens(call, body, reply)
 	case call == "POST "+repo+"/pulls":
 		for _, p := range g.pulls {
 			if p.Head.Ref == body["head"] {
