@@ -134,8 +134,9 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   step lands on its own and leaves main working, with new behaviour off until
   the step that turns it on. When an issue is split into a plan and steps,
   the plan's pull request says `Refs #N`, never `Closes #N`; the issue stays
-  open, `status/in-progress`, its body a `Depends on #S` line per step so
-  `pick` skips it, and the last step's pull request says `Closes #N` too.
+  open, `status/waiting` (waiting on its steps, not on an agent), its body a
+  `Depends on #S` line per step so `pick` skips it, and it closes itself when
+  its last step closes (`hack/lib/github.sh parents`).
 - **Main keeps itself current.** `hack/pull.sh` fast-forwards local main when
   that is safe and never touches a branch or uncommitted work. VS Code runs it
   every 5 minutes, Claude Code at session start, the relay before each session;

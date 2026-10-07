@@ -116,10 +116,13 @@ Lost claim (the heartbeat hook says so):
 - **Plan only:** when N is split into a plan and step issues, the plan's
   pull request says `Refs #N`, never `Closes #N`: nothing N asked for has
   shipped. Once it merges, add a `Depends on #S` line per step to N's body
-  (`gh issue edit N --body-file FILE`, the rest kept), leave N open and
-  `status/in-progress`, so `pick` skips it until every step closes, and post
-  a handoff naming the plan and the steps. Each step's body names N; the last
-  step's pull request says `Closes #S` and `Closes #N`. Steps never say
+  (`gh issue edit N --body-file FILE`, the rest kept), post a handoff naming
+  the plan and the steps, then `hack/lib/github.sh status N waiting`: N stays
+  open, waiting on its steps rather than on an agent, and `pick` skips it.
+  When its last step closes, N closes itself with a comment naming the steps
+  (`close`, the *Issue closed* workflow and the relay watch run
+  `hack/lib/github.sh parents --apply`; the watch also moves a parent you left
+  in progress to waiting). Each step's body names N. Steps never say
   `Depends on #N` (that is a cycle).
 - **Plan finished:** when the issue you close finishes a plan's last step,
   move the plan to `docs/plans/done/` in the same pull request (`git mv`),
