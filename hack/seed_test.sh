@@ -82,7 +82,7 @@ GITEA_PASSWORD=$(head -c 18 /dev/urandom | base64 | tr -d '\n/+=')
 export GITEA_PASSWORD
 export TEMPLATES_DIR=$T/templates PROJECTS=webshop
 CREDS=$T/creds
-SCOPES=write:admin,write:issue,write:organization,write:repository,read:user
+SCOPES=write:admin,write:issue,write:organization,write:package,write:repository,read:user
 seed() { CREDENTIALS_DIR=$CREDS "$SEED" >"$T/out" 2>&1; }
 token() { sed -n 's/^C4_GITEA_TOKEN=//p' "$CREDS/webshop.env"; }
 

@@ -8,10 +8,13 @@ doesn't copy their issue lists.
 
 ## Releases are a train
 
-- The maintainer tags `vX.Y.Z` on origin/main when `feat` or `fix` changes have
-  landed since the last tag and main is green. That happens at most once a
-  day; a fix that a reporter is waiting for can go out the same day.
-- Before 1.0, a `feat` bumps the minor version and a `fix` bumps the patch.
+- Releases are small and frequent, so users move faster (the owner, #261).
+  The maintainer tags `vX.Y.Z` on origin/main on any sweep where a `feat` or
+  `fix` has landed since the last tag, main is green, and nothing half-built
+  would ship. There is no daily cap, and it doesn't batch changes into a
+  bigger release.
+- Before 1.0, a `feat` bumps the minor version and a `fix` bumps the patch: a
+  release with only `fix` changes since the last tag is a patch release.
 - A release never ships a half-built feature that users can see. If main
   already shows a feature (a UI box, a chart value) and the step that turns it
   on is still in progress, the release waits for that step. The only exception

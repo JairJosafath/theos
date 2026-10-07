@@ -134,7 +134,8 @@ carries.
      feature main already shows a user: a UI box, a chart value, a field that
      does nothing yet. The only exception is a reporter waiting on the
      release; then it ships, and its notes say what is a preview.
-   - Release as often as that holds; there is no daily cap. Don't tag while
+   - Release on every sweep where that holds; there is no daily cap, and
+     changes aren't batched into a bigger release. Don't tag while
      a *Verify Release* run still runs, or a
      `Release vX.Y.Z fails its check` issue is open.
    - Name the next version: [SemVer](https://semver.org/), pre-1.0, so

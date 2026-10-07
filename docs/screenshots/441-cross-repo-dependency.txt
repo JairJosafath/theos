@@ -1,0 +1,14 @@
+# #441: make test-gitea against a local Gitea (2026-10-07)
+# An issue of one repository depends on an issue of another; OpenBlockers reports owner/name#N; repeating adds nothing.
+=== RUN   TestGiteaIssuesIntegration
+=== RUN   TestGiteaIssuesIntegration/labels,_links_and_closes_issues
+--- PASS: TestGiteaIssuesIntegration (1.82s)
+    --- PASS: TestGiteaIssuesIntegration/labels,_links_and_closes_issues (1.82s)
+=== RUN   TestGiteaCrossRepositoryDependencyIntegration
+--- PASS: TestGiteaCrossRepositoryDependencyIntegration (1.02s)
+=== RUN   TestOpenBlockers
+--- PASS: TestOpenBlockers (0.03s)
+=== RUN   TestAddIssueDependency
+--- PASS: TestAddIssueDependency (0.00s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/gitprovider	2.877s

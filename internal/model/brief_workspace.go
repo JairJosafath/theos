@@ -20,7 +20,7 @@ const (
 // WorkspaceFiles are every file BriefWorkspaceFiles writes, so the operator can
 // read them back to see whether main is already up to date.
 var WorkspaceFiles = []string{BriefFile, PlannerGuide, WorkspaceModelFile, WorkspaceCatalogFile, WorkspaceContainersFile,
-	WorkspaceSuggestionsFile}
+	WorkspaceSuggestionsFile, WorkspaceFailedFile}
 
 // MaxWorkspaceIssues is how many open issue titles model/containers.yaml lists
 // per Container; the rest are counted, not listed.
@@ -59,6 +59,9 @@ type BriefWorkspace struct {
 	// Suggestions are the reviewers' suggestions waiting in the Brief's
 	// Containers' repositories, for the person to answer in a prompt.
 	Suggestions []Suggestion
+	// Failed are the issues handed back to a person in the Brief's
+	// Containers' repositories, for the person to answer in a prompt.
+	Failed []FailedIssue
 	// Releases are the Brief's spec.releases entries (plans/done/brief-releases.md, R5).
 	Releases []WorkspaceRelease
 }
@@ -109,6 +112,10 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceSuggestionsFile, err)
 	}
+	failed, err := marshalDocument(workspaceFailed(ws.Failed))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", WorkspaceFailedFile, err)
+	}
 	return map[string]string{
 		BriefFile:                renderBrief(ws),
 		PlannerGuide:             plannerGuideText,
@@ -116,6 +123,7 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 		WorkspaceCatalogFile:     catalog,
 		WorkspaceContainersFile:  containers,
 		WorkspaceSuggestionsFile: suggestions,
+		WorkspaceFailedFile:      failed,
 	}, nil
 }
 
@@ -144,6 +152,10 @@ func renderBrief(ws BriefWorkspace) string {
 	if len(ws.Suggestions) > 0 {
 		fmt.Fprintf(&b, "\n## Reviewer suggestions\n\n%d wait for the person's answer, listed in `%s`. "+
 			"Answer one only when a **new** prompt speaks to it.\n", len(ws.Suggestions), WorkspaceSuggestionsFile)
+	}
+	if len(ws.Failed) > 0 {
+		fmt.Fprintf(&b, "\n## Failed issues\n\n%d were handed back to the person, listed with why in `%s`. "+
+			"Answer one only when a **new** prompt speaks to it.\n", len(ws.Failed), WorkspaceFailedFile)
 	}
 	fmt.Fprintf(&b, "\n## Git provider\n\nEvery new Container names `gitProviderRef: {name: %s}`.\n", ws.GitProvider)
 	if len(ws.Releases) > 0 {
