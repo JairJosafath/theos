@@ -90,6 +90,8 @@ carries.
      has a moving `main is red` issue, unless Actions started no jobs: then
      the watch's `GitHub Actions starts no jobs` issue comes to you, and only
      the owner can fix it (billing, the spending limit); take it to them.
+     Closing it as a duplicate of an issue already tracking the outage is
+     safe: the watch files it once per outage.
    - The relay: errors and pauses in `.relay/watch.log` and `.relay/relay-*.log`
      (`tail`, `grep`; never whole files), and in `.relay/paused-until`.
    - Claims: stale ones in `hack/lib/github.sh claims`, issues in progress
