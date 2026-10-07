@@ -309,6 +309,9 @@ setup-envtest: envtest | $(LOCALBIN) ## Download the binaries required for ENVTE
 		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
 		exit 1; \
 	}
+	@# setup-envtest leaves each release's directory read-only (0555), which
+	@# makes git clean -ffdx, and so a self-hosted runner's checkout, fail.
+	@find "$(LOCALBIN)/k8s" -type d ! -perm -u=w -exec chmod u+w {} +
 
 # A phony target, not a file rule: its versioned name would run go list on
 # every make, not only when envtest is needed.
