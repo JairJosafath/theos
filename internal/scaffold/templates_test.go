@@ -52,6 +52,12 @@ var templateCombos = []struct {
 		{model.SideFramework, "react-vite"},
 		{model.SideStandard, "ts-standard"},
 	}},
+	{"react web app on kubernetes", "static-site", []side{
+		{model.SideFramework, "react-vite"},
+		{model.SideStandard, "ts-standard"},
+		{model.SideCompute, "small"},
+		{model.SideDeployment, "k8s-manifests"},
+	}},
 	{"node cli", "cli", []side{
 		{model.SideFramework, "node-cli"},
 		{model.SideStandard, "ts-standard"},
@@ -70,40 +76,7 @@ var templateCombos = []struct {
 func TestEveryTemplateRenders(t *testing.T) {
 	for _, c := range templateCombos {
 		t.Run(c.name, func(t *testing.T) {
-			in := Input{
-				Project:        "webshop",
-				SoftwareSystem: "shop",
-				Container:      "sample-app",
-				DisplayName:    "Sample App",
-				Type:           c.typ,
-			}
-			var layers []Layer
-			for _, l := range c.layers {
-				files, err := ReadTree(os.DirFS(filepath.Join(templatesDir, l.Name)))
-				if err != nil {
-					t.Fatalf("read template %s: %v", l.Name, err)
-				}
-				layers = append(layers, Layer{Side: l.Side, Name: l.Name, Ref: "local", Files: files})
-				switch l.Side {
-				case model.SideFramework:
-					in.Framework = l.Name
-				case model.SideStandard:
-					in.Standard = l.Name
-				case model.SideCompute:
-					in.Compute = l.Name
-				case model.SideDeployment:
-					in.Deployment = l.Name
-				case model.SideConnector:
-					in.Connectors = append(in.Connectors, l.Name)
-				}
-			}
-
-			// Build names the template and file of a render error, and the
-			// path and both templates of a conflict.
-			result, err := Build(in, layers, Options{})
-			if err != nil {
-				t.Fatal(err)
-			}
+			layers, result := renderCombo(t, c.typ, c.layers)
 			for _, p := range result.Files.Paths() {
 				if ext := path.Ext(p); ext != ".yaml" && ext != ".yml" {
 					continue
@@ -114,6 +87,95 @@ func TestEveryTemplateRenders(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestK8sManifestsFollowsTheFramework checks that k8s-manifests writes the
+// Dockerfile, port and probes of the Framework's image, and no Dockerfile for
+// a Framework it has none for.
+func TestK8sManifestsFollowsTheFramework(t *testing.T) {
+	cases := []struct {
+		framework, typ string
+		standard       string
+		dockerfile     []string // substrings of the Dockerfile; nil: no Dockerfile
+		deployment     []string // substrings of deploy/k8s/deployment.yaml
+	}{
+		{"python-fastapi", "service", "", []string{"ghcr.io/astral-sh/uv", "uvicorn", "EXPOSE 8000"},
+			[]string{"containerPort: 8000", "path: /healthz"}},
+		{"react-vite", "static-site", "ts-standard",
+			[]string{"npm ci", "npm run build", "nginxinc/nginx-unprivileged", "/app/dist", "USER 101", "EXPOSE 8080"},
+			[]string{"containerPort: 8080", "path: /\n"}},
+		{"go-cli", "service", "", nil, []string{"containerPort: 8000"}},
+	}
+	for _, c := range cases {
+		t.Run(c.framework, func(t *testing.T) {
+			sides := []side{{model.SideFramework, c.framework}}
+			if c.standard != "" {
+				sides = append(sides, side{model.SideStandard, c.standard})
+			}
+			sides = append(sides, side{model.SideDeployment, "k8s-manifests"})
+			_, result := renderCombo(t, c.typ, sides)
+			for _, name := range []string{"Dockerfile", ".dockerignore"} {
+				if _, ok := result.Files[name]; ok != (c.dockerfile != nil) {
+					t.Errorf("%s written = %v, want %v", name, ok, c.dockerfile != nil)
+				}
+			}
+			if c.dockerfile != nil {
+				assertContains(t, "Dockerfile", string(result.Files["Dockerfile"].Data), c.dockerfile)
+			}
+			assertContains(t, "deploy/k8s/deployment.yaml", string(result.Files["deploy/k8s/deployment.yaml"].Data),
+				c.deployment)
+		})
+	}
+}
+
+func assertContains(t *testing.T, name, got string, want []string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(got, w) {
+			t.Errorf("%s doesn't contain %q:\n%s", name, w, got)
+		}
+	}
+}
+
+// renderCombo builds a Container of type typ from the templates in
+// templates/, with the choices the layers make.
+func renderCombo(t *testing.T, typ string, sides []side) ([]Layer, Result) {
+	t.Helper()
+	in := Input{
+		Project:        "webshop",
+		SoftwareSystem: "shop",
+		Container:      "sample-app",
+		DisplayName:    "Sample App",
+		Type:           typ,
+	}
+	layers := make([]Layer, 0, len(sides))
+	for _, l := range sides {
+		files, err := ReadTree(os.DirFS(filepath.Join(templatesDir, l.Name)))
+		if err != nil {
+			t.Fatalf("read template %s: %v", l.Name, err)
+		}
+		layers = append(layers, Layer{Side: l.Side, Name: l.Name, Ref: "local", Files: files})
+		switch l.Side {
+		case model.SideFramework:
+			in.Framework = l.Name
+		case model.SideStandard:
+			in.Standard = l.Name
+		case model.SideCompute:
+			in.Compute = l.Name
+		case model.SideDeployment:
+			in.Deployment = l.Name
+		case model.SideConnector:
+			in.Connectors = append(in.Connectors, l.Name)
+		}
+	}
+
+	// Build names the template and file of a render error, and the
+	// path and both templates of a conflict.
+	result, err := Build(in, layers, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return layers, result
 }
 
 // TestEveryTemplateHasACombo fails when a folder in templates/ is rendered by

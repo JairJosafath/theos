@@ -1,0 +1,32 @@
+$ docker build -t c4f-451-web:test .   # the scaffolded react-vite repository
+$ docker inspect -f '{{.Config.User}}' c4f-451-web:test
+101
+$ docker run -d --cap-drop ALL --security-opt no-new-privileges -p 18451:8080 c4f-451-web:test
+$ curl -si http://127.0.0.1:18451/
+HTTP/1.1 200 OK
+Server: nginx/1.29.8
+Date: Wed, 07 Oct 2026 12:31:18 GMT
+Content-Type: text/html
+Content-Length: 460
+Last-Modified: Wed, 07 Oct 2026 12:30:51 GMT
+Connection: keep-alive
+ETag: "6ac63b7b-1cc"
+Accept-Ranges: bytes
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Sample App</title>
+    <script type="module" crossorigin src="/assets/index-BSiccNDf.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CG9Gp7u3.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
+
+$ curl -s http://127.0.0.1:18451/ | grep -o "/assets/[^\"]*\.js" | xargs -I{} curl -so /dev/null -w "%{http_code} %{content_type}\n" http://127.0.0.1:18451{}
+200 application/javascript

@@ -1,0 +1,22 @@
+{{- if eq .Framework "python-fastapi" -}}
+# Keep the build context to what the image needs.
+.git
+.devcontainer
+.venv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.env
+deploy
+tests
+{{- else if eq .Framework "react-vite" -}}
+# Keep the build context to what the image needs; the image runs npm ci and
+# builds dist/ itself.
+.git
+.devcontainer
+node_modules
+dist
+coverage
+.env
+deploy
+{{- end }}
