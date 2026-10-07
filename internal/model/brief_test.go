@@ -95,6 +95,7 @@ func happyFiles() map[string]string {
 
 func happyCurrent() CurrentModel {
 	return CurrentModel{
+		Namespace: "shop",
 		Objects: []PlanObject{
 			{Kind: KindProject, Name: "shop", DisplayName: "Shop"},
 			{Kind: KindSoftwareSystem, Name: "shop", Description: "Sells things", Needs: []string{"orders"},
@@ -340,6 +341,10 @@ func TestCheckPlan(t *testing.T) {
 		{"a second Project", func(p *Plan, _ *CurrentModel) {
 			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindProject, Name: "blog"})
 		}, "Project/blog", "has Project shop already"},
+		{"a Project not named after its namespace", func(p *Plan, c *CurrentModel) {
+			c.Objects = nil
+			c.Namespace = "orders"
+		}, "Project/shop", "a Project is named after its namespace; name it orders"},
 		{"two Projects in an empty namespace", func(p *Plan, c *CurrentModel) {
 			c.Objects = nil
 			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindProject, Name: "blog"})

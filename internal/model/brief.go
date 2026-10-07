@@ -418,6 +418,8 @@ func parsePlanIssue(path, s string) (PlanIssue, error) {
 // CurrentModel is what a plan is checked against: the namespace now, the
 // installed catalog and the Brief.
 type CurrentModel struct {
+	// Namespace is the Brief's; a Project the plan makes is named after it.
+	Namespace string
 	// Objects are the namespace's story objects.
 	Objects []PlanObject
 	// Catalog is every installed catalog entry.
@@ -533,6 +535,9 @@ func checkCreated(plan Plan, current CurrentModel, o PlanObject, refuse func(str
 	}
 	switch o.Kind {
 	case KindProject:
+		if o.Name != current.Namespace {
+			refuse(subject, "a Project is named after its namespace; name it %s", current.Namespace)
+		}
 		for _, p := range current.Objects {
 			if p.Kind == KindProject {
 				refuse(subject, "the namespace has Project %s already; a plan makes a Project only when there is none", p.Name)

@@ -424,6 +424,27 @@ spec:
 			"a failed round planned nothing, the idea neither")
 	})
 
+	It("refuses a Project not named after the namespace before the admission policy would", func() {
+		createFactory(ns)
+		briefAgents(ns, 2)
+		mustCreate(newBrief(ns, "cel-lens"))
+		bad := linterPlan(ns, 1)
+		bad[model.PlanModelFile] = scaffold.File{Data: []byte(projectDoc("other") + linterDocs)}
+
+		planRound(ns, 1, 1, bad)
+		Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).
+			To(ContainSubstring("a Project the plan makes is named `"+ns+"`"), "brief.md names the namespace")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "cel-lens-plan-1")
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(task.Status.Feedback).To(ContainSubstring(
+				"Project/other: a Project is named after its namespace; name it " + ns))
+		}).Should(Succeed())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "other"), &c4v1alpha1.Project{}))).
+			To(BeTrue(), "a refused plan applies nothing")
+		Expect(getBrief(Default, ns).Status.Phase).NotTo(Equal(c4v1alpha1.BriefApplying))
+	})
+
 	It("refuses a plan the brief repository doesn't show once the Task waited long enough", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)

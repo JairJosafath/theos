@@ -45,6 +45,8 @@ type BriefWorkspace struct {
 	// IdeaPlanned says an earlier round planned the idea; when it hasn't, the
 	// round plans the idea too.
 	IdeaPlanned bool
+	// Namespace is the Brief's, which a new Project is named after.
+	Namespace string
 	// GitProvider is the Brief's, which every new Container names.
 	GitProvider string
 	// Objects are the namespace's story objects.
@@ -128,6 +130,8 @@ func renderBrief(ws BriefWorkspace) string {
 			fmt.Fprintf(&b, "%d. (%s) %s\n", i+1, mark, oneParagraph(p))
 		}
 	}
+	fmt.Fprintf(&b, "\n## Namespace\n\nThe Brief's namespace is `%s`; a Project the plan makes is named `%s`.\n",
+		ws.Namespace, ws.Namespace)
 	fmt.Fprintf(&b, "\n## Git provider\n\nEvery new Container names `gitProviderRef: {name: %s}`.\n", ws.GitProvider)
 	if len(ws.Releases) > 0 {
 		b.WriteString("\n## Releases\n\nThe person asked for these Containers' releases. Name each in " +

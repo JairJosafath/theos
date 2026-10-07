@@ -46,8 +46,9 @@ containers: [web]
 
 ## The rules
 
-1. **Plan the story kinds only:** Project (only when the namespace has none),
-   Person, SoftwareSystem, Container, DataStore and Relationship. Never a
+1. **Plan the story kinds only:** Project (only when the namespace has none,
+   named after the namespace `brief.md` names), Person, SoftwareSystem,
+   Container, DataStore and Relationship. Never a
    GitProvider, Secret, Agent, Crew, catalog entry, Task or Brief: those cost
    money or touch access, and a plan that names one is refused.
 2. **Use only the listed catalog.** A Container's `frameworkRef`,

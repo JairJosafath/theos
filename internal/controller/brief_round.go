@@ -283,7 +283,7 @@ func planFiles(tree scaffold.Tree) map[string]string {
 // currentModel is what the Brief's plans are checked against. Crews have no
 // designer yet, so a design idea needs acceptance criteria too.
 func (r *BriefReconciler) currentModel(ctx context.Context, brief *c4v1alpha1.Brief) (model.CurrentModel, error) {
-	current := model.CurrentModel{GitProvider: brief.Spec.GitProviderRef.Name}
+	current := model.CurrentModel{Namespace: brief.Namespace, GitProvider: brief.Spec.GitProviderRef.Name}
 	var err error
 	if current.Objects, err = storyObjects(ctx, r.Client, brief.Namespace); err != nil {
 		return current, err
