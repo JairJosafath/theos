@@ -118,9 +118,13 @@ url=$(cd "$WT" && gh pr create --base main --head "$branch" --title "chore: rele
   --body "Names $tag in \`$CHART\` and \`$GUIDE\`, so the guide at the tag installs that release (#370). Made by \`hack/release.sh\`.")
 echo "opened $url"
 (cd "$WT" && gh pr merge "$url" --merge)
-# GitHub deletes a merged branch itself where the repository says so.
-if git -C "$ROOT" ls-remote --exit-code --heads "$REMOTE" "$branch" >/dev/null; then
-  git -C "$WT" push --quiet "$REMOTE" --delete "$branch"
+# GitHub deletes a merged branch itself where the repository says so, at any
+# moment, even between a look and the delete (#580). So delete it regardless,
+# and only when that fails ask whether it's still there; either way go on to
+# the tag, since a branch left over never makes the release wrong.
+if ! git -C "$WT" push --quiet "$REMOTE" --delete "$branch" 2>/dev/null &&
+  git -C "$ROOT" ls-remote --exit-code --heads "$REMOTE" "$branch" >/dev/null; then
+  echo "couldn't delete $branch on $REMOTE; delete it by hand" >&2
 fi
 sha=$(cd "$WT" && gh pr view "$url" --json mergeCommit -q .mergeCommit.oid)
 if [ -z "$sha" ]; then
