@@ -139,6 +139,11 @@ var _ = Describe("Task", func() {
 		var secret corev1.Secret
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())
 		Expect(string(secret.Data["username"])).To(Equal(ns + "-orders-api-agent"))
+		Expect(string(secret.Data["scopes"])).To(Equal(gitprovider.AgentTokenScopes))
+		Expect(env).To(ContainElements(
+			map[string]any{"name": "GOPROXY", "value": "http://gitea.gitea.svc.cluster.local:3000/api/packages/" + ns + "/go,https://proxy.golang.org,direct"},
+			map[string]any{"name": "GONOSUMDB", "value": "c4factory.local"},
+		), "the agent fetches the owner's released Go modules from the Git host")
 
 		By("opening a pull request for the pushed branch")
 		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")

@@ -2,6 +2,7 @@ package model
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -135,7 +136,11 @@ func TestCheckFailedAnswers(t *testing.T) {
 		{"retry unclear, clarify without a checklist", []FailedAnswer{
 			{"cli", 4, AnswerRetry, "why", "## Acceptance criteria\n\nIt works.\n"}}, []string{"no acceptance criteria"}},
 		{"retry unclear whose empty criteria come first", []FailedAnswer{{"cli", 6, AnswerRetry, "why", criteria}},
-			[]string{"no acceptance criteria"}},
+			[]string{"no clarify can add one: close it, and file it again as a new issue with criteria"}},
+		{"retry unclear whose empty criteria come first, without clarify", []FailedAnswer{{"cli", 6, AnswerRetry, "why", ""}},
+			[]string{"close it, and file it again"}},
+		{"close unclear whose empty criteria come first", []FailedAnswer{{"cli", 6, AnswerClose, "Filed again as #9.", ""}},
+			nil},
 		{"long clarify", []FailedAnswer{{"cli", 1, AnswerRetry, "why", strings.Repeat("a", MaxClarify+1)}},
 			[]string{"keep it under"}},
 		{"close with clarify", []FailedAnswer{{"cli", 1, AnswerClose, "why", "More."}}, []string{"only a retry clarifies"}},
@@ -163,6 +168,54 @@ func TestClarifiedBody(t *testing.T) {
 	if got := ClarifiedBody("Add a CLI.\n\n", 2, "Import the checker.\n"); got != want {
 		t.Errorf("ClarifiedBody = %q, want %q", got, want)
 	}
+	if got := ClarifiedBody(want, 2, "Import the checker.\n"); got != want {
+		t.Errorf("clarified twice in one round: %q", got)
+	}
+	if got := ClarifiedBody(want, 3, "Use v2."); !strings.HasSuffix(got, "## Clarification (Brief round 3)\n\nUse v2.\n") ||
+		!strings.Contains(got, "round 2") {
+		t.Errorf("a later round's clarification: %q", got)
+	}
+}
+
+func TestFailedComment(t *testing.T) {
+	prompts := []string{"Try the CLI again now that\nthe checker is merged."}
+	retry := FailedComment(FailedAnswer{Answer: AnswerRetry, Why: "The prompt says so.", Clarify: "Import it."},
+		"lens", 2, prompts, []string{"lens-cli#4"})
+	for _, s := range []string{"Tried again for Brief `lens` in round 2", LabelReady, "clarification for round 2",
+		"The planner: The prompt says so.", "> Try the CLI again now that the checker is merged."} {
+		if !strings.Contains(retry, s) {
+			t.Errorf("retry comment lacks %q:\n%s", s, retry)
+		}
+	}
+	if strings.Contains(retry, "lens-cli#4") {
+		t.Errorf("retry comment names the round's issues:\n%s", retry)
+	}
+	closed := FailedComment(FailedAnswer{Answer: AnswerClose, Why: "Split in two."}, "lens", 2, prompts,
+		[]string{"lens-cli#4 Parse flags", "lens-cli#5 Print results"})
+	for _, s := range []string{"Closed for Brief `lens` in round 2.", "The planner: Split in two.",
+		"- lens-cli#4 Parse flags", "- lens-cli#5 Print results", "> Try the CLI again"} {
+		if !strings.Contains(closed, s) {
+			t.Errorf("close comment lacks %q:\n%s", s, closed)
+		}
+	}
+}
+
+// The guide's plan/failed.yaml example parses and is accepted.
+func TestPlannerGuideFailedExample(t *testing.T) {
+	start := strings.Index(plannerGuideText, "- container: cel-lens-cli")
+	end := strings.Index(plannerGuideText[start:], "```")
+	if start < 0 || end < 0 {
+		t.Fatal("PLANNER.md lacks the plan/failed.yaml example")
+	}
+	example := strings.ReplaceAll(plannerGuideText[start:start+end], "\n    ", "\n")
+	answers, err := parseFailedAnswers(example)
+	if err != nil || len(answers) != 1 {
+		t.Fatalf("parseFailedAnswers(example) = %+v, %v", answers, err)
+	}
+	waiting := []FailedIssue{{Container: "cel-lens-cli", Number: 1, Kind: FailedTask, Body: clearBody}}
+	if refusals := CheckFailedAnswers(answers, waiting); len(refusals) > 0 {
+		t.Errorf("the example is refused: %v", refusals)
+	}
 }
 
 func TestWorkspaceFailed(t *testing.T) {
@@ -185,5 +238,61 @@ func TestWorkspaceFailed(t *testing.T) {
 	}
 	if got, err := marshalDocument(workspaceFailed(nil)); err != nil || got != "[]\n" {
 		t.Errorf("with none: %q, %v", got, err)
+	}
+}
+
+func TestBriefWorkspaceFailed(t *testing.T) {
+	failed := []FailedIssue{{Container: "cli", Number: 1, Title: "The CLI", Kind: FailedTask,
+		Reason: "Task `cli-1` failed: no changes", Tries: 1, Body: "Add a CLI.\n"}}
+	files, err := BriefWorkspaceFiles(BriefWorkspace{Brief: "todo", Idea: "A todo list", GitProvider: "gitea",
+		Failed: failed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(files[WorkspaceFailedFile], "issue: 1") ||
+		!strings.Contains(files[BriefFile], "## Failed issues\n\n1 were handed back") {
+		t.Errorf("%s:\n%s\nbrief.md:\n%s", WorkspaceFailedFile, files[WorkspaceFailedFile], files[BriefFile])
+	}
+	if !slices.Contains(WorkspaceFiles, WorkspaceFailedFile) {
+		t.Errorf("WorkspaceFiles lacks %s", WorkspaceFailedFile)
+	}
+	files, err = BriefWorkspaceFiles(BriefWorkspace{Brief: "todo", Idea: "A todo list", GitProvider: "gitea"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files[WorkspaceFailedFile] != "[]\n" || strings.Contains(files[BriefFile], "Failed issues") {
+		t.Errorf("with none: %s = %q, brief.md:\n%s", WorkspaceFailedFile, files[WorkspaceFailedFile], files[BriefFile])
+	}
+
+	many := make([]FailedIssue, MaxFailedIssues+3)
+	for i := range many {
+		many[i] = FailedIssue{Container: "cli", Number: len(many) - i, Kind: FailedPerson}
+	}
+	out := workspaceFailed(many)
+	if len(out) != MaxFailedIssues || out[0].Issue != 1 || out[len(out)-1].Issue != MaxFailedIssues {
+		t.Errorf("workspaceFailed of %d lists %d, from #%d to #%d", len(many), len(out), out[0].Issue,
+			out[len(out)-1].Issue)
+	}
+}
+
+func TestFailedMessage(t *testing.T) {
+	cli := FailedIssue{Container: "cli", Number: 1, Title: "The\nCLI", Kind: FailedTask,
+		Reason: "Task `cli-1` failed: Failed after 3 rounds: the agent made no changes."}
+	for _, tc := range []struct {
+		name    string
+		listed  []FailedIssue
+		waiting int
+		want    string
+	}{
+		{"none", nil, 0, ""},
+		{"one", []FailedIssue{cli}, 1, "Issue cli#1 \"The CLI\" was handed back: Task `cli-1` failed: Failed after 3 " +
+			"rounds: the agent made no changes. Say in a prompt whether to try again."},
+		{"more", []FailedIssue{cli, {Container: "web", Number: 2}}, 3, "Issue cli#1 \"The CLI\" was handed back: " +
+			"Task `cli-1` failed: Failed after 3 rounds: the agent made no changes; and 2 more. " +
+			"Say in a prompt whether to try again."},
+	} {
+		if got := FailedMessage(tc.listed, tc.waiting); got != tc.want {
+			t.Errorf("%s: FailedMessage =\n%q\nwant\n%q", tc.name, got, tc.want)
+		}
 	}
 }

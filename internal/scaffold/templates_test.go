@@ -58,6 +58,11 @@ var templateCombos = []struct {
 		{model.SideCompute, "small"},
 		{model.SideDeployment, "k8s-manifests"},
 	}},
+	{"node cli", "cli", []side{
+		{model.SideFramework, "node-cli"},
+		{model.SideStandard, "ts-standard"},
+		{model.SideDeployment, "gitea-release"},
+	}},
 	{"hello", "cli", []side{
 		{model.SideFramework, "hello"},
 		{model.SideStandard, "hello-standard"},

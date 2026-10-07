@@ -1,0 +1,18 @@
+$ make test-gitea  # TestGiteaGoModuleIntegration and the unit tests, 2026-10-07
+--- PASS: TestRepackModule (0.00s)
+    --- PASS: TestRepackModule/keeps_the_module's_files_below_module@version (0.00s)
+    --- PASS: TestRepackModule/leaves_out_vendored_packages_and_a_nested_module (0.00s)
+    --- PASS: TestRepackModule/fails_on_a_file_name_Go_doesn't_allow (0.00s)
+--- PASS: TestPublishGoModule (0.01s)
+    --- PASS: TestPublishGoModule/publishes_the_module_at_the_tag (0.01s)
+    --- PASS: TestPublishGoModule/no_go.mod_is_an_outcome (0.00s)
+    --- PASS: TestPublishGoModule/a_published_version_is_left_as_it_is (0.00s)
+    --- PASS: TestPublishGoModule/a_version_published_meanwhile_is_left_as_it_is (0.00s)
+    --- PASS: TestPublishGoModule/a_v2_without_/v2_is_invalid (0.00s)
+    --- PASS: TestPublishGoModule/a_tag_that_is_no_semantic_version_is_invalid (0.00s)
+    --- PASS: TestPublishGoModule/a_go.mod_without_a_module_line_is_invalid (0.00s)
+    --- PASS: TestPublishGoModule/a_file_Go_doesn't_allow_is_invalid (0.00s)
+    --- PASS: TestPublishGoModule/a_failed_read_is_an_error (0.00s)
+--- PASS: TestGiteaGoModuleIntegration (1.67s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/gitprovider	1.691s

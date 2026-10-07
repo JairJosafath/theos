@@ -24,8 +24,12 @@ import (
 // how it went, pull requests carry the reviews. None of it decides what the Task
 // does next, so a failed note is logged and the Task goes on.
 
-// stateClosed is the state of a closed issue or pull request on the Git host.
-const stateClosed = "closed"
+// stateOpen and stateClosed are the states of an issue or pull request on the
+// Git host.
+const (
+	stateOpen   = "open"
+	stateClosed = "closed"
+)
 
 // agentName is how comments name an Agent: its name, and its model when set.
 func agentName(agent *c4v1alpha1.Agent) string {
@@ -133,8 +137,12 @@ func (r *TaskReconciler) handBack(ctx context.Context, task *c4v1alpha1.Task, co
 		return
 	}
 	n := int(task.Spec.Issue)
-	comment := fmt.Sprintf("Task `%s` failed: %s\n\nTo try again, clarify or split the issue and label it %s; "+
-		"a Crew tries an issue up to %d times.", task.Name, why, model.LabelReady, model.MaxIssueAttempts)
+	again := fmt.Sprintf("clarify or split the issue and label it %s", model.LabelReady)
+	if brief := container.Labels[c4v1alpha1.LabelBrief]; brief != "" {
+		again += fmt.Sprintf(", or say in a prompt on Brief `%s`", brief)
+	}
+	comment := fmt.Sprintf("Task `%s` failed: %s\n\nTo try again, %s; a Crew tries an issue up to %d times.",
+		task.Name, why, again, model.MaxIssueAttempts)
 	logNotes(ctx, task, []error{
 		r.gitCall(ctx, func(ctx context.Context) error { return provider.EnsureLabels(ctx, repo, issueLabels()) }),
 		r.gitCall(ctx, func(ctx context.Context) error { return provider.AddIssueLabel(ctx, repo, n, model.LabelNeedsHuman) }),

@@ -46,6 +46,8 @@ type roundApply struct {
 	released map[string]bool
 	// took and skipped count the reviewers' suggestions the round answered.
 	took, skipped int
+	// retried and closed count the failed issues the round answered.
+	retried, closed int
 }
 
 // applyRound applies the plan the Brief accepted (B8), in order and each step
@@ -131,6 +133,9 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	}
 	if run.took, run.skipped, err = r.answerSuggestions(ctx, brief, plan.Answers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the reviewers' suggestions", err)
+	}
+	if run.retried, run.closed, err = r.answerFailed(ctx, brief, plan.FailedAnswers); err != nil {
+		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the failed issues", err)
 	}
 	if err := r.mergePlan(ctx, brief, task.Status.Commit); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "merging the plan", err)
@@ -520,11 +525,15 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	if run.took+run.skipped > 0 {
 		answered = fmt.Sprintf(", took %d and skipped %d reviewers' suggestions", run.took, run.skipped)
 	}
+	if run.retried+run.closed > 0 {
+		answered += fmt.Sprintf(", retried %d and closed %d failed issues", run.retried, run.closed)
+	}
 	r.event(brief, corev1.EventTypeNormal, eventPlanned, "Apply",
 		fmt.Sprintf("%s: %d objects, %d issues%s. %s", message, len(plan.Objects), len(plan.Issues), answered,
 			summary))
 	logf.FromContext(ctx).Info("Applied Brief round", "round", status.Round, "issues", len(plan.Issues),
-		"suggestionsTaken", run.took, "suggestionsSkipped", run.skipped)
+		"suggestionsTaken", run.took, "suggestionsSkipped", run.skipped, "failedRetried", run.retried,
+		"failedClosed", run.closed)
 	return nil
 }
 

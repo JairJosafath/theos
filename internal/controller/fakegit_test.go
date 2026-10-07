@@ -183,7 +183,8 @@ func (p *fakeProvider) EnsureRepository(_ context.Context, name, _ string) (gitp
 		p.git.repos[key] = &fakeRepo{}
 	}
 	web := strings.TrimSuffix(p.cfg.URL, "/") + "/" + path.Join(p.cfg.Owner, name)
-	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git"}, nil
+	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git",
+		GoProxy: strings.TrimSuffix(p.cfg.URL, "/") + "/api/packages/" + p.cfg.Owner + "/go"}, nil
 }
 
 func (p *fakeProvider) History(ctx context.Context, repo gitprovider.Repository, limit int) ([]gitprovider.Commit, error) {
@@ -540,7 +541,8 @@ func (g *fakeGit) pullRequests(owner, name string) []gitprovider.PullRequest {
 
 func (p *fakeProvider) Repository(name string) gitprovider.Repository {
 	web := strings.TrimSuffix(p.cfg.URL, "/") + "/" + path.Join(p.cfg.Owner, name)
-	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git"}
+	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git",
+		GoProxy: strings.TrimSuffix(p.cfg.URL, "/") + "/api/packages/" + p.cfg.Owner + "/go"}
 }
 
 func (p *fakeProvider) ProtectBranch(_ context.Context, repo gitprovider.Repository, branch string,

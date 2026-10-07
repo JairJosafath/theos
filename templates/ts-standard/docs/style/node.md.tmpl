@@ -1,0 +1,127 @@
+{{ if eq .Framework "node-cli" -}}
+# Node command-line digest
+
+Distilled from Node's `util`, `process` and `fs` docs, the Command Line
+Interface Guidelines, the GNU coding standards, npm's `package.json` and
+`npm pack` docs, esbuild's API and NO_COLOR (see `SOURCES.md`). `[lint: x]` =
+enforced by `make check`; `[review]` = check it yourself.
+
+## The command line
+
+- Parse with `util.parseArgs` and `strict: true`: an unknown option or a value
+  of the wrong type throws, and `run` turns that into a usage error. [review]
+- Every option has a long name; a one-letter `short` only for the common
+  ones. Use the usual names (`--verbose`, `--output`, `--force`). [review]
+- `--help` and `--version` print to stdout and exit 0; other flags on the
+  line are ignored. Help starts with a usage line and lists every flag. [review]
+- Positionals are off by default under `strict`; turn on `allowPositionals`
+  only when the program takes operands. Prefer flags to positionals. [review]
+- Everything after `--` is a positional, even when it starts with `-`. A lone
+  `-` is a positional too: read it as stdin, or stdout for an output path. [review]
+- Boolean `--no-x` flags need `allowNegative` (Node 22.4); without it, define
+  the negated flag yourself. [review]
+- `values` from `parseArgs` is typed by the `options` object declared
+  `as const`; positionals are `string[]`, so index them with a check. [lint: tsc noUncheckedIndexedAccess]
+
+## Output and exit codes
+
+- Results go to stdout, so they pipe; diagnostics, progress and warnings go to
+  stderr. [review]
+- `src/cli.ts` writes only through the `Output` it is given, never the
+  console. [lint: no-console]
+- `main.ts` sets `process.exitCode` and lets Node exit. `process.exit()` can
+  drop writes still pending on a pipe. [lint: no-restricted-properties]
+- Exit 0 on success (help and version too), 2 for a usage error, 1 for any
+  other failure. Export the codes from `cli.ts` and test them. [review]
+- Output for machines is stable and plain: one record per line, or `--json`
+  when it is structured. No decoration when stdout is not a TTY. [review]
+- Piped to `head`, writes to stdout fail with `EPIPE` once the reader is gone.
+  That is the reader's choice, not a crash: handle `'error'` on stdout in
+  `main.ts`, stop writing, and print no stack trace. [review]
+- Say something within about 100 ms when work will take a while, on
+  stderr. [review]
+
+## Errors
+
+- An expected error is one line on stderr: the program's name, what failed
+  and the value involved (`greet: cannot read config.json: no such file`). [review]
+- Say what to do next ("Run 'greet --help' for usage."). [review]
+- No stack trace for expected errors: catch them and rewrite them for
+  people. Keep traces for bugs, or behind `--verbose`. [review]
+- Throw only `Error` objects; catch variables are `unknown`, so narrow them
+  before reading `.message`. [lint: @typescript-eslint/only-throw-error; tsc strict]
+- An uncaught exception exits 1 with a trace; don't count on it. [review]
+
+## Input and files
+
+- Use `node:fs/promises` and await it. Don't use sync calls on paths that
+  read user data. [review]
+- `readFile` buffers the whole file. For input that can be large, stream it
+  (`createReadStream`, `readline`) and process it as it arrives. [review]
+- Relative paths resolve against the current directory, as the user typed
+  them; never against the program's own location. [review]
+- Read and write text as UTF-8 and say so (`readFile(path, 'utf8')`). [review]
+- File names are input files; output files come from a flag such as
+  `-o`/`--output`. [review]
+- Prompt only when stdin is a TTY, and give a flag for every prompt. Check
+  `isTTY` on the stream involved. [review]
+- No colour, spinners or animation when stdout is not a TTY, when `NO_COLOR`
+  is set and not empty, or when `TERM=dumb`. A `--color` flag or config may
+  override `NO_COLOR`. [review]
+- `run` never touches `process`: `main.ts` passes in what it needs (env,
+  stdin, `isTTY`, an `AbortSignal`), so tests can set it. [review]
+
+## Signals and async
+
+- Every promise is awaited or returned; none is left floating. [lint: @typescript-eslint/no-floating-promises]
+- No async function where a callback must return `void`, such as an event
+  listener. [lint: @typescript-eslint/no-misused-promises]
+- When the program does I/O, `run` returns `Promise<number>` and `main.ts`
+  awaits it before setting `exitCode`. [review]
+- Ctrl-C sends `SIGINT`. Without a listener Node exits 130 (128 + 2) at once.
+  A listener removes that default, so only add one to clean up. [review]
+- On `SIGINT`, abort an `AbortController`, pass its signal to `fs` calls and
+  timers, say on stderr that the program is stopping, and set exit code 130. [review]
+- Cleanup has a time limit; a second Ctrl-C stops without it. [review]
+
+## Configuration
+
+- Precedence, highest first: flags, environment variables, a project config
+  file, a user config file. [review]
+- Never take a secret from a flag or an environment variable: they leak into
+  `ps` and shell history. Read it from a file or stdin. [review]
+- Never print a secret, in errors and `--verbose` output included. [review]
+
+## Bundling and packaging
+
+- esbuild bundles `src/main.ts` into one ES module, `out/cli.js`, for
+  `node22`. With `platform: 'node'` Node's built-in modules stay external;
+  import them as `node:fs`. [review]
+- The banner adds the shebang that `bin` needs and a `require` from
+  `createRequire`, for bundled CommonJS code that requires a built-in. [review]
+- The bundle holds everything, so the package has no `dependencies`: every
+  package goes in `devDependencies`. [review]
+- Packages that read their own files at run time (`__dirname`,
+  `import.meta.url`) or ship native `.node` modules may not bundle; pick
+  another. [review]
+- esbuild's `target` lowers syntax only, never adds APIs. `engines.node` is
+  `>=22` and `@types/node` describes Node 24: use no Node API newer than
+  Node 22. [review]
+- `engines` only warns unless the user sets `engine-strict`. [review]
+- `npm pack` runs `prepack`, which builds, and makes the release tarball.
+  `files` keeps it to the bundle and the CHANGELOG, plus what npm always adds
+  (`package.json`, README, LICENSE). [lint: make pack-check packs it and runs --version]
+- `bin` names the command after the container. [review]
+- `package.json`'s `version` is the release and what `--version` prints; each
+  release has a CHANGELOG entry, and its tag matches the version. [lint: make dist refuses a mismatch; CHANGELOG review]
+
+## Tests
+
+- Tests call `run` with a recording `Output` and check the exit code,
+  stdout and stderr together. No child process, no real terminal. [review]
+- Cover each flag, `--help`, `--version`, an unknown flag (exit 2, a message
+  on stderr, nothing on stdout) and each failure exit. [review]
+- Files go in a temporary directory made in the test and removed after. [review]
+- Exported functions declare their parameter and return types. [lint: @typescript-eslint/explicit-module-boundary-types]
+- vitest runs in `make test`; `make pack-check` runs the packed program once. [lint: make check]
+{{- end }}
