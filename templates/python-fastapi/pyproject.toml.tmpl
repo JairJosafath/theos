@@ -13,11 +13,22 @@ dependencies = [
 ]
 
 [dependency-groups]
+# The tools a Standard checks with are pinned exactly; uv.lock pins the rest.
 dev = [
     "httpx2>=2.13",
-    "pytest>=9.0",
-    "ruff>=0.16",
+    "mypy==2.4.0",
+    "pytest==9.1.1",
+    "ruff==0.16.10",
 ]
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "app"
+module-root = ""
+{{- if not .Standard }}
 
 [tool.ruff]
 line-length = 100
@@ -25,6 +36,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
+{{- end }}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

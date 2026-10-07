@@ -35,8 +35,14 @@ func mergedIssue(ns string) {
 // mergedIssueAt is mergedIssue with the Task's merge commit, "" for none read yet.
 func mergedIssueAt(ns, commit string) {
 	GinkgoHelper()
+	mergedIssueIn(ns, "v0.1.0", commit)
+}
+
+// mergedIssueIn is mergedIssueAt with the release the issue is in.
+func mergedIssueIn(ns, release, commit string) {
+	GinkgoHelper()
 	n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, nil)
-	gitFake.setIssueRelease(ns, "orders-api", n, "v0.1.0", releaseDue)
+	gitFake.setIssueRelease(ns, "orders-api", n, release, releaseDue)
 	Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
 	// The Task's Agent doesn't exist, so the Task does nothing before it is Merged.
 	task := newTask(ns, "orders-api-merged", "")

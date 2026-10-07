@@ -100,6 +100,7 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		status.LastRelease = &c4v1alpha1.CrewRelease{Tag: step.Tag, Commit: step.Commit, Time: metav1.NewTime(r.now()),
 			Run: model.RunWaiting}
 		r.releaseSaid.Store(crew.UID, reasonReleased+"\n"+message)
+		r.tagged.Store(crew.UID, step.Tag)
 		r.setReleased(crew, status, metav1.ConditionTrue, reasonReleased, message)
 	case step.Held != "":
 		// The last poll's status write can fail after its Event, so the
