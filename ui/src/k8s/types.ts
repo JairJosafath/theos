@@ -344,6 +344,10 @@ export interface Brief extends K8sObject {
     created?: { kind: string; name: string }[]
     /** The issues the Brief filed, over all rounds. */
     issues?: { repository: string; number: number; url?: string; title?: string; round?: number; n?: number }[]
+    /** Reviewers' suggestions waiting in the repositories of the Containers the Brief made: at most 50, by container then number. */
+    suggestions?: { container: string; number: number; title?: string; url?: string; criteria?: boolean }[]
+    /** How many reviewer suggestions wait in all; can exceed the listed ones. */
+    suggestionsWaiting?: number
     /** One entry per round, oldest first. */
     history?: {
       round: number

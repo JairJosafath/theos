@@ -37,6 +37,34 @@ describe('describeBrief', () => {
     expect(view).toMatchObject({ waitingPrompts: 2, round: 2, cost: '$1.23', needsInput: undefined })
   })
 
+  it('lists the reviewer suggestions and how many wait in all', () => {
+    const view = describeBrief({
+      ...brief('shop', ''),
+      status: {
+        phase: 'Planned',
+        suggestions: [{ container: 'api', number: 5, title: 'Escape input', url: 'http://g/5', criteria: true }],
+        suggestionsWaiting: 60,
+      },
+    })
+    expect(view.suggestions).toEqual([{ container: 'api', number: 5, title: 'Escape input', url: 'http://g/5' }])
+    expect(view.suggestionsWaiting).toBe(60)
+    expect(view.phase.explanation).toBe(
+      'The last round is done; 60 reviewer suggestions wait for your answer in a prompt.',
+    )
+  })
+
+  it('counts the listed suggestions when no total is given, and has none by default', () => {
+    const some = describeBrief({
+      ...brief('shop', ''),
+      status: { phase: 'Planned', suggestions: [{ container: 'api', number: 5 }] },
+    })
+    expect(some.suggestionsWaiting).toBe(1)
+    expect(some.phase.explanation).toContain('1 reviewer suggestion waits')
+    const none = describeBrief({ ...brief('shop', ''), status: { phase: 'Planned' } })
+    expect(none).toMatchObject({ suggestions: [], suggestionsWaiting: 0 })
+    expect(none.phase.explanation).toBe('The last round is done and no prompt is waiting.')
+  })
+
   it('takes the NeedsInput sentence only while it is True', () => {
     const needs = (status: 'True' | 'False') =>
       describeBrief({

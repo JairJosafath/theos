@@ -279,6 +279,35 @@ function BriefDetails({ view }: { view: BriefView }) {
           />
         </>
       ) : null}
+      {view.suggestionsWaiting ? (
+        <>
+          <h4 className="section-title">Reviewer suggestions ({view.suggestionsWaiting})</h4>
+          <Clipped
+            className="brief-list brief-issues"
+            items={view.suggestions.map((g) => {
+              const label = `${g.container} #${g.number}`
+              return (
+                <li key={label}>
+                  {g.url ? (
+                    <a href={g.url} target="_blank" rel="noreferrer">
+                      {label}
+                    </a>
+                  ) : (
+                    <span className="mono">{label}</span>
+                  )}
+                  {g.title ? <span className="brief-issue-title"> {g.title}</span> : null}
+                </li>
+              )
+            })}
+          />
+          {view.suggestionsWaiting > view.suggestions.length ? (
+            <p className="field-hint">
+              {view.suggestionsWaiting - view.suggestions.length} more wait than are listed here.
+            </p>
+          ) : null}
+          <p className="field-hint">Answer in a prompt, such as "take the input-safety ones, skip the rest".</p>
+        </>
+      ) : null}
       {view.prompts.length ? (
         <>
           <h4 className="section-title">
