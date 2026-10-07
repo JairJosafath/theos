@@ -22,7 +22,7 @@ issue and pull request templates, and the `make check` contract CI runs.
   nothing in this Standard redirects `GOCACHE`. The factory publishes its
   apps' released modules to the owner's Gitea package registry, under
   `c4factory.local` paths: a step before `make check` downloads the ones
-  `go.mod` requires with `GOPROXY` set to the registry alone (the job's token
+  `go.sum` lists with `GOPROXY` set to the registry alone (the job's token
   in `~/.netrc`), and `make check` runs with `GOPRIVATE=c4factory.local`, so
   no proxy is asked for them; other modules come from proxy.golang.org. The
   factory's agent pods send those paths to the registry alone too.

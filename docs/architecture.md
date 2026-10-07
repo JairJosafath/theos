@@ -223,7 +223,7 @@ proxy.golang.org. The go command has no per-path proxy, and with a list of
 the registry, then the public proxy, it would ask the public proxy for a
 factory module the registry lacks (it goes on after a 404), leaking the
 project's and Container's names. go-standard's CI (v1.1.5) downloads the
-`c4factory.local/` requirements of `go.mod` with `GOPROXY` set to the registry
+`c4factory.local/` modules of `go.sum` with `GOPROXY` set to the registry
 alone, then runs `make check` with `GOPRIVATE=c4factory.local`, so no proxy is
 asked for them. [plans/app-modules.md](plans/app-modules.md) has why.
 

@@ -170,12 +170,14 @@ func TestGoStandardCIKeepsFactoryModulesOffPublicProxies(t *testing.T) {
 	fetched, checked := -1, -1
 	for i, step := range job.Steps {
 		if step.Env["GOPROXY"] != "" {
-			if step.Env["GOPROXY"] != registry || step.Env["GOPRIVATE"] != "" ||
+			// GOPRIVATE set and empty: the job's would send the paths direct.
+			private, set := step.Env["GOPRIVATE"]
+			if step.Env["GOPROXY"] != registry || !set || private != "" ||
 				step.Env["GONOSUMDB"] != "c4factory.local" {
-				t.Errorf("step %q env %v: want GOPROXY=%s alone, no GOPRIVATE, GONOSUMDB=c4factory.local",
+				t.Errorf("step %q env %v: want GOPROXY=%s alone, an empty GOPRIVATE, GONOSUMDB=c4factory.local",
 					step.Name, step.Env, registry)
 			}
-			if !strings.Contains(step.Run, `startswith("c4factory.local/")`) || !strings.Contains(step.Run, "go mod download") {
+			if !strings.Contains(step.Run, "go.sum") || !strings.Contains(step.Run, "go mod download") {
 				t.Errorf("step %q doesn't download the factory's modules:\n%s", step.Name, step.Run)
 			}
 			fetched = i

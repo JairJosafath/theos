@@ -43,8 +43,11 @@ jobs:
           GOPROXY: ${{ gitea.server_url }}/api/packages/${{ gitea.repository_owner }}/go
           GOPRIVATE: ""
           GONOSUMDB: c4factory.local
+        # From go.sum, not go.mod's require lines: go mod tidy also loads the
+        # test imports of dependencies, which only go.sum lists; a module
+        # replaced by a local directory has no line there.
         run: |
-          mods=$(go mod edit -json | jq -r '.Require[]? | select(.Path | startswith("c4factory.local/")) | "\(.Path)@\(.Version)"')
+          mods=$( [ ! -f go.sum ] || awk '$1 ~ /^c4factory\.local\// { sub("/go.mod$", "", $2); print $1 "@" $2 }' go.sum | sort -u)
           if [ -n "$mods" ]; then
             # Outside the module, so only these are fetched.
             cd "$(mktemp -d)" && go mod download $mods

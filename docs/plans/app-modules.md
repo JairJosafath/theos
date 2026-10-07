@@ -90,7 +90,8 @@ choices under it.
    the registry lacks is a 404, the go command tries direct, and
    `c4factory.local` resolves nowhere. go-standard v1.1.5's CI can't run
    c4agent, and needs no new modules: a step downloads the `c4factory.local/`
-   requirements of `go.mod` with `GOPROXY` set to the registry alone, and
+   modules `go.sum` lists (`go mod tidy` loads dependencies' test imports too,
+   which only `go.sum` has) with `GOPROXY` set to the registry alone, and
    `make check` runs with `GOPRIVATE=c4factory.local`, so it finds them in the
    module cache and asks no proxy for them.
 5. **The plan says who uses whom.** An issue file's front matter takes
