@@ -355,7 +355,9 @@ failure files nothing. When GitHub started none of the newest failed run's
 jobs (no steps, an annotation saying the job was not started: failed
 payments, a spending limit), no code is at fault: the watch files one
 `GitHub Actions starts no jobs` issue in `status/needs-maintainer`, carrying
-the annotation, and no `main is red`.
+the annotation, and no `main is red`. It keeps that issue's number in
+`.relay/ci-stopped` until every workflow runs its jobs again, and files no
+other while the outage lasts, even after the issue is closed as a duplicate.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when

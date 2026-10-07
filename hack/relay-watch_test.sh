@@ -465,7 +465,9 @@ case "$1 $2 $* " in
     n=$(($(jq length "$FAKE/issues.json") + 100))
     jq --argjson n "$n" '. + [input + {number: $n}]' "$FAKE/issues.json" - >"$FAKE/issues.new" &&
       mv "$FAKE/issues.new" "$FAKE/issues.json" && echo "$n" ;;
-  *) jq -r "$q" "$FAKE/issues.json" ;;
+  *) # $FAKE/listed.json, when there, stands for a list of open issues that
+    # lags behind the creates, or that a close took an issue out of.
+    if [ -f "$FAKE/listed.json" ]; then jq -r "$q" "$FAKE/listed.json"; else jq -r "$q" "$FAKE/issues.json"; fi ;;
 esac
 GH
 chmod +x "$T/bin/gh"
@@ -546,6 +548,52 @@ check "ci: logged once per workflow" "$(logged 'GitHub Actions started no job of
 ci_round
 check "ci: a later round files no other issue" "$(filed)" 1
 check "ci: unstarted jobs that last are logged once" "$(logged 'GitHub Actions started no job')" 2
+
+# GitHub's open-issue list lags the create: the round still files one issue.
+echo '[]' >"$T/issues.json"
+echo '[]' >"$T/listed.json"
+rm -f "$DIR/ci-stopped"
+: >"$LOG"
+CI_SAID=
+ci_round
+check "ci: a lagging open-issue list still files one issue" "$(filed)" 1
+check "ci: both workflows name it" "$(logged 'GitHub Actions started no job of Tests; issue #100$'):$(logged 'GitHub Actions started no job of Lint; issue #100$')" 1:1
+check "ci: its number is kept" "$(cat "$DIR/ci-stopped")" 100
+# The maintainer closed it as a duplicate (not_planned): no open issue has
+# its title, and while the outage lasts, nothing is filed again, even after
+# the watch restarts (CI_SAID empty).
+CI_SAID=
+ci_round
+check "ci: after a close as duplicate, the outage files nothing" "$(filed)" 1
+# Every workflow ran its jobs again: the outage is over, and the next one
+# files anew.
+rm -f "$T"/jobs-*.json "$T"/annotations-*.json
+runs test.yml failure success
+runs lint.yml success
+ci_round
+check "ci: the end of the outage forgets the issue" "$([ -e "$DIR/ci-stopped" ] && echo kept || echo gone)" gone
+for id in $runs_test; do unstarted "$id" "5$id"; done
+runs test.yml failure failure
+runs lint.yml failure failure
+ci_round
+check "ci: the next outage files anew" "$(filed)" 2
+# An unreadable workflow doesn't end the outage.
+mv "$T/bin/gh" "$T/bin/gh.ok"
+printf '#!/usr/bin/env bash\nexit 1\n' >"$T/bin/gh"
+chmod +x "$T/bin/gh"
+ci_round
+mv "$T/bin/gh.ok" "$T/bin/gh"
+check "ci: an unreadable CI keeps the issue" "$(cat "$DIR/ci-stopped" 2>/dev/null)" 101
+
+# The outage already has an open issue in status/needs-human: it is reused
+# and its labels left alone.
+rm -f "$DIR/ci-stopped" "$T/listed.json"
+jq -n '[{number: 379, title: "GitHub Actions starts no jobs", labels: ["status/needs-human", "kind/bug", "source/dev"]}]' >"$T/issues.json"
+ci_round
+check "ci: a needs-human issue: nothing filed" "$(filed)" 1
+check "ci: a needs-human issue keeps its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/needs-human kind/bug source/dev"
+check "ci: a needs-human issue is the one kept" "$(cat "$DIR/ci-stopped")" 379
+rm -f "$DIR/ci-stopped"
 
 # A failed job with no steps but no such annotation is code work, and so is a
 # never-started run before the newest; the newest decides.

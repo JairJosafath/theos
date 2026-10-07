@@ -42,7 +42,8 @@
 # started none of the newest failed run's jobs (no steps, an annotation saying
 # the job was not started: failed payments, a spending limit), no code is at
 # fault: the watch files one "GitHub Actions starts no jobs" issue in
-# status/needs-maintainer, with the annotation, and no "main is red".
+# status/needs-maintainer, with the annotation, and no "main is red", once per
+# outage (.relay/ci-stopped), even when it is closed as a duplicate.
 #
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh
 # --maintain), which acts as the project's maintainer on the owner's behalf and
@@ -179,10 +180,24 @@ ci_workflows() {
 # fault: it files one "GitHub Actions starts no jobs" issue for the maintainer
 # instead, which every such workflow shares. CI_SAID holds the workflows whose
 # state was logged, so a state that lasts is logged once.
+#
+# The shared issue's number is kept in $DIR/ci-stopped from the round that
+# files it until a round in which every workflow's state was read and none
+# had unstarted jobs (the outage is over); while it is there, no round files
+# the issue again. The file, not GitHub, is asked: GitHub's list of open
+# issues lags a create by seconds (two workflows in one round filed two), and
+# the maintainer may close the issue as a duplicate of one that already
+# tracks the outage, after which a create would find no open issue and file
+# it again every round. Asking GitHub for issues closed since the outage
+# began would need the outage's start and the close reason; the file needs
+# neither, and outlives a restart of the watch. An open issue with this title
+# that the watch didn't file (one in status/needs-human, say) is reused by
+# the create, which leaves its labels alone.
 CI_SAID=
 CI_STOPPED_TITLE='GitHub Actions starts no jobs'
 ci_round() {
-  local file name body rc out said=
+  local file name body rc out said= stopped= unstarted= unread=
+  [ -r "$DIR/ci-stopped" ] && read -r stopped <"$DIR/ci-stopped"
   while IFS=$'\t' read -r file name; do
     [ -n "$file" ] || continue
     body=$(github red "$file" 2>&1)
@@ -203,8 +218,17 @@ ci_round() {
         ;;
       1) ;;
       3)
-        out=$(github create "$CI_STOPPED_TITLE" - status/needs-maintainer kind/bug source/dev <<<"$body" 2>&1)
-        rc=$?
+        unstarted=1
+        if [ -n "$stopped" ]; then
+          out=$stopped rc=0
+        else
+          out=$(github create "$CI_STOPPED_TITLE" - status/needs-maintainer kind/bug source/dev <<<"$body" 2>&1)
+          rc=$?
+          if [ "$rc" = 0 ]; then
+            stopped=${out##*$'\n'}
+            echo "$stopped" >"$DIR/ci-stopped"
+          fi
+        fi
         if [ "$rc" != 0 ]; then
           said+=" stopfail:$file"
           [[ " $CI_SAID " == *" stopfail:$file "* ]] ||
@@ -216,12 +240,14 @@ ci_round() {
         fi
         ;;
       *)
+        unread=1
         said+=" err:$file"
         [[ " $CI_SAID " == *" err:$file "* ]] ||
           log "could not read main's CI for $name (exit $rc): ${body//$'\n'/; }"
         ;;
     esac
   done < <(ci_workflows)
+  [ -n "$unstarted$unread" ] || rm -f "$DIR/ci-stopped"
   CI_SAID=$said
 }
 
