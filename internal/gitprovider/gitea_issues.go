@@ -256,6 +256,9 @@ func (g *gitea) GetIssue(ctx context.Context, repo Repository, number int) (Issu
 	if err != nil {
 		return Issue{}, err
 	}
+	if status == http.StatusNotFound {
+		return Issue{}, fmt.Errorf("gitea: issue %d of %s: %w", number, repoPath(repo), ErrIssueNotFound)
+	}
 	var issue giteaIssue
 	if status != http.StatusOK || json.Unmarshal(data, &issue) != nil {
 		return Issue{}, fmt.Errorf("gitea: reading issue %d of %s failed (HTTP %d): %s", number, repoPath(repo), status, apiMessage(data))

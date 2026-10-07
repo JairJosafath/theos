@@ -118,7 +118,7 @@ func (s *fakeIssueState) find(key string, number int) *fakeIssue {
 func (p *fakeProvider) issueOf(repo gitprovider.Repository, number int) (*fakeIssue, error) {
 	i := p.git.issueState().find(repo.Owner+"/"+repo.Name, number)
 	if i == nil {
-		return nil, fmt.Errorf("issue %d of %s/%s not found", number, repo.Owner, repo.Name)
+		return nil, fmt.Errorf("issue %d of %s/%s: %w", number, repo.Owner, repo.Name, gitprovider.ErrIssueNotFound)
 	}
 	return i, nil
 }

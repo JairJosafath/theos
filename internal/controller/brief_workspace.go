@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -89,7 +90,8 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 	if err != nil {
 		return "", err
 	}
-	recordSuggestions(ctx, brief, ws.Suggestions)
+	recordSuggestions(ctx, brief, ws.Suggestions, slices.ContainsFunc(ws.Containers,
+		func(c model.WorkspaceContainer) bool { return c.IssuesUnread }))
 	ws.Suggestions = waitingSuggestions(brief)
 	rendered, err := model.BriefWorkspaceFiles(ws)
 	if err != nil {

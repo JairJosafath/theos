@@ -10,10 +10,12 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -30,7 +32,9 @@ import (
 
 // recordSuggestions sets the Brief's waiting suggestions to the ones found,
 // by Container and number; the status holds the first model.MaxSuggestions.
-func recordSuggestions(ctx context.Context, brief *c4v1alpha1.Brief, found []model.Suggestion) {
+// When a repository couldn't be read (partial), found has only the ones the
+// status listed for it, so the count doesn't go down.
+func recordSuggestions(ctx context.Context, brief *c4v1alpha1.Brief, found []model.Suggestion, partial bool) {
 	found = slices.Clone(found)
 	slices.SortFunc(found, func(a, b model.Suggestion) int {
 		if c := strings.Compare(a.Container, b.Container); c != 0 {
@@ -44,10 +48,14 @@ func recordSuggestions(ctx context.Context, brief *c4v1alpha1.Brief, found []mod
 			Title: model.Clip(s.Title, 255), URL: s.URL, Criteria: s.Criteria})
 	}
 	status := &brief.Status
-	if int(status.SuggestionsWaiting) != len(found) {
-		logf.FromContext(ctx).Info("Reviewers' suggestions wait for the person", "count", len(found))
+	count := int32(len(found))
+	if partial {
+		count = max(count, status.SuggestionsWaiting)
 	}
-	status.SuggestionsWaiting = int32(len(found))
+	if status.SuggestionsWaiting != count {
+		logf.FromContext(ctx).Info("Reviewers' suggestions wait for the person", "count", count)
+	}
+	status.SuggestionsWaiting = count
 	status.Suggestions = nil
 	if len(listed) > 0 {
 		status.Suggestions = listed
@@ -72,9 +80,9 @@ func lastSuggestions(brief *c4v1alpha1.Brief, name string) []model.Suggestion {
 // answerSuggestions does what the plan's answers say: a suggestion to take
 // leaves the Later milestone and is labelled ready, for the Crew; one to skip
 // is closed. Each gets a comment with the planner's why and the round's
-// prompts. A suggestion that no longer waits (answered by an earlier try, or
-// by a person on the Git host) is left as it is. It returns how many it took
-// and skipped.
+// prompts. A suggestion that no longer waits (answered by an earlier try or
+// by a person on the Git host, or gone with its issue or Container) is left
+// as it is. It returns how many it took and skipped now.
 func (r *BriefReconciler) answerSuggestions(ctx context.Context, brief *c4v1alpha1.Brief,
 	answers []model.SuggestionAnswer) (took, skipped int, err error) {
 	if len(answers) == 0 {
@@ -86,8 +94,13 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, brief *c4v1alph
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	for _, a := range answers {
+		forgetSuggestion(brief, a.Container, a.Issue)
 		var c c4v1alpha1.Container
-		if err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c); err != nil {
+		err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c)
+		if apierrors.IsNotFound(err) {
+			continue // gone, and its suggestions with it
+		}
+		if err != nil {
 			return took, skipped, fmt.Errorf("reading Container %s: %w", a.Container, err)
 		}
 		provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
@@ -96,23 +109,26 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, brief *c4v1alph
 		}
 		repo := provider.Repository(c.Name)
 		issue, err := provider.GetIssue(gitCtx, repo, a.Issue)
+		if errors.Is(err, gitprovider.ErrIssueNotFound) {
+			continue // deleted on the Git host: nothing waits
+		}
 		if err != nil {
 			return took, skipped, fmt.Errorf("reading %s#%d: %w", a.Container, a.Issue, err)
 		}
-		if issue.State == "open" && model.IsSuggestion(issue.Labels, issue.Body) {
-			if err := answerSuggestion(gitCtx, provider, repo, issue, a,
-				model.SuggestionComment(a, brief.Name, int(status.Round), prompts)); err != nil {
-				return took, skipped, fmt.Errorf("answering %s#%d: %w", a.Container, a.Issue, err)
-			}
-			logf.FromContext(ctx).Info("Answered a reviewer's suggestion", "container", a.Container, "number", a.Issue,
-				"answer", a.Answer)
+		if issue.State != "open" || !model.IsSuggestion(issue.Labels, issue.Body) {
+			continue // answered by an earlier try, or by a person on the Git host
 		}
+		if err := answerSuggestion(gitCtx, provider, repo, issue, a,
+			model.SuggestionComment(a, brief.Name, int(status.Round), prompts)); err != nil {
+			return took, skipped, fmt.Errorf("answering %s#%d: %w", a.Container, a.Issue, err)
+		}
+		logf.FromContext(ctx).Info("Answered a reviewer's suggestion", "container", a.Container, "number", a.Issue,
+			"answer", a.Answer)
 		if a.Answer == model.AnswerTake {
 			took++
 		} else {
 			skipped++
 		}
-		forgetSuggestion(brief, a.Container, a.Issue)
 	}
 	return took, skipped, nil
 }

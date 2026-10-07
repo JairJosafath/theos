@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -368,8 +369,8 @@ func TestIssues(t *testing.T) {
 		!reflect.DeepEqual(h.comments[1], []string{"Picked up"}) {
 		t.Errorf("issue 1 = %+v, assignees %v, comments %v", got, h.issues[1].assignees, h.comments[1])
 	}
-	if _, err := p.GetIssue(ctx, repo, 9); err == nil {
-		t.Error("GetIssue() of a missing issue succeeded")
+	if _, err := p.GetIssue(ctx, repo, 9); !errors.Is(err, ErrIssueNotFound) {
+		t.Errorf("GetIssue() of a missing issue error = %v, want ErrIssueNotFound", err)
 	}
 }
 

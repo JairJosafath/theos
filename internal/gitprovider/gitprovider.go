@@ -143,7 +143,7 @@ type Provider interface {
 	// ListIssues returns the open issues of repo labelled label, or all of them
 	// when label is "", without pull requests.
 	ListIssues(ctx context.Context, repo Repository, label string) ([]Issue, error)
-	// GetIssue reads one issue.
+	// GetIssue reads one issue; ErrIssueNotFound when there is none.
 	GetIssue(ctx context.Context, repo Repository, number int) (Issue, error)
 	// OpenBlockers returns the open issues an issue depends on: "#3" in the same
 	// repository, "owner/name#3" in another.
@@ -243,6 +243,9 @@ var ErrTooManyFiles = errors.New("too many changed files to list in full")
 // ErrEmptyChange means a commit would leave its base as it is: every file it
 // writes is already there as it is, and no file it removes is. Nothing is pushed.
 var ErrEmptyChange = errors.New("the change leaves its base as it is")
+
+// ErrIssueNotFound is GetIssue's error for an issue the repository doesn't have.
+var ErrIssueNotFound = errors.New("no such issue")
 
 // SameHost reports whether two URLs point at the same host, so a Git provider's
 // credentials can be reused for a template on it.
