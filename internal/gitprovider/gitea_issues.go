@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -278,9 +279,10 @@ func (g *gitea) OpenBlockers(ctx context.Context, repo Repository, number int) (
 	return open, nil
 }
 
-// AddIssueDependency makes issue number depend on issue blocker of the same
-// repository. It is safe to repeat.
-func (g *gitea) AddIssueDependency(ctx context.Context, repo Repository, number, blocker int) error {
+// AddIssueDependency makes issue number of repo depend on issue blocker of
+// blockerRepo, which may be repo itself or another repository. It is safe to
+// repeat.
+func (g *gitea) AddIssueDependency(ctx context.Context, repo Repository, number int, blockerRepo Repository, blocker int) error {
 	path := issuePath(repo, number) + "/dependencies"
 	status, data, err := g.do(ctx, http.MethodGet, path+"?limit=50", nil)
 	if err != nil {
@@ -291,16 +293,24 @@ func (g *gitea) AddIssueDependency(ctx context.Context, repo Repository, number,
 		return fmt.Errorf("gitea: reading the dependencies of issue %d of %s failed (HTTP %d): %s",
 			number, repoPath(repo), status, apiMessage(data))
 	}
-	if slices.ContainsFunc(deps, func(d giteaIssue) bool { return d.Number == blocker }) {
+	self, want := repo.Owner+"/"+repo.Name, blockerRepo.Owner+"/"+blockerRepo.Name
+	if slices.ContainsFunc(deps, func(d giteaIssue) bool {
+		of := d.Repository.FullName
+		if of == "" {
+			of = self
+		}
+		return d.Number == blocker && strings.EqualFold(of, want)
+	}) {
 		return nil
 	}
-	payload, _ := json.Marshal(map[string]any{"owner": repo.Owner, "repo": repo.Name, "index": blocker})
+	payload, _ := json.Marshal(map[string]any{"owner": blockerRepo.Owner, "repo": blockerRepo.Name, "index": blocker})
 	status, data, err = g.do(ctx, http.MethodPost, path, payload)
 	if err != nil {
 		return err
 	}
 	if status != http.StatusCreated {
-		return fmt.Errorf("gitea: making issue %d depend on %d failed (HTTP %d): %s", number, blocker, status, apiMessage(data))
+		return fmt.Errorf("gitea: making issue %d of %s depend on %s#%d failed (HTTP %d): %s",
+			number, repoPath(repo), want, blocker, status, apiMessage(data))
 	}
 	return nil
 }

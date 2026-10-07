@@ -1,0 +1,132 @@
+{{ if eq .Framework "react-vite" -}}
+# React web app digest
+
+Distilled from react.dev, Vite's guides, WCAG 2.2, the W3C forms tutorial and
+Testing Library (see `SOURCES.md`). `[lint: x]` = enforced by `make check`
+(`react-hooks/*` from the plugin's recommended preset; its warnings fail too);
+`[review]` = check it yourself.
+
+## Components are pure
+
+- A component returns the same JSX for the same props, state and context. No
+  `Date.now()`, `new Date()` or `Math.random()` in render; read them in an
+  event handler or an effect. [lint: react-hooks/purity]
+- Render has no side effects: no `fetch`, no `document.title = ...`, no
+  writes to module variables. Side effects go in event handlers, or in effects
+  when nothing triggers them. [lint: react-hooks/globals; rest review]
+- Props, state, hook arguments and values already passed to JSX are never
+  mutated; make a new object or array and set it. Mutating a local made in
+  this render is fine. [lint: react-hooks/immutability]
+- No unconditional `setState` during render. [lint: react-hooks/set-state-in-render]
+- Read and write `ref.current` in handlers and effects, never in render. [lint: react-hooks/refs]
+- Define components at module level, never inside another component: a new
+  definition each render resets its state. [lint: react-hooks/static-components]
+- Use components as `<Card />`, never `Card()`. Keep `StrictMode` in
+  `main.tsx`: it renders twice in development to expose impure code. [review]
+- Catch children's errors with an error boundary, not `try`. [lint: react-hooks/error-boundaries]
+
+## Hooks
+
+- Call hooks only at the top level of a component or a custom hook: not in
+  conditions, loops, after an early `return`, in handlers, in `try`/`catch`,
+  or in callbacks passed to other hooks. [lint: react-hooks/rules-of-hooks]
+- Every value an effect, `useMemo` or `useCallback` reads is in its
+  dependency array. To drop a dependency, change the code, never the array. [lint: react-hooks/exhaustive-deps]
+- `useMemo` returns a value; for side effects use an effect. [lint: react-hooks/use-memo]
+
+## State
+
+- Keep the least state that works: compute what props or other state give.
+  Don't mirror a prop in state; name it `initialX` if it only seeds it. [review]
+- Group values that always change together; replace booleans that can
+  contradict (`isSending`, `isSent`) with one union (`'sending' | 'sent'`). [review]
+- Store an id, not a copy of the selected object; flatten deep trees into
+  tables keyed by id. [review]
+- To reset a subtree's state when an identity changes, give it a `key`
+  (`<Profile key={userId} />`), not an effect. [review]
+
+## Effects
+
+- Effects sync with systems outside React (network, browser APIs, widgets,
+  timers). No external system, no effect. [review]
+- Not in an effect: derived data (compute it in render), work a user action
+  causes, or telling a parent of a change (both go in the handler). [review]
+- No synchronous `setState` in an effect body; it renders twice for nothing.
+  Setting state from a subscription callback or a resolved promise is fine. [lint: react-hooks/set-state-in-effect]
+- Every effect that subscribes, connects or starts a timer returns the
+  cleanup that undoes it. A fetching effect's cleanup sets an `ignore` flag or
+  aborts an `AbortController`, so stale responses are dropped. [review]
+- Subscribe to external stores (`navigator.onLine`, a store library) with
+  `useSyncExternalStore`, not an effect and state. [review]
+
+## Events and forms
+
+- Inputs are controlled: `value` from state, `onChange` sets it. [review]
+- Forms use `<form onSubmit>` and a `<button type="submit">`, so Enter works. [review]
+- Every control has a visible `<label>` tied by `htmlFor`/`id` (use `useId`
+  for the id). `placeholder` is not a label; `aria-label` only when a visible
+  label truly can't exist. [review]
+- Errors are text next to the field, say how to fix it, and are tied to it
+  with `aria-describedby`. [review]
+
+## Lists and keys
+
+- Every mapped item gets a `key` unique among its siblings and stable: an id
+  from the data, or one made with the item (`crypto.randomUUID()`). [review]
+- Never `key={Math.random()}`; an index only for a static list that is never
+  reordered, filtered or edited. `key` is not a prop: pass the id too. [review]
+
+## Accessibility (WCAG 2.2 AA)
+
+- Semantic HTML: `<button>` acts, `<a href>` navigates, `<main>`, `<nav>`,
+  ordered headings. No clickable `<div>`; ARIA only where HTML has nothing. [review]
+- `<html lang>` is set; images have `alt` (`alt=""` when decorative). [review]
+- Everything works by keyboard, in a sensible order, with a visible focus
+  ring that nothing covers; don't remove `outline` without a replacement. [review]
+- Text contrast at least 4.5:1 (3:1 for large text); controls and focus
+  indicators 3:1; click targets at least 24×24 CSS px; no sideways scrolling
+  at 320 CSS px wide. [review]
+- Status that changes without moving focus (results, "saved", errors) is in an
+  `aria-live="polite"` region that exists before it changes. [review]
+
+## Performance
+
+- Measure first. No `memo`, `useMemo` or `useCallback` by default: they pay
+  off only for slow renders with unchanged props, and the React Compiler would
+  add them for you; the lint runs its checks, so code stays compilable. [lint: react-hooks/preserve-manual-memoization, unsupported-syntax, incompatible-library; rest review]
+- Split big, rarely seen parts with `lazy(() => import('./Big'))`, declared at
+  module level, inside a `<Suspense fallback>`. Each new dependency must earn
+  its size in the bundle `vite build` reports. [review]
+
+## Vite
+
+- `index.html` is the entry and holds the app's title; it loads `/src/main.tsx`. [review]
+- Assets the code uses are imported (`import logo from './logo.svg'`), so they
+  are hashed and cached. `public/` holds only files referenced by a fixed
+  path (`/favicon.svg`, `robots.txt`); never import from it. [review]
+- `import.meta.env` holds `MODE`, `DEV`, `PROD` and `BASE_URL`, plus every
+  `VITE_*` variable, which is **built into the bundle anyone can read**. Never
+  put a secret in a `VITE_` variable or anywhere in `src/`. [review]
+- `vite build` writes a static site to `dist/`, for browsers of the Baseline
+  target. When it is served below the root, set `base` and use
+  `import.meta.env.BASE_URL` for paths the code builds. [review]
+
+## Security
+
+- No `dangerouslySetInnerHTML` with unsanitized input; render text, which
+  React escapes. The bundle is public: no secrets in it. [review]
+- No `href` or `src` built from user input without checking the scheme is
+  `http:` or `https:` (never `javascript:`). [review]
+- No `console` output in shipped code. [lint: no-console]
+
+## Tests
+
+- Logic lives in pure modules without React or the DOM (`greeting.ts`);
+  vitest tests them in plain Node with `it.each` tables. [review]
+- Components are tested only when a test needs them, with Testing Library and
+  a DOM environment set for that file (`// @vitest-environment jsdom`). [review]
+- Query as a user would: `getByRole`, then `getByLabelText`, then
+  `getByText`; `getByTestId` last. Assert what the user sees, never state,
+  props or hook calls. [review]
+- No real timers or network: `vi.useFakeTimers()`, a stubbed `fetch`. [review]
+{{- end }}

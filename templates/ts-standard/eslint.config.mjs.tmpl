@@ -1,17 +1,29 @@
-// Lint config for the extension's TypeScript: typescript-eslint's strictest
+// Lint config for the {{ if eq .Framework "react-vite" }}web app{{ else }}extension{{ end }}'s TypeScript: typescript-eslint's strictest
 // type-checked presets, plus the rules below. `make lint` runs ESLint with
 // --max-warnings 0, so any finding fails `make check`. Every rule turned off
 // or changed here says why. Changing this file is the Standard's job, not a
 // task's.
 import js from '@eslint/js';
+{{- if eq .Framework "react-vite" }}
+import reactHooks from 'eslint-plugin-react-hooks';
+{{- end }}
 import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
+{{- if eq .Framework "react-vite" }}
+  globalIgnores(['dist/']),
+{{- else }}
   globalIgnores(['out/', 'dist/', '.vscode-test/']),
+{{- end }}
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
+{{- if eq .Framework "react-vite" }}
+  // The Rules of Hooks and the React Compiler's checks of the Rules of React:
+  // pure components, no refs read during render, no state set in an effect.
+  reactHooks.configs.flat.recommended,
+{{- end }}
   {
     languageOptions: {
       parserOptions: {
@@ -39,12 +51,40 @@ export default defineConfig(
       '@typescript-eslint/prefer-readonly': 'error',
       // Array#sort without a compare function sorts numbers as strings.
       '@typescript-eslint/require-array-sort-compare': ['error', { ignoreStringArrays: true }],
+{{- if eq .Framework "react-vite" }}
+      // Users see the page, never the browser's console.
+      'no-console': 'error',
+      // An effect that misses a dependency runs on stale values. The preset
+      // only warns.
+      'react-hooks/exhaustive-deps': 'error',
+{{- else }}
       // Users see an OutputChannel, never the extension host's console.
       'no-console': 'error',
+{{- end }}
       eqeqeq: ['error', 'always'],
       curly: ['error', 'all'],
     },
   },
+{{- if eq .Framework "react-vite" }}
+  {
+    // The page runs in the browser, where Node's globals and modules don't
+    // exist; tsconfig.json has Node's types only for vite.config.ts.
+    files: ['src/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...['process', 'Buffer', 'global', '__dirname', '__filename', 'require'].map((name) => ({
+          name,
+          message: 'The page runs in the browser, not Node.',
+        })),
+      ],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['node:*'], message: 'The page runs in the browser, not Node.' }] },
+      ],
+    },
+  },
+{{- end }}
   {
     // Build and config scripts are plain JavaScript, outside tsconfig.json.
     files: ['**/*.mjs'],

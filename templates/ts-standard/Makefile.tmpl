@@ -4,6 +4,11 @@
 
 NAME := {{ .Container }}
 BIN := node_modules/.bin
+{{- if eq .Framework "react-vite" }}
+
+.DEFAULT_GOAL := help
+.PHONY: help check deps fmt fmt-check lint typecheck test build-check dist clean
+{{- else }}
 # The extension's version is the one in package.json. A release passes its tag,
 # which must match: make dist VERSION=v1.2.3
 PACKAGE_VERSION := $(shell node -p "require('./package.json').version")
@@ -14,11 +19,15 @@ VSCE := $(BIN)/vsce package --no-dependencies --skip-license --allow-missing-rep
 
 .DEFAULT_GOAL := help
 .PHONY: help check deps fmt fmt-check lint typecheck test build package-check dist release-version clean
+{{- end }}
 
 help: ## List the targets.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-
+{{ if eq .Framework "react-vite" }}
+check: deps fmt-check lint typecheck test build-check ## Everything CI checks.
+{{- else }}
 check: deps fmt-check lint typecheck test package-check ## Everything CI checks.
+{{- end }}
 
 deps: ## Install the exact packages in package-lock.json.
 	npm ci --no-audit --no-fund
@@ -37,7 +46,18 @@ typecheck: ## Type-check with tsconfig.json.
 
 test: ## Run the unit tests.
 	$(BIN)/vitest run
+{{ if eq .Framework "react-vite" }}
+build-check: ## Fail when the site does not build.
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		$(BIN)/vite build --outDir "$$tmp" --emptyOutDir
 
+dist: deps ## Build the site into dist/ for a release.
+	rm -rf dist
+	$(BIN)/vite build
+
+clean: ## Remove build output.
+	rm -rf dist
+{{- else }}
 build: ## Bundle the extension into out/, minified.
 	node esbuild.mjs --production
 
@@ -59,3 +79,4 @@ release-version: # Fail when VERSION is not package.json's version.
 
 clean: ## Remove build output.
 	rm -rf out dist
+{{- end }}
