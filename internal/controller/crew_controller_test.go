@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -334,6 +335,14 @@ var _ = Describe("Crew", func() {
 			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReady)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Reason).To(Equal("AgentNotFound"))
+		}).Should(Succeed())
+
+		By("starting once its Agents exist, without waiting for a poll")
+		crewAgents(ns, 1)
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.Phase).To(Equal(c4v1alpha1.CrewIdle))
+			g.Expect(condition(crew.Status.Conditions, ConditionReady).Status).To(Equal(metav1.ConditionTrue))
 		}).Should(Succeed())
 	})
 })
