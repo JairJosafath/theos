@@ -27,8 +27,13 @@ Size it for one pull request: a few files, one concern.
 <!--
 Observable, testable outcomes, one unchecked checklist item each. Each becomes
 a test, and the reviewer reports each one as met or not met. For example:
+{{ if eq .Framework "node-cli" -}}
+`--name ''` prints `Hello!` and exits 0, and an unknown flag exits 2 with the
+error on stderr and nothing on stdout.
+{{- else -}}
 opening a ValidatingAdmissionPolicy starts the language server once, and a
 second YAML file reuses it.
+{{- end }}
 -->
 
 ## Out of scope
@@ -37,7 +42,7 @@ second YAML file reuses it.
 
 ## Notes
 
-<!-- Pointers: files, modules, {{ if eq .Framework "react-vite" }}components, browser APIs{{ else }}VS Code APIs{{ end }}, docs, libraries to use, known pitfalls. -->
+<!-- Pointers: files, modules, {{ if eq .Framework "react-vite" }}components, browser APIs{{ else if eq .Framework "node-cli" }}Node APIs, flags{{ else }}VS Code APIs{{ end }}, docs, libraries to use, known pitfalls. -->
 
 ## Dependencies
 
