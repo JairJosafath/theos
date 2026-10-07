@@ -31,7 +31,7 @@ func TestCloseIssueAfterALateAnswer(t *testing.T) {
 	defer cancel()
 
 	r.closeIssue(ctx, provider, repo, task, status, reviewer,
-		[]model.FollowUp{{Title: "Warn when the server is too old", Body: "Compare serverInfo.version."}})
+		[]model.FollowUp{{Title: "Warn when the server is too old", Body: "Compare serverInfo.version."}}, nil)
 
 	got := git.issue(repo.Owner, repo.Name, n)
 	if got.State != "closed" {
@@ -42,5 +42,52 @@ func TestCloseIssueAfterALateAnswer(t *testing.T) {
 	}
 	if slices.Contains(got.Labels, model.LabelInProgress) {
 		t.Errorf("labels %v, want %s removed", got.Labels, model.LabelInProgress)
+	}
+}
+
+// A rerun of the merge step files the open criteria once: by status.byHand, or,
+// when the status lost it, by the marker in the issue's body (#474).
+func TestCloseIssueFilesByHandOnce(t *testing.T) {
+	git := &fakeGit{repos: map[string]*fakeRepo{}, hangs: map[string]chan struct{}{}}
+	provider := &fakeProvider{git: git}
+	repo := gitprovider.Repository{Owner: "tools", Name: "cel-lens"}
+	n := git.addIssue(repo.Owner, repo.Name, "README shows the hover", "", []string{model.LabelInProgress})
+	r := &TaskReconciler{GitTimeout: time.Second}
+	task := &c4v1alpha1.Task{ObjectMeta: objectMeta("tools", "cel-lens-1"), Spec: c4v1alpha1.TaskSpec{Issue: int32(n)}}
+	reviewer := &c4v1alpha1.Agent{ObjectMeta: objectMeta("tools", "reviewer")}
+	open := []model.OpenCriterion{{Criterion: "The README has a screenshot of the hover", Why: "No desktop editor."}}
+	byHand := func() []gitprovider.Issue {
+		issues, err := provider.ListIssues(context.Background(), repo, model.LabelByHand)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return issues
+	}
+
+	status := &c4v1alpha1.TaskStatus{Round: 1, IssueTitle: "README shows the hover",
+		PullRequestURL: "http://gitea/tools/cel-lens/pulls/2"}
+	r.closeIssue(context.Background(), provider, repo, task, status, reviewer, nil, open)
+	filed := byHand()
+	if len(filed) != 1 || status.ByHand != filed[0].URL {
+		t.Fatalf("by-hand issues %v, status.byHand %q; want one, recorded", filed, status.ByHand)
+	}
+
+	for _, rerun := range []struct {
+		name   string
+		byHand string
+	}{{"with status.byHand", status.ByHand}, {"with status.byHand lost", ""}} {
+		again := &c4v1alpha1.TaskStatus{Round: 1, IssueTitle: status.IssueTitle, PullRequestURL: status.PullRequestURL,
+			ByHand: rerun.byHand}
+		r.closeIssue(context.Background(), provider, repo, task, again, reviewer, nil, open)
+		if got := byHand(); len(got) != 1 {
+			t.Errorf("%s: %d by-hand issues, want 1", rerun.name, len(got))
+		}
+		if again.ByHand != filed[0].URL {
+			t.Errorf("%s: status.byHand %q, want %q", rerun.name, again.ByHand, filed[0].URL)
+		}
+		comments := git.issue(repo.Owner, repo.Name, n).comments
+		if last := comments[len(comments)-1]; !strings.Contains(last, filed[0].URL) {
+			t.Errorf("%s: closing comment %q doesn't link the by-hand issue", rerun.name, last)
+		}
 	}
 }
