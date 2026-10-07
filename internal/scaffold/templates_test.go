@@ -30,6 +30,7 @@ var templateCombos = []struct {
 }{
 	{"fastapi service with postgres", "service", []side{
 		{model.SideFramework, "python-fastapi"},
+		{model.SideStandard, "python-standard"},
 		{model.SideCompute, "small"},
 		{model.SideDeployment, "k8s-manifests"},
 		{model.SideConnector, "postgres"},

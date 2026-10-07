@@ -1,4 +1,4 @@
-python-fastapi v1.2.1
+python-fastapi v1.3.0
 small v1.0.0
 k8s-manifests v1.1.0
 postgres v1.1.0
@@ -6,6 +6,7 @@ go-cli v1.0.0
 go-standard v1.1.3
 vscode-extension v1.0.0
 ts-standard v1.1.3
+python-standard v1.0.0
 gitea-release v1.0.1
 hello v1.0.0
 hello-standard v1.0.1

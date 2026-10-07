@@ -205,8 +205,8 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    Containers on Standard v1.0.0 have guides that say "stop", and a Standard
    may ship none and an `AGENTS.md` that says "Leave .devcontainer/,
    .c4factory.yaml and .gitea/ alone"; the prompt says to follow it instead. Only
-   `go-standard` and `ts-standard` (v1.1.0 and later) ship guides that describe Standard
-   changes.
+   `go-standard` and `ts-standard` (v1.1.0 and later) and `python-standard` ship guides
+   that describe Standard changes.
 
 ## Go build caches
 
