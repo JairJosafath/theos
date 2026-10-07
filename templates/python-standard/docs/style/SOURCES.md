@@ -20,9 +20,12 @@ Version or date as shown on the page; "live" when the page shows none.
 | FastAPI, handling errors — https://fastapi.tiangolo.com/tutorial/handling-errors/ | live |
 | FastAPI, testing — https://fastapi.tiangolo.com/tutorial/testing/ | live |
 | FastAPI, concurrency and async/await — https://fastapi.tiangolo.com/async/ | live |
+| argparse — https://docs.python.org/3/library/argparse.html | Python 3.12 and later |
+| importlib.metadata — https://docs.python.org/3/library/importlib.metadata.html | Python 3.12 and later |
 
 The FastAPI pages feed only the FastAPI section of `python.md`, which applies
-to FastAPI services.
+to FastAPI services; the `argparse` and `importlib.metadata` pages only its
+command-line section, which applies to CLIs.
 
 ## Lints
 

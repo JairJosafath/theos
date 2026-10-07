@@ -25,8 +25,12 @@ jobs:
           git -c http.extraHeader="Authorization: token $TOKEN" \
             fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
           git checkout -q FETCH_HEAD
+      # uv's cache and the Python it installs, for a Python project, go in the
+      # checkout, which is in memory and goes with the job, as in the checks.
       - name: make dist
-        run: make dist VERSION="$TAG"
+        run: |
+          export UV_CACHE_DIR="$PWD/.uv/cache" UV_PYTHON_INSTALL_DIR="$PWD/.uv/python"
+          make dist VERSION="$TAG"
       - name: Attach dist/ to the release
         run: |
           auth="Authorization: token $TOKEN"

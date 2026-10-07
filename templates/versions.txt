@@ -7,9 +7,10 @@ go-standard v1.1.4
 vscode-extension v1.0.0
 react-vite v1.0.0
 node-cli v1.0.0
+python-cli v1.0.0
 ts-standard v1.3.0
-python-standard v1.0.0
-gitea-release v1.0.2
+python-standard v1.1.0
+gitea-release v1.0.3
 hello v1.0.0
 hello-standard v1.0.1
 hello-html v1.0.0

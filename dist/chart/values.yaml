@@ -444,6 +444,13 @@ catalog:
         displayName: Command-line program (TypeScript, Node)
         description: A command-line program in TypeScript for Node, bundled with esbuild into one file and packed with npm pack, with flags parsed by util.parseArgs and unit tests.
         supportedTypes: [cli]
+    - kind: Framework
+      name: python-cli
+      ref: v1.0.0
+      spec:
+        displayName: Command-line program (Python, uv)
+        description: A command-line program in Python managed with uv, with flags parsed by argparse, a version flag, unit tests and a wheel and sdist for releases.
+        supportedTypes: [cli]
     - kind: Standard
       name: go-standard
       ref: v1.1.4
@@ -465,12 +472,12 @@ catalog:
         protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
     - kind: Standard
       name: python-standard
-      ref: v1.0.0
+      ref: v1.1.0
       spec:
         displayName: Python quality standard
         description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
-        supportedTypes: [service]
-        supportedFrameworks: [python-fastapi]
+        supportedTypes: [service, cli]
+        supportedFrameworks: [python-fastapi, python-cli]
         protectedPaths: [AGENTS.md, Makefile, ruff.toml, mypy.ini, .editorconfig, docs/style/, docs/agents/]
     - kind: Compute
       name: small
@@ -488,10 +495,10 @@ catalog:
         supportedTypes: [service, worker, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.0.2
+      ref: v1.0.3
       spec:
         displayName: Gitea release
-        description: Ships the release files (binaries, a .vsix, an npm tarball) on a Gitea release for each version tag.
+        description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist) on a Gitea release for each version tag.
         supportedTypes: [cli, extension]
     - kind: Connector
       name: postgres

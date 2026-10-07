@@ -110,7 +110,8 @@ and a review. Never commit red.
 Offline digests (read the one for what you are touching):
 
 - `docs/style/python.md`: PEP 8, PEP 257, Google's Python style, typing and
-  pytest practice, each rule marked [lint] or [review]
+  pytest practice, each rule marked [lint] or [review]; its FastAPI and
+  command-line sections apply to services and CLIs
 - `docs/style/principles.md`: cross-language principles, with sources
 - `docs/style/SOURCES.md`: every source URL, with the date it was read
 
@@ -119,4 +120,6 @@ https://google.github.io/styleguide/pyguide.html · https://docs.astral.sh/ruff/
 https://mypy.readthedocs.io/en/stable/ · https://docs.pytest.org/en/stable/explanation/goodpractices.html
 {{- if eq .Framework "python-fastapi" }} ·
 https://fastapi.tiangolo.com/tutorial/
+{{- else if eq .Framework "python-cli" }} ·
+https://docs.python.org/3/library/argparse.html
 {{- end }}

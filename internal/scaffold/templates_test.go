@@ -45,6 +45,11 @@ var templateCombos = []struct {
 		{model.SideStandard, "go-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"python cli", "cli", []side{
+		{model.SideFramework, "python-cli"},
+		{model.SideStandard, "python-standard"},
+		{model.SideDeployment, "gitea-release"},
+	}},
 	{"vscode extension", "extension", []side{
 		{model.SideFramework, "vscode-extension"},
 		{model.SideStandard, "ts-standard"},
