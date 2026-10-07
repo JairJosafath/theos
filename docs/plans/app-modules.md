@@ -60,7 +60,7 @@ choices under it.
    credentials it already has (`C4_GIT_USERNAME`/`C4_GIT_TOKEN`), which Go
    uses for proxy auth. Gitea comes first so our module names never go to
    proxy.golang.org; a module Gitea lacks returns 404 and falls through to the
-   public proxy. Not `GOPRIVATE`: it would also set `GONOPROXY` and send
+   public proxy (wrong, see #518 below). Not `GOPRIVATE`: it would also set `GONOPROXY` and send
    `c4factory.local` straight to a host that doesn't exist. The fence already
    lets an agent pod reach Gitea's namespace. The go-standard Standard's CI
    (`check.yaml`) sets the same, with the job's `gitea.token` in `~/.netrc`,
@@ -77,6 +77,22 @@ choices under it.
    next run. The proxy URL is on `gitprovider.Repository` (`GoProxy`), built
    from the GitProvider's URL and owner; the planner's pod doesn't get it, as
    it builds no code.
+
+   What #518 corrected: "Gitea comes first so our module names never go to
+   proxy.golang.org" was wrong. With a comma list the go command asks the next
+   proxy after a 404, so a module Gitea lacks (not released yet, or a typo)
+   went to proxy.golang.org with the project's and Container's names, and Go
+   has no per-path proxy. Agent pods now get
+   `GOPROXY=http://127.0.0.1:3127,direct` and `C4_GO_REGISTRY=<gitea>/api/packages/<owner>/go`:
+   c4agent serves a proxy on loopback (`agentrunner.GoProxy`) that sends
+   `c4factory.local/` paths to the registry alone, adding the bot's
+   credentials over https, and the rest to proxy.golang.org. A factory module
+   the registry lacks is a 404, the go command tries direct, and
+   `c4factory.local` resolves nowhere. go-standard v1.1.5's CI can't run
+   c4agent, and needs no new modules: a step downloads the `c4factory.local/`
+   requirements of `go.mod` with `GOPROXY` set to the registry alone, and
+   `make check` runs with `GOPRIVATE=c4factory.local`, so it finds them in the
+   module cache and asks no proxy for them.
 5. **The plan says who uses whom.** An issue file's front matter takes
    `uses:`, the Containers whose released code it builds on:
 
