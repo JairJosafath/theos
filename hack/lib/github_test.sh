@@ -11,6 +11,7 @@
 # for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
+set -o pipefail # as github.sh runs as a script
 unset C4_CLUSTER C4_HUMAN_CLUSTER # ./dev setup --lite sets the one, a human the other; each test sets its own
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -78,7 +79,9 @@ LEASE=$T/main/.git/c4-cluster.lease
 LEASE2=$T/main/.git/c4-cluster-c4factory-2.lease
 lease() { jq -n --arg wt "$1" --argjson i "$2" --argjson b "$3" '{name:"heron-\($i)",issue:$i,worktree:$wt,beat:$b}' >"${4:-$LEASE}"; }
 mkdir -p "$T/bin"
-printf '#!/bin/sh\n[ "$1 $2" = "get clusters" ] && cat "%s/kind-clusters"\n' "$T" >"$T/bin/kind"
+# It goes on writing after the list, more than a pipe holds: under pipefail
+# (as github.sh runs) a grep -q on its pipe would exit early and read a "no".
+printf '#!/bin/sh\n[ "$1 $2" = "get clusters" ] && cat "%s/kind-clusters" && seq 100000\n' "$T" >"$T/bin/kind"
 cat >"$T/bin/make" <<EOF
 #!/bin/sh
 echo "\$*" >>"$T/made"

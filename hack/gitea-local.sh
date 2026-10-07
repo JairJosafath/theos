@@ -67,9 +67,10 @@ url() { echo "http://127.0.0.1:$(port)"; }
 # from a crash or a reboot may belong to another process by now, so the process
 # must also name this checkout's app.ini.
 running() {
-  local pid
+  local pid args
   [[ -f $PIDFILE ]] && pid=$(cat "$PIDFILE") && [[ -n $pid ]] &&
-    tr '\0' '\n' <"/proc/$pid/cmdline" 2>/dev/null | grep -qxF -- "$CONFIG"
+    args=$(tr '\0' '\n' 2>/dev/null <"/proc/$pid/cmdline") &&
+    grep -qxF -- "$CONFIG" <<<"$args"
 }
 
 healthy() { curl -fs -o /dev/null "$(url)/api/healthz"; }
@@ -142,8 +143,11 @@ EOF
 # runs again after a failed start: an existing admin gets a new token (names
 # are unique per user, hence the timestamp) and a new password.
 create_admin() {
-  local password token status
-  if ! g admin user list --admin | awk 'NR > 1 {print $2}' | grep -qxF -- "$GITEA_ADMIN"; then
+  local password token status admins
+  # Read whole, not piped into grep -q: under pipefail a grep that exits early
+  # fails the pipeline.
+  admins=$(g admin user list --admin | awk 'NR > 1 {print $2}') || admins=
+  if ! grep -qxF -- "$GITEA_ADMIN" <<<"$admins"; then
     # The CLI's random password stays unknown; the API sets the one we keep.
     g admin user create --admin --username "$GITEA_ADMIN" --email "$GITEA_ADMIN_EMAIL" \
       --random-password --must-change-password=false >/dev/null

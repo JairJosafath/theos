@@ -856,6 +856,15 @@ gh_lease_locked() {
 # gh_kind_clusters: the Kind clusters that exist on this device, one per line.
 gh_kind_clusters() { "${KIND:-kind}" get clusters 2>/dev/null; }
 
+# gh_kind_exists NAME: the Kind cluster NAME exists. It reads the whole list
+# first: grep -q on kind's pipe can exit while kind still writes, and
+# pipefail turns its SIGPIPE into a "no".
+gh_kind_exists() {
+  local list
+  list=$(gh_kind_clusters)
+  grep -qxF -- "$1" <<<"$list"
+}
+
 # gh_lease_take [FRESH]: lease a pool cluster to this checkout and print its
 # name: the one it already holds, else a free one that exists and is not
 # marked bare, else one that does not exist yet, else the first free one; with
@@ -932,7 +941,7 @@ gh_lease_acquire() {
     said=1
     sleep "$GH_LEASE_POLL"
   done
-  if [ -z "$fresh" ] && gh_bare "$out" && gh_kind_clusters | grep -qxF -- "$out"; then
+  if [ -z "$fresh" ] && gh_bare "$out" && gh_kind_exists "$out"; then
     if [ "$out" = "$held" ]; then
       echo "github: Kind cluster $out, which this checkout already leased, was created bare (acquire --bare): no testenv Gitea or seed. Kept as it is; acquire --fresh makes it a testenv one" >&2
     else
@@ -940,7 +949,7 @@ gh_lease_acquire() {
       fresh=1
     fi
   fi
-  if [ -n "$fresh" ] && gh_kind_clusters | grep -qxF -- "$out"; then
+  if [ -n "$fresh" ] && gh_kind_exists "$out"; then
     # Only the cluster this checkout's lease names, checked once more.
     if ! gh_lease_read "$out" || ! gh_lease_mine; then
       echo "github: the lease on Kind cluster $out no longer names this checkout; not deleting it" >&2
@@ -954,7 +963,7 @@ gh_lease_acquire() {
     fi
     rm -f "$(gh_bare_file "$out")"
   fi
-  if [ -n "$bare" ] && ! gh_kind_clusters | grep -qxF -- "$out"; then
+  if [ -n "$bare" ] && ! gh_kind_exists "$out"; then
     echo "github: --bare: creating Kind cluster $out with nothing installed (make cluster KIND_CLUSTER=$out)" >&2
     if ! "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" cluster "KIND_CLUSTER=$out" >&2; then
       gh_lease_release >/dev/null
@@ -962,7 +971,7 @@ gh_lease_acquire() {
       return 1
     fi
     : >"$(gh_bare_file "$out")"
-  elif ! gh_kind_clusters | grep -qxF -- "$out"; then
+  elif ! gh_kind_exists "$out"; then
     echo "github: Kind cluster $out does not exist yet; creating it with Gitea and the seeded templates (make cluster gitea seed KIND_CLUSTER=$out)" >&2
     rm -f "$(gh_bare_file "$out")"
     if ! "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" cluster gitea seed "KIND_CLUSTER=$out" >&2; then

@@ -147,9 +147,12 @@ up_one() {
 # online I: runner I's container listens for jobs and GitHub sees it online.
 online() {
   use "$1"
-  local since
+  local since logs
   since=$(docker inspect -f '{{.State.StartedAt}}' "$container") || return 1
-  docker logs --since "$since" "$container" 2>&1 | grep -q 'Listening for Jobs' &&
+  # The logs are read whole: grep -q on docker's pipe can exit while docker
+  # still writes, and pipefail turns its SIGPIPE into a "no".
+  logs=$(docker logs --since "$since" "$container" 2>&1) || return 1
+  [[ $logs == *'Listening for Jobs'* ]] &&
     [[ $(github_runner 2>/dev/null) == *" online "* ]]
 }
 
