@@ -68,7 +68,7 @@ if grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart-gitea-bare.yaml" |
 fi
 echo "The chart's catalog matches templates/versions.txt; off, it renders no catalog or Agents"
 
-# Shared credentials (docs/plans/shared-project-credentials.md): the chart makes
+# Shared credentials (docs/plans/done/shared-project-credentials.md): the chart makes
 # each project's Namespace, labeled to receive the shared Secrets and kept on
 # uninstall; the seed may label only the project namespaces; the operator reads
 # the shared Secrets from its own namespace. chart-gitea.yaml renders project

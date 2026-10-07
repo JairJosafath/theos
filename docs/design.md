@@ -586,7 +586,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   Agents. A person gives the Agents' token once, as a Secret in the release
   namespace, and the operator shares it with every project; a project with a
   Secret of that name of its own keeps it
-  ([plan](plans/shared-project-credentials.md)). A Brief whose Agent's token
+  ([plan](plans/done/shared-project-credentials.md)). A Brief whose Agent's token
   is missing says where to give it: in the release namespace for every
   project, or in its own for this one, and names the namespace label when
   its namespace hasn't opted in.
