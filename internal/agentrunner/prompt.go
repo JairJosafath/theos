@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -207,9 +208,10 @@ points after "Non-blocking:" in the summary and approve.
 	b.WriteString(`
 Work worth doing later that is outside this change can go in "followUps": up to
 three, each a title, a few sentences saying what and why, and one to three
-"criteria": short checks a reviewer could verify to call it done (each becomes an
-"Acceptance criteria" checklist item on the issue). Never use a follow-up for
-something this change must fix.
+"criteria": short checks a reviewer could verify to call it done, each one
+sentence of at most ` + strconv.Itoa(maxCriterionChars) + ` characters (each becomes an "Acceptance criteria"
+checklist item on the issue). Never use a follow-up for something this change
+must fix.
 
 End your reply with one line of JSON and nothing after it:
 {"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>", "followUps": [{"title": "...", "body": "...", "criteria": ["..."]}]}
