@@ -1,5 +1,5 @@
 # The minimal runner: the Gitea runner on the minimal toolchain (hack/toolchain-base),
-# labelled base, for the e2e hello-world Container.
+# labelled base, for the e2e hello-world Container and Python projects (uv).
 # `make runner-base` builds it and applies this, it is applied by that target alone.
 # It registers with the token the seed Job stores in Secret gitea/gitea-runner.
 apiVersion: apps/v1

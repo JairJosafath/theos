@@ -171,7 +171,17 @@ events and the test checks that the page follows.
 ## Screenshots
 
 Two scripts, used for the whole project's evidence in `docs/screenshots/`. They
-need Chromium once: `npx playwright install --with-deps chromium`.
+need Chromium once: `npx playwright install chromium-headless-shell`.
+
+Chromium also needs a few system libraries a minimal Linux lacks (libnspr4,
+libnss3, libasound2). `sudo npx playwright install-deps chromium` installs them;
+without root (a headless agent), the scripts fetch them themselves: on the first
+launch that fails for a missing library, `scripts/browser.mjs` downloads the
+packages with `apt-get download`, unpacks them into
+`$XDG_CACHE_HOME/c4factory/chromium-libs` (`.dev/cache/` in the project shell) and
+launches again with `LD_LIBRARY_PATH` set. Where it can't (no `apt-get`, or a
+library it doesn't know), it exits saying which libraries are missing and the
+command that installs them.
 
 ### A web page: `scripts/screenshot.mjs`
 

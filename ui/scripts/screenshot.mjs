@@ -16,12 +16,13 @@
 //
 // Pages that keep connections open (such as the UI's watches) never go
 // "network idle", so this waits for `load`, then --wait-for, then --delay.
-// Needs Chromium once: npx playwright install --with-deps chromium
+// Needs Chromium once: npx playwright install chromium-headless-shell. Missing system
+// libraries are fetched without root (see browser.mjs).
 
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
-import { chromium } from 'playwright'
+import { launchChromiumOrExit } from './browser.mjs'
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -49,7 +50,7 @@ if (values.help || positionals.length !== 2) {
 const [url, out] = positionals
 const timeout = Number(values.timeout)
 
-const browser = await chromium.launch()
+const browser = await launchChromiumOrExit()
 try {
   const context = await browser.newContext({
     viewport: { width: Number(values.width), height: Number(values.height) },

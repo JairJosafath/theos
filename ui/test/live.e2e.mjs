@@ -4,14 +4,14 @@
 // (410 Gone) must recover by relisting.
 //
 // Needs a build and Chromium:  npm run test:e2e
-// (npx playwright install --with-deps chromium, once)
+// (npx playwright install chromium-headless-shell, once)
 
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchChromium } from '../scripts/browser.mjs'
 import { createServer, resolveUpstream } from '../server.mjs'
 
 const NS = 'webshop'
@@ -144,7 +144,7 @@ describe('live updates in the browser', () => {
 
     ui = createServer({ distDir: dist, upstream: resolveUpstream({ K8S_API: apiUrl }), log: () => {} })
     base = await listen(ui)
-    browser = await chromium.launch()
+    browser = await launchChromium()
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
     page.on('request', (r) => {
       if (new URL(r.url()).pathname.startsWith('/k8s')) requests.push({ url: new URL(r.url()), method: r.method() })

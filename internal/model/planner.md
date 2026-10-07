@@ -54,27 +54,37 @@ Push the branch `plan/<round>` with these files:
    `connectorRef`, name entries of `model/catalog.yaml` that support the
    Container's type. Every new Container names the Git provider `brief.md`
    gives.
-3. **Never delete, and keep what is built.** Leave every object of
+3. **Choose the kind of app by the idea, not by the catalog.** Pick the
+   Container type a person picturing the idea would expect, not the one the
+   catalog makes easiest: a todo list people click in has a screen, so it is
+   a `static-site` or a `service`, never a `cli`. When no Framework in
+   `model/catalog.yaml` supports that type, write `needs-input.md` naming the
+   kind of app and saying the catalog can't build it yet, and don't build
+   another kind instead. A prompt that settles it ("a CLI is fine") lets you
+   plan the kind it names.
+4. **Never delete, and keep what is built.** Leave every object of
    `model/model.yaml` in your plan. Of an existing object you may change only
    its story text: `displayName`, `description`, and a SoftwareSystem's `needs`
    and `kpis`. A change to an existing Container's code is an issue in its
    repository, not a change to the model.
-4. **Keep a round small:** at most 20 objects created or changed, and at most
+5. **Keep a round small:** at most 20 objects created or changed, and at most
    10 issues. Names are DNS labels: lowercase letters, digits and `-`.
-5. **Write ready issues.** Each issue is one piece of work a Crew can pick up,
+6. **Write ready issues.** Each issue is one piece of work a Crew can pick up,
    for a Container of the namespace or of your plan, and its body has an
    `## Acceptance criteria` heading with a checklist under it (`- [ ] ...`),
    each item one thing a reviewer can check. Don't file what
    `model/containers.yaml` already lists as open.
-6. **Explain each choice in `choices.md`, in plain words,** for a person who
+7. **Explain each choice in `choices.md`, in plain words,** for a person who
    doesn't read YAML: why this Container, this type, this framework, this data
-   store. One line each; `choices.md` is never empty.
-7. **Write `needs-input.md` only for what costs money or touches access:**
+   store. One line each; `choices.md` is never empty. Say why the type fits
+   the idea, never what the catalog lacks ("the catalog only has ...").
+8. **Write `needs-input.md` only for what costs money or touches access:**
    a catalog entry, an Agent, a Git provider or a credential the idea needs and
-   the catalog doesn't have. Write one sentence saying what and why, and leave
+   the catalog doesn't have, such as a Framework for the kind of app the idea
+   is (rule 3). Write one sentence saying what and why, and leave
    the other files out. Everything else is yours to decide: choose, and say
    why in `choices.md`.
-8. **Name the Containers that ship releases in `releases.yaml`:** each one you
+9. **Name the Containers that ship releases in `releases.yaml`:** each one you
    say ships a release (a CLI people download, a library, an app with
    versions), each one `brief.md`'s *Releases* section names, and each one a
    prompt asks to release. Each name is a Container of `plan/model.yaml`. Its
@@ -85,21 +95,21 @@ Push the branch `plan/<round>` with these files:
    least one issue for it, since a release with no work in it never comes.
    Leave the file out when nothing ships releases.
 
-9. **Answer a reviewer's suggestion only when a new prompt speaks to it,**
-   such as "take the input-safety ones, skip the rest" or "yes to #5". Write
-   `plan/suggestions.yaml`, a list with one entry per suggestion answered:
+10. **Answer a reviewer's suggestion only when a new prompt speaks to it,**
+    such as "take the input-safety ones, skip the rest" or "yes to #5". Write
+    `plan/suggestions.yaml`, a list with one entry per suggestion answered:
 
-   ```yaml
-   - container: todo
-     issue: 5
-     answer: take        # or skip
-     why: The prompt asks to take the input-safety suggestions.
-   ```
+    ```yaml
+    - container: todo
+      issue: 5
+      answer: take        # or skip
+      why: The prompt asks to take the input-safety suggestions.
+    ```
 
-   `why` says in plain words which prompt asked for it. Only a suggestion with
-   `criteria: true` can be taken as it is; to take one without, file it again
-   as an issue of your plan, with acceptance criteria, and skip it saying so.
-   Leave a suggestion no prompt speaks to unanswered: it waits for the person.
+    `why` says in plain words which prompt asked for it. Only a suggestion with
+    `criteria: true` can be taken as it is; to take one without, file it again
+    as an issue of your plan, with acceptance criteria, and skip it saying so.
+    Leave a suggestion no prompt speaks to unanswered: it waits for the person.
 
 ## The plan's format
 
