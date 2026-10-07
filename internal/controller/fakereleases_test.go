@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/mod/module"
+
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
 
@@ -28,13 +30,25 @@ type fakeReleaseState struct {
 	// created is the milestones CreateMilestone made, by owner/name#ID, for
 	// their descriptions and due dates.
 	created map[string]gitprovider.Milestone
+	// goMods is the module path each repository's go.mod declares, by
+	// owner/name; a repository without one has no go.mod. uploads counts the
+	// module versions uploaded, by path@version (a repeat finds one there and
+	// uploads nothing), and moduleFailures how many PublishGoModule calls fail
+	// before one gets through, by owner/name. modulePublishes counts the
+	// PublishGoModule calls, by owner/name@tag.
+	goMods          map[string]string
+	uploads         map[string]int
+	moduleFailures  map[string]int
+	modulePublishes map[string]int
 }
 
 func (g *fakeGit) releaseState() *fakeReleaseState {
 	if g.releases == nil {
 		g.releases = &fakeReleaseState{closed: map[string][]string{}, tags: map[string]string{},
 			runs: map[string][]gitprovider.WorkflowRun{}, published: map[string]*gitprovider.Release{},
-			assets: map[string][]byte{}, created: map[string]gitprovider.Milestone{}}
+			assets: map[string][]byte{}, created: map[string]gitprovider.Milestone{},
+			goMods: map[string]string{}, uploads: map[string]int{}, moduleFailures: map[string]int{},
+			modulePublishes: map[string]int{}}
 	}
 	return g.releases
 }
@@ -192,11 +206,72 @@ func (p *fakeProvider) SetReleaseBody(_ context.Context, repo gitprovider.Reposi
 	return fmt.Errorf("no release %d in %s/%s", id, repo.Owner, repo.Name)
 }
 
-// PublishGoModule finds no go.mod: no reconciler publishes yet (#460 gives the
-// fake its modules).
-func (p *fakeProvider) PublishGoModule(_ context.Context, _ gitprovider.Repository, tag string) (
+// PublishGoModule publishes the module setGoMod gave the repository, as Gitea
+// would: no go.mod, a version Go refuses and one uploaded before are outcomes.
+func (p *fakeProvider) PublishGoModule(_ context.Context, repo gitprovider.Repository, tag string) (
 	gitprovider.GoModule, error) {
-	return gitprovider.GoModule{Outcome: gitprovider.GoModuleNoGoMod, Version: tag}, nil
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	s := p.git.releaseState()
+	out := gitprovider.GoModule{Outcome: gitprovider.GoModuleNoGoMod, Version: tag}
+	key := repo.Owner + "/" + repo.Name
+	s.modulePublishes[key+"@"+tag]++
+	if s.moduleFailures[key] > 0 {
+		s.moduleFailures[key]--
+		return out, fmt.Errorf("gitea unavailable")
+	}
+	path, ok := s.goMods[key]
+	if !ok {
+		return out, nil
+	}
+	out.Path = path
+	if err := module.Check(path, tag); err != nil {
+		out.Outcome, out.Reason = gitprovider.GoModuleInvalid, err.Error()
+		return out, nil
+	}
+	out.Outcome = gitprovider.GoModuleExists
+	if s.uploads[path+"@"+tag] == 0 {
+		out.Outcome = gitprovider.GoModulePublished
+		s.uploads[path+"@"+tag]++
+	}
+	return out, nil
+}
+
+// setGoMod gives owner/name a go.mod declaring module path.
+func (g *fakeGit) setGoMod(owner, name, path string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().goMods[owner+"/"+name] = path
+}
+
+// failModulePublishes makes the next n PublishGoModule calls of owner/name fail.
+func (g *fakeGit) failModulePublishes(owner, name string, n int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().moduleFailures[owner+"/"+name] = n
+}
+
+// modulePublishes is how many times the Crew asked to publish owner/name's
+// module at tag.
+func (g *fakeGit) modulePublishes(owner, name, tag string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().modulePublishes[owner+"/"+name+"@"+tag]
+}
+
+// modulePublishFailuresLeft is how many PublishGoModule calls of owner/name
+// still fail.
+func (g *fakeGit) modulePublishFailuresLeft(owner, name string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().moduleFailures[owner+"/"+name]
+}
+
+// moduleUploads is how many times module path@version was uploaded.
+func (g *fakeGit) moduleUploads(path, version string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().uploads[path+"@"+version]
 }
 
 // setRuns sets the workflow runs a push of tag at commit started, newest first.
