@@ -784,7 +784,7 @@ func checkOrderCycle(plan Plan, refuse func(string, string, ...any)) {
 	visit = func(n int) {
 		state[n] = visiting
 		stack = append(stack, n)
-		for _, m := range afterOf(plan.Issues, n) {
+		for _, m := range IssueBlockers(plan.Issues, n) {
 			switch state[m] {
 			case unvisited:
 				visit(m)
@@ -809,9 +809,9 @@ func checkOrderCycle(plan Plan, refuse func(string, string, ...any)) {
 	}
 }
 
-// afterOf is the after: of the one issue numbered n, keeping only numbers of
-// exactly one other issue; checkAfter refuses the rest.
-func afterOf(issues []PlanIssue, n int) []int {
+// IssueBlockers is the after: of the one issue numbered n, keeping only numbers
+// of exactly one other issue; checkAfter refuses the rest.
+func IssueBlockers(issues []PlanIssue, n int) []int {
 	own := issuesNumbered(issues, n)
 	if len(own) != 1 {
 		return nil
@@ -845,7 +845,7 @@ func FilingOrder(issues []PlanIssue) []PlanIssue {
 	out := make([]PlanIssue, 0, len(sorted))
 	for len(sorted) > 0 {
 		i := slices.IndexFunc(sorted, func(issue PlanIssue) bool {
-			for _, m := range afterOf(issues, issue.N) {
+			for _, m := range IssueBlockers(issues, issue.N) {
 				if !filed[m] {
 					return false
 				}
@@ -976,8 +976,26 @@ func HasIssueMarker(body, brief string, round, n int) bool {
 	return false
 }
 
+// BuildsOn is a filed issue another issue of the round builds on: its
+// repository (owner/name), number and title.
+type BuildsOn struct {
+	Repository string
+	Number     int
+	Title      string
+}
+
 // BriefIssueBody is the body the operator files for a plan's issue: the
-// planner's text, in which no comment may pass for a marker, then the marker.
-func BriefIssueBody(issue PlanIssue, brief string, round int) string {
-	return strings.ReplaceAll(issue.Body, "<!--", "&lt;!--") + "\n\n" + IssueMarker(brief, round, issue.N) + "\n"
+// planner's text, in which no comment may pass for a marker, a line
+// "Builds on owner/name#N (title)." for each issue it builds on, then the
+// marker.
+func BriefIssueBody(issue PlanIssue, brief string, round int, buildsOn ...BuildsOn) string {
+	body := strings.ReplaceAll(issue.Body, "<!--", "&lt;!--") + "\n\n"
+	if len(buildsOn) > 0 {
+		for _, b := range buildsOn {
+			title := strings.Join(strings.Fields(strings.ReplaceAll(b.Title, "<!--", "&lt;!--")), " ")
+			body += fmt.Sprintf("Builds on %s#%d (%s).\n", b.Repository, b.Number, title)
+		}
+		body += "\n"
+	}
+	return body + IssueMarker(brief, round, issue.N) + "\n"
 }

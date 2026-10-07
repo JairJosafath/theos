@@ -450,7 +450,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   depend in Gitea on each blocker (across repositories too), names them in its
   body, and only then labels it ready; the Crew waits for open dependencies, so
   the issue starts once its blockers' pull requests merge. See
-  [plans/brief-issue-order.md](plans/brief-issue-order.md).
+  [plans/done/brief-issue-order.md](plans/done/brief-issue-order.md).
 - **One app uses another's release, never its branch** (#430). Apps stay one
   repository each and share code the way separate repositories do: an issue
   that builds on another Container's code names it in its front matter,

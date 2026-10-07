@@ -172,10 +172,12 @@ func (r *BriefReconciler) madeByRound(ctx context.Context, run *roundApply, name
 }
 
 // finishContainers gives each of names that is Ready its Crew, when the round
-// created it, and its issues. It returns the ones that aren't Ready yet.
+// created it, then files the round's issues of the Ready ones. It returns the
+// ones that aren't Ready yet.
 func (r *BriefReconciler) finishContainers(ctx context.Context, run *roundApply, names, created []string,
 	issues []model.PlanIssue) ([]string, error) {
 	var waiting []string
+	ready := map[string]*c4v1alpha1.Container{}
 	for _, name := range names {
 		var c c4v1alpha1.Container
 		err := r.Get(ctx, client.ObjectKey{Namespace: run.brief.Namespace, Name: name}, &c)
@@ -200,11 +202,9 @@ func (r *BriefReconciler) finishContainers(ctx context.Context, run *roundApply,
 				return nil, fmt.Errorf("turning on the releases of Crew %s: %w", name, err)
 			}
 		}
-		if err := r.fileIssues(ctx, run, &c, model.IssuesFor(issues, name)); err != nil {
-			return nil, fmt.Errorf("filing the issues of %s: %w", name, err)
-		}
+		ready[name] = &c
 	}
-	return waiting, nil
+	return waiting, r.fileIssues(ctx, run, ready, issues)
 }
 
 // applyObject creates a plan's object the namespace doesn't have, labelled
@@ -357,66 +357,134 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 	return nil
 }
 
-// fileIssues files the round's issues for a Container in its repository (B11):
-// status/ready, each body ending with its marker, in the round's release
-// milestone when the round releases the Container (R6) and else in none. An issue
+// issueRepo is a Container's repository as this reconcile files issues in it:
+// its labels made and its open issues listed once.
+type issueRepo struct {
+	provider  gitprovider.Provider
+	repo      gitprovider.Repository
+	open      []gitprovider.Issue
+	milestone int64
+}
+
+// fileIssues files the round's issues of the Ready Containers in their
+// repositories (B11), blockers first: status/ready, each body ending with its
+// marker, in the round's release milestone when the round releases the
+// Container (R6) and else in none. An issue with after: is filed only once
+// each issue it names is filed and recorded; until then it waits with the
+// Container that isn't Ready. It is filed without status/ready, made to
+// depend in the Git host on each of them, across repositories, and only then
+// labelled ready, so no Crew picks it up before its order is there. An issue
 // already filed is found by its marker among the open issues, so a restart
-// files no duplicate. Each is recorded in the Brief's status right away.
-func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, c *c4v1alpha1.Container,
+// files no duplicate and finishes what it left. Each is recorded in the
+// Brief's status once done.
+func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, ready map[string]*c4v1alpha1.Container,
 	issues []model.PlanIssue) error {
-	if len(issues) == 0 {
-		return nil
-	}
-	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
-	if err != nil {
-		return err
-	}
-	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
-	defer cancel()
-	repo := provider.Repository(c.Name)
-	if err := provider.EnsureLabels(gitCtx, repo, briefIssueLabels(issues)); err != nil {
-		return err
-	}
-	open, err := provider.ListIssues(gitCtx, repo, "")
-	if err != nil {
-		return err
-	}
-	brief, round := run.brief, int(run.brief.Status.Round)
-	repository := repo.Owner + "/" + repo.Name
-	var milestone int64
-	for _, issue := range issues {
-		if slices.ContainsFunc(brief.Status.Issues, func(i c4v1alpha1.BriefIssue) bool {
-			return i.Repository == repository && int(i.Round) == round && int(i.N) == issue.N
-		}) {
-			continue // filed and recorded, maybe closed since: never filed again
+	repos := map[string]*issueRepo{}
+	for _, issue := range model.FilingOrder(issues) {
+		c := ready[issue.Container]
+		if c == nil || run.filed(issue.N) != nil {
+			continue // its Container isn't Ready, or it is filed and recorded, maybe closed since
 		}
-		// Filed, but not recorded before a restart: found by its marker.
-		i := slices.IndexFunc(open, func(o gitprovider.Issue) bool {
-			return model.HasIssueMarker(o.Body, brief.Name, round, issue.N)
-		})
-		var filed gitprovider.Issue
-		if i >= 0 {
-			filed = open[i]
-		} else {
-			// Made only once an issue is to be filed: a release with no work
-			// is never released (R7).
-			if run.released[c.Name] && milestone == 0 {
-				if milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, round); err != nil {
-					return err
-				}
+		blockers := model.IssueBlockers(issues, issue.N)
+		var buildsOn []model.BuildsOn
+		for _, m := range blockers {
+			if b := run.filed(m); b != nil {
+				buildsOn = append(buildsOn, model.BuildsOn{Repository: b.Repository, Number: int(b.Number),
+					Title: b.Title})
 			}
-			filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, model.BriefIssueBody(issue, brief.Name, round),
-				model.BriefIssueLabels(issue.Labels), milestone)
-			if err != nil {
-				return err
-			}
-			logf.FromContext(ctx).Info("Filed Brief issue", "container", c.Name, "number", filed.Number, "round", round)
 		}
-		if err := r.recordIssue(ctx, run, repository, issue.N, filed); err != nil {
-			return err
+		if len(buildsOn) < len(blockers) {
+			continue // a blocker isn't filed: it waits with its Container
+		}
+		if err := r.fileIssue(ctx, run, repos, c, issues, issue, buildsOn); err != nil {
+			return fmt.Errorf("filing issue %d of %s: %w", issue.N, c.Name, err)
 		}
 	}
 	return nil
+}
+
+// filed returns the Brief's record of the round's issue n, or nil when it
+// isn't recorded.
+func (run *roundApply) filed(n int) *c4v1alpha1.BriefIssue {
+	status := &run.brief.Status
+	i := slices.IndexFunc(status.Issues, func(i c4v1alpha1.BriefIssue) bool {
+		return i.Round == status.Round && int(i.N) == n
+	})
+	if i < 0 {
+		return nil
+	}
+	return &status.Issues[i]
+}
+
+// fileIssue files one of the round's issues, or finds it by its marker, then
+// makes it depend on what it builds on and labels it ready, and records it.
+func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos map[string]*issueRepo,
+	c *c4v1alpha1.Container, issues []model.PlanIssue, issue model.PlanIssue, buildsOn []model.BuildsOn) error {
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	ir := repos[c.Name]
+	if ir == nil {
+		provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
+		if err != nil {
+			return err
+		}
+		repo := provider.Repository(c.Name)
+		if err := provider.EnsureLabels(gitCtx, repo, briefIssueLabels(model.IssuesFor(issues, c.Name))); err != nil {
+			return err
+		}
+		open, err := provider.ListIssues(gitCtx, repo, "")
+		if err != nil {
+			return err
+		}
+		ir = &issueRepo{provider: provider, repo: repo, open: open}
+		repos[c.Name] = ir
+	}
+	brief, round := run.brief, int(run.brief.Status.Round)
+	provider, repo := ir.provider, ir.repo
+	// Filed, but not recorded before a restart: found by its marker.
+	i := slices.IndexFunc(ir.open, func(o gitprovider.Issue) bool {
+		return model.HasIssueMarker(o.Body, brief.Name, round, issue.N)
+	})
+	var filed gitprovider.Issue
+	if i >= 0 {
+		filed = ir.open[i]
+	} else {
+		// Made only once an issue is to be filed: a release with no work
+		// is never released (R7).
+		var err error
+		if run.released[c.Name] && ir.milestone == 0 {
+			if ir.milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, round); err != nil {
+				return err
+			}
+		}
+		labels := model.BriefIssueLabels(issue.Labels)
+		if len(buildsOn) > 0 {
+			labels = slices.DeleteFunc(labels, func(l string) bool { return l == model.LabelReady })
+		}
+		body := model.BriefIssueBody(issue, brief.Name, round, buildsOn...)
+		filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, body, labels, ir.milestone)
+		if err != nil {
+			return err
+		}
+		logf.FromContext(ctx).Info("Filed Brief issue", "container", c.Name, "number", filed.Number, "round", round)
+	}
+	if len(buildsOn) > 0 {
+		for _, b := range buildsOn {
+			owner, name, _ := strings.Cut(b.Repository, "/")
+			if err := provider.AddIssueDependency(gitCtx, repo, filed.Number,
+				gitprovider.Repository{Owner: owner, Name: name}, b.Number); err != nil {
+				return fmt.Errorf("making it depend on %s#%d: %w", b.Repository, b.Number, err)
+			}
+		}
+		if !slices.Contains(filed.Labels, model.LabelReady) {
+			if err := provider.AddIssueLabel(gitCtx, repo, filed.Number, model.LabelReady); err != nil {
+				return err
+			}
+			logf.FromContext(ctx).Info("Ordered Brief issue", "container", c.Name, "number", filed.Number,
+				"round", round, "blockers", len(buildsOn))
+		}
+	}
+	return r.recordIssue(ctx, run, repo.Owner+"/"+repo.Name, issue.N, filed)
 }
 
 // briefIssueLabels are the labels the issues need: the factory's, and any

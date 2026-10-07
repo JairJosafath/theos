@@ -99,6 +99,26 @@ func TestPlannerGuideExamplePassesThePlanCheck(t *testing.T) {
 	}
 }
 
+func TestPlannerGuideExampleOrdersItsIssues(t *testing.T) {
+	plan, err := ParsePlan(guideExampleFiles(t, plannerGuideText))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := IssueBlockers(plan.Issues, 3); !slices.Equal(got, []int{2}) {
+		t.Fatalf("the web shop's order issue is after %v, want [2]", got)
+	}
+	var order []int
+	for _, issue := range FilingOrder(plan.Issues) {
+		order = append(order, issue.N)
+	}
+	if slices.Index(order, 2) > slices.Index(order, 3) {
+		t.Errorf("filing order %v files the order button before the service takes orders", order)
+	}
+	if !strings.Contains(plannerGuideText, "after: [2]") {
+		t.Error("PLANNER.md doesn't show after:")
+	}
+}
+
 func TestPlannerGuideExampleHasEveryField(t *testing.T) {
 	model := guideExampleFiles(t, plannerGuideText)[PlanModelFile]
 	for _, tag := range planSpecTags() {
