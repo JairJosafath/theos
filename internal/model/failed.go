@@ -32,10 +32,14 @@ const (
 	FailedByHand = "byHand"
 )
 
-// Answers to a failed issue.
+// Answers to a failed issue: try it again or close it, or leave it handed
+// back, waiting until something changed or asking the person
+// (plans/brief-autopilot.md, decision 6).
 const (
 	AnswerRetry = "retry"
 	AnswerClose = "close"
+	AnswerWait  = "wait"
+	AnswerAsk   = "ask"
 )
 
 // MaxFailedIssues is how many waiting failed issues a Brief lists, in its
@@ -50,6 +54,8 @@ const MaxClarify = 4000
 const (
 	PlanFailedFile      = "plan/failed.yaml"
 	WorkspaceFailedFile = "model/failed.yaml"
+	// WorkspaceTendedFile lists what rounds answered, so a prompt can overrule it.
+	WorkspaceTendedFile = "model/tended.yaml"
 )
 
 // IsFailedIssue reports whether an open issue is handed back to a person.
@@ -174,7 +180,26 @@ type FailedAnswer struct {
 	Why string `yaml:"why"`
 	// Clarify is appended to a retried issue's body; retry only, optional.
 	Clarify string `yaml:"clarify,omitempty"`
+	// Recommend is what an ask would do if the person agrees; ask only.
+	Recommend *Recommendation `yaml:"recommend,omitempty"`
 }
+
+// Recommendation is the answer an ask recommends: retry, close or wait, why,
+// and a retry's clarification.
+type Recommendation struct {
+	Answer  string `yaml:"answer"`
+	Why     string `yaml:"why"`
+	Clarify string `yaml:"clarify,omitempty"`
+}
+
+// Retries reports whether the answer retries the issue, or recommends it.
+func (a FailedAnswer) Retries() bool {
+	return a.Answer == AnswerRetry || a.Answer == AnswerAsk && a.Recommend != nil && a.Recommend.Answer == AnswerRetry
+}
+
+// Applies reports whether the answer changes the issue on the Git host: a
+// retry or a close. A wait or an ask leaves it handed back.
+func (a FailedAnswer) Applies() bool { return a.Answer == AnswerRetry || a.Answer == AnswerClose }
 
 // clarifiable reports whether some clarify could give body acceptance
 // criteria. The Crew reads only the first "Acceptance criteria" section, so a
@@ -233,16 +258,17 @@ func parseFailedAnswers(s string) ([]FailedAnswer, error) {
 	dec := yaml.NewDecoder(strings.NewReader(s))
 	dec.KnownFields(true)
 	if err := dec.Decode(&answers); err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("want a list of {container, issue, answer, why, clarify}: %w", err)
+		return nil, fmt.Errorf("want a list of {container, issue, answer, why, clarify, recommend}: %w", err)
 	}
 	return answers, nil
 }
 
 // CheckFailedAnswers returns every reason a plan's answers to failed issues
-// can't be applied: each answers a waiting failed issue once, retries or closes
-// it and says why, and retries only one the Crew would take: not merged, not
-// exhausted, not by hand, and an unclear one only with a clarification that has acceptance
-// criteria.
+// can't be applied: each answers a waiting failed issue once, retries, closes,
+// waits on or asks about it and says why, and retries only one the Crew would
+// take: not merged, not exhausted, not by hand, and an unclear one only with a
+// clarification that has acceptance criteria. An ask recommends one of the
+// other answers, checked the same way.
 func CheckFailedAnswers(answers []FailedAnswer, waiting []FailedIssue) []Refusal {
 	var out []Refusal
 	refuse := func(format string, args ...any) {
@@ -263,41 +289,95 @@ func CheckFailedAnswers(answers []FailedAnswer, waiting []FailedIssue) []Refusal
 		}
 		seen[subject] = true
 		switch a.Answer {
-		case AnswerRetry:
-			switch waiting[i].Kind {
-			case FailedMerged:
-				refuse("retries %s, which a Task merged already: close it, and file the rest as a new issue", subject)
-			case FailedExhausted:
-				refuse("retries %s, which agents tried %d times: close it, and file it again as a new issue, "+
-					"clarified or split", subject, MaxIssueAttempts)
-			case FailedByHand:
-				refuse("retries %s, which needs a person, not agents: close it once the person did it or "+
-					"dropped it", subject)
-			case FailedUnclear:
-				switch {
-				case !clarifiable(waiting[i].Body):
-					refuse("retries %s, whose own \"Acceptance criteria\" section has no checklist, so no clarify "+
-						"can add one: close it, and file it again as a new issue with criteria", subject)
-				case strings.TrimSpace(a.Clarify) == "" || missingCriteria(ClarifiedBody(waiting[i].Body, 0, a.Clarify)) != "":
-					refuse("retries %s, which has no acceptance criteria, without adding them: clarify it with an "+
-						"\"## Acceptance criteria\" checklist (\"- [ ] ...\")", subject)
-				}
+		case AnswerRetry, AnswerClose, AnswerWait:
+			for _, r := range checkAnswer(a.Answer, a.Clarify, waiting[i], subject) {
+				refuse("%s", r)
 			}
-			if len(a.Clarify) > MaxClarify {
-				refuse("clarifies %s with %d bytes; keep it under %d", subject, len(a.Clarify), MaxClarify)
+			if a.Recommend != nil {
+				refuse("%s %s with a recommend; only an ask recommends", verb(a.Answer), subject)
 			}
-		case AnswerClose:
+		case AnswerAsk:
 			if strings.TrimSpace(a.Clarify) != "" {
-				refuse("closes %s with a clarify; only a retry clarifies", subject)
+				refuse("asks about %s with a clarify; put it in the recommend", subject)
+			}
+			r := a.Recommend
+			switch {
+			case r == nil:
+				refuse("asks about %s with no recommend: say what you would do (%s, %s or %s) and why",
+					subject, AnswerRetry, AnswerClose, AnswerWait)
+			case r.Answer != AnswerRetry && r.Answer != AnswerClose && r.Answer != AnswerWait:
+				refuse("asks about %s recommending %q; recommend %s, %s or %s", subject, r.Answer,
+					AnswerRetry, AnswerClose, AnswerWait)
+			default:
+				for _, reason := range checkAnswer(r.Answer, r.Clarify, waiting[i], subject) {
+					refuse("recommends: %s", reason)
+				}
+				checkWhy(refuse, "recommends for", subject, r.Why)
 			}
 		default:
-			refuse("answers %s %q; an answer is %s or %s", subject, a.Answer, AnswerRetry, AnswerClose)
+			refuse("answers %s %q; an answer is %s, %s, %s or %s", subject, a.Answer,
+				AnswerRetry, AnswerClose, AnswerWait, AnswerAsk)
 		}
-		if strings.TrimSpace(a.Why) == "" {
-			refuse("answers %s with no why: say in plain words which prompt asked for it", subject)
-		} else if len(a.Why) > MaxAnswerWhy {
-			refuse("answers %s with a why of %d bytes; keep it under %d", subject, len(a.Why), MaxAnswerWhy)
+		checkWhy(refuse, "answers", subject, a.Why)
+	}
+	return out
+}
+
+// verb is how a refusal says answer: "retries", "closes", "waits on".
+func verb(answer string) string {
+	switch answer {
+	case AnswerRetry:
+		return "retries"
+	case AnswerClose:
+		return "closes"
+	case AnswerWait:
+		return "waits on"
+	}
+	return "asks about"
+}
+
+// checkWhy refuses a missing or overlong why.
+func checkWhy(refuse func(string, ...any), what, subject, why string) {
+	if strings.TrimSpace(why) == "" {
+		refuse("%s %s with no why: say in plain words why", what, subject)
+	} else if len(why) > MaxAnswerWhy {
+		refuse("%s %s with a why of %d bytes; keep it under %d", what, subject, len(why), MaxAnswerWhy)
+	}
+}
+
+// checkAnswer returns why answer (retry, close or wait) with clarify can't be
+// done to issue f: only a retry clarifies, and only one the Crew would take.
+func checkAnswer(answer, clarify string, f FailedIssue, subject string) []string {
+	var out []string
+	if answer != AnswerRetry {
+		if strings.TrimSpace(clarify) != "" {
+			out = append(out, fmt.Sprintf("%s %s with a clarify; only a retry clarifies", verb(answer), subject))
 		}
+		return out
+	}
+	switch f.Kind {
+	case FailedMerged:
+		out = append(out, fmt.Sprintf("retries %s, which a Task merged already: close it, and file the rest "+
+			"as a new issue", subject))
+	case FailedExhausted:
+		out = append(out, fmt.Sprintf("retries %s, which agents tried %d times: close it, and file it again as "+
+			"a new issue, clarified or split", subject, MaxIssueAttempts))
+	case FailedByHand:
+		out = append(out, fmt.Sprintf("retries %s, which needs a person, not agents: close it once the person "+
+			"did it or dropped it", subject))
+	case FailedUnclear:
+		switch {
+		case !clarifiable(f.Body):
+			out = append(out, fmt.Sprintf("retries %s, whose own \"Acceptance criteria\" section has no "+
+				"checklist, so no clarify can add one: close it, and file it again as a new issue with criteria",
+				subject))
+		case strings.TrimSpace(clarify) == "" || missingCriteria(ClarifiedBody(f.Body, 0, clarify)) != "":
+			out = append(out, fmt.Sprintf("retries %s, which has no acceptance criteria, without adding them: "+
+				"clarify it with an \"## Acceptance criteria\" checklist (\"- [ ] ...\")", subject))
+		}
+	}
+	if len(clarify) > MaxClarify {
+		out = append(out, fmt.Sprintf("clarifies %s with %d bytes; keep it under %d", subject, len(clarify), MaxClarify))
 	}
 	return out
 }
@@ -310,11 +390,16 @@ type failedOut struct {
 	Reason    string `yaml:"reason"`
 	Tries     int    `yaml:"tries"`
 	Body      string `yaml:"body"`
+	// Asked and Recommend are an ask's question and what the Brief would do,
+	// so a prompt saying "do what you suggest" is enough.
+	Asked     string          `yaml:"asked,omitempty"`
+	Recommend *Recommendation `yaml:"recommend,omitempty"`
 }
 
 // workspaceFailed renders model/failed.yaml: the first MaxFailedIssues
-// waiting failed issues, by Container and number.
-func workspaceFailed(failed []FailedIssue) []failedOut {
+// waiting failed issues, by Container and number, each asked one with its
+// recommendation from tended.
+func workspaceFailed(failed []FailedIssue, tended []TendedIssue) []failedOut {
 	sorted := slices.Clone(failed)
 	slices.SortFunc(sorted, func(a, b FailedIssue) int {
 		if c := strings.Compare(a.Container, b.Container); c != 0 {
@@ -325,8 +410,45 @@ func workspaceFailed(failed []FailedIssue) []failedOut {
 	sorted = sorted[:min(len(sorted), MaxFailedIssues)]
 	out := make([]failedOut, 0, len(sorted))
 	for _, f := range sorted {
-		out = append(out, failedOut{f.Container, f.Number, oneParagraph(f.Title), f.Kind, oneParagraph(f.Reason),
-			f.Tries, strings.TrimSpace(f.Body)})
+		entry := failedOut{Container: f.Container, Issue: f.Number, Title: oneParagraph(f.Title), Kind: f.Kind,
+			Reason: oneParagraph(f.Reason), Tries: f.Tries, Body: strings.TrimSpace(f.Body)}
+		if i := slices.IndexFunc(tended, func(t TendedIssue) bool {
+			return t.Container == f.Container && t.Issue == f.Number && t.Answer == AnswerAsk
+		}); i >= 0 {
+			entry.Asked = oneParagraph(tended[i].Why)
+			entry.Recommend = tended[i].Recommend
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+type tendedOut struct {
+	Container string          `yaml:"container"`
+	Issue     int             `yaml:"issue"`
+	Round     int             `yaml:"round"`
+	Answer    string          `yaml:"answer"`
+	Why       string          `yaml:"why"`
+	Recommend *Recommendation `yaml:"recommend,omitempty"`
+	At        string          `yaml:"at"`
+}
+
+// workspaceTended renders model/tended.yaml: what rounds answered the failed
+// issues still handed back, by Container and number, so the next prompt
+// round can overrule it.
+func workspaceTended(tended []TendedIssue) []tendedOut {
+	sorted := slices.Clone(tended)
+	slices.SortFunc(sorted, func(a, b TendedIssue) int {
+		if c := strings.Compare(a.Container, b.Container); c != 0 {
+			return c
+		}
+		return a.Issue - b.Issue
+	})
+	sorted = sorted[:min(len(sorted), MaxFailedIssues)]
+	out := make([]tendedOut, 0, len(sorted))
+	for _, t := range sorted {
+		out = append(out, tendedOut{t.Container, t.Issue, t.Round, t.Answer, oneParagraph(t.Why), t.Recommend,
+			t.At.UTC().Format(time.RFC3339)})
 	}
 	return out
 }

@@ -203,7 +203,10 @@ The Kind test environment installs with kustomize. Devices install the Helm
 chart in `dist/chart/` instead ([its README](../../dist/chart/README.md)).
 After a change under `config/` or `api/`, `make chart` regenerates it from the kustomize
 output and `make helm-lint` checks it, offline, in `make validate-yaml` and so in `make
-check`; the *Test Chart* workflow, dispatched by hand, installs it into a
+check`. `make chart` keeps `templates/manager/manager.yaml`, which the plugin would
+regenerate without the `/tmp` mount, `POD_NAMESPACE` and the shared Secrets; it
+writes what the plugin would change to `bin/yaml/manager.plugin.diff` to port by hand,
+and `hack/chart-manager.sh` fails `make validate-yaml` when the render lacks them; the *Test Chart* workflow, dispatched by hand, installs it into a
 fresh Kind cluster on GitHub. Don't `helm install` it into the shared
 `c4factory` cluster: `make deploy` owns the CRDs there.
 
@@ -372,6 +375,15 @@ which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
 issues wait on each other in a cycle, `cycles --report` comments each of them
 once and moves the newest to `status/needs-maintainer`.
+Every `WATCH_PARENTS` seconds (600; 0 turns it off), busy or idle, it tends the
+plans' parents (`hack/lib/github.sh parents --apply`): an issue in progress or
+waiting, with a `Depends on #S` line per step and a merged pull request that
+says `Refs #N` and adds its plan in `docs/plans/`, closes with a comment naming
+the steps once every step closed; while a step is open, one no live claim holds
+goes to `status/waiting`, with a comment naming the steps left. `pick` takes
+neither. `close` and the *Issue closed* workflow do the same as each step
+closes; the watch catches what they missed while the relay was down.
+`parents` alone lists each parent and the steps it still waits on.
 On every pass, busy or idle, it may start the maintainer
 (`hack/relay.sh --maintain`), a headless opus session that acts as the
 project's maintainer on the owner's behalf ([GOVERNANCE.md](../../GOVERNANCE.md),
