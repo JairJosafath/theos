@@ -39,9 +39,9 @@ the agents' NetworkPolicy).
 2. **The operator shares Secrets from its own namespace.** A person makes
    `claude-credentials` (and, while the images are private, `ghcr`) once, in
    the release namespace. The Project reconciler copies each shared Secret
-   into every namespace that has a Project and opts in (decision 3), under the
-   same name, with the label `c4.factory.io/shared-from: <name>`. It keeps a
-   copy it made in step with the source, so a rotated token reaches every
+   into every namespace that opts in (decision 3), with a Project or before
+   one (decision 10), under the same name, with the label
+   `c4.factory.io/shared-from: <name>`. It keeps a copy it made in step with the source, so a rotated token reaches every
    project, and deletes its copies when the namespace opts out. Why the
    operator and not the seed job: the seed runs only on `helm upgrade`, so a
    rotated token and a NeedsInput Brief would wait for the next one; the
@@ -85,6 +85,8 @@ the agents' NetworkPolicy).
    it in namespace c4-factory-system, which the factory shares with every
    project, or in cel-lens for this project only". It names the label when the
    namespace hasn't opted in, and keeps today's message when sharing is off.
+   When the source is there, the message says the copy is on its way instead
+   of asking for a Secret the person already made.
 8. **The fence.** Unchanged: the token is still readable inside the sandbox,
    the gap 1.0 must close (ROADMAP.md). One source in the release namespace
    makes that fix easier, since egress credential injection then reads one
@@ -93,6 +95,18 @@ the agents' NetworkPolicy).
 9. **Secrets skill.** Nothing here renders a credential: the source Secrets
    are the user's (a credential only they have), the copies are made in the
    cluster by the operator, and Helm renders only names.
+10. **An opted-in namespace is shared into before it has a Project** (#520).
+    A Brief gets its Project only from its planner round, which needs the
+    token, so copying only into namespaces with a Project left a Brief in a
+    new opted-in namespace waiting for good. The Project reconciler takes the
+    request for the Project named after a namespace, so when that Project is
+    missing it shares into the namespace anyway: the copies have no owner,
+    follow their source on the same five-minute recheck, and go when the
+    namespace opts out. The Project adopts them (controller reference) once
+    it is made. A Namespace made already labeled, as the chart makes them, is
+    a change of the label too, so its creation starts the sharing. Why not
+    the Brief reconciler: one reconciler then owns every copy, its rotation
+    and its opt-out, and the Brief only reports.
 
 ## Steps
 

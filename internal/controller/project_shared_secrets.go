@@ -63,30 +63,17 @@ func (r *ProjectReconciler) shareSecrets(ctx context.Context, project *c4v1alpha
 	if err := r.APIReader.Get(ctx, client.ObjectKey{Name: project.Namespace}, &ns); err != nil {
 		return 0, err
 	}
-	if ns.Labels[c4v1alpha1.LabelSharedSecrets] != sharedSecretsOptIn {
-		for _, name := range names {
-			if err := r.deleteSharedCopy(ctx, project.Namespace, name); err != nil {
-				return 0, err
-			}
-		}
+	optedIn, reports, missing, err := r.shareInto(ctx, &ns, project)
+	if err != nil {
+		return 0, err
+	}
+	if !optedIn {
 		setCondition(&status.Conditions, project.Generation, ConditionSecretsShared, metav1.ConditionFalse,
 			"NotOptedIn", fmt.Sprintf("namespace %s doesn't have the label %s=%s, so the factory shares none of %s",
 				project.Namespace, c4v1alpha1.LabelSharedSecrets, sharedSecretsOptIn, strings.Join(names, ", ")))
 		return 0, nil
 	}
-
-	var reports, missing []string
-	for _, name := range names {
-		report, ok, err := r.shareSecret(ctx, project, name)
-		if err != nil {
-			return 0, err
-		}
-		reports = append(reports, report)
-		if !ok {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) > 0 {
+	if missing {
 		setCondition(&status.Conditions, project.Generation, ConditionSecretsShared, metav1.ConditionFalse,
 			"SourceMissing", strings.Join(reports, "; "))
 	} else {
@@ -96,13 +83,63 @@ func (r *ProjectReconciler) shareSecrets(ctx context.Context, project *c4v1alpha
 	return r.recheck(), nil
 }
 
+// shareBeforeProject shares into an opted-in namespace that has no Project
+// yet, as shareSecrets does but with nowhere to report: a Brief there needs
+// the shared token for the round that makes its Project. The copies have no
+// owner until the Project adopts them.
+func (r *ProjectReconciler) shareBeforeProject(ctx context.Context, namespace string) (time.Duration, error) {
+	if len(r.sharedNames()) == 0 {
+		return 0, nil
+	}
+	var ns corev1.Namespace
+	if err := r.APIReader.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
+		return 0, client.IgnoreNotFound(err)
+	}
+	if !ns.DeletionTimestamp.IsZero() {
+		return 0, nil
+	}
+	optedIn, _, _, err := r.shareInto(ctx, &ns, nil)
+	if err != nil || !optedIn {
+		return 0, err
+	}
+	return r.recheck(), nil
+}
+
+// shareInto copies the shared Secrets into ns when it has opted in, and
+// deletes the copies when it hasn't. It returns whether ns has opted in, what
+// the condition says of each Secret, and whether a source is missing. owner is
+// nil before the namespace has a Project.
+func (r *ProjectReconciler) shareInto(ctx context.Context, ns *corev1.Namespace,
+	owner *c4v1alpha1.Project) (bool, []string, bool, error) {
+	names := r.sharedNames()
+	if ns.Labels[c4v1alpha1.LabelSharedSecrets] != sharedSecretsOptIn {
+		for _, name := range names {
+			if err := r.deleteSharedCopy(ctx, ns.Name, name); err != nil {
+				return false, nil, false, err
+			}
+		}
+		return false, nil, false, nil
+	}
+	var reports []string
+	missing := false
+	for _, name := range names {
+		report, ok, err := r.shareSecret(ctx, ns.Name, owner, name)
+		if err != nil {
+			return true, nil, false, err
+		}
+		reports = append(reports, report)
+		missing = missing || !ok
+	}
+	return true, reports, missing, nil
+}
+
 // shareSecret makes or updates one copy. It returns what the condition says of
 // it, and false when its source is missing.
-func (r *ProjectReconciler) shareSecret(ctx context.Context, project *c4v1alpha1.Project,
+func (r *ProjectReconciler) shareSecret(ctx context.Context, namespace string, owner *c4v1alpha1.Project,
 	name string) (string, bool, error) {
 	log := logf.FromContext(ctx)
 	var copied corev1.Secret
-	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: project.Namespace, Name: name}, &copied)
+	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &copied)
 	exists := err == nil
 	if err != nil && !apierrors.IsNotFound(err) {
 		return "", false, err
@@ -120,7 +157,7 @@ func (r *ProjectReconciler) shareSecret(ctx context.Context, project *c4v1alpha1
 	}
 	shared := fmt.Sprintf("%s: shared from namespace %s", name, r.SourceNamespace)
 
-	labels := projectLabels(project.Namespace)
+	labels := projectLabels(namespace)
 	labels[c4v1alpha1.LabelSharedFrom] = name
 	if exists && copied.Type != source.Type {
 		// A Secret's type can't change: make the copy again.
@@ -131,11 +168,11 @@ func (r *ProjectReconciler) shareSecret(ctx context.Context, project *c4v1alpha1
 	}
 	if !exists {
 		copied = corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: project.Namespace, Labels: labels},
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels},
 			Type:       source.Type,
 			Data:       source.Data,
 		}
-		if err := controllerutil.SetControllerReference(project, &copied, r.Scheme); err != nil {
+		if err := r.own(owner, &copied); err != nil {
 			return "", false, err
 		}
 		if err := r.Create(ctx, &copied); err != nil {
@@ -146,13 +183,13 @@ func (r *ProjectReconciler) shareSecret(ctx context.Context, project *c4v1alpha1
 	}
 
 	if maps.EqualFunc(copied.Data, source.Data, slices.Equal) && maps.Equal(copied.Labels, labels) &&
-		metav1.IsControlledBy(&copied, project) {
+		(owner == nil || metav1.IsControlledBy(&copied, owner)) {
 		return shared, true, nil
 	}
 	copied.Data = source.Data
 	copied.StringData = nil
 	copied.Labels = labels
-	if err := controllerutil.SetControllerReference(project, &copied, r.Scheme); err != nil {
+	if err := r.own(owner, &copied); err != nil {
 		return "", false, err
 	}
 	if err := r.Update(ctx, &copied); err != nil {
@@ -160,6 +197,14 @@ func (r *ProjectReconciler) shareSecret(ctx context.Context, project *c4v1alpha1
 	}
 	log.Info("Updated shared Secret", "secret", name, "from", r.SourceNamespace)
 	return shared, true, nil
+}
+
+// own makes the Project, if there is one yet, the copy's controller.
+func (r *ProjectReconciler) own(owner *c4v1alpha1.Project, copied *corev1.Secret) error {
+	if owner == nil {
+		return nil
+	}
+	return controllerutil.SetControllerReference(owner, copied, r.Scheme)
 }
 
 // deleteSharedCopy deletes the operator's copy of a shared Secret, if the
