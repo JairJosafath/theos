@@ -646,17 +646,13 @@ transcript() {
   echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/${WT//[^a-zA-Z0-9]/-}/$1.jsonl"
 }
 
-# idle_watch WHAT PID FILE MARK: end session WHAT (process group PID) once its
-# transcript FILE and its subagents' haven't changed for RELAY_IDLE: SIGTERM,
-# then SIGKILL after RELAY_IDLE_KILL, with MARK touched so the relay counts it
-# as failed. A transcript that never appears leaves the session to
-# SESSION_TIMEOUT.
+# idle_watch WHAT PID FILE MARK IDLE KILL: end session WHAT (process group PID)
+# once its transcript FILE and its subagents' haven't changed for IDLE seconds
+# (RELAY_IDLE): SIGTERM, then SIGKILL after KILL seconds (RELAY_IDLE_KILL),
+# with MARK touched so the relay counts it as failed. A transcript that never
+# appears leaves the session to SESSION_TIMEOUT.
 idle_watch() {
-  local what=$1 pid=$2 f=$3 idle kill_after t0 last m now missing= i
-  if ! idle=$(seconds "$IDLE") || ! kill_after=$(seconds "$IDLE_KILL"); then
-    log "RELAY_IDLE ($IDLE) or RELAY_IDLE_KILL ($IDLE_KILL) isn't like 45m; $what runs until the $SESSION_TIMEOUT timeout"
-    return 0
-  fi
+  local what=$1 pid=$2 f=$3 idle=$5 kill_after=$6 t0 last m now missing= i
   t0=$(date +%s) last=$t0
   while sleep "$IDLE_POLL"; do
     kill -0 "$pid" 2>/dev/null || return 0
@@ -688,8 +684,14 @@ idle_watch() {
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after
   t0=$(date +%s)
+  # Checked here, not in the watch: a session that ends before the watch runs
+  # would take the log line with it.
+  if ! idle=$(seconds "$IDLE") || ! kill_after=$(seconds "$IDLE_KILL"); then
+    log "RELAY_IDLE ($IDLE) or RELAY_IDLE_KILL ($IDLE_KILL) isn't like 45m; $what runs until the $SESSION_TIMEOUT timeout"
+    idle=
+  fi
   # timeout leads its own process group, so the idle watch can end claude and
   # every process it started. Neither gets the worker's lock (fd 9): a process
   # the session leaves behind would hold it after the worker exits, and the
@@ -698,12 +700,16 @@ session() {
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
-  idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" 9>&- &
-  watch=$!
+  if [ -n "$idle" ]; then
+    idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" "$idle" "$kill_after" 9>&- &
+    watch=$!
+  fi
   wait "$pid"
   rc=$?
-  kill "$watch" 2>/dev/null
-  wait "$watch" 2>/dev/null
+  if [ -n "$watch" ]; then
+    kill "$watch" 2>/dev/null
+    wait "$watch" 2>/dev/null
+  fi
   S_IDLE=
   [ -e "$out.idle" ] && S_IDLE=1
   mins=$((($(date +%s) - t0) / 60))
