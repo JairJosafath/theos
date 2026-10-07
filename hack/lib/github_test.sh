@@ -8,7 +8,7 @@
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails, for close, duplicate and closed dropping the status labels, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 unset C4_CLUSTER C4_HUMAN_CLUSTER # ./dev setup --lite sets the one, a human the other; each test sets its own
@@ -42,11 +42,12 @@ gh_api() {
     */labels/user%2F*) return 1 ;;
     */issues/50/labels*) printf 'needs/cluster\nstatus/in-progress\n' ;;
     */issues/51/labels*) printf 'status/in-progress\n' ;;
-    */issues/7[2-4]/labels*) printf 'kind/bug\nstatus/in-progress\nstatus/ready\n' ;;
+    */issues/7[2-5]/labels*) printf 'kind/bug\nstatus/in-progress\nstatus/ready\n' ;;
     */issues/60) echo '{"number":60,"title":"Deploy","labels":[{"name":"needs/cluster"},{"name":"kind/feature"}]}' ;;
     */issues/71) return 1 ;; # closing #71 fails
     */issues/73) echo closed ;; # --jq .state, as take asks
     */issues/74) echo open ;;
+    */issues/75) [[ " $* " == *" PATCH "* ]] && return 1; echo closed ;; # a merged pull request closed #75 first
     */issues/61) echo '{"number":61,"title":"Docs","labels":[{"name":"kind/docs"}]}' ;;
     */issues/77/comments*) return 1 ;; # posting on #77 fails
     */issues/*/comments*)
@@ -319,6 +320,12 @@ check "close, claim released" "$([ -e "$T/main/.relay/claim" ] && echo kept || e
 R=repos/$C4_GITHUB_REPO
 check "close drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/72/labels/status%2Fin-progress
 DELETE $R/issues/72/labels/status%2Fready"
+claim "$T/main" 75 "$(date +%s)"; lease "$T/main" 75 "$(date +%s)"; : >"$T/calls"
+echo landed | gh_close 75 - >/dev/null 2>&1; check "close, already closed" $? 0
+check "close, already closed, claim and lease released" \
+  "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released) $([ -e "$LEASE" ] && echo kept || echo gone)" "released gone"
+check "close, already closed, drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/75/labels/status%2Fin-progress
+DELETE $R/issues/75/labels/status%2Fready"
 : >"$T/calls"
 gh_duplicate 72 61 >/dev/null 2>&1; check "duplicate" $? 0
 check "duplicate drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/72/labels/status%2Fin-progress
