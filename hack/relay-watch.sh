@@ -515,12 +515,14 @@ cron_lines() {
   echo "*/5 * * * * $cmd $(cron_tag)"
 }
 
-# without_cron: remove this checkout's crontab lines, if there are any.
+# without_cron: remove this checkout's crontab lines; fails when there are
+# none. It reads the whole table first: a grep -q on crontab -l's pipe can
+# exit before crontab -l is done, and pipefail then fails the pipeline.
 without_cron() {
   local tab
-  command -v crontab >/dev/null || return 0
-  tab=$(crontab -l 2>/dev/null) || return 0
-  grep -qF "$(cron_tag)" <<<"$tab" || return 0
+  command -v crontab >/dev/null || return 1
+  tab=$(crontab -l 2>/dev/null) || return 1
+  grep -qF "$(cron_tag)" <<<"$tab" || return 1
   grep -vF "$(cron_tag)" <<<"$tab" | crontab -
 }
 
@@ -541,7 +543,7 @@ install_watch() {
   if has_systemd; then
     mkdir -p "$(dirname "$(unit_file)")"
     render_unit >"$(unit_file)"
-    without_cron
+    without_cron || true
     systemctl --user daemon-reload &&
       systemctl --user enable "$UNIT" &&
       systemctl --user restart "$UNIT" || { echo "relay-watch: systemctl failed" >&2; return 1; }
@@ -567,8 +569,7 @@ uninstall_watch() {
     systemctl --user daemon-reload
     echo "removed $(unit_file); its watch is stopped"
   fi
-  if command -v crontab >/dev/null && crontab -l 2>/dev/null | grep -qF "$(cron_tag)"; then
-    without_cron
+  if without_cron; then
     echo "removed the crontab lines; a watch running now keeps running (touch $STOP)"
   fi
   return 0
