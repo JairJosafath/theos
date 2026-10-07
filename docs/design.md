@@ -489,6 +489,24 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   round's prompts. A suggestion no prompt answers keeps waiting: nothing is
   built without the person's say, and labels and milestones stay the
   operator's.
+- **A failed issue shows on the Brief and is tried again from it** (#429).
+  An open issue handed back with `status/needs-human` in the repository of a
+  Container the Brief made is listed in the Brief's `status.failed` and card,
+  with why in one sentence, taken from the cluster: the newest failed Task's
+  message, or the Crew's reason for refusing it (no acceptance criteria,
+  already merged, three tries used). `status.failedWaiting` is a column of
+  `kubectl get brief`, the condition `IssuesFailed` says the first one and
+  its reason, and each is a Warning Event `IssueFailed`; the phase stays
+  `Planned`. The person answers in a prompt, as with suggestions: the planner
+  reads `model/failed.yaml` and writes `plan/failed.yaml`, `retry` (with an
+  optional clarification the operator appends to the issue's body, since an
+  agent's goal is the issue's title and body) or `close`, each with why, only
+  for the ones a new prompt speaks to. A retry is refused when the Crew would
+  refuse the issue again; an issue whose three tries are used is closed and
+  filed again, reworded or split, so the Crew's guard stays. Applying the
+  round, the operator labels a retried issue `status/ready` in place of
+  `status/needs-human`, or closes it, with a comment quoting the why and the
+  round's prompts. See [plans/brief-failed-issues.md](plans/brief-failed-issues.md).
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a
