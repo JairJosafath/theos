@@ -349,7 +349,7 @@ model and context it needs.
   the condition `ModulePublished` says why it isn't published. An upload is a
   Normal Event `ModulePublished` and the log line `Published Go module`; an
   invalid module is a Warning Event `InvalidModule`, once per release. See
-  [plans/app-modules.md](plans/app-modules.md).
+  [plans/done/app-modules.md](plans/done/app-modules.md).
 - **A release can be published to GitHub.** A Crew with
   `spec.publishReleases.github` (`repository: owner/name`, and a Secret the
   user creates holding a token for that one repository) copies its last release
@@ -480,14 +480,19 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 - **One app uses another's release, never its branch** (#430). Apps stay one
   repository each and share code the way separate repositories do: an issue
   that builds on another Container's code names it in its front matter,
-  `uses:`. The plan is refused when the used Container is the issue's own, has
-  no Relationship from the issue's Container, or has no release planned or
-  made. When the Crew tags a release of a repository with a `go.mod` at its
+  `uses:`. The plan is refused when the used Container is the issue's own, is
+  not in the model, has no Relationship from the issue's Container, or has
+  neither a release made nor one the round makes (named in `releases.yaml`,
+  with an issue of the round for it). When the Crew tags a release of a repository with a `go.mod` at its
   root, the operator publishes the module to the owner's Go registry in Gitea;
   agent pods and the Go Standard's CI fetch `c4factory.local/...` modules
-  through it. A `uses:` issue is labelled ready only once each app it uses has
-  a published version, which its body names to pin. See
-  [plans/app-modules.md](plans/app-modules.md).
+  through it. A `uses:` issue is filed without `status/ready` and labelled
+  ready only once each app it uses has a published version: the round's
+  release for an app the round releases, else its newest. Its body then gets
+  `Uses <module> <version>: go get it at that version.` per app. While it
+  waits, the Brief stays `Applying` and its message names the issue, the app
+  and why, such as a release that published no Go module. See
+  [plans/done/app-modules.md](plans/done/app-modules.md).
 - **It asks only for what costs money or touches access.** Agents, their
   models, a Crew's size, GitProviders and credentials are never the planner's
   to make or change. When it needs one, or can't go on without a decision, the

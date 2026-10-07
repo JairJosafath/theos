@@ -246,6 +246,14 @@ func TestCheckPlan(t *testing.T) {
 		t.Fatalf("no %s in the plan", ref)
 		return nil
 	}
+	// webUsesAPI makes web's issue use api's module, with the Relationship it
+	// needs and api released this round.
+	webUsesAPI := func(p *Plan) {
+		p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindRelationship, Name: "web-to-api",
+			Source: Ref{KindContainer, "web"}, Target: Ref{KindContainer, "api"}, Description: "Reads orders"})
+		p.Releases = []string{"api"}
+		p.Issues[0].Uses = []string{"api"}
+	}
 	tests := []struct {
 		name    string
 		change  func(p *Plan, c *CurrentModel)
@@ -253,6 +261,50 @@ func TestCheckPlan(t *testing.T) {
 		reason  string
 	}{
 		{"the happy path", func(*Plan, *CurrentModel) {}, "", ""},
+		{"uses: an app the round releases", func(p *Plan, _ *CurrentModel) { webUsesAPI(p) }, "", ""},
+		{"uses: an app that released before", func(p *Plan, c *CurrentModel) {
+			webUsesAPI(p)
+			p.Releases, p.Issues = nil, p.Issues[:1]
+			c.Released = []string{"api"}
+		}, "", ""},
+		{"uses: the issue's own Container", func(p *Plan, _ *CurrentModel) {
+			webUsesAPI(p)
+			p.Issues[0].Uses = []string{"web"}
+		}, "plan/issues/01-web.md", `uses: names "web", the issue's own Container`},
+		{"uses: a Container not in the model", func(p *Plan, _ *CurrentModel) {
+			webUsesAPI(p)
+			p.Issues[0].Uses = []string{"core"}
+		}, "plan/issues/01-web.md", `uses: names "core", which is not a Container of plan/model.yaml`},
+		{"uses: a DataStore", func(p *Plan, _ *CurrentModel) {
+			webUsesAPI(p)
+			p.Issues[0].Uses = []string{"db"}
+		}, "plan/issues/01-web.md", `uses: names "db", which is not a Container`},
+		{"uses: a Container twice", func(p *Plan, _ *CurrentModel) {
+			webUsesAPI(p)
+			p.Issues[0].Uses = []string{"api", "api"}
+		}, "plan/issues/01-web.md", `uses: names "api" twice`},
+		{"uses: with no Relationship to it", func(p *Plan, _ *CurrentModel) {
+			webUsesAPI(p)
+			p.Objects = p.Objects[:len(p.Objects)-1]
+		}, "plan/issues/01-web.md", `no Relationship goes from Container web to it`},
+		{"uses: with the Relationship the other way", func(p *Plan, _ *CurrentModel) {
+			webUsesAPI(p)
+			rel := &p.Objects[len(p.Objects)-1]
+			rel.Source, rel.Target = rel.Target, rel.Source
+		}, "plan/issues/01-web.md", `no Relationship goes from Container web to it`},
+		{"uses: an app with no release made or planned", func(p *Plan, _ *CurrentModel) {
+			webUsesAPI(p)
+			p.Releases = nil
+		}, "plan/issues/01-web.md", `"api", which has made no release and gets none this round; name it in plan/releases.yaml`},
+		{"uses: an app released this round with no work", func(p *Plan, _ *CurrentModel) {
+			webUsesAPI(p)
+			p.Issues = p.Issues[:1]
+		}, "plan/issues/01-web.md", `the round files no issue for it`},
+		{"a design idea with uses:", func(p *Plan, c *CurrentModel) {
+			webUsesAPI(p)
+			c.Designer = true
+			p.Issues[0].Body, p.Issues[0].Labels = "A calm page for orders", []string{LabelDesign}
+		}, "plan/issues/01-web.md", "is a design idea (status/design) and has uses:"},
 		{"story text of what exists may change", func(p *Plan, _ *CurrentModel) {
 			api := object(p, "Container/api")
 			api.DisplayName, api.Description = "API", "Serves orders"
@@ -649,6 +701,41 @@ func TestRoundPrompts(t *testing.T) {
 	if !reflect.DeepEqual(round1, []string{"support VAP files first"}) || !reflect.DeepEqual(round2, []string{"and CRDs"}) ||
 		RoundPrompts(prompts, planned) != nil {
 		t.Errorf("round 1 %v, round 2 %v, then %v", round1, round2, RoundPrompts(prompts, planned))
+	}
+}
+
+func TestParsePlanUses(t *testing.T) {
+	files := happyFiles()
+	files["plan/issues/01-web.md"] = strings.Replace(readyIssue, "labels: [kind/feature]\n",
+		"labels: [kind/feature]\nuses: [api, \" core \"]\n", 1)
+	plan, err := ParsePlan(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Issues[0].Uses; !reflect.DeepEqual(got, []string{"api", "core"}) {
+		t.Errorf("uses = %q, want [api core]", got)
+	}
+	if got := plan.Issues[1].Uses; got != nil {
+		t.Errorf("an issue without uses: has %v", got)
+	}
+	files["plan/issues/01-web.md"] = strings.Replace(readyIssue, "labels: [kind/feature]\n",
+		"labels: [kind/feature]\nuses: api\n", 1)
+	if _, err := ParsePlan(files); err == nil {
+		t.Error("uses: api parsed; want an error asking for a list")
+	}
+}
+
+func TestBriefIssueBodyUsing(t *testing.T) {
+	issue := PlanIssue{N: 3, Body: "## Goal\n\nCheck a file."}
+	got := BriefIssueBodyUsing(issue, "cel-lens", 1,
+		[]BuildsOn{{Repository: "shop/core", Number: 2, Title: "The checker"}},
+		[]UsedModule{{Path: "c4factory.local/cel-lens/cel-lens-core", Version: "v0.1.0"}})
+	want := "## Goal\n\nCheck a file.\n\n" +
+		"Builds on shop/core#2 (The checker).\n\n" +
+		"Uses c4factory.local/cel-lens/cel-lens-core v0.1.0: go get it at that version.\n\n" +
+		"<!-- c4-brief: cel-lens/1/3 -->\n"
+	if got != want {
+		t.Errorf("body\n%q\nwant\n%q", got, want)
 	}
 }
 

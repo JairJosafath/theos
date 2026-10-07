@@ -156,6 +156,14 @@ Each step is a GitHub issue, `status/proposed`, one pull request each.
    showing the CLI issue unready until the core's module is published, then
    ready with `Uses ... v0.1.0` in its body; and a restart in between
    finishes it.
+   As built: a used app with no release made must be in `releases.yaml`
+   *and* have an issue of the round, since a release with no work is never
+   made (R7). For an app the round releases, "the round's release" is the
+   one tagged with the title of the round's release milestone in its
+   repository; any other app gives its newest. The issue is filed at once
+   without `status/ready` and recorded in the Brief's status only once
+   readied, like an ordered one, so a restart finds it by its marker
+   (`brief_uses.go`).
 
 ## What only Kind would show
 

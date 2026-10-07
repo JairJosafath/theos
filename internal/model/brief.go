@@ -105,6 +105,9 @@ type PlanIssue struct {
 	// After are the round numbers (N) of the plan's issues whose work this one
 	// needs merged first, from any Container of the round.
 	After []int
+	// Uses are the Containers whose released Go module this one builds on:
+	// it is readied once each has published one (docs/plans/done/app-modules.md).
+	Uses []string
 }
 
 // Plan is what a planner pushed for one round.
@@ -424,6 +427,7 @@ func parsePlanIssue(path, s string) (PlanIssue, error) {
 		Title  string   `yaml:"title"`
 		Labels []string `yaml:"labels"`
 		After  []string `yaml:"after"`
+		Uses   []string `yaml:"uses"`
 	}
 	dec := yaml.NewDecoder(strings.NewReader(front))
 	dec.KnownFields(true)
@@ -439,6 +443,9 @@ func parsePlanIssue(path, s string) (PlanIssue, error) {
 			return PlanIssue{}, fmt.Errorf("after: has %q; list the nn of the issues it waits for, such as after: [2, 3]", a)
 		}
 		issue.After = append(issue.After, n)
+	}
+	for _, u := range meta.Uses {
+		issue.Uses = append(issue.Uses, strings.TrimSpace(u))
 	}
 	if issue.Title == "" {
 		return PlanIssue{}, errors.New("the front matter has no title")
@@ -461,6 +468,8 @@ type CurrentModel struct {
 	Designer bool
 	// CrewDesigners are the existing Containers whose Crew has a designer.
 	CrewDesigners []string
+	// Released are the existing Containers whose Crew has made a release.
+	Released []string
 }
 
 // Refusal is one reason a plan can't be applied, for the planner's next round.
@@ -548,6 +557,7 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 	for _, issue := range plan.Issues {
 		checkPlanIssue(plan, current, issue, refuse)
 		checkAfter(plan, issue, refuse)
+		checkUses(plan, current, issue, refuse)
 	}
 	checkOrderCycle(plan, refuse)
 	for _, name := range plan.Releases {
@@ -770,6 +780,61 @@ func checkAfter(plan Plan, issue PlanIssue, refuse func(string, string, ...any))
 	}
 }
 
+// checkUses refuses a uses: on a design idea, and one that names the issue's
+// own Container, a Container twice, one not in the plan, one the issue's
+// Container has no Relationship to, or one with neither a release made nor
+// one the round makes: released in releases.yaml, with an issue of the round
+// to release, since a release with no work is never made (R7).
+func checkUses(plan Plan, current CurrentModel, issue PlanIssue, refuse func(string, string, ...any)) {
+	if len(issue.Uses) == 0 {
+		return
+	}
+	if slices.Contains(issue.Labels, LabelDesign) {
+		refuse(issue.File, "is a design idea (%s) and has uses:; a design idea builds no code, "+
+			"so drop uses: or make it a ready issue", LabelDesign)
+		return
+	}
+	seen := map[string]bool{}
+	for _, name := range issue.Uses {
+		if seen[name] {
+			refuse(issue.File, "uses: names %q twice; name each Container once", name)
+			continue
+		}
+		seen[name] = true
+		if name == issue.Container {
+			refuse(issue.File, "uses: names %q, the issue's own Container; it builds on its own code without a release", name)
+			continue
+		}
+		if _, ok := findObject(plan.Objects, Ref{KindContainer, name}); !ok {
+			refuse(issue.File, "uses: names %q, which is not a Container of %s", name, PlanModelFile)
+			continue
+		}
+		if !hasRelationship(plan.Objects, Ref{KindContainer, issue.Container}, Ref{KindContainer, name}) {
+			refuse(issue.File, "uses: names %q, but no Relationship goes from Container %s to it; "+
+				"add one to %s that says what %s uses it for", name, issue.Container, PlanModelFile, issue.Container)
+			continue
+		}
+		if slices.Contains(current.Released, name) {
+			continue
+		}
+		switch {
+		case !slices.Contains(plan.Releases, name):
+			refuse(issue.File, "uses: names %q, which has made no release and gets none this round; "+
+				"name it in %s so the round releases its module", name, PlanReleasesFile)
+		case len(IssuesFor(plan.Issues, name)) == 0:
+			refuse(issue.File, "uses: names %q, which has made no release, and the round files no issue for it; "+
+				"a release with no work is never made, so file its work in this round", name)
+		}
+	}
+}
+
+// hasRelationship reports whether a Relationship goes from source to target.
+func hasRelationship(objects []PlanObject, source, target Ref) bool {
+	return slices.ContainsFunc(objects, func(o PlanObject) bool {
+		return o.Kind == KindRelationship && o.Source == source && o.Target == target
+	})
+}
+
 // checkOrderCycle refuses a plan whose after: lines make a cycle, once per
 // cycle, on the file of its lowest-numbered issue.
 func checkOrderCycle(plan Plan, refuse func(string, string, ...any)) {
@@ -989,6 +1054,25 @@ type BuildsOn struct {
 // "Builds on owner/name#N (title)." for each issue it builds on, then the
 // marker.
 func BriefIssueBody(issue PlanIssue, brief string, round int, buildsOn ...BuildsOn) string {
+	return BriefIssueBodyUsing(issue, brief, round, buildsOn, nil)
+}
+
+// UsedModule is a Go module a uses: issue builds on: the module a used
+// Container's release published, at that release's version.
+type UsedModule struct {
+	Path    string
+	Version string
+}
+
+// UsesLine is the body line that pins a used module's release.
+func UsesLine(m UsedModule) string {
+	return fmt.Sprintf("Uses %s %s: go get it at that version.", m.Path, m.Version)
+}
+
+// BriefIssueBodyUsing is BriefIssueBody with a line "Uses <module> <version>:
+// go get it at that version." for each module the issue uses, after the
+// Builds on lines.
+func BriefIssueBodyUsing(issue PlanIssue, brief string, round int, buildsOn []BuildsOn, uses []UsedModule) string {
 	var body strings.Builder
 	body.WriteString(strings.ReplaceAll(issue.Body, "<!--", "&lt;!--") + "\n\n")
 	for _, b := range buildsOn {
@@ -996,6 +1080,12 @@ func BriefIssueBody(issue PlanIssue, brief string, round int, buildsOn ...Builds
 		fmt.Fprintf(&body, "Builds on %s#%d (%s).\n", b.Repository, b.Number, title)
 	}
 	if len(buildsOn) > 0 {
+		body.WriteString("\n")
+	}
+	for _, m := range uses {
+		body.WriteString(UsesLine(m) + "\n")
+	}
+	if len(uses) > 0 {
 		body.WriteString("\n")
 	}
 	return body.String() + IssueMarker(brief, round, issue.N) + "\n"

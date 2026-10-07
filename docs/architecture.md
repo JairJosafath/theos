@@ -218,7 +218,7 @@ and owner through `gitprovider.Repository.GoProxy`); c4agent writes `~/.netrc`
 for the Git host from its Git credentials, and the bot's token can read the
 owner's packages (`gitprovider.AgentTokenScopes`). go-standard's CI does the
 same with the job's token. A module Gitea lacks is a 404, and the go command
-goes on to the public proxy. [plans/app-modules.md](plans/app-modules.md) has why.
+goes on to the public proxy. [plans/done/app-modules.md](plans/done/app-modules.md) has why.
 
 ## Go build caches
 

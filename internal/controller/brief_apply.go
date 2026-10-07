@@ -48,6 +48,11 @@ type roundApply struct {
 	took, skipped int
 	// retried and closed count the failed issues the round answered.
 	retried, closed int
+	// uses holds what the round's uses: issues wait for, filled once a
+	// reconcile (brief_uses.go).
+	uses *usesLookup
+	// usesWaits say which filed issues wait for a used app's module.
+	usesWaits []string
 }
 
 // applyRound applies the plan the Brief accepted (B8), in order and each step
@@ -119,9 +124,9 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "making the Crews and filing the issues", err)
 	}
-	if len(waiting) > 0 {
+	if len(waiting) > 0 || len(run.usesWaits) > 0 {
 		setCondition(&brief.Status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
-			"Applying", fmt.Sprintf("Round %d waits for %s to be Ready", brief.Status.Round, strings.Join(waiting, ", ")))
+			"Applying", roundWaitMessage(int(brief.Status.Round), waiting, run.usesWaits))
 		return ctrl.Result{RequeueAfter: r.needsInputRecheck()}, nil
 	}
 	// A Container the plan releases that the round neither made nor files
@@ -379,6 +384,9 @@ type issueRepo struct {
 // Container that isn't Ready. It is filed without status/ready, made to
 // depend in the Git host on each of them, across repositories, and only then
 // labelled ready, so no Crew picks it up before its order is there. An issue
+// with uses: is filed the same way, and readied, with a line pinning each used
+// module, only once each app it uses has published one; until then it is
+// filed but not recorded, and run.usesWaits says what it waits for. An issue
 // already filed is found by its marker among the open issues, so a restart
 // files no duplicate and finishes what it left. Each is recorded in the
 // Brief's status once done.
@@ -401,7 +409,11 @@ func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, ready
 		if len(buildsOn) < len(blockers) {
 			continue // a blocker isn't filed: it waits with its Container
 		}
-		if err := r.fileIssue(ctx, run, repos, c, issues, issue, buildsOn); err != nil {
+		uses, err := r.usedModules(ctx, run, issues, issue)
+		if err != nil {
+			return fmt.Errorf("reading the modules issue %d of %s uses: %w", issue.N, c.Name, err)
+		}
+		if err := r.fileIssue(ctx, run, repos, c, issues, issue, buildsOn, uses); err != nil {
 			return fmt.Errorf("filing issue %d of %s: %w", issue.N, c.Name, err)
 		}
 	}
@@ -424,7 +436,8 @@ func (run *roundApply) filed(n int) *c4v1alpha1.BriefIssue {
 // fileIssue files one of the round's issues, or finds it by its marker, then
 // makes it depend on what it builds on and labels it ready, and records it.
 func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos map[string]*issueRepo,
-	c *c4v1alpha1.Container, issues []model.PlanIssue, issue model.PlanIssue, buildsOn []model.BuildsOn) error {
+	c *c4v1alpha1.Container, issues []model.PlanIssue, issue model.PlanIssue, buildsOn []model.BuildsOn,
+	uses usedModules) error {
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	ir := repos[c.Name]
@@ -463,17 +476,17 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 			}
 		}
 		labels := model.BriefIssueLabels(issue.Labels)
-		if len(buildsOn) > 0 {
+		if len(buildsOn) > 0 || len(issue.Uses) > 0 {
 			labels = slices.DeleteFunc(labels, func(l string) bool { return l == model.LabelReady })
 		}
-		body := model.BriefIssueBody(issue, brief.Name, round, buildsOn...)
+		body := model.BriefIssueBodyUsing(issue, brief.Name, round, buildsOn, uses.modules)
 		filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, body, labels, ir.milestone)
 		if err != nil {
 			return err
 		}
 		logf.FromContext(ctx).Info("Filed Brief issue", "container", c.Name, "number", filed.Number, "round", round)
 	}
-	if len(buildsOn) > 0 {
+	if len(buildsOn) > 0 || len(issue.Uses) > 0 {
 		for _, b := range buildsOn {
 			owner, name, _ := strings.Cut(b.Repository, "/")
 			if err := provider.AddIssueDependency(gitCtx, repo, filed.Number,
@@ -481,12 +494,21 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 				return fmt.Errorf("making it depend on %s#%d: %w", b.Repository, b.Number, err)
 			}
 		}
+		if len(uses.waits) > 0 {
+			run.usesWaits = append(run.usesWaits, fmt.Sprintf("issue %s/%s#%d waits for %s",
+				repo.Owner, repo.Name, filed.Number, strings.Join(uses.waits, " and ")))
+			return nil // readied once the modules are published, so not recorded yet
+		}
+		if err := r.pinUses(gitCtx, provider, repo, filed, model.BriefIssueBodyUsing(issue, brief.Name, round,
+			buildsOn, uses.modules), uses.modules); err != nil {
+			return err
+		}
 		if !slices.Contains(filed.Labels, model.LabelReady) {
 			if err := provider.AddIssueLabel(gitCtx, repo, filed.Number, model.LabelReady); err != nil {
 				return err
 			}
 			logf.FromContext(ctx).Info("Ordered Brief issue", "container", c.Name, "number", filed.Number,
-				"round", round, "blockers", len(buildsOn))
+				"round", round, "blockers", len(buildsOn), "uses", len(uses.modules))
 		}
 	}
 	return r.recordIssue(ctx, run, repo.Owner+"/"+repo.Name, issue.N, filed)
