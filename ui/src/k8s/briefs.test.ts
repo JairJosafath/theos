@@ -15,6 +15,14 @@ describe('briefManifest and promptPatch', () => {
     })
   })
 
+  it('sets the autopilot mode only when one is chosen', () => {
+    expect(briefManifest('webshop', 'plant-care', 'Water plants', 'Ask').spec).toEqual({
+      idea: 'Water plants',
+      autopilot: 'Ask',
+    })
+    expect(briefManifest('webshop', 'plant-care', 'Water plants', undefined).spec).toEqual({ idea: 'Water plants' })
+  })
+
   it('appends one prompt', () => {
     expect(promptPatch('Use Stripe')).toEqual([{ op: 'add', path: '/spec/prompts/-', value: 'Use Stripe' }])
   })

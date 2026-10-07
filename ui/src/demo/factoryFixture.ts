@@ -110,6 +110,7 @@ export function demoFactory(now: number): FactoryData {
     containers: story.containers,
     sessions: story.sessions,
     crews: story.crews,
+    briefs: story.briefs,
   }
 }
 

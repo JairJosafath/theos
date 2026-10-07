@@ -366,6 +366,45 @@ export interface BriefFailedIssue {
   tries?: number
 }
 
+/** Whether a Brief tends its handed-back work by itself: Off, Ask (decides and asks you) or On (applies). */
+export type BriefAutopilot = 'Off' | 'Ask' | 'On'
+
+/** What a Brief's item is: a failed issue, or a Task, Crew or Container it made. */
+export type BriefItemKind = 'Issue' | 'Task' | 'Crew' | 'Container'
+
+/** An item the Brief leaves alone for now, as it may heal by itself, and when it acts if it hasn't. */
+export interface BriefHealing {
+  kind: BriefItemKind
+  /** The item's name; container#number for an issue. */
+  name: string
+  reason?: string
+  /** When the Brief acts if it hasn't healed; unset when it acts only once the item changes. */
+  actsAt?: string
+}
+
+/** An item only the person can decide: the question, what the Brief would do and why. */
+export interface BriefNeedsYou {
+  kind: BriefItemKind
+  /** The item's name; container#number for an issue. */
+  name: string
+  question: string
+  recommend?: string
+  why?: string
+  since?: string
+}
+
+/** A failed issue a round answered, as the Brief remembers it. */
+export interface BriefTendedIssue {
+  container: string
+  number: number
+  answer: 'retry' | 'close' | 'wait' | 'ask'
+  why?: string
+  recommend?: { answer: 'retry' | 'close' | 'wait'; why?: string; clarify?: string }
+  tries?: number
+  at: string
+  round: number
+}
+
 /** An app idea in plain words, steered by follow-up prompts; a planner Agent turns it into the model, round by round. */
 export interface Brief extends K8sObject {
   spec: {
@@ -375,6 +414,8 @@ export interface Brief extends K8sObject {
     prompts?: string[]
     agents?: { planner?: LocalRef; implementer?: LocalRef; reviewer?: LocalRef; designer?: LocalRef }
     gitProviderRef?: LocalRef
+    /** Whether it tends its handed-back work by itself; unset is the operator's default. */
+    autopilot?: BriefAutopilot
   }
   status?: {
     phase?: BriefPhase
@@ -398,6 +439,17 @@ export interface Brief extends K8sObject {
     failed?: BriefFailedIssue[]
     /** How many failed issues wait for an answer in all; can exceed the listed ones. */
     failedWaiting?: number
+    /** What the Brief made that it leaves alone for now, and when it acts; empty while autopilot is Off. */
+    attention?: BriefHealing[]
+    /** What only the person can decide, oldest first, at most 50; empty while autopilot is Off. */
+    needsYou?: BriefNeedsYou[]
+    /** How many items need the person in all; can exceed the listed ones. */
+    needsYouWaiting?: number
+    /** The failed issues rounds answered, at most 50. */
+    tended?: BriefTendedIssue[]
+    /** The last tending round: a round with no new prompt that decides the failed issues. */
+    tendRound?: number
+    lastTendTime?: string
     /** A line per Container the Brief made, then one per spec.releases entry naming none it made. */
     apps?: BriefApp[]
     /** One entry per round, oldest first. */
@@ -408,8 +460,8 @@ export interface Brief extends K8sObject {
       costMilliUSD?: number
       /** The round's planner runs whose agent didn't report their cost. */
       runsWithoutCost?: number
-      /** Applied, PlannerNeedsInput or RoundFailed. */
-      outcome?: 'Applied' | 'PlannerNeedsInput' | 'RoundFailed'
+      /** Applied, PlannerNeedsInput or RoundFailed; Tended for a tending round that applied. */
+      outcome?: 'Applied' | 'PlannerNeedsInput' | 'RoundFailed' | 'Tended'
       /** The planner's question, when the round asked for input. */
       needsInput?: string
     }[]

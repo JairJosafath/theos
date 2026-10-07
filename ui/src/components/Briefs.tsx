@@ -4,8 +4,15 @@
 
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { isBriefName, MAX_IDEA, MAX_PROMPT, nameFromIdea, type BriefWriter } from '../k8s/briefs'
-import type { Brief } from '../k8s/types'
-import { describeBrief, sortBriefs, type BriefAppView, type BriefView } from '../model/brief'
+import type { Brief, BriefAutopilot } from '../k8s/types'
+import {
+  AUTOPILOT_MODES,
+  DEFAULT_AUTOPILOT,
+  describeBrief,
+  sortBriefs,
+  type BriefAppView,
+  type BriefView,
+} from '../model/brief'
 import { plural, timeAgo } from '../model/describe'
 import { ExternalLinkIcon, RepoIcon, WarningIcon } from './icons'
 
@@ -69,6 +76,8 @@ function NewBrief({ namespace, taken, writer }: { namespace: string; taken: stri
   const [idea, setIdea] = useState('')
   // Until the person types a name, it follows the idea.
   const [typedName, setTypedName] = useState<string>()
+  // Empty leaves spec.autopilot unset: the factory's default.
+  const [autopilot, setAutopilot] = useState<BriefAutopilot | ''>('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string>()
   const [created, setCreated] = useState<string>()
@@ -84,10 +93,11 @@ function NewBrief({ namespace, taken, writer }: { namespace: string; taken: stri
     setSending(true)
     setError(undefined)
     try {
-      await writer.create(namespace, name, idea.trim())
+      await writer.create(namespace, name, idea.trim(), autopilot || undefined)
       setCreated(name)
       setIdea('')
       setTypedName(undefined)
+      setAutopilot('')
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -138,6 +148,26 @@ function NewBrief({ namespace, taken, writer }: { namespace: string; taken: stri
           {nameProblem}
         </p>
       ) : null}
+      <label className="field" htmlFor={`${id}-autopilot`}>
+        <span className="field-label">Autopilot</span>
+        <span className="field-hint">
+          {(autopilot ? AUTOPILOT_MODES[autopilot] : AUTOPILOT_MODES[DEFAULT_AUTOPILOT]).explanation}
+        </span>
+      </label>
+      <select
+        id={`${id}-autopilot`}
+        className="input"
+        value={autopilot}
+        onChange={(e) => setAutopilot(e.target.value as BriefAutopilot | '')}
+        disabled={sending}
+      >
+        <option value="">The factory’s default ({AUTOPILOT_MODES[DEFAULT_AUTOPILOT].label.toLowerCase()})</option>
+        {(Object.keys(AUTOPILOT_MODES) as BriefAutopilot[]).map((mode) => (
+          <option key={mode} value={mode}>
+            {AUTOPILOT_MODES[mode].label}
+          </option>
+        ))}
+      </select>
       <div className="form-row">
         <button type="submit" className="button" disabled={sending || !idea.trim() || !name || Boolean(nameProblem)}>
           {sending ? 'Creating…' : 'Create brief'}
@@ -187,6 +217,11 @@ function BriefCard({
                 <span title="What planning cost over all rounds">{view.cost}</span>
               </>
             ) : null}
+            <span className="sep">·</span>
+            <span title={view.autopilot.explanation}>
+              {view.autopilot.label}
+              {view.autopilot.isDefault ? ' (default)' : ''}
+            </span>
             {brief.metadata.creationTimestamp ? (
               <>
                 <span className="sep">·</span>
@@ -206,11 +241,7 @@ function BriefCard({
         {view.idea}
       </p>
 
-      {view.needsInput ? (
-        <div className="brief-note brief-note-waiting">
-          <strong>It needs your input.</strong> {view.needsInput}
-        </div>
-      ) : null}
+      {view.needsYou.length ? <NeedsYouBox view={view} now={now} /> : null}
       {view.failure ? (
         <div className="brief-note brief-note-error">
           <strong>The last round failed.</strong> {view.failure}
@@ -224,9 +255,78 @@ function BriefCard({
   )
 }
 
+/** What only the person can decide: what the Brief waits for, then each item with what it would do and why. */
+function NeedsYouBox({ view, now }: { view: BriefView; now: number }) {
+  return (
+    <div className="brief-note brief-note-waiting brief-needs-you">
+      <strong>Needs you ({view.needsYouWaiting})</strong>
+      <ul className="brief-list brief-issues">
+        {view.needsYou.map((n) => (
+          <li key={`${n.kind}|${n.label}`}>
+            {/* The operator's question names the item already. */}
+            <span>{n.question}</span>
+            {n.url ? (
+              <>
+                {' '}
+                <a href={n.url} target="_blank" rel="noreferrer" title={n.label}>
+                  open <ExternalLinkIcon size={11} />
+                </a>
+              </>
+            ) : null}
+            {n.since ? (
+              <span className="section-hint" title={n.since}>
+                {' '}
+                · {timeAgo(n.since, now)}
+              </span>
+            ) : null}
+            {n.recommend ? (
+              <div className="field-hint">
+                It would: {n.recommend}
+                {n.why ? ` — ${n.why}` : ''}
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {view.needsYouWaiting > view.needsYou.length ? (
+        <p className="field-hint">{view.needsYouWaiting - view.needsYou.length} more wait than are listed here.</p>
+      ) : null}
+      <p className="field-hint">Answer in a prompt, such as "do what you suggest" or "close the CLI issue instead".</p>
+    </div>
+  )
+}
+
 function BriefDetails({ view, now }: { view: BriefView; now: number }) {
   return (
     <>
+      {view.tended.length ? (
+        <>
+          <h4 className="section-title">
+            What it did by itself <span className="section-hint">{plural(view.tended.length, 'tending round')}</span>
+          </h4>
+          <Clipped
+            className="brief-list brief-issues brief-tended"
+            items={view.tended.map((t) => (
+              <li key={t.round}>
+                <span className="mono">Round {t.round}</span>
+                {t.summary ? <span className="brief-issue-title"> {t.summary}</span> : null}
+                {t.answers.map((a) => (
+                  <div key={a.label} className="field-hint">
+                    {a.url ? (
+                      <a href={a.url} target="_blank" rel="noreferrer">
+                        {a.label}
+                      </a>
+                    ) : (
+                      <span className="mono">{a.label}</span>
+                    )}{' '}
+                    {a.text}
+                  </div>
+                ))}
+              </li>
+            ))}
+          />
+        </>
+      ) : null}
       {view.choices.length ? (
         <>
           <h4 className="section-title">Choices in the last round</h4>
@@ -310,10 +410,7 @@ function BriefDetails({ view, now }: { view: BriefView; now: number }) {
           {view.failedWaiting > view.failed.length ? (
             <p className="field-hint">{view.failedWaiting - view.failed.length} more wait than are listed here.</p>
           ) : null}
-          <p className="field-hint">
-            Say in a prompt whether to try again, such as "try the CLI issue again now that the engine's checker is
-            merged".
-          </p>
+          <p className="field-hint">{view.failedHint}</p>
         </>
       ) : null}
       {view.suggestionsWaiting ? (

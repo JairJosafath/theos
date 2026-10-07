@@ -6,7 +6,7 @@
 import { briefManifest, isBriefName, MAX_IDEA, MAX_PROMPT, type BriefWriter } from '../k8s/briefs'
 import type { FactoryHealth } from '../k8s/health'
 import type { Connection, FactoryData, Snapshot, Source, StoryData } from '../k8s/sources'
-import type { Project } from '../k8s/types'
+import type { BriefAutopilot, Project } from '../k8s/types'
 import { demoFactory, demoHealth } from './factoryFixture'
 import { demoStory } from './fixture'
 
@@ -55,13 +55,13 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
   }
 
   /** A new Brief shows up as Pending, as the API would answer before the operator picks it up. */
-  async create(namespace: string, name: string, idea: string): Promise<void> {
+  async create(namespace: string, name: string, idea: string, autopilot?: BriefAutopilot): Promise<void> {
     const data = this.snapshot.data
     if (!isBriefName(name)) throw new Error(`Brief name "${name}" must be lowercase letters, digits and '-'`)
     if (data.briefs.some((b) => b.metadata.name === name))
       throw new Error(`briefs.c4.factory.io "${name}" already exists`)
     if (!idea.trim() || idea.length > MAX_IDEA) throw new Error(`spec.idea must be 1 to ${MAX_IDEA} characters`)
-    const brief = briefManifest(namespace, name, idea)
+    const brief = briefManifest(namespace, name, idea, autopilot)
     brief.metadata = { ...brief.metadata, uid: `demo-${name}`, creationTimestamp: new Date().toISOString() }
     brief.status = { phase: 'Pending' }
     this.update({ ...data, briefs: [...data.briefs, brief] })

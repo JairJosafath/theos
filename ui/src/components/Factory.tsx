@@ -65,6 +65,7 @@ export function FactoryPage({ data, loaded, health, healthLoaded, now, selectedT
         containers: data.containers,
         sessions: data.sessions,
         crews: data.crews,
+        briefs: data.briefs,
         health,
         now,
       }),
@@ -243,6 +244,7 @@ function AttentionPanel({ items, onSelectTask }: { items: Attention[]; onSelectT
                 <strong>{item.title}</strong>
               )}
               {item.detail ? <p className="attention-detail">{item.detail}</p> : null}
+              {item.brief ? <p className="attention-detail attention-brief">{item.brief.note}</p> : null}
             </div>
           </li>
         ))}
