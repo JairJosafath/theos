@@ -205,7 +205,10 @@ notes drafted by `hack/release-notes.sh` from the pull requests merged since
 the previous release. The previous release is the highest published release
 below the tag (`hack/previous-release.sh`; drafts and prereleases don't
 count): a tag whose *Release* failed has no release, so the next notes carry
-what it did.
+what it did. The tag must be the `version` of `dist/chart/Chart.yaml`, or
+*Release* stops; the commit that bumps it bumps `VERSION` in
+[getting-started](../getting-started.md) too, so the guide at a tag installs
+that release (`make check` holds the two together).
 
 GitHub workflows never run on pull requests. Lint, tests and UI checks run
 after a merge to main, each only when its paths change, or on demand. No

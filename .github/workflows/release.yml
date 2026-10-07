@@ -10,6 +10,8 @@ name: Release
 # draft from the pull requests merged since the previous release, the newest
 # published one below the tag (hack/previous-release.sh): a tag whose release
 # failed is not a release. The maintainer edits them on the release.
+# The tag must be dist/chart/Chart.yaml's version, the release
+# docs/getting-started.md installs, or nothing is built.
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
@@ -46,6 +48,13 @@ jobs:
       - name: Name the version and the registry
         run: |
           if [ "$PUBLISH" = true ]; then version=${GITHUB_REF_NAME#v}; else version=0.0.0-dryrun; fi
+          # The tag must be the version the chart and the guide name (#370):
+          # docs/getting-started.md at the tag installs that release.
+          chart=$(sed -n 's/^version: *//p' dist/chart/Chart.yaml)
+          if [ "$PUBLISH" = true ] && [ "$chart" != "$version" ]; then
+            echo "::error::dist/chart/Chart.yaml says version $chart, not $version: bump it and docs/getting-started.md's VERSION on main, then tag that commit"
+            exit 1
+          fi
           echo "VERSION=$version" >>"$GITHUB_ENV"
           echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/c4factory" >>"$GITHUB_ENV"
 

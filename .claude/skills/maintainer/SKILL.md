@@ -131,9 +131,13 @@ carries.
    - Release as often as that holds; there is no daily cap. Don't tag while
      a *Verify Release* run still runs, or a
      `Release vX.Y.Z fails its check` issue is open.
-   - Tag the next version on origin/main:
-     [SemVer](https://semver.org/), pre-1.0, so `feat` bumps the minor and
-     `fix` the patch.
+   - Name the next version: [SemVer](https://semver.org/), pre-1.0, so
+     `feat` bumps the minor and `fix` the patch. Bump `version` in
+     `dist/chart/Chart.yaml` and `VERSION` (with the release its prose
+     names) in `docs/getting-started.md` to it in one pull request, so the
+     guide at the tag installs that release; `make check` fails when the
+     two differ. Once it is merged, tag that commit of origin/main;
+     *Release* refuses a tag that isn't the chart's version.
    - Watch *Release*. *Verify Release* starts Kind, so it runs only when a
      human dispatches it; never dispatch it yourself. Read its runs when
      there are any.
