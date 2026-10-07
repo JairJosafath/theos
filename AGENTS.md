@@ -130,10 +130,12 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   `take` names (`<type>/<N>-<slug>`, from an up-to-date main), pushed after
   every commit; open a pull request to main whose body
   says `Closes #N` for the GitHub issue it finishes, and merge it with a merge
-  commit once `make check` passes. No long-lived or stacked branches: each plan
+  commit once `make check` passes (`hack/lib/github.sh merge PR`). No long-lived or stacked branches: each plan
   step lands on its own and leaves main working, with new behaviour off until
   the step that turns it on. When an issue is split into a plan and steps,
-  the plan's pull request says `Refs #N`, never `Closes #N`; the issue stays
+  the plan's pull request says `Refs #N`, never `Closes #N`, and no close, fix
+  or resolve word next to `#N` anywhere in its body or commits, even in prose
+  ("its PR closes #N" closes N; `merge` refuses it); the issue stays
   open, `status/waiting` (waiting on its steps, not on an agent), its body a
   `Depends on #S` line per step so `pick` skips it, and it closes itself when
   its last step closes (`hack/lib/github.sh parents`).
