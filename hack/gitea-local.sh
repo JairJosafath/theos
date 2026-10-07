@@ -20,8 +20,10 @@
 #
 # Credentials: the first start creates admin GITEA_ADMIN with a random password
 # and an access token, and writes them to .gitea-local/credentials.env (mode
-# 0600) as C4_GITEA_URL, C4_GITEA_USERNAME, C4_GITEA_PASSWORD and C4_GITEA_TOKEN.
-# They are never printed; source the file (`set -a; . .gitea-local/credentials.env`).
+# 0600) as C4_GITEA_URL, C4_GITEA_USERNAME, C4_GITEA_PASSWORD and C4_GITEA_TOKEN,
+# with the token's scopes as C4_GITEA_TOKEN_SCOPES; a start that finds other
+# scopes there makes a new token. They are never printed; source the file
+# (`set -a; . .gitea-local/credentials.env`).
 # rm -rf .gitea-local (after stop) starts over with new ones.
 set -euo pipefail
 
@@ -31,7 +33,7 @@ DIR=$TOP/.gitea-local
 GITEA_ADMIN=${GITEA_ADMIN:-c4admin}
 GITEA_ADMIN_EMAIL=${GITEA_ADMIN_EMAIL:-c4admin@c4.factory.io}
 # The scopes the seed gives the operator's token (hack/seed/seed.sh).
-TOKEN_SCOPES=${TOKEN_SCOPES:-write:admin,write:issue,write:organization,write:repository,read:user}
+TOKEN_SCOPES=${TOKEN_SCOPES:-write:admin,write:issue,write:organization,write:package,write:repository,read:user}
 # Seconds to wait for Gitea to answer after starting it.
 GITEA_WAIT=${GITEA_WAIT:-60}
 CONFIG=$DIR/app.ini
@@ -167,16 +169,23 @@ C4_GITEA_URL=$(url)
 C4_GITEA_USERNAME=$GITEA_ADMIN
 C4_GITEA_PASSWORD=$password
 C4_GITEA_TOKEN=$token
+C4_GITEA_TOKEN_SCOPES=$TOKEN_SCOPES
 EOF
   )
   mv "$CREDENTIALS.tmp" "$CREDENTIALS"
   log "Created admin $GITEA_ADMIN and a token; credentials are in ${CREDENTIALS#"$TOP"/}"
 }
 
+# credentials_current: CREDENTIALS exists and its token has TOKEN_SCOPES.
+credentials_current() {
+  [[ -f $CREDENTIALS ]] && [[ $(sed -n 's/^C4_GITEA_TOKEN_SCOPES=//p' "$CREDENTIALS") == "$TOKEN_SCOPES" ]]
+}
+
 start() {
   command -v "$GITEA" >/dev/null || die "no Gitea binary at $GITEA; run make gitea-local"
   mkdir -p "$DIR/log" "$DIR/data"
   if [[ -f $CONFIG ]] && running && healthy; then
+    credentials_current || create_admin
     log "Gitea already runs at $(url) (pid $(cat "$PIDFILE"))"
     return
   fi
@@ -211,7 +220,7 @@ start() {
     ((SECONDS < deadline)) || die "Gitea did not answer at $(url) within ${GITEA_WAIT}s"
     sleep 1
   done
-  [[ -f $CREDENTIALS ]] || create_admin
+  credentials_current || create_admin
   log "Gitea $(curl -fsS "$(url)/api/v1/version" | jq -r .version) runs at $(url) (pid $(cat "$PIDFILE"))"
 }
 

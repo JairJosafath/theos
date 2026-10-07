@@ -2,6 +2,8 @@
 
 Every source read to write `docs/style/`. The TypeScript{{ if eq .Framework "react-vite" }}
 sources were read on 2026-10-02, the React, Vite, accessibility and testing
+sources on 2026-10-07. The cross-language{{ else if eq .Framework "node-cli" }}
+sources were read on 2026-10-02, the Node, npm, esbuild and command-line
 sources on 2026-10-07. The cross-language{{ else }}, VS Code and LSP
 sources were read on 2026-10-02. The cross-language{{ end }} sources were read on
 2026-09-30 for another Standard, whose `principles.md` this one adapts; they were
@@ -49,6 +51,31 @@ eslint-plugin-react-hooks 7.1.1, Prettier 3.9.9, vitest 5.0.3, Vite 8.3.3,
 @vitejs/plugin-react 6.1.2, React and React DOM 19.3.0, @types/react and
 @types/react-dom 19.3.0, @types/node 24.19.1. Every ESLint rule this digest
 names was checked to be on in the resolved config (`eslint --print-config`).
+
+{{- else if eq .Framework "node-cli" -}}
+## Node and the command line
+
+| Source                                                                                                                                                    | Version / date          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| Node.js util.parseArgs — https://nodejs.org/api/util.html#utilparseargsconfig                                                                             | v26.10.0 docs           |
+| Node.js process (exitCode, exit, signal events, process I/O, exit codes) — https://nodejs.org/api/process.html#processexitcode                            | v26.10.0 docs           |
+| Node.js file system (fs/promises, readFile, AbortSignal) — https://nodejs.org/api/fs.html                                                                 | v26.10.0 docs           |
+| Node.js errors (EPIPE) — https://nodejs.org/api/errors.html#common-system-errors                                                                          | v26.10.0 docs           |
+| Command Line Interface Guidelines — https://clig.dev/                                                                                                     | live                    |
+| GNU Coding Standards, Command-Line Interfaces (with --version and --help) — https://www.gnu.org/prep/standards/html_node/Command_002dLine-Interfaces.html | last updated 2026-04-27 |
+| npm package.json (bin, files, engines, devDependencies) — https://docs.npmjs.com/cli/v11/configuring-npm/package-json                                     | npm 11.21.0 docs        |
+| npm pack — https://docs.npmjs.com/cli/v11/commands/npm-pack                                                                                               | npm 11.21.0 docs        |
+| esbuild API (platform, banner, target, packages) — https://esbuild.github.io/api/#platform                                                                | live                    |
+| NO_COLOR — https://no-color.org/                                                                                                                          | last updated 2026-09-29 |
+
+## Tools
+
+The versions pinned in the Framework's `package.json` and `package-lock.json`:
+TypeScript 6.0.3 (typescript-eslint 8.71.0 supports `<6.1.0`, so not 7.x),
+ESLint 10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9,
+vitest 5.0.3, esbuild 0.28.2, @types/node 24.19.1. Every ESLint rule this
+digest names was checked to be on in the resolved config
+(`eslint --print-config`).
 
 {{- else -}}
 ## VS Code and LSP

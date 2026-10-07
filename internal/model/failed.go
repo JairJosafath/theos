@@ -170,6 +170,13 @@ type FailedAnswer struct {
 	Clarify string `yaml:"clarify,omitempty"`
 }
 
+// clarifiable reports whether some clarify could give body acceptance
+// criteria. The Crew reads only the first "Acceptance criteria" section, so a
+// body whose own section has no checklist can't be fixed by one appended below.
+func clarifiable(body string) bool {
+	return missingCriteria(ClarifiedBody(body, 0, "## Acceptance criteria\n\n- [ ] done\n")) == ""
+}
+
 // ClarifiedBody is a retried issue's body: body with clarify appended under a
 // heading naming the Brief's round. The Crew reads the whole of it, so an
 // unclear issue's acceptance criteria are checked here. A body that has the
@@ -258,7 +265,11 @@ func CheckFailedAnswers(answers []FailedAnswer, waiting []FailedIssue) []Refusal
 				refuse("retries %s, which agents tried %d times: close it, and file it again as a new issue, "+
 					"clarified or split", subject, MaxIssueAttempts)
 			case FailedUnclear:
-				if strings.TrimSpace(a.Clarify) == "" || missingCriteria(ClarifiedBody(waiting[i].Body, 0, a.Clarify)) != "" {
+				switch {
+				case !clarifiable(waiting[i].Body):
+					refuse("retries %s, whose own \"Acceptance criteria\" section has no checklist, so no clarify "+
+						"can add one: close it, and file it again as a new issue with criteria", subject)
+				case strings.TrimSpace(a.Clarify) == "" || missingCriteria(ClarifiedBody(waiting[i].Body, 0, a.Clarify)) != "":
 					refuse("retries %s, which has no acceptance criteria, without adding them: clarify it with an "+
 						"\"## Acceptance criteria\" checklist (\"- [ ] ...\")", subject)
 				}

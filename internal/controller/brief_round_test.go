@@ -511,6 +511,8 @@ spec:
 	})
 
 	It("waits for its planner's token Secret, and plans once the person makes it", func() {
+		// claude-credentials is no Secret the suite's operator shares, so the
+		// message is the one for an operator that shares nothing.
 		createFactory(ns)
 		for _, name := range []string{"planner", "implementer", "reviewer"} {
 			mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.AgentSpec{
@@ -538,6 +540,45 @@ spec:
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
 				To(HaveField("Status", metav1.ConditionFalse))
+		}).Should(Succeed())
+	})
+
+	It("says where to give a token the operator shares: the label first, then its namespace", func() {
+		// No Project here, so the operator copies nothing in and the message stays.
+		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "shared-"}}
+		Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
+		shared := namespace.Name
+		DeferCleanup(stopPolling, shared)
+		createFactory(shared)
+		for _, name := range []string{"planner", "implementer", "reviewer"} {
+			mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(shared, name), Spec: c4v1alpha1.AgentSpec{
+				Image: "c4factory/agent-go:dev", MaxRounds: 3,
+				CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: sharedToken}}})
+		}
+		mustCreate(newBrief(shared, "cel-lens"))
+
+		By("naming the label a namespace that hasn't opted in needs")
+		Eventually(func(g Gomega) {
+			b := getBrief(g, shared)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
+			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(HaveField("Message",
+				Equal("Secret "+sharedToken+" of Agent planner is missing: label namespace "+shared+" "+
+					c4v1alpha1.LabelSharedSecrets+"=true, so the factory shares it from namespace "+operatorNamespace+
+					", or make it in "+shared+" for this project only")))
+		}).Should(Succeed())
+
+		By("naming the operator's namespace once it has opted in")
+		Expect(k8sClient.Get(ctx, key("", shared), namespace)).To(Succeed())
+		Expect(patch(namespace, func() {
+			namespace.Labels = map[string]string{c4v1alpha1.LabelSharedSecrets: "true"}
+		})).To(Succeed())
+		Eventually(func(g Gomega) {
+			b := getBrief(g, shared)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
+			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(HaveField("Message",
+				Equal("Secret "+sharedToken+" of Agent planner is missing: make it in namespace "+operatorNamespace+
+					", which the factory shares with every project, or in "+shared+" for this project only")))
+			g.Expect(b.Status.Round).To(BeZero())
 		}).Should(Succeed())
 	})
 
