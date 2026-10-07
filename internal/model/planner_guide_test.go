@@ -107,7 +107,7 @@ func TestPlannerGuideExampleOrdersItsIssues(t *testing.T) {
 	if got := IssueBlockers(plan.Issues, 3); !slices.Equal(got, []int{2}) {
 		t.Fatalf("the web shop's order issue is after %v, want [2]", got)
 	}
-	var order []int
+	order := make([]int, 0, len(plan.Issues))
 	for _, issue := range FilingOrder(plan.Issues) {
 		order = append(order, issue.N)
 	}

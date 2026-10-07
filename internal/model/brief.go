@@ -989,13 +989,14 @@ type BuildsOn struct {
 // "Builds on owner/name#N (title)." for each issue it builds on, then the
 // marker.
 func BriefIssueBody(issue PlanIssue, brief string, round int, buildsOn ...BuildsOn) string {
-	body := strings.ReplaceAll(issue.Body, "<!--", "&lt;!--") + "\n\n"
-	if len(buildsOn) > 0 {
-		for _, b := range buildsOn {
-			title := strings.Join(strings.Fields(strings.ReplaceAll(b.Title, "<!--", "&lt;!--")), " ")
-			body += fmt.Sprintf("Builds on %s#%d (%s).\n", b.Repository, b.Number, title)
-		}
-		body += "\n"
+	var body strings.Builder
+	body.WriteString(strings.ReplaceAll(issue.Body, "<!--", "&lt;!--") + "\n\n")
+	for _, b := range buildsOn {
+		title := strings.Join(strings.Fields(strings.ReplaceAll(b.Title, "<!--", "&lt;!--")), " ")
+		fmt.Fprintf(&body, "Builds on %s#%d (%s).\n", b.Repository, b.Number, title)
 	}
-	return body + IssueMarker(brief, round, issue.N) + "\n"
+	if len(buildsOn) > 0 {
+		body.WriteString("\n")
+	}
+	return body.String() + IssueMarker(brief, round, issue.N) + "\n"
 }
