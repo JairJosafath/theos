@@ -19,7 +19,7 @@ You need:
 - the GitHub CLI (`gh`), logged in, while this repository, the chart and the
   images on GHCR are private.
 
-The commands use the release `0.5.0`; for a later one, change `VERSION`. Run
+The commands use the release `0.6.0`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
 match the release (`gh` clones it while the repository is private). From the
 release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
@@ -27,7 +27,7 @@ its own template tags and agent image, and the samples make neither; `0.3.0`'s
 samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
-VERSION=0.5.0
+VERSION=0.6.0
 gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 ```
 
@@ -75,8 +75,8 @@ kubectl -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name"
 **The release.** `gitea.projects` lists the project namespaces: for each one
 the seed makes a Gitea organization, Secret `gitea-credentials` with its token
 and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
-pushed, pinned to their tags: Frameworks `go-cli`, `python-fastapi` and
-`vscode-extension`, Standards `go-standard` and `ts-standard`, Compute `small`,
+pushed, pinned to their tags: Frameworks `go-cli`, `python-fastapi`,
+`react-vite` and `vscode-extension`, Standards `go-standard` and `ts-standard`, Compute `small`,
 Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four
 Agents on the release's `agent-go` image: `planner`, `designer` and `reviewer`
 on Opus, `implementer` on Sonnet. The Agents read Secret `claude-credentials`,

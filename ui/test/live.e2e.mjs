@@ -13,6 +13,8 @@ import { after, before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { launchChromium } from '../scripts/browser.mjs'
 import { createServer, resolveUpstream } from '../server.mjs'
+// The UI's own list of kinds, so the fake API serves and the test expects every one.
+import { RESOURCES, resourcePath } from '../src/k8s/types.ts'
 
 const NS = 'webshop'
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
@@ -22,20 +24,7 @@ function fakeApi() {
   let rv = 1
   const store = new Map() // plural -> Map(name -> object)
   const watchers = new Map() // plural -> Set(res)
-  const kinds = [
-    'projects',
-    'people',
-    'softwaresystems',
-    'containers',
-    'datastores',
-    'relationships',
-    'sessions',
-    'frameworks',
-    'connectors',
-    'crews',
-    'agents',
-    'tasks',
-  ]
+  const kinds = Object.values(RESOURCES)
   for (const k of kinds) {
     store.set(k, new Map())
     watchers.set(k, new Set())
@@ -232,12 +221,25 @@ describe('live updates in the browser', () => {
     assert.ok(api.watchers.get('containers').size > 0, 'a new watch is open')
   })
 
-  it('watches all kinds over one or two connections, not one each', () => {
-    // Browsers allow six connections per host; the page watches ten kinds.
-    const first = requests.filter((r) => r.url.pathname === '/k8s-watch').slice(0, 2)
-    const kinds = first.flatMap((r) => r.url.searchParams.getAll('w'))
-    assert.ok(first.length >= 1)
-    assert.equal(new Set(kinds).size, 10, `first watch requests carry all kinds: ${kinds.join(', ')}`)
+  it('watches all kinds over a few connections, not one each', () => {
+    // Browsers allow six connections per host, and each /k8s-watch request
+    // holds one. The page watches the project picker's Projects and every kind
+    // in the project's namespace; each watch opens when its list returns, so
+    // on a busy device they may come in a few batches, never one each.
+    const want = new Set([
+      resourcePath(RESOURCES.projects),
+      ...Object.values(RESOURCES).map((k) => resourcePath(k, NS)),
+    ])
+    const watches = requests.filter((r) => r.url.pathname === '/k8s-watch')
+    const seen = new Set()
+    let used = 0
+    for (const r of watches) {
+      if ([...want].every((k) => seen.has(k))) break
+      used++
+      for (const k of r.url.searchParams.getAll('w')) seen.add(k)
+    }
+    assert.deepEqual(seen, want, `watch requests carry every kind: ${[...seen].join(', ')}`)
+    assert.ok(used < 6, `${used} watch requests for ${want.size} kinds leave no connection for the rest`)
     assert.ok(requests.every((r) => r.method === 'GET'))
   })
 

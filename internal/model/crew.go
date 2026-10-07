@@ -483,13 +483,21 @@ func MissingAcceptanceCriteria(body string) string {
 		"- [ ] An empty order is rejected with a message naming the missing field\n" +
 		"- [ ] A test covers the empty order\n```\n\n" +
 		"Each item is one check a reviewer can verify in the pull request."
+	if reason := missingCriteria(body); reason != "" {
+		return reason + fix
+	}
+	return ""
+}
+
+// missingCriteria is MissingAcceptanceCriteria's reason without the fix.
+func missingCriteria(body string) string {
 	if strings.TrimSpace(body) == "" {
-		return "This issue has no description, so an agent would have to guess what to build." + fix
+		return "This issue has no description, so an agent would have to guess what to build."
 	}
 	loc := criteriaHeading.FindStringIndex(body)
 	if loc == nil {
 		return `This issue has no "Acceptance criteria" section with a checklist ("- [ ] ..."), so a reviewer ` +
-			"could not tell when it is done." + fix
+			"could not tell when it is done."
 	}
 	section := body[loc[1]:]
 	if next := anyHeading.FindStringIndex(section); next != nil {
@@ -497,7 +505,7 @@ func MissingAcceptanceCriteria(body string) string {
 	}
 	if !checklistItem.MatchString(section) {
 		return `The "Acceptance criteria" section has no checklist items ("- [ ] ..."), so a reviewer could ` +
-			"not tell when it is done." + fix
+			"not tell when it is done."
 	}
 	return ""
 }

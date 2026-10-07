@@ -93,6 +93,8 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 	recordSuggestions(ctx, brief, ws.Suggestions, slices.ContainsFunc(ws.Containers,
 		func(c model.WorkspaceContainer) bool { return c.IssuesUnread }))
 	ws.Suggestions = waitingSuggestions(brief)
+	r.recordFailed(ctx, brief, ws.Failed, slices.ContainsFunc(ws.Containers,
+		func(c model.WorkspaceContainer) bool { return c.IssuesUnread }))
 	rendered, err := model.BriefWorkspaceFiles(ws)
 	if err != nil {
 		return "", err
@@ -296,25 +298,30 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1
 	if ws.Catalog, err = installedCatalog(ctx, r.Client, brief.Namespace); err != nil {
 		return ws, err
 	}
-	ws.Containers, ws.Suggestions, err = r.containerIssues(ctx, brief)
+	ws.Containers, ws.Suggestions, ws.Failed, err = r.containerIssues(ctx, brief)
 	return ws, err
 }
 
 // containerIssues lists each Container that has a repository, with its open
 // issues, whether a Crew of it tags releases, and the reviewers' suggestions
-// waiting in the ones the Brief made. Issues that can't be read are marked
-// so, not an error: one broken repository doesn't stop the Brief, and its
-// suggestions are the ones the Brief last saw.
+// and failed issues waiting in the ones the Brief made. Issues that can't be
+// read are marked so, not an error: one broken repository doesn't stop the
+// Brief, and its suggestions and failed issues are the ones the Brief last saw.
 func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1.Brief) (
-	[]model.WorkspaceContainer, []model.Suggestion, error) {
+	[]model.WorkspaceContainer, []model.Suggestion, []model.FailedIssue, error) {
 	var containers c4v1alpha1.ContainerList
 	if err := r.List(ctx, &containers, client.InNamespace(brief.Namespace)); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var crews c4v1alpha1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace)); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
+	var taskList c4v1alpha1.TaskList
+	if err := r.List(ctx, &taskList, client.InNamespace(brief.Namespace)); err != nil {
+		return nil, nil, nil, err
+	}
+	tasks := issueTasks(taskList.Items)
 	released := map[string]bool{}
 	for _, crew := range crews.Items {
 		if crew.Spec.TagReleases {
@@ -324,6 +331,7 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1
 	providers := map[string]gitprovider.Provider{}
 	var out []model.WorkspaceContainer
 	var suggestions []model.Suggestion
+	var failed []model.FailedIssue
 	for _, c := range containers.Items {
 		if c.Status.RepositoryURL == "" {
 			continue
@@ -337,6 +345,7 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1
 			entry.IssuesUnread = true
 			if mine {
 				suggestions = append(suggestions, lastSuggestions(brief, c.Name)...)
+				failed = append(failed, lastFailed(brief, c.Name)...)
 			}
 		}
 		for _, i := range issues {
@@ -345,10 +354,13 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1
 				suggestions = append(suggestions, model.Suggestion{Container: c.Name, Number: i.Number, Title: i.Title,
 					URL: i.URL, Criteria: model.MissingAcceptanceCriteria(i.Body) == ""})
 			}
+			if mine && model.IsFailedIssue(i.Labels) {
+				failed = append(failed, failedIssue(c.Name, i.Number, i.Title, i.URL, i.Body, tasks[c.Name]))
+			}
 		}
 		out = append(out, entry)
 	}
-	return out, suggestions, nil
+	return out, suggestions, failed, nil
 }
 
 func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]gitprovider.Provider,

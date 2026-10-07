@@ -102,6 +102,9 @@ type PlanIssue struct {
 	Title     string
 	Labels    []string
 	Body      string
+	// After are the round numbers (N) of the plan's issues whose work this one
+	// needs merged first, from any Container of the round.
+	After []int
 }
 
 // Plan is what a planner pushed for one round.
@@ -117,6 +120,8 @@ type Plan struct {
 	NeedsInput string
 	// Answers are the plan's answers to reviewers' suggestions.
 	Answers []SuggestionAnswer
+	// FailedAnswers are the plan's answers to failed issues.
+	FailedAnswers []FailedAnswer
 	// Summary is summary.md's text: what the round does for the person's app,
 	// in a sentence or two.
 	Summary string
@@ -202,6 +207,13 @@ func ParsePlan(files map[string]string) (Plan, error) {
 			return Plan{}, fmt.Errorf("%s: %w", PlanSuggestionsFile, err)
 		}
 		plan.Answers = answers
+	}
+	if s, ok := files[PlanFailedFile]; ok {
+		answers, err := parseFailedAnswers(s)
+		if err != nil {
+			return Plan{}, fmt.Errorf("%s: %w", PlanFailedFile, err)
+		}
+		plan.FailedAnswers = answers
 	}
 	paths := make([]string, 0, len(files))
 	for path := range files {
@@ -411,6 +423,7 @@ func parsePlanIssue(path, s string) (PlanIssue, error) {
 	var meta struct {
 		Title  string   `yaml:"title"`
 		Labels []string `yaml:"labels"`
+		After  []string `yaml:"after"`
 	}
 	dec := yaml.NewDecoder(strings.NewReader(front))
 	dec.KnownFields(true)
@@ -418,6 +431,15 @@ func parsePlanIssue(path, s string) (PlanIssue, error) {
 		return PlanIssue{}, fmt.Errorf("front matter: %w", err)
 	}
 	issue.Title, issue.Labels, issue.Body = strings.TrimSpace(meta.Title), meta.Labels, strings.TrimSpace(body)
+	// Read each number as written, base 10 like the file name: YAML would
+	// read 010 as octal 8 and refuse 08.
+	for _, a := range meta.After {
+		n, err := strconv.Atoi(strings.TrimSpace(a))
+		if err != nil || n < 0 {
+			return PlanIssue{}, fmt.Errorf("after: has %q; list the nn of the issues it waits for, such as after: [2, 3]", a)
+		}
+		issue.After = append(issue.After, n)
+	}
 	if issue.Title == "" {
 		return PlanIssue{}, errors.New("the front matter has no title")
 	}
@@ -525,7 +547,9 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 	}
 	for _, issue := range plan.Issues {
 		checkPlanIssue(plan, current, issue, refuse)
+		checkAfter(plan, issue, refuse)
 	}
+	checkOrderCycle(plan, refuse)
 	for _, name := range plan.Releases {
 		if _, ok := findObject(plan.Objects, Ref{KindContainer, name}); !ok {
 			refuse(PlanReleasesFile, "names %q, which is not a Container of %s; release only the plan's Containers",
@@ -703,6 +727,139 @@ func checkPlanIssue(plan Plan, current CurrentModel, issue PlanIssue, refuse fun
 		refuse(issue.File, "MissingAcceptanceCriteria: the body needs an \"## Acceptance criteria\" heading with "+
 			"a checklist (\"- [ ] ...\") under it, one check a reviewer can verify per item")
 	}
+}
+
+// checkAfter refuses an after: that names no issue of the plan, the issue
+// itself, a number two issues share, a design idea, a number twice or more
+// than MaxPlanIssues issues; and a design idea that has an after:. A design
+// idea goes to a designer, not a Crew's Task, and no merge closes it.
+func checkAfter(plan Plan, issue PlanIssue, refuse func(string, string, ...any)) {
+	if len(issue.After) == 0 {
+		return
+	}
+	if slices.Contains(issue.Labels, LabelDesign) {
+		refuse(issue.File, "is a design idea (%s) and has after:; a design idea waits on nothing, "+
+			"so drop after: or make it a ready issue", LabelDesign)
+		return
+	}
+	if len(issue.After) > MaxPlanIssues {
+		refuse(issue.File, "after: names %d issues; it may name at most %d", len(issue.After), MaxPlanIssues)
+		return
+	}
+	seen := map[int]bool{}
+	for _, n := range issue.After {
+		if seen[n] {
+			refuse(issue.File, "after: names %d twice; name each issue once", n)
+			continue
+		}
+		seen[n] = true
+		if n == issue.N {
+			refuse(issue.File, "after: names %d, the issue itself; an issue can't wait for itself", n)
+			continue
+		}
+		blockers := issuesNumbered(plan.Issues, n)
+		switch {
+		case len(blockers) == 0:
+			refuse(issue.File, "after: names %d, which is no issue of the plan; name the nn of a plan/issues/<nn>-<container>.md", n)
+		case len(blockers) > 1:
+			refuse(issue.File, "after: names %d, which %d issues share; give each issue its own number", n, len(blockers))
+		case slices.Contains(blockers[0].Labels, LabelDesign):
+			refuse(issue.File, "after: names %d, a design idea (%s); nothing waits on a design idea, "+
+				"since no merge closes it", n, LabelDesign)
+		}
+	}
+}
+
+// checkOrderCycle refuses a plan whose after: lines make a cycle, once per
+// cycle, on the file of its lowest-numbered issue.
+func checkOrderCycle(plan Plan, refuse func(string, string, ...any)) {
+	const (
+		unvisited = iota
+		visiting
+		done
+	)
+	state := map[int]int{}
+	var stack []int
+	var visit func(n int)
+	visit = func(n int) {
+		state[n] = visiting
+		stack = append(stack, n)
+		for _, m := range afterOf(plan.Issues, n) {
+			switch state[m] {
+			case unvisited:
+				visit(m)
+			case visiting:
+				cycle := append(slices.Clone(stack[slices.Index(stack, m):]), m)
+				first := issuesNumbered(plan.Issues, slices.Min(cycle))[0]
+				names := make([]string, len(cycle))
+				for i, c := range cycle {
+					names[i] = strconv.Itoa(c)
+				}
+				refuse(first.File, "after: makes a cycle (%s); an issue can't wait, through others, for itself",
+					strings.Join(names, " after "))
+			}
+		}
+		stack = stack[:len(stack)-1]
+		state[n] = done
+	}
+	for _, issue := range plan.Issues {
+		if state[issue.N] == unvisited {
+			visit(issue.N)
+		}
+	}
+}
+
+// afterOf is the after: of the one issue numbered n, keeping only numbers of
+// exactly one other issue; checkAfter refuses the rest.
+func afterOf(issues []PlanIssue, n int) []int {
+	own := issuesNumbered(issues, n)
+	if len(own) != 1 {
+		return nil
+	}
+	var out []int
+	for _, m := range own[0].After {
+		if m != n && len(issuesNumbered(issues, m)) == 1 && !slices.Contains(out, m) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func issuesNumbered(issues []PlanIssue, n int) []PlanIssue {
+	var out []PlanIssue
+	for _, issue := range issues {
+		if issue.N == n {
+			out = append(out, issue)
+		}
+	}
+	return out
+}
+
+// FilingOrder returns a checked plan's issues blockers-first: each issue after
+// every issue its after: names, across Containers, and otherwise by N. Issues
+// left in a cycle, which CheckPlan refuses, come last by N.
+func FilingOrder(issues []PlanIssue) []PlanIssue {
+	sorted := slices.Clone(issues)
+	slices.SortStableFunc(sorted, func(a, b PlanIssue) int { return a.N - b.N })
+	filed := map[int]bool{}
+	out := make([]PlanIssue, 0, len(sorted))
+	for len(sorted) > 0 {
+		i := slices.IndexFunc(sorted, func(issue PlanIssue) bool {
+			for _, m := range afterOf(issues, issue.N) {
+				if !filed[m] {
+					return false
+				}
+			}
+			return true
+		})
+		if i < 0 {
+			return append(out, sorted...)
+		}
+		filed[sorted[i].N] = true
+		out = append(out, sorted[i])
+		sorted = slices.Delete(sorted, i, i+1)
+	}
+	return out
 }
 
 // catalogEntry finds the entry of side named name, and says why it can't be

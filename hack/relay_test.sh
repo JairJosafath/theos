@@ -159,6 +159,9 @@ check "triage: escalates a user's decision to the maintainer" "$(grep -c 'hack/l
 check "triage: never sets needs-human" "$(grep -c 'status N needs-human' <<<"$out") $(grep -c 'never set status/needs-human' <<<"$out")" "0 1"
 check "triage: needs-maintainer is the maintainer's" "$(grep -c "needs-maintainer is the maintainer's" <<<"$out")" 1
 check "triage: readies an unsettled design as design work" "$(grep -c '^- Ready it as design work' <<<"$out")" 1
+check "triage: a design issue's plan says Refs, not Closes (#491)" "$(grep -c 'request says `Refs #N`, never `Closes #N`' <<<"$out")" 1
+check "triage: a design issue waits on its steps (#491)" "$(grep -c 'a "Depends on #S" line per step' <<<"$out")" 1
+check "triage: the plan is not the issue's Done when (#491)" "$(grep -c 'that is its "Done when"' <<<"$out")" 0
 check "triage: never asks how to build it" "$(grep -c 'Never ask how to' <<<"$out")" 1
 check "triage: a direction comes with the choice it would make" "$(grep -c 'says the choice you would make and why' <<<"$out")" 1
 check "triage: no cluster steps" "$(grep -cE 'cluster acquire|make deploy|needs/cluster' <<<"$out")" 0

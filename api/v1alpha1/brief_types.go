@@ -123,6 +123,10 @@ const (
 	ConditionPlanned = "Planned"
 	// ConditionNeedsInput is True while the Brief waits for the person.
 	ConditionNeedsInput = "NeedsInput"
+	// ConditionIssuesFailed is True while issues of the Brief's Containers are
+	// handed back to the person, waiting for a prompt to say whether to try
+	// them again.
+	ConditionIssuesFailed = "IssuesFailed"
 )
 
 // BriefObject names an object a Brief created.
@@ -194,6 +198,47 @@ type BriefSuggestion struct {
 	// take it as it stands.
 	// +optional
 	Criteria bool `json:"criteria,omitempty"`
+}
+
+// BriefFailedIssue is an issue handed back to a person (status/needs-human) in
+// the repository of a Container the Brief made, and why.
+type BriefFailedIssue struct {
+	// container is the Container whose repository has the issue.
+	// +kubebuilder:validation:MaxLength=253
+	// +required
+	Container string `json:"container"`
+
+	// number of the issue in its repository.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Number int32 `json:"number"`
+
+	// title of the issue.
+	// +kubebuilder:validation:MaxLength=255
+	// +optional
+	Title string `json:"title,omitempty"`
+
+	// url is the issue's address.
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// kind says why it was handed back: unclear (no acceptance criteria),
+	// merged (a Task merged it already), exhausted (agents tried it as often
+	// as a Crew does), failed (its last Task failed) or person (a person
+	// handed it back).
+	// +kubebuilder:validation:Enum=unclear;merged;exhausted;failed;person
+	// +required
+	Kind string `json:"kind"`
+
+	// reason says why in a sentence, such as the failed Task's message.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// tries is how many Tasks the issue has had.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Tries int32 `json:"tries,omitempty"`
 }
 
 // BriefApp is a Container the Brief made, or one spec.releases names, and how
@@ -351,6 +396,19 @@ type BriefStatus struct {
 	// +optional
 	SuggestionsWaiting int32 `json:"suggestionsWaiting,omitempty"`
 
+	// failed are the issues handed back to a person in the repositories of
+	// the Containers the Brief made, by Container and number; at most 50. A
+	// prompt says whether to try them again.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=50
+	// +optional
+	Failed []BriefFailedIssue `json:"failed,omitempty"`
+
+	// failedWaiting is how many failed issues wait for an answer, those past
+	// the 50 listed too.
+	// +optional
+	FailedWaiting int32 `json:"failedWaiting,omitempty"`
+
 	// apps has a line per Container the Brief made, then one per spec.releases
 	// entry naming no Container it made: whether its releases are on, where
 	// they are published, the latest one, and a sentence on how they go.
@@ -399,6 +457,7 @@ type BriefStatus struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Round",type=integer,JSONPath=".status.round"
 // +kubebuilder:printcolumn:name="Suggestions",type=integer,JSONPath=".status.suggestionsWaiting"
+// +kubebuilder:printcolumn:name="Failed",type=integer,JSONPath=".status.failedWaiting"
 // +kubebuilder:printcolumn:name="Releases",type=string,JSONPath=".status.apps[*].lastRelease.tag"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 

@@ -254,7 +254,12 @@ For each proposed issue, decide one of these:
   line \`<!-- relay-triage -->\`) that its session makes the design choices,
   writes them and why in a plan in docs/plans/ (and the change to
   docs/design.md), and files the steps as status/proposed issues, each with
-  its own "Done when"; that is its "Done when". Then ready it.
+  its own "Done when". The plan is not the issue's deliverable: its pull
+  request says \`Refs #N\`, never \`Closes #N\`; the issue stays open and
+  status/in-progress, its body a "Depends on #S" line per step, and the last
+  step's pull request closes #N too. Say that in the comment: the session is
+  done when the plan is merged and its steps are filed, the issue when its
+  last step lands. Then ready it.
 - Fill the gap and ready it, when the only thing missing is something you
   can write yourself: a "Depends on #M" line it lacks (add it to the body with
   \`gh issue edit N --repo $C4_GITHUB_REPO --body-file FILE\`, keeping the

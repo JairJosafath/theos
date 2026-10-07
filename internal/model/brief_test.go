@@ -429,6 +429,44 @@ func TestCheckPlan(t *testing.T) {
 			c.Designer = true
 			p.Issues[1].Body, p.Issues[1].Labels = "An API people like", []string{LabelDesign}
 		}, "plan/issues/02-api.md", "api's Crew has no designer"},
+		{"an ordered plan across Containers", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].After = []int{2}
+			p.Issues = append(p.Issues, PlanIssue{File: "plan/issues/03-api.md", N: 3, Container: "api",
+				Body: p.Issues[0].Body, After: []int{1, 2}})
+		}, "", ""},
+		{"after: naming no issue of the plan", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].After = []int{7}
+		}, "plan/issues/01-web.md", "after: names 7, which is no issue of the plan"},
+		{"after: naming the issue itself", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].After = []int{1}
+		}, "plan/issues/01-web.md", "after: names 1, the issue itself"},
+		{"after: naming a number twice", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].After = []int{2, 2}
+		}, "plan/issues/01-web.md", "after: names 2 twice"},
+		{"after: naming a number two issues share", func(p *Plan, _ *CurrentModel) {
+			p.Issues = append(p.Issues, PlanIssue{File: "plan/issues/02-web.md", N: 2, Container: "web",
+				Body: p.Issues[0].Body})
+			p.Issues[0].After = []int{2}
+		}, "plan/issues/01-web.md", "after: names 2, which 2 issues share"},
+		{"after: naming a design idea", func(p *Plan, c *CurrentModel) {
+			c.CrewDesigners = []string{"api"}
+			p.Issues[1].Body, p.Issues[1].Labels = "An API people like", []string{LabelDesign}
+			p.Issues[0].After = []int{2}
+		}, "plan/issues/01-web.md", "after: names 2, a design idea"},
+		{"a design idea with after:", func(p *Plan, c *CurrentModel) {
+			c.Designer = true
+			p.Issues[0].Body, p.Issues[0].Labels = "A calm page for orders", []string{LabelDesign}
+			p.Issues[0].After = []int{2}
+		}, "plan/issues/01-web.md", "is a design idea (status/design) and has after:"},
+		{"after: naming more than 10 issues", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].After = []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+		}, "plan/issues/01-web.md", "after: names 11 issues; it may name at most 10"},
+		{"after: making a cycle", func(p *Plan, _ *CurrentModel) {
+			p.Issues = append(p.Issues, PlanIssue{File: "plan/issues/03-api.md", N: 3, Container: "api",
+				Body: p.Issues[0].Body, After: []int{1}})
+			p.Issues[0].After = []int{2}
+			p.Issues[1].After = []int{3}
+		}, "plan/issues/01-web.md", "after: makes a cycle (1 after 2 after 3 after 1)"},
 		{"empty choices", func(p *Plan, _ *CurrentModel) {
 			p.Choices = nil
 		}, PlanChoicesFile, "is empty"},
@@ -462,6 +500,84 @@ func TestCheckPlan(t *testing.T) {
 				}
 			}
 			t.Errorf("got %v, want %s: ...%s...", got, tt.subject, reason)
+		})
+	}
+}
+
+func TestParsePlanAfter(t *testing.T) {
+	files := happyFiles()
+	files["plan/issues/01-web.md"] = strings.Replace(readyIssue, "labels: [kind/feature]\n",
+		"labels: [kind/feature]\nafter: [2]\n", 1)
+	plan, err := ParsePlan(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Issues[0].After; !reflect.DeepEqual(got, []int{2}) {
+		t.Errorf("after = %v, want [2]", got)
+	}
+	if got := plan.Issues[1].After; got != nil {
+		t.Errorf("an issue without after: has %v", got)
+	}
+	files["plan/issues/01-web.md"] = strings.Replace(readyIssue, "labels: [kind/feature]\n",
+		"labels: [kind/feature]\nafter: [core]\n", 1)
+	if _, err := ParsePlan(files); err == nil {
+		t.Error("after: [core] parsed; want an error")
+	}
+	// Numbers are read base 10 like the file names, not as YAML octal.
+	files["plan/issues/01-web.md"] = strings.Replace(readyIssue, "labels: [kind/feature]\n",
+		"labels: [kind/feature]\nafter: [02, 08, 010]\n", 1)
+	plan, err = ParsePlan(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Issues[0].After; !reflect.DeepEqual(got, []int{2, 8, 10}) {
+		t.Errorf("after = %v, want [2 8 10]", got)
+	}
+}
+
+func TestFilingOrder(t *testing.T) {
+	issue := func(n int, container string, after ...int) PlanIssue {
+		return PlanIssue{N: n, Container: container, After: after}
+	}
+	tests := []struct {
+		name   string
+		issues []PlanIssue
+		want   []int
+	}{
+		{"no order keeps the numbers", []PlanIssue{issue(1, "web"), issue(2, "api"), issue(3, "web")}, []int{1, 2, 3}},
+		{"a blocker in another Container first", []PlanIssue{issue(1, "core"), issue(2, "cli", 3), issue(3, "core")},
+			[]int{1, 3, 2}},
+		{"a chain across Containers", []PlanIssue{issue(1, "cli", 2), issue(2, "core", 4), issue(3, "web"),
+			issue(4, "core")}, []int{3, 4, 2, 1}},
+		{"several blockers", []PlanIssue{issue(1, "web", 2, 3), issue(2, "api"), issue(3, "core", 2)},
+			[]int{2, 3, 1}},
+		{"unsorted input", []PlanIssue{issue(3, "cli", 1), issue(2, "core"), issue(1, "core")}, []int{1, 2, 3}},
+		{"a cycle comes last", []PlanIssue{issue(1, "web", 2), issue(2, "api", 1), issue(3, "api")}, []int{3, 1, 2}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilingOrder(tt.issues)
+			ns := make([]int, len(got))
+			for i, issue := range got {
+				ns[i] = issue.N
+			}
+			if !reflect.DeepEqual(ns, tt.want) {
+				t.Fatalf("order %v, want %v", ns, tt.want)
+			}
+			if tt.name == "a cycle comes last" {
+				return
+			}
+			pos := map[int]int{}
+			for i, n := range ns {
+				pos[n] = i
+			}
+			for _, issue := range tt.issues {
+				for _, m := range issue.After {
+					if pos[m] > pos[issue.N] {
+						t.Errorf("%d (%s) filed before its blocker %d", issue.N, issue.Container, m)
+					}
+				}
+			}
 		})
 	}
 }
