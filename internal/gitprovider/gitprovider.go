@@ -164,6 +164,8 @@ type Provider interface {
 	CommentIssue(ctx context.Context, repo Repository, number int, body string) error
 	// CloseIssue closes an issue.
 	CloseIssue(ctx context.Context, repo Repository, number int) error
+	// EditIssueBody replaces an issue's body.
+	EditIssueBody(ctx context.Context, repo Repository, number int, body string) error
 	// SetIssueMilestone moves an issue into the milestone with ID milestone, or
 	// out of every milestone when it is 0.
 	SetIssueMilestone(ctx context.Context, repo Repository, number int, milestone int64) error

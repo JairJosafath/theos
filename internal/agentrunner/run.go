@@ -39,6 +39,9 @@ type Result struct {
 	Blocked string `json:"blocked,omitempty"`
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []model.FollowUp `json:"followUps,omitempty"`
+	// Open are the acceptance criteria an approving reviewer accepted as left
+	// open, for a person.
+	Open []model.OpenCriterion `json:"open,omitempty"`
 	// Unavailable means the agent's service couldn't work (a limit, an overload,
 	// bad credentials); RetryAt is when it said it is back.
 	Unavailable bool       `json:"unavailable,omitempty"`
@@ -78,6 +81,11 @@ func (r Result) Encode() []byte {
 			r.FollowUps[i].Criteria[j] = shortenWords(c, maxFollowUpCriterion)
 		}
 	}
+	r.Open = slices.Clone(r.Open)
+	for i := range r.Open {
+		r.Open[i].Criterion = shortenWords(r.Open[i].Criterion, maxFollowUpCriterion)
+		r.Open[i].Why = shortenWords(r.Open[i].Why, maxFollowUpCriterion)
+	}
 	if r.Proposal != nil {
 		p := *r.Proposal
 		r.Proposal = &p
@@ -88,9 +96,10 @@ func (r Result) Encode() []byte {
 			return data
 		}
 		switch {
-		case len(r.FollowUps) > 0 && r.Verdict != VerdictApprove:
-			// Follow-ups are filed only on merge; a summary asking for changes matters more.
-			r.FollowUps = nil
+		case (len(r.FollowUps) > 0 || len(r.Open) > 0) && r.Verdict != VerdictApprove:
+			// Follow-ups and open criteria are filed only on merge; a summary asking
+			// for changes matters more.
+			r.FollowUps, r.Open = nil, nil
 		case len(r.Summary) > 200:
 			r.Summary = shorten(r.Summary, len(r.Summary)-(len(data)-MaxResultBytes)-16)
 		case len(r.Error) > 200:
@@ -102,6 +111,9 @@ func (r Result) Encode() []byte {
 		case len(r.FollowUps) > 0:
 			// Escaping can make even short follow-ups too long; the verdict matters more.
 			r.FollowUps = r.FollowUps[:len(r.FollowUps)-1]
+		case len(r.Open) > 0:
+			// Open criteria are work the issue asked for, so they go after the follow-ups.
+			r.Open = r.Open[:len(r.Open)-1]
 		case stage == 0:
 			stage++
 			r.Summary, r.Error = shorten(r.Summary, 100), shorten(r.Error, 100)
@@ -362,6 +374,7 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, re
 		return result
 	}
 	result.Verdict, result.Summary, result.FollowUps = verdict.Verdict, verdict.Summary, verdict.FollowUps
+	result.Open = verdict.Open
 	return result
 }
 

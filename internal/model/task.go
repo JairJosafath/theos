@@ -57,6 +57,9 @@ type RunResult struct {
 	Blocked string
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []FollowUp
+	// Open are the criteria an approved review accepted as left open: they need
+	// what no agent's sandbox has, so a person does them.
+	Open []OpenCriterion
 	// Unavailable means the agent's service couldn't work: a usage limit, an
 	// overload or bad credentials. It is not the agent's fault and costs no round.
 	Unavailable bool
@@ -76,6 +79,15 @@ type FollowUp struct {
 	Title    string   `json:"title"`
 	Body     string   `json:"body,omitempty"`
 	Criteria []string `json:"criteria,omitempty"`
+}
+
+// OpenCriterion is an acceptance criterion the implementer left open, and the
+// reviewer accepted as such, because it needs what no agent's sandbox has (a
+// person's desktop or device, an account, a purchase). Why says what is missing.
+// An approval carries at most MaxFollowUpCriteria of them.
+type OpenCriterion struct {
+	Criterion string `json:"criterion"`
+	Why       string `json:"why,omitempty"`
 }
 
 // MaxFollowUps is how many follow-ups one review may file, and

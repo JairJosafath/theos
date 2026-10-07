@@ -1,7 +1,7 @@
 # A Brief shows its failed issues and tries them again
 
 GitHub issue #429, reported by gray-lenovo on v0.5.0. Agent: otter-429.
-Related: #428 ([brief-issue-order.md](brief-issue-order.md)) orders a round's
+Related: #428 ([done/brief-issue-order.md](done/brief-issue-order.md)) orders a round's
 issues so fewer fail for want of another app's work; this plan is about what
 happens once one has failed anyway.
 

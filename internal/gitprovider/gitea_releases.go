@@ -376,7 +376,7 @@ func (b *sizedBody) Close() error { return b.body.Close() }
 // SetReleaseBody replaces the notes of release id with body. Gitea keeps the
 // notes it has when body is "".
 func (g *gitea) SetReleaseBody(ctx context.Context, repo Repository, id int64, body string) error {
-	payload, _ := json.Marshal(map[string]string{"body": body})
+	payload, _ := json.Marshal(map[string]string{fieldBody: body})
 	path := "/api/v1/repos/" + repoPath(repo) + "/releases/" + strconv.FormatInt(id, 10)
 	status, data, err := g.do(ctx, http.MethodPatch, path, payload)
 	if err != nil {

@@ -20,6 +20,9 @@ can't apply it.
 - `model/suggestions.yaml`: the reviewers' suggestions waiting for the
   person's answer, each with its Container, issue number, title and whether
   it has acceptance criteria.
+- `model/failed.yaml`: the issues of your Containers handed back to the
+  person, each with its Container, issue number, title, body, how many Tasks
+  it has had (`tries`), and why: its `kind` and `reason`.
 
 ## What you write
 
@@ -29,8 +32,8 @@ Push the branch `plan/<round>` with these files:
   of `model/model.yaml` and add or change objects there.
 - `plan/issues/<nn>-<container>.md`: one file per issue, `nn` its number in the
   round (`01`, `02`, ...), `container` the Container it is for. It starts with
-  front matter: a `---` line, `title:` and `labels:`, another `---` line. Then
-  the body.
+  front matter: a `---` line, `title:`, `labels:` and, when it needs another
+  issue's work merged first, `after:`, then another `---` line. Then the body.
 - `plan/choices.md`: one line per choice you made, in plain words.
 - `plan/summary.md`: what this round does for the person's app, in one or two
   plain sentences, such as "Planned Sprout, a garden-themed todo CLI: one
@@ -41,6 +44,8 @@ Push the branch `plan/<round>` with these files:
 - `plan/needs-input.md`: only when you are stuck (see below).
 - `plan/suggestions.yaml`: only when a new prompt answers reviewers'
   suggestions (see below).
+- `plan/failed.yaml`: only when a new prompt answers failed issues (see
+  below).
 
 ## The rules
 
@@ -74,6 +79,14 @@ Push the branch `plan/<round>` with these files:
    `## Acceptance criteria` heading with a checklist under it (`- [ ] ...`),
    each item one thing a reviewer can check. Don't file what
    `model/containers.yaml` already lists as open.
+   **Say the order the work needs.** When an issue builds on another issue's
+   work, of the same Container or another, list that issue's number in its
+   `after:` (`after: [2]`), so it starts only once that work is merged: a
+   CLI's first issue that runs the engine's checker is `after:` the engine's
+   issue that writes the checker. Name only issues of this round, never the
+   issue itself, and no loop (2 after 3 after 2). Leave `after:` out when the
+   issues can be worked at the same time; it is never needed for a design
+   idea, which isn't ordered.
 7. **Explain each choice in `choices.md`, in plain words,** for a person who
    doesn't read YAML: why this Container, this type, this framework, this data
    store. One line each; `choices.md` is never empty. Say why the type fits
@@ -110,6 +123,37 @@ Push the branch `plan/<round>` with these files:
     `criteria: true` can be taken as it is; to take one without, file it again
     as an issue of your plan, with acceptance criteria, and skip it saying so.
     Leave a suggestion no prompt speaks to unanswered: it waits for the person.
+
+11. **Answer a failed issue only when a new prompt speaks to it,** such as
+    "try the CLI issue again now that the engine's checker is merged". Write
+    `plan/failed.yaml`, a list with one entry per failed issue answered:
+
+    ```yaml
+    - container: cel-lens-cli
+      issue: 1
+      answer: retry       # or close
+      why: The prompt says the engine's checker is merged now.
+      clarify: |          # retry only, optional
+        The engine's checker is merged (cel-lens-core#2); import it from there.
+    ```
+
+    `retry` sends the issue back to its Crew, with `clarify` appended to its
+    body under "## Clarification (Brief round N)": say there what the agent
+    needs to know that the issue doesn't, in at most 4000 characters.
+    `close` closes it; to split it, close it and file the parts as issues of
+    your plan, saying so in `why`. `why` says in plain words which prompt
+    asked for it. By `kind`:
+    - `unclear`: it has no acceptance criteria. Retry it only with a
+      `clarify` that adds an `## Acceptance criteria` checklist
+      (`- [ ] ...`).
+    - `merged`: a Task merged it already. Close it, and file what is left as
+      a new issue.
+    - `exhausted`: agents tried it three times. It can't be retried: close it
+      and file it again, clarified or split.
+    - `failed` or `person`: retry it, with a `clarify` when the prompt says
+      something the agent needs, or close it.
+    Leave a failed issue no prompt speaks to unanswered: it waits for the
+    person.
 
 ## The plan's format
 
@@ -252,6 +296,36 @@ Shoppers see what the shop sells on the first page.
 
 - [ ] The first page lists every product with its name and price
 - [ ] A product without a price shows "Ask us"
+```
+
+An issue that builds on another's work names it in `after:`. Here the web
+shop's order button needs the service to take orders first:
+
+```markdown plan/issues/02-api.md
+---
+title: Take an order
+labels: [kind/feature]
+---
+The service keeps an order a shopper places.
+
+## Acceptance criteria
+
+- [ ] Posting a product and an amount to /orders keeps the order
+- [ ] An order for a product that doesn't exist is refused with the reason
+```
+
+```markdown plan/issues/03-web.md
+---
+title: Order from the product page
+labels: [kind/feature]
+after: [2]
+---
+Shoppers order a product from its page, through the service's /orders.
+
+## Acceptance criteria
+
+- [ ] Each product has an Order button that places the order
+- [ ] The page says when the order is taken, or why it was refused
 ```
 
 `plan/releases.yaml`, releasing the web shop, which the example's issue is

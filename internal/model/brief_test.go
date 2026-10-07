@@ -652,6 +652,26 @@ func TestRoundPrompts(t *testing.T) {
 	}
 }
 
+func TestBriefIssueBodyBuildsOn(t *testing.T) {
+	issue := PlanIssue{N: 3, Body: "## Goal\n\nCheck a file."}
+	got := BriefIssueBody(issue, "cel-lens", 1,
+		BuildsOn{Repository: "shop/core", Number: 2, Title: "The checker"},
+		BuildsOn{Repository: "shop/cli", Number: 1, Title: "A <!-- odd\ntitle"})
+	want := "## Goal\n\nCheck a file.\n\n" +
+		"Builds on shop/core#2 (The checker).\n" +
+		"Builds on shop/cli#1 (A &lt;!-- odd title).\n\n" +
+		"<!-- c4-brief: cel-lens/1/3 -->\n"
+	if got != want {
+		t.Errorf("body\n%q\nwant\n%q", got, want)
+	}
+	if !HasIssueMarker(got, "cel-lens", 1, 3) {
+		t.Error("no marker")
+	}
+	if got := BriefIssueBody(issue, "cel-lens", 1); got != "## Goal\n\nCheck a file.\n\n<!-- c4-brief: cel-lens/1/3 -->\n" {
+		t.Errorf("without blockers %q", got)
+	}
+}
+
 func TestIssueMarker(t *testing.T) {
 	if got := IssueMarker("cel-lens", 2, 3); got != "<!-- c4-brief: cel-lens/2/3 -->" {
 		t.Errorf("marker %q", got)

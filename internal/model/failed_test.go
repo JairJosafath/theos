@@ -140,7 +140,11 @@ func TestCheckFailedAnswers(t *testing.T) {
 		{"retry unclear, clarify without a checklist", []FailedAnswer{
 			{"cli", 4, AnswerRetry, "why", "## Acceptance criteria\n\nIt works.\n"}}, []string{"no acceptance criteria"}},
 		{"retry unclear whose empty criteria come first", []FailedAnswer{{"cli", 6, AnswerRetry, "why", criteria}},
-			[]string{"no acceptance criteria"}},
+			[]string{"no clarify can add one: close it, and file it again as a new issue with criteria"}},
+		{"retry unclear whose empty criteria come first, without clarify", []FailedAnswer{{"cli", 6, AnswerRetry, "why", ""}},
+			[]string{"close it, and file it again"}},
+		{"close unclear whose empty criteria come first", []FailedAnswer{{"cli", 6, AnswerClose, "Filed again as #9.", ""}},
+			nil},
 		{"long clarify", []FailedAnswer{{"cli", 1, AnswerRetry, "why", strings.Repeat("a", MaxClarify+1)}},
 			[]string{"keep it under"}},
 		{"close with clarify", []FailedAnswer{{"cli", 1, AnswerClose, "why", "More."}}, []string{"only a retry clarifies"}},
@@ -167,6 +171,54 @@ func TestClarifiedBody(t *testing.T) {
 	want := "Add a CLI.\n\n## Clarification (Brief round 2)\n\nImport the checker.\n"
 	if got := ClarifiedBody("Add a CLI.\n\n", 2, "Import the checker.\n"); got != want {
 		t.Errorf("ClarifiedBody = %q, want %q", got, want)
+	}
+	if got := ClarifiedBody(want, 2, "Import the checker.\n"); got != want {
+		t.Errorf("clarified twice in one round: %q", got)
+	}
+	if got := ClarifiedBody(want, 3, "Use v2."); !strings.HasSuffix(got, "## Clarification (Brief round 3)\n\nUse v2.\n") ||
+		!strings.Contains(got, "round 2") {
+		t.Errorf("a later round's clarification: %q", got)
+	}
+}
+
+func TestFailedComment(t *testing.T) {
+	prompts := []string{"Try the CLI again now that\nthe checker is merged."}
+	retry := FailedComment(FailedAnswer{Answer: AnswerRetry, Why: "The prompt says so.", Clarify: "Import it."},
+		"lens", 2, prompts, []string{"lens-cli#4"})
+	for _, s := range []string{"Tried again for Brief `lens` in round 2", LabelReady, "clarification for round 2",
+		"The planner: The prompt says so.", "> Try the CLI again now that the checker is merged."} {
+		if !strings.Contains(retry, s) {
+			t.Errorf("retry comment lacks %q:\n%s", s, retry)
+		}
+	}
+	if strings.Contains(retry, "lens-cli#4") {
+		t.Errorf("retry comment names the round's issues:\n%s", retry)
+	}
+	closed := FailedComment(FailedAnswer{Answer: AnswerClose, Why: "Split in two."}, "lens", 2, prompts,
+		[]string{"lens-cli#4 Parse flags", "lens-cli#5 Print results"})
+	for _, s := range []string{"Closed for Brief `lens` in round 2.", "The planner: Split in two.",
+		"- lens-cli#4 Parse flags", "- lens-cli#5 Print results", "> Try the CLI again"} {
+		if !strings.Contains(closed, s) {
+			t.Errorf("close comment lacks %q:\n%s", s, closed)
+		}
+	}
+}
+
+// The guide's plan/failed.yaml example parses and is accepted.
+func TestPlannerGuideFailedExample(t *testing.T) {
+	start := strings.Index(plannerGuideText, "- container: cel-lens-cli")
+	end := strings.Index(plannerGuideText[start:], "```")
+	if start < 0 || end < 0 {
+		t.Fatal("PLANNER.md lacks the plan/failed.yaml example")
+	}
+	example := strings.ReplaceAll(plannerGuideText[start:start+end], "\n    ", "\n")
+	answers, err := parseFailedAnswers(example)
+	if err != nil || len(answers) != 1 {
+		t.Fatalf("parseFailedAnswers(example) = %+v, %v", answers, err)
+	}
+	waiting := []FailedIssue{{Container: "cel-lens-cli", Number: 1, Kind: FailedTask, Body: clearBody}}
+	if refusals := CheckFailedAnswers(answers, waiting); len(refusals) > 0 {
+		t.Errorf("the example is refused: %v", refusals)
 	}
 }
 

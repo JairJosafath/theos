@@ -59,8 +59,7 @@ make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind clus
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain (with uv), CI runner (label base), Agent Sandbox, agent image
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
 make toolchain-go runner-go agent-image-go  # Go, Node and uv toolchain, CI runner (label go) and agent image
-make claude-secret       # The real agent's token, from .dev/secrets/claude-token (below) or CLAUDE_TOKEN=...
-make claude-secret-copy FROM=webshop TO=apps  # Reuse that Secret in another project
+make claude-secret       # The real agent's token, once for every project, from .dev/secrets/claude-token (below) or CLAUDE_TOKEN=...
 make e2e                 # Only when the user asks: all of the above but the Go images, then check the whole loop in Kind
 make down / make up       # Stop the factory to free the machine; bring it back healthy
 make doctor              # Check every part of the factory and say what is wrong
@@ -116,12 +115,22 @@ mkdir -p .dev/secrets && install -m 600 /dev/stdin .dev/secrets/claude-token
 # paste the token, then Enter and Ctrl-D
 ```
 
-`make claude-secret` then stores it as Secret `claude-credentials` in
-`CLAUDE_NAMESPACE` (default `apps`) of the leased cluster, so a session on a fresh
-cluster makes the Secret without the token in its argv or transcript. It fails,
-naming the path, when the file is missing, empty, or readable by group or others;
-it never prints the token. `CLAUDE_TOKEN=...` on the command line or in the
-environment wins over the file; `CLAUDE_TOKEN_FILE` names another file.
+After `make deploy`, `make claude-secret` stores it as Secret
+`claude-credentials` in `CLAUDE_NAMESPACE` (default `c4-factory-system`, the
+operator's namespace) of the leased cluster, without the token in its argv or
+transcript. The test environment shares it like the release: `config/manager`
+runs the operator with `--shared-secret=claude-credentials` and `POD_NAMESPACE`,
+and the operator copies the Secret into every namespace that has a Project and
+the label `c4.factory.io/shared-secrets: "true"`, keeping each copy in step
+with it. `make seed` labels `webshop` and `apps`, and the webshop sample and
+the e2e fixture label theirs, so one Secret serves every project; a rotated
+token reaches them all within five minutes. Another namespace opts in with
+`kubectl label namespace NAME c4.factory.io/shared-secrets=true`. A project
+with a token of its own runs `make claude-secret CLAUDE_NAMESPACE=NAME`: the
+operator leaves a Secret it didn't make alone. `make claude-secret` fails,
+naming the path, when the file is missing, empty, or readable by group or
+others; it never prints the token. `CLAUDE_TOKEN=...` on the command line or in
+the environment wins over the file; `CLAUDE_TOKEN_FILE` names another file.
 
 `make run` runs the operator on your machine, but it can't reach Gitea's in-cluster
 address; use `make deploy` for anything that scaffolds.

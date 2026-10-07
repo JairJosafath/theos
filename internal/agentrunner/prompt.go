@@ -95,6 +95,16 @@ How to work:
   silencing them.
 - Keep the change focused on the goal.
 `, check)
+	b.WriteString(`- Never make up evidence: no drawn or generated image, recording or sample output
+  presented as the product's, and no message, log or output the code doesn't give.
+  A screenshot, recording or sample output must come from running the product here.
+`)
+	if job.Issue > 0 {
+		b.WriteString(`- A criterion that needs what this sandbox can't give (a person's desktop or
+  device, an account, a purchase) is left open, never faked: meet what you can of
+  it, and say so in your summary on a line "Open: <criterion>: <why>".
+`)
+	}
 	switch {
 	case gated:
 		fmt.Fprintf(&b, `
@@ -184,10 +194,22 @@ Approve only if you would merge the change as it is:
 	if job.Issue > 0 {
 		fmt.Fprintf(&b, `
 Check each acceptance criterion of the issue, one by one, against the code%s.
-In the summary, list every criterion as met or not met, with where it is %s.
-An unmet criterion is a required change.
+In the summary, list every criterion as met, not met or open, with where it is %s.
+An unmet criterion is a required change. A criterion the implementer left open
+(a line "Open: <criterion>: <why>") is one too, unless it truly needs what no agent
+here has: a person's desktop or device, an account, a purchase. One an agent could
+meet, or meet in part (a text sample of the product's real output instead of a
+screenshot, when the issue allows it), is unmet. When you approve, list each
+criterion you accept as open in "open", with why it needs a person: at most `+strconv.Itoa(model.MaxFollowUpCriteria)+`.
 `, andTests, whereMet)
 	}
+	b.WriteString(`
+Made-up evidence is a required change, whatever the round: an image, recording or
+sample output presented as the product's that running the product did not make,
+or a message, log or output the code doesn't give. Open every image the change
+adds and check it shows what running the product shows; check every quoted
+message, output or log against the code.
+`)
 	if gated {
 		fmt.Fprintf(&b, `
 This pull request carries a Standard change: it may change only %[1]s, so do
@@ -222,7 +244,7 @@ checklist item on the issue). Never use a follow-up for something this change
 must fix.
 
 End your reply with one line of JSON and nothing after it:
-{"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>", "followUps": [{"title": "...", "body": "...", "criteria": ["..."]}]}
+{"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>", "followUps": [{"title": "...", "body": "...", "criteria": ["..."]}], "open": [{"criterion": "...", "why": "..."}]}
 `)
 	return b.String()
 }
@@ -300,6 +322,9 @@ type Verdict struct {
 	Verdict   string
 	Summary   string
 	FollowUps []model.FollowUp
+	// Open are the criteria the reviewer accepted as left open; only an
+	// approval carries them.
+	Open []model.OpenCriterion
 }
 
 // criteria keeps a follow-up's non-empty criteria, trimmed, up to
@@ -316,14 +341,16 @@ func criteria(in []string) []string {
 
 // ParseVerdict finds the reviewer's JSON verdict: the last JSON object in the
 // output that has a verdict. It keeps the titled follow-ups, up to
-// model.MaxFollowUps.
+// model.MaxFollowUps, and on an approval the named open criteria, trimmed, up to
+// model.MaxFollowUpCriteria.
 func ParseVerdict(output string) (Verdict, error) {
 	for end := strings.LastIndex(output, "}"); end >= 0; end = strings.LastIndex(output[:end], "}") {
 		for start := strings.LastIndex(output[:end], "{"); start >= 0; start = strings.LastIndex(output[:start], "{") {
 			var v struct {
-				Verdict   string           `json:"verdict"`
-				Summary   string           `json:"summary"`
-				FollowUps []model.FollowUp `json:"followUps"`
+				Verdict   string                `json:"verdict"`
+				Summary   string                `json:"summary"`
+				FollowUps []model.FollowUp      `json:"followUps"`
+				Open      []model.OpenCriterion `json:"open"`
 			}
 			if json.Unmarshal([]byte(output[start:end+1]), &v) != nil || v.Verdict == "" {
 				continue
@@ -338,6 +365,12 @@ func ParseVerdict(output string) (Verdict, error) {
 				f.Criteria = criteria(f.Criteria)
 				if f.Title != "" && len(out.FollowUps) < model.MaxFollowUps {
 					out.FollowUps = append(out.FollowUps, f)
+				}
+			}
+			for _, o := range v.Open {
+				o.Criterion, o.Why = strings.TrimSpace(o.Criterion), strings.TrimSpace(o.Why)
+				if verdict == VerdictApprove && o.Criterion != "" && len(out.Open) < model.MaxFollowUpCriteria {
+					out.Open = append(out.Open, o)
 				}
 			}
 			return out, nil

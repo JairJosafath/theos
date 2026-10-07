@@ -25,6 +25,11 @@ rm -rf "$OUT/orders-api"
 go run ./hack/render -out "$OUT/orders-api" -type service -container orders-api -display-name "Orders API" \
 	Framework=python-fastapi Compute=small Deployment=k8s-manifests Connector=postgres >/dev/null
 "$KUSTOMIZE" build "$OUT/orders-api/deploy/k8s" >"$OUT/orders-api.yaml"
+# A react-vite web app on the same Compute and Deployment, served by nginx.
+rm -rf "$OUT/storefront"
+go run ./hack/render -out "$OUT/storefront" -type static-site -container storefront -display-name "Storefront" \
+	Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests >/dev/null
+"$KUSTOMIZE" build "$OUT/storefront/deploy/k8s" >"$OUT/storefront.yaml"
 
 files=()
 while IFS= read -r f; do files+=("$f"); done < <(
@@ -62,6 +67,23 @@ if grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart-gitea-bare.yaml" |
 	exit 1
 fi
 echo "The chart's catalog matches templates/versions.txt; off, it renders no catalog or Agents"
+
+# The test environment shares the Claude token (make claude-secret): the
+# manager names it and its own namespace, and the namespaces make seed and the
+# samples make opt in.
+for want in '--shared-secret=claude-credentials' 'name: POD_NAMESPACE' 'fieldPath: metadata.namespace'; do
+	if ! grep -qF -- "$want" "$OUT/kustomize-default.yaml"; then
+		echo "config/default's manager lacks $want: the test environment wouldn't share claude-credentials" >&2
+		exit 1
+	fi
+done
+for f in config/samples/webshop/namespace.yaml test/e2e/testdata/apps/namespace.yaml; do
+	if ! grep -qF 'c4.factory.io/shared-secrets: "true"' "$f"; then
+		echo "$f lacks label c4.factory.io/shared-secrets: \"true\": the operator wouldn't share claude-credentials into it" >&2
+		exit 1
+	fi
+done
+echo "The manager shares claude-credentials into the labeled sample namespaces"
 
 # test/invalid holds YAML each create-time CEL rule must reject: each file's
 # first line says "# expect: <message>", which the rejection must contain.

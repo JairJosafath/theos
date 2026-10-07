@@ -437,6 +437,13 @@ catalog:
         displayName: Web app with pages (React, Vite)
         description: A page in the browser in React and TypeScript, built with Vite into a static site, with a pure module and its unit tests.
         supportedTypes: [static-site]
+    - kind: Framework
+      name: node-cli
+      ref: v1.0.0
+      spec:
+        displayName: Command-line program (TypeScript, Node)
+        description: A command-line program in TypeScript for Node, bundled with esbuild into one file and packed with npm pack, with flags parsed by util.parseArgs and unit tests.
+        supportedTypes: [cli]
     - kind: Standard
       name: go-standard
       ref: v1.1.4
@@ -449,33 +456,33 @@ catalog:
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
     - kind: Standard
       name: ts-standard
-      ref: v1.2.0
+      ref: v1.3.0
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
-        supportedTypes: [extension, static-site]
-        supportedFrameworks: [vscode-extension, react-vite]
+        supportedTypes: [extension, static-site, cli]
+        supportedFrameworks: [vscode-extension, react-vite, node-cli]
         protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
     - kind: Compute
       name: small
-      ref: v1.0.0
+      ref: v1.0.1
       spec:
         displayName: Small
         description: 50m CPU and 64Mi requested, 250m and 256Mi at most.
-        supportedTypes: [service, worker, job]
+        supportedTypes: [service, worker, job, static-site]
     - kind: Deployment
       name: k8s-manifests
-      ref: v1.1.0
+      ref: v1.2.1
       spec:
         displayName: Kubernetes manifests
-        description: A Dockerfile and plain Kubernetes manifests, built with kustomize.
-        supportedTypes: [service, worker]
+        description: A Dockerfile for the Framework (python-fastapi or react-vite) and plain Kubernetes manifests, built with kustomize.
+        supportedTypes: [service, worker, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.0.1
+      ref: v1.0.2
       spec:
         displayName: Gitea release
-        description: Ships the release files (binaries, a .vsix) on a Gitea release for each version tag.
+        description: Ships the release files (binaries, a .vsix, an npm tarball) on a Gitea release for each version tag.
         supportedTypes: [cli, extension]
     - kind: Connector
       name: postgres

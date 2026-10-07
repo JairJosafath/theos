@@ -340,8 +340,13 @@ func (r *BriefReconciler) checkPlan(ctx context.Context, brief *c4v1alpha1.Brief
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+		failed, err := r.failedToCheck(ctx, brief, plan.FailedAnswers)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		refusals = model.RefusalText(append(model.CheckPlan(plan, current),
-			model.CheckAnswers(plan.Answers, waitingSuggestions(brief))...))
+			append(model.CheckAnswers(plan.Answers, waitingSuggestions(brief)),
+				model.CheckFailedAnswers(plan.FailedAnswers, failed)...)...))
 	}
 	if err := r.writeVerdict(ctx, task, commit, refusals); err != nil {
 		return ctrl.Result{}, err

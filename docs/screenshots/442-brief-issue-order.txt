@@ -1,0 +1,22 @@
+# #442: a Brief round files its issues in the plan's order (heron-442, 2026-10-07)
+
+## make check (tail)
+0 issues.
+ok  	github.com/JairJosafath/c4factory/cmd	1.039s	coverage: 1.6% of statements
+ok  	github.com/JairJosafath/c4factory/features	(cached)	coverage: 92.0% of statements
+ok  	github.com/JairJosafath/c4factory/internal/agentrunner	8.149s	coverage: 87.6% of statements
+ok  	github.com/JairJosafath/c4factory/internal/controller	362.595s	coverage: 85.2% of statements
+ok  	github.com/JairJosafath/c4factory/internal/gitprovider	(cached)	coverage: 83.6% of statements
+ok  	github.com/JairJosafath/c4factory/internal/model	0.211s	coverage: 98.0% of statements
+ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.086s	coverage: 92.4% of statements
+ok  	github.com/JairJosafath/c4factory/internal/sessionclient	13.130s	coverage: 73.2% of statements
+ok  	github.com/JairJosafath/c4factory/test/chart	7.420s	coverage: [no statements]
+ok  	github.com/JairJosafath/c4factory/test/e2e/standin	0.027s	coverage: 90.9% of statements
+
+## The order specs alone
+ok  	github.com/JairJosafath/c4factory/internal/controller	14.547s
+
+--- PASS: TestFilingOrder (0.00s)
+--- PASS: TestBriefIssueBodyBuildsOn (0.00s)
+--- PASS: TestPlannerGuideExampleOrdersItsIssues (0.00s)
+ok  	github.com/JairJosafath/c4factory/internal/model	0.010s

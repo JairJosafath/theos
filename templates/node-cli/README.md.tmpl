@@ -1,0 +1,51 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` command-line program of {{ .SoftwareSystem }}, in project {{ .Project }}:
+a command in TypeScript for Node 22 or later, scaffolded by C4 Factory.
+
+## Use it
+
+```sh
+{{ .Container }} --name Ada   # Hello, Ada!
+{{ .Container }} --version
+{{ .Container }} --help
+```
+
+A release is one file, `{{ .Container }}-<version>.tgz`, with the whole program
+bundled inside. Install it with `npm install --global ./{{ .Container }}-<version>.tgz`,
+which puts `{{ .Container }}` on your `PATH`.
+
+## Develop
+
+Open the repository in its devcontainer, which has Node 24 and the Go toolchain.
+
+```sh
+npm ci               # install the exact packages in package-lock.json
+npm run build        # bundle the program into out/cli.js
+node out/cli.js -h   # run it
+npm test             # unit tests with vitest
+{{- if .Standard }}
+make check           # what CI runs: format, lint, type check, test, pack
+make dist            # the release tarball in dist/
+make help            # every target
+{{- else }}
+npm pack             # the release tarball
+{{- end }}
+```
+
+## Layout
+
+- `src/main.ts` is the entry point: it hands the command line and the
+  process's streams to `run`.
+- `src/cli.ts` is the whole program behind it: it parses flags with Node's
+  `util.parseArgs`, writes results to stdout and errors to stderr, and returns
+  the exit code (0 for success, 2 for a wrong command line). Tests call it
+  directly.
+- `src/*.ts` are the program's modules; tests sit next to them as `*.test.ts`.
+- `esbuild.mjs` bundles `src/main.ts` into `out/cli.js`, the `bin` in
+  `package.json`. The name and version the program prints come from
+  `package.json`.
+{{- if .Standard }}
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}
