@@ -192,7 +192,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	// kubelet skips a pull Secret it can't find. A pod that lists pull Secrets
 	// doesn't get its ServiceAccount's, so a v0.5.0 namespace's hand-made ghcr
 	// keeps working only under the shared name, which the chart gives it.
-	var pullSecrets []corev1.LocalObjectReference
+	pullSecrets := make([]corev1.LocalObjectReference, 0, len(run.pullSecrets))
 	for _, name := range run.pullSecrets {
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
 	}
