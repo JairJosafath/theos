@@ -13,8 +13,8 @@ var t0 = time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 func hours(h float64) time.Time { return t0.Add(time.Duration(h * float64(time.Hour))) }
 
 func TestAutopilotMode(t *testing.T) {
-	if AutopilotMode("") != AutopilotOff {
-		t.Errorf("unset = %s, want %s until the loop has landed", AutopilotMode(""), AutopilotOff)
+	if AutopilotMode("") != AutopilotAsk {
+		t.Errorf("unset = %s, want %s", AutopilotMode(""), AutopilotAsk)
 	}
 	for _, m := range []string{AutopilotOff, AutopilotAsk, AutopilotOn} {
 		if AutopilotMode(m) != m {
@@ -260,7 +260,7 @@ func TestStartsTend(t *testing.T) {
 		{"on", func(*TendFacts) {}, t0, true},
 		{"ask", func(f *TendFacts) { f.Mode = AutopilotAsk }, t0, true},
 		{"off", func(f *TendFacts) { f.Mode = AutopilotOff }, t0, false},
-		{"unset means off for now", func(f *TendFacts) { f.Mode = "" }, t0, false},
+		{"unset means ask", func(f *TendFacts) { f.Mode = "" }, t0, true},
 		{"no round yet", func(f *TendFacts) { f.Round = 0 }, t0, false},
 		{"a round runs", func(f *TendFacts) { f.RoundOver = false }, t0, false},
 		{"a prompt waits", func(f *TendFacts) { f.PromptWaiting = true }, t0, false},

@@ -1,0 +1,44 @@
+Brief autopilot (#486, steps #503-#506): the tests that cover the plan
+docs/plans/done/brief-autopilot.md, after #506 made an unset autopilot Ask.
+Run 2026-10-07 on feat/506-brief-autopilot-4-4-ask-by-default by otter-506.
+
+$ go test ./internal/controller -v -ginkgo.focus "Brief autopilot" -ginkgo.v
+Brief autopilot in On, starts a tending round with no new prompt, applies its retry, and the Crew starts the next Task
+  STEP: starting a tending round on its own
+  STEP: applying the planner's retry with its clarification
+  STEP: the Crew starting the issue's next Task
+• [5.908 seconds]
+Brief autopilot in Ask, lists the answer under Needs you and applies nothing until a prompt answers it
+  STEP: listing it under Needs you with the recommendation, and leaving the issue handed back
+  STEP: a prompt answering it
+• [5.944 seconds]
+Brief autopilot with no autopilot set, lists the answer under Needs you and applies nothing until a prompt answers it
+  STEP: listing it under Needs you with the recommendation, and leaving the issue handed back
+  STEP: a prompt answering it
+• [5.899 seconds]
+Brief autopilot leaves a Task waiting for its agent alone inside its window and lists it under Needs you past it
+  STEP: listing it as healing until an hour past when its agent is back
+  STEP: listing it under Needs you once the window passed
+• [4.545 seconds]
+Brief autopilot starts no second tending round after a wait until a Task merges
+  STEP: starting none past TendInterval while nothing changed
+  STEP: starting one once a Task of the Brief's Containers merged
+• [6.001 seconds]
+Brief autopilot never retries an exhausted issue, and refuses a tending round that changes the story
+  STEP: an issue failing three Tasks while autopilot is Off
+  STEP: turning autopilot On
+  STEP: refusing a retry of the exhausted issue
+  STEP: refusing a plan that changes the story
+  STEP: closing it and filing it again, split
+• [7.460 seconds]
+Ran 6 of 207 Specs in 40.282 seconds
+SUCCESS! -- 6 Passed | 0 Failed | 0 Pending | 201 Skipped
+ok  	github.com/JairJosafath/c4factory/internal/controller	40.554s
+
+$ go test ./internal/model -run "TestAutopilotMode|TestStartsTend" -v
+--- PASS: TestAutopilotMode (0.00s)
+--- PASS: TestStartsTend (0.00s)
+ok  	github.com/JairJosafath/c4factory/internal/model	0.005s
+
+$ cd ui && npx vitest run src/model/brief.test.ts -t describeAutopilot
+      Tests  5 passed | 51 skipped (56)

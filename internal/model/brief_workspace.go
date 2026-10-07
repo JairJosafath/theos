@@ -66,7 +66,7 @@ type BriefWorkspace struct {
 	// them; an ask's recommendation shows in model/failed.yaml too.
 	Tended []TendedIssue
 	// Tending says the round is a tending round: no new prompt, it decides
-	// the failed issues (plans/brief-autopilot.md, decision 5).
+	// the failed issues (plans/done/brief-autopilot.md, decision 5).
 	Tending bool
 	// Releases are the Brief's spec.releases entries (plans/done/brief-releases.md, R5).
 	Releases []WorkspaceRelease

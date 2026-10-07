@@ -37,7 +37,7 @@ describe('the Brief card with failed issues', () => {
   const now = Date.parse('2026-10-07T12:00:00Z')
   const failedBrief: Brief = {
     metadata: { name: 'lens', creationTimestamp: '2026-10-07T10:00:00Z' },
-    spec: { idea: 'A CEL lens' },
+    spec: { idea: 'A CEL lens', autopilot: 'Off' },
     status: {
       phase: 'Planned',
       issues: [{ repository: 'lens/cel-lens-cli', number: 1, url: 'http://g/cli/1', title: 'CLI' }],

@@ -39,7 +39,7 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 	}
 	name := m[1]
 	if IsTendingBrief(brief) {
-		// It decides nothing (plans/brief-autopilot.md, decision 12): every
+		// It decides nothing (plans/done/brief-autopilot.md, decision 12): every
 		// due issue counts as an ask.
 		return map[string]string{PlanSummaryFile: StandInTendSummary + "\n"}, nil
 	}

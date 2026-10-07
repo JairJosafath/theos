@@ -15,6 +15,11 @@ function brief(name: string, created: string, extra: Partial<Brief> = {}): Brief
   return { metadata: { name, creationTimestamp: created }, spec: { idea: `Idea ${name}` }, ...extra }
 }
 
+/** A Brief whose autopilot is Off: failed issues wait for a prompt. */
+function off(name: string, created: string): Brief {
+  return brief(name, created, { spec: { idea: `Idea ${name}`, autopilot: 'Off' } })
+}
+
 describe('describeBriefPhase', () => {
   it.each<[BriefPhase | undefined, string, string]>([
     ['Pending', 'Pending', 'waiting'],
@@ -76,7 +81,7 @@ describe('describeBrief', () => {
 
   it('lists the failed issues with their reasons and marks them in the issue list', () => {
     const view = describeBrief({
-      ...brief('lens', ''),
+      ...off('lens', ''),
       status: {
         phase: 'Planned',
         issues: [
@@ -128,7 +133,7 @@ describe('describeBrief', () => {
 
   it('counts failed issues and suggestions together, and the listed ones when no total is given', () => {
     const view = describeBrief({
-      ...brief('lens', ''),
+      ...off('lens', ''),
       status: {
         phase: 'Planned',
         failed: [{ container: 'api', number: 3, kind: 'merged' }],
@@ -142,7 +147,7 @@ describe('describeBrief', () => {
       'The last round is done; 1 failed issue and 2 reviewer suggestions wait for your answer in a prompt.',
     )
     const one = describeBrief({
-      ...brief('lens', ''),
+      ...off('lens', ''),
       status: { phase: 'Planned', failed: [{ container: 'api', number: 3, kind: 'person' }] },
     })
     expect(one.phase.explanation).toBe('The last round is done; 1 failed issue waits for your answer in a prompt.')
@@ -394,7 +399,7 @@ describe('the Needs you box', () => {
 
   it('holds NeedsInput alone while autopilot is off', () => {
     const view = describeBrief({
-      ...brief('lens', '2026-01-01T00:00:00Z'),
+      ...off('lens', '2026-01-01T00:00:00Z'),
       status: { phase: 'NeedsInput', conditions: [needsInput] },
     })
     expect(view.needsYou.map((n) => n.kind)).toEqual(['Input'])
@@ -403,7 +408,7 @@ describe('the Needs you box', () => {
 
   it('counts the items in the phase explanation', () => {
     const view = describeBrief({
-      ...brief('lens', '2026-01-01T00:00:00Z'),
+      ...off('lens', '2026-01-01T00:00:00Z'),
       status: {
         phase: 'Planned',
         needsYou: [{ kind: 'Crew', name: 'cli', question: 'Its Agent is missing.' }],
@@ -497,7 +502,7 @@ describe('describeAutopilot', () => {
 
   it('says when the factory’s default applies', () => {
     const info = describeAutopilot(undefined)
-    expect(info).toMatchObject({ mode: 'Off', isDefault: true, label: 'Autopilot off' })
+    expect(info).toMatchObject({ mode: 'Ask', isDefault: true, label: 'Autopilot asks' })
     expect(info.explanation).toMatch(/default\.$/)
   })
 
@@ -506,7 +511,8 @@ describe('describeAutopilot', () => {
     const hint = (autopilot?: 'Off' | 'Ask' | 'On') =>
       describeBrief({ ...brief('lens', '2026-01-01T00:00:00Z'), spec: { idea: 'x', autopilot }, status: failed })
         .failedHint
-    expect(hint()).toMatch(/^Say in a prompt whether to try again/)
+    expect(hint('Off')).toMatch(/^Say in a prompt whether to try again/)
+    expect(hint()).toMatch(/Needs you/)
     expect(hint('Ask')).toMatch(/Needs you/)
     expect(hint('On')).toMatch(/by itself; a prompt overrules it/)
   })

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// A Brief looks after its own handed-back work (plans/brief-autopilot.md):
+// A Brief looks after its own handed-back work (plans/done/brief-autopilot.md):
 // each reconcile it classifies what it made as healing, left alone until a
 // time, or due. A due failed issue is the planner's to decide in a tending
 // round; anything else due is a fact for the person, listed under Needs you
@@ -24,9 +24,9 @@ const (
 	AutopilotOn = "On"
 )
 
-// DefaultAutopilot is the mode of a Brief whose spec sets none. It stays Off
-// until the whole loop has landed (plans/brief-autopilot.md, step 4).
-const DefaultAutopilot = AutopilotOff
+// DefaultAutopilot is the mode of a Brief whose spec sets none: it tends, and
+// asks before it applies anything (plans/done/brief-autopilot.md, decision 1).
+const DefaultAutopilot = AutopilotAsk
 
 // AutopilotMode is a Brief's mode: mode, or DefaultAutopilot when unset.
 func AutopilotMode(mode string) string {

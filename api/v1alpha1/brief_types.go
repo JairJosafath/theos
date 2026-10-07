@@ -57,10 +57,10 @@ type BriefSpec struct {
 	Releases []BriefRelease `json:"releases,omitempty"`
 
 	// autopilot says whether the Brief tends its failed issues by itself, in
-	// tending rounds with no new prompt (docs/plans/brief-autopilot.md): Off
-	// tends nothing; Ask decides them and lists each answer under
+	// tending rounds with no new prompt (docs/plans/done/brief-autopilot.md):
+	// Off tends nothing; Ask decides them and lists each answer under
 	// status.needsYou for a prompt to confirm; On applies them. Unset is the
-	// operator's default, Off for now.
+	// operator's default, Ask.
 	// +kubebuilder:validation:Enum=Off;Ask;On
 	// +optional
 	Autopilot string `json:"autopilot,omitempty"`

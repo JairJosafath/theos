@@ -562,7 +562,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   round, the operator labels a retried issue `status/ready` in place of
   `status/needs-human`, or closes it, with a comment quoting the why and the
   round's prompts. See [plans/brief-failed-issues.md](plans/done/brief-failed-issues.md).
-- **A Brief looks after its own handed-back work** (#486, planned).
+- **A Brief looks after its own handed-back work** (#486).
   `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. The Brief watches
   only what it made: failed issues, its Containers' Tasks and Crews. What
   heals by itself (a usage limit, an agent-slot queue, a Standard change in
@@ -582,7 +582,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   shows one *Needs you* box (`needsYou` with `NeedsInput`), its tending
   rounds and its mode, and the create form lets the person choose the mode;
   the Factory view's *Needs a look* names the Brief that watches an item and
-  when it acts. See [plans/brief-autopilot.md](plans/brief-autopilot.md).
+  when it acts. See [plans/done/brief-autopilot.md](plans/done/brief-autopilot.md).
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a
