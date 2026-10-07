@@ -397,7 +397,13 @@ its own worktree, `.claude/worktrees/relay-maintainer`, on origin/main, under
 `.relay/maintain.lock`, and doesn't count against `RELAY_MAX_WORKERS`, but
 goes through `admit` like any session, except that it goes first: while it
 waits, `.relay/admit-first` holds its PID and no worker takes the start slot
-(#262). It logs to `.relay/relay-maintainer.log`.
+(#262). It runs once per project, not once per device (#526): before its
+session it takes the maintainer lease, a `<!-- c4-maintainer -->` comment on
+the Maintainer report issue that it refreshes every `GH_BEAT_EVERY` seconds
+and deletes when the session ends. While another device holds a live one it
+starts nothing and logs the holder; one past `C4_LEASE_TTL`, or this host's
+own (a crashed maintainer's), is taken over. It logs to
+`.relay/relay-maintainer.log`.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
 the triage's reasons with `proposed --since` against a stubbed GitHub, and its
 CI rounds with `gh` faked.
