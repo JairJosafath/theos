@@ -86,9 +86,13 @@ func BriefPhaseOf(f BriefRoundFacts) string {
 }
 
 // BriefIssueLabels are the labels a plan's issue is filed with: the planner's,
-// with every status/* replaced by status/ready, each once (B11).
+// with every status/* replaced by status/ready, each once (B11); a by-hand
+// issue's by status/needs-human, since no Crew may pick it.
 func BriefIssueLabels(labels []string) []string {
 	out := []string{LabelReady}
+	if IsByHand(labels) {
+		out[0] = LabelNeedsHuman
+	}
 	for _, l := range labels {
 		l = strings.TrimSpace(l)
 		if l == "" || strings.HasPrefix(l, "status/") || slices.Contains(out, l) {
