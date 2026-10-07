@@ -26,11 +26,15 @@ pull request.
    kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
    ```
 
-2. **Project namespaces.** Each project lives in a namespace of its name; make
-   the ones you list in `gitea.projects`:
+2. **The agents' token.** Make it once, in the release's namespace; the
+   operator copies it into every project namespace and keeps the copies in
+   step:
 
    ```bash
-   kubectl create namespace webshop
+   kubectl create namespace c4-factory-system
+   claude setup-token   # then:
+   read -rs -p 'Claude token: ' T; echo; printf '%s' "$T" | kubectl -n c4-factory-system \
+     create secret generic claude-credentials --from-file=CLAUDE_CODE_OAUTH_TOKEN=/dev/stdin; unset T
    ```
 
 3. **The release.** On a fresh cluster Gitea's image may still be pulling when
@@ -46,7 +50,16 @@ The release requests about 1.1 CPU and 1.4 GiB of memory on top of
 Kubernetes' own, most of it Gitea and the `go` runner; on a two-CPU node, lower
 `runners.go.resources` or turn the runner off (`runners.go.enabled=false`).
 
-That is the whole factory. Gitea runs in namespace `gitea`, at
+That is the whole factory. The chart made namespace `webshop`, labeled
+`c4.factory.io/shared-secrets=true` and kept on uninstall like Gitea's; a
+project namespace that already exists and the release didn't make (by hand, as
+on v0.5.0) is left as it is, and the seed only adds the label
+(`projectNamespaces.create=false`: you make every one). Upgrading from v0.5.0,
+the `claude-credentials` and `ghcr` you made in a project namespace by hand
+stay that project's own, so a token rotated in `c4-factory-system` doesn't
+reach it; delete them there to take the shared ones. The operator copies
+the release namespace's `claude-credentials` and pull secrets into each
+labeled namespace. Gitea runs in namespace `gitea`, at
 `http://gitea.gitea.svc.cluster.local:3000` inside the cluster; the seed Job,
 a hook after every install and upgrade, pushed the tagged templates to
 organization `templates`, made organization `webshop`, stored its token in
@@ -56,8 +69,10 @@ namespace had none; it never changes one), and the chart made GitProvider
 template the seed pushed pinned to its tag (`kubectl -n webshop get
 c4catalog`), and Agents `planner`, `designer`, `reviewer` (Opus) and
 `implementer` (Sonnet) on the release's `agent-go` image. The Agents read
-Secret `webshop/claude-credentials`, key `CLAUDE_CODE_OAUTH_TOKEN` (from
-`claude setup-token`), which you make; the chart holds no token. Describe the
+Secret `webshop/claude-credentials`, key `CLAUDE_CODE_OAUTH_TOKEN`: the
+operator's copy of step 2's, or the project's own when you make one there,
+which the operator never changes; the chart holds no token, and Project
+`webshop`'s condition `SecretsShared` says which one it has. Describe the
 app in a Brief (the UI's box) and the planner writes the model, or apply your
 own Systems and Containers to `webshop`; either way their repositories appear
 in Gitea. The admin's password is in
@@ -81,10 +96,10 @@ kubectl -n gitea rollout restart deployment/gitea-runner-base deployment/gitea-r
 With `gitea.admin.existingSecret` the admin is your Secret: change its
 password there and restart Deployment `gitea`.
 
-A new project later: create its namespace, add it to `gitea.projects` and
-`helm upgrade` with the same values. `helm uninstall` keeps namespace `gitea`
-and Gitea's volume, so the repositories survive a reinstall; delete the
-namespace to drop them.
+A new project later: add it to `gitea.projects` and `helm upgrade` with the
+same values. `helm uninstall` keeps namespace `gitea` and Gitea's volume, so
+the repositories survive a reinstall, and the project namespaces with their
+models; delete a namespace to drop it.
 
 ### Private images
 
@@ -105,12 +120,11 @@ The images come in one of two ways:
   (the operator):
 
   ```bash
-  for ns in c4-factory-system gitea webshop; do
+  for ns in c4-factory-system gitea; do
     kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
     kubectl -n $ns create secret docker-registry ghcr --docker-server=ghcr.io \
       --docker-username=USER --docker-password="$(gh auth token)"
   done
-  kubectl -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr"}]}'
   helm install ... --set gitea.createNamespace=false \
     --set 'global.imagePullSecrets[0].name=ghcr' \
     --set 'manager.imagePullSecrets[0].name=ghcr'
@@ -119,9 +133,9 @@ The images come in one of two ways:
   The Secret has to exist before Gitea's pods, so you make namespace `gitea`
   and the chart doesn't (`gitea.createNamespace=false`). The agent images
   (`agent-base`, `agent-go`) run in Sandboxes the operator makes in each
-  project namespace, outside the chart, as the namespace's `default`
-  ServiceAccount; the `patch` lets them pull with the Secret. Repeat both for
-  every project namespace.
+  project namespace: it copies each of `global.imagePullSecrets` there from
+  the release's namespace and names it in their pods, so a project namespace
+  needs no Secret or ServiceAccount patch of its own.
 
 - **Kind: load them.** `docker login ghcr.io`, `docker pull` each image at the
   release's version and `kind load docker-image` it into the cluster; no pull
@@ -160,14 +174,15 @@ as the run's artifact); a failing release gets an issue titled
 | `gitea.namespace`, `gitea.createNamespace` | Gitea's namespace (default `gitea`) and whether the chart makes it |
 | `gitea.image`, `gitea.resources`, `gitea.persistence`, `gitea.config` | Gitea's image, its share of the node, its volume and extra `GITEA__section__KEY` settings |
 | `gitea.admin` | the admin's name and email; `existingSecret` for one of your own, else the password is generated |
-| `gitea.projects` | project names: an organization, Secret `gitea-credentials`, GitProvider `gitea` and, when there is none, Project `<name>` in each namespace |
+| `gitea.projects` | project names: a namespace each (see `projectNamespaces.create`), labeled `c4.factory.io/shared-secrets=true` by the chart or the seed, with an organization, Secret `gitea-credentials`, GitProvider `gitea` and, when there is none, Project `<name>` |
+| `projectNamespaces.create` | make each of `gitea.projects`' namespaces, kept on uninstall, unless it exists and isn't the release's (default on); off, you make them and the seed labels them |
 | `gitea.seed.image`, `gitea.seed.waitSeconds` | the seed Job's image (default tag `Chart.appVersion`) and how long it waits for Gitea |
 | `catalog.enabled`, `catalog.entries` | for each of `gitea.projects`, the catalog entries of the templates the seed pushes (Frameworks, Standards, Compute, Deployments, Connectors), each pinned to its tag in `templates/versions.txt` (default on) |
-| `agents.enabled`, `agents.image`, `agents.credentialsSecret` | for each of `gitea.projects`, Agents `planner`, `designer`, `implementer` and `reviewer` on the agent image (default `agent-go`, tag `Chart.appVersion`), reading the Secret you make (default `claude-credentials`) (default on) |
+| `agents.enabled`, `agents.image`, `agents.credentialsSecret` | for each of `gitea.projects`, Agents `planner`, `designer`, `implementer` and `reviewer` on the agent image (default `agent-go`, tag `Chart.appVersion`), reading the Secret you make once in the release's namespace (default `claude-credentials`), which the operator copies into each project namespace (default on) |
 | `agents.standIn` | for each of `gitea.projects`, Agent `stand-in` on the same image: no model and no Secret, it plans from the catalog and makes a scripted change, to show the loop without a token (default on; off with `agents.enabled=false` too) |
 | `agents.<role>` | each Agent's `description`, `model` (Opus, Sonnet for the implementer; a Fable model fails the install), `maxRounds`, `timeoutMinutes` and `resources` |
 | `runners.base`, `runners.go` | the CI runners: `enabled`, `image`, `resources`, `workSize`, `tmpSize`; `go.goCache` is the node directory of its Go build cache |
-| `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners; the operator's are `manager.imagePullSecrets` |
+| `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners, which the operator also copies into each project namespace for the agents' pods; the operator's are `manager.imagePullSecrets` |
 | `gitProviders` | more GitProviders to create, each reading a Secret you make (`existingSecret`), below |
 | `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default) |
 | `metrics`, `prometheus`, `networkPolicy` | the generated metrics endpoint, ServiceMonitor and NetworkPolicy |
