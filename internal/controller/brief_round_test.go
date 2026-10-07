@@ -657,6 +657,20 @@ spec:
 				HaveField("Message", ContainSubstring("Container checker")))
 		}).Should(Succeed())
 		Expect(gitFake.closeIssue(ns, "linter", int(getBrief(Default, ns).Status.Issues[0].Number))).To(Succeed())
+
+		By("a reconcile reading a cached Brief that doesn't show the recorded issue yet (#501)")
+		stale := getBrief(Default, ns)
+		recorded := stale.Status.Issues
+		stale.Status.Issues = nil
+		linter := &c4v1alpha1.Container{}
+		Expect(k8sClient.Get(ctx, key(ns, "linter"), linter)).To(Succeed())
+		r := &BriefReconciler{Client: k8sClient, APIReader: k8sClient, Git: gitFake}
+		run := &roundApply{brief: stale, orig: stale.DeepCopy(), round: "1"}
+		Expect(r.fileIssues(ctx, run, linter, []model.PlanIssue{
+			{N: 1, Container: "linter", Title: "Lint rule 1", Body: linterIssue(1)}})).To(Succeed())
+		Expect(gitFake.openIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
+		Expect(getBrief(Default, ns).Status.Issues).To(Equal(recorded))
+
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.openIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefApplying))

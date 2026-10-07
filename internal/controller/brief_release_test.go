@@ -76,6 +76,12 @@ func linterCrew(g Gomega, ns string) *c4v1alpha1.Crew {
 	return crew
 }
 
+// wholeRound is how long a spec waits for a round to apply end to end: the
+// plan accepted, the Container scaffolded, its Crew made, the issues filed
+// and the plan merged, each by an event to the next controller. That takes
+// about 3s on an idle device and was seen past 10s on a loaded one (#501).
+const wholeRound = 30 * time.Second
+
 // Step 4 of docs/plans/done/brief-releases.md: a released app's Crew tags, prepares
 // and publishes, and its rounds' issues go into release milestones.
 var _ = Describe("Brief releases", func() {
@@ -92,7 +98,7 @@ var _ = Describe("Brief releases", func() {
 
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).Should(Succeed())
+		}).WithTimeout(wholeRound).Should(Succeed())
 		crew := linterCrew(Default, ns)
 		Expect(crew.Spec.TagReleases).To(BeTrue())
 		Expect(crew.Spec.PrepareReleases).To(BeTrue())
@@ -117,7 +123,7 @@ var _ = Describe("Brief releases", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).Should(Succeed())
+		}).WithTimeout(wholeRound).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.2.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(2))
 		Expect(linterCrew(Default, ns).Spec.TagReleases).To(BeTrue())
