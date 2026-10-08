@@ -72,7 +72,13 @@ c4catalog`), and Agents `planner`, `designer`, `reviewer` (Opus) and
 Secret `webshop/claude-credentials`, key `CLAUDE_CODE_OAUTH_TOKEN`: the
 operator's copy of step 2's, or the project's own when you make one there,
 which the operator never changes; the chart holds no token, and Project
-`webshop`'s condition `SecretsShared` says which one it has. Describe the
+`webshop`'s condition `SecretsShared` says which one it has. The chart
+renders the GitProvider, the catalog and the Agents into ConfigMap
+`gitea/c4factory-catalog`, and the seed applies them with server-side apply
+(field manager `c4factory-chart`), so a `helm upgrade` changes them in place:
+they keep their UIDs, a running Task keeps its Agent, a field you set that
+the chart doesn't (an Agent's `env`) stays, and a field the chart sets is the
+chart's. One the chart stops rendering stays until you delete it. Describe the
 app in a Brief (the UI's box) and the planner writes the model, or apply your
 own Systems and Containers to `webshop`; either way their repositories appear
 in Gitea. The admin's password is in
@@ -218,4 +224,6 @@ that still sets them fails to render and says what to do.
 The CRDs are part of the release, so these are `post-install` and
 `post-upgrade` hooks, created once the CRDs exist. Every `helm upgrade` deletes
 and recreates them, so a Container scaffolding at that moment may wait a
-reconcile for its GitProvider; `helm uninstall` leaves them in place.
+reconcile for its GitProvider; `helm uninstall` leaves them in place. The
+GitProviders `gitea.projects` makes are not hooks: the seed applies them in
+place, as above.

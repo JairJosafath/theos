@@ -4,10 +4,12 @@
 # The seed (hack/seed/seed.sh): the templates organization and its tagged
 # template repositories, and an organization, Secret gitea-credentials and,
 # when its namespace has none, a Project for each project, whose namespace it
-# labels to receive the Secrets the operator shares. Not the runners' token: Gitea's pod makes that one. A hook
-# after every install and upgrade: it changes nothing already in place, and a new
-# chart version brings new template tags. A failed Job stays for its log until
-# the next upgrade replaces it.
+# labels to receive the Secrets the operator shares. Not the runners' token:
+# Gitea's pod makes that one. Last, it applies ConfigMap c4factory-catalog's
+# GitProviders, catalog and Agents in place. A hook after every install and
+# upgrade: it changes nothing already in place but the fields the chart sets,
+# and a new chart version brings new template tags. A failed Job stays for its
+# log until the next upgrade replaces it.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -52,6 +54,8 @@ spec:
               value: "true"
             - name: SHARE_SECRETS
               value: "true"
+            - name: CATALOG
+              value: /catalog/objects.yaml
             - name: GITEA_USERNAME
               valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: username}}
             - name: GITEA_PASSWORD
@@ -67,9 +71,15 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: catalog
+              mountPath: /catalog
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: catalog
+          configMap:
+            name: c4factory-catalog
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -112,8 +122,9 @@ subjects:
 {{- end }}
 {{- range .Values.gitea.projects | uniq }}
 ---
-# The seed may create Secret gitea-credentials and change only that one, and
-# create the project's Project when the namespace has none.
+# The seed may create Secret gitea-credentials and change only that one,
+# create the project's Project when the namespace has none, and apply the
+# GitProvider, catalog and Agents of ConfigMap c4factory-catalog.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -132,6 +143,9 @@ rules:
   - apiGroups: [c4.factory.io]
     resources: [projects]
     verbs: [get, create]
+  - apiGroups: [c4.factory.io]
+    resources: [gitproviders, agents, frameworks, standards, computes, deployments, connectors]
+    verbs: [get, list, create, patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

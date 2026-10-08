@@ -1,7 +1,8 @@
 # Build context for hack/seed/Dockerfile. BuildKit reads this file instead of the
-# repository's .dockerignore. Only the seed script and the templates go in.
+# repository's .dockerignore. Only the seed's scripts and the templates go in.
 **
 !hack/seed/seed.sh
+!hack/seed/catalog.sh
 !templates
 # Leftovers from trying a template by hand.
 templates/**/.git

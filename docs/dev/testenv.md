@@ -505,9 +505,10 @@ there with its phase and its `Ready` condition, that the new manager logs no
 `Reconciler error` in its first two minutes (optimistic-lock conflicts
 aside), that Secrets `gitea-admin` and `gitea-runner` are unchanged, and that
 every Gitea repository is still there with its earlier head commit (the seed
-may add template tags). The chart recreates its hooks (GitProviders, the
-catalog) on every upgrade, so objects are matched by kind, namespace and name,
-not uid. On the first release there is no previous one, and the
+may add template tags). The chart up to v0.12.0 recreated its GitProviders,
+catalog and Agents as hooks on every upgrade; later ones have the seed apply
+them in place, keeping their uid, but objects are still matched by kind,
+namespace and name, not uid. On the first release there is no previous one, and the
 check is skipped and says so. A release whose chart has no catalog (v0.3.0 and
 older) has no `first-app` of its own that works on it, so either check takes
 the newest samples that made their own catalog and Agents, from history.

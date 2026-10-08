@@ -13,6 +13,9 @@
 #   7. with SHARE_SECRETS=true (the Helm chart), labels each project's namespace
 #      c4.factory.io/shared-secrets=true, which opts it in to the Secrets the
 #      operator shares (claude-credentials, the pull Secrets).
+#   8. with CATALOG set (the Helm chart), applies that file's GitProviders,
+#      catalog and Agents in place (catalog.sh), last, once the templates are
+#      tagged and the credentials stored.
 # With CREDENTIALS_DIR set (`make seed-local`), step 4 writes each project's
 # token to CREDENTIALS_DIR/PROJECT.env instead, step 5 is skipped, and the
 # script needs no kubectl.
@@ -52,6 +55,9 @@ if [[ -n $CREDENTIALS_DIR ]]; then PROJECT_OBJECTS=false; fi
 SHARE_SECRETS=${SHARE_SECRETS:-false}
 if [[ -n $CREDENTIALS_DIR ]]; then SHARE_SECRETS=false; fi
 SHARED_LABEL=c4.factory.io/shared-secrets
+# The chart's ConfigMap c4factory-catalog, mounted; empty: none.
+CATALOG=${CATALOG:-}
+if [[ -n $CREDENTIALS_DIR ]]; then CATALOG=""; fi
 
 export GIT_AUTHOR_NAME="C4 Factory seed" GIT_AUTHOR_EMAIL="seed@c4.factory.io"
 export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
@@ -347,6 +353,10 @@ main() {
     if [[ $SHARE_SECRETS == true ]]; then ensure_shared_label "$project"; fi
   done
   if [[ -n $RUNNER_SECRET ]]; then ensure_runner_token; fi
+  if [[ -n $CATALOG ]]; then
+    log "Applying the GitProviders, catalog and Agents in $CATALOG"
+    "$(dirname "$0")/catalog.sh" "$CATALOG"
+  fi
   if [[ -n $PROJECTS ]]; then
     log "Done: organizations $TEMPLATE_ORG and $PROJECTS, templates tagged, credentials${RUNNER_SECRET:+ and runner token} stored"
   else
