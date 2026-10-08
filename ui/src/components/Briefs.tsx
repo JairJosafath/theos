@@ -22,6 +22,7 @@ import {
   type BriefView,
 } from '../model/brief'
 import { plural, timeAgo } from '../model/describe'
+import { UsageLine } from './bits'
 import { ExternalLinkIcon, RepoIcon, WarningIcon } from './icons'
 
 /** How many items of a long list show before "N more"; chips are smaller, so more of them. */
@@ -243,10 +244,12 @@ function BriefCard({
           <h3 className="panel-title small-title mono">{view.name}</h3>
           <span className="brief-meta">
             {view.round ? `Round ${view.round}` : 'No round yet'}
-            {view.cost ? (
+            {view.usage ? (
               <>
                 <span className="sep">·</span>
-                <span title="What planning cost over all rounds">{view.cost}</span>
+                <span title="What planning used over all rounds">
+                  <UsageLine usage={view.usage} />
+                </span>
               </>
             ) : null}
             <span className="sep">·</span>
@@ -354,6 +357,28 @@ function BriefDetails({ view, now }: { view: BriefView; now: number }) {
                     {a.text}
                   </div>
                 ))}
+              </li>
+            ))}
+          />
+        </>
+      ) : null}
+      {view.rounds.length ? (
+        <>
+          <h4 className="section-title">
+            Rounds <span className="section-hint">newest first, with what each round’s planner used</span>
+          </h4>
+          <Clipped
+            className="brief-list brief-issues brief-rounds"
+            items={view.rounds.map((r) => (
+              <li key={r.round}>
+                <span className="mono">Round {r.round}</span>
+                {r.outcome ? <span className="field-hint"> · {r.outcome}</span> : null}
+                {r.summary ? <span className="brief-issue-title"> {r.summary}</span> : null}
+                {r.usage ? (
+                  <div className="field-hint">
+                    <UsageLine usage={r.usage} />
+                  </div>
+                ) : null}
               </li>
             ))}
           />

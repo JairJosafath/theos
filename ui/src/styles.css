@@ -2499,6 +2499,16 @@ textarea.input {
   margin: 0 5px;
 }
 
+.usage .sep {
+  margin: 0 5px;
+  opacity: 0.6;
+}
+
+.usage-past {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .brief-idea {
   margin-top: 8px;
   font-size: 13.5px;
