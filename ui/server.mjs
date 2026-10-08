@@ -8,12 +8,13 @@
 //   GET /...              files from dist/
 //
 //   POST  /k8s/apis/c4.factory.io/v1alpha1/namespaces/<ns>/briefs          create a Brief
-//   PATCH /k8s/apis/c4.factory.io/v1alpha1/namespaces/<ns>/briefs/<name>   append a prompt
+//   PATCH /k8s/apis/c4.factory.io/v1alpha1/namespaces/<ns>/briefs/<name>   append a prompt, or pause or resume
 //
-// Read-only but for two writes: GET reaches the API only under
+// Read-only but for three writes: GET reaches the API only under
 // /apis/c4.factory.io/, and the only writes are creating a Brief in a
-// namespace that holds a Project, and a JSON patch whose one operation is
-// `add` at /spec/prompts/- on a Brief (see briefWrite). Every other method on
+// namespace that holds a Project, and a JSON patch on a Brief whose one
+// operation is `add` of a prompt at /spec/prompts/- or of a boolean at
+// /spec/paused (see briefWrite). Every other method on
 // /k8s gets 405, every other write 403. The browser's own headers (cookies,
 // Authorization, impersonation) never go upstream.
 //
@@ -42,8 +43,9 @@ const ALLOWED_PREFIX = '/apis/c4.factory.io/'
 const BRIEFS_PATH =
   /^\/apis\/c4\.factory\.io\/v1alpha1\/namespaces\/([a-z0-9-]{1,63})\/briefs(?:\/([a-z0-9.-]{1,253}))?$/
 
-/** The one JSON patch path the UI may write: append a prompt. */
+/** The JSON patch paths the UI may write: append a prompt, and pause or resume. */
 const PROMPT_PATH = '/spec/prompts/-'
+const PAUSED_PATH = '/spec/paused'
 
 /** Most bytes of a write's body; an idea is at most 4000 characters. */
 const MAX_WRITE_BYTES = 64 * 1024
@@ -255,14 +257,15 @@ function isCrossSite(req) {
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
 
 /**
- * The UI's only two writes, checked before anything reaches the API:
+ * The UI's only three writes, checked before anything reaches the API:
  *
  *   POST  .../namespaces/<ns>/briefs         application/json, a Brief of
  *         c4.factory.io/v1alpha1 in <ns>, and <ns> holds a Project. Only the
  *         Brief's name (or generateName) and spec go upstream: no labels,
  *         owners or finalizers.
  *   PATCH .../namespaces/<ns>/briefs/<name>  application/json-patch+json,
- *         exactly [{"op":"add","path":"/spec/prompts/-","value":"<prompt>"}].
+ *         exactly [{"op":"add","path":"/spec/prompts/-","value":"<prompt>"}],
+ *         or [{"op":"add","path":"/spec/paused","value":<true or false>}].
  *
  * Everything else is refused here and, in the cluster, by RBAC too. What a
  * Brief may say (lengths, append-only prompts) is the CRD's to check, not this
@@ -277,7 +280,7 @@ async function briefWrite(req, res, apiPath, upstream, log) {
       res,
       403,
       'Forbidden',
-      'The C4 Factory UI writes only two things: POST a Brief to a namespace, or PATCH a Brief to add a prompt',
+      'The C4 Factory UI writes only three things: POST a Brief to a namespace, or PATCH a Brief to add a prompt or to pause or resume it',
     )
   }
   if (isCrossSite(req)) return sendStatus(res, 403, 'Forbidden', 'Writes come only from the UI itself')
@@ -324,19 +327,21 @@ async function briefWrite(req, res, apiPath, upstream, log) {
   }
 
   const op = Array.isArray(body) && body.length === 1 ? body[0] : undefined
-  if (
-    !isObject(op) ||
-    Object.keys(op).sort().join() !== 'op,path,value' ||
-    op.op !== 'add' ||
-    op.path !== PROMPT_PATH ||
-    typeof op.value !== 'string'
-  ) {
+  const shaped = isObject(op) && Object.keys(op).sort().join() === 'op,path,value' && op.op === 'add'
+  const addsPrompt = shaped && op.path === PROMPT_PATH && typeof op.value === 'string'
+  const pauses = shaped && op.path === PAUSED_PATH && typeof op.value === 'boolean'
+  if (!addsPrompt && !pauses) {
     return sendStatus(
       res,
       403,
       'Forbidden',
-      `The UI patches a Brief only with one operation: add a prompt (a string) at ${PROMPT_PATH}`,
+      `The UI patches a Brief only with one operation: add a prompt (a string) at ${PROMPT_PATH}, or a boolean at ${PAUSED_PATH}`,
     )
+  }
+  // An add at /spec/paused sets the field whether or not it is there.
+  if (pauses) {
+    log(`${op.value ? 'Pausing' : 'Resuming'} Brief ${namespace}/${name}`)
+    return forwardWrite(res, upstream, 'PATCH', apiPath, 'application/json-patch+json', [op])
   }
   // A JSON patch can't append to a list that isn't there, and a Brief without
   // prompts has none: then the patch adds the list, guarded by the

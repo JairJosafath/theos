@@ -1,6 +1,6 @@
-// The UI's only two writes: create a Brief from an idea, and add a follow-up
-// prompt to one. server.mjs passes exactly these two requests on and nothing
-// else; the CRD's rules decide whether they are accepted.
+// The UI's only three writes: create a Brief from an idea, add a follow-up
+// prompt to one, and pause or resume one. server.mjs passes exactly these
+// requests on and nothing else; the CRD's rules decide whether they are accepted.
 
 import { GROUP, VERSION, resourcePath, RESOURCES, type Brief, type BriefAutopilot } from './types'
 import { errorFromResponse } from './watch'
@@ -36,9 +36,14 @@ export function briefManifest(namespace: string, name: string, idea: string, opt
   }
 }
 
-/** The JSON patch that appends one prompt; the only patch server.mjs passes on. */
+/** The JSON patch that appends one prompt; server.mjs passes on only this and pausedPatch. */
 export function promptPatch(prompt: string): [{ op: 'add'; path: '/spec/prompts/-'; value: string }] {
   return [{ op: 'add', path: '/spec/prompts/-', value: prompt }]
+}
+
+/** The JSON patch that pauses (true) or resumes (false) a Brief and every Crew it made. */
+export function pausedPatch(paused: boolean): [{ op: 'add'; path: '/spec/paused'; value: boolean }] {
+  return [{ op: 'add', path: '/spec/paused', value: paused }]
 }
 
 const DNS_LABEL = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
@@ -85,11 +90,13 @@ export function nameFromIdea(idea: string, taken: string[]): string {
   }
 }
 
-/** Creates Briefs and adds prompts to them; rejects with the API's message when it refuses. */
+/** Creates Briefs, adds prompts to them and pauses or resumes them; rejects with the API's message when it refuses. */
 export interface BriefWriter {
   /** Each unset option leaves the factory's default. */
   create(namespace: string, name: string, idea: string, options?: BriefOptions): Promise<void>
   addPrompt(namespace: string, name: string, prompt: string): Promise<void>
+  /** Sets spec.paused: true pauses the Brief and its Crews, false resumes them. */
+  setPaused(namespace: string, name: string, paused: boolean): Promise<void>
 }
 
 /** Writes through the /k8s proxy, relative to the page like the watches. */
@@ -111,11 +118,19 @@ export class LiveBriefWriter implements BriefWriter {
   }
 
   async addPrompt(namespace: string, name: string, prompt: string): Promise<void> {
+    await this.patch(namespace, name, promptPatch(prompt))
+  }
+
+  async setPaused(namespace: string, name: string, paused: boolean): Promise<void> {
+    await this.patch(namespace, name, pausedPatch(paused))
+  }
+
+  private async patch(namespace: string, name: string, ops: unknown[]): Promise<void> {
     const path = `${resourcePath(RESOURCES.briefs, namespace)}/${encodeURIComponent(name)}`
     await this.send(`${this.baseUrl}${path}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
-      body: JSON.stringify(promptPatch(prompt)),
+      body: JSON.stringify(ops),
     })
   }
 

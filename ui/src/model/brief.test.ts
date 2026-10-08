@@ -10,6 +10,7 @@ import {
   describeUsage,
   formatCost,
   formatTokens,
+  pauseAction,
   sortBriefs,
 } from './brief'
 
@@ -199,6 +200,22 @@ describe('describeBrief', () => {
     expect(view.failure).toBe('The plan is invalid.')
   })
 
+  it('says what still runs while paused, from the Paused condition, and nothing once resumed', () => {
+    const view = (paused: boolean, status?: 'True' | 'False', message = 'Paused; 1 Task still running: shop-api-4') =>
+      describeBrief({
+        ...brief('shop', ''),
+        spec: { idea: 'Idea', paused },
+        status: { conditions: status ? [{ type: 'Paused', status, reason: 'Paused', message }] : [] },
+      })
+    expect(view(true, 'True')).toMatchObject({ paused: true, pausedNote: 'Paused; 1 Task still running: shop-api-4' })
+    expect(view(true, 'True', 'Paused; nothing is running').pausedNote).toBe('Paused; nothing is running')
+    // Just paused: the operator has not set the condition yet, or still says Not paused.
+    expect(view(true).pausedNote).toBe('Pausing; the factory has not said yet what still runs.')
+    expect(view(true, 'False', 'Not paused').pausedNote).toBe('Pausing; the factory has not said yet what still runs.')
+    expect(view(false, 'False', 'Not paused')).toMatchObject({ paused: false, pausedNote: undefined })
+    expect(view(false, 'True')).toMatchObject({ paused: false, pausedNote: undefined })
+  })
+
   it('copes with a Brief the factory has not reported on', () => {
     const view = describeBrief(brief('new', ''))
     expect(view).toMatchObject({
@@ -208,9 +225,18 @@ describe('describeBrief', () => {
       created: [],
       issues: [],
       round: 0,
+      paused: false,
+      pausedNote: undefined,
       usage: undefined,
       rounds: [],
     })
+  })
+})
+
+describe('pauseAction', () => {
+  it('pauses a running Brief and resumes a paused one', () => {
+    expect(pauseAction({ paused: false })).toMatchObject({ label: 'Pause', paused: true })
+    expect(pauseAction({ paused: true })).toMatchObject({ label: 'Resume', paused: false })
   })
 })
 

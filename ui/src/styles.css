@@ -2483,6 +2483,18 @@ textarea.input {
   min-width: 0;
 }
 
+.brief-head-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.button-small {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
 .brief-title .panel-title {
   font-size: 14.5px;
   overflow-wrap: anywhere;

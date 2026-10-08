@@ -86,9 +86,9 @@ subjects:
   name: c4-factory-ui
   namespace: c4-factory-ui
 ---
-# The UI's only two writes (ui/server.mjs checks them first): create a Brief,
-# the box for an idea, and patch one to append a follow-up prompt. Nothing
-# else: no update, delete or status, no other kind.
+# The UI's only three writes (ui/server.mjs checks them first): create a
+# Brief, the box for an idea, and patch one to append a follow-up prompt or to
+# set spec.paused. Nothing else: no update, delete or status, no other kind.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

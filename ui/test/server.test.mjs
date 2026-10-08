@@ -195,7 +195,7 @@ describe('server.mjs', () => {
     })
   }
 
-  describe('the two writes', () => {
+  describe('the three writes', () => {
     const briefsPath = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs'
     const brief = {
       apiVersion: 'c4.factory.io/v1alpha1',
@@ -265,6 +265,19 @@ describe('server.mjs', () => {
       ])
     })
 
+    it('pauses and resumes a Brief with exactly the patch it was sent', async () => {
+      for (const value of [true, false]) {
+        seen.length = 0
+        const res = await write('PATCH', `${briefsPath}/lens`, [{ op: 'add', path: '/spec/paused', value }])
+        assert.equal(res.status, 200)
+        assert.deepEqual(
+          seen.map((r) => [r.method, r.url]),
+          [['PATCH', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/lens?fieldManager=c4-factory-ui']],
+        )
+        assert.deepEqual(seen[0].body, [{ op: 'add', path: '/spec/paused', value }])
+      }
+    })
+
     it("passes the API's refusal back, such as a Brief that isn't there", async () => {
       seen.length = 0
       const res = await write('PATCH', `${briefsPath}/gone`, prompt())
@@ -287,6 +300,22 @@ describe('server.mjs', () => {
       ],
       ['a patch removing prompts', 'PATCH', `${briefsPath}/lens`, [{ op: 'remove', path: '/spec/prompts' }], 403],
       ['a patch with a second operation', 'PATCH', `${briefsPath}/lens`, [...prompt(), ...prompt()], 403],
+      [
+        'a patch pausing with a string',
+        'PATCH',
+        `${briefsPath}/lens`,
+        [{ op: 'add', path: '/spec/paused', value: 'true' }],
+        403,
+      ],
+      ['a patch removing paused', 'PATCH', `${briefsPath}/lens`, [{ op: 'remove', path: '/spec/paused' }], 403],
+      [
+        'a pause with a prompt',
+        'PATCH',
+        `${briefsPath}/lens`,
+        [{ op: 'add', path: '/spec/paused', value: true }, ...prompt()],
+        403,
+      ],
+
       [
         'a patch adding a list as the prompt',
         'PATCH',

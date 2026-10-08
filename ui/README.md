@@ -3,8 +3,9 @@
 A view of a C4 Factory project, drawn live from the custom resources.
 Milestone 6 in [docs/design.md](../docs/design.md#mvp-v1-plan): someone who has
 never used kubectl can read the story in a browser. It reads everything and
-changes only two things: it creates a Brief from an app idea and adds a
-follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)).
+changes only three things: it creates a Brief from an app idea, adds a
+follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)),
+and pauses or resumes one ([docs/plans/upgrade-in-place.md](../docs/plans/upgrade-in-place.md)).
 
 - **Briefs**, above the views: a _Describe an app_ box that creates a Brief (an
   idea and a name, suggested from the idea, and optionally its autopilot mode
@@ -13,7 +14,9 @@ follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)
   the objects and issues it made, each app's releases (on or off, the
   latest tag linking to its Gitea release, and where it was published, linking to
   the GitHub release, and how many issues its crew works on at once), its prompts (those not yet planned marked
-  _next round_), its repository and cost, and a field to add a prompt. The API's
+  _next round_), its repository and cost, a field to add a prompt, and a Pause or Resume
+  button that sets `spec.paused`; while paused, the card shows its `Paused`
+  condition: which Tasks still run, or that nothing does. The API's
   answer shows as is when it refuses. Only shown in a namespace with a Project.
 - **System context** (C4 level 1): the People and SoftwareSystems, the
   Relationships between them, each system's needs, KPIs and roll-up summary.
@@ -65,16 +68,17 @@ Other query parameters: `project=<namespace>`, `view=containers` or
 `view=factory`, `system=<name>` and `task=<namespace>/<name>`, so any view can
 be bookmarked. `?demo=1&view=factory` shows the factory view with every state.
 
-## Read-only but for two writes
+## Read-only but for three writes
 
 The UI enforces nothing; the rules live in the CRDs and the operator. It reads
-every C4 Factory kind and writes only two things: it creates a Brief, and it
-appends a prompt to one. Three layers keep it that way:
+every C4 Factory kind and writes only three things: it creates a Brief, it
+appends a prompt to one, and it pauses or resumes one. Three layers keep it
+that way:
 
-1. The browser sends GET requests to `/k8s/...` and `/k8s-watch`, plus the two
+1. The browser sends GET requests to `/k8s/...` and `/k8s-watch`, plus the three
    writes ([src/k8s/briefs.ts](src/k8s/briefs.ts)).
 2. [server.mjs](server.mjs) passes on only GET under `/apis/c4.factory.io/`,
-   and two writes:
+   and these writes:
    - `POST .../namespaces/<ns>/briefs`, `Content-Type: application/json`: a
      Brief, only into a namespace that holds a Project. Only its `name` (or
      `generateName`) and `spec` go upstream: no labels, annotations or owners.
@@ -83,6 +87,8 @@ application/json-patch+json`: a patch whose one operation is `add` at
      `/spec/prompts/-`. When the Brief has no prompts yet, the server sends the
      equivalent `add /spec/prompts`, guarded by a `test` of the
      resourceVersion it read.
+   - the same `PATCH`, whose one operation is `add` of `true` or `false` at
+     `/spec/paused`: Pause and Resume.
 
    A write whose `Origin` names another host is refused. Everything else is
    answered with 405 (other methods), 403 (other paths or bodies) or 415
@@ -142,7 +148,7 @@ src/k8s/watch.ts        list-then-watch: NDJSON events, reconnect with backoff, 
 src/k8s/mux.ts          many watches over one connection
 src/k8s/sources.ts      one watcher per kind, combined into a story snapshot
 src/k8s/health.ts       polls /factory/health while the factory view is open
-src/k8s/briefs.ts       the two writes: create a Brief, add a prompt; a name from the idea
+src/k8s/briefs.ts       the three writes: create a Brief, add a prompt, pause or resume; a name from the idea
 src/model/story.ts      resources -> diagram model (boxes, arrows, roll-ups)
 src/model/layout.ts     a small layered layout and edge routing
 src/model/describe.ts   plain-language wording for phases, conditions and times

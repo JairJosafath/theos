@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { briefManifest, isBriefName, LiveBriefWriter, nameFromIdea, promptPatch } from './briefs'
+import { briefManifest, isBriefName, LiveBriefWriter, nameFromIdea, pausedPatch, promptPatch } from './briefs'
 
 function respond(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -35,6 +35,11 @@ describe('briefManifest and promptPatch', () => {
 
   it('appends one prompt', () => {
     expect(promptPatch('Use Stripe')).toEqual([{ op: 'add', path: '/spec/prompts/-', value: 'Use Stripe' }])
+  })
+
+  it('sets spec.paused', () => {
+    expect(pausedPatch(true)).toEqual([{ op: 'add', path: '/spec/paused', value: true }])
+    expect(pausedPatch(false)).toEqual([{ op: 'add', path: '/spec/paused', value: false }])
   })
 })
 
@@ -103,6 +108,16 @@ describe('LiveBriefWriter', () => {
     expect(init.method).toBe('PATCH')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json')
     expect(init.body).toBe('[{"op":"add","path":"/spec/prompts/-","value":"Add a weekly summary"}]')
+  })
+
+  it.each([true, false])('PATCHes spec.paused to %s', async (paused) => {
+    const fetchImpl = vi.fn(async () => respond(200, {}))
+    await new LiveBriefWriter('k8s', fetchImpl).setPaused('webshop', 'plant-care', paused)
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/plant-care')
+    expect(init.method).toBe('PATCH')
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json')
+    expect(init.body).toBe(`[{"op":"add","path":"/spec/paused","value":${paused}}]`)
   })
 
   it("rejects with the API's message", async () => {

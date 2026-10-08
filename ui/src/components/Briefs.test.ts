@@ -6,7 +6,7 @@ import type { BriefWriter } from '../k8s/briefs'
 import type { Brief } from '../k8s/types'
 import { Briefs } from './Briefs'
 
-const writer: BriefWriter = { create: async () => {}, addPrompt: async () => {} }
+const writer: BriefWriter = { create: async () => {}, addPrompt: async () => {}, setPaused: async () => {} }
 
 describe('the Brief card', () => {
   const now = Date.parse('2026-10-07T12:00:00Z')
@@ -114,6 +114,26 @@ describe('the Brief card with an item that needs you', () => {
   it('neither clamps nor keeps the item on one line', () => {
     const item = html.slice(html.indexOf('brief-needs-you'), html.indexOf(why))
     expect(item).not.toMatch(/clamp|nowrap|ellipsis/)
+  })
+})
+
+describe('the Brief card paused or not', () => {
+  const now = Date.parse('2026-10-07T12:00:00Z')
+  const render = (briefs: Brief[]) =>
+    renderToStaticMarkup(createElement(Briefs, { briefs, namespace: DEMO_NAMESPACE, canCreate: false, writer, now }))
+  const story = demoStory(now).briefs
+  const paused = render(story.filter((b) => b.metadata.name === 'gift-cards'))
+  const running = render(story.filter((b) => b.metadata.name === 'returns'))
+
+  it("offers Resume on the demo's paused Brief and shows what still runs", () => {
+    expect(paused).toContain('aria-label="Resume brief gift-cards"')
+    expect(paused).toContain('Paused; 1 Task still running: gift-cards-api-3')
+    expect(paused).toContain('role="status"')
+  })
+
+  it('offers Pause on a Brief that is not paused, with no paused note', () => {
+    expect(running).toContain('aria-label="Pause brief returns"')
+    expect(running).not.toContain('brief-paused')
   })
 })
 

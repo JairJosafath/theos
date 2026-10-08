@@ -2,8 +2,8 @@
 // phases, a failed type check, agent and human Sessions (one Stale), a
 // Relationship added after scaffolding, and Crews working, paused and waiting
 // for their Container: the working one with a Sonnet implementer, an Opus
-// reviewer and Tasks made from issues; and Briefs planned, needing input and
-// planning. Used by demo mode (?demo=1), so the whole
+// reviewer and Tasks made from issues; and Briefs planned, needing input,
+// paused and planning. Used by demo mode (?demo=1), so the whole
 // UI can be seen and screenshotted without writing to a cluster.
 
 import type { StoryData } from '../k8s/sources'
@@ -879,6 +879,25 @@ export function demoStory(now: number): StoryData {
             'Which payment provider pays out redeemed points, the existing one or a new one? Add a prompt that says which.',
             ago(40 * 60),
           ),
+        ],
+      },
+    },
+    // Paused before an upgrade: its Crews start nothing new, and one Task still runs.
+    {
+      apiVersion: API_VERSION,
+      kind: 'Brief',
+      metadata: meta('gift-cards', ago(3 * 3600)),
+      spec: { idea: 'Customers buy gift cards and pay with them at checkout.', paused: true },
+      status: {
+        phase: 'Planned',
+        round: 1,
+        promptsPlanned: 0,
+        choices: ['Gift cards get their own gift-cards-api, with balances in orders-db.'],
+        created: [{ kind: 'Container', name: 'gift-cards-api' }],
+        repositoryURL: `${GITEA_WEB}/webshop/brief-gift-cards`,
+        conditions: [
+          cond('Planned', 'True', 'Applied', 'Round 1 applied', ago(2 * 3600)),
+          cond('Paused', 'True', 'Paused', 'Paused; 1 Task still running: gift-cards-api-3', ago(4 * 60)),
         ],
       },
     },
