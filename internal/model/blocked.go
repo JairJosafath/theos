@@ -48,15 +48,40 @@ func BlockedNote(summary string) string {
 	return ""
 }
 
-// notBlocked are the reasons, in lower case, that say nothing blocks the issue.
+// notBlocked are the first words, in lower case, of a reason that says
+// nothing blocks the issue.
 var notBlocked = map[string]bool{"none": true, "n/a": true, "na": true, "nothing": true, "no": true, "-": true}
 
+// notBlockedFiller are the words, in lower case, that may follow a notBlocked
+// first word without saying what blocks the issue ("No blockers.", "nothing
+// blocks this issue").
+var notBlockedFiller = map[string]bool{
+	"block": true, "blocks": true, "blocked": true, "blocking": true, "blocker": true, "blockers": true,
+	"this": true, "the": true, "issue": true, "task": true, "it": true, "me": true,
+	"here": true, "at": true, "all": true, "for": true, "now": true, "currently": true,
+}
+
 // saysNotBlocked reports whether a blocked line's reason says nothing blocks
-// the issue, in any case, with or without a full stop or Markdown emphasis.
+// the issue, in any case, with or without punctuation or Markdown emphasis:
+// its first word is one of notBlocked and every other word is filler
+// ("None!", "No blockers."). A reason that goes on to say something ("none
+// of the engine's releases has the fix") is a blocked note.
 func saysNotBlocked(reason string) bool {
-	r := strings.Trim(strings.TrimSpace(reason), "*_`")
-	r = strings.Trim(strings.TrimRight(r, "."), "*_`")
-	return notBlocked[strings.ToLower(strings.TrimSpace(r))]
+	var words []string
+	for w := range strings.FieldsSeq(strings.ToLower(reason)) {
+		if w = strings.Trim(w, ".,!?;:*_`'\"()"); w != "" {
+			words = append(words, w)
+		}
+	}
+	if len(words) == 0 || !notBlocked[words[0]] {
+		return false
+	}
+	for _, w := range words[1:] {
+		if !notBlockedFiller[w] {
+			return false
+		}
+	}
+	return true
 }
 
 // NoChangeNoReason is a round's error when the agent changed nothing and wrote
