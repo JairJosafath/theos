@@ -537,6 +537,48 @@ spec:
                 description: summary is the implementing agent's account of its latest
                   round.
                 type: string
+              tokens:
+                description: |-
+                  tokens is what the Task's agent runs used so far, over all rounds, and
+                  how large the largest session got.
+                properties:
+                  cacheRead:
+                    description: cacheRead are the prompt tokens read from the cache.
+                    format: int64
+                    type: integer
+                  cacheWrite:
+                    description: cacheWrite are the prompt tokens written to the cache.
+                    format: int64
+                    type: integer
+                  input:
+                    description: |-
+                      input are the prompt tokens that were neither read from nor written to
+                      the cache.
+                    format: int64
+                    type: integer
+                  largestSession:
+                    description: |-
+                      largestSession is how large the largest agent session got: the prompt
+                      of its biggest turn, in tokens.
+                    format: int64
+                    type: integer
+                  output:
+                    description: output are the tokens the agents wrote.
+                    format: int64
+                    type: integer
+                  runsWithout:
+                    description: |-
+                      runsWithout counts the agent runs whose agent didn't report their
+                      tokens; the other fields leave them out.
+                    format: int32
+                    type: integer
+                  sessionHandoffs:
+                    description: |-
+                      sessionHandoffs counts the agent sessions that handed their work to a
+                      fresh session.
+                    format: int32
+                    type: integer
+                type: object
             type: object
         required:
         - spec

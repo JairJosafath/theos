@@ -533,7 +533,7 @@ func (r *BriefReconciler) plannerNeedsInput(ctx context.Context, brief *c4v1alph
 }
 
 // recordRound adds the running round to the history as entry says it ended,
-// with what its Plan Task cost, once; the newest 20 are kept.
+// with what its Plan Task cost and used, once; the newest 20 are kept.
 func recordRound(status *c4v1alpha1.BriefStatus, task *c4v1alpha1.Task, entry c4v1alpha1.BriefRound) {
 	if roundOver(status) {
 		return
@@ -541,6 +541,10 @@ func recordRound(status *c4v1alpha1.BriefStatus, task *c4v1alpha1.Task, entry c4
 	entry.CostMilliUSD, entry.RunsWithoutCost = task.Status.CostMilliUSD, task.Status.RunsWithoutCost
 	status.CostMilliUSD += entry.CostMilliUSD
 	status.RunsWithoutCost += entry.RunsWithoutCost
+	if task.Status.Tokens != nil {
+		entry.Tokens = task.Status.Tokens.DeepCopy()
+		status.Tokens = addTokens(status.Tokens, model.TokenUsage(*entry.Tokens))
+	}
 	entry.Round = status.Round
 	entry.Summary = model.ClipSentences(entry.Summary, 1000)
 	entry.Choices = model.ClipList(entry.Choices, 50, 500)

@@ -193,3 +193,38 @@ type CheckStatus struct {
 	// +optional
 	URL string `json:"url,omitempty"`
 }
+
+// TokenUsage is what agent sessions used, in tokens, as the agents reported it.
+type TokenUsage struct {
+	// input are the prompt tokens that were neither read from nor written to
+	// the cache.
+	// +optional
+	Input int64 `json:"input,omitempty"`
+
+	// output are the tokens the agents wrote.
+	// +optional
+	Output int64 `json:"output,omitempty"`
+
+	// cacheRead are the prompt tokens read from the cache.
+	// +optional
+	CacheRead int64 `json:"cacheRead,omitempty"`
+
+	// cacheWrite are the prompt tokens written to the cache.
+	// +optional
+	CacheWrite int64 `json:"cacheWrite,omitempty"`
+
+	// largestSession is how large the largest agent session got: the prompt
+	// of its biggest turn, in tokens.
+	// +optional
+	LargestSession int64 `json:"largestSession,omitempty"`
+
+	// runsWithout counts the agent runs whose agent didn't report their
+	// tokens; the other fields leave them out.
+	// +optional
+	RunsWithout int32 `json:"runsWithout,omitempty"`
+
+	// sessionHandoffs counts the agent sessions that handed their work to a
+	// fresh session.
+	// +optional
+	SessionHandoffs int32 `json:"sessionHandoffs,omitempty"`
+}

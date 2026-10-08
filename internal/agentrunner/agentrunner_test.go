@@ -695,37 +695,128 @@ func TestClaudeAgentReportsTheCost(t *testing.T) {
 	// A shell script stands in for the CLI: it prints what the CLI would.
 	tests := []struct {
 		name, output string
-		want         Cost
+		milliUSD     int64
+		reported     bool
 		wantErr      bool
 	}{
-		{"a reported cost", `{"result": "done", "total_cost_usd": 0.31234}`, Cost{MilliUSD: 312, Reported: true}, false},
-		{"a reported cost of nothing", `{"result": "done", "total_cost_usd": 0}`, Cost{Reported: true}, false},
+		{"a reported cost", `{"result": "done", "total_cost_usd": 0.31234}`, 312, true, false},
+		{"a reported cost of nothing", `{"result": "done", "total_cost_usd": 0}`, 0, true, false},
 		{"a failed call's cost", `{"result": "stopped", "is_error": true, "subtype": "error_max_turns", "total_cost_usd": 1.5}`,
-			Cost{MilliUSD: 1500, Reported: true}, true},
-		{"no cost in the output", `{"result": "done"}`, Cost{}, false},
-		{"plain text", `done`, Cost{}, false},
+			1500, true, true},
+		{"no cost in the output", `{"result": "done"}`, 0, false, false},
+		{"plain text", `done`, 0, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			agent := ClaudeAgent{Command: []string{"sh", "-c", "cat >/dev/null; printf '%s' '" + tt.output + "'"}}
-			answer, cost, err := agent.RunReportingCost(context.Background(), t.TempDir(), "plan it")
-			if cost != tt.want || (err != nil) != tt.wantErr || answer == "" {
-				t.Errorf("RunReportingCost() = %q, %+v, %v; want cost %+v", answer, cost, err, tt.want)
+			answer, usage, err := agent.RunReportingUsage(context.Background(), t.TempDir(), "plan it")
+			if usage.MilliUSD != tt.milliUSD || usage.Reported != tt.reported || (err != nil) != tt.wantErr || answer == "" {
+				t.Errorf("RunReportingUsage() = %q, %+v, %v; want a cost of %d, reported %v",
+					answer, usage, err, tt.milliUSD, tt.reported)
 			}
 		})
 	}
 }
 
-// costAgent approves, and says each call cost milliUSD.
-type costAgent struct{ milliUSD int64 }
+// streamFixture is Claude Code 2.1's stream-json output for a session that
+// started one subagent, captured with Haiku; the system lines are cut down to
+// their type. Its sessions' biggest turns: the main session's second, 2 + 620
+// + 33827, and the subagent's only one, 2 + 22976.
+const streamFixture = "testdata/claude-stream.jsonl"
 
-func (a costAgent) Run(ctx context.Context, dir, prompt string) (string, error) {
-	answer, _, err := a.RunReportingCost(ctx, dir, prompt)
+// withoutModelUsage writes the fixture with its result line's modelUsage
+// removed, as a CLI that reports only the main session's usage prints it.
+func withoutModelUsage(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(streamFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	var result map[string]any
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &result); err != nil || result["type"] != "result" {
+		t.Fatalf("the fixture's last line isn't a result: %v", err)
+	}
+	delete(result, "modelUsage")
+	last, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines[len(lines)-1] = string(last)
+	path := filepath.Join(t.TempDir(), "stream.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestClaudeAgentReportsTheTokens(t *testing.T) {
+	fixture, err := filepath.Abs(streamFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	printing := func(output string) []string {
+		return []string{"sh", "-c", "cat >/dev/null; printf '%s' '" + output + "'"}
+	}
+	catting := func(path string) []string { return []string{"sh", "-c", "cat >/dev/null; cat " + path} }
+	tests := []struct {
+		name     string
+		command  []string
+		answer   string
+		milliUSD int64
+		want     *model.TokenUsage
+		wantErr  bool
+	}{
+		{"the stream, summed over its models, subagent included", catting(fixture), "hello", 9,
+			&model.TokenUsage{Input: 8, Output: 595, CacheRead: 67283, CacheWrite: 50587, LargestSession: 34449}, false},
+		{"the stream without modelUsage: the main session's usage", catting(withoutModelUsage(t)), "hello", 9,
+			&model.TokenUsage{Input: 4, Output: 332, CacheRead: 44307, CacheWrite: 23967, LargestSession: 34449}, false},
+		{"a failed stream's tokens",
+			printing(`{"type":"assistant","message":{"usage":{"input_tokens":5,"cache_read_input_tokens":100}},"parent_tool_use_id":null}` + "\n" +
+				`{"type":"result","subtype":"error_max_turns","is_error":true,"result":"stopped","total_cost_usd":0.5,` +
+				`"usage":{"input_tokens":5,"output_tokens":7,"cache_read_input_tokens":100}}`),
+			"stopped", 500, &model.TokenUsage{Input: 5, Output: 7, CacheRead: 100, LargestSession: 105}, true},
+		{"one JSON object: tokens, no session size",
+			printing(`{"result": "done", "usage": {"input_tokens": 3, "output_tokens": 4, "cache_read_input_tokens": 5, ` +
+				`"cache_creation_input_tokens": 6}}`), "done", 0,
+			&model.TokenUsage{Input: 3, Output: 4, CacheRead: 5, CacheWrite: 6}, false},
+		{"one JSON object without tokens", printing(`{"result": "done", "total_cost_usd": 0.1}`), "done", 100, nil, false},
+		{"plain text", printing(`done`), "done", 0, nil, false},
+		{"a stream without a result", printing(`{"type":"system","subtype":"init"}`), "", 0, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			answer, usage, err := ClaudeAgent{Command: tt.command}.RunReportingUsage(context.Background(), t.TempDir(), "do it")
+			if answer != tt.answer || usage.MilliUSD != tt.milliUSD || (err != nil) != tt.wantErr {
+				t.Errorf("RunReportingUsage() = %q, %+v, %v; want %q at %d", answer, usage, err, tt.answer, tt.milliUSD)
+			}
+			if !reflect.DeepEqual(usage.Tokens, tt.want) {
+				t.Errorf("tokens = %+v, want %+v", usage.Tokens, tt.want)
+			}
+		})
+	}
+}
+
+// usageAgent approves, and says each call cost milliUSD and used the next of
+// tokens; a nil entry is a call that didn't say.
+type usageAgent struct {
+	milliUSD int64
+	tokens   []*model.TokenUsage
+	calls    *int
+}
+
+func (a usageAgent) Run(ctx context.Context, dir, prompt string) (string, error) {
+	answer, _, err := a.RunReportingUsage(ctx, dir, prompt)
 	return answer, err
 }
 
-func (a costAgent) RunReportingCost(context.Context, string, string) (string, Cost, error) {
-	return `{"verdict": "approve", "summary": "fine"}`, Cost{MilliUSD: a.milliUSD, Reported: true}, nil
+func (a usageAgent) RunReportingUsage(context.Context, string, string) (string, Usage, error) {
+	usage := Usage{MilliUSD: a.milliUSD, Reported: true}
+	if a.calls != nil && *a.calls < len(a.tokens) {
+		usage.Tokens = a.tokens[*a.calls]
+		*a.calls++
+	}
+	return `{"verdict": "approve", "summary": "fine"}`, usage, nil
 }
 
 func TestRunReportsTheCost(t *testing.T) {
@@ -733,7 +824,7 @@ func TestRunReportsTheCost(t *testing.T) {
 	ctx := context.Background()
 	Run(ctx, testJob(t, url, RoleImplement, 1), FakeAgent{Role: RoleImplement, Round: 1}, t.TempDir())
 
-	reported := Run(ctx, testJob(t, url, RoleReview, 1), costAgent{milliUSD: 42}, t.TempDir())
+	reported := Run(ctx, testJob(t, url, RoleReview, 1), usageAgent{milliUSD: 42}, t.TempDir())
 	if reported.CostMilliUSD == nil || *reported.CostMilliUSD != 42 {
 		t.Errorf("a reporting agent's run = %+v, want a cost of 42", reported)
 	}
@@ -744,8 +835,68 @@ func TestRunReportsTheCost(t *testing.T) {
 	}
 
 	unreported := Run(ctx, testJob(t, url, RoleReview, 1), FakeAgent{Role: RoleReview, Round: 1}, t.TempDir())
-	if unreported.Verdict != VerdictApprove || unreported.CostMilliUSD != nil {
-		t.Errorf("a run whose agent doesn't report its cost = %+v, want no cost", unreported)
+	if unreported.Verdict != VerdictApprove || unreported.CostMilliUSD != nil || unreported.Tokens != nil {
+		t.Errorf("a run whose agent doesn't report its cost = %+v, want no cost and no tokens", unreported)
+	}
+}
+
+func TestRunReportsTheTokens(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	ctx := context.Background()
+	Run(ctx, testJob(t, url, RoleImplement, 1), FakeAgent{Role: RoleImplement, Round: 1}, t.TempDir())
+
+	calls := 0
+	agent := usageAgent{tokens: []*model.TokenUsage{{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4, LargestSession: 50}}, calls: &calls}
+	reported := Run(ctx, testJob(t, url, RoleReview, 1), agent, t.TempDir())
+	want := &model.TokenUsage{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4, LargestSession: 50}
+	if !reflect.DeepEqual(reported.Tokens, want) {
+		t.Errorf("a reporting agent's run used %+v, want %+v", reported.Tokens, want)
+	}
+	var decoded Result
+	if err := json.Unmarshal(reported.Encode(), &decoded); err != nil || !reflect.DeepEqual(decoded.Tokens, want) {
+		t.Errorf("decoded = %+v, %v; want the tokens kept", decoded.Tokens, err)
+	}
+}
+
+func TestUsageMeterAddsUpTheCalls(t *testing.T) {
+	ctx := context.Background()
+	calls := 0
+	meter := &usageMeter{agent: usageAgent{milliUSD: 10, calls: &calls, tokens: []*model.TokenUsage{
+		{Input: 1, Output: 10, CacheRead: 100, CacheWrite: 1000, LargestSession: 120},
+		{Input: 2, Output: 20, CacheRead: 200, CacheWrite: 2000, LargestSession: 90},
+	}}}
+	for range 2 {
+		if _, err := meter.Run(ctx, t.TempDir(), "do it"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := &model.TokenUsage{Input: 3, Output: 30, CacheRead: 300, CacheWrite: 3000, LargestSession: 120}
+	if got := meter.totalTokens(); !reflect.DeepEqual(got, want) || *meter.total() != 20 {
+		t.Errorf("two calls = %+v at %d, want %+v at 20", got, *meter.total(), want)
+	}
+
+	// The third call reports no tokens: the run's are unknown, its cost not.
+	if _, err := meter.Run(ctx, t.TempDir(), "do it"); err != nil {
+		t.Fatal(err)
+	}
+	if got := meter.totalTokens(); got != nil || *meter.total() != 30 {
+		t.Errorf("after a call without tokens = %+v at %d, want none at 30", got, *meter.total())
+	}
+}
+
+func TestClaudeAgentKeepsWhyAFailedStreamFailed(t *testing.T) {
+	fixture, err := filepath.Abs(streamFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The CLI dies mid-stream: its lines are long, what stderr says comes last.
+	script := "cat >/dev/null; head -n 12 " + fixture + "; echo 'API Error: 529 overloaded_error' >&2; exit 1"
+	_, _, err = ClaudeAgent{Command: []string{"sh", "-c", script}}.RunReportingUsage(context.Background(), t.TempDir(), "do it")
+	if err == nil || !strings.HasSuffix(err.Error(), "API Error: 529 overloaded_error") {
+		t.Errorf("RunReportingUsage() error = %v, want it to end with what stderr said", err)
+	}
+	if down, _ := unavailable(err.Error(), time.Now()); !down {
+		t.Errorf("unavailable(%q) = false, want the overload seen", err)
 	}
 }
 

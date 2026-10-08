@@ -34,33 +34,38 @@ type ClaudeAgent struct {
 	Model string
 }
 
-// DefaultClaudeCommand runs Claude Code once, headless, with JSON output.
+// DefaultClaudeCommand runs Claude Code once, headless, streaming every turn
+// as JSON lines, so each turn's tokens can be read.
 var DefaultClaudeCommand = []string{
-	"claude", "-p", "--dangerously-skip-permissions", "--output-format", "json",
+	"claude", "-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose",
 }
 
-// Cost is what one agent call cost, as the agent reported it.
-type Cost struct {
+// Usage is what one agent call cost and the tokens it used, as the agent
+// reported them.
+type Usage struct {
 	MilliUSD int64
 	// Reported is false when the agent's output didn't say what the call cost.
 	Reported bool
+	// Tokens is nil when the agent's output didn't say what tokens the call used.
+	Tokens *model.TokenUsage
 }
 
-// CostReporter is an Agent that says what each call cost. The calls of an
-// Agent that isn't one leave the run's cost unreported.
-type CostReporter interface {
-	RunReportingCost(ctx context.Context, dir, prompt string) (string, Cost, error)
+// UsageReporter is an Agent that says what each call cost and used. The calls
+// of an Agent that isn't one leave the run's cost and tokens unreported.
+type UsageReporter interface {
+	RunReportingUsage(ctx context.Context, dir, prompt string) (string, Usage, error)
 }
 
 // Run runs the agent in dir and returns its final answer.
 func (a ClaudeAgent) Run(ctx context.Context, dir, prompt string) (string, error) {
-	answer, _, err := a.RunReportingCost(ctx, dir, prompt)
+	answer, _, err := a.RunReportingUsage(ctx, dir, prompt)
 	return answer, err
 }
 
-// RunReportingCost runs the agent in dir and returns its final answer and what
-// the call cost, from the total_cost_usd of the CLI's JSON output.
-func (a ClaudeAgent) RunReportingCost(ctx context.Context, dir, prompt string) (string, Cost, error) {
+// RunReportingUsage runs the agent in dir and returns its final answer and
+// what the call cost and used, from the CLI's stream-json output, or the one
+// JSON object a custom command prints.
+func (a ClaudeAgent) RunReportingUsage(ctx context.Context, dir, prompt string) (string, Usage, error) {
 	command := a.Command
 	if len(command) == 0 {
 		command = DefaultClaudeCommand
@@ -76,58 +81,168 @@ func (a ClaudeAgent) RunReportingCost(ctx context.Context, dir, prompt string) (
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	runErr := cmd.Run()
 
-	var out struct {
-		Result  string `json:"result"`
-		IsError bool   `json:"is_error"`
-		Subtype string `json:"subtype"`
-		// CostUSD is missing when the CLI doesn't report it.
-		CostUSD *float64 `json:"total_cost_usd"`
-	}
-	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+	out, ok, streamed := parseClaudeOutput(stdout.Bytes())
+	if !ok {
+		// stderr goes last: a stream's lines come before it and the tail keeps
+		// what says why, such as a limit or an overload.
 		if runErr != nil {
-			return "", Cost{}, fmt.Errorf("%s failed: %v: %s", command[0], runErr, tail(stderr.String()+stdout.String(), 1500))
+			return "", Usage{}, fmt.Errorf("%s failed: %v: %s", command[0], runErr, tail(stdout.String()+"\n"+stderr.String(), 1500))
+		}
+		if streamed {
+			return "", Usage{}, fmt.Errorf("%s ended without a result: %s", command[0], tail(stdout.String()+"\n"+stderr.String(), 1500))
 		}
 		// Plain text output, from a custom command.
-		return strings.TrimSpace(stdout.String()), Cost{}, nil
+		return strings.TrimSpace(stdout.String()), Usage{}, nil
 	}
-	var cost Cost
+	usage := Usage{Tokens: out.tokens()}
 	if out.CostUSD != nil && *out.CostUSD >= 0 {
-		cost = Cost{MilliUSD: int64(math.Round(*out.CostUSD * 1000)), Reported: true}
+		usage.MilliUSD, usage.Reported = int64(math.Round(*out.CostUSD*1000)), true
 	}
 	if out.IsError || runErr != nil {
-		return out.Result, cost, fmt.Errorf("%s ended with %s: %s", command[0], orDefault(out.Subtype, "an error"),
+		return out.Result, usage, fmt.Errorf("%s ended with %s: %s", command[0], orDefault(out.Subtype, "an error"),
 			tail(out.Result+" "+stderr.String(), 1500))
 	}
-	return out.Result, cost, nil
+	return out.Result, usage, nil
 }
 
-// costMeter adds up what an Agent's calls in one run cost. One call that
-// doesn't report its cost leaves the whole run's cost unreported.
-type costMeter struct {
-	agent      Agent
-	milliUSD   int64
-	unreported bool
+// claudeResult is Claude Code's answer: the one JSON object of
+// --output-format json, or the last line of stream-json.
+type claudeResult struct {
+	Result  string `json:"result"`
+	IsError bool   `json:"is_error"`
+	Subtype string `json:"subtype"`
+	// CostUSD is missing when the CLI doesn't report it.
+	CostUSD *float64 `json:"total_cost_usd"`
+	// Usage is the main session's tokens; ModelUsage covers its subagents
+	// too, per model.
+	Usage      *claudeUsage                `json:"usage"`
+	ModelUsage map[string]claudeModelUsage `json:"modelUsage"`
+	// largestSession is the biggest turn's prompt of any one session, from the
+	// stream's assistant lines; zero without a stream.
+	largestSession int64
 }
 
-func (m *costMeter) Run(ctx context.Context, dir, prompt string) (string, error) {
-	reporter, ok := m.agent.(CostReporter)
+type claudeUsage struct {
+	Input      int64 `json:"input_tokens"`
+	Output     int64 `json:"output_tokens"`
+	CacheRead  int64 `json:"cache_read_input_tokens"`
+	CacheWrite int64 `json:"cache_creation_input_tokens"`
+}
+
+type claudeModelUsage struct {
+	Input      int64 `json:"inputTokens"`
+	Output     int64 `json:"outputTokens"`
+	CacheRead  int64 `json:"cacheReadInputTokens"`
+	CacheWrite int64 `json:"cacheCreationInputTokens"`
+}
+
+// claudeLine is one line of stream-json.
+type claudeLine struct {
+	claudeResult
+	Type string `json:"type"`
+	// ParentToolUseID is set on a subagent's lines: the tool call that started it.
+	ParentToolUseID string `json:"parent_tool_use_id"`
+	Message         *struct {
+		Usage *claudeUsage `json:"usage"`
+	} `json:"message"`
+}
+
+// parseClaudeOutput reads the CLI's output: one JSON object, or a stream of
+// JSON lines ending in a result line. It is false for anything else, and
+// streamed when the output was a stream that ended without a result.
+func parseClaudeOutput(stdout []byte) (out claudeResult, ok, streamed bool) {
+	var whole claudeLine
+	if json.Unmarshal(stdout, &whole) == nil && (whole.Type == "" || whole.Type == "result") {
+		return whole.claudeResult, true, false
+	}
+	found := false
+	sessions := map[string]int64{}
+	for raw := range bytes.SplitSeq(stdout, []byte("\n")) {
+		var line claudeLine
+		if json.Unmarshal(raw, &line) != nil {
+			continue
+		}
+		streamed = streamed || line.Type != ""
+		switch line.Type {
+		case "assistant":
+			if line.Message != nil && line.Message.Usage != nil {
+				// The turn's prompt is everything the session held so far.
+				u := line.Message.Usage
+				sessions[line.ParentToolUseID] = max(sessions[line.ParentToolUseID], u.Input+u.CacheRead+u.CacheWrite)
+			}
+		case "result":
+			out, found = line.claudeResult, true
+		}
+	}
+	for _, size := range sessions {
+		out.largestSession = max(out.largestSession, size)
+	}
+	return out, found, streamed && !found
+}
+
+// tokens is what the call used, summed over its models, else the main
+// session's; nil when the CLI didn't say.
+func (r claudeResult) tokens() *model.TokenUsage {
+	var t model.TokenUsage
+	switch {
+	case len(r.ModelUsage) > 0:
+		for _, u := range r.ModelUsage {
+			t.Add(model.TokenUsage{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite})
+		}
+	case r.Usage != nil:
+		t = model.TokenUsage{Input: r.Usage.Input, Output: r.Usage.Output,
+			CacheRead: r.Usage.CacheRead, CacheWrite: r.Usage.CacheWrite}
+	default:
+		return nil
+	}
+	t.LargestSession = r.largestSession
+	return &t
+}
+
+// usageMeter adds up what an Agent's calls in one run cost and used. One call
+// that doesn't report its cost leaves the whole run's cost unreported, and
+// one that doesn't report its tokens the run's tokens.
+type usageMeter struct {
+	agent            Agent
+	milliUSD         int64
+	unreported       bool
+	tokens           model.TokenUsage
+	tokensUnreported bool
+}
+
+func (m *usageMeter) Run(ctx context.Context, dir, prompt string) (string, error) {
+	reporter, ok := m.agent.(UsageReporter)
 	if !ok {
-		m.unreported = true
+		m.unreported, m.tokensUnreported = true, true
 		return m.agent.Run(ctx, dir, prompt)
 	}
-	answer, cost, err := reporter.RunReportingCost(ctx, dir, prompt)
-	m.milliUSD += cost.MilliUSD
-	m.unreported = m.unreported || !cost.Reported
+	answer, usage, err := reporter.RunReportingUsage(ctx, dir, prompt)
+	m.milliUSD += usage.MilliUSD
+	m.unreported = m.unreported || !usage.Reported
+	if usage.Tokens != nil {
+		m.tokens.Add(*usage.Tokens)
+	} else {
+		m.tokensUnreported = true
+	}
 	return answer, err
 }
 
 // total is what the run cost in thousandths of a US dollar, or nil when a call
 // didn't report its cost. A run that called no agent cost nothing.
-func (m *costMeter) total() *int64 {
+func (m *usageMeter) total() *int64 {
 	if m.unreported {
 		return nil
 	}
 	return &m.milliUSD
+}
+
+// totalTokens is what the run's calls used, or nil when a call didn't report
+// its tokens. A run that called no agent used none.
+func (m *usageMeter) totalTokens() *model.TokenUsage {
+	if m.tokensUnreported {
+		return nil
+	}
+	return &m.tokens
 }
 
 // FakeAgent stands in for a real agent in tests and demos. Implementing, it adds

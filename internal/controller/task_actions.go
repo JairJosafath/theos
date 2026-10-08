@@ -593,8 +593,23 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, stat
 	milliUSD, withoutCost := run.Cost()
 	status.CostMilliUSD += milliUSD
 	status.RunsWithoutCost += withoutCost
+	status.Tokens = addTokens(status.Tokens, run.Tokens())
 	status.Sandbox, status.SandboxPod = "", ""
 	return nil
+}
+
+// addTokens adds add to tokens, which stays nil while nothing is counted.
+func addTokens(tokens *c4v1alpha1.TokenUsage, add model.TokenUsage) *c4v1alpha1.TokenUsage {
+	if add == (model.TokenUsage{}) {
+		return tokens
+	}
+	var sum model.TokenUsage
+	if tokens != nil {
+		sum = model.TokenUsage(*tokens)
+	}
+	sum.Add(add)
+	out := c4v1alpha1.TokenUsage(sum)
+	return &out
 }
 
 // progressOf copies the part of status that the model's transitions change.

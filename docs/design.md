@@ -249,18 +249,20 @@ without kubectl, and cheaply: it lives on a laptop.
   time went stays readable after it ends. A Task waiting for an agent slot says
   `WaitingForSlot`.
 - **A Task says what its runs cost.** Each agent run reports its cost as the
-  agent says it (for Claude Code, `total_cost_usd` in its JSON output); the
-  Task adds them up in `status.costMilliUSD`. A run whose agent didn't say, or
-  that ended without a result, counts in `status.runsWithoutCost`, and the UI
-  says the cost wasn't reported instead of leaving it blank. A Brief's rounds
-  take their Plan Task's.
+  agent says it (for Claude Code, `total_cost_usd` in its stream-json result
+  line); the Task adds them up in `status.costMilliUSD`. A run whose agent
+  didn't say, or that ended without a result, counts in
+  `status.runsWithoutCost`, and the UI says the cost wasn't reported instead
+  of leaving it blank. A Brief's rounds take their Plan Task's.
 - **A Task says what tokens its runs used, and how big a session got.** Beside
   the cost, `status.tokens` adds up the input, output, cache-read and
   cache-write tokens its agents reported (for Claude Code, from its
-  stream-json output) and keeps `largestSession`: the most context any one
-  agent session was given on a turn, which is what makes an agent's work
-  sloppier. Runs that reported none count in `tokens.runsWithout`. A Brief's
-  rounds take their Plan Task's. Plan:
+  stream-json result line: `modelUsage`, subagents included, else `usage`)
+  and keeps `largestSession`: the most context any one agent session was
+  given on a turn, which is what makes an agent's work sloppier; a subagent is
+  a session of its own. A run with a call that reported none adds no tokens
+  and counts in `tokens.runsWithout`. A Brief's rounds take their Plan Task's,
+  and the Brief adds its rounds up. Plan:
   [plans/session-tokens.md](plans/session-tokens.md).
 - **A long session hands off to a fresh one.** A session whose context passes
   its Agent's `sessionTokenLimit` (default 130000) is told, at its next tool

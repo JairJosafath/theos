@@ -479,6 +479,11 @@ type BriefRound struct {
 	// +optional
 	RunsWithoutCost int32 `json:"runsWithoutCost,omitempty"`
 
+	// tokens is what the round's planner runs used, and how large the largest
+	// session got.
+	// +optional
+	Tokens *TokenUsage `json:"tokens,omitempty"`
+
 	// outcome is how the round ended: Applied, PlannerNeedsInput or
 	// RoundFailed; Tended for a tending round that applied.
 	// +kubebuilder:validation:Enum=Applied;PlannerNeedsInput;RoundFailed;Tended
@@ -636,6 +641,11 @@ type BriefStatus struct {
 	// didn't report what they cost; costMilliUSD leaves them out.
 	// +optional
 	RunsWithoutCost int32 `json:"runsWithoutCost,omitempty"`
+
+	// tokens is what the planner runs used over all rounds, and how large the
+	// largest session got.
+	// +optional
+	Tokens *TokenUsage `json:"tokens,omitempty"`
 
 	// observedGeneration is the spec generation the status reflects.
 	// +optional

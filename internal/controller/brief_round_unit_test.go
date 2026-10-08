@@ -153,3 +153,30 @@ func TestEndingARoundOnAStaleBriefWritesNothing(t *testing.T) {
 		t.Errorf("Planned = %+v, want reason %s", cond, model.ReasonApplied)
 	}
 }
+
+// A Brief round takes what its Plan Task used, and the Brief adds its rounds up.
+func TestRecordRoundAddsUpTheTokens(t *testing.T) {
+	status := &c4v1alpha1.BriefStatus{Round: 1}
+	plan := func(tokens *c4v1alpha1.TokenUsage) *c4v1alpha1.Task {
+		return &c4v1alpha1.Task{Status: c4v1alpha1.TaskStatus{Tokens: tokens}}
+	}
+	recordRound(status, plan(&c4v1alpha1.TokenUsage{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4,
+		LargestSession: 120000, RunsWithout: 1}), c4v1alpha1.BriefRound{Outcome: model.ReasonApplied})
+	status.Round = 2
+	recordRound(status, plan(&c4v1alpha1.TokenUsage{Input: 10, Output: 20, CacheRead: 30, CacheWrite: 40,
+		LargestSession: 80000}), c4v1alpha1.BriefRound{Outcome: model.ReasonApplied})
+	status.Round = 3
+	recordRound(status, plan(nil), c4v1alpha1.BriefRound{Outcome: model.ReasonApplied})
+
+	want := c4v1alpha1.TokenUsage{Input: 11, Output: 22, CacheRead: 33, CacheWrite: 44, LargestSession: 120000,
+		RunsWithout: 1}
+	if status.Tokens == nil || *status.Tokens != want {
+		t.Errorf("the Brief's tokens = %+v, want %+v", status.Tokens, want)
+	}
+	if got := status.History[1].Tokens; got == nil || got.LargestSession != 80000 || got.Input != 10 {
+		t.Errorf("round 2's tokens = %+v, want its Plan Task's", got)
+	}
+	if got := status.History[2].Tokens; got != nil {
+		t.Errorf("round 3's tokens = %+v, want none: its Plan Task ran no agent", got)
+	}
+}

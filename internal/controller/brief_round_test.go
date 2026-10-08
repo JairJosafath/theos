@@ -150,20 +150,27 @@ func planRound(ns string, round, try int, files scaffold.Tree) string {
 	return planRoundCosting(ns, round, try, files, new(planCost))
 }
 
-// planCost is what planRound's planner says each try cost.
+// planCost is what planRound's planner says each try cost, and planTokens
+// what it used.
 const planCost int64 = 120
 
+var planTokens = model.TokenUsage{Input: 6, Output: 900, CacheRead: 40000, CacheWrite: 12000, LargestSession: 35000}
+
 // planRoundCosting is planRound with a planner that says the try cost
-// milliUSD, or doesn't say when it is nil.
+// milliUSD and used planTokens, or says neither when milliUSD is nil.
 func planRoundCosting(ns string, round, try int, files scaffold.Tree, milliUSD *int64) string {
 	GinkgoHelper()
 	task := fmt.Sprintf("cel-lens-plan-%d", round)
 	sandbox := fmt.Sprintf("%s-r%d-plan", task, try)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, sandbox) }).Should(Succeed())
 	sha := gitFake.pushPlan(ns, briefRepo, round, files)
-	finishSandbox(ns, sandbox, task, &agentrunner.Result{Role: "plan", Commit: sha,
+	result := &agentrunner.Result{Role: "plan", Commit: sha,
 		Summary:      "I've rewritten the plan in `plan/` with the refusal fixed. Nothing is committed or pushed.",
-		CostMilliUSD: milliUSD}, "")
+		CostMilliUSD: milliUSD}
+	if milliUSD != nil {
+		result.Tokens = new(planTokens)
+	}
+	finishSandbox(ns, sandbox, task, result, "")
 	return sha
 }
 
@@ -240,9 +247,10 @@ var _ = Describe("Brief rounds", func() {
 		Expect(brief.Status.History).To(Equal([]c4v1alpha1.BriefRound{{Round: 1,
 			Summary: "Planned cel-lens, a linter for CEL rules: one Container and its first issues.",
 			Choices: []string{"A service lints the rules", "Postgres keeps them"}, CostMilliUSD: planCost,
-			Outcome: model.ReasonApplied}}))
+			Tokens: new(c4v1alpha1.TokenUsage(planTokens)), Outcome: model.ReasonApplied}}))
 		Expect(brief.Status.CostMilliUSD).To(Equal(planCost), "what the planner said the round cost")
 		Expect(brief.Status.RunsWithoutCost).To(BeZero())
+		Expect(brief.Status.Tokens).To(Equal(new(c4v1alpha1.TokenUsage(planTokens))), "and used")
 		Expect(brief.Status.Choices).To(Equal([]string{"A service lints the rules", "Postgres keeps them"}))
 		Expect(brief.Status.PromptsPlanned).To(BeZero())
 		Expect(brief.Status.Created).To(ConsistOf(
@@ -406,10 +414,14 @@ spec:
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionFalse), HaveField("Reason", model.ReasonRoundFailed),
 				HaveField("Message", And(HavePrefix("Round 1 failed: "), ContainSubstring("Failed after 2 rounds")))))
+			tokens := c4v1alpha1.TokenUsage(planTokens)
+			tokens.RunsWithout = 1
 			g.Expect(b.Status.History).To(ConsistOf(And(HaveField("CostMilliUSD", planCost),
-				HaveField("RunsWithoutCost", int32(1)))), "the second try's cost, and the first's not reported")
+				HaveField("RunsWithoutCost", int32(1)), HaveField("Tokens", &tokens))),
+				"the second try's cost and tokens, and the first's not reported")
 			g.Expect(b.Status.CostMilliUSD).To(Equal(planCost))
 			g.Expect(b.Status.RunsWithoutCost).To(Equal(int32(1)))
+			g.Expect(b.Status.Tokens).To(Equal(&tokens))
 		}).Should(Succeed())
 
 		By("starting round 2 for a new prompt")

@@ -218,19 +218,22 @@ var _ = Describe("Task", func() {
 			"Implementing r2", "Checking r2", "Reviewing r2", "Merged r2"}))
 	})
 
-	It("adds up what its runs cost, and counts the runs whose agent didn't say", func() {
+	It("adds up what its runs cost and used, and counts the runs whose agent didn't say", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
 		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
-			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(312))}, "")
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(312)),
+				Tokens: &model.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000, CacheWrite: 30000, LargestSession: 140000}}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
 			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(312)))
 			g.Expect(task.Status.RunsWithoutCost).To(BeZero())
+			g.Expect(task.Status.Tokens).To(Equal(&c4v1alpha1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000,
+				CacheWrite: 30000, LargestSession: 140000}))
 		}).Should(Succeed())
 
 		By("counting a review whose agent didn't report its cost")
@@ -243,6 +246,21 @@ var _ = Describe("Task", func() {
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(312)))
 			g.Expect(task.Status.RunsWithoutCost).To(Equal(int32(1)))
+			g.Expect(task.Status.Tokens).To(Equal(&c4v1alpha1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000,
+				CacheWrite: 30000, LargestSession: 140000, RunsWithout: 1}))
+		}).Should(Succeed())
+
+		By("adding a smaller session's tokens, keeping the largest session")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r2-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r2")
+		finishSandbox(ns, "add-crop-r2-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r2", CostMilliUSD: new(int64(100)),
+				Tokens: &model.TokenUsage{Input: 5, Output: 1000, CacheRead: 40000, CacheWrite: 8000, LargestSession: 60000}}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(412)))
+			g.Expect(task.Status.Tokens).To(Equal(&c4v1alpha1.TokenUsage{Input: 15, Output: 3000, CacheRead: 130000,
+				CacheWrite: 38000, LargestSession: 140000, RunsWithout: 1}))
 		}).Should(Succeed())
 	})
 
@@ -276,6 +294,7 @@ var _ = Describe("Task", func() {
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Message).To(ContainSubstring("ended without a result: OOMKilled"))
 			g.Expect(task.Status.RunsWithoutCost).To(Equal(int32(1)), "a run without a result reported no cost")
+			g.Expect(task.Status.Tokens).To(Equal(&c4v1alpha1.TokenUsage{RunsWithout: 1}), "nor tokens")
 		}).Should(Succeed())
 	})
 
