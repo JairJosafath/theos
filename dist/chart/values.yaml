@@ -284,8 +284,10 @@ ui:
 ##   kubectl -n webshop create secret generic git-credentials \
 ##     --from-literal=username=c4factory --from-literal=token="$GIT_TOKEN"
 ##
-## They are post-install and post-upgrade hooks, so `helm uninstall` leaves them
-## in place. With gitea.enabled, gitea.projects makes these instead.
+## Job c4-factory-gitproviders (on the seed image, gitea.seed.image) applies
+## them in place after every install and upgrade, so an upgrade keeps them, and
+## `helm uninstall` leaves them in place. With gitea.enabled, gitea.projects
+## makes these instead.
 ##
 gitProviders: []
 #  - namespace: webshop

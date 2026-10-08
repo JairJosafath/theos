@@ -1,0 +1,105 @@
+{{- with .Values.gitProviders }}
+{{- $seed := $.Values.gitea.seed }}
+# Applies ConfigMap c4factory-gitproviders' GitProviders in place with the seed
+# image's catalog.sh (server-side apply, field manager c4factory-chart), after
+# every install and upgrade: an upgrade changes them in place, keeping their
+# UIDs and the fields the chart doesn't set, and the first one takes over the
+# hook objects an older chart made. An object the chart stops rendering stays.
+# Needs no Gitea, so it runs with gitea.enabled=false too. A failed Job stays
+# for its log until the next upgrade replaces it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "c4-factory.resourceName" (dict "suffix" "gitproviders" "context" $) }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "gitproviders" "context" $) | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "c4-factory.giteaLabels" (dict "name" "gitproviders" "context" $) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "c4-factory.resourceName" (dict "suffix" "gitproviders" "context" $) }}
+      restartPolicy: Never
+      {{- include "c4-factory.imagePullSecrets" $ | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: apply
+          image: "{{ $seed.image.repository }}:{{ $seed.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $seed.image.pullPolicy }}
+          command: [/usr/local/bin/catalog.sh, /gitproviders/objects.yaml]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: gitproviders
+              mountPath: /gitproviders
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: gitproviders
+          configMap:
+            name: c4factory-gitproviders
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "c4-factory.resourceName" (dict "suffix" "gitproviders" "context" $) }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "gitproviders" "context" $) | nindent 4 }}
+{{- $namespaces := list }}
+{{- range . }}
+{{- $namespaces = append $namespaces .namespace }}
+{{- end }}
+{{- range $namespaces | uniq }}
+---
+# The Job may apply GitProviders in this namespace, and nothing else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "c4-factory.resourceName" (dict "suffix" "gitproviders" "context" $) }}
+  namespace: {{ . }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "gitproviders" "context" $) | nindent 4 }}
+rules:
+  - apiGroups: [c4.factory.io]
+    resources: [gitproviders]
+    verbs: [get, list, create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "c4-factory.resourceName" (dict "suffix" "gitproviders" "context" $) }}
+  namespace: {{ . }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "gitproviders" "context" $) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "c4-factory.resourceName" (dict "suffix" "gitproviders" "context" $) }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "c4-factory.resourceName" (dict "suffix" "gitproviders" "context" $) }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}

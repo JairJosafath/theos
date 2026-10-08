@@ -752,7 +752,7 @@ release installs the whole factory:
 | Project namespaces | each of `gitea.projects` | `projectNamespaces.create`, on by default; made when missing, labeled `c4.factory.io/shared-secrets: "true"` and kept on uninstall; a namespace that already exists is left to the person |
 | Shared Secrets | the release namespace, copied to each project namespace | the Agents' token Secret (`agents.credentialsSecret`) and the pull Secrets (`global.imagePullSecrets`), which the person makes once; the operator copies each into every labeled namespace, before it has a Project too (a Brief there needs the token for the round that makes it), keeps its copies in step with the source, and never touches a Secret of that name it didn't make, which is how a project keeps a token of its own; Task sandboxes list the pull Secrets |
 | CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
-| GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values |
+| GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values; a hook Job on the seed image applies them in place from ConfigMap `c4factory-gitproviders` |
 
 A device installs itself only what is another project's or its own: Agent
 Sandbox (its controller and CRDs) before the chart, the Agents' token in the
