@@ -441,6 +441,28 @@ var _ = Describe("Task with an interrupted run", func() {
 		}).Should(Succeed())
 	})
 
+	It("reruns a round whose Git host stayed unreachable without counting it", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }, "20s").Should(Succeed())
+		// Gitea restarting through every retry of the clone, as c4agent reports it.
+		unreachable := &agentrunner.Result{Role: "implement", Interrupted: true, Error: "the Git host stayed " +
+			"unreachable: git clone: exit status 128: fatal: unable to access 'http://gitea/apps/x.git/': " +
+			"Couldn't connect to server"}
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop", unreachable, "")
+
+		rerun := model.SandboxName("add-crop", 1, model.RoleImplementer, 1, 1)
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, rerun)
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Reruns).To(Equal(int32(1)))
+			g.Expect(task.Status.Round).To(Equal(int32(1)), "an unreachable Git host costs no round")
+			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Reason", "Interrupted"),
+				HaveField("Message", ContainSubstring("the Git host stayed unreachable")))))
+		}, "20s").Should(Succeed())
+	})
+
 	It("reruns a round whose pod was deleted and replaced under the same sandbox", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)

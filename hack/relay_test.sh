@@ -180,6 +180,10 @@ check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues
 echo "1 40 41" >"$DIR/triaged"
 DRY_RUN= untriaged
 check "triage: never ran" "$(awk '{print NF}' "$DIR/triaged")" 1
+# A triage that starts, from a terminal or the watch, records its time and issues (#688).
+DRY_RUN= triaged "#40 #41"
+check "triage: records its issues" "$(cut -d' ' -f2- "$DIR/triaged")" "40 41"
+check "triage: records its time" "$(($(date +%s) - $(cut -d' ' -f1 "$DIR/triaged") < 5))" 1
 
 # The maintainer, as a dry run: its prompt names the charter, the skill and the
 # report, says it commits nothing, and gives the last sweep's time.

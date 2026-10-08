@@ -295,9 +295,10 @@ start() {
 # TRIAGE_EVERY seconds, when a proposed issue waits that the last triage didn't
 # see, one changed after it (not by the triage's own comment), one waits on an
 # issue that closed after it, or the last triage is RETRIAGE seconds old.
-# $DIR/triaged holds the last triage's time and issues; when its session never
-# ran, hack/relay.sh --triage keeps only the time there, so the same issues
-# start it again.
+# $DIR/triaged holds the last triage's time and issues, this watch's or one
+# started by hand (hack/relay.sh --triage writes it as its session starts);
+# when its session never ran, hack/relay.sh --triage keeps only the time there,
+# so the same issues start it again.
 TRIAGE_ERR=
 triage() {
   local now=$1 list= rc n changed closed why=() new= moved= freed= out t=0 seen= since=()

@@ -365,7 +365,11 @@ dropped: nine workers grow Go's build cache by gigabytes an hour.
 With nothing ready, it starts a triage of the `status/proposed` issues: for a
 new one, for one that changed since the last triage or waits on an issue that
 closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
-`WATCH_TRIAGE` (30m). Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
+`WATCH_TRIAGE` (30m). To triage now, say after a plan files its steps
+`status/proposed`, run `./dev run hack/relay.sh --triage --workers N`: it
+starts one triage session in the first free worker, and records its time and
+issues in `.relay/triaged` as the watch's does, so the watch starts no second
+triage for the same issues, only for one filed after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
 a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
 ready and urgent, so the next session fixes main before anything else; a single
