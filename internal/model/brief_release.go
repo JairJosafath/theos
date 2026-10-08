@@ -13,7 +13,7 @@ import (
 const ReleaseMilestoneDue = 7 * 24 * time.Hour
 
 // LabelBug marks a fix; a round whose work for a Container is all fixes gets a
-// patch release (plans/brief-patch-releases.md, P1).
+// patch release (plans/done/brief-patch-releases.md, P1).
 const LabelBug = "kind/bug"
 
 // ReleaseMilestoneTitle is the title of the release milestone a Brief's round

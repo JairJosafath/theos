@@ -218,6 +218,38 @@ var _ = Describe("Brief releases", func() {
 		}
 	})
 
+	// #633: a tending round files a released app's issues by the same rule
+	// as a planned one (P5).
+	It("files a tending round's fix on a released app in the next patch release", func() {
+		createFactory(ns)
+		briefAgents(ns, 1)
+		brief := newBrief(ns, "cel-lens")
+		brief.Spec.Autopilot = model.AutopilotOn
+		mustCreate(brief)
+		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0"}))
+		n := int(getBrief(Default, ns).Status.Issues[0].Number)
+		failLinterTask(ns, model.IssueTaskName("linter", n, 1), n)
+
+		By("filing the tending round's new fix in v0.1.1")
+		awaitTendRound(ns, 2)
+		plan := tendPlan(fmt.Sprintf(
+			"- {container: linter, issue: %d, answer: close, why: The fix below replaces it.}\n", n))
+		plan["plan/issues/01-linter.md"] = scaffold.File{
+			Data: []byte(strings.Replace(linterIssue(2), "kind/feature", model.LabelBug, 1))}
+		planRound(ns, 2, 1, plan)
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.History).To(HaveLen(2))
+			g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.1"}))
+		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(2), "v0.1.0 and v0.1.1")
+	})
+
 	It("puts a released app's ready work in no milestone in its first open release, before the round's (#599)", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
