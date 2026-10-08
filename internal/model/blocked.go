@@ -28,7 +28,9 @@ const MaxBlockedNote = 1000
 // BlockedNote takes the blocked note from an agent's summary: everything
 // after the first line starting "Blocked:" (Markdown emphasis around the
 // prefix allowed), trimmed and at most MaxBlockedNote bytes. It is empty when
-// the summary has no such line, or the line gives no reason.
+// the summary has no such line, or the line gives no reason. A line whose
+// reason says nothing blocks the issue ("Blocked: none") is not a blocked
+// note: it is skipped as if it weren't there.
 func BlockedNote(summary string) string {
 	lines := strings.Split(summary, "\n")
 	for i, l := range lines {
@@ -37,10 +39,24 @@ func BlockedNote(summary string) string {
 			continue
 		}
 		rest = strings.TrimLeft(rest, "*_")
+		if saysNotBlocked(rest) {
+			continue
+		}
 		note := strings.TrimSpace(strings.Join(append([]string{rest}, lines[i+1:]...), "\n"))
 		return ClipSentences(note, MaxBlockedNote)
 	}
 	return ""
+}
+
+// notBlocked are the reasons, in lower case, that say nothing blocks the issue.
+var notBlocked = map[string]bool{"none": true, "n/a": true, "na": true, "nothing": true, "no": true, "-": true}
+
+// saysNotBlocked reports whether a blocked line's reason says nothing blocks
+// the issue, in any case, with or without a full stop or Markdown emphasis.
+func saysNotBlocked(reason string) bool {
+	r := strings.Trim(strings.TrimSpace(reason), "*_`")
+	r = strings.Trim(strings.TrimRight(r, "."), "*_`")
+	return notBlocked[strings.ToLower(strings.TrimSpace(r))]
 }
 
 // NoChangeNoReason is a round's error when the agent changed nothing and wrote

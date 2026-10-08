@@ -422,7 +422,8 @@ func TestIssuePrompts(t *testing.T) {
 	for _, want := range []string{"issue #3", "- [ ] finds rules", "every acceptance criterion", "Write the failing test first.",
 		"docs/agents/implementer.md", "/workspace/related/vscode-extension", "Makefile, docs/agents/",
 		"Never make up evidence", "no drawn or generated image, recording or sample output",
-		"no message, log or output the code doesn't give", "left open, never faked", `"Open: <criterion>: <why>"`} {
+		"no message, log or output the code doesn't give", "left open, never faked", `"Open: <criterion>: <why>"`,
+		"Write that line only when something blocks the issue"} {
 		if !strings.Contains(implement, want) {
 			t.Errorf("implement prompt lacks %q", want)
 		}
