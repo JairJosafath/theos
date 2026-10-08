@@ -125,7 +125,7 @@ export function SessionRow({ session, now, compact = false }: { session: Session
   )
 }
 
-/** What agent runs used, on one line: cost · tokens · largest session, the last marked when it passed the limit. */
+/** What agent runs used, on one line: cost · tokens · largest session · handoffs, the largest session marked when it passed the limit. */
 export function UsageLine({ usage }: { usage: UsageView }) {
   const parts = [
     usage.cost ? <span key="cost">{usage.cost}</span> : null,
@@ -141,6 +141,11 @@ export function UsageLine({ usage }: { usage: UsageView }) {
         }
       >
         {usage.largestSession}
+      </span>
+    ) : null,
+    usage.handoffs ? (
+      <span key="handoffs" title="Sessions that got long handed their work to a fresh session">
+        {usage.handoffs}
       </span>
     ) : null,
   ].filter(Boolean)

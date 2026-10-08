@@ -265,7 +265,8 @@ without kubectl, and cheaply: it lives on a laptop.
   and the Brief adds its rounds up. The UI shows them on one line beside the
   cost, on a Task and on each Brief round (`$6.12 · 1.4M tokens, 1.1M of them
   cache reads · largest session 142k`), marking a largest session past the
-  limit, and says when the agent reported no tokens. Plan:
+  limit, and says when the agent reported no tokens; when a session handed off
+  to a fresh one, the line ends with how often (`handed off 2×`). Plan:
   [plans/done/session-tokens.md](plans/done/session-tokens.md).
 - **A long session hands off to a fresh one.** A session whose context passes
   its Agent's `sessionTokenLimit` (default 130000) is told, at its next tool
@@ -596,6 +597,14 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   form can set `spec.parallel`. The agent-slot queue
   still caps how many agents run. See
   [plans/done/brief-parallel.md](plans/done/brief-parallel.md).
+- **A Brief pauses and resumes its Crews in one step** (#677). While
+  `spec.paused` is true, the Brief sets `spec.paused` on every Crew it made,
+  marking each with `c4.factory.io/paused-by: brief`, starts no new round and
+  tends no failed issue; a Task already started, its planner's included, runs
+  to its end. Its condition `Paused` names the Tasks still running, then says
+  nothing is. Set back to false, it unpauses only the Crews it marked, so a
+  Crew a person paused by hand stays paused. The Brief's card pauses and
+  resumes it. See [plans/upgrade-in-place.md](plans/upgrade-in-place.md).
 - **Follow-ups keep scaffold once.** A change to a scaffolded Container
   becomes an issue in its repository; a new Container is added and scaffolded;
   a Relationship added from a scaffolded Container shows `AddedAfterScaffold`
@@ -701,7 +710,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   did for their app: the planner's `plan/summary.md`, or what the plan holds
   when it wrote none, never the planner's reply. A summary too long for the
   history ends on its last whole sentence, never mid-word. The chart makes each project's namespace, Project, catalog and four default
-  Agents. A person gives the Agents' token once, as a Secret in the release
+  Agents, and an upgrade updates the catalog and Agents in place. A person gives the Agents' token once, as a Secret in the release
   namespace, and the operator shares it with every project; a project with a
   Secret of that name of its own keeps it
   ([plan](plans/done/shared-project-credentials.md)). A Brief whose Agent's token
@@ -730,7 +739,7 @@ release installs the whole factory:
 | Operator, CRDs, RBAC, admission policy | release namespace | always |
 | UI | release namespace | `ui.enabled`, on by default |
 | Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password and the runners' registration token generated in the cluster by Gitea's pod into Secrets `gitea-admin` and `gitea-runner` when missing, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
-| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret, a GitProvider and, when the namespace has none, a Project for each project in `gitea.projects`; labels a project namespace the chart didn't make so it receives the shared Secrets |
+| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret, a GitProvider and, when the namespace has none, a Project for each project in `gitea.projects`; labels a project namespace the chart didn't make so it receives the shared Secrets; applies the catalog, the Agents and the GitProviders the chart renders into ConfigMap `c4factory-catalog` with server-side apply, so an upgrade updates them in place, keeping their UIDs and the fields the chart doesn't set |
 | Project namespaces | each of `gitea.projects` | `projectNamespaces.create`, on by default; made when missing, labeled `c4.factory.io/shared-secrets: "true"` and kept on uninstall; a namespace that already exists is left to the person |
 | Shared Secrets | the release namespace, copied to each project namespace | the Agents' token Secret (`agents.credentialsSecret`) and the pull Secrets (`global.imagePullSecrets`), which the person makes once; the operator copies each into every labeled namespace, before it has a Project too (a Brief there needs the token for the round that makes it), keeps its copies in step with the source, and never touches a Secret of that name it didn't make, which is how a project keeps a token of its own; Task sandboxes list the pull Secrets |
 | CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
@@ -742,6 +751,18 @@ release namespace, and, while the GHCR packages are private, a pull secret in
 the release namespace and Gitea's or the images loaded into its cluster. Adding
 a project is adding its name to `gitea.projects`. The Kind test environment of this repository keeps its
 make targets (`make gitea seed deploy`) and locally built images.
+
+**An upgrade leaves running work alone** (#677). A device upgrades in place
+with `helm upgrade`, while Tasks run. A Task's state lives in its status, so
+the restarted operator picks up its sandbox, round and pull request where
+they were; a sandbox is never changed under its agent and keeps the token it
+started with; the Agents, catalog and GitProviders are updated in place, never
+deleted; and a sandbox waits out a Gitea restart, a run that still can't
+reach it being rerun without spending the round. New Agent values apply from
+the next run, and a new Standard ref through its update pull request. A
+person who wants a quiet moment pauses a Brief and waits for its `Paused`
+condition to say nothing is running. See
+[plans/upgrade-in-place.md](plans/upgrade-in-place.md).
 
 ## Out of scope for v1
 

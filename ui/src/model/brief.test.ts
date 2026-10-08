@@ -301,6 +301,15 @@ describe('describeUsage', () => {
     expect(describeUsage(6_120, 0, { output: 1_400_000, largestSession: 142_000 }, 200_000)?.pastLimit).toBe(false)
   })
 
+  it('says how often a session handed off, and nothing when none did', () => {
+    const usage = describeUsage(6_120, 0, { output: 1_400_000, largestSession: 142_000, sessionHandoffs: 2 })
+    expect(usage?.handoffs).toBe('handed off 2×')
+    expect(usage?.line).toBe('$6.12 · 1.4M tokens · largest session 142k, past the 130k limit · handed off 2×')
+    const none = describeUsage(6_120, 0, { output: 1_400_000, largestSession: 112_000, sessionHandoffs: 0 })
+    expect(none?.handoffs).toBeUndefined()
+    expect(none?.line).toBe('$6.12 · 1.4M tokens · largest session 112k')
+  })
+
   it.each([
     ['no run yet', 0, 0, {}, undefined],
     ['a run before the operator counted tokens', 420, 0, undefined, '$0.42'],
@@ -331,7 +340,7 @@ describe('describeUsage', () => {
             costMilliUSD: 312,
             tokens: { cacheRead: 486_000, output: 14_000, largestSession: 150_000 },
           },
-          { round: 2, outcome: 'PlannerNeedsInput', tokens: { runsWithout: 1 } },
+          { round: 2, outcome: 'PlannerNeedsInput', tokens: { runsWithout: 1, sessionHandoffs: 1 } },
         ],
       },
     })
@@ -345,7 +354,8 @@ describe('describeUsage', () => {
           tokens: 'tokens not reported by the agent',
           largestSession: undefined,
           pastLimit: false,
-          line: 'tokens not reported by the agent',
+          handoffs: 'handed off 1×',
+          line: 'tokens not reported by the agent · handed off 1×',
         },
       },
       {
@@ -355,6 +365,7 @@ describe('describeUsage', () => {
         usage: expect.objectContaining({
           line: '$0.31 · 500k tokens, 486k of them cache reads · largest session 150k, past the 130k limit',
           pastLimit: true,
+          handoffs: undefined,
         }),
       },
     ])

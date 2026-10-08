@@ -444,14 +444,16 @@ export interface UsageView {
   largestSession?: string
   /** Whether the largest session passed the limit. */
   pastLimit: boolean
-  /** The parts joined, such as "$6.12 · 1.4M tokens, 1.1M of them cache reads · largest session 142k". */
+  /** How often a session handed its work to a fresh one, such as "handed off 2×"; none when it never did. */
+  handoffs?: string
+  /** The parts joined, such as "$6.12 · 1.4M tokens, 1.1M of them cache reads · largest session 142k · handed off 2×". */
   line: string
 }
 
 /**
- * What agent runs used, as their agents reported it: the cost, the tokens and
- * the largest session, which is marked when it passed the limit. Undefined
- * before any run.
+ * What agent runs used, as their agents reported it: the cost, the tokens,
+ * the largest session, which is marked when it passed the limit, and how often
+ * a session handed off to a fresh one. Undefined before any run.
  */
 export function describeUsage(
   milliUSD = 0,
@@ -479,9 +481,10 @@ export function describeUsage(
   const largestSession = largest
     ? `largest session ${formatTokens(largest)}${pastLimit ? `, past the ${formatTokens(limit)} limit` : ''}`
     : undefined
-  const parts = [cost, used, largestSession].filter(Boolean)
+  const handoffs = tokens.sessionHandoffs ? `handed off ${tokens.sessionHandoffs}×` : undefined
+  const parts = [cost, used, largestSession, handoffs].filter(Boolean)
   if (!parts.length) return undefined
-  return { cost, tokens: used, largestSession, pastLimit, line: parts.join(' · ') }
+  return { cost, tokens: used, largestSession, pastLimit, handoffs, line: parts.join(' · ') }
 }
 
 /** A token count in a few characters: 950, 9.5k, 142k, 1.4M. */
