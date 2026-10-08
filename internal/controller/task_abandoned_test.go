@@ -16,6 +16,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -53,6 +54,21 @@ func failTry(ns, name string, issue int) *c4v1alpha1.Task {
 	return task
 }
 
+// waitingTry creates a Task at issue that waits for an absent Agent, so it
+// takes no step of its own, with pr as its pull request.
+func waitingTry(ns, name string, issue int, pr gitprovider.PullRequest) {
+	GinkgoHelper()
+	task := newTask(ns, name, "")
+	task.Spec.Issue, task.Spec.AgentRef.Name = int32(issue), "absent"
+	mustCreate(task)
+	Eventually(func(g Gomega) {
+		t := getTask(g, ns, name)
+		g.Expect(t.Status.Phase).To(Equal(c4v1alpha1.TaskPending))
+		t.Status.PullRequest, t.Status.PullRequestURL = int32(pr.Number), pr.URL
+		g.Expect(k8sClient.Status().Update(ctx, t)).To(Succeed())
+	}).Should(Succeed())
+}
+
 // pullState is the state of pull request number of orders-api.
 func pullState(ns string, number int32) string {
 	return gitFake.pullRequests(ns, "orders-api")[number-1].State
@@ -86,49 +102,45 @@ var _ = Describe("Failed Task's pull request", func() {
 		Expect(kept).To(BeTrue(), "the branch stays")
 	})
 
-	It("closes when a newer try at its issue opens its own, pointing at it", func() {
+	It("closes when a newer try at its issue has its own, pointing at it", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 1))
 		n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
 		old := failTry(ns, "orders-api-1", n).Status.PullRequest
 
-		startTry(ns, "orders-api-2", n, "sha-2")
-		newer := getTask(Default, ns, "orders-api-2").Status
-		Expect(newer.PullRequest).NotTo(Equal(old))
+		// A newer try with a pull request of its own, as tries before #607 had.
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-2", "sha-2")
+		own, err := (&fakeProvider{git: gitFake}).OpenPullRequest(ctx,
+			gitprovider.Repository{Owner: ns, Name: "orders-api"}, "task/orders-api-2", "main", "Validate orders", "")
+		Expect(err).NotTo(HaveOccurred())
+		waitingTry(ns, "orders-api-2", n, own)
+
 		Eventually(func(g Gomega) {
 			g.Expect(pullState(ns, old)).To(Equal(stateClosed))
 			g.Expect(getTask(g, ns, "orders-api-1").Status.PullRequestEnded).To(Equal("superseded by Task orders-api-2"))
 		}).Should(Succeed())
 		Expect(gitFake.pullComments(ns, "orders-api", int(old))).To(ContainElement(And(
-			ContainSubstring("Task `orders-api-2`"), ContainSubstring(newer.PullRequestURL))))
-		Expect(pullState(ns, newer.PullRequest)).To(Equal(stateOpen), "the newer try's pull request is its own")
+			ContainSubstring("Task `orders-api-2`"), ContainSubstring(own.URL))))
+		Expect(pullState(ns, int32(own.Number))).To(Equal(stateOpen), "the newer try's pull request is its own")
 	})
 
-	It("stays open when a newer try continues it (#607)", func() {
+	It("stays open when a newer try continues it (#607), its issue closed or not", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 1))
 		n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
-		task := failTry(ns, "orders-api-1", n)
-		pr := task.Status.PullRequest
+		pr := failTry(ns, "orders-api-1", n).Status.PullRequest
 
-		// The newer try waits for an Agent, so it takes no step of its own here.
 		newer := newTask(ns, "orders-api-2", "")
-		newer.Spec.Issue, newer.Spec.AgentRef.Name = int32(n), "absent"
+		newer.Spec.Issue = int32(n)
 		mustCreate(newer)
 		Eventually(func(g Gomega) {
-			t := getTask(g, ns, "orders-api-2")
-			g.Expect(t.Status.Phase).To(Equal(c4v1alpha1.TaskPending))
-			t.Status.PullRequest, t.Status.PullRequestURL = pr, task.Status.PullRequestURL
-			g.Expect(k8sClient.Status().Update(ctx, t)).To(Succeed())
-		}).Should(Succeed())
-		Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
-
-		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-2").Status.PullRequest).To(Equal(pr))
 			g.Expect(getTask(g, ns, "orders-api-1").Status.PullRequestEnded).To(Equal("continued by Task orders-api-2"))
 		}).Should(Succeed())
-		Expect(pullState(ns, pr)).To(Equal(stateOpen))
+		Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
+		Consistently(func() string { return pullState(ns, pr) }, "3s").Should(Equal(stateOpen))
 		Expect(gitFake.pullComments(ns, "orders-api", int(pr))).NotTo(ContainElement(ContainSubstring("Closing")))
 	})
 

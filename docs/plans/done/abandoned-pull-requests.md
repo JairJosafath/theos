@@ -52,8 +52,9 @@ field, the reconcile step, envtests, this plan and the `docs/design.md` bullet.
   (`internal/controller/task_abandoned_test.go`): a Failed Task's pull request
   stays open while its issue is open and closes, with the comment, once the
   issue is closed, the branch kept; an older try's pull request closes when a
-  newer try opens its own, linking it; a pull request a newer try continues
-  (#607) stays open; a Task without an issue closes its pull request at once.
+  newer try has its own (as tries before #607 did), linking it; a pull request
+  a newer try continues through #607 stays open, its issue closed or not; a
+  Task without an issue closes its pull request at once.
 - `make check` passes.
 
 A human run of Kind would show the same against Gitea: the close and the
