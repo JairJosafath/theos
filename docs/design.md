@@ -214,8 +214,10 @@ enforces.
   message and on the issue, and the Brief lists the issue as kind `blocked`. A
   round with no change and no such line fails with the end of the agent's
   summary (its last 400 bytes, from a whole word), where it usually said why. A
-  line that says nothing blocks the issue (`Blocked: none`, `n/a`, `nothing`)
-  is not a blocked note. The
+  line that says nothing blocks the issue (`Blocked: none`, `n/a`,
+  `No blockers.`, `nothing blocks this issue`) is not a blocked note; one that
+  goes on to name something (`none of the engine's releases has the fix`) is.
+  The
   Container's Crew decides how many Tasks run at once.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
