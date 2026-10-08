@@ -221,6 +221,9 @@ case $(cat "$FAKE") in
   login) echo 'Not logged in · Please run /login' >&2; exit 1 ;;
   oauth) echo '{"is_error":true,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","num_turns":0}'; exit 1 ;;
   oauth-ok) echo '{"is_error":false,"result":"fixed the failed to authenticate matcher","num_turns":9}' ;;
+  oauth-quoted) echo '{"is_error":false,"result":"stopped: the Gitea call said failed to authenticate","num_turns":9}'; exit 1 ;;
+  oauth-noturn) echo '{"is_error":false,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","num_turns":0}'; exit 1 ;;
+  login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
   handoff) echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"handed off","num_turns":9}' ;;
@@ -284,6 +287,25 @@ echo oauth-ok >"$FAKE"
 work
 check "oauth-ok: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
 rm -f "$DIR/fails-175"
+# A session that exits non-zero and whose final message only quotes a login
+# failure pauses nothing either (#655): the agent's words aren't the CLI's.
+echo oauth-quoted >"$FAKE"
+work
+check "oauth-quoted: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
+check "oauth-quoted: counted" "$(wc -l <"$DIR/fails-175")" 1
+rm -f "$DIR/fails-175"
+# The CLI's login error as a non-error result before any turn still pauses.
+echo oauth-noturn >"$FAKE"
+LIMIT_WAIT=10m work
+check "oauth-noturn: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+check "oauth-noturn: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+rm -f "$DIR/paused-until"
+# So does the CLI's login error on stderr of a session that exited non-zero.
+echo login-err >"$FAKE"
+LIMIT_WAIT=10m work
+check "login-err: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+check "login-err: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+rm -f "$DIR/paused-until"
 
 # Failed sessions in a row: a handoff or a commit resets the count; the third
 # escalates the issue to the maintainer, with a comment naming each session.
