@@ -218,6 +218,48 @@ var _ = Describe("Brief releases", func() {
 		}
 	})
 
+	It("puts a released app's ready work in no milestone in its first open release, before the round's (#599)", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, linterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{""}), "filed before releases were on")
+
+		By("pausing the Crew, so the issues keep their labels, and a person making v0.1.0")
+		crew := linterCrew(Default, ns)
+		Expect(patch(crew, func() { crew.Spec.Paused = true })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(linterCrew(g, ns).Status.Phase).To(Equal(c4v1alpha1.CrewPaused))
+		}).Should(Succeed())
+		older := gitFake.addIssue(ns, "linter", "Bundle the engine", "", []string{model.LabelReady})
+		gitFake.addMilestone(ns, "linter", "v0.1.0", "", time.Now().Add(time.Hour))
+		proposed := gitFake.addIssue(ns, "linter", "Follow-up", "", []string{model.LabelProposed})
+		gitFake.setIssueMilestone(ns, "linter", proposed, model.FollowUpMilestone)
+		byHand := gitFake.addIssue(ns, "linter", "Try it in an editor", "",
+			[]string{model.LabelNeedsHuman, model.LabelByHand})
+		gitFake.setIssueMilestone(ns, "linter", byHand, model.FollowUpMilestone)
+		handedBack := gitFake.addIssue(ns, "linter", "Failed thrice", "", []string{model.LabelNeedsHuman})
+
+		By("applying round 2, which releases the linter")
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Ship it."} })).To(Succeed())
+		planRound(ns, 2, 1, releasingLinterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Round).To(Equal(int32(2)))
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.2.0"}))
+		Expect(gitFake.issue(ns, "linter", older).milestone).To(Equal("v0.1.0"))
+		Expect(gitFake.issue(ns, "linter", proposed).milestone).To(Equal(model.FollowUpMilestone))
+		Expect(gitFake.issue(ns, "linter", byHand).milestone).To(Equal(model.FollowUpMilestone))
+		Expect(gitFake.issue(ns, "linter", handedBack).milestone).To(BeEmpty())
+	})
+
 	It("files no release milestone for a Container the round doesn't release (B11)", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)

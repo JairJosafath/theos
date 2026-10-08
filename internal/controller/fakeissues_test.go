@@ -199,7 +199,12 @@ func (p *fakeProvider) ListIssues(_ context.Context, repo gitprovider.Repository
 	var out []gitprovider.Issue
 	for _, i := range p.git.issueState().issues[repo.Owner+"/"+repo.Name] {
 		if i.State == "open" && (label == "" || slices.Contains(i.Labels, label)) {
-			out = append(out, i.Issue)
+			issue := i.Issue
+			if i.milestone != "" {
+				issue.Milestone = int64(slices.Index(p.git.issueState().milestones[repo.Owner+"/"+repo.Name],
+					i.milestone) + 1)
+			}
+			out = append(out, issue)
 		}
 	}
 	return out, nil

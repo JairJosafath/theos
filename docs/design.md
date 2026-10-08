@@ -541,7 +541,12 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   Container's issues in a release milestone of its own, so a release follows
   once they are done: the next patch version when the round's work for it is
   all fixes (`kind/bug`, and no suggestion taken), else the next minor one,
-  each due after every open release before it. A person turns releases on
+  each due after every open release before it. Applying a round also puts
+  such a Container's open ready or in-progress issues that sit in no
+  milestone (filed before releases were on) into its first open release, so
+  work it already has never waits behind its own later releases (#599); a
+  proposed suggestion, a `kind/by-hand` issue and one handed back to a person
+  stay where they are. A person turns releases on
   with a prompt, or by naming the Container in `spec.releases` with a GitHub
   repository and a Secret holding a token for that repository only, which
   also has the Crew publish its releases there. Releases only turn on; a Crew
