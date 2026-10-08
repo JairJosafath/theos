@@ -1,8 +1,8 @@
 package model
 
 // BriefParallelDefault is how many issues a Brief's Crews work on at once when
-// nothing says otherwise (plans/brief-parallel.md, decision 2). The agent-slot
-// queue still caps how many agents run.
+// nothing says otherwise (plans/done/brief-parallel.md, decision 2). The
+// agent-slot queue still caps how many agents run.
 const BriefParallelDefault int32 = 3
 
 // BriefParallel is how many issues a Brief's Crews work on at once: spec, the

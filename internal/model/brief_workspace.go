@@ -70,6 +70,12 @@ type BriefWorkspace struct {
 	Tending bool
 	// Releases are the Brief's spec.releases entries (plans/done/brief-releases.md, R5).
 	Releases []WorkspaceRelease
+	// SpecParallel is the Brief's spec.parallel; PromptParallel the number a
+	// prompt of round PromptParallelRound gave. 0 is unset
+	// (plans/done/brief-parallel.md, decisions 4 and 5).
+	SpecParallel        int32
+	PromptParallel      int32
+	PromptParallelRound int32
 }
 
 // WorkspaceRelease is a spec.releases entry: the person asks for the
@@ -173,6 +179,7 @@ func renderBrief(ws BriefWorkspace) string {
 			"Answer one only when a **new** prompt speaks to it.\n", len(ws.Failed), WorkspaceFailedFile)
 	}
 	fmt.Fprintf(&b, "\n## Git provider\n\nEvery new Container names `gitProviderRef: {name: %s}`.\n", ws.GitProvider)
+	b.WriteString(renderParallel(ws))
 	if len(ws.Releases) > 0 {
 		b.WriteString("\n## Releases\n\nThe person asked for these Containers' releases. Name each in " +
 			"`plan/releases.yaml`; plan the Container under that name if it isn't in the model yet.\n\n")
@@ -187,6 +194,24 @@ func renderBrief(ws BriefWorkspace) string {
 		}
 	}
 	return b.String()
+}
+
+// renderParallel says how many issues the Brief's Crews build at once now,
+// where that comes from, and whether a plan may change it.
+func renderParallel(ws BriefWorkspace) string {
+	n := BriefParallel(ws.SpecParallel, ws.PromptParallel)
+	head := fmt.Sprintf("\n## Building at once\n\nEach Crew of the Brief builds up to %d issues at once, ", n)
+	switch {
+	case ws.SpecParallel > 0:
+		return head + fmt.Sprintf("set on the Brief (`spec.parallel`), which wins over a prompt. Don't write `%s`; "+
+			"if a new prompt asks for another number, say in `%s` that it is set on the Brief.\n",
+			PlanParallelFile, PlanChoicesFile)
+	case ws.PromptParallel > 0:
+		return head + fmt.Sprintf("as a prompt of round %d asked. Write `%s` only when a **new** prompt asks "+
+			"for another number.\n", ws.PromptParallelRound, PlanParallelFile)
+	}
+	return head + fmt.Sprintf("the operator's default. Write `%s` only when a **new** prompt asks how many to "+
+		"build at once.\n", PlanParallelFile)
 }
 
 // oneParagraph keeps a prompt inside its list item: its line breaks become spaces.

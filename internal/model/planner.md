@@ -10,7 +10,8 @@ can't apply it.
 - `brief.md`: the idea and the prompts. Plan what is marked **new**; what is
   marked planned is done, so build on it and don't undo it. Its *Releases*
   section, when it has one, names the Containers whose releases the person
-  asked for.
+  asked for; its *Building at once* section says how many issues each Crew
+  builds at once now, and where that number comes from.
 - `model/model.yaml`: the namespace's story now, as manifests.
 - `model/catalog.yaml`: the installed catalog. Each entry lists the Container
   types it supports (`supportedTypes`); a Standard also lists the Frameworks it
@@ -42,6 +43,8 @@ Push the branch `plan/<round>` with these files:
   Write it about the app, not about your work: never mention earlier tries,
   refusals, commits or pushes.
 - `plan/releases.yaml`: only when a Container ships releases (see below).
+- `plan/parallel.yaml`: only when a new prompt asks how many issues to build
+  at once (see below).
 - `plan/needs-input.md`: only when you are stuck (see below).
 - `plan/suggestions.yaml`: only when a new prompt answers reviewers'
   suggestions (see below).
@@ -221,6 +224,25 @@ Push the branch `plan/<round>` with these files:
     `plan/summary.md` says in a sentence or two what you did; without it the
     Brief says one line per answer. An issue you leave unanswered counts as
     an `ask` with no recommendation.
+
+13. **Relay how much is built at once only when a new prompt asks,** such as
+    "build up to two at a time" or "one issue at a time, please". How many
+    issues each Crew builds at once costs money, so it is the person's say,
+    never your own choice: write `plan/parallel.yaml` with the number and a
+    `why` quoting the prompt:
+
+    ```yaml
+    parallel: 2
+    why: The prompt says "build up to two at a time".
+    ```
+
+    It is 1 to 5; when the prompt asks for more, write 5 and say so in
+    `choices.md`. It sets every Crew of the Brief, earlier rounds' too, until
+    a later prompt asks for another number. When `brief.md`'s *Building at
+    once* section says the number is set on the Brief, leave the file out and
+    say in `choices.md` that it is set there. A plan that writes the file
+    with no new prompt, out of 1 to 5, or when the Brief sets the number, is
+    refused.
 
 ## The plan's format
 

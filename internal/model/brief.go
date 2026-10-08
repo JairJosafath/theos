@@ -39,6 +39,7 @@ const (
 	PlanNeedsInputFile = "plan/needs-input.md"
 	PlanSummaryFile    = "plan/summary.md"
 	PlanReleasesFile   = "plan/releases.yaml"
+	PlanParallelFile   = "plan/parallel.yaml"
 	planIssuesDir      = "plan/issues/"
 )
 
@@ -131,6 +132,17 @@ type Plan struct {
 	// Releases are the Containers releases.yaml says ship releases, sorted,
 	// each once (plans/done/brief-releases.md, R1).
 	Releases []string
+	// Parallel is parallel.yaml's say on how many issues the Brief's Crews
+	// build at once, relayed from a new prompt; nil when the file is absent
+	// (plans/done/brief-parallel.md, decision 4).
+	Parallel *PlanParallel
+}
+
+// PlanParallel is plan/parallel.yaml: the number a new prompt asked for, and
+// the planner's quote of it.
+type PlanParallel struct {
+	N   int32
+	Why string
 }
 
 // maxRoundSummary is the most of a round's summary a Brief's history keeps.
@@ -198,6 +210,13 @@ func parsePlan(files map[string]string, needModel bool) (Plan, error) {
 		return Plan{}, fmt.Errorf("%s: %w", PlanReleasesFile, err)
 	}
 	plan.Releases = releases
+	if s, ok := files[PlanParallelFile]; ok {
+		parallel, err := parsePlanParallel(s)
+		if err != nil {
+			return Plan{}, fmt.Errorf("%s: %w", PlanParallelFile, err)
+		}
+		plan.Parallel = &parallel
+	}
 	for line := range strings.SplitSeq(files[PlanChoicesFile], "\n") {
 		line = strings.TrimSpace(line)
 		for _, marker := range []string{"-", "*", "[ ]", "[x]"} {
@@ -258,6 +277,29 @@ func parsePlanReleases(s string) ([]string, error) {
 	names := slices.Clone(releases.Containers)
 	slices.Sort(names)
 	return slices.Compact(names), nil
+}
+
+// parsePlanParallel reads parallel.yaml, `parallel: N` and `why:`, strictly.
+// Whether N is one the Brief takes is CheckPlan's to say.
+func parsePlanParallel(s string) (PlanParallel, error) {
+	const shape = "the file holds only parallel: N and why: quoting the prompt that asks"
+	var parallel struct {
+		Parallel *int32 `yaml:"parallel"`
+		Why      string `yaml:"why"`
+	}
+	dec := yaml.NewDecoder(strings.NewReader(s))
+	dec.KnownFields(true)
+	if err := dec.Decode(&parallel); err != nil && !errors.Is(err, io.EOF) {
+		return PlanParallel{}, fmt.Errorf("%w; %s", err, shape)
+	}
+	if parallel.Parallel == nil {
+		return PlanParallel{}, fmt.Errorf("parallel: is missing; %s, or leave the file out", shape)
+	}
+	why := strings.Join(strings.Fields(parallel.Why), " ")
+	if why == "" {
+		return PlanParallel{}, fmt.Errorf("why: is empty; %s", shape)
+	}
+	return PlanParallel{N: *parallel.Parallel, Why: why}, nil
 }
 
 type planManifest struct {
@@ -473,6 +515,12 @@ type CurrentModel struct {
 	CrewDesigners []string
 	// Released are the existing Containers whose Crew has made a release.
 	Released []string
+	// NewPrompt says the round takes a new prompt, or the idea no round
+	// planned yet: only then may the plan say how much is built at once.
+	NewPrompt bool
+	// SpecParallel is the Brief's spec.parallel, 0 when unset; set, it wins
+	// over a prompt, so a plan may not write parallel.yaml.
+	SpecParallel int32
 }
 
 // Refusal is one reason a plan can't be applied, for the planner's next round.
@@ -569,7 +617,30 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 				name, PlanModelFile)
 		}
 	}
+	checkParallel(plan, current, refuse)
 	return out
+}
+
+// checkParallel checks parallel.yaml (plans/done/brief-parallel.md, decisions 4
+// and 5): a number of 1 to 5, a new prompt that asks for it, and no
+// spec.parallel that wins over it.
+func checkParallel(plan Plan, current CurrentModel, refuse func(string, string, ...any)) {
+	if plan.Parallel == nil {
+		return
+	}
+	if n := plan.Parallel.N; n < 1 || n > 5 {
+		refuse(PlanParallelFile, "says parallel: %d; a Crew builds 1 to 5 issues at once, so write the number "+
+			"the prompt asks for within that, and say so in %s", n, PlanChoicesFile)
+	}
+	if !current.NewPrompt {
+		refuse(PlanParallelFile, "is written in a round with no new prompt; how much the Crews build at once "+
+			"is the person's say, so write it only when a new prompt asks, and leave the file out")
+	}
+	if current.SpecParallel > 0 {
+		refuse(PlanParallelFile, "is written, but the Brief's spec.parallel sets it to %d, which wins over a "+
+			"prompt; leave the file out and say in %s that the number is set on the Brief",
+			current.SpecParallel, PlanChoicesFile)
+	}
 }
 
 func checkCreated(plan Plan, current CurrentModel, o PlanObject, refuse func(string, string, ...any)) {

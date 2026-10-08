@@ -279,15 +279,18 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1
 	}
 	roundRuns := status.Round > 0 && !roundOver(status)
 	ws := model.BriefWorkspace{
-		Brief:          brief.Name,
-		Idea:           brief.Spec.Idea,
-		Prompts:        model.WorkspacePrompts(brief.Spec.Prompts, int(status.RoundPrompts), roundRuns),
-		PromptsPlanned: int(status.PromptsPlanned),
-		IdeaPlanned:    model.IdeaPlanned(outcomes, int(status.PromptsPlanned)),
-		Namespace:      brief.Namespace,
-		GitProvider:    brief.Spec.GitProviderRef.Name,
-		Tended:         modelTended(status.Tended),
-		Tending:        roundRuns && tending(status),
+		Brief:               brief.Name,
+		Idea:                brief.Spec.Idea,
+		Prompts:             model.WorkspacePrompts(brief.Spec.Prompts, int(status.RoundPrompts), roundRuns),
+		PromptsPlanned:      int(status.PromptsPlanned),
+		IdeaPlanned:         model.IdeaPlanned(outcomes, int(status.PromptsPlanned)),
+		Namespace:           brief.Namespace,
+		GitProvider:         brief.Spec.GitProviderRef.Name,
+		Tended:              modelTended(status.Tended),
+		Tending:             roundRuns && tending(status),
+		SpecParallel:        brief.Spec.Parallel,
+		PromptParallel:      status.Parallel,
+		PromptParallelRound: status.ParallelRound,
 	}
 	for _, entry := range brief.Spec.Releases {
 		ws.Releases = append(ws.Releases, model.WorkspaceRelease{Container: entry.Container,

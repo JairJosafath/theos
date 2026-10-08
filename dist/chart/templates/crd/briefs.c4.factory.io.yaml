@@ -170,7 +170,7 @@ spec:
                 description: |-
                   parallel is how many issues each Crew the Brief made works on at once,
                   set on those Crews every reconcile, earlier rounds' included
-                  (docs/plans/brief-parallel.md). Unset is the operator's default, 3.
+                  (docs/plans/done/brief-parallel.md). Unset is the operator's default, 3.
                 format: int32
                 maximum: 5
                 minimum: 1
@@ -706,6 +706,20 @@ spec:
                 description: observedGeneration is the spec generation the status
                   reflects.
                 format: int64
+                type: integer
+              parallel:
+                description: |-
+                  parallel is how many issues each Crew the Brief made works on at once,
+                  as a prompt asked: the planner relays it in plan/parallel.yaml and the
+                  round that applies it records it here. spec.parallel wins over it
+                  (docs/plans/done/brief-parallel.md).
+                format: int32
+                maximum: 5
+                minimum: 1
+                type: integer
+              parallelRound:
+                description: parallelRound is the round whose prompt gave parallel.
+                format: int32
                 type: integer
               phase:
                 description: phase is Pending, Planning, Applying, Planned, NeedsInput

@@ -323,7 +323,8 @@ func planFiles(tree scaffold.Tree) map[string]string {
 // currentModel is what the Brief's plans are checked against. Crews have no
 // designer yet, so a design idea needs acceptance criteria too.
 func (r *BriefReconciler) currentModel(ctx context.Context, brief *c4v1alpha1.Brief) (model.CurrentModel, error) {
-	current := model.CurrentModel{Namespace: brief.Namespace, GitProvider: brief.Spec.GitProviderRef.Name}
+	current := model.CurrentModel{Namespace: brief.Namespace, GitProvider: brief.Spec.GitProviderRef.Name,
+		NewPrompt: newPrompt(&brief.Status), SpecParallel: brief.Spec.Parallel}
 	var err error
 	if current.Objects, err = storyObjects(ctx, r.Client, brief.Namespace); err != nil {
 		return current, err
@@ -341,6 +342,19 @@ func (r *BriefReconciler) currentModel(ctx context.Context, brief *c4v1alpha1.Br
 		}
 	}
 	return current, nil
+}
+
+// newPrompt reports whether the round takes a new prompt, or the idea no
+// round planned yet; a tending round takes neither.
+func newPrompt(status *c4v1alpha1.BriefStatus) bool {
+	if tending(status) {
+		return false
+	}
+	outcomes := make([]string, 0, len(status.History))
+	for _, h := range status.History {
+		outcomes = append(outcomes, h.Outcome)
+	}
+	return status.RoundPrompts > status.PromptsPlanned || !model.IdeaPlanned(outcomes, int(status.PromptsPlanned))
 }
 
 // checkPlan checks the plan the round's Task pushed and writes the verdict on

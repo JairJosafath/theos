@@ -19,12 +19,28 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// How much a Brief's Crews build at once (docs/plans/brief-parallel.md): the
+// How much a Brief's Crews build at once (docs/plans/done/brief-parallel.md): the
 // Brief owns the parallel of every Crew it made.
 
 // briefParallel is how many issues the Brief's Crews work on at once.
 func briefParallel(brief *c4v1alpha1.Brief) int32 {
-	return model.BriefParallel(brief.Spec.Parallel, 0)
+	return model.BriefParallel(brief.Spec.Parallel, brief.Status.Parallel)
+}
+
+// applyParallel records the number the round's plan relays from a prompt in
+// status.parallel (decision 4), before the round makes its Crews, and sets
+// the Crews the Brief made already. spec.parallel still wins over it.
+func (r *BriefReconciler) applyParallel(ctx context.Context, brief *c4v1alpha1.Brief, plan model.Plan) error {
+	if plan.Parallel == nil {
+		return nil
+	}
+	status := &brief.Status
+	if status.Parallel != plan.Parallel.N || status.ParallelRound != status.Round {
+		status.Parallel, status.ParallelRound = plan.Parallel.N, status.Round
+		logf.FromContext(ctx).Info("Recorded the parallel a prompt asked for", "round", status.Round,
+			"parallel", plan.Parallel.N, "why", plan.Parallel.Why)
+	}
+	return r.syncParallel(ctx, brief)
 }
 
 // syncParallel sets the parallel of every Crew the Brief made, earlier rounds'

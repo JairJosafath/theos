@@ -67,7 +67,7 @@ type BriefSpec struct {
 
 	// parallel is how many issues each Crew the Brief made works on at once,
 	// set on those Crews every reconcile, earlier rounds' included
-	// (docs/plans/brief-parallel.md). Unset is the operator's default, 3.
+	// (docs/plans/done/brief-parallel.md). Unset is the operator's default, 3.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=5
 	// +optional
@@ -510,6 +510,19 @@ type BriefStatus struct {
 	// the prompts after them wait for the next round.
 	// +optional
 	PromptsPlanned int32 `json:"promptsPlanned,omitempty"`
+
+	// parallel is how many issues each Crew the Brief made works on at once,
+	// as a prompt asked: the planner relays it in plan/parallel.yaml and the
+	// round that applies it records it here. spec.parallel wins over it
+	// (docs/plans/done/brief-parallel.md).
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=5
+	// +optional
+	Parallel int32 `json:"parallel,omitempty"`
+
+	// parallelRound is the round whose prompt gave parallel.
+	// +optional
+	ParallelRound int32 `json:"parallelRound,omitempty"`
 
 	// choices are what the planner chose in the last round, in plain words.
 	// +listType=atomic
