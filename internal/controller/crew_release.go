@@ -68,7 +68,7 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 			err = provider.CreateTag(gitCtx, repo, step.Tag, step.Commit, "Release "+step.Tag)
 		}
 		if err == nil && step.Commit != "" && crew.Spec.TagReleases {
-			err = provider.CloseMilestone(gitCtx, repo, step.Milestone)
+			err = settleMilestones(gitCtx, provider, repo, step)
 		}
 	}
 	if step.File && err == nil {
@@ -93,7 +93,10 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		r.setReleased(crew, status, metav1.ConditionFalse, reasonReleaseGitFailure,
 			"Could not tag the next release: "+err.Error())
 	case step.Commit != "":
-		message := fmt.Sprintf("Released %s at %s", step.Tag, step.Commit)
+		message := model.ReleasedMessage(step)
+		for _, m := range step.Moved {
+			log.Info("Moved an issue into the release", "tag", step.Tag, "issue", m.Issue, "from", m.From)
+		}
 		log.Info("Released milestone", "tag", step.Tag, "commit", step.Commit, "created", step.CreateTag)
 		r.event(crew, corev1.EventTypeNormal, reasonReleased, "TagRelease", message)
 		r.notePublishSkipped(ctx, crew, status.LastRelease)
@@ -126,6 +129,36 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		}
 	}
 	return nil
+}
+
+// settleMilestones moves the later releases' issues the tag carries into its
+// milestone, each with a comment, closes each later milestone left empty right
+// after its last move, and last the tagged release's own. The tag is made
+// first, so a poll that fails half way finds it and moves the rest. A comment
+// goes before its move, so a failed one is made again; a failure between a
+// release's last move and closing it leaves that release empty, to a person.
+func settleMilestones(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	step model.ReleaseStep) error {
+	for i, m := range step.Moved {
+		if err := provider.CommentIssue(ctx, repo, m.Issue, model.MovedComment(step, m)); err != nil {
+			return fmt.Errorf("commenting on #%d: %w", m.Issue, err)
+		}
+		if err := provider.SetIssueMilestone(ctx, repo, m.Issue, step.Milestone); err != nil {
+			return fmt.Errorf("moving #%d into %s: %w", m.Issue, step.Tag, err)
+		}
+		if i+1 < len(step.Moved) && step.Moved[i+1].From == m.From {
+			continue
+		}
+		for _, e := range step.Emptied {
+			if e.Title != m.From {
+				continue
+			}
+			if err := provider.CloseMilestone(ctx, repo, e.ID); err != nil {
+				return fmt.Errorf("closing %s: %w", e.Title, err)
+			}
+		}
+	}
+	return provider.CloseMilestone(ctx, repo, step.Milestone)
 }
 
 // releaseOf is the release of milestone id among the facts' releases.

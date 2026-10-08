@@ -44,20 +44,26 @@ func mergedIssueIn(ns, release, commit string) {
 	n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, nil)
 	gitFake.setIssueRelease(ns, "orders-api", n, release, releaseDue)
 	Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
+	mergedTask(ns, "orders-api-merged", n, commit, time.Now())
+}
+
+// mergedTask records issue n as merged at commit, at time at, by Task name.
+func mergedTask(ns, name string, n int, commit string, at time.Time) {
+	GinkgoHelper()
 	// The Task's Agent doesn't exist, so the Task does nothing before it is Merged.
-	task := newTask(ns, "orders-api-merged", "")
+	task := newTask(ns, name, "")
 	task.Spec.AgentRef = c4v1alpha1.LocalRef{Name: "nobody"}
 	task.Spec.Issue = int32(n)
 	mustCreate(task)
 	// Once it waits for its Agent, the Task reconciler writes nothing more.
 	Eventually(func(g Gomega) {
-		cond := condition(getTask(g, ns, "orders-api-merged").Status.Conditions, ConditionProgressing)
+		cond := condition(getTask(g, ns, name).Status.Conditions, ConditionProgressing)
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Reason).To(Equal("AgentNotFound"))
 	}).Should(Succeed())
 	Eventually(func(g Gomega) {
-		task := getTask(g, ns, "orders-api-merged")
-		completed := metav1.Now()
+		task := getTask(g, ns, name)
+		completed := metav1.NewTime(at)
 		task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1alpha1.TaskMerged, commit, &completed
 		g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 	}).Should(Succeed())
@@ -423,6 +429,101 @@ var _ = Describe("Crew release preparation", func() {
 			err := k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: fmt.Sprintf("orders-api-%d", next)}, &task)
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "v0.2.0 waits for v0.1.0's prepare issue")
 		}, 3*time.Second).Should(Succeed())
+	})
+
+	It("tags a release whose prepare issue merged after later work, moves that work in, and goes on", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		start := time.Now().Add(-time.Hour)
+		// issue files a closed issue in release, merged at commit minutes after start.
+		issue := func(title, release string, due time.Time, labels []string, commit string, minutes int) int {
+			n := gitFake.addIssue(ns, "orders-api", title, clearIssue, labels)
+			gitFake.setIssueRelease(ns, "orders-api", n, release, due)
+			Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
+			mergedTask(ns, fmt.Sprintf("orders-api-merged-%d", n), n, commit, start.Add(time.Duration(minutes)*time.Minute))
+			return n
+		}
+		next := releaseDue.AddDate(0, 0, 7)
+		// v0.1.3's last fix was handed back; the Crew went on with v0.2.0, whose
+		// first fix merged before v0.1.3's prepare issue.
+		issue("Validate orders", "v0.1.3", releaseDue, nil, "c-fix", 1)
+		early := issue("Ship orders", "v0.2.0", next, nil, "c-early", 2)
+		issue("Prepare v0.1.3", "v0.1.3", releaseDue, []string{"kind/release"}, "c-prepare-013", 3)
+		late := issue("Track orders", "v0.2.0", next, nil, "c-late", 4)
+		crew := newCrew(ns)
+		crew.Spec.Paused = true
+		crew.Spec.PrepareReleases = true
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		var prepare fakeIssue
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.3")).To(Equal("c-prepare-013"))
+			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.1.3")).To(BeTrue())
+			moved := gitFake.issue(ns, "orders-api", early)
+			g.Expect(moved.milestone).To(Equal("v0.1.3"))
+			g.Expect(moved.comments).To(ConsistOf(ContainSubstring("Moved from v0.2.0 to v0.1.3")))
+			g.Expect(gitFake.issue(ns, "orders-api", late).milestone).To(Equal("v0.2.0"))
+			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.2.0")).To(BeFalse())
+			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
+				HaveField("Reason", "Released"),
+				HaveField("Note", fmt.Sprintf("Released v0.1.3 at c-prepare-013, carrying #%d of v0.2.0", early)))))
+			// v0.2.0 is next, with only its own work.
+			for _, i := range gitFake.openIssues(ns, "orders-api") {
+				if i.Title == "Prepare v0.2.0" {
+					prepare = i
+				}
+			}
+			g.Expect(prepare.Number).NotTo(BeZero())
+			g.Expect(prepare.milestone).To(Equal("v0.2.0"))
+			g.Expect(prepare.Body).To(ContainSubstring("Track orders"))
+			g.Expect(prepare.Body).NotTo(ContainSubstring("Ship orders"))
+		}).Should(Succeed())
+
+		// The merge is recorded before the issue closes, as when its Task merges.
+		mergedTask(ns, "orders-api-merged-prepare-020", prepare.Number, "c-prepare-020", time.Now())
+		Expect(gitFake.closeIssue(ns, "orders-api", prepare.Number)).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.tag(ns, "orders-api", "v0.2.0")).To(Equal("c-prepare-020"))
+			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.2.0")).To(BeTrue())
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReleased)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Message).To(Equal("Released v0.2.0 at c-prepare-020"))
+		}).Should(Succeed())
+		Expect(gitFake.tag(ns, "orders-api", "v0.1.3")).To(Equal("c-prepare-013"), "a tag is never moved")
+	})
+
+	It("closes a later release left with no issue, untagged", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		start := time.Now().Add(-time.Hour)
+		next := releaseDue.AddDate(0, 0, 7)
+		fix := gitFake.addIssue(ns, "orders-api", "Ship orders", clearIssue, nil)
+		gitFake.setIssueRelease(ns, "orders-api", fix, "v0.2.0", next)
+		Expect(gitFake.closeIssue(ns, "orders-api", fix)).To(Succeed())
+		mergedTask(ns, "orders-api-merged-early", fix, "c-early", start)
+		own := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, nil)
+		gitFake.setIssueRelease(ns, "orders-api", own, "v0.1.3", releaseDue)
+		Expect(gitFake.closeIssue(ns, "orders-api", own)).To(Succeed())
+		mergedTask(ns, "orders-api-merged-own", own, "c-own", start.Add(time.Minute))
+		crew := newCrew(ns)
+		crew.Spec.Paused = true
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.3")).To(Equal("c-own"))
+			g.Expect(gitFake.issue(ns, "orders-api", fix).milestone).To(Equal("v0.1.3"))
+			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.1.3")).To(BeTrue())
+			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.2.0")).To(BeTrue())
+			g.Expect(gitFake.tag(ns, "orders-api", "v0.2.0")).To(BeEmpty())
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReleased)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Message).To(Equal(fmt.Sprintf("Released v0.1.3 at c-own, carrying #%d of v0.2.0; "+
+				"v0.2.0 had nothing left and closed untagged", fix)))
+		}).Should(Succeed())
 	})
 
 	It("files nothing without spec.prepareReleases", func() {
