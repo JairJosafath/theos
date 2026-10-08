@@ -34,6 +34,21 @@ has "the image list ends it" 'Images: `ghcr.io/o/c4factory/<name>:1.2.0` for ope
 has "the install command names the version" "helm install c4-factory oci://ghcr.io/o/c4factory/charts/c4-factory --version 1.2.0 \\"
 has "the guide link names the tag" "[docs/getting-started.md](https://github.com/o/c4factory/blob/v1.2.0/docs/getting-started.md)"
 
+# The install snippet is the guide's install without the pull secret: the
+# bash blocks of its section 1 up to the helm install's, but the registry
+# login's, and the helm install's imagePullSecrets left out; compared one
+# command per line, with its continuations joined.
+commands() { sed -e :a -e '/\\$/N; s/ *\\\n */ /; ta' | sed 's/^ *//; s/  */ /g'; }
+VERSION=1.2.0 "$NOTES" --prs "$HACK/testdata/release-notes-prs.jsonl" v1.1.0 >"$T/out" 2>&1
+sed -n '/^Install/,/^\[docs/{/^```bash$/,/^```$/{/^```/d;p}}' "$T/out" | commands >"$T/snippet"
+sed -n '/^## 1\. /,/^## 2\. /p' "$HACK/../docs/getting-started.md" |
+  awk '/^```bash$/ {b = ""; on = 1; next} /^```$/ && on {on = 0; if (b !~ /registry login/) printf "%s", b; if (b ~ /helm install/) exit; next} on {b = b $0 "\n"}' |
+  commands | sed "s/ --set '[^']*imagePullSecrets[^']*'//g; s/\"\$VERSION\"/1.2.0/" >"$T/guide"
+check "the install snippet runs the guide's install, without the pull secret" \
+  "$(diff "$T/guide" "$T/snippet")" ""
+hasnt "  makes no project namespace by hand" "kubectl create namespace webshop"
+has "  says the chart makes them" "projects in \`gitea.projects\`, for each of which the chart makes a namespace:"
+
 grep -E '"number":(9|10|11|12|13|14),' "$HACK/testdata/release-notes-prs.jsonl" >"$T/none.jsonl"
 VERSION=1.2.0 "$NOTES" --prs "$T/none.jsonl" v1.1.0 >"$T/out" 2>&1
 check "a range with nothing to list: drafts" $? 0
