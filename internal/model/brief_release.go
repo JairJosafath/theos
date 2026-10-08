@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -11,35 +12,90 @@ import (
 // milestone is due; the date only orders releases (plans/done/brief-releases.md, R6).
 const ReleaseMilestoneDue = 7 * 24 * time.Hour
 
+// LabelBug marks a fix; a round whose work for a Container is all fixes gets a
+// patch release (plans/brief-patch-releases.md, P1).
+const LabelBug = "kind/bug"
+
 // ReleaseMilestoneTitle is the title of the release milestone a Brief's round
-// makes in a repository whose milestones, open or closed, have titles: the
-// next minor version after the newest vMAJOR.MINOR.PATCH among them, or
-// v0.1.0 when there is none. Titles that aren't versions are ignored (R6).
-func ReleaseMilestoneTitle(titles []string) string {
+// makes in a repository whose milestones, open or closed, have titles: after
+// the newest vMAJOR.MINOR.PATCH among them, the next patch version for a round
+// of fixes, else the next minor version; v0.1.0 when there is none. Titles that
+// aren't versions are ignored (R6, P1).
+func ReleaseMilestoneTitle(titles []string, fixes bool) string {
+	newest := newestVersion(titles)
+	switch {
+	case newest == nil:
+		return "v0.1.0"
+	case fixes:
+		return fmt.Sprintf("v%d.%d.%d", newest[0], newest[1], newest[2]+1)
+	default:
+		return fmt.Sprintf("v%d.%d.0", newest[0], newest[1]+1)
+	}
+}
+
+// newestVersion is the newest version among titles, nil when none is one.
+func newestVersion(titles []string) []int {
 	var newest []int
 	for _, title := range titles {
-		m := releaseTitle.FindStringSubmatch(title)
-		if m == nil {
-			continue
-		}
-		version := make([]int, 3)
-		for i := range version {
-			n, err := strconv.Atoi(m[i+1])
-			if err != nil {
-				// Too large to be a version a Crew tags.
-				version = nil
-				break
-			}
-			version[i] = n
-		}
-		if version != nil && (newest == nil || compareVersions(version, newest) > 0) {
+		if version := parseVersion(title); version != nil &&
+			(newest == nil || compareVersions(version, newest) > 0) {
 			newest = version
 		}
 	}
-	if newest == nil {
-		return "v0.1.0"
+	return newest
+}
+
+// parseVersion reads a vMAJOR.MINOR.PATCH title, nil when it isn't one or is
+// too large to be a version a Crew tags.
+func parseVersion(title string) []int {
+	m := releaseTitle.FindStringSubmatch(title)
+	if m == nil {
+		return nil
 	}
-	return fmt.Sprintf("v%d.%d.0", newest[0], newest[1]+1)
+	version := make([]int, 3)
+	for i := range version {
+		n, err := strconv.Atoi(m[i+1])
+		if err != nil {
+			return nil
+		}
+		version[i] = n
+	}
+	return version
+}
+
+// ReleaseMilestoneDueAt is when a release milestone made at now is due:
+// ReleaseMilestoneDue later, or an hour after the latest due date among the
+// open releases, whichever is later, as its version is the newest (P4).
+func ReleaseMilestoneDueAt(open []Release, now time.Time) time.Time {
+	due := now.Add(ReleaseMilestoneDue)
+	for _, r := range open {
+		if parseVersion(r.Title) != nil && !r.Due.Before(due) {
+			due = r.Due.Add(time.Hour)
+		}
+	}
+	return due
+}
+
+// RoundFixes reports, by Container, whether the plan's work for it is all
+// fixes: at least one issue that isn't by hand, each labelled kind/bug, and no
+// reviewer's suggestion taken, which is new work (P2).
+func RoundFixes(plan Plan) map[string]bool {
+	fixes := map[string]bool{}
+	for _, issue := range plan.Issues {
+		if IsByHand(issue.Labels) {
+			continue
+		}
+		bug := slices.ContainsFunc(issue.Labels, func(l string) bool { return strings.TrimSpace(l) == LabelBug })
+		if all, seen := fixes[issue.Container]; !seen || all {
+			fixes[issue.Container] = bug
+		}
+	}
+	for _, a := range plan.Answers {
+		if a.Answer == AnswerTake {
+			fixes[a.Container] = false
+		}
+	}
+	return fixes
 }
 
 func compareVersions(a, b []int) int {

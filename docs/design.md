@@ -538,15 +538,18 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 - **A Brief's apps are released when the plan says so.** A plan names the
   Containers that ship releases (`plan/releases.yaml`); the Crew the Brief
   made for each then tags and prepares releases, and each round files that
-  Container's issues in a release milestone of its own, the next minor
-  version, so a release follows once they are done. A person turns releases on
+  Container's issues in a release milestone of its own, so a release follows
+  once they are done: the next patch version when the round's work for it is
+  all fixes (`kind/bug`, and no suggestion taken), else the next minor one,
+  each due after every open release before it. A person turns releases on
   with a prompt, or by naming the Container in `spec.releases` with a GitHub
   repository and a Secret holding a token for that repository only, which
   also has the Crew publish its releases there. Releases only turn on; a Crew
   the Brief didn't make is left alone. `status.apps` and the Brief's card show
   each app's latest release and where it went, and say plainly when releases
   are off and how to turn them on. See
-  [plans/done/brief-releases.md](plans/done/brief-releases.md).
+  [plans/done/brief-releases.md](plans/done/brief-releases.md) and
+  [plans/brief-patch-releases.md](plans/brief-patch-releases.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for
@@ -562,7 +565,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   minutes. A plan answers only the ones a new prompt speaks to, in
   `plan/suggestions.yaml`: `take`, which needs acceptance criteria, or `skip`,
   each with why. The operator checks the answers with the plan; applying the
-  round, it takes a suggestion out of the Later milestone and labels it
+  round, it takes a suggestion out of the Later milestone, into the round's
+  release milestone when its Container ships releases, and labels it
   `status/ready`, or closes it, with a comment quoting the planner's why and the
   round's prompts. A suggestion no prompt answers keeps waiting: nothing is
   built without the person's say, and labels and milestones stay the

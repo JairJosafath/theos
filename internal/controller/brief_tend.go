@@ -279,7 +279,12 @@ func (r *BriefReconciler) applyTend(ctx context.Context, brief, orig *c4v1alpha1
 		r.endRoundFailed(ctx, brief, task, "the plan no longer fits the namespace: "+model.RefusalText(refusals))
 		return ctrl.Result{}, nil
 	}
-	run := &roundApply{brief: brief, orig: orig, round: fmt.Sprint(brief.Status.Round)}
+	released, err := r.releasedContainers(ctx, brief, plan)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	run := &roundApply{brief: brief, orig: orig, round: fmt.Sprint(brief.Status.Round), released: released,
+		fixes: model.RoundFixes(plan)}
 	waiting, err := r.finishContainers(ctx, run, model.RoundContainers(nil, plan.Issues), nil, plan.Issues)
 	if err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "filing the issues", err)

@@ -10,6 +10,7 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,6 +28,16 @@ import (
 func releasingLinterPlan(ns string, issues int) scaffold.Tree {
 	files := linterPlan(ns, issues)
 	files[model.PlanReleasesFile] = scaffold.File{Data: []byte("containers: [linter]\n")}
+	return files
+}
+
+// bugLinterPlan is linterPlan whose issues are all fixes.
+func bugLinterPlan(ns string, issues int) scaffold.Tree {
+	files := linterPlan(ns, 0)
+	for n := 1; n <= issues; n++ {
+		files[fmt.Sprintf("plan/issues/%02d-linter.md", n)] = scaffold.File{
+			Data: []byte(strings.Replace(linterIssue(n), "kind/feature", model.LabelBug, 1))}
+	}
 	return files
 }
 
@@ -145,6 +156,66 @@ var _ = Describe("Brief releases", func() {
 		}).Should(Succeed())
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(1))
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0", "v0.1.0"}))
+	})
+
+	// #601: after the first release, a round of fixes is a patch release, and
+	// a suggestion a prompt takes lands in the round's release.
+	It("files a round of fixes in v0.1.1, and a taken suggestion with the next round in v0.2.0", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0"}))
+
+		By("filing a round whose issues are all fixes in the next patch version")
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Fix the crashes."} })).To(Succeed())
+		planRound(ns, 2, 1, bugLinterPlan(ns, 2))
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Round).To(Equal(int32(2)))
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.1", "v0.1.1"}))
+		milestones := gitFake.allMilestones(ns, "linter")
+		Expect(milestones).To(HaveLen(2))
+		Expect(milestones[1].Due).To(BeTemporally(">", milestones[0].Due), "lined up after v0.1.0")
+
+		By("taking a reviewer's suggestion into the round's release, which makes it a minor one")
+		safety := gitFake.addIssue(ns, "linter", "Reject control characters", model.FollowUpIssue(model.FollowUp{
+			Body: "A rule's text takes them.", Criteria: []string{"A rule with a control character is refused"}},
+			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
+		gitFake.setIssueMilestone(ns, "linter", safety, model.FollowUpMilestone)
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.SuggestionsWaiting).To(Equal(int32(1)))
+		}).Should(Succeed())
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() {
+			brief.Spec.Prompts = append(brief.Spec.Prompts, "Fix one more crash, and take the input-safety suggestion.")
+		})).To(Succeed())
+		plan := bugLinterPlan(ns, 1)
+		plan[model.PlanSuggestionsFile] = scaffold.File{Data: []byte(fmt.Sprintf(
+			"- {container: linter, issue: %d, answer: take, why: The prompt takes it.}\n", safety))}
+		planRound(ns, 3, 1, plan)
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Round).To(Equal(int32(3)))
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 3)).To(Equal([]string{"v0.2.0"}))
+		taken := gitFake.issue(ns, "linter", safety)
+		Expect(taken.Labels).To(ContainElement(model.LabelReady))
+		Expect(taken.milestone).To(Equal("v0.2.0"))
+		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4), "v0.1.0, v0.1.1, Later and v0.2.0")
+
+		By("leaving no issue the Brief filed or took in no milestone")
+		for _, issue := range getBrief(Default, ns).Status.Issues {
+			Expect(gitFake.issue(ns, "linter", int(issue.Number)).milestone).To(MatchRegexp(`^v\d+\.\d+\.\d+$`))
+		}
 	})
 
 	It("files no release milestone for a Container the round doesn't release (B11)", func() {
