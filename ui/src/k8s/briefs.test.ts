@@ -16,11 +16,21 @@ describe('briefManifest and promptPatch', () => {
   })
 
   it('sets the autopilot mode only when one is chosen', () => {
-    expect(briefManifest('webshop', 'plant-care', 'Water plants', 'Ask').spec).toEqual({
+    expect(briefManifest('webshop', 'plant-care', 'Water plants', { autopilot: 'Ask' }).spec).toEqual({
       idea: 'Water plants',
       autopilot: 'Ask',
     })
-    expect(briefManifest('webshop', 'plant-care', 'Water plants', undefined).spec).toEqual({ idea: 'Water plants' })
+    expect(briefManifest('webshop', 'plant-care', 'Water plants', {}).spec).toEqual({ idea: 'Water plants' })
+  })
+
+  it('sets spec.parallel only when one is chosen', () => {
+    expect(briefManifest('webshop', 'plant-care', 'Water plants', { parallel: 2 }).spec).toEqual({
+      idea: 'Water plants',
+      parallel: 2,
+    })
+    expect(briefManifest('webshop', 'plant-care', 'Water plants', { parallel: undefined }).spec).toEqual({
+      idea: 'Water plants',
+    })
   })
 
   it('appends one prompt', () => {

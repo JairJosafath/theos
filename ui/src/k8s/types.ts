@@ -331,6 +331,8 @@ export interface BriefApp {
   crew?: string
   /** On when the Crew tags releases. */
   releases: 'On' | 'Off'
+  /** How many issues the Crew works on at once; 0 or unset while it has no Crew. */
+  parallel?: number
   /** The GitHub repository, owner/name, the Crew publishes its releases to; empty when it publishes none. */
   publishTo?: string
   /** The Crew's latest release. */
@@ -416,6 +418,8 @@ export interface Brief extends K8sObject {
     gitProviderRef?: LocalRef
     /** Whether it tends its handed-back work by itself; unset is the operator's default. */
     autopilot?: BriefAutopilot
+    /** How many issues each Crew the Brief made works on at once, 1 to 5; unset is the operator's default. */
+    parallel?: number
   }
   status?: {
     phase?: BriefPhase

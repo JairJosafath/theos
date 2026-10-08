@@ -2618,6 +2618,11 @@ a.brief-app-published {
   color: var(--link);
 }
 
+.brief-app-parallel {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
 .brief-app-message {
   margin: 2px 0 0;
   color: var(--text-2);

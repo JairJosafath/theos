@@ -539,7 +539,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   `spec.parallel` is set is refused, and `brief.md` tells the planner the
   number now and where it comes from. A hand
   edit of such a Crew's `parallel` is set back, and `status.apps` shows each
-  Crew's. The agent-slot queue
+  Crew's, which the Brief's card shows per app ("3 at a time"); the create
+  form can set `spec.parallel`. The agent-slot queue
   still caps how many agents run. See
   [plans/done/brief-parallel.md](plans/done/brief-parallel.md).
 - **Follow-ups keep scaffold once.** A change to a scaffolded Container

@@ -356,6 +356,8 @@ export interface BriefAppView {
   /** Where the releases are published, owner/name, linking to the published release once there is one. */
   publishTo?: string
   publishedURL?: string
+  /** "3 at a time": how many issues its Crew works on at once; unset while it has no Crew. */
+  parallel?: string
 }
 
 export function describeBriefApp(app: BriefApp): BriefAppView {
@@ -370,6 +372,7 @@ export function describeBriefApp(app: BriefApp): BriefAppView {
     release: last ? { tag: last.tag, url: last.url || undefined, time: last.time } : undefined,
     publishTo: app.publishTo || undefined,
     publishedURL: last?.publishState === 'Published' ? last.publishedURL || undefined : undefined,
+    parallel: app.parallel ? `${app.parallel} at a time` : undefined,
   }
 }
 
