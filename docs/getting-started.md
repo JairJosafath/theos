@@ -465,9 +465,73 @@ kubectl -n cel-lens get brief cel-lens -o jsonpath='{range .status.apps[*]}{.con
 Why a release run or a publish failed is as in *Publish releases to GitHub*,
 on the Crew named after the Container.
 
+## Upgrading
+
+Upgrade whenever a release is out, while Tasks run; there is no need to
+wait for a quiet moment. Use the new `VERSION` and the same values as the
+install (`--reuse-values` keeps them):
+
+```bash
+VERSION=0.13.0   # the new release
+helm upgrade c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
+  -n c4-factory-system --reuse-values --wait --timeout 10m
+```
+
+**Running Tasks carry on**, in the same sandbox, at the same round, with the
+same token:
+
+- A Task keeps its whole state in its status, so the restarted operator finds
+  its sandbox again and reads the result of a run that ended while it was
+  away. A sandbox is never changed under a running agent.
+- The agents' Git token is read once, when the sandbox starts; the upgrade
+  doesn't touch it.
+- The seed applies the Agents, the catalog and the GitProviders in place, so
+  they keep their UIDs and no Task loses its Agent for a moment.
+- A sandbox waits up to about five minutes for a Gitea that restarts on a new
+  image. A run that still couldn't reach Gitea is rerun for free, without
+  costing the Task a round.
+
+**What changes at once:**
+
+- A new Agent image, model or other Agent value applies from each Task's next
+  run; a run already going finishes on the old one.
+- A lower `maxRounds` applies to running Tasks too: one already at or past it
+  fails if its current round isn't accepted, instead of starting another.
+- A new template tag moves each Standard's `ref`, and the operator opens and
+  merges a Standard update pull request in each of its Containers. A running
+  Task's pull request goes behind `main` and takes a merge round, as after any
+  other merge.
+
+**Hand edits** of the chart's Agents, catalog and GitProviders stay only
+where the chart doesn't set the field: an `env` you added to an Agent stays,
+an `image` or `model` you changed goes back to the chart's. To change what
+the chart sets, set its values (`agents.*`, `catalog.*`, [the chart's
+README](../dist/chart/README.md#values)), or turn `agents.enabled` or
+`catalog.enabled` off and keep your own. An object the chart stops rendering
+stays until you delete it.
+
+**A quiet moment anyway.** Pause a Brief, and with it every Crew it made, in
+one step; pause a Crew of your own
+with its `spec.paused`. A paused Crew starts no issue and a paused Brief no
+round, but a Task already started runs to its end. The Brief's `Paused`
+condition counts them down until it says `Paused; nothing is running`; for a
+Crew, `kubectl get tasks` shows which are still running:
+
+```bash
+kubectl -n cel-lens patch brief cel-lens --type merge -p '{"spec":{"paused":true}}'
+kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions[?(@.type=="Paused")].message}'; echo
+kubectl -n webshop patch crew orders-cli --type merge -p '{"spec":{"paused":true}}'
+kubectl -n webshop get tasks
+```
+
+Resume with `false`. Resuming a Brief unpauses only the Crews it paused (the
+annotation `c4.factory.io/paused-by: brief` marks them), so a Crew you paused
+by hand stays paused.
+
 ## Next
 
-- Your own project: add it to `gitea.projects` and `helm upgrade`.
+- Your own project: add it to `gitea.projects` and `helm upgrade` with the
+  same values ([Upgrading](#upgrading)).
 - [docs/design.md](design.md) explains the model, the catalog, Crews and
   Standards; [the chart's README](../dist/chart/README.md) lists its values.
 - A problem with the release: [report it](https://github.com/JairJosafath/c4factory/issues/new?template=user-report.yml).
