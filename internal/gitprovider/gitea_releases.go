@@ -46,10 +46,16 @@ func (g *gitea) ListAllMilestones(ctx context.Context, repo Repository) ([]Miles
 	return g.listMilestones(ctx, repo, "all")
 }
 
-// listMilestones returns repo's milestones in state: open, closed or all.
+// listMilestones returns repo's milestones in state: open, closed or all. A
+// repository with more milestones than it can list in full is an error, not cut
+// short: a milestone left out could be an open release.
 func (g *gitea) listMilestones(ctx context.Context, repo Repository, state string) ([]Milestone, error) {
 	var out []Milestone
-	for page := 1; page <= maxIssuePages; page++ {
+	for page := 1; ; page++ {
+		if page > maxIssuePages {
+			return nil, fmt.Errorf("gitea: listing %s milestones of %s: %d or more, too many to list in full", state,
+				repoPath(repo), maxIssuePages*issuePageSize)
+		}
 		path := fmt.Sprintf("/api/v1/repos/%s/milestones?state=%s&limit=%d&page=%d", repoPath(repo), state,
 			issuePageSize, page)
 		status, data, err := g.do(ctx, http.MethodGet, path, nil)
@@ -64,10 +70,9 @@ func (g *gitea) listMilestones(ctx context.Context, repo Repository, state strin
 			out = append(out, m.milestone())
 		}
 		if len(milestones) < issuePageSize {
-			break
+			return out, nil
 		}
 	}
-	return out, nil
 }
 
 // CreateMilestone creates an open milestone in repo with description, due at
