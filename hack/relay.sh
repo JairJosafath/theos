@@ -517,16 +517,17 @@ paused() {
 }
 
 # limit_message OUT: the line that says session OUT ended on a usage limit or a
-# failed login, from its error result, else (no result) the tail of OUT.err.
+# failed login, from its result when it is an error or the session exited
+# non-zero (S_RC), else (no result) the tail of OUT.err.
 limit_message() {
   local out=$1
   {
     if jq -e 'has("result")' "$out.json" >/dev/null 2>&1; then
-      jq -r 'select(.is_error == true) | .result // empty' "$out.json"
+      jq -r --arg rc "${S_RC:-0}" 'select(.is_error == true or $rc != "0") | .result // empty' "$out.json"
     else
       tail -n 20 "$out.err" 2>/dev/null
     fi
-  } | grep -m1 -iE "you've hit your|you've reached your|you're out of usage|out of usage credits|usage limit reached|not logged in|please run /login|invalid api key|oauth token (has )?(expired|revoked)|authentication_error|credit balance (is )?too low"
+  } | grep -m1 -iE "you've hit your|you've reached your|you're out of usage|out of usage credits|usage limit reached|not logged in|please run /login|invalid api key|oauth token (has )?(expired|revoked)|oauth session expired|failed to authenticate|authentication_error|credit balance (is )?too low"
 }
 
 # reset_time MESSAGE: the epoch second a limit MESSAGE says it resets at
