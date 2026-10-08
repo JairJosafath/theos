@@ -132,7 +132,10 @@ Push the branch `plan/<round>` with these files:
    versions), each one `brief.md`'s *Releases* section names, and each one a
    prompt asks to release. Each name is a Container of `plan/model.yaml`. Its
    Crew then tags and prepares releases, and the round's issues for it go
-   into the next release. Releases only turn on: a Container `released`
+   into the next release: a patch release (`v0.1.1` after `v0.1.0`) when
+   every one of them is a fix, labelled `kind/bug`, and the round takes no
+   suggestion of it, else the next minor one, so label each fix `kind/bug`.
+   Releases only turn on: a Container `released`
    already stays released, so you needn't list it again, and leaving it out
    doesn't stop them. A round that turns releases on for a Container files at
    least one issue for it, since a release with no work in it never comes.

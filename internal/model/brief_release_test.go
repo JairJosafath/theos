@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParsePlanReleases(t *testing.T) {
@@ -119,23 +120,98 @@ func TestReleaseMilestoneTitle(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		titles []string
+		fixes  bool
 		want   string
 	}{
-		{"no milestones", nil, "v0.1.0"},
+		{"no milestones", nil, false, "v0.1.0"},
+		{"no milestones, a round of fixes", nil, true, "v0.1.0"},
 		{"only titles that aren't versions", []string{"Backlog", "v1", "1.2.3", "v1.2", "v01.2.3", "v1.2.3-rc1", " v1.2.3"},
-			"v0.1.0"},
-		{"v0.1.0 open", []string{"v0.1.0"}, "v0.2.0"},
-		{"v0.3.2 closed with v0.2.0 open", []string{"v0.2.0", "v0.3.2"}, "v0.4.0"},
-		{"the newest by version, not by text", []string{"v0.10.0", "v0.9.5", "Backlog"}, "v0.11.0"},
-		{"a major version", []string{"v1.0.0", "v0.7.3"}, "v1.1.0"},
-		{"a version too large to tag is ignored", []string{"v0.2.0", "v0.99999999999999999999.0"}, "v0.3.0"},
+			false, "v0.1.0"},
+		{"v0.1.0 open", []string{"v0.1.0"}, false, "v0.2.0"},
+		{"v0.1.0 released, a round of fixes", []string{"v0.1.0"}, true, "v0.1.1"},
+		{"patches made by hand, a round of fixes", []string{"v0.1.0", "v0.1.1", "v0.1.3", "v0.1.2"}, true, "v0.1.4"},
+		{"patches made by hand, a round of features", []string{"v0.1.0", "v0.1.3", "Later"}, false, "v0.2.0"},
+		{"fixes after an open minor go after it", []string{"v0.1.0", "v0.2.0"}, true, "v0.2.1"},
+		{"v0.3.2 closed with v0.2.0 open", []string{"v0.2.0", "v0.3.2"}, false, "v0.4.0"},
+		{"v0.3.2 closed with v0.2.0 open, a round of fixes", []string{"v0.2.0", "v0.3.2"}, true, "v0.3.3"},
+		{"the newest by version, not by text", []string{"v0.10.0", "v0.9.5", "Backlog"}, false, "v0.11.0"},
+		{"a major version", []string{"v1.0.0", "v0.7.3"}, false, "v1.1.0"},
+		{"a major version, a round of fixes", []string{"v1.0.0", "v0.7.3"}, true, "v1.0.1"},
+		{"a version too large to tag is ignored", []string{"v0.2.0", "v0.99999999999999999999.0"}, false, "v0.3.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := ReleaseMilestoneTitle(tc.titles); got != tc.want {
-				t.Fatalf("ReleaseMilestoneTitle(%q) = %s, want %s", tc.titles, got, tc.want)
+			got := ReleaseMilestoneTitle(tc.titles, tc.fixes)
+			if got != tc.want {
+				t.Fatalf("ReleaseMilestoneTitle(%q, %t) = %s, want %s", tc.titles, tc.fixes, got, tc.want)
 			}
 			if !IsReleaseTitle(tc.want) {
 				t.Fatalf("%s is not a title a Crew tags", tc.want)
+			}
+			if slices.Contains(tc.titles, got) {
+				t.Fatalf("%s reuses a title of %q", got, tc.titles)
+			}
+		})
+	}
+}
+
+func TestReleaseMilestoneDueAt(t *testing.T) {
+	now := time.Date(2026, 10, 8, 20, 0, 0, 0, time.UTC)
+	week := now.Add(ReleaseMilestoneDue)
+	for _, tc := range []struct {
+		name string
+		open []Release
+		want time.Time
+	}{
+		{"none open", nil, week},
+		{"open releases due sooner", []Release{{"v0.1.0", now.Add(time.Hour)}, {"v0.1.1", week.Add(-time.Minute)}}, week},
+		{"one made by hand due later", []Release{{"v0.1.0", now}, {"v0.1.3", week.Add(7 * 24 * time.Hour)}},
+			week.Add(7*24*time.Hour + time.Hour)},
+		{"one due at the same time", []Release{{"v0.2.0", week}}, week.Add(time.Hour)},
+		{"the latest of several", []Release{{"v0.1.2", week.Add(48 * time.Hour)}, {"v0.1.1", week.Add(24 * time.Hour)}},
+			week.Add(49 * time.Hour)},
+		{"a milestone that isn't a version, or has no date, is ignored",
+			[]Release{{"Later", week.Add(time.Hour)}, {"v0.1.0", time.Time{}}}, week},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ReleaseMilestoneDueAt(tc.open, now); !got.Equal(tc.want) {
+				t.Fatalf("ReleaseMilestoneDueAt = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRoundFixes(t *testing.T) {
+	issue := func(container string, labels ...string) PlanIssue {
+		return PlanIssue{Container: container, Labels: labels}
+	}
+	for _, tc := range []struct {
+		name string
+		plan Plan
+		want map[string]bool
+	}{
+		{"no issues", Plan{}, map[string]bool{}},
+		{"all fixes", Plan{Issues: []PlanIssue{issue("core", "kind/bug"), issue("core", " kind/bug ", "area/cli")}},
+			map[string]bool{"core": true}},
+		{"a feature among fixes", Plan{Issues: []PlanIssue{issue("core", "kind/bug"), issue("core", "kind/feature"),
+			issue("core", "kind/bug")}}, map[string]bool{"core": false}},
+		{"an unlabelled issue is not a fix", Plan{Issues: []PlanIssue{issue("core")}}, map[string]bool{"core": false}},
+		{"by Container", Plan{Issues: []PlanIssue{issue("core", "kind/bug"), issue("vscode", "kind/feature")}},
+			map[string]bool{"core": true, "vscode": false}},
+		{"a person's work doesn't count", Plan{Issues: []PlanIssue{issue("core", "kind/bug"),
+			issue("core", "kind/docs", "kind/by-hand")}}, map[string]bool{"core": true}},
+		{"only a person's work", Plan{Issues: []PlanIssue{issue("core", "kind/by-hand")}}, map[string]bool{}},
+		{"a taken suggestion is new work", Plan{Issues: []PlanIssue{issue("core", "kind/bug")},
+			Answers: []SuggestionAnswer{{Container: "core", Issue: 57, Answer: AnswerTake}}},
+			map[string]bool{"core": false}},
+		{"only a taken suggestion", Plan{Answers: []SuggestionAnswer{{Container: "vscode", Issue: 26, Answer: AnswerTake}}},
+			map[string]bool{"vscode": false}},
+		{"a skipped suggestion is no work", Plan{Issues: []PlanIssue{issue("core", "kind/bug")},
+			Answers: []SuggestionAnswer{{Container: "core", Issue: 57, Answer: AnswerSkip}}},
+			map[string]bool{"core": true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := RoundFixes(tc.plan); !maps.Equal(got, tc.want) {
+				t.Fatalf("RoundFixes = %v, want %v", got, tc.want)
 			}
 		})
 	}

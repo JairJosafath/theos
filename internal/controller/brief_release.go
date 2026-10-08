@@ -119,27 +119,32 @@ func (r *BriefReconciler) releasedContainers(ctx context.Context, brief *c4v1alp
 // releaseMilestone returns the ID of the release milestone of the Brief's
 // round in repo (R6): the one whose description carries the round's marker,
 // open or closed, so a restart makes no second one, or a new one titled the
-// next minor version, due ReleaseMilestoneDue from now.
+// next patch version for a round of fixes, else the next minor one, due after
+// every open release (plans/brief-patch-releases.md).
 func releaseMilestone(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, brief string,
-	round int) (int64, error) {
+	round int, fixes bool) (int64, error) {
 	milestones, err := provider.ListAllMilestones(ctx, repo)
 	if err != nil {
 		return 0, err
 	}
 	titles := make([]string, 0, len(milestones))
+	var open []model.Release
 	for _, m := range milestones {
 		if model.HasReleaseMilestoneMarker(m.Description, brief, round) {
 			return m.ID, nil
 		}
 		titles = append(titles, m.Title)
+		if !m.Closed {
+			open = append(open, model.Release{Title: m.Title, Due: m.Due})
+		}
 	}
-	title := model.ReleaseMilestoneTitle(titles)
+	title := model.ReleaseMilestoneTitle(titles, fixes)
 	m, err := provider.CreateMilestone(ctx, repo, title, model.ReleaseMilestoneDescription(brief, round),
-		time.Now().Add(model.ReleaseMilestoneDue))
+		model.ReleaseMilestoneDueAt(open, time.Now()))
 	if err != nil {
 		return 0, err
 	}
 	logf.FromContext(ctx).Info("Made the round's release milestone", "repository", repo.Owner+"/"+repo.Name,
-		"milestone", title, "round", round)
+		"milestone", title, "round", round, "fixes", fixes)
 	return m.ID, nil
 }

@@ -78,16 +78,18 @@ func lastSuggestions(brief *c4v1alpha1.Brief, name string) []model.Suggestion {
 }
 
 // answerSuggestions does what the plan's answers say: a suggestion to take
-// leaves the Later milestone and is labelled ready, for the Crew; one to skip
-// is closed. Each gets a comment with the planner's why and the round's
+// leaves the Later milestone for the round's release milestone when its
+// Container is released, else for none, and is labelled ready, for the Crew;
+// one to skip is closed. Each gets a comment with the planner's why and the round's
 // prompts. A suggestion that no longer waits (answered by an earlier try or
 // by a person on the Git host, or gone with its issue or Container) is left
 // as it is. It returns how many it took and skipped now.
-func (r *BriefReconciler) answerSuggestions(ctx context.Context, brief *c4v1alpha1.Brief,
+func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply,
 	answers []model.SuggestionAnswer) (took, skipped int, err error) {
 	if len(answers) == 0 {
 		return 0, 0, nil
 	}
+	brief := run.brief
 	status := &brief.Status
 	prompts := model.RoundPrompts(brief.Spec.Prompts[:min(max(int(status.RoundPrompts), 0), len(brief.Spec.Prompts))],
 		int(status.PromptsPlanned))
@@ -118,7 +120,14 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, brief *c4v1alph
 		if issue.State != stateOpen || !model.IsSuggestion(issue.Labels, issue.Body) {
 			continue // answered by an earlier try, or by a person on the Git host
 		}
-		if err := answerSuggestion(gitCtx, provider, repo, issue, a,
+		var milestone int64
+		if a.Answer == model.AnswerTake && run.released[a.Container] {
+			if milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, int(status.Round),
+				run.fixes[a.Container]); err != nil {
+				return took, skipped, fmt.Errorf("making the release milestone of %s: %w", a.Container, err)
+			}
+		}
+		if err := answerSuggestion(gitCtx, provider, repo, issue, a, milestone,
 			model.SuggestionComment(a, brief.Name, int(status.Round), prompts)); err != nil {
 			return took, skipped, fmt.Errorf("answering %s#%d: %w", a.Container, a.Issue, err)
 		}
@@ -133,14 +142,14 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, brief *c4v1alph
 	return took, skipped, nil
 }
 
-// answerSuggestion takes or closes one suggestion. What marks it answered, the
-// ready label or the closing, comes last, so a try that stops part way is
-// done again whole.
+// answerSuggestion takes one suggestion into milestone, 0 for none, or closes
+// it. What marks it answered, the ready label or the closing, comes last, so a
+// try that stops part way is done again whole.
 func answerSuggestion(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	issue gitprovider.Issue, a model.SuggestionAnswer, comment string) error {
+	issue gitprovider.Issue, a model.SuggestionAnswer, milestone int64, comment string) error {
 	if a.Answer == model.AnswerTake {
-		if issue.Milestone != 0 {
-			if err := provider.SetIssueMilestone(ctx, repo, issue.Number, 0); err != nil {
+		if issue.Milestone != milestone {
+			if err := provider.SetIssueMilestone(ctx, repo, issue.Number, milestone); err != nil {
 				return err
 			}
 		}

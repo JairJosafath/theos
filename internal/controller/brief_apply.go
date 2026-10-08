@@ -42,8 +42,9 @@ type roundApply struct {
 	// made are the objects this reconcile created, which the cache may not
 	// show yet.
 	made []c4v1alpha1.BriefObject
-	// released are the Containers the round releases.
-	released map[string]bool
+	// released are the Containers the round releases, and fixes those whose
+	// work in the round is all fixes, which get a patch release.
+	released, fixes map[string]bool
 	// took and skipped count the reviewers' suggestions the round answered.
 	took, skipped int
 	// retried and closed count the failed issues the round answered.
@@ -131,7 +132,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	run.released = released
+	run.released, run.fixes = released, model.RoundFixes(plan)
 	waiting, err := r.finishContainers(ctx, run, model.RoundContainers(created, plan.Issues), created, plan.Issues)
 	if err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "making the Crews and filing the issues", err)
@@ -148,7 +149,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 			return ctrl.Result{}, r.applyFailed(ctx, brief, "turning on the releases of Crew "+name, err)
 		}
 	}
-	if run.took, run.skipped, err = r.answerSuggestions(ctx, brief, plan.Answers); err != nil {
+	if run.took, run.skipped, err = r.answerSuggestions(ctx, run, plan.Answers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the reviewers' suggestions", err)
 	}
 	if run.retried, run.closed, err = r.answerFailedRemembering(ctx, brief, plan.FailedAnswers); err != nil {
@@ -523,7 +524,8 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 				}
 			}
 		case run.released[c.Name] && ir.milestone == 0:
-			if ir.milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, round); err != nil {
+			if ir.milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, round,
+				run.fixes[c.Name]); err != nil {
 				return err
 			}
 		}
