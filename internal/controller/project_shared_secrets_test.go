@@ -130,6 +130,41 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 		optIn(ns, false)
 	})
 
+	It("keeps the copies in a namespace without a Project in step and deletes them on opt-out", func() {
+		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "projectless-",
+			Labels: map[string]string{c4v1alpha1.LabelSharedSecrets: "true"}}}
+		Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
+		ns := namespace.Name
+		DeferCleanup(stopPolling, ns)
+
+		Eventually(func(g Gomega) {
+			for _, name := range []string{sharedToken, sharedPullSecret} {
+				g.Expect(k8sClient.Get(ctx, key(ns, name), &corev1.Secret{})).To(Succeed(), name)
+			}
+		}).Should(Succeed())
+
+		By("following a rotated source")
+		source := &corev1.Secret{}
+		Expect(k8sClient.Get(ctx, key(operatorNamespace, sharedToken), source)).To(Succeed())
+		Expect(patch(source, func() { source.Data["token"] = []byte("projectless") })).To(Succeed())
+		Eventually(func(g Gomega) {
+			var copied corev1.Secret
+			g.Expect(k8sClient.Get(ctx, key(ns, sharedToken), &copied)).To(Succeed())
+			g.Expect(copied.Data).To(HaveKeyWithValue("token", []byte("projectless")))
+			g.Expect(copied.OwnerReferences).To(BeEmpty())
+		}).Should(Succeed())
+
+		By("deleting the copies when the namespace opts out")
+		optIn(ns, false)
+		Eventually(func(g Gomega) {
+			for _, name := range []string{sharedToken, sharedPullSecret} {
+				g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, name), &corev1.Secret{}))).To(BeTrue(), name)
+			}
+		}).Should(Succeed())
+		var project c4v1alpha1.Project
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, ns), &project))).To(BeTrue())
+	})
+
 	It("leaves the project's own Secret of a shared name alone", func() {
 		ns := newProjectNamespace()
 		own := &corev1.Secret{ObjectMeta: objectMeta(ns, sharedToken), Data: map[string][]byte{"token": []byte("own")}}
