@@ -28,7 +28,7 @@ import {
 import type { Project } from './k8s/types'
 import { useSource, useUrlState, type View } from './lib/hooks'
 import { plural, titleOf } from './model/describe'
-import { activeCrewTasks } from './model/factory'
+import { activeCrewTasks } from './model/crews'
 import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker, workingNow } from './model/story'
 
 /**
