@@ -105,6 +105,16 @@ func TestGiteaIntegration(t *testing.T) {
 		if status := readRepo(bot.Token); status != http.StatusOK {
 			t.Fatalf("the bot reads its repository: HTTP %d", status)
 		}
+		old := oldAgentToken(ctx, t, base, creds.Token, bot.Username)
+		if err := p.RevokeOldAgentTokens(ctx, bot.Username); err != nil {
+			t.Fatalf("RevokeOldAgentTokens(): %v", err)
+		}
+		if status := readRepo(old); status != http.StatusUnauthorized {
+			t.Errorf("the revoked old token reads the repository: HTTP %d, want 401", status)
+		}
+		if status := readRepo(bot.Token); status != http.StatusOK {
+			t.Errorf("the current token no longer reads the repository: HTTP %d", status)
+		}
 		for i := range 2 { // the second finds the user gone
 			if err := p.RemoveAgentAccess(ctx, repo, bot.Username); err != nil {
 				t.Fatalf("RemoveAgentAccess() #%d: %v", i, err)
@@ -640,4 +650,40 @@ func TestGiteaGoModuleIntegration(t *testing.T) {
 	if got, err := p.PublishGoModule(ctx, repo, "v0.1.0"); err != nil || got.Outcome != GoModuleExists {
 		t.Fatalf("PublishGoModule() again = %+v, %v; want %s", got, err, GoModuleExists)
 	}
+}
+
+// oldAgentToken makes user a token named as an operator before an upgrade
+// named it, with fewer scopes, and returns it.
+func oldAgentToken(ctx context.Context, t *testing.T, base, adminToken, user string) string {
+	t.Helper()
+	call := func(method, path string, body any, auth func(*http.Request)) []byte {
+		data, _ := json.Marshal(body)
+		req, _ := http.NewRequestWithContext(ctx, method, base+path, bytes.NewReader(data))
+		req.Header.Set("Content-Type", "application/json")
+		auth(req)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		out, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode >= 300 {
+			t.Fatalf("%s %s: HTTP %d: %s", method, path, resp.StatusCode, out)
+		}
+		return out
+	}
+	const password = "old-token-Passw0rd"
+	call(http.MethodPatch, "/api/v1/admin/users/"+user,
+		map[string]any{"login_name": user, "source_id": 0, "password": password, "must_change_password": false},
+		func(r *http.Request) { r.Header.Set("Authorization", "token "+adminToken) })
+	out := call(http.MethodPost, "/api/v1/users/"+user+"/tokens",
+		map[string]any{"name": agentTokenPrefix, "scopes": []string{"write:repository"}},
+		func(r *http.Request) { r.SetBasicAuth(user, password) })
+	var token struct {
+		SHA1 string `json:"sha1"`
+	}
+	if err := json.Unmarshal(out, &token); err != nil || token.SHA1 == "" {
+		t.Fatalf("reading the old token: %v", err)
+	}
+	return token.SHA1
 }

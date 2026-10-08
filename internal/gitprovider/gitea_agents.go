@@ -50,13 +50,16 @@ type PullRequest struct {
 // agentTokenName is the name of the access token made for an agent bot user
 // with AgentTokenScopes. The name carries the scopes, so a token made with
 // other ones, by an operator before an upgrade, keeps its own name: making the
-// new one doesn't revoke the old one a running sandbox may still use. Old
-// tokens grant no more than their bot's collaborator rights and go with the bot
-// user when its Container goes.
+// new one doesn't revoke the old one a running sandbox may still use.
+// RevokeOldAgentTokens does, once none does.
 var agentTokenName = func() string {
 	sum := sha256.Sum256([]byte(AgentTokenScopes))
-	return "c4factory-agent-" + hex.EncodeToString(sum[:4])
+	return agentTokenPrefix + "-" + hex.EncodeToString(sum[:4])
 }()
+
+// agentTokenPrefix starts the name of every token the operator made for an
+// agent bot, with whatever scopes.
+const agentTokenPrefix = "c4factory-agent"
 
 // AgentTokenScopes are what an agent bot's token may do, comma-separated: push
 // to its repository, and read the owner's packages, where the go command
@@ -273,6 +276,59 @@ func (g *gitea) EnsureAgentAccess(ctx context.Context, repo Repository, user str
 		return Credentials{}, fmt.Errorf("gitea: reading the token for %s: %v", user, err)
 	}
 	return Credentials{Username: user, Token: token.SHA1}, nil
+}
+
+// RevokeOldAgentTokens deletes the tokens the operator made for user with
+// other scopes than AgentTokenScopes, before an upgrade, and keeps the current
+// one. A user that doesn't exist is no error. It needs an admin token.
+func (g *gitea) RevokeOldAgentTokens(ctx context.Context, user string) error {
+	password, err := randomSecret()
+	if err != nil {
+		return err
+	}
+	// Tokens are listed and deleted by the user itself, with basic auth: set a
+	// password we know.
+	body, _ := json.Marshal(map[string]any{"login_name": user, "source_id": 0, "password": password,
+		"must_change_password": false})
+	status, data, err := g.do(ctx, http.MethodPatch, "/api/v1/admin/users/"+url.PathEscape(user), body)
+	if err != nil {
+		return err
+	}
+	switch status {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return nil
+	default:
+		return fmt.Errorf("gitea: updating agent user %s failed (HTTP %d): %s", user, status, apiMessage(data))
+	}
+	as := &gitea{base: g.base, owner: g.owner, http: g.http, basic: &Credentials{Username: user, Token: password}}
+	tokens := "/api/v1/users/" + url.PathEscape(user) + "/tokens"
+	status, data, err = as.do(ctx, http.MethodGet, tokens+"?limit=50", nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("gitea: listing the tokens of %s failed (HTTP %d): %s", user, status, apiMessage(data))
+	}
+	var list []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(data, &list); err != nil {
+		return fmt.Errorf("gitea: reading the tokens of %s: %w", user, err)
+	}
+	for _, t := range list {
+		if t.Name == agentTokenName || !strings.HasPrefix(t.Name, agentTokenPrefix) {
+			continue
+		}
+		status, data, err := as.do(ctx, http.MethodDelete, tokens+"/"+url.PathEscape(t.Name), nil)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusNoContent && status != http.StatusNotFound {
+			return fmt.Errorf("gitea: revoking token %s of %s failed (HTTP %d): %s", t.Name, user, status, apiMessage(data))
+		}
+	}
+	return nil
 }
 
 // RemoveAgentAccess deletes the bot user EnsureAgentAccess made, which drops its

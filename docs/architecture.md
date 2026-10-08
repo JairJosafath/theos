@@ -220,8 +220,12 @@ while the agent works: `c4factory.local/` paths go to the registry and nowhere
 else, with the bot's credentials over https (`gitprovider.AgentTokenScopes`
 lets it read the owner's packages; the token's name carries its scopes, so an
 operator upgrade that changes them makes a new token beside the old one
-instead of revoking what a running sandbox of the Container holds, and the old
-one goes with the bot user), and every other path to
+instead of revoking what a running sandbox of the Container holds. The agent
+Git Secret's `c4.factory.io/old-tokens-before` annotation records when; at
+the start and end of each run, once every sandbox of the Container started
+after it (`model.OldTokensUnused`), the operator revokes the old tokens
+(`gitprovider.RevokeOldAgentTokens`) and drops the annotation), and every
+other path to
 proxy.golang.org. The go command has no per-path proxy, and with a list of
 the registry, then the public proxy, it would ask the public proxy for a
 factory module the registry lacks (it goes on after a 404), leaking the

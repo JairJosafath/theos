@@ -403,6 +403,8 @@ type fakeAgentState struct {
 	// removeErrs are what RemoveAgentAccess returns for a bot user, as a host
 	// that refuses or doesn't answer would.
 	removeErrs map[string]error
+	// revoked counts the RevokeOldAgentTokens calls, by bot user.
+	revoked map[string]int
 }
 
 func (g *fakeGit) agentState() *fakeAgentState {
@@ -413,7 +415,7 @@ func (g *fakeGit) agentState() *fakeAgentState {
 			agents: map[string]string{}, pulls: map[string][]*gitprovider.PullRequest{},
 			comments: map[string][]string{}, branches: map[string]string{}, authors: map[string]string{},
 			files: map[string][]string{}, forced: map[string][]int{},
-			edits: map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{},
+			edits: map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{}, revoked: map[string]int{},
 		}
 	}
 	return g.agent
@@ -604,6 +606,20 @@ func (p *fakeProvider) RemoveAgentAccess(_ context.Context, _ gitprovider.Reposi
 	// Deleting the user takes it off every repository.
 	maps.DeleteFunc(p.git.agentState().agents, func(_, u string) bool { return u == user })
 	return nil
+}
+
+func (p *fakeProvider) RevokeOldAgentTokens(_ context.Context, user string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	p.git.agentState().revoked[user]++
+	return nil
+}
+
+// revocations is how often the operator revoked user's old tokens.
+func (g *fakeGit) revocations(user string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.agentState().revoked[user]
 }
 
 func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repository, head, _, _, _ string) (gitprovider.PullRequest, error) {

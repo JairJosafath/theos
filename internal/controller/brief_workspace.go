@@ -137,7 +137,7 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 	}
 	if _, err := ensureAgentSecret(ctx, r.Client, r.APIReader, brief, briefGitSecret(brief.Name),
 		map[string]string{c4v1alpha1.LabelProject: brief.Namespace, c4v1alpha1.LabelBrief: brief.Name},
-		map[string]string{"repository": repo.CloneURL},
+		map[string]string{"repository": repo.CloneURL}, r.now(),
 		func() (gitprovider.Credentials, error) {
 			return provider.EnsureAgentAccess(gitCtx, repo,
 				model.AgentUsername(brief.Namespace, model.BriefRepository(brief.Name)))
@@ -498,10 +498,13 @@ func installedCatalog(ctx context.Context, c client.Reader, ns string) ([]model.
 // ensureAgentSecret returns Secret name holding a bot's Git credentials, owned
 // by owner, making the bot with access and the Secret the first time, and
 // again when the Secret's data lacks any of extra, such as the repository the
-// bot was given. The Secret is read and written without the cache: the
-// operator doesn't watch Secrets.
+// bot was given. Made again, the Secret's annotationOldTokensBefore says the
+// bot's older tokens may still be live, in sandboxes started before now. The
+// Secret is read and written without the cache: the operator doesn't watch
+// Secrets.
 func ensureAgentSecret(ctx context.Context, c client.Client, apiReader client.Reader, owner client.Object,
-	name string, labels, extra map[string]string, access func() (gitprovider.Credentials, error)) (string, error) {
+	name string, labels, extra map[string]string, now time.Time,
+	access func() (gitprovider.Credentials, error)) (string, error) {
 	var secret corev1.Secret
 	err := apiReader.Get(ctx, client.ObjectKey{Namespace: owner.GetNamespace(), Name: name}, &secret)
 	current := err == nil && len(secret.Data["token"]) > 0
@@ -532,6 +535,9 @@ func ensureAgentSecret(ctx context.Context, c client.Client, apiReader client.Re
 	if found {
 		orig := secret.DeepCopy()
 		secret.Labels, secret.Data, secret.OwnerReferences = desired.Labels, desired.Data, desired.OwnerReferences
+		if len(orig.Data["token"]) > 0 {
+			metav1.SetMetaDataAnnotation(&secret.ObjectMeta, annotationOldTokensBefore, now.UTC().Format(time.RFC3339))
+		}
 		err = c.Patch(ctx, &secret, client.MergeFrom(orig))
 	} else {
 		err = c.Create(ctx, &desired)

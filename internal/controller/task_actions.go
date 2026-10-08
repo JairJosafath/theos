@@ -18,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -297,15 +298,95 @@ func (r *TaskReconciler) agentCredentials(ctx context.Context, task *c4v1alpha1.
 // Container, so it goes when the Container goes.
 func (r *TaskReconciler) ensureAgentGit(ctx context.Context, container *c4v1alpha1.Container,
 	provider gitprovider.Provider, repo gitprovider.Repository) (string, error) {
+	r.revokeOldAgentTokens(ctx, container.Namespace, container.Name, "")
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	// The scopes are kept with the token, so a token made with fewer is made again.
-	return ensureAgentSecret(ctx, r.Client, r.APIReader, container, container.Name+"-agent-git",
+	return ensureAgentSecret(ctx, r.Client, r.APIReader, container, agentGitSecret(container.Name),
 		map[string]string{c4v1alpha1.LabelProject: container.Namespace, c4v1alpha1.LabelContainer: container.Name},
-		map[string]string{"scopes": gitprovider.AgentTokenScopes},
+		map[string]string{"scopes": gitprovider.AgentTokenScopes}, r.now(),
 		func() (gitprovider.Credentials, error) {
 			return provider.EnsureAgentAccess(gitCtx, repo, model.AgentUsername(container.Namespace, container.Name))
 		})
+}
+
+// agentGitSecret is the name of the Secret with Container's agent Git credentials.
+func agentGitSecret(container string) string {
+	return container + "-agent-git"
+}
+
+// annotationOldTokensBefore, on an agent Git Secret, is when its token was made
+// again (RFC 3339): the bot's tokens made before it, with other scopes, may
+// still be live in sandboxes started before it.
+const annotationOldTokensBefore = "c4.factory.io/old-tokens-before"
+
+// revokeOldAgentTokens revokes the bot tokens of Container name made before
+// its Secret's annotationOldTokensBefore, once no sandbox of the Container may
+// still hold one, and drops the annotation. ending is a sandbox being deleted,
+// which no longer counts. It is best effort: a failure is logged, and the next
+// run's start or end tries again.
+func (r *TaskReconciler) revokeOldAgentTokens(ctx context.Context, namespace, name, ending string) {
+	log := logf.FromContext(ctx)
+	if err := r.revokeOldAgentTokensOnce(ctx, namespace, name, ending); err != nil {
+		log.Error(err, "Revoking old agent tokens failed; trying again at the next run", "container", name)
+	}
+}
+
+func (r *TaskReconciler) revokeOldAgentTokensOnce(ctx context.Context, namespace, name, ending string) error {
+	var secret corev1.Secret
+	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: agentGitSecret(name)}, &secret)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	value, ok := secret.Annotations[annotationOldTokensBefore]
+	if !ok {
+		return nil
+	}
+	since, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return fmt.Errorf("annotation %s of Secret %s: %w", annotationOldTokensBefore, secret.Name, err)
+	}
+	sandboxes := &unstructured.UnstructuredList{}
+	sandboxes.SetGroupVersionKind(SandboxGVK.GroupVersion().WithKind("SandboxList"))
+	// Read live: the cache may not have the sandbox started a moment ago.
+	if err := r.APIReader.List(ctx, sandboxes, client.InNamespace(namespace),
+		client.MatchingLabels{c4v1alpha1.LabelContainer: name, LabelAgentSandbox: agentSandboxValue}); err != nil {
+		return err
+	}
+	var started []time.Time
+	for _, s := range sandboxes.Items {
+		if s.GetName() != ending {
+			started = append(started, s.GetCreationTimestamp().Time)
+		}
+	}
+	if !model.OldTokensUnused(since, started) {
+		return nil
+	}
+	var container c4v1alpha1.Container
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &container); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	provider, _, err := r.gitRepo(ctx, &container)
+	if err != nil {
+		return err
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	user := model.AgentUsername(namespace, name)
+	if err := provider.RevokeOldAgentTokens(gitCtx, user); err != nil {
+		return err
+	}
+	// Optimistic: a token made again meanwhile keeps its newer annotation.
+	orig := secret.DeepCopy()
+	delete(secret.Annotations, annotationOldTokensBefore)
+	if err := r.Patch(ctx, &secret, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{})); err != nil {
+		return err
+	}
+	logf.FromContext(ctx).Info("Revoked old agent tokens", "user", user, "secret", secret.Name)
+	return nil
 }
 
 // merge squashes the approved pull request into main.
@@ -452,6 +533,9 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, stat
 		!apierrors.IsNotFound(err) {
 		return err
 	}
+	if container := task.Spec.ContainerRef.Name; container != "" {
+		r.revokeOldAgentTokens(ctx, task.Namespace, container, status.Sandbox)
+	}
 	milliUSD, withoutCost := run.Cost()
 	status.CostMilliUSD += milliUSD
 	status.RunsWithoutCost += withoutCost
@@ -596,7 +680,7 @@ func (r *TaskReconciler) agentGitRepo(ctx context.Context, container *c4v1alpha1
 		return nil, gitprovider.Repository{}, fmt.Errorf("GitProvider %s: %w", container.Spec.GitProviderRef.Name, err)
 	}
 	var secret corev1.Secret
-	if err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: container.Name + "-agent-git"},
+	if err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: agentGitSecret(container.Name)},
 		&secret); err != nil {
 		return nil, gitprovider.Repository{}, fmt.Errorf("agent Git access of %s: %w", container.Name, err)
 	}

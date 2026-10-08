@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -66,9 +67,17 @@ func (g *agentGitea) serveBotUser(method string, reply func(int, any)) {
 	}
 }
 
-// serveBotTokens deletes or makes a token of the bot user photo-editor-agent,
-// by name.
+// serveBotTokens lists the tokens of the bot user photo-editor-agent, or
+// deletes or makes one by name.
 func (g *agentGitea) serveBotTokens(call string, body map[string]any, reply func(int, any)) {
+	if call == "GET /api/v1/users/photo-editor-agent/tokens" {
+		list := make([]map[string]any, 0, len(g.botTokens))
+		for _, name := range slices.Sorted(maps.Keys(g.botTokens)) {
+			list = append(list, map[string]any{"name": name})
+		}
+		reply(http.StatusOK, list)
+		return
+	}
 	if name, ok := strings.CutPrefix(call, "DELETE /api/v1/users/photo-editor-agent/tokens/"); ok {
 		if !g.botTokens[name] {
 			reply(http.StatusNotFound, map[string]string{"message": "token not found"})
@@ -161,6 +170,10 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.users[body["username"].(string)] = true
 		reply(http.StatusCreated, map[string]string{})
 	case call == "PATCH /api/v1/admin/users/photo-editor-agent":
+		if !g.users["photo-editor-agent"] {
+			reply(http.StatusNotFound, map[string]string{"message": "user does not exist"})
+			return
+		}
 		reply(http.StatusOK, map[string]string{})
 	case call == "PUT "+repo+"/collaborators/photo-editor-agent":
 		w.WriteHeader(http.StatusNoContent)
@@ -334,6 +347,30 @@ func TestEnsureAgentAccessKeepsTokensOfOtherScopes(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(g.calls, "\n"), "DELETE /api/v1/users/photo-editor-agent/tokens/"+agentTokenName) {
 		t.Error("the second call did not rotate the token of these scopes")
+	}
+}
+
+// Once no sandbox uses them, the tokens made before an upgrade go; the current
+// one and tokens the operator didn't make stay (#584).
+func TestRevokeOldAgentTokens(t *testing.T) {
+	g, p := newAgentGitea(t)
+	ctx := context.Background()
+	if err := p.RevokeOldAgentTokens(ctx, "photo-editor-agent"); err != nil {
+		t.Fatalf("RevokeOldAgentTokens() of a missing user error = %v", err)
+	}
+	g.users["photo-editor-agent"] = true
+	g.botTokens["c4factory-agent"] = true          // made before the token carried read:package
+	g.botTokens["c4factory-agent-00000000"] = true // made with other scopes
+	g.botTokens["someone-else"] = true
+	if _, err := p.EnsureAgentAccess(ctx, p.Repository("photo-editor"), "photo-editor-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.RevokeOldAgentTokens(ctx, "photo-editor-agent"); err != nil {
+		t.Fatalf("RevokeOldAgentTokens() error = %v", err)
+	}
+	want := []string{agentTokenName, "someone-else"}
+	if got := slices.Sorted(maps.Keys(g.botTokens)); !slices.Equal(got, want) {
+		t.Errorf("tokens = %v, want %v", got, want)
 	}
 }
 

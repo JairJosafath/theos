@@ -492,3 +492,49 @@ var _ = Describe("Task with an unavailable agent", func() {
 		}, "20s").Should(Succeed())
 	})
 })
+
+var _ = Describe("Agent tokens after an upgrade", func() {
+	It("revokes the bot's old token once no sandbox of the Container uses it, and not before", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		user := ns + "-orders-api-agent"
+
+		By("an operator before the upgrade made a token with fewer scopes, which a running sandbox holds")
+		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "orders-api-agent-git"), Data: map[string][]byte{
+			"username": []byte(user), "token": []byte("old"), "scopes": []byte("write:repository")}})
+		running := newSandbox()
+		running.SetNamespace(ns)
+		running.SetName("fix-login-r1-implement")
+		running.SetLabels(map[string]string{c4v1alpha1.LabelContainer: "orders-api", LabelAgentSandbox: agentSandboxValue})
+		Expect(unstructured.SetNestedSlice(running.Object, []any{map[string]any{"name": "agent", "image": "agent"}},
+			"spec", "podTemplate", "spec", "containers")).To(Succeed())
+		Expect(k8sClient.Create(ctx, running)).To(Succeed())
+
+		By("making a new token for the next run, beside the old one")
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		var secret corev1.Secret
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())
+		Expect(string(secret.Data["scopes"])).To(Equal(gitprovider.AgentTokenScopes))
+		Expect(secret.Annotations).To(HaveKey(annotationOldTokensBefore))
+
+		By("keeping the old token while the sandbox started before it runs")
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+		}).Should(Succeed())
+		Expect(gitFake.revocations(user)).To(BeZero(), "a running agent never loses its token")
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())
+		Expect(secret.Annotations).To(HaveKey(annotationOldTokensBefore))
+
+		By("revoking it at the next run once that sandbox is gone")
+		Expect(k8sClient.Delete(ctx, running)).To(Succeed())
+		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }, "20s").Should(Succeed())
+		Expect(gitFake.revocations(user)).To(Equal(1))
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())
+		Expect(secret.Annotations).NotTo(HaveKey(annotationOldTokensBefore))
+	})
+})
