@@ -422,7 +422,7 @@ var _ = Describe("Task with a Standard change", func() {
 			g.Expect(change.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
 			g.Expect(change.Status.Round).To(Equal(int32(2)))
 			g.Expect(condition(change.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
-				"Reason": Equal(model.ReasonBlocked),
+				"Reason":  Equal(model.ReasonBlocked),
 				"Message": And(ContainSubstring("Two rounds in a row"), ContainSubstring("ruff.toml"))})))
 			task := getTask(g, ns, "orders-api-1")
 			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
@@ -698,6 +698,21 @@ var _ = Describe("Task with a gated merge", func() {
 		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
+	It("names an unprotected file a later round adds on the open pull request", func() {
+		ns := newProjectNamespace()
+		gatedTaskInReview(ns, "Makefile")
+		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+			&agentrunner.Result{Role: "review", Verdict: model.VerdictChanges, Summary: "CI must pass."}, "")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r2-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-2")
+		finishSandbox(ns, "orders-api-1-r2-implement", "orders-api-1", &agentrunner.Result{Role: "implement",
+			Commit: "sha-2", Summary: "Updated the test.", Extra: []string{"tests/test_release.py"}}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.pullComments(ns, "orders-api", 1)).To(ContainElement(And(HavePrefix("Round 2: "),
+				ContainSubstring("It also changes `tests/test_release.py`, which no Standard protects"))))
+		}).Should(Succeed())
+	})
+
 	It("refuses a Standard change that touches a path it may not", func() {
 		ns := newProjectNamespace()
 		n := gatedTaskInReview(ns, "Makefile", "ruff.toml")
@@ -778,7 +793,7 @@ func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 				gitprovider.ErrTooManyFiles)}, refusal: "1000 files or more"},
 		{name: "refuses a protected path outside the allowance", review: approved,
 			provider: gateProvider{checks: "success", files: []string{"Makefile", ".gitea/workflows/check.yaml"}},
-			refusal: ".gitea/workflows/check.yaml"},
+			refusal:  ".gitea/workflows/check.yaml"},
 		{name: "refuses without the reviewer's approval", provider: gateProvider{checks: "success", files: makefile},
 			refusal: "verdict"},
 	} {

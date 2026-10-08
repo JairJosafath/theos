@@ -319,8 +319,8 @@ func ResumeFeedback(issue int, paths []string, earlier string) string {
 // GatedMergeRefusal says why a Standard change's pull request may not merge, or ""
 // when it may: CI is green, every check main's protection requires passed (the
 // merge overrides that protection, so it must not be laxer), the reviewer
-// approved, and the change is not empty and changes no protected path outside
-// the allowed ones. contexts is the state of each check on the commit by its context.
+// approved, and the change changes an allowed path and no protected path
+// outside the allowed ones, case ignored. contexts is the state of each check on the commit by its context.
 func GatedMergeRefusal(checks string, contexts map[string]string, verdict string, changed, allowed,
 	protected []string) string {
 	if refusal := checksRefusal(checks, contexts); refusal != "" {
@@ -333,10 +333,17 @@ func GatedMergeRefusal(checks string, contexts map[string]string, verdict string
 		return "the change changes nothing"
 	}
 	var outside []string
+	inside := false
 	for _, p := range changed {
-		if !coveredByAny(allowed, p) && coveredByAny(protected, p) {
+		switch {
+		case coveredByAny(allowed, p):
+			inside = true
+		case coveredFold(protected, p):
 			outside = append(outside, p)
 		}
+	}
+	if !inside {
+		return fmt.Sprintf("the change touches none of %s, the paths it is for", joinAnd(allowed))
 	}
 	if len(outside) > 0 {
 		return fmt.Sprintf("the change touches %s, protected and outside the allowed paths", joinAnd(outside))

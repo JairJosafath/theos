@@ -30,6 +30,8 @@ func TestSplitChange(t *testing.T) {
 		{"gated: other protected files refused, unprotected ones the Task's",
 			[]string{"Makefile", "release_test.go", ".gitea/workflows/check.yaml", "AGENTS.md"}, std, []string{"Makefile"}, true,
 			ChangeSplit{Task: []string{"Makefile", "release_test.go"}, Refused: []string{".gitea/workflows/check.yaml", "AGENTS.md"}}},
+		{"gated: a protected path in another case refused", []string{"Makefile", "makefile", "Agents.md"}, std,
+			[]string{"Makefile"}, true, ChangeSplit{Task: []string{"Makefile"}, Refused: []string{"makefile", "Agents.md"}}},
 		{"unprotected AGENTS.md is the Task's", []string{"AGENTS.md"}, AgentProtectedPaths(nil), nil, true,
 			ChangeSplit{Task: []string{"AGENTS.md"}}},
 	} {

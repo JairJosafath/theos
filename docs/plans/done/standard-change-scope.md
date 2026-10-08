@@ -18,8 +18,14 @@ only rounds being spent.
    or the platform protects. Other protected paths, the agents' rules and
    `.c4factory.yaml` included, stay refused. The extra paths are named: in the
    round's history entry ("besides its Standard change's files it changes
-   ..."), and in the pull request's description, for the reviewer. The gated
-   merge refuses only protected paths outside the allowance.
+   ..."), and in the pull request's description for the reviewer, or in a
+   comment on it when a later round adds them (the description is round 1's).
+   The gated merge refuses protected paths outside the allowance, and a change
+   that touches none of its allowed paths: the waiting Task resumes on the
+   promise that they are in main. A path that differs from a protected one only
+   in case (`makefile` beside `Makefile`) counts as protected, in the split and
+   in the merge: the Git host matches its patterns that way, and the gated merge
+   overrides it.
 2. **The reviewer still guards the checks.** The gated review prompt and the
    Standards' reviewer guides require that every extra file changes only what
    the check command fails on without it, and that no check is weakened. The

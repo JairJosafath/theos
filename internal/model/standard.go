@@ -53,7 +53,9 @@ func SplitChange(changed, protected, allowed []string, canPropose bool) ChangeSp
 	gated := len(allowed) > 0
 	for _, p := range changed {
 		switch {
-		case gated && coveredByAny(allowed, p), !coveredByAny(protected, p):
+		case gated && coveredByAny(allowed, p), !coveredByAny(protected, p) && (!gated || !coveredFold(protected, p)):
+			// A gated Task's extra path must not even differ from a protected
+			// one in case only: its merge bypasses the Git host's protection.
 			s.Task = append(s.Task, p)
 		case gated, !canPropose, coveredByAny(AgentNeverPaths, p):
 			s.Refused = append(s.Refused, p)
@@ -104,6 +106,13 @@ func ScopeBlockedMessage(refusal string) string {
 
 func coveredByAny(prots []string, path string) bool {
 	return slices.ContainsFunc(prots, func(prot string) bool { return covers(prot, path) })
+}
+
+// coveredFold is coveredByAny ignoring case, as the Git host matches its
+// protected file patterns: `makefile` falls under a protected `Makefile`.
+func coveredFold(prots []string, path string) bool {
+	path = strings.ToLower(path)
+	return slices.ContainsFunc(prots, func(prot string) bool { return covers(strings.ToLower(prot), path) })
 }
 
 // EligibleAllowance keeps the paths a Task may be allowed to change: those not
