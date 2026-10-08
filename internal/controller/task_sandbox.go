@@ -121,6 +121,10 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	if agent.Spec.Model != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvModel, Value: agent.Spec.Model})
 	}
+	if agent.Spec.SessionTokenLimit > 0 {
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvSessionTokenLimit,
+			Value: strconv.Itoa(int(agent.Spec.SessionTokenLimit))})
+	}
 	if task.Spec.Issue > 0 {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvIssue, Value: strconv.Itoa(int(task.Spec.Issue))})
 	}
@@ -397,7 +401,8 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 			if result.CostMilliUSD != nil {
 				state.Result.CostMilliUSD, state.Result.CostReported = *result.CostMilliUSD, true
 			}
-			state.Result.Tokens = result.Tokens
+			state.Result.Tokens, state.Result.SessionHandoffs = result.Tokens, result.SessionHandoffs
+			state.Result.Role = result.Role
 			return state, nil
 		}
 		state.Failure = term.Reason

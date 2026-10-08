@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -32,6 +33,12 @@ type ClaudeAgent struct {
 	Env []string
 	// Model is passed with --model; empty leaves the CLI's default.
 	Model string
+	// SessionTokenLimit, with Guard, hands a session whose context passes it
+	// to a fresh one (session.go); zero runs one session to its end.
+	SessionTokenLimit int64
+	// Guard is the program whose session-guard subcommand guards a session:
+	// c4agent itself.
+	Guard string
 }
 
 // DefaultClaudeCommand runs Claude Code once, headless, streaming every turn
@@ -48,6 +55,8 @@ type Usage struct {
 	Reported bool
 	// Tokens is nil when the agent's output didn't say what tokens the call used.
 	Tokens *model.TokenUsage
+	// Handoffs are the sizes at which the call's sessions handed off to fresh ones.
+	Handoffs []int64
 }
 
 // UsageReporter is an Agent that says what each call cost and used. The calls
@@ -66,6 +75,20 @@ func (a ClaudeAgent) Run(ctx context.Context, dir, prompt string) (string, error
 // what the call cost and used, from the CLI's stream-json output, or the one
 // JSON object a custom command prints.
 func (a ClaudeAgent) RunReportingUsage(ctx context.Context, dir, prompt string) (string, Usage, error) {
+	if a.SessionTokenLimit > 0 && a.Guard != "" {
+		return a.runSessions(ctx, dir, prompt)
+	}
+	s := a.runSession(ctx, dir, prompt, nil)
+	return s.answer, s.usage, s.err
+}
+
+// stopWait is how long a session c4agent ended may hold its output open,
+// through a process it started.
+const stopWait = 10 * time.Second
+
+// runSession runs one Claude Code session; with a guard, it is guarded and
+// ended when it passes the guard's stopAt.
+func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *sessionGuard) session {
 	command := a.Command
 	if len(command) == 0 {
 		command = DefaultClaudeCommand
@@ -73,36 +96,58 @@ func (a ClaudeAgent) RunReportingUsage(ctx context.Context, dir, prompt string) 
 	if a.Model != "" {
 		command = append(slices.Clone(command), "--model", a.Model)
 	}
-	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	sessionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var s session
+	stdout := &streamWatch{}
+	if guard != nil {
+		command = append(slices.Clone(command), "--settings", guard.settings())
+		stdout.stopAt = guard.stopAt()
+		stdout.stop = func() { s.stopped = true; cancel() }
+	}
+	cmd := exec.CommandContext(sessionCtx, command[0], command[1:]...)
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Env = append(os.Environ(), a.Env...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	cmd.WaitDelay = stopWait
+	// Ending the session ends what its tools started, such as a check that
+	// would go on changing the working tree under the next session.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	var stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = stdout, &stderr
 	runErr := cmd.Run()
 
-	out, ok, streamed := parseClaudeOutput(stdout.Bytes())
+	output := stdout.buf.String()
+	out, ok, streamed := parseClaudeOutput(stdout.buf.Bytes())
+	s.size, s.lastText = out.mainSession, out.lastText
 	if !ok {
-		// stderr goes last: a stream's lines come before it and the tail keeps
-		// what says why, such as a limit or an overload.
-		if runErr != nil {
-			return "", Usage{}, fmt.Errorf("%s failed: %v: %s", command[0], runErr, tail(stdout.String()+"\n"+stderr.String(), 1500))
+		switch {
+		case s.stopped:
+			// No result line: its turns say what it used; what it cost is unknown.
+			s.usage.Tokens = &out.turns
+			s.err = fmt.Errorf("c4agent ended the session at %d tokens", s.size)
+		case runErr != nil:
+			// stderr goes last: a stream's lines come before it and the tail
+			// keeps what says why, such as a limit or an overload.
+			s.err = fmt.Errorf("%s failed: %v: %s", command[0], runErr, tail(output+"\n"+stderr.String(), 1500))
+		case streamed:
+			s.err = fmt.Errorf("%s ended without a result: %s", command[0], tail(output+"\n"+stderr.String(), 1500))
+		default:
+			// Plain text output, from a custom command.
+			s.answer = strings.TrimSpace(output)
 		}
-		if streamed {
-			return "", Usage{}, fmt.Errorf("%s ended without a result: %s", command[0], tail(stdout.String()+"\n"+stderr.String(), 1500))
-		}
-		// Plain text output, from a custom command.
-		return strings.TrimSpace(stdout.String()), Usage{}, nil
+		return s
 	}
-	usage := Usage{Tokens: out.tokens()}
+	s.answer, s.usage.Tokens = out.Result, out.tokens()
 	if out.CostUSD != nil && *out.CostUSD >= 0 {
-		usage.MilliUSD, usage.Reported = int64(math.Round(*out.CostUSD*1000)), true
+		s.usage.MilliUSD, s.usage.Reported = int64(math.Round(*out.CostUSD*1000)), true
 	}
 	if out.IsError || runErr != nil {
-		return out.Result, usage, fmt.Errorf("%s ended with %s: %s", command[0], orDefault(out.Subtype, "an error"),
+		s.err = fmt.Errorf("%s ended with %s: %s", command[0], orDefault(out.Subtype, "an error"),
 			tail(out.Result+" "+stderr.String(), 1500))
 	}
-	return out.Result, usage, nil
+	return s
 }
 
 // claudeResult is Claude Code's answer: the one JSON object of
@@ -117,9 +162,15 @@ type claudeResult struct {
 	// too, per model.
 	Usage      *claudeUsage                `json:"usage"`
 	ModelUsage map[string]claudeModelUsage `json:"modelUsage"`
-	// largestSession is the biggest turn's prompt of any one session, from the
-	// stream's assistant lines; zero without a stream.
-	largestSession int64
+	// largestSession is the biggest turn's prompt of any one session, and
+	// mainSession the main session's, from the stream's assistant lines; zero
+	// without a stream.
+	largestSession, mainSession int64
+	// lastText is the main session's last words on the stream.
+	lastText string
+	// turns adds up the stream's turns: what a session that ended without a
+	// result line used.
+	turns model.TokenUsage
 }
 
 type claudeUsage struct {
@@ -128,6 +179,9 @@ type claudeUsage struct {
 	CacheRead  int64 `json:"cache_read_input_tokens"`
 	CacheWrite int64 `json:"cache_creation_input_tokens"`
 }
+
+// prompt is a turn's prompt: everything its session held so far.
+func (u claudeUsage) prompt() int64 { return u.Input + u.CacheRead + u.CacheWrite }
 
 type claudeModelUsage struct {
 	Input      int64 `json:"inputTokens"`
@@ -143,7 +197,12 @@ type claudeLine struct {
 	// ParentToolUseID is set on a subagent's lines: the tool call that started it.
 	ParentToolUseID string `json:"parent_tool_use_id"`
 	Message         *struct {
-		Usage *claudeUsage `json:"usage"`
+		ID      string       `json:"id"`
+		Usage   *claudeUsage `json:"usage"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
 	} `json:"message"`
 }
 
@@ -157,18 +216,31 @@ func parseClaudeOutput(stdout []byte) (out claudeResult, ok, streamed bool) {
 	}
 	found := false
 	sessions := map[string]int64{}
+	// A message's content blocks come on lines of their own, each with the
+	// message's usage.
+	turns := map[string]claudeUsage{}
+	lastText := ""
+	n := 0
 	for raw := range bytes.SplitSeq(stdout, []byte("\n")) {
+		n++
 		var line claudeLine
 		if json.Unmarshal(raw, &line) != nil {
 			continue
 		}
 		streamed = streamed || line.Type != ""
 		switch line.Type {
-		case "assistant":
-			if line.Message != nil && line.Message.Usage != nil {
-				// The turn's prompt is everything the session held so far.
-				u := line.Message.Usage
-				sessions[line.ParentToolUseID] = max(sessions[line.ParentToolUseID], u.Input+u.CacheRead+u.CacheWrite)
+		case lineAssistant:
+			if line.Message == nil {
+				continue
+			}
+			if u := line.Message.Usage; u != nil {
+				sessions[line.ParentToolUseID] = max(sessions[line.ParentToolUseID], u.prompt())
+				turns[orDefault(line.Message.ID, strconv.Itoa(n))] = *u
+			}
+			for _, c := range line.Message.Content {
+				if line.ParentToolUseID == "" && c.Type == "text" && strings.TrimSpace(c.Text) != "" {
+					lastText = c.Text
+				}
 			}
 		case "result":
 			out, found = line.claudeResult, true
@@ -177,6 +249,11 @@ func parseClaudeOutput(stdout []byte) (out claudeResult, ok, streamed bool) {
 	for _, size := range sessions {
 		out.largestSession = max(out.largestSession, size)
 	}
+	for _, u := range turns {
+		out.turns.Add(model.TokenUsage{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite})
+	}
+	out.turns.LargestSession = out.largestSession
+	out.mainSession, out.lastText = sessions[""], strings.TrimSpace(lastText)
 	return out, found, streamed && !found
 }
 
@@ -208,6 +285,8 @@ type usageMeter struct {
 	unreported       bool
 	tokens           model.TokenUsage
 	tokensUnreported bool
+	// handoffs are the sizes at which the calls' sessions handed off.
+	handoffs []int64
 }
 
 func (m *usageMeter) Run(ctx context.Context, dir, prompt string) (string, error) {
@@ -219,6 +298,7 @@ func (m *usageMeter) Run(ctx context.Context, dir, prompt string) (string, error
 	answer, usage, err := reporter.RunReportingUsage(ctx, dir, prompt)
 	m.milliUSD += usage.MilliUSD
 	m.unreported = m.unreported || !usage.Reported
+	m.handoffs = append(m.handoffs, usage.Handoffs...)
 	if usage.Tokens != nil {
 		m.tokens.Add(*usage.Tokens)
 	} else {

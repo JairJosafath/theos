@@ -65,6 +65,9 @@ const (
 	// EnvGoRegistry is the owner's Go package registry, where GoProxy sends
 	// the factory's module paths.
 	EnvGoRegistry = "C4_GO_REGISTRY"
+	// EnvSessionTokenLimit is the Agent's sessionTokenLimit: the size at which
+	// an agent session hands off to a fresh one.
+	EnvSessionTokenLimit = "C4AGENT_SESSION_TOKEN_LIMIT"
 )
 
 // Harnesses: the agent programs c4agent can run.
@@ -116,6 +119,9 @@ type Job struct {
 	Brief string
 	// GoRegistry is the owner's Go package registry; empty: no GoProxy.
 	GoRegistry string
+	// SessionTokenLimit is the size at which an agent session hands off to a
+	// fresh one; 0: sessions run to their end.
+	SessionTokenLimit int64
 }
 
 // JobFromEnv reads a Job from environment variables.
@@ -195,6 +201,11 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		return Job{}, fmt.Errorf("%s=%q is not a round number", EnvRound, round)
 	}
 	job.Round = n
+	if limit := getenv(EnvSessionTokenLimit); limit != "" {
+		if job.SessionTokenLimit, err = strconv.ParseInt(limit, 10, 64); err != nil || job.SessionTokenLimit < 0 {
+			return Job{}, fmt.Errorf("%s=%q is not a number of tokens", EnvSessionTokenLimit, limit)
+		}
+	}
 	if last := getenv(EnvMaxRounds); last != "" {
 		if job.MaxRounds, err = strconv.Atoi(last); err != nil || job.MaxRounds < 0 {
 			return Job{}, fmt.Errorf("%s=%q is not a round number", EnvMaxRounds, last)

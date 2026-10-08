@@ -656,6 +656,7 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 			secretEnv("C4_GIT_USERNAME", "brief-cel-lens-git", "username"),
 			secretEnv("C4_GIT_TOKEN", "brief-cel-lens-git", "token"),
 			{Name: "C4_MODEL", Value: "opus"},
+			{Name: "C4AGENT_SESSION_TOKEN_LIMIT", Value: "130000"},
 		}},
 		{name: "a try after a refusal, with a goal", goal: "Keep it small.", feedback: "The Brief refused the plan:\nx",
 			want: []corev1.EnvVar{
@@ -673,6 +674,7 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 				secretEnv("C4_GIT_USERNAME", "brief-cel-lens-git", "username"),
 				secretEnv("C4_GIT_TOKEN", "brief-cel-lens-git", "token"),
 				{Name: "C4_MODEL", Value: "opus"},
+				{Name: "C4AGENT_SESSION_TOKEN_LIMIT", Value: "130000"},
 				{Name: "C4_FEEDBACK", Value: "The Brief refused the plan:\nx"},
 			}},
 	} {
@@ -681,6 +683,7 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 			task.Spec.Goal = tt.goal
 			agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "planner")}
 			agent.Spec.Harness, agent.Spec.Model = "stand-in", "opus"
+			agent.Spec.SessionTokenLimit = 130000
 			sandbox, err := buildSandbox(sandboxRun{
 				task:   task,
 				status: &c4v1alpha1.TaskStatus{Round: 2, Branch: "plan/4", Feedback: tt.feedback},

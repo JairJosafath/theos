@@ -337,6 +337,16 @@ spec:
                       More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                     type: object
                 type: object
+              sessionTokenLimit:
+                default: 130000
+                description: |-
+                  sessionTokenLimit is how large, in tokens, one agent session may grow:
+                  past it, the session writes where it stands and hands off to a fresh one,
+                  at most three times per agent call. Pick it for the model and the role.
+                format: int32
+                maximum: 1000000
+                minimum: 20000
+                type: integer
               timeoutMinutes:
                 default: 45
                 description: timeoutMinutes bounds one sandbox run.

@@ -580,8 +580,8 @@ func (r *TaskReconciler) reviewRun(ctx context.Context, task *c4v1alpha1.Task,
 	return run.Result
 }
 
-// endRun deletes the current sandbox, once its result is in status, and adds
-// what the run cost to the Task's.
+// endRun deletes the current sandbox, once its result is in status, adds
+// what the run cost to the Task's, and posts when its sessions handed off.
 func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) error {
 	if status.Sandbox == "" {
 		return nil
@@ -604,6 +604,10 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, stat
 	status.CostMilliUSD += milliUSD
 	status.RunsWithoutCost += withoutCost
 	status.Tokens = addTokens(status.Tokens, run.Tokens())
+	if run.Result != nil && len(run.Result.SessionHandoffs) > 0 && r.Recorder != nil {
+		r.Recorder.Eventf(task, nil, corev1.EventTypeNormal, eventSessionHandedOff, "HandOff", "%s",
+			model.HandoffNote(int(status.Round), run.Result.Role, run.Result.SessionHandoffs))
+	}
 	status.Sandbox, status.SandboxPod = "", ""
 	return nil
 }
