@@ -235,6 +235,18 @@ ui:
   ##
   allowedHosts: []
 
+  ## The UI's actions (docs/design.md, UI actions): with enabled, the UI also
+  ## sets a Brief's and a Crew's settings, re-runs a failed release, retries a
+  ## Container's scaffold, makes a Task from a goal and bumps a Standard's ref.
+  ## Off, it only makes a Brief, adds a prompt to one and pauses or resumes it.
+  ## Over port-forward (allowedHosts empty) the UI's ServiceAccount makes the
+  ## writes, through ClusterRole <release>-ui-actions. With allowedHosts the
+  ## chart refuses actions unless ui.auth.oidc is set, so that behind an
+  ## Ingress only a person signed in acts.
+  ##
+  actions:
+    enabled: false
+
   resources:
     limits:
       cpu: 200m

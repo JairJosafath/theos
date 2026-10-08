@@ -9,8 +9,8 @@ metadata:
 ---
 # The same access as config/ui/rbac.yaml: reading the story, the Sessions, the
 # catalog and the factory's work in every namespace, and for the health view
-# pods, nodes and their metrics, and creating a Brief or adding a prompt to
-# one. No status subresources, no Secrets, no other writes.
+# pods, nodes and their metrics. The writes are below, by ui.actions.enabled.
+# No status subresources, no Secrets.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -82,10 +82,13 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "c4-factory.uiName" . }}
   namespace: {{ .Release.Namespace }}
+{{- $actions := include "c4-factory.uiActions" . }}
+{{- if not $actions }}
 ---
-# The UI's only three writes (ui/server.mjs checks them first): create a
-# Brief, the box for an idea, and patch one to append a follow-up prompt or to
-# set spec.paused. Nothing else: no update, delete or status, no other kind.
+# With ui.actions.enabled off, the UI's only three writes (ui/server.mjs
+# checks them first): create a Brief, the box for an idea, and patch one to
+# append a follow-up prompt or to set spec.paused. Nothing else: no update,
+# delete or status, no other kind.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -111,4 +114,44 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "c4-factory.uiName" . }}
   namespace: {{ .Release.Namespace }}
+{{- else }}
+---
+# With ui.actions.enabled, the writes of the UI's action table (design.md, UI
+# actions; ui/server.mjs checks each first): create a Brief or a Task, and
+# patch a Brief, a Crew, a Container or a Standard. Nothing else: no update,
+# delete or status, no other kind.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-actions
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+rules:
+- apiGroups: [c4.factory.io]
+  resources: [briefs, tasks]
+  verbs: [create]
+- apiGroups: [c4.factory.io]
+  resources: [briefs, crews, containers, standards]
+  verbs: [patch]
+{{- if eq $actions "service-account" }}
+---
+# Over port-forward the UI acts as its ServiceAccount: whoever reaches the
+# page can already reach the cluster. With ui.auth.oidc it acts as the person
+# signed in, so the ServiceAccount gets none of these writes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-actions
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "c4-factory.uiName" . }}-actions
+subjects:
+- kind: ServiceAccount
+  name: {{ include "c4-factory.uiName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}
 {{- end }}
