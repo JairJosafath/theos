@@ -194,7 +194,9 @@ Push the branch `plan/<round>` with these files:
     needs to know that the issue doesn't, in at most 4000 characters.
     `close` closes it; to split it, close it and file the parts as issues of
     your plan, saying so in `why`. `why` says in plain words which prompt
-    asked for it. By `kind`:
+    asked for it. Quote a `why` or `clarify` with a ` #` in it, such as
+    `why: "Its only change, #136, shipped."`: unquoted, YAML reads the rest
+    as a comment, and the plan is refused. By `kind`:
     - `unclear`: it has no acceptance criteria. Retry it only with a
       `clarify` that adds an `## Acceptance criteria` checklist
       (`- [ ] ...`).

@@ -292,6 +292,9 @@ func parsePlanParallel(s string) (PlanParallel, error) {
 	if err := dec.Decode(&parallel); err != nil && !errors.Is(err, io.EOF) {
 		return PlanParallel{}, fmt.Errorf("%w; %s", err, shape)
 	}
+	if err := checkCutText(s); err != nil {
+		return PlanParallel{}, err
+	}
 	if parallel.Parallel == nil {
 		return PlanParallel{}, fmt.Errorf("parallel: is missing; %s, or leave the file out", shape)
 	}

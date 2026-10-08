@@ -351,3 +351,54 @@ func TestFailedMessage(t *testing.T) {
 		}
 	}
 }
+
+// An unquoted why or clarify with " #" in it is cut there, as YAML reads the
+// rest as a comment; the plan is refused rather than the text shortened (#630).
+func TestPlanTextCutByAComment(t *testing.T) {
+	const full = "Its only change, #136, already shipped in v0.2.0."
+	ask := func(why string) string {
+		return "- container: engine\n  issue: 158\n  answer: ask   # or wait\n  why: It needs you.\n" +
+			"  recommend:\n    answer: close\n    why: " + why + "\n"
+	}
+	tests := []struct {
+		name, failed, why, refused string
+	}{
+		{"unquoted, cut at #136", ask(full), "", `line 7: why: reads only "Its only change,", since YAML takes ` +
+			`"#136, already shipped in v0.2.0." for a comment; quote the text`},
+		{"quoted", ask(`"` + full + `"`), full, ""},
+		{"quoted, with a comment after it", ask(`'` + full + `' # the release step`), full, ""},
+		{"a block", ask("|\n      " + full), full + "\n", ""},
+		{"a # with no space before it", ask("Merged in PR#136, so it shipped."), "Merged in PR#136, so it shipped.", ""},
+		{"wrapped before #136", ask("Its only change,\n      #136, already shipped in v0.2.0."), "",
+			`line 7: why: reads only "Its only change,", since YAML takes "#136, already shipped in v0.2.0."`},
+		{"wrapped, whole", ask("Its only change, PR 136,\n      already shipped in v0.2.0."),
+			"Its only change, PR 136, already shipped in v0.2.0.", ""},
+		{"a cut clarify", "- container: engine\n  issue: 158\n  answer: retry\n  why: The prompt says so.\n" +
+			"  clarify: Use the checker, #2 merged it.\n", "", `line 5: clarify: reads only "Use the checker,"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, err := ParseTendPlan(map[string]string{PlanFailedFile: tc.failed})
+			if tc.refused != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.refused) {
+					t.Fatalf("err = %v, want it to say %q", err, tc.refused)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r := plan.FailedAnswers[0].Recommend; r == nil || r.Why != tc.why {
+				t.Errorf("recommend = %+v, want why %q", r, tc.why)
+			}
+		})
+	}
+	if _, err := parseAnswers("- {container: a, issue: 1, answer: take, why: x}\n- container: a\n  issue: 2\n" +
+		"  why: Done in\n    #4 already.\n  answer: skip\n"); err == nil || !strings.Contains(err.Error(), "line 4: why: reads only \"Done in\"") {
+		t.Errorf("suggestions: err = %v, want the cut why refused", err)
+	}
+	if _, err := parsePlanParallel("parallel: 2\nwhy: The prompt, #3, asks for two.\n"); err == nil ||
+		!strings.Contains(err.Error(), "line 2: why:") {
+		t.Errorf("parallel: err = %v, want the cut why refused", err)
+	}
+}
