@@ -170,7 +170,7 @@ var _ = Describe("Brief releases", func() {
 		Eventually(func(g Gomega) { getTask(g, ns, "cel-lens-plan-1") }).Should(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).
-				To(ContainSubstring("`linter`, published to github.com/acme/cel-lens"))
+				To(ContainSubstring("`linter`, published by the factory to github.com/acme/cel-lens"))
 		}).Should(Succeed())
 
 		By("making the linter's Crew release and publish, though the plan doesn't name it")

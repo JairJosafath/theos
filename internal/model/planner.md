@@ -135,6 +135,18 @@ Push the branch `plan/<round>` with these files:
    least one issue for it, since a release with no work in it never comes.
    Leave the file out when nothing ships releases.
 
+   **The factory makes the releases; plan only what goes in them.** For a
+   released Container the Crew tags `vX.Y.Z` in Gitea, the Container's
+   release workflow builds the release's files on `v*` tags, and, when
+   `brief.md`'s *Releases* section names the Container, the Crew publishes
+   the release to that GitHub repository as `<prefix>vX.Y.Z` with the
+   operator's token. So no issue asks agents to tag or publish a release, to
+   change which tags start the release workflow, or to put a GitHub token in
+   CI. Issues may ask what a release contains, such as which binaries it
+   builds. When a prompt asks for what the factory already does, such as
+   "release the engine on GitHub as `core-vX.Y.Z`", file no issue for it and
+   say in `choices.md` that the factory does it.
+
 10. **Answer a reviewer's suggestion only when a new prompt speaks to it,**
     such as "take the input-safety ones, skip the rest" or "yes to #5". Write
     `plan/suggestions.yaml`, a list with one entry per suggestion answered:

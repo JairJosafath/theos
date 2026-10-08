@@ -175,15 +175,17 @@ func renderBrief(ws BriefWorkspace) string {
 	fmt.Fprintf(&b, "\n## Git provider\n\nEvery new Container names `gitProviderRef: {name: %s}`.\n", ws.GitProvider)
 	if len(ws.Releases) > 0 {
 		b.WriteString("\n## Releases\n\nThe person asked for these Containers' releases. Name each in " +
-			"`plan/releases.yaml`; plan the Container under that name if it isn't in the model yet.\n\n")
+			"`plan/releases.yaml`; plan the Container under that name if it isn't in the model yet.\n\n" +
+			"The factory makes these releases: the Crew tags `vX.Y.Z` in Gitea, the Container's release " +
+			"workflow builds the release's files on `" + ReleaseTags + "` tags, and the Crew publishes the release " +
+			"to GitHub under the tag below with the operator's token. Issues may ask what a release contains, " +
+			"never to tag or publish a release, to change which tags start the release workflow, or to put a " +
+			"GitHub token in CI.\n\n")
 		releases := slices.Clone(ws.Releases)
 		slices.SortFunc(releases, func(a, b WorkspaceRelease) int { return strings.Compare(a.Container, b.Container) })
 		for _, r := range releases {
-			fmt.Fprintf(&b, "- `%s`, published to github.com/%s", r.Container, r.Repository)
-			if r.TagPrefix != "" {
-				fmt.Fprintf(&b, " with tag prefix `%s`", r.TagPrefix)
-			}
-			b.WriteString("\n")
+			fmt.Fprintf(&b, "- `%s`, published by the factory to github.com/%s as `%s`\n",
+				r.Container, r.Repository, GitHubTag(r.TagPrefix, "vX.Y.Z"))
 		}
 	}
 	return b.String()
