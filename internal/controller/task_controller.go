@@ -307,20 +307,8 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		}
 	}
 
-	// An approved change merges only on checks that ran against the main it
-	// merges into.
-	run := facts.Run
-	approved := status.Phase == c4v1alpha1.TaskReviewing && run.Done && run.Result != nil &&
-		run.Result.Verdict == model.VerdictApprove
-	updated := status.Phase == c4v1alpha1.TaskChecking && status.MergeWhenChecksPass &&
-		facts.Checks == gitprovider.CheckSuccess
-	if (approved || updated) && status.PullRequest > 0 {
-		pr, err := r.pullRequest(ctx, container, status)
-		if err != nil {
-			return facts, err
-		}
-		open := pr.State == stateOpen && !pr.Merged
-		facts.Conflicted, facts.Behind = open && !pr.Mergeable, open && pr.Behind
+	if err := r.pullFacts(ctx, container, status, &facts); err != nil {
+		return facts, err
 	}
 	return facts, nil
 }
@@ -345,6 +333,28 @@ func (r *TaskReconciler) noFreeSlot(ctx context.Context, task *c4v1alpha1.Task) 
 		}
 	}
 	return model.NoFreeSlot(task.Namespace+"/"+task.Name, r.now(), waiting, r.MaxSandboxes, len(sandboxes.Items)), nil
+}
+
+// pullFacts reads whether an approved change's pull request conflicts with main
+// or misses what merged into it since its checks ran: an approved change merges
+// only on checks that ran against the main it merges into.
+func (r *TaskReconciler) pullFacts(ctx context.Context, container *c4v1alpha1.Container,
+	status *c4v1alpha1.TaskStatus, facts *model.TaskFacts) error {
+	run := facts.Run
+	approved := status.Phase == c4v1alpha1.TaskReviewing && run.Done && run.Result != nil &&
+		run.Result.Verdict == model.VerdictApprove
+	updated := status.Phase == c4v1alpha1.TaskChecking && status.MergeWhenChecksPass &&
+		facts.Checks == gitprovider.CheckSuccess
+	if !approved && !updated || status.PullRequest == 0 {
+		return nil
+	}
+	pr, err := r.pullRequest(ctx, container, status)
+	if err != nil {
+		return err
+	}
+	open := pr.State == stateOpen && !pr.Merged
+	facts.Conflicted, facts.Behind = open && !pr.Mergeable, open && pr.Behind
+	return nil
 }
 
 // pullRequest reads the Task's pull request: whether main moved since its
