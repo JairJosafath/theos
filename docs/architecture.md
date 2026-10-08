@@ -157,7 +157,7 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    base branch, runs the agent, runs `make check` and sends the agent back while
    it fails, pushes the branch, and writes one JSON `Result` to the termination
    message. A reviewer run answers with a JSON verdict and up to three follow-ups,
-   each with up to three acceptance criteria, instead. A usage limit, an overload or rejected credentials come back as
+   each with up to three acceptance criteria, instead. A usage limit, an overload, a 5xx server error or rejected credentials come back as
    `unavailable`: the Task keeps its round and tries again later.
 5. The controller reads the result from the pod status, opens the pull request as
    the agent bot (Gitea refuses a review of one's own pull request), polls the

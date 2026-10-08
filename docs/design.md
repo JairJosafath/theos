@@ -406,8 +406,9 @@ model and context it needs.
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the agent of a client reads the service it calls.
-- **Waiting is not failing.** A usage limit, an overloaded API or rejected
-  credentials don't cost a round: the Task waits (`AgentUnavailable`) and tries
+- **Waiting is not failing.** A usage limit, an overloaded API, a temporary
+  server error from the model's API (a 5xx) or rejected credentials don't cost
+  a round: the Task waits (`AgentUnavailable`) and tries
   the same step again. Neither does a run the infrastructure ended (a node
   shutdown or restart, an eviction, a preemption, an outage that lasted past
   its pod's deadline or its sandbox's shutdown time, a pod deleted before it

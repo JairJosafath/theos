@@ -529,6 +529,11 @@ func TestNextTaskStepAgentUnavailable(t *testing.T) {
 			Run: unavailable}, ActionAgentUnavailable, "The agent is unavailable (usage limit reached); round 3 waits for it"},
 		{"so does a reviewer", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: unavailable},
 			ActionAgentUnavailable, "round 1 waits"},
+		{"a server error from the model keeps the round", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: RunState{Started: true, Done: true, Result: &RunResult{Unavailable: true,
+				Error: "claude ended with success: API Error: 500 Internal server error"}}},
+			ActionAgentUnavailable, "The agent is unavailable (claude ended with success: API Error: 500 Internal " +
+				"server error); round 1 waits for it"},
 		{"waits before starting again", TaskFacts{Phase: TaskImplementing, Round: 2, MaxRounds: 3,
 			AgentBackIn: 10 * time.Minute}, ActionWait, "The agent is unavailable; trying again in 10m0s"},
 		{"starts again when the time has come", TaskFacts{Phase: TaskReviewing, Round: 2, MaxRounds: 3},
@@ -540,8 +545,8 @@ func TestNextTaskStepAgentUnavailable(t *testing.T) {
 			if got.Action != tt.want || !strings.Contains(got.Message, tt.message) {
 				t.Errorf("NextTaskStep() = %+v, want %s with %q", got, tt.want, tt.message)
 			}
-			if got.Action == ActionAgentUnavailable && !got.RetryAt.Equal(back) {
-				t.Errorf("RetryAt = %v, want %v", got.RetryAt, back)
+			if got.Action == ActionAgentUnavailable && !got.RetryAt.Equal(tt.facts.Run.Result.RetryAt) {
+				t.Errorf("RetryAt = %v, want %v", got.RetryAt, tt.facts.Run.Result.RetryAt)
 			}
 		})
 	}

@@ -708,7 +708,16 @@ func TestUnavailable(t *testing.T) {
 		{"rate limited", "API Error: 429 {\"error\":{\"type\":\"rate_limit_error\"}}", true, time.Time{}},
 		{"bad credentials", "Invalid API key · Please run /login", true, time.Time{}},
 		{"an expired token", `{"type":"authentication_error","message":"OAuth token has expired"}`, true, time.Time{}},
+		{"a server error", "claude ended with success: API Error: 500 Internal server error. This is a server-side issue, " +
+			"usually temporary — try again in a moment.", true, time.Time{}},
+		{"a bad gateway", "claude ended with an error: API Error: 502 Bad Gateway", true, time.Time{}},
+		{"a service unavailable", "claude ended with an error: API Error: 503 Service Unavailable", true, time.Time{}},
+		{"a gateway timeout", "claude ended with an error: API Error: 504 Gateway Timeout", true, time.Time{}},
+		{"an api_error", `API Error: {"type":"error","error":{"type":"api_error","message":"Internal server error"}}`,
+			true, time.Time{}},
 		{"the agent's own failure", "claude ended with error_max_turns: stopped after 200 turns", false, time.Time{}},
+		{"a test of a 500", "FAIL TestHandler: got status 500 Internal Server Error, want 200", false, time.Time{}},
+		{"a client error", "claude ended with an error: API Error: 400 invalid_request_error", false, time.Time{}},
 		{"a test named after a limit", "FAIL TestRateLimiter (0.01s)", false, time.Time{}},
 	}
 	for _, tt := range tests {

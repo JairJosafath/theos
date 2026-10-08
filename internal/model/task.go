@@ -61,7 +61,7 @@ type RunResult struct {
 	// what no agent's sandbox has, so a person does them.
 	Open []OpenCriterion
 	// Unavailable means the agent's service couldn't work: a usage limit, an
-	// overload or bad credentials. It is not the agent's fault and costs no round.
+	// overload, a temporary server error or bad credentials. It is not the agent's fault and costs no round.
 	Unavailable bool
 	// RetryAt is when the service said it is back; zero when it didn't say.
 	RetryAt time.Time
