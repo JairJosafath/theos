@@ -265,7 +265,8 @@ without kubectl, and cheaply: it lives on a laptop.
   and the Brief adds its rounds up. The UI shows them on one line beside the
   cost, on a Task and on each Brief round (`$6.12 · 1.4M tokens, 1.1M of them
   cache reads · largest session 142k`), marking a largest session past the
-  limit, and says when the agent reported no tokens. Plan:
+  limit, and says when the agent reported no tokens; when a session handed off
+  to a fresh one, the line ends with how often (`handed off 2×`). Plan:
   [plans/session-tokens.md](plans/session-tokens.md).
 - **A long session hands off to a fresh one.** A session whose context passes
   its Agent's `sessionTokenLimit` (default 130000) is told, at its next tool

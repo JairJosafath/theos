@@ -515,9 +515,16 @@ export function demoStory(now: number): StoryData {
       checks: { state: 'failure' },
       review: { verdict: 'changes', summary: 'A retried refund pays out twice; send an idempotency key.' },
       feedback: 'CI failed: test_refund_retry pays out twice.',
-      // A long session, past the Agent's limit, on a Task that failed.
+      // A long session, past the Agent's limit, that handed off twice, on a Task that failed.
       costMilliUSD: 6_120,
-      tokens: { input: 31_000, output: 162_000, cacheRead: 8_870_000, cacheWrite: 694_000, largestSession: 142_000 },
+      tokens: {
+        input: 31_000,
+        output: 162_000,
+        cacheRead: 8_870_000,
+        cacheWrite: 694_000,
+        largestSession: 142_000,
+        sessionHandoffs: 2,
+      },
       ...pr('orders-api', 5),
       conditions: [
         cond('Progressing', 'False', 'RoundsExhausted', 'Failed after 3 rounds', at(52)),
@@ -763,7 +770,14 @@ export function demoStory(now: number): StoryData {
             summary: 'Planned the shop: storefront, orders and catalog',
             costMilliUSD: 312,
             outcome: 'Applied',
-            tokens: { input: 2_100, output: 14_800, cacheRead: 486_000, cacheWrite: 61_000, largestSession: 74_000 },
+            tokens: {
+              input: 2_100,
+              output: 14_800,
+              cacheRead: 486_000,
+              cacheWrite: 61_000,
+              largestSession: 74_000,
+              sessionHandoffs: 1,
+            },
           },
           {
             round: 2,
@@ -817,7 +831,14 @@ export function demoStory(now: number): StoryData {
         tendRound: 3,
         repositoryURL: `${GITEA_WEB}/webshop/brief-webshop`,
         costMilliUSD: 501,
-        tokens: { input: 3_300, output: 22_900, cacheRead: 781_000, cacheWrite: 98_000, largestSession: 74_000 },
+        tokens: {
+          input: 3_300,
+          output: 22_900,
+          cacheRead: 781_000,
+          cacheWrite: 98_000,
+          largestSession: 74_000,
+          sessionHandoffs: 1,
+        },
         conditions: [
           cond('Planned', 'True', 'Applied', 'Round 3 is applied', ago(1800)),
           cond('NeedsInput', 'False', 'NothingAsked', 'Nothing is asked', ago(1800)),
