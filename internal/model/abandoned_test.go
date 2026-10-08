@@ -6,7 +6,7 @@ import (
 )
 
 func TestAbandonedPull(t *testing.T) {
-	first := IssueTry{Name: "core-1", Created: 1, Failed: true, PullRequest: 54, PullRequestURL: "https://git/pulls/54"}
+	first := IssueTry{Name: "core-1", Created: 1, Final: true, Failed: true, PullRequest: 54, PullRequestURL: "https://git/pulls/54"}
 	open := func(f AbandonedPullFacts) AbandonedPullFacts {
 		f.Task, f.PullOpen, f.PullRequest = "core-1", true, 54
 		if f.Tries == nil {
@@ -29,11 +29,11 @@ func TestAbandonedPull(t *testing.T) {
 			"closed: issue #52 closed", "issue #52 is closed"},
 		{"no issue", open(AbandonedPullFacts{}), true, "closed: no issue", "had no issue"},
 		{"tries used up", open(AbandonedPullFacts{Issue: 52, Tries: []IssueTry{first,
-			{Name: "core-2", Created: 2, Failed: true}, {Name: "core-3", Created: 3, Failed: true}}}), true,
+			{Name: "core-2", Created: 2, Final: true, Failed: true}, {Name: "core-3", Created: 3, Final: true, Failed: true}}}), true,
 			"closed: tries used up", "3 tries are used up"},
 		{"superseded by a newer try's own pull request", open(AbandonedPullFacts{Issue: 139, Tries: []IssueTry{first,
 			{Name: "core-2", Created: 2, PullRequest: 155, PullRequestURL: "https://git/pulls/155"}}}), true,
-			"superseded by Task core-2", "Task `core-2`, a newer try at #139, opened https://git/pulls/155"},
+			"superseded by Task core-2", "Task `core-2`, a newer try at #139, works on https://git/pulls/155"},
 		{"continued by a newer try (#607), even with the issue closed", open(AbandonedPullFacts{Issue: 139,
 			IssueClosed: true, Tries: []IssueTry{first, {Name: "core-2", Created: 2, PullRequest: 54}}}), false,
 			"continued by Task core-2", ""},
@@ -43,7 +43,12 @@ func TestAbandonedPull(t *testing.T) {
 			Tries: []IssueTry{{Name: "core-0", Created: 0, Failed: true, PullRequest: 50}, first}}), false, "", ""},
 		{"the same second orders by name", open(AbandonedPullFacts{Issue: 139, Tries: []IssueTry{
 			{Name: "core-2", Created: 1, PullRequest: 60, PullRequestURL: "https://git/pulls/60"}, first}}), true,
-			"superseded by Task core-2", "opened https://git/pulls/60"},
+			"superseded by Task core-2", "works on https://git/pulls/60"},
+		{"a newer try still running holds it, even with the issue closed", open(AbandonedPullFacts{Issue: 139,
+			IssueClosed: true, Tries: []IssueTry{first, {Name: "core-2", Created: 2}}}), false, "", ""},
+		{"an ended newer try without a pull request doesn't", open(AbandonedPullFacts{Issue: 139,
+			IssueClosed: true, Tries: []IssueTry{first, {Name: "core-2", Created: 2, Final: true, Failed: true}}}), true,
+			"closed: issue #139 closed", "issue #139 is closed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

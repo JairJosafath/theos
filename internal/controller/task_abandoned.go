@@ -100,20 +100,22 @@ func (r *TaskReconciler) abandonedPullFacts(ctx context.Context, task *c4v1alpha
 	default:
 		facts.IssueClosed = issue.State == stateClosed
 	}
+	// Read live: a newer try that took this pull request up a moment ago must
+	// keep it, and the cache may not have its status yet.
 	var tasks c4v1alpha1.TaskList
-	if err := r.List(ctx, &tasks, client.InNamespace(task.Namespace),
-		client.MatchingFields{indexTaskContainer: container.Name}); err != nil {
+	if err := r.APIReader.List(ctx, &tasks, client.InNamespace(task.Namespace)); err != nil {
 		return facts, err
 	}
 	for _, t := range tasks.Items {
-		if t.Spec.Issue != task.Spec.Issue || t.Spec.Kind == c4v1alpha1.TaskPlan {
+		if t.Spec.ContainerRef.Name != container.Name || t.Spec.Issue != task.Spec.Issue ||
+			t.Spec.Kind == c4v1alpha1.TaskPlan {
 			continue
 		}
 		if t.Name == task.Name {
-			t.Status = *status // the cache may lag behind the live Task
+			t.Status = *status
 		}
 		facts.Tries = append(facts.Tries, model.IssueTry{Name: t.Name, Created: t.CreationTimestamp.Unix(),
-			Failed: t.Status.Phase == c4v1alpha1.TaskFailed, PullRequest: int(t.Status.PullRequest),
+			Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1alpha1.TaskFailed, PullRequest: int(t.Status.PullRequest),
 			PullRequestURL: t.Status.PullRequestURL})
 	}
 	return facts, nil

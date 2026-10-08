@@ -17,7 +17,8 @@ type IssueTry struct {
 	Name string
 	// Created orders the tries; Name breaks a tie.
 	Created int64
-	Failed  bool
+	// Final is a try that ended; Failed one that failed.
+	Final, Failed bool
 	// PullRequest is the number of the try's pull request, 0 before it has one.
 	PullRequest    int
 	PullRequestURL string
@@ -62,8 +63,15 @@ func AbandonedPull(f AbandonedPullFacts) PullEnd {
 	}
 	for _, t := range newerTries(f.Task, f.Tries) {
 		if t.PullRequest != 0 {
-			return closePull(f.Task, fmt.Sprintf("Task `%s`, a newer try at #%d, opened %s",
+			return closePull(f.Task, fmt.Sprintf("Task `%s`, a newer try at #%d, works on %s",
 				t.Name, f.Issue, t.PullRequestURL), fmt.Sprintf("superseded by Task %s", t.Name))
+		}
+	}
+	for _, t := range newerTries(f.Task, f.Tries) {
+		if !t.Final {
+			// It may still take this pull request up (#607); a closed issue
+			// ends it at its next run, and this Task looks again then.
+			return PullEnd{}
 		}
 	}
 	failed := 0

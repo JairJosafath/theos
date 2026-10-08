@@ -286,7 +286,7 @@ model and context it needs.
   closes it, with a comment naming the Task and why, once none will: its issue
   is closed, a newer try at the issue opened its own pull request (the comment
   links it), the issue's tries are used up, or the Task had no issue. A newer
-  try that continues it keeps it open. The branch stays, so a person can
+  try that continues it, or still runs and may, keeps it open. The branch stays, so a person can
   reopen it; `status.pullRequestEnded` says how it ended. A Failed Task looks
   again every 10 minutes, since the Git host doesn't say when an issue closes,
   so tries from before an upgrade are cleaned up too while their Task exists.

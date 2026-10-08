@@ -21,6 +21,9 @@ deletes the branch. What "no later work" means, decided here:
      now; recorded as continued and left open;
    - a newer try at the issue has its own pull request: closed, the comment
      links the newer one;
+   - a newer try still runs without a pull request: kept, it may take this
+     one up (#607); a closed issue ends that try at its next run, and this
+     Task looks again;
    - the Task had no issue: closed at once, no try comes back to a goal;
    - the issue is closed (or gone): closed;
    - the issue's failed tries reached `MaxIssueAttempts`: closed, a Crew
@@ -29,8 +32,10 @@ deletes the branch. What "no later work" means, decided here:
 3. **Where it runs.** In the Failed Task's own reconcile, every 10 minutes
    (`TaskReconciler.PullRequestRecheck`), because the Git host doesn't call
    back when an issue closes. `status.pullRequestEnded` records how it ended
-   and stops the looking. Tasks from before the upgrade have it empty, so
-   their pull requests are cleaned up too while the Task exists.
+   and stops the looking. The tries are listed live, not from the cache, so a
+   newer try that took the pull request up a moment ago keeps it. Tasks from
+   before the upgrade have it empty, so their pull requests are cleaned up
+   too while the Task exists.
 4. A Git host that can't be reached is logged and tried again at the next
    look; it never changes the Task's phase.
 

@@ -40,8 +40,9 @@ func startTry(ns, name string, issue int, sha string) {
 
 // failTry plays a try whose only round fails its checks, and returns its Task
 // once Failed, its pull request open.
-func failTry(ns, name string, issue int, sha string) *c4v1alpha1.Task {
+func failTry(ns, name string, issue int) *c4v1alpha1.Task {
 	GinkgoHelper()
+	sha := "sha-" + name
 	startTry(ns, name, issue, sha)
 	gitFake.setChecks(ns, "orders-api", sha, "failure")
 	var task *c4v1alpha1.Task
@@ -64,7 +65,7 @@ var _ = Describe("Failed Task's pull request", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 1))
 		n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
-		task := failTry(ns, "orders-api-1", n, "sha-1")
+		task := failTry(ns, "orders-api-1", n)
 		pr := task.Status.PullRequest
 
 		Consistently(func() string { return pullState(ns, pr) }, "3s").Should(Equal(stateOpen))
@@ -90,7 +91,7 @@ var _ = Describe("Failed Task's pull request", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 1))
 		n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
-		old := failTry(ns, "orders-api-1", n, "sha-1").Status.PullRequest
+		old := failTry(ns, "orders-api-1", n).Status.PullRequest
 
 		startTry(ns, "orders-api-2", n, "sha-2")
 		newer := getTask(Default, ns, "orders-api-2").Status
@@ -109,7 +110,7 @@ var _ = Describe("Failed Task's pull request", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 1))
 		n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
-		task := failTry(ns, "orders-api-1", n, "sha-1")
+		task := failTry(ns, "orders-api-1", n)
 		pr := task.Status.PullRequest
 
 		// The newer try waits for an Agent, so it takes no step of its own here.
@@ -135,7 +136,7 @@ var _ = Describe("Failed Task's pull request", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 1))
-		pr := failTry(ns, "add-crop", 0, "sha-1").Status.PullRequest
+		pr := failTry(ns, "add-crop", 0).Status.PullRequest
 		Eventually(func(g Gomega) {
 			g.Expect(pullState(ns, pr)).To(Equal(stateClosed))
 			g.Expect(getTask(g, ns, "add-crop").Status.PullRequestEnded).To(Equal("closed: no issue"))
