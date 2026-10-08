@@ -177,3 +177,21 @@ func TestPlannerGuideGivesAgentsOnlyCriteriaTheyCanMeet(t *testing.T) {
 		t.Error("the example plan has no kind/by-hand issue after the agents' work it shows")
 	}
 }
+
+func TestPlannerGuideLeavesReleasingToTheFactory(t *testing.T) {
+	guide := strings.Join(strings.Fields(plannerGuideText), " ")
+	for _, rule := range []string{
+		"**The factory makes the releases; plan only what goes in them.**",
+		"the Crew tags `vX.Y.Z` in Gitea",
+		"builds the release's files on `" + ReleaseTags + "` tags",
+		"as `" + GitHubTag("<prefix>", "vX.Y.Z") + "` with the operator's token",
+		"no issue asks agents to tag or publish a release",
+		"to change which tags start the release workflow",
+		"to put a GitHub token in CI",
+		"say in `choices.md` that the factory does it",
+	} {
+		if !strings.Contains(guide, rule) {
+			t.Errorf("PLANNER.md doesn't say %q", rule)
+		}
+	}
+}
