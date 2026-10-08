@@ -511,11 +511,13 @@ README](../dist/chart/README.md#values)), or turn `agents.enabled` or
 stays until you delete it.
 
 **A quiet moment anyway.** Pause a Brief, and with it every Crew it made, in
-one step; pause a Crew of your own
-with its `spec.paused`. A paused Crew starts no issue and a paused Brief no
-round, but a Task already started runs to its end. The Brief's `Paused`
-condition counts them down until it says `Paused; nothing is running`; for a
-Crew, `kubectl get tasks` shows which are still running:
+one step: the Pause button on its card in the UI sets its `spec.paused` to
+`true`, and Resume sets it back to `false`. Pause a Crew of your own with its
+`spec.paused` through kubectl; the UI has no Crew button. A paused Crew starts no issue and a paused
+Brief no round, but a Task already started runs to its end. The Brief's
+`Paused` condition, which its card shows while it is paused, counts them down
+until it says `Paused; nothing is running`; for a Crew, `kubectl get tasks`
+shows which are still running. With kubectl:
 
 ```bash
 kubectl -n cel-lens patch brief cel-lens --type merge -p '{"spec":{"paused":true}}'
@@ -524,9 +526,10 @@ kubectl -n webshop patch crew orders-cli --type merge -p '{"spec":{"paused":true
 kubectl -n webshop get tasks
 ```
 
-Resume with `false`. Resuming a Brief unpauses only the Crews it paused (the
-annotation `c4.factory.io/paused-by: brief` marks them), so a Crew you paused
-by hand stays paused.
+Resume with `false`, or a Brief with its card's Resume button. Resuming a
+Brief unpauses only the Crews it paused (the annotation
+`c4.factory.io/paused-by: brief` marks them), so a Crew you paused by hand
+stays paused.
 
 ## Next
 
