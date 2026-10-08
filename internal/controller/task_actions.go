@@ -79,6 +79,9 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 	case model.ActionMerge:
 		return r.merge(ctx, task, status, container, agents, step)
 
+	case model.ActionUpdateBranch:
+		return r.updateBranch(ctx, task, status, container, agents, step)
+
 	case model.ActionResolveConflicts:
 		review := r.reviewFrom(ctx, task, status)
 		r.comment(ctx, task, status, container, step.Message+".")
@@ -402,6 +405,12 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 		return ctrl.Result{}, err
 	}
 	reviewRun := r.reviewRun(ctx, task, status)
+	if len(task.Spec.AllowedProtectedPaths) > 0 && status.MergeWhenChecksPass && reviewRun == nil {
+		// As in noVerdictStep: a gated merge waits for CI only while the review
+		// run that approved it lasts.
+		return ctrl.Result{}, r.failWith(ctx, task, status, container, model.GatedMergeRefused(
+			"the review run that approved it ended while CI ran again with main merged in"))
+	}
 	status.Review = r.reviewFrom(ctx, task, status)
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
@@ -460,6 +469,42 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 	return ctrl.Result{}, nil
 }
 
+// updateBranch merges main into an approved change's branch, as main moved since
+// its checks ran, and waits for the checks on the new head, which merges once
+// they pass. The review run stays for its follow-ups, and the verdict goes into
+// status. A branch that conflicts with main goes back to its implementer.
+func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
+	provider, repo, err := r.gitRepo(ctx, container)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	err = provider.UpdatePullRequest(gitCtx, repo, int(status.PullRequest))
+	if errors.Is(err, gitprovider.ErrConflict) {
+		return r.apply(ctx, task, status, container, agents, model.ConflictStep(int(status.Round)))
+	}
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	status.Review = r.reviewFrom(ctx, task, status)
+	r.comment(ctx, task, status, container, step.Message+".")
+	setProgress(status, model.UpdatedBranch(progressOf(status), pr.HeadSHA))
+	// The checks' wait starts again on the new head, also when main moved again
+	// while the Task was already waiting for checks.
+	now := metav1.NewTime(r.now())
+	status.PhaseChangedAt = &now
+	r.progress(task, status, metav1.ConditionTrue, "UpdatingBranch", step.Message)
+	logf.FromContext(ctx).Info("Merged main into an approved Task's branch", "round", status.Round,
+		"commit", pr.HeadSHA)
+	return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+}
+
 // mergeCommit reads the commit the pull request's merge made on the default
 // branch; empty when it can't be read yet, for the Task to read again once Merged.
 func (r *TaskReconciler) mergeCommit(ctx context.Context, provider gitprovider.Provider,
@@ -508,10 +553,14 @@ func (r *TaskReconciler) reviewFrom(ctx context.Context, task *c4v1alpha1.Task,
 	return &c4v1alpha1.TaskReview{Verdict: run.Verdict, Summary: run.Summary}
 }
 
-// reviewRun reads the current review sandbox's result, if it gave a verdict.
+// reviewRun reads the current review sandbox's result, if it gave a verdict:
+// in review, or while the approved change's branch, with main merged in, is
+// checked again.
 func (r *TaskReconciler) reviewRun(ctx context.Context, task *c4v1alpha1.Task,
 	status *c4v1alpha1.TaskStatus) *model.RunResult {
-	if status.Phase != c4v1alpha1.TaskReviewing || status.Sandbox == "" {
+	reviewing := status.Phase == c4v1alpha1.TaskReviewing ||
+		status.Phase == c4v1alpha1.TaskChecking && status.MergeWhenChecksPass
+	if !reviewing || status.Sandbox == "" {
 		return nil
 	}
 	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
@@ -552,7 +601,7 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, stat
 func progressOf(status *c4v1alpha1.TaskStatus) model.TaskProgress {
 	p := model.TaskProgress{Phase: string(status.Phase), Round: int(status.Round),
 		ReviewAttempts: int(status.ReviewAttempts), Reruns: int(status.Reruns), Feedback: status.Feedback,
-		Commit: status.Commit, HasChecks: status.Checks != nil}
+		Commit: status.Commit, HasChecks: status.Checks != nil, MergeWhenChecksPass: status.MergeWhenChecksPass}
 	if status.StandardChange != nil {
 		p.ResumedRound = int(status.StandardChange.ResumedRound)
 	}
@@ -564,6 +613,7 @@ func setProgress(status *c4v1alpha1.TaskStatus, p model.TaskProgress) {
 	status.Phase, status.Round = c4v1alpha1.TaskPhase(p.Phase), int32(p.Round)
 	status.ReviewAttempts, status.Reruns = int32(p.ReviewAttempts), int32(p.Reruns)
 	status.Feedback, status.Commit = p.Feedback, p.Commit
+	status.MergeWhenChecksPass = p.MergeWhenChecksPass
 	if !p.HasChecks {
 		status.Checks = nil
 	}

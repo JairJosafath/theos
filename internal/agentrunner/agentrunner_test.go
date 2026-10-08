@@ -300,12 +300,26 @@ func TestRunImplementFailures(t *testing.T) {
 	t.Run("no change", func(t *testing.T) {
 		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
 		got := Run(ctx, testJob(t, url, RoleImplement, 1), FakeAgent{Role: RoleImplement, NoChange: true}, t.TempDir())
-		if !strings.HasPrefix(got.Error, "the agent made no changes and gave no reason;") ||
+		// The handed-back issue says what the agent did say (#602).
+		if got.Error != model.NoChangeError("Nothing to do.") ||
+			!strings.Contains(got.Error, `its summary ends: "Nothing to do."`) ||
 			!strings.Contains(got.Error, `"Blocked: ..."`) {
 			t.Errorf("Error = %q", got.Error)
 		}
 		if branchHead(t, url, "task/add-crop") != "" {
 			t.Error("an empty change was pushed")
+		}
+	})
+	t.Run("no change with a long summary", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		summary := strings.Repeat("Ran the unit tests, which pass.\n", 40) +
+			"The integration test can't run here: it needs xvfb-run or a display."
+		got := Run(ctx, testJob(t, url, RoleImplement, 1), summaryAgent{summary}, t.TempDir())
+		_, end, _ := strings.Cut(got.Error, `its summary ends: "…`)
+		end, _, _ = strings.Cut(end, `";`)
+		if !strings.HasSuffix(end, "it needs xvfb-run or a display.") || len(end) > model.MaxSummaryEnd ||
+			!strings.Contains(" "+strings.Join(strings.Fields(summary), " "), " "+end) {
+			t.Errorf("Error = %q, want the summary's end from a whole word", got.Error)
 		}
 	})
 	t.Run("blocked", func(t *testing.T) {
@@ -405,6 +419,11 @@ func (a blockedAgent) Run(_ context.Context, dir, _ string) (string, error) {
 		os.WriteFile(filepath.Join(dir, "stray.txt"), []byte("x\n"), 0o644)
 }
 
+// summaryAgent changes nothing and says so in its summary.
+type summaryAgent struct{ summary string }
+
+func (a summaryAgent) Run(context.Context, string, string) (string, error) { return a.summary, nil }
+
 // countingAgent changes a file on every call.
 type countingAgent struct{ calls int }
 
@@ -438,7 +457,8 @@ func TestIssuePrompts(t *testing.T) {
 	for _, want := range []string{"issue #3", "- [ ] finds rules", "every acceptance criterion", "Write the failing test first.",
 		"docs/agents/implementer.md", "/workspace/related/vscode-extension", "Makefile, docs/agents/",
 		"Never make up evidence", "no drawn or generated image, recording or sample output",
-		"no message, log or output the code doesn't give", "left open, never faked", `"Open: <criterion>: <why>"`} {
+		"no message, log or output the code doesn't give", "left open, never faked", `"Open: <criterion>: <why>"`,
+		"Write that line only when something blocks the issue"} {
 		if !strings.Contains(implement, want) {
 			t.Errorf("implement prompt lacks %q", want)
 		}

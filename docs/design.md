@@ -200,14 +200,22 @@ enforces.
 - **Task: a goal for a Container.** The operator runs the Agent in an
   [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox), which works on
   branch `task/<name>`; opens a pull request; waits for CI; runs the Agent again as
-  reviewer; and squash-merges on approval. Failed checks, requested changes or a
-  failed run start the next round with that feedback, up to the Agent's
-  `maxRounds`. An implementer that finds its issue can't be done yet (it waits
+  reviewer; and squash-merges on approval. A pull request merges only on checks
+  that ran against the `main` it merges into: when `main` moved since the
+  approved head's checks ran, the operator merges `main` into the branch through
+  the Git host, with no agent run and no round spent, waits for the checks
+  again, and merges when they pass, without another review. A branch that
+  conflicts with `main` goes back to its implementer in the same round instead.
+  Failed checks, requested changes or a failed run start the next round with
+  that feedback, up to the Agent's `maxRounds`. An implementer that finds its issue can't be done yet (it waits
   on work not merged or released) or can't be done in the sandbox changes
   nothing and ends its summary with a line `Blocked: <what it waits on and
   why>`; the Task then fails at once, reason `Blocked`, with those words in its
   message and on the issue, and the Brief lists the issue as kind `blocked`. A
-  round with no change and no such line says the agent gave no reason. The
+  round with no change and no such line fails with the end of the agent's
+  summary (its last 400 bytes, from a whole word), where it usually said why. A
+  line that says nothing blocks the issue (`Blocked: none`, `n/a`, `nothing`)
+  is not a blocked note. The
   Container's Crew decides how many Tasks run at once.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
@@ -623,7 +631,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   shows one *Needs you* box (`needsYou` with `NeedsInput`), its tending
   rounds and its mode, and the create form lets the person choose the mode;
   the Factory view's *Needs a look* names the Brief that watches an item and
-  when it acts. See [plans/done/brief-autopilot.md](plans/done/brief-autopilot.md).
+  when it acts. A failed Task leaves *Needs a look* once it is answered: a
+  newer Task works the same issue of the same Container, or a round tended
+  the issue with a retry or a close after the Task failed; so an issue that
+  failed several times shows one line, its newest attempt. See [plans/done/brief-autopilot.md](plans/done/brief-autopilot.md).
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a

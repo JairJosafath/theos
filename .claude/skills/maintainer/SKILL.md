@@ -114,13 +114,15 @@ carries.
      with the reason.
    - The governance files and CONTRIBUTING.md must still match how the project
      works. A mismatch becomes a `kind/docs` issue.
-   - Milestones ([ROADMAP.md](../../../ROADMAP.md)): every open `kind/feature`
-     or `kind/bug` issue whose change ships (the CRDs, the operator, the UI,
-     the chart, templates, docs a user reads) has a milestone, or a comment
-     saying why none fits. Set one with `hack/lib/github.sh milestone N
-     "TITLE"` (the title as `hack/lib/github.sh milestones` prints it), and
-     clear a wrong one with `hack/lib/github.sh milestone N`. Work on the
-     relay, `hack/`, the skills or the governance files has none.
+   - Milestones ([ROADMAP.md](../../../ROADMAP.md)): a milestone is one
+     plan's outcome. An issue that is a step of a plan with a milestone gets
+     that milestone; a single-issue fix or feature has none and needs no
+     comment saying so, since a `fix` doesn't wait for a milestone. *1.0*
+     holds only the issues that track its own criteria. Set one with
+     `hack/lib/github.sh milestone N "TITLE"` (the title as
+     `hack/lib/github.sh milestones` prints it), and clear a wrong one with
+     `hack/lib/github.sh milestone N`. Work on the relay, `hack/`, the skills
+     or the governance files has none.
    - A milestone whose *Done when* holds and whose issues are all closed gets
      closed: `gh api -X PATCH repos/{owner}/{repo}/milestones/M -f
      state=closed`. Then file the ROADMAP.md update that marks the outcome

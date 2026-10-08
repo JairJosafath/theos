@@ -260,7 +260,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	if head == start && !job.Resumed && job.PullRequest == 0 {
 		// With a pull request, the round may have changed only it: the
 		// reviewer reviews the branch as it is.
-		result.Error = model.NoChangeNoReason
+		result.Error = model.NoChangeError(summary)
 		return result
 	}
 	if job.Resumed {

@@ -256,6 +256,12 @@ type TaskStatus struct {
 	// +optional
 	Review *TaskReview `json:"review,omitempty"`
 
+	// mergeWhenChecksPass means the reviewer approved the change and the
+	// operator merged main into its branch, since main had moved since the
+	// change's checks ran: commit merges once its checks pass, with no new review.
+	// +optional
+	MergeWhenChecksPass bool `json:"mergeWhenChecksPass,omitempty"`
+
 	// summary is the implementing agent's account of its latest round.
 	// +optional
 	Summary string `json:"summary,omitempty"`

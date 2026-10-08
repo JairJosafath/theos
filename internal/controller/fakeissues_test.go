@@ -429,6 +429,20 @@ func (g *fakeGit) closeIssue(owner, name string, number int) error {
 	return p.CloseIssue(context.Background(), gitprovider.Repository{Owner: owner, Name: name}, number)
 }
 
+// fallBehind makes a pull request's branch miss what merged into main since it
+// took main in.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) fallBehind(owner, name string, number int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, pr := range g.agentState().pulls[owner+"/"+name] {
+		if pr.Number == number {
+			pr.Behind = true
+		}
+	}
+}
+
 // pullAuthor is who opened a pull request.
 func (g *fakeGit) pullAuthor(owner, name string, number int) string {
 	g.mu.Lock()

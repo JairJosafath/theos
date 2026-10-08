@@ -129,7 +129,10 @@ passing and a review. Never commit red.
    files use a fresh temporary directory.
 {{- else }}8. **Pure modules:** logic lives in modules that don't import `vscode`, tested
    with plain vitest. Code that needs `vscode` is tested against
-   `test/vscode.ts`; extend the stand-in with `satisfies` types.
+   `test/vscode.ts`; extend the stand-in with `satisfies` types. No test
+   starts VS Code: the sandbox and CI have no display and none of its
+   libraries, so `@vscode/test-electron` can't run in `make check`. What needs
+   a real editor is for a person to try.
 {{- end }}
 9. **Tests:** next to the code (`foo.test.ts`), `it.each` tables, names that say
    what is expected; no real timers, network or shared state between tests.
