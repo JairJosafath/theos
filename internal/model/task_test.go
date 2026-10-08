@@ -509,6 +509,10 @@ func TestNextTaskStepInterrupted(t *testing.T) {
 			Run: evicted}, ActionRerun, "(Evicted); round 3 runs again (rerun 2 of 2)"},
 		{"an interrupted reviewer reruns too", TaskFacts{Phase: TaskReviewing, Round: 2, MaxRounds: 3,
 			Run: evicted}, ActionRerun, "round 2 runs again"},
+		{"a run whose Git host stayed unreachable reruns its round", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Run: RunState{Started: true, Done: true, Interrupted: true, Result: &RunResult{
+				Error: "the Git host stayed unreachable: git push: unable to access 'http://gitea/x/'"}}},
+			ActionRerun, "(the Git host stayed unreachable"},
 		{"past the cap the round is spent", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Reruns: 2,
 			Run: killed}, ActionRetry, "claude failed: signal: killed"},
 		{"past the cap the reviewer runs again", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Reruns: 2,

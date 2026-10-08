@@ -2,14 +2,22 @@ package agentrunner
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 )
 
 // networkRetryDelays is how long the runner waits before each retry of a clone
-// or push that failed to reach the Git host: about a minute in all, enough for
-// a Git host or a busy API server on a small cluster to come back.
-var networkRetryDelays = []time.Duration{5 * time.Second, 15 * time.Second, 40 * time.Second}
+// or push that failed to reach the Git host: about five minutes in all, enough
+// for a Gitea pod to restart on a pulled image during an upgrade.
+var networkRetryDelays = []time.Duration{
+	5 * time.Second, 15 * time.Second, 40 * time.Second, 60 * time.Second, 90 * time.Second, 90 * time.Second,
+}
+
+// hostUnreachable starts the error of a clone or push whose Git host stayed
+// unreachable through every retry. Run reports such a run interrupted: the
+// infrastructure failed it, not the agent.
+const hostUnreachable = "the Git host stayed unreachable"
 
 // transientMarkers are what git says when it couldn't reach the remote, as
 // opposed to the remote refusing (a protected branch, a non-fast-forward push,
@@ -45,7 +53,9 @@ func transientGitError(err error) bool {
 }
 
 // retryTransient runs op, and again after each delay while it fails to reach
-// the remote. A blip on the Git host would otherwise cost the Task a round.
+// the remote. A blip on the Git host would otherwise cost the Task a round. When
+// the remote is still unreachable after the last delay, the error says so with
+// hostUnreachable.
 func retryTransient(ctx context.Context, delays []time.Duration, op func() error) error {
 	err := op()
 	for _, delay := range delays {
@@ -59,5 +69,14 @@ func retryTransient(ctx context.Context, delays []time.Duration, op func() error
 		}
 		err = op()
 	}
+	if err != nil && transientGitError(err) {
+		return fmt.Errorf("%s: %w", hostUnreachable, err)
+	}
 	return err
+}
+
+// unreachableHost reports whether a run failed because its Git host stayed
+// unreachable.
+func unreachableHost(runError string) bool {
+	return strings.Contains(runError, hostUnreachable)
 }

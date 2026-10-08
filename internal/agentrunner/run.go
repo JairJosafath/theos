@@ -50,8 +50,8 @@ type Result struct {
 	Unavailable bool       `json:"unavailable,omitempty"`
 	RetryAt     *time.Time `json:"retryAt,omitempty"`
 	// Interrupted means c4agent was told to stop (SIGTERM: a node shutdown, an
-	// eviction, a preemption) before the run finished: the infrastructure ended
-	// it, not the agent.
+	// eviction, a preemption) before the run finished, or its Git host stayed
+	// unreachable: the infrastructure ended it, not the agent.
 	Interrupted bool `json:"interrupted,omitempty"`
 	// CostMilliUSD is what the run's agent calls cost, in thousandths of a US
 	// dollar; nil when the agent didn't report it.
@@ -188,11 +188,14 @@ var stopGrace = 2 * time.Second
 // are in Result.Error; the run as such does not fail. A run that fails when ctx
 // is cancelled, or within stopGrace after, is Interrupted: c4agent was told to
 // stop, and the kill of the agent that comes with it is not the agent's failure.
+// So is a run whose Git host stayed unreachable through every retry: a Gitea
+// restart, not the agent, failed it.
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	meter := &usageMeter{agent: agent}
 	result := run(ctx, job, meter, dir)
 	result.CostMilliUSD, result.Tokens = meter.total(), meter.totalTokens()
-	if result.Error != "" && !result.Unavailable && stoppedWithin(ctx, stopGrace) {
+	if result.Error != "" && !result.Unavailable &&
+		(unreachableHost(result.Error) || stoppedWithin(ctx, stopGrace)) {
 		result.Interrupted = true
 	}
 	return result
