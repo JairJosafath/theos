@@ -476,7 +476,7 @@ catalog:
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
     - kind: Standard
       name: ts-standard
-      ref: v1.3.1
+      ref: v1.3.2
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.

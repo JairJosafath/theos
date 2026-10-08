@@ -8,7 +8,7 @@ vscode-extension v1.0.0
 react-vite v1.0.0
 node-cli v1.0.0
 python-cli v1.0.0
-ts-standard v1.3.1
+ts-standard v1.3.2
 python-standard v1.1.1
 gitea-release v1.0.3
 hello v1.0.0

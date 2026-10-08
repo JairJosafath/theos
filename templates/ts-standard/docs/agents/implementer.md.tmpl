@@ -137,8 +137,9 @@ Task that reviews and merges it. Then:
 - Timing logic (debounce, timeouts, retries) is tested with fake timers
   (`vi.useFakeTimers()`, then `vi.advanceTimersByTime`), or by awaiting the
   event it fires.
-- You can't open VS Code here. Say which behaviour needs a person to try in a
-  real editor.
+- You can't open VS Code here, and neither can CI: don't write a test that
+  starts it (`@vscode/test-electron`, `xvfb-run`). Say which behaviour needs a
+  person to try in a real editor.
 {{- end }}
 
 ## Your summary

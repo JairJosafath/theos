@@ -13,7 +13,8 @@ and the `make check` contract CI runs.
   the role guides' notes. `docs/style/vscode.md` is written only for
   `vscode-extension`, `docs/style/react.md` only for `react-vite`,
   `docs/style/node.md` only for `node-cli`. What a `vscode-extension`
-  Container gets is the same as in v1.1.3, what a `react-vite` one gets the
+  Container gets is the same as in v1.1.3, but for the rule that no test
+  starts VS Code (v1.3.2), what a `react-vite` one gets the
   same as in v1.2.0.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,

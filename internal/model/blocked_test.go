@@ -39,3 +39,53 @@ func TestBlockedNote(t *testing.T) {
 		t.Errorf("oversized note is not cut after a whole word: %q", got[len(got)-20:])
 	}
 }
+
+func TestClipWordsFromEnd(t *testing.T) {
+	tests := []struct {
+		name, s string
+		n       int
+		want    string
+	}{
+		{"fits", "  the whole summary  ", 40, "the whole summary"},
+		{"at a word start", "one two three", len("…") + len("three"), "…three"},
+		{"inside a word", "one two three", len("…") + len("wo three"), "…three"},
+		{"after a space", "one two three", len("…") + len(" three"), "…three"},
+		{"one long word", "abcdefghij", len("…") + 4, ""},
+		{"no room", "one two three", 2, ""},
+		{"multibyte", "naïve café ünïcode", len("…") + len("ïcode") + 1, ""},
+		{"multibyte word", "naïve café ünïcode", len("…") + len("ünïcode"), "…ünïcode"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ClipWordsFromEnd(tt.s, tt.n)
+			if got != tt.want {
+				t.Errorf("ClipWordsFromEnd(%q, %d) = %q, want %q", tt.s, tt.n, got, tt.want)
+			}
+			if len(got) > tt.n {
+				t.Errorf("%q is %d bytes, more than %d", got, len(got), tt.n)
+			}
+		})
+	}
+}
+
+func TestNoChangeError(t *testing.T) {
+	if got := NoChangeError(" \n "); got != NoChangeNoReason {
+		t.Errorf("empty summary: %q, want NoChangeNoReason", got)
+	}
+	got := NoChangeError("Wrote the integration test.\n\nIt can't run here:\nthe test needs xvfb-run or a display.")
+	want := `the agent made no changes and wrote no "Blocked:" line; its summary ends: ` +
+		`"Wrote the integration test. It can't run here: the test needs xvfb-run or a display."; ` +
+		`if the issue can't be done yet, say why in a line "Blocked: ..."`
+	if got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+	long := strings.Repeat("filler words ", 100) + "so the test needs xvfb-run or a display."
+	got = NoChangeError(long)
+	if !strings.Contains(got, `its summary ends: "…`) || !strings.Contains(got, "needs xvfb-run or a display.\"") ||
+		strings.Contains(got, `"…ords`) || strings.Contains(got, `"…iller`) {
+		t.Errorf("long summary: %q", got)
+	}
+	if n := len(ClipWordsFromEnd(long, MaxSummaryEnd)); n > MaxSummaryEnd {
+		t.Errorf("end is %d bytes, more than %d", n, MaxSummaryEnd)
+	}
+}

@@ -293,3 +293,26 @@ func ownerOf(layers []Layer, p string) string {
 	}
 	return operatorOwner
 }
+
+// TestVSCodeExtensionGuidesAskForNoTestThatStartsVSCode checks ts-standard's
+// guides for a vscode-extension: the sandbox and CI can't start VS Code, so no
+// test does (#602).
+func TestVSCodeExtensionGuidesAskForNoTestThatStartsVSCode(t *testing.T) {
+	_, result := renderCombo(t, "extension", []side{
+		{model.SideFramework, "vscode-extension"},
+		{model.SideStandard, "ts-standard"},
+	})
+	for name, want := range map[string][]string{
+		"AGENTS.md": {"No test starts VS Code",
+			"`@vscode/test-electron` can't run in `make check`"},
+		"docs/agents/implementer.md": {"don't write a test that starts it"},
+		"docs/style/vscode.md":       {"No integration tests in a real VS Code", "can't run in `make check`"},
+	} {
+		file, ok := result.Files[name]
+		if !ok {
+			t.Errorf("%s not written", name)
+			continue
+		}
+		assertContains(t, name, strings.Join(strings.Fields(string(file.Data)), " "), want)
+	}
+}
