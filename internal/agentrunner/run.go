@@ -59,6 +59,9 @@ type Result struct {
 	// Tokens is what the run's agent sessions used; nil when the agent didn't
 	// report it.
 	Tokens *model.TokenUsage `json:"tokens,omitempty"`
+	// SessionHandoffs are the sizes, in tokens, at which the run's agent
+	// sessions handed off to fresh ones.
+	SessionHandoffs []int64 `json:"sessionHandoffs,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
@@ -192,6 +195,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	meter := &usageMeter{agent: agent}
 	result := run(ctx, job, meter, dir)
 	result.CostMilliUSD, result.Tokens = meter.total(), meter.totalTokens()
+	result.SessionHandoffs = meter.handoffs
 	if result.Error != "" && !result.Unavailable && stoppedWithin(ctx, stopGrace) {
 		result.Interrupted = true
 	}

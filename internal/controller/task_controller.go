@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -100,7 +101,13 @@ type TaskReconciler struct {
 	// project namespaces; every sandbox pod lists them, so pulling a private image
 	// needs no patched default ServiceAccount.
 	SharedPullSecrets []string
+	// Recorder posts the Task's Events; nil posts none.
+	Recorder events.EventRecorder
 }
+
+// eventSessionHandedOff is the Normal Event of a run whose agent sessions
+// handed off to fresh ones.
+const eventSessionHandedOff = "SessionHandedOff"
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/status,verbs=get;update;patch
@@ -109,6 +116,7 @@ type TaskReconciler struct {
 // +kubebuilder:rbac:groups=agents.x-k8s.io,resources=sandboxes,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile takes the next step of a Task.
 func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

@@ -30,6 +30,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == agentrunner.SessionGuardCommand {
+		os.Exit(agentrunner.SessionGuardMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
 	resultPath := flag.String("result", "/dev/termination-log", "where to write the JSON result")
 	workdir := flag.String("workdir", "/workspace/repo", "where to clone the repository")
 	flag.Parse()
@@ -90,8 +93,8 @@ func serveGoProxy(job agentrunner.Job) (func(), error) {
 }
 
 // agentFor picks the agent: the stand-in for the stand-in harness (or when
-// C4AGENT_FAKE is set), else Claude Code with the job's model, or the command in
-// C4AGENT_COMMAND.
+// C4AGENT_FAKE is set), else Claude Code with the job's model and session
+// limit, or the command in C4AGENT_COMMAND, whose one session runs to its end.
 func agentFor(job agentrunner.Job) agentrunner.Agent {
 	if job.Harness == agentrunner.HarnessStandIn || os.Getenv("C4AGENT_FAKE") != "" {
 		changesFirst, _ := strconv.ParseBool(os.Getenv("C4AGENT_FAKE_CHANGES_FIRST"))
@@ -101,6 +104,12 @@ func agentFor(job agentrunner.Job) agentrunner.Agent {
 	agent := agentrunner.ClaudeAgent{Model: job.Model}
 	if command := strings.Fields(os.Getenv("C4AGENT_COMMAND")); len(command) > 0 {
 		agent.Command = command
+		return agent
+	}
+	if self, err := os.Executable(); err == nil {
+		agent.SessionTokenLimit, agent.Guard = job.SessionTokenLimit, self
+	} else {
+		slog.Error("Running sessions unguarded: c4agent can't find itself", "error", err)
 	}
 	return agent
 }

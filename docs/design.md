@@ -268,9 +268,13 @@ without kubectl, and cheaply: it lives on a laptop.
   its Agent's `sessionTokenLimit` (default 130000) is told, at its next tool
   call, to write where it stands and stop; c4agent starts a fresh session on
   the same job with that note and the working tree, and ends a session that
-  doesn't stop. After three handoffs in one call the last session runs to its
-  end. The Task counts them in `status.tokens.sessionHandoffs`, with a
-  `SessionHandedOff` Event for each run that handed off.
+  doesn't stop (past the limit by half again), writing that note itself from
+  the session's last words and `git status`; such a session ends without a
+  result line, so its tokens come from its turns and the run's cost goes
+  unreported. After three handoffs in one call the last session runs to its
+  end. A custom `C4AGENT_COMMAND` runs one session, unguarded. The Task counts
+  handoffs in `status.tokens.sessionHandoffs`, with a `SessionHandedOff` Event
+  for each run that handed off, saying the sizes it happened at.
 - **The UI has a Factory view** next to the story, across all projects: component
   health with CPU and memory, the last hour, the Tasks on a board by stage with
   their timelines, where the time goes, agent slots, and what needs a look.

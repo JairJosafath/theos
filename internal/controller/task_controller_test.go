@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -250,17 +251,30 @@ var _ = Describe("Task", func() {
 				CacheWrite: 30000, LargestSession: 140000, RunsWithout: 1}))
 		}).Should(Succeed())
 
-		By("adding a smaller session's tokens, keeping the largest session")
+		By("adding a smaller session's tokens, keeping the largest session, and counting its handoffs")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r2-implement") }).Should(Succeed())
 		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r2")
 		finishSandbox(ns, "add-crop-r2-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r2", CostMilliUSD: new(int64(100)),
-				Tokens: &model.TokenUsage{Input: 5, Output: 1000, CacheRead: 40000, CacheWrite: 8000, LargestSession: 60000}}, "")
+				Tokens:          &model.TokenUsage{Input: 5, Output: 1000, CacheRead: 40000, CacheWrite: 8000, LargestSession: 60000},
+				SessionHandoffs: []int64{134000, 141200}}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(412)))
 			g.Expect(task.Status.Tokens).To(Equal(&c4v1alpha1.TokenUsage{Input: 15, Output: 3000, CacheRead: 130000,
-				CacheWrite: 38000, LargestSession: 140000, RunsWithout: 1}))
+				CacheWrite: 38000, LargestSession: 140000, RunsWithout: 1, SessionHandoffs: 2}))
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			var events eventsv1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+			var notes []string
+			for _, e := range events.Items {
+				if e.Regarding.Kind == "Task" && e.Regarding.Name == "add-crop" && e.Reason == eventSessionHandedOff {
+					g.Expect(e.Type).To(Equal(corev1.EventTypeNormal))
+					notes = append(notes, e.Note)
+				}
+			}
+			g.Expect(notes).To(Equal([]string{"Round 2's implement run handed off 2 times, at 134k and 141k tokens."}))
 		}).Should(Succeed())
 	})
 
@@ -375,6 +389,27 @@ var _ = Describe("Task", func() {
 		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "claude-credentials"),
 			StringData: map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": rand.Text()}})
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }, "30s").Should(Succeed())
+	})
+})
+
+var _ = Describe("Agent", func() {
+	It("limits a session to 130000 tokens unless told, between 20000 and 1000000", func() {
+		ns := newProjectNamespace()
+		agent := newAgent(ns, 3)
+		mustCreate(agent)
+		Expect(agent.Spec.SessionTokenLimit).To(Equal(int32(130000)))
+
+		for limit, err := range map[int32]string{19999: "greater than or equal to 20000",
+			1000001: "less than or equal to 1000000"} {
+			bad := newAgent(ns, 3)
+			bad.Name, bad.Spec.SessionTokenLimit = fmt.Sprintf("limit-%d", limit), limit
+			Expect(k8sClient.Create(ctx, bad)).To(MatchError(ContainSubstring(err)), "a limit of %d", limit)
+		}
+		for _, limit := range []int32{20000, 1000000} {
+			good := newAgent(ns, 3)
+			good.Name, good.Spec.SessionTokenLimit = fmt.Sprintf("limit-%d", limit), limit
+			Expect(k8sClient.Create(ctx, good)).To(Succeed(), "a limit of %d", limit)
+		}
 	})
 })
 

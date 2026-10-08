@@ -58,6 +58,15 @@ type AgentSpec struct {
 	// +optional
 	MaxRounds int32 `json:"maxRounds,omitempty"`
 
+	// sessionTokenLimit is how large, in tokens, one agent session may grow:
+	// past it, the session writes where it stands and hands off to a fresh one,
+	// at most three times per agent call. Pick it for the model and the role.
+	// +kubebuilder:validation:Minimum=20000
+	// +kubebuilder:validation:Maximum=1000000
+	// +kubebuilder:default=130000
+	// +optional
+	SessionTokenLimit int32 `json:"sessionTokenLimit,omitempty"`
+
 	// timeoutMinutes bounds one sandbox run.
 	// +kubebuilder:validation:Minimum=5
 	// +kubebuilder:validation:Maximum=240

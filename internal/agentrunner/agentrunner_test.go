@@ -25,6 +25,14 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// The test binary is also the session guard and the stand-in Claude Code
+	// of session_test.go.
+	if len(os.Args) > 1 && os.Args[1] == SessionGuardCommand {
+		os.Exit(SessionGuardMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	if mode := os.Getenv(standInClaudeMode); mode != "" {
+		os.Exit(standInClaude(mode))
+	}
 	// Failed runs wait this long for a stop that never comes.
 	stopGrace = 200 * time.Millisecond
 	os.Exit(m.Run())
@@ -63,6 +71,7 @@ func TestJobFromEnv(t *testing.T) {
 		{"bad round limit", map[string]string{EnvMaxRounds: "-1"}, "not a round number"},
 		{"branch is the base", map[string]string{EnvBranch: "main"}, "must not be the base"},
 		{"bad resumed", map[string]string{EnvResumed: "maybe"}, "C4_RESUMED"},
+		{"bad session limit", map[string]string{EnvSessionTokenLimit: "lots"}, "not a number of tokens"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -71,6 +80,16 @@ func TestJobFromEnv(t *testing.T) {
 				t.Errorf("JobFromEnv() error = %v, want it to contain %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestJobFromEnvSessionTokenLimit(t *testing.T) {
+	got, err := JobFromEnv(env(map[string]string{EnvSessionTokenLimit: "130000"}))
+	if err != nil || got.SessionTokenLimit != 130000 {
+		t.Errorf("JobFromEnv() = %d, %v; want a limit of 130000", got.SessionTokenLimit, err)
+	}
+	if got, _ := JobFromEnv(env(nil)); got.SessionTokenLimit != 0 {
+		t.Errorf("without a limit = %d, want 0: sessions run to their end", got.SessionTokenLimit)
 	}
 }
 

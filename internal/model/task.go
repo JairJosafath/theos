@@ -75,6 +75,11 @@ type RunResult struct {
 	// Tokens is what the run's agent sessions used; nil when the agent didn't
 	// say.
 	Tokens *TokenUsage
+	// SessionHandoffs are the sizes, in tokens, at which the run's agent
+	// sessions handed off to fresh ones.
+	SessionHandoffs []int64
+	// Role is the sandbox's role as c4agent reported it: implement, review or plan.
+	Role string
 }
 
 // FollowUp is work a reviewer suggests for later, outside the change it reviewed:

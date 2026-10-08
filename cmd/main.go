@@ -305,6 +305,7 @@ func main() {
 		WorkspaceMemory:   workspaceQuantity,
 		SandboxGoCache:    sandboxGoCache,
 		SharedPullSecrets: sharedPullSecrets,
+		Recorder:          mgr.GetEventRecorder("task"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
 		os.Exit(1)
