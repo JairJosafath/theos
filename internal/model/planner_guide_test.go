@@ -178,6 +178,21 @@ func TestPlannerGuideGivesAgentsOnlyCriteriaTheyCanMeet(t *testing.T) {
 	}
 }
 
+func TestPlannerGuideAsksForNoTestThatStartsADesktopApp(t *testing.T) {
+	guide := strings.Join(strings.Fields(plannerGuideText), " ")
+	for _, rule := range []string{
+		"**No test starts a desktop app.**",
+		"`@vscode/test-electron`",
+		"can't run in `make check`, and no criterion asks for one",
+		"An extension's tests run without a VS Code window",
+		"trying it in a real editor is a `kind/by-hand` issue",
+	} {
+		if !strings.Contains(guide, rule) {
+			t.Errorf("PLANNER.md doesn't say %q", rule)
+		}
+	}
+}
+
 func TestPlannerGuideLeavesReleasingToTheFactory(t *testing.T) {
 	guide := strings.Join(strings.Fields(plannerGuideText), " ")
 	for _, rule := range []string{

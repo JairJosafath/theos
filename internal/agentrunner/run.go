@@ -258,7 +258,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		return result
 	}
 	if head == start && !job.Resumed {
-		result.Error = model.NoChangeNoReason
+		result.Error = model.NoChangeError(summary)
 		return result
 	}
 	if job.Resumed {
