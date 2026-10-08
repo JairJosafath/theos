@@ -69,3 +69,41 @@ describe('the Brief card with failed issues', () => {
     expect(html).toContain('brief-issue-failed')
   })
 })
+
+// #630: the why of a Needs you item is shown whole, however long, and wraps.
+describe('the Brief card with an item that needs you', () => {
+  const now = Date.parse('2026-10-08T17:00:00Z')
+  const why =
+    'Its only change, #136, already shipped in v0.2.0, and the v0.3.0 milestone held nothing else when the ' +
+    'last try stopped; closing it keeps the release history in order until new work merges into the milestone.'
+  const brief: Brief = {
+    metadata: { name: 'cel-lens', creationTimestamp: '2026-10-08T10:00:00Z' },
+    spec: { idea: 'A CEL lens', autopilot: 'Ask' },
+    status: {
+      phase: 'Planned',
+      needsYou: [
+        {
+          kind: 'Issue',
+          name: 'cel-lens-engine#158',
+          question: 'Issue cel-lens-engine#158 "Prepare v0.3.0": It needs you.',
+          recommend: 'Close it.',
+          why,
+          since: '2026-10-08T16:47:00Z',
+        },
+      ],
+      needsYouWaiting: 1,
+    },
+  }
+  const html = renderToStaticMarkup(
+    createElement(Briefs, { briefs: [brief], namespace: DEMO_NAMESPACE, canCreate: false, writer, now }),
+  )
+
+  it('shows the whole why after what it would do', () => {
+    expect(html).toContain(`It would: Close it. — ${why}`)
+  })
+
+  it('neither clamps nor keeps the item on one line', () => {
+    const item = html.slice(html.indexOf('brief-needs-you'), html.indexOf(why))
+    expect(item).not.toMatch(/clamp|nowrap|ellipsis/)
+  })
+})

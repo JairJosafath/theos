@@ -273,7 +273,37 @@ func parseFailedAnswers(s string) ([]FailedAnswer, error) {
 	if err := dec.Decode(&answers); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("want a list of {container, issue, answer, why, clarify, recommend}: %w", err)
 	}
+	if err := checkCutText(s); err != nil {
+		return nil, err
+	}
 	return answers, nil
+}
+
+// checkCutText says which text field, a why or a clarify, YAML cuts short:
+// in an unquoted value, " #" starts a comment, so `why: Its only change, #136,
+// shipped.` reads "Its only change,". Malformed YAML is the decoder's to say.
+func checkCutText(s string) error {
+	var doc yaml.Node
+	if yaml.Unmarshal([]byte(s), &doc) != nil {
+		return nil
+	}
+	var walk func(n *yaml.Node) error
+	walk = func(n *yaml.Node) error {
+		for i := 0; n.Kind == yaml.MappingNode && i+1 < len(n.Content); i += 2 {
+			key, v := n.Content[i].Value, n.Content[i+1]
+			if (key == "why" || key == "clarify") && v.Kind == yaml.ScalarNode && v.Style == 0 && v.LineComment != "" {
+				return fmt.Errorf("line %d: %s: reads only %q, since YAML takes %q for a comment; "+
+					"quote the text, or write it as a block (%s: |)", v.Line, key, v.Value, v.LineComment, key)
+			}
+		}
+		for _, c := range n.Content {
+			if err := walk(c); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return walk(&doc)
 }
 
 // CheckFailedAnswers returns every reason a plan's answers to failed issues

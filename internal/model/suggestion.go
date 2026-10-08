@@ -73,6 +73,9 @@ func parseAnswers(s string) ([]SuggestionAnswer, error) {
 	if err := dec.Decode(&answers); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("want a list of {container, issue, answer, why}: %w", err)
 	}
+	if err := checkCutText(s); err != nil {
+		return nil, err
+	}
 	return answers, nil
 }
 

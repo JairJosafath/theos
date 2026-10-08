@@ -161,8 +161,12 @@ var _ = Describe("Brief autopilot", func() {
 			autopilotBrief(ns, set)
 			n := failedLinterIssue(ns, 1)
 			awaitTendRound(ns, 2)
+			// #630: a why longer than a line, with a comma and a " #", reaches status whole.
+			why := "The checker it needs is merged now, #2 on the engine, and the engine released it as v0.3.0 " +
+				"an hour after this issue's last try stopped, so the import that failed then resolves now; " +
+				"nothing else in its acceptance criteria changed, and no other Task touches the linter's files."
 			planRound(ns, 2, 1, tendPlan(fmt.Sprintf(
-				"- {container: linter, issue: %d, answer: retry, why: The checker it needs is merged now.}\n", n)))
+				"- {container: linter, issue: %d, answer: retry, why: %q}\n", n, why)))
 
 			By("listing it under Needs you with the recommendation, and leaving the issue handed back")
 			name := fmt.Sprintf("linter#%d", n)
@@ -172,7 +176,7 @@ var _ = Describe("Brief autopilot", func() {
 				g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
 				g.Expect(b.Status.NeedsYou).To(ConsistOf(And(HaveField("Kind", model.AttentionIssue),
 					HaveField("Name", name), HaveField("Recommend", "Try it again."),
-					HaveField("Why", "The checker it needs is merged now."))))
+					HaveField("Why", why))))
 				g.Expect(b.Status.NeedsYouWaiting).To(Equal(int32(1)))
 				cond := condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)
 				g.Expect(cond).NotTo(BeNil())
