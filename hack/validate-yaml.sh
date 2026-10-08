@@ -31,6 +31,34 @@ go run ./hack/render -out "$OUT/storefront" -type static-site -container storefr
 	Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests >/dev/null
 "$KUSTOMIZE" build "$OUT/storefront/deploy/k8s" >"$OUT/storefront.yaml"
 
+# The chart's GitProviders, catalog and Agents are the objects in ConfigMap
+# c4factory-catalog, which the seed applies (hack/seed/catalog.sh): validated
+# below as chart-*-catalog.yaml. With Gitea, the chart renders no
+# c4.factory.io object of its own and none of them is a Helm hook, so an
+# upgrade changes them in place (docs/plans/upgrade-in-place.md).
+catalog_objects() {
+	awk '/^---/ { cm = 0; data = 0 } /^  name: c4factory-catalog$/ { cm = 1 }
+		data { sub(/^    /, ""); print } cm && /^  objects\.yaml: \|$/ { data = 1 }' "$1"
+}
+for f in chart-gitea chart-gitea-bare; do
+	catalog_objects "$OUT/$f.yaml" >"$OUT/$f-catalog.yaml"
+	if ! grep -q '^kind: GitProvider$' "$OUT/$f-catalog.yaml"; then
+		echo "The chart ($f.yaml) renders no GitProvider into ConfigMap c4factory-catalog" >&2
+		exit 1
+	fi
+	outside=$(grep -A1 '^apiVersion: c4.factory.io/' "$OUT/$f.yaml" | grep '^kind:' || true)
+	if [ -n "$outside" ]; then
+		echo "The chart ($f.yaml) renders c4.factory.io objects outside ConfigMap c4factory-catalog; the seed applies them:" >&2
+		sort <<<"$outside" | uniq -c >&2
+		exit 1
+	fi
+done
+if grep -q 'helm\.sh/hook' "$OUT/chart-gitea-catalog.yaml"; then
+	echo "An object in ConfigMap c4factory-catalog is a Helm hook" >&2
+	exit 1
+fi
+echo "The chart's GitProviders, catalog and Agents are in ConfigMap c4factory-catalog, none a hook"
+
 files=()
 while IFS= read -r f; do files+=("$f"); done < <(
 	find config/samples test/e2e/testdata -name '*.yaml' ! -name kustomization.yaml | sort
@@ -54,14 +82,14 @@ echo "All valid"
 # and hello-html-standard are the end-to-end tests' own. Rendered without the
 # catalog and the Agents, it has neither.
 pinned=$(awk '/url: .*\/templates\// { name = $2; gsub(/"/, "", name); sub(/.*\/templates\//, "", name) }
-	/^ *ref:/ && name != "" { ref = $2; gsub(/"/, "", ref); print name, ref; name = "" }' "$OUT/chart-gitea.yaml" | sort -u)
+	/^ *ref:/ && name != "" { ref = $2; gsub(/"/, "", ref); print name, ref; name = "" }' "$OUT/chart-gitea-catalog.yaml" | sort -u)
 want=$(grep -v -e '^hello ' -e '^hello-standard ' -e '^hello-html ' -e '^hello-html-standard ' templates/versions.txt | sort)
 if [ "$pinned" != "$want" ]; then
 	echo "The chart's catalog.entries don't match templates/versions.txt (< chart, > versions.txt):" >&2
 	diff <(echo "$pinned") <(echo "$want") >&2 || true
 	exit 1
 fi
-if grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart-gitea-bare.yaml" |
+if grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart-gitea-bare-catalog.yaml" |
 	grep -qE '^kind: (Agent|Framework|Standard|Compute|Deployment|Connector)$'; then
 	echo "The chart renders catalog entries or Agents with catalog.enabled=false and agents.enabled=false" >&2
 	exit 1

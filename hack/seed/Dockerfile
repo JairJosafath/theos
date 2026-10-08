@@ -6,6 +6,7 @@
 FROM alpine:3.24.2
 RUN apk add --no-cache bash ca-certificates curl git jq kubectl openssl
 COPY --chmod=0755 hack/seed/seed.sh /usr/local/bin/seed
+COPY --chmod=0755 hack/seed/catalog.sh /usr/local/bin/catalog.sh
 COPY templates/ /templates/
 ENV HOME=/tmp TEMPLATES_DIR=/templates
 USER 65532:65532

@@ -1,0 +1,16 @@
+{{- if .Values.gitea.enabled }}
+# The GitProviders, catalog and Agents of gitea.projects (_catalog.tpl), which
+# the seed applies with server-side apply after every install and upgrade: an
+# upgrade changes them in place, keeping their UIDs and the fields the chart
+# doesn't set. An object the chart stops rendering stays.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: c4factory-catalog
+  namespace: {{ include "c4-factory.giteaNamespace" . }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+data:
+  objects.yaml: |
+    {{- include "c4-factory.catalogObjects" . | trim | nindent 4 }}
+{{- end }}
