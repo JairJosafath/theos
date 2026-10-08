@@ -25,6 +25,13 @@ import (
 // updatedStandard is the Standard the Container in these tests uses.
 const updatedStandard = "python-strict"
 
+// standardSteps is how long a spec waits for the Container to get somewhere:
+// scaffolded and Ready, or a Standard update planned, pushed and opened, or
+// merged. Each takes a chain of reconciles, under a second on an idle device;
+// with three make checks at once the scaffold alone was seen past 10s (#597),
+// and an API call alone at 8s (#501).
+const standardSteps = 30 * time.Second
+
 // Files of the Standard's template.
 const (
 	agentsTemplate = "AGENTS.md.tmpl"
@@ -129,7 +136,7 @@ func eventuallyAt(ns, ref string, leftOut ...string) {
 		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpToDate))
 		g.Expect(cond.Message).To(HavePrefix(updatedStandard + " is at " + ref))
-	}).Should(Succeed())
+	}).WithTimeout(standardSteps).Should(Succeed())
 }
 
 // openedUpdate waits for an update to ref in flight, and returns it.
@@ -149,7 +156,7 @@ func openedUpdate(ns, ref string) c4v1alpha1.StandardUpdateStatus {
 		g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpdating))
 		g.Expect(cond.Message).To(Equal("Pull request " + update.PullRequestURL + " brings python-strict from " +
 			container.Status.Standard.Ref + " to " + ref + "; it merges once CI passes"))
-	}).Should(Succeed())
+	}).WithTimeout(standardSteps).Should(Succeed())
 	return update
 }
 
@@ -166,7 +173,7 @@ func stoppedUpdate(ns, reason string) string {
 		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 		g.Expect(cond.Reason).To(Equal(reason))
 		message = cond.Message
-	}).Should(Succeed())
+	}).WithTimeout(standardSteps).Should(Succeed())
 	return message
 }
 
@@ -307,7 +314,7 @@ var _ = Describe("Container Standard update", func() {
 			g.Expect(cond.Message).To(Equal("CI is failure on http://gitea/" + ns + "/orders-api/actions/runs/1; " +
 				"the update merges once a re-run passes, or close " + update.PullRequestURL + " to drop it"))
 			g.Expect(container.Status.Standard.Update).To(PointTo(HaveField("Stopped", BeEmpty())))
-		}).Should(Succeed())
+		}).WithTimeout(standardSteps).Should(Succeed())
 		Consistently(func() []int { return gitFake.forcedMerges(ns, "orders-api") }).
 			WithTimeout(2 * time.Second).Should(BeEmpty())
 
@@ -373,7 +380,7 @@ var _ = Describe("Container Standard update", func() {
 			g.Expect(cond.Message).To(Equal("The Standard python-strict was not part of the scaffold; " +
 				"its updates don't reach this Container"))
 			g.Expect(c.Status.Standard).To(BeNil())
-		}).Should(Succeed())
+		}).WithTimeout(standardSteps).Should(Succeed())
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
 	})
 
@@ -400,7 +407,7 @@ var _ = Describe("Container Standard update", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getContainer(g, ns).Status.Standard.Update).
 				To(PointTo(HaveField("PullRequest", Not(Equal(first.PullRequest)))))
-		}).Should(Succeed())
+		}).WithTimeout(standardSteps).Should(Succeed())
 		second := openedUpdate(ns, "v1.1.0")
 		Expect(second.Branch).To(Equal(first.Branch))
 		Expect(second.Paths).To(Equal([]string{"AGENTS.md"}))
