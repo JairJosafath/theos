@@ -400,6 +400,55 @@ describe('attention', () => {
     expect(attention({ tasks: [waiting], containers: [], sessions: [], now })[0].brief).toBeUndefined()
   })
 
+  it('drops a failure a newer Task for the same issue answered, one line per issue', () => {
+    const attempt = (name: string, created: number, status: Task['status']): Task => {
+      const t = issueTask(status)
+      return { ...t, metadata: { ...t.metadata, name, creationTimestamp: at(created) } }
+    }
+    const failed = (min: number): Task['status'] => ({ phase: 'Failed', completedAt: at(min) })
+    const first = attempt('cel-language-server-3', 0, failed(10))
+    const second = attempt('cel-language-server-3-2', 20, failed(30))
+    const third = attempt('cel-language-server-3-3', 40, failed(50))
+    const items = attention({ tasks: [third, first, second], containers: [], sessions: [], now: T0 + 60 * 60_000 })
+    expect(items.map((i) => i.task)).toEqual(['tools/cel-language-server-3-3'])
+
+    // A retry that is still running answers the failure, whatever its phase.
+    const retry = attempt('cel-language-server-3-4', 55, { phase: 'Implementing' })
+    const all = attention({ tasks: [first, second, third, retry], containers: [], sessions: [], now: T0 + 60 * 60_000 })
+    expect(all.filter((i) => i.title.endsWith('failed'))).toEqual([])
+
+    // Another issue, another Container or another namespace is not an answer.
+    const otherIssue: Task = { ...retry, spec: { ...retry.spec, issue: 4 } }
+    const otherNamespace: Task = { ...retry, metadata: { ...retry.metadata, namespace: 'apps' } }
+    const goal = task('later', {}, at(55))
+    expect(
+      attention({
+        tasks: [first, otherIssue, otherNamespace, goal],
+        containers: [],
+        sessions: [],
+        now: T0 + 60 * 60_000,
+      }).map((i) => i.task),
+    ).toContain('tools/cel-language-server-3')
+  })
+
+  it('drops a failure a Brief answered with a retry or a close, and keeps an unanswered one', () => {
+    const failed = issueTask({ phase: 'Failed', completedAt: at(10) })
+    const tended = (answer: 'retry' | 'close' | 'wait' | 'ask', min: number): Brief => ({
+      metadata: { name: 'cel-lens', namespace: 'tools' },
+      spec: { idea: 'A CEL lens' },
+      status: { tended: [{ container: 'cel-language-server', number: 3, answer, at: at(min), round: 2 }] },
+    })
+    const list = (briefs: Brief[]) =>
+      attention({ tasks: [failed], containers: [], sessions: [], briefs, now: T0 + 60 * 60_000 }).map((i) => i.task)
+    expect(list([tended('close', 20)])).toEqual([])
+    expect(list([tended('retry', 20)])).toEqual([])
+    // Waiting or asking still needs the person; an answer from before this failure was about an earlier one.
+    expect(list([tended('wait', 20)])).toEqual(['tools/cel-language-server-3'])
+    expect(list([tended('ask', 20)])).toEqual(['tools/cel-language-server-3'])
+    expect(list([tended('close', 5)])).toEqual(['tools/cel-language-server-3'])
+    expect(list([])).toEqual(['tools/cel-language-server-3'])
+  })
+
   it('forgets failures older than a day', () => {
     const old = task('old', { phase: 'Failed', completedAt: at(0) })
     expect(attention({ tasks: [old], containers: [], sessions: [], now: T0 + 25 * 60 * 60_000 })).toEqual([])
