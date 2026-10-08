@@ -50,13 +50,37 @@ func TestRetryTransient(t *testing.T) {
 		calls++
 		return unreachable
 	})
-	if !errors.Is(err, unreachable) || calls != 3 {
-		t.Errorf("got %v after %d calls, want the error after 1 try and 2 retries", err, calls)
+	if !errors.Is(err, unreachable) || !unreachableHost(err.Error()) || calls != 3 {
+		t.Errorf("got %v after %d calls, want the host unreachable after 1 try and 2 retries", err, calls)
 	}
 
 	calls = 0
 	rejected := errors.New("! [remote rejected] HEAD -> main (protected branch)")
-	if err := retryTransient(context.Background(), delays, func() error { calls++; return rejected }); !errors.Is(err, rejected) || calls != 1 {
+	if err := retryTransient(context.Background(), delays, func() error { calls++; return rejected }); !errors.Is(err, rejected) || unreachableHost(err.Error()) || calls != 1 {
 		t.Errorf("got %v after %d calls, want a rejection returned at once", err, calls)
+	}
+}
+
+func TestNetworkRetryWaitsOutAGiteaRestart(t *testing.T) {
+	// A Gitea pod restarting on a pulled image takes a few minutes.
+	var total time.Duration
+	for _, d := range networkRetryDelays {
+		total += d
+	}
+	if total < 4*time.Minute || total > 6*time.Minute {
+		t.Errorf("the retries wait %v in all, want about five minutes", total)
+	}
+}
+
+func TestRunWithTheGitHostUnreachableIsInterrupted(t *testing.T) {
+	delays := networkRetryDelays
+	networkRetryDelays = []time.Duration{time.Millisecond}
+	t.Cleanup(func() { networkRetryDelays = delays })
+
+	// Nothing listens on port 1: the clone can't connect.
+	got := Run(context.Background(), testJob(t, "http://127.0.0.1:1/apps/photo-editor.git", RoleImplement, 1),
+		failingAgent{err: errors.New("never runs")}, t.TempDir())
+	if !got.Interrupted || got.Unavailable || !unreachableHost(got.Error) {
+		t.Errorf("Run() = %+v, want an interrupted run whose Git host stayed unreachable", got)
 	}
 }

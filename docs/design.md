@@ -475,7 +475,9 @@ model and context it needs.
   the same step again. Neither does a run the infrastructure ended (a node
   shutdown or restart, an eviction, a preemption, an outage that lasted past
   its pod's deadline or its sandbox's shutdown time, a pod deleted before it
-  finished, which Agent Sandbox would replace and start over): it runs again in the same round
+  finished, which Agent Sandbox would replace and start over, a Git host that
+  stayed unreachable through the runner's retries of a clone or push, about
+  five minutes, enough for Gitea to restart on an upgrade): it runs again in the same round
   (`Interrupted`, then `status.reruns`), at most twice per round, so a run that
   is cut short every time still spends rounds. An out-of-memory kill, or a run
   that ran out its time while the cluster ran, is the agent's run failing, not
