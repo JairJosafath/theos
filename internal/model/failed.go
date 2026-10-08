@@ -281,19 +281,40 @@ func parseFailedAnswers(s string) ([]FailedAnswer, error) {
 
 // checkCutText says which text field, a why or a clarify, YAML cuts short:
 // in an unquoted value, " #" starts a comment, so `why: Its only change, #136,
-// shipped.` reads "Its only change,". Malformed YAML is the decoder's to say.
+// shipped.` reads "Its only change,", and so does a value wrapped before
+// "#136". Malformed YAML is the decoder's to say.
 func checkCutText(s string) error {
 	var doc yaml.Node
 	if yaml.Unmarshal([]byte(s), &doc) != nil {
 		return nil
 	}
+	lines := strings.Split(s, "\n")
 	var walk func(n *yaml.Node) error
 	walk = func(n *yaml.Node) error {
 		for i := 0; n.Kind == yaml.MappingNode && i+1 < len(n.Content); i += 2 {
-			key, v := n.Content[i].Value, n.Content[i+1]
-			if (key == "why" || key == "clarify") && v.Kind == yaml.ScalarNode && v.Style == 0 && v.LineComment != "" {
+			k, v := n.Content[i], n.Content[i+1]
+			if (k.Value != "why" && k.Value != "clarify") || v.Kind != yaml.ScalarNode || v.Style != 0 {
+				continue
+			}
+			comment := v.LineComment
+			// A plain value goes on over the lines indented past its key; a
+			// comment among them cuts it.
+			for _, line := range lines[min(v.Line, len(lines)):] {
+				text := strings.TrimLeft(line, " ")
+				if text == "" {
+					continue
+				}
+				if len(line)-len(text) < k.Column {
+					break
+				}
+				if strings.HasPrefix(text, "#") {
+					comment = text
+					break
+				}
+			}
+			if comment != "" {
 				return fmt.Errorf("line %d: %s: reads only %q, since YAML takes %q for a comment; "+
-					"quote the text, or write it as a block (%s: |)", v.Line, key, v.Value, v.LineComment, key)
+					"quote the text, or write it as a block (%s: |)", v.Line, k.Value, v.Value, comment, k.Value)
 			}
 		}
 		for _, c := range n.Content {

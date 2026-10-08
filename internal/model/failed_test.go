@@ -369,6 +369,10 @@ func TestPlanTextCutByAComment(t *testing.T) {
 		{"quoted, with a comment after it", ask(`'` + full + `' # the release step`), full, ""},
 		{"a block", ask("|\n      " + full), full + "\n", ""},
 		{"a # with no space before it", ask("Merged in PR#136, so it shipped."), "Merged in PR#136, so it shipped.", ""},
+		{"wrapped before #136", ask("Its only change,\n      #136, already shipped in v0.2.0."), "",
+			`line 7: why: reads only "Its only change,", since YAML takes "#136, already shipped in v0.2.0."`},
+		{"wrapped, whole", ask("Its only change, PR 136,\n      already shipped in v0.2.0."),
+			"Its only change, PR 136, already shipped in v0.2.0.", ""},
 		{"a cut clarify", "- container: engine\n  issue: 158\n  answer: retry\n  why: The prompt says so.\n" +
 			"  clarify: Use the checker, #2 merged it.\n", "", `line 5: clarify: reads only "Use the checker,"`},
 	}
@@ -390,7 +394,7 @@ func TestPlanTextCutByAComment(t *testing.T) {
 		})
 	}
 	if _, err := parseAnswers("- {container: a, issue: 1, answer: take, why: x}\n- container: a\n  issue: 2\n" +
-		"  answer: skip\n  why: Done in #4 already.\n"); err == nil || !strings.Contains(err.Error(), "line 5: why:") {
+		"  why: Done in\n    #4 already.\n  answer: skip\n"); err == nil || !strings.Contains(err.Error(), "line 4: why: reads only \"Done in\"") {
 		t.Errorf("suggestions: err = %v, want the cut why refused", err)
 	}
 	if _, err := parsePlanParallel("parallel: 2\nwhy: The prompt, #3, asks for two.\n"); err == nil ||
