@@ -32,6 +32,9 @@ type Result struct {
 	// Proposal is the Standard change the agent asks for: its branch, paths and
 	// reason. The patch itself stays in Git.
 	Proposal *model.Proposal `json:"proposal,omitempty"`
+	// Extra are the unprotected paths a Standard change changes besides its
+	// allowed ones, so its checks pass: the history and the pull request name them.
+	Extra []string `json:"extra,omitempty"`
 	// Empty is set when the round leaves nothing for the Task branch.
 	Empty bool `json:"empty,omitempty"`
 	// Blocked is the implementer's blocked note (model.BlockedNote): it can't
@@ -114,6 +117,9 @@ func (r Result) Encode() []byte {
 		case len(r.Open) > 0:
 			// Open criteria are work the issue asked for, so they go after the follow-ups.
 			r.Open = r.Open[:len(r.Open)-1]
+		case len(r.Extra) > 0:
+			// The reviewer sees every path in the diff; the list only points at them.
+			r.Extra = r.Extra[:len(r.Extra)-1]
 		case stage == 0:
 			stage++
 			r.Summary, r.Error = shorten(r.Summary, 100), shorten(r.Error, 100)
@@ -278,6 +284,9 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		result.Error = err.Error()
 		return result
 	}
+	if len(job.AllowedPaths) > 0 {
+		result.Extra = model.StandardChangeExtras(split.Task, job.AllowedPaths)
+	}
 	if len(split.Proposal) > 0 {
 		reason := shorten(model.ProposalReason(summary), maxProposalReason)
 		proposal := model.Proposal{Branch: model.ProposalBranch(job.Task), Paths: split.Proposal}
@@ -329,12 +338,7 @@ const maxProposalPathBytes = 256
 // proposal too large to travel in the result.
 func checkSplit(job Job, split model.ChangeSplit) error {
 	if len(split.Refused) > 0 {
-		if len(job.AllowedPaths) > 0 {
-			return fmt.Errorf("the change touches %s; this Task may change only %s",
-				strings.Join(split.Refused, ", "), strings.Join(job.AllowedPaths, ", "))
-		}
-		return fmt.Errorf("the change touches %s, which the platform and the Standard protect; leave them as they are",
-			strings.Join(split.Refused, ", "))
+		return errors.New(model.ScopeRefusal(split.Refused, job.AllowedPaths))
 	}
 	if n := len(split.Proposal); n > model.MaxProposalPaths {
 		return fmt.Errorf("the Standard change touches %d protected files; at most %d go in one", n, model.MaxProposalPaths)

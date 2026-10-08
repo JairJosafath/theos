@@ -50,6 +50,9 @@ type RunResult struct {
 	Error   string
 	// Proposal is a Standard change the agent asks for, besides its own change.
 	Proposal *Proposal
+	// Extra are the unprotected paths a Standard change changes besides its
+	// allowed ones (StandardChangeExtras).
+	Extra []string
 	// Empty means a resumed branch equals the base: the Standard change did it all.
 	Empty bool
 	// Blocked is the agent's blocked note (BlockedNote): it can't start the
@@ -256,29 +259,33 @@ type ChangeFacts struct {
 	Paths  []string
 	Merged bool
 	// Failed says why the change will not merge; empty while it still may.
-	Failed string
+	// Blocked means its Task failed blocked, as nothing more rounds can fix.
+	Failed  string
+	Blocked bool
 }
 
 // ChangeTask is a Task that works on a Standard change's issue.
 type ChangeTask struct {
 	Name string
-	// Final means the Task has ended, Failed that it ended in failure.
-	Final, Failed bool
-	Message       string
+	// Final means the Task has ended, Failed that it ended in failure, and
+	// Blocked that it failed reason ReasonBlocked.
+	Final, Failed, Blocked bool
+	Message                string
 }
 
 // StandardChangeOutcome reads the Tasks on a Standard change's issue. Any merged
 // Task means the change merged; any active one means it is pending, even when the
 // issue is closed, since the gated merge closes the issue in the same reconcile
 // that sets Merged. Otherwise the last failed Task fails it, and a closed issue
-// with no Task at all was closed without a merge.
-func StandardChangeOutcome(issue int, tasks []ChangeTask, issueClosed bool) (merged bool, failed string) {
+// with no Task at all was closed without a merge. blocked tells that the last
+// failed Task failed blocked.
+func StandardChangeOutcome(issue int, tasks []ChangeTask, issueClosed bool) (merged bool, failed string, blocked bool) {
 	var last *ChangeTask
 	active := false
 	for i, t := range tasks {
 		switch {
 		case t.Final && !t.Failed:
-			return true, ""
+			return true, "", false
 		case !t.Final:
 			active = true
 		default:
@@ -287,13 +294,13 @@ func StandardChangeOutcome(issue int, tasks []ChangeTask, issueClosed bool) (mer
 	}
 	switch {
 	case active:
-		return false, ""
+		return false, "", false
 	case last != nil:
-		return false, fmt.Sprintf("Task %s failed: %s", last.Name, last.Message)
+		return false, fmt.Sprintf("Task %s failed: %s", last.Name, last.Message), last.Blocked
 	case issueClosed:
-		return false, fmt.Sprintf("issue #%d was closed without a merge", issue)
+		return false, fmt.Sprintf("issue #%d was closed without a merge", issue), false
 	}
-	return false, ""
+	return false, "", false
 }
 
 // ResumeFeedback is what the implementer is told when its Standard change merged:
@@ -312,9 +319,10 @@ func ResumeFeedback(issue int, paths []string, earlier string) string {
 // GatedMergeRefusal says why a Standard change's pull request may not merge, or ""
 // when it may: CI is green, every check main's protection requires passed (the
 // merge overrides that protection, so it must not be laxer), the reviewer
-// approved, and the change is not empty and stays inside the allowed paths.
-// contexts is the state of each check on the commit by its context.
-func GatedMergeRefusal(checks string, contexts map[string]string, verdict string, changed, allowed []string) string {
+// approved, and the change changes an allowed path and no protected path
+// outside the allowed ones, case ignored. contexts is the state of each check on the commit by its context.
+func GatedMergeRefusal(checks string, contexts map[string]string, verdict string, changed, allowed,
+	protected []string) string {
 	if refusal := checksRefusal(checks, contexts); refusal != "" {
 		return refusal
 	}
@@ -325,13 +333,20 @@ func GatedMergeRefusal(checks string, contexts map[string]string, verdict string
 		return "the change changes nothing"
 	}
 	var outside []string
+	inside := false
 	for _, p := range changed {
-		if !coveredByAny(allowed, p) {
+		switch {
+		case coveredByAny(allowed, p):
+			inside = true
+		case coveredFold(protected, p):
 			outside = append(outside, p)
 		}
 	}
+	if !inside {
+		return fmt.Sprintf("the change touches none of %s, the paths it is for", joinAnd(allowed))
+	}
 	if len(outside) > 0 {
-		return fmt.Sprintf("the change touches %s, outside the allowed paths", joinAnd(outside))
+		return fmt.Sprintf("the change touches %s, protected and outside the allowed paths", joinAnd(outside))
 	}
 	return ""
 }
@@ -531,6 +546,10 @@ func implementingStep(f TaskFacts) TaskStep {
 	case f.Run.Result.Blocked != "" && !f.Plan:
 		// The agent says the issue can't start yet: more rounds won't change that.
 		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Message: BlockedMessage(f.Run.Result.Blocked)}
+	case IsScopeRefusal(f.Run.Result.Error) && IsScopeRefusal(f.Feedback):
+		// Turned back for scope twice in a row: the change can't be made here.
+		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Feedback: f.Run.Result.Error,
+			Message: ScopeBlockedMessage(f.Run.Result.Error)}
 	case f.Run.Result.Error != "":
 		return roundFailed(f, f.Run.Result.Error)
 	case f.Plan:
@@ -602,7 +621,12 @@ func implementedStep(f TaskFacts) TaskStep {
 		return TaskStep{Action: ActionDoneByStandardChange, Message: fmt.Sprintf(
 			"Standard change #%d did the whole issue: the branch has nothing beyond main", f.Change.Issue)}
 	}
-	return TaskStep{Action: ActionOpenPR, Message: "The agent pushed " + short(res.Commit)}
+	msg := "The agent pushed " + short(res.Commit)
+	if len(res.Extra) > 0 {
+		msg += fmt.Sprintf("; besides its Standard change's files it changes %s, which no Standard protects",
+			joinAnd(res.Extra))
+	}
+	return TaskStep{Action: ActionOpenPR, Message: msg}
 }
 
 // blockedStep waits for the Standard change a Task needs, then resumes or fails it.
@@ -613,8 +637,13 @@ func blockedStep(f TaskFacts) TaskStep {
 		return TaskStep{Action: ActionResume, Feedback: ResumeFeedback(c.Issue, c.Paths, f.Feedback),
 			Message: fmt.Sprintf("Standard change #%d merged; round %d goes on", c.Issue, f.Round)}
 	case c.Failed != "":
-		return TaskStep{Action: ActionFail,
+		// A change that failed blocked holds this Task too: say so, not that it failed.
+		step := TaskStep{Action: ActionFail,
 			Message: fmt.Sprintf("Standard change #%d will not merge: %s", c.Issue, c.Failed)}
+		if c.Blocked {
+			step.Reason = ReasonBlocked
+		}
+		return step
 	}
 	return TaskStep{Action: ActionWait,
 		Message: fmt.Sprintf("Waiting for Standard change #%d (%s)", c.Issue, joinAnd(c.Paths))}

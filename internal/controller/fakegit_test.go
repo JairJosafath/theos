@@ -539,6 +539,15 @@ func (g *fakeGit) pullRequests(owner, name string) []gitprovider.PullRequest {
 	return out
 }
 
+// pullComments are the comments on pull request number of owner/name.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) pullComments(owner, name string, number int) []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return slices.Clone(g.agentState().comments[fmt.Sprintf("%s/%s#%d", owner, name, number)])
+}
+
 func (p *fakeProvider) Repository(name string) gitprovider.Repository {
 	web := strings.TrimSuffix(p.cfg.URL, "/") + "/" + path.Join(p.cfg.Owner, name)
 	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git",

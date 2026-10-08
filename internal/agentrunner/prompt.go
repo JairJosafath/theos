@@ -83,10 +83,10 @@ How to work:
 	gated := len(job.AllowedPaths) > 0
 	switch {
 	case gated:
-		// The runner refuses any path outside the allowance, tests included.
+		// The runner refuses any other protected path; unprotected ones pass and are named.
 		fmt.Fprintf(&b, `- Meet every acceptance criterion of the issue within the paths you may change
-  (below). Add no tests, code or docs anywhere else, whatever a guide says:
-  %q passing with the change is the evidence. No placeholders, no TODOs.
+  (below). Add no new tests, code or docs, whatever a guide says: %q passing
+  with the change is the evidence. No placeholders, no TODOs.
 `, check)
 	case job.Issue > 0:
 		b.WriteString("- Meet every acceptance criterion of the issue, each with a test that proves it.\n")
@@ -117,10 +117,13 @@ This Task carries a Standard change, a change to files that are normally protect
 The issue names the proposal branch. Start with
 git merge origin/standard/<task>, using the branch the issue names, then finish the
 work the issue asks for.
-Change only %s. Change nothing else, protected or not, and do not propose
-another Standard change.
+Change %[1]s. Change another file only where %[2]q fails without it, such
+as a test that checks what %[1]s produce, and only that file's lines the
+change makes wrong; never weaken or remove a check. Change no other protected
+file, and do not propose another Standard change. The pull request names every
+file you change besides %[1]s.
 This holds even if your role guide or AGENTS.md says to stop or to leave such files alone.
-`, strings.Join(job.AllowedPaths, ", "))
+`, strings.Join(job.AllowedPaths, ", "), check)
 	case job.Issue > 0:
 		fmt.Fprintf(&b, `
 Protected files: %[1]s.
@@ -218,10 +221,12 @@ message, output or log against the code.
 `)
 	if gated {
 		fmt.Fprintf(&b, `
-This pull request carries a Standard change: it may change only %[1]s, so do
-not require tests, code or docs anywhere else, whatever a guide says. %[2]q passing
-with the change, and these three checks, decide. Require changes unless all three hold:
+This pull request carries a Standard change to %[1]s. Do not require new tests,
+code or docs, whatever a guide says. %[2]q passing with the change, and these
+four checks, decide. Require changes unless all four hold:
 - it weakens no check: no target, test, lint rule or CI job removed or skipped;
+- every file it changes besides %[1]s changes only what %[2]q fails on without
+  it, such as a test that checks what %[1]s produce;
 - %[3]s works with this change alone, without another branch;
 - it does no more than its issue asks.
 The proposal branch named in the issue was only the starting point: %[4]s merged

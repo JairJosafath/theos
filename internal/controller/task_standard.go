@@ -189,6 +189,7 @@ func (r *TaskReconciler) changeFacts(ctx context.Context, task *c4v1alpha1.Task,
 		ct := model.ChangeTask{Name: t.Name, Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1alpha1.TaskFailed}
 		if cond := meta.FindStatusCondition(t.Status.Conditions, ConditionSucceeded); cond != nil {
 			ct.Message = cond.Message
+			ct.Blocked = ct.Failed && cond.Reason == model.ReasonBlocked
 		}
 		changeTasks = append(changeTasks, ct)
 	}
@@ -202,7 +203,7 @@ func (r *TaskReconciler) changeFacts(ctx context.Context, task *c4v1alpha1.Task,
 	if err != nil {
 		return facts, err
 	}
-	facts.Merged, facts.Failed = model.StandardChangeOutcome(facts.Issue, changeTasks, issue.State == stateClosed)
+	facts.Merged, facts.Failed, facts.Blocked = model.StandardChangeOutcome(facts.Issue, changeTasks, issue.State == stateClosed)
 	return facts, nil
 }
 
@@ -349,8 +350,12 @@ func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Pr
 	if status.Review != nil {
 		verdict = status.Review.Verdict
 	}
+	protected, err := protectedPaths(ctx, r.Client, container)
+	if err != nil {
+		return "", err // never merge a path nobody checked
+	}
 	if why := model.GatedMergeRefusal(checks.State, checks.Contexts, verdict, changed,
-		task.Spec.AllowedProtectedPaths); why != "" {
+		task.Spec.AllowedProtectedPaths, protected); why != "" {
 		return why, nil
 	}
 	r.approve(ctx, task, status, container, reviewer)

@@ -185,11 +185,16 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	pr, err := provider.OpenPullRequest(gitCtx, repo, status.Branch, gitprovider.DefaultBranch,
-		pullTitle(task, status), pullBody(task, agents, status.Round, run.Result.Summary))
+		pullTitle(task, status), pullBody(task, agents, status.Round, run.Result.Summary, run.Result.Extra))
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	log.Info("Opened pull request", "url", pr.URL, "commit", run.Result.Commit, "round", status.Round)
+	if reopened := status.PullRequest != 0; reopened && len(run.Result.Extra) > 0 {
+		// A later round's pull request is the first one, whose description stays.
+		r.comment(ctx, task, status, container, fmt.Sprintf("Round %d: %s", status.Round,
+			extrasNote(task, run.Result.Extra)))
+	}
 	setProgress(status, model.OpenedPR(progressOf(status), run.Result.Commit))
 	status.Summary = run.Result.Summary
 	status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
@@ -541,7 +546,9 @@ func pullTitle(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) string {
 	return firstLine(task.Spec.Goal)
 }
 
-func pullBody(task *c4v1alpha1.Task, agents taskAgents, round int32, summary string) string {
+// pullBody is a pull request's description; extra are the unprotected files a
+// Standard change changes besides its allowed ones, named for the reviewer.
+func pullBody(task *c4v1alpha1.Task, agents taskAgents, round int32, summary string, extra []string) string {
 	var b strings.Builder
 	if task.Spec.Issue > 0 {
 		// Gitea links the issue, and closes it on merge.
@@ -551,6 +558,9 @@ func pullBody(task *c4v1alpha1.Task, agents taskAgents, round int32, summary str
 		agentName(agents.implementer), agentName(agents.reviewer))
 	if task.Spec.Issue == 0 {
 		fmt.Fprintf(&b, "\n## Goal\n\n%s\n", task.Spec.Goal)
+	}
+	if len(extra) > 0 {
+		fmt.Fprintf(&b, "\n%s\n", extrasNote(task, extra))
 	}
 	if summary = strings.TrimSpace(summary); summary != "" {
 		fmt.Fprintf(&b, "\n## Summary of round %d\n\n%s\n", round, summary)
@@ -598,4 +608,20 @@ func (r *TaskReconciler) agentGitRepo(ctx context.Context, container *c4v1alpha1
 		return nil, gitprovider.Repository{}, err
 	}
 	return provider, provider.Repository(container.Name), nil
+}
+
+// extrasNote names the unprotected files a Standard change changes besides its
+// allowed ones.
+func extrasNote(task *c4v1alpha1.Task, extra []string) string {
+	return fmt.Sprintf("This Standard change may change %s. It also changes %s, which no Standard protects, "+
+		"so the repository's checks pass with it.", codeList(task.Spec.AllowedProtectedPaths), codeList(extra))
+}
+
+// codeList lists paths as `a`, `b`, for Markdown.
+func codeList(paths []string) string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = "`" + p + "`"
+	}
+	return strings.Join(out, ", ")
 }
