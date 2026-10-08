@@ -212,7 +212,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
 			Now: briefNow},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: gitFake, PollInterval: time.Second,
-			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake},
+			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err
