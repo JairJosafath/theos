@@ -56,6 +56,9 @@ type Result struct {
 	// CostMilliUSD is what the run's agent calls cost, in thousandths of a US
 	// dollar; nil when the agent didn't report it.
 	CostMilliUSD *int64 `json:"costMilliUSD,omitempty"`
+	// Tokens is what the run's agent sessions used; nil when the agent didn't
+	// report it.
+	Tokens *model.TokenUsage `json:"tokens,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
@@ -186,9 +189,9 @@ var stopGrace = 2 * time.Second
 // is cancelled, or within stopGrace after, is Interrupted: c4agent was told to
 // stop, and the kill of the agent that comes with it is not the agent's failure.
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
-	meter := &costMeter{agent: agent}
+	meter := &usageMeter{agent: agent}
 	result := run(ctx, job, meter, dir)
-	result.CostMilliUSD = meter.total()
+	result.CostMilliUSD, result.Tokens = meter.total(), meter.totalTokens()
 	if result.Error != "" && !result.Unavailable && stoppedWithin(ctx, stopGrace) {
 		result.Interrupted = true
 	}

@@ -72,6 +72,9 @@ type RunResult struct {
 	// CostReported; the agent didn't say otherwise.
 	CostMilliUSD int64
 	CostReported bool
+	// Tokens is what the run's agent sessions used; nil when the agent didn't
+	// say.
+	Tokens *TokenUsage
 }
 
 // FollowUp is work a reviewer suggests for later, outside the change it reviewed:

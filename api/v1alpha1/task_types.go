@@ -289,6 +289,11 @@ type TaskStatus struct {
 	// +optional
 	RunsWithoutCost int32 `json:"runsWithoutCost,omitempty"`
 
+	// tokens is what the Task's agent runs used so far, over all rounds, and
+	// how large the largest session got.
+	// +optional
+	Tokens *TokenUsage `json:"tokens,omitempty"`
+
 	// sandbox names the Sandbox running now, if any.
 	// +optional
 	Sandbox string `json:"sandbox,omitempty"`
