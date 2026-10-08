@@ -20,6 +20,9 @@ type TaskProgress struct {
 	HasChecks bool
 	// ResumedRound is the round a Blocked Task resumed in; 0 when it didn't.
 	ResumedRound int
+	// MergeWhenChecksPass means the approved change's branch took in main, and
+	// Commit merges once its checks pass, with no new review.
+	MergeWhenChecksPass bool
 }
 
 // TaskEnd is how a Task ends: its final phase, and the reason and message of
@@ -58,6 +61,7 @@ func IssueClosed(issue int) TaskEnd {
 func OpenedPR(p TaskProgress, commit string) TaskProgress {
 	p.Commit = commit
 	p.HasChecks = false
+	p.MergeWhenChecksPass = false
 	p.Phase = TaskChecking
 	return p
 }
@@ -78,6 +82,7 @@ func NextRound(p TaskProgress, feedback string) TaskProgress {
 	p.ReviewAttempts = 0
 	p.Reruns = 0
 	p.HasChecks = false
+	p.MergeWhenChecksPass = false
 	p.Phase = TaskImplementing
 	return p
 }
@@ -90,6 +95,7 @@ func ResolveConflicts(p TaskProgress, feedback string) TaskProgress {
 	p.ReviewAttempts = 0
 	p.HasChecks = false
 	p.ResumedRound = 0
+	p.MergeWhenChecksPass = false
 	p.Phase = TaskImplementing
 	return p
 }
@@ -166,6 +172,18 @@ func PullRequestClosed(url string) TaskEnd {
 func Recheck(p TaskProgress, head string) TaskProgress {
 	p.Commit = head
 	p.HasChecks = false
+	p.MergeWhenChecksPass = false
+	p.Phase = TaskChecking
+	return p
+}
+
+// UpdatedBranch is the progress of an approved Task whose branch took in main
+// at head, as main had moved since its checks ran: it waits for head's checks,
+// and merges once they pass, in the same round and with no new review.
+func UpdatedBranch(p TaskProgress, head string) TaskProgress {
+	p.Commit = head
+	p.HasChecks = false
+	p.MergeWhenChecksPass = true
 	p.Phase = TaskChecking
 	return p
 }

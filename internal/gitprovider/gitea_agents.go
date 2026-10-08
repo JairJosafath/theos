@@ -43,6 +43,9 @@ type PullRequest struct {
 	Merged  bool
 	// Mergeable is false while the pull request conflicts with its base.
 	Mergeable bool
+	// Behind means the base moved since the branch last took it in: checks on
+	// the head ran without what merged into the base since.
+	Behind bool
 	// MergeCommit is the commit the merge made on the base; empty until merged.
 	MergeCommit string
 }
@@ -353,15 +356,22 @@ type giteaPull struct {
 	Mergeable bool   `json:"mergeable"`
 	// MergeCommit is merge_commit_sha, set once the pull request is merged.
 	MergeCommit *string `json:"merge_commit_sha"`
-	Head        struct {
+	// MergeBase is where the branch last took in its base.
+	MergeBase string `json:"merge_base"`
+	Head      struct {
 		Ref string `json:"ref"`
 		SHA string `json:"sha"`
 	} `json:"head"`
+	// Base.SHA is the base branch's head now, while the pull request is open.
+	Base struct {
+		SHA string `json:"sha"`
+	} `json:"base"`
 }
 
 func (p giteaPull) pullRequest() PullRequest {
 	out := PullRequest{Number: p.Number, URL: p.HTMLURL, Head: p.Head.Ref, HeadSHA: p.Head.SHA, State: p.State,
-		Merged: p.Merged, Mergeable: p.Mergeable}
+		Merged: p.Merged, Mergeable: p.Mergeable,
+		Behind: p.State == "open" && !p.Merged && p.MergeBase != "" && p.Base.SHA != "" && p.MergeBase != p.Base.SHA}
 	if p.MergeCommit != nil {
 		out.MergeCommit = *p.MergeCommit
 	}
@@ -453,6 +463,24 @@ func (g *gitea) merge(ctx context.Context, repo Repository, number int, headSHA,
 		return fmt.Errorf("gitea: merging pull request %d failed (HTTP %d): %s", number, status, apiMessage(data))
 	}
 	return nil
+}
+
+// UpdatePullRequest merges the base into the pull request's branch, as Gitea's
+// "Update branch" button does.
+func (g *gitea) UpdatePullRequest(ctx context.Context, repo Repository, number int) error {
+	status, data, err := g.do(ctx, http.MethodPost,
+		"/api/v1/repos/"+repoPath(repo)+"/pulls/"+strconv.Itoa(number)+"/update?style=merge", nil)
+	if err != nil {
+		return err
+	}
+	switch status {
+	case http.StatusOK:
+		return nil
+	case http.StatusConflict:
+		return fmt.Errorf("gitea: updating pull request %d of %s: %w", number, repoPath(repo), ErrConflict)
+	}
+	return fmt.Errorf("gitea: updating pull request %d of %s failed (HTTP %d): %s", number, repoPath(repo), status,
+		apiMessage(data))
 }
 
 // PullRequestFiles returns the paths a pull request changes, both the old and the

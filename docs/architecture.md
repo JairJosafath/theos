@@ -135,8 +135,8 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    unavailable agent, or fail. The model also decides what each step does to the
    Task (`internal/model/task_transition.go`): the controller copies the status
    into a `TaskProgress`, applies one transition and copies it back.
-   `StartRun`, `OpenedPR`, `NextRound`, `ResolveConflicts`, `RetryReview`,
-   `Rerun`, `Recheck` and `Proposed` move the round, phase and feedback;
+   `StartRun`, `OpenedPR`, `NextRound`, `ResolveConflicts`, `UpdatedBranch`,
+   `RetryReview`, `Rerun`, `Recheck` and `Proposed` move the round, phase and feedback;
    `DecideMerge` and `AfterSquash` choose what to do with an approved pull
    request; `AgentBackAt` sets an unavailable agent's wait; and `IssueClosed`,
    `PullRequestClosed` and `GatedMergeRefused` end the Task.

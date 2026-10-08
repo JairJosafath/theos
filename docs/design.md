@@ -200,9 +200,14 @@ enforces.
 - **Task: a goal for a Container.** The operator runs the Agent in an
   [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox), which works on
   branch `task/<name>`; opens a pull request; waits for CI; runs the Agent again as
-  reviewer; and squash-merges on approval. Failed checks, requested changes or a
-  failed run start the next round with that feedback, up to the Agent's
-  `maxRounds`. An implementer that finds its issue can't be done yet (it waits
+  reviewer; and squash-merges on approval. A pull request merges only on checks
+  that ran against the `main` it merges into: when `main` moved since the
+  approved head's checks ran, the operator merges `main` into the branch through
+  the Git host, with no agent run and no round spent, waits for the checks
+  again, and merges when they pass, without another review. A branch that
+  conflicts with `main` goes back to its implementer in the same round instead.
+  Failed checks, requested changes or a failed run start the next round with
+  that feedback, up to the Agent's `maxRounds`. An implementer that finds its issue can't be done yet (it waits
   on work not merged or released) or can't be done in the sandbox changes
   nothing and ends its summary with a line `Blocked: <what it waits on and
   why>`; the Task then fails at once, reason `Blocked`, with those words in its

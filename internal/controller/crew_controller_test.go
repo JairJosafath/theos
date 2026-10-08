@@ -356,6 +356,85 @@ var _ = Describe("Crew", func() {
 		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
+	// approvedBehindMain runs a Crew's Task to its approval while main moved since
+	// its checks ran, and returns the head the operator merged main into.
+	approvedBehindMain := func(ns string) (pr gitprovider.PullRequest, head string) {
+		readyContainer(ns)
+		crewAgents(ns, 2)
+		gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		mustCreate(newCrew(ns))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }, "30s").Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement", Commit: "sha-1"}, "")
+		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }, "30s").Should(Succeed())
+
+		By("merging main into the branch once approved, as another change merged since its checks ran")
+		pr = gitFake.pullRequests(ns, "orders-api")[0]
+		gitFake.fallBehind(ns, "orders-api", pr.Number)
+		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Good."}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Round).To(Equal(int32(1)), "main moving costs no round")
+			g.Expect(task.Status.MergeWhenChecksPass).To(BeTrue())
+			g.Expect(task.Status.Commit).NotTo(Equal("sha-1"))
+			g.Expect(task.Status.Commit).To(Equal(gitFake.pullRequests(ns, "orders-api")[0].HeadSHA))
+			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "UpdatingBranch")))
+			head = task.Status.Commit
+		}, "30s").Should(Succeed())
+		Consistently(func() bool { return gitFake.pullRequests(ns, "orders-api")[0].Merged }, "2s").
+			Should(BeFalse(), "it waits for the checks on the new head")
+		return pr, head
+	}
+
+	It("merges an approved change whose checks ran on an older main only once they pass with main merged in", func() {
+		ns := newProjectNamespace()
+		pr, first := approvedBehindMain(ns)
+
+		By("merging main in again when main moved again while the checks ran")
+		gitFake.fallBehind(ns, "orders-api", pr.Number)
+		gitFake.setChecks(ns, "orders-api", first, "success")
+		var head string
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Commit).NotTo(Equal(first))
+			g.Expect(task.Status.MergeWhenChecksPass).To(BeTrue())
+			head = task.Status.Commit
+		}, "30s").Should(Succeed())
+		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+
+		By("merging once the new head's checks pass, with no new review")
+		gitFake.setChecks(ns, "orders-api", head, "success")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(task.Status.Review).NotTo(BeNil())
+			g.Expect(task.Status.Review.Verdict).To(Equal(model.VerdictApprove))
+		}, "30s").Should(Succeed())
+		Expect(gitFake.issue(ns, "orders-api", 1).State).To(Equal("closed"))
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-review-a2"), newSandbox()))).
+			To(BeTrue(), "no reviewer runs again")
+	})
+
+	It("starts the next round when an approved change's checks fail with main merged in", func() {
+		ns := newProjectNamespace()
+		pr, head := approvedBehindMain(ns)
+
+		gitFake.setChecks(ns, "orders-api", head, "failure")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(task.Status.MergeWhenChecksPass).To(BeFalse())
+			g.Expect(task.Status.Feedback).To(ContainSubstring("main moved since its checks ran"))
+		}, "30s").Should(Succeed())
+		Expect(gitFake.pullRequests(ns, "orders-api")[pr.Number-1].Merged).To(BeFalse())
+	})
+
 	It("starts nothing while paused", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
