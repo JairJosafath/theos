@@ -10,15 +10,19 @@ package controller
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
@@ -82,8 +86,42 @@ func TestControllers(t *testing.T) {
 	SetDefaultEventuallyTimeout(10 * time.Second)
 	SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
 
-	RunSpecs(t, "Controller Suite")
+	// End the suite 30s before go test's -timeout (Makefile), so Ginkgo fails the
+	// spec that is running by name and the slowest-specs report still runs,
+	// instead of go test panicking with a goroutine dump.
+	suiteConfig, reporterConfig := GinkgoConfiguration()
+	if deadline, ok := t.Deadline(); ok {
+		suiteConfig.Timeout = time.Until(deadline) - 30*time.Second
+	}
+	RunSpecs(t, "Controller Suite", suiteConfig, reporterConfig)
 }
+
+// slowestSpecs is how many specs the report names.
+const slowestSpecs = 10
+
+// When C4_SLOWEST_SPECS names a file, the suite writes its slowest specs there,
+// so the Tests job's log names what made a slow run slow (go test shows no
+// output of a package that passes).
+var _ = ReportAfterSuite("slowest specs", func(report Report) {
+	path := os.Getenv("C4_SLOWEST_SPECS")
+	if path == "" {
+		return
+	}
+	var specs []SpecReport
+	for _, s := range report.SpecReports {
+		if s.LeafNodeType == types.NodeTypeIt && s.State != types.SpecStateSkipped {
+			specs = append(specs, s)
+		}
+	}
+	slices.SortFunc(specs, func(a, b SpecReport) int { return cmp.Compare(b.RunTime, a.RunTime) })
+	var out bytes.Buffer
+	fmt.Fprintf(&out, "Controller Suite: %d specs in %s; the %d slowest:\n",
+		len(specs), report.RunTime.Round(time.Second), min(slowestSpecs, len(specs)))
+	for _, s := range specs[:min(slowestSpecs, len(specs))] {
+		fmt.Fprintf(&out, "%6.1fs  %s  (%s)\n", s.RunTime.Seconds(), s.FullText(), s.LeafNodeLocation)
+	}
+	Expect(os.WriteFile(path, out.Bytes(), 0o644)).To(Succeed())
+})
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
