@@ -1,6 +1,7 @@
 // The Briefs of a project: a box to describe a new app, and a card per Brief
-// with what the planner made of it and a field to steer it with a prompt.
-// These are the UI's only two writes; the CRD decides what is accepted.
+// with what the planner made of it, a field to steer it with a prompt and a
+// button to pause or resume it. These are the UI's only three writes; the CRD
+// decides what is accepted.
 
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import {
@@ -17,6 +18,7 @@ import {
   AUTOPILOT_MODES,
   DEFAULT_AUTOPILOT,
   describeBrief,
+  pauseAction,
   sortBriefs,
   type BriefAppView,
   type BriefView,
@@ -53,8 +55,8 @@ export function Briefs({
         </h2>
         <p className="view-caption">
           Describe an app in plain words. A planner agent turns it into software systems, containers, crews and issues,
-          round by round; add a prompt to steer it. Creating a brief and adding a prompt are the only changes this page
-          can make.
+          round by round; add a prompt to steer it. Creating a brief, adding a prompt and pausing or resuming a brief
+          are the only changes this page can make.
         </p>
       </div>
       <div className="briefs-grid">
@@ -237,6 +239,7 @@ function BriefCard({
   now: number
 }) {
   const view = describeBrief(brief)
+  const [pauseError, setPauseError] = useState<string>()
   return (
     <article className={`panel brief brief-${view.phase.tone}`} aria-label={`Brief ${view.name}`}>
       <div className="panel-head">
@@ -267,14 +270,23 @@ function BriefCard({
             ) : null}
           </span>
         </div>
-        <span className={`badge badge-${view.phase.tone} badge-sm`} title={view.phase.explanation}>
-          <span className="badge-dot" aria-hidden="true" />
-          {view.phase.label}
-        </span>
+        <div className="brief-head-actions">
+          <span className={`badge badge-${view.phase.tone} badge-sm`} title={view.phase.explanation}>
+            <span className="badge-dot" aria-hidden="true" />
+            {view.phase.label}
+          </span>
+          <PauseButton namespace={namespace} view={view} writer={writer} onError={setPauseError} />
+        </div>
       </div>
       <p className="brief-idea" title={view.idea}>
         {view.idea}
       </p>
+      {pauseError ? <FormError message={pauseError} /> : null}
+      {view.pausedNote ? (
+        <div className="brief-note brief-note-waiting brief-paused" role="status">
+          {view.pausedNote}
+        </div>
+      ) : null}
 
       {view.needsYou.length ? <NeedsYouBox view={view} now={now} /> : null}
       {view.failure ? (
@@ -287,6 +299,47 @@ function BriefCard({
 
       <PromptForm namespace={namespace} name={view.name} writer={writer} needsInput={Boolean(view.needsInput)} />
     </article>
+  )
+}
+
+/** Pauses a running Brief or resumes a paused one by patching spec.paused; the card shows the API's refusal. */
+function PauseButton({
+  namespace,
+  view,
+  writer,
+  onError,
+}: {
+  namespace: string
+  view: BriefView
+  writer: BriefWriter
+  onError: (message: string | undefined) => void
+}) {
+  const [sending, setSending] = useState(false)
+  const action = pauseAction(view)
+
+  async function click() {
+    setSending(true)
+    onError(undefined)
+    try {
+      await writer.setPaused(namespace, view.name, action.paused)
+    } catch (err) {
+      onError(errorText(err))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="button button-secondary button-small"
+      title={action.explanation}
+      aria-label={`${action.label} brief ${view.name}`}
+      disabled={sending}
+      onClick={click}
+    >
+      {sending ? (action.paused ? 'Pausing…' : 'Resuming…') : action.label}
+    </button>
   )
 }
 

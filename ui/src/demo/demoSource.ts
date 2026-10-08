@@ -1,7 +1,7 @@
 // Demo mode's data source: the fixtures, kept "alive" by moving the heartbeat of
 // Active sessions forward every 30 seconds, as a real Session client would. One
-// project: the webshop. The story source also takes the UI's two writes in
-// memory, so the Brief box works without a cluster.
+// project: the webshop. The story source also takes the UI's three writes in
+// memory, so the Brief box and its Pause button work without a cluster.
 
 import {
   briefManifest,
@@ -14,7 +14,7 @@ import {
 } from '../k8s/briefs'
 import type { FactoryHealth } from '../k8s/health'
 import type { Connection, FactoryData, Snapshot, Source, StoryData } from '../k8s/sources'
-import type { Project } from '../k8s/types'
+import type { Condition, Project } from '../k8s/types'
 import { demoFactory, demoHealth } from './factoryFixture'
 import { demoStory } from './fixture'
 
@@ -86,6 +86,22 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
     const prompts = brief.spec.prompts ?? []
     if (prompts.length >= MAX_PROMPTS) throw new Error(`spec.prompts: at most ${MAX_PROMPTS} prompts`)
     const changed = { ...brief, spec: { ...brief.spec, prompts: [...prompts, prompt] } }
+    this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
+  }
+
+  /** Sets spec.paused and, as the operator would, the Paused condition; the demo has no Task running. */
+  async setPaused(_namespace: string, name: string, paused: boolean): Promise<void> {
+    const data = this.snapshot.data
+    const brief = data.briefs.find((b) => b.metadata.name === name)
+    if (!brief) throw new Error(`briefs.c4.factory.io "${name}" not found`)
+    const condition: Condition = paused
+      ? { type: 'Paused', status: 'True', reason: 'Paused', message: 'Paused; nothing is running' }
+      : { type: 'Paused', status: 'False', reason: 'Resumed', message: 'Not paused' }
+    const conditions = [
+      ...(brief.status?.conditions ?? []).filter((c) => c.type !== 'Paused'),
+      { ...condition, lastTransitionTime: new Date().toISOString() },
+    ]
+    const changed = { ...brief, spec: { ...brief.spec, paused }, status: { ...brief.status, conditions } }
     this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
   }
 

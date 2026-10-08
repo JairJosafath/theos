@@ -58,6 +58,10 @@ export interface BriefView {
   needsInput?: string
   /** Why the last round failed, while it has. */
   failure?: string
+  /** spec.paused: the Brief and its Crews start nothing new. */
+  paused: boolean
+  /** While paused, the Paused condition's message: which Tasks still run, or that nothing does. */
+  pausedNote?: string
   round: number
   prompts: BriefPrompt[]
   waitingPrompts: number
@@ -118,6 +122,8 @@ export function describeBrief(brief: Brief): BriefView {
   const conditions = status.conditions
   const needs = findCondition(conditions, 'NeedsInput')
   const planned = findCondition(conditions, 'Planned')
+  const pausedCondition = findCondition(conditions, 'Paused')
+  const paused = Boolean(brief.spec.paused)
   const taken = status.promptsPlanned ?? 0
   const prompts = (brief.spec.prompts ?? []).map((text, i) => ({ text, planned: i < taken }))
   const suggestions = (status.suggestions ?? []).map(({ container, number, title, url }) => ({
@@ -156,6 +162,11 @@ export function describeBrief(brief: Brief): BriefView {
     phase,
     needsInput,
     failure: status.phase === 'Failed' ? planned?.message?.trim() || undefined : undefined,
+    paused,
+    pausedNote: paused
+      ? (pausedCondition?.status === 'True' && pausedCondition.message?.trim()) ||
+        'Pausing; the factory has not said yet what still runs.'
+      : undefined,
     round: status.round ?? 0,
     prompts,
     waitingPrompts: prompts.filter((p) => !p.planned).length,
@@ -189,6 +200,24 @@ export function describeBrief(brief: Brief): BriefView {
       }))
       .reverse(),
   }
+}
+
+/** What the Brief card's Pause or Resume button does: the spec.paused it sets, its label and why. */
+export interface PauseAction {
+  label: 'Pause' | 'Resume'
+  /** The value it patches spec.paused to. */
+  paused: boolean
+  explanation: string
+}
+
+export function pauseAction(view: Pick<BriefView, 'paused'>): PauseAction {
+  return view.paused
+    ? { label: 'Resume', paused: false, explanation: 'Resume this brief and the crews it paused' }
+    : {
+        label: 'Pause',
+        paused: true,
+        explanation: 'Pause this brief and its crews: they start nothing new, and running Tasks finish',
+      }
 }
 
 /** The operator's mode for a Brief that sets none (docs/plans/done/brief-autopilot.md, decision 1). */

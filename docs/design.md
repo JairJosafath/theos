@@ -529,7 +529,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 - **A Brief is one more writer of the model.** `spec.idea` is the idea,
   immutable; `spec.prompts` takes follow-ups and only grows. Anything can
   write it: the UI's box, kubectl or GitOps. The UI server writes nothing but
-  this: creating a Brief and appending a prompt.
+  this: creating a Brief, appending a prompt, and setting `spec.paused` from
+  the card's Pause and Resume buttons.
 - **A planner Agent plans each round** (the idea, then each batch of new
   prompts) as a Task with `spec.kind: Plan` owned by the Brief, in an agent
   sandbox like any Task. It works in the Brief's own repository, where the

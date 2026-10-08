@@ -422,6 +422,8 @@ export interface Brief extends K8sObject {
     autopilot?: BriefAutopilot
     /** How many issues each Crew the Brief made works on at once, 1 to 5; unset is the operator's default. */
     parallel?: number
+    /** Pauses the Brief and every Crew it made; a Task already started runs to its end. The Paused condition says what still runs. */
+    paused?: boolean
   }
   status?: {
     phase?: BriefPhase

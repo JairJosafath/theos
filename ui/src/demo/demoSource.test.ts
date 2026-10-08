@@ -36,4 +36,19 @@ describe('DemoStorySource as a BriefWriter', () => {
     expect(brief?.spec.prompts).toEqual(['Only unopened items'])
     await expect(source.addPrompt(DEMO_NAMESPACE, 'nope', 'x')).rejects.toThrow('not found')
   })
+
+  it('pauses and resumes a Brief, saying what still runs', async () => {
+    const source = new DemoStorySource()
+    const returns = () => source.getSnapshot().data.briefs.find((b) => b.metadata.name === 'returns')
+    await source.setPaused(DEMO_NAMESPACE, 'returns', true)
+    expect(returns()?.spec.paused).toBe(true)
+    expect(returns()?.status?.conditions?.find((c) => c.type === 'Paused')).toMatchObject({
+      status: 'True',
+      message: 'Paused; nothing is running',
+    })
+    await source.setPaused(DEMO_NAMESPACE, 'returns', false)
+    expect(returns()?.spec.paused).toBe(false)
+    expect(returns()?.status?.conditions?.filter((c) => c.type === 'Paused')).toMatchObject([{ status: 'False' }])
+    await expect(source.setPaused(DEMO_NAMESPACE, 'nope', true)).rejects.toThrow('not found')
+  })
 })
