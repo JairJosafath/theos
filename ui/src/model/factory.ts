@@ -395,6 +395,54 @@ export function briefOn(
   return undefined
 }
 
+/** The Container and issue a Task works, or undefined for a Task with a goal. */
+function issueOf(task: Task): { namespace?: string; container: string; number: number } | undefined {
+  const container = task.spec.containerRef?.name
+  const number = task.spec.issue
+  if (!container || number === undefined) return undefined
+  return { namespace: task.metadata.namespace, container, number }
+}
+
+/** Whether a is newer than b: created later, or at the same second with the later name. */
+function newerTask(a: Task, b: Task): boolean {
+  const ta = time(a.metadata.creationTimestamp) ?? 0
+  const tb = time(b.metadata.creationTimestamp) ?? 0
+  return ta !== tb ? ta > tb : a.metadata.name > b.metadata.name
+}
+
+/**
+ * Whether a failed Task's issue has been answered since it failed, so it no
+ * longer needs a look: a newer Task works the same issue of the same Container
+ * (a retry or a new attempt, whatever its phase), or a Brief's round answered
+ * the issue with a retry or a close after the Task failed. A Task with a goal
+ * has no issue to answer, and an answer of wait or ask still needs the person.
+ */
+function failureAnswered(task: Task, done: number, tasks: Task[], briefs: Brief[]): boolean {
+  const issue = issueOf(task)
+  if (!issue) return false
+  const sameIssue = (t: Task) => {
+    const other = issueOf(t)
+    return (
+      other !== undefined &&
+      other.namespace === issue.namespace &&
+      other.container === issue.container &&
+      other.number === issue.number
+    )
+  }
+  if (tasks.some((t) => t !== task && sameIssue(t) && newerTask(t, task))) return true
+  return briefs.some(
+    (b) =>
+      b.metadata.namespace === issue.namespace &&
+      (b.status?.tended ?? []).some(
+        (t) =>
+          t.container === issue.container &&
+          t.number === issue.number &&
+          (t.answer === 'retry' || t.answer === 'close') &&
+          (time(t.at) ?? 0) >= done,
+      ),
+  )
+}
+
 /** Everything that needs a look, errors first. */
 export function attention(input: {
   tasks: Task[]
@@ -486,7 +534,7 @@ export function attention(input: {
     const brief = briefOn(briefs, 'Task', task.metadata.namespace, task.metadata.name, now)
     if (task.status?.phase === 'Failed') {
       const done = time(task.status.completedAt)
-      if (done !== undefined && now - done < RECENT_FAILURE_MS) {
+      if (done !== undefined && now - done < RECENT_FAILURE_MS && !failureAnswered(task, done, tasks, briefs)) {
         items.push({
           level: 'warning',
           title: `Task ${key} failed`,

@@ -623,7 +623,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   shows one *Needs you* box (`needsYou` with `NeedsInput`), its tending
   rounds and its mode, and the create form lets the person choose the mode;
   the Factory view's *Needs a look* names the Brief that watches an item and
-  when it acts. See [plans/done/brief-autopilot.md](plans/done/brief-autopilot.md).
+  when it acts. A failed Task leaves *Needs a look* once it is answered: a
+  newer Task works the same issue of the same Container, or a round tended
+  the issue with a retry or a close after the Task failed; so an issue that
+  failed several times shows one line, its newest attempt. See [plans/done/brief-autopilot.md](plans/done/brief-autopilot.md).
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a
