@@ -100,6 +100,15 @@ func TestUIActionsGrantExactlyTheTable(t *testing.T) {
 				uiActions: "oidc",
 			},
 		},
+		{
+			name: "actions on with an empty ui.auth.oidc",
+			sets: []string{uiActionsOn, "ui.auth.oidc.issuerURL=null"},
+			want: uiRender{
+				writes:    map[string][]rbacv1.PolicyRule{uiName + "-actions": actions},
+				bound:     reads,
+				uiActions: "oidc",
+			},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -145,8 +154,9 @@ func helmBinary(t *testing.T) string {
 // helmTemplate renders the UI's RBAC and Deployment with the values sets, and
 // returns stdout, or stderr when helm fails.
 func helmTemplate(helm string, sets ...string) (string, error) {
-	args := []string{"template", release, chartDir, "--namespace", releaseNS,
-		"--show-only", uiRBAC, "--show-only", uiDeploy}
+	args := make([]string, 0, 9+2*len(sets))
+	args = append(args, "template", release, chartDir, "--namespace", releaseNS,
+		"--show-only", uiRBAC, "--show-only", uiDeploy)
 	for _, s := range sets {
 		args = append(args, "--set", s)
 	}

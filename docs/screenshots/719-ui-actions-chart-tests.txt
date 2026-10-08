@@ -1,0 +1,8 @@
+--- PASS: TestUIActionsGrantExactlyTheTable (1.07s)
+    --- PASS: TestUIActionsGrantExactlyTheTable/actions_off (0.24s)
+    --- PASS: TestUIActionsGrantExactlyTheTable/actions_off_behind_an_Ingress (0.21s)
+    --- PASS: TestUIActionsGrantExactlyTheTable/actions_on_over_port-forward (0.17s)
+    --- PASS: TestUIActionsGrantExactlyTheTable/actions_on_with_OIDC_behind_an_Ingress (0.20s)
+    --- PASS: TestUIActionsGrantExactlyTheTable/actions_on_with_an_empty_ui.auth.oidc (0.25s)
+--- PASS: TestUIActionsBehindAnIngressNeedOIDC (0.20s)
+ok  	github.com/JairJosafath/c4factory/test/chart	1.297s

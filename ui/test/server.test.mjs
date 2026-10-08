@@ -722,6 +722,14 @@ describe('server.mjs', () => {
         [{ ...add('/spec/paused', true), from: '/x' }],
         403,
       ],
+      [
+        'a patch whose path is not a string',
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [{ op: 'add', path: ['/spec/paused'], value: true }],
+        403,
+      ],
       // Other origins.
       [
         'a write from another site',

@@ -46,14 +46,14 @@ CI runners follow; the UI sums the runners' CPU as CI's (key runner).
 
 {{/*
 How the UI acts (design.md, UI actions), the server's UI_ACTIONS: empty with
-ui.actions.enabled off; oidc with ui.auth.oidc set, every write as the person
+ui.actions.enabled off; oidc with ui.auth.oidc set (even empty), every write as the person
 signed in; else service-account, over port-forward. Behind an Ingress
 (ui.allowedHosts) the ServiceAccount never acts: anything else that reaches
 the pod could act through it.
 */}}
 {{- define "c4-factory.uiActions" -}}
 {{- if dig "actions" "enabled" false .Values.ui }}
-{{- if dig "auth" "oidc" nil .Values.ui }}oidc
+{{- if kindIs "map" (dig "auth" "oidc" nil .Values.ui) }}oidc
 {{- else if .Values.ui.allowedHosts }}
 {{- fail "ui.actions.enabled with ui.allowedHosts needs ui.auth.oidc: behind an Ingress the UI acts only as a person signed in" }}
 {{- else }}service-account

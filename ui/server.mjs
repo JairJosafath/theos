@@ -284,7 +284,13 @@ function addsFields(fields) {
     const paths = new Set()
     for (const op of body) {
       if (!isObject(op) || Object.keys(op).sort().join() !== 'op,path,value' || op.op !== 'add') return undefined
-      if (!Object.hasOwn(fields, op.path) || paths.has(op.path) || !hasType(op.value, fields[op.path])) return undefined
+      if (
+        typeof op.path !== 'string' ||
+        !Object.hasOwn(fields, op.path) ||
+        paths.has(op.path) ||
+        !hasType(op.value, fields[op.path])
+      )
+        return undefined
       paths.add(op.path)
     }
     return body
