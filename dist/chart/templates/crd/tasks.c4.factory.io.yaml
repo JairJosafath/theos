@@ -432,6 +432,13 @@ spec:
                   its address.
                 format: int32
                 type: integer
+              pullRequestEnded:
+                description: |-
+                  pullRequestEnded says how a Failed Task's pull request ended once the
+                  operator saw it: closed by the operator and why, closed or merged on the
+                  Git host, or continued by a newer try at the issue. Empty while the
+                  pull request stays open for a later try.
+                type: string
               pullRequestURL:
                 type: string
               reruns:

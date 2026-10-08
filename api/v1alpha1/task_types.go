@@ -242,6 +242,13 @@ type TaskStatus struct {
 	// +optional
 	PullRequestURL string `json:"pullRequestURL,omitempty"`
 
+	// pullRequestEnded says how a Failed Task's pull request ended once the
+	// operator saw it: closed by the operator and why, closed or merged on the
+	// Git host, or continued by a newer try at the issue. Empty while the
+	// pull request stays open for a later try.
+	// +optional
+	PullRequestEnded string `json:"pullRequestEnded,omitempty"`
+
 	// checks is the CI result on commit.
 	// +optional
 	Checks *CheckStatus `json:"checks,omitempty"`

@@ -84,6 +84,9 @@ type TaskReconciler struct {
 	// GitTimeout is how long the operator waits on a Git host at a time; zero
 	// means 30 seconds.
 	GitTimeout time.Duration
+	// PullRequestRecheck is how often a Failed Task looks whether its open pull
+	// request is still wanted; zero means 10 minutes.
+	PullRequestRecheck time.Duration
 	// MaxSandboxes caps the agent sandboxes running at once, across all projects;
 	// zero means no cap. Agents and their checks are heavy.
 	MaxSandboxes int
@@ -142,6 +145,10 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 	if isFinal(status.Phase) {
+		if status.Phase == c4v1alpha1.TaskFailed {
+			result := r.tendAbandonedPull(ctx, &task, status, &container)
+			return result, r.writeStatus(ctx, &task, status)
+		}
 		if status.Phase != c4v1alpha1.TaskMerged || status.MergeCommit != "" || status.PullRequest == 0 {
 			return ctrl.Result{}, r.writeStatus(ctx, &task, status)
 		}
