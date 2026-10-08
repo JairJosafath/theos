@@ -23,7 +23,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 | Project scope | One Project per namespace. No references across namespaces; reuse is by copying. |
 | Levels | Person, SoftwareSystem, Container and DataStore. Component and Code are dropped for now. |
 | Container | An application with its own repository. One repository per Container, no monorepos. |
-| Container type | A fixed list: `static-site`, `service`, `job`, `worker`. |
+| Container type | A fixed list: `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`. |
 | Catalog | One entry per side of a Container (Framework, Compute, Deployment, Connector), kept per namespace. Bundles can come later, as a team choice. |
 | Compatibility | Each catalog entry lists the Container types it supports. The operator checks this before scaffolding; no webhook in v1. |
 | Templates | Catalog entries point to platform-managed template repositories at a pinned tag or commit. |
@@ -526,6 +526,12 @@ model and context it needs.
 - **New shapes, same operator.** Container types `cli` and `extension`, with
   their templates in the template catalog in `templates/`; a Go and Node toolchain whose image ships a warm build cache, a CI runner
   labelled `go`, and two agent sandboxes at once.
+- **A Container type `operator`:** a Kubernetes operator, built with
+  kubebuilder. It is not a `service` or a `worker`: it ships CRDs and RBAC and
+  needs cluster-wide permissions, so the planner tells it apart. The factory
+  never installs it; a release publishes what a person, Argo CD or Flux needs
+  to. Until a catalog entry supports the type, the planner answers that it
+  needs input rather than planning it. GitHub issue #723 has the plan.
 
 ## Briefs: an idea in plain words
 

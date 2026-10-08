@@ -84,6 +84,7 @@ spec:
                   - mobile-app
                   - cli
                   - extension
+                  - operator
                   type: string
                 minItems: 1
                 type: array

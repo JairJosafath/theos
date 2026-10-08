@@ -21,6 +21,7 @@ const (
 	TypeMobileApp  = "mobile-app"
 	TypeCLI        = "cli"
 	TypeExtension  = "extension"
+	TypeOperator   = "operator"
 )
 
 // Catalog sides, in the order their layers are rendered.

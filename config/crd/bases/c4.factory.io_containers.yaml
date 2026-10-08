@@ -158,6 +158,7 @@ spec:
                 - mobile-app
                 - cli
                 - extension
+                - operator
                 type: string
             required:
             - frameworkRef
