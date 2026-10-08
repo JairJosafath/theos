@@ -7,7 +7,9 @@ import {
   describeBriefPhase,
   describeCost,
   describeFailedIssue,
+  describeUsage,
   formatCost,
+  formatTokens,
   sortBriefs,
 } from './brief'
 
@@ -48,7 +50,8 @@ describe('describeBrief', () => {
       { text: 'Add gift cards', planned: false },
       { text: 'Ship to Belgium', planned: false },
     ])
-    expect(view).toMatchObject({ waitingPrompts: 2, round: 2, cost: '$1.23', needsInput: undefined })
+    expect(view).toMatchObject({ waitingPrompts: 2, round: 2, needsInput: undefined })
+    expect(view.usage?.line).toBe('$1.23')
   })
 
   it('lists the reviewer suggestions and how many wait in all', () => {
@@ -205,7 +208,8 @@ describe('describeBrief', () => {
       created: [],
       issues: [],
       round: 0,
-      cost: undefined,
+      usage: undefined,
+      rounds: [],
     })
   })
 })
@@ -250,7 +254,110 @@ describe('describeCost', () => {
       ...brief('shop', '2026-01-01T00:00:00Z'),
       status: { phase: 'Planned', round: 1, runsWithoutCost: 1 },
     })
-    expect(view.cost).toBe('cost not reported by the agent')
+    expect(view.usage?.line).toBe('cost not reported by the agent')
+  })
+})
+
+describe('formatTokens', () => {
+  it.each([
+    [0, '0'],
+    [950, '950'],
+    [1_000, '1k'],
+    [9_500, '9.5k'],
+    [9_960, '10k'],
+    [142_000, '142k'],
+    [999_499, '999k'],
+    [999_500, '1M'],
+    [1_400_000, '1.4M'],
+    [12_300_000, '12M'],
+  ])('%d', (n, want) => {
+    expect(formatTokens(n)).toBe(want)
+  })
+})
+
+describe('describeUsage', () => {
+  it('shows the cost, the tokens with their cache reads, and the largest session', () => {
+    const usage = describeUsage(6_120, 0, {
+      input: 40_000,
+      output: 160_000,
+      cacheRead: 1_100_000,
+      cacheWrite: 100_000,
+      largestSession: 112_000,
+    })
+    expect(usage).toEqual({
+      cost: '$6.12',
+      tokens: '1.4M tokens, 1.1M of them cache reads',
+      largestSession: 'largest session 112k',
+      pastLimit: false,
+      line: '$6.12 · 1.4M tokens, 1.1M of them cache reads · largest session 112k',
+    })
+  })
+
+  it('marks a largest session past the limit, 130k by default', () => {
+    const usage = describeUsage(6_120, 0, { output: 1_400_000, largestSession: 142_000 })
+    expect(usage?.pastLimit).toBe(true)
+    expect(usage?.largestSession).toBe('largest session 142k, past the 130k limit')
+    expect(describeUsage(6_120, 0, { output: 1_400_000, largestSession: 130_000 })?.pastLimit).toBe(false)
+    expect(describeUsage(6_120, 0, { output: 1_400_000, largestSession: 142_000 }, 200_000)?.pastLimit).toBe(false)
+  })
+
+  it.each([
+    ['no run yet', 0, 0, {}, undefined],
+    ['a run before the operator counted tokens', 420, 0, undefined, '$0.42'],
+    ['every run without tokens', 420, 0, { runsWithout: 2 }, '$0.42 · tokens not reported by the agent'],
+    [
+      'some runs without tokens',
+      420,
+      0,
+      { output: 2_000, runsWithout: 1 },
+      '$0.42 · 2k tokens, plus 1 run whose tokens the agent didn’t report',
+    ],
+    ['runs without cost or tokens', 0, 2, { runsWithout: 2 }, 'cost and tokens not reported by the agent'],
+  ])('%s', (_, milli, without, tokens, want) => {
+    expect(describeUsage(milli, without, tokens)?.line).toBe(want)
+  })
+
+  it('shows each round of a Brief, newest first, with what its planner used', () => {
+    const view = describeBrief({
+      ...brief('shop', '2026-01-01T00:00:00Z'),
+      status: {
+        phase: 'NeedsInput',
+        round: 2,
+        history: [
+          {
+            round: 1,
+            summary: ' Planned the shop ',
+            outcome: 'Applied',
+            costMilliUSD: 312,
+            tokens: { cacheRead: 486_000, output: 14_000, largestSession: 150_000 },
+          },
+          { round: 2, outcome: 'PlannerNeedsInput', tokens: { runsWithout: 1 } },
+        ],
+      },
+    })
+    expect(view.rounds).toEqual([
+      {
+        round: 2,
+        summary: undefined,
+        outcome: 'Asked you',
+        usage: {
+          cost: undefined,
+          tokens: 'tokens not reported by the agent',
+          largestSession: undefined,
+          pastLimit: false,
+          line: 'tokens not reported by the agent',
+        },
+      },
+      {
+        round: 1,
+        summary: 'Planned the shop',
+        outcome: 'Applied',
+        usage: expect.objectContaining({
+          line: '$0.31 · 500k tokens, 486k of them cache reads · largest session 150k, past the 130k limit',
+          pastLimit: true,
+        }),
+      },
+    ])
   })
 })
 

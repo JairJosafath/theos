@@ -10,6 +10,7 @@ import {
   timeAgo,
   type Tone,
 } from '../model/describe'
+import type { UsageView } from '../model/brief'
 import type { AgentRole } from '../model/factory'
 import { AgentIcon, CheckIcon, ClockIcon, CrossIcon, HumanIcon, QuestionIcon } from './icons'
 
@@ -121,5 +122,36 @@ export function SessionRow({ session, now, compact = false }: { session: Session
         ) : null}
       </span>
     </li>
+  )
+}
+
+/** What agent runs used, on one line: cost · tokens · largest session, the last marked when it passed the limit. */
+export function UsageLine({ usage }: { usage: UsageView }) {
+  const parts = [
+    usage.cost ? <span key="cost">{usage.cost}</span> : null,
+    usage.tokens ? <span key="tokens">{usage.tokens}</span> : null,
+    usage.largestSession ? (
+      <span
+        key="largest"
+        className={usage.pastLimit ? 'usage-past' : undefined}
+        title={
+          usage.pastLimit
+            ? 'A session got longer than the Agent should let it; agents get sloppier in long sessions'
+            : 'The prompt of the biggest turn of any session'
+        }
+      >
+        {usage.largestSession}
+      </span>
+    ) : null,
+  ].filter(Boolean)
+  return (
+    <span className="usage">
+      {parts.map((p, i) => (
+        <span key={i}>
+          {i ? <span className="sep">·</span> : null}
+          {p}
+        </span>
+      ))}
+    </span>
   )
 }

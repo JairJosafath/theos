@@ -262,7 +262,10 @@ without kubectl, and cheaply: it lives on a laptop.
   given on a turn, which is what makes an agent's work sloppier; a subagent is
   a session of its own. A run with a call that reported none adds no tokens
   and counts in `tokens.runsWithout`. A Brief's rounds take their Plan Task's,
-  and the Brief adds its rounds up. Plan:
+  and the Brief adds its rounds up. The UI shows them on one line beside the
+  cost, on a Task and on each Brief round (`$6.12 · 1.4M tokens, 1.1M of them
+  cache reads · largest session 142k`), marking a largest session past the
+  limit, and says when the agent reported no tokens. Plan:
   [plans/session-tokens.md](plans/session-tokens.md).
 - **A long session hands off to a fresh one.** A session whose context passes
   its Agent's `sessionTokenLimit` (default 130000) is told, at its next tool

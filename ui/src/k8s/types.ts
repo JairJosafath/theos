@@ -264,6 +264,8 @@ export interface Task extends K8sObject {
     costMilliUSD?: number
     /** The Task's agent runs whose agent didn't report their cost. */
     runsWithoutCost?: number
+    /** What the Task's agent runs used, in tokens, over all rounds. */
+    tokens?: TokenUsage
     sandbox?: string
     sandboxPod?: string
     /** When an unavailable agent is tried again; Progressing's reason is then AgentUnavailable. */
@@ -464,6 +466,8 @@ export interface Brief extends K8sObject {
       costMilliUSD?: number
       /** The round's planner runs whose agent didn't report their cost. */
       runsWithoutCost?: number
+      /** What the round's planner runs used, in tokens. */
+      tokens?: TokenUsage
       /** Applied, PlannerNeedsInput or RoundFailed; Tended for a tending round that applied. */
       outcome?: 'Applied' | 'PlannerNeedsInput' | 'RoundFailed' | 'Tended'
       /** The planner's question, when the round asked for input. */
@@ -475,8 +479,28 @@ export interface Brief extends K8sObject {
     costMilliUSD?: number
     /** The planner runs, over all rounds, whose agent didn't report their cost. */
     runsWithoutCost?: number
+    /** What the planner runs used, in tokens, over all rounds. */
+    tokens?: TokenUsage
     observedGeneration?: number
     /** Planned, and NeedsInput: while True, its message says what the Brief waits for. */
     conditions?: Condition[]
   }
+}
+
+/** What agent sessions used, in tokens, as the agents reported it; every field is omitted when zero. */
+export interface TokenUsage {
+  /** Prompt tokens neither read from nor written to the cache. */
+  input?: number
+  /** Tokens the agents wrote. */
+  output?: number
+  /** Prompt tokens read from the cache. */
+  cacheRead?: number
+  /** Prompt tokens written to the cache. */
+  cacheWrite?: number
+  /** How large the largest agent session got: the prompt of its biggest turn. */
+  largestSession?: number
+  /** The agent runs whose agent didn't report their tokens; the other fields leave them out. */
+  runsWithout?: number
+  /** The agent sessions that handed their work to a fresh session. */
+  sessionHandoffs?: number
 }
