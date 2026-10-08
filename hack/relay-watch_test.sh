@@ -790,9 +790,14 @@ export PATH=$SAVED_PATH HOME=$SAVED_HOME
 # The watch itself, in a scratch copy: a --cron start with the stop file starts
 # nothing; a --foreground watch waits while another holds the lock, takes over
 # when it ends, and exits 0 for the stop file, which the unit doesn't restart.
+# Started from a Claude Code session in VS Code, what it runs (here a faked
+# hack/pull.sh) doesn't see that session's variables (#645).
 S=$T/scratch
-mkdir -p "$S/hack" "$S/.relay"
+mkdir -p "$S/hack/lib" "$S/.relay"
 cp "$(dirname "$0")/relay-watch.sh" "$S/hack/"
+cp "$(dirname "$0")/lib/session-env.sh" "$S/hack/lib/"
+printf '#!/usr/bin/env bash\nenv >"%s"\n' "$T/pull-env" >"$S/hack/pull.sh"
+chmod +x "$S/hack/pull.sh"
 touch "$S/.relay/stop"
 bash "$S/hack/relay-watch.sh" --cron
 check "cron start with the stop file: nothing" "$([ -e "$S/.relay/watch.log" ] && echo started)" ""
@@ -802,7 +807,9 @@ rm "$S/.relay/stop"
 flock "$S/.relay/watch.lock" bash -c "for _ in \$(seq 300); do [ -e '$S/release' ] && break; sleep 0.1; done" &
 holder=$!
 until ! flock -n "$S/.relay/watch.lock" true; do sleep 0.1; done
-WATCH_EVERY=1 WATCH_PULL_EVERY=999 bash "$S/hack/relay-watch.sh" --foreground 2>/dev/null &
+CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=parent CLAUDE_CODE_ENTRYPOINT=claude-vscode CLAUDE_EFFORT=xhigh \
+  VSCODE_PID=1 GIT_ASKPASS=/vscode/askpass.sh CLAUDE_CODE_OAUTH_TOKEN=kept \
+  WATCH_EVERY=1 WATCH_PULL_EVERY=999 bash "$S/hack/relay-watch.sh" --foreground 2>/dev/null &
 fg=$!
 for _ in $(seq 100); do grep -qs 'another watch holds the lock' "$S/.relay/watch.log" && break; sleep 0.1; done
 check "foreground: waits for the lock" "$(grep -cs 'another watch holds the lock; pid .* waits' "$S/.relay/watch.log")" 1
@@ -815,6 +822,9 @@ touch "$S/.relay/stop"
 wait "$fg"
 check "foreground: exits 0 for the stop file" $? 0
 check "foreground: says why" "$(grep -c 'stop file found; stopping' "$S/.relay/watch.log")" 1
+check "foreground: no Claude Code or VS Code session variables" \
+  "$(grep -E '^(CLAUDECODE|CLAUDE_CODE_SESSION_ID|CLAUDE_CODE_ENTRYPOINT|CLAUDE_EFFORT|VSCODE_PID|GIT_ASKPASS)=' "$T/pull-env")" ""
+check "foreground: keeps the Claude settings" "$(grep -c '^CLAUDE_CODE_OAUTH_TOKEN=kept$' "$T/pull-env")" 1
 
 # Arguments.
 bash "$(dirname "$0")/relay-watch.sh" --workers 0 2>/dev/null

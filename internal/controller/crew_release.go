@@ -185,18 +185,28 @@ func filePrepareIssue(ctx context.Context, provider gitprovider.Provider, repo g
 	return provider.CreateIssue(ctx, repo, title, body, []string{model.LabelRelease, model.LabelReady}, step.Milestone)
 }
 
-// releaseFacts reads the open releases, their issues and tags, and the Tasks'
-// merges, and the titles of the releases' issues.
+// maxPreviousTags bounds the closed releases a poll reads the tags of to find
+// the previous release: closed without a tag, a release was dropped.
+const maxPreviousTags = 5
+
+// releaseFacts reads the open releases, their issues and tags, the newest
+// tagged closed release before them, and the Tasks' merges, and the titles of
+// the releases' issues.
 func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
 	tasks []c4v1alpha1.Task) (model.ReleaseFacts, map[int]string, error) {
 	var facts model.ReleaseFacts
 	titles := map[int]string{}
-	milestones, err := provider.ListMilestones(ctx, repo)
+	milestones, err := provider.ListAllMilestones(ctx, repo)
 	if err != nil {
 		return facts, nil, fmt.Errorf("milestones: %w", err)
 	}
+	var closed []model.Release
 	for _, m := range milestones {
 		if !model.IsReleaseTitle(m.Title) || m.Due.IsZero() {
+			continue
+		}
+		if m.Closed {
+			closed = append(closed, model.Release{Title: m.Title, Due: m.Due})
 			continue
 		}
 		issues, err := provider.MilestoneIssues(ctx, repo, m.ID)
@@ -225,6 +235,16 @@ func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitpr
 				facts.Tags = map[string]string{}
 			}
 			facts.Tags[m.Title] = commit
+		}
+	}
+	for _, r := range model.PreviousReleases(closed, facts.Milestones, maxPreviousTags) {
+		commit, err := provider.GetTag(ctx, repo, r.Title)
+		if err != nil {
+			return facts, nil, fmt.Errorf("tag %s: %w", r.Title, err)
+		}
+		if commit != "" {
+			facts.Previous = &model.ReleasedTag{Release: r, Commit: commit}
+			break
 		}
 	}
 	for _, t := range tasks {

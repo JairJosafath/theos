@@ -25,10 +25,12 @@ type issueHost struct {
 	labels     []giteaLabel
 	scoped     map[int64]bool
 	milestones []hostMilestone
-	issues     map[int]*hostIssue
-	reviews    []map[string]string
-	comments   map[int][]string
-	depPosts   []map[string]any
+	// milestonePages counts the milestone list calls.
+	milestonePages int
+	issues         map[int]*hostIssue
+	reviews        []map[string]string
+	comments       map[int][]string
+	depPosts       []map[string]any
 	// tags maps a tag to the commit it names; tagPosts are the create requests.
 	tags     map[string]string
 	tagPosts []map[string]string
@@ -89,7 +91,11 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 				out = append(out, m)
 			}
 		}
-		reply(w, http.StatusOK, out)
+		h.milestonePages++
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		start := min(max(page-1, 0)*limit, len(out))
+		reply(w, http.StatusOK, out[start:min(start+limit, len(out))])
 	})
 	mux.HandleFunc("POST "+repo+"/milestones", func(w http.ResponseWriter, r *http.Request) {
 		var m hostMilestone

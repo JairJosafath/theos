@@ -221,7 +221,11 @@ case $(cat "$FAKE") in
   login) echo 'Not logged in · Please run /login' >&2; exit 1 ;;
   oauth) echo '{"is_error":true,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","num_turns":0}'; exit 1 ;;
   oauth-ok) echo '{"is_error":false,"result":"fixed the failed to authenticate matcher","num_turns":9}' ;;
+  oauth-quoted) echo '{"is_error":false,"result":"stopped: the Gitea call said failed to authenticate","num_turns":9}'; exit 1 ;;
+  oauth-noturn) echo '{"is_error":false,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","num_turns":0}'; exit 1 ;;
+  login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
+  env) env >"$FAKE.env"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"env","num_turns":1}' ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
   handoff) echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"handed off","num_turns":9}' ;;
   lease) sleep 3; cp "$LEASES" "$LEASES.during"; echo '{"is_error":false,"result":"swept","num_turns":9}' ;;
@@ -283,6 +287,39 @@ rm -f "$DIR/paused-until"
 echo oauth-ok >"$FAKE"
 work
 check "oauth-ok: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
+rm -f "$DIR/fails-175"
+# A session that exits non-zero and whose final message only quotes a login
+# failure pauses nothing either (#655): the agent's words aren't the CLI's.
+echo oauth-quoted >"$FAKE"
+work
+check "oauth-quoted: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
+check "oauth-quoted: counted" "$(wc -l <"$DIR/fails-175")" 1
+rm -f "$DIR/fails-175"
+# The CLI's login error as a non-error result before any turn still pauses.
+echo oauth-noturn >"$FAKE"
+LIMIT_WAIT=10m work
+check "oauth-noturn: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+check "oauth-noturn: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+rm -f "$DIR/paused-until"
+# So does the CLI's login error on stderr of a session that exited non-zero.
+echo login-err >"$FAKE"
+LIMIT_WAIT=10m work
+check "login-err: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+check "login-err: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+rm -f "$DIR/paused-until"
+
+# A relay started from a Claude Code session in VS Code gives its sessions none
+# of that session's variables, and keeps the settings a shell sets (#645).
+echo env >"$FAKE"
+(export CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=parent CLAUDE_CODE_CHILD_SESSION=1 \
+  CLAUDE_CODE_SESSION_ATTENDED=1 CLAUDE_CODE_ENTRYPOINT=claude-vscode \
+  CLAUDE_CODE_MESSAGING_SOCKET=/tmp/s CLAUDE_CODE_MESSAGING_TOKEN=x CLAUDE_EFFORT=xhigh \
+  CLAUDE_PID=1 AI_AGENT=claude ELECTRON_RUN_AS_NODE=1 VSCODE_PID=1 VSCODE_IPC_HOOK_CLI=/tmp/v \
+  GIT_ASKPASS=/home/u/.vscode-server/askpass.sh TERM_PROGRAM=vscode CLAUDE_CODE_OAUTH_TOKEN=kept
+  work)
+check "env: no Claude Code or VS Code session variables" \
+  "$(grep -E '^(CLAUDECODE|CLAUDE_CODE_(SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|ENTRYPOINT|MESSAGING_SOCKET|MESSAGING_TOKEN)|CLAUDE_EFFORT|CLAUDE_PID|AI_AGENT|ELECTRON_RUN_AS_NODE|VSCODE_[A-Z_]*|GIT_ASKPASS|TERM_PROGRAM)=' "$FAKE.env")" ""
+check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|C4_HEADLESS=1)$" "$FAKE.env")" 3
 rm -f "$DIR/fails-175"
 
 # Failed sessions in a row: a handoff or a commit resets the count; the third

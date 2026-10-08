@@ -254,6 +254,21 @@ without kubectl, and cheaply: it lives on a laptop.
   that ended without a result, counts in `status.runsWithoutCost`, and the UI
   says the cost wasn't reported instead of leaving it blank. A Brief's rounds
   take their Plan Task's.
+- **A Task says what tokens its runs used, and how big a session got.** Beside
+  the cost, `status.tokens` adds up the input, output, cache-read and
+  cache-write tokens its agents reported (for Claude Code, from its
+  stream-json output) and keeps `largestSession`: the most context any one
+  agent session was given on a turn, which is what makes an agent's work
+  sloppier. Runs that reported none count in `tokens.runsWithout`. A Brief's
+  rounds take their Plan Task's. Plan:
+  [plans/session-tokens.md](plans/session-tokens.md).
+- **A long session hands off to a fresh one.** A session whose context passes
+  its Agent's `sessionTokenLimit` (default 130000) is told, at its next tool
+  call, to write where it stands and stop; c4agent starts a fresh session on
+  the same job with that note and the working tree, and ends a session that
+  doesn't stop. After three handoffs in one call the last session runs to its
+  end. The Task counts them in `status.tokens.sessionHandoffs`, with a
+  `SessionHandedOff` Event for each run that handed off.
 - **The UI has a Factory view** next to the story, across all projects: component
   health with CPU and memory, the last hour, the Tasks on a board by stage with
   their timelines, where the time goes, agent slots, and what needs a look.
@@ -285,6 +300,15 @@ model and context it needs.
   that closes it, and closes it on merge; a failed Task hands it back with
   `status/needs-human` and the reason. The `status/*` labels are exclusive, so an
   issue is in one state at a time.
+- **Open pull requests are the work in flight.** A failed Task's pull request
+  stays open while a later try at its issue may continue it, and the operator
+  closes it, with a comment naming the Task and why, once none will: its issue
+  is closed, a newer try at the issue opened its own pull request (the comment
+  links it), the issue's tries are used up, or the Task had no issue. A newer
+  try that continues it, or still runs and may, keeps it open. The branch stays, so a person can
+  reopen it; `status.pullRequestEnded` says how it ended. A Failed Task looks
+  again every 10 minutes, since the Git host doesn't say when an issue closes,
+  so tries from before an upgrade are cleaned up too while their Task exists.
 - **Ready means clear.** An issue needs an "Acceptance criteria" checklist before
   an agent gets it; without one it goes back to a person before any tokens are
   spent, with an example checklist in the comment. The Standards' issue templates
@@ -357,6 +381,12 @@ model and context it needs.
   after it leaves the release to a person (`MergedAfterPrepare`), who files
   another `kind/release` issue or tags it. A release with no merged work gets
   none, so a milestone made ahead of its issues isn't released on its own.
+- **A release's tag comes after the one before it.** The newest closed release
+  milestone's tag is the previous release; a release whose newest merge is
+  that tag's commit, or a Task's merge that ended before the merge the tag
+  names, would ship older code under a newer version, so the Crew leaves it
+  to a person (`BehindPreviousRelease`) instead of tagging it. A previous tag
+  at a commit no Task merged can't be placed and doesn't hold the release.
 - **The Crew watches the release run.** It reads the CI workflow runs the last
   release's tag started and sums them up in `status.lastRelease.run`: `Waiting`,
   `Running`, `Failed` as soon as one ended other than success or skipped, and
@@ -631,7 +661,12 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   in `Ask` every answer waits for the person. Everything else that is due,
   and every `ask`, is one entry in `status.needsYou` with the choice the
   Brief would make and why. The Crew's three tries still hold, an issue is
-  answered once per failure, and tending rounds come at most hourly. Each
+  answered once per failure, and tending rounds come at most hourly. A
+  failed release step (a `kind/release` issue) is judged by its milestone as
+  it is now: the planner sees the issues Tasks merged into it, and when, next
+  to when its last try stopped, and a plan that closes it, or asks
+  recommending to, while work merged after that try is refused, so it is
+  tried again (#624). Each
   is a history entry, outcome `Tended`, so a prompt can overrule it. A
   tending round's plan holds only `plan/failed.yaml`, `plan/summary.md` and
   new issues; it leaves the story, the `Planned` condition and the prompts

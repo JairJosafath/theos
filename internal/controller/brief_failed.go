@@ -47,6 +47,38 @@ func failedIssue(name string, number int, title, url string, labels []string, bo
 		Reason: reason, Tries: tries}
 }
 
+// failedRelease is failed issue's milestone as it is now when the issue is a
+// release step (labelled kind/release, in a milestone) of a release not yet
+// tagged, else nil: the
+// milestone's closed issues a Task merged, and when the step's last try
+// stopped, from the Container's tasks.
+func failedRelease(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	issue gitprovider.Issue, tasks []model.IssueTask) (*model.FailedRelease, error) {
+	if !slices.Contains(issue.Labels, model.LabelRelease) || issue.Milestone == 0 {
+		return nil, nil
+	}
+	// A release that went out (a person tagged it) has nothing left to
+	// prepare, so closing its step is right whatever merged.
+	if tag, err := provider.GetTag(ctx, repo, issue.MilestoneTitle); err != nil || tag != "" {
+		return nil, err
+	}
+	issues, err := provider.MilestoneIssues(ctx, repo, issue.Milestone)
+	if err != nil {
+		return nil, fmt.Errorf("issues of milestone %s: %w", issue.MilestoneTitle, err)
+	}
+	titles := map[int]string{}
+	var prepared []int
+	for _, i := range issues {
+		if slices.Contains(i.Labels, model.LabelRelease) {
+			prepared = append(prepared, i.Number)
+		}
+		if i.State != stateOpen {
+			titles[i.Number] = i.Title
+		}
+	}
+	return model.NewFailedRelease(issue.MilestoneTitle, issue.Number, titles, prepared, tasks), nil
+}
+
 // issueTasks are the namespace's Tasks on an issue, by Container, as
 // model.FailedReason sees them.
 func issueTasks(tasks []c4v1alpha1.Task) map[string][]model.IssueTask {
@@ -57,6 +89,9 @@ func issueTasks(tasks []c4v1alpha1.Task) map[string][]model.IssueTask {
 		}
 		it := model.IssueTask{Name: t.Name, Issue: int(t.Spec.Issue), Merged: t.Status.Phase == c4v1alpha1.TaskMerged,
 			Failed: t.Status.Phase == c4v1alpha1.TaskFailed, Created: t.CreationTimestamp.Time}
+		if t.Status.CompletedAt != nil {
+			it.Completed = t.Status.CompletedAt.Time
+		}
 		if cond := meta.FindStatusCondition(t.Status.Conditions, ConditionSucceeded); cond != nil {
 			it.Message = cond.Message
 			it.Blocked = it.Failed && cond.Reason == model.ReasonBlocked
@@ -135,8 +170,10 @@ func lastFailed(brief *c4v1alpha1.Brief, name string) []model.FailedIssue {
 // failedToCheck are the Brief's waiting failed issues, as its status lists
 // them, for model.CheckFailedAnswers. The status keeps no bodies, so an
 // unclear one the answers retry, or recommend retrying, is read from the Git
-// host: its clarification must make the whole body pass the Crew's check. One
-// that is gone is checked without its body.
+// host: its clarification must make the whole body pass the Crew's check. So
+// is a release step the answers close, or recommend closing, with its
+// milestone as it is now: work merged since its last try stopped keeps it
+// open. One that is gone is checked without its body.
 func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.Brief,
 	answers []model.FailedAnswer) ([]model.FailedIssue, error) {
 	out := make([]model.FailedIssue, 0, len(brief.Status.Failed))
@@ -146,10 +183,16 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.B
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
+	var tasks map[string][]model.IssueTask
 	for i, f := range out {
-		if f.Kind != model.FailedUnclear || !slices.ContainsFunc(answers, func(a model.FailedAnswer) bool {
-			return a.Container == f.Container && a.Issue == f.Number && a.Retries()
-		}) {
+		answered := func(match func(model.FailedAnswer) bool) bool {
+			return slices.ContainsFunc(answers, func(a model.FailedAnswer) bool {
+				return a.Container == f.Container && a.Issue == f.Number && match(a)
+			})
+		}
+		body := f.Kind == model.FailedUnclear && answered(model.FailedAnswer.Retries)
+		closes := answered(model.FailedAnswer.Closes)
+		if !body && !closes {
 			continue
 		}
 		var c c4v1alpha1.Container
@@ -164,7 +207,8 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.B
 		if err != nil {
 			return nil, err
 		}
-		issue, err := provider.GetIssue(gitCtx, provider.Repository(c.Name), f.Number)
+		repo := provider.Repository(c.Name)
+		issue, err := provider.GetIssue(gitCtx, repo, f.Number)
 		if errors.Is(err, gitprovider.ErrIssueNotFound) {
 			continue
 		}
@@ -172,6 +216,19 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.B
 			return nil, fmt.Errorf("reading %s#%d: %w", f.Container, f.Number, err)
 		}
 		out[i].Body = issue.Body
+		if !closes {
+			continue
+		}
+		if tasks == nil {
+			var list c4v1alpha1.TaskList
+			if err := r.List(ctx, &list, client.InNamespace(brief.Namespace)); err != nil {
+				return nil, fmt.Errorf("listing Tasks: %w", err)
+			}
+			tasks = issueTasks(list.Items)
+		}
+		if out[i].Release, err = failedRelease(gitCtx, provider, repo, issue, tasks[f.Container]); err != nil {
+			return nil, fmt.Errorf("reading %s#%d's release: %w", f.Container, f.Number, err)
+		}
 	}
 	return out, nil
 }

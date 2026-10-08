@@ -57,6 +57,34 @@ func TestListAllMilestones(t *testing.T) {
 	}
 }
 
+func TestListMilestonesPages(t *testing.T) {
+	h, p := newIssueHost(t)
+	for id := range int64(maxIssuePages*issuePageSize - 1) {
+		h.milestones = append(h.milestones, hostMilestone{ID: id + 1, Title: fmt.Sprintf("v0.%d.0", id), State: "closed"})
+	}
+	got, err := p.ListAllMilestones(context.Background(), p.Repository("orders-api"))
+	if err != nil || len(got) != len(h.milestones) || got[len(got)-1].ID != int64(len(h.milestones)) {
+		t.Fatalf("ListAllMilestones() = %d milestones, %v; want all %d", len(got), err, len(h.milestones))
+	}
+	if h.milestonePages != maxIssuePages {
+		t.Errorf("read %d pages, want %d", h.milestonePages, maxIssuePages)
+	}
+}
+
+func TestListMilestonesFailsClosed(t *testing.T) {
+	h, p := newIssueHost(t)
+	for id := range int64(maxIssuePages*issuePageSize + 1) {
+		h.milestones = append(h.milestones, hostMilestone{ID: id + 1, Title: fmt.Sprintf("v0.%d.0", id), State: "closed"})
+	}
+	got, err := p.ListAllMilestones(context.Background(), p.Repository("orders-api"))
+	if err == nil || !strings.Contains(err.Error(), "listing all milestones of webshop/orders-api: 1000 or more") || got != nil {
+		t.Fatalf("ListAllMilestones() = %d milestones, %v; want an error, not a list cut short", len(got), err)
+	}
+	if h.milestonePages != maxIssuePages {
+		t.Errorf("read %d pages, want %d", h.milestonePages, maxIssuePages)
+	}
+}
+
 func TestCreateMilestone(t *testing.T) {
 	ctx := context.Background()
 	due := time.Date(2026, 10, 14, 9, 30, 0, 0, time.UTC)
