@@ -254,6 +254,21 @@ without kubectl, and cheaply: it lives on a laptop.
   that ended without a result, counts in `status.runsWithoutCost`, and the UI
   says the cost wasn't reported instead of leaving it blank. A Brief's rounds
   take their Plan Task's.
+- **A Task says what tokens its runs used, and how big a session got.** Beside
+  the cost, `status.tokens` adds up the input, output, cache-read and
+  cache-write tokens its agents reported (for Claude Code, from its
+  stream-json output) and keeps `largestSession`: the most context any one
+  agent session was given on a turn, which is what makes an agent's work
+  sloppier. Runs that reported none count in `tokens.runsWithout`. A Brief's
+  rounds take their Plan Task's. Plan:
+  [plans/session-tokens.md](plans/session-tokens.md).
+- **A long session hands off to a fresh one.** A session whose context passes
+  its Agent's `sessionTokenLimit` (default 130000) is told, at its next tool
+  call, to write where it stands and stop; c4agent starts a fresh session on
+  the same job with that note and the working tree, and ends a session that
+  doesn't stop. After three handoffs in one call the last session runs to its
+  end. The Task counts them in `status.tokens.sessionHandoffs`, with a
+  `SessionHandedOff` Event for each run that handed off.
 - **The UI has a Factory view** next to the story, across all projects: component
   health with CPU and memory, the last hour, the Tasks on a board by stage with
   their timelines, where the time goes, agent slots, and what needs a look.
