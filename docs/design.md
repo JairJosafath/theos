@@ -207,7 +207,9 @@ enforces.
   nothing and ends its summary with a line `Blocked: <what it waits on and
   why>`; the Task then fails at once, reason `Blocked`, with those words in its
   message and on the issue, and the Brief lists the issue as kind `blocked`. A
-  round with no change and no such line says the agent gave no reason. The
+  round with no change and no such line says the agent gave no reason. A line
+  that says nothing blocks the issue (`Blocked: none`, `n/a`, `nothing`) is not
+  a blocked note. The
   Container's Crew decides how many Tasks run at once.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one

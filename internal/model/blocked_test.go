@@ -22,6 +22,16 @@ func TestBlockedNote(t *testing.T) {
 		{"no reason", "Blocked:   \n", ""},
 		{"only at line start", "This is not Blocked: by anything.", ""},
 		{"lower case is prose", "blocked: maybe", ""},
+		{"none", "Fixed the description.\nBlocked: none", ""},
+		{"none in emphasis with a full stop", "**Blocked:** None.", ""},
+		{"n/a", "Blocked: n/a\n", ""},
+		{"nothing", "Blocked: nothing", ""},
+		{"no", "Blocked: No", ""},
+		{"dash", "Blocked: -", ""},
+		{"emphasised none", "Blocked: *none*", ""},
+		{"none then a real one", "Blocked: none\nBlocked: waits on #12", "waits on #12"},
+		{"none as a word of a reason", "Blocked: none of the engine's releases has the fix", "none of the engine's releases has the fix"},
+		{"real reason", "Blocked: waits on #12", "waits on #12"},
 		{"oversized", "Blocked: " + long, ClipSentences(long, MaxBlockedNote)},
 	}
 	for _, tt := range tests {
