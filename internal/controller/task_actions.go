@@ -250,12 +250,17 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		status.IssueTitle, status.IssueURL = issue.Title, issue.URL
 		goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
 		if model.FirstRun(progressOf(status)) {
+			if err := r.continueEarlierTry(protectCtx, provider, repo, task, status); err != nil {
+				return ctrl.Result{}, err
+			}
 			r.announce(protectCtx, provider, repo, task, container, agents)
 		}
 	}
 
 	setProgress(status, model.StartRun(progressOf(status), role))
-	status.Branch = model.TaskBranch(task.Name)
+	if status.Branch == "" {
+		status.Branch = model.TaskBranch(task.Name)
+	}
 	name := sandboxName(task, status, role)
 	story := c4Context(ctx, r.Client, container)
 	sandbox, err := buildSandbox(sandboxRun{

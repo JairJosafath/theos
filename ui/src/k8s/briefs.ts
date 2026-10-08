@@ -9,16 +9,30 @@ import { errorFromResponse } from './watch'
 export const MAX_IDEA = 4000
 export const MAX_PROMPT = 2000
 
+/** Most issues a Brief's Crews may each work on at once, and how many when spec.parallel is unset. */
+export const MAX_PARALLEL = 5
+export const DEFAULT_PARALLEL = 3
+
+/** What a new Brief may choose besides its idea; each unset leaves the factory's default. */
+export interface BriefOptions {
+  autopilot?: BriefAutopilot
+  /** How many issues each of its Crews works on at once, 1 to 5. */
+  parallel?: number
+}
+
 /**
- * The Brief to POST: only its name, idea and, when chosen, its autopilot mode;
- * the factory fills in the rest.
+ * The Brief to POST: only its name, idea and, when chosen, its autopilot mode
+ * and parallel; the factory fills in the rest.
  */
-export function briefManifest(namespace: string, name: string, idea: string, autopilot?: BriefAutopilot): Brief {
+export function briefManifest(namespace: string, name: string, idea: string, options: BriefOptions = {}): Brief {
+  const spec: Brief['spec'] = { idea }
+  if (options.autopilot) spec.autopilot = options.autopilot
+  if (options.parallel) spec.parallel = options.parallel
   return {
     apiVersion: `${GROUP}/${VERSION}`,
     kind: 'Brief',
     metadata: { name, namespace },
-    spec: autopilot ? { idea, autopilot } : { idea },
+    spec,
   }
 }
 
@@ -73,8 +87,8 @@ export function nameFromIdea(idea: string, taken: string[]): string {
 
 /** Creates Briefs and adds prompts to them; rejects with the API's message when it refuses. */
 export interface BriefWriter {
-  /** Unset autopilot leaves the factory's default. */
-  create(namespace: string, name: string, idea: string, autopilot?: BriefAutopilot): Promise<void>
+  /** Each unset option leaves the factory's default. */
+  create(namespace: string, name: string, idea: string, options?: BriefOptions): Promise<void>
   addPrompt(namespace: string, name: string, prompt: string): Promise<void>
 }
 
@@ -88,11 +102,11 @@ export class LiveBriefWriter implements BriefWriter {
     this.fetchImpl = fetchImpl
   }
 
-  async create(namespace: string, name: string, idea: string, autopilot?: BriefAutopilot): Promise<void> {
+  async create(namespace: string, name: string, idea: string, options?: BriefOptions): Promise<void> {
     await this.send(`${this.baseUrl}${resourcePath(RESOURCES.briefs, namespace)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(briefManifest(namespace, name, idea, autopilot)),
+      body: JSON.stringify(briefManifest(namespace, name, idea, options)),
     })
   }
 

@@ -115,6 +115,20 @@ func TestPrompts(t *testing.T) {
 	if strings.Contains(review, gitToken) || strings.Contains(implement, gitToken) {
 		t.Error("a prompt contains the Git token")
 	}
+	if strings.Contains(implement, "pull request #") {
+		t.Error("the implement prompt names a pull request the branch doesn't have")
+	}
+	continued, err := JobFromEnv(env(map[string]string{EnvPullRequest: "155"}))
+	if err != nil || continued.PullRequest != 155 {
+		t.Fatalf("JobFromEnv(%s) = %d, %v", EnvPullRequest, continued.PullRequest, err)
+	}
+	if p := ImplementPrompt(continued, Workspace{}); !strings.Contains(p, "pull request #155") ||
+		!strings.Contains(p, "commit nothing") {
+		t.Error("the implement prompt doesn't say a change to the pull request alone needs no commit")
+	}
+	if _, err := JobFromEnv(env(map[string]string{EnvPullRequest: "x"})); err == nil {
+		t.Errorf("JobFromEnv accepts %s=x", EnvPullRequest)
+	}
 }
 
 func TestParseVerdict(t *testing.T) {
@@ -257,6 +271,27 @@ func TestRunImplementPushesTheBranch(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(dir, "STAND-IN.md"))
 	if string(data) != "Round 1 of the stand-in agent.\nRound 2 of the stand-in agent.\n" {
 		t.Errorf("STAND-IN.md = %q", data)
+	}
+}
+
+// #607: on a branch with an open pull request, a round may change only the pull
+// request (its description); it goes to the reviewer with the branch as it is.
+func TestRunImplementWithoutCommitOnAPullRequest(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	ctx := context.Background()
+	first := Run(ctx, testJob(t, url, RoleImplement, 1), FakeAgent{Role: RoleImplement, Round: 1}, t.TempDir())
+	if first.Error != "" || first.Commit == "" {
+		t.Fatalf("round 1 = %+v", first)
+	}
+
+	job := testJob(t, url, RoleImplement, 2)
+	job.PullRequest = 7
+	got := Run(ctx, job, FakeAgent{Role: RoleImplement, NoChange: true}, t.TempDir())
+	if got.Error != "" || got.Commit != first.Commit {
+		t.Errorf("result = %+v, want the branch's head %s and no error", got, first.Commit)
+	}
+	if head := branchHead(t, url, "task/add-crop"); head != first.Commit {
+		t.Errorf("branch head = %q, want it unchanged at %q", head, first.Commit)
 	}
 }
 
@@ -422,7 +457,8 @@ func TestIssuePrompts(t *testing.T) {
 	for _, want := range []string{"issue #3", "- [ ] finds rules", "every acceptance criterion", "Write the failing test first.",
 		"docs/agents/implementer.md", "/workspace/related/vscode-extension", "Makefile, docs/agents/",
 		"Never make up evidence", "no drawn or generated image, recording or sample output",
-		"no message, log or output the code doesn't give", "left open, never faked", `"Open: <criterion>: <why>"`} {
+		"no message, log or output the code doesn't give", "left open, never faked", `"Open: <criterion>: <why>"`,
+		"Write that line only when something blocks the issue"} {
 		if !strings.Contains(implement, want) {
 			t.Errorf("implement prompt lacks %q", want)
 		}

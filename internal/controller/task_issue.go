@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -53,6 +54,46 @@ func (r *TaskReconciler) announce(ctx context.Context, provider gitprovider.Prov
 			task.Name, agentName(agents.implementer), agentName(agents.reviewer), agents.implementer.Spec.MaxRounds)),
 	}
 	logNotes(ctx, task, notes)
+}
+
+// continueEarlierTry takes over the pull request of the issue's earlier try
+// when it is still open: its branch, number and feedback become the Task's, so
+// the try goes on from where the last one stopped (#607).
+func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitprovider.Provider,
+	repo gitprovider.Repository, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) error {
+	var list c4v1alpha1.TaskList
+	if err := r.List(ctx, &list, client.InNamespace(task.Namespace),
+		client.MatchingFields{indexTaskContainer: task.Spec.ContainerRef.Name}); err != nil {
+		return err
+	}
+	tries := make([]model.Try, 0, len(list.Items))
+	byName := make(map[string]*c4v1alpha1.Task, len(list.Items))
+	for i := range list.Items {
+		t := &list.Items[i]
+		byName[t.Name] = t
+		tries = append(tries, model.Try{Name: t.Name, Issue: int(t.Spec.Issue), Created: t.CreationTimestamp.Unix(),
+			Failed: t.Status.Phase == c4v1alpha1.TaskFailed, PullRequest: int(t.Status.PullRequest)})
+	}
+	earlier, ok := model.EarlierTry(task.Name, task.CreationTimestamp.Unix(), int(task.Spec.Issue), tries)
+	if !ok {
+		return nil
+	}
+	pr, err := provider.GetPullRequest(ctx, repo, earlier.PullRequest)
+	if err != nil {
+		return err
+	}
+	if pr.State != stateOpen || pr.Merged || pr.Head == "" {
+		return nil
+	}
+	status.Continues, status.Branch = earlier.Name, pr.Head
+	status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
+	status.Feedback = byName[earlier.Name].Status.Feedback
+	logf.FromContext(ctx).Info("Continuing pull request", "url", pr.URL, "branch", pr.Head, "earlierTask", earlier.Name)
+	if err := provider.CommentPullRequest(ctx, repo, pr.Number, fmt.Sprintf(
+		"Task `%s` continues this pull request, which Task `%s` opened.", task.Name, earlier.Name)); err != nil {
+		logf.FromContext(ctx).Info("Could not comment on pull request", "task", task.Name, "error", err.Error())
+	}
+	return nil
 }
 
 // review posts the reviewer's verdict as a review of the round's commit.

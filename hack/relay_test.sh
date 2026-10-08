@@ -219,6 +219,8 @@ case $(cat "$FAKE") in
   quiet) sleep 4; echo '{"is_error":false,"result":"quiet","num_turns":1}' ;;
   limit) echo '{"is_error":true,"result":"You'"'"'ve hit your session limit · resets 3am (UTC)","num_turns":1}'; exit 1 ;;
   login) echo 'Not logged in · Please run /login' >&2; exit 1 ;;
+  oauth) echo '{"is_error":true,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","num_turns":0}'; exit 1 ;;
+  oauth-ok) echo '{"is_error":false,"result":"fixed the failed to authenticate matcher","num_turns":9}' ;;
   crash) echo "crashed" >&2; exit 1 ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
   handoff) echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"handed off","num_turns":9}' ;;
@@ -270,6 +272,18 @@ LIMIT_WAIT=10m work
 check "login: paused for RELAY_LIMIT_WAIT" "$(($(cut -d' ' -f1 "$DIR/paused-until") - $(date +%s) > 590))" 1
 check "login: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
 rm -f "$DIR/paused-until"
+# An expired OAuth session, in an error result, pauses too and isn't counted.
+echo oauth >"$FAKE"
+LIMIT_WAIT=10m work
+check "oauth: paused for RELAY_LIMIT_WAIT" "$(($(cut -d' ' -f1 "$DIR/paused-until") - $(date +%s) > 590))" 1
+grep -q "paused the relay until .*: Failed to authenticate: OAuth session expired" "$LOG"; check "oauth: logged" $? 0
+check "oauth: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+rm -f "$DIR/paused-until"
+# A session that ends well and only mentions a login failure pauses nothing.
+echo oauth-ok >"$FAKE"
+work
+check "oauth-ok: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
+rm -f "$DIR/fails-175"
 
 # Failed sessions in a row: a handoff or a commit resets the count; the third
 # escalates the issue to the maintainer, with a comment naming each session.

@@ -879,3 +879,39 @@ func TestRunStateCost(t *testing.T) {
 		})
 	}
 }
+
+func TestEarlierTry(t *testing.T) {
+	try1 := Try{Name: "core-139-1", Issue: 139, Created: 10, Failed: true, PullRequest: 150}
+	try2 := Try{Name: "core-139-2", Issue: 139, Created: 20, Failed: true, PullRequest: 155}
+	tests := []struct {
+		name  string
+		issue int
+		tries []Try
+		want  string
+	}{
+		{"none before", 139, nil, ""},
+		{"the newest failed try with a pull request", 139, []Try{try1, try2}, "core-139-2"},
+		{"a try without a pull request is passed over", 139,
+			[]Try{try1, {Name: "core-139-2", Issue: 139, Created: 20, Failed: true}}, "core-139-1"},
+		{"an active try is not continued", 139,
+			[]Try{{Name: "core-139-2", Issue: 139, Created: 20, PullRequest: 155}}, ""},
+		{"another issue's try is not continued", 139,
+			[]Try{{Name: "core-140-1", Issue: 140, Created: 20, Failed: true, PullRequest: 156}}, ""},
+		{"a later try is not continued", 139,
+			[]Try{{Name: "core-139-4", Issue: 139, Created: 40, Failed: true, PullRequest: 160}}, ""},
+		{"the Task itself is not its earlier try", 139,
+			[]Try{{Name: "core-139-3", Issue: 139, Created: 30, Failed: true, PullRequest: 157}}, ""},
+		{"a written goal continues nothing", 0,
+			[]Try{{Name: "core-x", Created: 20, Failed: true, PullRequest: 157}}, ""},
+		{"ties go by name", 139, []Try{{Name: "core-139-2b", Issue: 139, Created: 30, Failed: true, PullRequest: 158},
+			{Name: "core-139-2a", Issue: 139, Created: 30, Failed: true, PullRequest: 159}}, "core-139-2b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := EarlierTry("core-139-3", 30, tt.issue, tt.tries)
+			if ok != (tt.want != "") || got.Name != tt.want {
+				t.Errorf("EarlierTry = %q, %v; want %q", got.Name, ok, tt.want)
+			}
+		})
+	}
+}

@@ -213,7 +213,9 @@ enforces.
   why>`; the Task then fails at once, reason `Blocked`, with those words in its
   message and on the issue, and the Brief lists the issue as kind `blocked`. A
   round with no change and no such line fails with the end of the agent's
-  summary (its last 400 bytes, from a whole word), where it usually said why. The
+  summary (its last 400 bytes, from a whole word), where it usually said why. A
+  line that says nothing blocks the issue (`Blocked: none`, `n/a`, `nothing`)
+  is not a blocked note. The
   Container's Crew decides how many Tasks run at once.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
@@ -299,7 +301,13 @@ model and context it needs.
   Gitea dependencies (also across repositories) to close, and starts up to `parallel`
   Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
   first after the Standard changes that `Blocked` Tasks wait on, up to three
-  tries per issue. Milestones group the
+  tries per issue. A try continues an earlier try's pull request that is
+  still open: it works on that branch, with that try's feedback, and reports
+  to that pull request (`status.continues` names the earlier Task). A round
+  that changes only the pull request, such as its description, and commits
+  nothing goes to the reviewer as it is, and merges when approved; without a
+  pull request, a round with no commit has nothing to review
+  ([plan](plans/done/try-continues-open-pr.md)). Milestones group the
   backlog; Gitea 1.27 has no API for project boards.
 - **Releases go one at a time.** A milestone with a due date is a release. The
   Crew starts only the ready issues of the release due first that still has work
@@ -546,7 +554,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   `spec.parallel` is set is refused, and `brief.md` tells the planner the
   number now and where it comes from. A hand
   edit of such a Crew's `parallel` is set back, and `status.apps` shows each
-  Crew's. The agent-slot queue
+  Crew's, which the Brief's card shows per app ("3 at a time"); the create
+  form can set `spec.parallel`. The agent-slot queue
   still caps how many agents run. See
   [plans/done/brief-parallel.md](plans/done/brief-parallel.md).
 - **Follow-ups keep scaffold once.** A change to a scaffolded Container
@@ -632,7 +641,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   shows one *Needs you* box (`needsYou` with `NeedsInput`), its tending
   rounds and its mode, and the create form lets the person choose the mode;
   the Factory view's *Needs a look* names the Brief that watches an item and
-  when it acts. See [plans/done/brief-autopilot.md](plans/done/brief-autopilot.md).
+  when it acts. A failed Task leaves *Needs a look* once it is answered: a
+  newer Task works the same issue of the same Container, or a round tended
+  the issue with a retry or a close after the Task failed; so an issue that
+  failed several times shows one line, its newest attempt. See [plans/done/brief-autopilot.md](plans/done/brief-autopilot.md).
 - **Deleting a Brief deletes its bot on the Git host** and keeps its
   repository and the model it made. A host that fails the delete (down,
   unreachable, or answering with an error) is tried again, each failure a
