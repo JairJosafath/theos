@@ -12,6 +12,7 @@ import {
   type BriefNeedsYou,
   type BriefPhase,
   type BriefTendedIssue,
+  type TokenUsage,
 } from '../k8s/types'
 import { plural, type PhaseInfo, type Tone } from './describe'
 
@@ -87,8 +88,29 @@ export interface BriefView {
   /** Each app's releases: a line per Container the Brief made, then per spec.releases entry. */
   apps: BriefAppView[]
   repositoryURL?: string
-  /** Planning cost over all rounds, such as "$0.42", or that the agent didn't report it. */
-  cost?: string
+  /** What planning used over all rounds: cost, tokens and the largest session. */
+  usage?: UsageView
+  /** Every round, newest first, with what it used. */
+  rounds: BriefRoundView[]
+}
+
+/** A Brief round, for display: its summary, how it ended and what its planner runs used. */
+export interface BriefRoundView {
+  round: number
+  summary?: string
+  /** How the round ended, in a word or two, when it says. */
+  outcome?: string
+  usage?: UsageView
+}
+
+const ROUND_OUTCOMES: Record<
+  NonNullable<NonNullable<NonNullable<Brief['status']>['history']>[number]['outcome']>,
+  string
+> = {
+  Applied: 'Applied',
+  PlannerNeedsInput: 'Asked you',
+  RoundFailed: 'Failed',
+  Tended: 'Tended',
 }
 
 export function describeBrief(brief: Brief): BriefView {
@@ -157,7 +179,15 @@ export function describeBrief(brief: Brief): BriefView {
     suggestionsWaiting,
     apps: (status.apps ?? []).map(describeBriefApp),
     repositoryURL: status.repositoryURL,
-    cost: describeCost(status.costMilliUSD, status.runsWithoutCost),
+    usage: describeUsage(status.costMilliUSD, status.runsWithoutCost, status.tokens),
+    rounds: (status.history ?? [])
+      .map((h) => ({
+        round: h.round,
+        summary: h.summary?.trim() || undefined,
+        outcome: h.outcome ? ROUND_OUTCOMES[h.outcome] : undefined,
+        usage: describeUsage(h.costMilliUSD, h.runsWithoutCost, h.tokens),
+      }))
+      .reverse(),
   }
 }
 
@@ -396,6 +426,70 @@ export function describeCost(milliUSD = 0, runsWithoutCost = 0): string | undefi
   if (!milliUSD) return 'cost not reported by the agent'
   const runs = runsWithoutCost === 1 ? '1 run' : `${runsWithoutCost} runs`
   return `${formatCost(milliUSD)}, plus ${runs} whose cost the agent didn’t report`
+}
+
+/**
+ * How large a session may get before it should hand off, while the Agent has no
+ * sessionTokenLimit of its own (docs/plans/session-tokens.md, decision 6).
+ */
+export const DEFAULT_SESSION_TOKEN_LIMIT = 130_000
+
+/** What agent runs used, for display: each part of the line, and whether a session got too long. */
+export interface UsageView {
+  /** Dollars and cents, or that the agent didn't report the cost. */
+  cost?: string
+  /** All tokens, how many of them were cache reads, or that the agent didn't report them. */
+  tokens?: string
+  /** How large the largest session got, and the limit when it passed it. */
+  largestSession?: string
+  /** Whether the largest session passed the limit. */
+  pastLimit: boolean
+  /** The parts joined, such as "$6.12 · 1.4M tokens, 1.1M of them cache reads · largest session 142k". */
+  line: string
+}
+
+/**
+ * What agent runs used, as their agents reported it: the cost, the tokens and
+ * the largest session, which is marked when it passed the limit. Undefined
+ * before any run.
+ */
+export function describeUsage(
+  milliUSD = 0,
+  runsWithoutCost = 0,
+  tokens: TokenUsage = {},
+  limit = DEFAULT_SESSION_TOKEN_LIMIT,
+): UsageView | undefined {
+  let cost = describeCost(milliUSD, runsWithoutCost)
+  const total = (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.cacheRead ?? 0) + (tokens.cacheWrite ?? 0)
+  const without = tokens.runsWithout ?? 0
+  let used: string | undefined
+  if (total) {
+    used = `${formatTokens(total)} tokens`
+    if (tokens.cacheRead) used += `, ${formatTokens(tokens.cacheRead)} of them cache reads`
+    if (without) used += `, plus ${plural(without, 'run')} whose tokens the agent didn’t report`
+  } else if (without) {
+    used = 'tokens not reported by the agent'
+    if (!milliUSD && runsWithoutCost) {
+      cost = undefined
+      used = 'cost and tokens not reported by the agent'
+    }
+  }
+  const largest = tokens.largestSession ?? 0
+  const pastLimit = largest > limit
+  const largestSession = largest
+    ? `largest session ${formatTokens(largest)}${pastLimit ? `, past the ${formatTokens(limit)} limit` : ''}`
+    : undefined
+  const parts = [cost, used, largestSession].filter(Boolean)
+  if (!parts.length) return undefined
+  return { cost, tokens: used, largestSession, pastLimit, line: parts.join(' · ') }
+}
+
+/** A token count in a few characters: 950, 9.5k, 142k, 1.4M. */
+export function formatTokens(n: number): string {
+  if (n < 1000) return `${n}`
+  const [value, unit] = n < 999_500 ? [n / 1000, 'k'] : [n / 1_000_000, 'M']
+  const shown = value < 9.95 ? value.toFixed(1).replace(/\.0$/, '') : `${Math.round(value)}`
+  return `${shown}${unit}`
 }
 
 /** Thousandths of a US dollar as dollars and cents; under a cent shows as "<$0.01". */

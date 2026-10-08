@@ -479,6 +479,8 @@ export function demoStory(now: number): StoryData {
       ...merged(118),
       round: 1,
       summary: 'GET /customers/{id}/orders, newest first and paged, with tests for an empty history.',
+      costMilliUSD: 1_380,
+      tokens: { input: 8_400, output: 41_000, cacheRead: 1_910_000, cacheWrite: 176_000, largestSession: 88_000 },
       ...pr('orders-api', 3),
       history: [
         step(140, 'Implementing', 1, 'Running', 'Starting round 1'),
@@ -492,6 +494,8 @@ export function demoStory(now: number): StoryData {
       ...merged(85),
       round: 2,
       summary: 'POST /orders/{id}/reorder copies the lines at today’s prices; sold-out lines are reported.',
+      costMilliUSD: 2_940,
+      tokens: { input: 15_200, output: 83_000, cacheRead: 4_120_000, cacheWrite: 352_000, largestSession: 117_000 },
       followUps: [issueURL('orders-api', 16), issueURL('orders-api', 17)],
       ...pr('orders-api', 4),
       history: [
@@ -511,6 +515,9 @@ export function demoStory(now: number): StoryData {
       checks: { state: 'failure' },
       review: { verdict: 'changes', summary: 'A retried refund pays out twice; send an idempotency key.' },
       feedback: 'CI failed: test_refund_retry pays out twice.',
+      // A long session, past the Agent's limit, on a Task that failed.
+      costMilliUSD: 6_120,
+      tokens: { input: 31_000, output: 162_000, cacheRead: 8_870_000, cacheWrite: 694_000, largestSession: 142_000 },
       ...pr('orders-api', 5),
       conditions: [
         cond('Progressing', 'False', 'RoundsExhausted', 'Failed after 3 rounds', at(52)),
@@ -751,9 +758,27 @@ export function demoStory(now: number): StoryData {
           },
         ],
         history: [
-          { round: 1, summary: 'Planned the shop: storefront, orders and catalog', costMilliUSD: 312 },
-          { round: 2, summary: 'Added one-click reorder', costMilliUSD: 148 },
-          { round: 3, summary: 'Decided the failed reorder button', costMilliUSD: 41, outcome: 'Tended' },
+          {
+            round: 1,
+            summary: 'Planned the shop: storefront, orders and catalog',
+            costMilliUSD: 312,
+            outcome: 'Applied',
+            tokens: { input: 2_100, output: 14_800, cacheRead: 486_000, cacheWrite: 61_000, largestSession: 74_000 },
+          },
+          {
+            round: 2,
+            summary: 'Added one-click reorder',
+            costMilliUSD: 148,
+            outcome: 'Applied',
+            tokens: { input: 900, output: 6_200, cacheRead: 231_000, cacheWrite: 28_000, largestSession: 52_000 },
+          },
+          {
+            round: 3,
+            summary: 'Decided the failed reorder button',
+            costMilliUSD: 41,
+            outcome: 'Tended',
+            tokens: { input: 300, output: 1_900, cacheRead: 64_000, cacheWrite: 9_000, largestSession: 31_000 },
+          },
         ],
         // In Ask, the tending round's answer waits under Needs you.
         tended: [
@@ -792,6 +817,7 @@ export function demoStory(now: number): StoryData {
         tendRound: 3,
         repositoryURL: `${GITEA_WEB}/webshop/brief-webshop`,
         costMilliUSD: 501,
+        tokens: { input: 3_300, output: 22_900, cacheRead: 781_000, cacheWrite: 98_000, largestSession: 74_000 },
         conditions: [
           cond('Planned', 'True', 'Applied', 'Round 3 is applied', ago(1800)),
           cond('NeedsInput', 'False', 'NothingAsked', 'Nothing is asked', ago(1800)),
@@ -811,9 +837,18 @@ export function demoStory(now: number): StoryData {
         phase: 'NeedsInput',
         round: 1,
         choices: ['Points live in orders-db, next to the orders that earned them.'],
-        history: [{ round: 1, summary: 'Asked how points are paid out', costMilliUSD: 96 }],
+        history: [
+          {
+            round: 1,
+            summary: 'Asked how points are paid out',
+            costMilliUSD: 96,
+            outcome: 'PlannerNeedsInput',
+            tokens: { input: 600, output: 4_100, cacheRead: 152_000, cacheWrite: 19_000, largestSession: 38_000 },
+          },
+        ],
         repositoryURL: `${GITEA_WEB}/webshop/brief-loyalty-points`,
         costMilliUSD: 96,
+        tokens: { input: 600, output: 4_100, cacheRead: 152_000, cacheWrite: 19_000, largestSession: 38_000 },
         conditions: [
           cond('Planned', 'False', 'NeedsInput', 'Round 1 waits for an answer', ago(40 * 60)),
           cond(
