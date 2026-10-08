@@ -227,8 +227,13 @@ var _ = Describe("Brief releases", func() {
 		brief.Spec.Autopilot = model.AutopilotOn
 		mustCreate(brief)
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
+		// Round 1's linter Task fails at once, so the tending round 2 can
+		// start in the second round 1 goes Planned (#671): wait on its
+		// History entry, which holds after that.
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			b := getBrief(g, ns)
+			g.Expect(b.Status.History).NotTo(BeEmpty())
+			g.Expect(b.Status.History[0].Outcome).To(Equal(model.ReasonApplied))
 		}).WithTimeout(wholeRound).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0"}))
 		n := int(getBrief(Default, ns).Status.Issues[0].Number)
