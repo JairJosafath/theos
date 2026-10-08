@@ -122,7 +122,7 @@ func (r *BriefReconciler) releasedContainers(ctx context.Context, brief *c4v1alp
 // round in repo (R6): the one whose description carries the round's marker,
 // open or closed, so a restart makes no second one, or a new one titled the
 // next patch version for a round of fixes, else the next minor one, due after
-// every open release (plans/brief-patch-releases.md).
+// every open release (plans/done/brief-patch-releases.md).
 func releaseMilestone(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, brief string,
 	round int, fixes bool) (int64, error) {
 	milestones, err := provider.ListAllMilestones(ctx, repo)

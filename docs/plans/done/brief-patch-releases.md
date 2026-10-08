@@ -8,7 +8,7 @@ releases instead of one big one and a growing Later pile (#601, reported by
 suggestion a prompt takes lands in the round's release, and no issue the Brief
 files or takes for a released Container is left in no milestone.
 
-This extends [done/brief-releases.md](done/brief-releases.md) (R6, R7); the
+This extends [brief-releases.md](brief-releases.md) (R6, R7); the
 maintainer's decision on #601 settles the three rules.
 
 ## Decisions
