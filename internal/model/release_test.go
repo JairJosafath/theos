@@ -169,6 +169,38 @@ func TestNextRelease(t *testing.T) {
 			ReleaseFacts{Milestones: []ReleaseMilestone{v020, milestone(3, "v0.3.0", 19, []int{120}, nil)},
 				Merged: serverMerges, Active: []int{120}},
 			ReleaseStep{Tag: "v0.2.0", Commit: "694db57", Milestone: 2, CreateTag: true}},
+		// The engine's v0.3.0: its newest merge, #136, came before v0.2.0's
+		// prepare issue #140 merged and was tagged.
+		{"a release whose newest merge came before the previous tag is held",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(3, "v0.3.0", 19, nil, []int{136})},
+				Merged:   []MergedTask{merged("engine-136", 136, "c136", 3), merged("engine-140", 140, "c140", 5)},
+				Previous: &ReleasedTag{Release: Release{Title: "v0.2.0", Due: day(12)}, Commit: "c140"}},
+			ReleaseStep{Tag: "v0.3.0", Reason: ReleaseBehindPrevious, Held: "v0.3.0 would be tagged at c136, the " +
+				"merge of #136, but v0.2.0's tag names c140, the merge of #140, which came after it; a release's " +
+				"tag must come after the one before it, so a person tags it"}},
+		{"a release at the previous tag's commit is held",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(3, "v0.3.0", 19, nil, []int{136})},
+				Merged:   []MergedTask{merged("engine-136", 136, "c136", 3)},
+				Previous: &ReleasedTag{Release: Release{Title: "v0.2.0", Due: day(12)}, Commit: "c136"}},
+			ReleaseStep{Tag: "v0.3.0", Reason: ReleaseBehindPrevious, Held: "v0.3.0 would be tagged at c136, the " +
+				"merge of #136, but v0.2.0's tag names that commit already; a release's tag must come after the " +
+				"one before it, so a person tags it"}},
+		{"a release whose newest merge came after the previous tag is tagged",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(3, "v0.3.0", 19, nil, []int{136, 153})},
+				Merged: []MergedTask{merged("engine-136", 136, "c136", 3), merged("engine-140", 140, "c140", 5),
+					merged("engine-153", 153, "c153", 8)},
+				Previous: &ReleasedTag{Release: Release{Title: "v0.2.0", Due: day(12)}, Commit: "c140"}},
+			ReleaseStep{Tag: "v0.3.0", Commit: "c153", Milestone: 3, CreateTag: true}},
+		{"a previous tag at a commit no Task merged doesn't hold it",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(3, "v0.3.0", 19, nil, []int{136})},
+				Merged:   []MergedTask{merged("engine-136", 136, "c136", 3)},
+				Previous: &ReleasedTag{Release: Release{Title: "v0.2.0", Due: day(12)}, Commit: "byhand"}},
+			ReleaseStep{Tag: "v0.3.0", Commit: "c136", Milestone: 3, CreateTag: true}},
+		{"a closed release after this one isn't the previous",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(3, "v0.3.0", 19, nil, []int{136})},
+				Merged:   []MergedTask{merged("engine-136", 136, "c136", 3), merged("engine-140", 140, "c140", 5)},
+				Previous: &ReleasedTag{Release: Release{Title: "v0.4.0", Due: day(26)}, Commit: "c140"}},
+			ReleaseStep{Tag: "v0.3.0", Commit: "c136", Milestone: 3, CreateTag: true}},
 		{"a milestone without a due date is no release",
 			ReleaseFacts{Milestones: []ReleaseMilestone{{ID: 9, Release: Release{Title: "v0.1.0"}, Open: []int{5}}, v020},
 				Merged: serverMerges},
@@ -180,6 +212,22 @@ func TestNextRelease(t *testing.T) {
 				t.Errorf("NextRelease() = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPreviousReleases(t *testing.T) {
+	day := func(d int) time.Time { return time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC) }
+	v010, v020, v040 := Release{"v0.1.0", day(5)}, Release{"v0.2.0", day(12)}, Release{"v0.4.0", day(26)}
+	open := []ReleaseMilestone{{Release: Release{"v0.3.0", day(19)}}}
+	// v0.4.0 was closed ahead of v0.3.0, by hand: it isn't before v0.3.0.
+	if got := PreviousReleases([]Release{v040, v010, v020}, open, 5); !reflect.DeepEqual(got, []Release{v020, v010}) {
+		t.Errorf("PreviousReleases() = %v, want v0.2.0 then v0.1.0", got)
+	}
+	if got := PreviousReleases([]Release{v010, v020}, open, 1); !reflect.DeepEqual(got, []Release{v020}) {
+		t.Errorf("PreviousReleases() with limit 1 = %v, want v0.2.0", got)
+	}
+	if got := PreviousReleases([]Release{v010}, nil, 5); !reflect.DeepEqual(got, []Release{v010}) {
+		t.Errorf("PreviousReleases() with no open release = %v, want v0.1.0", got)
 	}
 }
 

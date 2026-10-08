@@ -51,10 +51,36 @@ type ReleaseFacts struct {
 	Merged []MergedTask
 	// Tags maps the existing tags among the releases' titles to their commits.
 	Tags map[string]string
+	// Previous is the newest closed release and the commit its tag names; nil
+	// when there is none or it has no tag. The next tag must come after it.
+	Previous *ReleasedTag
 	// Prepare says the Crew files each release's prepare issue: a done release
 	// with merged work and no prepare issue gets one before it is tagged, and
 	// work merged after its prepare issue holds it.
 	Prepare bool
+}
+
+// ReleasedTag is a release that went out, and the commit its tag names.
+type ReleasedTag struct {
+	Release
+	Commit string
+}
+
+// ReleaseBefore reports whether release a goes out before release b.
+func ReleaseBefore(a, b Release) bool { return compareReleases(&a, &b) < 0 }
+
+// PreviousReleases are the closed releases that went out before every open
+// one, newest first, at most limit: where the previous release's tag is
+// looked for.
+func PreviousReleases(closed []Release, open []ReleaseMilestone, limit int) []Release {
+	var out []Release
+	for _, r := range closed {
+		if !slices.ContainsFunc(open, func(m ReleaseMilestone) bool { return !ReleaseBefore(r, m.Release) }) {
+			out = append(out, r)
+		}
+	}
+	slices.SortFunc(out, func(a, b Release) int { return compareReleases(&b, &a) })
+	return out[:min(len(out), limit)]
 }
 
 // LabelRelease marks a release's prepare issue, which sets the version and
@@ -75,6 +101,9 @@ const (
 	// ReleaseMergedAfterPrepare holds a release whose changelog misses work
 	// merged after its prepare issue.
 	ReleaseMergedAfterPrepare = "MergedAfterPrepare"
+	// ReleaseBehindPrevious holds a release whose tag would not come after
+	// the previous release's: it would ship older code under a newer version.
+	ReleaseBehindPrevious = "BehindPreviousRelease"
 )
 
 // ReleaseStep is what a Crew does about its releases. With File set, it files
@@ -191,6 +220,11 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 	if tagged && existing != newest.Commit {
 		return held(first.Title, ReleaseTagClash, "%s is done at %s but the tag %s names %s; a person resolves it",
 			first.Title, newest.Commit, first.Title, existing)
+	}
+	if behind := behindPrevious(f.Previous, first.Release, f.Merged, *newest); behind != "" && !tagged {
+		return held(first.Title, ReleaseBehindPrevious, "%s would be tagged at %s, the merge of #%d, but %s; a "+
+			"release's tag must come after the one before it, so a person tags it", first.Title, newest.Commit,
+			newest.Issue, behind)
 	}
 	moved, emptied := carriedWork(releases[1:], f.Merged, *newest)
 	return ReleaseStep{Tag: first.Title, Commit: newest.Commit, Milestone: first.ID, CreateTag: !tagged,
@@ -319,6 +353,26 @@ func carriedWork(later []ReleaseMilestone, merged []MergedTask, newest MergedTas
 		}
 	}
 	return moved, emptied
+}
+
+// behindPrevious says why tagging newest would not come after the previous
+// release's tag, or "" when it does or can't be told. The default branch's
+// merges follow one another, so a merge that ended before the one the previous
+// tag names is behind it, and the same commit is no newer.
+func behindPrevious(previous *ReleasedTag, release Release, merged []MergedTask, newest MergedTask) string {
+	if previous == nil || !ReleaseBefore(previous.Release, release) {
+		return ""
+	}
+	if previous.Commit == newest.Commit {
+		return fmt.Sprintf("%s's tag names that commit already", previous.Title)
+	}
+	for _, t := range merged {
+		if t.Commit == previous.Commit && !t.At.IsZero() && mergedAfter(t, newest) {
+			return fmt.Sprintf("%s's tag names %s, the merge of #%d, which came after it", previous.Title,
+				previous.Commit, t.Issue)
+		}
+	}
+	return ""
 }
 
 // ReleaseRun is one CI workflow run a release's tag started.

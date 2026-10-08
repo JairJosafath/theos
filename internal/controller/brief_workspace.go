@@ -360,12 +360,27 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1
 					URL: i.URL, Criteria: model.MissingAcceptanceCriteria(i.Body) == ""})
 			}
 			if mine && model.IsFailedIssue(i.Labels) {
-				failed = append(failed, failedIssue(c.Name, i.Number, i.Title, i.URL, i.Labels, i.Body, tasks[c.Name]))
+				f := failedIssue(c.Name, i.Number, i.Title, i.URL, i.Labels, i.Body, tasks[c.Name])
+				if f.Release, err = r.readFailedRelease(ctx, providers[c.Spec.GitProviderRef.Name], &c, i,
+					tasks[c.Name]); err != nil {
+					// The plan's check reads it again before it closes the step.
+					logf.FromContext(ctx).Info("Could not read a release step's milestone", "container", c.Name,
+						"number", i.Number, "error", err.Error())
+				}
+				failed = append(failed, f)
 			}
 		}
 		out = append(out, entry)
 	}
 	return out, suggestions, failed, nil
+}
+
+// readFailedRelease is failedRelease with the workspace's Git timeout.
+func (r *BriefReconciler) readFailedRelease(ctx context.Context, provider gitprovider.Provider,
+	c *c4v1alpha1.Container, issue gitprovider.Issue, tasks []model.IssueTask) (*model.FailedRelease, error) {
+	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
+	defer cancel()
+	return failedRelease(gitCtx, provider, provider.Repository(c.Name), issue, tasks)
 }
 
 func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]gitprovider.Provider,
