@@ -361,7 +361,8 @@ func copyStoryText(dst, src client.Object) {
 // after it, with the Brief's implementer and reviewer, as many Tasks at a time
 // as the Brief says (briefParallel), and releases on only when the round
 // releases the Container (R4, R5). An existing Crew of that name is left
-// alone here; syncParallel keeps the parallel of one the Brief made.
+// alone here; syncParallel keeps the parallel of one the Brief made, and
+// syncPaused its pause.
 func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4v1alpha1.Container) error {
 	brief := run.brief
 	crew := &c4v1alpha1.Crew{
@@ -377,6 +378,11 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 	}
 	if run.released[c.Name] {
 		releaseSpec(&crew.Spec, briefRelease(brief, c.Name))
+	}
+	if brief.Spec.Paused {
+		// A round that was running when the Brief paused makes its Crews
+		// paused, so none starts a Task before syncPaused reaches it.
+		markPaused(crew)
 	}
 	err := r.Get(ctx, client.ObjectKeyFromObject(crew), &c4v1alpha1.Crew{})
 	if err == nil {

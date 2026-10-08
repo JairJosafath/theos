@@ -1,7 +1,9 @@
 package model
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -24,12 +26,35 @@ func TestStartsRound(t *testing.T) {
 			RoundOver: true, Outcome: ReasonRoundFailed}, true},
 		{"a failed round with no new prompt starts none", BriefRoundFacts{Round: 2, Prompts: 1, RoundPrompts: 1,
 			RoundOver: true, Outcome: ReasonRoundFailed}, false},
+		{"a paused Brief doesn't plan its idea", BriefRoundFacts{Paused: true}, false},
+		{"a prompt to a paused Brief waits", BriefRoundFacts{Round: 1, Prompts: 1, RoundOver: true,
+			Paused: true}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := StartsRound(tc.facts); got != tc.want {
 				t.Errorf("StartsRound(%+v) = %v, want %v", tc.facts, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestBriefPausedMessage(t *testing.T) {
+	many := make([]string, 22)
+	for i := range many {
+		many[i] = fmt.Sprintf("t%d", i)
+	}
+	for _, tc := range []struct {
+		running []string
+		want    string
+	}{
+		{nil, "Paused; nothing is running"},
+		{[]string{"brief-plan-2"}, "Paused; 1 Task still running: brief-plan-2"},
+		{[]string{"cli-1", "cli-2"}, "Paused; 2 Tasks still running: cli-1, cli-2"},
+		{many, "Paused; 22 Tasks still running: " + strings.Join(many[:20], ", ") + " and 2 more"},
+	} {
+		if got := BriefPausedMessage(tc.running); got != tc.want {
+			t.Errorf("BriefPausedMessage(%v) = %q, want %q", tc.running, got, tc.want)
+		}
 	}
 }
 

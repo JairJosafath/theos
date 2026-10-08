@@ -187,8 +187,8 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 		logf.FromContext(ctx).Info("Prepared the Brief's repository", "url", url)
 		brief.Status.RepositoryURL = url
 	}
-	// A Crew that can't take its releases or parallel doesn't stop the
-	// rounds; the reconcile tries it again after them.
+	// A Crew that can't take its releases, parallel or pause doesn't stop
+	// the rounds; the reconcile tries it again after them.
 	syncErr := r.syncReleases(ctx, brief)
 	if syncErr != nil {
 		logf.FromContext(ctx).Info("Could not bring a Crew's releases up to date", "error", syncErr.Error())
@@ -196,6 +196,10 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 	if parallelErr := r.syncParallel(ctx, brief); parallelErr != nil {
 		logf.FromContext(ctx).Info("Could not bring a Crew's parallel up to date", "error", parallelErr.Error())
 		syncErr = errors.Join(syncErr, parallelErr)
+	}
+	if pausedErr := r.syncPaused(ctx, brief); pausedErr != nil {
+		logf.FromContext(ctx).Info("Could not bring a Crew's pause up to date", "error", pausedErr.Error())
+		syncErr = errors.Join(syncErr, pausedErr)
 	}
 	result, err := r.reconcileRound(ctx, brief, orig)
 	if err == nil {
