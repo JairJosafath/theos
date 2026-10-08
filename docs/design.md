@@ -510,12 +510,16 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   Brief owns the `parallel` of the Crews it made and sets it every reconcile,
   earlier rounds' Crews included; a Crew it didn't make is left alone.
   `spec.parallel` (1 to 5) wins; else the number a prompt gave, which the
-  planner relays in `plan/parallel.yaml` only when a new prompt asks, never
-  of its own accord (#555, planned); else the operator's default, 3. A hand
+  planner relays in `plan/parallel.yaml` (`parallel: N`, `why:` quoting the
+  prompt) only when a new prompt asks, never of its own accord, and the round
+  that applies it records in `status.parallel`; else the operator's default,
+  3. A plan writing it with no new prompt, out of 1 to 5, or while
+  `spec.parallel` is set is refused, and `brief.md` tells the planner the
+  number now and where it comes from. A hand
   edit of such a Crew's `parallel` is set back, and `status.apps` shows each
   Crew's. The agent-slot queue
   still caps how many agents run. See
-  [plans/brief-parallel.md](plans/brief-parallel.md).
+  [plans/done/brief-parallel.md](plans/done/brief-parallel.md).
 - **Follow-ups keep scaffold once.** A change to a scaffolded Container
   becomes an issue in its repository; a new Container is added and scaffolded;
   a Relationship added from a scaffolded Container shows `AddedAfterScaffold`

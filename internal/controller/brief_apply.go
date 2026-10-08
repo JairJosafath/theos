@@ -97,12 +97,18 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	// The namespace may have changed since the plan was checked: someone made
 	// an object of the same name, or one the plan doesn't keep. What this
 	// round applied already is in the plan as it is, so a restart passes.
+	// A spec.parallel set since the plan was checked wins over its
+	// parallel.yaml anyway, so it doesn't fail the round.
+	current.SpecParallel = 0
 	if refusals := model.CheckPlan(plan, current); len(refusals) > 0 {
 		r.endRoundFailed(ctx, brief, task,
 			"the plan no longer fits the namespace: "+model.RefusalText(refusals))
 		return ctrl.Result{}, nil
 	}
 
+	if err := r.applyParallel(ctx, brief, plan); err != nil {
+		return ctrl.Result{}, r.applyFailed(ctx, brief, "setting the Crews' parallel", err)
+	}
 	run := &roundApply{brief: brief, orig: orig, round: strconv.Itoa(int(brief.Status.Round))}
 	var created []string
 	newRelationships := false

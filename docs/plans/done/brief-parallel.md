@@ -74,7 +74,7 @@ a plan writing it with no new prompt, or out of 1 to 5, is refused; and
 
 Each is its own issue and pull request, and leaves main working.
 
-1. **The Brief sets its Crews' parallel** (#554) (API, controller, model):
+1. **The Brief sets its Crews' parallel** (#554, done) (API, controller, model):
    `spec.parallel` (1 to 5, optional), `model.BriefParallelDefault` = 3 and
    `model.BriefParallel`; `ensureCrew` makes Crews with it, and a sync each
    reconcile patches the Crews the Brief made; `status.apps[].parallel`;
@@ -82,7 +82,7 @@ Each is its own issue and pull request, and leaves main working.
    when the envtest cases of the goal without a prompt pass: default 3,
    `spec.parallel` 2 on new and earlier Crews, a Crew not the Brief's left
    alone, a hand edit set back, `status.apps` showing it.
-2. **A prompt says how much at once** (#555) (model, controller, planner):
+2. **A prompt says how much at once** (#555, done) (model, controller, planner):
    `plan/parallel.yaml` parsed strictly in `internal/model`, the plan's
    checks (1 to 5, a new prompt in the round, `spec.parallel` unset),
    `status.parallel` recorded on apply and used by `model.BriefParallel`,
