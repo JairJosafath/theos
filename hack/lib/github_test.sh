@@ -689,7 +689,7 @@ POST $R/issues/123/labels"
   }
   out=$(printf 'docs(486): plan\n\nRefs #486\n\n- #506 (turn on `Ask` by default, closes #486)\n' | gh_closes_check - 2>&1)
   check "closes-check: closes #N in prose beside Refs #N is refused, naming the line" "$? $out" \
-    '1 github: refused: "- #506 (turn on `Ask` by default, closes #486)" closes #486 at merge, and the same text says Refs #486. A plan'"'"'s pull request only refers to its parent: reword the line so no close, fix or resolve word sits before #486.'
+    '1 github: refused: "- #506 (turn on `Ask` by default, closes #486)" closes #486 at merge, and the same text says Refs #486. A plan'"'"'s pull request only refers to its parent: reword the line so no close, fix or resolve word sits before #486. If this pull request finishes #486, which has no plan, the Refs #486 is wrong: say Closes #486, never Refs #486; when a pushed commit says Refs #486, reword the history onto a new branch <branch>-2, open a fresh pull request and close this one (the handoff skill, Finish).'
   check "closes-check: asks GitHub only for the body of the issue it closes" "$(cat "$T/calls")" "GET $R/issues/486"
   : >"$T/calls"
   out=$(printf 'feat(486): ask\n\nRefs #486\n' | gh_closes_check - 2>&1)

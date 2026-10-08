@@ -1398,7 +1398,7 @@ gh_closes_check() {
     for n in $(gh_closing_refs <<<"$line" | sort -nu); do
       line=$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$line")
       if [ -z "${steps[$n]}" ] && grep -qxF -- "$n" <<<"$refs"; then
-        echo "github: refused: \"$line\" closes #$n at merge, and the same text says Refs #$n. A plan's pull request only refers to its parent: reword the line so no close, fix or resolve word sits before #$n." >&2
+        echo "github: refused: \"$line\" closes #$n at merge, and the same text says Refs #$n. A plan's pull request only refers to its parent: reword the line so no close, fix or resolve word sits before #$n. If this pull request finishes #$n, which has no plan, the Refs #$n is wrong: say Closes #$n, never Refs #$n; when a pushed commit says Refs #$n, reword the history onto a new branch <branch>-2, open a fresh pull request and close this one (the handoff skill, Finish)." >&2
         rc=1
         continue
       fi
