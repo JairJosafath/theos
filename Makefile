@@ -86,9 +86,17 @@ export C4_HEAVY_SLOT := 1
 endif
 endif
 
+# TEST_TIMEOUT bounds each package's test binary. The slowest is the controller
+# envtest suite: 296-375 s on the CI runner in October 2026, so 15m leaves it
+# about 2.5 times its runtime, more than go test's 10m default, and still ends a
+# hung spec. The suite stops itself 30 s earlier, naming the spec that was
+# running; CI prints its 10 slowest specs (C4_SLOWEST_SPECS), so when it grows
+# toward the limit the log says which specs to speed up before raising this.
+TEST_TIMEOUT ?= 15m
+
 .PHONY: test
 test: manifests generate fmt vet setup-envtest install-helm ## Run tests.
-	HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') -coverprofile cover.out
+	HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') -timeout $(TEST_TIMEOUT) -coverprofile cover.out
 
 # The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
 # calls, so none needs a cluster or the network. make check runs them.
