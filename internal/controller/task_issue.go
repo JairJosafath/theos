@@ -10,6 +10,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -79,6 +80,13 @@ func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitpro
 		return nil
 	}
 	pr, err := provider.GetPullRequest(ctx, repo, earlier.PullRequest)
+	if errors.Is(err, gitprovider.ErrPullRequestNotFound) {
+		// Gone for good, deleted or with its repository: like a closed one,
+		// the Task starts on its own branch.
+		logf.FromContext(ctx).Info("Earlier pull request not found", "number", earlier.PullRequest,
+			"earlierTask", earlier.Name)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -89,11 +97,18 @@ func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitpro
 	status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
 	status.Feedback = byName[earlier.Name].Status.Feedback
 	logf.FromContext(ctx).Info("Continuing pull request", "url", pr.URL, "branch", pr.Head, "earlierTask", earlier.Name)
-	if err := provider.CommentPullRequest(ctx, repo, pr.Number, fmt.Sprintf(
-		"Task `%s` continues this pull request, which Task `%s` opened.", task.Name, earlier.Name)); err != nil {
+	return nil
+}
+
+// noteContinued says on the pull request a Task took over that it goes on with
+// it. The caller posts it once, with the run's new sandbox, so a retry after a
+// failed status write doesn't post it again.
+func (r *TaskReconciler) noteContinued(ctx context.Context, provider gitprovider.Provider,
+	repo gitprovider.Repository, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) {
+	if err := provider.CommentPullRequest(ctx, repo, int(status.PullRequest), fmt.Sprintf(
+		"Task `%s` continues this pull request, which Task `%s` opened.", task.Name, status.Continues)); err != nil {
 		logf.FromContext(ctx).Info("Could not comment on pull request", "task", task.Name, "error", err.Error())
 	}
-	return nil
 }
 
 // review posts the reviewer's verdict as a review of the round's commit.

@@ -119,7 +119,7 @@ type Provider interface {
 	// OpenPullRequest opens a pull request from head into base, or returns the
 	// open one for head.
 	OpenPullRequest(ctx context.Context, repo Repository, head, base, title, body string) (PullRequest, error)
-	// GetPullRequest reads a pull request.
+	// GetPullRequest reads a pull request; ErrPullRequestNotFound when there is none.
 	GetPullRequest(ctx context.Context, repo Repository, number int) (PullRequest, error)
 	// CommentPullRequest adds a comment to a pull request.
 	CommentPullRequest(ctx context.Context, repo Repository, number int, body string) error
@@ -275,6 +275,10 @@ var ErrConflict = errors.New("the branch conflicts with its base")
 
 // ErrIssueNotFound is GetIssue's error for an issue the repository doesn't have.
 var ErrIssueNotFound = errors.New("no such issue")
+
+// ErrPullRequestNotFound is GetPullRequest's error for a pull request the
+// repository doesn't have, say one deleted or of a repository made again.
+var ErrPullRequestNotFound = errors.New("no such pull request")
 
 // SameHost reports whether two URLs point at the same host, so a Git provider's
 // credentials can be reused for a template on it.

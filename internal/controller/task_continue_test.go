@@ -9,10 +9,13 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
@@ -87,20 +90,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 
 	It("starts its own branch when the earlier try's pull request is closed", func() {
 		ns := newProjectNamespace()
-		readyContainer(ns)
-		mustCreate(newAgent(ns, 1))
-		n := gitFake.addIssue(ns, "orders-api", "Add crop", clearIssue, []string{model.LabelReady})
-		first := newTask(ns, "orders-api-1", "")
-		first.Spec.Issue = int32(n)
-		mustCreate(first)
-		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-try1")
-		gitFake.setChecks(ns, "orders-api", "sha-try1", "failure")
-		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
-			&agentrunner.Result{Role: "implement", Commit: "sha-try1", Summary: "Added crop."}, "")
-		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
-		}).Should(Succeed())
+		n := failTryWithOpenPull(ns)
 		gitFake.closePull(ns, "orders-api", 1)
 
 		second := newTask(ns, "orders-api-2", "")
@@ -114,4 +104,82 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 			g.Expect(task.Status.PullRequest).To(BeZero())
 		}).Should(Succeed())
 	})
+
+	// #656: a pull request gone for good is like a closed one, not an error to
+	// retry forever.
+	It("starts its own branch when the earlier try's pull request is gone", func() {
+		ns := newProjectNamespace()
+		n := failTryWithOpenPull(ns)
+		gitFake.deletePull(ns, "orders-api", 1)
+
+		second := newTask(ns, "orders-api-2", "")
+		second.Spec.Issue = int32(n)
+		mustCreate(second)
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, "orders-api-2-r1-implement")
+			task := getTask(g, ns, "orders-api-2")
+			g.Expect(task.Status.Branch).To(Equal("task/orders-api-2"))
+			g.Expect(task.Status.Continues).To(BeEmpty())
+			g.Expect(task.Status.PullRequest).To(BeZero())
+		}).Should(Succeed())
+		Expect(gitFake.pullComments(ns, "orders-api", 1)).NotTo(ContainElement(ContainSubstring("orders-api-2")))
+	})
+
+	// #656: a read that fails for now is retried, and the comments a run starts
+	// with are posted once, however often the status write after them fails.
+	It("retries a failed read of the earlier pull request and comments once when the status write fails", func() {
+		ns := newProjectNamespace()
+		n := failTryWithOpenPull(ns)
+		gitFake.failPullReads(ns, "orders-api", 1, 2)
+		key := client.ObjectKey{Namespace: ns, Name: "orders-api-2"}
+		taskStatusFaults.failNext(key, 2, func(t *c4v1alpha1.Task) bool { return t.Status.Sandbox != "" })
+
+		second := newTask(ns, "orders-api-2", "")
+		second.Spec.Issue = int32(n)
+		mustCreate(second)
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, "orders-api-2-r1-implement")
+			task := getTask(g, ns, "orders-api-2")
+			g.Expect(task.Status.Sandbox).To(Equal("orders-api-2-r1-implement"))
+			g.Expect(task.Status.Continues).To(Equal("orders-api-1"))
+			g.Expect(task.Status.Branch).To(Equal("task/orders-api-1"))
+		}).Should(Succeed())
+		Expect(gitFake.pullReadsToFail(ns, "orders-api", 1)).To(BeZero())
+		Expect(taskStatusFaults.pending(key)).To(BeZero())
+		continues := 0
+		for _, c := range gitFake.pullComments(ns, "orders-api", 1) {
+			if strings.Contains(c, "Task `orders-api-2` continues this pull request") {
+				continues++
+			}
+		}
+		Expect(continues).To(Equal(1))
+		picked := 0
+		for _, c := range gitFake.issue(ns, "orders-api", n).comments {
+			if strings.Contains(c, "Task `orders-api-2` picked this up") {
+				picked++
+			}
+		}
+		Expect(picked).To(Equal(1))
+	})
 })
+
+// failTryWithOpenPull fails a first Task on a new issue of orders-api on its
+// checks, leaving its pull request, number 1, open. It returns the issue.
+func failTryWithOpenPull(ns string) int {
+	readyContainer(ns)
+	mustCreate(newAgent(ns, 1))
+	n := gitFake.addIssue(ns, "orders-api", "Add crop", clearIssue, []string{model.LabelReady})
+	first := newTask(ns, "orders-api-1", "")
+	first.Spec.Issue = int32(n)
+	mustCreate(first)
+	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
+	gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-try1")
+	gitFake.setChecks(ns, "orders-api", "sha-try1", "failure")
+	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
+		&agentrunner.Result{Role: "implement", Commit: "sha-try1", Summary: "Added crop."}, "")
+	Eventually(func(g Gomega) {
+		g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+	}).Should(Succeed())
+	ExpectWithOffset(1, gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
+	return n
+}

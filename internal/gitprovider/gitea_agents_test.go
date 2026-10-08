@@ -197,6 +197,8 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(http.StatusOK, g.pulls)
 	case call == "GET "+repo+"/pulls/1":
 		reply(http.StatusOK, g.pulls[0])
+	case call == "GET "+repo+"/pulls/3":
+		reply(http.StatusNotFound, map[string]string{"message": "pull request does not exist"})
 	case strings.Contains(call, "/pulls/7"):
 		g.serveGatedPull(w, r, call)
 	case call == "POST "+repo+"/issues/1/comments":
@@ -419,6 +421,9 @@ func TestPullRequests(t *testing.T) {
 	got, err := p.GetPullRequest(ctx, repo, 1)
 	if err != nil || !got.Merged || got.MergeCommit != "694db57" {
 		t.Errorf("GetPullRequest() = %+v, %v; want merged at 694db57", got, err)
+	}
+	if _, err := p.GetPullRequest(ctx, repo, 3); !errors.Is(err, ErrPullRequestNotFound) {
+		t.Errorf("GetPullRequest() of a missing pull request error = %v, want ErrPullRequestNotFound", err)
 	}
 	if err := p.MergePullRequest(ctx, repo, 2, "def456", "x", "y"); err == nil || !strings.Contains(err.Error(), "HTTP 405") {
 		t.Errorf("MergePullRequest() of an unmergeable PR error = %v", err)
