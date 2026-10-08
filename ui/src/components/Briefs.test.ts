@@ -27,6 +27,15 @@ describe('the Brief card', () => {
     expect(html).toContain('3 h ago')
   })
 
+  it("shows how many issues each app's crew works on at once", () => {
+    expect(html).toContain(
+      '<span class="brief-app-parallel" title="How many issues its crew works on at once">3 at a time</span>',
+    )
+    expect(html).toContain('>1 at a time</span>')
+    // catalog-api has no crew yet, so no parallel.
+    expect(html.match(/brief-app-parallel/g)).toHaveLength(2)
+  })
+
   it('shows an app with releases off with its message', () => {
     expect(html).toContain('Releases off')
     expect(html).toContain('Releases are off: ask for them in a prompt, or name this app in spec.releases.')
@@ -67,5 +76,24 @@ describe('the Brief card with failed issues', () => {
 
   it('marks the failed issue in the issue list', () => {
     expect(html).toContain('brief-issue-failed')
+  })
+})
+
+describe('the Describe an app form', () => {
+  const html = renderToStaticMarkup(
+    createElement(Briefs, { briefs: [], namespace: DEMO_NAMESPACE, canCreate: true, writer, now: 0 }),
+  )
+
+  it("offers parallel 1 to 5, the factory's default first", () => {
+    expect(html).toContain('Parallel')
+    const options = [...html.matchAll(/<option value="(\d)"[^>]*>([^<]*)<\/option>/g)].map((m) => [m[1], m[2]])
+    expect(options).toEqual([
+      ['0', 'The factory’s default (3 at a time)'],
+      ['1', '1 at a time'],
+      ['2', '2 at a time'],
+      ['3', '3 at a time'],
+      ['4', '4 at a time'],
+      ['5', '5 at a time'],
+    ])
   })
 })

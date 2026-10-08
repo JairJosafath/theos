@@ -3,10 +3,18 @@
 // project: the webshop. The story source also takes the UI's two writes in
 // memory, so the Brief box works without a cluster.
 
-import { briefManifest, isBriefName, MAX_IDEA, MAX_PROMPT, type BriefWriter } from '../k8s/briefs'
+import {
+  briefManifest,
+  isBriefName,
+  MAX_IDEA,
+  MAX_PARALLEL,
+  MAX_PROMPT,
+  type BriefOptions,
+  type BriefWriter,
+} from '../k8s/briefs'
 import type { FactoryHealth } from '../k8s/health'
 import type { Connection, FactoryData, Snapshot, Source, StoryData } from '../k8s/sources'
-import type { BriefAutopilot, Project } from '../k8s/types'
+import type { Project } from '../k8s/types'
 import { demoFactory, demoHealth } from './factoryFixture'
 import { demoStory } from './fixture'
 
@@ -55,13 +63,16 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
   }
 
   /** A new Brief shows up as Pending, as the API would answer before the operator picks it up. */
-  async create(namespace: string, name: string, idea: string, autopilot?: BriefAutopilot): Promise<void> {
+  async create(namespace: string, name: string, idea: string, options?: BriefOptions): Promise<void> {
     const data = this.snapshot.data
     if (!isBriefName(name)) throw new Error(`Brief name "${name}" must be lowercase letters, digits and '-'`)
     if (data.briefs.some((b) => b.metadata.name === name))
       throw new Error(`briefs.c4.factory.io "${name}" already exists`)
     if (!idea.trim() || idea.length > MAX_IDEA) throw new Error(`spec.idea must be 1 to ${MAX_IDEA} characters`)
-    const brief = briefManifest(namespace, name, idea, autopilot)
+    const parallel = options?.parallel
+    if (parallel !== undefined && !(Number.isInteger(parallel) && parallel >= 1 && parallel <= MAX_PARALLEL))
+      throw new Error(`spec.parallel must be 1 to ${MAX_PARALLEL}`)
+    const brief = briefManifest(namespace, name, idea, options)
     brief.metadata = { ...brief.metadata, uid: `demo-${name}`, creationTimestamp: new Date().toISOString() }
     brief.status = { phase: 'Pending' }
     this.update({ ...data, briefs: [...data.briefs, brief] })
