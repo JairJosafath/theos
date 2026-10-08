@@ -11,6 +11,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -147,4 +149,67 @@ func releaseMilestone(ctx context.Context, provider gitprovider.Provider, repo g
 	logf.FromContext(ctx).Info("Made the round's release milestone", "repository", repo.Owner+"/"+repo.Name,
 		"milestone", title, "round", round, "fixes", fixes)
 	return m.ID, nil
+}
+
+// adoptStrayWork puts the work each released Container the Brief made
+// already has, in no milestone, into its first open release (#599): issues
+// filed before releases were turned on would otherwise come after every
+// release, the next round's included. A Container that isn't Ready, or has
+// no open release, is left as it is.
+func (r *BriefReconciler) adoptStrayWork(ctx context.Context, run *roundApply) error {
+	for _, name := range slices.Sorted(maps.Keys(run.released)) {
+		var c c4v1alpha1.Container
+		err := r.Get(ctx, client.ObjectKey{Namespace: run.brief.Namespace, Name: name}, &c)
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if c.Labels[c4v1alpha1.LabelBrief] != run.brief.Name || c.Status.Phase != c4v1alpha1.ContainerReady {
+			continue
+		}
+		if err := r.adoptContainerWork(ctx, &c); err != nil {
+			return fmt.Errorf("putting the work of %s in its first release: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func (r *BriefReconciler) adoptContainerWork(ctx context.Context, c *c4v1alpha1.Container) error {
+	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
+	if err != nil {
+		return err
+	}
+	repo := provider.Repository(c.Name)
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	milestones, err := provider.ListMilestones(gitCtx, repo)
+	if err != nil {
+		return err
+	}
+	releases := make([]model.ReleaseMilestone, 0, len(milestones))
+	for _, m := range milestones {
+		releases = append(releases, model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID})
+	}
+	first := model.FirstOpenRelease(releases)
+	if first == 0 {
+		return nil
+	}
+	open, err := provider.ListIssues(gitCtx, repo, "")
+	if err != nil {
+		return err
+	}
+	issues := make([]model.OpenIssue, 0, len(open))
+	for _, i := range open {
+		issues = append(issues, model.OpenIssue{Number: i.Number, Labels: i.Labels, Milestone: i.Milestone})
+	}
+	for _, n := range model.StrayWork(issues) {
+		if err := provider.SetIssueMilestone(gitCtx, repo, n, first); err != nil {
+			return err
+		}
+		logf.FromContext(ctx).Info("Put an issue in no milestone in the first release", "container", c.Name,
+			"number", n, "milestone", first)
+	}
+	return nil
 }

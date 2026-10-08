@@ -152,6 +152,9 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if run.took, run.skipped, err = r.answerSuggestions(ctx, run, plan.Answers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the reviewers' suggestions", err)
 	}
+	if err := r.adoptStrayWork(ctx, run); err != nil {
+		return ctrl.Result{}, r.applyFailed(ctx, brief, "putting the released apps' work in their first release", err)
+	}
 	if run.retried, run.closed, err = r.answerFailedRemembering(ctx, brief, plan.FailedAnswers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the failed issues", err)
 	}

@@ -131,3 +131,29 @@ func HasReleaseMilestoneMarker(description, brief string, round int) bool {
 	}
 	return false
 }
+
+// OpenIssue is an open issue of a repository: its number, labels and
+// milestone's ID, 0 when it is in none.
+type OpenIssue struct {
+	Number    int
+	Labels    []string
+	Milestone int64
+}
+
+// StrayWork returns the numbers of the issues a Crew works, status/ready or
+// status/in-progress, that sit in no milestone, so they would come after
+// every release. A released Container's are put in its first open release,
+// so work it already has never waits behind its own later releases (#599).
+// A suggestion still proposed, a person's kind/by-hand work and an issue
+// handed back to a person stay where they are: none of them may hold a
+// release.
+func StrayWork(issues []OpenIssue) []int {
+	var out []int
+	for _, i := range issues {
+		works := slices.Contains(i.Labels, LabelReady) || slices.Contains(i.Labels, LabelInProgress)
+		if i.Milestone == 0 && works && !IsByHand(i.Labels) {
+			out = append(out, i.Number)
+		}
+	}
+	return out
+}
