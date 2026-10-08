@@ -237,6 +237,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	}
 
 	goal := task.Spec.Goal
+	firstIssueRun := task.Spec.Issue > 0 && model.FirstRun(progressOf(status))
 	if task.Spec.Issue > 0 {
 		// Read before every run: a person may have clarified the issue since.
 		issue, err := provider.GetIssue(protectCtx, repo, int(task.Spec.Issue))
@@ -249,11 +250,10 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		}
 		status.IssueTitle, status.IssueURL = issue.Title, issue.URL
 		goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
-		if model.FirstRun(progressOf(status)) {
+		if firstIssueRun {
 			if err := r.continueEarlierTry(protectCtx, provider, repo, task, status); err != nil {
 				return ctrl.Result{}, err
 			}
-			r.announce(protectCtx, provider, repo, task, container, agents)
 		}
 	}
 
@@ -274,8 +274,18 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.Create(ctx, sandbox); err != nil && !apierrors.IsAlreadyExists(err) {
+	err = r.Create(ctx, sandbox)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return ctrl.Result{}, err
+	}
+	// Comment with the sandbox that starts the first run, not when a retry
+	// finds it made: then the status write after it failed, and the comments
+	// are there.
+	if err == nil && firstIssueRun {
+		if status.Continues != "" {
+			r.noteContinued(protectCtx, provider, repo, task, status)
+		}
+		r.announce(protectCtx, provider, repo, task, container, agents)
 	}
 	status.Sandbox, status.SandboxPod, status.AgentBackAt = name, "", nil
 	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", message, name))

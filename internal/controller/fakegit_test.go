@@ -397,6 +397,8 @@ type fakeAgentState struct {
 	log       string                                // served for every CI job
 	files     map[string][]string                   // owner/name#number -> paths the pull request changes
 	forced    map[string][]int                      // owner/name -> pull requests force-merged
+	gone      map[string]bool                       // owner/name#number -> pull request deleted
+	readErrs  map[string]int                        // owner/name#number -> reads left to fail
 	// edits are what the commit PushBranch made on a branch changes on main,
 	// by owner/name@branch: a path's new file, or nil when it removes it.
 	edits map[string]map[string]*scaffold.File
@@ -414,8 +416,9 @@ func (g *fakeGit) agentState() *fakeAgentState {
 			rules: map[string]gitprovider.BranchRule{}, tags: map[string][]string{},
 			agents: map[string]string{}, pulls: map[string][]*gitprovider.PullRequest{},
 			comments: map[string][]string{}, branches: map[string]string{}, authors: map[string]string{},
-			files: map[string][]string{}, forced: map[string][]int{},
-			edits: map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{}, revoked: map[string]int{},
+			files: map[string][]string{}, forced: map[string][]int{}, gone: map[string]bool{},
+			readErrs: map[string]int{},
+			edits:    map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{}, revoked: map[string]int{},
 		}
 	}
 	return g.agent
@@ -527,6 +530,29 @@ func (g *fakeGit) closePull(owner, name string, number int) {
 			pr.State = "closed"
 		}
 	}
+}
+
+// deletePull makes a pull request gone, as deleting it or making the
+// repository again would: reading it answers 404.
+func (g *fakeGit) deletePull(owner, name string, number int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.agentState().gone[fmt.Sprintf("%s/%s#%d", owner, name, number)] = true
+}
+
+// failPullReads makes the next n reads of a pull request fail, as a host
+// that doesn't answer would.
+func (g *fakeGit) failPullReads(owner, name string, number, n int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.agentState().readErrs[fmt.Sprintf("%s/%s#%d", owner, name, number)] = n
+}
+
+// pullReadsToFail is how many of a pull request's reads are still to fail.
+func (g *fakeGit) pullReadsToFail(owner, name string, number int) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.agentState().readErrs[fmt.Sprintf("%s/%s#%d", owner, name, number)]
 }
 
 //nolint:unparam // takes owner and name like the other helpers
@@ -647,8 +673,8 @@ func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repos
 func (p *fakeProvider) pull(repo gitprovider.Repository, number int) (*gitprovider.PullRequest, error) {
 	s := p.git.agentState()
 	key := repo.Owner + "/" + repo.Name
-	if number < 1 || number > len(s.pulls[key]) {
-		return nil, fmt.Errorf("pull request %d of %s not found", number, key)
+	if number < 1 || number > len(s.pulls[key]) || s.gone[fmt.Sprintf("%s#%d", key, number)] {
+		return nil, fmt.Errorf("pull request %d of %s: %w", number, key, gitprovider.ErrPullRequestNotFound)
 	}
 	pr := s.pulls[key][number-1]
 	if sha, ok := s.branches[key+"@"+pr.Head]; ok && !pr.Merged {
@@ -660,6 +686,11 @@ func (p *fakeProvider) pull(repo gitprovider.Repository, number int) (*gitprovid
 func (p *fakeProvider) GetPullRequest(_ context.Context, repo gitprovider.Repository, number int) (gitprovider.PullRequest, error) {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
+	key := fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)
+	if s := p.git.agentState(); s.readErrs[key] > 0 {
+		s.readErrs[key]--
+		return gitprovider.PullRequest{}, fmt.Errorf("reading pull request %d: connection reset", number)
+	}
 	pr, err := p.pull(repo, number)
 	if err != nil {
 		return gitprovider.PullRequest{}, err

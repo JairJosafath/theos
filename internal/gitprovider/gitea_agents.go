@@ -419,6 +419,9 @@ func (g *gitea) GetPullRequest(ctx context.Context, repo Repository, number int)
 	if err != nil {
 		return PullRequest{}, err
 	}
+	if status == http.StatusNotFound {
+		return PullRequest{}, fmt.Errorf("gitea: pull request %d of %s: %w", number, repoPath(repo), ErrPullRequestNotFound)
+	}
 	var pull giteaPull
 	if status != http.StatusOK || json.Unmarshal(data, &pull) != nil {
 		return PullRequest{}, fmt.Errorf("gitea: reading pull request %d of %s failed (HTTP %d): %s", number, repoPath(repo), status, apiMessage(data))
