@@ -198,9 +198,11 @@ func orDefault(s, def string) string {
 }
 
 // unavailableSigns are what Claude Code and the API say when the service, not the
-// agent, can't go on: usage and rate limits, overload, and bad credentials.
+// agent, can't go on: usage and rate limits, overload, a temporary server error
+// (any 5xx, or an api_error), and bad credentials.
 var unavailableSigns = regexp.MustCompile(`(?i)usage limit|limit reached|hit your limit|rate_limit_error|` +
-	`api error: 429|api error: 529|overloaded_error|authentication_error|invalid api key|/login|oauth token has expired`)
+	`api error: 429|api error: 5\d\d\b|overloaded_error|\bapi_error\b|` +
+	`authentication_error|invalid api key|/login|oauth token has expired`)
 
 // resetEpoch is the reset time Claude Code puts after a usage limit: "...|1759417200".
 var resetEpoch = regexp.MustCompile(`limit reached\|(\d{10})`)
