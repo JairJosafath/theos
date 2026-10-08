@@ -194,7 +194,8 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   `hack/relay-watch.sh [--workers N]` keeps it ready, starting it within a
   minute of an issue becoming ready. When nothing is ready, it starts a triage
   session (`hack/relay.sh --triage`) that readies the sound `status/proposed`
-  issues and comments on the others what they lack; `status/needs-human`
+  issues and comments on the others what they lack (run it by hand to
+  triage now; the watch counts that triage); `status/needs-human`
   stays the user's. Every 2 hours when anything changed (`WATCH_MAINTAIN`),
   busy or idle, and within a minute of an issue reaching
   `status/needs-maintainer`, it starts the maintainer (`hack/relay.sh
