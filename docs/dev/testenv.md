@@ -210,7 +210,8 @@ After a change under `config/` or `api/`, `make chart` regenerates it from the k
 output and `make helm-lint` checks it, offline, in `make validate-yaml` and so in `make
 check`. `make chart` keeps `templates/manager/manager.yaml`, which the plugin would
 regenerate without the `/tmp` mount, `POD_NAMESPACE` and the shared Secrets; it
-writes what the plugin would change to `bin/yaml/manager.plugin.diff` to port by hand,
+writes what the plugin would change to `bin/chart/manager.plugin.diff`, outside the
+`bin/yaml/` that `make validate-yaml` parses, to port by hand,
 and `hack/chart-manager.sh` fails `make validate-yaml` when the render lacks them; the *Test Chart* workflow, dispatched by hand, installs it into a
 fresh Kind cluster on GitHub. Don't `helm install` it into the shared
 `c4factory` cluster: `make deploy` owns the CRDs there.
