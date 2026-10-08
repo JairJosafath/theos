@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore } from 'react'
 import type { Snapshot, Source } from '../k8s/sources'
 
 /** Subscribes to a data source for as long as the component is mounted. */
@@ -13,14 +13,23 @@ export function useSource<T>(source: Source<T>): Snapshot<T> {
   )
 }
 
-/** The current time, updated every `intervalMs`, for "12 s ago" style labels. */
+/** A fixed time for every useNow below it, for tests; unset, useNow follows the clock. */
+export const FixedNow = createContext<number | undefined>(undefined)
+
+/**
+ * The current time, updated every `intervalMs`, for "12 s ago" style labels.
+ * Only the components that show a running clock call it, so the timer
+ * re-renders them and nothing above them.
+ */
 export function useNow(intervalMs = 1000): number {
+  const fixed = useContext(FixedNow)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
+    if (fixed !== undefined) return
     const timer = setInterval(() => setNow(Date.now()), intervalMs)
     return () => clearInterval(timer)
-  }, [intervalMs])
-  return now
+  }, [intervalMs, fixed])
+  return fixed ?? now
 }
 
 export type View = 'context' | 'containers' | 'factory'

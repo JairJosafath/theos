@@ -6,6 +6,7 @@ import type { FactoryData } from '../k8s/sources'
 import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../k8s/health'
 import { findCondition, LABEL_CREW, type Agent, type Task } from '../k8s/types'
 import { describeUsage } from '../model/brief'
+import { useNow } from '../lib/hooks'
 import { plural, timeAgo } from '../model/describe'
 import { AgentName, CrewPhaseBadge, UsageLine } from './bits'
 import {
@@ -50,12 +51,12 @@ export interface FactoryPageProps {
   loaded: boolean
   health?: FactoryHealth
   healthLoaded: boolean
-  now: number
   selectedTask?: string
   onSelectTask: (key: string | undefined) => void
 }
 
-export function FactoryPage({ data, loaded, health, healthLoaded, now, selectedTask, onSelectTask }: FactoryPageProps) {
+export function FactoryPage({ data, loaded, health, healthLoaded, selectedTask, onSelectTask }: FactoryPageProps) {
+  const now = useNow()
   const stats = useMemo(() => factoryStats(data.tasks, now), [data.tasks, now])
   const columns = useMemo(() => boardColumns(data.tasks), [data.tasks])
   const items = useMemo(

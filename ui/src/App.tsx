@@ -8,7 +8,6 @@ import { Diagram } from './components/Diagram'
 import { FactoryPage } from './components/Factory'
 import { LogoMark, WarningIcon } from './components/icons'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
-import { DemoFactorySource, DemoHealthSource, DemoProjectsSource, DemoStorySource } from './demo/demoSource'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
 import { HealthSource, type FactoryHealth } from './k8s/health'
 import { WatchMux } from './k8s/mux'
@@ -27,7 +26,7 @@ import {
   type StoryData,
 } from './k8s/sources'
 import type { Project } from './k8s/types'
-import { useNow, useSource, useUrlState, type View } from './lib/hooks'
+import { useSource, useUrlState, type View } from './lib/hooks'
 import { plural, titleOf } from './model/describe'
 import { activeCrewTasks } from './model/factory'
 import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker, workingNow } from './model/story'
@@ -55,20 +54,36 @@ class Idle<T> implements Source<T> {
   start() {}
   stop() {}
 }
+const NO_PROJECTS = new Idle<Project[]>([])
 const NO_STORY = new Idle<StoryData>(emptyStory(''))
 const NO_FACTORY = new Idle<FactoryData>(emptyFactory())
 const NO_HEALTH = new Idle<FactoryHealth | undefined>(undefined)
 
 const MemoDiagram = memo(Diagram)
 
+type DemoModule = typeof import('./demo/demoSource')
+
+/**
+ * Demo mode's sources, loaded only in demo mode: the fixture is a chunk of its
+ * own, so a page on a cluster never downloads it. Undefined until it arrives.
+ */
+function useDemo(demo: boolean): DemoModule | undefined {
+  const [module, setModule] = useState<DemoModule>()
+  useEffect(() => {
+    if (demo && !module) void import('./demo/demoSource').then(setModule)
+  }, [demo, module])
+  return demo ? module : undefined
+}
+
 export default function App() {
   const [url, setUrl] = useUrlState()
   const demo = url.demo
+  const demoModule = useDemo(demo)
 
-  const projectsSource = useMemo<Source<Project[]>>(
-    () => (demo ? new DemoProjectsSource() : new LiveProjectsSource(API)),
-    [demo],
-  )
+  const projectsSource = useMemo<Source<Project[]>>(() => {
+    if (!demo) return new LiveProjectsSource(API)
+    return demoModule ? new demoModule.DemoProjectsSource() : NO_PROJECTS
+  }, [demo, demoModule])
   const projects = useSource(projectsSource)
   // Oldest first, so the default is the project the cluster started with.
   const sortedProjects = useMemo(
@@ -86,22 +101,26 @@ export default function App() {
   // Only the view on screen watches the cluster.
   const storySource = useMemo<Source<StoryData>>(() => {
     if (!namespace || factoryView) return NO_STORY
-    return demo ? new DemoStorySource() : new LiveStorySource(namespace, API)
-  }, [namespace, demo, factoryView])
+    if (!demo) return new LiveStorySource(namespace, API)
+    return demoModule ? new demoModule.DemoStorySource() : NO_STORY
+  }, [namespace, demo, demoModule, factoryView])
   const factorySource = useMemo<Source<FactoryData>>(() => {
     if (!factoryView) return NO_FACTORY
-    return demo ? new DemoFactorySource() : new LiveFactorySource(API)
-  }, [demo, factoryView])
+    if (!demo) return new LiveFactorySource(API)
+    return demoModule ? new demoModule.DemoFactorySource() : NO_FACTORY
+  }, [demo, demoModule, factoryView])
   const healthSource = useMemo<Source<FactoryHealth | undefined>>(() => {
     if (!factoryView) return NO_HEALTH
-    return demo ? new DemoHealthSource() : new HealthSource()
-  }, [demo, factoryView])
+    if (!demo) return new HealthSource()
+    return demoModule ? new demoModule.DemoHealthSource() : NO_HEALTH
+  }, [demo, demoModule, factoryView])
   const factory = useSource(factorySource)
   const health = useSource(healthSource)
   const story = useSource(storySource)
   const data = story.data
   // Demo mode writes into its own fixture; live mode through the proxy.
-  const writer: BriefWriter = storySource instanceof DemoStorySource ? storySource : LIVE_WRITER
+  const writer: BriefWriter =
+    demoModule && storySource instanceof demoModule.DemoStorySource ? storySource : LIVE_WRITER
 
   const systems = useMemo(() => systemsForPicker(data), [data])
   const systemName = url.system && systems.some((s) => s.name === url.system) ? url.system : systems[0]?.name
@@ -125,7 +144,6 @@ export default function App() {
   )
   const openSystem = useCallback((name: string) => setUrl({ view: 'containers', system: name }), [setUrl])
 
-  const now = useNow(1000)
   const sessionContainers = useMemo(
     () => containerNodes(data, view === 'containers' ? systemName : undefined),
     [data, view, systemName],
@@ -225,7 +243,6 @@ export default function App() {
           loaded={factory.connection.loaded}
           health={health.data}
           healthLoaded={health.connection.loaded}
-          now={now}
           selectedTask={url.task}
           onSelectTask={(task) => setUrl({ view: 'factory', task }, true)}
         />
@@ -235,13 +252,7 @@ export default function App() {
         <>
           <ProjectHeader data={data} namespace={namespace} loaded={story.connection.loaded} />
           {namespace && story.connection.loaded ? (
-            <Briefs
-              briefs={data.briefs}
-              namespace={namespace}
-              canCreate={Boolean(data.project)}
-              writer={writer}
-              now={now}
-            />
+            <Briefs briefs={data.briefs} namespace={namespace} canCreate={Boolean(data.project)} writer={writer} />
           ) : null}
 
           <nav className="tabs" aria-label="Views">
@@ -319,7 +330,6 @@ export default function App() {
                 <DetailsPanel
                   node={selectedNode}
                   data={data}
-                  now={now}
                   onClose={() => setSelection(undefined)}
                   onOpenSystem={openSystem}
                 />
@@ -327,7 +337,6 @@ export default function App() {
               <SessionsPanel
                 containers={sessionContainers}
                 tasks={crewTasks}
-                now={now}
                 scope={view === 'containers' && systemTitle ? systemTitle : project ? titleOf(project) : 'this project'}
               />
               <Legend view={view} />

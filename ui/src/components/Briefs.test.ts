@@ -4,16 +4,26 @@ import { describe, expect, it } from 'vitest'
 import { DEMO_NAMESPACE, demoStory } from '../demo/fixture'
 import type { BriefWriter } from '../k8s/briefs'
 import type { Brief } from '../k8s/types'
+import { FixedNow } from '../lib/hooks'
 import { Briefs } from './Briefs'
 
 const writer: BriefWriter = { create: async () => {}, addPrompt: async () => {}, setPaused: async () => {} }
 
+/** The Brief cards of `briefs` as HTML, with the clock stopped at `now`. */
+function render(briefs: Brief[], now: number): string {
+  return renderToStaticMarkup(
+    createElement(
+      FixedNow.Provider,
+      { value: now },
+      createElement(Briefs, { briefs, namespace: DEMO_NAMESPACE, canCreate: false, writer }),
+    ),
+  )
+}
+
 describe('the Brief card', () => {
   const now = Date.parse('2026-10-07T12:00:00Z')
   const briefs = demoStory(now).briefs.filter((b) => b.metadata.name === 'webshop')
-  const html = renderToStaticMarkup(
-    createElement(Briefs, { briefs, namespace: DEMO_NAMESPACE, canCreate: false, writer, now }),
-  )
+  const html = render(briefs, now)
 
   it('lists each app of the demo Brief under Releases', () => {
     expect(html).toContain('Releases <span class="section-hint">3</span>')
@@ -63,9 +73,7 @@ describe('the Brief card with failed issues', () => {
       failedWaiting: 1,
     },
   }
-  const html = renderToStaticMarkup(
-    createElement(Briefs, { briefs: [failedBrief], namespace: DEMO_NAMESPACE, canCreate: false, writer, now }),
-  )
+  const html = render([failedBrief], now)
 
   it('lists each failed issue with its link and reason, and says to answer in a prompt', () => {
     expect(html).toContain('Failed issues (1)')
@@ -103,9 +111,7 @@ describe('the Brief card with an item that needs you', () => {
       needsYouWaiting: 1,
     },
   }
-  const html = renderToStaticMarkup(
-    createElement(Briefs, { briefs: [brief], namespace: DEMO_NAMESPACE, canCreate: false, writer, now }),
-  )
+  const html = render([brief], now)
 
   it('shows the whole why after what it would do', () => {
     expect(html).toContain(`It would: Close it. — ${why}`)
@@ -119,11 +125,15 @@ describe('the Brief card with an item that needs you', () => {
 
 describe('the Brief card paused or not', () => {
   const now = Date.parse('2026-10-07T12:00:00Z')
-  const render = (briefs: Brief[]) =>
-    renderToStaticMarkup(createElement(Briefs, { briefs, namespace: DEMO_NAMESPACE, canCreate: false, writer, now }))
   const story = demoStory(now).briefs
-  const paused = render(story.filter((b) => b.metadata.name === 'gift-cards'))
-  const running = render(story.filter((b) => b.metadata.name === 'returns'))
+  const paused = render(
+    story.filter((b) => b.metadata.name === 'gift-cards'),
+    now,
+  )
+  const running = render(
+    story.filter((b) => b.metadata.name === 'returns'),
+    now,
+  )
 
   it("offers Resume on the demo's paused Brief and shows what still runs", () => {
     expect(paused).toContain('aria-label="Resume brief gift-cards"')
@@ -139,7 +149,7 @@ describe('the Brief card paused or not', () => {
 
 describe('the Describe an app form', () => {
   const html = renderToStaticMarkup(
-    createElement(Briefs, { briefs: [], namespace: DEMO_NAMESPACE, canCreate: true, writer, now: 0 }),
+    createElement(Briefs, { briefs: [], namespace: DEMO_NAMESPACE, canCreate: true, writer }),
   )
 
   it("offers parallel 1 to 5, the factory's default first", () => {

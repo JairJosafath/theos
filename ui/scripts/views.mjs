@@ -18,14 +18,13 @@
 // the factory's last-hour history is masked: it shows measured times.
 // Needs Chromium once: npx playwright install chromium-headless-shell.
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { mkdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { build } from 'rolldown'
 import { createServer, resolveUpstream } from '../server.mjs'
 import { fakeApi, listen } from '../test/fakeApi.mjs'
+import { loadFixture } from '../test/fixture.mjs'
 import { RESOURCES } from '../src/k8s/types.ts'
 import { launchChromiumOrExit } from './browser.mjs'
 
@@ -41,24 +40,6 @@ if (positionals.length !== 1) {
 const out = path.resolve(positionals[0])
 /** The clock of every page and of the fixture. */
 const NOW = Date.parse('2026-06-01T12:00:00Z')
-
-/** The demo fixture, bundled for Node, so the fake API serves the same objects demo mode shows. */
-async function loadFixture() {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'c4ui-views-'))
-  try {
-    const entry = path.join(dir, 'entry.ts')
-    await writeFile(
-      entry,
-      `export { demoStory } from ${JSON.stringify(path.join(root, 'src/demo/fixture.ts'))}\n` +
-        `export { demoFactory } from ${JSON.stringify(path.join(root, 'src/demo/factoryFixture.ts'))}\n`,
-    )
-    const file = path.join(dir, 'fixture.mjs')
-    await build({ input: entry, output: { file, format: 'esm' }, logLevel: 'silent' })
-    return await import(pathToFileURL(file).href)
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-}
 
 const { demoStory, demoFactory } = await loadFixture()
 const story = demoStory(NOW)

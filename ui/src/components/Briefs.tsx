@@ -23,6 +23,7 @@ import {
   type BriefAppView,
   type BriefView,
 } from '../model/brief'
+import { useNow } from '../lib/hooks'
 import { plural, timeAgo } from '../model/describe'
 import { UsageLine } from './bits'
 import { ExternalLinkIcon, RepoIcon, WarningIcon } from './icons'
@@ -36,14 +37,12 @@ export function Briefs({
   namespace,
   canCreate,
   writer,
-  now,
 }: {
   briefs: Brief[]
   namespace: string
   /** False when the namespace holds no Project: the server makes no Brief there. */
   canCreate: boolean
   writer: BriefWriter
-  now: number
 }) {
   if (!canCreate && !briefs.length) return null
   const sorted = sortBriefs(briefs)
@@ -64,13 +63,7 @@ export function Briefs({
           <NewBrief namespace={namespace} taken={briefs.map((b) => b.metadata.name)} writer={writer} />
         ) : null}
         {sorted.map((b) => (
-          <BriefCard
-            key={b.metadata.uid ?? b.metadata.name}
-            brief={b}
-            namespace={namespace}
-            writer={writer}
-            now={now}
-          />
+          <BriefCard key={b.metadata.uid ?? b.metadata.name} brief={b} namespace={namespace} writer={writer} />
         ))}
       </div>
     </section>
@@ -227,17 +220,8 @@ function FormError({ message }: { message: string }) {
   )
 }
 
-function BriefCard({
-  brief,
-  namespace,
-  writer,
-  now,
-}: {
-  brief: Brief
-  namespace: string
-  writer: BriefWriter
-  now: number
-}) {
+function BriefCard({ brief, namespace, writer }: { brief: Brief; namespace: string; writer: BriefWriter }) {
+  const now = useNow()
   const view = describeBrief(brief)
   const [pauseError, setPauseError] = useState<string>()
   return (
