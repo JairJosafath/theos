@@ -300,6 +300,15 @@ model and context it needs.
   that closes it, and closes it on merge; a failed Task hands it back with
   `status/needs-human` and the reason. The `status/*` labels are exclusive, so an
   issue is in one state at a time.
+- **Open pull requests are the work in flight.** A failed Task's pull request
+  stays open while a later try at its issue may continue it, and the operator
+  closes it, with a comment naming the Task and why, once none will: its issue
+  is closed, a newer try at the issue opened its own pull request (the comment
+  links it), the issue's tries are used up, or the Task had no issue. A newer
+  try that continues it, or still runs and may, keeps it open. The branch stays, so a person can
+  reopen it; `status.pullRequestEnded` says how it ended. A Failed Task looks
+  again every 10 minutes, since the Git host doesn't say when an issue closes,
+  so tries from before an upgrade are cleaned up too while their Task exists.
 - **Ready means clear.** An issue needs an "Acceptance criteria" checklist before
   an agent gets it; without one it goes back to a person before any tokens are
   spent, with an example checklist in the comment. The Standards' issue templates
