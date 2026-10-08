@@ -1,13 +1,31 @@
 # The Go and Node toolchain: Go, golangci-lint, Node with npm and uv, for
-# Containers written in Go, TypeScript or Python. CI (runner label `go`), agents
-# and devcontainers all use it, so an agent checks its work with exactly the
-# tools CI uses. uv installs the Python a project's `.python-version` pins on
-# first use.
+# Containers written in Go, TypeScript or Python, and the kubebuilder operator
+# tools (kubebuilder, controller-gen, kustomize, setup-envtest and the envtest
+# binaries in /usr/local/kubebuilder/bin, where envtest looks when
+# KUBEBUILDER_ASSETS is unset). CI (runner label `go`), agents and
+# devcontainers all use it, so an agent checks its work with exactly the tools
+# CI uses. uv installs the Python a project's `.python-version` pins on first
+# use.
 #
 # UV_VERSION is the one hack/toolchain-base/Dockerfile pins;
 # hack/toolchain-uv_test.sh (make check) fails when they differ.
 ARG UV_VERSION=0.12.21
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
+# The operator tools, at the versions this repository is built with (its
+# PROJECT, Makefile and go.mod); hack/toolchain-go/operator-tools_test.sh
+# (make check) fails when they differ. Built in their own stage, so their
+# module and build caches stay out of the image.
+FROM golang:1.26-bookworm AS operator-tools
+
+ARG KUBEBUILDER_VERSION=4.16.0
+ARG CONTROLLER_TOOLS_VERSION=0.22.0
+ARG KUSTOMIZE_VERSION=5.8.1
+ARG SETUP_ENVTEST_VERSION=0.25.0
+ARG ENVTEST_K8S_VERSION=1.37.0
+
+ENV GOBIN=/out/bin
+RUN mkdir -p /out/bin /out/kubebuilder/bin  && curl -fsSL -o /out/bin/kubebuilder       "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_linux_amd64"  && chmod 0755 /out/bin/kubebuilder  && curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"       | tar -xz -C /out/bin kustomize  && go install "sigs.k8s.io/controller-tools/cmd/controller-gen@v${CONTROLLER_TOOLS_VERSION}"  && go install "sigs.k8s.io/controller-runtime/tools/setup-envtest@v${SETUP_ENVTEST_VERSION}"  && cp -a "$(/out/bin/setup-envtest use "${ENVTEST_K8S_VERSION}" --bin-dir /tmp/envtest -p path)/." /out/kubebuilder/bin/  && chmod -R a+rX,u+w /out  && /out/bin/kubebuilder version && /out/bin/controller-gen --version  && /out/bin/kustomize version && ls /out/kubebuilder/bin
 
 FROM golang:1.26-bookworm
 
@@ -30,6 +48,11 @@ RUN curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${G
 
 COPY --from=uv /uv /uvx /usr/local/bin/
 RUN uv --version
+
+COPY --from=operator-tools /out/bin/ /usr/local/bin/
+COPY --from=operator-tools /out/kubebuilder/ /usr/local/kubebuilder/
+RUN kubebuilder version && controller-gen --version && kustomize version \
+ && ls /usr/local/kubebuilder/bin
 
 ENV GOTOOLCHAIN=local \
     GOFLAGS=-modcacherw \

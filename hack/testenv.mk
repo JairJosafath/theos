@@ -192,7 +192,7 @@ RUNNER_BASE_IMG ?= c4factory/gitea-runner-base:dev
 AGENT_BASE_IMG ?= c4factory/agent-base:dev
 
 .PHONY: toolchain-go
-toolchain-go: ## Build the Go, Node and uv toolchain (Go and Python Containers, VS Code extensions), with a warm Go build cache.
+toolchain-go: ## Build the Go, Node and uv toolchain (Go and Python Containers, VS Code extensions, kubebuilder operators), with a warm Go build cache.
 	$(CONTAINER_TOOL) build -t $(GO_TOOLCHAIN_IMG) hack/toolchain-go
 
 .PHONY: runner-go
