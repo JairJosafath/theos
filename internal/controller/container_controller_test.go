@@ -67,6 +67,11 @@ var _ = Describe("Container", func() {
 			To(MatchError(ContainSubstring("softwareSystemRef is immutable")))
 	})
 
+	It("accepts the operator type", func() {
+		ns := newProjectNamespace()
+		mustCreate(newContainer(ns, "backup-operator", "webshop-core", c4v1alpha1.ContainerTypeOperator))
+	})
+
 	It("rejects a type outside the fixed list", func() {
 		ns := newProjectNamespace()
 		container := newContainer(ns, "orders-api", "webshop-core", "lambda")

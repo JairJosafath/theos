@@ -83,6 +83,7 @@ const CONTAINER_TYPES: Record<ContainerType, string> = {
   'mobile-app': 'mobile app',
   cli: 'command-line tool',
   extension: 'editor extension',
+  operator: 'Kubernetes operator',
 }
 
 /** The Container type in words, such as "static site". */

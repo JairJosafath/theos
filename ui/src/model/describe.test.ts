@@ -73,6 +73,7 @@ describe('small helpers', () => {
     expect(describeContainerType('static-site')).toBe('static site')
     expect(describeContainerType('cli')).toBe('command-line tool')
     expect(describeContainerType('extension')).toBe('editor extension')
+    expect(describeContainerType('operator')).toBe('Kubernetes operator')
     expect(describeContainerType('plugin')).toBe('plugin')
     expect(describeContainerType(undefined)).toBe('unknown type')
   })
