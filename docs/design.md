@@ -253,7 +253,8 @@ without kubectl, and cheaply: it lives on a laptop.
 - **A Task keeps its timeline.** `status.history` gets an entry whenever the
   phase, round or Progressing reason changes (the newest 64), so where a Task's
   time went stays readable after it ends. A Task waiting for an agent slot says
-  `WaitingForSlot`.
+  `WaitingForSlot`. An agent sandbox holds a slot until its pod ends; one kept
+  after its run, a reviewer's while its Task waits for CI, holds none.
 - **A Task says what its runs cost.** Each agent run reports its cost as the
   agent says it (for Claude Code, `total_cost_usd` in its stream-json result
   line); the Task adds them up in `status.costMilliUSD`. A run whose agent
