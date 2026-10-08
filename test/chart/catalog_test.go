@@ -48,33 +48,9 @@ const (
 // chart doesn't. A GitProvider an older chart made as a Helm hook is taken
 // over, not re-created.
 func TestSeedAppliesTheCatalogInPlace(t *testing.T) {
-	helm := os.Getenv("HELM")
-	if helm == "" {
-		helm = filepath.Join("..", "..", "bin", "helm")
-	}
-	if _, err := os.Stat(helm); err != nil {
-		t.Skipf("no helm at %s (make install-helm, or run make test): %v", helm, err)
-	}
-	assets := os.Getenv("KUBEBUILDER_ASSETS")
-	if assets == "" {
-		assets = envtestBinaryDir()
-	}
-	if _, err := os.Stat(filepath.Join(assets, "kubectl")); err != nil {
-		t.Skipf("no kubectl among envtest's binaries in %q (run make test): %v", assets, err)
-	}
-
-	env := &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: true,
-		BinaryAssetsDirectory: assets,
-	}
-	cfg, err := env.Start()
-	if err != nil {
-		t.Fatalf("start envtest: %v", err)
-	}
-	t.Cleanup(func() { _ = env.Stop() })
-	cs := kubernetes.NewForConfigOrDie(cfg)
-	dyn := dynamic.NewForConfigOrDie(cfg)
+	helm, env, assets := startEnv(t)
+	cs := kubernetes.NewForConfigOrDie(env.Config)
+	dyn := dynamic.NewForConfigOrDie(env.Config)
 	ctx := t.Context()
 
 	for _, ns := range []string{giteaNS, project} {
@@ -85,53 +61,17 @@ func TestSeedAppliesTheCatalogInPlace(t *testing.T) {
 	}
 
 	first := renderCatalog(ctx, t, helm, "first")
-	createSeedRBAC(ctx, t, cs, first.rbac)
+	createRBAC(ctx, t, cs, first.rbac)
 
 	// What the chart up to v0.12 made: a hook, created by helm.
 	gitea := gvr("gitproviders")
-	hook := &unstructured.Unstructured{}
-	hook.SetAPIVersion("c4.factory.io/v1alpha1")
-	hook.SetKind("GitProvider")
-	hook.SetName("gitea")
-	hook.SetNamespace(project)
-	hook.SetAnnotations(map[string]string{"helm.sh/hook": "post-install,post-upgrade"})
-	_ = unstructured.SetNestedMap(hook.Object, map[string]any{
-		"provider": "gitea", "url": "http://old.example:3000", "owner": project,
-		"credentialsSecretRef": map[string]any{"name": "gitea-credentials"},
-	}, "spec")
+	hook := hookGitProvider("gitea", "http://old.example:3000", "gitea-credentials")
 	old, err := dyn.Resource(gitea).Namespace(project).Create(ctx, hook, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	seed, err := env.AddUser(envtest.User{
-		Name:   "system:serviceaccount:" + giteaNS + ":seed",
-		Groups: []string{"system:serviceaccounts", "system:serviceaccounts:" + giteaNS, "system:authenticated"},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	kubeconfig, err := seed.KubeConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig")
-	if err := os.WriteFile(kubeconfigPath, kubeconfig, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	apply := func(t *testing.T, objects string) {
-		t.Helper()
-		file := filepath.Join(t.TempDir(), "objects.yaml")
-		if err := os.WriteFile(file, []byte(objects), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		cmd := exec.CommandContext(ctx, filepath.Join("..", "..", "hack", "seed", "catalog.sh"), file)
-		cmd.Env = append(os.Environ(), "KUBECONFIG="+kubeconfigPath,
-			"PATH="+assets+string(os.PathListSeparator)+os.Getenv("PATH"))
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("catalog.sh as the seed: %v\n%s", err, out)
-		}
-	}
+	apply := applier(ctx, t, env, assets, giteaNS, "seed")
 
 	apply(t, first.objects)
 	uids := map[string]types.UID{}
@@ -191,9 +131,23 @@ type rendered struct {
 // renderCatalog renders the chart with the Agents on image tag tag.
 func renderCatalog(ctx context.Context, t *testing.T, helm, tag string) rendered {
 	t.Helper()
-	args := []string{"template", release, chartDir, "--namespace", releaseNS,
-		"--show-only", catalogSource, "--show-only", seedSource,
-		"--set", "gitea.projects={" + project + "}", "--set", "agents.image.tag=" + tag}
+	return render(ctx, t, helm, catalogConfigMap, []string{catalogSource, seedSource},
+		"gitea.projects={"+project+"}", "agents.image.tag="+tag)
+}
+
+// render renders the chart's templates sources with the values sets, and
+// returns ConfigMap configMap's objects and the Role and RoleBinding in the
+// project namespace.
+func render(ctx context.Context, t *testing.T, helm, configMap string, sources []string, sets ...string) rendered {
+	t.Helper()
+	args := make([]string, 0, 5+2*len(sources)+2*len(sets))
+	args = append(args, "template", release, chartDir, "--namespace", releaseNS)
+	for _, s := range sources {
+		args = append(args, "--show-only", s)
+	}
+	for _, s := range sets {
+		args = append(args, "--set", s)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, helm, args...)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -219,7 +173,7 @@ func renderCatalog(ctx context.Context, t *testing.T, helm, tag string) rendered
 		}
 		switch o := obj.(type) {
 		case *corev1.ConfigMap:
-			if o.Name == catalogConfigMap {
+			if o.Name == configMap {
 				r.objects = o.Data["objects.yaml"]
 			}
 		case *rbacv1.Role:
@@ -233,12 +187,94 @@ func renderCatalog(ctx context.Context, t *testing.T, helm, tag string) rendered
 		}
 	}
 	if r.objects == "" || len(r.rbac) != 2 {
-		t.Fatalf("the render has no ConfigMap %s or no seed Role and RoleBinding in %s", catalogConfigMap, project)
+		t.Fatalf("the render has no ConfigMap %s or not one Role and RoleBinding in %s", configMap, project)
 	}
 	return r
 }
 
-func createSeedRBAC(ctx context.Context, t *testing.T, cs kubernetes.Interface, objs []any) {
+// startEnv finds helm and envtest's binaries, skipping the test without them,
+// and starts envtest's API server with the CRDs.
+func startEnv(t *testing.T) (helm string, env *envtest.Environment, assets string) {
+	t.Helper()
+	helm = os.Getenv("HELM")
+	if helm == "" {
+		helm = filepath.Join("..", "..", "bin", "helm")
+	}
+	if _, err := os.Stat(helm); err != nil {
+		t.Skipf("no helm at %s (make install-helm, or run make test): %v", helm, err)
+	}
+	assets = os.Getenv("KUBEBUILDER_ASSETS")
+	if assets == "" {
+		assets = envtestBinaryDir()
+	}
+	if _, err := os.Stat(filepath.Join(assets, "kubectl")); err != nil {
+		t.Skipf("no kubectl among envtest's binaries in %q (run make test): %v", assets, err)
+	}
+	env = &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+		BinaryAssetsDirectory: assets,
+	}
+	if _, err := env.Start(); err != nil {
+		t.Fatalf("start envtest: %v", err)
+	}
+	t.Cleanup(func() { _ = env.Stop() })
+	return helm, env, assets
+}
+
+// applier returns a func that applies objects with hack/seed/catalog.sh as
+// ServiceAccount namespace/name, so only the RBAC the chart renders lets it.
+func applier(
+	ctx context.Context, t *testing.T, env *envtest.Environment, assets, namespace, name string,
+) func(t *testing.T, objects string) {
+	t.Helper()
+	user, err := env.AddUser(envtest.User{
+		Name:   "system:serviceaccount:" + namespace + ":" + name,
+		Groups: []string{"system:serviceaccounts", "system:serviceaccounts:" + namespace, "system:authenticated"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kubeconfig, err := user.KubeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig")
+	if err := os.WriteFile(kubeconfigPath, kubeconfig, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return func(t *testing.T, objects string) {
+		t.Helper()
+		file := filepath.Join(t.TempDir(), "objects.yaml")
+		if err := os.WriteFile(file, []byte(objects), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.CommandContext(ctx, filepath.Join("..", "..", "hack", "seed", "catalog.sh"), file)
+		cmd.Env = append(os.Environ(), "KUBECONFIG="+kubeconfigPath,
+			"PATH="+assets+string(os.PathListSeparator)+os.Getenv("PATH"))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("catalog.sh as %s/%s: %v\n%s", namespace, name, err, out)
+		}
+	}
+}
+
+// hookGitProvider is a GitProvider in the project namespace as the chart up
+// to v0.12 made it: a Helm hook, created by helm.
+func hookGitProvider(name, url, secret string) *unstructured.Unstructured {
+	hook := &unstructured.Unstructured{}
+	hook.SetAPIVersion("c4.factory.io/v1alpha1")
+	hook.SetKind("GitProvider")
+	hook.SetName(name)
+	hook.SetNamespace(project)
+	hook.SetAnnotations(map[string]string{"helm.sh/hook": "post-install,post-upgrade"})
+	_ = unstructured.SetNestedMap(hook.Object, map[string]any{
+		"provider": "gitea", "url": url, "owner": project,
+		"credentialsSecretRef": map[string]any{"name": secret},
+	}, "spec")
+	return hook
+}
+
+func createRBAC(ctx context.Context, t *testing.T, cs kubernetes.Interface, objs []any) {
 	t.Helper()
 	for _, o := range objs {
 		var err error
@@ -274,7 +310,7 @@ func decodeObjects(t *testing.T, objects string) []*unstructured.Unstructured {
 			continue
 		}
 		if a := u.GetAnnotations(); a["helm.sh/hook"] != "" {
-			t.Errorf("%s in ConfigMap %s is a Helm hook", key(u), catalogConfigMap)
+			t.Errorf("%s in the ConfigMap is a Helm hook", key(u))
 		}
 		out = append(out, u)
 	}

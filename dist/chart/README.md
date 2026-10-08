@@ -221,9 +221,13 @@ kubectl -n webshop create secret generic git-credentials \
 values file and in every revision of Helm's release record); a values file
 that still sets them fails to render and says what to do.
 
-The CRDs are part of the release, so these are `post-install` and
-`post-upgrade` hooks, created once the CRDs exist. Every `helm upgrade` deletes
-and recreates them, so a Container scaffolding at that moment may wait a
-reconcile for its GitProvider; `helm uninstall` leaves them in place. The
-GitProviders `gitea.projects` makes are not hooks: the seed applies them in
-place, as above.
+The CRDs are part of the release, so the GitProviders are not release objects:
+the chart renders them into ConfigMap `c4factory-gitproviders`, and Job
+`c4-factory-gitproviders`, a `post-install` and `post-upgrade` hook on the seed
+image (`gitea.seed.image`), applies them in place with server-side apply, under
+a Role in each `gitProviders[].namespace` that grants only GitProviders. An
+upgrade changes them in place, keeping their UIDs and any field the chart
+doesn't set, so a Git step in flight never misses its GitProvider; the first
+upgrade from an older chart takes over the hooks it made. `helm uninstall`
+leaves them in place, as it does one the chart stops rendering. The
+GitProviders `gitea.projects` makes are applied the same way, by the seed.
