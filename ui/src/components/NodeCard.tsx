@@ -2,7 +2,7 @@
 // cylinder, everything else as a card, following the usual C4 shapes and colours.
 
 import type { KeyboardEvent, MouseEvent } from 'react'
-import { plural, splitTemplateRef } from '../model/describe'
+import { KIND_LABEL, plural, splitTemplateRef } from '../model/describe'
 import type { Rect } from '../model/layout'
 import { MAX_LIST_ITEMS } from '../model/sizes'
 import type { ContainerNode, DataStoreNode, DiagramNode, PersonNode, SystemNode } from '../model/story'
@@ -19,14 +19,6 @@ export interface NodeCardProps {
   onHover: (id: string | undefined) => void
   /** Opens the container view of a system ("Look inside"). */
   onOpenSystem?: (name: string) => void
-}
-
-const KIND_LABEL: Record<DiagramNode['role'], string> = {
-  person: 'Person',
-  system: 'Software system',
-  'external-system': 'Software system',
-  container: 'Container',
-  datastore: 'Data store',
 }
 
 export function NodeCard({ node, rect, selected, dimmed, onSelect, onHover, onOpenSystem }: NodeCardProps) {

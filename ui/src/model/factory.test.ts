@@ -702,6 +702,13 @@ describe('formatDuration', () => {
     [120 * 60_000, '2 h'],
     [76 * 60 * 60_000, '3 d 4 h'],
   ])('formats %d ms as %s', (ms, want) => expect(formatDuration(ms)).toBe(want))
+
+  it.each([
+    [2, '2 ms'],
+    [999, '999 ms'],
+    [1500, '1.5 s'],
+    [90_000, '1 min'],
+  ])('formats a fine %d ms as %s', (ms, want) => expect(formatDuration(ms, { fine: true })).toBe(want))
 })
 
 describe('timelineSteps', () => {

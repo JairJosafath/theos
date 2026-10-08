@@ -1086,7 +1086,7 @@ function HistoryCharts({ health, now }: { health: FactoryHealth; now: number }) 
       <h3 className="section-title">Last hour</h3>
       <Sparkline
         title="API server response"
-        summary={`now ${formatMs(latest.apiMs)} · worst ${formatMs(worstApi)}`}
+        summary={`now ${formatDuration(latest.apiMs, { fine: true })} · worst ${formatDuration(worstApi, { fine: true })}`}
         max={Math.max(1000, worstApi)}
         now={now}
         series={[{ label: 'API', className: 'spark-api', values: points.map((p) => ({ t: p.t, v: p.apiMs })) }]}
@@ -1122,8 +1122,4 @@ function HistoryCharts({ health, now }: { health: FactoryHealth; now: number }) 
       ) : null}
     </div>
   )
-}
-
-function formatMs(ms: number): string {
-  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`
 }

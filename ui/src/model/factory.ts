@@ -587,8 +587,13 @@ export function attention(input: {
   return items.sort((a, b) => (a.level === b.level ? 0 : a.level === 'error' ? -1 : 1))
 }
 
-/** "45 s", "3 min", "2 h 5 min", "3 d 4 h". */
-export function formatDuration(ms: number): string {
+/**
+ * "45 s", "3 min", "2 h 5 min", "3 d 4 h". `fine` is for short measured times
+ * such as the API's response: "12 ms" under a second, "1.5 s" under a minute.
+ */
+export function formatDuration(ms: number, { fine = false } = {}): string {
+  if (fine && ms < 1000) return `${Math.round(ms)} ms`
+  if (fine && ms < 60_000) return `${(ms / 1000).toFixed(1)} s`
   const s = Math.max(0, Math.round(ms / 1000))
   if (s < 60) return `${s} s`
   const m = Math.floor(s / 60)

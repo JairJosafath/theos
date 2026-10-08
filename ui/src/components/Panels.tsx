@@ -3,19 +3,11 @@
 
 import type { StoryData } from '../k8s/sources'
 import type { Condition, ContainerPhase } from '../k8s/types'
-import { describeContainerPhase, plural, splitTemplateRef } from '../model/describe'
+import { describeContainerPhase, KIND_LABEL, plural, splitTemplateRef } from '../model/describe'
 import { crewDoing, issueList, type ActiveCrewTask, type CrewSummary } from '../model/factory'
 import { linksOf, type ContainerNode, type DiagramNode, type Link } from '../model/story'
 import { AgentName, ConditionList, CrewPhaseBadge, PhaseBadge, SessionRow } from './bits'
 import { AgentIcon, ArrowRightIcon, CrossIcon, ExternalLinkIcon, HumanIcon, WarningIcon } from './icons'
-
-const KIND_LABEL: Record<DiagramNode['role'], string> = {
-  person: 'Person',
-  system: 'Software system',
-  'external-system': 'Software system (outside this one)',
-  container: 'Container',
-  datastore: 'Data store',
-}
 
 export function DetailsPanel({
   node,

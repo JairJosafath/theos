@@ -2,10 +2,20 @@
 // Nothing here assumes the reader knows Kubernetes.
 
 import type { Condition, ContainerPhase, ContainerType, CrewPhase, SessionPhase } from '../k8s/types'
+import type { DiagramNode } from './story'
 
 /** displayName first; fall back to the stable metadata.name. */
 export function titleOf(obj: { metadata: { name: string }; spec?: { displayName?: string } }): string {
   return obj.spec?.displayName?.trim() || obj.metadata.name
+}
+
+/** What a node of a diagram is, in words. */
+export const KIND_LABEL: Record<DiagramNode['role'], string> = {
+  person: 'Person',
+  system: 'Software system',
+  'external-system': 'Software system (outside this one)',
+  container: 'Container',
+  datastore: 'Data store',
 }
 
 export type Tone = 'ok' | 'progress' | 'waiting' | 'error' | 'unknown'
