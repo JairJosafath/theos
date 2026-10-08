@@ -539,9 +539,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 
 - **A Brief is one more writer of the model.** `spec.idea` is the idea,
   immutable; `spec.prompts` takes follow-ups and only grows. Anything can
-  write it: the UI's box, kubectl or GitOps. The UI server writes nothing but
-  this: creating a Brief, appending a prompt, and setting `spec.paused` from
-  the card's Pause and Resume buttons.
+  write it: the UI's box, kubectl or GitOps. With actions off, the UI server
+  writes nothing but this: creating a Brief, appending a prompt, and setting
+  `spec.paused` from the card's Pause and Resume buttons. With them on, it
+  takes the actions under *UI actions* below.
 - **A planner Agent plans each round** (the idea, then each batch of new
   prompts) as a Task with `spec.kind: Plan` owned by the Brief, in an agent
   sandbox like any Task. It works in the Brief's own repository, where the
@@ -728,6 +729,77 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   project, or in its own for this one, and names the namespace label when
   its namespace hasn't opted in.
 
+## UI actions: as the person signed in
+
+Decided on 9 October 2026 for GitHub issue #706; the plan, with every decision
+and why, is [plans/ui-actions.md](plans/ui-actions.md).
+
+Most of what a person does to steer the factory is a field on a resource, so
+the UI can take it, made by the API server like any other write: the CRD
+schemas, CEL rules and the admission policy decide, and the UI shows the API
+server's message when it refuses one. The UI still enforces nothing.
+
+- **Actions are off by default** (`ui.actions.enabled: false`). Off, the UI
+  server writes only the three Brief writes above.
+- **Who acts depends on how the page is reached.** Over `kubectl
+  port-forward` (`ui.allowedHosts` empty), writes are made as the UI's
+  ServiceAccount, with no sign-in: whoever reaches the page can already reach
+  the cluster. Behind an Ingress, a person signs in with OIDC (authorization
+  code with PKCE) and every write is made as them, with `Impersonate-User`
+  and `Impersonate-Group`, so the cluster's RBAC decides. The chart refuses
+  `ui.actions.enabled` with `ui.allowedHosts` unless `ui.auth.oidc` is set; a
+  trusted proxy header is never enough, since anything else that reaches the
+  pod can send it. Reads stay the UI's ServiceAccount's, as today.
+- **Impersonation, not the person's token,** so it works on any cluster,
+  Kind included, without configuring the API server for OIDC. The UI server
+  checks the ID token (issuer, audience, expiry, signature against the
+  issuer's keys) and impersonates the user `ui.auth.oidc.usernamePrefix` +
+  the configured claim (`oidc:` + `email` by default) and the token's groups
+  with `ui.auth.oidc.groupsPrefix`, never a name the browser sends, so no
+  signed-in person can become a cluster user or `system:` group. The
+  ServiceAccount gets `impersonate` on users and groups only when
+  `ui.auth.oidc` is set. The OIDC client secret is a Secret the person makes
+  and the chart names (`ui.auth.oidc.existingSecret`); the browser never sees
+  it, nor the tokens: the session is an opaque, `HttpOnly`, `Secure`,
+  `SameSite=Lax` cookie keyed to server memory, so a restart of the UI signs
+  everyone out.
+- **The writes, each one allowlisted request** in `ui/server.mjs`, refused
+  there for any other path, method, content type or field, and by RBAC for
+  any other resource or verb:
+
+  | Kind | Request | Fields |
+  | --- | --- | --- |
+  | Brief | `POST` | a new Brief (as today) |
+  | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.autopilot`, `spec.parallel`, `spec.releases` |
+  | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` |
+  | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
+  | Container | `PATCH`, merge patch | annotation `c4.factory.io/retry` |
+  | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
+  | Standard | `PATCH`, JSON patch | `spec.template.ref` |
+
+  A *Needs you* item's one-click answer (take or skip a suggestion; retry,
+  close or wait on a failed issue) is a prompt appended to the Brief, worded
+  from the item, since a person answers those in a prompt. The UI's
+  ClusterRole `<ui>-actions` grants exactly `create` and `patch` on these
+  kinds; over port-forward it is bound to the ServiceAccount, and behind an
+  Ingress the chart binds it to `ui.auth.oidc.actionGroups`, when set, for a
+  cluster admin to grant the signed-in people.
+- **A Crew re-runs its failed release run on request.** Setting or changing
+  `c4.factory.io/rerun-release` on a Crew whose `status.lastRelease.run` is
+  `Failed` re-runs that release's failed workflow runs on the Git host, once
+  per value, and the Crew watches them as before. A value set while the run
+  hasn't failed does nothing, with a Normal Event saying so.
+- **Retrying a Container's scaffold warns first.** The UI says the
+  repository must be empty and links to it before it sets
+  `c4.factory.io/retry`.
+- **Bumping a Standard's `ref` asks first.** The dialog names how many
+  Containers on that Standard will get an update pull request.
+- **Out:** deletes (they cascade and can't be undone), Secrets and
+  credentials (the browser never sees them), anything in the Git host
+  (merges, reviews, labels: the UI links there), and editing the model
+  itself (Systems, Containers, DataStores, Relationships), which would be a
+  model editor of its own.
+
 ## Distribution and issues
 
 This repository develops the factory and holds no product. The factory ships
@@ -747,7 +819,7 @@ release installs the whole factory:
 | Part | Where | Notes |
 | --- | --- | --- |
 | Operator, CRDs, RBAC, admission policy | release namespace | always |
-| UI | release namespace | `ui.enabled`, on by default |
+| UI | release namespace | `ui.enabled`, on by default; its actions off until `ui.actions.enabled`, and behind an Ingress only with `ui.auth.oidc` (*UI actions*) |
 | Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password and the runners' registration token generated in the cluster by Gitea's pod into Secrets `gitea-admin` and `gitea-runner` when missing, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
 | Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret, a GitProvider and, when the namespace has none, a Project for each project in `gitea.projects`; labels a project namespace the chart didn't make so it receives the shared Secrets; applies the catalog, the Agents and the GitProviders the chart renders into ConfigMap `c4factory-catalog` with server-side apply, so an upgrade updates them in place, keeping their UIDs and the fields the chart doesn't set |
 | Project namespaces | each of `gitea.projects` | `projectNamespaces.create`, on by default; made when missing, labeled `c4.factory.io/shared-secrets: "true"` and kept on uninstall; a namespace that already exists is left to the person |
