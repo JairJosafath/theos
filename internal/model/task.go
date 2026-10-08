@@ -773,8 +773,40 @@ func SandboxName(task string, round int, role string, attempt, rerun int) string
 	return task + suffix
 }
 
-// TaskBranch is the branch a Task's agent works on.
+// TaskBranch is the branch a Task's agent works on, unless it continues an
+// earlier try's pull request (EarlierTry).
 func TaskBranch(task string) string { return "task/" + task }
+
+// Try is a Task on an issue, as a later try on the same issue sees it.
+type Try struct {
+	Name  string
+	Issue int
+	// Created orders tries; ties go by name.
+	Created int64
+	// Failed means the Task ended Failed.
+	Failed bool
+	// PullRequest is the pull request the Task opened; 0 when none.
+	PullRequest int
+}
+
+// EarlierTry returns the try whose pull request a new Task on issue continues:
+// the newest other Failed Task on the issue, created before it, that opened a
+// pull request. Whether that pull request is still open is for the Git host to
+// say. ok is false when there is none.
+func EarlierTry(task string, created int64, issue int, tries []Try) (Try, bool) {
+	var best Try
+	found := false
+	for _, t := range tries {
+		before := t.Created < created || t.Created == created && t.Name < task
+		if t.Name == task || t.Issue != issue || issue == 0 || !t.Failed || t.PullRequest == 0 || !before {
+			continue
+		}
+		if !found || t.Created > best.Created || t.Created == best.Created && t.Name > best.Name {
+			best, found = t, true
+		}
+	}
+	return best, found
+}
 
 func short(sha string) string {
 	if len(sha) > 7 {

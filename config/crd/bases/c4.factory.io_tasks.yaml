@@ -320,6 +320,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              continues:
+                description: |-
+                  continues names the earlier try, a Failed Task on the same issue, whose
+                  open pull request this Task took over: its branch, pull request and
+                  feedback became this Task's when its first run started.
+                type: string
               costMilliUSD:
                 description: |-
                   costMilliUSD is what the Task's agent runs cost so far, over all rounds,

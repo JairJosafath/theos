@@ -62,6 +62,12 @@ func ImplementPrompt(job Job, ws Workspace) string {
 		fmt.Fprintf(&b, "\nThis is round %d. The previous round was not accepted. Address all of this feedback:\n%s\n",
 			job.Round, job.Feedback)
 	}
+	if job.PullRequest > 0 {
+		fmt.Fprintf(&b, "\nYour branch already has pull request #%d, from an earlier round or an earlier try "+
+			"on this issue: the reviewer reads its description with the code. Build on what the branch has. "+
+			"When what is left is only the pull request, such as its description, change it on the Git host "+
+			"and commit nothing: the reviewer then reviews the branch as it is.\n", job.PullRequest)
+	}
 	if len(ws.Conflicts) > 0 {
 		fmt.Fprintf(&b, "\nOther changes merged into %s since your last round, and merging them into your branch "+
 			"left conflicts in %s. Resolve them first, keeping what both sides need, then finish the merge "+
