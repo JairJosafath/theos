@@ -46,6 +46,11 @@ spec:
         - name: UI_ALLOWED_HOSTS
           value: {{ join "," . | quote }}
         {{- end }}
+        {{- with include "c4-factory.uiActions" . }}
+        # Who makes the action table's writes: service-account or oidc.
+        - name: UI_ACTIONS
+          value: {{ . | quote }}
+        {{- end }}
         ports:
         - name: http
           containerPort: 8080

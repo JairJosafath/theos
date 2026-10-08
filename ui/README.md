@@ -103,6 +103,40 @@ application/json-patch+json`: a patch whose one operation is `add` at
    below. A separate ClusterRole, `c4-factory-ui-brief-writer`, grants only
    `create` and `patch` on `briefs`. No Secrets, no other writes.
 
+### Actions: `ui.actions.enabled`
+
+With the chart's `ui.actions.enabled` (off by default; design.md, _UI
+actions_), the server's action table (`ACTIONS` in [server.mjs](server.mjs))
+takes more writes, each one method, path, content type and body shape:
+
+| Kind      | Request              | Fields                                                                                                                               |
+| --------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Brief     | `POST`, JSON         | a new Brief, as above                                                                                                                |
+| Brief     | `PATCH`, JSON patch  | `add` at `/spec/prompts/-` alone, as above; or `add` of any of `/spec/paused`, `/spec/autopilot`, `/spec/parallel`, `/spec/releases` |
+| Crew      | `PATCH`, JSON patch  | `add` of any of `/spec/paused`, `/spec/parallel`, `/spec/tagReleases`, `/spec/prepareReleases`, `/spec/publishReleases`              |
+| Crew      | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` alone                                                                                       |
+| Container | `PATCH`, merge patch | annotation `c4.factory.io/retry` alone                                                                                               |
+| Task      | `POST`, JSON         | `spec.kind: Implement` with `containerRef`, `agentRef`, `reviewerRef`, `goal`; only its name and spec go upstream                    |
+| Standard  | `PATCH`, JSON patch  | `add` at `/spec/template/ref`                                                                                                        |
+
+The server checks each body's shape and the JSON type of each value, not the
+values: limits and enums are the CRD's, and the API server's refusal comes
+back as-is. The chart sets `UI_ACTIONS` from the values:
+
+- over port-forward (`ui.allowedHosts` empty), `service-account`: the UI's
+  ServiceAccount makes the writes, bound to ClusterRole
+  `c4-factory-ui-actions` (`create` on briefs and tasks, `patch` on briefs,
+  crews, containers and standards) in place of the brief writer;
+- with `ui.auth.oidc`, `oidc`: each write is made as the person signed in, and
+  the ServiceAccount has no write binding. Until sign-in lands, every write
+  answers 401;
+- with `ui.allowedHosts` and no `ui.auth.oidc`, the chart refuses to render.
+
+`GET /ui/session` tells the page whether actions are on, the mode (`off`,
+`service-account` or `oidc`), who is signed in and the writes the table takes;
+never a token. `UI_ACTIONS` unset is off, as with `npm run dev`; set it to
+`service-account` to try the actions against a `kubectl proxy`.
+
 ### The factory's health
 
 `GET /factory/health` is answered by [health.mjs](health.mjs), not proxied: the
@@ -141,7 +175,7 @@ a single watch.
 ## Code
 
 ```
-server.mjs              static files + gateway to the Kubernetes API (/k8s, /k8s-watch): GETs and the two Brief writes
+server.mjs              static files + gateway to the Kubernetes API (/k8s, /k8s-watch): GETs and the action table's writes
 health.mjs              the factory's health summary and last hour (/factory/health)
 src/k8s/types.ts        the CRD shapes, mirroring api/v1alpha1
 src/k8s/watch.ts        list-then-watch: NDJSON events, reconnect with backoff, relist on 410

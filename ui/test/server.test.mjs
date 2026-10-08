@@ -9,7 +9,7 @@ import http from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
-import { allowedHostsFromEnv, createServer, resolveUpstream } from '../server.mjs'
+import { actionsFromEnv, allowedHostsFromEnv, createServer, resolveUpstream } from '../server.mjs'
 
 /** Starts a server on a free port and returns its base URL. */
 function listen(server) {
@@ -47,6 +47,7 @@ describe('server.mjs', () => {
   /** Watch responses still open, so the test can write to them. */
   const watches = []
   let upstream
+  let upstreamUrl
   let server
   let base
   let dist
@@ -60,6 +61,9 @@ describe('server.mjs', () => {
       const json = (status, value) => {
         res.writeHead(status, { 'content-type': 'application/json' })
         res.end(JSON.stringify(value))
+      }
+      if ((req.method === 'POST' || req.method === 'PATCH') && url.pathname.endsWith('/denied')) {
+        return json(422, { kind: 'Status', code: 422, reason: 'Invalid', message: 'spec.parallel: must be at least 1' })
       }
       if (req.method === 'POST' || req.method === 'PATCH') {
         return json(req.method === 'POST' ? 201 : 200, { kind: 'Brief', metadata: { name: 'echo' } })
@@ -92,7 +96,7 @@ describe('server.mjs', () => {
       res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'upstream=1', 'www-authenticate': 'x' })
       res.end(JSON.stringify({ kind: 'ContainerList', metadata: { resourceVersion: '1' }, items: [] }))
     })
-    const upstreamUrl = await listen(upstream)
+    upstreamUrl = await listen(upstream)
 
     dist = await mkdtemp(path.join(tmpdir(), 'c4ui-dist-'))
     await mkdir(path.join(dist, 'assets'))
@@ -395,6 +399,408 @@ describe('server.mjs', () => {
         )
       })
     }
+  })
+
+  it('says on /ui/session that actions are off, and lists the three writes', async () => {
+    const res = await fetch(`${base}/ui/session`)
+    assert.equal(res.status, 200)
+    const answer = await res.json()
+    assert.equal(answer.actions, false)
+    assert.equal(answer.mode, 'off')
+    assert.equal(answer.user, null)
+    assert.equal(answer.writes.length, 3)
+    assert.equal((await fetch(`${base}/ui/session`, { method: 'POST' })).status, 405)
+  })
+
+  describe('the action table, over port-forward (UI_ACTIONS=service-account)', () => {
+    let actionServer
+    let actionBase
+    const api = '/apis/c4.factory.io/v1alpha1/namespaces/webshop'
+    const write = (method, p, body, type, headers = {}) =>
+      fetch(`${actionBase}/k8s${api}${p}`, {
+        method,
+        headers: { 'content-type': type, authorization: `Bearer ${browserToken}`, ...headers },
+        body: typeof body === 'string' ? body : JSON.stringify(body),
+      })
+    const JP = 'application/json-patch+json'
+    const MP = 'application/merge-patch+json'
+    const add = (p, value) => ({ op: 'add', path: p, value })
+    const task = {
+      apiVersion: 'c4.factory.io/v1alpha1',
+      kind: 'Task',
+      metadata: { generateName: 'orders-api-', labels: { x: 'y' } },
+      spec: {
+        kind: 'Implement',
+        containerRef: { name: 'orders-api' },
+        agentRef: { name: 'claude' },
+        reviewerRef: { name: 'reviewer' },
+        goal: 'Add pagination',
+      },
+    }
+
+    before(async () => {
+      actionServer = createServer({
+        distDir: dist,
+        upstream: resolveUpstream({ K8S_API: upstreamUrl }),
+        log: () => {},
+        actions: 'service-account',
+      })
+      actionBase = await listen(actionServer)
+    })
+    after(() => close(actionServer))
+
+    it('says on /ui/session that actions are on, made as the ServiceAccount, with every write', async () => {
+      const answer = await (await fetch(`${actionBase}/ui/session`)).json()
+      assert.deepEqual([answer.actions, answer.mode, answer.user], [true, 'service-account', null])
+      assert.equal(answer.writes.length, 8)
+      assert.ok(!JSON.stringify(answer).includes(browserToken))
+    })
+
+    // [what, method, path, content type, body, what goes upstream (when not the body)]
+    const accepted = [
+      [
+        "a Brief's settings",
+        'PATCH',
+        '/briefs/lens',
+        JP,
+        [
+          add('/spec/paused', true),
+          add('/spec/autopilot', 'Suggest'),
+          add('/spec/parallel', 2),
+          add('/spec/releases', [{ name: 'v1' }]),
+        ],
+      ],
+      ['a Brief pause alone', 'PATCH', '/briefs/lens', JP, [add('/spec/paused', false)]],
+      [
+        "a Crew's settings",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [
+          add('/spec/paused', true),
+          add('/spec/parallel', 3),
+          add('/spec/tagReleases', true),
+          add('/spec/prepareReleases', false),
+          add('/spec/publishReleases', { registry: 'ghcr.io' }),
+        ],
+      ],
+      [
+        "a Crew's release re-run",
+        'PATCH',
+        '/crews/orders-api',
+        MP,
+        { metadata: { annotations: { 'c4.factory.io/rerun-release': '2026-10-09T01:00:00Z' } } },
+      ],
+      [
+        "a Container's scaffold retry",
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        { metadata: { annotations: { 'c4.factory.io/retry': '1' } } },
+      ],
+      [
+        'a Task from a goal, with only its name and spec',
+        'POST',
+        '/tasks',
+        'application/json',
+        task,
+        { ...task, metadata: { generateName: 'orders-api-', namespace: 'webshop' } },
+      ],
+      ["a Standard's ref", 'PATCH', '/standards/go-service', JP, [add('/spec/template/ref', 'v1.4.0')]],
+    ]
+    for (const [what, method, p, type, body, sent = body] of accepted) {
+      it(`takes ${what}, and sends exactly that as the UI`, async () => {
+        seen.length = 0
+        const res = await write(method, p, body, type)
+        assert.equal(res.status, method === 'POST' ? 201 : 200)
+        assert.deepEqual(
+          seen.map((r) => [r.method, r.url]),
+          [[method, `${api}${p}?fieldManager=c4-factory-ui`]],
+        )
+        assert.equal(seen[0].headers['content-type'], type)
+        assert.equal(seen[0].headers.authorization, undefined)
+        assert.deepEqual(seen[0].body, sent)
+      })
+    }
+
+    it('still creates a Brief and adds a prompt as with actions off', async () => {
+      seen.length = 0
+      const brief = {
+        apiVersion: 'c4.factory.io/v1alpha1',
+        kind: 'Brief',
+        metadata: { name: 'b' },
+        spec: { idea: 'x' },
+      }
+      assert.equal((await write('POST', '/briefs', brief, 'application/json')).status, 201)
+      assert.equal((await write('PATCH', '/briefs/lens', [add('/spec/prompts/-', 'More')], JP)).status, 200)
+      assert.deepEqual(
+        seen.map((r) => r.method),
+        ['GET', 'POST', 'GET', 'PATCH'],
+      )
+    })
+
+    it("passes the API server's refusal back as-is", async () => {
+      seen.length = 0
+      const res = await write('PATCH', '/crews/denied', [add('/spec/parallel', 0)], JP)
+      assert.equal(res.status, 422)
+      assert.deepEqual(await res.json(), {
+        kind: 'Status',
+        code: 422,
+        reason: 'Invalid',
+        message: 'spec.parallel: must be at least 1',
+      })
+      assert.deepEqual(
+        seen.map((r) => r.method),
+        ['PATCH'],
+      )
+    })
+
+    const crewAnn = (key, value = 'x') => ({ metadata: { annotations: { [key]: value } } })
+    // [what, method, path, content type, body, status]
+    const refused = [
+      // Other paths.
+      ['a patch of a Brief status', 'PATCH', '/briefs/lens/status', JP, [add('/spec/paused', true)], 405],
+      ['a patch of a Crew list', 'PATCH', '/crews', JP, [add('/spec/paused', true)], 405],
+      ['a patch of a Container list', 'PATCH', '/containers', MP, crewAnn('c4.factory.io/retry'), 405],
+      ['a patch of one Task', 'PATCH', '/tasks/t1', JP, [add('/spec/goal', 'x')], 405],
+      ['a patch of a System', 'PATCH', '/softwaresystems/shop', JP, [add('/spec/x', 1)], 405],
+      ['a patch of an Agent', 'PATCH', '/agents/claude', JP, [add('/spec/model', 'x')], 405],
+      ['a POST of a Crew', 'POST', '/crews', 'application/json', { kind: 'Crew' }, 405],
+      // Other methods on a path the table writes.
+      ['a POST to one Crew', 'POST', '/crews/orders-api', 'application/json', {}, 403],
+      ['a POST to one Container', 'POST', '/containers/orders-api', MP, crewAnn('c4.factory.io/retry'), 403],
+      ['a PATCH of the Task list', 'PATCH', '/tasks', JP, [add('/spec/goal', 'x')], 403],
+      ['a PUT of a Crew', 'PUT', '/crews/orders-api', 'application/json', {}, 405],
+      ['a DELETE of a Container', 'DELETE', '/containers/orders-api', 'application/json', {}, 405],
+      ['a DELETE of a Task', 'DELETE', '/tasks/t1', 'application/json', {}, 405],
+      // Other content types.
+      ['a merge patch of a Crew setting', 'PATCH', '/crews/orders-api', MP, { spec: { paused: true } }, 403],
+      [
+        'a JSON patch of a Container annotation',
+        'PATCH',
+        '/containers/orders-api',
+        JP,
+        [add('/metadata/annotations/x', 'y')],
+        415,
+      ],
+      ['a merge patch of a Standard', 'PATCH', '/standards/go-service', MP, { spec: { template: { ref: 'v2' } } }, 415],
+      ['a server-side apply of a Crew', 'PATCH', '/crews/orders-api', 'application/apply-patch+yaml', {}, 415],
+      ['a Task as a form', 'POST', '/tasks', 'application/x-www-form-urlencoded', 'goal=x', 415],
+      // Other fields.
+      ["a Brief's idea", 'PATCH', '/briefs/lens', JP, [add('/spec/idea', 'x')], 403],
+      ["a Brief's agents", 'PATCH', '/briefs/lens', JP, [add('/spec/agents', {})], 403],
+      [
+        'a Brief setting with a prompt',
+        'PATCH',
+        '/briefs/lens',
+        JP,
+        [add('/spec/paused', true), add('/spec/prompts/-', 'x')],
+        403,
+      ],
+      ["a Crew's implementer", 'PATCH', '/crews/orders-api', JP, [add('/spec/implementer', { name: 'x' })], 403],
+      ["a Crew's paused as a string", 'PATCH', '/crews/orders-api', JP, [add('/spec/paused', 'true')], 403],
+      ["a Crew's parallel as a fraction", 'PATCH', '/crews/orders-api', JP, [add('/spec/parallel', 1.5)], 403],
+      [
+        "a Crew's paused twice",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [add('/spec/paused', true), add('/spec/paused', false)],
+        403,
+      ],
+      ['an empty patch', 'PATCH', '/crews/orders-api', JP, [], 403],
+      ["a Standard's template url", 'PATCH', '/standards/go-service', JP, [add('/spec/template/url', 'x')], 403],
+      [
+        "a Standard's whole template",
+        'PATCH',
+        '/standards/go-service',
+        JP,
+        [add('/spec/template', { ref: 'v2' })],
+        403,
+      ],
+      ['another Crew annotation', 'PATCH', '/crews/orders-api', MP, crewAnn('c4.factory.io/paused-by'), 403],
+      ['the retry annotation on a Crew', 'PATCH', '/crews/orders-api', MP, crewAnn('c4.factory.io/retry'), 403],
+      [
+        'the re-run annotation on a Container',
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        crewAnn('c4.factory.io/rerun-release'),
+        403,
+      ],
+      ['a retry annotation removed', 'PATCH', '/containers/orders-api', MP, crewAnn('c4.factory.io/retry', null), 403],
+      [
+        'a retry with a label',
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        { metadata: { annotations: { 'c4.factory.io/retry': '1' }, labels: { a: 'b' } } },
+        403,
+      ],
+      [
+        'a retry with a spec change',
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        { ...crewAnn('c4.factory.io/retry'), spec: { x: 1 } },
+        403,
+      ],
+      ['a retry as null', 'PATCH', '/containers/orders-api', MP, 'null', 403],
+      [
+        'a Task of kind Plan',
+        'POST',
+        '/tasks',
+        'application/json',
+        { ...task, spec: { ...task.spec, kind: 'Plan' } },
+        403,
+      ],
+      [
+        'a Task without a kind',
+        'POST',
+        '/tasks',
+        'application/json',
+        { ...task, spec: { ...task.spec, kind: undefined } },
+        403,
+      ],
+      [
+        'a Task with a Brief',
+        'POST',
+        '/tasks',
+        'application/json',
+        { ...task, spec: { ...task.spec, briefRef: { name: 'b' } } },
+        403,
+      ],
+      [
+        'a Task with protected paths',
+        'POST',
+        '/tasks',
+        'application/json',
+        { ...task, spec: { ...task.spec, allowedProtectedPaths: ['x'] } },
+        403,
+      ],
+      [
+        'a Task in another namespace',
+        'POST',
+        '/tasks',
+        'application/json',
+        { ...task, metadata: { namespace: 'kube-system' } },
+        403,
+      ],
+      ['a Crew posted as a Task', 'POST', '/tasks', 'application/json', { ...task, kind: 'Crew' }, 403],
+      // Other patch operations.
+      [
+        "a Crew's paused replaced",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [{ op: 'replace', path: '/spec/paused', value: true }],
+        403,
+      ],
+      ["a Crew's paused removed", 'PATCH', '/crews/orders-api', JP, [{ op: 'remove', path: '/spec/paused' }], 403],
+      [
+        "a Standard's ref moved",
+        'PATCH',
+        '/standards/go-service',
+        JP,
+        [{ op: 'move', from: '/spec/template/url', path: '/spec/template/ref' }],
+        403,
+      ],
+      [
+        "a Brief's prompt replaced",
+        'PATCH',
+        '/briefs/lens',
+        JP,
+        [{ op: 'replace', path: '/spec/prompts/0', value: 'x' }],
+        403,
+      ],
+      ['a test operation', 'PATCH', '/crews/orders-api', JP, [{ op: 'test', path: '/spec/paused', value: true }], 403],
+      [
+        'an operation with an extra field',
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [{ ...add('/spec/paused', true), from: '/x' }],
+        403,
+      ],
+      [
+        'a patch whose path is not a string',
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [{ op: 'add', path: ['/spec/paused'], value: true }],
+        403,
+      ],
+      // Other origins.
+      [
+        'a write from another site',
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [add('/spec/paused', true)],
+        403,
+        { origin: 'https://evil.example' },
+      ],
+    ]
+    for (const [what, method, p, type, body, status, headers] of refused) {
+      it(`refuses ${what} with ${status}, and writes nothing upstream`, async () => {
+        seen.length = 0
+        const res = await write(method, p, body, type, headers)
+        assert.equal(res.status, status)
+        const answer = await res.json()
+        assert.equal(answer.kind, 'Status')
+        if (status === 403 && !headers) assert.match(answer.message, /The C4 Factory UI writes/)
+        assert.equal(seen.length, 0, `${what}: ${seen.map((r) => r.method).join()}`)
+      })
+    }
+  })
+
+  describe('the action table behind an Ingress (UI_ACTIONS=oidc), before anyone can sign in', () => {
+    let oidcServer
+    let oidcBase
+    before(async () => {
+      oidcServer = createServer({
+        distDir: dist,
+        upstream: resolveUpstream({ K8S_API: upstreamUrl }),
+        log: () => {},
+        actions: 'oidc',
+      })
+      oidcBase = await listen(oidcServer)
+    })
+    after(() => close(oidcServer))
+
+    it('says on /ui/session that actions need a person, and nobody is signed in', async () => {
+      const answer = await (await fetch(`${oidcBase}/ui/session`)).json()
+      assert.deepEqual([answer.actions, answer.mode, answer.user], [true, 'oidc', null])
+    })
+
+    it('refuses every write with 401, the three Brief writes included, and writes nothing upstream', async () => {
+      const api = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop'
+      for (const [method, p, type, body] of [
+        ['POST', '/briefs', 'application/json', { apiVersion: 'c4.factory.io/v1alpha1', kind: 'Brief', spec: {} }],
+        ['PATCH', '/briefs/lens', 'application/json-patch+json', [{ op: 'add', path: '/spec/paused', value: true }]],
+        [
+          'PATCH',
+          '/containers/orders-api',
+          'application/merge-patch+json',
+          { metadata: { annotations: { 'c4.factory.io/retry': '1' } } },
+        ],
+      ]) {
+        seen.length = 0
+        const res = await fetch(`${oidcBase}${api}${p}`, {
+          method,
+          headers: { 'content-type': type },
+          body: JSON.stringify(body),
+        })
+        assert.equal(res.status, 401, `${method} ${p}`)
+        assert.equal(seen.length, 0)
+      }
+    })
+  })
+
+  it('refuses an unknown UI_ACTIONS', () => {
+    assert.throws(() => actionsFromEnv({ UI_ACTIONS: 'everyone' }), /UI_ACTIONS is everyone/)
+    assert.equal(actionsFromEnv({}), false)
+    assert.equal(actionsFromEnv({ UI_ACTIONS: 'service-account' }), 'service-account')
   })
 
   it('refuses API paths outside c4.factory.io, including through .. and escapes', async () => {

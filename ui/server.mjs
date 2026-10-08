@@ -7,16 +7,19 @@
 //   GET /factory/health   the factory's components, node, agent sandboxes and last hour, summarized (health.mjs)
 //   GET /...              files from dist/
 //
-//   POST  /k8s/apis/c4.factory.io/v1alpha1/namespaces/<ns>/briefs          create a Brief
-//   PATCH /k8s/apis/c4.factory.io/v1alpha1/namespaces/<ns>/briefs/<name>   append a prompt, or pause or resume
+//   GET /ui/session       whether actions are on, who makes them, who is signed in, and the writes
+//   POST, PATCH /k8s/...  the writes of the action table (see ACTIONS)
 //
-// Read-only but for three writes: GET reaches the API only under
-// /apis/c4.factory.io/, and the only writes are creating a Brief in a
-// namespace that holds a Project, and a JSON patch on a Brief whose one
-// operation is `add` of a prompt at /spec/prompts/- or of a boolean at
-// /spec/paused (see briefWrite). Every other method on
-// /k8s gets 405, every other write 403. The browser's own headers (cookies,
-// Authorization, impersonation) never go upstream.
+// Read-only but for the action table's writes: GET reaches the API only under
+// /apis/c4.factory.io/. With actions off (UI_ACTIONS unset) the only writes
+// are creating a Brief in a namespace that holds a Project, and a JSON patch
+// on a Brief that appends a prompt at /spec/prompts/- or adds a boolean at
+// /spec/paused. With UI_ACTIONS=service-account (over port-forward) the table
+// also takes design.md's UI actions: a Brief's and a Crew's settings, a
+// release re-run, a Container's scaffold retry, a Task from a goal and a
+// Standard's ref. With UI_ACTIONS=oidc every write needs a person signed in.
+// Every other method on /k8s gets 405, every other write 403. The browser's
+// own headers (cookies, Authorization, impersonation) never go upstream.
 //
 // Upstream, in order of preference:
 //   K8S_API=http://127.0.0.1:8001   a `kubectl proxy`, or any API URL (no auth added)
@@ -38,10 +41,6 @@ const SERVICE_ACCOUNT_DIR = '/var/run/secrets/kubernetes.io/serviceaccount'
 
 /** Only the c4.factory.io API group is reachable: the UI needs nothing else. */
 const ALLOWED_PREFIX = '/apis/c4.factory.io/'
-
-/** The Briefs of one namespace, or one Brief: the only paths the UI writes. */
-const BRIEFS_PATH =
-  /^\/apis\/c4\.factory\.io\/v1alpha1\/namespaces\/([a-z0-9-]{1,63})\/briefs(?:\/([a-z0-9.-]{1,253}))?$/
 
 /** The JSON patch paths the UI may write: append a prompt, and pause or resume. */
 const PROMPT_PATH = '/spec/prompts/-'
@@ -256,105 +255,249 @@ function isCrossSite(req) {
 
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
 
+/** A namespaced c4.factory.io resource path: the collection, or one object with `one`. */
+const resourcePath = (plural, one = false) =>
+  new RegExp(
+    `^/apis/c4\\.factory\\.io/v1alpha1/namespaces/([a-z0-9-]{1,63})/${plural}${one ? '/([a-z0-9.-]{1,253})' : ''}$`,
+  )
+
+const JSON_MEDIA = 'application/json'
+const JSON_PATCH = 'application/json-patch+json'
+const MERGE_PATCH = 'application/merge-patch+json'
+
+/** True when value has the JSON type `type`: boolean, integer, string, array or object. */
+function hasType(value, type) {
+  if (type === 'integer') return Number.isInteger(value)
+  if (type === 'array') return Array.isArray(value)
+  if (type === 'object') return isObject(value)
+  return typeof value === type
+}
+
 /**
- * The UI's only three writes, checked before anything reaches the API:
- *
- *   POST  .../namespaces/<ns>/briefs         application/json, a Brief of
- *         c4.factory.io/v1alpha1 in <ns>, and <ns> holds a Project. Only the
- *         Brief's name (or generateName) and spec go upstream: no labels,
- *         owners or finalizers.
- *   PATCH .../namespaces/<ns>/briefs/<name>  application/json-patch+json,
- *         exactly [{"op":"add","path":"/spec/prompts/-","value":"<prompt>"}],
- *         or [{"op":"add","path":"/spec/paused","value":<true or false>}].
- *
- * Everything else is refused here and, in the cluster, by RBAC too. What a
- * Brief may say (lengths, append-only prompts) is the CRD's to check, not this
- * server's: its answer, a refusal included, goes back to the browser as-is.
+ * A JSON patch of `add` operations, each on one of `fields` (path to JSON
+ * type), no path twice. `add` sets a field whether or not it is there. Returns
+ * the operations, or undefined for any other patch.
  */
-async function briefWrite(req, res, apiPath, upstream, log) {
-  const match = BRIEFS_PATH.exec(apiPath)
-  const create = req.method === 'POST' && match && !match[2]
-  const patch = req.method === 'PATCH' && match && match[2]
-  if (!create && !patch) {
-    return sendStatus(
-      res,
-      403,
-      'Forbidden',
-      'The C4 Factory UI writes only three things: POST a Brief to a namespace, or PATCH a Brief to add a prompt or to pause or resume it',
-    )
+function addsFields(fields) {
+  return (body) => {
+    if (!Array.isArray(body) || body.length === 0 || body.length > Object.keys(fields).length) return undefined
+    const paths = new Set()
+    for (const op of body) {
+      if (!isObject(op) || Object.keys(op).sort().join() !== 'op,path,value' || op.op !== 'add') return undefined
+      if (
+        typeof op.path !== 'string' ||
+        !Object.hasOwn(fields, op.path) ||
+        paths.has(op.path) ||
+        !hasType(op.value, fields[op.path])
+      )
+        return undefined
+      paths.add(op.path)
+    }
+    return body
+  }
+}
+
+/** A merge patch setting exactly one annotation, `key`, to a string. Returns the patch, or undefined. */
+function setsAnnotation(key) {
+  return (body) => {
+    const metadata = isObject(body) && Object.keys(body).join() === 'metadata' ? body.metadata : undefined
+    const annotations =
+      isObject(metadata) && Object.keys(metadata).join() === 'annotations' ? metadata.annotations : undefined
+    const ok = isObject(annotations) && Object.keys(annotations).join() === key && typeof annotations[key] === 'string'
+    return ok ? { metadata: { annotations: { [key]: annotations[key] } } } : undefined
+  }
+}
+
+/**
+ * A new object of `kind` in the path's namespace, its spec only of `specFields`
+ * and with `fixed` values where given. Only its name (or generateName) and spec
+ * go upstream: no labels, owners or finalizers. Returns it, or undefined.
+ */
+function createsObject(kind, specFields, fixed = {}) {
+  return (body, namespace) => {
+    if (!isObject(body) || body.apiVersion !== 'c4.factory.io/v1alpha1' || body.kind !== kind) return undefined
+    const meta = isObject(body.metadata) ? body.metadata : {}
+    if (meta.namespace !== undefined && meta.namespace !== namespace) return undefined
+    if (specFields && !(isObject(body.spec) && Object.keys(body.spec).every((f) => specFields.includes(f)))) {
+      return undefined
+    }
+    if (Object.entries(fixed).some(([f, value]) => body.spec?.[f] !== value)) return undefined
+    const metadata = { namespace }
+    if (typeof meta.name === 'string') metadata.name = meta.name
+    if (typeof meta.generateName === 'string') metadata.generateName = meta.generateName
+    return { apiVersion: body.apiVersion, kind, metadata, spec: body.spec }
+  }
+}
+
+/**
+ * The UI's writes, checked before anything reaches the API (design.md, UI
+ * actions). Each entry is one request: a method, a path, a content type and a
+ * check of the body, which returns what goes upstream or undefined. The check
+ * is of the body's shape, not its values: limits and enums are the CRD's, and
+ * the API server's answer, a refusal included, goes back to the browser as-is.
+ * In the cluster RBAC refuses the rest too.
+ *
+ * With actions off (`actions: false`) only the entries marked `always`, the
+ * Brief writes the UI has always made, and the Brief's settings narrowed to
+ * spec.paused.
+ */
+const BRIEF_SETTINGS = {
+  '/spec/paused': 'boolean',
+  '/spec/autopilot': 'string',
+  '/spec/parallel': 'integer',
+  '/spec/releases': 'array',
+}
+const ACTIONS = [
+  {
+    what: 'create a Brief',
+    always: true,
+    method: 'POST',
+    path: resourcePath('briefs'),
+    type: JSON_MEDIA,
+    check: createsObject('Brief'),
+    write: createBrief,
+  },
+  {
+    what: `add a prompt (a string) to a Brief at ${PROMPT_PATH}`,
+    always: true,
+    method: 'PATCH',
+    path: resourcePath('briefs', true),
+    type: JSON_PATCH,
+    check: (body) =>
+      Array.isArray(body) && body.length === 1 && addsFields({ [PROMPT_PATH]: 'string' })(body) ? body[0] : undefined,
+    write: addPrompt,
+  },
+  {
+    what: `pause or resume a Brief (a boolean at ${PAUSED_PATH})`,
+    always: true,
+    offOnly: true,
+    method: 'PATCH',
+    path: resourcePath('briefs', true),
+    type: JSON_PATCH,
+    check: addsFields({ [PAUSED_PATH]: 'boolean' }),
+  },
+  {
+    what: `set a Brief's ${Object.keys(BRIEF_SETTINGS).join(', ')}`,
+    method: 'PATCH',
+    path: resourcePath('briefs', true),
+    type: JSON_PATCH,
+    check: addsFields(BRIEF_SETTINGS),
+  },
+  {
+    what: "set a Crew's /spec/paused, /spec/parallel, /spec/tagReleases, /spec/prepareReleases, /spec/publishReleases",
+    method: 'PATCH',
+    path: resourcePath('crews', true),
+    type: JSON_PATCH,
+    check: addsFields({
+      '/spec/paused': 'boolean',
+      '/spec/parallel': 'integer',
+      '/spec/tagReleases': 'boolean',
+      '/spec/prepareReleases': 'boolean',
+      '/spec/publishReleases': 'object',
+    }),
+  },
+  {
+    what: 'set annotation c4.factory.io/rerun-release on a Crew',
+    method: 'PATCH',
+    path: resourcePath('crews', true),
+    type: MERGE_PATCH,
+    check: setsAnnotation('c4.factory.io/rerun-release'),
+  },
+  {
+    what: 'set annotation c4.factory.io/retry on a Container',
+    method: 'PATCH',
+    path: resourcePath('containers', true),
+    type: MERGE_PATCH,
+    check: setsAnnotation('c4.factory.io/retry'),
+  },
+  {
+    what: 'create a Task of kind Implement with containerRef, agentRef, reviewerRef and goal',
+    method: 'POST',
+    path: resourcePath('tasks'),
+    type: JSON_MEDIA,
+    check: createsObject('Task', ['kind', 'containerRef', 'agentRef', 'reviewerRef', 'goal'], { kind: 'Implement' }),
+  },
+  {
+    what: "set a Standard's /spec/template/ref",
+    method: 'PATCH',
+    path: resourcePath('standards', true),
+    type: JSON_PATCH,
+    check: addsFields({ '/spec/template/ref': 'string' }),
+  },
+]
+
+/** The table's entries in force: all with actions on, else the `always` ones. */
+export function actionTable(actions) {
+  return ACTIONS.filter((entry) => (actions ? !entry.offOnly : entry.always))
+}
+
+/**
+ * How the UI acts, from UI_ACTIONS: off (unset or empty), service-account (over
+ * port-forward, as the UI's ServiceAccount) or oidc (as the person signed in).
+ */
+export function actionsFromEnv(env = process.env) {
+  const mode = (env.UI_ACTIONS ?? '').trim()
+  if (mode === '' || mode === 'off') return false
+  if (mode === 'service-account' || mode === 'oidc') return mode
+  throw new Error(`UI_ACTIONS is ${mode}: expected off, service-account or oidc`)
+}
+
+/** True when some entry of `table` takes a write to apiPath, whatever the method. */
+function isWritePath(table, apiPath) {
+  return table.some((entry) => entry.path.test(apiPath))
+}
+
+/**
+ * One write from the browser: finds the table's entries for its method and
+ * path, checks the content type and body, and makes it as the UI (over
+ * port-forward) or refuses it unsigned (OIDC, until a person can sign in).
+ */
+async function actionWrite(req, res, apiPath, upstream, log, table, mode) {
+  const writes = table.map((entry) => `${entry.method} ${entry.what}`).join('; ')
+  const entries = table.filter((entry) => entry.method === req.method && entry.path.test(apiPath))
+  if (!entries.length) {
+    return sendStatus(res, 403, 'Forbidden', `The C4 Factory UI writes only these: ${writes}`)
   }
   if (isCrossSite(req)) return sendStatus(res, 403, 'Forbidden', 'Writes come only from the UI itself')
-  const wantType = create ? 'application/json' : 'application/json-patch+json'
-  if (mediaType(req) !== wantType) {
-    return sendStatus(res, 415, 'UnsupportedMediaType', `Expected Content-Type ${wantType}`)
+  if (mode === 'oidc') return sendStatus(res, 401, 'Unauthorized', 'Sign in to act')
+  const types = [...new Set(entries.map((entry) => entry.type))]
+  const typed = entries.filter((entry) => entry.type === mediaType(req))
+  if (!typed.length) {
+    return sendStatus(res, 415, 'UnsupportedMediaType', `Expected Content-Type ${types.join(' or ')}`)
   }
   const text = await readBody(req, MAX_WRITE_BYTES)
   if (text === undefined) return sendStatus(res, 413, 'RequestEntityTooLarge', `At most ${MAX_WRITE_BYTES} bytes`)
   const body = parseJson(text)
-  const [, namespace, name] = match
+  for (const entry of typed) {
+    const [, namespace, name] = entry.path.exec(apiPath)
+    const checked = entry.check(body, namespace)
+    if (checked === undefined) continue
+    const write = entry.write ?? forwardPatch
+    return write({ res, upstream, log, apiPath, namespace, name, entry, body: checked })
+  }
+  const here = typed.map((entry) => entry.what).join('; or ')
+  return sendStatus(res, 403, 'Forbidden', `The C4 Factory UI writes here only: ${here}`)
+}
 
-  if (create) {
-    if (!isObject(body) || body.apiVersion !== 'c4.factory.io/v1alpha1' || body.kind !== 'Brief') {
-      return sendStatus(res, 403, 'Forbidden', 'The UI creates only Briefs (c4.factory.io/v1alpha1)')
-    }
-    const meta = isObject(body.metadata) ? body.metadata : {}
-    if (meta.namespace !== undefined && meta.namespace !== namespace) {
-      return sendStatus(res, 403, 'Forbidden', `The Brief's namespace must be ${namespace}, as in the path`)
-    }
-    const projects = await requestJson(upstream, `/apis/c4.factory.io/v1alpha1/namespaces/${namespace}/projects`)
-    if (projects.status !== 200)
-      return send(
-        res,
-        projects.status,
-        `${JSON.stringify(projects.body)}
-`,
-        JSON_TYPE,
-      )
-    if (!projects.body?.items?.length) {
-      return sendStatus(
-        res,
-        403,
-        'Forbidden',
-        `Namespace ${namespace} holds no Project, so the UI makes no Brief there`,
-      )
-    }
-    const metadata = { namespace }
-    if (typeof meta.name === 'string') metadata.name = meta.name
-    if (typeof meta.generateName === 'string') metadata.generateName = meta.generateName
-    const brief = { apiVersion: body.apiVersion, kind: 'Brief', metadata, spec: body.spec }
-    log(`Creating a Brief in ${namespace}`)
-    return forwardWrite(res, upstream, 'POST', apiPath, 'application/json', brief)
+/** Creates a Brief, once the namespace is known to hold a Project. */
+async function createBrief({ res, upstream, log, apiPath, namespace, body }) {
+  const projects = await requestJson(upstream, `/apis/c4.factory.io/v1alpha1/namespaces/${namespace}/projects`)
+  if (projects.status !== 200) return send(res, projects.status, `${JSON.stringify(projects.body)}\n`, JSON_TYPE)
+  if (!projects.body?.items?.length) {
+    return sendStatus(res, 403, 'Forbidden', `Namespace ${namespace} holds no Project, so the UI makes no Brief there`)
   }
+  log(`Creating a Brief in ${namespace}`)
+  return forwardWrite(res, upstream, 'POST', apiPath, JSON_MEDIA, body)
+}
 
-  const op = Array.isArray(body) && body.length === 1 ? body[0] : undefined
-  const shaped = isObject(op) && Object.keys(op).sort().join() === 'op,path,value' && op.op === 'add'
-  const addsPrompt = shaped && op.path === PROMPT_PATH && typeof op.value === 'string'
-  const pauses = shaped && op.path === PAUSED_PATH && typeof op.value === 'boolean'
-  if (!addsPrompt && !pauses) {
-    return sendStatus(
-      res,
-      403,
-      'Forbidden',
-      `The UI patches a Brief only with one operation: add a prompt (a string) at ${PROMPT_PATH}, or a boolean at ${PAUSED_PATH}`,
-    )
-  }
-  // An add at /spec/paused sets the field whether or not it is there.
-  if (pauses) {
-    log(`${op.value ? 'Pausing' : 'Resuming'} Brief ${namespace}/${name}`)
-    return forwardWrite(res, upstream, 'PATCH', apiPath, 'application/json-patch+json', [op])
-  }
-  // A JSON patch can't append to a list that isn't there, and a Brief without
-  // prompts has none: then the patch adds the list, guarded by the
-  // resourceVersion just read so it never replaces a list made meanwhile.
+/**
+ * Appends a prompt. A JSON patch can't append to a list that isn't there, and
+ * a Brief without prompts has none: then the patch adds the list, guarded by
+ * the resourceVersion just read so it never replaces a list made meanwhile.
+ */
+async function addPrompt({ res, upstream, log, apiPath, namespace, name, body: op }) {
   const current = await requestJson(upstream, apiPath)
-  if (current.status !== 200)
-    return send(
-      res,
-      current.status,
-      `${JSON.stringify(current.body)}
-`,
-      JSON_TYPE,
-    )
+  if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
   const ops = Array.isArray(current.body?.spec?.prompts)
     ? [op]
     : [
@@ -362,7 +505,27 @@ async function briefWrite(req, res, apiPath, upstream, log) {
         { op: 'add', path: '/spec/prompts', value: [op.value] },
       ]
   log(`Adding a prompt to Brief ${namespace}/${name}`)
-  return forwardWrite(res, upstream, 'PATCH', apiPath, 'application/json-patch+json', ops)
+  return forwardWrite(res, upstream, 'PATCH', apiPath, JSON_PATCH, ops)
+}
+
+/**
+ * What GET /ui/session answers: whether actions are on, who makes them, who is
+ * signed in (nobody, until OIDC sign-in), and the writes the table takes. Never
+ * a token.
+ */
+function session(actions, table) {
+  return {
+    actions: Boolean(actions),
+    mode: actions || 'off',
+    user: null,
+    writes: table.map((entry) => ({ method: entry.method, type: entry.type, what: entry.what })),
+  }
+}
+
+/** Any other entry: sends the checked body as the entry's write. */
+function forwardPatch({ res, upstream, log, apiPath, namespace, name, entry, body }) {
+  log(`UI action: ${entry.what}${name ? `: ${namespace}/${name}` : ` in ${namespace}`}`)
+  return forwardWrite(res, upstream, entry.method, apiPath, entry.type, body)
 }
 
 const JSON_TYPE = { 'content-type': 'application/json', 'cache-control': 'no-store' }
@@ -514,7 +677,9 @@ export function createApiHandler({
   log = (msg) => console.log(msg),
   components = componentsFromEnv(process.env, log),
   sampleEveryMs = 0,
+  actions = actionsFromEnv(),
 } = {}) {
+  const table = actionTable(actions)
   const health = createHealthHandler({ getJson: (apiPath) => getJson(upstream, apiPath), components, sampleEveryMs })
   return (req, res) => {
     let url
@@ -544,15 +709,23 @@ export function createApiHandler({
       )
       return true
     }
+    if (url.pathname === '/ui/session') {
+      if (req.method !== 'GET') {
+        sendStatus(res, 405, 'MethodNotAllowed', 'Only GET is allowed here', { allow: 'GET' })
+        return true
+      }
+      send(res, 200, `${JSON.stringify(session(actions, table))}\n`, JSON_TYPE)
+      return true
+    }
     const isProxy = url.pathname === '/k8s' || url.pathname.startsWith('/k8s/')
     const isWatch = url.pathname === '/k8s-watch'
     if (!isProxy && !isWatch) return false
 
     // URL() has already resolved any "..".
     const apiPath = url.pathname.slice('/k8s'.length)
-    // Nothing but GET reaches the API, except the two Brief writes.
-    if (isProxy && (req.method === 'POST' || req.method === 'PATCH') && BRIEFS_PATH.test(apiPath)) {
-      briefWrite(req, res, apiPath, upstream, log).catch((err) => {
+    // Nothing but GET reaches the API, except the action table's writes.
+    if (isProxy && (req.method === 'POST' || req.method === 'PATCH') && isWritePath(table, apiPath)) {
+      actionWrite(req, res, apiPath, upstream, log, table, actions).catch((err) => {
         log(`Write failed: ${err.message}`)
         if (!res.headersSent) sendStatus(res, 502, 'BadGateway', `Cannot reach the Kubernetes API: ${err.message}`)
         else res.destroy()
@@ -560,12 +733,15 @@ export function createApiHandler({
       return true
     }
     if (req.method !== 'GET') {
+      const only = actions ? 'the writes GET /ui/session lists' : 'Briefs'
       sendStatus(
         res,
         405,
         'MethodNotAllowed',
-        'Only GET is allowed here: the C4 Factory UI writes nothing but Briefs',
-        { allow: 'GET' },
+        `Only GET is allowed here: the C4 Factory UI writes nothing but ${only}`,
+        {
+          allow: 'GET',
+        },
       )
       return true
     }

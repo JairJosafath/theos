@@ -175,6 +175,7 @@ as the run's artifact); a failing release gets an issue titled
 | `manager.args` | the operator's flags (`go run ./cmd --help`); the defaults are the Kind environment's |
 | `ui.enabled` | install the UI (default true); `ui.service` and `ui.resources` |
 | `ui.allowedHosts` | host names the UI answers besides localhost, for an Ingress in front of it; any other Host is refused |
+| `ui.actions.enabled` | off by default; on, the UI also sets Brief and Crew settings, re-runs a failed release, retries a scaffold, makes a Task from a goal and bumps a Standard's ref (design.md, *UI actions*). Over port-forward its ServiceAccount makes them; with `ui.allowedHosts` the chart needs `ui.auth.oidc` |
 | `ui.components` | the UI health view's components; an empty namespace is the release's |
 | `gitea.enabled` | install Gitea, the seed and the runners (default true); off, `gitProviders` point at a Gitea of your own |
 | `gitea.namespace`, `gitea.createNamespace` | Gitea's namespace (default `gitea`) and whether the chart makes it |
