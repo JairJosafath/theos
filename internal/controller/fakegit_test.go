@@ -726,6 +726,23 @@ func (p *fakeProvider) merge(repo gitprovider.Repository, number int, headSHA, t
 	return nil
 }
 
+// UpdatePullRequest merges main into a pull request's branch: a new head that
+// is no longer behind, or ErrConflict when the pull request conflicts.
+func (p *fakeProvider) UpdatePullRequest(_ context.Context, repo gitprovider.Repository, number int) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	pr, err := p.pull(repo, number)
+	if err != nil {
+		return err
+	}
+	if !pr.Mergeable {
+		return fmt.Errorf("pull request %d: %w", number, gitprovider.ErrConflict)
+	}
+	pr.HeadSHA, pr.Behind = p.git.newSHA(), false
+	p.git.agentState().branches[repo.Owner+"/"+repo.Name+"@"+pr.Head] = pr.HeadSHA
+	return nil
+}
+
 func touchesProtected(files, protected []string) bool {
 	return slices.ContainsFunc(files, func(f string) bool {
 		return slices.ContainsFunc(protected, func(p string) bool {

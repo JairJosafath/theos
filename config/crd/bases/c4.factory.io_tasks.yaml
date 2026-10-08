@@ -396,6 +396,12 @@ spec:
                   mergeCommit is the commit the pull request's squash merge made on the
                   default branch, recorded once the Task is Merged. A Crew tags releases at it.
                 type: string
+              mergeWhenChecksPass:
+                description: |-
+                  mergeWhenChecksPass means the reviewer approved the change and the
+                  operator merged main into its branch, since main had moved since the
+                  change's checks ran: commit merges once its checks pass, with no new review.
+                type: boolean
               observedGeneration:
                 description: observedGeneration is the spec generation the status
                   reflects.

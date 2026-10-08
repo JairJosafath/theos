@@ -129,6 +129,9 @@ type Provider interface {
 	// ForceMergePullRequest is MergePullRequest as the provider's admin user,
 	// overriding the branch protection's merge restrictions.
 	ForceMergePullRequest(ctx context.Context, repo Repository, number int, headSHA, title, message string) error
+	// UpdatePullRequest merges the pull request's base into its branch, so its
+	// checks run on what it would merge into. ErrConflict when they conflict.
+	UpdatePullRequest(ctx context.Context, repo Repository, number int) error
 	// PullRequestFiles returns every path a pull request changes, a renamed
 	// file's old path too, or an error when it can't read them all:
 	// ErrTooManyFiles when there are too many.
@@ -266,6 +269,9 @@ var ErrTooManyFiles = errors.New("too many changed files to list in full")
 // ErrEmptyChange means a commit would leave its base as it is: every file it
 // writes is already there as it is, and no file it removes is. Nothing is pushed.
 var ErrEmptyChange = errors.New("the change leaves its base as it is")
+
+// ErrConflict is UpdatePullRequest's error for a branch that conflicts with its base.
+var ErrConflict = errors.New("the branch conflicts with its base")
 
 // ErrIssueNotFound is GetIssue's error for an issue the repository doesn't have.
 var ErrIssueNotFound = errors.New("no such issue")

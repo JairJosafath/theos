@@ -3,7 +3,9 @@ package gitprovider
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -207,6 +209,94 @@ func TestGiteaChecksIntegration(t *testing.T) {
 	got, err := p.CombinedStatus(ctx, repo, "main")
 	if err != nil || got.State != CheckSuccess || got.Contexts["check / check (push)"] != CheckSuccess {
 		t.Errorf("CombinedStatus() = %+v, %v; want success", got, err)
+	}
+}
+
+// TestGiteaPullRequestUpdateIntegration checks that a pull request whose base
+// moved reads as behind, and that updating it merges the base in, or fails with
+// ErrConflict when they conflict, like TestGiteaIntegration.
+func TestGiteaPullRequestUpdateIntegration(t *testing.T) {
+	base := os.Getenv("C4_GITEA_URL")
+	if base == "" {
+		t.Skip("C4_GITEA_URL not set")
+	}
+	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	p, err := Client{}.Provider(Config{URL: base, Owner: "webshop", Credentials: creds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("it-update-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteRepo(t, base, "webshop", name, creds.Token) })
+	repo, err := p.EnsureRepository(ctx, name, "integration test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.PushInitialCommit(ctx, repo, scaffold.Tree{"README.md": {Data: []byte("hi")}}, "Scaffold\n",
+		testAuthor); err != nil {
+		t.Fatal(err)
+	}
+	write := func(path, content, branch, newBranch string) {
+		body := map[string]string{"content": base64.StdEncoding.EncodeToString([]byte(content)),
+			"message": "Write " + path, "branch": branch}
+		if newBranch != "" {
+			body["new_branch"] = newBranch
+		}
+		giteaJSON(t, base, creds.Token, http.MethodPost, "/api/v1/repos/webshop/"+name+"/contents/"+path, body, nil)
+	}
+	pull := func(number int) PullRequest {
+		t.Helper()
+		pr, err := p.GetPullRequest(ctx, repo, number)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pr
+	}
+	// eventually polls a pull request until ok: Gitea tests it against its base
+	// in the background.
+	eventually := func(number int, what string, ok func(PullRequest) bool) PullRequest {
+		t.Helper()
+		for {
+			pr := pull(number)
+			if ok(pr) {
+				return pr
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatalf("pull request %d never %s: %+v", number, what, pr)
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+	}
+
+	write("a.txt", "a", "main", "task/a")
+	write("c.txt", "branch", "main", "task/c")
+	a, err := p.OpenPullRequest(ctx, repo, "task/a", "main", "A", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := p.OpenPullRequest(ctx, repo, "task/c", "main", "C", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pr := eventually(a.Number, "mergeable", func(pr PullRequest) bool { return pr.Mergeable }); pr.Behind {
+		t.Errorf("a pull request made from main's head reads as behind: %+v", pr)
+	}
+
+	write("c.txt", "main", "main", "")
+	eventually(a.Number, "behind", func(pr PullRequest) bool { return pr.Behind })
+	if err := p.UpdatePullRequest(ctx, repo, a.Number); err != nil {
+		t.Fatalf("UpdatePullRequest(): %v", err)
+	}
+	if pr := pull(a.Number); pr.HeadSHA == a.HeadSHA {
+		t.Errorf("updating left the head at %s", pr.HeadSHA)
+	}
+	eventually(a.Number, "caught up", func(pr PullRequest) bool { return !pr.Behind && pr.Mergeable })
+
+	eventually(c.Number, "behind", func(pr PullRequest) bool { return pr.Behind })
+	if err := p.UpdatePullRequest(ctx, repo, c.Number); !errors.Is(err, ErrConflict) {
+		t.Errorf("UpdatePullRequest() of a conflicting branch = %v, want ErrConflict", err)
 	}
 }
 

@@ -228,6 +228,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		Reruns:         int(status.Reruns),
 
 		MergeWaitsForChecks: mergeWaitsForChecks(status),
+		MergeWhenChecksPass: status.MergeWhenChecksPass,
 		StandardChanges:     standardChangeCount(status),
 		Resumed:             resumedRun(status),
 		Feedback:            status.Feedback,
@@ -285,15 +286,6 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		facts.Run = run
 	}
 
-	if run := facts.Run; status.Phase == c4v1alpha1.TaskReviewing && run.Done && run.Result != nil &&
-		run.Result.Verdict == model.VerdictApprove && status.PullRequest > 0 {
-		conflicted, err := r.conflicted(ctx, container, status)
-		if err != nil {
-			return facts, err
-		}
-		facts.Conflicted = conflicted
-	}
-
 	if status.Phase == c4v1alpha1.TaskChecking && status.Commit != "" {
 		provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, task.Namespace, container.Spec.GitProviderRef.Name)
 		if err != nil {
@@ -313,6 +305,10 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 				facts.ChecksLog = log
 			}
 		}
+	}
+
+	if err := r.pullFacts(ctx, container, status, &facts); err != nil {
+		return facts, err
 	}
 	return facts, nil
 }
@@ -339,21 +335,39 @@ func (r *TaskReconciler) noFreeSlot(ctx context.Context, task *c4v1alpha1.Task) 
 	return model.NoFreeSlot(task.Namespace+"/"+task.Name, r.now(), waiting, r.MaxSandboxes, len(sandboxes.Items)), nil
 }
 
-// conflicted reports whether the Task's pull request can no longer merge
-// because main moved with conflicting changes.
-func (r *TaskReconciler) conflicted(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.TaskStatus) (bool, error) {
+// pullFacts reads whether an approved change's pull request conflicts with main
+// or misses what merged into it since its checks ran: an approved change merges
+// only on checks that ran against the main it merges into.
+func (r *TaskReconciler) pullFacts(ctx context.Context, container *c4v1alpha1.Container,
+	status *c4v1alpha1.TaskStatus, facts *model.TaskFacts) error {
+	run := facts.Run
+	approved := status.Phase == c4v1alpha1.TaskReviewing && run.Done && run.Result != nil &&
+		run.Result.Verdict == model.VerdictApprove
+	updated := status.Phase == c4v1alpha1.TaskChecking && status.MergeWhenChecksPass &&
+		facts.Checks == gitprovider.CheckSuccess
+	if !approved && !updated || status.PullRequest == 0 {
+		return nil
+	}
+	pr, err := r.pullRequest(ctx, container, status)
+	if err != nil {
+		return err
+	}
+	open := pr.State == stateOpen && !pr.Merged
+	facts.Conflicted, facts.Behind = open && !pr.Mergeable, open && pr.Behind
+	return nil
+}
+
+// pullRequest reads the Task's pull request: whether main moved since its
+// branch took it in, and whether it conflicts with main.
+func (r *TaskReconciler) pullRequest(ctx context.Context, container *c4v1alpha1.Container,
+	status *c4v1alpha1.TaskStatus) (gitprovider.PullRequest, error) {
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
-		return false, err
+		return gitprovider.PullRequest{}, err
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
-	if err != nil {
-		return false, err
-	}
-	return pr.State == stateOpen && !pr.Merged && !pr.Mergeable, nil
+	return provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
 }
 
 // runRole is the role of the sandbox a phase waits on.

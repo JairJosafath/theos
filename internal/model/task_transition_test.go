@@ -9,7 +9,7 @@ import (
 func TestTaskProgressTransitions(t *testing.T) {
 	// mid is a Task in the middle of round 2, with everything set.
 	mid := TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 1, Reruns: 1, Feedback: "earlier",
-		Commit: "abc", HasChecks: true, ResumedRound: 2}
+		Commit: "abc", HasChecks: true, ResumedRound: 2, MergeWhenChecksPass: true}
 
 	tests := []struct {
 		name string
@@ -37,16 +37,21 @@ func TestTaskProgressTransitions(t *testing.T) {
 				Commit: "abc"}},
 		{name: "a review without verdict counts an attempt", got: RetryReview(mid),
 			want: TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 2, Reruns: 1, Feedback: "earlier",
-				Commit: "abc", HasChecks: true, ResumedRound: 2}},
+				Commit: "abc", HasChecks: true, ResumedRound: 2, MergeWhenChecksPass: true}},
 		{name: "an interrupted run counts a rerun", got: Rerun(mid),
 			want: TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 1, Reruns: 2, Feedback: "earlier",
-				Commit: "abc", HasChecks: true, ResumedRound: 2}},
+				Commit: "abc", HasChecks: true, ResumedRound: 2, MergeWhenChecksPass: true}},
 		{name: "a moved branch checks its new head", got: Recheck(mid, "fed"),
 			want: TaskProgress{Phase: TaskChecking, Round: 2, ReviewAttempts: 1, Reruns: 1, Feedback: "earlier",
 				Commit: "fed", ResumedRound: 2}},
+		{name: "an approved branch that took in main waits for its new head's checks, and merges on them",
+			got: UpdatedBranch(TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 1, Feedback: "earlier",
+				Commit: "abc", HasChecks: true}, "fed"),
+			want: TaskProgress{Phase: TaskChecking, Round: 2, ReviewAttempts: 1, Feedback: "earlier", Commit: "fed",
+				MergeWhenChecksPass: true}},
 		{name: "a proposal blocks the Task on its commit", got: Proposed(mid, "std"),
 			want: TaskProgress{Phase: TaskBlocked, Round: 2, ReviewAttempts: 1, Reruns: 1, Feedback: "earlier",
-				Commit: "std", HasChecks: true, ResumedRound: 2}},
+				Commit: "std", HasChecks: true, ResumedRound: 2, MergeWhenChecksPass: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

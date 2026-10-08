@@ -614,6 +614,63 @@ func TestNextTaskStepConflicts(t *testing.T) {
 	}
 }
 
+// TestNextTaskStepBehindMain: a change merges only on checks that ran against
+// the main it merges into. One approved while main moved takes in main and is
+// checked again, in the same round and with no new review.
+func TestNextTaskStepBehindMain(t *testing.T) {
+	approved := RunState{Started: true, Done: true, Result: &RunResult{Verdict: VerdictApprove, Summary: "Good."}}
+	tests := []struct {
+		name    string
+		facts   TaskFacts
+		want    TaskAction
+		message string
+	}{
+		{name: "an approved change whose checks ran on an older main takes in main",
+			facts: TaskFacts{Phase: TaskReviewing, Round: 3, MaxRounds: 3, Run: approved, Behind: true},
+			want:  ActionUpdateBranch, message: "checking it again in round 3"},
+		{name: "a conflict with main goes to the implementer, not to an update",
+			facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: approved, Behind: true, Conflicted: true},
+			want:  ActionResolveConflicts, message: "round 1 resolves them"},
+		{name: "an approved change up to date with main merges",
+			facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: approved},
+			want:  ActionMerge, message: "Approved; merging"},
+		{name: "the updated branch waits for its checks",
+			facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, MergeWhenChecksPass: true},
+			want:  ActionWait, message: "Waiting for checks"},
+		{name: "the updated branch merges once its checks pass, with no new review",
+			facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, MergeWhenChecksPass: true, Checks: "success"},
+			want:  ActionMerge, message: "with main merged in; merging"},
+		{name: "main moved again while the checks ran: take it in again",
+			facts: TaskFacts{Phase: TaskChecking, Round: 2, MaxRounds: 3, MergeWhenChecksPass: true, Checks: "success",
+				Behind: true},
+			want: ActionUpdateBranch, message: "in round 2"},
+		{name: "main moved again with a conflict",
+			facts: TaskFacts{Phase: TaskChecking, Round: 2, MaxRounds: 3, MergeWhenChecksPass: true, Checks: "success",
+				Behind: true, Conflicted: true},
+			want: ActionResolveConflicts, message: "round 2 resolves them"},
+		{name: "failing checks with main merged in start the next round",
+			facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, MergeWhenChecksPass: true, Checks: "failure",
+				ChecksURL: "http://ci/1"},
+			want: ActionRetry, message: "starting round 2"},
+		{name: "a change that isn't approved yet is reviewed once its checks pass",
+			facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "success", Behind: true},
+			want:  ActionStartReview, message: "starting the review"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextTaskStep(tt.facts)
+			if got.Action != tt.want || !strings.Contains(got.Message, tt.message) {
+				t.Errorf("NextTaskStep() = %+v, want %s with %q", got, tt.want, tt.message)
+			}
+		})
+	}
+	got := NextTaskStep(TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, MergeWhenChecksPass: true,
+		Checks: "failure", ChecksURL: "http://ci/1"})
+	if !strings.Contains(got.Feedback, "main moved since its checks ran") || !strings.Contains(got.Feedback, "http://ci/1") {
+		t.Errorf("Feedback = %q, want it to say main was merged in, with the checks' link", got.Feedback)
+	}
+}
+
 func TestNextTaskStepBlockedSlotWait(t *testing.T) {
 	got := NextTaskStep(TaskFacts{Phase: TaskBlocked, NoFreeSlot: true, Change: ChangeFacts{Issue: 31}})
 	if got.SlotWait {

@@ -230,6 +230,12 @@ type TaskFacts struct {
 	// Conflicted means the pull request can no longer merge: main moved since
 	// the branch was made, with changes that conflict.
 	Conflicted bool
+	// Behind means main moved since the pull request's branch last took it in:
+	// its checks ran without what merged since.
+	Behind bool
+	// MergeWhenChecksPass means the approved change's branch took in main, and
+	// its new head merges once its checks pass, with no new review.
+	MergeWhenChecksPass bool
 	// MergeWaitsForChecks means the reviewer approved a Standard change whose
 	// gated merge waits for CI, which runs again on the reviewed commit.
 	MergeWaitsForChecks bool
@@ -373,6 +379,12 @@ const ConflictFeedback = "Your change was approved, but another change merged in
 	"conflicts with yours. Merge main into your branch, resolve every conflict so both changes keep " +
 	"working, and make sure the check command passes. Change nothing else."
 
+// updatedChecksFeedback is what the implementer is told when its approved
+// change's checks fail once main is merged into its branch.
+const updatedChecksFeedback = "Your change was approved, but main moved since its checks ran, and with main " +
+	"merged into your branch the CI checks fail (%s). Pull your branch, run the check command, and fix the " +
+	"failure so both your change and what merged into main keep working."
+
 // AgentRetryDelay is how long a Task waits for an unavailable agent that didn't
 // say when it is back.
 const AgentRetryDelay = 15 * time.Minute
@@ -404,6 +416,10 @@ const (
 	// ActionResolveConflicts sends an approved change back to the implementer, in
 	// the same round, to merge main and resolve the conflicts.
 	ActionResolveConflicts TaskAction = "ResolveConflicts"
+	// ActionUpdateBranch merges main into an approved change's branch, as main
+	// moved since its checks ran, and waits for the checks again: no agent runs,
+	// and it costs no round.
+	ActionUpdateBranch TaskAction = "UpdateBranch"
 	// ActionAgentUnavailable ends the run and tries the same step again later.
 	ActionAgentUnavailable TaskAction = "AgentUnavailable"
 	// ActionRerun ends a run the infrastructure interrupted and runs the same
@@ -477,10 +493,16 @@ func nextTaskStep(f TaskFacts) TaskStep {
 	case TaskChecking:
 		switch f.Checks {
 		case checkSuccess:
+			if f.MergeWhenChecksPass {
+				return approvedStep(f, "Checks passed on the branch with main merged in; merging")
+			}
 			return TaskStep{Action: ActionStartReview, Message: "Checks passed; starting the review"}
 		case "failure", "error":
 			feedback := fmt.Sprintf("The CI checks failed (%s). Run the check command, find the failure and fix it.",
 				orUnknown(f.ChecksURL))
+			if f.MergeWhenChecksPass {
+				feedback = fmt.Sprintf(updatedChecksFeedback, orUnknown(f.ChecksURL))
+			}
 			if excerpt := CheckFailures(f.ChecksLog); excerpt != "" {
 				feedback += " A test that passes for you but fails in CI is flaky: make it deterministic." +
 					"\nWhat failed in CI:\n" + excerpt
@@ -573,15 +595,33 @@ func reviewingStep(f TaskFacts) TaskStep {
 	if f.Run.Result == nil || f.Run.Result.Error != "" || f.Run.Result.Verdict == "" {
 		return noVerdictStep(f)
 	}
-	if f.Run.Result.Verdict == VerdictApprove && f.Conflicted {
-		// Not the agent's fault: another change merged first. It costs no round.
-		return TaskStep{Action: ActionResolveConflicts, Feedback: ConflictFeedback, Message: fmt.Sprintf(
-			"Approved, but main moved and the pull request conflicts with it; round %d resolves them", f.Round)}
-	}
 	if f.Run.Result.Verdict == VerdictApprove {
-		return TaskStep{Action: ActionMerge, Message: "Approved; merging"}
+		return approvedStep(f, "Approved; merging")
 	}
 	return roundFailed(f, "The reviewer asked for changes:\n"+f.Run.Result.Summary)
+}
+
+// ConflictStep sends an approved change that conflicts with main back to its
+// implementer, in the same round.
+func ConflictStep(round int) TaskStep {
+	return TaskStep{Action: ActionResolveConflicts, Feedback: ConflictFeedback, Message: fmt.Sprintf(
+		"Approved, but main moved and the pull request conflicts with it; round %d resolves them", round)}
+}
+
+// approvedStep decides what follows an approval: a merge, unless main moved
+// since the change's checks ran. A change that conflicts with main goes back to
+// its implementer; one that doesn't takes in main and is checked again first.
+// Neither is the agent's fault: another change merged first. Neither costs a round.
+func approvedStep(f TaskFacts, merging string) TaskStep {
+	switch {
+	case f.Conflicted:
+		return ConflictStep(f.Round)
+	case f.Behind:
+		return TaskStep{Action: ActionUpdateBranch, Message: fmt.Sprintf(
+			"Approved, but main moved since the checks ran; merging main into the branch and checking it again "+
+				"in round %d", f.Round)}
+	}
+	return TaskStep{Action: ActionMerge, Message: merging}
 }
 
 // noVerdictStep decides what follows a review run that ended without a verdict:
