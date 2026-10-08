@@ -98,6 +98,8 @@
 set -uo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=hack/lib/session-env.sh
+. "$REPO/hack/lib/session-env.sh"
 DIR="$REPO/.relay"
 STOP="$DIR/stop"
 LOG="$DIR/watch.log"
@@ -460,7 +462,7 @@ round() {
   esac
 }
 
-code_sum() { cksum <"$REPO/hack/relay-watch.sh"; }
+code_sum() { cat "$REPO/hack/relay-watch.sh" "$REPO/hack/lib/session-env.sh" 2>/dev/null | cksum; }
 
 # --install and --uninstall. The unit goes to the user's own systemd folder,
 # not $XDG_CONFIG_HOME, which the project shell points into .dev/.
@@ -606,6 +608,9 @@ uninstall_watch() {
 
 # Sourced (hack/relay-watch_test.sh): the functions only.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
+# Whoever starts the watch, a Claude Code session among them, the watch and the
+# relay it starts run as from a plain project shell (#645).
+drop_session_env
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"

@@ -64,10 +64,14 @@
 # session to use one, and every issue is any worker's, needs/cluster or not.
 #
 # Workers load their code once, from this checkout. Before each pick a worker
-# runs hack/pull.sh here, and when that changed hack/relay.sh or
-# hack/lib/github.sh it restarts itself on the new code, so a relay that runs
-# for hours never picks by stale rules. RELAY_PULL=0 turns this off, to try relay
-# changes from a branch.
+# runs hack/pull.sh here, and when that changed hack/relay.sh,
+# hack/lib/github.sh or hack/lib/session-env.sh it restarts itself on the new
+# code, so a relay that runs for hours never picks by stale rules. RELAY_PULL=0
+# turns this off, to try relay changes from a branch.
+#
+# Started from a Claude Code or VS Code session or not, the relay and its
+# sessions run as from a plain project shell: hack/lib/session-env.sh drops that
+# session's variables (CLAUDECODE, CLAUDE_CODE_SESSION_ID, VSCODE_*, ...).
 #
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-99); workers already running are left alone
@@ -149,6 +153,8 @@ LOCK="$DIR/lock-$K"
 
 # shellcheck source=hack/lib/github.sh
 . "$REPO/hack/lib/github.sh"
+# shellcheck source=hack/lib/session-env.sh
+. "$REPO/hack/lib/session-env.sh"
 # The worker's claim and unposted handoffs live in its worktree, where its
 # sessions' hack/lib/github.sh and heartbeat hook look for them.
 GH_PENDING_DIR="$WT/.relay"
@@ -412,7 +418,7 @@ worktree() {
 
 # code_sum: a checksum of the relay's own code, to see whether a pull changed it.
 code_sum() {
-  cat "$REPO/hack/relay.sh" "$REPO/hack/lib/github.sh" 2>/dev/null | cksum
+  cat "$REPO/hack/relay.sh" "$REPO/hack/lib/github.sh" "$REPO/hack/lib/session-env.sh" 2>/dev/null | cksum
 }
 
 # update LEFT: run hack/pull.sh in this checkout, and restart the worker with
@@ -708,7 +714,9 @@ session() {
   # every process it started. Neither gets the worker's lock (fd 9): a process
   # the session leaves behind would hold it after the worker exits, and the
   # watch would see the worker as running.
-  (cd "$WT" && C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+  # Started from a Claude Code session or not, the session gets the same
+  # environment (#645).
+  (cd "$WT" && drop_session_env && C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
@@ -1001,6 +1009,7 @@ work() {
 
 # Sourced (hack/relay_test.sh): the functions only.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
+drop_session_env
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
