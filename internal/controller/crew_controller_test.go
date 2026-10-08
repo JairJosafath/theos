@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -433,6 +434,76 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Status.Feedback).To(ContainSubstring("main moved since its checks ran"))
 		}, "30s").Should(Succeed())
 		Expect(gitFake.pullRequests(ns, "orders-api")[pr.Number-1].Merged).To(BeFalse())
+	})
+
+	It("merges a cleanly updated branch the Git host is still testing, not sending it back for conflicts", func() {
+		ns := newProjectNamespace()
+		pr, head := approvedBehindMain(ns)
+
+		By("waiting while the Git host says the pull request doesn't merge, as it tests it against main")
+		gitFake.retest(ns, "orders-api", pr.Number, true)
+		gitFake.setChecks(ns, "orders-api", head, "success")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			cond := meta.FindStatusCondition(task.Status.Conditions, ConditionProgressing)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Message).To(ContainSubstring("waiting for the Git host"))
+		}, "30s").Should(Succeed())
+		Consistently(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.History).NotTo(ContainElement(HaveField("Reason", "ResolvingConflicts")))
+		}, "2s").Should(Succeed())
+
+		By("merging once the Git host found it merges")
+		gitFake.retest(ns, "orders-api", pr.Number, false)
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+		}, "30s").Should(Succeed())
+	})
+
+	It("merges an approved change whose implementer, sent to resolve conflicts, finds none", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 2)
+		gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		mustCreate(newCrew(ns))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }, "30s").Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement", Commit: "sha-1"}, "")
+		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }, "30s").Should(Succeed())
+		pr := gitFake.pullRequests(ns, "orders-api")[0]
+		gitFake.conflict(ns, "orders-api", pr.Number, true)
+		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Good."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.History).To(ContainElement(HaveField("Reason", "ResolvingConflicts")))
+		}, "30s").Should(Succeed())
+
+		By("the implementer finding no conflict and committing nothing")
+		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-implement")})).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(sandboxExists(g, ns, "orders-api-1-r1-implement").GetDeletionTimestamp()).To(BeNil())
+			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement")).To(ContainElement(
+				map[string]any{"name": agentrunner.EnvPullRequest, "value": fmt.Sprint(pr.Number)}))
+		}, "30s").Should(Succeed())
+		gitFake.conflict(ns, "orders-api", pr.Number, false)
+		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
+			&agentrunner.Result{Role: "implement", Commit: "sha-1", Summary: "Main merges cleanly; nothing to resolve."}, "")
+
+		By("reviewing the branch as it is and merging it, in the same round")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }, "30s").Should(Succeed())
+		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-review-a1")})).To(Succeed())
+		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Still good."}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+		}, "30s").Should(Succeed())
 	})
 
 	It("starts nothing while paused", func() {

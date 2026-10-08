@@ -165,7 +165,7 @@ func (r *TaskReconciler) wait(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStat
 		reason = "AgentUnavailable"
 	}
 	r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
-	if status.Phase == c4v1alpha1.TaskChecking {
+	if status.Phase == c4v1alpha1.TaskChecking || step.Recheck {
 		return ctrl.Result{RequeueAfter: r.checksRecheck()}
 	}
 	if reason == "AgentUnavailable" {
@@ -482,7 +482,8 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 // updateBranch merges main into an approved change's branch, as main moved since
 // its checks ran, and waits for the checks on the new head, which merges once
 // they pass. The review run stays for its follow-ups, and the verdict goes into
-// status. A branch that conflicts with main goes back to its implementer.
+// status. A branch that conflicts with main goes back to its implementer: the
+// merge, not the Git host's mergeable flag, tells a conflict.
 func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
 	container *c4v1alpha1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
 	provider, repo, err := r.gitRepo(ctx, container)
@@ -501,6 +502,11 @@ func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1alpha1.Task
 	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if pr.HeadSHA == status.Commit {
+		// Nothing merged: the branch had main already, and the Git host had not
+		// yet seen it. Look again once it has.
+		return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
 	}
 	status.Review = r.reviewFrom(ctx, task, status)
 	r.comment(ctx, task, status, container, step.Message+".")

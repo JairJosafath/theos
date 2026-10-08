@@ -348,8 +348,8 @@ func (r *TaskReconciler) noFreeSlot(ctx context.Context, task *c4v1alpha1.Task) 
 	return model.NoFreeSlot(task.Namespace+"/"+task.Name, r.now(), waiting, r.MaxSandboxes, len(sandboxes.Items)), nil
 }
 
-// pullFacts reads whether an approved change's pull request conflicts with main
-// or misses what merged into it since its checks ran: an approved change merges
+// pullFacts reads whether an approved change's pull request misses what merged
+// into main since its checks ran, and whether the Git host says it merges: an approved change merges
 // only on checks that ran against the main it merges into.
 func (r *TaskReconciler) pullFacts(ctx context.Context, container *c4v1alpha1.Container,
 	status *c4v1alpha1.TaskStatus, facts *model.TaskFacts) error {
@@ -366,7 +366,7 @@ func (r *TaskReconciler) pullFacts(ctx context.Context, container *c4v1alpha1.Co
 		return err
 	}
 	open := pr.State == stateOpen && !pr.Merged
-	facts.Conflicted, facts.Behind = open && !pr.Mergeable, open && pr.Behind
+	facts.Unmergeable, facts.Behind = open && !pr.Mergeable, open && pr.Behind
 	return nil
 }
 

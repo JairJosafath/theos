@@ -397,6 +397,7 @@ type fakeAgentState struct {
 	log       string                                // served for every CI job
 	files     map[string][]string                   // owner/name#number -> paths the pull request changes
 	forced    map[string][]int                      // owner/name -> pull requests force-merged
+	conflicts map[string]bool                       // owner/name#N -> conflicts with its base
 	gone      map[string]bool                       // owner/name#number -> pull request deleted
 	readErrs  map[string]int                        // owner/name#number -> reads left to fail
 	// edits are what the commit PushBranch made on a branch changes on main,
@@ -416,7 +417,7 @@ func (g *fakeGit) agentState() *fakeAgentState {
 			rules: map[string]gitprovider.BranchRule{}, tags: map[string][]string{},
 			agents: map[string]string{}, pulls: map[string][]*gitprovider.PullRequest{},
 			comments: map[string][]string{}, branches: map[string]string{}, authors: map[string]string{},
-			files: map[string][]string{}, forced: map[string][]int{}, gone: map[string]bool{},
+			files: map[string][]string{}, forced: map[string][]int{}, gone: map[string]bool{}, conflicts: map[string]bool{},
 			readErrs: map[string]int{},
 			edits:    map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{}, revoked: map[string]int{},
 		}
@@ -766,7 +767,7 @@ func (p *fakeProvider) UpdatePullRequest(_ context.Context, repo gitprovider.Rep
 	if err != nil {
 		return err
 	}
-	if !pr.Mergeable {
+	if p.git.agentState().conflicts[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)] {
 		return fmt.Errorf("pull request %d: %w", number, gitprovider.ErrConflict)
 	}
 	pr.HeadSHA, pr.Behind = p.git.newSHA(), false
