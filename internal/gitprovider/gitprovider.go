@@ -112,6 +112,10 @@ type Provider interface {
 	// Gitea it deletes the bot user, and its tokens with it. A user already gone
 	// is no error.
 	RemoveAgentAccess(ctx context.Context, repo Repository, user string) error
+	// RevokeOldAgentTokens revokes the tokens EnsureAgentAccess made for user
+	// before an upgrade changed their scopes, and keeps the current one. A user
+	// that doesn't exist is no error.
+	RevokeOldAgentTokens(ctx context.Context, user string) error
 	// OpenPullRequest opens a pull request from head into base, or returns the
 	// open one for head.
 	OpenPullRequest(ctx context.Context, repo Repository, head, base, title, body string) (PullRequest, error)
