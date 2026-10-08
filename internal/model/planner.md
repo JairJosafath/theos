@@ -23,7 +23,10 @@ can't apply it.
   it has acceptance criteria.
 - `model/failed.yaml`: the issues of your Containers handed back to the
   person, each with its Container, issue number, title, body, how many Tasks
-  it has had (`tries`), and why: its `kind` and `reason`.
+  it has had (`tries`), and why: its `kind` and `reason`. A release step
+  (a "Prepare vX" issue) has `release` too: its milestone as it is now, with
+  when its last try `stopped` and the issues `merged` into it, each with
+  `mergedAt` and `afterStop: true` when its last try didn't see it.
 
 ## What you write
 
@@ -245,6 +248,10 @@ Push the branch `plan/<round>` with these files:
     person can decide (product direction, money, access). Retry an issue only
     when something changed since its last try, or with a `clarify` that says
     what the agent missed; an `exhausted` one still can't be retried.
+    Judge a release step by its `release`, not only by its `reason`: its
+    last try may have found the milestone empty, but a merge with
+    `afterStop: true` came after it, so it has work to release now. Retry
+    it; a plan that closes it, or asks recommending to close it, is refused.
     `plan/summary.md` says in a sentence or two what you did; without it the
     Brief says one line per answer. An issue you leave unanswered counts as
     an `ask` with no recommendation.

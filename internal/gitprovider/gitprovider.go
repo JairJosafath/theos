@@ -182,7 +182,8 @@ type Provider interface {
 	// in the milestone with ID milestone, or in none when it is 0.
 	CreateIssue(ctx context.Context, repo Repository, title, body string, labels []string, milestone int64) (Issue, error)
 
-	// ListMilestones returns repo's open milestones.
+	// ListMilestones returns repo's open milestones. Both lists fail rather than
+	// come back cut short when there are too many to list in full.
 	ListMilestones(ctx context.Context, repo Repository) ([]Milestone, error)
 	// ListAllMilestones returns repo's milestones, open and closed, with their
 	// descriptions.
