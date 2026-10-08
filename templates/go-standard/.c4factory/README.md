@@ -18,6 +18,9 @@ issue and pull request templates, and the `make check` contract CI runs.
   `go test -race -count=1`. `.gitea/workflows/check.yaml` runs it on pull
   requests and on `main` on a runner labelled `go`, under the status context
   `check / check`, which the protected `main` requires (`model.CheckContexts`).
+  A change to only `CHANGELOG.md`, `docs/` or images (`.png`, `.jpg`, `.gif`,
+  `.svg`) skips the steps after the checkout and passes, so the context still
+  reports; any other file, `README.md` included, or a first push runs them.
   It keeps the toolchain image's Go build cache, which the image ships warm;
   nothing in this Standard redirects `GOCACHE`. The factory publishes its
   apps' released modules to the owner's Gitea package registry, under

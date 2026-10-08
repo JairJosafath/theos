@@ -466,7 +466,7 @@ catalog:
         supportedTypes: [cli]
     - kind: Standard
       name: go-standard
-      ref: v1.1.5
+      ref: v1.1.6
       spec:
         displayName: Go quality standard
         description: Strict golangci-lint, gofumpt, race-checked tests, role guides for agents and the make check CI.
@@ -476,7 +476,7 @@ catalog:
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
     - kind: Standard
       name: ts-standard
-      ref: v1.3.0
+      ref: v1.3.1
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
@@ -485,7 +485,7 @@ catalog:
         protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
     - kind: Standard
       name: python-standard
-      ref: v1.1.0
+      ref: v1.1.1
       spec:
         displayName: Python quality standard
         description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.

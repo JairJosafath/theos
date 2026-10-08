@@ -190,7 +190,9 @@ enforces.
 - **Standard: the rules as a layer.** Lint and format config, `AGENTS.md`, offline
   style digests, the `make check` contract and its CI workflow, rendered right after
   the Framework it lists. A Container with a Standard gets `main` protected by
-  required checks at scaffold time, and `status.checks` reports CI on `main`.
+  required checks at scaffold time, and `status.checks` reports CI on `main`. A change
+  that touches only the changelog, `docs/` or images passes CI without running
+  `make check`; the required context still reports.
 - **CI in Gitea.** Gitea Actions with a runner in the cluster on the same toolchain
   image the agents and devcontainers use. Both toolchain images, `base` and `go`,
   carry one pinned uv, so a Python project checks on either runner and releases
