@@ -242,6 +242,12 @@ type TaskStatus struct {
 	// +optional
 	PullRequestURL string `json:"pullRequestURL,omitempty"`
 
+	// continues names the earlier try, a Failed Task on the same issue, whose
+	// open pull request this Task took over: its branch, pull request and
+	// feedback became this Task's when its first run started.
+	// +optional
+	Continues string `json:"continues,omitempty"`
+
 	// checks is the CI result on commit.
 	// +optional
 	Checks *CheckStatus `json:"checks,omitempty"`

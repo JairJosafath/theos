@@ -51,6 +51,9 @@ const (
 	EnvResumed = "C4_RESUMED"
 	// EnvIssue is the number of the issue the goal comes from, if any.
 	EnvIssue = "C4_ISSUE"
+	// EnvPullRequest is the number of the Task's open pull request, when an
+	// implement run's branch already has one.
+	EnvPullRequest = "C4_PULL_REQUEST"
 	// EnvHarness and EnvModel say which agent program runs, with which model.
 	EnvHarness = "C4_HARNESS"
 	EnvModel   = "C4_MODEL"
@@ -100,6 +103,10 @@ type Job struct {
 	Resumed bool
 	// Issue is the issue the goal comes from; 0 for a written goal.
 	Issue int
+	// PullRequest is the open pull request of the branch an implement run
+	// works on; 0 when it has none yet. With one, a run that commits nothing
+	// is a round for the reviewer: it may have changed only the pull request.
+	PullRequest int
 	// Harness is the agent program, and Model the model it uses (empty: its default).
 	Harness string
 	Model   string
@@ -154,6 +161,13 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 			return Job{}, fmt.Errorf("%s=%q is not an issue number", EnvIssue, issue)
 		}
 		job.Issue = n
+	}
+	if pr := getenv(EnvPullRequest); pr != "" {
+		n, err := strconv.Atoi(pr)
+		if err != nil || n < 1 {
+			return Job{}, fmt.Errorf("%s=%q is not a pull request number", EnvPullRequest, pr)
+		}
+		job.PullRequest = n
 	}
 	for pair := range strings.SplitSeq(getenv(EnvRelated), ",") {
 		if pair = strings.TrimSpace(pair); pair == "" {

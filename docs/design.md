@@ -292,7 +292,13 @@ model and context it needs.
   Gitea dependencies (also across repositories) to close, and starts up to `parallel`
   Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
   first after the Standard changes that `Blocked` Tasks wait on, up to three
-  tries per issue. Milestones group the
+  tries per issue. A try continues an earlier try's pull request that is
+  still open: it works on that branch, with that try's feedback, and reports
+  to that pull request (`status.continues` names the earlier Task). A round
+  that changes only the pull request, such as its description, and commits
+  nothing goes to the reviewer as it is, and merges when approved; without a
+  pull request, a round with no commit has nothing to review
+  ([plan](plans/done/try-continues-open-pr.md)). Milestones group the
   backlog; Gitea 1.27 has no API for project boards.
 - **Releases go one at a time.** A milestone with a due date is a release. The
   Crew starts only the ready issues of the release due first that still has work
@@ -539,7 +545,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   `spec.parallel` is set is refused, and `brief.md` tells the planner the
   number now and where it comes from. A hand
   edit of such a Crew's `parallel` is set back, and `status.apps` shows each
-  Crew's. The agent-slot queue
+  Crew's, which the Brief's card shows per app ("3 at a time"); the create
+  form can set `spec.parallel`. The agent-slot queue
   still caps how many agents run. See
   [plans/done/brief-parallel.md](plans/done/brief-parallel.md).
 - **Follow-ups keep scaffold once.** A change to a scaffolded Container

@@ -3,7 +3,15 @@
 // These are the UI's only two writes; the CRD decides what is accepted.
 
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
-import { isBriefName, MAX_IDEA, MAX_PROMPT, nameFromIdea, type BriefWriter } from '../k8s/briefs'
+import {
+  DEFAULT_PARALLEL,
+  isBriefName,
+  MAX_IDEA,
+  MAX_PARALLEL,
+  MAX_PROMPT,
+  nameFromIdea,
+  type BriefWriter,
+} from '../k8s/briefs'
 import type { Brief, BriefAutopilot } from '../k8s/types'
 import {
   AUTOPILOT_MODES,
@@ -78,6 +86,8 @@ function NewBrief({ namespace, taken, writer }: { namespace: string; taken: stri
   const [typedName, setTypedName] = useState<string>()
   // Empty leaves spec.autopilot unset: the factory's default.
   const [autopilot, setAutopilot] = useState<BriefAutopilot | ''>('')
+  // 0 leaves spec.parallel unset: the factory's default.
+  const [parallel, setParallel] = useState(0)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string>()
   const [created, setCreated] = useState<string>()
@@ -93,11 +103,15 @@ function NewBrief({ namespace, taken, writer }: { namespace: string; taken: stri
     setSending(true)
     setError(undefined)
     try {
-      await writer.create(namespace, name, idea.trim(), autopilot || undefined)
+      await writer.create(namespace, name, idea.trim(), {
+        autopilot: autopilot || undefined,
+        parallel: parallel || undefined,
+      })
       setCreated(name)
       setIdea('')
       setTypedName(undefined)
       setAutopilot('')
+      setParallel(0)
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -165,6 +179,24 @@ function NewBrief({ namespace, taken, writer }: { namespace: string; taken: stri
         {(Object.keys(AUTOPILOT_MODES) as BriefAutopilot[]).map((mode) => (
           <option key={mode} value={mode}>
             {AUTOPILOT_MODES[mode].label}
+          </option>
+        ))}
+      </select>
+      <label className="field" htmlFor={`${id}-parallel`}>
+        <span className="field-label">Parallel</span>
+        <span className="field-hint">How many issues each of its crews works on at once.</span>
+      </label>
+      <select
+        id={`${id}-parallel`}
+        className="input"
+        value={parallel}
+        onChange={(e) => setParallel(Number(e.target.value))}
+        disabled={sending}
+      >
+        <option value={0}>The factory’s default ({DEFAULT_PARALLEL} at a time)</option>
+        {Array.from({ length: MAX_PARALLEL }, (_, i) => i + 1).map((n) => (
+          <option key={n} value={n}>
+            {n} at a time
           </option>
         ))}
       </select>
@@ -518,6 +550,11 @@ function AppLine({ app, now }: { app: BriefAppView; now: number }) {
         ) : app.publishTo ? (
           <span className="brief-app-published" title="Where its releases are published">
             to {app.publishTo}
+          </span>
+        ) : null}
+        {app.parallel ? (
+          <span className="brief-app-parallel" title="How many issues its crew works on at once">
+            {app.parallel}
           </span>
         ) : null}
       </div>

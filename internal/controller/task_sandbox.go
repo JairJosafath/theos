@@ -124,6 +124,10 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	if task.Spec.Issue > 0 {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvIssue, Value: strconv.Itoa(int(task.Spec.Issue))})
 	}
+	if run.role == model.RoleImplementer && run.status.PullRequest > 0 {
+		// A round that changes only the pull request then needs no commit.
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvPullRequest, Value: strconv.Itoa(int(run.status.PullRequest))})
+	}
 	if len(run.allowedPaths) > 0 {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvAllowedPaths, Value: strings.Join(run.allowedPaths, ",")})
 	}

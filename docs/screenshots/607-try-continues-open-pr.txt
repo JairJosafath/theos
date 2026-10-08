@@ -1,0 +1,35 @@
+# #607: a try continues an earlier try's open pull request (otter-607)
+
+$ go test ./internal/controller/ -run TestControllers -v -args -ginkgo.focus="earlier try" -ginkgo.v
+  STEP: bootstrapping test environment @ 10/08/26 20:02:54.466
+  STEP: installing the admission policy @ 10/08/26 20:02:57.817
+  STEP: binding the generated role to the operator's ServiceAccount @ 10/08/26 20:02:57.83
+  STEP: making the operator's namespace, the source of shared Secrets @ 10/08/26 20:02:57.836
+  STEP: starting the manager with every reconciler, as that ServiceAccount @ 10/08/26 20:02:57.839
+Task on an issue an earlier try left a pull request for continues that branch and pull request, and merges a round with no commit once approved
+  STEP: failing the first try with its pull request open @ 10/08/26 20:03:00.221
+  STEP: starting the next try on the earlier try's branch, with its feedback @ 10/08/26 20:03:00.573
+  STEP: reviewing a round that changed only the pull request, and merging it when approved @ 10/08/26 20:03:00.682
+Task on an issue an earlier try left a pull request for starts its own branch when the earlier try's pull request is closed
+  STEP: tearing down the test environment @ 10/08/26 20:03:01.4
+Ran 2 of 231 Specs in 8.090 seconds
+SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 229 Skipped
+ok  	github.com/JairJosafath/c4factory/internal/controller	8.122s
+
+$ go test ./internal/model/ -run TestEarlierTry -v
+--- PASS: TestEarlierTry (0.00s)
+    --- PASS: TestEarlierTry/none_before (0.00s)
+    --- PASS: TestEarlierTry/the_newest_failed_try_with_a_pull_request (0.00s)
+    --- PASS: TestEarlierTry/a_try_without_a_pull_request_is_passed_over (0.00s)
+    --- PASS: TestEarlierTry/an_active_try_is_not_continued (0.00s)
+    --- PASS: TestEarlierTry/another_issue's_try_is_not_continued (0.00s)
+    --- PASS: TestEarlierTry/a_later_try_is_not_continued (0.00s)
+    --- PASS: TestEarlierTry/the_Task_itself_is_not_its_earlier_try (0.00s)
+    --- PASS: TestEarlierTry/a_written_goal_continues_nothing (0.00s)
+    --- PASS: TestEarlierTry/ties_go_by_name (0.00s)
+ok  	github.com/JairJosafath/c4factory/internal/model	0.004s
+
+$ go test ./internal/agentrunner/ -run "TestRunImplementWithoutCommitOnAPullRequest|TestPrompts" -v
+--- PASS: TestPrompts (0.00s)
+--- PASS: TestRunImplementWithoutCommitOnAPullRequest (0.13s)
+ok  	github.com/JairJosafath/c4factory/internal/agentrunner	0.134s

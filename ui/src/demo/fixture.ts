@@ -725,6 +725,7 @@ export function demoStory(now: number): StoryData {
             container: 'orders-api',
             crew: 'orders-api',
             releases: 'On',
+            parallel: 3,
             publishTo: 'webshop-co/orders-api',
             lastRelease: {
               tag: 'v0.2.0',
@@ -740,6 +741,7 @@ export function demoStory(now: number): StoryData {
             container: 'storefront',
             crew: 'storefront',
             releases: 'Off',
+            parallel: 1,
             message: 'Releases are off: ask for them in a prompt, or name this app in spec.releases.',
           },
           {
