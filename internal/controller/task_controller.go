@@ -337,10 +337,8 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 // noFreeSlot reports whether the Task must wait for an agent slot: all are taken,
 // or a Task that has waited longer goes first.
 func (r *TaskReconciler) noFreeSlot(ctx context.Context, task *c4v1alpha1.Task) (bool, error) {
-	sandboxes := &unstructured.UnstructuredList{}
-	sandboxes.SetGroupVersionKind(SandboxGVK.GroupVersion().WithKind("SandboxList"))
-	// Counted live: the cache may not have the sandbox started a moment ago.
-	if err := r.APIReader.List(ctx, sandboxes, client.MatchingLabels{LabelAgentSandbox: agentSandboxValue}); err != nil {
+	held, err := r.slotHolders(ctx)
+	if err != nil {
 		return false, err
 	}
 	var tasks c4v1alpha1.TaskList
@@ -353,7 +351,40 @@ func (r *TaskReconciler) noFreeSlot(ctx context.Context, task *c4v1alpha1.Task) 
 			waiting = append(waiting, model.SlotWaiter{Name: t.Namespace + "/" + t.Name, Since: t.Status.SlotWaitSince.Time})
 		}
 	}
-	return model.NoFreeSlot(task.Namespace+"/"+task.Name, r.now(), waiting, r.MaxSandboxes, len(sandboxes.Items)), nil
+	return model.NoFreeSlot(task.Namespace+"/"+task.Name, r.now(), waiting, r.MaxSandboxes, len(held)), nil
+}
+
+// slotHolders lists the agent sandboxes, as namespace/name, that hold a slot:
+// every one whose run hasn't ended. A sandbox kept after its pod succeeded or
+// failed, a reviewer's while its Task waits for CI, holds none.
+func (r *TaskReconciler) slotHolders(ctx context.Context) ([]string, error) {
+	sandboxes := &unstructured.UnstructuredList{}
+	sandboxes.SetGroupVersionKind(SandboxGVK.GroupVersion().WithKind("SandboxList"))
+	agents := client.MatchingLabels{LabelAgentSandbox: agentSandboxValue}
+	// Counted live: the cache may not have the sandbox started a moment ago.
+	if err := r.APIReader.List(ctx, sandboxes, agents); err != nil {
+		return nil, err
+	}
+	var pods corev1.PodList
+	if err := r.APIReader.List(ctx, &pods, agents); err != nil {
+		return nil, err
+	}
+	ended := map[string]*corev1.Pod{}
+	for i, pod := range pods.Items {
+		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			ended[pod.Namespace+"/"+pod.Name] = &pods.Items[i]
+		}
+	}
+	var held []string
+	for i := range sandboxes.Items {
+		sandbox := &sandboxes.Items[i]
+		name := sandbox.GetNamespace() + "/" + sandbox.GetName()
+		// A pod of an earlier sandbox with this name is not this one's run.
+		if pod := ended[name]; pod == nil || !metav1.IsControlledBy(pod, sandbox) {
+			held = append(held, name)
+		}
+	}
+	return held, nil
 }
 
 // pullFacts reads whether an approved change's pull request misses what merged
