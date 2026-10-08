@@ -107,14 +107,18 @@ cat <<EOF
 Images: \`$REGISTRY/<name>:$VERSION\` for operator, ui, seed, the toolchains
 base and go, agent-base, agent-go, gitea-runner-base and gitea-runner-go.
 
-Install: [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox) first,
-then a namespace for each project, then the chart with the projects in \`gitea.projects\`:
+Install, as the guide below does without a pull secret: [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
+first, then the release's namespace and Gitea's, then the chart with the
+projects in \`gitea.projects\`, for each of which the chart makes a namespace:
 
 \`\`\`bash
 kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
-kubectl create namespace webshop
+for ns in c4-factory-system gitea; do
+  kubectl create namespace \$ns --dry-run=client -o yaml | kubectl apply -f -
+done
 helm install c4-factory oci://$REGISTRY/charts/c4-factory --version $VERSION \\
-  -n c4-factory-system --create-namespace --wait --timeout 10m \\
+  -n c4-factory-system --wait --timeout 10m \\
+  --set gitea.createNamespace=false \\
   --set 'gitea.projects={webshop}'
 \`\`\`
 
