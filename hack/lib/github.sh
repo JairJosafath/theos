@@ -1321,14 +1321,17 @@ gh_flush() {
   return $rc
 }
 
-# gh_closing_refs: the issues the text on stdin closes, one number per line:
-# a GitHub closing keyword (close[sd], fix(e[sd]), resolve[sd], any case, an
-# optional colon) before #N, OWNER/REPO#N or the issue's URL, of this
+# gh_closing_refs [--leading]: the issues the text on stdin closes, one number
+# per line: a GitHub closing keyword (close[sd], fix(e[sd]), resolve[sd], any
+# case, an optional colon) before #N, OWNER/REPO#N or the issue's URL, of this
 # repository. A pull request body, or a commit message that reaches main,
-# saying one closes N at merge, wherever the words sit, prose included.
+# saying one closes N at merge, wherever the words sit, prose included. With
+# --leading, only the keywords that start a line (Closes #N on its own line).
+# The one closing-keyword matcher: merge, closes-check and close-guard use it.
 gh_closing_refs() {
-  local m ref repo
-  grep -oiE '(^|[^[:alnum:]_])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+(https?://github\.com/[[:alnum:]_.-]+/[[:alnum:]_.-]+/issues/[0-9]+|([[:alnum:]_.-]+/[[:alnum:]_.-]+)?#[0-9]+)' |
+  local m ref repo before='(^|[^[:alnum:]_])'
+  [ "${1:-}" != --leading ] || before='^[[:space:]]*'
+  grep -oiE "$before"'(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+(https?://github\.com/[[:alnum:]_.-]+/[[:alnum:]_.-]+/issues/[0-9]+|([[:alnum:]_.-]+/[[:alnum:]_.-]+)?#[0-9]+)' |
     while IFS= read -r m; do
       ref=${m##*[[:space:]]}
       if [[ $ref =~ github\.com/([^/]+/[^/]+)/issues/([0-9]+)$ ]]; then
@@ -1339,6 +1342,15 @@ gh_closing_refs() {
       [ -z "$repo" ] || [ "${repo,,}" = "${C4_GITHUB_REPO,,}" ] || continue
       echo "$ref"
     done
+}
+
+# gh_closing_line N: the first line of the text on stdin that closes N
+# (gh_closing_refs), trimmed; nothing when none does.
+gh_closing_line() {
+  local line
+  while IFS= read -r line; do
+    grep -qxF -- "$1" <<<"$(gh_closing_refs <<<"$line")" && { sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$line"; return; }
+  done
 }
 
 # gh_steps N [SKIP...]: N's steps, the "Depends on #S" lines of its body, one
@@ -1445,22 +1457,19 @@ gh_close() {
   gh_parents --apply "$n" || echo "github: closed #$n but could not close the plan parents waiting on it (hack/lib/github.sh parents --apply)" >&2
 }
 
-# GitHub's closing keywords, optionally with a colon, before #N or OWNER/REPO#N.
-GH_CLOSE_WORDS='(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+([[:alnum:]_.-]+/[[:alnum:]_.-]+)?#'
-
 # gh_merge PR: merge pull request PR with a merge commit, unless it would close
 # an issue its body says Refs #N to. GitHub reads a closing keyword next to #N
 # anywhere in the body or a commit message, prose included ("its PR closes
 # #N"), so a plan's pull request would close its parent with the steps
 # unbuilt. Refused (exit 1) when such a phrase is there or GraphQL's
-# closingIssuesReferences lists N; the message names the phrase to reword.
+# closingIssuesReferences lists N; the message names the line to reword.
 # Refused as well when it would close any issue that no line of the body or a
 # commit message starts with Closes, Fixes or Resolves #N for: a step's or a
 # fix's prose ("its PR closes #9") closes #9 too, and the message names the line.
 # Refused too when it would close an issue with a "Depends on #S" step still
 # open (gh_closes_check), or GitHub can't be asked whether it would.
 gh_merge() {
-  local pr=${1:?usage: merge PR} view text refs closing meant line n phrase bad=
+  local pr=${1:?usage: merge PR} view text refs closing meant line n bad=
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
@@ -1470,9 +1479,9 @@ gh_merge() {
   closing=$(jq -r '.closingIssuesReferences.nodes[]?.number' <<<"$view")
   refs=$(jq -r '.body // ""' <<<"$view" | grep -oiE '\brefs:?[[:space:]]+#[0-9]+\b' | grep -oE '[0-9]+$' | sort -un)
   for n in $refs; do
-    phrase=$(grep -oiE "\\b$GH_CLOSE_WORDS$n\\b" <<<"$text" | head -1)
-    if [ -n "$phrase" ]; then
-      echo "github: #$pr says Refs #$n, but \"$phrase\" in it closes #$n on merge; reword it (no close, fix or resolve word before #$n)" >&2
+    line=$(gh_closing_line "$n" <<<"$text")
+    if [ -n "$line" ]; then
+      echo "github: #$pr says Refs #$n, but \"$line\" in it closes #$n on merge; reword it (no close, fix or resolve word before #$n)" >&2
       bad=1
     elif grep -qx "$n" <<<"$closing"; then
       echo "github: #$pr says Refs #$n, but GitHub would close #$n on merge (closingIssuesReferences); drop the link or the closing word before it" >&2
@@ -1481,12 +1490,10 @@ gh_merge() {
   done
   [ -z "$bad" ] || return 1
   # It closes only what a line starts with Closes, Fixes or Resolves #N names.
-  meant=$(grep -oiE '^[[:space:]]*(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+(https?://github\.com/[[:alnum:]_.-]+/[[:alnum:]_.-]+/issues/[0-9]+|([[:alnum:]_.-]+/[[:alnum:]_.-]+)?#[0-9]+)' <<<"$text" | gh_closing_refs | sort -un)
+  meant=$(gh_closing_refs --leading <<<"$text" | sort -un)
   for n in $( { gh_closing_refs <<<"$text"; echo "$closing"; } | sort -un); do
     grep -qxF -- "$n" <<<"$meant" && continue
-    line=$(while IFS= read -r line; do
-      grep -qxF -- "$n" <<<"$(gh_closing_refs <<<"$line")" && { sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$line"; break; }
-    done <<<"$text")
+    line=$(gh_closing_line "$n" <<<"$text")
     if [ -n "$line" ]; then
       echo "github: #$pr would close #$n on merge: \"$line\" names it with a closing word, and no line starts with Closes #$n; reword it (no close, fix or resolve word before #$n), or put Closes #$n on its own line" >&2
     else
