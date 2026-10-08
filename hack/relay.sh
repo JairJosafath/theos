@@ -523,13 +523,16 @@ paused() {
 }
 
 # limit_message OUT: the line that says session OUT ended on a usage limit or a
-# failed login, from its result when it is an error or the session exited
-# non-zero (S_RC), else (no result) the tail of OUT.err.
+# failed login. It reads the CLI's own words only, never the agent's final
+# message (#655): the result when it is an error, or when the session exited
+# non-zero (S_RC) before any turn ran; and the tail of OUT.err when there is no
+# result or the session exited non-zero.
 limit_message() {
   local out=$1
   {
     if jq -e 'has("result")' "$out.json" >/dev/null 2>&1; then
-      jq -r --arg rc "${S_RC:-0}" 'select(.is_error == true or $rc != "0") | .result // empty' "$out.json"
+      jq -r --arg rc "${S_RC:-0}" 'select(.is_error == true or ($rc != "0" and (.num_turns // 0) == 0)) | .result // empty' "$out.json"
+      [ "${S_RC:-0}" = 0 ] || tail -n 20 "$out.err" 2>/dev/null
     else
       tail -n 20 "$out.err" 2>/dev/null
     fi
