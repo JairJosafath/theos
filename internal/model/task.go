@@ -235,9 +235,11 @@ type TaskFacts struct {
 	// AgentBackIn is how long until an unavailable agent is tried again; zero or
 	// less means now.
 	AgentBackIn time.Duration
-	// Conflicted means the pull request can no longer merge: main moved since
-	// the branch was made, with changes that conflict.
-	Conflicted bool
+	// Unmergeable means the Git host doesn't say the pull request merges. It is
+	// no conflict by itself: the host says so too while it tests the pull
+	// request against a main that just moved. Only merging main into the
+	// branch tells a conflict.
+	Unmergeable bool
 	// Behind means main moved since the pull request's branch last took it in:
 	// its checks ran without what merged since.
 	Behind bool
@@ -453,6 +455,9 @@ type TaskStep struct {
 	// SlotWait means the Task would start a sandbox but waits for a free slot;
 	// only such Tasks queue for one (see HasSlotTurn).
 	SlotWait bool
+	// Recheck means the wait ends on the Git host, which sends no event: the
+	// Task looks again after a while.
+	Recheck bool
 	// RetryAt is when to try an unavailable agent again; zero means the default delay.
 	RetryAt time.Time
 	// Reason is a failed Task's reason, when not ReasonFailed.
@@ -617,17 +622,20 @@ func ConflictStep(round int) TaskStep {
 }
 
 // approvedStep decides what follows an approval: a merge, unless main moved
-// since the change's checks ran. A change that conflicts with main goes back to
-// its implementer; one that doesn't takes in main and is checked again first.
-// Neither is the agent's fault: another change merged first. Neither costs a round.
+// since the change's checks ran. Then the change takes in main and is checked
+// again first, or, when main conflicts with it, goes back to its implementer
+// (ActionUpdateBranch tells which). Neither is the agent's fault: another change
+// merged first. Neither costs a round. A branch that has main's head can't
+// conflict with it: while the Git host doesn't yet say it merges, it waits.
 func approvedStep(f TaskFacts, merging string) TaskStep {
 	switch {
-	case f.Conflicted:
-		return ConflictStep(f.Round)
 	case f.Behind:
 		return TaskStep{Action: ActionUpdateBranch, Message: fmt.Sprintf(
 			"Approved, but main moved since the checks ran; merging main into the branch and checking it again "+
 				"in round %d", f.Round)}
+	case f.Unmergeable:
+		return TaskStep{Action: ActionWait, Recheck: true,
+			Message: "Approved; waiting for the Git host to find that the pull request merges"}
 	}
 	return TaskStep{Action: ActionMerge, Message: merging}
 }

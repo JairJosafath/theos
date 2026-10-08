@@ -1,0 +1,15 @@
+#691: an approved change the operator updated cleanly waits while the Git host retests it, then merges
+
+$ go test ./internal/model -run TestNextTaskStep -v (excerpt)
+--- PASS: TestNextTaskStepConflicts (0.00s)
+--- PASS: TestNextTaskStepBehindMain (0.00s)
+ok  	github.com/JairJosafath/c4factory/internal/model	0.004s
+
+$ go test ./internal/controller -ginkgo.focus 'Git host is still testing|finds none' (envtest)
+Ran 2 of 247 Specs: 2 Passed (merges a cleanly updated branch the Git host is still testing, not sending it
+back for conflicts; merges an approved change whose implementer, sent to resolve conflicts, finds none)
+ok  	github.com/JairJosafath/c4factory/internal/controller	14.411s
+
+Without the fix, the first spec fails (it went to ResolvingConflicts): 1 Passed | 1 Failed.
+
+make check: passed

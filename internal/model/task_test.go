@@ -607,14 +607,19 @@ func TestNextTaskStepAgentUnavailable(t *testing.T) {
 }
 
 func TestNextTaskStepConflicts(t *testing.T) {
-	approved := RunState{Started: true, Done: true, Result: &RunResult{Verdict: VerdictApprove, Summary: "Good."}}
-	got := NextTaskStep(TaskFacts{Phase: TaskReviewing, Round: 3, MaxRounds: 3, Run: approved, Conflicted: true})
+	got := ConflictStep(3)
 	if got.Action != ActionResolveConflicts || !strings.Contains(got.Feedback, "Merge main into your branch") ||
 		!strings.Contains(got.Message, "round 3 resolves them") {
-		t.Errorf("NextTaskStep() = %+v, want the implementer to resolve the conflicts in the same round", got)
+		t.Errorf("ConflictStep() = %+v, want the implementer to resolve the conflicts in the same round", got)
 	}
+	approved := RunState{Started: true, Done: true, Result: &RunResult{Verdict: VerdictApprove, Summary: "Good."}}
 	if got := NextTaskStep(TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: approved}); got.Action != ActionMerge {
 		t.Errorf("NextTaskStep() = %+v, want a merge without conflicts", got)
+	}
+	// The Git host sends no event once it found the pull request merges.
+	if got := NextTaskStep(TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: approved,
+		Unmergeable: true}); !got.Recheck {
+		t.Errorf("NextTaskStep() = %+v, want a wait that looks again", got)
 	}
 }
 
@@ -632,9 +637,16 @@ func TestNextTaskStepBehindMain(t *testing.T) {
 		{name: "an approved change whose checks ran on an older main takes in main",
 			facts: TaskFacts{Phase: TaskReviewing, Round: 3, MaxRounds: 3, Run: approved, Behind: true},
 			want:  ActionUpdateBranch, message: "checking it again in round 3"},
-		{name: "a conflict with main goes to the implementer, not to an update",
-			facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: approved, Behind: true, Conflicted: true},
-			want:  ActionResolveConflicts, message: "round 1 resolves them"},
+		{name: "an unmergeable change behind main takes in main: the update tells a conflict",
+			facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: approved, Behind: true, Unmergeable: true},
+			want:  ActionUpdateBranch, message: "checking it again in round 1"},
+		{name: "a change that has main's head waits while the Git host tests whether it merges",
+			facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: approved, Unmergeable: true},
+			want:  ActionWait, message: "waiting for the Git host"},
+		{name: "the updated branch waits while the Git host tests whether it merges, then merges",
+			facts: TaskFacts{Phase: TaskChecking, Round: 3, MaxRounds: 3, MergeWhenChecksPass: true, Checks: "success",
+				Unmergeable: true},
+			want: ActionWait, message: "waiting for the Git host"},
 		{name: "an approved change up to date with main merges",
 			facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: approved},
 			want:  ActionMerge, message: "Approved; merging"},
@@ -648,10 +660,10 @@ func TestNextTaskStepBehindMain(t *testing.T) {
 			facts: TaskFacts{Phase: TaskChecking, Round: 2, MaxRounds: 3, MergeWhenChecksPass: true, Checks: "success",
 				Behind: true},
 			want: ActionUpdateBranch, message: "in round 2"},
-		{name: "main moved again with a conflict",
+		{name: "main moved again, maybe with a conflict: the update tells",
 			facts: TaskFacts{Phase: TaskChecking, Round: 2, MaxRounds: 3, MergeWhenChecksPass: true, Checks: "success",
-				Behind: true, Conflicted: true},
-			want: ActionResolveConflicts, message: "round 2 resolves them"},
+				Behind: true, Unmergeable: true},
+			want: ActionUpdateBranch, message: "in round 2"},
 		{name: "failing checks with main merged in start the next round",
 			facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, MergeWhenChecksPass: true, Checks: "failure",
 				ChecksURL: "http://ci/1"},

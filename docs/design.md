@@ -206,6 +206,12 @@ enforces.
   the Git host, with no agent run and no round spent, waits for the checks
   again, and merges when they pass, without another review. A branch that
   conflicts with `main` goes back to its implementer in the same round instead.
+  Only that merge through the Git host decides a conflict: the host's
+  "mergeable" flag is stale while it tests the pull request against a `main`
+  that just moved, so a branch that has `main`'s head waits for it rather than
+  going back. An implementer sent to resolve conflicts that finds none commits
+  nothing; its branch, with its pull request, is checked and reviewed again as
+  it is, and merges when approved.
   Failed checks, requested changes or a failed run start the next round with
   that feedback, up to the Agent's `maxRounds`. An implementer that finds its issue can't be done yet (it waits
   on work not merged or released) or can't be done in the sandbox changes

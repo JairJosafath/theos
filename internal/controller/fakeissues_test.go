@@ -460,15 +460,32 @@ func (g *fakeGit) pullAuthor(owner, name string, number int) string {
 	return g.agentState().authors[fmt.Sprintf("%s/%s#%d", owner, name, number)]
 }
 
-// conflict makes a pull request conflict with its base, or merge cleanly again.
+// conflict makes a pull request conflict with its base, as main moved with
+// conflicting changes, or merge cleanly again.
 //
 //nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) conflict(owner, name string, number int, conflicted bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	g.agentState().conflicts[fmt.Sprintf("%s/%s#%d", owner, name, number)] = conflicted
 	for _, pr := range g.agentState().pulls[owner+"/"+name] {
 		if pr.Number == number {
 			pr.Mergeable = !conflicted
+			pr.Behind = conflicted // resolving it takes in main
+		}
+	}
+}
+
+// retest makes the Git host say a pull request doesn't merge while it tests it
+// against its base, which conflicts with it no more than before, or finish.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) retest(owner, name string, number int, testing bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, pr := range g.agentState().pulls[owner+"/"+name] {
+		if pr.Number == number {
+			pr.Mergeable = !testing
 		}
 	}
 }
