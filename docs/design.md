@@ -312,8 +312,14 @@ model and context it needs.
   milestone. Tags go out in due-date order, and a tag is never moved: a tag
   already at that commit only closes the milestone, one at another commit is
   left to a person. A release is also left to a person when it has no merged
-  issue, or when the tag would carry a later release's merged work. Each release
-  is an Event, the log line `Released milestone` and `status.lastRelease`; a
+  issue. When the tag would carry a later release's merged work (its issue was
+  handed back, and the Crew went on), the Crew tags it anyway: first it moves
+  each closed issue of a later release that merged before the tag's commit into
+  this release's milestone, with a comment, so each milestone holds what its tag
+  carries; an open issue stays in its release. A later release left with no
+  issue closes untagged, its version skipped. See
+  [plans/done/release-carries-later-work.md](plans/done/release-carries-later-work.md).
+  Each release is an Event, the log line `Released milestone` and `status.lastRelease`; a
   release left to a person is a Warning Event, once per reason, and the Crew's
   `Released` condition says why. A paused Crew still tags: its release's work
   is already merged.
@@ -337,7 +343,7 @@ model and context it needs.
   done and an issue of it was merged by a Task, and the milestone has no issue
   labelled `kind/release` (open or closed, whoever filed it), the Crew files
   `Prepare vX.Y.Z` there, `kind/release` and `status/ready`, listing the merged
-  issues: its agents set the version files (`make release-version` checks them
+  issues, later releases' merged issues that its tag will carry included: its agents set the version files (`make release-version` checks them
   against the tag) and write the changelog. Its merge is then the release's
   newest, so the tag carries both. A release has one prepare issue; work merged
   after it leaves the release to a person (`MergedAfterPrepare`), who files

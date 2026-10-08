@@ -90,11 +90,33 @@ func TestNextRelease(t *testing.T) {
 			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(2, "v0.2.0", 12, nil, []int{1, 2})},
 				Merged: []MergedTask{merged("t-2", 2, "c2", 3), merged("t-1", 1, "c1", 3)}},
 			ReleaseStep{Tag: "v0.2.0", Commit: "c2", Milestone: 2, CreateTag: true}},
-		{"a later release's merge before the newest one is left to a person",
+		{"a later release's merge before the newest one moves into the release it tags",
 			ReleaseFacts{Milestones: []ReleaseMilestone{v020, milestone(3, "v0.3.0", 19, []int{121}, []int{120})},
 				Merged: append(serverMerges, merged("server-120", 120, "ccc1200", 5))},
-			ReleaseStep{Tag: "v0.2.0", Reason: ReleaseLaterWork, Held: "v0.2.0's newest merge (#45) came after #120 of v0.3.0 merged, so its tag would " +
-				"hold later work; a person tags it"}},
+			ReleaseStep{Tag: "v0.2.0", Commit: "694db57", Milestone: 2, CreateTag: true,
+				Moved: []ReleaseMove{{Issue: 120, From: "v0.3.0"}}}},
+		{"a later release's merges before the newest one move, from each later release, and one left empty closes",
+			ReleaseFacts{Milestones: []ReleaseMilestone{v020, milestone(3, "v0.3.0", 19, nil, []int{120, 122}),
+				milestone(4, "v0.4.0", 26, nil, []int{130, 131})},
+				Merged: append(serverMerges, merged("server-120", 120, "ccc1200", 5), merged("server-122", 122, "ccc1222", 4),
+					merged("server-130", 130, "ccc1300", 2), merged("server-131", 131, "ccc1310", 7))},
+			ReleaseStep{Tag: "v0.2.0", Commit: "694db57", Milestone: 2, CreateTag: true,
+				Moved:   []ReleaseMove{{Issue: 120, From: "v0.3.0"}, {Issue: 122, From: "v0.3.0"}, {Issue: 130, From: "v0.4.0"}},
+				Emptied: []EmptiedRelease{{ID: 3, Title: "v0.3.0"}}}},
+		{"a later issue closed by hand or merged again after the newest one stays",
+			ReleaseFacts{Milestones: []ReleaseMilestone{v020, milestone(3, "v0.3.0", 19, nil, []int{120, 123})},
+				Merged: append(serverMerges, merged("server-120", 120, "ccc1200", 5),
+					merged("server-120-again", 120, "ccc1201", 7))},
+			ReleaseStep{Tag: "v0.2.0", Commit: "694db57", Milestone: 2, CreateTag: true}},
+		{"a later release's prepare issue stays",
+			ReleaseFacts{Milestones: []ReleaseMilestone{v020,
+				{ID: 3, Release: Release{Title: "v0.3.0", Due: day(19)}, Closed: []int{120, 124}, Prepared: []int{124}}},
+				Merged: append(serverMerges, merged("server-120", 120, "ccc1200", 5), merged("server-124", 124, "ccc1240", 5))},
+			ReleaseStep{Tag: "v0.2.0", Commit: "694db57", Milestone: 2, CreateTag: true,
+				Moved: []ReleaseMove{{Issue: 120, From: "v0.3.0"}}}},
+		{"an empty later release is left alone",
+			ReleaseFacts{Milestones: []ReleaseMilestone{v020, milestone(3, "v0.3.0", 19, nil, nil)}, Merged: serverMerges},
+			ReleaseStep{Tag: "v0.2.0", Commit: "694db57", Milestone: 2, CreateTag: true}},
 		{"a later release's merge after the newest one is fine",
 			ReleaseFacts{Milestones: []ReleaseMilestone{v020, milestone(3, "v0.3.0", 19, nil, []int{120})},
 				Merged: append(serverMerges, merged("server-120", 120, "ccc1200", 7))},
@@ -107,16 +129,28 @@ func TestNextRelease(t *testing.T) {
 			ReleaseFacts{Milestones: []ReleaseMilestone{v020}, Merged: serverMerges,
 				Tags: map[string]string{"v0.2.0": "1234567"}},
 			ReleaseStep{Tag: "v0.2.0", Reason: ReleaseTagClash, Held: "v0.2.0 is done at 694db57 but the tag v0.2.0 names 1234567; a person resolves it"}},
-		{"a tag a person made at the same commit closes the milestone despite later work",
+		{"a tag already at the commit still moves the later work it carries",
 			ReleaseFacts{Milestones: []ReleaseMilestone{v020, milestone(3, "v0.3.0", 19, []int{121}, []int{120})},
 				Merged: append(serverMerges, merged("server-120", 120, "ccc1200", 5)),
 				Tags:   map[string]string{"v0.2.0": "694db57"}},
-			ReleaseStep{Tag: "v0.2.0", Commit: "694db57", Milestone: 2}},
-		{"a later release's reopened issue that merged early still counts",
+			ReleaseStep{Tag: "v0.2.0", Commit: "694db57", Milestone: 2, Moved: []ReleaseMove{{Issue: 120, From: "v0.3.0"}}}},
+		{"a later release's reopened issue that merged early stays in its release",
 			ReleaseFacts{Milestones: []ReleaseMilestone{v020, milestone(3, "v0.3.0", 19, []int{120}, nil)},
 				Merged: append(serverMerges, merged("server-120", 120, "ccc1200", 5))},
-			ReleaseStep{Tag: "v0.2.0", Reason: ReleaseLaterWork, Held: "v0.2.0's newest merge (#45) came after #120 of " +
-				"v0.3.0 merged, so its tag would hold later work; a person tags it"}},
+			ReleaseStep{Tag: "v0.2.0", Commit: "694db57", Milestone: 2, CreateTag: true}},
+		{"cel-lens v0.1.3: its prepare issue merged after v0.2.0's fixes, which move into it",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{
+				{ID: 1, Release: Release{Title: "v0.1.3", Due: day(5)}, Closed: []int{30, 31, 135}, Prepared: []int{135}},
+				milestone(2, "v0.2.0", 12, nil, []int{40, 41, 42, 43}),
+				milestone(3, "v0.3.0", 19, []int{137}, []int{136})},
+				Active: []int{137},
+				Merged: []MergedTask{merged("core-30", 30, "c30", 1), merged("core-40", 40, "c40", 2),
+					merged("core-41", 41, "c41", 2), merged("core-42", 42, "c42", 3), merged("core-43", 43, "c43", 3),
+					merged("core-31", 31, "c31", 4), merged("core-135", 135, "c135", 5), merged("core-136", 136, "c136", 6)}},
+			ReleaseStep{Tag: "v0.1.3", Commit: "c135", Milestone: 1, CreateTag: true,
+				Moved: []ReleaseMove{{Issue: 40, From: "v0.2.0"}, {Issue: 41, From: "v0.2.0"}, {Issue: 42, From: "v0.2.0"},
+					{Issue: 43, From: "v0.2.0"}},
+				Emptied: []EmptiedRelease{{ID: 2, Title: "v0.2.0"}}}},
 		{"a merge without its commit doesn't hold when a later try of the issue has one",
 			ReleaseFacts{Milestones: []ReleaseMilestone{v020},
 				Merged: append(serverMerges, merged("server-44-old", 44, "", 2))},
@@ -169,6 +203,11 @@ func TestNextReleasePrepares(t *testing.T) {
 		{"a done release with merged work gets its prepare issue, merges oldest first",
 			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3, 4}, nil)}, Merged: work},
 			ReleaseStep{Tag: "v0.2.0", Milestone: 2, File: true, Merged: []int{1, 2, 3}}},
+		{"the prepare issue lists the later releases' merged work its tag will carry",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3}, nil),
+				{ID: 3, Release: Release{Title: "v0.3.0", Due: day(19)}, Open: []int{9}, Closed: []int{5, 6, 8}}},
+				Merged: append(work, merged(6, "c6", 2), merged(5, "c5", 4))},
+			ReleaseStep{Tag: "v0.2.0", Milestone: 2, File: true, Merged: []int{1, 2, 3, 6, 5}}},
 		{"without the switch it is tagged as before",
 			ReleaseFacts{Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3}, nil)}, Merged: work},
 			ReleaseStep{Tag: "v0.2.0", Commit: "c3", Milestone: 2, CreateTag: true}},
@@ -330,5 +369,22 @@ func TestReleaseBumpable(t *testing.T) {
 				t.Errorf("ReleaseBumpable(%q, +%s) = %v; want %v", tt.result, tt.after, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestReleasedMessage(t *testing.T) {
+	step := ReleaseStep{Tag: "v0.1.3", Commit: "c135"}
+	if got, want := ReleasedMessage(step), "Released v0.1.3 at c135"; got != want {
+		t.Errorf("ReleasedMessage() = %q, want %q", got, want)
+	}
+	step.Moved = []ReleaseMove{{Issue: 40, From: "v0.2.0"}, {Issue: 41, From: "v0.2.0"}}
+	step.Emptied = []EmptiedRelease{{ID: 2, Title: "v0.2.0"}}
+	want := "Released v0.1.3 at c135, carrying #40 of v0.2.0, #41 of v0.2.0; v0.2.0 had nothing left and closed untagged"
+	if got := ReleasedMessage(step); got != want {
+		t.Errorf("ReleasedMessage() = %q, want %q", got, want)
+	}
+	if got := MovedComment(step, step.Moved[0]); !strings.Contains(got, "Moved from v0.2.0 to v0.1.3") ||
+		!strings.Contains(got, "c135") {
+		t.Errorf("MovedComment() = %q", got)
 	}
 }

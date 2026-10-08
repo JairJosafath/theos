@@ -71,7 +71,6 @@ const (
 	ReleaseWaiting       = "WaitsForEarlierRelease"
 	ReleaseNoMergedIssue = "NoMergedIssue"
 	ReleaseNoMergeCommit = "NoMergeCommit"
-	ReleaseLaterWork     = "HoldsLaterWork"
 	ReleaseTagClash      = "TagClash"
 	// ReleaseMergedAfterPrepare holds a release whose changelog misses work
 	// merged after its prepare issue.
@@ -79,10 +78,12 @@ const (
 )
 
 // ReleaseStep is what a Crew does about its releases. With File set, it files
-// release Tag's prepare issue in milestone Milestone, listing the issues Merged
-// in the order they merged. With Commit set, it tags Commit as Tag when
-// CreateTag says so, then closes milestone Milestone. With Held set, release Tag
-// is done but can't go out: Reason says why in a word, Held in a sentence. With
+// release Tag's prepare issue in milestone Milestone, listing the issues Merged:
+// its own in the order they merged, then the later releases' merged ones its
+// tag will carry. With Commit set, it moves the issues Moved into
+// milestone Milestone, tags Commit as Tag when CreateTag says so, then closes
+// milestone Milestone and the milestones Emptied. With Held set, release Tag is
+// done but can't go out: Reason says why in a word, Held in a sentence. With
 // none, there is nothing to do.
 type ReleaseStep struct {
 	Tag       string
@@ -91,8 +92,24 @@ type ReleaseStep struct {
 	CreateTag bool
 	File      bool
 	Merged    []int
+	Moved     []ReleaseMove
+	Emptied   []EmptiedRelease
 	Reason    string
 	Held      string
+}
+
+// ReleaseMove is a later release's closed issue whose merge the tag carries, to
+// move into the tagged release: issue Issue of release From.
+type ReleaseMove struct {
+	Issue int
+	From  string
+}
+
+// EmptiedRelease is a later release whose issues all moved into the tagged one,
+// so its milestone closes untagged.
+type EmptiedRelease struct {
+	ID    int64
+	Title string
 }
 
 // held is a ReleaseStep that leaves release title alone.
@@ -130,6 +147,10 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 
 	if f.Prepare && len(first.Prepared) == 0 {
 		if work := mergedWork(first, f.Merged); len(work) > 0 {
+			// The tag will carry the later releases' work merged so far.
+			for _, later := range releases[1:] {
+				work = append(work, mergedWork(later, f.Merged)...)
+			}
 			return ReleaseStep{Tag: first.Title, Milestone: first.ID, File: true, Merged: work}
 		}
 	}
@@ -164,20 +185,16 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 				first.Title, newest.Issue, prepared.Issue, LabelRelease, first.Title)
 		}
 	}
-	// An existing tag is never moved; at the right commit, only the milestone is
-	// left to close, whoever made the tag.
-	if existing, ok := f.Tags[first.Title]; ok {
-		if existing != newest.Commit {
-			return held(first.Title, ReleaseTagClash, "%s is done at %s but the tag %s names %s; a person resolves it",
-				first.Title, newest.Commit, first.Title, existing)
-		}
-		return ReleaseStep{Tag: first.Title, Commit: newest.Commit, Milestone: first.ID}
+	// An existing tag is never moved; at the right commit, only the milestones
+	// are left to settle, whoever made the tag.
+	existing, tagged := f.Tags[first.Title]
+	if tagged && existing != newest.Commit {
+		return held(first.Title, ReleaseTagClash, "%s is done at %s but the tag %s names %s; a person resolves it",
+			first.Title, newest.Commit, first.Title, existing)
 	}
-	if early := laterWorkBefore(releases[1:], f.Merged, *newest); early != "" {
-		return held(first.Title, ReleaseLaterWork, "%s's newest merge (#%d) came after %s merged, so its tag would "+
-			"hold later work; a person tags it", first.Title, newest.Issue, early)
-	}
-	return ReleaseStep{Tag: first.Title, Commit: newest.Commit, Milestone: first.ID, CreateTag: true}
+	moved, emptied := carriedWork(releases[1:], f.Merged, *newest)
+	return ReleaseStep{Tag: first.Title, Commit: newest.Commit, Milestone: first.ID, CreateTag: !tagged,
+		Moved: moved, Emptied: emptied}
 }
 
 // releaseDone reports whether a release has no open issue and no Task at work on
@@ -244,6 +261,34 @@ func PrepareIssue(tag string, merged []int, titles map[int]string) (title, body 
 	return "Prepare " + tag, b.String()
 }
 
+// MovedComment is the comment on an issue a release's tag carries, moved into it
+// from a later release.
+func MovedComment(step ReleaseStep, m ReleaseMove) string {
+	return fmt.Sprintf("Moved from %s to %s: it merged before %s's newest merge, so the tag %s at %s carries it.",
+		m.From, step.Tag, step.Tag, step.Tag, step.Commit)
+}
+
+// ReleasedMessage says a release went out, with the later releases' issues
+// moved into it and the later releases that left empty.
+func ReleasedMessage(step ReleaseStep) string {
+	message := fmt.Sprintf("Released %s at %s", step.Tag, step.Commit)
+	if len(step.Moved) > 0 {
+		moved := make([]string, 0, len(step.Moved))
+		for _, m := range step.Moved {
+			moved = append(moved, fmt.Sprintf("#%d of %s", m.Issue, m.From))
+		}
+		message += ", carrying " + strings.Join(moved, ", ")
+	}
+	if len(step.Emptied) > 0 {
+		titles := make([]string, 0, len(step.Emptied))
+		for _, e := range step.Emptied {
+			titles = append(titles, e.Title)
+		}
+		message += "; " + strings.Join(titles, ", ") + " had nothing left and closed untagged"
+	}
+	return message
+}
+
 // mergedAfter orders merges by completion time, then by Task name.
 func mergedAfter(a, b MergedTask) bool {
 	if c := a.At.Compare(b.At); c != 0 {
@@ -252,18 +297,28 @@ func mergedAfter(a, b MergedTask) bool {
 	return strings.Compare(a.Name, b.Name) > 0
 }
 
-// laterWorkBefore names an issue of a later release that merged before newest,
-// as "#120 of v0.3.0"; empty when there is none.
-func laterWorkBefore(later []ReleaseMilestone, merged []MergedTask, newest MergedTask) string {
+// carriedWork returns the later releases' closed issues, prepare issues left
+// out, whose newest recorded merge came before newest, so a tag at newest
+// carries them, and the later releases that moving them leaves with no issue.
+// An open issue stays in its release, whose tag carries the rest of its work.
+func carriedWork(later []ReleaseMilestone, merged []MergedTask, newest MergedTask) ([]ReleaseMove, []EmptiedRelease) {
+	var moved []ReleaseMove
+	var emptied []EmptiedRelease
 	for _, m := range later {
-		for _, t := range merged {
-			inRelease := slices.Contains(m.Closed, t.Issue) || slices.Contains(m.Open, t.Issue)
-			if inRelease && mergedAfter(newest, t) {
-				return fmt.Sprintf("#%d of %s", t.Issue, m.Title)
+		left := len(m.Open)
+		for _, n := range m.Closed {
+			last := newestOf(merged, []int{n})
+			if slices.Contains(m.Prepared, n) || last == nil || !mergedAfter(newest, *last) {
+				left++
+				continue
 			}
+			moved = append(moved, ReleaseMove{Issue: n, From: m.Title})
+		}
+		if left == 0 && len(m.Closed) > 0 {
+			emptied = append(emptied, EmptiedRelease{ID: m.ID, Title: m.Title})
 		}
 	}
-	return ""
+	return moved, emptied
 }
 
 // ReleaseRun is one CI workflow run a release's tag started.

@@ -362,11 +362,19 @@ func (p *fakeProvider) SetIssueMilestone(_ context.Context, repo gitprovider.Rep
 	if err != nil {
 		return err
 	}
-	titles := p.git.issueState().milestones[repo.Owner+"/"+repo.Name]
+	key := repo.Owner + "/" + repo.Name
+	titles := p.git.issueState().milestones[key]
 	switch {
 	case milestone == 0:
 		i.milestone = ""
+		i.MilestoneTitle, i.MilestoneDue = "", time.Time{}
 	case int(milestone) <= len(titles):
+		// The issue takes its new milestone's due date, as the host reads it.
+		for _, m := range p.git.milestones(key, true) {
+			if m.ID == milestone {
+				i.MilestoneTitle, i.MilestoneDue = m.Title, m.Due
+			}
+		}
 		i.milestone = titles[milestone-1]
 	default:
 		return fmt.Errorf("no milestone %d", milestone)
