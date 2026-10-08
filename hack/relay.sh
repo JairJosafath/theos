@@ -801,6 +801,11 @@ forget_fails() { rm -f "$DIR/fails-$1"; }
 # in .relay/triaged, so it starts one again after WATCH_TRIAGE.
 untriaged() { [ -n "$DRY_RUN" ] || date +%s >"$DIR/triaged"; }
 
+# triaged LIST: tell the watch a triage session starts now on LIST (#1 #2 ...),
+# as its own triage does, so a triage started from a terminal keeps the watch
+# from starting another on the same issues.
+triaged() { [ -n "$DRY_RUN" ] || echo "$(date +%s) ${1//#/}" >"$DIR/triaged"; }
+
 # triage: one triage session on the open proposed issues (see the header).
 triage() {
   local list id
@@ -831,6 +836,7 @@ triage() {
   git -C "$WT" switch -q --detach origin/main 2>>"$LOG" ||
     { log "could not switch $WT to origin/main; no triage"; untriaged; return 1; }
   log "triage start: id $id, proposed $list, HEAD $(git -C "$WT" rev-parse --short HEAD)"
+  triaged "$list"
   session triage "$DIR/triage-$K-$(date +%Y%m%d-%H%M%S)" "$id" "$(triage_prompt "$list")"
 }
 

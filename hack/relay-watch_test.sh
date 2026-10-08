@@ -99,11 +99,26 @@ echo "$(($(date +%s) - TRIAGE_EVERY))" >"$DIR/triaged"
 round
 check "session never ran: again after WATCH_TRIAGE" "$(triages)" 5
 
+# A triage started by hand (hack/relay.sh --triage from a terminal) records
+# its issues as the watch's does (#688): the watch starts none for them, even
+# after WATCH_TRIAGE, and still starts one for an issue filed after it.
+echo "$(($(date +%s) - 2 * TRIAGE_EVERY)) 41" >"$DIR/triaged"
+PROPOSED='41 44 45'
+(. "$(dirname "$0")/relay.sh"; DIR=$T/relay DRY_RUN=; triaged "#41 #44 #45")
+before=$(triages)
+aged
+round; round
+check "triaged by hand: no triage for its issues" "$(triages)" "$before"
+PROPOSED='41 44 45 46'
+round
+check "triaged by hand: one for an issue filed after it" "$(triages)" $((before + 1))
+check "triaged by hand: names the new one" "$(logged 'triage: proposed #41 #44 #45 #46 (new: #46)')" 1
+
 # The proposed issues can't be listed: no triage, logged once.
 PROPOSED='github: no token' PROPOSED_RC=2
 echo 0 >"$DIR/triaged"
 round; round
-check "proposed fails: no triage" "$(triages)" 5
+check "proposed fails: no triage" "$(triages)" 6
 check "proposed fails: logged once" "$(logged 'could not list the proposed issues (exit 2)')" 1
 PROPOSED= PROPOSED_RC=0
 
