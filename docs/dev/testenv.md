@@ -58,7 +58,7 @@ make test-gitea          # gitprovider against a local Gitea (make gitea-local),
 make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind cluster
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain (with uv), CI runner (label base), Agent Sandbox, agent image
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
-make toolchain-go runner-go agent-image-go  # Go, Node and uv toolchain, CI runner (label go) and agent image
+make toolchain-go runner-go agent-image-go  # Go, Node, uv and kubebuilder toolchain, CI runner (label go) and agent image
 make claude-secret       # The real agent's token, once for every project, from .dev/secrets/claude-token (below) or CLAUDE_TOKEN=...
 make e2e                 # Only when the user asks: all of the above but the Go images, then check the whole loop in Kind
 make down / make up       # Stop the factory to free the machine; bring it back healthy
