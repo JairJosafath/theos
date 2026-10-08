@@ -1,6 +1,10 @@
 package model
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+	"unicode/utf8"
+)
 
 // An implementer that finds its issue can't be done yet (it waits on work
 // that isn't merged or released) or can't be done in its sandbox stops on
@@ -57,8 +61,56 @@ func saysNotBlocked(reason string) bool {
 
 // NoChangeNoReason is a round's error when the agent changed nothing and wrote
 // no blocked note.
-const NoChangeNoReason = "the agent made no changes and gave no reason; if the issue can't be done yet, " +
-	"say why in a line \"" + BlockedPrefix + " ...\""
+const NoChangeNoReason = "the agent made no changes and gave no reason; " + blockedHint
+
+// blockedHint tells the next round how to stop on purpose.
+const blockedHint = "if the issue can't be done yet, say why in a line \"" + BlockedPrefix + " ...\""
+
+// MaxSummaryEnd is the longest end of an agent's summary, in bytes, a
+// no-change round's error carries.
+const MaxSummaryEnd = 400
+
+// NoChangeError is a round's error when the agent changed nothing and wrote no
+// blocked note. It carries the end of the agent's summary, where an agent that
+// stopped usually says why ("the test needs xvfb-run or a display"), and is
+// NoChangeNoReason when the summary is empty.
+func NoChangeError(summary string) string {
+	end := ClipWordsFromEnd(strings.Join(strings.Fields(summary), " "), MaxSummaryEnd)
+	if end == "" {
+		return NoChangeNoReason
+	}
+	return "the agent made no changes and wrote no \"" + BlockedPrefix + "\" line; its summary ends: " +
+		strconv.Quote(end) + "; " + blockedHint
+}
+
+// ClipWordsFromEnd keeps the end of s, at most n bytes: from the first whole
+// word that fits, after "…".
+func ClipWordsFromEnd(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	const ellipsis = "…"
+	if n <= len(ellipsis) {
+		return ""
+	}
+	start := len(s) - (n - len(ellipsis))
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	if s[start-1] != ' ' && s[start-1] != '\n' {
+		if i := strings.IndexAny(s[start:], " \n"); i >= 0 {
+			start += i
+		} else {
+			start = len(s)
+		}
+	}
+	tail := strings.TrimLeft(s[start:], " \n")
+	if tail == "" {
+		return ""
+	}
+	return ellipsis + tail
+}
 
 // BlockedMessage is a blocked Task's message: the agent's own words.
 func BlockedMessage(note string) string {

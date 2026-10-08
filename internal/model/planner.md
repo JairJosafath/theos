@@ -94,6 +94,13 @@ Push the branch `plan/<round>` with these files:
    agents' issue it shows, but no issue is `after:` it. Where a text sample
    serves, ask the agent for that instead: a command's real output in a code
    block of the README.
+   **No test starts a desktop app.** The sandbox and CI have no display and
+   none of a desktop app's libraries, so a test that starts VS Code (an
+   integration test with `@vscode/test-electron`, under `xvfb-run` or not), a
+   browser window or another desktop app can't run in `make check`, and no
+   criterion asks for one. An extension's tests run without a VS Code window,
+   against the `vscode` stand-in; trying it in a real editor is a
+   `kind/by-hand` issue for the person.
    **Say the order the work needs.** When an issue builds on another issue's
    work, of the same Container or another, list that issue's number in its
    `after:` (`after: [2]`), so it starts only once that work is merged: a

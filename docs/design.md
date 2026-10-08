@@ -207,9 +207,10 @@ enforces.
   nothing and ends its summary with a line `Blocked: <what it waits on and
   why>`; the Task then fails at once, reason `Blocked`, with those words in its
   message and on the issue, and the Brief lists the issue as kind `blocked`. A
-  round with no change and no such line says the agent gave no reason. A line
-  that says nothing blocks the issue (`Blocked: none`, `n/a`, `nothing`) is not
-  a blocked note. The
+  round with no change and no such line fails with the end of the agent's
+  summary (its last 400 bytes, from a whole word), where it usually said why. A
+  line that says nothing blocks the issue (`Blocked: none`, `n/a`, `nothing`)
+  is not a blocked note. The
   Container's Crew decides how many Tasks run at once.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
@@ -315,13 +316,16 @@ model and context it needs.
   Container A to Container B with `spec.bundles: true` says A ships a pinned
   release of B, as an extension ships its server; only a Container to Container
   link can say it, and most don't (a client calling a service follows its
-  deploys, not its tags). When B's Crew tags a release, it files `Bump B to vX`
+  deploys, not its tags). When B's Crew tags a release and its runs have built
+  the release's files (`status.lastRelease.run` is `Succeeded`, or no run
+  started within the hour a release's runs get), it files `Bump B to vX`
   in A's repository, labelled `kind/bump` and `status/ready` with acceptance
   criteria, in A's first open release, so A's Crew picks it up and A's next
   release carries it. Each Container gets one issue per release, recorded in
   `status.lastRelease.bumps` and found again by a marker in its body; only the
   newest release is bumped, a link created after the release files nothing, and
-  a bundler not yet Ready gets its issue once it is. Each is an Event
+  a bundler not yet Ready gets its issue once it is. A release whose runs fail
+  or never end files nothing until a run of it again succeeds. Each is an Event
   `BumpFiled`. See [plans/done/release-bumps.md](plans/done/release-bumps.md).
 - **The Crew prepares a release** when its `spec.prepareReleases` is true (off
   by default, independent of `tagReleases`). Once the first open release is
@@ -543,7 +547,12 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   Container's issues in a release milestone of its own, so a release follows
   once they are done: the next patch version when the round's work for it is
   all fixes (`kind/bug`, and no suggestion taken), else the next minor one,
-  each due after every open release before it. A person turns releases on
+  each due after every open release before it. Applying a round also puts
+  such a Container's open ready or in-progress issues that sit in no
+  milestone (filed before releases were on) into its first open release, so
+  work it already has never waits behind its own later releases (#599); a
+  proposed suggestion, a `kind/by-hand` issue and one handed back to a person
+  stay where they are. A person turns releases on
   with a prompt, or by naming the Container in `spec.releases` with a GitHub
   repository and a Secret holding a token for that repository only, which
   also has the Crew publish its releases there. Releases only turn on; a Crew

@@ -114,7 +114,8 @@ yourself.
 - Code that needs `vscode` is tested against `test/vscode.ts`, the stand-in.
   Extend it with only what tests need, typed with `satisfies` against the real
   API, and clear its state in `reset()`. [review]
-- Integration tests in a real VS Code (`@vscode/test-electron`) only when an
-  issue needs them; they download VS Code and need a display, so they are not
-  part of `make check`. [review]
+- No integration tests in a real VS Code (`@vscode/test-electron`): they
+  download VS Code and need a display and its libraries, which the sandbox and
+  CI don't have, so they can't run in `make check`. What needs a real editor
+  is for a person to try. [review]
 {{- end }}

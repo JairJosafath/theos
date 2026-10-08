@@ -245,3 +245,23 @@ func TestReleaseMilestoneMarker(t *testing.T) {
 		})
 	}
 }
+
+func TestStrayWork(t *testing.T) {
+	issues := []OpenIssue{
+		{Number: 3, Labels: []string{LabelReady}},
+		{Number: 10, Labels: []string{LabelInProgress, "kind/feature"}},
+		{Number: 19, Labels: []string{LabelReady}, Milestone: 1},
+		{Number: 20, Labels: []string{LabelProposed}},
+		{Number: 21, Labels: []string{LabelNeedsHuman}},
+		{Number: 22, Labels: []string{LabelNeedsHuman, LabelByHand}},
+		{Number: 23, Labels: []string{LabelReady, LabelByHand}},
+		{Number: 24, Labels: nil},
+		{Number: 25, Labels: []string{LabelReady, LabelBump}},
+	}
+	if got, want := StrayWork(issues), []int{3, 10, 25}; !slices.Equal(got, want) {
+		t.Fatalf("StrayWork = %v, want %v", got, want)
+	}
+	if got := StrayWork(nil); got != nil {
+		t.Fatalf("StrayWork(nil) = %v, want none", got)
+	}
+}
