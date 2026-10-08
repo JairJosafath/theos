@@ -307,6 +307,14 @@ func (g *fakeGit) setTag(owner, name, tag, commit string) {
 	g.releaseState().tags[owner+"/"+name+"@"+tag] = commit
 }
 
+// closeMilestone closes the milestone titled title, as a release did.
+func (g *fakeGit) closeMilestone(owner, name, title string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := g.releaseState()
+	s.closed[owner+"/"+name] = append(s.closed[owner+"/"+name], title)
+}
+
 // milestoneClosed reports whether the milestone titled title was closed.
 //
 //nolint:unparam // takes owner and name like the other helpers

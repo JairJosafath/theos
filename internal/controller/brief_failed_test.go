@@ -11,7 +11,9 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -37,6 +39,27 @@ func failLinterTask(ns, name string, n int) {
 	Eventually(func(g Gomega) {
 		g.Expect(getTask(g, ns, name).Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
 		g.Expect(gitFake.issue(ns, "linter", n).Labels).To(ContainElement(model.LabelNeedsHuman))
+	}).Should(Succeed())
+}
+
+// endedTask records a Task of the linter on issue n as ended in phase at
+// completed. Its Agent doesn't exist, so the Task does nothing first.
+func endedTask(ns, name string, n int, phase c4v1alpha1.TaskPhase, completed time.Time) {
+	GinkgoHelper()
+	task := newTask(ns, name, "")
+	task.Spec.ContainerRef = c4v1alpha1.LocalRef{Name: "linter"}
+	task.Spec.AgentRef = c4v1alpha1.LocalRef{Name: "nobody"}
+	task.Spec.Issue = int32(n)
+	mustCreate(task)
+	Eventually(func(g Gomega) {
+		cond := condition(getTask(g, ns, name).Status.Conditions, ConditionProgressing)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Reason).To(Equal("AgentNotFound"))
+	}).Should(Succeed())
+	Eventually(func(g Gomega) {
+		task := getTask(g, ns, name)
+		task.Status.Phase, task.Status.CompletedAt = phase, &metav1.Time{Time: completed}
+		g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 	}).Should(Succeed())
 }
 
@@ -163,6 +186,71 @@ var _ = Describe("Brief failed issues", func() {
 			g.Expect(issue.State).To(Equal("closed"))
 			g.Expect(issue.comments).To(ContainElement(ContainSubstring("Closed for Brief `cel-lens` in round 2.")))
 			g.Expect(getBrief(g, ns).Status.Failed).To(BeEmpty())
+		}).Should(Succeed())
+	})
+
+	// #624: a release step's last try found its milestone empty; work merged
+	// into it since, so it has something to release now.
+	It("shows a failed release step's milestone as it is now and refuses closing it after new merges", func() {
+		createFactory(ns)
+		briefAgents(ns, 2)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, linterPlan(ns, 0))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+
+		due := time.Now().AddDate(0, 0, 7)
+		inRelease := func(title string, labels ...string) int {
+			body := linterIssue(1)
+			if slices.Contains(labels, model.LabelRelease) {
+				_, body = model.PrepareIssue("v0.3.0", nil, nil)
+			}
+			n := gitFake.addIssue(ns, "linter", title, body, labels)
+			gitFake.setIssueRelease(ns, "linter", n, "v0.3.0", due)
+			return n
+		}
+		stopped := time.Now().Add(-time.Hour).Truncate(time.Second)
+		shipped := inRelease("Lint rule 136")
+		Expect(gitFake.closeIssue(ns, "linter", shipped)).To(Succeed())
+		endedTask(ns, "linter-shipped", shipped, c4v1alpha1.TaskMerged, stopped.Add(-time.Hour))
+		step := inRelease("Prepare v0.3.0", model.LabelRelease, model.LabelNeedsHuman)
+		endedTask(ns, "linter-step", step, c4v1alpha1.TaskFailed, stopped)
+		fresh := inRelease("Lint rule 147")
+		Expect(gitFake.closeIssue(ns, "linter", fresh)).To(Succeed())
+		endedTask(ns, "linter-fresh", fresh, c4v1alpha1.TaskMerged, stopped.Add(30*time.Minute))
+
+		By("giving the planner the milestone's merges, and which came after the try stopped")
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Failed).To(ContainElement(HaveField("Number", int32(step))))
+			failed := string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
+			g.Expect(failed).To(And(ContainSubstring("milestone: v0.3.0"),
+				ContainSubstring(fmt.Sprintf("stopped: \"%s\"", stopped.UTC().Format(time.RFC3339))),
+				ContainSubstring(fmt.Sprintf("issue: %d\n          title: Lint rule 136\n", shipped)),
+				ContainSubstring(fmt.Sprintf("issue: %d\n          title: Lint rule 147\n", fresh)),
+				ContainSubstring("afterStop: true")))
+			g.Expect(strings.Count(failed, "afterStop: true")).To(Equal(1))
+		}).Should(Succeed())
+
+		By("refusing a plan that closes it as empty")
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Tidy up the release."} })).To(Succeed())
+		planRound(ns, 2, 1, failedPlan(ns, fmt.Sprintf(
+			"- {container: linter, issue: %d, answer: close, why: Its only change shipped in v0.2.0.}\n", step)))
+		Eventually(func(g Gomega) {
+			g.Expect(briefEventNotes(g, ns, eventPlanRefused)).To(ContainElement(And(
+				ContainSubstring(fmt.Sprintf("closes linter#%d, the release step of v0.3.0, but #%d merged", step,
+					fresh)), ContainSubstring("retry it"))))
+		}).Should(Succeed())
+		Expect(gitFake.issue(ns, "linter", step).State).To(Equal("open"))
+
+		By("closing it once a person tagged the release: nothing is left to prepare")
+		gitFake.setTag(ns, "linter", "v0.3.0", "c-by-hand")
+		planRound(ns, 2, 2, failedPlan(ns, fmt.Sprintf(
+			"- {container: linter, issue: %d, answer: close, why: A person released v0.3.0.}\n", step)))
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.issue(ns, "linter", step).State).To(Equal("closed"))
 		}).Should(Succeed())
 	})
 

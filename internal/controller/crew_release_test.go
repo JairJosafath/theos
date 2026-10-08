@@ -137,6 +137,42 @@ var _ = Describe("Crew releases", func() {
 		Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.1.0")).To(BeFalse())
 	})
 
+	It("leaves a release whose tag would not come after the previous release's to a person", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		// v0.1.0 went out at the very merge v0.2.0 would be tagged at.
+		shipped := gitFake.addIssue(ns, "orders-api", "Ship it", clearIssue, nil)
+		gitFake.setIssueRelease(ns, "orders-api", shipped, "v0.1.0", releaseDue.AddDate(0, 0, -7))
+		Expect(gitFake.closeIssue(ns, "orders-api", shipped)).To(Succeed())
+		gitFake.closeMilestone(ns, "orders-api", "v0.1.0")
+		gitFake.setTag(ns, "orders-api", "v0.1.0", "5a-merge")
+		// v0.1.5 was dropped without a tag, and v0.4.0 closed ahead of v0.2.0
+		// by hand: neither is the previous release.
+		for title, due := range map[string]time.Time{"v0.1.5": releaseDue.AddDate(0, 0, -3),
+			"v0.4.0": releaseDue.AddDate(0, 0, 14)} {
+			n := gitFake.addIssue(ns, "orders-api", "Dropped "+title, clearIssue, nil)
+			gitFake.setIssueRelease(ns, "orders-api", n, title, due)
+			Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
+			gitFake.closeMilestone(ns, "orders-api", title)
+		}
+		gitFake.setTag(ns, "orders-api", "v0.4.0", "5a-later")
+		mergedIssueIn(ns, "v0.2.0", "5a-merge")
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReleased)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(cond.Reason).To(Equal("BehindPreviousRelease"))
+			g.Expect(cond.Message).To(ContainSubstring("v0.1.0's tag names that commit already"))
+		}).Should(Succeed())
+		Expect(gitFake.tag(ns, "orders-api", "v0.2.0")).To(BeEmpty())
+		Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.2.0")).To(BeFalse())
+	})
+
 	It("tags nothing without spec.tagReleases", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)

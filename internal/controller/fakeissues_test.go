@@ -203,6 +203,7 @@ func (p *fakeProvider) ListIssues(_ context.Context, repo gitprovider.Repository
 			if i.milestone != "" {
 				issue.Milestone = int64(slices.Index(p.git.issueState().milestones[repo.Owner+"/"+repo.Name],
 					i.milestone) + 1)
+				issue.MilestoneTitle = i.milestone
 			}
 			out = append(out, issue)
 		}
@@ -220,6 +221,7 @@ func (p *fakeProvider) GetIssue(_ context.Context, repo gitprovider.Repository, 
 	out := i.Issue
 	if i.milestone != "" {
 		out.Milestone = int64(slices.Index(p.git.issueState().milestones[repo.Owner+"/"+repo.Name], i.milestone) + 1)
+		out.MilestoneTitle = i.milestone
 	}
 	return out, nil
 }

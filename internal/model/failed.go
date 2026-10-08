@@ -76,6 +76,9 @@ type FailedIssue struct {
 	Reason string
 	// Tries is how many Tasks the issue has had.
 	Tries int
+	// Release is a release step's milestone as it is now; nil for another
+	// issue.
+	Release *FailedRelease
 }
 
 // IssueTask is a Task on a failed issue's Container, as FailedReason sees it.
@@ -91,6 +94,8 @@ type IssueTask struct {
 	// Message is the Task's status message.
 	Message string
 	Created time.Time
+	// Completed is when it ended; zero while it works.
+	Completed time.Time
 }
 
 // FailedReason decides why issue number, with labels and body, was handed
@@ -204,6 +209,11 @@ type Recommendation struct {
 // Retries reports whether the answer retries the issue, or recommends it.
 func (a FailedAnswer) Retries() bool {
 	return a.Answer == AnswerRetry || a.Answer == AnswerAsk && a.Recommend != nil && a.Recommend.Answer == AnswerRetry
+}
+
+// Closes reports whether the answer closes the issue, or recommends it.
+func (a FailedAnswer) Closes() bool {
+	return a.Answer == AnswerClose || a.Answer == AnswerAsk && a.Recommend != nil && a.Recommend.Answer == AnswerClose
 }
 
 // Applies reports whether the answer changes the issue on the Git host: a
@@ -331,7 +341,8 @@ func checkCutText(s string) error {
 // can't be applied: each answers a waiting failed issue once, retries, closes,
 // waits on or asks about it and says why, and retries only one the Crew would
 // take: not merged, not exhausted, not by hand, and an unclear one only with a
-// clarification that has acceptance criteria. An ask recommends one of the
+// clarification that has acceptance criteria. It closes no release step whose
+// milestone gained merged work after its last try stopped. An ask recommends one of the
 // other answers, checked the same way.
 func CheckFailedAnswers(answers []FailedAnswer, waiting []FailedIssue) []Refusal {
 	var out []Refusal
@@ -357,6 +368,9 @@ func CheckFailedAnswers(answers []FailedAnswer, waiting []FailedIssue) []Refusal
 			for _, r := range checkAnswer(a.Answer, a.Clarify, waiting[i], subject) {
 				refuse("%s", r)
 			}
+			for _, r := range checkReleaseClose(a.Answer, waiting[i], subject) {
+				refuse("%s", r)
+			}
 			if a.Recommend != nil {
 				refuse("%s %s with a recommend; only an ask recommends", verb(a.Answer), subject)
 			}
@@ -374,6 +388,9 @@ func CheckFailedAnswers(answers []FailedAnswer, waiting []FailedIssue) []Refusal
 					AnswerRetry, AnswerClose, AnswerWait)
 			default:
 				for _, reason := range checkAnswer(r.Answer, r.Clarify, waiting[i], subject) {
+					refuse("recommends: %s", reason)
+				}
+				for _, reason := range checkReleaseClose(r.Answer, waiting[i], subject) {
 					refuse("recommends: %s", reason)
 				}
 				checkWhy(refuse, "recommends for", subject, r.Why)
@@ -458,6 +475,9 @@ type failedOut struct {
 	// so a prompt saying "do what you suggest" is enough.
 	Asked     string          `yaml:"asked,omitempty"`
 	Recommend *Recommendation `yaml:"recommend,omitempty"`
+	// Release is a release step's milestone as it is now, so the planner
+	// judges it by what merged since its last try, not only by why it stopped.
+	Release *releaseOut `yaml:"release,omitempty"`
 }
 
 // workspaceFailed renders model/failed.yaml: the first MaxFailedIssues
@@ -475,7 +495,8 @@ func workspaceFailed(failed []FailedIssue, tended []TendedIssue) []failedOut {
 	out := make([]failedOut, 0, len(sorted))
 	for _, f := range sorted {
 		entry := failedOut{Container: f.Container, Issue: f.Number, Title: oneParagraph(f.Title), Kind: f.Kind,
-			Reason: oneParagraph(f.Reason), Tries: f.Tries, Body: strings.TrimSpace(f.Body)}
+			Reason: oneParagraph(f.Reason), Tries: f.Tries, Body: strings.TrimSpace(f.Body),
+			Release: workspaceRelease(f.Release)}
 		if i := slices.IndexFunc(tended, func(t TendedIssue) bool {
 			return t.Container == f.Container && t.Issue == f.Number && t.Answer == AnswerAsk
 		}); i >= 0 {

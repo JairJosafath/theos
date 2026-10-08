@@ -372,6 +372,12 @@ model and context it needs.
   after it leaves the release to a person (`MergedAfterPrepare`), who files
   another `kind/release` issue or tags it. A release with no merged work gets
   none, so a milestone made ahead of its issues isn't released on its own.
+- **A release's tag comes after the one before it.** The newest closed release
+  milestone's tag is the previous release; a release whose newest merge is
+  that tag's commit, or a Task's merge that ended before the merge the tag
+  names, would ship older code under a newer version, so the Crew leaves it
+  to a person (`BehindPreviousRelease`) instead of tagging it. A previous tag
+  at a commit no Task merged can't be placed and doesn't hold the release.
 - **The Crew watches the release run.** It reads the CI workflow runs the last
   release's tag started and sums them up in `status.lastRelease.run`: `Waiting`,
   `Running`, `Failed` as soon as one ended other than success or skipped, and
@@ -646,7 +652,12 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   in `Ask` every answer waits for the person. Everything else that is due,
   and every `ask`, is one entry in `status.needsYou` with the choice the
   Brief would make and why. The Crew's three tries still hold, an issue is
-  answered once per failure, and tending rounds come at most hourly. Each
+  answered once per failure, and tending rounds come at most hourly. A
+  failed release step (a `kind/release` issue) is judged by its milestone as
+  it is now: the planner sees the issues Tasks merged into it, and when, next
+  to when its last try stopped, and a plan that closes it, or asks
+  recommending to, while work merged after that try is refused, so it is
+  tried again (#624). Each
   is a history entry, outcome `Tended`, so a prompt can overrule it. A
   tending round's plan holds only `plan/failed.yaml`, `plan/summary.md` and
   new issues; it leaves the story, the `Planned` condition and the prompts
