@@ -129,7 +129,8 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
 - **Small pull requests to main.** One branch per issue or plan step, the one
   `take` names (`<type>/<N>-<slug>`, from an up-to-date main), pushed after
   every commit; open a pull request to main whose body
-  says `Closes #N` for the GitHub issue it finishes, and merge it with a merge
+  says `Closes #N` for the GitHub issue it finishes (never `Refs #N`, in
+  the body or a commit: that is only a plan's), and merge it with a merge
   commit once `make check` passes (`hack/lib/github.sh merge PR`). No long-lived or stacked branches: each plan
   step lands on its own and leaves main working, with new behaviour off until
   the step that turns it on. When an issue is split into a plan and steps,

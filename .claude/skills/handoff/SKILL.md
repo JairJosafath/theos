@@ -112,7 +112,15 @@ Lost claim (the heartbeat hook says so):
 
 - **Landed:** the pull request says `Closes #N` and is merged as AGENTS.md
   ("How to Work") says, with `hack/lib/github.sh merge PR` (a merge commit). If N is still open: `hack/lib/github.sh close N FILE`,
-  FILE naming the pull request, SHAs and evidence.
+  FILE naming the pull request, SHAs and evidence. An issue with no plan is
+  finished by its own pull request: its body says `Closes #N`, and neither the
+  body nor a commit message says `Refs #N` (that is only a plan's), or `merge`
+  refuses it, or merges it leaving N open. When a pushed commit already says
+  `Refs #N`, don't force-push: reword the history onto a new branch
+  `<branch>-2` (`git switch -c <branch>-2 origin/main`, cherry-pick the
+  commits and `git commit --amend` or `git rebase` to reword the message),
+  push it, open a fresh pull request saying `Closes #N`, and close the old one
+  with a comment naming the new one (`gh pr close OLD --comment ...`).
 - **Plan only:** when N is split into a plan and step issues, the plan's
   pull request says `Refs #N`, never `Closes #N`: nothing N asked for has
   shipped. Nor may a close, fix or resolve word (closes, fixed, resolves...)
