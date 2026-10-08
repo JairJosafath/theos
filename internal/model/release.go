@@ -319,3 +319,18 @@ const ReleaseRunBound = time.Hour
 func ReleaseRunLate(result string, tagged, now time.Time) bool {
 	return (result == RunWaiting || result == RunRunning) && now.Sub(tagged) >= ReleaseRunBound
 }
+
+// ReleaseBumpable says whether the bumps of a release tagged at tagged, whose
+// runs are at result, may be filed at now: once its runs all ended well, since
+// they build the files a bump reads, or once ReleaseRunBound has passed with no
+// run started (or none read), for a repository whose tags start no workflow. A
+// release whose runs failed or haven't ended waits, however long.
+func ReleaseBumpable(result string, tagged, now time.Time) bool {
+	switch result {
+	case RunSucceeded:
+		return true
+	case RunWaiting, "":
+		return now.Sub(tagged) >= ReleaseRunBound
+	}
+	return false
+}

@@ -305,3 +305,30 @@ func TestReleaseRunLate(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseBumpable(t *testing.T) {
+	tagged := time.Date(2026, 10, 6, 1, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name   string
+		result string
+		after  time.Duration
+		want   bool
+	}{
+		{"succeeded at once", RunSucceeded, time.Minute, true},
+		{"waiting within the bound", RunWaiting, 59 * time.Minute, false},
+		{"waiting at the bound", RunWaiting, time.Hour, true},
+		{"never read within the bound", "", 59 * time.Minute, false},
+		{"never read past the bound", "", 2 * time.Hour, true},
+		{"running within the bound", RunRunning, time.Minute, false},
+		{"running past the bound", RunRunning, 2 * time.Hour, false},
+		{"failed", RunFailed, time.Minute, false},
+		{"failed past the bound", RunFailed, 2 * time.Hour, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ReleaseBumpable(tt.result, tagged, tagged.Add(tt.after)); got != tt.want {
+				t.Errorf("ReleaseBumpable(%q, +%s) = %v; want %v", tt.result, tt.after, got, tt.want)
+			}
+		})
+	}
+}
