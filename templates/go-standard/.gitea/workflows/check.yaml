@@ -29,7 +29,31 @@ jobs:
           git -c http.extraHeader="Authorization: token ${{ gitea.token }}" \
             fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
           git checkout -q FETCH_HEAD
+      # A change to only the changelog, docs/ or images has nothing for the
+      # steps below to verify: the job passes without them, so the required
+      # "check" context still reports and the change merges. Any other file,
+      # a first push, or a base git can't fetch or compare runs them as always.
+      - name: What the change touches
+        id: changes
+        env:
+          TOKEN: ${{ gitea.token }}
+          URL: ${{ gitea.server_url }}/${{ gitea.repository }}.git
+          BASE: ${{ gitea.event.pull_request.base.sha || gitea.event.before }}
+        run: |
+          code=true
+          case $BASE in
+          *[!0]*)
+            if git -c http.extraHeader="Authorization: token $TOKEN" fetch -q --depth 1 "$URL" "$BASE" &&
+              files=$(git diff --no-renames --name-only "$BASE" HEAD) && [ -n "$files" ] &&
+              ! printf '%s\n' "$files" | grep -qvE '^CHANGELOG\.md$|^docs/|\.(png|jpg|gif|svg)$'; then
+              code=false
+              echo "Only the changelog, docs/ or images changed; skipping the checks."
+            fi
+            ;;
+          esac
+          echo "code=$code" >>"$GITHUB_OUTPUT"
       - name: Credentials for the package registry
+        if: steps.changes.outputs.code == 'true'
         # Go sends them over https only; over http it fetches without them.
         env:
           TOKEN: ${{ gitea.token }}
@@ -39,6 +63,7 @@ jobs:
           umask 077
           printf 'machine %s\nlogin %s\npassword %s\n' "${host%%/*}" "${{ gitea.actor }}" "$TOKEN" > "$HOME/.netrc"
       - name: The factory's modules, from the package registry only
+        if: steps.changes.outputs.code == 'true'
         env:
           GOPROXY: ${{ gitea.server_url }}/api/packages/${{ gitea.repository_owner }}/go
           GOPRIVATE: ""
@@ -53,4 +78,5 @@ jobs:
             cd "$(mktemp -d)" && go mod download $mods
           fi
       - name: make check
+        if: steps.changes.outputs.code == 'true'
         run: make check

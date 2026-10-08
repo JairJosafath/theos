@@ -29,6 +29,9 @@ the `make check` contract CI runs.
   checkout, in the runner's memory-backed work directory, which the job's end
   frees; the checks skip `.uv/`. The status context is `check / check`, which
   the protected `main` requires (`model.CheckContexts`).
+  A change to only `CHANGELOG.md`, `docs/` or images (`.png`, `.jpg`, `.gif`,
+  `.svg`) skips the steps after the checkout and passes, so the context still
+  reports; any other file, `README.md` included, or a first push runs them.
 - **Releases:** `make dist VERSION=v1.2.3` builds `dist/<name>-1.2.3.tar.gz`
   and the wheel, and fails when the tag doesn't match `pyproject.toml`'s
   `version`; gitea-release attaches both for a CLI.

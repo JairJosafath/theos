@@ -17,12 +17,36 @@ jobs:
           git -c http.extraHeader="Authorization: token ${{ gitea.token }}" \
             fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
           git checkout -q FETCH_HEAD
+      # A change to only the changelog, docs/ or images has nothing for the
+      # steps below to verify: the job passes without them, so the required
+      # "check" context still reports and the change merges. Any other file,
+      # a first push, or a base git can't fetch or compare runs them as always.
+      - name: What the change touches
+        id: changes
+        env:
+          TOKEN: ${{ gitea.token }}
+          URL: ${{ gitea.server_url }}/${{ gitea.repository }}.git
+          BASE: ${{ gitea.event.pull_request.base.sha || gitea.event.before }}
+        run: |
+          code=true
+          case $BASE in
+          *[!0]*)
+            if git -c http.extraHeader="Authorization: token $TOKEN" fetch -q --depth 1 "$URL" "$BASE" &&
+              files=$(git diff --no-renames --name-only "$BASE" HEAD) && [ -n "$files" ] &&
+              ! printf '%s\n' "$files" | grep -qvE '^CHANGELOG\.md$|^docs/|\.(png|jpg|gif|svg)$'; then
+              code=false
+              echo "Only the changelog, docs/ or images changed; skipping the checks."
+            fi
+            ;;
+          esac
+          echo "code=$code" >>"$GITHUB_OUTPUT"
       # uv's cache and the Python it installs (about 250 MB) go in the
       # checkout, which is in memory and goes with the job: on the runner's
       # disk they would stall the node, and with it the whole cluster, and in
       # its /tmp (256 MiB) they wouldn't fit. On the same filesystem the
       # virtual environment links to the cache instead of copying it.
       - name: make check
+        if: steps.changes.outputs.code == 'true'
         run: |
           export UV_CACHE_DIR="$PWD/.uv/cache" UV_PYTHON_INSTALL_DIR="$PWD/.uv/python"
           make check

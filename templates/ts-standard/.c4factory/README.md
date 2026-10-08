@@ -40,6 +40,9 @@ and the `make check` contract CI runs.
   runner labelled `go`, under the status context `check / check`, which the
   protected `main` requires (`model.CheckContexts`). npm's cache goes to the
   runner's memory-backed `/tmp`.
+  A change to only `CHANGELOG.md`, `docs/` or images (`.png`, `.jpg`, `.gif`,
+  `.svg`) skips the steps after the checkout and passes, so the context still
+  reports; any other file, `README.md` included, or a first push runs them.
 - **Releases:** `make dist VERSION=v1.2.3` packages
   `dist/<container>-1.2.3.vsix` and fails when the tag doesn't match
   `package.json`'s `version`; gitea-release attaches it to the release. For
