@@ -141,6 +141,12 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err := adopt(ctx, r.Client, r.Scheme, &container, &task, labels); err != nil {
 		return ctrl.Result{}, err
 	}
+	// Adopting reads the Task back with a newer resourceVersion: take its status
+	// too, or a status written since the read would be overwritten (#591).
+	status = task.Status.DeepCopy()
+	if status.Phase == "" {
+		status.Phase = c4v1alpha1.TaskPending
+	}
 	if isFinal(status.Phase) {
 		if status.Phase != c4v1alpha1.TaskMerged || status.MergeCommit != "" || status.PullRequest == 0 {
 			return ctrl.Result{}, r.writeStatus(ctx, &task, status)
