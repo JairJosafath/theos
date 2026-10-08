@@ -102,6 +102,11 @@ func (r *BriefReconciler) reconcileRound(ctx context.Context, brief, orig *c4v1a
 		return ctrl.Result{}, nil
 	}
 	if task == nil {
+		if brief.Spec.Paused {
+			// A paused Brief starts no planner; its round's Task waits for
+			// the resume, the first round's included.
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, r.ensureRoundTask(ctx, brief)
 	}
 	// A Plan Task that hasn't started waits for its Agent: say so on the Brief,
@@ -116,6 +121,11 @@ func (r *BriefReconciler) reconcileRound(ctx context.Context, brief, orig *c4v1a
 	case c4v1alpha1.TaskChecking:
 		return r.checkPlan(ctx, brief, task)
 	case c4v1alpha1.TaskMerged:
+		if brief.Spec.Paused && tending(&brief.Status) {
+			// A paused Brief tends no failed issue: its tending round's
+			// answers wait for the resume.
+			return ctrl.Result{}, nil
+		}
 		if result, err = r.applyRound(ctx, brief, orig, task); err != nil {
 			return result, err
 		}

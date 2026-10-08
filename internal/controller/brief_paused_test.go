@@ -15,6 +15,8 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 )
 
@@ -154,5 +156,26 @@ var _ = Describe("Brief paused", func() {
 		Expect(crew.Spec.Paused).To(BeTrue())
 		Expect(crew.Annotations).To(HaveKeyWithValue(c4v1alpha1.AnnotationPausedBy, c4v1alpha1.PausedByBrief))
 		pausedMessage(ns, "Paused; nothing is running")
+	})
+
+	It("starts no planner for a Brief made paused, until it resumes", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		brief := newBrief(ns, "cel-lens")
+		brief.Spec.Paused = true
+		mustCreate(brief)
+		pausedMessage(ns, "Paused; nothing is running")
+		Consistently(func(g Gomega) {
+			var tasks c4v1alpha1.TaskList
+			g.Expect(k8sClient.List(ctx, &tasks, client.InNamespace(ns))).To(Succeed())
+			g.Expect(tasks.Items).To(BeEmpty())
+			g.Expect(getBrief(g, ns).Status.Round).To(BeZero())
+		}, "2s").Should(Succeed())
+
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() { brief.Spec.Paused = false })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "cel-lens-plan-1")).NotTo(BeNil())
+		}).Should(Succeed())
 	})
 })
