@@ -19,7 +19,7 @@ import (
 )
 
 // A Claude Code session whose context passes its Agent's sessionTokenLimit
-// hands its work to a fresh session (docs/plans/session-tokens.md, decisions
+// hands its work to a fresh session (docs/plans/done/session-tokens.md, decisions
 // 6-9). Its PreToolUse hook, c4agent session-guard, denies every tool but
 // writing the handoff note once the session's newest turn is past the limit;
 // a session past it by half again is ended by c4agent, which writes the note

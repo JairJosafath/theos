@@ -263,7 +263,7 @@ without kubectl, and cheaply: it lives on a laptop.
   a session of its own. A run with a call that reported none adds no tokens
   and counts in `tokens.runsWithout`. A Brief's rounds take their Plan Task's,
   and the Brief adds its rounds up. Plan:
-  [plans/session-tokens.md](plans/session-tokens.md).
+  [plans/done/session-tokens.md](plans/done/session-tokens.md).
 - **A long session hands off to a fresh one.** A session whose context passes
   its Agent's `sessionTokenLimit` (default 130000) is told, at its next tool
   call, to write where it stands and stop; c4agent starts a fresh session on
