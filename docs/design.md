@@ -420,8 +420,16 @@ model and context it needs.
   as the Makefile or a CI workflow, gets its own gated Task: the operator files a
   `kind/standard-change` issue, the waiting Task is `Blocked`, and the operator
   merges the reviewed change itself. The agents' rules and `.c4factory.yaml` stay
-  out of reach. See
-  [plans/done/2026-10-02-standard-change-design.md](plans/done/2026-10-02-standard-change-design.md).
+  out of reach. The gated Task may also change files no Standard protects where
+  the repository's checks fail without them, such as a test that pins what the
+  protected file produces; its history and pull request name them, and its
+  reviewer checks they change only that. Any other protected file is refused.
+  A round turned back for touching files the Task may not change, twice in a
+  row, ends the Task `Blocked` instead of spending its last round, and the Task
+  that waits on that Standard change ends `Blocked` too, so the Brief lists
+  both issues with the files that hold them. See
+  [plans/done/2026-10-02-standard-change-design.md](plans/done/2026-10-02-standard-change-design.md)
+  and [plans/done/standard-change-scope.md](plans/done/standard-change-scope.md).
 - **A Standard's fixes reach its Containers.** Bumping a Standard's pinned `ref`
   updates every Ready Container that uses it. The operator renders the Standard
   at the Container's ref and at the new one, and opens a pull request of its own

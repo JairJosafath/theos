@@ -155,6 +155,51 @@ func TestNextTaskStep(t *testing.T) {
 	}
 }
 
+// A round turned back for scope twice in a row stops the Task blocked, and a
+// Task whose Standard change stopped blocked stops blocked too (#578).
+func TestNextTaskStepScope(t *testing.T) {
+	refusal := ScopeRefusal([]string{"go.mod"}, []string{"Makefile"})
+	done := func(r RunResult) RunState { return RunState{Started: true, Done: true, Result: &r} }
+	tests := []struct {
+		name   string
+		facts  TaskFacts
+		want   TaskAction
+		reason string
+		// message must contain this.
+		message string
+	}{
+		{name: "the first refusal costs a round", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: done(RunResult{Error: refusal})}, want: ActionRetry, message: "Round 1 was not accepted (Out of scope"},
+		{name: "a refusal after other feedback costs a round", facts: TaskFacts{Phase: TaskImplementing, Round: 2,
+			MaxRounds: 3, Feedback: "make check still fails", Run: done(RunResult{Error: refusal})}, want: ActionRetry},
+		{name: "the second refusal in a row stops the Task blocked", facts: TaskFacts{Phase: TaskImplementing,
+			Round: 2, MaxRounds: 3, Feedback: refusal, Run: done(RunResult{Error: refusal})},
+			want: ActionFail, reason: ReasonBlocked,
+			message: "Two rounds in a row changed files this Task may not change, so it stops instead of spending " +
+				"more rounds: the change touches go.mod; this Task may change only Makefile"},
+		{name: "a Standard change that stopped blocked holds the Task", facts: TaskFacts{Phase: TaskBlocked,
+			Change: ChangeFacts{Issue: 53, Failed: "Task x-53 failed: m", Blocked: true}},
+			want: ActionFail, reason: ReasonBlocked, message: "Standard change #53 will not merge: Task x-53 failed: m"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextTaskStep(tt.facts)
+			if got.Action != tt.want || got.Reason != tt.reason || !strings.Contains(got.Message, tt.message) {
+				t.Errorf("NextTaskStep() = %+v; want %s, reason %q, a message with %q", got, tt.want, tt.reason, tt.message)
+			}
+		})
+	}
+}
+
+func TestImplementedStepNamesExtras(t *testing.T) {
+	got := NextTaskStep(TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Run: RunState{Started: true,
+		Done: true, Result: &RunResult{Commit: "abcdef1234", Extra: []string{"e2e_test.go", "release_test.go"}}}})
+	want := "besides its Standard change's files it changes e2e_test.go and release_test.go, which no Standard protects"
+	if got.Action != ActionOpenPR || !strings.Contains(got.Message, want) {
+		t.Errorf("NextTaskStep() = %+v, want a message with %q", got, want)
+	}
+}
+
 // A Plan Task's steps (docs/plans/done/brief.md, step 5): no Container to wait
 // for, and the Brief's verdict in place of CI and a review.
 func TestNextTaskStepPlan(t *testing.T) {
@@ -593,6 +638,7 @@ func TestStandardChangeOutcome(t *testing.T) {
 		closed     bool
 		wantMerged bool
 		wantFailed string
+		wantBlock  bool
 	}{
 		{name: "no tasks, open"},
 		// The gated merge closes the issue in the reconcile that sets Merged, so the
@@ -601,6 +647,8 @@ func TestStandardChangeOutcome(t *testing.T) {
 		{name: "merged", tasks: []ChangeTask{{Name: "x-31", Final: true}}, closed: true, wantMerged: true},
 		{name: "failed", tasks: []ChangeTask{{Name: "x-31", Final: true, Failed: true, Message: "Failed after 3 rounds"}},
 			wantFailed: "Task x-31 failed: Failed after 3 rounds"},
+		{name: "failed blocked", tasks: []ChangeTask{{Name: "x-31", Final: true, Failed: true, Blocked: true, Message: "m"}},
+			wantFailed: "Task x-31 failed: m", wantBlock: true},
 		{name: "failed, then retried", tasks: []ChangeTask{{Name: "x-31", Final: true, Failed: true, Message: "m"},
 			{Name: "x-31-2"}}},
 		{name: "failed, then merged", tasks: []ChangeTask{{Name: "x-31", Final: true, Failed: true, Message: "m"},
@@ -609,9 +657,10 @@ func TestStandardChangeOutcome(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			merged, failed := StandardChangeOutcome(31, tt.tasks, tt.closed)
-			if merged != tt.wantMerged || failed != tt.wantFailed {
-				t.Errorf("StandardChangeOutcome() = %v, %q; want %v, %q", merged, failed, tt.wantMerged, tt.wantFailed)
+			merged, failed, blocked := StandardChangeOutcome(31, tt.tasks, tt.closed)
+			if merged != tt.wantMerged || failed != tt.wantFailed || blocked != tt.wantBlock {
+				t.Errorf("StandardChangeOutcome() = %v, %q, %v; want %v, %q, %v", merged, failed, blocked,
+					tt.wantMerged, tt.wantFailed, tt.wantBlock)
 			}
 		})
 	}
@@ -659,14 +708,17 @@ func TestGatedMergeRefusal(t *testing.T) {
 			want:     `"check*"`},
 		{name: "no verdict", checks: "success", contexts: ci, verdict: VerdictChanges, changed: mk, allowed: mk,
 			want: "approve"},
-		{name: "outside the allowance", checks: "success", contexts: ci, verdict: VerdictApprove,
+		{name: "a protected file outside the allowance", checks: "success", contexts: ci, verdict: VerdictApprove,
 			changed: []string{"Makefile", "README.md"}, allowed: mk, want: "README.md"},
+		{name: "an unprotected file beside the allowance", checks: "success", contexts: ci, verdict: VerdictApprove,
+			changed: []string{"Makefile", "release_test.go"}, allowed: mk},
 		{name: "empty change", checks: "success", contexts: ci, verdict: VerdictApprove, allowed: mk,
 			want: "changes nothing"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GatedMergeRefusal(tt.checks, tt.contexts, tt.verdict, tt.changed, tt.allowed)
+			got := GatedMergeRefusal(tt.checks, tt.contexts, tt.verdict, tt.changed, tt.allowed,
+				AgentProtectedPaths([]string{"Makefile", "README.md"}))
 			if tt.want == "" && got != "" || !strings.Contains(got, tt.want) {
 				t.Errorf("GatedMergeRefusal() = %q, want %q", got, tt.want)
 			}

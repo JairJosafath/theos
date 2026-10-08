@@ -995,13 +995,29 @@ func TestRunImplementGated(t *testing.T) {
 			t.Error("a proposal branch was pushed")
 		}
 	})
-	t.Run("outside the allowance", func(t *testing.T) {
+	t.Run("an unprotected file beside the allowance", func(t *testing.T) {
+		// A test that pins what the Makefile builds changes with it (#578).
 		url := standardRepo(t)
 		job := standardJob(t, url)
 		job.AllowedPaths = []string{"Makefile"}
 		agent := filesAgent{files: map[string]string{"Makefile": "check:\n\tgo test\n", "README.md": "changed\n"}, summary: "Done."}
 		got := Run(ctx, job, agent, t.TempDir())
-		if !strings.Contains(got.Error, "this Task may change only Makefile") {
+		if got.Error != "" || got.Proposal != nil || !slices.Equal(got.Extra, []string{"README.md"}) {
+			t.Fatalf("Run() = %+v", got)
+		}
+		if fileIn(t, cloneTask(t, url), "README.md") != "changed\n" {
+			t.Error("the unprotected change is missing from the task branch")
+		}
+	})
+	t.Run("a protected file outside the allowance", func(t *testing.T) {
+		url := standardRepo(t)
+		job := standardJob(t, url)
+		job.ProtectedPaths = []string{"Makefile", "README.md"}
+		job.AllowedPaths = []string{"Makefile"}
+		agent := filesAgent{files: map[string]string{"Makefile": "check:\n\tgo test\n", "README.md": "changed\n"}, summary: "Done."}
+		got := Run(ctx, job, agent, t.TempDir())
+		if !model.IsScopeRefusal(got.Error) ||
+			!strings.Contains(got.Error, "touches README.md; this Task may change only Makefile") {
 			t.Errorf("Error = %q", got.Error)
 		}
 		if branchHead(t, url, "task/add-crop") != "" {
@@ -1162,14 +1178,16 @@ func TestStandardChangePrompts(t *testing.T) {
 			"even if your role guide or AGENTS.md says to stop"}, []string{"must run on main alone"}},
 		{"implement goal", ImplementPrompt(goal, Workspace{}), []string{"do not change", "tests for it"},
 			[]string{"Standard change:"}},
-		{"implement gated", ImplementPrompt(gated, Workspace{}), []string{"Change only Makefile", "git merge origin/standard/",
+		{"implement gated", ImplementPrompt(gated, Workspace{}), []string{"Change Makefile.", "git merge origin/standard/",
 			"proposal branch", "even if your role guide or AGENTS.md says to stop or to leave such files alone",
-			"Add no tests", `"make check" passing with the change is the evidence`},
+			"Add no new tests", `"make check" passing with the change is the evidence`,
+			`only where "make check" fails without it`, "never weaken or remove a check", "Change no other protected file"},
 			[]string{"Standard change:", "each with a test", "tests for it", "and tested"}},
 		{"review issue", ReviewPrompt(issue, Workspace{}), []string{"Makefile", "a Standard change",
 			"has tests for its behaviour", "where it is tested", "behaviour without tests"}, []string{"weakens no check"}},
 		{"review gated", ReviewPrompt(gated, Workspace{}), []string{"weakens no check", "works with this change alone",
-			"no more than its issue asks", "do not require tests", `"make check" passing with the change`,
+			"no more than its issue asks", "Do not require new tests", `"make check" passing with the change`,
+			`every file it changes besides Makefile changes only what "make check" fails on without it`,
 			"The proposal branch named in the issue was only the starting point", "is never merged",
 			"Judge task/x alone", "never ask for the proposal branch to be changed"},
 			[]string{"has tests for its behaviour", "where it is tested", "behaviour without tests"}},

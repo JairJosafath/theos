@@ -41,30 +41,65 @@ type ChangeSplit struct {
 	Task, Proposal, Refused []string
 }
 
-// SplitChange sorts the changed paths. With allowed set the Task is gated: a path
-// it covers is the Task's, every other path is refused. Otherwise an unprotected
-// path is the Task's, a protected one under AgentNeverPaths is refused, and any
-// other protected one is proposed when canPropose, else refused. Order follows
-// changed.
+// SplitChange sorts the changed paths. An unprotected path is the Task's. With
+// allowed set the Task is gated: a protected path it covers is the Task's too,
+// and every other protected path is refused, so a Standard change may carry the
+// unprotected changes its checks need (a test that pins what a protected file
+// produces). Otherwise a protected path under AgentNeverPaths is refused, and
+// any other protected one is proposed when canPropose, else refused. Order
+// follows changed.
 func SplitChange(changed, protected, allowed []string, canPropose bool) ChangeSplit {
 	var s ChangeSplit
+	gated := len(allowed) > 0
 	for _, p := range changed {
 		switch {
-		case len(allowed) > 0:
-			if coveredByAny(allowed, p) {
-				s.Task = append(s.Task, p)
-			} else {
-				s.Refused = append(s.Refused, p)
-			}
-		case !coveredByAny(protected, p):
+		case gated && coveredByAny(allowed, p), !coveredByAny(protected, p):
 			s.Task = append(s.Task, p)
-		case !canPropose || coveredByAny(AgentNeverPaths, p):
+		case gated, !canPropose, coveredByAny(AgentNeverPaths, p):
 			s.Refused = append(s.Refused, p)
 		default:
 			s.Proposal = append(s.Proposal, p)
 		}
 	}
 	return s
+}
+
+// StandardChangeExtras are the paths of a Standard change outside its allowed
+// paths: the unprotected files it changes so the repository's checks pass.
+func StandardChangeExtras(changed, allowed []string) []string {
+	var out []string
+	for _, p := range changed {
+		if !coveredByAny(allowed, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// ScopePrefix starts a round's error when the change touches paths the Task
+// may not change.
+const ScopePrefix = "Out of scope: "
+
+// ScopeRefusal is a round's error when the change touches refused paths: with
+// allowed set, protected files outside a Standard change's paths; otherwise
+// files nobody may change through a Task.
+func ScopeRefusal(refused, allowed []string) string {
+	if len(allowed) > 0 {
+		return fmt.Sprintf("%sthe change touches %s; this Task may change only %s, and files no Standard protects",
+			ScopePrefix, strings.Join(refused, ", "), strings.Join(allowed, ", "))
+	}
+	return fmt.Sprintf("%sthe change touches %s, which the platform and the Standard protect; leave them as they are",
+		ScopePrefix, strings.Join(refused, ", "))
+}
+
+// IsScopeRefusal reports whether a round's error or feedback is a ScopeRefusal.
+func IsScopeRefusal(s string) bool { return strings.HasPrefix(s, ScopePrefix) }
+
+// ScopeBlockedMessage is the message of a Task whose round was turned back for
+// scope twice in a row: more rounds won't change that, so it stops.
+func ScopeBlockedMessage(refusal string) string {
+	return "Two rounds in a row changed files this Task may not change, so it stops instead of spending " +
+		"more rounds: " + strings.TrimPrefix(refusal, ScopePrefix)
 }
 
 func coveredByAny(prots []string, path string) bool {

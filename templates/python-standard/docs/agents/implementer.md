@@ -51,8 +51,10 @@ Task that reviews and merges it. Then:
 - End your summary with a line: `Standard change: <why the issue needs it>`.
 - Never change `AGENTS.md`, `docs/agents/` or `.c4factory.yaml`. No Standard
   change can.
-- When your own Task is the Standard change, change only the paths the issue
-  names, and nothing else. Do not propose another Standard change.
+- When your own Task is the Standard change, change the paths the issue names.
+  Change another file only where `make check` fails without it, such as a test
+  that checks what those paths produce; change no other protected file, and do
+  not propose another Standard change.
 
 ## Python notes
 

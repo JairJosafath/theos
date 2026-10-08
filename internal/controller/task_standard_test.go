@@ -405,6 +405,37 @@ var _ = Describe("Task with a Standard change", func() {
 			ContainSubstring("will not merge"))))
 		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeFalse())
 	})
+
+	It("stops both Tasks, blocked, when its Standard change is turned back for scope twice", func() {
+		// #578: two rounds refused for the same files would only spend the third.
+		ns := newProjectNamespace()
+		n, m := blockedBesideChange(ns, 3)
+		refusal := model.ScopeRefusal([]string{"ruff.toml"}, []string{"Makefile"})
+		finishSandbox(ns, "orders-api-2-r1-implement", "orders-api-2",
+			&agentrunner.Result{Role: "implement", Error: refusal}, "")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-2-r2-implement") }).Should(Succeed())
+		finishSandbox(ns, "orders-api-2-r2-implement", "orders-api-2",
+			&agentrunner.Result{Role: "implement", Error: refusal}, "")
+
+		Eventually(func(g Gomega) {
+			change := getTask(g, ns, "orders-api-2")
+			g.Expect(change.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(change.Status.Round).To(Equal(int32(2)))
+			g.Expect(condition(change.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Reason": Equal(model.ReasonBlocked),
+				"Message": And(ContainSubstring("Two rounds in a row"), ContainSubstring("ruff.toml"))})))
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Reason": Equal(model.ReasonBlocked),
+				"Message": And(ContainSubstring(fmt.Sprintf("Standard change #%d will not merge", m)),
+					ContainSubstring("ruff.toml"))})))
+		}).Should(Succeed())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-2-r3-implement"), newSandbox()))).
+			To(BeTrue(), "no third round")
+		Expect(gitFake.issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
+		Expect(gitFake.issue(ns, "orders-api", m).Labels).To(ContainElement(model.LabelNeedsHuman))
+	})
 })
 
 // blockedBesideChange runs a Crew whose Task orders-api-1 proposes a Standard
@@ -655,9 +686,21 @@ var _ = Describe("Task with a gated merge", func() {
 		Expect(gitFake.issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
 	})
 
+	It("merges a Standard change with the unprotected files its checks need", func() {
+		// #578: a test that pins what the Makefile builds changes with it.
+		ns := newProjectNamespace()
+		n := gatedTaskInReview(ns, "Makefile", "tests/test_release.py")
+		approveGated(ns)
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+		}).Should(Succeed())
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
+		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
+	})
+
 	It("refuses a Standard change that touches a path it may not", func() {
 		ns := newProjectNamespace()
-		n := gatedTaskInReview(ns, "Makefile", "README.md")
+		n := gatedTaskInReview(ns, "Makefile", "ruff.toml")
 		approveGated(ns)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
@@ -665,7 +708,7 @@ var _ = Describe("Task with a gated merge", func() {
 			g.Expect(task.Status.Sandbox).To(BeEmpty())
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("GatedMergeRefused"),
-				"Message": ContainSubstring("README.md")})))
+				"Message": ContainSubstring("ruff.toml")})))
 		}).Should(Succeed())
 		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
 		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
@@ -677,7 +720,7 @@ var _ = Describe("Task with a gated merge", func() {
 		Expect(issue.State).To(Equal("open"))
 		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
 		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
-			ContainSubstring("README.md"))))
+			ContainSubstring("ruff.toml"))))
 	})
 })
 
@@ -733,8 +776,9 @@ func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 		{name: "refuses a change too large to check every path", review: approved,
 			provider: gateProvider{checks: "success", filesErr: fmt.Errorf("pull request 1 changes 1000 files or more: %w",
 				gitprovider.ErrTooManyFiles)}, refusal: "1000 files or more"},
-		{name: "refuses a path outside the allowance", review: approved,
-			provider: gateProvider{checks: "success", files: []string{"Makefile", "README.md"}}, refusal: "README.md"},
+		{name: "refuses a protected path outside the allowance", review: approved,
+			provider: gateProvider{checks: "success", files: []string{"Makefile", ".gitea/workflows/check.yaml"}},
+			refusal: ".gitea/workflows/check.yaml"},
 		{name: "refuses without the reviewer's approval", provider: gateProvider{checks: "success", files: makefile},
 			refusal: "verdict"},
 	} {
@@ -822,5 +866,19 @@ func TestResumedRun(t *testing.T) {
 				t.Errorf("resumedRun() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPullBodyNamesAStandardChangesExtras(t *testing.T) {
+	agents := taskAgents{implementer: &c4v1alpha1.Agent{}, reviewer: &c4v1alpha1.Agent{}}
+	task := &c4v1alpha1.Task{Spec: c4v1alpha1.TaskSpec{Issue: 53, AllowedProtectedPaths: []string{"Makefile"}}}
+	body := pullBody(task, agents, 1, "Renamed the dist outputs.", []string{"release_test.go"})
+	want := "This Standard change may change `Makefile`. It also changes `release_test.go`, which no Standard " +
+		"protects, so the repository's checks pass with it."
+	if !strings.Contains(body, want) {
+		t.Errorf("pullBody() = %q, want it to contain %q", body, want)
+	}
+	if body := pullBody(task, agents, 1, "Done.", nil); strings.Contains(body, "It also changes") {
+		t.Errorf("pullBody() = %q names extras it has none of", body)
 	}
 }
