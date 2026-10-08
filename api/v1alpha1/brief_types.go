@@ -72,6 +72,15 @@ type BriefSpec struct {
 	// +kubebuilder:validation:Maximum=5
 	// +optional
 	Parallel int32 `json:"parallel,omitempty"`
+
+	// paused stops the Brief's work in one step (docs/plans/upgrade-in-place.md):
+	// while true, the Brief pauses every Crew it made, marking each with
+	// c4.factory.io/paused-by: brief, starts no new round (a new prompt waits)
+	// and tends no failed issue; a planner Task already started runs to its
+	// end. Set back to false, it unpauses only the Crews it marked, so a Crew
+	// paused by hand stays paused. The Paused condition says what still runs.
+	// +optional
+	Paused bool `json:"paused,omitempty"`
 }
 
 // BriefRelease is where a Container's releases are published: the fields of a
@@ -147,6 +156,9 @@ const (
 	// ConditionNeedsYou is True while status.needsYou lists something only
 	// the person can decide; it says the first and how many more.
 	ConditionNeedsYou = "NeedsYou"
+	// ConditionPaused is True while spec.paused is; it names the Tasks still
+	// running in the Brief's Crews and its planner Task.
+	ConditionPaused = "Paused"
 )
 
 // BriefObject names an object a Brief created.

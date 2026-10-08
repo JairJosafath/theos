@@ -383,10 +383,12 @@ type TendFacts struct {
 	LastTend time.Time
 	// Due is how many failed issues are due and unanswered (Attention.Due).
 	Due int
+	// Paused says the Brief's spec.paused is set: it tends nothing.
+	Paused bool
 }
 
 // StartsTend reports whether the Brief starts a tending round at now: its
-// autopilot is Ask or On, the last round is over, no prompt waits, at least
+// autopilot is Ask or On, it isn't paused, the last round is over, no prompt waits, at least
 // one failed issue is due and unanswered, and the last tending round started
 // at least TendInterval ago.
 func StartsTend(f TendFacts, now time.Time) bool {
@@ -394,7 +396,7 @@ func StartsTend(f TendFacts, now time.Time) bool {
 	switch {
 	case mode != AutopilotAsk && mode != AutopilotOn:
 		return false
-	case f.Round == 0 || !f.RoundOver || f.PromptWaiting || f.OperatorNeedsInput || f.Due == 0:
+	case f.Paused || f.Round == 0 || !f.RoundOver || f.PromptWaiting || f.OperatorNeedsInput || f.Due == 0:
 		return false
 	}
 	return f.LastTend.IsZero() || !now.Before(f.LastTend.Add(TendInterval))

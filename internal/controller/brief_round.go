@@ -76,6 +76,7 @@ func roundFacts(brief *c4v1alpha1.Brief, task *c4v1alpha1.Task) model.BriefRound
 		RoundPrompts:       int(status.RoundPrompts),
 		RoundOver:          roundOver(status),
 		OperatorNeedsInput: operatorWaits(status),
+		Paused:             brief.Spec.Paused,
 	}
 	if cond := meta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionPlanned); cond != nil {
 		facts.Outcome = cond.Reason

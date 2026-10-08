@@ -266,6 +266,7 @@ func TestStartsTend(t *testing.T) {
 		{"a prompt waits", func(f *TendFacts) { f.PromptWaiting = true }, t0, false},
 		{"the operator needs input", func(f *TendFacts) { f.OperatorNeedsInput = true }, t0, false},
 		{"nothing due", func(f *TendFacts) { f.Due = 0 }, t0, false},
+		{"paused", func(f *TendFacts) { f.Paused = true }, t0, false},
 		{"inside the interval", func(f *TendFacts) { f.LastTend = hours(-0.9) }, t0, false},
 		{"past the interval", func(f *TendFacts) { f.LastTend = hours(-1) }, t0, true},
 	}

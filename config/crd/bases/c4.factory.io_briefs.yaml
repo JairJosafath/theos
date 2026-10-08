@@ -172,6 +172,15 @@ spec:
                 maximum: 5
                 minimum: 1
                 type: integer
+              paused:
+                description: |-
+                  paused stops the Brief's work in one step (docs/plans/upgrade-in-place.md):
+                  while true, the Brief pauses every Crew it made, marking each with
+                  c4.factory.io/paused-by: brief, starts no new round (a new prompt waits)
+                  and tends no failed issue; a planner Task already started runs to its
+                  end. Set back to false, it unpauses only the Crews it marked, so a Crew
+                  paused by hand stays paused. The Paused condition says what still runs.
+                type: boolean
               prompts:
                 description: |-
                   prompts are follow-ups in plain words, oldest first. A prompt is only

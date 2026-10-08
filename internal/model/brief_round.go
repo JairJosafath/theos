@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -51,12 +52,18 @@ type BriefRoundFacts struct {
 	// OperatorNeedsInput says the operator waits for the person to make
 	// something: an Agent, the GitProvider, its Secret or a catalog entry.
 	OperatorNeedsInput bool
+	// Paused says the Brief's spec.paused is set: no round starts.
+	Paused bool
 }
 
 // StartsRound reports whether the Brief starts its next round: none ran yet,
 // or the last one is over and prompts were appended after the ones it took
-// (B12). A prompt appended during a round waits for the next one.
+// (B12). A prompt appended during a round waits for the next one; a paused
+// Brief starts none, and its prompts wait for it to resume.
 func StartsRound(f BriefRoundFacts) bool {
+	if f.Paused {
+		return false
+	}
 	if f.Round == 0 {
 		return true
 	}
@@ -276,4 +283,24 @@ func WorkspacePrompts(prompts []string, roundPrompts int, roundRuns bool) []stri
 // tending round comes only after one that applied.
 func IdeaPlanned(outcomes []string, promptsPlanned int) bool {
 	return promptsPlanned > 0 || slices.Contains(outcomes, ReasonApplied) || slices.Contains(outcomes, ReasonTended)
+}
+
+// maxPausedNames is how many running Tasks a paused Brief's condition names.
+const maxPausedNames = 20
+
+// BriefPausedMessage is the message of a paused Brief's Paused condition: the
+// Tasks still running in its Crews and its planner Task, by name, until none
+// is (decision 5 of docs/plans/upgrade-in-place.md).
+func BriefPausedMessage(running []string) string {
+	switch len(running) {
+	case 0:
+		return "Paused; nothing is running"
+	case 1:
+		return "Paused; 1 Task still running: " + running[0]
+	}
+	names := strings.Join(running[:min(len(running), maxPausedNames)], ", ")
+	if more := len(running) - maxPausedNames; more > 0 {
+		names += fmt.Sprintf(" and %d more", more)
+	}
+	return fmt.Sprintf("Paused; %d Tasks still running: %s", len(running), names)
 }

@@ -175,6 +175,14 @@ const (
 	AnnotationPlanRefusals = "c4.factory.io/plan-refusals"
 )
 
+// AnnotationPausedBy on a Crew says who paused it: PausedByBrief when its
+// Brief did, which then unpauses it on resume. A Crew without it was paused
+// by hand and stays paused.
+const AnnotationPausedBy = "c4.factory.io/paused-by"
+
+// PausedByBrief is AnnotationPausedBy's value on a Crew its Brief paused.
+const PausedByBrief = "brief"
+
 // AnnotationRetry, set or changed on a Failed Container, makes the operator try
 // to scaffold it again: after emptying its repository, for example.
 const AnnotationRetry = "c4.factory.io/retry"
