@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { isBriefName } from '../demo/limits'
-import { briefManifest, LiveBriefWriter, nameFromIdea, pausedPatch, promptPatch } from './briefs'
+import { briefManifest, LiveBriefWriter, nameFromIdea, pausedPatch, promptPatch, settingsPatch } from './briefs'
 
 function respond(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -41,6 +41,14 @@ describe('briefManifest and promptPatch', () => {
   it('sets spec.paused', () => {
     expect(pausedPatch(true)).toEqual([{ op: 'add', path: '/spec/paused', value: true }])
     expect(pausedPatch(false)).toEqual([{ op: 'add', path: '/spec/paused', value: false }])
+  })
+
+  it('sets only the settings given, each as given', () => {
+    const release = { container: 'cli', github: { repository: 'me/cli', tokenSecretRef: { name: 'gh' } } }
+    expect(settingsPatch({ autopilot: 'On' })).toEqual([{ op: 'add', path: '/spec/autopilot', value: 'On' }])
+    expect(settingsPatch({ parallel: 'six' })).toEqual([{ op: 'add', path: '/spec/parallel', value: 'six' }])
+    expect(settingsPatch({ releases: [release] })).toEqual([{ op: 'add', path: '/spec/releases', value: [release] }])
+    expect(settingsPatch({ releases: [] })).toEqual([{ op: 'add', path: '/spec/releases', value: [] }])
   })
 })
 

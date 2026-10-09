@@ -1,7 +1,8 @@
 // A Brief's page: the object header (its lifecycle, conditions, rounds as the
 // timeline, what it made, its repository and the pause button), then what its
-// card shows: what needs you, its rounds, prompts, issues and suggestions, and
-// the prompt box. Its three writes are the UI's three.
+// card shows: what needs you, with a one-click answer on each item, its
+// rounds, prompts, issues and suggestions, and the prompt box; then its
+// settings (autopilot, parallel, releases), which it changes with actions on.
 
 import { useState } from 'react'
 import type { BriefWriter } from '../../k8s/briefs'
@@ -13,6 +14,7 @@ import { plannerLimit } from './rows'
 import { FormError } from '../briefs/PromptForm'
 import type { WriteError } from '../briefs/errors'
 import { ObjectHeader } from '../ObjectHeader'
+import { BriefSettings } from '../briefs/BriefSettings'
 import { briefTimeline } from './rows'
 import { briefsHref, pageHref, storyHref } from './links'
 import '../briefs.css'
@@ -51,8 +53,9 @@ export function BriefPage({ brief, agents, writer }: { brief: Brief; agents: Age
         <h2 className="panel-title small-title">The idea</h2>
         <p className="brief-idea">{view.idea}</p>
         {pauseError ? <FormError error={pauseError} /> : null}
-        <BriefBody view={view} namespace={ns} writer={writer} now={now} />
+        <BriefBody view={view} namespace={ns} writer={writer} now={now} answering />
       </section>
+      <BriefSettings brief={brief} writer={writer} />
     </main>
   )
 }

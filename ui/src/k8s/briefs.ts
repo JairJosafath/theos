@@ -1,9 +1,10 @@
-// The UI's only three writes: create a Brief from an idea, add a follow-up
-// prompt to one, and pause or resume one. server.mjs passes exactly these
-// requests on and nothing else; the CRD's rules decide whether they are accepted,
-// so this file copies none of them: a refused write shows the API server's message.
+// The UI's writes to a Brief: create one from an idea, add a follow-up prompt
+// to one, pause or resume one and, with actions on, set its autopilot,
+// parallel and releases. server.mjs passes exactly these requests on and
+// nothing else; the CRD's rules decide whether they are accepted, so this file
+// copies none of them: a refused write shows the API server's message.
 
-import { GROUP, VERSION, resourcePath, RESOURCES, type Brief, type BriefAutopilot } from './types'
+import { GROUP, VERSION, resourcePath, RESOURCES, type Brief, type BriefAutopilot, type BriefRelease } from './types'
 import { errorFromResponse } from './watch'
 
 /** What a new Brief may choose besides its idea; each unset leaves the factory's default. */
@@ -37,6 +38,24 @@ export function promptPatch(prompt: string): [{ op: 'add'; path: '/spec/prompts/
 /** The JSON patch that pauses (true) or resumes (false) a Brief and every Crew it made. */
 export function pausedPatch(paused: boolean): [{ op: 'add'; path: '/spec/paused'; value: boolean }] {
   return [{ op: 'add', path: '/spec/paused', value: paused }]
+}
+
+/** A Brief's settings the UI sets with actions on; each one given is set, the rest left as they are. */
+export interface BriefSettings {
+  autopilot?: BriefAutopilot
+  /** Sent as given, so the API server judges it. */
+  parallel?: number | string
+  /** The whole list: an entry added or removed is the list without or with it. */
+  releases?: BriefRelease[]
+}
+
+/** The JSON patch that sets each of the settings given; server.mjs passes on only these paths. */
+export function settingsPatch(settings: BriefSettings): { op: 'add'; path: string; value: unknown }[] {
+  const ops: { op: 'add'; path: string; value: unknown }[] = []
+  if (settings.autopilot !== undefined) ops.push({ op: 'add', path: '/spec/autopilot', value: settings.autopilot })
+  if (settings.parallel !== undefined) ops.push({ op: 'add', path: '/spec/parallel', value: settings.parallel })
+  if (settings.releases !== undefined) ops.push({ op: 'add', path: '/spec/releases', value: settings.releases })
+  return ops
 }
 
 // Words that say little about the app, skipped when naming it.
@@ -76,13 +95,15 @@ export function nameFromIdea(idea: string, taken: string[]): string {
   }
 }
 
-/** Creates Briefs, adds prompts to them and pauses or resumes them; rejects with the API's message when it refuses. */
+/** Creates Briefs, adds prompts to them, pauses or resumes them and sets their settings; rejects with the API's message when it refuses. */
 export interface BriefWriter {
   /** Each unset option leaves the factory's default. */
   create(namespace: string, name: string, idea: string, options?: BriefOptions): Promise<void>
   addPrompt(namespace: string, name: string, prompt: string): Promise<void>
   /** Sets spec.paused: true pauses the Brief and its Crews, false resumes them. */
   setPaused(namespace: string, name: string, paused: boolean): Promise<void>
+  /** Sets spec.autopilot, spec.parallel or spec.releases; the UI server refuses it with actions off. */
+  setSettings(namespace: string, name: string, settings: BriefSettings): Promise<void>
 }
 
 /** Writes through the /k8s proxy, relative to the page like the watches. */
@@ -109,6 +130,10 @@ export class LiveBriefWriter implements BriefWriter {
 
   async setPaused(namespace: string, name: string, paused: boolean): Promise<void> {
     await this.patch(namespace, name, pausedPatch(paused))
+  }
+
+  async setSettings(namespace: string, name: string, settings: BriefSettings): Promise<void> {
+    await this.patch(namespace, name, settingsPatch(settings))
   }
 
   private async patch(namespace: string, name: string, ops: unknown[]): Promise<void> {

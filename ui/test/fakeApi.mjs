@@ -1,7 +1,9 @@
 // A tiny in-memory Kubernetes API for the c4.factory.io kinds, with lists and
 // watches, for the end-to-end test and the screenshots of every view. It
-// answers only GETs of collections, and the factory health's Pods and Nodes
-// as empty lists; everything else is 404.
+// answers GETs of collections and of one object, a JSON patch of one object
+// (add and test ops, as the UI server sends them), and the factory health's
+// Pods and Nodes as empty lists; everything else is 404. refuse() makes the
+// next write fail as the API server refuses one.
 
 import http from 'node:http'
 // The UI's own list of kinds, so the fake API serves every one.
@@ -41,6 +43,9 @@ export function fakeApi(namespace) {
       res.writeHead(200, { 'content-type': 'application/json' })
       return res.end(JSON.stringify({ metadata: { resourceVersion: String(rv) }, items: [] }))
     }
+    const one = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1alpha1\/namespaces\/([^/]+)\/([a-z]+)\/([^/]+)$/)
+    if (one && store.has(one[2]) && (req.method === 'GET' || req.method === 'PATCH'))
+      return object(req, res, ...one.slice(1))
     const m = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1alpha1(?:\/namespaces\/([^/]+))?\/([a-z]+)$/)
     if (req.method !== 'GET' || !m || !store.has(m[2])) {
       res.writeHead(404, { 'content-type': 'application/json' })
@@ -62,8 +67,52 @@ export function fakeApi(namespace) {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ metadata: { resourceVersion: String(rv) }, items }))
   })
+  /** GET or PATCH one object; the patch is recorded in `writes`, or refused when refuse() asked. */
+  function object(req, res, ns, plural, name) {
+    const reply = (code, body) => {
+      res.writeHead(code, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(body))
+    }
+    const obj = store.get(plural).get(`${ns}/${name}`)
+    if (!obj) return reply(404, { kind: 'Status', code: 404, message: `${plural} "${name}" not found` })
+    if (req.method === 'GET') return reply(200, obj)
+    let body = ''
+    req.on('data', (chunk) => (body += chunk))
+    req.on('end', () => {
+      const ops = JSON.parse(body)
+      writes.push({ plural, name, contentType: req.headers['content-type'], ops })
+      if (refusal) {
+        const message = refusal
+        refusal = undefined
+        return reply(422, { kind: 'Status', status: 'Failure', code: 422, reason: 'Invalid', message })
+      }
+      const next = structuredClone(obj)
+      for (const op of ops) {
+        const keys = op.path.split('/').slice(1)
+        const last = keys.pop()
+        const parent = keys.reduce((o, k) => o[k], next)
+        if (op.op === 'test' && parent[last] !== op.value)
+          return reply(409, { kind: 'Status', code: 409, message: `the object has been modified` })
+        if (op.op === 'add') {
+          if (last === '-') parent.push(op.value)
+          else parent[last] = op.value
+        }
+      }
+      send(plural, 'MODIFIED', put(plural, next))
+      reply(200, next)
+    })
+  }
+
+  const writes = []
+  let refusal
   return {
     server,
+    /** Every PATCH the API was sent, oldest first: plural, name, content type and the ops. */
+    writes,
+    /** Refuses the next write with 422 and `message`, as the API server does when the CRD refuses a value. */
+    refuse(message) {
+      refusal = message
+    },
     /** How many watches of a kind are open. */
     watching(plural) {
       return watchers.get(plural).size

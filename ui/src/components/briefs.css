@@ -388,3 +388,59 @@ a.brief-app-published {
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+
+.brief-answers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.brief-answers .button {
+  margin-top: 0;
+}
+
+.brief-answers .form-error {
+  flex-basis: 100%;
+  margin-top: 2px;
+}
+
+.brief-settings {
+  display: grid;
+  gap: 14px;
+}
+
+.brief-setting {
+  display: grid;
+  gap: 4px;
+}
+
+.brief-setting-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.brief-setting .button,
+.brief-setting-add .button {
+  margin-top: 0;
+}
+
+.brief-setting-number {
+  max-width: 8em;
+}
+
+.brief-setting-releases li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.brief-setting-add {
+  display: grid;
+  gap: 4px;
+  max-width: 28em;
+  margin-top: 6px;
+}
