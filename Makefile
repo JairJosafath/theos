@@ -78,7 +78,7 @@ vet: ## Run go vet against code.
 ifeq ($(MAKECMDGOALS)$(C4_HEAVY_SLOT),check)
 CHECK_CACHED := $(shell hack/check-cache.sh lookup)
 endif
-HEAVY_GOALS = check test lint lint-fix docker-build deploy e2e test-e2e
+HEAVY_GOALS = check test lint lint-fix docker-build deploy e2e test-e2e test-templates-operator
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
 ifeq ($(C4_HEAVY_SLOT)$(CHECK_CACHED),)
 $(shell hack/heavy-slot.sh acquire $$PPID "make $(MAKECMDGOALS)" >&2)
@@ -103,6 +103,17 @@ test: manifests generate fmt vet setup-envtest install-helm ## Run tests.
 .PHONY: test-hack
 test-hack: install-helm ## Run the shell tests of the scripts in hack/.
 	@hack/test-hack.sh
+
+# Renders the operator combo (go-kubebuilder, go-operator-standard, small) and
+# runs its make check before and after kubebuilder create api, with this
+# repository's pinned tools (hack/test-templates-operator.sh). Not part of
+# make check: run it when a change touches either operator template.
+.PHONY: test-templates-operator
+test-templates-operator: kubebuilder kustomize controller-gen envtest $(GOLANGCI_LINT_BASE) ## Render the operator combo and run its make check before and after kubebuilder create api.
+	KUBEBUILDER="$(KUBEBUILDER)" CONTROLLER_GEN="$(CONTROLLER_GEN)" KUSTOMIZE="$(KUSTOMIZE)" ENVTEST="$(ENVTEST)" \
+		GOLANGCI_LINT="$(GOLANGCI_LINT_BASE)" \
+		ENVTEST_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
+		hack/test-templates-operator.sh
 
 # Regenerates the go-kubebuilder Framework from the pinned kubebuilder; review
 # the diff, then tag the template (hack/template-go-kubebuilder/main.go says how

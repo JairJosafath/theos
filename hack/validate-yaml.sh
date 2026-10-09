@@ -30,6 +30,12 @@ rm -rf "$OUT/storefront"
 go run ./hack/render -out "$OUT/storefront" -type static-site -container storefront -display-name "Storefront" \
 	Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests >/dev/null
 "$KUSTOMIZE" build "$OUT/storefront/deploy/k8s" >"$OUT/storefront.yaml"
+# A kubebuilder operator: the Framework's config/default, with small's patch
+# on the manager.
+rm -rf "$OUT/backup-operator"
+go run ./hack/render -out "$OUT/backup-operator" -type operator -container backup-operator -display-name "Backup Operator" \
+	Framework=go-kubebuilder Standard=go-operator-standard Compute=small >/dev/null
+"$KUSTOMIZE" build "$OUT/backup-operator/config/default" >"$OUT/backup-operator.yaml"
 
 # The chart's GitProviders, catalog and Agents are the objects in ConfigMap
 # c4factory-catalog, which the seed applies (hack/seed/catalog.sh): validated

@@ -50,6 +50,7 @@ make test                # Unit and envtest tests (real K8s API + etcd, no clust
 make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack and test
 make validate-yaml       # The YAML against the built-in schemas and our CRDs, offline
 make test-hack           # The shell tests of hack/ (hack/**/*_test.sh), all at once, about a minute
+make test-templates-operator  # The operator combo's make check before and after kubebuilder create api, not in make check
 make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
@@ -568,7 +569,7 @@ queue:
   workers is `RELAY_ADMIT_GAP` seconds old (default 120), and stops after
   `RELAY_MEM_WAIT` seconds (default 3600) without headroom. It logs the wait.
 - Heavy jobs queue device-wide: `make check`, `test`, `lint`, `lint-fix`,
-  `docker-build`, `deploy`, `e2e` and `test-e2e` take one of `HEAVY_JOBS` slots
+  `docker-build`, `deploy`, `e2e`, `test-e2e` and `test-templates-operator` take one of `HEAVY_JOBS` slots
   (default 2; 0 turns the queue off) before anything builds, shared by every
   checkout on the device (`hack/heavy-slot.sh`: `flock`ed files in
   `<git common dir>/heavy-slots`). A `make` that finds them all taken waits,

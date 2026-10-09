@@ -466,6 +466,13 @@ catalog:
         displayName: Command-line program (Python, uv)
         description: A command-line program in Python managed with uv, with flags parsed by argparse, a version flag, unit tests and a wheel and sdist for releases.
         supportedTypes: [cli]
+    - kind: Framework
+      name: go-kubebuilder
+      ref: v1.0.0
+      spec:
+        displayName: Kubernetes operator (Go, kubebuilder)
+        description: "An operator that extends Kubernetes: watches and reconciles cluster objects. What kubebuilder init writes, in Go, ready for kubebuilder create api."
+        supportedTypes: [operator]
     - kind: Standard
       name: go-standard
       ref: v1.1.6
@@ -475,6 +482,15 @@ catalog:
         supportedTypes: [cli]
         supportedFrameworks: [go-cli]
         # The quality contract: agents fix the code, not the rules it is checked by.
+        protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
+    - kind: Standard
+      name: go-operator-standard
+      ref: v1.0.0
+      spec:
+        displayName: Go operator quality standard
+        description: kubebuilder's golangci-lint, gofmt and goimports, envtest tests, generated files kept up to date, role guides for agents and the make check CI.
+        supportedTypes: [operator]
+        supportedFrameworks: [go-kubebuilder]
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
     - kind: Standard
       name: ts-standard

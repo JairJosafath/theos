@@ -1,0 +1,65 @@
+# go-kubebuilder v1.0.0 under go-operator-standard v1.0.0 and small v1.1.0, rendered with
+# go run ./hack/render -out backup-operator -type operator -container backup-operator -display-name 'Backup Operator' Framework=go-kubebuilder Standard=go-operator-standard Compute=small
+# and checked by make test-templates-operator (hack/test-templates-operator.sh): make check, kubebuilder create api,
+# make manifests generate, make check again. Tools: kubebuilder v4.16.0, controller-gen v0.22.0, kustomize v5.8.1,
+# setup-envtest v0.25.0 with the Kubernetes 1.37.0 envtest binaries, golangci-lint v2.13.1 (this repository's pin;
+# the toolchain image has v2.14.0), go1.26.8, 2026-10-09. The heavy-job slot line and timing are left out.
+
+KUBEBUILDER="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/kubebuilder-v4.16.0" CONTROLLER_GEN="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/controller-gen-v0.22.0" KUSTOMIZE="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/kustomize-v5.8.1" ENVTEST="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/setup-envtest-v0.25.0" \
+	GOLANGCI_LINT="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/golangci-lint-v2.13.1" \
+	ENVTEST_ASSETS="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/k8s/1.37.0-linux-amd64" \
+	hack/test-templates-operator.sh
+Rendered 47 files from go-kubebuilder@local, go-operator-standard@local, small@local into /tmp/tmp.RyBP4w7hC6/backup-operator
+
+$ make check
+go mod download
+go mod tidy -diff
+"controller-gen" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+"controller-gen" object:headerFile="hack/boilerplate.go.txt",year=2026 paths="./..."
+Generated files are up to date.
+"/tmp/tmp.RyBP4w7hC6/bin/golangci-lint" fmt --diff
+go vet ./...
+"/tmp/tmp.RyBP4w7hC6/bin/golangci-lint" run
+0 issues.
+KUBEBUILDER_ASSETS=/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/k8s/1.37.0-linux-amd64
+?   	c4factory.local/webshop/backup-operator/cmd	[no test files]
+?   	c4factory.local/webshop/backup-operator/test/utils	[no test files]
+
+$ kubebuilder create api --group demo --version v1 --kind Widget --resource --controller
+INFO Writing kustomize manifests for you to edit... 
+INFO Writing scaffold for you to edit... 
+INFO api/v1/widget_types.go 
+INFO api/v1/groupversion_info.go 
+INFO internal/controller/suite_test.go 
+INFO internal/controller/widget_controller.go 
+INFO internal/controller/widget_controller_test.go 
+INFO Update dependencies 
+INFO Running make 
+"controller-gen" object:headerFile="hack/boilerplate.go.txt",year=2026 paths="./..."
+Next: implement your new API and generate the manifests (e.g. CRDs,CRs) with:
+$ make manifests
+
+$ make manifests generate
+"controller-gen" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+"controller-gen" object:headerFile="hack/boilerplate.go.txt",year=2026 paths="./..."
+
+No protected path changed (AGENTS.md Makefile .golangci.yml .editorconfig docs/style/ docs/agents/)
+
+$ make check
+go mod download
+go mod tidy -diff
+"controller-gen" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+"controller-gen" object:headerFile="hack/boilerplate.go.txt",year=2026 paths="./..."
+Generated files are up to date.
+"/tmp/tmp.RyBP4w7hC6/bin/golangci-lint" fmt --diff
+go vet ./...
+"/tmp/tmp.RyBP4w7hC6/bin/golangci-lint" run
+0 issues.
+KUBEBUILDER_ASSETS=/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/k8s/1.37.0-linux-amd64
+?   	c4factory.local/webshop/backup-operator/api/v1	[no test files]
+?   	c4factory.local/webshop/backup-operator/cmd	[no test files]
+ok  	c4factory.local/webshop/backup-operator/internal/controller	7.358s
+?   	c4factory.local/webshop/backup-operator/test/utils	[no test files]
+
+test-templates-operator: the operator combo passes make check before and after kubebuilder create api
+

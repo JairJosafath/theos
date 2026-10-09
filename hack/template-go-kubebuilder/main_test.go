@@ -201,6 +201,25 @@ func TestAddComputePatch(t *testing.T) {
 	}
 }
 
+func TestAddDistIgnore(t *testing.T) {
+	for _, src := range []string{"bin/*\n", "bin/*"} {
+		p, got, err := addDistIgnore(gitignore, []byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p != gitignore {
+			t.Errorf("path = %q, want %q", p, gitignore)
+		}
+		want := "bin/*\n\n# Release output: make dist\n/dist/\n"
+		if string(got) != want {
+			t.Errorf("addDistIgnore(%q) = %q, want %q", src, got, want)
+		}
+	}
+	if _, _, err := addDistIgnore(gitignore, []byte("/dist/\n")); err == nil {
+		t.Error("want an error when .gitignore already ignores /dist/")
+	}
+}
+
 // TestCommittedTemplate checks templates/go-kubebuilder as committed: only
 // Framework paths, every .go file a .go.tmpl, no placeholder left, and every
 // template renders.

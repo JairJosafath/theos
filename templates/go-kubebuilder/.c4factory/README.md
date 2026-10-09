@@ -43,8 +43,9 @@ A Kubernetes operator in Go 1.26: what `kubebuilder init --plugins go/v4` (kubeb
   runs the pinned `kubebuilder init` with placeholder names, sorts every path it
   writes by the table in `hack/template-go-kubebuilder/main.go` (and fails on a
   path no rule matches), turns the placeholders into template fields, escapes the
-  files' own `{{ }}`, and adds the Compute patch to
-  `config/manager/kustomization.yaml`. It replaces everything here except
+  files' own `{{ }}`, adds the Compute patch to
+  `config/manager/kustomization.yaml`, and appends `/dist/` to `.gitignore` (the
+  Standard's `make dist` writes there, and `.gitignore` is the Framework's). It replaces everything here except
   `.c4factory/`. To change a file, change the tool, or bump `KUBEBUILDER_VERSION`
   in C4 Factory's `Makefile`, and review the diff.
 - **Every `.go` file is a `.tmpl`**, even without template expressions: C4

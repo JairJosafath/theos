@@ -8,8 +8,9 @@
 // sorts every path it writes into the Framework, the Standard (go-operator-standard
 // writes its own) or dropped; a path no rule matches fails the run, so a
 // kubebuilder bump that writes a new path is a decision, not a surprise. The
-// Framework's files have their placeholders turned into template fields and
-// replace everything in the output folder except its .c4factory/.
+// Framework's files have their placeholders turned into template fields, two
+// edits follow (addComputePatch and addDistIgnore), and they replace everything
+// in the output folder except its .c4factory/.
 package main
 
 import (
@@ -158,7 +159,7 @@ patches:
 {{- end }}
 `
 
-// addComputePatch is the one edit besides the substitutions: it makes
+// addComputePatch is one of the two edits besides the substitutions: it makes
 // config/manager/kustomization.yaml a template that applies the Compute's
 // patch. p and data are transform's result.
 func addComputePatch(p string, data []byte) (string, []byte, error) {
@@ -173,6 +174,28 @@ func addComputePatch(p string, data []byte) (string, []byte, error) {
 		data = []byte(escaper.Replace(string(data)))
 	}
 	return p, append(data, computePatch...), nil
+}
+
+// gitignore is the ignore file the release output is added to.
+const gitignore = ".gitignore"
+
+// distIgnore ignores go-operator-standard's release output: its `make dist`
+// writes dist/, and the Standard can't write .gitignore, the Framework's.
+const distIgnore = `
+# Release output: make dist
+/dist/
+`
+
+// addDistIgnore is the other edit besides the substitutions: it appends
+// distIgnore to .gitignore. p and data are transform's result.
+func addDistIgnore(p string, data []byte) (string, []byte, error) {
+	if bytes.Contains(data, []byte("/dist/")) {
+		return "", nil, fmt.Errorf("%s: already ignores /dist/; drop addDistIgnore", p)
+	}
+	if len(data) > 0 && !bytes.HasSuffix(data, []byte("\n")) {
+		data = append(data, '\n')
+	}
+	return p, append(data, distIgnore...), nil
 }
 
 // file is one file of the generated template.
@@ -215,6 +238,9 @@ func frameworkFiles(dir string) (map[string]file, error) {
 		if err == nil && p == managerKustomization {
 			name, data, err = addComputePatch(name, data)
 		}
+		if err == nil && p == gitignore {
+			name, data, err = addDistIgnore(name, data)
+		}
 		if err != nil {
 			errs = append(errs, err)
 			return nil
@@ -228,6 +254,12 @@ func frameworkFiles(dir string) (map[string]file, error) {
 	if _, ok := out[managerKustomization+".tmpl"]; !ok && len(errs) == 0 {
 		errs = append(errs, fmt.Errorf("%s: kubebuilder no longer writes it; the compute patch has nowhere to go",
 			managerKustomization))
+	}
+	_, plain := out[gitignore]
+	_, tmpl := out[gitignore+".tmpl"]
+	if !plain && !tmpl && len(errs) == 0 {
+		errs = append(errs, fmt.Errorf("%s: kubebuilder no longer writes it; /dist/ has nowhere to be ignored",
+			gitignore))
 	}
 	return out, errors.Join(errs...)
 }
