@@ -205,6 +205,19 @@ func TestUIOIDCNeedsItsSettings(t *testing.T) {
 	}
 }
 
+// TestUIOIDCNeedsAnHTTPSIssuer: the UI reads the issuer's keys from
+// issuerURL, so plain http fails the render.
+func TestUIOIDCNeedsAnHTTPSIssuer(t *testing.T) {
+	helm := helmBinary(t)
+	out, err := helmTemplate(helm, withOIDC("ui.auth.oidc.issuerURL=http://issuer.example")...)
+	if err == nil {
+		t.Fatalf("the render succeeded:\n%s", out)
+	}
+	if !strings.Contains(out, "must be https") {
+		t.Errorf("the render failed without saying https:\n%s", out)
+	}
+}
+
 // TestUIOIDCSettings: the UI server gets ui.auth.oidc as OIDC_* variables,
 // the defaults where unset, and an empty prefix stays empty.
 func TestUIOIDCSettings(t *testing.T) {

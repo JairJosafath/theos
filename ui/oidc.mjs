@@ -13,14 +13,17 @@
 
 import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto'
 
-/** The session cookie, and the one that ties a sign-in's answer to the browser that started it. */
-export const SESSION_COOKIE = 'c4ui_session'
-const LOGIN_COOKIE = 'c4ui_login'
+/**
+ * The session cookie, and the one that ties a sign-in's answer to the browser
+ * that started it. __Host- keeps a sibling subdomain from planting either.
+ */
+export const SESSION_COOKIE = '__Host-c4ui_session'
+const LOGIN_COOKIE = '__Host-c4ui_login'
 const CALLBACK_PATH = '/ui/callback'
 
 /** How long a started sign-in waits for the issuer's answer. */
 const LOGIN_TTL_MS = 10 * 60_000
-/** Most sign-ins in flight and sessions held, so nobody can fill the memory. */
+/** Most sign-ins in flight (the oldest go first) and sessions held, so nobody can fill the memory. */
 const MAX_LOGINS = 1000
 const MAX_SESSIONS = 10_000
 /** Clock skew allowed on the ID token's exp, iat and nbf. */
@@ -28,7 +31,7 @@ const SKEW_S = 60
 
 const ALGORITHMS = {
   RS256: { kty: 'RSA', options: {} },
-  ES256: { kty: 'EC', options: { dsaEncoding: 'ieee-p1363' } },
+  ES256: { kty: 'EC', crv: 'P-256', options: { dsaEncoding: 'ieee-p1363' } },
 }
 
 /**
@@ -75,9 +78,12 @@ function cookies(req) {
   return out
 }
 
-function cookie(name, value, { path = '/', maxAge }) {
-  return `${name}=${value}; Path=${path}; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`
+function cookie(name, value, maxAge) {
+  return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`
 }
+
+/** Text from the request, safe for one log line. */
+const quoted = (text) => JSON.stringify(String(text).slice(0, 200))
 
 /** A path on this site to return to after sign-in: never another site. */
 function localPath(value) {
@@ -101,6 +107,7 @@ export async function verifyIDToken(token, { issuer, clientID, nonce, keys, now 
   const candidates = (await keys(header.kid)).filter(
     (jwk) =>
       jwk.kty === alg.kty &&
+      (alg.crv === undefined || jwk.crv === alg.crv) &&
       (header.kid === undefined || jwk.kid === header.kid) &&
       (jwk.use === undefined || jwk.use === 'sig') &&
       (jwk.alg === undefined || jwk.alg === header.alg),
@@ -119,7 +126,8 @@ export async function verifyIDToken(token, { issuer, clientID, nonce, keys, now 
   if (claims.iss !== issuer) throw new Error(`the ID token's issuer is ${claims.iss}, not ${issuer}`)
   const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud]
   if (!audience.includes(clientID)) throw new Error(`the ID token is not for client ${clientID}`)
-  if (audience.length > 1 && claims.azp !== clientID) throw new Error(`the ID token was not issued to ${clientID}`)
+  if ((audience.length > 1 || claims.azp !== undefined) && claims.azp !== clientID)
+    throw new Error(`the ID token was not issued to ${clientID}`)
   if (typeof claims.exp !== 'number' || claims.exp + SKEW_S < now) throw new Error('the ID token has expired')
   if (typeof claims.nbf === 'number' && claims.nbf - SKEW_S > now) throw new Error('the ID token is not valid yet')
   if (typeof claims.iat === 'number' && claims.iat - SKEW_S > now)
@@ -208,8 +216,8 @@ export function createOIDC(config, { log = () => {}, fetch: get = fetch, send, s
 
   async function login(req, res, url) {
     prune()
-    if (logins.size >= MAX_LOGINS)
-      return sendStatus(res, 503, 'ServiceUnavailable', 'Too many sign-ins at once; try again')
+    // Past the limit the oldest sign-in in flight goes, so no one can lock the others out.
+    while (logins.size >= MAX_LOGINS) logins.delete(logins.keys().next().value)
     const doc = await discovery()
     const state = random()
     const browser = random()
@@ -236,7 +244,7 @@ export function createOIDC(config, { log = () => {}, fetch: get = fetch, send, s
     send(res, 302, '', {
       location: target.href,
       'cache-control': 'no-store',
-      'set-cookie': cookie(LOGIN_COOKIE, browser, { path: CALLBACK_PATH, maxAge: LOGIN_TTL_MS / 1000 }),
+      'set-cookie': cookie(LOGIN_COOKIE, browser, LOGIN_TTL_MS / 1000),
     })
   }
 
@@ -244,7 +252,7 @@ export function createOIDC(config, { log = () => {}, fetch: get = fetch, send, s
     const refuse = (message) => {
       log(`Sign-in refused: ${message}`)
       sendStatus(res, 401, 'Unauthorized', `Sign-in failed: ${message}`, {
-        'set-cookie': cookie(LOGIN_COOKIE, '', { path: CALLBACK_PATH, maxAge: 0 }),
+        'set-cookie': cookie(LOGIN_COOKIE, '', 0),
       })
     }
     const state = url.searchParams.get('state') ?? ''
@@ -252,7 +260,7 @@ export function createOIDC(config, { log = () => {}, fetch: get = fetch, send, s
     logins.delete(state)
     if (!pending || pending.expiresAt <= Date.now()) return refuse('this sign-in is unknown or too old; sign in again')
     if (cookies(req)[LOGIN_COOKIE] !== pending.browser) return refuse('this browser did not start this sign-in')
-    if (url.searchParams.has('error')) return refuse(`the issuer answered ${url.searchParams.get('error')}`)
+    if (url.searchParams.has('error')) return refuse(`the issuer answered ${quoted(url.searchParams.get('error'))}`)
     const code = url.searchParams.get('code')
     if (!code) return refuse('the issuer sent no code')
     const doc = await discovery()
@@ -300,8 +308,8 @@ export function createOIDC(config, { log = () => {}, fetch: get = fetch, send, s
       location: pending.returnTo,
       'cache-control': 'no-store',
       'set-cookie': [
-        cookie(SESSION_COOKIE, id, { maxAge: Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)) }),
-        cookie(LOGIN_COOKIE, '', { path: CALLBACK_PATH, maxAge: 0 }),
+        cookie(SESSION_COOKIE, id, Math.max(0, Math.floor((expiresAt - Date.now()) / 1000))),
+        cookie(LOGIN_COOKIE, '', 0),
       ],
     })
   }
@@ -314,7 +322,7 @@ export function createOIDC(config, { log = () => {}, fetch: get = fetch, send, s
     send(res, 200, '{"user":null}\n', {
       'content-type': 'application/json',
       'cache-control': 'no-store',
-      'set-cookie': cookie(SESSION_COOKIE, '', { maxAge: 0 }),
+      'set-cookie': cookie(SESSION_COOKIE, '', 0),
     })
   }
 

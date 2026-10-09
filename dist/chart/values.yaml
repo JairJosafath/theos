@@ -254,9 +254,11 @@ ui:
   ## email only when the issuer verified it) and groupsPrefix + each of the
   ## ID token's groups, so the cluster's RBAC decides. The UI's ServiceAccount
   ## gets impersonate on users and groups, so the UI pod can act as anyone the
-  ## prefixes allow. Reads stay the ServiceAccount's.
+  ## prefixes allow. Reads stay the ServiceAccount's. A session ends with the
+  ## ID token (no refresh), or when the UI restarts: set the issuer's ID token
+  ## lifetime for how long a person stays signed in.
   ##
-  ##   issuerURL          the issuer, exactly as its ID tokens name it (required)
+  ##   issuerURL          the issuer, https, exactly as its ID tokens name it (required)
   ##   clientID           the UI's client at the issuer (required)
   ##   existingSecret     a Secret you make, holding the client secret (required)
   ##   existingSecretKey  its key, client-secret by default

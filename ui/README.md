@@ -146,15 +146,15 @@ library:
 
 - `GET /ui/login?return=/path` reads the issuer's discovery and sends the
   browser there: an authorization code with PKCE (`S256`), a `state` and a
-  `nonce`, and a short-lived `c4ui_login` cookie that ties the answer to this
+  `nonce`, and a short-lived `__Host-c4ui_login` cookie that ties the answer to this
   browser;
 - `GET /ui/callback` exchanges the code (client secret by HTTP Basic), checks
   the ID token with `node:crypto` against the issuer's JWKS (RS256 or ES256;
-  `iss`, `aud`, `azp`, `exp`, `nbf`, `nonce`), and requires `email_verified`
+  `iss`, `aud`, `azp`, `exp`, `nbf`, `nonce`; ES256 on P-256 only), and requires `email_verified`
   when the username claim is `email`. The person is then `usernamePrefix` +
   that claim and `groupsPrefix` + each group, never a `system:` name; the
   session holds only those and the token's expiry, in memory, behind
-  `c4ui_session` (`HttpOnly`, `Secure`, `SameSite=Lax`). A restart, or the
+  `__Host-c4ui_session` (`HttpOnly`, `Secure`, `SameSite=Lax`). A restart, or the
   ID token's expiry, signs everyone out;
 - `POST /ui/logout` ends the session.
 

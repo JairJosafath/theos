@@ -59,6 +59,9 @@ the pod could act through it.
 {{- if not (get $oidc .) }}
 {{- fail (printf "ui.auth.oidc.%s is required: the UI signs people in with it" .) }}
 {{- end }}
+{{- end }}
+{{- if not (hasPrefix "https://" $oidc.issuerURL) }}
+{{- fail "ui.auth.oidc.issuerURL must be https: the UI reads the issuer's keys from it" }}
 {{- end }}oidc
 {{- else if .Values.ui.allowedHosts }}
 {{- fail "ui.actions.enabled with ui.allowedHosts needs ui.auth.oidc: behind an Ingress the UI acts only as a person signed in" }}

@@ -894,7 +894,7 @@ describe('server.mjs', () => {
         redirect: 'manual',
         headers: { cookie: loginCookie },
       })
-      const session = back.headers.getSetCookie().find((c) => /^c4ui_session=[^;]/.test(c))
+      const session = back.headers.getSetCookie().find((c) => /^__Host-c4ui_session=[^;]/.test(c))
       return { back, session, cookie: session?.split(';')[0] }
     }
 
@@ -967,7 +967,7 @@ describe('server.mjs', () => {
     })
 
     it('refuses a write with no session, or an unknown one, with 401 and a message to sign in', async () => {
-      for (const cookie of [undefined, 'c4ui_session=made-up']) {
+      for (const cookie of [undefined, '__Host-c4ui_session=made-up']) {
         seen.length = 0
         const res = await fetch(`${oidcBase}${api}/briefs/lens`, {
           method: 'PATCH',
@@ -993,6 +993,7 @@ describe('server.mjs', () => {
         ['issuer', /issuer/, { change: { iss: 'https://other.example' } }],
         ['audience', /not for client/, { change: { aud: 'someone-else' } }],
         ['audience, issued to another', /not issued to/, { change: { aud: [clientID, 'b'], azp: 'b' } }],
+        ['issued to another', /not issued to/, { change: { azp: 'b' } }],
         ['nonce', /nonce/, { change: { nonce: 'replayed' } }],
         ['expiry', /expired/, { change: { exp: now - 3600 } }],
         ['unverified email', /not verified/, { change: { email_verified: false } }],
@@ -1003,6 +1004,23 @@ describe('server.mjs', () => {
         assert.match((await back.json()).message, refused, why)
         assert.equal(session, undefined, why)
       }
+    })
+
+    it('lets no flood of sign-ins lock out the next one', async () => {
+      await Promise.all(Array.from({ length: 1100 }, () => fetch(`${oidcBase}/ui/login`, { redirect: 'manual' })))
+      const { back } = await signIn()
+      assert.equal(back.status, 302)
+    })
+
+    it("keeps the issuer's error to one quoted log line", async () => {
+      const start = await fetch(`${oidcBase}/ui/login`, { redirect: 'manual' })
+      const state = new URL(start.headers.get('location')).searchParams.get('state')
+      const res = await fetch(`${oidcBase}/ui/callback?state=${state}&error=x%0aSigned%20in`, {
+        redirect: 'manual',
+        headers: { cookie: start.headers.getSetCookie()[0].split(';')[0] },
+      })
+      assert.equal(res.status, 401)
+      assert.match((await res.json()).message, /answered "x\\nSigned in"/)
     })
 
     it('refuses a callback the browser did not start, or one used twice', async () => {
@@ -1025,7 +1043,7 @@ describe('server.mjs', () => {
       assert.equal(cross.status, 403)
       const out = await fetch(`${oidcBase}/ui/logout`, { method: 'POST', headers: { cookie } })
       assert.equal(out.status, 200)
-      assert.match(out.headers.getSetCookie()[0], /^c4ui_session=; Path=\/; Max-Age=0;/)
+      assert.match(out.headers.getSetCookie()[0], /^__Host-c4ui_session=; Path=\/; Max-Age=0;/)
       assert.equal((await (await fetch(`${oidcBase}/ui/session`, { headers: { cookie } })).json()).user, null)
       const res = await fetch(`${oidcBase}${api}/crews/builders`, {
         method: 'PATCH',
