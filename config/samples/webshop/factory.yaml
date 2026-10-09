@@ -30,10 +30,10 @@ metadata:
 spec:
   displayName: Small
   description: 50m CPU and 64Mi requested, 250m and 256Mi at most.
-  supportedTypes: [service, worker, job, static-site]
+  supportedTypes: [service, worker, job, static-site, operator]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/small
-    ref: v1.0.1
+    ref: v1.1.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Deployment

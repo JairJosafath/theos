@@ -1,0 +1,6 @@
+resources:
+- manager.yaml
+{{- if .Compute }}
+patches:
+- path: compute.yaml
+{{- end }}
