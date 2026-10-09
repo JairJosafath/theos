@@ -1,7 +1,10 @@
 // Sign-in with OIDC for the UI's actions behind an Ingress (design.md, UI
 // actions): an authorization code with PKCE (S256), the ID token checked here
 // with node:crypto, and a session in this process's memory behind an opaque,
-// HttpOnly, Secure, SameSite=Lax cookie. Every write is then made with
+// HttpOnly, Secure, SameSite=Lax cookie. A sign-in in flight (its state, nonce
+// and PKCE verifier) lives only in its own login cookie, named by its state and
+// sealed with a key this process holds: the server keeps nothing for it, so no
+// flood of sign-ins can push it out, and two tabs signing in keep one each. Every write is then made with
 // Impersonate-User and Impersonate-Group, names the server picks from the
 // token, never from the browser.
 //
@@ -11,11 +14,12 @@
 //
 // No runtime dependencies: only Node's standard library.
 
-import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createPublicKey, randomBytes, verify } from 'node:crypto'
 
 /**
- * The session cookie, and the one that ties a sign-in's answer to the browser
- * that started it. __Host- keeps a sibling subdomain from planting either.
+ * The session cookie, and the prefix of the ones that tie a sign-in's answer
+ * to the browser that started it, one per sign-in. __Host- keeps a sibling
+ * subdomain from planting any of them.
  */
 export const SESSION_COOKIE = '__Host-c4ui_session'
 const LOGIN_COOKIE = '__Host-c4ui_login'
@@ -23,8 +27,9 @@ const CALLBACK_PATH = '/ui/callback'
 
 /** How long a started sign-in waits for the issuer's answer. */
 const LOGIN_TTL_MS = 10 * 60_000
-/** Most sign-ins in flight (the oldest go first) and sessions held, so nobody can fill the memory. */
-const MAX_LOGINS = 1000
+/** Most sign-ins one browser keeps in flight (its oldest go first), so their cookies stay small. */
+const MAX_LOGINS = 5
+/** Most sessions held, so nobody can fill the memory. */
 const MAX_SESSIONS = 10_000
 /** Clock skew allowed on the ID token's exp, iat and nbf. */
 const SKEW_S = 60
@@ -85,9 +90,39 @@ function cookie(name, value, maxAge) {
 /** Text from the request, safe for one log line. */
 const quoted = (text) => JSON.stringify(String(text).slice(0, 200))
 
-/** A path on this site to return to after sign-in: never another site. */
+/**
+ * A path on this site to return to after sign-in: never another site, and
+ * printable ASCII (a browser sends a path percent-encoded) short enough that a
+ * browser's MAX_LOGINS login cookies stay a few kilobytes, whatever a page
+ * that sends it to /ui/login puts in `return`.
+ */
 function localPath(value) {
-  return typeof value === 'string' && /^\/(?![/\\])[^\s]*$/.test(value) ? value : '/'
+  return typeof value === 'string' && /^\/(?![/\\])[\x21-\x7e]{0,511}$/.test(value) ? value : '/'
+}
+
+/** The login cookie of the sign-in with this state. */
+const loginCookie = (state) => `${LOGIN_COOKIE}_${createHash('sha256').update(state).digest('base64url').slice(0, 16)}`
+
+/** `value` as JSON, encrypted and signed with `key` (AES-256-GCM). */
+function seal(key, value) {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', key, iv)
+  const text = Buffer.concat([cipher.update(JSON.stringify(value)), cipher.final()])
+  return b64url(Buffer.concat([iv, cipher.getAuthTag(), text]))
+}
+
+/** What seal sealed with `key`, or undefined when it is not that. */
+function unseal(key, sealed) {
+  try {
+    const bytes = Buffer.from(sealed ?? '', 'base64url')
+    // A full 16-byte tag only: GCM would otherwise take a cut one.
+    const decipher = createDecipheriv('aes-256-gcm', key, bytes.subarray(0, 12), { authTagLength: 16 })
+    decipher.setAuthTag(bytes.subarray(12, 28))
+    const value = parseJson(Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString())
+    return isObject(value) ? value : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -166,9 +201,9 @@ export function identity(claims, config) {
  * @param {{ log?: (msg: string) => void, fetch?: typeof fetch, send: Function, sendStatus: Function, isCrossSite: Function }} deps
  */
 export function createOIDC(config, { log = () => {}, fetch: get = fetch, send, sendStatus, isCrossSite }) {
-  /** Sign-ins in flight by state; sessions by their cookie's id. */
-  const logins = new Map()
+  /** Sessions by their cookie's id; the key that seals the sign-ins in flight. */
   const sessions = new Map()
+  const loginKey = randomBytes(32)
   let discovered
   let jwks = { keys: [], readAt: 0 }
 
@@ -210,26 +245,39 @@ export function createOIDC(config, { log = () => {}, fetch: get = fetch, send, s
   const redirectURL = (req) => config.redirectURL || `https://${req.headers.host}${CALLBACK_PATH}`
 
   function prune(now = Date.now()) {
-    for (const [state, login] of logins) if (login.expiresAt <= now) logins.delete(state)
     for (const [id, session] of sessions) if (session.expiresAt <= now) sessions.delete(id)
   }
 
+  /**
+   * The login cookies to clear so this browser keeps at most MAX_LOGINS
+   * sign-ins in flight with the one it starts now: those it cannot use, then
+   * its oldest. Only the browser itself can push out its own sign-ins.
+   */
+  function oldLogins(req) {
+    const now = Date.now()
+    const held = Object.entries(cookies(req))
+      .filter(([name]) => name.startsWith(`${LOGIN_COOKIE}_`))
+      .map(([name, value]) => {
+        const login = unseal(loginKey, value)
+        const usable = login && login.expiresAt > now && loginCookie(String(login.state)) === name
+        return { name, expiresAt: usable ? login.expiresAt : -Infinity }
+      })
+      .sort((a, b) => a.expiresAt - b.expiresAt)
+    const keep = held.filter((login) => login.expiresAt > -Infinity).slice(-(MAX_LOGINS - 1))
+    return held.filter((login) => !keep.includes(login)).map((login) => login.name)
+  }
+
   async function login(req, res, url) {
-    prune()
-    // Past the limit the oldest sign-in in flight goes, so no one can lock the others out.
-    while (logins.size >= MAX_LOGINS) logins.delete(logins.keys().next().value)
     const doc = await discovery()
     const state = random()
-    const browser = random()
     const login = {
-      browser,
+      state,
       nonce: random(),
       verifier: random(),
       redirectURL: redirectURL(req),
       returnTo: localPath(url.searchParams.get('return')),
       expiresAt: Date.now() + LOGIN_TTL_MS,
     }
-    logins.set(state, login)
     const target = new URL(doc.authorization_endpoint)
     target.search = new URLSearchParams({
       response_type: 'code',
@@ -244,22 +292,25 @@ export function createOIDC(config, { log = () => {}, fetch: get = fetch, send, s
     send(res, 302, '', {
       location: target.href,
       'cache-control': 'no-store',
-      'set-cookie': cookie(LOGIN_COOKIE, browser, LOGIN_TTL_MS / 1000),
+      'set-cookie': [
+        ...oldLogins(req).map((name) => cookie(name, '', 0)),
+        cookie(loginCookie(state), seal(loginKey, login), LOGIN_TTL_MS / 1000),
+      ],
     })
   }
 
   async function callback(req, res, url) {
+    const state = url.searchParams.get('state') ?? ''
+    // Only this sign-in's cookie goes: another tab's sign-in keeps its own.
+    const done = cookie(loginCookie(state), '', 0)
     const refuse = (message) => {
       log(`Sign-in refused: ${message}`)
-      sendStatus(res, 401, 'Unauthorized', `Sign-in failed: ${message}`, {
-        'set-cookie': cookie(LOGIN_COOKIE, '', 0),
-      })
+      sendStatus(res, 401, 'Unauthorized', `Sign-in failed: ${message}`, { 'set-cookie': done })
     }
-    const state = url.searchParams.get('state') ?? ''
-    const pending = logins.get(state)
-    logins.delete(state)
-    if (!pending || pending.expiresAt <= Date.now()) return refuse('this sign-in is unknown or too old; sign in again')
-    if (cookies(req)[LOGIN_COOKIE] !== pending.browser) return refuse('this browser did not start this sign-in')
+    const pending = unseal(loginKey, cookies(req)[loginCookie(state)])
+    if (!pending || pending.state !== state)
+      return refuse('this browser did not start this sign-in, or it ended; sign in again')
+    if (!(pending.expiresAt > Date.now())) return refuse('this sign-in is too old; sign in again')
     if (url.searchParams.has('error')) return refuse(`the issuer answered ${quoted(url.searchParams.get('error'))}`)
     const code = url.searchParams.get('code')
     if (!code) return refuse('the issuer sent no code')
@@ -307,10 +358,7 @@ export function createOIDC(config, { log = () => {}, fetch: get = fetch, send, s
     send(res, 302, '', {
       location: pending.returnTo,
       'cache-control': 'no-store',
-      'set-cookie': [
-        cookie(SESSION_COOKIE, id, Math.max(0, Math.floor((expiresAt - Date.now()) / 1000))),
-        cookie(LOGIN_COOKIE, '', 0),
-      ],
+      'set-cookie': [cookie(SESSION_COOKIE, id, Math.max(0, Math.floor((expiresAt - Date.now()) / 1000))), done],
     })
   }
 

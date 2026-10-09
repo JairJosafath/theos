@@ -861,6 +861,11 @@ describe('server.mjs', () => {
      * answers /ui/callback. Returns the callback's answer and the session cookie.
      */
     async function signIn({ change = {}, token = {}, returnTo = '/crews/webshop/builders' } = {}) {
+      return finishSignIn(await startSignIn(returnTo), { change, token })
+    }
+
+    /** Starts a sign-in at /ui/login: the issuer's query and the login cookie the browser keeps. */
+    async function startSignIn(returnTo = '/crews/webshop/builders') {
       const start = await fetch(`${oidcBase}/ui/login?return=${encodeURIComponent(returnTo)}`, { redirect: 'manual' })
       assert.equal(start.status, 302)
       const to = new URL(start.headers.get('location'))
@@ -870,7 +875,16 @@ describe('server.mjs', () => {
         [q.get('response_type'), q.get('client_id'), q.get('code_challenge_method'), q.get('scope')],
         ['code', clientID, 'S256', 'openid email profile'],
       )
-      const loginCookie = start.headers.getSetCookie()[0].split(';')[0]
+      const [loginCookie] = start.headers.getSetCookie()
+      assert.match(
+        loginCookie,
+        /^__Host-c4ui_login_[\w-]+=[\w-]+; Path=\/; Max-Age=600; HttpOnly; Secure; SameSite=Lax$/,
+      )
+      return { q, cookie: loginCookie.split(';')[0] }
+    }
+
+    /** Answers /ui/callback for a sign-in startSignIn started, sending `cookie` (all the browser holds). */
+    async function finishSignIn({ q, cookie }, { change = {}, token = {} } = {}) {
       const now = Math.floor(Date.now() / 1000)
       const claims = {
         iss: issuer,
@@ -890,12 +904,10 @@ describe('server.mjs', () => {
         redirectURI: q.get('redirect_uri'),
         idToken: idToken(claims, token),
       })
-      const back = await fetch(`${oidcBase}/ui/callback?code=${code}&state=${q.get('state')}`, {
-        redirect: 'manual',
-        headers: { cookie: loginCookie },
-      })
+      const url = `${oidcBase}/ui/callback?code=${code}&state=${q.get('state')}`
+      const back = await fetch(url, { redirect: 'manual', headers: { cookie } })
       const session = back.headers.getSetCookie().find((c) => /^__Host-c4ui_session=[^;]/.test(c))
-      return { back, session, cookie: session?.split(';')[0] }
+      return { back, session, cookie: session?.split(';')[0], url }
     }
 
     it('says on /ui/session that actions need a person, nobody is signed in, and where to sign in', async () => {
@@ -920,7 +932,14 @@ describe('server.mjs', () => {
     })
 
     it('returns only to a path on this site', async () => {
-      for (const returnTo of ['//evil.example/x', 'https://evil.example/', '/\\evil.example']) {
+      for (const returnTo of [
+        '//evil.example/x',
+        'https://evil.example/',
+        '/\\evil.example',
+        '/é',
+        '/\u0001',
+        `/${'x'.repeat(512)}`,
+      ]) {
         const { back } = await signIn({ returnTo })
         assert.equal(back.headers.get('location'), '/', returnTo)
       }
@@ -1006,10 +1025,31 @@ describe('server.mjs', () => {
       }
     })
 
-    it('lets no flood of sign-ins lock out the next one', async () => {
+    it('lets no flood of sign-ins push out one in flight, or lock out the next one', async () => {
+      const pending = await startSignIn()
+      // More than the 1000 sign-ins the server once kept, while alice is at the issuer.
       await Promise.all(Array.from({ length: 1100 }, () => fetch(`${oidcBase}/ui/login`, { redirect: 'manual' })))
-      const { back } = await signIn()
-      assert.equal(back.status, 302)
+      assert.equal((await finishSignIn(pending)).back.status, 302)
+      assert.equal((await signIn()).back.status, 302)
+    })
+
+    it('signs in from two tabs of one browser at once, each back to its own page', async () => {
+      const first = await startSignIn('/crews/webshop/builders')
+      const second = await startSignIn('/briefs')
+      assert.notEqual(first.cookie.split('=')[0], second.cookie.split('=')[0], 'each sign-in has its own cookie')
+      // The browser sends both cookies to each callback; the second tab answers first.
+      const both = `${first.cookie}; ${second.cookie}`
+      const two = await finishSignIn({ ...second, cookie: both })
+      const one = await finishSignIn({ ...first, cookie: both })
+      assert.deepEqual([two.back.status, two.back.headers.get('location')], [302, '/briefs'])
+      assert.deepEqual([one.back.status, one.back.headers.get('location')], [302, '/crews/webshop/builders'])
+      // Each callback clears only its own login cookie.
+      assert.ok(
+        two.back.headers
+          .getSetCookie()
+          .includes(`${second.cookie.split('=')[0]}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`),
+      )
+      assert.ok(!two.back.headers.getSetCookie().some((c) => c.startsWith(first.cookie.split('=')[0])))
     })
 
     it("keeps the issuer's error to one quoted log line", async () => {
@@ -1023,14 +1063,63 @@ describe('server.mjs', () => {
       assert.match((await res.json()).message, /answered "x\\nSigned in"/)
     })
 
-    it('refuses a callback the browser did not start, or one used twice', async () => {
-      const start = await fetch(`${oidcBase}/ui/login`, { redirect: 'manual' })
-      const state = new URL(start.headers.get('location')).searchParams.get('state')
-      const res = await fetch(`${oidcBase}/ui/callback?code=x&state=${state}`, { redirect: 'manual' })
-      assert.equal(res.status, 401)
-      assert.match((await res.json()).message, /did not start/)
-      const again = await fetch(`${oidcBase}/ui/callback?code=x&state=${state}`, { redirect: 'manual' })
-      assert.match((await again.json()).message, /unknown or too old/)
+    it("keeps a browser's newest five sign-ins in flight, clearing its own oldest and any it cannot use", async () => {
+      // A browser's cookie jar: each answer's Set-Cookie sets or clears a cookie.
+      const jar = new Map([['__Host-c4ui_login_junk', 'not-sealed']])
+      const send = () => [...jar].map(([name, value]) => `${name}=${value}`).join('; ')
+      const started = []
+      for (let i = 0; i < 7; i++) {
+        const res = await fetch(`${oidcBase}/ui/login`, { redirect: 'manual', headers: { cookie: send() } })
+        for (const set of res.headers.getSetCookie()) {
+          const [, name, value] = set.match(/^([^=]+)=([^;]*);/)
+          if (/Max-Age=0;/.test(set)) jar.delete(name)
+          else jar.set(name, value)
+        }
+        started.push({ q: new URL(res.headers.get('location')).searchParams })
+      }
+      assert.equal(jar.size, 5)
+      assert.ok(!jar.has('__Host-c4ui_login_junk'))
+      for (const [i, pending] of started.entries()) {
+        const { back } = await finishSignIn({ ...pending, cookie: send() })
+        assert.equal(back.status, i < 2 ? 401 : 302, `sign-in ${i}`)
+      }
+    })
+
+    it("keeps a browser's login cookies a few kilobytes, whatever path it is sent back to", async () => {
+      // A page elsewhere can send the browser to /ui/login five times with the longest path taken.
+      let total = 0
+      for (let i = 0; i < 5; i++) {
+        const { cookie } = await startSignIn(`/${'x'.repeat(510)}`)
+        total += cookie.length + 2
+      }
+      assert.ok(total < 6 * 1024, `${total} bytes`)
+    })
+
+    it('refuses a callback the browser did not start, one with a changed or swapped cookie, or one used twice', async () => {
+      const { q, cookie } = await startSignIn()
+      const other = await startSignIn()
+      const [name, value] = cookie.split('=')
+      const flipped = `${value[0] === 'A' ? 'B' : 'A'}${value.slice(1)}`
+      for (const [why, sent] of [
+        ['no cookie', undefined],
+        ['changed', `${name}=${flipped}`],
+        ["another sign-in's, under this name", `${name}=${other.cookie.split('=')[1]}`],
+        ["another sign-in's", other.cookie],
+      ]) {
+        const res = await fetch(`${oidcBase}/ui/callback?code=x&state=${q.get('state')}`, {
+          redirect: 'manual',
+          headers: sent ? { cookie: sent } : {},
+        })
+        assert.equal(res.status, 401, why)
+        assert.match((await res.json()).message, /did not start this sign-in/, why)
+      }
+      // Replayed with its cookie, a callback finds its code spent at the issuer.
+      const pending = await startSignIn()
+      const { back, url } = await finishSignIn(pending)
+      assert.equal(back.status, 302)
+      const again = await fetch(url, { redirect: 'manual', headers: { cookie: pending.cookie } })
+      assert.equal(again.status, 401)
+      assert.match((await again.json()).message, /token exchange failed.*invalid_grant/)
     })
 
     it('signs out: the session ends, and the next write is refused', async () => {

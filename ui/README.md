@@ -146,8 +146,14 @@ library:
 
 - `GET /ui/login?return=/path` reads the issuer's discovery and sends the
   browser there: an authorization code with PKCE (`S256`), a `state` and a
-  `nonce`, and a short-lived `__Host-c4ui_login` cookie that ties the answer to this
-  browser;
+  `nonce`. The sign-in in flight (`state`, `nonce`, PKCE verifier, the path
+  to return to) lives only in its own short-lived `__Host-c4ui_login_<id>`
+  cookie, named by its `state` and sealed (AES-256-GCM) with a key the process
+  makes at start. The server keeps nothing for it, so no flood of sign-ins can
+  push one out, and two tabs signing in at once each keep their own (a browser
+  keeps its newest five, and the return path is printable ASCII under 512
+  characters or `/`, so their cookies stay a few kilobytes); a restart ends the
+  sign-ins in flight;
 - `GET /ui/callback` exchanges the code (client secret by HTTP Basic), checks
   the ID token with `node:crypto` against the issuer's JWKS (RS256 or ES256;
   `iss`, `aud`, `azp`, `exp`, `nbf`, `nonce`; ES256 on P-256 only), and requires `email_verified`
