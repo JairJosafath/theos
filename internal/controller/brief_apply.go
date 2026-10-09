@@ -155,16 +155,26 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if err := r.adoptStrayWork(ctx, run); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "putting the released apps' work in their first release", err)
 	}
-	if run.retried, run.closed, err = r.answerFailedRemembering(ctx, brief, plan.FailedAnswers); err != nil {
-		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the failed issues", err)
-	}
-	if err := r.answerRequests(ctx, run, plan); err != nil {
-		return ctrl.Result{}, r.applyFailed(ctx, brief, "recording the requests' answers", err)
+	if err := r.answerFailedAndRequests(ctx, run, plan); err != nil {
+		return ctrl.Result{}, err
 	}
 	if err := r.mergePlan(ctx, brief, task.Status.Commit); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "merging the plan", err)
 	}
 	return ctrl.Result{}, r.roundApplied(ctx, run, task, plan)
+}
+
+// answerFailedAndRequests answers the failed issues the plan answers and
+// records its answers to the round's requests, saying where it stopped.
+func (r *BriefReconciler) answerFailedAndRequests(ctx context.Context, run *roundApply, plan model.Plan) error {
+	var err error
+	if run.retried, run.closed, err = r.answerFailedRemembering(ctx, run.brief, plan.FailedAnswers); err != nil {
+		return r.applyFailed(ctx, run.brief, "answering the failed issues", err)
+	}
+	if err := r.answerRequests(ctx, run, plan); err != nil {
+		return r.applyFailed(ctx, run.brief, "recording the requests' answers", err)
+	}
+	return nil
 }
 
 // applyFailed says why applying the round stopped, so the Brief never looks

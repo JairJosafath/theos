@@ -16,7 +16,7 @@ func TestTakenAndNewRequests(t *testing.T) {
 		{Repository: "o/r", Number: 5, Stage: RequestDeclined},
 	}
 	names := func(rs []Request) []string {
-		var out []string
+		out := make([]string, 0, len(rs))
 		for _, r := range rs {
 			out = append(out, RequestName(r.Repository, r.Number))
 		}
