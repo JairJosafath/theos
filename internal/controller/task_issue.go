@@ -12,7 +12,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -103,7 +102,8 @@ func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitpro
 	status.Feedback = prior.Feedback
 	logf.FromContext(ctx).Info("Continuing pull request", "url", pr.URL, "branch", pr.Head, "earlierTask", earlier.Name)
 
-	work := model.InheritedWork{Pushed: prior.Commit, Head: pr.HeadSHA, Unreviewed: endedChecking(prior.History)}
+	work := model.InheritedWork{Pushed: prior.Commit, Head: pr.HeadSHA,
+		Unreviewed: model.EndedUnreviewed(tryHistory(prior.History))}
 	if work.Unreviewed && work.Pushed != "" && work.Head == work.Pushed {
 		checks, err := provider.CombinedStatus(ctx, repo, work.Head)
 		if err != nil {
@@ -118,15 +118,13 @@ func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitpro
 	return work.Head, nil
 }
 
-// endedChecking reports whether a Task's timeline ended waiting for the checks
-// of its commit: the step before it finished was Checking.
-func endedChecking(history []c4v1alpha1.TaskTransition) bool {
-	for _, h := range slices.Backward(history) {
-		if h.Phase != c4v1alpha1.TaskFailed && h.Phase != c4v1alpha1.TaskMerged {
-			return h.Phase == c4v1alpha1.TaskChecking
-		}
+// tryHistory is a Task's timeline as model.EndedUnreviewed reads it.
+func tryHistory(history []c4v1alpha1.TaskTransition) []model.TryStep {
+	steps := make([]model.TryStep, len(history))
+	for i, h := range history {
+		steps[i] = model.TryStep{Phase: string(h.Phase), Round: int(h.Round)}
 	}
-	return false
+	return steps
 }
 
 // noteContinued says on the pull request a Task took over that it goes on with

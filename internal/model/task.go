@@ -1057,6 +1057,38 @@ type InheritedWork struct {
 	Checks string
 }
 
+// TryStep is one entry of a try's timeline: the phase it entered, in round.
+type TryStep struct {
+	Phase string
+	Round int
+}
+
+// EndedUnreviewed reports whether a try whose timeline is history ended
+// waiting for the checks of a commit no reviewer judged: the step before it
+// finished was Checking, and no reviewer ran in any of its rounds. The
+// timeline records no commits, and a round after a reviewer's changes may push
+// nothing, so a Checking that follows any review may be of the judged commit:
+// such a try is not unreviewed. Red checks that end the try count as ending
+// in Checking: when they later pass, its commit goes to the reviewer. A
+// timeline whose start was dropped (its first step is past round 1) may have
+// lost a review, so it is not unreviewed either.
+func EndedUnreviewed(history []TryStep) bool {
+	if len(history) == 0 || history[0].Round > 1 {
+		return false
+	}
+	last := ""
+	for _, h := range history {
+		switch h.Phase {
+		case TaskReviewing:
+			return false
+		case TaskFailed, TaskMerged:
+		default:
+			last = h.Phase
+		}
+	}
+	return last == TaskChecking
+}
+
 // StartsAtReview reports whether a try that continues an earlier try's pull
 // request skips the implementer and enters Checking at w.Head, whose passing
 // checks start the review: the earlier try pushed it and ended before anyone
