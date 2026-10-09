@@ -456,6 +456,14 @@ type BriefRequest struct {
 	// +optional
 	Why string `json:"why,omitempty"`
 
+	// shipped is where it went out, once Released: the published releases
+	// that hold its issues, and the pages of those done in a Container that
+	// publishes nowhere.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +optional
+	Shipped []BriefRequestShipped `json:"shipped,omitempty"`
+
 	// since is when the Brief first saw it.
 	// +optional
 	Since *metav1.Time `json:"since,omitempty"`
@@ -520,6 +528,20 @@ type BriefTendedIssue struct {
 	// +kubebuilder:validation:Minimum=1
 	// +required
 	Round int32 `json:"round"`
+}
+
+// BriefRequestShipped is where a request's issues went out.
+type BriefRequestShipped struct {
+	// tag is the published release's version; empty for an issue done in a
+	// Container that publishes nowhere.
+	// +kubebuilder:validation:MaxLength=100
+	// +optional
+	Tag string `json:"tag,omitempty"`
+
+	// url is the published release's page, or the issue's.
+	// +kubebuilder:validation:MaxLength=300
+	// +optional
+	URL string `json:"url,omitempty"`
 }
 
 // BriefApp is a Container the Brief made, or one spec.releases names, and how

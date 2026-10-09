@@ -2,6 +2,7 @@ package model
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -125,15 +126,24 @@ func TestRequestComments(t *testing.T) {
 			"<!-- c4factory:request brief=cel-lens stage=planned -->\nNot planned.\n"},
 		{"declined", DeclinedComment("cel-lens"),
 			"<!-- c4factory:request brief=cel-lens stage=declined -->\nNot taken by the app's owners.\n"},
-		{"released", ReleasedComment("cel-lens", "v0.3.0", "https://github.com/gray-lenovo/cel-lens/releases/tag/v0.3.0"),
+		{"released", ReleasedComment("cel-lens", []Shipped{
+			{Tag: "v0.3.0", URL: "https://github.com/gray-lenovo/cel-lens/releases/tag/v0.3.0"}}),
 			"<!-- c4factory:request brief=cel-lens stage=released -->\n" +
 				"Shipped in v0.3.0: https://github.com/gray-lenovo/cel-lens/releases/tag/v0.3.0\n"},
-		{"done where nothing publishes", DoneComment("cel-lens", []string{"http://gitea/cel-lens/linter/issues/4"}),
+		{"released in two", ReleasedComment("cel-lens", []Shipped{{Tag: "v0.3.0", URL: "https://x/v0.3.0"},
+			{Tag: "v1.0.0"}}),
+			"<!-- c4factory:request brief=cel-lens stage=released -->\nShipped in v0.3.0: https://x/v0.3.0 and v1.0.0\n"},
+		{"done where nothing publishes", ReleasedComment("cel-lens", []Shipped{
+			{URL: "http://gitea/cel-lens/linter/issues/4"}}),
 			"<!-- c4factory:request brief=cel-lens stage=released -->\nDone in http://gitea/cel-lens/linter/issues/4.\n"},
-		{"done in two issues", DoneComment("cel-lens",
-			[]string{"http://gitea/cel-lens/linter/issues/4", "http://gitea/cel-lens/linter/issues/5"}),
+		{"done in two issues", ReleasedComment("cel-lens", []Shipped{{URL: "http://gitea/cel-lens/linter/issues/4"},
+			{URL: "http://gitea/cel-lens/linter/issues/5"}}),
 			"<!-- c4factory:request brief=cel-lens stage=released -->\n" +
 				"Done in http://gitea/cel-lens/linter/issues/4 and http://gitea/cel-lens/linter/issues/5.\n"},
+		{"shipped and done", ReleasedComment("cel-lens", []Shipped{{Tag: "v0.3.0", URL: "https://x/v0.3.0"},
+			{URL: "http://gitea/cel-lens/server/issues/2"}}),
+			"<!-- c4factory:request brief=cel-lens stage=released -->\n" +
+				"Shipped in v0.3.0: https://x/v0.3.0\nDone in http://gitea/cel-lens/server/issues/2.\n"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -303,5 +313,54 @@ func TestWithNeedsYou(t *testing.T) {
 	got = WithNeedsYou(full, []NeedsYou{{Name: "late", Since: at(9)}})
 	if len(got.NeedsYou) != MaxNeedsYou || got.Waiting != MaxNeedsYou+5 {
 		t.Errorf("WithNeedsYou past the cap = %d listed, %d waiting", len(got.NeedsYou), got.Waiting)
+	}
+}
+
+func TestRequestShipped(t *testing.T) {
+	published := func(milestone, tag string) ShipIssue {
+		return ShipIssue{URL: "http://gitea/linter/issues/1", Closed: true, Milestone: milestone, Publishes: true,
+			LastTag: tag, LastPublished: true, LastURL: "https://github.com/o/r/releases/tag/" + tag}
+	}
+	nowhere := ShipIssue{URL: "http://gitea/server/issues/2", Closed: true}
+	tests := []struct {
+		name   string
+		issues []ShipIssue
+		want   []Shipped
+		ok     bool
+	}{
+		{"no issues", nil, nil, false},
+		{"published in its milestone", []ShipIssue{published("v0.3.0", "v0.3.0")},
+			[]Shipped{{"v0.3.0", "https://github.com/o/r/releases/tag/v0.3.0"}}, true},
+		{"held by a later release", []ShipIssue{published("v0.3.0", "v0.4.0")},
+			[]Shipped{{"v0.4.0", "https://github.com/o/r/releases/tag/v0.4.0"}}, true},
+		{"an earlier release doesn't hold it", []ShipIssue{published("v0.3.0", "v0.2.0")}, nil, false},
+		{"an older major doesn't hold it", []ShipIssue{published("v1.0.0", "v0.9.0")}, nil, false},
+		{"not published yet", []ShipIssue{func() ShipIssue {
+			i := published("v0.3.0", "v0.3.0")
+			i.LastPublished = false
+			return i
+		}()}, nil, false},
+		{"still open", []ShipIssue{func() ShipIssue {
+			i := published("v0.3.0", "v0.3.0")
+			i.Closed = false
+			return i
+		}()}, nil, false},
+		{"done where nothing publishes", []ShipIssue{nowhere}, []Shipped{{URL: "http://gitea/server/issues/2"}}, true},
+		{"closed outside any release", []ShipIssue{published("", "v0.3.0")},
+			[]Shipped{{URL: "http://gitea/linter/issues/1"}}, true},
+		{"split over two Containers waits for both", []ShipIssue{published("v0.3.0", "v0.3.0"),
+			{URL: "http://gitea/server/issues/2"}}, nil, false},
+		{"split over two Containers, both done", []ShipIssue{nowhere, published("v0.3.0", "v0.3.0"),
+			published("v0.3.0", "v0.3.0")},
+			[]Shipped{{"v0.3.0", "https://github.com/o/r/releases/tag/v0.3.0"}, {URL: "http://gitea/server/issues/2"}},
+			true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := RequestShipped(tc.issues)
+			if ok != tc.ok || !slices.Equal(got, tc.want) {
+				t.Errorf("RequestShipped = %v, %v; want %v, %v", got, ok, tc.want, tc.ok)
+			}
+		})
 	}
 }

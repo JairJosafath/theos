@@ -228,6 +228,30 @@ Choices the decisions left open, made in #801:
 - **A tending round takes no request.** A request let through waits for, and
   starts, a prompt round, as a waiting prompt does.
 
+## What step 5 settled
+
+Choices the decisions left open, made in #802:
+
+- **A later release holds an earlier one's work.** A closed issue in a
+  Container that publishes is shipped once its Crew's latest release is
+  published and is the issue's milestone or a later version; the comment
+  names the release that is out. A Crew tags its next release whether or
+  not the last one published, so waiting for the milestone's own release
+  could wait forever.
+- **Closed outside a release counts as done.** A closed issue with no
+  milestone, or in a Container that publishes nowhere, says "Done in" its
+  page. A request split over Containers waits for all of its issues and says
+  both, "Shipped in" then "Done in", in one comment.
+- **Where it shipped is kept in status.** `status.requests[].shipped` lists
+  the releases and pages once the stage is `Released`, so a comment GitHub
+  refused is posted after a restart with the same words.
+- **The Brief looks at a request's issues every ten minutes,** and at once
+  when the latest release of one of their Crews changes, which reconciles the
+  Brief. A request waits for its planned comment first, so the two come in
+  order; the released comment ends with
+  `<!-- c4factory:request brief=NAME released=N -->`, N the round that
+  planned it, which the Brief looks for before posting.
+
 ## What a human run of Kind would check
 
 That a real fine-grained token with the permissions of decision 3 reads,

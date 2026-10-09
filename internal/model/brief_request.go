@@ -211,20 +211,102 @@ func DeclinedComment(brief string) string {
 	return requestComment(brief, CommentDeclined, "Not taken by the app's owners.")
 }
 
-// ReleasedComment says which published release shipped a request; the issue
-// is then closed as completed.
-func ReleasedComment(brief, tag, url string) string {
-	text := "Shipped in " + tag
-	if url != "" {
-		text += ": " + url
-	}
-	return requestComment(brief, CommentReleased, text)
+// Shipped is where a request's issues went out: a published release, by its
+// tag and page, or with no tag the page of an issue done in a Container that
+// publishes nowhere.
+type Shipped struct {
+	Tag string
+	URL string
 }
 
-// DoneComment says where a request was done when its issues landed in a
-// Container that publishes nowhere: the issues' pages.
-func DoneComment(brief string, urls []string) string {
-	return requestComment(brief, CommentReleased, "Done in "+joinAnd(urls)+".")
+// ReleasedComment says which published releases shipped a request, and where
+// the issues done in a Container that publishes nowhere are; the issue is
+// then closed as completed.
+func ReleasedComment(brief string, shipped []Shipped) string {
+	var releases, done []string
+	for _, s := range shipped {
+		switch {
+		case s.Tag == "":
+			done = append(done, s.URL)
+		case s.URL == "":
+			releases = append(releases, s.Tag)
+		default:
+			releases = append(releases, s.Tag+": "+s.URL)
+		}
+	}
+	var lines []string
+	if len(releases) > 0 {
+		lines = append(lines, "Shipped in "+joinAnd(releases))
+	}
+	if len(done) > 0 {
+		lines = append(lines, "Done in "+joinAnd(done)+".")
+	}
+	return requestComment(brief, CommentReleased, strings.Join(lines, "\n"))
+}
+
+// RequestReleasedMarker is the hidden line that ends the released comment of
+// the round that planned a request, so a request reopened and planned again
+// hears when that round's work ships too.
+func RequestReleasedMarker(brief string, round int) string {
+	return fmt.Sprintf("<!-- c4factory:request brief=%s released=%d -->", brief, round)
+}
+
+// ShipIssue is what the Brief knows of one issue a request became, to tell
+// whether it shipped.
+type ShipIssue struct {
+	// URL is the issue's page.
+	URL    string
+	Closed bool
+	// Milestone is the title of the issue's milestone, its release.
+	Milestone string
+	// Publishes says the issue's Container publishes its releases.
+	Publishes bool
+	// LastTag is the Container's latest release, LastPublished whether it is
+	// published, and LastURL its published page.
+	LastTag       string
+	LastPublished bool
+	LastURL       string
+}
+
+// RequestShipped is where a planned request shipped, once every issue it
+// became is closed and, for each in a Container that publishes, a published
+// release holds it: its milestone's, or a later one, which holds every
+// earlier release's work. An issue in a Container that publishes nowhere, or
+// closed outside any release, is done when it closes. It reports false while
+// one is still to go.
+func RequestShipped(issues []ShipIssue) ([]Shipped, bool) {
+	if len(issues) == 0 {
+		return nil, false
+	}
+	var releases, done []Shipped
+	for _, i := range issues {
+		if !i.Closed {
+			return nil, false
+		}
+		if !i.Publishes || i.Milestone == "" {
+			if !slices.ContainsFunc(done, func(s Shipped) bool { return s.URL == i.URL }) {
+				done = append(done, Shipped{URL: i.URL})
+			}
+			continue
+		}
+		if !i.LastPublished || !holds(i.LastTag, i.Milestone) {
+			return nil, false
+		}
+		if !slices.ContainsFunc(releases, func(s Shipped) bool { return s.Tag == i.LastTag }) {
+			releases = append(releases, Shipped{Tag: i.LastTag, URL: i.LastURL})
+		}
+	}
+	return append(releases, done...), true
+}
+
+// holds reports whether release tag holds the work of milestone: it is that
+// release, or a later version.
+func holds(tag, milestone string) bool {
+	if tag == milestone {
+		return true
+	}
+	t, m := parseVersion(tag), parseVersion(milestone)
+	return t != nil && m != nil && compareVersions(t, m) > 0
 }
 
 // Request is a request as a Brief's status keeps it.
@@ -247,6 +329,8 @@ type Request struct {
 	Issues  []string
 	Release string
 	Why     string
+	// Shipped is where it went out, once Released.
+	Shipped []Shipped
 }
 
 // RequestsRead is a read of the open issues of a releases repository whose

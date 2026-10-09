@@ -223,7 +223,7 @@ func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitpr
 		}
 		release := model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID}
 		for _, i := range issues {
-			if i.State == "closed" {
+			if i.State == stateClosed {
 				release.Closed = append(release.Closed, i.Number)
 			} else {
 				release.Open = append(release.Open, i.Number)
