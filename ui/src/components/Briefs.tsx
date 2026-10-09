@@ -16,6 +16,8 @@ import { NewBrief } from './briefs/NewBrief'
 import { BriefDetails } from './briefs/BriefDetails'
 import { FormError, PromptForm } from './briefs/PromptForm'
 import { writeError, type WriteError } from './briefs/errors'
+import { AnswerButtons, type AnswerContext } from './briefs/Answers'
+import { failedAnswers } from '../model/answers'
 import './briefs.css'
 
 export function Briefs({
@@ -129,18 +131,27 @@ function BriefCard({
   )
 }
 
-/** What a Brief's card and page show below its head: notes, what needs you, its details and the prompt box. */
+/**
+ * What a Brief's card and page show below its head: notes, what needs you, its
+ * details and the prompt box. With `answering` (the Brief's page) each item
+ * that waits for the person has its one-click answers.
+ */
 export function BriefBody({
   view,
   namespace,
   writer,
   now,
+  answering = false,
 }: {
   view: BriefView
   namespace: string
   writer: BriefWriter
   now: number
+  answering?: boolean
 }) {
+  const answers: AnswerContext | undefined = answering
+    ? { namespace, name: view.name, writer, prompts: view.prompts }
+    : undefined
   return (
     <>
       {view.pausedNote ? (
@@ -149,14 +160,14 @@ export function BriefBody({
         </div>
       ) : null}
 
-      {view.needsYou.length ? <NeedsYouBox view={view} now={now} /> : null}
+      {view.needsYou.length ? <NeedsYouBox view={view} now={now} answers={answers} /> : null}
       {view.failure ? (
         <div className="brief-note brief-note-error">
           <strong>The last round failed.</strong> {view.failure}
         </div>
       ) : null}
 
-      <BriefDetails view={view} now={now} />
+      <BriefDetails view={view} now={now} answers={answers} />
 
       <PromptForm namespace={namespace} name={view.name} writer={writer} needsInput={Boolean(view.needsInput)} />
     </>
@@ -205,7 +216,7 @@ export function PauseButton({
 }
 
 /** What only the person can decide: what the Brief waits for, then each item with what it would do and why. */
-function NeedsYouBox({ view, now }: { view: BriefView; now: number }) {
+function NeedsYouBox({ view, now, answers }: { view: BriefView; now: number; answers?: AnswerContext }) {
   return (
     <div className="brief-note brief-note-waiting brief-needs-you">
       <strong>Needs you ({view.needsYouWaiting})</strong>
@@ -234,13 +245,25 @@ function NeedsYouBox({ view, now }: { view: BriefView; now: number }) {
                 {n.why ? ` — ${n.why}` : ''}
               </div>
             ) : null}
+            {answers && n.issue ? (
+              <AnswerButtons
+                context={answers}
+                label={n.label}
+                answers={failedAnswers(n.issue)}
+                recommended={n.recommended}
+              />
+            ) : null}
           </li>
         ))}
       </ul>
       {view.needsYouWaiting > view.needsYou.length ? (
         <p className="field-hint">{view.needsYouWaiting - view.needsYou.length} more wait than are listed here.</p>
       ) : null}
-      <p className="field-hint">Answer in a prompt, such as "do what you suggest" or "close the CLI issue instead".</p>
+      <p className="field-hint">
+        {answers && view.needsYou.some((n) => n.issue)
+          ? 'Answer with a button, which adds a prompt saying so, or in a prompt of your own, such as "do what you suggest".'
+          : 'Answer in a prompt, such as "do what you suggest" or "close the CLI issue instead".'}
+      </p>
     </div>
   )
 }

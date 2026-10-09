@@ -1,10 +1,11 @@
 // A tiny in-memory Kubernetes API for the c4.factory.io kinds, with lists and
 // watches, for the end-to-end test and the screenshots of every view. It
 // answers GETs of collections, and the factory health's Pods and Nodes as
-// empty lists; a POST that creates an object (generateName included), a
-// merge patch of one and a JSON patch of add and replace ops, refusing what a CRD rule of REFUSE would, with the API
-// server's message; everything else is 404. A kind it is told to refuse
-// answers 403, as RBAC would.
+// empty lists; a GET of one object; a POST that creates an object
+// (generateName included), a merge patch of one and a JSON patch of add,
+// replace and test ops, refusing what a CRD rule of REFUSE would, or what
+// refuseNextWrite() asks, with the API server's message; everything else is
+// 404. A kind it is told to refuse answers 403, as RBAC would.
 
 import http from 'node:http'
 // The UI's own list of kinds, so the fake API serves every one.
@@ -56,23 +57,29 @@ function mergePatch(target, patch) {
 }
 
 /**
- * A JSON patch (RFC 6902) of add and replace ops onto `target`, on object
- * members only; undefined for any other op or path.
+ * A JSON patch (RFC 6902) of add, replace and test ops onto `target`, on
+ * object members, and an add at `-` appending to a list; undefined for any
+ * other op or path, or when a test fails.
  */
 function jsonPatch(target, ops) {
   if (!Array.isArray(ops)) return undefined
   const out = structuredClone(target)
   for (const op of ops) {
-    if ((op?.op !== 'add' && op?.op !== 'replace') || typeof op.path !== 'string' || !op.path.startsWith('/'))
+    if (!['add', 'replace', 'test'].includes(op?.op) || typeof op.path !== 'string' || !op.path.startsWith('/'))
       return undefined
     const keys = op.path.slice(1).split('/')
     const last = keys.pop()
     let at = out
-    for (const k of keys) {
-      if (at[k] === null || typeof at[k] !== 'object' || Array.isArray(at[k])) return undefined
+    for (const [i, k] of keys.entries()) {
+      // A list only as the target of an append.
+      const list = Array.isArray(at[k]) && i === keys.length - 1 && last === '-'
+      if (at[k] === null || typeof at[k] !== 'object' || (Array.isArray(at[k]) && !list)) return undefined
       at = at[k]
     }
-    at[last] = op.value
+    if (op.op === 'test') {
+      if (at[last] !== op.value) return undefined
+    } else if (last === '-' && Array.isArray(at)) at.push(op.value)
+    else at[last] = op.value
   }
   return out
 }
@@ -109,9 +116,17 @@ export function fakeApi(namespace) {
   /** Every write it took or refused, in order: method, path, body. */
   const writes = []
   let suffix = 0
+  // The message the next write is refused with, set by refuseNextWrite().
+  let refusal
   const write = async (req, res, plural, ns, name) => {
     const body = await readJson(req)
-    writes.push({ method: req.method, path: new URL(req.url, 'http://x').pathname, body })
+    const contentType = req.headers['content-type']
+    writes.push({ method: req.method, path: new URL(req.url, 'http://x').pathname, contentType, body })
+    if (refusal) {
+      const message = refusal
+      refusal = undefined
+      return status(res, 422, 'Invalid', message)
+    }
     let obj
     if (req.method === 'POST') {
       if (!body?.metadata) return status(res, 400, 'BadRequest', 'the body is not an object')
@@ -144,6 +159,12 @@ export function fakeApi(namespace) {
     if (one && store.has(one[2]) && ((req.method === 'POST' && !one[3]) || (req.method === 'PATCH' && one[3]))) {
       void write(req, res, one[2], one[1], one[3] && decodeURIComponent(one[3]))
       return
+    }
+    if (one && store.has(one[2]) && req.method === 'GET' && one[3]) {
+      const obj = store.get(one[2]).get(`${one[1]}/${decodeURIComponent(one[3])}`)
+      if (!obj) return status(res, 404, 'NotFound', `${one[2]} "${one[3]}" not found`)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify(obj))
     }
     if (req.method === 'GET' && (url.pathname === '/api/v1/pods' || url.pathname === '/api/v1/nodes')) {
       res.writeHead(200, { 'content-type': 'application/json' })
@@ -184,6 +205,10 @@ export function fakeApi(namespace) {
   return {
     server,
     writes,
+    /** Refuses the next write with 422 and `message`, as the API server does when the CRD refuses a value. */
+    refuseNextWrite(message) {
+      refusal = message
+    },
     /** How many watches of a kind are open. */
     watching(plural) {
       return watchers.get(plural).size

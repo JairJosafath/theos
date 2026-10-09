@@ -39,3 +39,16 @@ export function signInHref(login: string, here: string): string {
 export function needsSignIn(err: unknown): boolean {
   return err instanceof ApiError && err.code === 401
 }
+
+/**
+ * Whether the page can make a write: `act`; `signIn` with OIDC and nobody
+ * signed in; `off` for a setting while actions are off. A prompt is one of the
+ * writes the UI always makes, so it needs only a person signed in with OIDC.
+ * Without a session answer (demo mode, or the server didn't say) the page
+ * offers prompts only; the server decides either way.
+ */
+export function canWrite(session: UiSession | undefined, write: 'prompt' | 'setting'): 'act' | 'signIn' | 'off' {
+  if (session?.mode === 'oidc' && !session.user) return 'signIn'
+  if (write === 'prompt') return 'act'
+  return session?.actions ? 'act' : 'off'
+}

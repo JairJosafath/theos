@@ -296,8 +296,9 @@ describe('the new shell', () => {
     await task.waitFor({ timeout: 10000 })
     const params = new URL(page.url()).searchParams
     assert.deepEqual([params.get('ns'), params.get('kind'), params.get('name')], [namespace, 'Task', 'orders-api-14'])
-    // The page once the Task is read: its stepper marks where it is.
-    await task.locator('[aria-current="step"]').waitFor({ timeout: 10000 })
+    // The region shows "Loading the Task…" before the Task arrives: textContent
+    // waits for the one current step (strict, so two would fail) where count would not.
+    assert.equal(await task.locator('[aria-current="step"]').textContent({ timeout: 10000 }), 'Implementing')
     await page.goBack()
     await heading('Tasks').waitFor({ timeout: 10000 })
   })

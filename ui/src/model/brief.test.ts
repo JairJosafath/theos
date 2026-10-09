@@ -119,6 +119,7 @@ describe('describeBrief', () => {
         reason: 'Task cel-lens-cli-1 failed: the agent made no changes',
         tries: 1,
         note: undefined,
+        asked: false,
       },
       {
         container: 'cel-lens-core',
@@ -129,6 +130,7 @@ describe('describeBrief', () => {
         reason: 'Agents tried it as often as a Crew does.',
         tries: 3,
         note: 'It won’t be tried again as it is: it will be filed again, reworded or split.',
+        asked: false,
       },
     ])
     expect(view.failedWaiting).toBe(2)
@@ -531,6 +533,7 @@ describe('the Needs you box', () => {
         kind: 'Issue',
         label: 'cli #3',
         url: 'http://git/cli/issues/3',
+        issue: { container: 'cli', number: 3 },
         question: 'Its Task failed twice on the checker.',
         recommend: 'Try it again once core#8 merges.',
         why: 'core#8 adds the checker.',
@@ -549,6 +552,39 @@ describe('the Needs you box', () => {
     // The four the operator counts, and the Brief's own input.
     expect(view.needsYouWaiting).toBe(5)
     expect(view.needsInput).toBe('Agent planner is missing: create it.')
+  })
+
+  it('names the issue to answer, its title, and the answer the asking round would give', () => {
+    const view = describeBrief({
+      ...brief('lens', '2026-01-01T00:00:00Z'),
+      spec: { idea: 'A lens', autopilot: 'Ask' },
+      status: {
+        phase: 'Planned',
+        issues: [{ repository: 'shop/cli', number: 3, title: 'Add a CLI' }],
+        failed: [
+          { container: 'cli', number: 3, kind: 'failed' },
+          { container: 'core', number: 9, kind: 'exhausted', title: 'Parse filters' },
+        ],
+        tended: [
+          { container: 'cli', number: 3, answer: 'ask', recommend: { answer: 'retry' }, at: 'x', round: 2 },
+          { container: 'cli', number: 3, answer: 'ask', recommend: { answer: 'wait' }, at: 'y', round: 3 },
+          { container: 'core', number: 9, answer: 'retry', at: 'y', round: 3 },
+        ],
+        needsYou: [
+          { kind: 'Issue', name: 'cli#3', question: 'Try it again?' },
+          { kind: 'Crew', name: 'cli', question: 'Its Agent is missing.' },
+        ],
+      },
+    })
+    expect(view.needsYou.map((n) => [n.issue, n.recommended])).toEqual([
+      [{ container: 'cli', number: 3, title: 'Add a CLI' }, 'wait'],
+      [undefined, undefined],
+    ])
+    // cli#3 is answered under Needs you; core#9 only in the failed list.
+    expect(view.failed.map((f) => [f.number, f.asked])).toEqual([
+      [3, true],
+      [9, false],
+    ])
   })
 
   it('is empty when nothing needs the person', () => {
