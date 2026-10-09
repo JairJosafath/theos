@@ -10,6 +10,8 @@ import (
 func TestNextPublishStep(t *testing.T) {
 	const marker = "<!-- c4factory: cel-lens/extension v0.2.0 -->"
 	const url = "https://github.com/JairJosafath/cel-lens/releases/tag/v0.2.0"
+	// name is the release's name: the app, then the Crew's tag, no prefix.
+	const name = "CEL Lens for VS Code v0.2.0"
 	vsix := ReleaseAsset{ID: 1, Name: "cel-lens-0.2.0.vsix", Size: 4096}
 	sums := ReleaseAsset{ID: 2, Name: "SHA256SUMS", Size: 120}
 	gitea := &SourceRelease{Body: "- Lens the CEL (#3)\n", Assets: []ReleaseAsset{vsix, sums}}
@@ -22,6 +24,7 @@ func TestNextPublishStep(t *testing.T) {
 	// sides unless f says otherwise.
 	ready := func(f PublishFacts) PublishFacts {
 		f.Configured, f.Namespace, f.Container, f.Tag = true, "cel-lens", "extension", "v0.2.0"
+		f.App, f.Latest = "CEL Lens for VS Code", true
 		f.Repository, f.Secret, f.SecretFound, f.Runs = "JairJosafath/cel-lens", "cel-lens-github", true, RunSucceeded
 		return f
 	}
@@ -41,6 +44,12 @@ func TestNextPublishStep(t *testing.T) {
 		change(&f)
 		return f
 	}
+	// notLatest is a release with every asset on its draft, of an app that
+	// doesn't take Latest.
+	notLatest := read(PublishFacts{GitHub: onGitHub(draft(
+		ReleaseAsset{ID: 71, Name: sums.Name, Size: sums.Size},
+		ReleaseAsset{ID: 70, Name: vsix.Name, Size: vsix.Size}))})
+	notLatest.Latest = false
 	failure := func(reason string) PublishFacts {
 		return ready(PublishFacts{Failure: &PublishFailure{Reason: reason, Detail: "HTTP 418"}})
 	}
@@ -125,7 +134,7 @@ func TestNextPublishStep(t *testing.T) {
 		{name: "a marked release of another tag doesn't count",
 			facts: read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 4, TagName: "v0.1.0",
 				Body: "<!-- c4factory: cel-lens/extension v0.1.0 -->"})}),
-			want: PublishStep{Action: PublishCreateDraft, Tag: "v0.2.0", Body: "- Lens the CEL (#3)\n\n" + marker + "\n"}},
+			want: PublishStep{Action: PublishCreateDraft, Tag: "v0.2.0", Name: name, Body: "- Lens the CEL (#3)\n\n" + marker + "\n"}},
 		{name: "another Container's marked release of the tag is taken",
 			facts: read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 4, TagName: "v0.2.0",
 				Body: "<!-- c4factory: cel-lens/cli v0.2.0 -->"})}),
@@ -141,13 +150,13 @@ func TestNextPublishStep(t *testing.T) {
 				Body: "- Lens the CEL (#3)\n- Show errors (#5)\n"}},
 		{name: "a release with no notes and no merged issue gets the marker alone",
 			facts: read(PublishFacts{Gitea: &SourceRelease{Assets: []ReleaseAsset{vsix}}, Issues: []ReleaseIssue{}}),
-			want:  PublishStep{Action: PublishCreateDraft, Tag: "v0.2.0", Body: marker + "\n"}},
+			want:  PublishStep{Action: PublishCreateDraft, Tag: "v0.2.0", Name: name, Body: marker + "\n"}},
 		{name: "a release with notes gets a marked draft",
 			facts: read(PublishFacts{}),
-			want:  PublishStep{Action: PublishCreateDraft, Tag: "v0.2.0", Body: "- Lens the CEL (#3)\n\n" + marker + "\n"}},
+			want:  PublishStep{Action: PublishCreateDraft, Tag: "v0.2.0", Name: name, Body: "- Lens the CEL (#3)\n\n" + marker + "\n"}},
 		{name: "the prefix goes before the tag, in the marker too",
 			facts: read(PublishFacts{TagPrefix: "cli-"}),
-			want: PublishStep{Action: PublishCreateDraft, Tag: "cli-v0.2.0",
+			want: PublishStep{Action: PublishCreateDraft, Tag: "cli-v0.2.0", Name: name,
 				Body: "- Lens the CEL (#3)\n\n<!-- c4factory: cel-lens/extension cli-v0.2.0 -->\n"}},
 
 		{name: "retry: a draft without assets gets the first",
@@ -169,11 +178,13 @@ func TestNextPublishStep(t *testing.T) {
 				ReleaseAsset{ID: 71, Name: sums.Name, Size: sums.Size},
 				ReleaseAsset{ID: 70, Name: vsix.Name, Size: vsix.Size},
 				ReleaseAsset{ID: 72, Name: "extra.txt", Size: 1}))}),
-			want: PublishStep{Action: PublishDraft, Release: 9}},
+			want: PublishStep{Action: PublishDraft, Release: 9, Latest: true}},
 		{name: "retry: a draft with notes nobody wrote doesn't write them again",
 			facts: read(PublishFacts{Gitea: &SourceRelease{Assets: []ReleaseAsset{vsix}},
 				GitHub: onGitHub(draft(ReleaseAsset{ID: 70, Name: vsix.Name, Size: vsix.Size}))}),
-			want: PublishStep{Action: PublishDraft, Release: 9}},
+			want: PublishStep{Action: PublishDraft, Release: 9, Latest: true}},
+		{name: "a release of an app that isn't Latest is published as not Latest",
+			facts: notLatest, want: PublishStep{Action: PublishDraft, Release: 9}},
 		{name: "a published marked release is done",
 			facts:   read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 9, TagName: "v0.2.0", Body: marker, URL: url})}),
 			want:    PublishStep{Action: PublishDone, Reason: PublishPublished, URL: url},
@@ -194,6 +205,14 @@ func TestNextPublishStep(t *testing.T) {
 				t.Errorf("NextPublishStep() = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestReleaseName(t *testing.T) {
+	for app, want := range map[string]string{"CEL Lens": "CEL Lens v0.2.0", "": "v0.2.0"} {
+		if got := ReleaseName(app, "v0.2.0"); got != want {
+			t.Errorf("ReleaseName(%q, v0.2.0) = %q, want %q", app, got, want)
+		}
 	}
 }
 

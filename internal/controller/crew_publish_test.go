@@ -47,8 +47,9 @@ func (r secretReader) Get(ctx context.Context, key client.ObjectKey, obj client.
 
 // publishingCrew makes a release v0.1.0 of orders-api whose runs succeeded,
 // with files in Gitea, and a Crew that tags it and publishes it to repository
-// with the token in Secret orders-api-github. It returns the files.
-func publishingCrew(ns, repository string) []fakeFile {
+// with the token in Secret orders-api-github, changed by change when given. It
+// returns the files.
+func publishingCrew(ns, repository string, change ...func(*c4v1alpha1.Crew)) []fakeFile {
 	GinkgoHelper()
 	readyContainer(ns)
 	crewAgents(ns, 1)
@@ -61,6 +62,9 @@ func publishingCrew(ns, repository string) []fakeFile {
 	crew.Spec.TagReleases = true
 	crew.Spec.PublishReleases = &c4v1alpha1.CrewPublishReleases{GitHub: c4v1alpha1.CrewPublishGitHub{
 		Repository: repository, TokenSecretRef: c4v1alpha1.LocalRef{Name: "orders-api-github"}}}
+	for _, c := range change {
+		c(crew)
+	}
 	mustCreate(crew)
 	return files
 }
@@ -102,8 +106,10 @@ func publishFailedWith(ns, reason, message string) {
 }
 
 // publishedTo waits for the Crew's release to be published to repository with
-// notes and files, and checks GitHub holds it so.
-func publishedTo(ns, repository, notes string, files []fakeFile) {
+// the notes of its merged issue and files, checks GitHub holds it so, and
+// returns it.
+func publishedTo(ns, repository string, files []fakeFile) fakeGitHubRelease {
+	const notes = "- Validate orders (#1)\n"
 	GinkgoHelper()
 	url := "https://github.com/" + repository + "/releases/tag/v0.1.0"
 	Eventually(func(g Gomega) {
@@ -124,7 +130,6 @@ func publishedTo(ns, repository, notes string, files []fakeFile) {
 	Expect(releases).To(HaveLen(1))
 	rel := releases[0]
 	Expect(rel.TagName).To(Equal("v0.1.0"))
-	Expect(rel.Name).To(Equal("v0.1.0"))
 	Expect(rel.Draft).To(BeFalse())
 	Expect(rel.Body).To(Equal(notes + "\n<!-- c4factory: " + ns + "/orders-api v0.1.0 -->\n"))
 	Expect(rel.assets).To(HaveLen(len(files)))
@@ -132,6 +137,7 @@ func publishedTo(ns, repository, notes string, files []fakeFile) {
 		Expect(rel.assets[i].Name).To(Equal(f.name))
 		Expect(rel.assets[i].data).To(Equal(f.data))
 	}
+	return rel
 }
 
 var _ = Describe("Crew publishing releases", func() {
@@ -155,10 +161,33 @@ var _ = Describe("Crew publishing releases", func() {
 		mustCreate(publishSecret(ns, token))
 		files := publishingCrew(ns, repository)
 
-		notes := "- Validate orders (#1)\n"
-		publishedTo(ns, repository, notes, files)
-		Expect(gitFake.giteaReleaseBody(ns, "orders-api", "v0.1.0")).To(Equal(notes),
+		rel := publishedTo(ns, repository, files)
+		Expect(gitFake.giteaReleaseBody(ns, "orders-api", "v0.1.0")).To(Equal("- Validate orders (#1)\n"),
 			"the notes are written on Gitea too")
+		Expect(rel.Name).To(Equal("orders-api v0.1.0"), "named after the Container, with no display name")
+		Expect(rel.makeLatest).To(Equal("true"))
+	})
+
+	It("names a release after the app's display name, and leaves Latest alone when latest is false", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		token := rand.Text()
+		githubFake.addRepository(repository, token)
+		// No Secret yet, so nothing is drafted before the display name is set.
+		files := publishingCrew(ns, repository, func(crew *c4v1alpha1.Crew) {
+			crew.Spec.PublishReleases.Latest = new(false)
+		})
+		var container c4v1alpha1.Container
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
+		container.Spec.DisplayName = "Orders API"
+		Expect(k8sClient.Update(ctx, &container)).To(Succeed())
+		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
+
+		mustCreate(publishSecret(ns, token))
+		rel := publishedTo(ns, repository, files)
+		Expect(rel.TagName).To(Equal("v0.1.0"))
+		Expect(rel.Name).To(Equal("Orders API v0.1.0"))
+		Expect(rel.makeLatest).To(Equal("false"))
 	})
 
 	It("fails without its Secret, and publishes once the Secret is there", func() {
@@ -172,7 +201,7 @@ var _ = Describe("Crew publishing releases", func() {
 		Expect(githubFake.releases(repository)).To(BeEmpty())
 
 		mustCreate(publishSecret(ns, token))
-		publishedTo(ns, repository, "- Validate orders (#1)\n", files)
+		publishedTo(ns, repository, files)
 	})
 
 	It("fails while its Secret can't be read, and publishes once it can", func() {
@@ -191,7 +220,7 @@ var _ = Describe("Crew publishing releases", func() {
 		Expect(githubFake.releases(repository)).To(BeEmpty())
 
 		unreadableSecrets.Delete(secret)
-		publishedTo(ns, repository, "- Validate orders (#1)\n", files)
+		publishedTo(ns, repository, files)
 	})
 
 	It("fails on a repository GitHub doesn't show the token", func() {
