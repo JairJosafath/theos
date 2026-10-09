@@ -386,7 +386,11 @@ model and context it needs.
   works on one of its issues. The Crew tags it, as the operator's Git user, at
   the merge commit of its most recently merged issue (the Task records it in
   `status.mergeCommit`; issues closed by hand don't count), then closes its
-  milestone. Tags go out in due-date order, and a tag is never moved: a tag
+  milestone. An issue its Standard change did whole (the Task ends Merged as
+  `DoneByStandardChange`, with no pull request of its own) counts as merged at
+  that change's merge commit and time, and when that merge is lost, it doesn't
+  hold the release. A merge still waiting for its commit holds the release, and
+  the message says that a person can move the issue out of the milestone. Tags go out in due-date order, and a tag is never moved: a tag
   already at that commit only closes the milestone, one at another commit is
   left to a person. A release is also left to a person when it has no merged
   issue. When the tag would carry a later release's merged work (its issue was
