@@ -338,13 +338,20 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	if err := r.pullFacts(ctx, container, status, &facts); err != nil {
 		return facts, err
 	}
-	// A gated merge merges only with the approval of a review run that still
-	// lasts; asked once the checks with main merged in passed.
+	r.approvalFacts(ctx, task, status, &facts)
+	return facts, nil
+}
+
+// approvalFacts reads whether the review run that approved a Standard change
+// ended while its branch, with main merged in, was checked again: a gated
+// merge merges only with the approval of a review run that still lasts. Asked
+// once those checks passed.
+func (r *TaskReconciler) approvalFacts(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	facts *model.TaskFacts) {
 	if len(task.Spec.AllowedProtectedPaths) > 0 && status.Phase == c4v1alpha1.TaskChecking &&
 		status.MergeWhenChecksPass && facts.Checks == gitprovider.CheckSuccess {
 		facts.ApprovalEnded = r.reviewRun(ctx, task, status) == nil
 	}
-	return facts, nil
 }
 
 // ciRun reads the state of the CI runs at commit, whose checks have no result
