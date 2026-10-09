@@ -444,3 +444,14 @@ a.brief-app-published {
   max-width: 28em;
   margin-top: 6px;
 }
+
+/* An entry's requests: folded under its line until opened. */
+.brief-setting-requests {
+  flex-basis: 100%;
+}
+
+.brief-setting-requests summary {
+  font-size: 12.5px;
+  color: var(--link);
+  cursor: pointer;
+}

@@ -1,5 +1,6 @@
 // A Brief's settings on its page: autopilot, parallel and the apps whose
-// releases are published to GitHub. With actions on each is a write the UI
+// releases are published to GitHub, each with whether it takes requests from
+// the repository's issues. With actions on each is a write the UI
 // server allows (spec.autopilot, spec.parallel, spec.releases); off, or with
 // nobody signed in with OIDC, the page shows them and says why it can't
 // change them. The CRD judges each value; a refusal shows the API's message.
@@ -7,9 +8,10 @@
 import { useContext, useId, useState, type FormEvent } from 'react'
 import type { BriefSettings as Settings, BriefWriter } from '../../k8s/briefs'
 import { canWrite } from '../../k8s/session'
-import type { Brief, BriefAutopilot, BriefRelease } from '../../k8s/types'
+import type { Brief, BriefAutopilot, BriefRelease, BriefRequests, BriefRequestsMode } from '../../k8s/types'
 import { SessionContext } from '../../lib/hooks'
 import { AUTOPILOT_MODES, DEFAULT_AUTOPILOT_HINT } from '../../model/brief'
+import { REQUEST_MODES, entryWithRequests, requestsSummary, splitNames, withRequests } from '../../model/requests'
 import { SignInLink } from '../Account'
 import { FormError } from './PromptForm'
 import { writeError, type WriteError } from './errors'
@@ -173,7 +175,7 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
                 {' '}
                 · token Secret {r.github.tokenSecretRef.name}
                 {r.tagPrefix ? ` · tags ${r.tagPrefix}v…` : ''}
-                {r.latest === false ? ' · never Latest' : ''}
+                {r.latest === false ? ' · never Latest' : ''} · {requestsSummary(r.requests)}
               </span>
               {act ? (
                 <button
@@ -190,6 +192,18 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
                 >
                   {sending === `remove-${r.container}` ? 'Removing…' : 'Remove'}
                 </button>
+              ) : null}
+              {act ? (
+                <EditRequests
+                  // Its fields start from the entry's requests: one changed meanwhile starts them again.
+                  key={JSON.stringify(r.requests ?? {})}
+                  release={r}
+                  releases={releases}
+                  resourceVersion={resourceVersion}
+                  busy={busy}
+                  save={save}
+                  sending={sending}
+                />
               ) : null}
             </li>
           ))}
@@ -229,6 +243,7 @@ function AddRelease({
   const [secret, setSecret] = useState('')
   const [tagPrefix, setTagPrefix] = useState('')
   const [latest, setLatest] = useState(true)
+  const [requests, setRequests] = useState<RequestsFields>(NO_REQUESTS)
   const picked = container || containers[0] || ''
 
   async function submit(e: FormEvent) {
@@ -239,12 +254,15 @@ function AddRelease({
     }
     if (tagPrefix.trim()) entry.tagPrefix = tagPrefix.trim()
     if (!latest) entry.latest = false
+    const set = requestsOf(undefined, requests)
+    if (set) entry.requests = set
     if (await save('add-release', { releases: [...releases, entry], resourceVersion })) {
       setContainer('')
       setRepository('')
       setSecret('')
       setTagPrefix('')
       setLatest(true)
+      setRequests(NO_REQUESTS)
     }
   }
 
@@ -309,11 +327,134 @@ function AddRelease({
           </span>
         </span>
       </label>
+      <RequestsInputs fields={requests} onChange={setRequests} busy={busy} />
       <div className="form-row">
         <button type="submit" className="button button-secondary" disabled={busy || !picked}>
           Publish its releases
         </button>
       </div>
     </form>
+  )
+}
+
+/** The requests fields of a releases entry, as typed. */
+interface RequestsFields {
+  mode: BriefRequestsMode
+  authors: string
+  teams: string
+}
+
+const NO_REQUESTS: RequestsFields = { mode: 'Off', authors: '', teams: '' }
+
+/** The entry's requests from the fields, keeping what previous accepted and declined. */
+function requestsOf(previous: BriefRequests | undefined, f: RequestsFields): BriefRequests | undefined {
+  return withRequests(previous, f.mode, splitNames(f.authors), splitNames(f.teams))
+}
+
+/** Whether to take requests from the repository's GitHub issues, and whose. */
+function RequestsInputs({
+  fields,
+  onChange,
+  busy,
+}: {
+  fields: RequestsFields
+  onChange: (f: RequestsFields) => void
+  busy: boolean
+}) {
+  const id = useId()
+  return (
+    <>
+      <label className="field" htmlFor={`${id}-mode`}>
+        <span className="field-label">Requests from its GitHub issues</span>
+        <span className="field-hint">
+          {REQUEST_MODES[fields.mode].explanation} The token then needs Issues: read and write, and Organization
+          members: read for teams.
+        </span>
+      </label>
+      <select
+        id={`${id}-mode`}
+        className="input"
+        value={fields.mode}
+        onChange={(e) => onChange({ ...fields, mode: e.target.value as BriefRequestsMode })}
+        disabled={busy}
+      >
+        {REQUEST_MODE_KEYS.map((m) => (
+          <option key={m} value={m}>
+            {REQUEST_MODES[m].label}
+          </option>
+        ))}
+      </select>
+      <label className="field" htmlFor={`${id}-authors`}>
+        <span className="field-label">Authors</span>
+        <span className="field-hint">GitHub logins whose issues are requests, separated by commas.</span>
+      </label>
+      <input
+        id={`${id}-authors`}
+        className="input mono"
+        value={fields.authors}
+        onChange={(e) => onChange({ ...fields, authors: e.target.value })}
+        disabled={busy}
+      />
+      <label className="field" htmlFor={`${id}-teams`}>
+        <span className="field-label">Teams</span>
+        <span className="field-hint">GitHub teams, org/slug, whose members’ issues are requests.</span>
+      </label>
+      <input
+        id={`${id}-teams`}
+        className="input mono"
+        value={fields.teams}
+        onChange={(e) => onChange({ ...fields, teams: e.target.value })}
+        disabled={busy}
+      />
+    </>
+  )
+}
+
+const REQUEST_MODE_KEYS = Object.keys(REQUEST_MODES) as BriefRequestsMode[]
+
+/** Changes whether an entry takes requests, and whose; the numbers already accepted or declined stay. */
+function EditRequests({
+  release,
+  releases,
+  resourceVersion,
+  busy,
+  save,
+  sending,
+}: {
+  release: BriefRelease
+  releases: BriefRelease[]
+  resourceVersion?: string
+  busy: boolean
+  save: SettingProps['save']
+  sending?: string
+}) {
+  const current = release.requests
+  const initial = (): RequestsFields => ({
+    mode: current?.mode ?? 'Off',
+    authors: (current?.authors ?? []).join(', '),
+    teams: (current?.teams ?? []).join(', '),
+  })
+  const [fields, setFields] = useState<RequestsFields>(initial)
+  const what = `requests-${release.container}`
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    const requests = requestsOf(current, fields)
+    const next = releases.map((r) => (r.container === release.container ? entryWithRequests(r, requests) : r))
+    await save(what, { releases: next, resourceVersion })
+  }
+
+  return (
+    <details className="brief-setting-requests">
+      <summary>Requests of {release.container}</summary>
+      <form className="brief-setting-add" onSubmit={submit} aria-label={`Requests of ${release.container}`}>
+        <RequestsInputs fields={fields} onChange={setFields} busy={busy} />
+        <div className="form-row">
+          <button type="submit" className="button button-secondary" disabled={busy}>
+            {sending === what ? 'Setting…' : 'Set requests'}
+          </button>
+        </div>
+      </form>
+    </details>
   )
 }

@@ -2,7 +2,8 @@
 // timeline, what it made, its repository and the pause button), then what its
 // card shows: what needs you, with a one-click answer on each item, its
 // rounds, prompts, issues and suggestions, and the prompt box; then its
-// settings (autopilot, parallel, releases), which it changes with actions on.
+// settings (autopilot, parallel, releases and their requests), which it
+// changes with actions on. Its requests from GitHub show among its details.
 
 import { useState } from 'react'
 import type { BriefWriter } from '../../k8s/briefs'

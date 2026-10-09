@@ -29,6 +29,14 @@ const REFUSE = {
     }
     return undefined
   },
+  briefs: (obj) => {
+    const i = (obj.spec?.releases ?? []).findIndex(
+      (r) => r.requests && r.requests.mode !== 'Off' && !r.requests.authors?.length && !r.requests.teams?.length,
+    )
+    return i < 0
+      ? undefined
+      : `Brief.c4.factory.io "${obj.metadata.name}" is invalid: spec.releases[${i}].requests: Invalid value: "object": requests need authors or teams unless mode is Off`
+  },
   standards: (obj) =>
     typeof obj.spec?.template?.ref === 'string' && obj.spec.template.ref.length < 1
       ? `Standard.c4.factory.io "${obj.metadata.name}" is invalid: spec.template.ref: Invalid value: "": spec.template.ref in body should be at least 1 chars long`

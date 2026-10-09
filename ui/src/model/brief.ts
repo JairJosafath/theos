@@ -11,10 +11,12 @@ import {
   type BriefItemKind,
   type BriefNeedsYou,
   type BriefPhase,
+  type BriefRelease,
   type BriefTendedIssue,
   type TokenUsage,
 } from '../k8s/types'
 import { plural, type PhaseInfo, type Tone } from './describe'
+import { describeRequests, splitRequest, type RequestsView } from './requests'
 
 /** The Brief phase as a badge label, colour tone and one-line explanation. */
 export function describeBriefPhase(phase: BriefPhase | undefined): PhaseInfo {
@@ -91,6 +93,12 @@ export interface BriefView {
   suggestionsWaiting: number
   /** Each app's releases: a line per Container the Brief made, then per spec.releases entry. */
   apps: BriefAppView[]
+  /** The GitHub issues it takes as requests, and whether it can read them. */
+  requests: RequestsView
+  /** spec.releases, which accepting or declining a request sends whole. */
+  releases: BriefRelease[]
+  /** The resourceVersion the view was worked out from, which a releases write tests. */
+  resourceVersion?: string
   repositoryURL?: string
   /** What planning used over all rounds: cost, tokens and the largest agent run. */
   usage?: UsageView
@@ -199,6 +207,9 @@ export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
     suggestions,
     suggestionsWaiting,
     apps: (status.apps ?? []).map(describeBriefApp),
+    requests: describeRequests(brief),
+    releases: brief.spec.releases ?? [],
+    resourceVersion: brief.metadata.resourceVersion,
     repositoryURL: status.repositoryURL,
     usage: describeUsage(status.costMilliUSD, status.runsWithoutCost, status.tokens, plannerLimit),
     rounds: (status.history ?? [])
@@ -294,6 +305,8 @@ export interface BriefNeedsYouView {
   url?: string
   /** The issue it is about, with its title when the Brief lists it; unset for any other kind. */
   issue?: { container: string; number: number; title?: string }
+  /** The GitHub issue a request is, for a request waiting in Ask; unset for any other kind. */
+  request?: { repository: string; number: number }
   /** The answer the Brief would give the issue, from the tending round that asked. */
   recommended?: 'retry' | 'close' | 'wait'
   question: string
@@ -305,9 +318,10 @@ export interface BriefNeedsYouView {
 
 export function describeNeedsYou(
   entry: BriefNeedsYou,
-  status: Pick<NonNullable<Brief['status']>, 'failed' | 'issues' | 'tended'>,
+  status: Pick<NonNullable<Brief['status']>, 'failed' | 'issues' | 'tended' | 'requests'>,
 ): BriefNeedsYouView {
   const issue = entry.kind === 'Issue' ? splitIssue(entry.name) : undefined
+  const request = entry.kind === 'Request' ? splitRequest(entry.name) : undefined
   const same = (t: { container: string; number: number }) =>
     issue !== undefined && t.container === issue.container && t.number === issue.number
   const failed = (status.failed ?? []).find(same)
@@ -316,11 +330,21 @@ export function describeNeedsYou(
     (status.issues ?? []).find((i) => i.number === issue.number && i.repository.split('/').pop() === issue.container)
   // The newest round that asked about it says what it would do.
   const tended = (status.tended ?? []).filter((t) => same(t) && t.answer === 'ask').at(-1)
+  const requested =
+    request &&
+    (status.requests ?? []).find(
+      (r) => r.number === request.number && r.repository.toLowerCase() === request.repository.toLowerCase(),
+    )
   return {
     kind: entry.kind,
-    label: issue ? `${issue.container} #${issue.number}` : `${entry.kind} ${entry.name}`,
-    url: failed?.url || undefined,
+    label: issue
+      ? `${issue.container} #${issue.number}`
+      : request
+        ? `${request.repository} #${request.number}`
+        : `${entry.kind} ${entry.name}`,
+    url: failed?.url || requested?.url || undefined,
     issue: issue && { ...issue, title: failed?.title || filed?.title || undefined },
+    request,
     recommended: tended?.recommend?.answer,
     question: entry.question.trim(),
     recommend: entry.recommend?.trim() || undefined,

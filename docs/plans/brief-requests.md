@@ -228,6 +228,25 @@ Choices the decisions left open, made in #801:
 - **A tending round takes no request.** A request let through waits for, and
   starts, a prompt round, as a waiting prompt does.
 
+## What step 6 settled
+
+Choices made in #803:
+
+- **"The create form" is the form that adds a releases entry.** A new Brief
+  has made no Container yet, so the *Describe an app* form has no entry to
+  hang requests on; the settings' *Publish an app's releases* form, which
+  creates an entry, gets the requests fields, and each entry gets a folded
+  *Requests of NAME* form to change them later.
+- **Accept and Decline are settings, not prompts.** They send the whole
+  `spec.releases` behind a test of the resourceVersion, like every releases
+  write, so they need UI actions on; with actions off the item says to add
+  the number with kubectl. Once `accepted` or `declined` holds the number,
+  the item says so until the operator moves the request on.
+- **The forms keep the answered numbers.** Changing an entry's mode, authors
+  or teams keeps its `accepted` and `declined`; `Off` with nothing else to
+  keep removes `requests`. Values go as typed: the CRD judges them, and a
+  refusal shows the API server's message.
+
 ## What a human run of Kind would check
 
 That a real fine-grained token with the permissions of decision 3 reads,
