@@ -1,0 +1,46 @@
+package controller
+
+import (
+	"slices"
+	"testing"
+
+	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/model"
+)
+
+// A round takes the requests let through; one that ends without applying
+// hands them back, and they start no round by themselves.
+func TestTakeAndReleaseRequests(t *testing.T) {
+	status := &c4v1alpha1.BriefStatus{Round: 3, Requests: []c4v1alpha1.BriefRequest{
+		{Repository: "o/r", Number: 1, Stage: model.RequestAccepted},
+		{Repository: "o/r", Number: 2, Stage: model.RequestWaiting},
+		{Repository: "o/r", Number: 3, Stage: model.RequestPlanned, Round: 2},
+		{Repository: "o/r", Number: 4, Stage: model.RequestAccepted},
+	}}
+	status.Round++
+	status.RoundRequests = takeRequests(status)
+	if want := []string{"o/r#1", "o/r#4"}; !slices.Equal(status.RoundRequests, want) {
+		t.Fatalf("takeRequests = %v, want %v", status.RoundRequests, want)
+	}
+	for _, i := range []int{0, 3} {
+		if r := status.Requests[i]; r.Stage != model.RequestPlanning || r.Round != 4 {
+			t.Errorf("request %d = %s in round %d, want Planning in round 4", r.Number, r.Stage, r.Round)
+		}
+	}
+	status.Requests = slices.Delete(status.Requests, 3, 4) // #4 closed on GitHub
+	took, open := roundRequests(status)
+	if !slices.Equal(took, []string{"o/r#1", "o/r#4"}) || !slices.Equal(open, []string{"o/r#1"}) {
+		t.Errorf("roundRequests = %v, %v; want both taken, #1 open", took, open)
+	}
+
+	releaseRequests(status)
+	if r := status.Requests[0]; r.Stage != model.RequestAccepted || r.Round != 0 {
+		t.Errorf("released request = %s in round %d, want Accepted in none", r.Stage, r.Round)
+	}
+	if r := status.Requests[2]; r.Stage != model.RequestPlanned || r.Round != 2 {
+		t.Errorf("an earlier round's request = %s in round %d, want it kept", r.Stage, r.Round)
+	}
+	if n := model.NewRequests(modelRequests(status.Requests), status.RoundRequests); n != 0 {
+		t.Errorf("NewRequests = %d after a failed round, want 0: its requests wait for something new", n)
+	}
+}

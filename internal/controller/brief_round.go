@@ -74,6 +74,7 @@ func roundFacts(brief *c4v1alpha1.Brief, task *c4v1alpha1.Task) model.BriefRound
 		Prompts:            len(brief.Spec.Prompts),
 		Round:              int(status.Round),
 		RoundPrompts:       int(status.RoundPrompts),
+		NewRequests:        model.NewRequests(modelRequests(status.Requests), status.RoundRequests),
 		RoundOver:          roundOver(status),
 		OperatorNeedsInput: operatorWaits(status),
 		Paused:             brief.Spec.Paused,
@@ -256,8 +257,11 @@ func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1alpha
 	taken := model.RoundPrompts(brief.Spec.Prompts, int(status.PromptsPlanned))
 	status.Round++
 	status.RoundPrompts = int32(len(brief.Spec.Prompts))
+	status.RoundRequests = nil
 	if tend {
 		status.TendRound, status.LastTendTime = status.Round, &metav1.Time{Time: r.now()}
+	} else {
+		status.RoundRequests = takeRequests(status)
 	}
 	// A new round answers the planner's question, if it had one.
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput,
@@ -269,7 +273,15 @@ func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1alpha
 		return err
 	}
 	*orig = *brief.DeepCopy()
-	logf.FromContext(ctx).Info("Started Brief round", "round", status.Round, "newPrompts", len(taken), "tending", tend)
+	logf.FromContext(ctx).Info("Started Brief round", "round", status.Round, "newPrompts", len(taken),
+		"requests", len(status.RoundRequests), "tending", tend)
+	if len(status.RoundRequests) > 0 {
+		// The workspace this reconcile wrote may lack a request let through
+		// since: the planner reads the round's.
+		if _, err := r.prepareWorkspace(ctx, brief); err != nil {
+			return err
+		}
+	}
 	return r.ensureRoundTask(ctx, brief)
 }
 
@@ -405,9 +417,11 @@ func (r *BriefReconciler) checkPlan(ctx context.Context, brief *c4v1alpha1.Brief
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		refusals = model.RefusalText(append(model.CheckPlan(plan, current),
-			append(model.CheckAnswers(plan.Answers, waitingSuggestions(brief)),
-				model.CheckFailedAnswers(plan.FailedAnswers, failed)...)...))
+		took, open := roundRequests(&brief.Status)
+		refusals = model.RefusalText(slices.Concat(model.CheckPlan(plan, current),
+			model.CheckAnswers(plan.Answers, waitingSuggestions(brief)),
+			model.CheckFailedAnswers(plan.FailedAnswers, failed),
+			model.CheckRequestAnswers(plan.Requests, took, open, plan.Issues)))
 	}
 	return r.verdict(ctx, brief, task, commit, refusals)
 }
@@ -523,6 +537,7 @@ func (r *BriefReconciler) endRoundFailed(ctx context.Context, brief *c4v1alpha1.
 		return
 	}
 	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonRoundFailed, Summary: task.Status.Summary})
+	releaseRequests(status)
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
 		model.ReasonRoundFailed, model.Clip(fmt.Sprintf("Round %d failed: %s", status.Round, message), 32768))
 	logf.FromContext(ctx).Info("Brief round failed", "round", status.Round, "message", firstLine(message))
@@ -536,6 +551,7 @@ func (r *BriefReconciler) plannerNeedsInput(ctx context.Context, brief *c4v1alph
 	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonPlannerNeedsInput,
 		Summary: model.RoundSummary(plan),
 		Choices: plan.Choices, NeedsInput: sentence})
+	releaseRequests(status)
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsInput, metav1.ConditionTrue,
 		model.ReasonPlannerNeedsInput, sentence)
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,

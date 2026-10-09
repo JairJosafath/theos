@@ -158,6 +158,9 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if run.retried, run.closed, err = r.answerFailedRemembering(ctx, brief, plan.FailedAnswers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the failed issues", err)
 	}
+	if err := r.answerRequests(ctx, run, plan); err != nil {
+		return ctrl.Result{}, r.applyFailed(ctx, brief, "recording the requests' answers", err)
+	}
 	if err := r.mergePlan(ctx, brief, task.Status.Commit); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "merging the plan", err)
 	}

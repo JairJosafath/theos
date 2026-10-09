@@ -149,7 +149,13 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1alpha1.
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	last := r.readIssues(gitCtx, brief, entry, tracker, now)
+	var owed []int
+	for _, req := range same {
+		if r.owesPlanned(brief, req) {
+			owed = append(owed, req.Number)
+		}
+	}
+	last := r.readIssues(gitCtx, brief, entry, tracker, owed, now)
 	if last.err != nil {
 		return same, &requestsFailure{gitprovider.IssuesReason(last.err), last.err.Error()}
 	}
@@ -174,26 +180,32 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1alpha1.
 	if err != nil {
 		failure = &requestsFailure{gitprovider.IssuesReason(err), err.Error()}
 	}
+	got, err = r.answerPlanned(gitCtx, brief, tracker, got)
+	if err != nil && failure == nil {
+		failure = &requestsFailure{gitprovider.IssuesReason(err), err.Error()}
+	}
 	return got, failure
 }
 
 // readIssues returns what the Brief last read of the entry's repository,
 // reading it again when the entry changed or the suggestions recheck has
 // passed: the open issues, asked with the last ETag, and the teams of the
-// authors not named in authors.
+// authors not named in authors. owed are the requests the Brief has to
+// answer on GitHub, which it reads again first.
 func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1alpha1.Brief, entry *c4v1alpha1.BriefRelease,
-	tracker gitprovider.IssueTracker, now time.Time) *requestsRead {
+	tracker gitprovider.IssueTracker, owed []int, now time.Time) *requestsRead {
 	spec := entry.Requests
 	key := requestsKey(brief, entry.GitHub.Repository)
 	fingerprint := fmt.Sprintf("%s %v %v %s", spec.Mode, spec.Authors, spec.Teams, entry.GitHub.TokenSecretRef.Name)
 	r.requestsMu.Lock()
 	last := r.requestsReads[key]
 	r.requestsMu.Unlock()
-	// A request about to be declined is read again first, with the ETag, so
-	// one its author closed meanwhile is dropped rather than answered.
+	// A request about to be declined or answered is read again first, with
+	// the ETag, so one its author closed meanwhile is dropped rather than
+	// answered.
 	if last != nil && last.entry == fingerprint && now.Sub(last.readAt) < r.suggestionsRecheck() &&
 		!slices.ContainsFunc(last.open, func(i gitprovider.GitHubIssue) bool {
-			return slices.Contains(spec.Declined, int32(i.Number))
+			return slices.Contains(spec.Declined, int32(i.Number)) || slices.Contains(owed, i.Number)
 		}) {
 		return last
 	}
@@ -425,7 +437,8 @@ func modelRequests(requests []c4v1alpha1.BriefRequest) []model.Request {
 	out := make([]model.Request, 0, len(requests))
 	for _, s := range requests {
 		req := model.Request{Repository: s.Repository, Number: int(s.Number), Author: s.Author, Title: s.Title,
-			Body: s.Body, URL: s.URL, Stage: s.Stage, Round: int(s.Round)}
+			Body: s.Body, URL: s.URL, Stage: s.Stage, Round: int(s.Round), Issues: s.Issues, Release: s.Release,
+			Why: s.Why}
 		if s.Since != nil {
 			req.Since = s.Since.Time
 		}

@@ -233,6 +233,12 @@ type Request struct {
 	Round int
 	// Since is when the Brief first saw it.
 	Since time.Time
+	// Issues are the issues the round that took it filed for it,
+	// container#number, and Release the release they are in; Why is the
+	// round's reason when it skipped it.
+	Issues  []string
+	Release string
+	Why     string
 }
 
 // RequestsRead is a read of the open issues of a releases repository whose

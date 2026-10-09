@@ -24,7 +24,9 @@ var (
 // round that plans the idea adds one Container named after the Brief, on the
 // catalog's first Framework, that Framework's first type and the first
 // Standard that fits both, and files one issue for it; each new prompt is one
-// issue for the Brief's Container, else the model's first. It changes nothing
+// issue for the Brief's Container, else the model's first, and so is each
+// request of model/requests.yaml, taken in plan/requests.yaml (a request it
+// has no room or no Container for is skipped). It changes nothing
 // that exists, so CheckPlan takes it; with no Framework to plan the idea on,
 // it asks for one. It runs the whole loop without a model, for tests and
 // demos (plans/done/brief.md, step 8).
@@ -113,6 +115,18 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 	if len(issues) > MaxPlanIssues {
 		issues = issues[:MaxPlanIssues]
 	}
+	answers, err := standInRequests(workspace[WorkspaceRequestsFile], container, &issues)
+	if err != nil {
+		return nil, err
+	}
+	if len(answers) > 0 {
+		data, err := yaml.Marshal(answers)
+		if err != nil {
+			return nil, err
+		}
+		files[PlanRequestsFile] = string(data)
+		choices = append(choices, "The stand-in planner files each request it can as an issue.")
+	}
 	for n, issue := range issues {
 		files[fmt.Sprintf("%s%02d-%s.md", planIssuesDir, n+1, container)] = fmt.Sprintf(
 			"---\ntitle: %q\nlabels: []\n---\n## Goal\n\n%s\n\n## Acceptance criteria\n\n- [ ] A change for it is merged to main\n",
@@ -131,6 +145,34 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 	files[PlanChoicesFile] = "- " + strings.Join(choices, "\n- ") + "\n"
 	files[PlanSummaryFile] = fmt.Sprintf("The stand-in planner files %s.\n", count(len(issues), "issue"))
 	return files, nil
+}
+
+// standInRequests answers each request of model/requests.yaml: an issue for
+// container, appended to issues, while the round has room for one, else a skip.
+func standInRequests(file, container string, issues *[][2]string) ([]RequestAnswer, error) {
+	var requests []requestOut
+	if err := yaml.Unmarshal([]byte(file), &requests); err != nil {
+		return nil, fmt.Errorf("%s: %w", WorkspaceRequestsFile, err)
+	}
+	var answers []RequestAnswer
+	for _, req := range requests {
+		switch {
+		case container == "":
+			answers = append(answers, RequestAnswer{Request: req.Request, Answer: AnswerSkip,
+				Why: "The stand-in planner files no issue: the app has no Container to file it for."})
+		case len(*issues) >= MaxPlanIssues:
+			answers = append(answers, RequestAnswer{Request: req.Request, Answer: AnswerSkip,
+				Why: fmt.Sprintf("The round files %d issues already, as many as one round may.", MaxPlanIssues)})
+		default:
+			goal := oneParagraph(req.Body)
+			if goal == "" {
+				goal = oneParagraph(req.Title)
+			}
+			*issues = append(*issues, [2]string{shortTitle(req.Title), goal})
+			answers = append(answers, RequestAnswer{Request: req.Request, Answer: AnswerTake, Issues: []int{len(*issues)}})
+		}
+	}
+	return answers, nil
 }
 
 // standInCatalog picks the catalog's first Framework that has a Container

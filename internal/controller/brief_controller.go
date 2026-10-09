@@ -72,6 +72,9 @@ type BriefReconciler struct {
 	// requestsReads are what each Brief last read of each repository's issues.
 	requestsMu    sync.Mutex
 	requestsReads map[string]*requestsRead
+	// requestsSaid are the comments the Brief knows it posted on requests,
+	// so it looks for its marker once per request, not on every read.
+	requestsSaid map[string]bool
 	// Now tells the time of the Brief's heal windows and tending rounds; nil
 	// means time.Now.
 	Now func() time.Time
@@ -216,6 +219,11 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 	// is in needsYou when the Brief is tended.
 	takesRequests := r.syncRequests(ctx, brief)
 	result, err := r.reconcileRound(ctx, brief, orig)
+	if err == nil && r.owesRequests(brief) {
+		// The round just answered requests: say so on GitHub now, not at
+		// the next read.
+		r.syncRequests(ctx, brief)
+	}
 	if err == nil {
 		// What the Brief made is tended once the round's step is taken, so a
 		// round that just ended starts the tending round that follows it.

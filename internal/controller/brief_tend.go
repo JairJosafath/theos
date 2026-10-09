@@ -229,7 +229,9 @@ func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now
 func tendFacts(brief *c4v1alpha1.Brief, due int) model.TendFacts {
 	status := &brief.Status
 	facts := model.TendFacts{Mode: brief.Spec.Autopilot, Round: int(status.Round), RoundOver: roundOver(status),
-		PromptWaiting: len(brief.Spec.Prompts) > int(status.RoundPrompts), Due: due, Paused: brief.Spec.Paused,
+		PromptWaiting: len(brief.Spec.Prompts) > int(status.RoundPrompts) ||
+			model.NewRequests(modelRequests(status.Requests), status.RoundRequests) > 0,
+		Due: due, Paused: brief.Spec.Paused,
 		OperatorNeedsInput: operatorWaits(status) ||
 			!meta.IsStatusConditionTrue(status.Conditions, c4v1alpha1.ConditionPlanned)}
 	if status.LastTendTime != nil {
