@@ -453,7 +453,8 @@ Gitea release. Nothing on the Crew needs editing by hand.
    `publishReleases` of the Crew the Brief made for it at once, without
    waiting for a round; the next round's planner sees it too and names the
    Container if the plan hasn't made it yet. Up to 10 entries, one per
-   Container. The UI doesn't set them: use kubectl or GitOps, like the Secret.
+   Container. With UI actions on, the Brief's page sets them too (*Settings →
+   Releases published to GitHub*); the Secret is always yours to make.
 
 Releases only turn on: a later plan that leaves a Container out, or an entry
 removed from `spec.releases`, changes nothing on its Crew, and what is on
@@ -473,6 +474,69 @@ kubectl -n cel-lens get brief cel-lens -o jsonpath='{range .status.apps[*]}{.con
 
 Why a release run or a publish failed is as in *Publish releases to GitHub*,
 on the Crew named after the Container.
+
+### Take requests from its GitHub issues
+
+A Brief can take requests from the issues of a repository its app publishes
+to: an open issue by a person you name becomes input to planning, like a
+prompt. It is off unless you turn it on, per entry of `spec.releases`, and an
+issue by anyone else is left alone: no comment, no label, and its text never
+reaches an agent.
+
+1. **The token's permissions.** Edit the entry's fine-grained token on GitHub
+   (*Settings → Developer settings → Fine-grained tokens*) and tick, beside
+   *Contents: Read and write*: *Repository permissions → Issues: Read and
+   write*, and only if you name `teams`, *Organization permissions → Members:
+   Read*. No new Secret: the entry's is used.
+2. **Turn it on** in the entry:
+
+   ```yaml
+   spec:
+     releases:
+     - container: linter
+       github:
+         repository: your-name/cel-lens
+         tokenSecretRef: {name: cel-lens-github}
+       requests:
+         mode: Ask                  # Off (the default), Ask or On
+         authors: [your-name]       # GitHub logins whose issues are requests
+         teams: [your-org/maintainers]   # optional: org/slug
+   ```
+
+   With UI actions on, the Brief's page sets the same in *Settings*: *Requests
+   of linter* on an entry, or the requests fields when publishing an app.
+   `authors` or `teams` must name someone unless `mode` is `Off`, and only
+   one entry per repository may take requests.
+
+In `Ask`, each new request waits under the Brief's *Needs you* until you
+accept or decline it: the *Accept* and *Decline* buttons on its page, or its
+issue number added to `requests.accepted` or `requests.declined` with kubectl.
+`On` lets every request through when first seen. A request declined before a
+round takes it gets a comment saying it isn't taken and is closed. The Brief reads the issues every
+ten minutes and at once when the entry changes. A request let through starts
+a round, like a new prompt; the round takes it or skips it, and the Brief says
+on the issue what it became (the issues and their release) or why it was
+skipped, and closes a skipped one. The comment when its release ships is step
+5 of [the plan](plans/brief-requests.md).
+
+The Brief's page lists the open requests with how far each got
+(`status.requests`), and the condition `Requests` says whether the issues can
+be read:
+
+```bash
+kubectl -n cel-lens get brief cel-lens -o jsonpath='{range .status.requests[*]}{.repository}#{.number} {.stage}: {.title}{"\n"}{end}'
+kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions[?(@.type=="Requests")]}{"\n"}'
+```
+
+| Reason | What to do |
+| --- | --- |
+| `TokenLacksIssues` | Tick *Issues: Read and write* on the token. |
+| `TokenLacksMembers` | Tick *Organization permissions → Members: Read*, or remove `teams`. |
+| `SecretMissing`, `SecretUnreadable`, `Unauthorized`, `RepositoryNotFound` | As for publishing, above. |
+| `IssuesDisabled` | Turn issues on in the repository's settings. |
+| `GitHubUnavailable`, `GitHubError` | A rate limit or GitHub unreachable; it reads again on the next ten minutes. |
+
+Releases still publish while requests can't be read.
 
 ## Upgrading
 
