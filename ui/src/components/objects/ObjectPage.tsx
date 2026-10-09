@@ -3,20 +3,25 @@
 // there, still loading, or a read the API server refused).
 
 import type { BriefWriter } from '../../k8s/briefs'
+import type { ContainerWriter } from '../../k8s/containers'
 import { RESOURCES, type K8sObject } from '../../k8s/types'
 import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
 import type { LifecycleKind } from '../../model/lifecycle'
 import { BriefPage } from './BriefPage'
 import { CatalogPage, GitProviderPage } from './CatalogPages'
 import { ContainerPage } from './ContainerPage'
+import { CrewPage } from './CrewPage'
 import { ProjectPage, RelationshipPage, SessionPage, SystemPage } from './ModelPages'
 import { ReadProblem } from './ReadProblem'
+import { TaskPage } from './TaskPage'
 import '../objects.css'
 
 /** Where each kind's objects are in the story data, and the plural its read is reported under. */
 const WHERE: Record<LifecycleKind, { list: (d: StoryData) => K8sObject[]; resource: string }> = {
   Brief: { list: (d) => d.briefs, resource: RESOURCES.briefs },
   Container: { list: (d) => d.containers, resource: RESOURCES.containers },
+  Crew: { list: (d) => d.crews, resource: RESOURCES.crews },
+  Task: { list: (d) => d.tasks, resource: RESOURCES.tasks },
   Project: { list: (d) => (d.project ? [d.project] : []), resource: RESOURCES.projects },
   SoftwareSystem: { list: (d) => d.systems, resource: RESOURCES.softwareSystems },
   Relationship: { list: (d) => d.relationships, resource: RESOURCES.relationships },
@@ -33,14 +38,16 @@ export function ObjectPage({
   data,
   connection,
   writer,
+  containerWriter,
 }: {
   kind: LifecycleKind
   name: string
   data: StoryData
   connection: Connection
   writer: BriefWriter
+  containerWriter: ContainerWriter
 }) {
-  const page = pageFor(kind, name, data, connection, writer)
+  const page = pageFor(kind, name, data, connection, writer, containerWriter)
   if (page) return page
   const unread = unreadOf(connection, WHERE[kind].resource)
   return (
@@ -65,7 +72,14 @@ export function ObjectPage({
   )
 }
 
-function pageFor(kind: LifecycleKind, name: string, data: StoryData, connection: Connection, writer: BriefWriter) {
+function pageFor(
+  kind: LifecycleKind,
+  name: string,
+  data: StoryData,
+  connection: Connection,
+  writer: BriefWriter,
+  containerWriter: ContainerWriter,
+) {
   const named = <T extends K8sObject>(list: T[]) => list.find((o) => o.metadata.name === name)
   switch (kind) {
     case 'Brief': {
@@ -77,14 +91,35 @@ function pageFor(kind: LifecycleKind, name: string, data: StoryData, connection:
       return (
         container && (
           <ContainerPage
+            key={`${data.namespace}/${name}`}
             container={container}
             relationships={data.relationships}
             sessions={data.sessions}
             frameworks={data.frameworks}
             briefs={data.briefs}
+            crews={data.crews}
+            writer={containerWriter}
           />
         )
       )
+    }
+    case 'Crew': {
+      const crew = named(data.crews)
+      return (
+        crew && (
+          <CrewPage
+            crew={crew}
+            agents={data.agents}
+            tasks={data.tasks}
+            containers={data.containers}
+            briefs={data.briefs}
+          />
+        )
+      )
+    }
+    case 'Task': {
+      const task = named(data.tasks)
+      return task && <TaskPage task={task} agents={data.agents} />
     }
     case 'Project': {
       const project = data.project?.metadata.name === name ? data.project : undefined

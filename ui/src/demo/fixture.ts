@@ -611,7 +611,14 @@ export function demoStory(now: number): StoryData {
     }),
   ]
 
-  const crew = (name: string, displayName: string, paused: boolean, status: Crew['status'], parallel = 1): Crew => ({
+  const crew = (
+    name: string,
+    displayName: string,
+    paused: boolean,
+    status: Crew['status'],
+    parallel = 1,
+    releases: Partial<Crew['spec']> = {},
+  ): Crew => ({
     apiVersion: API_VERSION,
     kind: 'Crew',
     metadata: meta(name, created),
@@ -622,6 +629,7 @@ export function demoStory(now: number): StoryData {
       reviewer: { name: 'claude-reviewer' },
       ...(paused ? { paused } : {}),
       ...(parallel > 1 ? { parallel } : {}),
+      ...releases,
     },
     status,
   })
@@ -644,9 +652,32 @@ export function demoStory(now: number): StoryData {
             'Tasks orders-api-14 and orders-api-15 are working on issues #14 and #15',
             at(25),
           ),
+          cond(
+            'Released',
+            'True',
+            'Published',
+            'Released v0.2.0 and published it to webshop-co/orders-api',
+            ago(3 * 3600),
+          ),
         ],
+        // The release its Brief's app shows.
+        lastRelease: {
+          tag: 'v0.2.0',
+          commit: 'a04e6f1c2d3b4e5f60718293a4b5c6d7e8f90a1b',
+          time: ago(3 * 3600),
+          run: 'Succeeded',
+          runURL: `${GITEA_WEB}/webshop/orders-api/actions/runs/12`,
+          publish: { state: 'Published', url: 'https://github.com/webshop-co/orders-api/releases/tag/v0.2.0' },
+          goModule: { state: 'NotGo', message: 'No go.mod at the repository root at v0.2.0' },
+        },
       },
       2,
+      {
+        tagReleases: true,
+        publishReleases: {
+          github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'orders-api-github' } },
+        },
+      },
     ),
     // Paused by a person until the storefront has a framework that fits it.
     crew('storefront', 'Storefront crew', true, {

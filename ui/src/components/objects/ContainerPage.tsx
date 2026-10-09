@@ -1,9 +1,11 @@
 // A Container's page: the object header (its scaffold lifecycle and
 // conditions, its Relationships with their Applied reason and its Sessions,
 // the repository, and on Failed the retry kubectl line), then its template
-// refs and its Standard with the update pull request in flight.
+// refs and its Standard with the update pull request in flight; with UI
+// actions on, a scaffold retry and a Task from a goal (ContainerActions).
 
-import type { Brief, CatalogEntry, Container, Relationship, Session } from '../../k8s/types'
+import type { ContainerWriter } from '../../k8s/containers'
+import type { Brief, CatalogEntry, Container, Crew, Relationship, Session } from '../../k8s/types'
 import { useNow } from '../../lib/hooks'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
 import { containerNextStep } from '../../model/lifecycle'
@@ -11,8 +13,10 @@ import { sessionsOf } from '../../model/story'
 import { SessionRow } from '../bits'
 import { ExternalLinkIcon } from '../icons'
 import { ObjectHeader, type OutLink } from '../ObjectHeader'
+import { ContainerActions } from './ContainerActions'
 import { relationshipsOf } from './rows'
 import { pageHref, storyHref } from './links'
+import '../briefs.css'
 
 export function ContainerPage({
   container,
@@ -20,12 +24,16 @@ export function ContainerPage({
   sessions,
   frameworks,
   briefs,
+  crews,
+  writer,
 }: {
   container: Container
   relationships: Relationship[]
   sessions: Session[]
   frameworks: CatalogEntry[]
   briefs: Brief[]
+  crews: Crew[]
+  writer: ContainerWriter
 }) {
   const now = useNow()
   const ns = container.metadata.namespace ?? ''
@@ -64,6 +72,12 @@ export function ContainerPage({
         }))}
         links={links}
         next={containerNextStep(container)}
+      />
+
+      <ContainerActions
+        container={container}
+        crew={crews.find((c) => c.spec.containerRef.name === name)}
+        writer={writer}
       />
 
       <section className="panel" aria-labelledby="container-templates">

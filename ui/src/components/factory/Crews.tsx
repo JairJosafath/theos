@@ -4,17 +4,20 @@ import { timeAgo } from '../../model/describe'
 import { AgentName, CrewPhaseBadge } from '../bits'
 import { WarningIcon } from '../icons'
 import { crewDoing, issueList, type CrewSummary } from '../../model/crews'
+import type { ObjectHref } from '../Factory'
 
 export function CrewsPanel({
   crews,
   loaded,
   now,
   onSelectTask,
+  pageHref,
 }: {
   crews: CrewSummary[]
   loaded: boolean
   now: number
   onSelectTask: (key: string) => void
+  pageHref?: ObjectHref
 }) {
   return (
     <div className="panel">
@@ -26,7 +29,13 @@ export function CrewsPanel({
       {crews.length ? (
         <ul className="crews">
           {crews.map((crew) => (
-            <CrewCard key={crew.key} crew={crew} now={now} onSelectTask={onSelectTask} />
+            <CrewCard
+              key={crew.key}
+              crew={crew}
+              now={now}
+              onSelectTask={onSelectTask}
+              href={pageHref?.(crew.namespace, 'Crew', crew.name)}
+            />
           ))}
         </ul>
       ) : (
@@ -42,16 +51,25 @@ function CrewCard({
   crew,
   now,
   onSelectTask,
+  href,
 }: {
   crew: CrewSummary
   now: number
   onSelectTask: (key: string) => void
+  /** The Crew's page, in the shell. */
+  href?: string
 }) {
   const tone = crew.notReady ? 'error' : crew.paused ? 'waiting' : undefined
   return (
     <li className={`crew-card${tone ? ` tone-${tone}` : ''}`}>
       <div className="crew-head">
-        <span className="crew-title">{crew.title}</span>
+        {href ? (
+          <a className="crew-title" href={href}>
+            {crew.title}
+          </a>
+        ) : (
+          <span className="crew-title">{crew.title}</span>
+        )}
         <CrewPhaseBadge phase={crew.phase} />
         {crew.paused && crew.phase !== 'Paused' ? (
           <span className="badge badge-sm badge-waiting" title="spec.paused is set">

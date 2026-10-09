@@ -153,7 +153,10 @@ function containerNeeds(c: Container): Need[] {
 
 function taskNeeds(task: Task, input: NeedsInput): Need[] {
   const ns = task.metadata.namespace ?? ''
-  const place = { label: 'Open it in Work', to: { area: 'work', task: `${ns}/${task.metadata.name}` } as Place }
+  const place = placeOf('Task', ns, task.metadata.name, {
+    label: 'Open it in Work',
+    to: { area: 'work', task: `${ns}/${task.metadata.name}` },
+  })
   const s = task.status
   if (s?.phase === 'Blocked') {
     const change = s.standardChange
@@ -187,7 +190,7 @@ function taskNeeds(task: Task, input: NeedsInput): Need[] {
 
 function crewNeeds(crew: Crew, containers: Container[]): Need[] {
   const ns = crew.metadata.namespace ?? ''
-  const place = { label: 'Open Work', to: { area: 'work' } as Place }
+  const place = placeOf('Crew', ns, crew.metadata.name, { label: 'Open Work', to: { area: 'work' } })
   const items: Need[] = []
   const released = findCondition(crew.status?.conditions, 'Released')
   if (released?.status === 'False' && RELEASE_HELD_BY_PERSON.includes(released.reason ?? '')) {

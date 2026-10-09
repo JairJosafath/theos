@@ -3,13 +3,34 @@
 // what moves it along, and what a person does at each step. Object pages read
 // it from here, so no page invents its own. Pure, and read only from status.
 
-import type { BriefPhase, Condition, Container, ContainerPhase, Relationship, SessionPhase } from '../k8s/types'
+import type {
+  Brief,
+  BriefPhase,
+  Condition,
+  Container,
+  ContainerPhase,
+  Crew,
+  CrewPhase,
+  Relationship,
+  SessionPhase,
+  Task,
+  TaskPhase,
+} from '../k8s/types'
+import { findCondition } from '../k8s/types'
 import { describeBriefPhase } from './brief'
-import { describeContainerPhase, describeSessionPhase, type Tone } from './describe'
+import {
+  describeContainerPhase,
+  describeCrewPhase,
+  describeSessionPhase,
+  describeTaskPhase,
+  type Tone,
+} from './describe'
 
 export type LifecycleKind =
   | 'Brief'
   | 'Container'
+  | 'Crew'
+  | 'Task'
   | 'Project'
   | 'SoftwareSystem'
   | 'Relationship'
@@ -111,6 +132,57 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
     exits: [{ phase: 'Failed', person: 'Fix what the failed condition names, then retry the scaffold.' }],
     moves: 'Scaffolded once, when created; a bump of its Standard’s ref opens an update pull request.',
     describe: (phase) => describeContainerPhase(phase as ContainerPhase | undefined),
+  },
+  Crew: {
+    path: [
+      {
+        phase: 'Waiting',
+        person:
+          'Fix what its Ready condition names, such as a Container that isn’t Ready yet; the Crew goes on by itself.',
+      },
+      {
+        phase: 'Idle',
+        person:
+          'Nothing is ready to pick up. Label an issue with acceptance criteria status/ready in its Container’s repository, and the Crew takes it.',
+      },
+      { phase: 'Working', person: 'Nothing: its Tasks run. Follow them below.' },
+    ],
+    exits: [
+      {
+        phase: 'Paused',
+        person: 'Resume it when it should pick up issues again; a Task already started runs to its end.',
+      },
+    ],
+    moves:
+      'Ready issues and free places: it starts a Task per ready issue, urgent and lowest number first, as many at once as its parallel count.',
+    describe: (phase) => describeCrewPhase(phase as CrewPhase | undefined),
+  },
+  Task: {
+    path: [
+      { phase: 'Pending', person: 'Nothing: it waits for its Container, an earlier Task or a free agent slot.' },
+      { phase: 'Implementing', person: 'Nothing: the agent writes the change in a sandbox.' },
+      {
+        phase: 'Checking',
+        person: 'Nothing: CI runs on the pull request; failed checks go back to the agent in the next round.',
+      },
+      {
+        phase: 'Reviewing',
+        person: 'Nothing: an agent reviews the pull request; changes it asks for start the next round.',
+      },
+      { phase: 'Merged', person: 'Nothing: the change is in. Take or skip the follow-up issues the review proposed.' },
+    ],
+    exits: [
+      {
+        phase: 'Blocked',
+        person: 'Review and merge the Standard change it filed; the Task goes on when it merges.',
+      },
+      {
+        phase: 'Failed',
+        person: 'Read why it failed. To try again, give the work a new Task, or do it by hand.',
+      },
+    ],
+    moves: 'The agent, CI and the reviewer, round by round, up to its implementer’s maxRounds.',
+    describe: (phase) => describeTaskPhase(phase as TaskPhase | undefined),
   },
   Project: phaseless(
     'One per namespace, made by the chart or the planner; it counts what its namespace holds.',
@@ -260,6 +332,8 @@ export interface NextStep {
   command?: string
   /** Where to do it: a pull request or the repository. */
   link?: { href: string; label: string }
+  /** Where to do it in the UI: an object's page, in the same namespace. */
+  page?: { kind: string; name: string; label: string }
 }
 
 /**
@@ -321,6 +395,98 @@ export function containerNextStep(container: Container): NextStep | undefined {
     return {
       text: `The last Standard update left ${n === 1 ? 'a file' : `${n} files`} out that the repository had changed: ${standard.leftOut.join(', ')}. Bring ${n === 1 ? 'it' : 'them'} up to date by hand.`,
       link: status?.repositoryURL ? { href: status.repositoryURL, label: 'Open the repository' } : undefined,
+    }
+  }
+  return undefined
+}
+
+/** The command that re-runs a Crew's failed release runs (design.md, *A failed release run re-runs on request*). */
+export function rerunReleaseCommand(crew: Crew): string {
+  const ns = crew.metadata.namespace ?? 'default'
+  return `kubectl -n ${ns} annotate crews.c4.factory.io ${crew.metadata.name} c4.factory.io/rerun-release=$(date +%s) --overwrite`
+}
+
+/** The command that resumes a paused Crew. */
+export function resumeCrewCommand(crew: Crew): string {
+  const ns = crew.metadata.namespace ?? 'default'
+  return `kubectl -n ${ns} patch crews.c4.factory.io ${crew.metadata.name} --type merge -p '{"spec":{"paused":false}}'`
+}
+
+/**
+ * What a person does next on this Crew: re-run its last release's failed runs;
+ * fix what keeps its release from publishing; resume it, through its Brief
+ * when the Brief is what paused it; or fix what keeps it Waiting. Undefined
+ * when nothing waits on a person.
+ */
+export function crewNextStep(crew: Crew, briefs: Brief[]): NextStep | undefined {
+  const status = crew.status
+  const release = status?.lastRelease
+  if (release?.run === 'Failed') {
+    return {
+      text: `Release ${release.tag}’s CI runs failed. Fix what failed, then re-run them; the Crew watches the new attempts.`,
+      command: rerunReleaseCommand(crew),
+      link: release.runURL ? { href: release.runURL, label: 'Open the failed run' } : undefined,
+    }
+  }
+  if (release?.publish?.state === 'Failed') {
+    const to = crew.spec.publishReleases?.github
+    return {
+      text: `Publishing ${release.tag}${to ? ` to ${to.repository}` : ''} failed${release.publish.message ? `: ${release.publish.message}` : ''}. Fix what it names${to ? `, such as the token in Secret ${to.tokenSecretRef.name}` : ''}; the Crew tries again each time it reads the issues.`,
+    }
+  }
+  if (release?.goModule?.state === 'Invalid') {
+    return {
+      text: `Go can’t take the module at ${release.tag}${release.goModule.message ? `: ${release.goModule.message}` : ''}. Fix go.mod’s module path; the next release publishes it.`,
+    }
+  }
+  if (status?.phase === 'Paused') {
+    const ns = crew.metadata.namespace ?? ''
+    const brief = briefs.find(
+      (b) =>
+        (b.metadata.namespace ?? '') === ns &&
+        b.spec.paused &&
+        b.status?.created?.some((c) => c.kind === 'Crew' && c.name === crew.metadata.name),
+    )
+    if (brief) {
+      return {
+        text: `Its Brief ${brief.metadata.name} is paused, and with it every Crew the Brief made. Resume the Brief to resume them.`,
+        page: { kind: 'Brief', name: brief.metadata.name, label: `Open Brief ${brief.metadata.name}` },
+      }
+    }
+    return { text: 'Resume it when it should pick up issues again:', command: resumeCrewCommand(crew) }
+  }
+  const ready = findCondition(status?.conditions, 'Ready')
+  if (status?.phase === 'Waiting' && ready?.status === 'False') {
+    const container = crew.spec.containerRef.name
+    return {
+      text: `It can’t pick up issues${ready.message ? `: ${ready.message}` : ''}.`,
+      page:
+        ready.reason === 'ContainerNotReady'
+          ? { kind: 'Container', name: container, label: `Open Container ${container}` }
+          : undefined,
+    }
+  }
+  return undefined
+}
+
+/**
+ * What a person does next on this Task: a Blocked one waits on the Standard
+ * change it filed; a Failed one handed its issue back. Undefined while the
+ * loop needs nobody.
+ */
+export function taskNextStep(task: Task): NextStep | undefined {
+  const status = task.status
+  const change = status?.standardChange
+  if (status?.phase === 'Blocked' && change) {
+    return {
+      text: `It waits for the Standard change it filed, #${change.issue}, for ${change.paths.join(', ')}. Review and merge it; the Task goes on when it merges.`,
+      link: change.issueURL ? { href: change.issueURL, label: `Open the Standard change #${change.issue}` } : undefined,
+    }
+  }
+  if (status?.phase === 'Failed' && task.spec.issue) {
+    return {
+      text: `Its issue #${task.spec.issue} went back to you, labelled status/needs-human with why. Answer it there, then label it status/ready to try again, or close it.`,
+      link: status.issueURL ? { href: status.issueURL, label: `Open issue #${task.spec.issue}` } : undefined,
     }
   }
   return undefined

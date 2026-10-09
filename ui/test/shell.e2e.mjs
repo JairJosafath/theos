@@ -188,7 +188,8 @@ describe('the new shell', () => {
       await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-brief.png'), fullPage: true })
     }
 
-    await header.getByRole('link', { name: 'storefront', exact: true }).click()
+    // It made a Container and a Crew both named storefront.
+    await header.locator('a[href*="kind=Container"]', { hasText: /^storefront$/ }).click()
     const container = page.getByRole('region', { name: 'Container storefront', exact: true })
     await container.waitFor({ timeout: 10000 })
     params = new URL(page.url()).searchParams
@@ -224,6 +225,73 @@ describe('the new shell', () => {
       .waitFor({ timeout: 5000 })
     await page.getByRole('heading', { name: 'What it is made from' }).waitFor({ timeout: 5000 })
     assert.equal(await container.locator('.command-line').count(), 0)
+  })
+
+  it('opens a Crew page from Work, and a Task page from the Crew', async () => {
+    await page.goto(`${base}/?shell=next&area=work`)
+    await page.getByRole('link', { name: 'Orders API crew', exact: true }).click()
+    const crew = page.getByRole('region', { name: 'Crew orders-api', exact: true })
+    await crew.waitFor({ timeout: 10000 })
+    let params = new URL(page.url()).searchParams
+    assert.deepEqual([params.get('ns'), params.get('kind'), params.get('name')], [namespace, 'Crew', 'orders-api'])
+    assert.match(await page.title(), /^Crew orders-api · C4 Factory$/)
+    // Working, its Tasks, the places in use and its last release.
+    assert.equal(await crew.locator('[aria-current="step"]').textContent(), 'Working')
+    await page.getByText('2 of 2 busy').waitFor({ timeout: 5000 })
+    await heading('Last release: v0.2.0').waitFor({ timeout: 5000 })
+    await page.locator('dd', { hasText: /^succeeded Open the run/ }).waitFor({ timeout: 5000 })
+    if (process.env.C4_UI_SHOTS) {
+      await page.waitForTimeout(300)
+      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-crew.png'), fullPage: true })
+    }
+
+    await crew.getByRole('link', { name: 'orders-api-13', exact: true }).click()
+    const task = page.getByRole('region', { name: 'Task orders-api-13', exact: true })
+    await task.waitFor({ timeout: 10000 })
+    params = new URL(page.url()).searchParams
+    assert.deepEqual([params.get('kind'), params.get('name')], ['Task', 'orders-api-13'])
+    // Failed, with its issue to answer, the history, its agent runs and the handoffs.
+    assert.equal(await task.locator('[aria-current="step"]').textContent(), 'Failed')
+    await task.getByRole('link', { name: 'Open issue #13' }).waitFor({ timeout: 5000 })
+    await task.getByText('Failed, round 3 · RoundsExhausted').waitFor({ timeout: 5000 })
+    // Three implement runs and the one review of round 1.
+    await task.getByText('run 4', { exact: true }).waitFor({ timeout: 5000 })
+    assert.equal(await task.getByText('run 5', { exact: true }).count(), 0)
+    await page.getByText('3 of 3', { exact: true }).waitFor({ timeout: 5000 })
+    await page.getByText('2 times an agent run handed off to a fresh one at the token limit of 130k').waitFor({
+      timeout: 5000,
+    })
+    assert.match(
+      await page.locator('.command-line code').textContent(),
+      /^kubectl -n \S+ get events --field-selector involvedObject.kind=Task,involvedObject.name=orders-api-13,reason=SessionHandedOff$/,
+    )
+    await task.getByRole('link', { name: 'Crew orders-api' }).waitFor({ timeout: 5000 })
+    if (process.env.C4_UI_SHOTS) {
+      await page.waitForTimeout(300)
+      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-task.png'), fullPage: true })
+    }
+
+    await page.goBack()
+    await crew.waitFor({ timeout: 10000 })
+  })
+
+  it('opens a Task page from the Task panel in Work', async () => {
+    await page.goto(`${base}/?shell=next&area=work&task=${namespace}/orders-api-14`)
+    await page.getByRole('link', { name: 'Open the Task’s page' }).click()
+    const task = page.getByRole('region', { name: 'Task orders-api-14', exact: true })
+    await task.waitFor({ timeout: 10000 })
+    assert.equal(await task.locator('[aria-current="step"]').count(), 1)
+  })
+
+  it('gives a paused Crew the patch that resumes it', async () => {
+    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Crew&name=storefront`)
+    const crew = page.getByRole('region', { name: 'Crew storefront', exact: true })
+    await crew.waitFor({ timeout: 10000 })
+    assert.equal(await crew.locator('[aria-current="step"]').textContent(), 'Paused')
+    assert.equal(
+      await crew.locator('.command-line code').textContent(),
+      `kubectl -n ${namespace} patch crews.c4.factory.io storefront --type merge -p '{"spec":{"paused":false}}'`,
+    )
   })
 
   it('opens a read-only page of each remaining kind', async () => {

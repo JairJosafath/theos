@@ -1,12 +1,55 @@
 // A tiny in-memory Kubernetes API for the c4.factory.io kinds, with lists and
 // watches, for the end-to-end test and the screenshots of every view. It
-// answers only GETs of collections, and the factory health's Pods and Nodes
-// as empty lists; everything else is 404. A kind it is told to refuse answers
-// 403, as RBAC would.
+// answers GETs of collections, and the factory health's Pods and Nodes as
+// empty lists; a POST that creates an object (generateName included) and a
+// merge patch of one, refusing what a CRD rule of REFUSE would, with the API
+// server's message; everything else is 404. A kind it is told to refuse
+// answers 403, as RBAC would.
 
 import http from 'node:http'
 // The UI's own list of kinds, so the fake API serves every one.
 import { RESOURCES } from '../src/k8s/types.ts'
+
+/**
+ * The CRD rules the fake API keeps, as the API server words their refusal:
+ * plural -> object -> message, or undefined when it passes.
+ */
+const REFUSE = {
+  tasks: (obj) =>
+    typeof obj.spec?.goal === 'string' && obj.spec.goal.length < 1
+      ? `Task.c4.factory.io "${obj.metadata.name}" is invalid: spec.goal: Invalid value: "": spec.goal in body should be at least 1 chars long`
+      : undefined,
+}
+
+function status(res, code, reason, message) {
+  res.writeHead(code, { 'content-type': 'application/json' })
+  res.end(JSON.stringify({ kind: 'Status', status: 'Failure', code, reason, message }))
+}
+
+function readJson(req) {
+  return new Promise((resolve) => {
+    let text = ''
+    req.on('data', (chunk) => (text += chunk))
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(text))
+      } catch {
+        resolve(undefined)
+      }
+    })
+  })
+}
+
+/** A JSON merge patch (RFC 7396) of `patch` onto `target`. */
+function mergePatch(target, patch) {
+  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return patch
+  const out = target !== null && typeof target === 'object' && !Array.isArray(target) ? { ...target } : {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) delete out[k]
+    else out[k] = mergePatch(out[k], v)
+  }
+  return out
+}
 
 /** A fake API whose objects default to `namespace` when they name none. */
 export function fakeApi(namespace) {
@@ -37,8 +80,43 @@ export function fakeApi(namespace) {
     for (const w of watchers.get(plural))
       if (!w.namespace || w.namespace === obj.metadata.namespace) w.res.write(history.at(-1).line)
   }
+  /** Every write it took or refused, in order: method, path, body. */
+  const writes = []
+  let suffix = 0
+  const write = async (req, res, plural, ns, name) => {
+    const body = await readJson(req)
+    writes.push({ method: req.method, path: new URL(req.url, 'http://x').pathname, body })
+    let obj
+    if (req.method === 'POST') {
+      if (!body?.metadata) return status(res, 400, 'BadRequest', 'the body is not an object')
+      const generated = body.metadata.generateName
+        ? `${body.metadata.generateName}${String(++suffix).padStart(5, 'x')}`
+        : ''
+      obj = { ...body, metadata: { ...body.metadata, namespace: ns, name: body.metadata.name ?? generated } }
+      delete obj.metadata.generateName
+    } else {
+      if (req.headers['content-type'] !== 'application/merge-patch+json')
+        return status(res, 415, 'UnsupportedMediaType', 'the fake API takes only merge patches')
+      const old = store.get(plural).get(`${ns}/${name}`)
+      if (!old) return status(res, 404, 'NotFound', `${plural} "${name}" not found`)
+      obj = mergePatch(old, body)
+    }
+    const refused = REFUSE[plural]?.(obj)
+    if (refused) return status(res, 422, 'Invalid', refused)
+    const created = req.method === 'POST'
+    if (created && store.get(plural).has(`${ns}/${obj.metadata.name}`))
+      return status(res, 409, 'AlreadyExists', `${plural} "${obj.metadata.name}" already exists`)
+    send(plural, created ? 'ADDED' : 'MODIFIED', put(plural, obj))
+    res.writeHead(created ? 201 : 200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(obj))
+  }
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x')
+    const one = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1alpha1\/namespaces\/([^/]+)\/([a-z]+)(?:\/([^/]+))?$/)
+    if (one && store.has(one[2]) && ((req.method === 'POST' && !one[3]) || (req.method === 'PATCH' && one[3]))) {
+      void write(req, res, one[2], one[1], one[3] && decodeURIComponent(one[3]))
+      return
+    }
     if (req.method === 'GET' && (url.pathname === '/api/v1/pods' || url.pathname === '/api/v1/nodes')) {
       res.writeHead(200, { 'content-type': 'application/json' })
       return res.end(JSON.stringify({ metadata: { resourceVersion: String(rv) }, items: [] }))
@@ -77,6 +155,7 @@ export function fakeApi(namespace) {
   })
   return {
     server,
+    writes,
     /** How many watches of a kind are open. */
     watching(plural) {
       return watchers.get(plural).size

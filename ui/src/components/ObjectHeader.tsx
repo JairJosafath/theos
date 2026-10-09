@@ -10,6 +10,7 @@ import type { Condition } from '../k8s/types'
 import { hasPhases, lifecycleOf, type LifecycleKind, type NextStep, type StepView } from '../model/lifecycle'
 import { ConditionList } from './bits'
 import { ExternalLinkIcon } from './icons'
+import { pageHref } from './objects/links'
 import './objects.css'
 
 export interface Crumb {
@@ -123,6 +124,11 @@ export function ObjectHeader(props: ObjectHeaderProps) {
             <a href={next.link.href} target="_blank" rel="noreferrer">
               {next.link.label} <ExternalLinkIcon size={12} />
             </a>
+          </p>
+        ) : null}
+        {next?.page ? (
+          <p>
+            <a href={pageHref(namespace, next.page.kind, next.page.name)}>{next.page.label}</a>
           </p>
         ) : null}
         {actions ? <div className="object-actions">{actions}</div> : null}
