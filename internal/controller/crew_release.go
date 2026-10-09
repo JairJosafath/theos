@@ -39,6 +39,13 @@ const (
 	reasonReleaseRunOverdue = "ReleaseRunOverdue"
 )
 
+// Reasons of the Events answering a Crew's rerun-release annotation.
+const (
+	reasonReleaseRerun        = "ReleaseRunRerun"
+	reasonReleaseRerunFailed  = "ReleaseRunRerunFailed"
+	reasonReleaseNothingRerun = "NoFailedReleaseRun"
+)
+
 // runOverdueNote ends the Released condition's message while the last
 // release's runs are past model.ReleaseRunBound.
 const runOverdueNote = "; its runs have not ended an hour after tagging"
@@ -274,6 +281,80 @@ func (r *CrewReconciler) event(crew *c4v1alpha1.Crew, eventType, reason, action,
 	}
 }
 
+// rerunRelease answers the Crew's c4.factory.io/rerun-release annotation, once
+// per value: while its last release's run Failed, it re-runs the failed jobs of
+// that release's failed runs, and the watch follows their new attempts;
+// otherwise it says with a Normal Event that there is nothing to re-run. It
+// runs with spec.tagReleases, as the watch does. A
+// re-run the Git host refuses is a Warning Event, and a new value tries again.
+func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+	provider gitprovider.Provider, repo gitprovider.Repository) {
+	value := crew.Annotations[c4v1alpha1.AnnotationRerunRelease]
+	release := status.LastRelease
+	run := ""
+	if release != nil {
+		run = release.Run
+	}
+	if said, _ := r.rerunSaid.Load(crew.UID); value != "" && said == value {
+		status.RerunRelease = value
+	}
+	step := model.ReleaseRerun(value, status.RerunRelease, run)
+	if step == model.RerunNone {
+		return
+	}
+	status.RerunRelease = value
+	r.rerunSaid.Store(crew.UID, value)
+	log := logf.FromContext(ctx)
+	if step == model.RerunNothingFailed {
+		note := "No release run failed, so there is nothing to re-run"
+		if release != nil {
+			note = fmt.Sprintf("Release runs of %s are %s, not Failed, so there is nothing to re-run", release.Tag, run)
+		}
+		log.Info("Skipped the release re-run", "value", value, "run", run)
+		r.event(crew, corev1.EventTypeNormal, reasonReleaseNothingRerun, "RerunRelease", note)
+		return
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	found, err := provider.TagRuns(gitCtx, repo, release.Tag, release.Commit)
+	var rerun []string
+	if err == nil {
+		runs := make([]model.ReleaseRun, 0, len(found))
+		for _, f := range found {
+			runs = append(runs, model.ReleaseRun{ID: f.ID, Workflow: f.Workflow, Status: f.Status,
+				Conclusion: f.Conclusion, URL: f.URL})
+		}
+		for _, failed := range model.FailedReleaseRuns(runs) {
+			if err = provider.RerunFailedJobs(gitCtx, repo, failed.ID); err != nil {
+				break
+			}
+			rerun = append(rerun, failed.Workflow)
+		}
+	}
+	if len(rerun) > 0 {
+		// The watch reads the runs' new attempts from here.
+		now := metav1.NewTime(r.now())
+		release.Run, release.RerunTime = model.RunRunning, &now
+	}
+	if err != nil {
+		log.Error(err, "Failed to re-run the release runs", "tag", release.Tag, "rerun", rerun)
+		r.event(crew, corev1.EventTypeWarning, reasonReleaseRerunFailed, "RerunRelease",
+			fmt.Sprintf("Could not re-run the failed runs of %s: %v; set a new %s value to try again",
+				release.Tag, err, c4v1alpha1.AnnotationRerunRelease))
+		return
+	}
+	if len(rerun) == 0 {
+		// Someone re-ran them already, in Gitea: the watch follows those.
+		log.Info("Skipped the release re-run", "value", value, "tag", release.Tag)
+		r.event(crew, corev1.EventTypeNormal, reasonReleaseNothingRerun, "RerunRelease",
+			fmt.Sprintf("No run of %s failed any more, so there is nothing to re-run", release.Tag))
+		return
+	}
+	log.Info("Re-ran the release runs", "tag", release.Tag, "workflows", rerun)
+	r.event(crew, corev1.EventTypeNormal, reasonReleaseRerun, "RerunRelease",
+		fmt.Sprintf("Re-ran the failed runs of %s: %s", release.Tag, strings.Join(rerun, ", ")))
+}
+
 // watchReleaseRun reads how the CI workflow runs on the Crew's last release
 // went, until they all ended well, and reports a run that failed with a Warning
 // Event and one that ended well with a Normal Event, once per change.
@@ -299,8 +380,8 @@ func (r *CrewReconciler) watchReleaseRun(ctx context.Context, crew *c4v1alpha1.C
 	r.runErrSaid.Delete(crew.UID)
 	runs := make([]model.ReleaseRun, 0, len(found))
 	for _, run := range found {
-		runs = append(runs, model.ReleaseRun{Workflow: run.Workflow, Status: run.Status, Conclusion: run.Conclusion,
-			URL: run.URL})
+		runs = append(runs, model.ReleaseRun{ID: run.ID, Workflow: run.Workflow, Status: run.Status,
+			Conclusion: run.Conclusion, URL: run.URL})
 	}
 	result, run := model.ReleaseRunResult(runs)
 	// The last poll's status write can fail after its Event, so the Reconciler
@@ -334,11 +415,17 @@ func (r *CrewReconciler) noteOverdueRun(ctx context.Context, crew *c4v1alpha1.Cr
 	if release == nil {
 		return
 	}
-	late := model.ReleaseRunLate(release.Run, release.Time.Time, r.now())
+	started := release.Time.Time
+	if release.RerunTime != nil {
+		started = release.RerunTime.Time
+	}
+	late := model.ReleaseRunLate(release.Run, started, r.now())
+	// A re-run's runs get their own hour, and their own report.
+	lateKey := release.Tag + "\n" + started.UTC().Format(time.RFC3339)
 	// The Crew as read says whether an earlier process reported it already.
 	read := apimeta.FindStatusCondition(crew.Status.Conditions, ConditionReleased)
 	noted := read != nil && read.Reason == reasonReleased && strings.HasSuffix(read.Message, runOverdueNote)
-	if last, _ := r.runLateSaid.Load(crew.UID); late && !noted && last != release.Tag {
+	if last, _ := r.runLateSaid.Load(crew.UID); late && !noted && last != lateKey {
 		note := fmt.Sprintf("Release runs of %s have not ended an hour after tagging, %s", release.Tag, release.Run)
 		if release.RunURL != "" {
 			note += ": " + release.RunURL
@@ -348,7 +435,7 @@ func (r *CrewReconciler) noteOverdueRun(ctx context.Context, crew *c4v1alpha1.Cr
 		r.event(crew, corev1.EventTypeWarning, reasonReleaseRunOverdue, "WatchReleaseRun", note)
 	}
 	if late {
-		r.runLateSaid.Store(crew.UID, release.Tag)
+		r.runLateSaid.Store(crew.UID, lateKey)
 	}
 	cond := apimeta.FindStatusCondition(status.Conditions, ConditionReleased)
 	if cond == nil || cond.Reason != reasonReleased {

@@ -479,6 +479,14 @@ func TestGiteaReleasesIntegration(t *testing.T) {
 		len(rel.Assets) != 1 {
 		t.Fatalf("GetRelease() after SetReleaseBody = %+v, %v; want the notes and the file kept", rel, err)
 	}
+
+	// This Gitea runs no Actions, so it has no failed run to re-run: Gitea's
+	// re-run handler answers that the run doesn't exist, where a wrong path or
+	// method would get its router's bare 404 page.
+	if err := p.RerunFailedJobs(ctx, repo, 999999); err == nil ||
+		!strings.Contains(err.Error(), "HTTP 404") || !strings.Contains(err.Error(), "run with id 999999") {
+		t.Errorf("RerunFailedJobs() of a run that doesn't exist error = %v, want Gitea's HTTP 404 for run 999999", err)
+	}
 }
 
 func TestGiteaMilestonesIntegration(t *testing.T) {

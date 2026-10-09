@@ -82,9 +82,12 @@ type CrewReconciler struct {
 	runSaid sync.Map
 	// runErrSaid is, by Crew UID, the last error reading the release run logged.
 	runErrSaid sync.Map
-	// runLateSaid is, by Crew UID, the tag of the last release whose overdue
-	// runs were reported.
+	// runLateSaid is, by Crew UID, the tag and re-run time of the last release
+	// whose overdue runs were reported.
 	runLateSaid sync.Map
+	// rerunSaid is, by Crew UID, the last rerun-release value answered: the
+	// status write that records it can fail after the re-run.
+	rerunSaid sync.Map
 	// publishSaid is, by Crew UID, the tag and reason of the last publish
 	// failure or success reported, so each gets one Event.
 	publishSaid sync.Map
@@ -247,12 +250,14 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 }
 
-// release watches the last release's run, prepares or tags the next release,
-// reports the last release's overdue runs, publishes its Go module, files its
-// bumps and publishes it, as the Crew's switches say. It returns the prepare issue filed now, if any.
+// release re-runs the last release's failed runs when asked, watches its run,
+// prepares or tags the next release, reports the last release's overdue runs,
+// publishes its Go module, files its bumps and publishes it, as the Crew's
+// switches say. It returns the prepare issue filed now, if any.
 func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) *model.Issue {
 	if crew.Spec.TagReleases {
+		r.rerunRelease(ctx, crew, status, provider, repo)
 		r.watchReleaseRun(ctx, crew, status, provider, repo)
 	}
 	var filed *model.Issue

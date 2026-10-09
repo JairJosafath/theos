@@ -251,6 +251,20 @@ func (g *gitea) TagRuns(ctx context.Context, repo Repository, tag, commit string
 	return out, nil
 }
 
+// RerunFailedJobs runs the failed jobs of workflow run id again, as a new
+// attempt of the same run.
+func (g *gitea) RerunFailedJobs(ctx context.Context, repo Repository, id int64) error {
+	path := "/api/v1/repos/" + repoPath(repo) + "/actions/runs/" + strconv.FormatInt(id, 10) + "/rerun-failed-jobs"
+	status, data, err := g.do(ctx, http.MethodPost, path, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusCreated {
+		return fmt.Errorf("gitea: re-running run %d of %s failed (HTTP %d): %s", id, repoPath(repo), status, apiMessage(data))
+	}
+	return nil
+}
+
 // Release is a release on a repository, with the files attached to it.
 type Release struct {
 	ID int64

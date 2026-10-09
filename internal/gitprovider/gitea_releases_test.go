@@ -230,6 +230,40 @@ func TestTagRuns(t *testing.T) {
 	}
 }
 
+func TestRerunFailedJobs(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/repos/webshop/orders-api/actions/runs/9/rerun-failed-jobs":
+			w.WriteHeader(http.StatusCreated)
+		case "/api/v1/repos/webshop/orders-api/actions/runs/8/rerun-failed-jobs":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"message":"this workflow run is not done"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := p.Repository("orders-api")
+	if err := p.RerunFailedJobs(context.Background(), repo, 9); err != nil {
+		t.Fatalf("RerunFailedJobs() error = %v", err)
+	}
+	if err := p.RerunFailedJobs(context.Background(), repo, 8); err == nil ||
+		!strings.Contains(err.Error(), "HTTP 400") || !strings.Contains(err.Error(), "not done") {
+		t.Errorf("RerunFailedJobs() of a run that hasn't ended error = %v, want HTTP 400 with Gitea's message", err)
+	}
+	want := []string{"POST /api/v1/repos/webshop/orders-api/actions/runs/9/rerun-failed-jobs",
+		"POST /api/v1/repos/webshop/orders-api/actions/runs/8/rerun-failed-jobs"}
+	if !reflect.DeepEqual(calls, want) {
+		t.Errorf("calls = %v, want %v", calls, want)
+	}
+}
+
 func TestReleases(t *testing.T) {
 	const asset = "#!/bin/sh\necho orders\n"
 	var patches []map[string]string

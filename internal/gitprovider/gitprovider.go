@@ -206,6 +206,9 @@ type Provider interface {
 	// TagRuns returns the CI workflow runs a push of tag at commit started,
 	// newest first.
 	TagRuns(ctx context.Context, repo Repository, tag, commit string) ([]WorkflowRun, error)
+	// RerunFailedJobs runs the failed jobs of workflow run id again, as a new
+	// attempt of the same run.
+	RerunFailedJobs(ctx context.Context, repo Repository, id int64) error
 	// GetRelease returns the release of tag with its assets, a draft too, or nil
 	// when repo has none.
 	GetRelease(ctx context.Context, repo Repository, tag string) (*Release, error)

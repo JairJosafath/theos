@@ -69,6 +69,19 @@ func mergedTask(ns, name string, n int, commit string, at time.Time) {
 	}).Should(Succeed())
 }
 
+// setCrewAnnotation sets annotation key of the Crew of orders-api to value.
+func setCrewAnnotation(ns, key, value string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		crew := getCrew(g, ns)
+		if crew.Annotations == nil {
+			crew.Annotations = map[string]string{}
+		}
+		crew.Annotations[key] = value
+		g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
+	}).Should(Succeed())
+}
+
 // crewEvents lists the Events about the Crew of orders-api.
 func crewEvents(g Gomega, ns string) []eventsv1.Event {
 	var events eventsv1.EventList
@@ -320,6 +333,98 @@ var _ = Describe("Crew releases", func() {
 			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
 				HaveField("Reason", "ReleaseRunSucceeded"))))
 		}).Should(Succeed())
+	})
+
+	It("re-runs a failed release run once per rerun-release value", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.LastRelease).NotTo(BeNil())
+		}).Should(Succeed())
+
+		runURL := "http://gitea/" + ns + "/orders-api/actions/runs/5"
+		passed := gitprovider.WorkflowRun{ID: 4, Workflow: "notes.yaml", Status: "completed", Conclusion: "success"}
+		run := gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "failure",
+			URL: runURL}
+		gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", run, passed)
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.LastRelease.Run).To(Equal("Failed"))
+		}).Should(Succeed())
+
+		setCrewAnnotation(ns, c4v1alpha1.AnnotationRerunRelease, "1")
+		Eventually(func(g Gomega) {
+			status := getCrew(g, ns).Status
+			g.Expect(status.RerunRelease).To(Equal("1"))
+			g.Expect(status.LastRelease.Run).To(Equal("Running"))
+			g.Expect(status.LastRelease.RerunTime).NotTo(BeNil())
+			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
+				HaveField("Reason", "ReleaseRunRerun"), HaveField("Note", "Re-ran the failed runs of v0.1.0: release.yaml"))))
+		}).Should(Succeed())
+		Expect(gitFake.reruns(ns, "orders-api", 5)).To(Equal(1))
+		Expect(gitFake.reruns(ns, "orders-api", 4)).To(Equal(0))
+
+		// The new attempt fails too: the same value asks for nothing more.
+		gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", run, passed)
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.LastRelease.Run).To(Equal("Failed"))
+		}).Should(Succeed())
+		Consistently(func() int {
+			return gitFake.reruns(ns, "orders-api", 5)
+		}, 3*time.Second).Should(Equal(1))
+
+		setCrewAnnotation(ns, c4v1alpha1.AnnotationRerunRelease, "2")
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.RerunRelease).To(Equal("2"))
+			g.Expect(gitFake.reruns(ns, "orders-api", 5)).To(Equal(2))
+		}).Should(Succeed())
+
+		run.Conclusion = "success"
+		gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", run, passed)
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.LastRelease.Run).To(Equal("Succeeded"))
+		}).Should(Succeed())
+	})
+
+	It("re-runs nothing for a rerun-release value set on a run that succeeded, and says so", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.LastRelease).NotTo(BeNil())
+		}).Should(Succeed())
+		run := gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "success"}
+		gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", run)
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.LastRelease.Run).To(Equal("Succeeded"))
+		}).Should(Succeed())
+
+		setCrewAnnotation(ns, c4v1alpha1.AnnotationRerunRelease, "1")
+		said := And(HaveField("Type", "Normal"), HaveField("Reason", "NoFailedReleaseRun"),
+			HaveField("Note", "Release runs of v0.1.0 are Succeeded, not Failed, so there is nothing to re-run"))
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.RerunRelease).To(Equal("1"))
+			g.Expect(crewEvents(g, ns)).To(ContainElement(said))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			var notes []eventsv1.Event
+			for _, e := range crewEvents(g, ns) {
+				if e.Reason == "NoFailedReleaseRun" {
+					notes = append(notes, e)
+				}
+			}
+			g.Expect(notes).To(HaveLen(1))
+			g.Expect(notes[0].Series).To(BeNil())
+		}, 3*time.Second).Should(Succeed())
+		Expect(gitFake.reruns(ns, "orders-api", 5)).To(Equal(0))
 	})
 
 	It("reports release runs that haven't ended an hour after tagging, once, and their later end", func() {

@@ -420,6 +420,20 @@ model and context it needs.
   up never starts) are a Warning Event `ReleaseRunOverdue`, once per release,
   the log line `Release run overdue`, and a note on the `Released` condition's
   message until they end; the watch carries on and reports their end as usual.
+- **A failed release run re-runs on request.** Setting or changing the
+  annotation `c4.factory.io/rerun-release` on a Crew with `tagReleases` whose
+  `status.lastRelease.run` is `Failed` makes the operator re-run the failed
+  jobs of that release's failed runs (each workflow's newest run) through the
+  GitProvider (Gitea's `rerun-failed-jobs`), once per value: the Crew records
+  the value it answered in `status.rerunRelease`, and a second reconcile with
+  the same value does nothing. The re-run is a Normal Event
+  `ReleaseRunRerun` and the log line `Re-ran the release runs`, and the watch
+  follows the runs' new attempts as it does when a person re-runs them in
+  Gitea; the hour they have to end counts from the re-run
+  (`status.lastRelease.rerunTime`), and a re-run's overdue runs get their own
+  `ReleaseRunOverdue`. A value set while the run hasn't failed re-runs
+  nothing, now or later: it is a Normal Event `NoFailedReleaseRun`. A re-run the Git host
+  refuses is a Warning Event `ReleaseRunRerunFailed`; a new value tries again.
 - **A released Go app is a module others can fetch.** Right after the Crew
   tags a release, it publishes the repository's Go module at that tag to the
   Git host's Go package registry (Gitea's, per owner), under the module path
