@@ -1,7 +1,8 @@
 // The new shell (docs/plans/ui-lifecycle.md, decision 2), reached only with
 // ?shell=next until it becomes the default: navigation for the six areas, a
-// freshness line, and the area on screen. Story, Briefs, Work and Factory show
-// today's components; the object pages come in later steps.
+// freshness line, and the area on screen or an object's page. Story, Briefs,
+// Work and Factory show today's components, and the pages of the kinds that
+// have none yet say so.
 
 import type { MouseEvent, ReactNode } from 'react'
 import type { FactoryHealth } from '../k8s/health'
@@ -33,6 +34,8 @@ export interface ShellProps {
   banners: ReactNode
   /** Needs you, and today's components for the other areas of the cluster. */
   areas: Record<'needs' | 'briefs' | 'story' | 'work' | 'factory', ReactNode>
+  /** The object page the URL names, for kinds that have one. */
+  objectPage?: ReactNode
 }
 
 /** Leaves an object page: the area alone. */
@@ -49,6 +52,7 @@ export function Shell({
   picker,
   banners,
   areas,
+  objectPage,
 }: ShellProps) {
   const object = url.kind && url.name ? { ns: url.ns, kind: url.kind, name: url.name } : undefined
   const scope = object ? object.ns : inNamespace(area) ? namespace : area === 'about' ? undefined : ''
@@ -87,7 +91,13 @@ export function Shell({
       {banners}
       <Freshness connection={connection} scope={scope} />
 
-      {object ? <ObjectPlaceholder {...object} /> : area === 'about' ? <AboutArea versions={versions} /> : areas[area]}
+      {object ? (
+        (objectPage ?? <ObjectPlaceholder {...object} />)
+      ) : area === 'about' ? (
+        <AboutArea versions={versions} />
+      ) : (
+        areas[area]
+      )}
 
       <footer className="footer">
         This page reads the C4 Factory resources in the cluster and updates as they change. It can change only three

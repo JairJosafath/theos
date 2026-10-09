@@ -8,17 +8,14 @@ import { findCondition } from '../k8s/types'
 import type { Area } from './areas'
 import { failureAnswered } from './attention'
 import { time } from './factory'
+import { hasPage } from './lifecycle'
 
 export type NeedKind = 'Brief' | 'Container' | 'Task' | 'Crew'
 
-/** A place in the UI, as the URL says it. */
-export interface Place {
-  area: Area
-  project?: string
-  view?: 'containers'
-  system?: string
-  task?: string
-}
+/** A place in the UI, as the URL says it: an area, or an object's page. */
+export type Place =
+  | { area: Area; project?: string; view?: 'containers'; system?: string; task?: string }
+  | { page: { ns: string; kind: string; name: string } }
 
 export interface Need {
   /** Tells items apart: kind, namespace, name and what is asked. */
@@ -94,13 +91,21 @@ function base(kind: NeedKind, obj: { metadata: { namespace?: string; name: strin
   return { key: `${kind}|${namespace}|${obj.metadata.name}|${what}`, kind, namespace, name: obj.metadata.name }
 }
 
+/** The object's page where its kind has one, else the place in today's views. */
+function placeOf(kind: NeedKind, ns: string, name: string, fallback: Need['place']): Need['place'] {
+  return hasPage(kind) ? { label: `Open the ${kind}`, to: { page: { ns, kind, name } } } : fallback
+}
+
 function why(c: Condition | undefined, fallback: string) {
   return { reason: c?.reason || fallback, message: c?.message ?? '', since: c?.lastTransitionTime }
 }
 
 function briefNeeds(brief: Brief): Need[] {
   const ns = brief.metadata.namespace ?? ''
-  const place = { label: 'Open its Brief', to: { area: 'briefs', project: ns } as Place }
+  const place = placeOf('Brief', ns, brief.metadata.name, {
+    label: 'Open its Brief',
+    to: { area: 'briefs', project: ns },
+  })
   const items: Need[] = []
   for (const [type, title] of [
     ['NeedsInput', 'needs your input'],
@@ -115,10 +120,10 @@ function briefNeeds(brief: Brief): Need[] {
 
 function containerNeeds(c: Container): Need[] {
   const ns = c.metadata.namespace ?? ''
-  const place = {
+  const place = placeOf('Container', ns, c.metadata.name, {
     label: 'Find it in Story',
-    to: { area: 'story', project: ns, view: 'containers', system: c.spec.softwareSystemRef.name } as Place,
-  }
+    to: { area: 'story', project: ns, view: 'containers', system: c.spec.softwareSystemRef.name },
+  })
   const items: Need[] = []
   if (c.status?.phase === 'Failed') {
     const unmet = (c.status.conditions ?? []).filter((cond) => cond.status === 'False')

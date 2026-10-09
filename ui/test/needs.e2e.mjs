@@ -263,10 +263,10 @@ describe('Needs you', () => {
     const params = new URL(page.url()).searchParams
     assert.deepEqual([params.get('area'), params.get('task')], ['work', 'zoo/tickets-4'])
     await page.goBack()
-    await item('Brief', 'checkout').getByRole('link', { name: 'Open its Brief' }).click()
-    await page.getByRole('heading', { name: 'Briefs', exact: true }).first().waitFor({ timeout: 10000 })
+    await item('Brief', 'checkout').getByRole('link', { name: 'Open the Brief' }).click()
+    await page.getByRole('heading', { name: 'checkout' }).first().waitFor({ timeout: 10000 })
     const brief = new URL(page.url()).searchParams
-    assert.deepEqual([brief.get('area'), brief.get('project')], ['briefs', 'shop'])
+    assert.deepEqual([brief.get('ns'), brief.get('kind'), brief.get('name')], ['shop', 'Brief', 'checkout'])
   })
 
   it('opens on Story when nothing waits on a person', async () => {

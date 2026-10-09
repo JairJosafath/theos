@@ -92,6 +92,7 @@ function NeedItem({ item, setUrl }: { item: Need; setUrl: (next: Partial<UrlStat
 
 /** The place as URL state; a place that names no project keeps the one in view. */
 function placeUrl(p: Place): Partial<UrlState> {
+  if ('page' in p) return { ...p.page }
   return {
     area: p.area,
     view: p.view ?? 'context',

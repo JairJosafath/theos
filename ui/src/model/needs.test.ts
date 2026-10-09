@@ -60,12 +60,12 @@ describe('needs', () => {
     {
       name: 'a Brief waiting for input',
       input: input({ briefs: [brief([cond('NeedsInput', 'True', 'PlannerNeedsInput', 'Which payment provider?')])] }),
-      want: { kind: 'Brief', reason: 'PlannerNeedsInput', message: 'Which payment provider?', place: 'briefs' },
+      want: { kind: 'Brief', reason: 'PlannerNeedsInput', message: 'Which payment provider?', place: 'Brief' },
     },
     {
       name: 'a Brief with something only the person can decide',
       input: input({ briefs: [brief([cond('NeedsYou', 'True', 'Waiting', 'Retry api#7? and 2 more')])] }),
-      want: { kind: 'Brief', reason: 'Waiting', message: 'Retry api#7? and 2 more', place: 'briefs' },
+      want: { kind: 'Brief', reason: 'Waiting', message: 'Retry api#7? and 2 more', place: 'Brief' },
     },
     {
       name: 'a Failed Container',
@@ -93,7 +93,7 @@ describe('needs', () => {
         message: 'The repository has commits the factory did not make',
         links: [repo.repositoryURL],
         command: 'kubectl -n shop annotate container api c4.factory.io/retry=$(date +%s) --overwrite',
-        place: 'story',
+        place: 'Container',
       },
     },
     {
@@ -116,7 +116,7 @@ describe('needs', () => {
         reason: 'ChecksFailed',
         message: 'CI failed on the update to v2',
         links: ['https://git.example/shop/api/pulls/3'],
-        place: 'story',
+        place: 'Container',
       },
     },
     {
@@ -230,7 +230,10 @@ describe('needs', () => {
     expect(item.message).toBe(want.message)
     expect(item.links.map((l) => l.url)).toEqual(want.links ?? [])
     expect(item.command).toBe(want.command)
-    expect(item.place.to.area).toBe(want.place)
+    // An object page where the kind has one, else an area.
+    const to = item.place.to
+    expect('page' in to ? to.page.kind : to.area).toBe(want.place)
+    if ('page' in to) expect(to.page).toEqual({ ns: 'shop', kind: want.kind, name: item.name })
   })
 
   it('gives every item somewhere to go: a place, and a link or a command where one exists', () => {
