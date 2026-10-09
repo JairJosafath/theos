@@ -45,7 +45,12 @@ export function TaskPanel({
   const byStage = timeByStage(segments)
   const back = agentBackAt(task)
   const followUps = followUpLinks(task)
-  const usage = describeUsage(task.status?.costMilliUSD, task.status?.runsWithoutCost, task.status?.tokens)
+  const usage = describeUsage(
+    task.status?.costMilliUSD,
+    task.status?.runsWithoutCost,
+    task.status?.tokens,
+    agent?.spec.sessionTokenLimit,
+  )
   const standardChange = standardChangeLink(task)
   const crew = task.metadata.labels?.[LABEL_CREW]
   return (

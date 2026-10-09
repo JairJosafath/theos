@@ -92,7 +92,7 @@ export interface BriefView {
   /** Each app's releases: a line per Container the Brief made, then per spec.releases entry. */
   apps: BriefAppView[]
   repositoryURL?: string
-  /** What planning used over all rounds: cost, tokens and the largest session. */
+  /** What planning used over all rounds: cost, tokens and the largest agent run. */
   usage?: UsageView
   /** Every round, newest first, with what it used. */
   rounds: BriefRoundView[]
@@ -145,8 +145,16 @@ export function describeBrief(brief: Brief): BriefView {
   const phase = describeBriefPhase(status.phase)
   const asked = status.needsYouWaiting ?? listed.length
   // With autopilot on or asking, the failed issues that wait for the person
-  // are under Needs you already; the rest the Brief decides by itself.
-  const unanswered = autopilot.mode === 'Off' ? failedWaiting : 0
+  // are under Needs you already; the rest the Brief decides by itself. Unset,
+  // the mode in effect is the operator's and status doesn't say it, so a
+  // failed issue waits unless Needs you lists it.
+  const askedIssues = new Set((status.needsYou ?? []).map((n) => n.name))
+  const unanswered =
+    autopilot.mode === 'Off'
+      ? failedWaiting
+      : autopilot.mode
+        ? 0
+        : failedWaiting - (status.failed ?? []).filter((f) => askedIssues.has(`${f.container}#${f.number}`)).length
   if (status.phase === 'Planned' && (unanswered > 0 || suggestionsWaiting > 0 || asked > 0)) {
     const waiting = [
       asked ? `${asked} ${asked === 1 ? 'item' : 'items'} under Needs you` : '',
@@ -181,7 +189,7 @@ export function describeBrief(brief: Brief): BriefView {
     })),
     failed,
     failedWaiting,
-    failedHint: FAILED_HINTS[autopilot.mode],
+    failedHint: autopilot.mode ? FAILED_HINTS[autopilot.mode] : DEFAULT_FAILED_HINT,
     needsYou,
     needsYouWaiting,
     tended: tendedRounds(status.history ?? [], status.tended ?? [], status.failed ?? []),
@@ -220,13 +228,10 @@ export function pauseAction(view: Pick<BriefView, 'paused'>): PauseAction {
       }
 }
 
-/** The operator's mode for a Brief that sets none (docs/plans/done/brief-autopilot.md, decision 1). */
-export const DEFAULT_AUTOPILOT: BriefAutopilot = 'Ask'
-
-/** A Brief's autopilot mode as a label and one-line explanation; unset says it is the default. */
+/** A Brief's autopilot mode as a label and one-line explanation; unset says it is the factory's default. */
 export interface AutopilotInfo {
-  /** The mode in effect. */
-  mode: BriefAutopilot
+  /** The mode the Brief sets; none when it leaves the factory's default, which status doesn't say. */
+  mode?: BriefAutopilot
   /** Whether the Brief sets none and the operator's default applies. */
   isDefault: boolean
   label: string
@@ -250,12 +255,12 @@ export const AUTOPILOT_MODES: Record<BriefAutopilot, { label: string; explanatio
   },
 }
 
-export function describeAutopilot(set: BriefAutopilot | undefined): AutopilotInfo {
-  const mode = set ?? DEFAULT_AUTOPILOT
-  const { label, explanation } = AUTOPILOT_MODES[mode]
-  return set
-    ? { mode, isDefault: false, label, explanation }
-    : { mode, isDefault: true, label, explanation: `${explanation} This is the factory’s default.` }
+/** What an unset autopilot does: the operator decides, so the UI names no mode. */
+export const DEFAULT_AUTOPILOT_HINT = 'The factory’s default mode decides whether it tends its failed issues by itself.'
+
+export function describeAutopilot(mode: BriefAutopilot | undefined): AutopilotInfo {
+  if (!mode) return { isDefault: true, label: 'Autopilot: factory default', explanation: DEFAULT_AUTOPILOT_HINT }
+  return { mode, isDefault: false, ...AUTOPILOT_MODES[mode] }
 }
 
 /** What to do about failed issues, by the mode in effect. */
@@ -264,6 +269,10 @@ const FAILED_HINTS: Record<BriefAutopilot, string> = {
   Ask: 'The Brief decides these and asks you under Needs you; a prompt can answer them first.',
   On: 'The Brief decides these by itself; a prompt overrules it, such as "file the CLI issue again".',
 }
+
+/** What to do about failed issues when the Brief leaves the mode to the factory. */
+const DEFAULT_FAILED_HINT =
+  'The Brief asks you under Needs you about those it can’t decide; a prompt can answer any of them, such as "file the CLI issue again".'
 
 /** An entry of the Needs you box, for display. */
 export interface BriefNeedsYouView {
@@ -457,38 +466,33 @@ export function describeCost(milliUSD = 0, runsWithoutCost = 0): string | undefi
   return `${formatCost(milliUSD)}, plus ${runs} whose cost the agent didn’t report`
 }
 
-/**
- * How large a session may get before it should hand off, while the Agent has no
- * sessionTokenLimit of its own (docs/plans/session-tokens.md, decision 6).
- */
-export const DEFAULT_SESSION_TOKEN_LIMIT = 130_000
-
-/** What agent runs used, for display: each part of the line, and whether a session got too long. */
+/** What agent runs used, for display: each part of the line, and whether an agent run got too long. */
 export interface UsageView {
   /** Dollars and cents, or that the agent didn't report the cost. */
   cost?: string
   /** All tokens, how many of them were cache reads, or that the agent didn't report them. */
   tokens?: string
-  /** How large the largest session got, and the limit when it passed it. */
-  largestSession?: string
-  /** Whether the largest session passed the limit. */
+  /** How large the largest agent run got, and the limit when it passed it. */
+  largestRun?: string
+  /** Whether the largest agent run passed the Agent's limit. */
   pastLimit: boolean
-  /** How often a session handed its work to a fresh one, such as "handed off 2×"; none when it never did. */
+  /** How often an agent run handed its work to a fresh one, such as "handed off 2×"; none when none did. */
   handoffs?: string
-  /** The parts joined, such as "$6.12 · 1.4M tokens, 1.1M of them cache reads · largest session 142k · handed off 2×". */
+  /** The parts joined, such as "$6.12 · 1.4M tokens, 1.1M of them cache reads · largest run 142k · handed off 2×". */
   line: string
 }
 
 /**
  * What agent runs used, as their agents reported it: the cost, the tokens,
- * the largest session, which is marked when it passed the limit, and how often
- * a session handed off to a fresh one. Undefined before any run.
+ * the largest agent run, marked when it passed limit (the Agent's
+ * spec.sessionTokenLimit, when the caller knows it), and how often an agent
+ * run handed off to a fresh one. Undefined before any run.
  */
 export function describeUsage(
   milliUSD = 0,
   runsWithoutCost = 0,
   tokens: TokenUsage = {},
-  limit = DEFAULT_SESSION_TOKEN_LIMIT,
+  limit?: number,
 ): UsageView | undefined {
   let cost = describeCost(milliUSD, runsWithoutCost)
   const total = (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.cacheRead ?? 0) + (tokens.cacheWrite ?? 0)
@@ -506,14 +510,14 @@ export function describeUsage(
     }
   }
   const largest = tokens.largestSession ?? 0
-  const pastLimit = largest > limit
-  const largestSession = largest
-    ? `largest session ${formatTokens(largest)}${pastLimit ? `, past the ${formatTokens(limit)} limit` : ''}`
+  const pastLimit = limit !== undefined && largest > limit
+  const largestRun = largest
+    ? `largest run ${formatTokens(largest)}${pastLimit ? `, past the ${formatTokens(limit)} limit` : ''}`
     : undefined
   const handoffs = tokens.sessionHandoffs ? `handed off ${tokens.sessionHandoffs}×` : undefined
-  const parts = [cost, used, largestSession, handoffs].filter(Boolean)
+  const parts = [cost, used, largestRun, handoffs].filter(Boolean)
   if (!parts.length) return undefined
-  return { cost, tokens: used, largestSession, pastLimit, handoffs, line: parts.join(' · ') }
+  return { cost, tokens: used, largestRun, pastLimit, handoffs, line: parts.join(' · ') }
 }
 
 /** A token count in a few characters: 950, 9.5k, 142k, 1.4M. */

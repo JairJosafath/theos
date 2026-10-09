@@ -1,22 +1,15 @@
 // The UI's only three writes: create a Brief from an idea, add a follow-up
 // prompt to one, and pause or resume one. server.mjs passes exactly these
-// requests on and nothing else; the CRD's rules decide whether they are accepted.
+// requests on and nothing else; the CRD's rules decide whether they are accepted,
+// so this file copies none of them: a refused write shows the API server's message.
 
 import { GROUP, VERSION, resourcePath, RESOURCES, type Brief, type BriefAutopilot } from './types'
 import { errorFromResponse } from './watch'
 
-/** Longest idea and prompt the Brief CRD accepts. */
-export const MAX_IDEA = 4000
-export const MAX_PROMPT = 2000
-
-/** Most issues a Brief's Crews may each work on at once, and how many when spec.parallel is unset. */
-export const MAX_PARALLEL = 5
-export const DEFAULT_PARALLEL = 3
-
 /** What a new Brief may choose besides its idea; each unset leaves the factory's default. */
 export interface BriefOptions {
   autopilot?: BriefAutopilot
-  /** How many issues each of its Crews works on at once, 1 to 5. */
+  /** How many issues each of its Crews works on at once. */
   parallel?: number
 }
 
@@ -44,13 +37,6 @@ export function promptPatch(prompt: string): [{ op: 'add'; path: '/spec/prompts/
 /** The JSON patch that pauses (true) or resumes (false) a Brief and every Crew it made. */
 export function pausedPatch(paused: boolean): [{ op: 'add'; path: '/spec/paused'; value: boolean }] {
   return [{ op: 'add', path: '/spec/paused', value: paused }]
-}
-
-const DNS_LABEL = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
-
-/** Whether name can name a Brief: a DNS label of at most 63 characters. */
-export function isBriefName(name: string): boolean {
-  return name.length <= 63 && DNS_LABEL.test(name)
 }
 
 // Words that say little about the app, skipped when naming it.

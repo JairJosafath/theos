@@ -75,10 +75,7 @@ function BriefCard({ brief, namespace, writer }: { brief: Brief; namespace: stri
               </>
             ) : null}
             <span className="sep">·</span>
-            <span title={view.autopilot.explanation}>
-              {view.autopilot.label}
-              {view.autopilot.isDefault ? ' (default)' : ''}
-            </span>
+            <span title={view.autopilot.explanation}>{view.autopilot.label}</span>
             {brief.metadata.creationTimestamp ? (
               <>
                 <span className="sep">·</span>

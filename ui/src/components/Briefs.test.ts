@@ -152,16 +152,12 @@ describe('the Describe an app form', () => {
     createElement(Briefs, { briefs: [], namespace: DEMO_NAMESPACE, canCreate: true, writer }),
   )
 
-  it("offers parallel 1 to 5, the factory's default first", () => {
+  it('copies none of the CRD’s limits or defaults', () => {
     expect(html).toContain('Parallel')
-    const options = [...html.matchAll(/<option value="(\d)"[^>]*>([^<]*)<\/option>/g)].map((m) => [m[1], m[2]])
-    expect(options).toEqual([
-      ['0', 'The factory’s default (3 at a time)'],
-      ['1', '1 at a time'],
-      ['2', '2 at a time'],
-      ['3', '3 at a time'],
-      ['4', '4 at a time'],
-      ['5', '5 at a time'],
-    ])
+    expect(html).toMatch(
+      /<input id="[^"]*-parallel" class="input" type="number" [^>]*placeholder="the factory’s default"/,
+    )
+    expect(html).toContain('<option value="" selected="">The factory’s default</option>')
+    expect(html).not.toMatch(/maxLength|maxlength|min=|max=|pattern=/)
   })
 })
