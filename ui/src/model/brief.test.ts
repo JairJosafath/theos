@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Brief, BriefApp, BriefFailedKind, BriefPhase } from '../k8s/types'
 import {
+  AUTOPILOT_MODES,
   describeAutopilot,
   describeBrief,
   describeBriefApp,
@@ -614,6 +615,39 @@ describe('the Needs you box', () => {
     )
     expect(view.failedHint).toMatch(/^The Brief asks you under Needs you about those it can’t decide/)
   })
+
+  // #750: the operator reports the mode in effect for a Brief that sets none.
+  it.each<['Off' | 'Ask' | 'On', string, RegExp]>([
+    ['Off', 'The last round is done; 2 failed issues wait for your answer in a prompt.', /^Say in a prompt/],
+    [
+      'Ask',
+      'The last round is done; 1 item under Needs you waits for your answer in a prompt.',
+      /^The Brief decides these and asks you/,
+    ],
+    [
+      'On',
+      'The last round is done; 1 item under Needs you waits for your answer in a prompt.',
+      /^The Brief decides these by itself/,
+    ],
+  ])('with the reported default %s, counts and hints as when the Brief sets it', (autopilot, explanation, hint) => {
+    const view = describeBrief({
+      ...brief('lens', '2026-01-01T00:00:00Z'),
+      spec: { idea: 'A lens' },
+      status: {
+        phase: 'Planned',
+        autopilot,
+        failed: [
+          { container: 'cli', number: 3, kind: 'failed' },
+          { container: 'cli', number: 4, kind: 'failed' },
+        ],
+        failedWaiting: 2,
+        needsYou: autopilot === 'Off' ? [] : [{ kind: 'Issue', name: 'cli#3', question: 'Issue cli#3 needs you.' }],
+      },
+    })
+    expect(view.autopilot).toMatchObject({ mode: autopilot, isDefault: true })
+    expect(view.phase.explanation).toBe(explanation)
+    expect(view.failedHint).toMatch(hint)
+  })
 })
 
 describe('what the Brief did by itself', () => {
@@ -686,6 +720,24 @@ describe('describeAutopilot', () => {
       label: 'Autopilot: factory default',
       explanation: 'The factory’s default mode decides whether it tends its failed issues by itself.',
     })
+  })
+
+  // #750: unset, the mode the operator reports is the one in effect.
+  it.each<['Off' | 'Ask' | 'On', string]>([
+    ['Off', 'Autopilot off (factory default)'],
+    ['Ask', 'Autopilot asks (factory default)'],
+    ['On', 'Autopilot on (factory default)'],
+  ])('names the reported default %s', (reported, label) => {
+    expect(describeAutopilot(undefined, reported)).toEqual({
+      mode: reported,
+      isDefault: true,
+      label,
+      explanation: AUTOPILOT_MODES[reported].explanation,
+    })
+  })
+
+  it('takes the mode the Brief sets over the one status still reports', () => {
+    expect(describeAutopilot('On', 'Ask')).toMatchObject({ mode: 'On', isDefault: false, label: 'Autopilot on' })
   })
 
   it('points failed issues at a prompt only while it is off', () => {

@@ -514,6 +514,12 @@ type BriefStatus struct {
 	// +optional
 	Phase BriefPhase `json:"phase,omitempty"`
 
+	// autopilot is the mode the Brief runs in, set every reconcile:
+	// spec.autopilot, or the operator's default, Ask, when that is unset.
+	// +kubebuilder:validation:Enum=Off;Ask;On
+	// +optional
+	Autopilot string `json:"autopilot,omitempty"`
+
 	// round is the number of the round running now or last run; 0 before the
 	// first.
 	// +optional
