@@ -361,53 +361,58 @@ const BRIEF_SETTINGS = {
   '/spec/releases': 'array',
 }
 const RELEASES_PATH = '/spec/releases'
+const PUBLISH_PATH = '/spec/publishReleases'
 const RV_PATH = '/metadata/resourceVersion'
 
 /**
- * A Brief's settings: adds of BRIEF_SETTINGS, after a test of the Brief's
- * resourceVersion, which a releases add needs. The whole list is sent, so
- * without it a write worked out from a stale Brief would silently drop what
- * someone else added or removed meanwhile.
+ * `check` over a JSON patch that may start with a test of the object's
+ * resourceVersion, which an operation on one of `guarded` needs. Those set a
+ * whole list or object, so without it a write worked out from a stale object
+ * would silently drop what someone else changed meanwhile.
  */
-function setsBriefSettings(body) {
-  if (!Array.isArray(body)) return undefined
-  const [first, ...rest] = body
-  const tested =
-    isObject(first) &&
-    Object.keys(first).sort().join() === 'op,path,value' &&
-    first.op === 'test' &&
-    first.path === RV_PATH &&
-    typeof first.value === 'string' &&
-    first.value !== ''
-  const adds = addsFields(BRIEF_SETTINGS)(tested ? rest : body)
-  if (!adds) return undefined
-  if (!tested && adds.some((op) => op.path === RELEASES_PATH)) return undefined
-  return body
+function testsVersion(check, guarded) {
+  return (body) => {
+    if (!Array.isArray(body)) return undefined
+    const [first, ...rest] = body
+    const tested =
+      isObject(first) &&
+      Object.keys(first).sort().join() === 'op,path,value' &&
+      first.op === 'test' &&
+      first.path === RV_PATH &&
+      typeof first.value === 'string' &&
+      first.value !== ''
+    const ops = check(tested ? rest : body)
+    if (!ops) return undefined
+    if (!tested && ops.some((op) => guarded.includes(op.path))) return undefined
+    return body
+  }
 }
 
 /**
- * Sets a Brief's settings. With a test of its resourceVersion, a Brief that
- * has changed since is refused as a Conflict saying so; the test goes
- * upstream too, so a change landing between the read and the write is
- * refused by the API server.
+ * Forwards a patch checked by testsVersion. With a test of its
+ * resourceVersion, an object of `kind` that has changed since is refused as a
+ * Conflict saying so; the test goes upstream too, so a change landing between
+ * the read and the write is refused by the API server.
  */
-async function setBriefSettings(args) {
-  const { res, upstream, apiPath, namespace, name, body } = args
-  if (body[0].op === 'test') {
-    const current = await requestJson(upstream, apiPath)
-    if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
-    const now = current.body?.metadata?.resourceVersion
-    if (now !== body[0].value) {
-      return sendStatus(
-        res,
-        409,
-        'Conflict',
-        `Brief ${namespace}/${name} changed since this page showed it, so nothing was saved: ` +
-          'check its settings as they are now and make the change again',
-      )
+function writeTested(kind) {
+  return async (args) => {
+    const { res, upstream, apiPath, namespace, name, body } = args
+    if (body[0].op === 'test') {
+      const current = await requestJson(upstream, apiPath)
+      if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
+      const now = current.body?.metadata?.resourceVersion
+      if (now !== body[0].value) {
+        return sendStatus(
+          res,
+          409,
+          'Conflict',
+          `${kind} ${namespace}/${name} changed since this page showed it, so nothing was saved: ` +
+            'check its settings as they are now and make the change again',
+        )
+      }
     }
+    return forwardPatch(args)
   }
-  return forwardPatch(args)
 }
 
 const ACTIONS = [
@@ -444,24 +449,28 @@ const ACTIONS = [
     method: 'PATCH',
     path: resourcePath('briefs', true),
     type: JSON_PATCH,
-    check: setsBriefSettings,
-    write: setBriefSettings,
+    check: testsVersion(addsFields(BRIEF_SETTINGS), [RELEASES_PATH]),
+    write: writeTested('Brief'),
   },
   {
-    what: "set a Crew's /spec/paused, /spec/parallel, /spec/tagReleases, /spec/prepareReleases, /spec/publishReleases (or remove it)",
+    what: `set a Crew's /spec/paused, /spec/parallel, /spec/tagReleases, /spec/prepareReleases, ${PUBLISH_PATH} (or remove it; ${PUBLISH_PATH} after a test of ${RV_PATH})`,
     method: 'PATCH',
     path: resourcePath('crews', true),
     type: JSON_PATCH,
-    check: addsFields(
-      {
-        '/spec/paused': 'boolean',
-        '/spec/parallel': 'integer',
-        '/spec/tagReleases': 'boolean',
-        '/spec/prepareReleases': 'boolean',
-        '/spec/publishReleases': 'object',
-      },
-      ['/spec/publishReleases'],
+    check: testsVersion(
+      addsFields(
+        {
+          '/spec/paused': 'boolean',
+          '/spec/parallel': 'integer',
+          '/spec/tagReleases': 'boolean',
+          '/spec/prepareReleases': 'boolean',
+          [PUBLISH_PATH]: 'object',
+        },
+        [PUBLISH_PATH],
+      ),
+      [PUBLISH_PATH],
     ),
+    write: writeTested('Crew'),
   },
   {
     what: 'set annotation c4.factory.io/rerun-release on a Crew',
