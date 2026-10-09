@@ -122,6 +122,27 @@ export interface Container extends K8sObject {
     scaffoldedFrom?: string[]
     appliedRelationships?: string[]
     appliedConnectors?: { relationship: string; dataStore: string; connector: string }[]
+    /** The latest CI result on the default branch; only Containers with a Standard have it. */
+    checks?: CheckStatus
+    /** Which ref of its Standard the repository's Standard files are at, and the update in flight. */
+    standard?: {
+      name: string
+      ref: string
+      /** The files the last update left out, because the repository had changed them. */
+      leftOut?: string[]
+      /** The Standard update in flight, or the last one, stopped. */
+      update?: {
+        ref: string
+        branch?: string
+        commit?: string
+        pullRequest?: number
+        pullRequestURL?: string
+        paths?: string[]
+        leftOut?: string[]
+        /** Why the update stopped without merging, such as UpdateClosed. */
+        stopped?: string
+      }
+    }
     activeSessions?: number
     observedGeneration?: number
     conditions?: Condition[]

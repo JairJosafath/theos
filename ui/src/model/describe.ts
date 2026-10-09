@@ -154,10 +154,17 @@ const REASON_WORDING: Record<string, string> = {
 // Reasons that mean "not yet" rather than "wrong".
 const WAITING_REASONS = new Set(['WaitingForScaffold', 'Scaffolding', 'NotFound'])
 
+// A Brief's conditions that flag something for a person: False is the calm state.
+const FLAGS = new Set(['NeedsInput', 'NeedsYou', 'IssuesFailed', 'Paused'])
+
 /** Turns a condition into a sentence and a tone for its icon. */
 export function describeCondition(condition: Condition): ConditionInfo {
   const wording = WORDING[condition.type]
   const detail = condition.message?.trim() || undefined
+  if (FLAGS.has(condition.type) && condition.status !== 'Unknown') {
+    const yes = condition.status === 'True'
+    return { title: `${splitWords(condition.type)}: ${yes ? 'yes' : 'no'}`, tone: yes ? 'waiting' : 'ok', detail }
+  }
   if (condition.status === 'True') {
     return { title: wording?.yes ?? `${splitWords(condition.type)}: yes`, tone: 'ok', detail }
   }

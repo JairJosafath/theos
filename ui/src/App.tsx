@@ -10,6 +10,8 @@ import { Diagram } from './components/Diagram'
 import { FactoryPage } from './components/Factory'
 import { LogoMark, WarningIcon } from './components/icons'
 import { FactoryArea, Shell } from './components/Shell'
+import { pageHref } from './components/objects/links'
+import { ObjectPage } from './components/objects/ObjectPage'
 import { ConnectionStatus, ProblemsBanner } from './components/Status'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { VersionLine } from './components/Versions'
@@ -36,6 +38,7 @@ import { RefreshSession, SessionContext, useSource, useUrlState, type View } fro
 import { areaLabel } from './model/areas'
 import { plural, titleOf } from './model/describe'
 import { factoryVersions } from './model/versions'
+import { hasPage } from './model/lifecycle'
 import { activeCrewTasks } from './model/crews'
 import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker, workingNow } from './model/story'
 
@@ -89,18 +92,20 @@ export default function App() {
       ),
     [projects.data],
   )
-  const namespace = url.project ?? sortedProjects[0]?.metadata.namespace
+  const shell = url.shell
+  // An object page of a kind that has one watches the object's namespace.
+  const objectKind = shell && url.kind && url.name && hasPage(url.kind) ? url.kind : undefined
+  const namespace = (objectKind ? url.ns : undefined) ?? url.project ?? sortedProjects[0]?.metadata.namespace
   const versions = useMemo(
     () => factoryVersions(sortedProjects, __C4_UI_VERSION__, `${GROUP}/${VERSION}`),
     [sortedProjects],
   )
-  const shell = url.shell
   // The Needs you step opens the shell on Needs you when it has items.
   const area = url.area ?? 'story'
   const objectPage = shell && Boolean(url.kind && url.name)
   // In the shell, Story and Briefs show one project; Work and Factory every one.
   const factoryView = shell ? !objectPage && (area === 'work' || area === 'factory') : url.view === 'factory'
-  const storyView = shell ? !objectPage && (area === 'story' || area === 'briefs') : !factoryView
+  const storyView = shell ? (objectPage ? Boolean(objectKind) : area === 'story' || area === 'briefs') : !factoryView
 
   // Only the view on screen watches the cluster.
   const storySource = useMemo<Source<StoryData>>(() => {
@@ -232,6 +237,7 @@ export default function App() {
         canCreate={Boolean(data.project)}
         writer={writer}
         agents={data.agents}
+        pageHref={shell ? (name) => pageHref(namespace, 'Brief', name)! : undefined}
       />
     ) : null
   const storyBody = noProjects ? (
@@ -364,6 +370,11 @@ export default function App() {
           />
         ),
       }}
+      objectPage={
+        objectKind && url.name ? (
+          <ObjectPage kind={objectKind} name={url.name} data={data} loaded={story.connection.loaded} writer={writer} />
+        ) : undefined
+      }
     />
   ) : (
     <div className="app">

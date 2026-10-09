@@ -11,6 +11,7 @@ import { useNow } from '../lib/hooks'
 import { timeAgo } from '../model/describe'
 import { UsageLine } from './bits'
 import { ExternalLinkIcon } from './icons'
+import { plannerLimit } from './objects/rows'
 import { NewBrief } from './briefs/NewBrief'
 import { BriefDetails } from './briefs/BriefDetails'
 import { FormError, PromptForm } from './briefs/PromptForm'
@@ -23,8 +24,11 @@ export function Briefs({
   canCreate,
   writer,
   agents = [],
+  pageHref,
 }: {
   briefs: Brief[]
+  /** Each Brief's object page, in the new shell; the old layout links none. */
+  pageHref?: (name: string) => string
   namespace: string
   /** The namespace's Agents, for each planner's sessionTokenLimit. */
   agents?: Agent[]
@@ -56,7 +60,8 @@ export function Briefs({
             brief={b}
             namespace={namespace}
             writer={writer}
-            plannerLimit={agents.find((a) => a.metadata.name === b.spec.agents?.planner?.name)?.spec.sessionTokenLimit}
+            plannerLimit={plannerLimit(agents, b)}
+            href={pageHref?.(b.metadata.name)}
           />
         ))}
       </div>
@@ -69,11 +74,13 @@ function BriefCard({
   namespace,
   writer,
   plannerLimit,
+  href,
 }: {
   brief: Brief
   namespace: string
   writer: BriefWriter
   plannerLimit?: number
+  href?: string
 }) {
   const now = useNow()
   const view = describeBrief(brief, plannerLimit)
@@ -82,7 +89,7 @@ function BriefCard({
     <article className={`panel brief brief-${view.phase.tone}`} aria-label={`Brief ${view.name}`}>
       <div className="panel-head">
         <div className="brief-title">
-          <h3 className="panel-title small-title mono">{view.name}</h3>
+          <h3 className="panel-title small-title mono">{href ? <a href={href}>{view.name}</a> : view.name}</h3>
           <span className="brief-meta">
             {view.round ? `Round ${view.round}` : 'No round yet'}
             {view.usage ? (
@@ -117,6 +124,25 @@ function BriefCard({
         {view.idea}
       </p>
       {pauseError ? <FormError error={pauseError} /> : null}
+      <BriefBody view={view} namespace={namespace} writer={writer} now={now} />
+    </article>
+  )
+}
+
+/** What a Brief's card and page show below its head: notes, what needs you, its details and the prompt box. */
+export function BriefBody({
+  view,
+  namespace,
+  writer,
+  now,
+}: {
+  view: BriefView
+  namespace: string
+  writer: BriefWriter
+  now: number
+}) {
+  return (
+    <>
       {view.pausedNote ? (
         <div className="brief-note brief-note-waiting brief-paused" role="status">
           {view.pausedNote}
@@ -133,12 +159,12 @@ function BriefCard({
       <BriefDetails view={view} now={now} />
 
       <PromptForm namespace={namespace} name={view.name} writer={writer} needsInput={Boolean(view.needsInput)} />
-    </article>
+    </>
   )
 }
 
 /** Pauses a running Brief or resumes a paused one by patching spec.paused; the card shows the API's refusal. */
-function PauseButton({
+export function PauseButton({
   namespace,
   view,
   writer,
