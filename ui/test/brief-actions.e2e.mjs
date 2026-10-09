@@ -130,8 +130,15 @@ describe('the Brief page’s actions', () => {
       github: { repository: 'webshop-co/storefront', tokenSecretRef: { name: 'github-token' } },
       tagPrefix: 'web-',
     }
+    // Each releases write tests the resourceVersion of the Brief it was worked out from.
+    const tested = (ops) => {
+      assert.equal(ops[0].op, 'test')
+      assert.equal(ops[0].path, '/metadata/resourceVersion')
+      assert.match(ops[0].value, /^\d+$/)
+      return ops.slice(1)
+    }
     let ops = await patchOf(() => add.getByRole('button', { name: 'Publish its releases' }).click())
-    assert.deepEqual(ops, [{ op: 'add', path: '/spec/releases', value: [entry] }])
+    assert.deepEqual(tested(ops), [{ op: 'add', path: '/spec/releases', value: [entry] }])
     const remove = settings().getByRole('button', { name: 'Stop publishing storefront' })
     await remove.waitFor({ timeout: 5000 })
     if (process.env.C4_UI_SHOTS) {
@@ -139,7 +146,7 @@ describe('the Brief page’s actions', () => {
       await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-brief-settings.png'), fullPage: true })
     }
     ops = await patchOf(() => remove.click())
-    assert.deepEqual(ops, [{ op: 'add', path: '/spec/releases', value: [] }])
+    assert.deepEqual(tested(ops), [{ op: 'add', path: '/spec/releases', value: [] }])
     await remove.waitFor({ state: 'detached', timeout: 5000 })
   })
 

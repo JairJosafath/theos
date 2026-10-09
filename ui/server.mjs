@@ -360,6 +360,56 @@ const BRIEF_SETTINGS = {
   '/spec/parallel': 'integer',
   '/spec/releases': 'array',
 }
+const RELEASES_PATH = '/spec/releases'
+const RV_PATH = '/metadata/resourceVersion'
+
+/**
+ * A Brief's settings: adds of BRIEF_SETTINGS, after a test of the Brief's
+ * resourceVersion, which a releases add needs. The whole list is sent, so
+ * without it a write worked out from a stale Brief would silently drop what
+ * someone else added or removed meanwhile.
+ */
+function setsBriefSettings(body) {
+  if (!Array.isArray(body)) return undefined
+  const [first, ...rest] = body
+  const tested =
+    isObject(first) &&
+    Object.keys(first).sort().join() === 'op,path,value' &&
+    first.op === 'test' &&
+    first.path === RV_PATH &&
+    typeof first.value === 'string' &&
+    first.value !== ''
+  const adds = addsFields(BRIEF_SETTINGS)(tested ? rest : body)
+  if (!adds) return undefined
+  if (!tested && adds.some((op) => op.path === RELEASES_PATH)) return undefined
+  return body
+}
+
+/**
+ * Sets a Brief's settings. With a test of its resourceVersion, a Brief that
+ * has changed since is refused as a Conflict saying so; the test goes
+ * upstream too, so a change landing between the read and the write is
+ * refused by the API server.
+ */
+async function setBriefSettings(args) {
+  const { res, upstream, apiPath, namespace, name, body } = args
+  if (body[0].op === 'test') {
+    const current = await requestJson(upstream, apiPath)
+    if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
+    const now = current.body?.metadata?.resourceVersion
+    if (now !== body[0].value) {
+      return sendStatus(
+        res,
+        409,
+        'Conflict',
+        `Brief ${namespace}/${name} changed since this page showed it, so nothing was saved: ` +
+          'check its settings as they are now and make the change again',
+      )
+    }
+  }
+  return forwardPatch(args)
+}
+
 const ACTIONS = [
   {
     what: 'create a Brief',
@@ -390,11 +440,12 @@ const ACTIONS = [
     check: addsFields({ [PAUSED_PATH]: 'boolean' }),
   },
   {
-    what: `set a Brief's ${Object.keys(BRIEF_SETTINGS).join(', ')}`,
+    what: `set a Brief's ${Object.keys(BRIEF_SETTINGS).join(', ')} (${RELEASES_PATH} after a test of ${RV_PATH})`,
     method: 'PATCH',
     path: resourcePath('briefs', true),
     type: JSON_PATCH,
-    check: addsFields(BRIEF_SETTINGS),
+    check: setsBriefSettings,
+    write: setBriefSettings,
   },
   {
     what: "set a Crew's /spec/paused, /spec/parallel, /spec/tagReleases, /spec/prepareReleases, /spec/publishReleases (or remove it)",
