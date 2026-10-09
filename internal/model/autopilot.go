@@ -327,7 +327,7 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 			fmt.Sprintf("Task `%s` has waited %s for Standard change #%d.", t.Name, waited, t.StandardChange),
 			"Review the change, or close it.", "Blocked until the Standard change is merged or closed.")
 	case t.Stage == StageChecks:
-		return &Healing{AttentionTask, t.Name, "The operator fails it after 30 minutes without a CI result.",
+		return &Healing{AttentionTask, t.Name, ChecksBound(t.Message),
 			time.Time{}}, nil
 	case t.Stage == StageSlot || t.Reason == reasonWaitingForSlot:
 		return window("A slot frees, longest waiter first.", t.Since.Add(SlotWindow),

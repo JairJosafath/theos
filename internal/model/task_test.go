@@ -62,8 +62,6 @@ func TestNextTaskStep(t *testing.T) {
 			want: ActionWait, message: "Waiting for checks"},
 		{name: "waits for checks to start", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3},
 			want: ActionWait},
-		{name: "gives up on checks that never report", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
-			Checks: "pending", InPhase: 31 * time.Minute}, want: ActionFail, message: "No CI result after 30m0s"},
 		{name: "green checks start the review", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
 			Checks: "success"}, want: ActionStartReview},
 		{name: "red checks send it back", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
@@ -155,6 +153,104 @@ func TestNextTaskStep(t *testing.T) {
 	}
 }
 
+// A Task in Checking waits while its run is queued on an online runner or
+// running, and fails, reason NoCIResult, only when CI won't report (#758).
+func TestNextTaskStepChecksWait(t *testing.T) {
+	since := time.Date(2026, 10, 9, 1, 13, 0, 0, time.UTC)
+	started := time.Date(2026, 10, 9, 1, 40, 0, 0, time.UTC)
+	queued := CIRun{Commit: "abcdef123", State: CIRunQueued, URL: "http://gitea/runs/7"}
+	noRunner := queued
+	noRunner.NoRunnerOnline = true
+	running := func(d time.Duration) CIRun {
+		return CIRun{Commit: "abcdef123", State: CIRunRunning, URL: "http://gitea/runs/7", Started: started, Running: d}
+	}
+	tests := []struct {
+		name    string
+		ci      CIRun
+		in      time.Duration
+		want    TaskAction
+		message string
+	}{
+		{"queued 45 minutes with a runner online waits", queued, 45 * time.Minute, ActionWait,
+			"Waiting for checks: queued behind other jobs since 01:13Z"},
+		{"queued with a runner unknown waits", CIRun{State: CIRunQueued}, 45 * time.Minute, ActionWait,
+			"queued behind other jobs"},
+		{"queued past 6 hours fails", queued, 6*time.Hour + time.Minute, ActionFail,
+			"CI run http://gitea/runs/7 has been queued for 6h0m0s"},
+		{"queued with no runner online waits 30 minutes", noRunner, 20 * time.Minute, ActionWait,
+			"Waiting for checks: queued with no runner online since 01:13Z"},
+		{"queued with no runner online after 30 minutes fails", noRunner, 31 * time.Minute, ActionFail,
+			"CI run http://gitea/runs/7 is queued and no runner is online; start a runner for the repository"},
+		{"no run waits 30 minutes", CIRun{Commit: "abcdef123"}, 20 * time.Minute, ActionWait,
+			"no CI run has started yet"},
+		{"no run after 30 minutes fails", CIRun{Commit: "abcdef123"}, 31 * time.Minute, ActionFail,
+			"No CI run started for abcdef1 after 30m0s; check that the repository's workflows run on pull requests"},
+		{"running 2 hours waits", running(2 * time.Hour), 3 * time.Hour, ActionWait,
+			"Waiting for checks: running since 01:40Z"},
+		{"running past 3h15m fails", running(3*time.Hour + 16*time.Minute), 4 * time.Hour, ActionFail,
+			"CI run http://gitea/runs/7 has run for 3h16m0s, past 3h15m0s"},
+		{"running with no start counts from Checking", CIRun{State: CIRunRunning}, 3*time.Hour + 16*time.Minute,
+			ActionFail, "past 3h15m0s"},
+		{"ended runs with no result fail after 30 minutes", CIRun{Commit: "abcdef123", State: CIRunCompleted},
+			31 * time.Minute, ActionFail, "No CI result for abcdef1 after 30m0s, though its CI runs ended"},
+		{"unknown runs wait", CIRun{State: CIRunUnknown}, 2 * time.Hour, ActionWait,
+			"doesn't say whether a CI run is queued"},
+		{"unknown runs fail past 6 hours", CIRun{Commit: "abcdef123", State: CIRunUnknown},
+			6*time.Hour + time.Minute, ActionFail, "No CI result for abcdef1 after 6h0m0s"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextTaskStep(TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "pending",
+				CIRun: tt.ci, InPhase: tt.in, CheckingSince: since})
+			if got.Action != tt.want || !strings.Contains(got.Message, tt.message) {
+				t.Fatalf("NextTaskStep() = %+v, want %s with %q", got, tt.want, tt.message)
+			}
+			if failed := got.Action == ActionFail; failed != (got.Reason == ReasonNoCIResult) {
+				t.Errorf("Reason = %q, want %s on each failure only", got.Reason, ReasonNoCIResult)
+			}
+		})
+	}
+}
+
+func TestCommitRunState(t *testing.T) {
+	early, late := time.Unix(1000, 0), time.Unix(2000, 0)
+	tests := []struct {
+		name  string
+		runs  []WorkflowRun
+		state string
+		url   string
+	}{
+		{"none", nil, CIRunNone, ""},
+		{"all ended", []WorkflowRun{{Status: "completed", URL: "a"}}, CIRunCompleted, "a"},
+		{"one waits", []WorkflowRun{{Status: "completed", URL: "a"}, {Status: "waiting", URL: "b"},
+			{Status: "queued", URL: "c"}}, CIRunQueued, "b"},
+		{"running outweighs queued, the longest first", []WorkflowRun{{Status: "queued", URL: "a"},
+			{Status: "in_progress", Started: late, URL: "b"}, {Status: "in_progress", Started: early, URL: "c"}},
+			CIRunRunning, "c"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, run := CommitRunState(tt.runs)
+			if state != tt.state || run.URL != tt.url {
+				t.Errorf("CommitRunState() = %q, %q; want %q, %q", state, run.URL, tt.state, tt.url)
+			}
+		})
+	}
+}
+
+func TestChecksBound(t *testing.T) {
+	for message, want := range map[string]string{
+		"Waiting for checks: no CI run has started yet":                 "if no CI run starts within 30 minutes",
+		"Waiting for checks: queued behind other jobs since 01:13Z":     "still queued 6 hours into its checks",
+		"Waiting for checks: queued with no runner online since 01:13Z": "30 minutes into its checks unless a runner comes online",
+		"Waiting for checks: running since 01:40Z":                      "still running 3 hours 15 minutes after it started",
+	} {
+		if got := ChecksBound(message); !strings.Contains(got, want) {
+			t.Errorf("ChecksBound(%q) = %q, want it to contain %q", message, got, want)
+		}
+	}
+}
+
 // A round turned back for scope twice in a row stops the Task blocked, and a
 // Task whose Standard change stopped blocked stops blocked too (#578).
 func TestNextTaskStepScope(t *testing.T) {
@@ -234,7 +330,7 @@ func TestNextTaskStepPlan(t *testing.T) {
 		{name: "an unavailable planner waits", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
 			Run: done(RunResult{Unavailable: true, Error: "usage limit"})}, want: ActionAgentUnavailable},
 		{name: "waits for the verdict", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
-			InPhase: 2 * ChecksTimeout}, want: ActionWait, message: "Waiting for the Brief to check the plan"},
+			InPhase: 2 * QueuedChecksLimit}, want: ActionWait, message: "Waiting for the Brief to check the plan"},
 		{name: "an accepted plan merges", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
 			PlanChecked: true}, want: ActionPlanAccepted, message: "The Brief accepted the plan"},
 		{name: "a refused plan is a failed round", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,

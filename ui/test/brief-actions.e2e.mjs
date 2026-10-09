@@ -93,10 +93,10 @@ describe('the Brief page’s actions', () => {
     const count = api.writes.length
     await click()
     const write = await nextWrite(count)
-    assert.equal(write.plural, 'briefs')
-    assert.equal(write.name, 'webshop')
+    assert.equal(write.method, 'PATCH')
+    assert.equal(write.path, `/apis/c4.factory.io/v1alpha1/namespaces/${namespace}/briefs/webshop`)
     assert.equal(write.contentType, 'application/json-patch+json')
-    return write.ops
+    return write.body
   }
 
   it('sets the autopilot mode, and shows the new one pressed', async () => {

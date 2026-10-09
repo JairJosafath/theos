@@ -14,7 +14,8 @@
 #   hack/gitea-local.sh port       the port this checkout's Gitea listens on
 #
 # It runs the same Gitea version as config/gitea, with SQLite under .gitea-local/
-# (gitignored), on 127.0.0.1 only, with Actions, mail, SSH and LFS off. The first
+# (gitignored), on 127.0.0.1 only, with mail, SSH and LFS off. Actions is on with
+# no runner, so a pushed workflow makes a run that stays queued. The first
 # start picks a free port near one derived from the checkout's path, so worktrees
 # don't collide, and keeps it in app.ini.
 #
@@ -127,7 +128,7 @@ ENABLED = false
 ISSUE_INDEXER_TYPE = db
 
 [actions]
-ENABLED = false
+ENABLED = true
 
 [mailer]
 ENABLED = false
@@ -181,9 +182,23 @@ credentials_current() {
   [[ -f $CREDENTIALS ]] && [[ $(sed -n 's/^C4_GITEA_TOKEN_SCOPES=//p' "$CREDENTIALS") == "$TOKEN_SCOPES" ]]
 }
 
+# enable_actions: turns Actions on in an app.ini written before it was on, and
+# stops a Gitea that runs with it off so start runs it again.
+enable_actions() {
+  local section
+  [[ -f $CONFIG ]] || return 0
+  # Read whole, not piped into grep -q (see create_admin).
+  section=$(sed -n '/^\[actions\]/,/^\[/p' "$CONFIG")
+  grep -qx 'ENABLED = false' <<<"$section" || return 0
+  sed -i '/^\[actions\]/,/^\[/ s/^ENABLED = false$/ENABLED = true/' "$CONFIG"
+  log "Turned Actions on in ${CONFIG#"$TOP"/}"
+  if running; then stop; fi
+}
+
 start() {
   command -v "$GITEA" >/dev/null || die "no Gitea binary at $GITEA; run make gitea-local"
   mkdir -p "$DIR/log" "$DIR/data"
+  enable_actions
   if [[ -f $CONFIG ]] && running && healthy; then
     credentials_current || create_admin
     log "Gitea already runs at $(url) (pid $(cat "$PIDFILE"))"

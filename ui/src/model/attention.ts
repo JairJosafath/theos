@@ -96,7 +96,7 @@ function newerTask(a: Task, b: Task): boolean {
  * the issue with a retry or a close after the Task failed. A Task with a goal
  * has no issue to answer, and an answer of wait or ask still needs the person.
  */
-function failureAnswered(task: Task, done: number, tasks: Task[], briefs: Brief[]): boolean {
+export function failureAnswered(task: Task, done: number, tasks: Task[], briefs: Brief[]): boolean {
   const issue = issueOf(task)
   if (!issue) return false
   const sameIssue = (t: Task) => {

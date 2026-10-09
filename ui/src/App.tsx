@@ -9,6 +9,7 @@ import { Briefs } from './components/Briefs'
 import { Diagram } from './components/Diagram'
 import { FactoryPage } from './components/Factory'
 import { LogoMark, WarningIcon } from './components/icons'
+import { NeedsArea } from './components/Needs'
 import { FactoryArea, Shell } from './components/Shell'
 import { pageHref } from './components/objects/links'
 import { ObjectPage } from './components/objects/ObjectPage'
@@ -16,6 +17,7 @@ import { ConnectionStatus, ProblemsBanner } from './components/Status'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { VersionLine } from './components/Versions'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
+import { LiveContainerWriter } from './k8s/containers'
 import { HealthSource, type FactoryHealth } from './k8s/health'
 import { fetchSession, signOut, type UiSession } from './k8s/session'
 import { WatchMux } from './k8s/mux'
@@ -40,6 +42,7 @@ import { plural, titleOf } from './model/describe'
 import { factoryVersions } from './model/versions'
 import { hasPage } from './model/lifecycle'
 import { activeCrewTasks } from './model/crews'
+import { needs } from './model/needs'
 import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker, workingNow } from './model/story'
 
 /**
@@ -47,8 +50,10 @@ import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForP
  * All watches of the page share connections through one WatchMux.
  */
 const API: Api = { baseUrl: 'k8s', mux: new WatchMux({ url: 'k8s-watch' }) }
-/** The page's only writes, through the same proxy: create a Brief, add a prompt to one, pause or resume one. */
+/** The Brief writes, through the same proxy: create a Brief, add a prompt to one, pause or resume one. */
 const LIVE_WRITER = new LiveBriefWriter(API.baseUrl)
+/** With UI actions on: a Container's scaffold retry and a Task from a goal. */
+const CONTAINER_WRITER = new LiveContainerWriter(API.baseUrl)
 
 /** A source with nothing in it: for a view that is not shown, or no project yet. */
 class Idle<T> implements Source<T> {
@@ -100,11 +105,13 @@ export default function App() {
     () => factoryVersions(sortedProjects, __C4_UI_VERSION__, `${GROUP}/${VERSION}`),
     [sortedProjects],
   )
-  // The Needs you step opens the shell on Needs you when it has items.
-  const area = url.area ?? 'story'
+  // Without an area, the shell opens on Needs you while it loads, then stays
+  // there if anything waits on a person, else goes to Story (the effect below).
+  const area = url.area ?? 'needs'
   const objectPage = shell && Boolean(url.kind && url.name)
-  // In the shell, Story and Briefs show one project; Work and Factory every one.
+  // In the shell, Story and Briefs show one project; Needs you, Work and Factory every one.
   const factoryView = shell ? !objectPage && (area === 'work' || area === 'factory') : url.view === 'factory'
+  const needsView = shell && !objectPage && area === 'needs'
   const storyView = shell ? (objectPage ? Boolean(objectKind) : area === 'story' || area === 'briefs') : !factoryView
 
   // Only the view on screen watches the cluster.
@@ -114,10 +121,10 @@ export default function App() {
     return demoModule ? new demoModule.DemoStorySource() : NO_STORY
   }, [namespace, demo, demoModule, storyView])
   const factorySource = useMemo<Source<FactoryData>>(() => {
-    if (!factoryView) return NO_FACTORY
+    if (!factoryView && !needsView) return NO_FACTORY
     if (!demo) return new LiveFactorySource(API)
     return demoModule ? new demoModule.DemoFactorySource() : NO_FACTORY
-  }, [demo, demoModule, factoryView])
+  }, [demo, demoModule, factoryView, needsView])
   const healthSource = useMemo<Source<FactoryHealth | undefined>>(() => {
     if (!factoryView) return NO_HEALTH
     if (!demo) return new HealthSource()
@@ -128,6 +135,17 @@ export default function App() {
   const health = useSource(healthSource)
   const story = useSource(storySource)
   const data = story.data
+  const needItems = useMemo(() => needs(factory.data), [factory.data])
+  // Every list, Briefs and Crews included, so a late one can't hide its items;
+  // a factory that can't be read goes to Story rather than waiting on it.
+  const factoryRead = factory.connection.settled ?? factory.connection.loaded
+  const factoryBroken = factory.connection.problems.length > 0 || Boolean(demoProblem)
+  const pickArea = shell && !url.area && !objectPage && ((factory.connection.loaded && factoryRead) || factoryBroken)
+  const firstArea = needItems.length > 0 ? 'needs' : 'story'
+  useEffect(() => {
+    // Once, so the area doesn't change under the person as items come and go.
+    if (pickArea) setUrl({ area: firstArea }, true)
+  }, [pickArea, firstArea, setUrl])
   // Demo mode writes into its own fixture; live mode through the proxy.
   const writer: BriefWriter =
     demoModule && storySource instanceof demoModule.DemoStorySource ? storySource : LIVE_WRITER
@@ -187,13 +205,15 @@ export default function App() {
   useEffect(() => {
     document.title = pageTitle
   }, [pageTitle])
-  const shownConnection = factoryView
-    ? demo
-      ? factory.connection
-      : mergeConnections(factory.connection, health.connection)
-    : demo || !storyView
-      ? projects.connection
-      : mergeConnections(projects.connection, story.connection)
+  const shownConnection = needsView
+    ? factory.connection
+    : factoryView
+      ? demo
+        ? factory.connection
+        : mergeConnections(factory.connection, health.connection)
+      : demo || !storyView
+        ? projects.connection
+        : mergeConnections(projects.connection, story.connection)
   const connection = demoProblem
     ? { ...shownConnection, problems: [...shownConnection.problems, demoProblem] }
     : shownConnection
@@ -343,6 +363,7 @@ export default function App() {
       healthLoaded={health.connection.loaded}
       selectedTask={url.task}
       onSelectTask={selectTask}
+      pageHref={shell ? pageHref : undefined}
     />
   )
 
@@ -358,6 +379,14 @@ export default function App() {
       picker={picker}
       banners={banners}
       areas={{
+        needs: (
+          <NeedsArea
+            items={needItems}
+            projects={factory.data.projects}
+            loaded={factory.connection.loaded}
+            setUrl={setUrl}
+          />
+        ),
         briefs: noProjects ? <EmptyProjects /> : (briefs ?? <div className="placeholder">Loading the Briefs…</div>),
         story: storyBody,
         work: factoryPage,
@@ -372,7 +401,14 @@ export default function App() {
       }}
       objectPage={
         objectKind && url.name ? (
-          <ObjectPage kind={objectKind} name={url.name} data={data} loaded={story.connection.loaded} writer={writer} />
+          <ObjectPage
+            kind={objectKind}
+            name={url.name}
+            data={data}
+            loaded={story.connection.loaded}
+            writer={writer}
+            containerWriter={CONTAINER_WRITER}
+          />
         ) : undefined
       }
     />

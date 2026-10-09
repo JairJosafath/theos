@@ -55,6 +55,8 @@ export interface Connection {
   phase: 'demo' | 'connecting' | 'live' | 'reconnecting'
   /** True once every required list has loaded at least once. */
   loaded: boolean
+  /** True once every list, the optional ones too, has loaded or failed; unset where that is `loaded`. */
+  settled?: boolean
   problems: Problem[]
   /** When the data last changed, in ms since the epoch; unset until it does, and for demo data. */
   updatedAt?: number
@@ -122,7 +124,8 @@ export function combineConnection(
   let phase: Connection['phase'] = 'live'
   if (!loaded) phase = 'connecting'
   else if (required.some((s) => s.state.phase !== 'live' || s.state.error)) phase = 'reconnecting'
-  return { phase, loaded, problems }
+  const settled = states.every((s) => s.state.loaded || Boolean(s.state.error))
+  return { phase, loaded, settled, problems }
 }
 
 type Watched = { what: string; watcher: ResourceWatcher<K8sObject>; optional?: boolean }

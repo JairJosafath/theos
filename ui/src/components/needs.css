@@ -1,0 +1,95 @@
+/* The shell's Needs you area (Needs.tsx). */
+
+.needs-project {
+  margin-top: 18px;
+}
+
+.needs-project-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.needs-project-title code {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.needs-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.need {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.need-head {
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.need-kind {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.need-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.need-why {
+  margin-top: 6px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.need-reason {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--warn);
+}
+
+.need-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.need-actions a {
+  color: var(--link);
+}
+
+.need-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.need-command code {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}

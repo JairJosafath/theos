@@ -326,12 +326,49 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 				facts.ChecksLog = log
 			}
 		}
+		if checks.State != gitprovider.CheckSuccess && checks.State != gitprovider.CheckFailure &&
+			checks.State != gitprovider.CheckError {
+			facts.CIRun = r.ciRun(gitCtx, provider, provider.Repository(container.Name), status.Commit)
+		}
+		if status.PhaseChangedAt != nil {
+			facts.CheckingSince = status.PhaseChangedAt.Time
+		}
 	}
 
 	if err := r.pullFacts(ctx, container, status, &facts); err != nil {
 		return facts, err
 	}
 	return facts, nil
+}
+
+// ciRun reads the state of the CI runs at commit, whose checks have no result
+// yet, and whether a runner is online while one is queued. Runs that can't be
+// read are unknown, which waits up to model.QueuedChecksLimit.
+func (r *TaskReconciler) ciRun(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	commit string) model.CIRun {
+	ci := model.CIRun{Commit: commit}
+	runs, err := provider.CommitRuns(ctx, repo, commit)
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read the CI runs of the Task's commit", "commit", commit, "error", err.Error())
+		ci.State = model.CIRunUnknown
+		return ci
+	}
+	seen := make([]model.WorkflowRun, 0, len(runs))
+	for _, run := range runs {
+		seen = append(seen, model.WorkflowRun{Status: run.Status, Started: run.Started, URL: run.URL})
+	}
+	state, run := model.CommitRunState(seen)
+	ci.State, ci.URL, ci.Started = state, run.URL, run.Started
+	switch state {
+	case model.CIRunRunning:
+		if !run.Started.IsZero() {
+			ci.Running = r.now().Sub(run.Started)
+		}
+	case model.CIRunQueued:
+		online, known := provider.RunnersOnline(ctx)
+		ci.NoRunnerOnline = known && online == 0
+	}
+	return ci
 }
 
 // noFreeSlot reports whether the Task must wait for an agent slot: all are taken,

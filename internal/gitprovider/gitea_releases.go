@@ -198,57 +198,142 @@ type WorkflowRun struct {
 	ID int64
 	// Workflow is the workflow file it runs, such as release.yaml.
 	Workflow string
+	// Event is what started it: push, pull_request and the like.
+	Event string
 	// Status is queued, waiting, in_progress or completed.
 	Status string
 	// Conclusion is how a completed run ended: success, failure, cancelled or
 	// skipped.
 	Conclusion string
+	// Started is when a runner started it, zero while it waits for one.
+	Started time.Time
 	// URL is the run's page.
 	URL string
 }
 
-// tagRunPages bounds the runs TagRuns reads: a tag's runs are among the newest
-// at its commit.
-const tagRunPages = 3
+// runPages bounds the runs TagRuns and CommitRuns read: a commit's runs are
+// among the newest at it.
+const runPages = 3
 
 // TagRuns returns the CI workflow runs a push of tag at commit started, newest
 // first: the push runs at commit whose workflow ran at refs/tags/<tag>.
 func (g *gitea) TagRuns(ctx context.Context, repo Repository, tag, commit string) ([]WorkflowRun, error) {
-	suffix := "@refs/tags/" + tag
+	runs, err := g.listRuns(ctx, repo, commit, url.Values{"event": {"push"}})
+	if err != nil {
+		return nil, err
+	}
 	var out []WorkflowRun
-	for page := 1; page <= tagRunPages; page++ {
-		query := url.Values{"event": {"push"}, "head_sha": {commit}, "limit": {strconv.Itoa(issuePageSize)},
-			"page": {strconv.Itoa(page)}}
+	for _, r := range runs {
+		if workflow, ok := strings.CutSuffix(r.path, "@refs/tags/"+tag); ok {
+			r.Workflow = workflow
+			out = append(out, r.WorkflowRun)
+		}
+	}
+	return out, nil
+}
+
+// CommitRuns returns the CI workflow runs at commit, of any event, newest
+// first.
+func (g *gitea) CommitRuns(ctx context.Context, repo Repository, commit string) ([]WorkflowRun, error) {
+	runs, err := g.listRuns(ctx, repo, commit, url.Values{})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]WorkflowRun, 0, len(runs))
+	for _, r := range runs {
+		out = append(out, r.WorkflowRun)
+	}
+	return out, nil
+}
+
+// giteaRun is a workflow run with the path Gitea gives its workflow, such as
+// check.yaml@refs/pull/3/head.
+type giteaRun struct {
+	WorkflowRun
+	path string
+}
+
+// listRuns reads the runs at commit, newest first, up to runPages pages,
+// narrowed by query.
+func (g *gitea) listRuns(ctx context.Context, repo Repository, commit string, query url.Values) ([]giteaRun, error) {
+	var out []giteaRun
+	for page := 1; page <= runPages; page++ {
+		query.Set("head_sha", commit)
+		query.Set("limit", strconv.Itoa(issuePageSize))
+		query.Set("page", strconv.Itoa(page))
 		status, data, err := g.do(ctx, http.MethodGet, "/api/v1/repos/"+repoPath(repo)+"/actions/runs?"+query.Encode(), nil)
 		if err != nil {
 			return nil, err
 		}
 		var runs struct {
 			WorkflowRuns []struct {
-				ID         int64  `json:"id"`
-				Path       string `json:"path"`
-				HeadSHA    string `json:"head_sha"`
-				Status     string `json:"status"`
-				Conclusion string `json:"conclusion"`
-				HTMLURL    string `json:"html_url"`
+				ID         int64     `json:"id"`
+				Path       string    `json:"path"`
+				Event      string    `json:"event"`
+				HeadSHA    string    `json:"head_sha"`
+				Status     string    `json:"status"`
+				Conclusion string    `json:"conclusion"`
+				StartedAt  time.Time `json:"started_at"`
+				HTMLURL    string    `json:"html_url"`
 			} `json:"workflow_runs"`
 		}
 		if status != http.StatusOK || json.Unmarshal(data, &runs) != nil {
 			return nil, fmt.Errorf("gitea: listing the runs of %s failed (HTTP %d): %s", repoPath(repo), status, apiMessage(data))
 		}
 		for _, r := range runs.WorkflowRuns {
-			workflow, ok := strings.CutSuffix(r.Path, suffix)
-			if !ok || r.HeadSHA != commit {
+			if r.HeadSHA != commit {
 				continue
 			}
-			out = append(out, WorkflowRun{ID: r.ID, Workflow: workflow, Status: r.Status, Conclusion: r.Conclusion,
-				URL: r.HTMLURL})
+			workflow, _, _ := strings.Cut(r.Path, "@")
+			started := r.StartedAt
+			// Gitea writes a run no runner has started as starting at the epoch.
+			if started.Unix() <= 0 {
+				started = time.Time{}
+			}
+			out = append(out, giteaRun{path: r.Path, WorkflowRun: WorkflowRun{ID: r.ID, Workflow: workflow,
+				Event: r.Event, Status: r.Status, Conclusion: r.Conclusion, Started: started, URL: r.HTMLURL}})
 		}
 		if len(runs.WorkflowRuns) < issuePageSize {
 			break
 		}
 	}
 	return out, nil
+}
+
+// runnerPages bounds the runners RunnersOnline reads.
+const runnerPages = 10
+
+// RunnersOnline returns how many of the instance's runners, global,
+// organisation and repository ones, are online, idle or busy. known is false
+// when Gitea doesn't say: an older Gitea without the call, a token that isn't
+// an admin's, or a failed call.
+func (g *gitea) RunnersOnline(ctx context.Context) (online int, known bool) {
+	for page := 1; page <= runnerPages; page++ {
+		query := url.Values{"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
+		status, data, err := g.do(ctx, http.MethodGet, "/api/v1/admin/actions/runners?"+query.Encode(), nil)
+		if err != nil || status != http.StatusOK {
+			return 0, false
+		}
+		var runners struct {
+			Runners []struct {
+				Status string `json:"status"`
+				Busy   bool   `json:"busy"`
+			} `json:"runners"`
+		}
+		if json.Unmarshal(data, &runners) != nil {
+			return 0, false
+		}
+		for _, r := range runners.Runners {
+			switch {
+			case r.Busy, r.Status == "online", r.Status == "idle", r.Status == "active":
+				online++
+			}
+		}
+		if len(runners.Runners) < issuePageSize {
+			break
+		}
+	}
+	return online, true
 }
 
 // RerunFailedJobs runs the failed jobs of workflow run id again, as a new

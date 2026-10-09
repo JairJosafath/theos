@@ -1,7 +1,7 @@
 // Plain-language wording for newcomers: phases, conditions, times and names.
 // Nothing here assumes the reader knows Kubernetes.
 
-import type { Condition, ContainerPhase, ContainerType, CrewPhase, SessionPhase } from '../k8s/types'
+import type { Condition, ContainerPhase, ContainerType, CrewPhase, SessionPhase, TaskPhase } from '../k8s/types'
 import type { DiagramNode } from './story'
 
 /** displayName first; fall back to the stable metadata.name. */
@@ -71,6 +71,28 @@ export function describeCrewPhase(phase: CrewPhase | undefined): PhaseInfo {
       }
     default:
       return { label: 'No status yet', tone: 'unknown', explanation: 'The factory has not reported on this crew yet.' }
+  }
+}
+
+/** The Task phase as a badge label, colour tone and one-line explanation. */
+export function describeTaskPhase(phase: TaskPhase | undefined): PhaseInfo {
+  switch (phase) {
+    case 'Pending':
+      return { label: 'Queued', tone: 'waiting', explanation: 'Waits for its Container, an earlier Task or a slot.' }
+    case 'Implementing':
+      return { label: 'Implementing', tone: 'progress', explanation: 'The agent writes the change in a sandbox.' }
+    case 'Checking':
+      return { label: 'Checking', tone: 'progress', explanation: 'CI runs on the pull request.' }
+    case 'Reviewing':
+      return { label: 'Reviewing', tone: 'progress', explanation: 'An agent reviews the pull request.' }
+    case 'Merged':
+      return { label: 'Merged', tone: 'ok', explanation: 'The pull request is merged.' }
+    case 'Blocked':
+      return { label: 'Blocked', tone: 'waiting', explanation: 'Waits for the Standard change it filed to merge.' }
+    case 'Failed':
+      return { label: 'Failed', tone: 'error', explanation: 'It stopped without merging; its conditions say why.' }
+    default:
+      return { label: 'No status yet', tone: 'unknown', explanation: 'The factory has not reported on this Task yet.' }
   }
 }
 

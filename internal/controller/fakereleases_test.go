@@ -21,6 +21,10 @@ type fakeReleaseState struct {
 	closed map[string][]string                  // owner/name, closed milestones' titles
 	tags   map[string]string                    // owner/name@tag, the commit it names
 	runs   map[string][]gitprovider.WorkflowRun // owner/name@tag@commit, newest first
+	// commitRuns is the runs at a commit, by owner/name@commit, and runners
+	// how many runners are online, unknown while nil.
+	commitRuns map[string][]gitprovider.WorkflowRun
+	runners    *int
 	// reruns counts the RerunFailedJobs calls, by owner/name#run ID, and
 	// refused is the runs whose re-run the host refuses.
 	reruns  map[string]int
@@ -52,7 +56,8 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			runs: map[string][]gitprovider.WorkflowRun{}, published: map[string]*gitprovider.Release{},
 			assets: map[string][]byte{}, created: map[string]gitprovider.Milestone{},
 			goMods: map[string]string{}, uploads: map[string]int{}, moduleFailures: map[string]int{},
-			modulePublishes: map[string]int{}, reruns: map[string]int{}, refused: map[string]bool{}}
+			modulePublishes: map[string]int{}, reruns: map[string]int{}, refused: map[string]bool{},
+			commitRuns: map[string][]gitprovider.WorkflowRun{}}
 	}
 	return g.releases
 }
@@ -170,6 +175,30 @@ func (p *fakeProvider) TagRuns(_ context.Context, repo gitprovider.Repository, t
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	return slices.Clone(p.git.releaseState().runs[repo.Owner+"/"+repo.Name+"@"+tag+"@"+commit]), nil
+}
+
+func (p *fakeProvider) CommitRuns(_ context.Context, repo gitprovider.Repository, commit string) (
+	[]gitprovider.WorkflowRun, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	return slices.Clone(p.git.releaseState().commitRuns[repo.Owner+"/"+repo.Name+"@"+commit]), nil
+}
+
+// RunnersOnline doesn't know until a test sets it.
+func (p *fakeProvider) RunnersOnline(context.Context) (int, bool) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	if n := p.git.releaseState().runners; n != nil {
+		return *n, true
+	}
+	return 0, false
+}
+
+// setCommitRuns sets the CI runs at commit.
+func (g *fakeGit) setCommitRuns(owner, name, commit string, runs ...gitprovider.WorkflowRun) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().commitRuns[owner+"/"+name+"@"+commit] = runs
 }
 
 // RerunFailedJobs queues run id again, as Gitea's new attempt of it does.

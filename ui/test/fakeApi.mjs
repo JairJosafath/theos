@@ -1,13 +1,72 @@
 // A tiny in-memory Kubernetes API for the c4.factory.io kinds, with lists and
 // watches, for the end-to-end test and the screenshots of every view. It
-// answers GETs of collections and of one object, a JSON patch of one object
-// (add and test ops, as the UI server sends them), and the factory health's
-// Pods and Nodes as empty lists; everything else is 404. refuse() makes the
-// next write fail as the API server refuses one.
+// answers GETs of collections, and the factory health's Pods and Nodes as
+// empty lists; a GET of one object; a POST that creates an object
+// (generateName included), and a merge patch or a JSON patch (add and test
+// ops, as the UI server sends them) of one, refusing what a CRD rule of
+// REFUSE would, or what refuse() asks, with the API server's message;
+// everything else is 404.
 
 import http from 'node:http'
 // The UI's own list of kinds, so the fake API serves every one.
 import { RESOURCES } from '../src/k8s/types.ts'
+
+/**
+ * The CRD rules the fake API keeps, as the API server words their refusal:
+ * plural -> object -> message, or undefined when it passes.
+ */
+const REFUSE = {
+  tasks: (obj) =>
+    typeof obj.spec?.goal === 'string' && obj.spec.goal.length < 1
+      ? `Task.c4.factory.io "${obj.metadata.name}" is invalid: spec.goal: Invalid value: "": spec.goal in body should be at least 1 chars long`
+      : undefined,
+}
+
+function status(res, code, reason, message) {
+  res.writeHead(code, { 'content-type': 'application/json' })
+  res.end(JSON.stringify({ kind: 'Status', status: 'Failure', code, reason, message }))
+}
+
+function readJson(req) {
+  return new Promise((resolve) => {
+    let text = ''
+    req.on('data', (chunk) => (text += chunk))
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(text))
+      } catch {
+        resolve(undefined)
+      }
+    })
+  })
+}
+
+/** A JSON merge patch (RFC 7396) of `patch` onto `target`. */
+function mergePatch(target, patch) {
+  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return patch
+  const out = target !== null && typeof target === 'object' && !Array.isArray(target) ? { ...target } : {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) delete out[k]
+    else out[k] = mergePatch(out[k], v)
+  }
+  return out
+}
+
+/** A JSON patch of `ops` (add and test only) onto `target`; undefined when a test fails. */
+function jsonPatch(target, ops) {
+  const next = structuredClone(target)
+  for (const op of ops) {
+    const keys = op.path.split('/').slice(1)
+    const last = keys.pop()
+    const parent = keys.reduce((o, k) => o[k], next)
+    if (op.op === 'test' && parent[last] !== op.value) return undefined
+    if (op.op === 'add') {
+      if (last === '-') parent.push(op.value)
+      else parent[last] = op.value
+    }
+  }
+  return next
+}
 
 /** A fake API whose objects default to `namespace` when they name none. */
 export function fakeApi(namespace) {
@@ -37,15 +96,63 @@ export function fakeApi(namespace) {
     for (const w of watchers.get(plural))
       if (!w.namespace || w.namespace === obj.metadata.namespace) w.res.write(history.at(-1).line)
   }
+  /** Every write it took or refused, in order: method, path, body. */
+  const writes = []
+  let suffix = 0
+  // The message the next write is refused with, set by refuse().
+  let refusal
+  const write = async (req, res, plural, ns, name) => {
+    const body = await readJson(req)
+    const contentType = req.headers['content-type']
+    writes.push({ method: req.method, path: new URL(req.url, 'http://x').pathname, contentType, body })
+    if (refusal) {
+      const message = refusal
+      refusal = undefined
+      return status(res, 422, 'Invalid', message)
+    }
+    let obj
+    if (req.method === 'POST') {
+      if (!body?.metadata) return status(res, 400, 'BadRequest', 'the body is not an object')
+      const generated = body.metadata.generateName
+        ? `${body.metadata.generateName}${String(++suffix).padStart(5, 'x')}`
+        : ''
+      obj = { ...body, metadata: { ...body.metadata, namespace: ns, name: body.metadata.name ?? generated } }
+      delete obj.metadata.generateName
+    } else {
+      const old = store.get(plural).get(`${ns}/${name}`)
+      if (!old) return status(res, 404, 'NotFound', `${plural} "${name}" not found`)
+      if (contentType === 'application/merge-patch+json') obj = mergePatch(old, body)
+      else if (contentType === 'application/json-patch+json') {
+        obj = jsonPatch(old, body)
+        if (!obj) return status(res, 409, 'Conflict', 'the object has been modified')
+      } else return status(res, 415, 'UnsupportedMediaType', 'the fake API takes merge and JSON patches')
+    }
+    const refused = REFUSE[plural]?.(obj)
+    if (refused) return status(res, 422, 'Invalid', refused)
+    const created = req.method === 'POST'
+    if (created && store.get(plural).has(`${ns}/${obj.metadata.name}`))
+      return status(res, 409, 'AlreadyExists', `${plural} "${obj.metadata.name}" already exists`)
+    send(plural, created ? 'ADDED' : 'MODIFIED', put(plural, obj))
+    res.writeHead(created ? 201 : 200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(obj))
+  }
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x')
+    const one = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1alpha1\/namespaces\/([^/]+)\/([a-z]+)(?:\/([^/]+))?$/)
+    if (one && store.has(one[2]) && ((req.method === 'POST' && !one[3]) || (req.method === 'PATCH' && one[3]))) {
+      void write(req, res, one[2], one[1], one[3] && decodeURIComponent(one[3]))
+      return
+    }
+    if (one && store.has(one[2]) && req.method === 'GET' && one[3]) {
+      const obj = store.get(one[2]).get(`${one[1]}/${decodeURIComponent(one[3])}`)
+      if (!obj) return status(res, 404, 'NotFound', `${one[2]} "${one[3]}" not found`)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify(obj))
+    }
     if (req.method === 'GET' && (url.pathname === '/api/v1/pods' || url.pathname === '/api/v1/nodes')) {
       res.writeHead(200, { 'content-type': 'application/json' })
       return res.end(JSON.stringify({ metadata: { resourceVersion: String(rv) }, items: [] }))
     }
-    const one = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1alpha1\/namespaces\/([^/]+)\/([a-z]+)\/([^/]+)$/)
-    if (one && store.has(one[2]) && (req.method === 'GET' || req.method === 'PATCH'))
-      return object(req, res, ...one.slice(1))
     const m = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1alpha1(?:\/namespaces\/([^/]+))?\/([a-z]+)$/)
     if (req.method !== 'GET' || !m || !store.has(m[2])) {
       res.writeHead(404, { 'content-type': 'application/json' })
@@ -67,47 +174,8 @@ export function fakeApi(namespace) {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ metadata: { resourceVersion: String(rv) }, items }))
   })
-  /** GET or PATCH one object; the patch is recorded in `writes`, or refused when refuse() asked. */
-  function object(req, res, ns, plural, name) {
-    const reply = (code, body) => {
-      res.writeHead(code, { 'content-type': 'application/json' })
-      res.end(JSON.stringify(body))
-    }
-    const obj = store.get(plural).get(`${ns}/${name}`)
-    if (!obj) return reply(404, { kind: 'Status', code: 404, message: `${plural} "${name}" not found` })
-    if (req.method === 'GET') return reply(200, obj)
-    let body = ''
-    req.on('data', (chunk) => (body += chunk))
-    req.on('end', () => {
-      const ops = JSON.parse(body)
-      writes.push({ plural, name, contentType: req.headers['content-type'], ops })
-      if (refusal) {
-        const message = refusal
-        refusal = undefined
-        return reply(422, { kind: 'Status', status: 'Failure', code: 422, reason: 'Invalid', message })
-      }
-      const next = structuredClone(obj)
-      for (const op of ops) {
-        const keys = op.path.split('/').slice(1)
-        const last = keys.pop()
-        const parent = keys.reduce((o, k) => o[k], next)
-        if (op.op === 'test' && parent[last] !== op.value)
-          return reply(409, { kind: 'Status', code: 409, message: `the object has been modified` })
-        if (op.op === 'add') {
-          if (last === '-') parent.push(op.value)
-          else parent[last] = op.value
-        }
-      }
-      send(plural, 'MODIFIED', put(plural, next))
-      reply(200, next)
-    })
-  }
-
-  const writes = []
-  let refusal
   return {
     server,
-    /** Every PATCH the API was sent, oldest first: plural, name, content type and the ops. */
     writes,
     /** Refuses the next write with 422 and `message`, as the API server does when the CRD refuses a value. */
     refuse(message) {
