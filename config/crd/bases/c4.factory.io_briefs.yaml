@@ -942,6 +942,30 @@ spec:
                       description: round is the round that took it; 0 before one did.
                       format: int32
                       type: integer
+                    shipped:
+                      description: |-
+                        shipped is where it went out, once Released: the published releases
+                        that hold its issues, and the pages of those done in a Container that
+                        publishes nowhere.
+                      items:
+                        description: BriefRequestShipped is where a request's issues
+                          went out.
+                        properties:
+                          tag:
+                            description: |-
+                              tag is the published release's version; empty for an issue done in a
+                              Container that publishes nowhere.
+                            maxLength: 100
+                            type: string
+                          url:
+                            description: url is the published release's page, or the
+                              issue's.
+                            maxLength: 300
+                            type: string
+                        type: object
+                      maxItems: 20
+                      type: array
+                      x-kubernetes-list-type: atomic
                     since:
                       description: since is when the Brief first saw it.
                       format: date-time

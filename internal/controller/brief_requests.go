@@ -93,6 +93,7 @@ type requestsFailure struct {
 func (r *BriefReconciler) syncRequests(ctx context.Context, brief *c4v1alpha1.Brief) bool {
 	status := &brief.Status
 	now := r.now()
+	r.shipRequests(ctx, brief)
 	known := modelRequests(status.Requests)
 	var all []model.Request
 	var reading []string
@@ -151,7 +152,7 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1alpha1.
 	defer cancel()
 	var owed []int
 	for _, req := range same {
-		if r.owesPlanned(brief, req) {
+		if r.owesPlanned(brief, req) || req.Stage == model.RequestReleased {
 			owed = append(owed, req.Number)
 		}
 	}
@@ -181,6 +182,10 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1alpha1.
 		failure = &requestsFailure{gitprovider.IssuesReason(err), err.Error()}
 	}
 	got, err = r.answerPlanned(gitCtx, brief, tracker, got)
+	if err != nil && failure == nil {
+		failure = &requestsFailure{gitprovider.IssuesReason(err), err.Error()}
+	}
+	got, err = r.answerReleased(gitCtx, brief, tracker, got)
 	if err != nil && failure == nil {
 		failure = &requestsFailure{gitprovider.IssuesReason(err), err.Error()}
 	}
@@ -345,7 +350,8 @@ func (r *BriefReconciler) forgetIssue(brief *c4v1alpha1.Brief, repository string
 	}
 }
 
-// forgetReads drops what the Brief read of repositories it no longer reads.
+// forgetReads drops what the Brief read of repositories it no longer reads,
+// and when it last looked whether their requests shipped.
 func (r *BriefReconciler) forgetReads(brief *c4v1alpha1.Brief, read map[string]bool) {
 	r.requestsMu.Lock()
 	defer r.requestsMu.Unlock()
@@ -353,6 +359,12 @@ func (r *BriefReconciler) forgetReads(brief *c4v1alpha1.Brief, read map[string]b
 	for key := range r.requestsReads {
 		if repository, ok := strings.CutPrefix(key, prefix); ok && !read[repository] {
 			delete(r.requestsReads, key)
+		}
+	}
+	for key := range r.requestsShip {
+		rest, ok := strings.CutPrefix(key, prefix)
+		if repository, _, _ := strings.Cut(rest, "#"); ok && !read[repository] {
+			delete(r.requestsShip, key)
 		}
 	}
 }
@@ -441,6 +453,9 @@ func modelRequests(requests []c4v1alpha1.BriefRequest) []model.Request {
 			Why: s.Why}
 		if s.Since != nil {
 			req.Since = s.Since.Time
+		}
+		for _, sh := range s.Shipped {
+			req.Shipped = append(req.Shipped, model.Shipped{Tag: sh.Tag, URL: sh.URL})
 		}
 		out = append(out, req)
 	}

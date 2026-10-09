@@ -226,7 +226,7 @@ func releaseIssues(ctx context.Context, provider gitprovider.Provider, repo gitp
 	}
 	out := []model.ReleaseIssue{}
 	for _, i := range issues {
-		if i.State == "closed" {
+		if i.State == stateClosed {
 			out = append(out, model.ReleaseIssue{Number: i.Number, Title: i.Title})
 		}
 	}

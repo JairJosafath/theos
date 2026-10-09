@@ -757,8 +757,13 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   and release, then comments on the GitHub issue once, with a marker: what it
   became and the release it is in, or the skip's why, closing a skipped one as
   not planned. A round that fails or asks for input hands its requests back
-  to the next round, which they don't start by themselves. See
-  [plans/brief-requests.md](plans/brief-requests.md).
+  to the next round, which they don't start by themselves. Once every issue a
+  request became is closed and a published release holds each (its
+  milestone's, or a later one), the Brief comments once "Shipped in vX.Y.Z"
+  with the published page, or "Done in" the issue for one in a Container
+  that publishes nowhere, closes the GitHub issue as completed, and drops it
+  from `status.requests`. A request a person closed on GitHub meanwhile hears
+  nothing more. See [plans/brief-requests.md](plans/brief-requests.md).
 - **A failed issue shows on the Brief and is tried again from it** (#429).
   An open issue handed back with `status/needs-human` in the repository of a
   Container the Brief made is listed in the Brief's `status.failed` and card,

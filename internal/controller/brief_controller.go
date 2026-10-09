@@ -75,6 +75,12 @@ type BriefReconciler struct {
 	// requestsSaid are the comments the Brief knows it posted on requests,
 	// so it looks for its marker once per request, not on every read.
 	requestsSaid map[string]bool
+	// requestsShip is when the Brief last looked whether each planned
+	// request shipped.
+	requestsShip map[string]shipCheck
+	// requestsPublished is the newest release of each Container's Crew the
+	// Brief saw published.
+	requestsPublished map[string]model.Shipped
 	// Now tells the time of the Brief's heal windows and tending rounds; nil
 	// means time.Now.
 	Now func() time.Time
