@@ -7,6 +7,8 @@ import './app.css'
 import { Account } from './components/Account'
 import { Briefs } from './components/Briefs'
 import { Diagram } from './components/Diagram'
+import { StoryLine } from './components/StoryLine'
+import { ViewCaption } from './components/ViewCaption'
 import { FactoryPage } from './components/Factory'
 import { LogoMark, WarningIcon } from './components/icons'
 import { NeedsArea } from './components/Needs'
@@ -44,7 +46,14 @@ import { factoryVersions } from './model/versions'
 import { hasPage } from './model/lifecycle'
 import { activeCrewTasks } from './model/crews'
 import { needs } from './model/needs'
-import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker, workingNow } from './model/story'
+import {
+  buildContainerDiagram,
+  buildContextDiagram,
+  containerNodes,
+  systemsForPicker,
+  type DiagramNode,
+  workingNow,
+} from './model/story'
 
 /**
  * Where the Kubernetes API is proxied, relative to the page (see server.mjs).
@@ -157,10 +166,14 @@ export default function App() {
   const systemName = url.system && systems.some((s) => s.name === url.system) ? url.system : systems[0]?.name
   const view: Exclude<View, 'factory'> = url.view === 'containers' ? 'containers' : 'context'
   const selectTask = useCallback(
-    // Selecting a Task replaces the history entry; opening one from Factory goes to Work.
-    (task: string | undefined) =>
-      setUrl(shell ? { area: 'work', task } : { view: 'factory', task }, !shell || area === 'work'),
-    [setUrl, shell, area],
+    // Selecting a Task replaces the history entry; in the shell, a Task opens its page.
+    (task: string | undefined) => {
+      if (!shell) return setUrl({ view: 'factory', task }, true)
+      const [ns, name] = task?.split('/') ?? []
+      if (name) setUrl({ ns, kind: 'Task', name, task: undefined })
+      else setUrl({ task: undefined }, true)
+    },
+    [setUrl, shell],
   )
 
   const contextDiagram = useMemo(() => buildContextDiagram(data), [data])
@@ -176,8 +189,17 @@ export default function App() {
   const selectedId = selection?.scope === scope ? selection.id : undefined
   const selectedNode = diagram?.nodes.find((n) => n.id === selectedId)
   const onSelect = useCallback(
-    (id: string) => setSelection((cur) => (cur?.scope === scope && cur.id === id ? undefined : { scope, id })),
-    [scope],
+    (id: string) => {
+      // In the shell, a box of a kind with a page opens it.
+      const node = shell ? diagram?.nodes.find((n) => n.id === id) : undefined
+      if (node && namespace && hasPage(node.kind)) return setUrl({ ns: namespace, kind: node.kind, name: node.name })
+      setSelection((cur) => (cur?.scope === scope && cur.id === id ? undefined : { scope, id }))
+    },
+    [scope, shell, diagram, namespace, setUrl],
+  )
+  const nodeHref = useMemo(
+    () => (shell && namespace ? (node: DiagramNode) => pageHref(namespace, node.kind, node.name) : undefined),
+    [shell, namespace],
   )
   const openSystem = useCallback((name: string) => setUrl({ view: 'containers', system: name }), [setUrl])
 
@@ -268,7 +290,7 @@ export default function App() {
   ) : (
     <>
       <ProjectHeader data={data} namespace={namespace} loaded={story.connection.loaded} />
-      {shell ? null : briefs}
+      {shell ? story.connection.loaded ? <StoryLine data={data} /> : null : briefs}
       <nav className="tabs" aria-label="Views">
         <div className="tablist" role="tablist">
           <button
@@ -307,7 +329,7 @@ export default function App() {
 
       <main className="workspace">
         <section className="stage" aria-label="Diagram">
-          <ViewCaption view={view} systemTitle={systemTitle} />
+          <ViewCaption view={view} systemTitle={systemTitle} opensPages={shell} />
           {!story.connection.loaded ? (
             <div className="placeholder">Loading the story…</div>
           ) : !diagram || diagram.nodes.length + (diagram.boundary ? 1 : 0) === 0 ? (
@@ -322,6 +344,7 @@ export default function App() {
               selectedId={selectedId}
               onSelect={onSelect}
               onOpenSystem={view === 'context' ? openSystem : undefined}
+              nodeHref={nodeHref}
               emptyBoundaryText="No containers or data stores in this system yet."
             />
           )}
@@ -545,30 +568,6 @@ function ProjectHeader({ data, namespace, loaded }: { data: StoryData; namespace
         </div>
       </dl>
     </section>
-  )
-}
-
-function ViewCaption({ view, systemTitle }: { view: View; systemTitle?: string }) {
-  if (view === 'context') {
-    return (
-      <div className="view-head">
-        <h2 className="view-title">System context: the big picture</h2>
-        <p className="view-caption">
-          Who uses the software, and which software systems are involved. Each arrow says who uses what, and what for.
-          Select a box for details, or <em>Look inside</em> a system to see what it is made of.
-        </p>
-      </div>
-    )
-  }
-  return (
-    <div className="view-head">
-      <h2 className="view-title">Containers of {systemTitle ?? 'a system'}</h2>
-      <p className="view-caption">
-        The applications (containers) and data stores inside the dashed box make up this system. The factory gives each
-        container its own Git repository, started from templates. People and grey systems around it are outside. Hover
-        over a container to see how the factory is getting on.
-      </p>
-    </div>
   )
 }
 

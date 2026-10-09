@@ -33,25 +33,24 @@ export function TaskCard({
   now,
   selected,
   onSelect,
+  href,
 }: {
   task: Task
   agent?: Agent
   now: number
   selected: boolean
   onSelect: () => void
+  /** The Task's page, in the shell: the card links there instead of selecting the Task. */
+  href?: string
 }) {
   const phase = task.status?.phase
   const since = stageSince(task)
   const maxRounds = agent?.spec.maxRounds
   const headline = taskHeadline(task)
   const back = agentBackAt(task)
-  return (
-    <button
-      type="button"
-      className={`task-card${selected ? ' is-selected' : ''}${phase === 'Failed' ? ' is-failed' : ''}`}
-      aria-pressed={selected}
-      onClick={onSelect}
-    >
+  const className = `task-card${selected ? ' is-selected' : ''}${phase === 'Failed' ? ' is-failed' : ''}`
+  const body = (
+    <>
       <span className="task-card-name">{task.metadata.name}</span>
       {headline.issue ? <span className="task-card-issue">{headline.text}</span> : null}
       <span className="task-card-sub">
@@ -83,6 +82,15 @@ export function TaskCard({
             : ''}
       </span>
       <MiniTimeline task={task} now={now} />
+    </>
+  )
+  return href ? (
+    <a className={className} href={href}>
+      {body}
+    </a>
+  ) : (
+    <button type="button" className={className} aria-pressed={selected} onClick={onSelect}>
+      {body}
     </button>
   )
 }

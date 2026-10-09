@@ -279,14 +279,62 @@ describe('the new shell', () => {
     await crew.waitFor({ timeout: 10000 })
   })
 
-  it('opens a Task page from the Task panel in Work', async () => {
-    await page.goto(`${base}/?shell=next&area=work&task=${namespace}/orders-api-14`)
-    await page.getByRole('link', { name: 'Open the Task’s page' }).click()
+  it('opens a Task page from a board card in Work, and lists the releases', async () => {
+    await page.goto(`${base}/?shell=next&area=work`)
+    const releases = page.getByRole('region', { name: 'Releases', exact: true })
+    await releases.getByText('v0.2.0', { exact: true }).waitFor({ timeout: 10000 })
+    assert.equal(
+      await releases.getByRole('link', { name: 'Crew orders-api', exact: true }).getAttribute('href'),
+      `/?shell=next&area=work&ns=${namespace}&kind=Crew&name=orders-api`,
+    )
+    if (process.env.C4_UI_SHOTS) {
+      await page.waitForTimeout(300)
+      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-shell-work-board.png'), fullPage: true })
+    }
+    await page.locator('.board a.task-card', { hasText: 'orders-api-14' }).click()
     const task = page.getByRole('region', { name: 'Task orders-api-14', exact: true })
     await task.waitFor({ timeout: 10000 })
+    const params = new URL(page.url()).searchParams
+    assert.deepEqual([params.get('ns'), params.get('kind'), params.get('name')], [namespace, 'Task', 'orders-api-14'])
     // The region shows "Loading the Task…" before the Task arrives: textContent
     // waits for the one current step (strict, so two would fail) where count would not.
     assert.equal(await task.locator('[aria-current="step"]').textContent({ timeout: 10000 }), 'Implementing')
+    await page.goBack()
+    await heading('Tasks').waitFor({ timeout: 10000 })
+  })
+
+  it('tells the story in one line, and opens a page from a diagram node', async () => {
+    await page.goto(`${base}/?shell=next&area=story`)
+    const line = page.getByRole('navigation', { name: 'The project’s story' })
+    await line.getByText('Releases').waitFor({ timeout: 10000 })
+    assert.deepEqual(await line.locator('.storyline-label').allTextContents(), [
+      'Briefs',
+      'Plan',
+      'Model',
+      'Repositories',
+      'Tasks',
+      'Releases',
+    ])
+    // A system's box opens its page; Back returns to the diagram.
+    await page.locator('[data-node-id="SoftwareSystem/webshop-core"]').click()
+    await page.getByRole('region', { name: 'SoftwareSystem webshop-core', exact: true }).waitFor({ timeout: 10000 })
+    await page.goBack()
+    await heading('System context: the big picture').waitFor({ timeout: 10000 })
+
+    // A container's box, by keyboard, opens the Container's page.
+    await page.goto(`${base}/?shell=next&area=story&view=containers&system=webshop-core`)
+    const node = page.locator('[data-node-id="Container/orders-api"]')
+    assert.equal(await node.getAttribute('role'), 'link')
+    assert.equal(await node.getAttribute('aria-pressed'), null)
+    await node.focus()
+    await page.keyboard.press('Enter')
+    const container = page.getByRole('region', { name: 'Container orders-api', exact: true })
+    await container.waitFor({ timeout: 10000 })
+    const params = new URL(page.url()).searchParams
+    assert.deepEqual(
+      [params.get('area'), params.get('ns'), params.get('kind'), params.get('name')],
+      ['story', namespace, 'Container', 'orders-api'],
+    )
   })
 
   it('gives a paused Crew the patch that resumes it', async () => {

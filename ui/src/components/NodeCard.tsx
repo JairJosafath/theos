@@ -19,9 +19,11 @@ export interface NodeCardProps {
   onHover: (id: string | undefined) => void
   /** Opens the container view of a system ("Look inside"). */
   onOpenSystem?: (name: string) => void
+  /** The box's page: the box is a link to it, and onSelect opens it. */
+  href?: string
 }
 
-export function NodeCard({ node, rect, selected, dimmed, onSelect, onHover, onOpenSystem }: NodeCardProps) {
+export function NodeCard({ node, rect, selected, dimmed, onSelect, onHover, onOpenSystem, href }: NodeCardProps) {
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
@@ -35,12 +37,19 @@ export function NodeCard({ node, rect, selected, dimmed, onSelect, onHover, onOp
     <div
       className={className}
       style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
-      role="button"
+      role={href ? 'link' : 'button'}
       tabIndex={0}
-      aria-pressed={selected}
+      aria-pressed={href ? undefined : selected}
       aria-label={`${KIND_LABEL[node.role]}: ${node.title}`}
       data-node-id={node.id}
-      onClick={() => onSelect(node.id)}
+      onClick={(e) => {
+        // With a modifier, a page opens in a new tab, as a link's would.
+        if (href && (e.metaKey || e.ctrlKey || e.shiftKey)) window.open(href, '_blank', 'noopener')
+        else onSelect(node.id)
+      }}
+      onAuxClick={(e) => {
+        if (href && e.button === 1) window.open(href, '_blank', 'noopener')
+      }}
       onKeyDown={onKeyDown}
       onMouseEnter={() => onHover(node.id)}
       onMouseLeave={() => onHover(undefined)}
