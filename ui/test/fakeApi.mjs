@@ -1,19 +1,86 @@
 // A tiny in-memory Kubernetes API for the c4.factory.io kinds, with lists and
 // watches, for the end-to-end test and the screenshots of every view. It
-// answers GETs of collections, the factory health's Pods and Nodes as empty
-// lists, and PATCHes of one object (a JSON patch of add and remove, or a merge
-// patch), refused with 422 when a rule given to refuse() says so, as a CRD's
-// rule would; everything else is 404.
+// answers GETs of collections, and the factory health's Pods and Nodes as
+// empty lists; a POST that creates an object (generateName included) and a
+// merge patch or JSON patch (add and remove) of one, refusing what a CRD rule of REFUSE would, with the API
+// server's message; everything else is 404. A kind it is told to refuse
+// answers 403, as RBAC would.
 
 import http from 'node:http'
 // The UI's own list of kinds, so the fake API serves every one.
 import { RESOURCES } from '../src/k8s/types.ts'
+
+/**
+ * The CRD rules the fake API keeps, as the API server words their refusal:
+ * plural -> object -> message, or undefined when it passes.
+ */
+const REFUSE = {
+  tasks: (obj) =>
+    typeof obj.spec?.goal === 'string' && obj.spec.goal.length < 1
+      ? `Task.c4.factory.io "${obj.metadata.name}" is invalid: spec.goal: Invalid value: "": spec.goal in body should be at least 1 chars long`
+      : undefined,
+  crews: (obj) => {
+    if (obj.spec?.parallel > 5) {
+      return `Crew.c4.factory.io "${obj.metadata.name}" is invalid: spec.parallel: Invalid value: ${obj.spec.parallel}: spec.parallel in body should be less than or equal to 5`
+    }
+    if (obj.spec?.publishReleases && !obj.spec.tagReleases) {
+      return `Crew.c4.factory.io "${obj.metadata.name}" is invalid: spec: Invalid value: "object": publishReleases needs tagReleases: only a release the Crew tagged is published`
+    }
+    return undefined
+  },
+}
+
+function status(res, code, reason, message) {
+  res.writeHead(code, { 'content-type': 'application/json' })
+  res.end(JSON.stringify({ kind: 'Status', status: 'Failure', code, reason, message }))
+}
+
+function readJson(req) {
+  return new Promise((resolve) => {
+    let text = ''
+    req.on('data', (chunk) => (text += chunk))
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(text))
+      } catch {
+        resolve(undefined)
+      }
+    })
+  })
+}
+
+/** A JSON merge patch (RFC 7396) of `patch` onto `target`. */
+function mergePatch(target, patch) {
+  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return patch
+  const out = target !== null && typeof target === 'object' && !Array.isArray(target) ? { ...target } : {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) delete out[k]
+    else out[k] = mergePatch(out[k], v)
+  }
+  return out
+}
+
+/** A JSON patch (RFC 6902) of add and remove onto `target`, or undefined when an op can't apply. */
+function jsonPatch(target, ops) {
+  const out = structuredClone(target)
+  for (const op of Array.isArray(ops) ? ops : []) {
+    const keys = String(op.path).split('/').slice(1)
+    const last = keys.pop()
+    const parent = keys.reduce((o, k) => o?.[k], out)
+    if (parent === null || typeof parent !== 'object') return undefined
+    if (op.op === 'add') parent[last] = op.value
+    else if (op.op === 'remove' && last in parent) delete parent[last]
+    else return undefined
+  }
+  return out
+}
 
 /** A fake API whose objects default to `namespace` when they name none. */
 export function fakeApi(namespace) {
   let rv = 1
   const store = new Map() // plural -> Map(namespace/name -> object)
   const watchers = new Map() // plural -> Set(res)
+  const refused = new Set() // plurals answered with 403
   for (const k of Object.values(RESOURCES)) {
     store.set(k, new Map())
     watchers.set(k, new Set())
@@ -37,53 +104,43 @@ export function fakeApi(namespace) {
     for (const w of watchers.get(plural))
       if (!w.namespace || w.namespace === obj.metadata.namespace) w.res.write(history.at(-1).line)
   }
-  const rules = [] // (plural, obj) => a refusal's message, or undefined
-  const patches = [] // { plural, name, type, body }, each PATCH as it came
-  const status = (res, code, message) => {
-    res.writeHead(code, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ kind: 'Status', code, message }))
-  }
-  const patch = async (req, res, ns, plural, name) => {
-    const old = store.get(plural)?.get(`${ns}/${name}`)
-    if (!old) return status(res, 404, `${plural} "${name}" not found`)
-    let text = ''
-    for await (const chunk of req) text += chunk
-    const body = JSON.parse(text)
-    const type = (req.headers['content-type'] ?? '').split(';')[0]
-    patches.push({ plural, name, type, body })
-    const obj = structuredClone(old)
-    if (type === 'application/json-patch+json') {
-      for (const op of body) {
-        const keys = op.path.split('/').slice(1)
-        const last = keys.pop()
-        const parent = keys.reduce((o, k) => (o[k] ??= {}), obj)
-        if (op.op === 'add') parent[last] = op.value
-        else if (op.op === 'remove' && last in parent) delete parent[last]
-        else return status(res, 422, `the ${op.op} of ${op.path} failed`)
-      }
-    } else if (type === 'application/merge-patch+json') {
-      const merge = (into, from) => {
-        for (const [k, v] of Object.entries(from)) {
-          if (v === null) delete into[k]
-          else if (typeof v === 'object' && !Array.isArray(v)) merge((into[k] ??= {}), v)
-          else into[k] = v
-        }
-      }
-      merge(obj, body)
+  /** Every write it took or refused, in order: method, path, body. */
+  const writes = []
+  let suffix = 0
+  const write = async (req, res, plural, ns, name) => {
+    const body = await readJson(req)
+    const type = req.headers['content-type']
+    writes.push({ method: req.method, path: new URL(req.url, 'http://x').pathname, type, body })
+    let obj
+    if (req.method === 'POST') {
+      if (!body?.metadata) return status(res, 400, 'BadRequest', 'the body is not an object')
+      const generated = body.metadata.generateName
+        ? `${body.metadata.generateName}${String(++suffix).padStart(5, 'x')}`
+        : ''
+      obj = { ...body, metadata: { ...body.metadata, namespace: ns, name: body.metadata.name ?? generated } }
+      delete obj.metadata.generateName
     } else {
-      return status(res, 415, `unsupported media type ${type}`)
+      if (type !== 'application/merge-patch+json' && type !== 'application/json-patch+json')
+        return status(res, 415, 'UnsupportedMediaType', 'the fake API takes only merge patches and JSON patches')
+      const old = store.get(plural).get(`${ns}/${name}`)
+      if (!old) return status(res, 404, 'NotFound', `${plural} "${name}" not found`)
+      obj = type === 'application/merge-patch+json' ? mergePatch(old, body) : jsonPatch(old, body)
+      if (!obj) return status(res, 422, 'Invalid', 'the JSON patch does not apply')
     }
-    const refusal = rules.map((rule) => rule(plural, obj)).find(Boolean)
-    if (refusal) return status(res, 422, refusal)
-    send(plural, 'MODIFIED', put(plural, obj))
-    res.writeHead(200, { 'content-type': 'application/json' })
+    const refused = REFUSE[plural]?.(obj)
+    if (refused) return status(res, 422, 'Invalid', refused)
+    const created = req.method === 'POST'
+    if (created && store.get(plural).has(`${ns}/${obj.metadata.name}`))
+      return status(res, 409, 'AlreadyExists', `${plural} "${obj.metadata.name}" already exists`)
+    send(plural, created ? 'ADDED' : 'MODIFIED', put(plural, obj))
+    res.writeHead(created ? 201 : 200, { 'content-type': 'application/json' })
     res.end(JSON.stringify(obj))
   }
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x')
-    const one = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1alpha1\/namespaces\/([^/]+)\/([a-z]+)\/([^/]+)$/)
-    if (req.method === 'PATCH' && one) {
-      patch(req, res, one[1], one[2], decodeURIComponent(one[3])).catch((err) => status(res, 500, err.message))
+    const one = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1alpha1\/namespaces\/([^/]+)\/([a-z]+)(?:\/([^/]+))?$/)
+    if (one && store.has(one[2]) && ((req.method === 'POST' && !one[3]) || (req.method === 'PATCH' && one[3]))) {
+      void write(req, res, one[2], one[1], one[3] && decodeURIComponent(one[3]))
       return
     }
     if (req.method === 'GET' && (url.pathname === '/api/v1/pods' || url.pathname === '/api/v1/nodes')) {
@@ -96,6 +153,17 @@ export function fakeApi(namespace) {
       return res.end(JSON.stringify({ kind: 'Status', code: 404, message: 'not found' }))
     }
     const [, ns, plural] = m
+    if (refused.has(plural)) {
+      res.writeHead(403, { 'content-type': 'application/json' })
+      return res.end(
+        JSON.stringify({
+          kind: 'Status',
+          code: 403,
+          reason: 'Forbidden',
+          message: `${plural}.c4.factory.io is forbidden: the UI's role cannot list it`,
+        }),
+      )
+    }
     const inScope = (objNs) => !ns || objNs === ns
     if (url.searchParams.get('watch') === '1') {
       res.writeHead(200, { 'content-type': 'application/json' })
@@ -113,13 +181,8 @@ export function fakeApi(namespace) {
   })
   return {
     server,
-    /** Every PATCH so far, in order. */
-    patches,
-    /** Refuses a PATCH whose result `rule(plural, obj)` returns a message for, with that message. */
-    refuse(rule) {
-      rules.push(rule)
-    },
-    /** The stored object, as the API has it now. */
+    writes,
+    /** The stored object of a kind, as the API has it now. */
     get(plural, name) {
       return store.get(plural).get(`${namespace}/${name}`)
     },
@@ -138,6 +201,14 @@ export function fakeApi(namespace) {
       const obj = store.get(plural).get(k)
       store.get(plural).delete(k)
       send(plural, 'DELETED', { ...obj, metadata: { ...obj.metadata, resourceVersion: String(++rv) } })
+    },
+    /** Answers every read of a kind with 403 from now on, and ends its open watches. */
+    refuse(plural) {
+      refused.add(plural)
+      for (const w of [...watchers.get(plural)]) {
+        watchers.get(plural).delete(w)
+        w.res.end()
+      }
     },
     /** Ends every open watch of a kind with an "expired" error, as the API does after compaction. */
     expire(plural) {

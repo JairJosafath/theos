@@ -17,6 +17,7 @@ import { ConnectionStatus, ProblemsBanner } from './components/Status'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { VersionLine } from './components/Versions'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
+import { LiveContainerWriter } from './k8s/containers'
 import { LiveCrewWriter } from './k8s/crews'
 import { HealthSource, type FactoryHealth } from './k8s/health'
 import { fetchSession, signOut, type UiSession } from './k8s/session'
@@ -50,8 +51,10 @@ import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForP
  * All watches of the page share connections through one WatchMux.
  */
 const API: Api = { baseUrl: 'k8s', mux: new WatchMux({ url: 'k8s-watch' }) }
-/** The page's only writes, through the same proxy: create a Brief, add a prompt to one, pause or resume one. */
+/** The Brief writes, through the same proxy: create a Brief, add a prompt to one, pause or resume one. */
 const LIVE_WRITER = new LiveBriefWriter(API.baseUrl)
+/** With UI actions on: a Container's scaffold retry and a Task from a goal. */
+const CONTAINER_WRITER = new LiveContainerWriter(API.baseUrl)
 /** A Crew page's writes, taken only with the UI server's actions on. */
 const CREW_WRITER = new LiveCrewWriter(API.baseUrl)
 
@@ -405,8 +408,9 @@ export default function App() {
             kind={objectKind}
             name={url.name}
             data={data}
-            loaded={story.connection.loaded}
+            connection={story.connection}
             writer={writer}
+            containerWriter={CONTAINER_WRITER}
             crewWriter={CREW_WRITER}
           />
         ) : undefined

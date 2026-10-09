@@ -1,9 +1,11 @@
 // A Container's page: the object header (its scaffold lifecycle and
 // conditions, its Relationships with their Applied reason and its Sessions,
 // the repository, and on Failed the retry kubectl line), then its template
-// refs and its Standard with the update pull request in flight.
+// refs and its Standard with the update pull request in flight; with UI
+// actions on, a scaffold retry and a Task from a goal (ContainerActions).
 
-import type { Brief, CatalogEntry, Container, Relationship, Session } from '../../k8s/types'
+import type { ContainerWriter } from '../../k8s/containers'
+import type { Brief, CatalogEntry, Container, Crew, Relationship, Session } from '../../k8s/types'
 import { useNow } from '../../lib/hooks'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
 import { containerNextStep } from '../../model/lifecycle'
@@ -11,8 +13,10 @@ import { sessionsOf } from '../../model/story'
 import { SessionRow } from '../bits'
 import { ExternalLinkIcon } from '../icons'
 import { ObjectHeader, type OutLink } from '../ObjectHeader'
+import { ContainerActions } from './ContainerActions'
 import { relationshipsOf } from './rows'
 import { pageHref, storyHref } from './links'
+import '../briefs.css'
 
 export function ContainerPage({
   container,
@@ -20,12 +24,16 @@ export function ContainerPage({
   sessions,
   frameworks,
   briefs,
+  crews,
+  writer,
 }: {
   container: Container
   relationships: Relationship[]
   sessions: Session[]
   frameworks: CatalogEntry[]
   briefs: Brief[]
+  crews: Crew[]
+  writer: ContainerWriter
 }) {
   const now = useNow()
   const ns = container.metadata.namespace ?? ''
@@ -58,9 +66,18 @@ export function ContainerPage({
         phase={status?.phase}
         conditions={status?.conditions ?? []}
         childrenTitle="Relationships"
-        children={relationshipsOf(relationships, name)}
+        children={relationshipsOf(relationships, name).map((r) => ({
+          ...r,
+          href: pageHref(ns, 'Relationship', r.name),
+        }))}
         links={links}
         next={containerNextStep(container)}
+      />
+
+      <ContainerActions
+        container={container}
+        crew={crews.find((c) => c.spec.containerRef.name === name)}
+        writer={writer}
       />
 
       <section className="panel" aria-labelledby="container-templates">
@@ -79,7 +96,9 @@ export function ContainerPage({
             <>
               <dt>Standard</dt>
               <dd className="mono">
-                {container.spec.standardRef.name}
+                <a href={pageHref(ns, 'Standard', container.spec.standardRef.name)}>
+                  {container.spec.standardRef.name}
+                </a>
                 {status?.standard ? ` @ ${status.standard.ref}` : ''}
               </dd>
             </>
@@ -87,15 +106,27 @@ export function ContainerPage({
           {container.spec.computeRef ? (
             <>
               <dt>Compute</dt>
-              <dd className="mono">{container.spec.computeRef.name}</dd>
+              <dd className="mono">
+                <a href={pageHref(ns, 'Compute', container.spec.computeRef.name)}>{container.spec.computeRef.name}</a>
+              </dd>
             </>
           ) : null}
           {container.spec.deploymentRef ? (
             <>
               <dt>Deployment</dt>
-              <dd className="mono">{container.spec.deploymentRef.name}</dd>
+              <dd className="mono">
+                <a href={pageHref(ns, 'Deployment', container.spec.deploymentRef.name)}>
+                  {container.spec.deploymentRef.name}
+                </a>
+              </dd>
             </>
           ) : null}
+          <dt>Git provider</dt>
+          <dd className="mono">
+            <a href={pageHref(ns, 'GitProvider', container.spec.gitProviderRef.name)}>
+              {container.spec.gitProviderRef.name}
+            </a>
+          </dd>
           <dt>Scaffolded from</dt>
           <dd>
             {status?.scaffoldedFrom?.length ? (
@@ -151,7 +182,7 @@ export function ContainerPage({
           </h2>
           <ul className="sessions">
             {own.map((s) => (
-              <SessionRow key={s.metadata.name} session={s} now={now} />
+              <SessionRow key={s.metadata.name} session={s} now={now} href={pageHref(ns, 'Session', s.metadata.name)} />
             ))}
           </ul>
         </section>

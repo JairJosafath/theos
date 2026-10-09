@@ -278,7 +278,8 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, sta
 // allowance.
 func crewTask(t *c4v1alpha1.Task) model.CrewTask {
 	out := model.CrewTask{Name: t.Name, Issue: int(t.Spec.Issue), Final: isFinal(t.Status.Phase),
-		Failed: t.Status.Phase == c4v1alpha1.TaskFailed, Blocked: t.Status.Phase == c4v1alpha1.TaskBlocked}
+		Failed: t.Status.Phase == c4v1alpha1.TaskFailed, NoCI: failedNoCI(&t.Status),
+		Blocked: t.Status.Phase == c4v1alpha1.TaskBlocked}
 	if change := t.Status.StandardChange; change != nil {
 		out.StandardChange = &model.IssueChange{Issue: int(change.Issue), Paths: slices.Clone(change.Paths)}
 	}

@@ -47,17 +47,6 @@ describe('a Crew page’s actions', () => {
         for (const obj of Array.isArray(v) ? v : [v]) api.add(plural, structuredClone(obj))
       }
     }
-    // The CRD's rules these tests meet.
-    api.refuse((plural, obj) =>
-      plural === 'crews' && obj.spec.parallel > 5
-        ? `Crew.c4.factory.io "${obj.metadata.name}" is invalid: spec.parallel: Invalid value: ${obj.spec.parallel}: spec.parallel in body should be less than or equal to 5`
-        : undefined,
-    )
-    api.refuse((plural, obj) =>
-      plural === 'crews' && obj.spec.publishReleases && !obj.spec.tagReleases
-        ? `Crew.c4.factory.io "${obj.metadata.name}" is invalid: spec: Invalid value: "object": publishReleases needs tagReleases: only a release the Crew tagged is published`
-        : undefined,
-    )
     const upstream = resolveUpstream({ K8S_API: await listen(api.server) })
     ui = createServer({ distDir: dist, upstream, log: () => {}, actions: 'service-account' })
     base = await listen(ui)
@@ -137,7 +126,7 @@ describe('a Crew page’s actions', () => {
     assert.deepEqual(crew().spec.publishReleases, {
       github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'orders-api-release-token' } },
     })
-    assert.deepEqual(api.patches.at(-1).body, [
+    assert.deepEqual(api.writes.at(-1).body, [
       { op: 'add', path: '/spec/prepareReleases', value: true },
       {
         op: 'add',
@@ -162,7 +151,7 @@ describe('a Crew page’s actions', () => {
     await form.getByLabel('Publish releases to GitHub').uncheck()
     await form.getByRole('button', { name: 'Save release settings' }).click()
     await until((c) => c.spec.tagReleases === false && !c.spec.publishReleases, 'stopped tagging and publishing')
-    assert.deepEqual(api.patches.at(-1).body, [
+    assert.deepEqual(api.writes.at(-1).body, [
       { op: 'add', path: '/spec/tagReleases', value: false },
       { op: 'remove', path: '/spec/publishReleases' },
     ])
@@ -186,7 +175,7 @@ describe('a Crew page’s actions', () => {
     assert.equal(await rerun.isDisabled(), true, 'asked once, until the release’s re-run time changes')
     const asked = crew().metadata.annotations?.['c4.factory.io/rerun-release']
     assert.ok(asked && !Number.isNaN(Date.parse(asked)), `the annotation is a time: ${asked}`)
-    assert.equal(api.patches.at(-1).type, 'application/merge-patch+json')
+    assert.equal(api.writes.at(-1).type, 'application/merge-patch+json')
   })
 
   it('says to sign in, instead of offering the buttons, when nobody is signed in with OIDC', async () => {

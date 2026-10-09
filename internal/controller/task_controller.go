@@ -478,6 +478,16 @@ func isFinal(phase c4v1alpha1.TaskPhase) bool {
 	return phase == c4v1alpha1.TaskMerged || phase == c4v1alpha1.TaskFailed
 }
 
+// failedNoCI reports whether a Task failed because CI never reported on its
+// commit: the runner's fault, so it costs its issue no try.
+func failedNoCI(status *c4v1alpha1.TaskStatus) bool {
+	if status.Phase != c4v1alpha1.TaskFailed {
+		return false
+	}
+	cond := meta.FindStatusCondition(status.Conditions, ConditionSucceeded)
+	return cond != nil && cond.Reason == model.ReasonNoCIResult
+}
+
 func (r *TaskReconciler) now() time.Time {
 	if r.Now != nil {
 		return r.Now()
