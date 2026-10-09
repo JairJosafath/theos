@@ -91,7 +91,18 @@ export function ConditionList({ conditions, empty }: { conditions: Condition[]; 
 }
 
 /** One Session: who (agent or human), what, and how recently they checked in. */
-export function SessionRow({ session, now, compact = false }: { session: Session; now: number; compact?: boolean }) {
+export function SessionRow({
+  session,
+  now,
+  compact = false,
+  href,
+}: {
+  session: Session
+  now: number
+  compact?: boolean
+  /** Its object page, in the shell. */
+  href?: string
+}) {
   const phase = session.status?.phase
   const info = describeSessionPhase(phase)
   const stale = phase === 'Stale'
@@ -102,7 +113,13 @@ export function SessionRow({ session, now, compact = false }: { session: Session
         <ActorIcon actor={session.spec.actor} size={compact ? 14 : 16} />
       </span>
       <span className="session-body">
-        <span className="session-summary">{session.spec.summary || 'No summary given'}</span>
+        <span className="session-summary">
+          {href ? (
+            <a href={href}>{session.spec.summary || 'No summary given'}</a>
+          ) : (
+            session.spec.summary || 'No summary given'
+          )}
+        </span>
         <span className="session-meta">
           {actor}
           <span className="sep">·</span>

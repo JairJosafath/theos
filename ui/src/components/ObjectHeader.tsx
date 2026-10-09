@@ -7,7 +7,7 @@
 
 import { useState, type ReactNode } from 'react'
 import type { Condition } from '../k8s/types'
-import { lifecycleOf, type LifecycleKind, type NextStep, type StepView } from '../model/lifecycle'
+import { hasPhases, lifecycleOf, type LifecycleKind, type NextStep, type StepView } from '../model/lifecycle'
 import { ConditionList } from './bits'
 import { ExternalLinkIcon } from './icons'
 import { pageHref } from './objects/links'
@@ -49,7 +49,10 @@ export interface ObjectHeaderProps {
   /** displayName, when it differs from the name. */
   title?: string
   phase?: string
-  conditions: Condition[]
+  /** False for an object of a kind with phases that has none itself (a Relationship the factory doesn't apply). */
+  phased?: boolean
+  /** Undefined for a kind whose status has no conditions. */
+  conditions?: Condition[]
   /** The kind's history, oldest first; undefined for a kind without one. */
   timeline?: TimelineEntry[]
   children: ChildRef[]
@@ -70,6 +73,7 @@ export function ObjectHeader(props: ObjectHeaderProps) {
     breadcrumb,
     title,
     phase,
+    phased = true,
     conditions,
     timeline,
     children,
@@ -79,6 +83,7 @@ export function ObjectHeader(props: ObjectHeaderProps) {
     next,
   } = props
   const life = lifecycleOf(kind, phase)
+  const stepper = phased && hasPhases(kind)
   return (
     <section className="panel object-header" aria-label={`${kind} ${name}`}>
       <nav className="crumbs" aria-label="Breadcrumb">
@@ -99,7 +104,7 @@ export function ObjectHeader(props: ObjectHeaderProps) {
           <h1 className="panel-title mono">{name}</h1>
           {title && title !== name ? <p className="object-title">{title}</p> : null}
         </div>
-        {life.current ? (
+        {stepper && life.current ? (
           <span className={`badge badge-${life.current.tone}`} title={life.current.explanation}>
             <span className="badge-dot" aria-hidden="true" />
             {life.current.label}
@@ -107,7 +112,7 @@ export function ObjectHeader(props: ObjectHeaderProps) {
         ) : null}
       </div>
 
-      <Stepper path={life.path} exits={life.exits} />
+      {stepper ? <Stepper path={life.path} exits={life.exits} /> : null}
       <p className="object-moves">{life.moves}</p>
 
       <div className={`object-next object-next-${next ? 'person' : 'none'}`}>
@@ -129,8 +134,15 @@ export function ObjectHeader(props: ObjectHeaderProps) {
         {actions ? <div className="object-actions">{actions}</div> : null}
       </div>
 
-      <h2 className="object-section">Conditions</h2>
-      <ConditionList conditions={conditions} empty={`The factory has not reported conditions on this ${kind} yet.`} />
+      {conditions ? (
+        <>
+          <h2 className="object-section">Conditions</h2>
+          <ConditionList
+            conditions={conditions}
+            empty={`The factory has not reported conditions on this ${kind} yet.`}
+          />
+        </>
+      ) : null}
 
       {timeline ? (
         <>

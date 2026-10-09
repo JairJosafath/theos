@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { Brief, Condition, Container, Crew, Task } from '../k8s/types'
+import type { Brief, Condition, Container, Crew, Relationship, Task } from '../k8s/types'
 import {
+  appliesConnector,
   containerNextStep,
   crewNextStep,
   failedCondition,
+  hasPage,
+  hasPhases,
   lifecycleOf,
+  relationshipPhase,
   rerunReleaseCommand,
   resumeCrewCommand,
   retryCommand,
@@ -439,5 +443,65 @@ describe('taskNextStep', () => {
     for (const phase of ['Pending', 'Implementing', 'Checking', 'Reviewing', 'Merged'] as const)
       expect(taskNextStep(task({ phase }))).toBeUndefined()
     expect(taskNextStep(task({ phase: 'Failed' }, { goal: 'Add a health endpoint' }))).toBeUndefined()
+  })
+})
+
+describe('the read-only kinds', () => {
+  it.each([
+    [
+      'Relationship',
+      'WaitingForScaffold',
+      'WaitingForScaffold:current AppliedAtScaffold:next',
+      'AddedAfterScaffold:off',
+    ],
+    [
+      'Relationship',
+      'AppliedAtScaffold',
+      'WaitingForScaffold:done AppliedAtScaffold:current',
+      'AddedAfterScaffold:off',
+    ],
+    [
+      'Relationship',
+      'AddedAfterScaffold',
+      'WaitingForScaffold:off AppliedAtScaffold:off',
+      'AddedAfterScaffold:current',
+    ],
+    ['Session', 'Active', 'Active:current', 'Stale:off'],
+    ['Session', 'Stale', 'Active:off', 'Stale:current'],
+    ['Session', undefined, 'Active:next', 'Stale:off'],
+  ] as const)('%s at %s', (kind, phase, path, exits) => {
+    const s = states(kind, phase)
+    expect([s.path, s.exits]).toEqual([path, exits])
+  })
+
+  it('says what a person does on an AddedAfterScaffold Relationship', () => {
+    expect(lifecycleOf('Relationship', 'AddedAfterScaffold').person).toMatch(/by hand.*scaffolds a Container once/)
+  })
+
+  it.each(['Project', 'SoftwareSystem', 'Standard', 'Compute', 'Deployment', 'GitProvider'] as const)(
+    '%s has no phases, and one thing a person does',
+    (kind) => {
+      expect(hasPhases(kind)).toBe(false)
+      expect(hasPage(kind)).toBe(true)
+      const v = lifecycleOf(kind, undefined)
+      expect([v.path, v.exits, v.current]).toEqual([[], [], undefined])
+      expect(v.person).not.toMatch(/has not reported/)
+    },
+  )
+
+  it('reads a Relationship’s phase from its Applied reason', () => {
+    const r: Relationship = {
+      metadata: { name: 'api-to-db' },
+      spec: { source: { kind: 'Container', name: 'api' }, target: { kind: 'DataStore', name: 'db' } },
+      status: { conditions: [{ type: 'Applied', status: 'False', reason: 'AddedAfterScaffold' }] },
+    }
+    expect(relationshipPhase(r)).toBe('AddedAfterScaffold')
+    expect(appliesConnector(r)).toBe(true)
+    const uses: Relationship = {
+      metadata: { name: 'customer-uses-shop' },
+      spec: { source: { kind: 'Person', name: 'customer' }, target: { kind: 'SoftwareSystem', name: 'shop' } },
+    }
+    expect(relationshipPhase(uses)).toBeUndefined()
+    expect(appliesConnector(uses)).toBe(false)
   })
 })
