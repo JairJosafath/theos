@@ -146,7 +146,7 @@ describe('the Brief page’s actions', () => {
   it('shows the API server’s message when it refuses a setting', async () => {
     const message =
       'Brief.c4.factory.io "webshop" is invalid: spec.parallel: Invalid value: 9: spec.parallel in body should be less than or equal to 5'
-    api.refuse(message)
+    api.refuseNextWrite(message)
     await settings()
       .getByLabel(/^Parallel/)
       .fill('9')
@@ -194,7 +194,7 @@ describe('the Brief page’s actions', () => {
 
   it('shows the API server’s message when it refuses an answer', async () => {
     const message = 'Brief.c4.factory.io "webshop" is invalid: spec.prompts: Too many: 51: must have at most 50 items'
-    api.refuse(message)
+    api.refuseNextWrite(message)
     await patchOf(() => button('Retry orders-api #15').click())
     // orders-api #15 was closed above and that prompt was taken; Retry is offered again.
     const alert = page.getByRole('alert').filter({ hasText: 'Too many' })

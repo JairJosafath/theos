@@ -91,6 +91,8 @@ type IssueTask struct {
 	Failed bool
 	// Blocked means it failed because its agent said it can't start the issue.
 	Blocked bool
+	// NoCI means it failed because CI never reported; it costs no try.
+	NoCI bool
 	// Message is the Task's status message.
 	Message string
 	Created time.Time
@@ -101,7 +103,8 @@ type IssueTask struct {
 // FailedReason decides why issue number, with labels and body, was handed
 // back, from its Container's Tasks, the first that holds: labelled kind/by-hand
 // (byHand, with the whys its body gives); no acceptance criteria (unclear); a
-// Task merged it (merged); MaxIssueAttempts Tasks failed (exhausted); its
+// Task merged it (merged); MaxIssueAttempts Tasks failed, not counting those
+// CI never reported on (exhausted); its
 // newest failed Task's message (blocked, when its agent said it can't start
 // the issue; else failed); else a person (person). Tries counts the issue's
 // Tasks.
@@ -125,7 +128,7 @@ func FailedReason(number int, labels []string, body string, tasks []IssueTask) (
 		switch {
 		case t.Merged:
 			merged = t.Name
-		case t.Failed:
+		case t.Failed && !t.NoCI:
 			failed = append(failed, t.Name)
 		}
 	}

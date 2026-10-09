@@ -66,7 +66,10 @@ export function ContainerPage({
         phase={status?.phase}
         conditions={status?.conditions ?? []}
         childrenTitle="Relationships"
-        children={relationshipsOf(relationships, name)}
+        children={relationshipsOf(relationships, name).map((r) => ({
+          ...r,
+          href: pageHref(ns, 'Relationship', r.name),
+        }))}
         links={links}
         next={containerNextStep(container)}
       />
@@ -93,7 +96,9 @@ export function ContainerPage({
             <>
               <dt>Standard</dt>
               <dd className="mono">
-                {container.spec.standardRef.name}
+                <a href={pageHref(ns, 'Standard', container.spec.standardRef.name)}>
+                  {container.spec.standardRef.name}
+                </a>
                 {status?.standard ? ` @ ${status.standard.ref}` : ''}
               </dd>
             </>
@@ -101,15 +106,27 @@ export function ContainerPage({
           {container.spec.computeRef ? (
             <>
               <dt>Compute</dt>
-              <dd className="mono">{container.spec.computeRef.name}</dd>
+              <dd className="mono">
+                <a href={pageHref(ns, 'Compute', container.spec.computeRef.name)}>{container.spec.computeRef.name}</a>
+              </dd>
             </>
           ) : null}
           {container.spec.deploymentRef ? (
             <>
               <dt>Deployment</dt>
-              <dd className="mono">{container.spec.deploymentRef.name}</dd>
+              <dd className="mono">
+                <a href={pageHref(ns, 'Deployment', container.spec.deploymentRef.name)}>
+                  {container.spec.deploymentRef.name}
+                </a>
+              </dd>
             </>
           ) : null}
+          <dt>Git provider</dt>
+          <dd className="mono">
+            <a href={pageHref(ns, 'GitProvider', container.spec.gitProviderRef.name)}>
+              {container.spec.gitProviderRef.name}
+            </a>
+          </dd>
           <dt>Scaffolded from</dt>
           <dd>
             {status?.scaffoldedFrom?.length ? (
@@ -165,7 +182,7 @@ export function ContainerPage({
           </h2>
           <ul className="sessions">
             {own.map((s) => (
-              <SessionRow key={s.metadata.name} session={s} now={now} />
+              <SessionRow key={s.metadata.name} session={s} now={now} href={pageHref(ns, 'Session', s.metadata.name)} />
             ))}
           </ul>
         </section>

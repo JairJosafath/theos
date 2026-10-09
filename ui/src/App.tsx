@@ -405,7 +405,7 @@ export default function App() {
             kind={objectKind}
             name={url.name}
             data={data}
-            loaded={story.connection.loaded}
+            connection={story.connection}
             writer={writer}
             containerWriter={CONTAINER_WRITER}
           />

@@ -10,6 +10,7 @@ package controller
 
 import (
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -19,6 +20,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -162,6 +164,109 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 		Expect(picked).To(Equal(1))
 	})
 })
+
+// #759: a try whose CI never reported leaves finished work; once its checks
+// pass, the next try reviews it instead of implementing it again.
+var _ = Describe("Task on an issue whose earlier try CI never reported on", func() {
+	It("reviews the earlier try's commit with no implement run once its checks pass", func() {
+		ns := newProjectNamespace()
+		n := failTryNoCI(ns)
+		Expect(gitFake.issue(ns, "orders-api", n).comments).To(ContainElement(
+			ContainSubstring("this try doesn't count towards the limit")))
+		gitFake.setChecks(ns, "orders-api", "sha-try1", gitprovider.CheckSuccess)
+		taskKey := client.ObjectKey{Namespace: ns, Name: "orders-api-2"}
+		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1alpha1.Task) bool {
+			return t.Status.Phase == c4v1alpha1.TaskChecking
+		})
+
+		second := newTask(ns, "orders-api-2", "")
+		second.Spec.Issue = int32(n)
+		mustCreate(second)
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, "orders-api-2-r1-review-a1")
+			task := getTask(g, ns, "orders-api-2")
+			g.Expect(task.Status.Continues).To(Equal("orders-api-1"))
+			g.Expect(task.Status.Commit).To(Equal("sha-try1"))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+		}).Should(Succeed())
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api-2-r1-implement"), newSandbox())).NotTo(Succeed(),
+			"no implement run")
+		Expect(getTask(Default, ns, "orders-api-2").Status.History).To(ContainElement(And(
+			HaveField("Phase", c4v1alpha1.TaskChecking),
+			HaveField("Message", ContainSubstring("which Task orders-api-1 pushed and no one reviewed")))))
+		Expect(taskStatusFaults.pending(taskKey)).To(BeZero())
+		Expect(countContaining(gitFake.pullComments(ns, "orders-api", 1),
+			"Task `orders-api-2` continues this pull request")).To(Equal(1))
+		Expect(countContaining(gitFake.issue(ns, "orders-api", n).comments,
+			"Task `orders-api-2` picked this up")).To(Equal(1))
+
+		By("merging it once the reviewer approves")
+		finishSandbox(ns, "orders-api-2-r1-review-a1", "orders-api-2",
+			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Complete."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-2").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+		}).Should(Succeed())
+	})
+
+	It("starts round 1 when the earlier try's checks failed", func() {
+		ns := newProjectNamespace()
+		n := failTryNoCI(ns)
+		gitFake.setChecks(ns, "orders-api", "sha-try1", gitprovider.CheckFailure)
+
+		second := newTask(ns, "orders-api-2", "")
+		second.Spec.Issue = int32(n)
+		mustCreate(second)
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, "orders-api-2-r1-implement")
+			task := getTask(g, ns, "orders-api-2")
+			g.Expect(task.Status.Continues).To(Equal("orders-api-1"))
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+		}).Should(Succeed())
+	})
+})
+
+// countContaining counts the comments that contain s.
+func countContaining(comments []string, s string) int {
+	n := 0
+	for _, c := range comments {
+		if strings.Contains(c, s) {
+			n++
+		}
+	}
+	return n
+}
+
+// failTryNoCI fails a first Task on a new issue of orders-api with
+// NoCIResult: its run at sha-try1 stays queued with no runner online. Its pull
+// request, number 1, stays open. It returns the issue.
+func failTryNoCI(ns string) int {
+	readyContainer(ns)
+	mustCreate(newAgent(ns, 1))
+	n := gitFake.addIssue(ns, "orders-api", "Add crop", clearIssue, []string{model.LabelReady})
+	first := newTask(ns, "orders-api-1", "")
+	first.Spec.Issue = int32(n)
+	mustCreate(first)
+	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
+	gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-try1")
+	gitFake.setChecks(ns, "orders-api", "sha-try1", gitprovider.CheckPending)
+	gitFake.setCommitRuns(ns, "orders-api", "sha-try1", gitprovider.WorkflowRun{ID: 7, Workflow: "check.yaml",
+		Event: "pull_request", Status: "queued", URL: "http://gitea/" + ns + "/orders-api/actions/runs/7"})
+	gitFake.setRunnersOnline(0)
+	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
+		&agentrunner.Result{Role: "implement", Commit: "sha-try1", Summary: "Added crop."}, "")
+	Eventually(func(g Gomega) {
+		g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+	}).Should(Succeed())
+	skewTaskClock(45 * time.Minute)
+	Eventually(func(g Gomega) {
+		task := getTask(g, ns, "orders-api-1")
+		g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+		g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(HaveField("Reason", model.ReasonNoCIResult))
+	}).Should(Succeed())
+	taskSkew.Store(0)
+	ExpectWithOffset(1, gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
+	return n
+}
 
 // failTryWithOpenPull fails a first Task on a new issue of orders-api on its
 // checks, leaving its pull request, number 1, open. It returns the issue.
