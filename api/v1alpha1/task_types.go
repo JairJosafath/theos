@@ -151,6 +151,45 @@ type TaskTransition struct {
 	Message string `json:"message,omitempty"`
 }
 
+// TaskAgentRun is what a Task keeps of one agent run once it ended.
+type TaskAgentRun struct {
+	// round is the implement round the run belonged to.
+	// +required
+	Round int32 `json:"round"`
+
+	// role is implement, review or plan; empty when neither c4agent nor the
+	// sandbox's name said.
+	// +kubebuilder:validation:MaxLength=32
+	// +optional
+	Role string `json:"role,omitempty"`
+
+	// sandbox names the Sandbox the run ran in.
+	// +kubebuilder:validation:MaxLength=63
+	// +optional
+	Sandbox string `json:"sandbox,omitempty"`
+
+	// endedAt is when the Task saw the run end.
+	// +required
+	EndedAt metav1.Time `json:"endedAt"`
+
+	// costMilliUSD is what the run cost, in thousandths of a US dollar, as its
+	// agent reported it; unset when the agent didn't say.
+	// +optional
+	CostMilliUSD *int64 `json:"costMilliUSD,omitempty"`
+
+	// tokens is what the run's agent sessions used; runsWithout is 1 when the
+	// agent didn't report them.
+	// +optional
+	Tokens *TokenUsage `json:"tokens,omitempty"`
+
+	// sessionHandoffs are the sizes, in tokens, at which the run's agent
+	// sessions handed their work to a fresh session, the first 8.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=8
+	// +optional
+	SessionHandoffs []int64 `json:"sessionHandoffs,omitempty"`
+}
+
 // TaskStandardChange is the Standard change a Task proposed: the protected files
 // it wants changed, and where that change is being reviewed.
 type TaskStandardChange struct {
@@ -329,6 +368,14 @@ type TaskStatus struct {
 	// completedAt is when the Task was Merged or Failed.
 	// +optional
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+
+	// runs records the Task's agent runs as each ends, oldest first: its round
+	// and role, what it cost and used, and the sizes at which its sessions
+	// handed off. The newest 64 are kept.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=64
+	// +optional
+	Runs []TaskAgentRun `json:"runs,omitempty"`
 
 	// history is the Task's timeline, oldest first: an entry each time its phase,
 	// round or Progressing reason changed. The newest 64 are kept.
