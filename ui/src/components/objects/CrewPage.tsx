@@ -1,15 +1,20 @@
 // A Crew's page: the object header (its state, its Ready condition, its Tasks,
 // and what a person does: re-run a failed release, resume it, or fix what
 // keeps it waiting), then who works and how many at once, its issues, and its
-// last release with its runs, Go module, publishing and bump issues.
+// last release with its runs, Go module, publishing and bump issues. With the
+// UI server's actions on, the person pauses or resumes it, sets those and its
+// release settings, and re-runs a failed release's runs (CrewActions).
 
+import type { CrewWriter } from '../../k8s/crews'
 import type { Agent, Brief, Container, Crew, CrewRelease, Task } from '../../k8s/types'
+import { useActs } from '../../lib/hooks'
 import { crewSummary, issueList } from '../../model/crews'
 import { RELEASE_RUN } from '../../model/releases'
 import { crewNextStep } from '../../model/lifecycle'
 import { AgentName, When } from '../bits'
 import { ExternalLinkIcon } from '../icons'
 import { ObjectHeader, type OutLink } from '../ObjectHeader'
+import { CrewPauseButton, ParallelForm, ReleaseForm, RerunButton, SignInToAct } from './CrewActions'
 import { pageHref, storyHref } from './links'
 import { crewTasks } from './rows'
 
@@ -19,13 +24,16 @@ export function CrewPage({
   tasks,
   containers,
   briefs,
+  writer,
 }: {
   crew: Crew
   agents: Agent[]
   tasks: Task[]
   containers: Container[]
   briefs: Brief[]
+  writer: CrewWriter
 }) {
+  const acts = useActs()
   const ns = crew.metadata.namespace ?? ''
   const name = crew.metadata.name
   const summary = crewSummary(crew, agents, tasks)
@@ -58,7 +66,13 @@ export function CrewPage({
         children={crewTasks(crew, tasks)}
         links={links}
         next={crewNextStep(crew, briefs)}
+        actions={acts === 'act' ? <CrewPauseButton crew={crew} writer={writer} /> : undefined}
       />
+      {acts === 'sign-in' ? (
+        <section className="panel">
+          <SignInToAct />
+        </section>
+      ) : null}
 
       <section className="panel" aria-labelledby="crew-work">
         <h2 className="panel-title small-title" id="crew-work">
@@ -103,6 +117,7 @@ export function CrewPage({
           <dt>Read the issues</dt>
           <dd>{summary.lastPolled ? <When at={summary.lastPolled} full /> : 'not yet'}</dd>
         </dl>
+        {acts === 'act' ? <ParallelForm crew={crew} writer={writer} /> : null}
       </section>
 
       <section className="panel" aria-labelledby="crew-release">
@@ -117,6 +132,10 @@ export function CrewPage({
           {crew.spec.publishReleases ? ` It publishes them to ${crew.spec.publishReleases.github.repository}.` : ''}
         </p>
         {release ? <ReleaseFacts release={release} /> : <p className="muted small">No release yet.</p>}
+        {acts === 'act' && release?.run === 'Failed' ? (
+          <RerunButton key={`${release.tag}|${release.rerunTime ?? ''}`} crew={crew} writer={writer} />
+        ) : null}
+        {acts === 'act' ? <ReleaseForm crew={crew} writer={writer} /> : null}
       </section>
     </main>
   )

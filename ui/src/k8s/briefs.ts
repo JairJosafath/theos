@@ -47,11 +47,25 @@ export interface BriefSettings {
   parallel?: number | string
   /** The whole list: an entry added or removed is the list without or with it. */
   releases?: BriefRelease[]
+  /**
+   * The resourceVersion of the Brief the releases were worked out from. A
+   * releases write sends it as a precondition, so it never replaces a list
+   * someone else changed meanwhile; server.mjs refuses releases without it.
+   */
+  resourceVersion?: string
 }
 
-/** The JSON patch that sets each of the settings given; server.mjs passes on only these paths. */
-export function settingsPatch(settings: BriefSettings): { op: 'add'; path: string; value: unknown }[] {
-  const ops: { op: 'add'; path: string; value: unknown }[] = []
+type SettingsOp = { op: 'add' | 'test'; path: string; value: unknown }
+
+/**
+ * The JSON patch that sets each of the settings given; server.mjs passes on
+ * only these paths. With releases it starts with a test of the Brief's
+ * resourceVersion, so a patch worked out from a stale Brief is refused.
+ */
+export function settingsPatch(settings: BriefSettings): SettingsOp[] {
+  const ops: SettingsOp[] = []
+  if (settings.releases !== undefined && settings.resourceVersion !== undefined)
+    ops.push({ op: 'test', path: '/metadata/resourceVersion', value: settings.resourceVersion })
   if (settings.autopilot !== undefined) ops.push({ op: 'add', path: '/spec/autopilot', value: settings.autopilot })
   if (settings.parallel !== undefined) ops.push({ op: 'add', path: '/spec/parallel', value: settings.parallel })
   if (settings.releases !== undefined) ops.push({ op: 'add', path: '/spec/releases', value: settings.releases })

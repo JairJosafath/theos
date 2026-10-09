@@ -147,6 +147,9 @@ function Parallel({ brief, act, busy, save }: SettingProps) {
 /** The Brief's releases list: each entry with a Remove, and a form that adds one. */
 function Releases({ brief, act, busy, save, sending }: SettingProps) {
   const releases = brief.spec.releases ?? []
+  // Each change sends the whole list, so it says which Brief it was worked
+  // out from: one changed meanwhile refuses it rather than lose that change.
+  const resourceVersion = brief.metadata.resourceVersion
   // The Containers it made, and any it names already, to pick from.
   const containers = [
     ...new Set([
@@ -178,7 +181,10 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
                   aria-label={`Stop publishing ${r.container}`}
                   disabled={busy}
                   onClick={() =>
-                    save(`remove-${r.container}`, { releases: releases.filter((x) => x.container !== r.container) })
+                    save(`remove-${r.container}`, {
+                      releases: releases.filter((x) => x.container !== r.container),
+                      resourceVersion,
+                    })
                   }
                 >
                   {sending === `remove-${r.container}` ? 'Removing…' : 'Remove'}
@@ -190,7 +196,15 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
       ) : (
         <p className="field-hint">None yet.</p>
       )}
-      {act ? <AddRelease containers={containers} releases={releases} busy={busy} save={save} /> : null}
+      {act ? (
+        <AddRelease
+          containers={containers}
+          releases={releases}
+          resourceVersion={resourceVersion}
+          busy={busy}
+          save={save}
+        />
+      ) : null}
     </div>
   )
 }
@@ -198,11 +212,13 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
 function AddRelease({
   containers,
   releases,
+  resourceVersion,
   busy,
   save,
 }: {
   containers: string[]
   releases: BriefRelease[]
+  resourceVersion?: string
   busy: boolean
   save: SettingProps['save']
 }) {
@@ -220,7 +236,7 @@ function AddRelease({
       github: { repository: repository.trim(), tokenSecretRef: { name: secret.trim() } },
     }
     if (tagPrefix.trim()) entry.tagPrefix = tagPrefix.trim()
-    if (await save('add-release', { releases: [...releases, entry] })) {
+    if (await save('add-release', { releases: [...releases, entry], resourceVersion })) {
       setContainer('')
       setRepository('')
       setSecret('')

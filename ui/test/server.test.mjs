@@ -470,12 +470,7 @@ describe('server.mjs', () => {
         'PATCH',
         '/briefs/lens',
         JP,
-        [
-          add('/spec/paused', true),
-          add('/spec/autopilot', 'Suggest'),
-          add('/spec/parallel', 2),
-          add('/spec/releases', [{ name: 'v1' }]),
-        ],
+        [add('/spec/paused', true), add('/spec/autopilot', 'Suggest'), add('/spec/parallel', 2)],
       ],
       ['a Brief pause alone', 'PATCH', '/briefs/lens', JP, [add('/spec/paused', false)]],
       [
@@ -490,6 +485,13 @@ describe('server.mjs', () => {
           add('/spec/prepareReleases', false),
           add('/spec/publishReleases', { registry: 'ghcr.io' }),
         ],
+      ],
+      [
+        "a Crew's publishing turned off, with its tagging",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [{ op: 'remove', path: '/spec/publishReleases' }, add('/spec/tagReleases', false)],
       ],
       [
         "a Crew's release re-run",
@@ -546,6 +548,37 @@ describe('server.mjs', () => {
       )
     })
 
+    const tested = (rv) => ({ op: 'test', path: '/metadata/resourceVersion', value: rv })
+    const releases = add('/spec/releases', [{ container: 'storefront' }])
+
+    it("sets a Brief's releases worked out from the Brief as it is, test and all", async () => {
+      seen.length = 0
+      const body = [tested('7'), add('/spec/paused', true), releases]
+      const res = await write('PATCH', '/briefs/lens', body, JP)
+      assert.equal(res.status, 200)
+      assert.deepEqual(
+        seen.map((r) => [r.method, r.url]),
+        [
+          ['GET', `${api}/briefs/lens`],
+          ['PATCH', `${api}/briefs/lens?fieldManager=c4-factory-ui`],
+        ],
+      )
+      assert.deepEqual(seen[1].body, body)
+    })
+
+    it("refuses a Brief's releases worked out from a stale Brief as a Conflict, and writes nothing", async () => {
+      seen.length = 0
+      const res = await write('PATCH', '/briefs/lens', [tested('6'), releases], JP)
+      assert.equal(res.status, 409)
+      const answer = await res.json()
+      assert.equal(answer.reason, 'Conflict')
+      assert.match(answer.message, /^Brief webshop\/lens changed since this page showed it, so nothing was saved/)
+      assert.deepEqual(
+        seen.map((r) => r.method),
+        ['GET'],
+      )
+    })
+
     it("passes the API server's refusal back as-is", async () => {
       seen.length = 0
       const res = await write('PATCH', '/crews/denied', [add('/spec/parallel', 0)], JP)
@@ -596,6 +629,17 @@ describe('server.mjs', () => {
       // Other fields.
       ["a Brief's idea", 'PATCH', '/briefs/lens', JP, [add('/spec/idea', 'x')], 403],
       ["a Brief's agents", 'PATCH', '/briefs/lens', JP, [add('/spec/agents', {})], 403],
+      ["a Brief's releases with no test of its resourceVersion", 'PATCH', '/briefs/lens', JP, [releases], 403],
+      [
+        'a test of a Brief field other than its resourceVersion',
+        'PATCH',
+        '/briefs/lens',
+        JP,
+        [{ op: 'test', path: '/spec/idea', value: 'x' }, releases],
+        403,
+      ],
+      ['a test of an empty resourceVersion', 'PATCH', '/briefs/lens', JP, [tested(''), releases], 403],
+      ['a test alone', 'PATCH', '/briefs/lens', JP, [tested('7')], 403],
       [
         'a Brief setting with a prompt',
         'PATCH',
@@ -704,6 +748,25 @@ describe('server.mjs', () => {
         403,
       ],
       ["a Crew's paused removed", 'PATCH', '/crews/orders-api', JP, [{ op: 'remove', path: '/spec/paused' }], 403],
+      [
+        "a Crew's publishing removed with a value",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [{ op: 'remove', path: '/spec/publishReleases', value: {} }],
+        403,
+      ],
+      [
+        "a Crew's publishing removed twice",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [
+          { op: 'remove', path: '/spec/publishReleases' },
+          { op: 'remove', path: '/spec/publishReleases' },
+        ],
+        403,
+      ],
       [
         "a Standard's ref moved",
         'PATCH',

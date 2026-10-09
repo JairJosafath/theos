@@ -50,6 +50,17 @@ describe('briefManifest and promptPatch', () => {
     expect(settingsPatch({ releases: [release] })).toEqual([{ op: 'add', path: '/spec/releases', value: [release] }])
     expect(settingsPatch({ releases: [] })).toEqual([{ op: 'add', path: '/spec/releases', value: [] }])
   })
+
+  it('tests the resourceVersion the releases were worked out from before setting them', () => {
+    expect(settingsPatch({ releases: [], resourceVersion: '42' })).toEqual([
+      { op: 'test', path: '/metadata/resourceVersion', value: '42' },
+      { op: 'add', path: '/spec/releases', value: [] },
+    ])
+    // Only releases replace a list; the other settings are single values.
+    expect(settingsPatch({ autopilot: 'On', resourceVersion: '42' })).toEqual([
+      { op: 'add', path: '/spec/autopilot', value: 'On' },
+    ])
+  })
 })
 
 describe('nameFromIdea', () => {

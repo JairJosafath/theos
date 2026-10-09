@@ -3,9 +3,9 @@
 // answers GETs of collections, and the factory health's Pods and Nodes as
 // empty lists; a GET of one object; a POST that creates an object
 // (generateName included), a merge patch of one and a JSON patch of add,
-// replace and test ops, refusing what a CRD rule of REFUSE would, or what
-// refuseNextWrite() asks, with the API server's message; everything else is
-// 404. A kind it is told to refuse answers 403, as RBAC would.
+// remove, replace and test ops, refusing what a CRD rule of REFUSE would, or
+// what refuseNextWrite() asks, with the API server's message; everything
+// else is 404. A kind it is told to refuse answers 403, as RBAC would.
 
 import http from 'node:http'
 // The UI's own list of kinds, so the fake API serves every one.
@@ -20,6 +20,15 @@ const REFUSE = {
     typeof obj.spec?.goal === 'string' && obj.spec.goal.length < 1
       ? `Task.c4.factory.io "${obj.metadata.name}" is invalid: spec.goal: Invalid value: "": spec.goal in body should be at least 1 chars long`
       : undefined,
+  crews: (obj) => {
+    if (obj.spec?.parallel > 5) {
+      return `Crew.c4.factory.io "${obj.metadata.name}" is invalid: spec.parallel: Invalid value: ${obj.spec.parallel}: spec.parallel in body should be less than or equal to 5`
+    }
+    if (obj.spec?.publishReleases && !obj.spec.tagReleases) {
+      return `Crew.c4.factory.io "${obj.metadata.name}" is invalid: spec: Invalid value: "object": publishReleases needs tagReleases: only a release the Crew tagged is published`
+    }
+    return undefined
+  },
   standards: (obj) =>
     typeof obj.spec?.template?.ref === 'string' && obj.spec.template.ref.length < 1
       ? `Standard.c4.factory.io "${obj.metadata.name}" is invalid: spec.template.ref: Invalid value: "": spec.template.ref in body should be at least 1 chars long`
@@ -57,7 +66,7 @@ function mergePatch(target, patch) {
 }
 
 /**
- * A JSON patch (RFC 6902) of add, replace and test ops onto `target`, on
+ * A JSON patch (RFC 6902) of add, remove, replace and test ops onto `target`, on
  * object members, and an add at `-` appending to a list; undefined for any
  * other op or path, or when a test fails.
  */
@@ -65,7 +74,11 @@ function jsonPatch(target, ops) {
   if (!Array.isArray(ops)) return undefined
   const out = structuredClone(target)
   for (const op of ops) {
-    if (!['add', 'replace', 'test'].includes(op?.op) || typeof op.path !== 'string' || !op.path.startsWith('/'))
+    if (
+      !['add', 'remove', 'replace', 'test'].includes(op?.op) ||
+      typeof op.path !== 'string' ||
+      !op.path.startsWith('/')
+    )
       return undefined
     const keys = op.path.slice(1).split('/')
     const last = keys.pop()
@@ -78,6 +91,9 @@ function jsonPatch(target, ops) {
     }
     if (op.op === 'test') {
       if (at[last] !== op.value) return undefined
+    } else if (op.op === 'remove') {
+      if (Array.isArray(at) || !(last in at)) return undefined
+      delete at[last]
     } else if (last === '-' && Array.isArray(at)) at.push(op.value)
     else at[last] = op.value
   }
@@ -142,7 +158,7 @@ export function fakeApi(namespace) {
       const old = store.get(plural).get(`${ns}/${name}`)
       if (!old) return status(res, 404, 'NotFound', `${plural} "${name}" not found`)
       obj = type === 'application/merge-patch+json' ? mergePatch(old, body) : jsonPatch(old, body)
-      if (!obj) return status(res, 422, 'UnprocessableEntity', 'the fake API takes only add and replace ops')
+      if (!obj) return status(res, 422, 'UnprocessableEntity', 'the fake API takes only add, remove and replace ops')
     }
     const refused = REFUSE[plural]?.(obj)
     if (refused) return status(res, 422, 'Invalid', refused)
@@ -205,6 +221,10 @@ export function fakeApi(namespace) {
   return {
     server,
     writes,
+    /** The stored object of a kind, as the API has it now. */
+    get(plural, name) {
+      return store.get(plural).get(`${namespace}/${name}`)
+    },
     /** Refuses the next write with 422 and `message`, as the API server does when the CRD refuses a value. */
     refuseNextWrite(message) {
       refusal = message

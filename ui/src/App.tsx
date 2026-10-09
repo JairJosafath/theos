@@ -21,6 +21,7 @@ import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { VersionLine } from './components/Versions'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
 import { LiveContainerWriter } from './k8s/containers'
+import { LiveCrewWriter } from './k8s/crews'
 import { LiveStandardWriter } from './k8s/standards'
 import { HealthSource, type FactoryHealth } from './k8s/health'
 import { fetchSession, signOut, type UiSession } from './k8s/session'
@@ -67,6 +68,8 @@ const API: Api = { baseUrl: 'k8s', mux: new WatchMux({ url: 'k8s-watch' }) }
 const LIVE_WRITER = new LiveBriefWriter(API.baseUrl)
 /** With UI actions on: a Container's scaffold retry and a Task from a goal. */
 const CONTAINER_WRITER = new LiveContainerWriter(API.baseUrl)
+/** A Crew page's writes, taken only with the UI server's actions on. */
+const CREW_WRITER = new LiveCrewWriter(API.baseUrl)
 /** With UI actions on: a Standard's ref bump. */
 const STANDARD_WRITER = new LiveStandardWriter(API.baseUrl)
 
@@ -502,6 +505,7 @@ export default function App() {
             connection={story.connection}
             writer={writer}
             containerWriter={CONTAINER_WRITER}
+            crewWriter={CREW_WRITER}
             standardWriter={STANDARD_WRITER}
           />
         ) : undefined
