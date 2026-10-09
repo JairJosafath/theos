@@ -9,6 +9,7 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -286,7 +287,9 @@ func (r *CrewReconciler) event(crew *c4v1alpha1.Crew, eventType, reason, action,
 // that release's failed runs, and the watch follows their new attempts;
 // otherwise it says with a Normal Event that there is nothing to re-run. It
 // runs with spec.tagReleases, as the watch does. A
-// re-run the Git host refuses is a Warning Event, and a new value tries again.
+// re-run the Git host refuses is a Warning Event, and a new value tries again:
+// when it refused only some runs, the release stays Failed, and a new value
+// re-runs those.
 func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository) {
 	value := crew.Annotations[c4v1alpha1.AnnotationRerunRelease]
@@ -317,7 +320,7 @@ func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1alpha1.Crew
 	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	found, err := provider.TagRuns(gitCtx, repo, release.Tag, release.Commit)
-	var rerun []string
+	var rerun, refused []string
 	if err == nil {
 		runs := make([]model.ReleaseRun, 0, len(found))
 		for _, f := range found {
@@ -325,22 +328,34 @@ func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1alpha1.Crew
 				Conclusion: f.Conclusion, URL: f.URL})
 		}
 		for _, failed := range model.FailedReleaseRuns(runs) {
-			if err = provider.RerunFailedJobs(gitCtx, repo, failed.ID); err != nil {
-				break
+			if rerr := provider.RerunFailedJobs(gitCtx, repo, failed.ID); rerr != nil {
+				err = cmp.Or(err, rerr)
+				refused = append(refused, failed.Workflow)
+				continue
 			}
 			rerun = append(rerun, failed.Workflow)
 		}
 	}
 	if len(rerun) > 0 {
-		// The watch reads the runs' new attempts from here.
+		// The watch reads the runs' new attempts from here. A run the host
+		// refused still failed, so the release stays Failed and a new value
+		// re-runs only that one: the others aren't failed any more.
 		now := metav1.NewTime(r.now())
-		release.Run, release.RerunTime = model.RunRunning, &now
+		release.RerunTime = &now
+		if err == nil {
+			release.Run = model.RunRunning
+		}
 	}
 	if err != nil {
-		log.Error(err, "Failed to re-run the release runs", "tag", release.Tag, "rerun", rerun)
-		r.event(crew, corev1.EventTypeWarning, reasonReleaseRerunFailed, "RerunRelease",
-			fmt.Sprintf("Could not re-run the failed runs of %s: %v; set a new %s value to try again",
-				release.Tag, err, c4v1alpha1.AnnotationRerunRelease))
+		log.Error(err, "Failed to re-run the release runs", "tag", release.Tag, "rerun", rerun, "refused", refused)
+		note := fmt.Sprintf("Could not re-run the failed runs of %s: %v; set a new %s value to try again",
+			release.Tag, err, c4v1alpha1.AnnotationRerunRelease)
+		if len(rerun) > 0 {
+			note = fmt.Sprintf("Re-ran %s of %s, but could not re-run %s: %v; set a new %s value to try those again",
+				strings.Join(rerun, ", "), release.Tag, strings.Join(refused, ", "), err,
+				c4v1alpha1.AnnotationRerunRelease)
+		}
+		r.event(crew, corev1.EventTypeWarning, reasonReleaseRerunFailed, "RerunRelease", note)
 		return
 	}
 	if len(rerun) == 0 {

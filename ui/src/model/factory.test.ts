@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { demoFactory, demoHealth } from '../demo/factoryFixture'
 import type { FactoryHealth } from '../k8s/health'
 import type { Agent, Brief, Container, Crew, Session, Task, TaskTransition } from '../k8s/types'
-import { attention, briefOn, recentStall } from './attention'
+import { attention, attentionKey, briefOn, recentStall } from './attention'
 import { activeCrewTasks, crewDoing, crewSummaries, crewSummary } from './crews'
 import {
   agentBackAt,
@@ -250,6 +250,13 @@ describe('attention', () => {
       ['warning', 'Task apps/stuck has been waiting for CI for 45 min'],
     ])
     expect(items[0].detail).toContain('CrashLoopBackOff')
+  })
+
+  it('lists each failed read once, under a key of its own', () => {
+    const errors = ['/api/v1/pods: 404 not found', '/api/v1/nodes: 404 not found', '/api/v1/pods: 404 not found']
+    const items = attention({ tasks: [], containers: [], sessions: [], health: health({ errors }), now: T0 })
+    expect(items.map((i) => i.detail)).toEqual(['/api/v1/pods: 404 not found', '/api/v1/nodes: 404 not found'])
+    expect(new Set(items.map(attentionKey)).size).toBe(items.length)
   })
 
   it('warns when the node runs out of memory', () => {

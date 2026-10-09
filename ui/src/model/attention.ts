@@ -36,6 +36,11 @@ export interface Attention {
   brief?: { name: string; note: string }
 }
 
+/** Tells items apart: two read errors share a title and differ only in detail. */
+export function attentionKey(item: Attention): string {
+  return `${item.level}|${item.title}|${item.detail}`
+}
+
 /**
  * The Brief that watches a Task, Crew or Container, from its status.attention
  * (healing: when it acts) or status.needsYou (on its list); undefined when no
@@ -258,7 +263,10 @@ export function attention(input: {
     }
   }
 
-  return items.sort((a, b) => (a.level === b.level ? 0 : a.level === 'error' ? -1 : 1))
+  // The same item twice (the same read error twice) says nothing more, and two
+  // rows with one key make React keep stale ones.
+  const unique = [...new Map(items.map((item) => [attentionKey(item), item])).values()]
+  return unique.sort((a, b) => (a.level === b.level ? 0 : a.level === 'error' ? -1 : 1))
 }
 
 function timeAgoShort(iso: string | undefined, now: number): string {

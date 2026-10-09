@@ -4,7 +4,7 @@ import { useId, useState, type FormEvent } from 'react'
 import { nameFromIdea, type BriefWriter } from '../../k8s/briefs'
 import type { BriefAutopilot } from '../../k8s/types'
 import { AUTOPILOT_MODES, DEFAULT_AUTOPILOT_HINT } from '../../model/brief'
-import { errorText } from './errors'
+import { writeError, type WriteError } from './errors'
 import { FormError } from './PromptForm'
 
 /**
@@ -21,7 +21,7 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
   // Empty leaves spec.parallel unset: the factory's default.
   const [parallel, setParallel] = useState('')
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string>()
+  const [error, setError] = useState<WriteError>()
   const [created, setCreated] = useState<string>()
   const name = typedName ?? (idea.trim() ? nameFromIdea(idea, taken) : '')
 
@@ -41,7 +41,7 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
       setAutopilot('')
       setParallel('')
     } catch (err) {
-      setError(errorText(err))
+      setError(writeError(err))
     } finally {
       setSending(false)
     }
@@ -124,7 +124,7 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
           </span>
         ) : null}
       </div>
-      {error ? <FormError message={error} /> : null}
+      {error ? <FormError error={error} /> : null}
     </form>
   )
 }

@@ -4,6 +4,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import './app.css'
+import { Account } from './components/Account'
 import { Briefs } from './components/Briefs'
 import { Diagram } from './components/Diagram'
 import { FactoryPage } from './components/Factory'
@@ -11,6 +12,7 @@ import { LogoMark, WarningIcon } from './components/icons'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
 import { HealthSource, type FactoryHealth } from './k8s/health'
+import { fetchSession, signOut, type UiSession } from './k8s/session'
 import { WatchMux } from './k8s/mux'
 import {
   emptyFactory,
@@ -28,7 +30,7 @@ import {
 } from './k8s/sources'
 import type { Project } from './k8s/types'
 import { useDemo } from './lib/demo'
-import { useSource, useUrlState, type View } from './lib/hooks'
+import { RefreshSession, SessionContext, useSource, useUrlState, type View } from './lib/hooks'
 import { plural, titleOf } from './model/describe'
 import { activeCrewTasks } from './model/crews'
 import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker, workingNow } from './model/story'
@@ -102,6 +104,7 @@ export default function App() {
     if (!demo) return new HealthSource()
     return demoModule ? new demoModule.DemoHealthSource() : NO_HEALTH
   }, [demo, demoModule, factoryView])
+  const { session, onSignOut, refresh: refreshSession } = useSession(demo)
   const factory = useSource(factorySource)
   const health = useSource(healthSource)
   const story = useSource(storySource)
@@ -170,7 +173,7 @@ export default function App() {
   const noProjects = !demo && projects.connection.loaded && sortedProjects.length === 0
   const systemTitle = systems.find((s) => s.name === systemName)?.title
 
-  return (
+  const page = (
     <div className="app">
       <header className="topbar">
         <div className="brand">
@@ -203,6 +206,7 @@ export default function App() {
         </nav>
         <div className="topbar-right">
           <ConnectionStatus connection={connection} />
+          <Account onSignOut={onSignOut} />
           {sortedProjects.length > 0 && !factoryView ? (
             <label className="picker">
               <span className="picker-label">Project</span>
@@ -352,6 +356,43 @@ export default function App() {
       </footer>
     </div>
   )
+  return (
+    <SessionContext.Provider value={session}>
+      <RefreshSession.Provider value={refreshSession}>{page}</RefreshSession.Provider>
+    </SessionContext.Provider>
+  )
+}
+
+/**
+ * The UI server's session answer (none in demo mode), asked when the page
+ * opens and again on refresh, such as after a write refused with 401; and a
+ * sign-out. Without an answer the page shows no account.
+ */
+function useSession(demo: boolean): {
+  session: UiSession | undefined
+  onSignOut: () => Promise<void>
+  refresh: () => void
+} {
+  const [session, setSession] = useState<UiSession>()
+  const [asked, setAsked] = useState(0)
+  useEffect(() => {
+    if (demo) return
+    let live = true
+    fetchSession().then(
+      (answer) => live && setSession(answer),
+      () => live && setSession(undefined),
+    )
+    return () => {
+      live = false
+    }
+  }, [demo, asked])
+  const refresh = useCallback(() => setAsked((n) => n + 1), [])
+  const onSignOut = useCallback(async () => {
+    if (!session?.logout) return
+    await signOut(session.logout)
+    setSession({ ...session, user: null })
+  }, [session])
+  return { session: demo ? undefined : session, onSignOut, refresh }
 }
 
 function mergeConnections(a: Connection, b: Connection): Connection {
