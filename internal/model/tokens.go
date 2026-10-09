@@ -2,7 +2,10 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
+	"time"
 )
 
 // TokenUsage is what agent sessions used, in tokens: of a call, a run, a Task,
@@ -83,4 +86,74 @@ func orRun(role string) string {
 		return "agent"
 	}
 	return role
+}
+
+// MaxRunRecords is how many agent runs a Task keeps a record of, the newest,
+// and MaxRecordedHandoffs how many handoff sizes each record keeps, the first.
+const (
+	MaxRunRecords       = 64
+	MaxRecordedHandoffs = 8
+)
+
+// RunRecord is what a Task keeps of one agent run when it ends: its round and
+// role, what it cost and used, and the sizes at which its sessions handed off.
+type RunRecord struct {
+	Round   int
+	Role    string
+	Sandbox string
+	EndedAt time.Time
+	// CostMilliUSD is what the run cost when CostReported.
+	CostMilliUSD int64
+	CostReported bool
+	// Tokens is what the run adds to its Task's tokens (RunState.Tokens).
+	Tokens          TokenUsage
+	SessionHandoffs []int64
+}
+
+// Record is the record of a run of sandbox in round that ends at, and false
+// for a sandbox that is gone: whoever ended it recorded it. The role is the one
+// c4agent reported, else the one in the sandbox's name.
+func (s RunState) Record(round int, sandbox string, at time.Time) (RunRecord, bool) {
+	if !s.Started {
+		return RunRecord{}, false
+	}
+	rec := RunRecord{Round: round, Role: SandboxRole(sandbox), Sandbox: sandbox, EndedAt: at, Tokens: s.Tokens()}
+	rec.CostMilliUSD, _ = s.Cost()
+	if s.Result != nil {
+		rec.CostReported = s.Result.CostReported
+		if s.Result.Role != "" {
+			rec.Role = s.Result.Role
+		}
+		rec.SessionHandoffs = slices.Clone(s.Result.SessionHandoffs[:min(len(s.Result.SessionHandoffs), MaxRecordedHandoffs)])
+	}
+	return rec, true
+}
+
+// SandboxRole is the role in a sandbox's name (SandboxName), or "" when the
+// name has none.
+func SandboxRole(sandbox string) string {
+	for _, role := range []string{RoleImplementer, RoleReviewer, RolePlanner} {
+		i := strings.LastIndex(sandbox, "-"+role)
+		if i < 0 {
+			continue
+		}
+		rest := sandbox[i+1+len(role):]
+		if j := strings.LastIndex(sandbox[:i], "-r"); j >= 0 && isDigits(sandbox[j+2:i]) &&
+			(rest == "" || strings.HasPrefix(rest, "-a") || strings.HasPrefix(rest, "-x")) {
+			return role
+		}
+	}
+	return ""
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }

@@ -257,6 +257,21 @@ export interface TaskTransition {
   message?: string
 }
 
+/** What a Task keeps of one agent run once it ended: its round, role, cost, tokens and handoff sizes. */
+export interface TaskAgentRun {
+  round: number
+  /** implement, review or plan; omitted when neither c4agent nor the sandbox's name said. */
+  role?: string
+  sandbox?: string
+  /** When the Task saw the run end. */
+  endedAt: string
+  /** What the run cost, in thousandths of a US dollar; omitted when the agent didn't say. */
+  costMilliUSD?: number
+  tokens?: TokenUsage
+  /** The sizes, in tokens, at which the run's sessions handed off to fresh ones. */
+  sessionHandoffs?: number[]
+}
+
 export interface CheckStatus {
   commit?: string
   /** pending, success, failure or error. */
@@ -324,6 +339,8 @@ export interface Task extends K8sObject {
     slotWaitSince?: string
     phaseChangedAt?: string
     completedAt?: string
+    /** The Task's agent runs as each ended, oldest first; the newest 64. */
+    runs?: TaskAgentRun[]
     history?: TaskTransition[]
     conditions?: Condition[]
   }
