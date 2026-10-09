@@ -139,7 +139,7 @@ describe('the Container page’s actions', () => {
       const name = await link.textContent()
       assert.match(name, /^orders-api-/)
       const href = new URL(await link.getAttribute('href'), env.base).searchParams
-      assert.deepEqual([href.get('area'), href.get('task')], ['work', `${NS}/${name}`])
+      assert.deepEqual([href.get('ns'), href.get('kind'), href.get('name')], [NS, 'Task', name])
       assert.equal(env.api.writes.length, 1)
       assert.deepEqual(env.api.writes[0].body.spec, {
         kind: 'Implement',
@@ -150,8 +150,8 @@ describe('the Container page’s actions', () => {
       })
       assert.equal(await panel().getByLabel('Start a Task').inputValue(), '')
       await link.click()
-      // Work opens with the new Task selected.
-      await page.locator('.task-card[aria-pressed="true"]', { hasText: name }).waitFor({ timeout: 10000 })
+      // The new Task's page opens.
+      await page.getByRole('region', { name: `Task ${name}`, exact: true }).waitFor({ timeout: 10000 })
     })
 
     it('shows the API server’s message when it refuses an empty goal', async () => {

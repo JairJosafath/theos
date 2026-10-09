@@ -13,6 +13,7 @@ import { crewSummaries } from '../model/crews'
 import { AttentionPanel } from './factory/Attention'
 import { TaskCard } from './factory/TaskBoard'
 import { CrewsPanel } from './factory/Crews'
+import { ReleasesPanel } from './factory/Releases'
 import { TimePanel } from './factory/TimePanel'
 import { TaskPanel } from './factory/TaskPanel'
 import { HealthPanel } from './factory/Health'
@@ -112,8 +113,8 @@ export function FactoryPage({
               <div>
                 <h2 className="panel-title">Tasks</h2>
                 <p className="panel-caption">
-                  Each Task moves left to right every round: an agent implements, CI checks, an agent reviews. Select
-                  one for its timeline.
+                  Each Task moves left to right every round: an agent implements, CI checks, an agent reviews.{' '}
+                  {pageHref ? 'Open one for its page.' : 'Select one for its timeline.'}
                 </p>
               </div>
             </div>
@@ -138,6 +139,7 @@ export function FactoryPage({
                         now={now}
                         selected={taskKey(t) === selectedTask}
                         onSelect={() => onSelectTask(taskKey(t) === selectedTask ? undefined : taskKey(t))}
+                        href={pageHref?.(t.metadata.namespace ?? '', 'Task', t.metadata.name)}
                       />
                     ))}
                   </div>
@@ -147,6 +149,8 @@ export function FactoryPage({
           </div>
 
           <CrewsPanel crews={crews} loaded={loaded} now={now} onSelectTask={onSelectTask} pageHref={pageHref} />
+
+          <ReleasesPanel crews={data.crews} loaded={loaded} now={now} pageHref={pageHref} />
 
           <TimePanel stats={stats} />
         </section>

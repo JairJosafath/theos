@@ -12,7 +12,7 @@ import { SignInLink } from '../Account'
 import { writeError, type WriteError } from '../briefs/errors'
 import { FormError } from '../briefs/PromptForm'
 import { ExternalLinkIcon } from '../icons'
-import { taskHref } from './links'
+import { pageHref } from './links'
 
 export function ContainerActions({
   container,
@@ -186,7 +186,7 @@ function TaskFromGoal({
       </button>
       {started ? (
         <p className="form-done" role="status">
-          Started Task <a href={taskHref(ns, started)}>{started}</a>.
+          Started Task <a href={pageHref(ns, 'Task', started)}>{started}</a>.
         </p>
       ) : null}
       {error ? <FormError error={error} /> : null}
