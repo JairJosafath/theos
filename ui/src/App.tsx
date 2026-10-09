@@ -17,6 +17,7 @@ import { ConnectionStatus, ProblemsBanner } from './components/Status'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { VersionLine } from './components/Versions'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
+import { LiveContainerWriter } from './k8s/containers'
 import { HealthSource, type FactoryHealth } from './k8s/health'
 import { fetchSession, signOut, type UiSession } from './k8s/session'
 import { WatchMux } from './k8s/mux'
@@ -49,8 +50,10 @@ import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForP
  * All watches of the page share connections through one WatchMux.
  */
 const API: Api = { baseUrl: 'k8s', mux: new WatchMux({ url: 'k8s-watch' }) }
-/** The page's only writes, through the same proxy: create a Brief, add a prompt to one, pause or resume one. */
+/** The Brief writes, through the same proxy: create a Brief, add a prompt to one, pause or resume one. */
 const LIVE_WRITER = new LiveBriefWriter(API.baseUrl)
+/** With UI actions on: a Container's scaffold retry and a Task from a goal. */
+const CONTAINER_WRITER = new LiveContainerWriter(API.baseUrl)
 
 /** A source with nothing in it: for a view that is not shown, or no project yet. */
 class Idle<T> implements Source<T> {
@@ -398,7 +401,14 @@ export default function App() {
       }}
       objectPage={
         objectKind && url.name ? (
-          <ObjectPage kind={objectKind} name={url.name} data={data} loaded={story.connection.loaded} writer={writer} />
+          <ObjectPage
+            kind={objectKind}
+            name={url.name}
+            data={data}
+            loaded={story.connection.loaded}
+            writer={writer}
+            containerWriter={CONTAINER_WRITER}
+          />
         ) : undefined
       }
     />

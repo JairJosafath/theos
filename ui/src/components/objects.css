@@ -227,3 +227,37 @@
   justify-content: start;
   gap: 16px;
 }
+
+/* ContainerActions.tsx: the scaffold retry and its dialog, and the goal box. */
+.container-action + .container-action {
+  margin-top: 18px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.container-action textarea.input {
+  margin-top: 8px;
+}
+
+.dialog {
+  max-width: 480px;
+  padding: 20px 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+.dialog-buttons {
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.container-action > .button,
+.dialog-buttons .button {
+  margin-top: 8px;
+}
