@@ -150,7 +150,8 @@ describe('the Container page’s actions', () => {
       })
       assert.equal(await panel().getByLabel('Start a Task').inputValue(), '')
       await link.click()
-      await page.getByRole('heading', { name: 'Tasks', exact: true }).first().waitFor({ timeout: 10000 })
+      // Work opens with the new Task selected.
+      await page.locator('.task-card[aria-pressed="true"]', { hasText: name }).waitFor({ timeout: 10000 })
     })
 
     it('shows the API server’s message when it refuses an empty goal', async () => {

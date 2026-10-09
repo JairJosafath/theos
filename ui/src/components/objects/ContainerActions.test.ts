@@ -62,7 +62,7 @@ describe('ContainerActions', () => {
 
   it('says a Task needs a Crew when the Container has none', () => {
     const html = render(serviceAccount, container('Ready'), null)
-    expect(html).toContain('has no Crew')
+    expect(html).toContain('sees no Crew for orders-api')
     expect(html).not.toContain('Start the Task')
   })
 

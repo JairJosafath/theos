@@ -31,6 +31,7 @@ export function ObjectPage({
     if (container)
       return (
         <ContainerPage
+          key={`${data.namespace}/${name}`}
           container={container}
           relationships={data.relationships}
           sessions={data.sessions}

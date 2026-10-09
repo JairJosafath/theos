@@ -140,7 +140,8 @@ function TaskFromGoal({
       <div className="container-action">
         <h3 className="object-section">Start a Task</h3>
         <p className="panel-text">
-          A Task takes its implementer and reviewer from the Container’s Crew, and {name} has no Crew.
+          A Task takes its implementer and reviewer from the Container’s Crew, and this page sees no Crew for {name}{' '}
+          (none yet, or one it can’t read).
         </p>
       </div>
     )
