@@ -421,6 +421,23 @@ const (
 // ReasonNoCIResult is the reason of a Task that failed because CI won't report.
 const ReasonNoCIResult = "NoCIResult"
 
+// ReasonRunnerOutOfSpace is the reason of a Task whose checks failed because
+// the CI runner ran out of room ("no space left on device"): the runner's
+// fault, not the change's, so it costs no round and its issue no try.
+const ReasonRunnerOutOfSpace = "RunnerOutOfSpace"
+
+// RunnerFault reports whether a Task that failed for reason failed through
+// its CI runner's fault, so the failure costs its issue no try.
+func RunnerFault(reason string) bool {
+	return reason == ReasonNoCIResult || reason == ReasonRunnerOutOfSpace
+}
+
+// RunnerOutOfSpace reports whether a failed CI log shows the runner out of
+// room: Go, Node and the shell all say "no space left on device" (ENOSPC).
+func RunnerOutOfSpace(log string) bool {
+	return strings.Contains(strings.ToLower(log), "no space left on device")
+}
+
 // The states of the CI runs at a Task's commit (CIRun.State).
 const (
 	// CIRunNone means no run at the commit.
@@ -618,6 +635,11 @@ func nextTaskStep(f TaskFacts) TaskStep {
 			}
 			return TaskStep{Action: ActionStartReview, Message: "Checks passed; starting the review"}
 		case "failure", "error":
+			if RunnerOutOfSpace(f.ChecksLog) {
+				return TaskStep{Action: ActionFail, Reason: ReasonRunnerOutOfSpace, Message: fmt.Sprintf(
+					"CI run %s failed because the runner ran out of room (no space left on device); "+
+						"free the runner's space or restart it", orUnknown(f.ChecksURL))}
+			}
 			feedback := fmt.Sprintf("The CI checks failed (%s). Run the check command, find the failure and fix it.",
 				orUnknown(f.ChecksURL))
 			if f.MergeWhenChecksPass {

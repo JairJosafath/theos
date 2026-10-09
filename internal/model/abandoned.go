@@ -18,7 +18,7 @@ type IssueTry struct {
 	// Created orders the tries; Name breaks a tie.
 	Created int64
 	// Final is a try that ended; Failed one that failed; NoCI one that failed
-	// because CI never reported, which costs no try.
+	// through its CI runner's fault (RunnerFault), which costs no try.
 	Final, Failed, NoCI bool
 	// PullRequest is the number of the try's pull request, 0 before it has one.
 	PullRequest    int

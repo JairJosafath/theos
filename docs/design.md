@@ -240,7 +240,12 @@ enforces.
   That failure is the infrastructure's, so it costs the issue no try; a later
   try that continues its pull request, with green checks on the commit the
   failed try pushed, goes straight to review
-  ([plan](plans/checks-wait-for-runner.md)).
+  ([plan](plans/checks-wait-for-runner.md)). Checks that fail because the
+  runner ran out of room (the log says `no space left on device`) are the
+  infrastructure's too: the Task fails, reason `RunnerOutOfSpace`, costing no
+  round and no try. The runners keep `/tmp` from job to job, so they clear
+  what jobs left there over two hours ago and run jobs without Node's compile
+  cache, which no later job reads.
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
   repository only; `main` takes no pushes, only the operator merges (the reviewed
@@ -359,7 +364,7 @@ model and context it needs.
   Gitea dependencies (also across repositories) to close, and starts up to `parallel`
   Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
   first after the Standard changes that `Blocked` Tasks wait on, up to three
-  tries per issue (a `NoCIResult` failure is not one). A try continues an earlier try's pull request that is
+  tries per issue (a `NoCIResult` or `RunnerOutOfSpace` failure is not one). A try continues an earlier try's pull request that is
   still open: it works on that branch, with that try's feedback, and reports
   to that pull request (`status.continues` names the earlier Task). When the
   earlier try ended waiting for the checks of its commit (red checks

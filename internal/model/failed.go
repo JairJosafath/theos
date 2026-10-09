@@ -91,7 +91,7 @@ type IssueTask struct {
 	Failed bool
 	// Blocked means it failed because its agent said it can't start the issue.
 	Blocked bool
-	// NoCI means it failed because CI never reported; it costs no try.
+	// NoCI means it failed through its CI runner's fault (model.RunnerFault); it costs no try.
 	NoCI bool
 	// Message is the Task's status message.
 	Message string

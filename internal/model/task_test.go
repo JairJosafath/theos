@@ -69,6 +69,10 @@ func TestNextTaskStep(t *testing.T) {
 		{name: "red checks pass on what failed", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
 			Checks: "failure", ChecksLog: "x\n--- FAIL: TestA (0.00s)\n    a_test.go:9: got 2, want 1\n"}, want: ActionRetry,
 			feedback: "What failed in CI:\n--- FAIL: TestA (0.00s)\n    a_test.go:9: got 2, want 1"},
+		{name: "red checks from a runner out of room fail the Task, costing no round", facts: TaskFacts{
+			Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "failure", ChecksURL: "http://gitea/runs/5",
+			ChecksLog: "--- FAIL: TestBinary\n  compile: writing output: write $WORK/b001/_pkg_.a: no space left on device\n"},
+			want: ActionFail, message: "http://gitea/runs/5 failed because the runner ran out of room"},
 
 		{name: "waits for the reviewer", facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Run: running},
 			want: ActionWait},
@@ -780,6 +784,22 @@ func TestNextTaskStepBehindMain(t *testing.T) {
 		Checks: "failure", ChecksURL: "http://ci/1"})
 	if !strings.Contains(got.Feedback, "main moved since its checks ran") || !strings.Contains(got.Feedback, "http://ci/1") {
 		t.Errorf("Feedback = %q, want it to say main was merged in, with the checks' link", got.Feedback)
+	}
+}
+
+func TestRunnerOutOfSpace(t *testing.T) {
+	for _, merge := range []bool{false, true} {
+		got := NextTaskStep(TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, MergeWhenChecksPass: merge,
+			Checks: "error", ChecksLog: "npm error code ENOSPC\nnpm error syscall write\nENOSPC: No space left on device\n"})
+		if got.Action != ActionFail || got.Reason != ReasonRunnerOutOfSpace {
+			t.Errorf("merge %v: NextTaskStep() = %+v, want ActionFail, reason %s", merge, got, ReasonRunnerOutOfSpace)
+		}
+	}
+	for reason, want := range map[string]bool{ReasonNoCIResult: true, ReasonRunnerOutOfSpace: true,
+		"RoundsExhausted": false, "": false} {
+		if got := RunnerFault(reason); got != want {
+			t.Errorf("RunnerFault(%q) = %v, want %v", reason, got, want)
+		}
 	}
 }
 

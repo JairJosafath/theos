@@ -728,8 +728,11 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1alpha1.Task, status
 	r.dropProposal(ctx, task, status, container)
 	r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, reason, message)
 	why := message
-	if reason == model.ReasonNoCIResult {
+	switch reason {
+	case model.ReasonNoCIResult:
 		why += "\n\nCI never reported, so this try doesn't count towards the limit; start or fix the runner first."
+	case model.ReasonRunnerOutOfSpace:
+		why += "\n\nThe runner ran out of room, so this try doesn't count towards the limit; free its space first."
 	}
 	r.handBack(ctx, task, container, why)
 	logf.FromContext(ctx).Info("Failed Task", "reason", reason, "message", message)

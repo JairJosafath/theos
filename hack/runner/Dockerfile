@@ -13,4 +13,5 @@ RUN curl -fsSL -o /usr/local/bin/gitea-runner \
  && chmod +x /usr/local/bin/gitea-runner
 COPY hack/runner/config.yaml /etc/gitea-runner/config.yaml
 COPY --chmod=0755 hack/runner/entrypoint.sh /usr/local/bin/entrypoint
+COPY --chmod=0755 hack/runner/tmp-sweep.sh /usr/local/bin/c4-tmp-sweep
 ENTRYPOINT ["/usr/local/bin/entrypoint"]

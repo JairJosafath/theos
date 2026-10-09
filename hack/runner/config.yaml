@@ -5,10 +5,16 @@ runner:
   file: /data/.runner
   # One job at a time: builds are heavy.
   capacity: 1
+  # c4-tmp-sweep (entrypoint.sh) keeps /tmp files for twice this.
   timeout: 1h
   # Extra variables for jobs, when the file exists: the go runner's build caches
   # (config/runner/go.yaml).
   env_file: /etc/gitea-runner/job.env
+  envs:
+    # Node keeps compiled code in /tmp/node-compile-cache, keyed by the job's
+    # folder, which is new for every job: it is never used again and filled
+    # /tmp, which jobs share (#814).
+    NODE_DISABLE_COMPILE_CACHE: "1"
 cache:
   enabled: false
 host:
