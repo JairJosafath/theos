@@ -1,8 +1,8 @@
 // A tiny in-memory Kubernetes API for the c4.factory.io kinds, with lists and
 // watches, for the end-to-end test and the screenshots of every view. It
 // answers GETs of collections, and the factory health's Pods and Nodes as
-// empty lists; a POST that creates an object (generateName included) and a
-// merge patch of one, refusing what a CRD rule of REFUSE would, with the API
+// empty lists; a POST that creates an object (generateName included), a
+// merge patch of one and a JSON patch of add and replace ops, refusing what a CRD rule of REFUSE would, with the API
 // server's message; everything else is 404. A kind it is told to refuse
 // answers 403, as RBAC would.
 
@@ -18,6 +18,10 @@ const REFUSE = {
   tasks: (obj) =>
     typeof obj.spec?.goal === 'string' && obj.spec.goal.length < 1
       ? `Task.c4.factory.io "${obj.metadata.name}" is invalid: spec.goal: Invalid value: "": spec.goal in body should be at least 1 chars long`
+      : undefined,
+  standards: (obj) =>
+    typeof obj.spec?.template?.ref === 'string' && obj.spec.template.ref.length < 1
+      ? `Standard.c4.factory.io "${obj.metadata.name}" is invalid: spec.template.ref: Invalid value: "": spec.template.ref in body should be at least 1 chars long`
       : undefined,
 }
 
@@ -47,6 +51,28 @@ function mergePatch(target, patch) {
   for (const [k, v] of Object.entries(patch)) {
     if (v === null) delete out[k]
     else out[k] = mergePatch(out[k], v)
+  }
+  return out
+}
+
+/**
+ * A JSON patch (RFC 6902) of add and replace ops onto `target`, on object
+ * members only; undefined for any other op or path.
+ */
+function jsonPatch(target, ops) {
+  if (!Array.isArray(ops)) return undefined
+  const out = structuredClone(target)
+  for (const op of ops) {
+    if ((op?.op !== 'add' && op?.op !== 'replace') || typeof op.path !== 'string' || !op.path.startsWith('/'))
+      return undefined
+    const keys = op.path.slice(1).split('/')
+    const last = keys.pop()
+    let at = out
+    for (const k of keys) {
+      if (at[k] === null || typeof at[k] !== 'object' || Array.isArray(at[k])) return undefined
+      at = at[k]
+    }
+    at[last] = op.value
   }
   return out
 }
@@ -95,11 +121,13 @@ export function fakeApi(namespace) {
       obj = { ...body, metadata: { ...body.metadata, namespace: ns, name: body.metadata.name ?? generated } }
       delete obj.metadata.generateName
     } else {
-      if (req.headers['content-type'] !== 'application/merge-patch+json')
-        return status(res, 415, 'UnsupportedMediaType', 'the fake API takes only merge patches')
+      const type = req.headers['content-type']
+      if (type !== 'application/merge-patch+json' && type !== 'application/json-patch+json')
+        return status(res, 415, 'UnsupportedMediaType', 'the fake API takes only merge and JSON patches')
       const old = store.get(plural).get(`${ns}/${name}`)
       if (!old) return status(res, 404, 'NotFound', `${plural} "${name}" not found`)
-      obj = mergePatch(old, body)
+      obj = type === 'application/merge-patch+json' ? mergePatch(old, body) : jsonPatch(old, body)
+      if (!obj) return status(res, 422, 'UnprocessableEntity', 'the fake API takes only add and replace ops')
     }
     const refused = REFUSE[plural]?.(obj)
     if (refused) return status(res, 422, 'Invalid', refused)

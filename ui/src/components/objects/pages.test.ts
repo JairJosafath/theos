@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { BriefWriter } from '../../k8s/briefs'
 import type { ContainerWriter } from '../../k8s/containers'
 import type { Connection, StoryData } from '../../k8s/sources'
+import type { StandardWriter } from '../../k8s/standards'
 import type { GitProvider } from '../../k8s/types'
 import { demoStory } from '../../demo/fixture'
 import type { LifecycleKind } from '../../model/lifecycle'
@@ -14,6 +15,7 @@ const NOW = Date.parse('2026-06-01T12:00:00Z')
 const LIVE: Connection = { phase: 'live', loaded: true, problems: [] }
 const WRITER = {} as BriefWriter
 const CONTAINER_WRITER = {} as ContainerWriter
+const STANDARD_WRITER = {} as StandardWriter
 
 beforeAll(() => {
   // The pages link to each other through the URL the shell is on.
@@ -25,7 +27,15 @@ afterAll(() => {
 
 function page(kind: LifecycleKind, name: string, data: StoryData = demoStory(NOW), connection = LIVE) {
   return renderToStaticMarkup(
-    createElement(ObjectPage, { kind, name, data, connection, writer: WRITER, containerWriter: CONTAINER_WRITER }),
+    createElement(ObjectPage, {
+      kind,
+      name,
+      data,
+      connection,
+      writer: WRITER,
+      containerWriter: CONTAINER_WRITER,
+      standardWriter: STANDARD_WRITER,
+    }),
   )
 }
 
