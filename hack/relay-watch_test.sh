@@ -811,7 +811,7 @@ S=$T/scratch
 mkdir -p "$S/hack/lib" "$S/.relay"
 cp "$(dirname "$0")/relay-watch.sh" "$S/hack/"
 cp "$(dirname "$0")/lib/session-env.sh" "$S/hack/lib/"
-printf '#!/usr/bin/env bash\nenv >"%s"\n' "$T/pull-env" >"$S/hack/pull.sh"
+printf '#!/usr/bin/env bash\nenv >"%s.tmp" && mv "%s.tmp" "%s"\n' "$T/pull-env" "$T/pull-env" "$T/pull-env" >"$S/hack/pull.sh"
 chmod +x "$S/hack/pull.sh"
 touch "$S/.relay/stop"
 bash "$S/hack/relay-watch.sh" --cron
@@ -833,6 +833,10 @@ touch "$S/release"
 wait "$holder"
 for _ in $(seq 100); do grep -qs 'watch started' "$S/.relay/watch.log" && break; sleep 0.1; done
 check "foreground: takes over" "$(grep -c 'watch started: pid .*, under systemd' "$S/.relay/watch.log")" 1
+# The stop file waits for the faked pull: the watch checks it before its first
+# pull, so a loaded device could otherwise stop the watch before it pulls (#821).
+# The fake renames its output into place, so pull-env is whole once it exists.
+for _ in $(seq 300); do [ -e "$T/pull-env" ] && break; sleep 0.1; done
 touch "$S/.relay/stop"
 wait "$fg"
 check "foreground: exits 0 for the stop file" $? 0
