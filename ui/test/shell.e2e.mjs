@@ -261,10 +261,14 @@ describe('the new shell', () => {
     await page.getByText('2 times an agent run handed off to a fresh one at the token limit of 130k').waitFor({
       timeout: 5000,
     })
-    assert.match(
-      await page.locator('.command-line code').textContent(),
-      /^kubectl -n \S+ get events --field-selector involvedObject.kind=Task,involvedObject.name=orders-api-13,reason=SessionHandedOff$/,
-    )
+    // The Task recorded its runs, so the page names the one that handed off.
+    await page.getByText('Run 3 (round 2, implement) handed off 2 times, at 131k and 138k tokens.').waitFor({
+      timeout: 5000,
+    })
+    await task.getByText(/round 2, implement by claude-implementer · ended .* · handed off 2 times/).waitFor({
+      timeout: 5000,
+    })
+    assert.equal(await page.locator('.command-line code').count(), 0)
     await task.getByRole('link', { name: 'Crew orders-api' }).waitFor({ timeout: 5000 })
     if (process.env.C4_UI_SHOTS) {
       await page.waitForTimeout(300)
