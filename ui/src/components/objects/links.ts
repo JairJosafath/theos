@@ -27,3 +27,8 @@ export function storyHref(project: string, system?: string): string {
 export function briefsHref(project: string): string {
   return hrefFor({ ...NO_OBJECT, area: 'briefs', project, view: 'context', system: undefined, task: undefined })
 }
+
+/** A Task in the Work area. */
+export function taskHref(ns: string, name: string): string {
+  return hrefFor({ ...NO_OBJECT, area: 'work', project: ns, task: `${ns}/${name}` })
+}

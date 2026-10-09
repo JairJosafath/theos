@@ -2,6 +2,7 @@
 // page of its kind once it is loaded, or what keeps it from showing.
 
 import type { BriefWriter } from '../../k8s/briefs'
+import type { ContainerWriter } from '../../k8s/containers'
 import type { StoryData } from '../../k8s/sources'
 import { BriefPage } from './BriefPage'
 import { ContainerPage } from './ContainerPage'
@@ -13,12 +14,14 @@ export function ObjectPage({
   data,
   loaded,
   writer,
+  containerWriter,
 }: {
   kind: 'Brief' | 'Container'
   name: string
   data: StoryData
   loaded: boolean
   writer: BriefWriter
+  containerWriter: ContainerWriter
 }) {
   if (kind === 'Brief') {
     const brief = data.briefs.find((b) => b.metadata.name === name)
@@ -33,6 +36,8 @@ export function ObjectPage({
           sessions={data.sessions}
           frameworks={data.frameworks}
           briefs={data.briefs}
+          crews={data.crews}
+          writer={containerWriter}
         />
       )
   }
