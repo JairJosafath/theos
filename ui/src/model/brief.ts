@@ -145,13 +145,13 @@ export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
     ? [{ kind: 'Input', label: 'The Brief', question: needsInput }, ...listed]
     : listed
   const needsYouWaiting = (status.needsYouWaiting ?? listed.length) + (needsInput ? 1 : 0)
-  const autopilot = describeAutopilot(brief.spec.autopilot)
+  const autopilot = describeAutopilot(brief.spec.autopilot, status.autopilot)
   const phase = describeBriefPhase(status.phase)
   const asked = status.needsYouWaiting ?? listed.length
   // With autopilot on or asking, the failed issues that wait for the person
-  // are under Needs you already; the rest the Brief decides by itself. Unset,
-  // the mode in effect is the operator's and status doesn't say it, so the
-  // count claims none and the failed-issues hint says how to answer them.
+  // are under Needs you already; the rest the Brief decides by itself. With
+  // no mode known, the operator's not having reported it yet, the count
+  // claims none and the failed-issues hint says how to answer them.
   const unanswered = autopilot.mode === 'Off' ? failedWaiting : 0
   if (status.phase === 'Planned' && (unanswered > 0 || suggestionsWaiting > 0 || asked > 0)) {
     const waiting = [
@@ -228,7 +228,7 @@ export function pauseAction(view: Pick<BriefView, 'paused'>): PauseAction {
 
 /** A Brief's autopilot mode as a label and one-line explanation; unset says it is the factory's default. */
 export interface AutopilotInfo {
-  /** The mode the Brief sets; none when it leaves the factory's default, which status doesn't say. */
+  /** The mode in effect: the one the Brief sets, else the one its status reports; none before the operator reports it. */
   mode?: BriefAutopilot
   /** Whether the Brief sets none and the operator's default applies. */
   isDefault: boolean
@@ -253,12 +253,20 @@ export const AUTOPILOT_MODES: Record<BriefAutopilot, { label: string; explanatio
   },
 }
 
-/** What an unset autopilot does: the operator decides, so the UI names no mode. */
+/** What an unset autopilot does: the operator decides, so the UI names no mode until status reports it. */
 export const DEFAULT_AUTOPILOT_HINT = 'The factory’s default mode decides whether it tends its failed issues by itself.'
 
-export function describeAutopilot(mode: BriefAutopilot | undefined): AutopilotInfo {
-  if (!mode) return { isDefault: true, label: 'Autopilot: factory default', explanation: DEFAULT_AUTOPILOT_HINT }
-  return { mode, isDefault: false, ...AUTOPILOT_MODES[mode] }
+/**
+ * The autopilot mode in effect: mode, the Brief's spec.autopilot, wins; unset,
+ * reported, its status.autopilot, names the operator's default.
+ */
+export function describeAutopilot(mode: BriefAutopilot | undefined, reported?: BriefAutopilot): AutopilotInfo {
+  if (mode) return { mode, isDefault: false, ...AUTOPILOT_MODES[mode] }
+  if (reported) {
+    const { label, explanation } = AUTOPILOT_MODES[reported]
+    return { mode: reported, isDefault: true, label: `${label} (factory default)`, explanation }
+  }
+  return { isDefault: true, label: 'Autopilot: factory default', explanation: DEFAULT_AUTOPILOT_HINT }
 }
 
 /** What to do about failed issues, by the mode in effect. */
@@ -268,7 +276,7 @@ const FAILED_HINTS: Record<BriefAutopilot, string> = {
   On: 'The Brief decides these by itself; a prompt overrules it, such as "file the CLI issue again".',
 }
 
-/** What to do about failed issues when the Brief leaves the mode to the factory. */
+/** What to do about failed issues before the operator reports the mode in effect. */
 const DEFAULT_FAILED_HINT =
   'The Brief asks you under Needs you about those it can’t decide; a prompt can answer any of them, such as "file the CLI issue again".'
 

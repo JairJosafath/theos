@@ -5,6 +5,9 @@ ARG BASE_IMAGE=golang:1.26
 FROM ${BASE_IMAGE} AS builder
 ARG TARGETOS
 ARG TARGETARCH
+# The release this image is, stamped into the binary (internal/buildinfo);
+# release.yml passes it, a local build stays dev.
+ARG VERSION=dev
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -25,7 +28,9 @@ COPY . .
 # The cache mounts keep Go's module and build caches between builds, so a rebuild
 # after a small change takes seconds.
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -o manager cmd/main.go
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
+    -ldflags=-X=github.com/JairJosafath/c4factory/internal/buildinfo.Version=${VERSION} \
+    -o manager cmd/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details

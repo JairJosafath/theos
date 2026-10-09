@@ -38,6 +38,7 @@ every scaffolded repository.
 | Adapters | `internal/gitprovider` | `net/http`, go-git, business rules | Kubernetes, controller-runtime, `api/`, `internal/controller` |
 | Sandbox runner | `internal/agentrunner`, `cmd/c4agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/gitprovider`, `internal/controller` |
 | Clients of the API | `internal/controller`, `internal/sessionclient` | everything above | `cmd/` |
+| Build info | `internal/buildinfo` | nothing | everything; only `cmd/*` reads it |
 | Assets | `features` | `internal/scaffold` | everything else |
 | Entry points | `cmd/*` | everything | nothing imports them |
 

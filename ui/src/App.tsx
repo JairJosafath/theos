@@ -10,6 +10,7 @@ import { Diagram } from './components/Diagram'
 import { FactoryPage } from './components/Factory'
 import { LogoMark, WarningIcon } from './components/icons'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
+import { VersionLine } from './components/Versions'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
 import { HealthSource, type FactoryHealth } from './k8s/health'
 import { fetchSession, signOut, type UiSession } from './k8s/session'
@@ -28,10 +29,11 @@ import {
   type Source,
   type StoryData,
 } from './k8s/sources'
-import type { Project } from './k8s/types'
+import { GROUP, VERSION, type Project } from './k8s/types'
 import { useDemo } from './lib/demo'
 import { RefreshSession, SessionContext, useSource, useUrlState, type View } from './lib/hooks'
 import { plural, titleOf } from './model/describe'
+import { factoryVersions } from './model/versions'
 import { activeCrewTasks } from './model/crews'
 import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker, workingNow } from './model/story'
 
@@ -86,6 +88,10 @@ export default function App() {
     [projects.data],
   )
   const namespace = url.project ?? sortedProjects[0]?.metadata.namespace
+  const versions = useMemo(
+    () => factoryVersions(sortedProjects, __C4_UI_VERSION__, `${GROUP}/${VERSION}`),
+    [sortedProjects],
+  )
   const factoryView = url.view === 'factory'
 
   // Only the view on screen watches the cluster.
@@ -353,6 +359,7 @@ export default function App() {
         This page reads the C4 Factory resources in the cluster and updates as they change. It can change only three
         things: create a Brief from an app idea, add a prompt to a Brief, and pause or resume a Brief. The cluster
         decides what it accepts, and a refusal shows its message.
+        <VersionLine versions={versions} />
       </footer>
     </div>
   )

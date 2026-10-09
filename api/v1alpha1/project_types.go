@@ -47,11 +47,29 @@ type ProjectStatus struct {
 	// +optional
 	Summary string `json:"summary,omitempty"`
 
+	// factory is the operator that last reconciled the Project: its version
+	// and the Helm chart's it was installed with. The UI compares them with
+	// its own.
+	// +optional
+	Factory *FactoryVersions `json:"factory,omitempty"`
+
 	// conditions represent the current state of the Project.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// FactoryVersions are the versions of the factory running in the cluster.
+type FactoryVersions struct {
+	// operatorVersion is the operator's release, "dev" for an unreleased build.
+	// +optional
+	OperatorVersion string `json:"operatorVersion,omitempty"`
+
+	// chartVersion is the Helm chart's version the operator was installed
+	// with, empty when it wasn't installed by the chart.
+	// +optional
+	ChartVersion string `json:"chartVersion,omitempty"`
 }
 
 // +kubebuilder:object:root=true

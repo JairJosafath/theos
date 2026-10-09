@@ -34,6 +34,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/features"
+	"github.com/JairJosafath/c4factory/internal/buildinfo"
 	"github.com/JairJosafath/c4factory/internal/controller"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -248,6 +249,8 @@ func main() {
 		SharedSecrets:     sharedSecrets,
 		SharedPullSecrets: sharedPullSecrets,
 		SourceNamespace:   podNamespace,
+		OperatorVersion:   buildinfo.Version,
+		ChartVersion:      os.Getenv("C4_CHART_VERSION"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "project")
 		os.Exit(1)
@@ -343,7 +346,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("Starting manager")
+	setupLog.Info("Starting manager", "version", buildinfo.Version, "chartVersion", os.Getenv("C4_CHART_VERSION"))
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)

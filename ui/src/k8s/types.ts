@@ -77,6 +77,8 @@ export interface Project extends K8sObject {
     readyContainers?: number
     activeSessions?: number
     summary?: string
+    /** The operator that last reconciled the Project, and the chart it was installed with. */
+    factory?: { operatorVersion?: string; chartVersion?: string }
     conditions?: Condition[]
   }
 }
@@ -430,6 +432,8 @@ export interface Brief extends K8sObject {
   }
   status?: {
     phase?: BriefPhase
+    /** The mode the Brief runs in, set every reconcile: spec.autopilot, or the operator's default when that is unset. */
+    autopilot?: BriefAutopilot
     /** The round running now or last run; 0 before the first. */
     round?: number
     /** How many of spec.prompts the running or last round took. */

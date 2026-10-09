@@ -394,6 +394,15 @@ spec:
                 maxItems: 100
                 type: array
                 x-kubernetes-list-type: atomic
+              autopilot:
+                description: |-
+                  autopilot is the mode the Brief runs in, set every reconcile:
+                  spec.autopilot, or the operator's default, Ask, when that is unset.
+                enum:
+                - "Off"
+                - Ask
+                - "On"
+                type: string
               choices:
                 description: choices are what the planner chose in the last round,
                   in plain words.
