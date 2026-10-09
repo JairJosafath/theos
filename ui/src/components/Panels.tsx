@@ -3,7 +3,6 @@
 
 import type { Problem, StoryData } from '../k8s/sources'
 import type { Condition, ContainerPhase } from '../k8s/types'
-import { useNow } from '../lib/hooks'
 import { describeContainerPhase, KIND_LABEL, plural, splitTemplateRef } from '../model/describe'
 import { crewDoing, issueList, type ActiveCrewTask, type CrewSummary } from '../model/crews'
 import { linksOf, type ContainerNode, type DiagramNode, type Link } from '../model/story'
@@ -23,7 +22,6 @@ export function DetailsPanel({
   onClose: () => void
   onOpenSystem: (name: string) => void
 }) {
-  const now = useNow()
   const links = linksOf(data, node.kind, node.name)
   return (
     <section className="panel details" aria-label={`Details of ${node.title}`}>
@@ -55,7 +53,7 @@ export function DetailsPanel({
         </>
       ) : null}
 
-      {node.role === 'container' ? <ContainerDetails node={node} now={now} /> : null}
+      {node.role === 'container' ? <ContainerDetails node={node} /> : null}
 
       {node.role === 'datastore' ? (
         <>
@@ -104,7 +102,7 @@ function DetailList({ title, hint, items }: { title: string; hint: string; items
   )
 }
 
-function ContainerDetails({ node, now }: { node: ContainerNode; now: number }) {
+function ContainerDetails({ node }: { node: ContainerNode }) {
   const phase = describeContainerPhase(node.phase)
   return (
     <>
@@ -163,7 +161,7 @@ function ContainerDetails({ node, now }: { node: ContainerNode; now: number }) {
       {node.sessions.length ? (
         <ul className="sessions">
           {node.sessions.map((s) => (
-            <SessionRow key={s.metadata.name} session={s} now={now} />
+            <SessionRow key={s.metadata.name} session={s} />
           ))}
         </ul>
       ) : (
@@ -269,7 +267,6 @@ export function SessionsPanel({
   /** The failed reads of Sessions, Crews, Tasks and Agents. */
   problems?: Problem[]
 }) {
-  const now = useNow()
   const withSessions = containers.filter((c) => c.sessions.length)
   const all = withSessions.flatMap((c) => c.sessions)
   const active = all.filter((s) => s.status?.phase === 'Active').length
@@ -333,7 +330,7 @@ export function SessionsPanel({
                 </div>
                 <ul className="sessions">
                   {c.sessions.map((s) => (
-                    <SessionRow key={s.metadata.name} session={s} now={now} compact />
+                    <SessionRow key={s.metadata.name} session={s} compact />
                   ))}
                 </ul>
               </div>

@@ -77,6 +77,8 @@ export function FactoryPage({
   const maxSlots = health?.agents.maxSandboxes
   const problems = (...resources: string[]) => (connection ? problemsOf(connection, ...resources) : undefined)
   const read = (...resources: string[]) => (connection ? readOf(connection, ...resources) : loaded)
+  // The kinds only Needs a look reads: a failure there would hide its items.
+  const attentionProblems = problems(RESOURCES.projects, RESOURCES.containers, RESOURCES.sessions, RESOURCES.briefs)
 
   return (
     <>
@@ -115,7 +117,9 @@ export function FactoryPage({
 
       <main className="workspace factory">
         <section className="factory-main" aria-label="Work">
-          {items.length ? <AttentionPanel items={items} onSelectTask={onSelectTask} /> : null}
+          {items.length || attentionProblems?.length ? (
+            <AttentionPanel items={items} problems={attentionProblems} onSelectTask={onSelectTask} />
+          ) : null}
 
           <div className="panel">
             <div className="panel-head">
@@ -193,7 +197,8 @@ export function FactoryPage({
           <HealthPanel health={health} loaded={healthLoaded} problems={healthProblems} now={now} />
           <SlotsPanel
             tasks={data.tasks}
-            loaded={read(RESOURCES.tasks)}
+            // The old layout always showed the slots.
+            loaded={connection ? read(RESOURCES.tasks) : true}
             problems={problems(RESOURCES.tasks)}
             health={health}
             now={now}

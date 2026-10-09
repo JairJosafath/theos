@@ -79,6 +79,8 @@ describe('the new shell with refused reads', () => {
         .count(),
       0,
     )
+    // Sessions only feed Needs a look, which says the failure that may hide its items.
+    await panel('Needs a look').getByRole('alert').getByText('Could not read sessions.').waitFor({ timeout: 5000 })
     assert.equal(await page.locator('.banner-problem').count(), 0)
     await shot('ui-states-work-refused.png')
   })

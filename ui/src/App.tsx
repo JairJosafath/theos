@@ -101,7 +101,14 @@ const DIAGRAM_KINDS = [
   RESOURCES.dataStores,
   RESOURCES.relationships,
 ]
-const WORKING_KINDS = [RESOURCES.sessions, RESOURCES.crews, RESOURCES.tasks, RESOURCES.agents]
+const WORKING_KINDS = [
+  RESOURCES.softwareSystems,
+  RESOURCES.containers,
+  RESOURCES.sessions,
+  RESOURCES.crews,
+  RESOURCES.tasks,
+  RESOURCES.agents,
+]
 
 export default function App() {
   const [url, setUrl] = useUrlState()

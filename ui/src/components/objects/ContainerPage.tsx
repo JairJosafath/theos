@@ -6,7 +6,6 @@
 
 import type { ContainerWriter } from '../../k8s/containers'
 import type { Brief, CatalogEntry, Container, Crew, Relationship, Session } from '../../k8s/types'
-import { useNow } from '../../lib/hooks'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
 import { containerNextStep } from '../../model/lifecycle'
 import { sessionsOf } from '../../model/story'
@@ -35,7 +34,6 @@ export function ContainerPage({
   crews: Crew[]
   writer: ContainerWriter
 }) {
-  const now = useNow()
   const ns = container.metadata.namespace ?? ''
   const name = container.metadata.name
   const status = container.status
@@ -182,7 +180,7 @@ export function ContainerPage({
           </h2>
           <ul className="sessions">
             {own.map((s) => (
-              <SessionRow key={s.metadata.name} session={s} now={now} href={pageHref(ns, 'Session', s.metadata.name)} />
+              <SessionRow key={s.metadata.name} session={s} href={pageHref(ns, 'Session', s.metadata.name)} />
             ))}
           </ul>
         </section>
