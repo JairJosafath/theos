@@ -5,12 +5,12 @@
 
 import { useState } from 'react'
 import type { BriefWriter } from '../k8s/briefs'
+import type { Problem } from '../k8s/sources'
 import type { Agent, Brief } from '../k8s/types'
 import { describeBrief, pauseAction, sortBriefs, type BriefView } from '../model/brief'
-import { useNow } from '../lib/hooks'
-import { timeAgo } from '../model/describe'
-import { UsageLine } from './bits'
+import { UsageLine, When } from './bits'
 import { ExternalLinkIcon } from './icons'
+import { PanelState } from './PanelState'
 import { plannerLimit } from './objects/rows'
 import { NewBrief } from './briefs/NewBrief'
 import { BriefDetails } from './briefs/BriefDetails'
@@ -27,8 +27,14 @@ export function Briefs({
   writer,
   agents = [],
   pageHref,
+  loaded = true,
+  problems,
 }: {
   briefs: Brief[]
+  /** The Briefs and the Project have loaded; unset where the caller waits for them. */
+  loaded?: boolean
+  /** The failed reads of Briefs and the Project. */
+  problems?: Problem[]
   /** Each Brief's object page, in the new shell; the old layout links none. */
   pageHref?: (name: string) => string
   namespace: string
@@ -38,7 +44,7 @@ export function Briefs({
   canCreate: boolean
   writer: BriefWriter
 }) {
-  if (!canCreate && !briefs.length) return null
+  if (loaded && !problems?.length && !canCreate && !briefs.length) return null
   const sorted = sortBriefs(briefs)
   return (
     <section className="briefs" aria-labelledby="briefs-title">
@@ -52,21 +58,23 @@ export function Briefs({
           are the only changes this page can make.
         </p>
       </div>
-      <div className="briefs-grid">
-        {canCreate ? (
-          <NewBrief namespace={namespace} taken={briefs.map((b) => b.metadata.name)} writer={writer} />
-        ) : null}
-        {sorted.map((b) => (
-          <BriefCard
-            key={b.metadata.uid ?? b.metadata.name}
-            brief={b}
-            namespace={namespace}
-            writer={writer}
-            plannerLimit={plannerLimit(agents, b)}
-            href={pageHref?.(b.metadata.name)}
-          />
-        ))}
-      </div>
+      <PanelState loaded={loaded} problems={problems} loading="Loading the Briefs…">
+        <div className="briefs-grid">
+          {canCreate ? (
+            <NewBrief namespace={namespace} taken={briefs.map((b) => b.metadata.name)} writer={writer} />
+          ) : null}
+          {sorted.map((b) => (
+            <BriefCard
+              key={b.metadata.uid ?? b.metadata.name}
+              brief={b}
+              namespace={namespace}
+              writer={writer}
+              plannerLimit={plannerLimit(agents, b)}
+              href={pageHref?.(b.metadata.name)}
+            />
+          ))}
+        </div>
+      </PanelState>
     </section>
   )
 }
@@ -84,7 +92,6 @@ function BriefCard({
   plannerLimit?: number
   href?: string
 }) {
-  const now = useNow()
   const view = describeBrief(brief, plannerLimit)
   const [pauseError, setPauseError] = useState<WriteError>()
   return (
@@ -108,7 +115,7 @@ function BriefCard({
               <>
                 <span className="sep">·</span>
                 <span title={brief.metadata.creationTimestamp}>
-                  created {timeAgo(brief.metadata.creationTimestamp, now)}
+                  created <When at={brief.metadata.creationTimestamp} />
                 </span>
               </>
             ) : null}
@@ -126,7 +133,7 @@ function BriefCard({
         {view.idea}
       </p>
       {pauseError ? <FormError error={pauseError} /> : null}
-      <BriefBody view={view} namespace={namespace} writer={writer} now={now} />
+      <BriefBody view={view} namespace={namespace} writer={writer} />
     </article>
   )
 }
@@ -140,13 +147,11 @@ export function BriefBody({
   view,
   namespace,
   writer,
-  now,
   answering = false,
 }: {
   view: BriefView
   namespace: string
   writer: BriefWriter
-  now: number
   answering?: boolean
 }) {
   const answers: AnswerContext | undefined = answering
@@ -160,14 +165,14 @@ export function BriefBody({
         </div>
       ) : null}
 
-      {view.needsYou.length ? <NeedsYouBox view={view} now={now} answers={answers} /> : null}
+      {view.needsYou.length ? <NeedsYouBox view={view} answers={answers} /> : null}
       {view.failure ? (
         <div className="brief-note brief-note-error">
           <strong>The last round failed.</strong> {view.failure}
         </div>
       ) : null}
 
-      <BriefDetails view={view} now={now} answers={answers} />
+      <BriefDetails view={view} answers={answers} />
 
       <PromptForm namespace={namespace} name={view.name} writer={writer} needsInput={Boolean(view.needsInput)} />
     </>
@@ -216,7 +221,7 @@ export function PauseButton({
 }
 
 /** What only the person can decide: what the Brief waits for, then each item with what it would do and why. */
-function NeedsYouBox({ view, now, answers }: { view: BriefView; now: number; answers?: AnswerContext }) {
+function NeedsYouBox({ view, answers }: { view: BriefView; answers?: AnswerContext }) {
   return (
     <div className="brief-note brief-note-waiting brief-needs-you">
       <strong>Needs you ({view.needsYouWaiting})</strong>
@@ -236,7 +241,7 @@ function NeedsYouBox({ view, now, answers }: { view: BriefView; now: number; ans
             {n.since ? (
               <span className="section-hint" title={n.since}>
                 {' '}
-                · {timeAgo(n.since, now)}
+                · <When at={n.since} />
               </span>
             ) : null}
             {n.recommend ? (

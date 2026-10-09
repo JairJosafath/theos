@@ -2,10 +2,10 @@
 // a small timeline.
 
 import type { Agent, Task } from '../../k8s/types'
-import { timeAgo } from '../../model/describe'
 import { CheckIcon, CrossIcon } from '../icons'
 import { agentBackAt, isFinal, stageSince, taskHeadline, taskSegments } from '../../model/factory'
 import { formatClock, formatDuration } from '../../model/format'
+import { When } from '../bits'
 
 export function ChecksPill({ state }: { state?: string }) {
   if (!state) return null
@@ -69,17 +69,22 @@ export function TaskCard({
         {!isFinal(phase) ? <ChecksPill state={task.status?.checks?.state} /> : null}
         {!isFinal(phase) ? <VerdictPill verdict={task.status?.review?.verdict} /> : null}
         {back !== undefined ? (
-          <span className="badge badge-sm badge-waiting" title="Waiting for the agent: its service is unavailable">
+          <span
+            className="badge badge-sm badge-waiting"
+            title={`Waiting for the agent: its service is unavailable. Back ${back > now ? `in ${formatDuration(back - now)}` : 'any moment'}.`}
+          >
             agent back {formatClock(back, now)}
           </span>
         ) : null}
       </span>
       <span className="task-card-time">
-        {isFinal(phase)
-          ? `${timeAgo(task.status?.completedAt, now)}`
-          : since !== undefined
-            ? `for ${formatDuration(now - since)}`
-            : ''}
+        {isFinal(phase) ? (
+          <When at={task.status?.completedAt} />
+        ) : since !== undefined ? (
+          `for ${formatDuration(now - since)}`
+        ) : (
+          ''
+        )}
       </span>
       <MiniTimeline task={task} now={now} />
     </>

@@ -4,12 +4,10 @@
 // last release with its runs, Go module, publishing and bump issues.
 
 import type { Agent, Brief, Container, Crew, CrewRelease, Task } from '../../k8s/types'
-import { useNow } from '../../lib/hooks'
 import { crewSummary, issueList } from '../../model/crews'
-import { timeAgo } from '../../model/describe'
 import { RELEASE_RUN } from '../../model/releases'
 import { crewNextStep } from '../../model/lifecycle'
-import { AgentName } from '../bits'
+import { AgentName, When } from '../bits'
 import { ExternalLinkIcon } from '../icons'
 import { ObjectHeader, type OutLink } from '../ObjectHeader'
 import { pageHref, storyHref } from './links'
@@ -28,7 +26,6 @@ export function CrewPage({
   containers: Container[]
   briefs: Brief[]
 }) {
-  const now = useNow()
   const ns = crew.metadata.namespace ?? ''
   const name = crew.metadata.name
   const summary = crewSummary(crew, agents, tasks)
@@ -104,7 +101,7 @@ export function CrewPage({
           <dt>Waiting on others</dt>
           <dd>{summary.waiting.length ? issueList(summary.waiting) : <span className="muted">none</span>}</dd>
           <dt>Read the issues</dt>
-          <dd>{summary.lastPolled ? timeAgo(summary.lastPolled, now) : 'not yet'}</dd>
+          <dd>{summary.lastPolled ? <When at={summary.lastPolled} full /> : 'not yet'}</dd>
         </dl>
       </section>
 
@@ -119,18 +116,18 @@ export function CrewPage({
           {crew.spec.prepareReleases ? ' It files each release’s prepare issue.' : ''}
           {crew.spec.publishReleases ? ` It publishes them to ${crew.spec.publishReleases.github.repository}.` : ''}
         </p>
-        {release ? <ReleaseFacts release={release} now={now} /> : <p className="muted small">No release yet.</p>}
+        {release ? <ReleaseFacts release={release} /> : <p className="muted small">No release yet.</p>}
       </section>
     </main>
   )
 }
 
-function ReleaseFacts({ release, now }: { release: CrewRelease; now: number }) {
+function ReleaseFacts({ release }: { release: CrewRelease }) {
   return (
     <dl className="facts">
       <dt>Tagged</dt>
       <dd>
-        {timeAgo(release.time, now)} <span className="muted mono">at {release.commit.slice(0, 7)}</span>
+        <When at={release.time} full /> <span className="muted mono">at {release.commit.slice(0, 7)}</span>
       </dd>
       <dt>CI runs</dt>
       <dd>
@@ -143,7 +140,12 @@ function ReleaseFacts({ release, now }: { release: CrewRelease; now: number }) {
             </a>
           </>
         ) : null}
-        {release.rerunTime ? <span className="muted"> · re-run {timeAgo(release.rerunTime, now)}</span> : null}
+        {release.rerunTime ? (
+          <span className="muted">
+            {' '}
+            · re-run <When at={release.rerunTime} full />
+          </span>
+        ) : null}
       </dd>
       {release.goModule ? (
         <>

@@ -11,9 +11,29 @@ import {
   type Tone,
 } from '../model/describe'
 import type { UsageView } from '../model/brief'
+import { absoluteTime } from '../model/format'
+import { useNow } from '../lib/hooks'
 import type { AgentRole } from '../model/factory'
 import { AgentIcon, CheckIcon, ClockIcon, CrossIcon, HumanIcon, QuestionIcon } from './icons'
 import './bits.css'
+
+/**
+ * A moment, relative and absolute: "12 min ago", with the date and time on
+ * hover and to a screen reader, or shown beside it with `full`. It follows
+ * the clock itself, so only it re-renders as time passes.
+ */
+export function When({ at, full }: { at?: string | number; full?: boolean }) {
+  const now = useNow()
+  const abs = absoluteTime(at)
+  const iso = typeof at === 'number' ? new Date(at).toISOString() : at
+  if (!abs || !iso) return <>{timeAgo(iso, now)}</>
+  return (
+    <time dateTime={iso} title={abs}>
+      {timeAgo(iso, now)}
+      {full ? <> ({abs})</> : <span className="visually-hidden"> ({abs})</span>}
+    </time>
+  )
+}
 
 export function PhaseBadge({ phase, size = 'md' }: { phase: ContainerPhase | undefined; size?: 'sm' | 'md' }) {
   const info = describeContainerPhase(phase)

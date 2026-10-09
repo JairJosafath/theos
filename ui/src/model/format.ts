@@ -25,6 +25,14 @@ export function formatClock(t: number, now: number): string {
   return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${clock}`
 }
 
+/** A moment as a date and time in the reader's locale, "1 Jun 2026, 11:48:05"; '' for no valid time. */
+export function absoluteTime(at: string | number | undefined): string {
+  if (at === undefined || at === '') return ''
+  const d = new Date(at)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })
+}
+
 /** "1.2 GiB", "93 MiB". */
 export function formatBytes(bytes: number | undefined): string {
   if (bytes === undefined) return '–'

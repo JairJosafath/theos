@@ -7,7 +7,6 @@
 import { useState } from 'react'
 import type { BriefWriter } from '../../k8s/briefs'
 import type { Agent, Brief } from '../../k8s/types'
-import { useNow } from '../../lib/hooks'
 import { describeBrief } from '../../model/brief'
 import { BriefBody, PauseButton } from '../Briefs'
 import { plannerLimit } from './rows'
@@ -20,7 +19,6 @@ import { briefsHref, pageHref, storyHref } from './links'
 import '../briefs.css'
 
 export function BriefPage({ brief, agents, writer }: { brief: Brief; agents: Agent[]; writer: BriefWriter }) {
-  const now = useNow()
   const ns = brief.metadata.namespace ?? ''
   const view = describeBrief(brief, plannerLimit(agents, brief))
   const [pauseError, setPauseError] = useState<WriteError>()
@@ -53,7 +51,7 @@ export function BriefPage({ brief, agents, writer }: { brief: Brief; agents: Age
         <h2 className="panel-title small-title">The idea</h2>
         <p className="brief-idea">{view.idea}</p>
         {pauseError ? <FormError error={pauseError} /> : null}
-        <BriefBody view={view} namespace={ns} writer={writer} now={now} answering />
+        <BriefBody view={view} namespace={ns} writer={writer} answering />
       </section>
       <BriefSettings brief={brief} writer={writer} />
     </main>

@@ -392,7 +392,7 @@ describe('the new shell', () => {
   it('says a refused read of an optional kind in its panel', async () => {
     api.refuse('standards')
     await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Standard&name=python-standard`)
-    await page.getByText(/^Could not read standards \(403\)/).waitFor({ timeout: 10000 })
+    await page.getByText(/^Could not read standards\. The UI is not allowed/).waitFor({ timeout: 10000 })
     await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Project&name=${namespace}`)
     const catalog = page.getByRole('region', { name: 'Its catalog and Git hosts' })
     await catalog.getByText(/^Could not read standards \(403\)/).waitFor({ timeout: 10000 })

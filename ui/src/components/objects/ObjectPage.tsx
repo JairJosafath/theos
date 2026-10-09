@@ -6,14 +6,14 @@ import type { BriefWriter } from '../../k8s/briefs'
 import type { ContainerWriter } from '../../k8s/containers'
 import type { StandardWriter } from '../../k8s/standards'
 import { RESOURCES, type K8sObject } from '../../k8s/types'
-import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
+import { problemsOf, type Connection, type StoryData } from '../../k8s/sources'
 import type { LifecycleKind } from '../../model/lifecycle'
 import { BriefPage } from './BriefPage'
 import { CatalogPage, GitProviderPage } from './CatalogPages'
 import { ContainerPage } from './ContainerPage'
 import { CrewPage } from './CrewPage'
 import { ProjectPage, RelationshipPage, SessionPage, SystemPage } from './ModelPages'
-import { ReadProblem } from './ReadProblem'
+import { ReadProblems } from '../Status'
 import { StandardActions } from './StandardActions'
 import { TaskPage } from './TaskPage'
 import '../objects.css'
@@ -53,7 +53,7 @@ export function ObjectPage({
 }) {
   const page = pageFor(kind, name, data, connection, writer, containerWriter, standardWriter)
   if (page) return page
-  const unread = unreadOf(connection, WHERE[kind].resource)
+  const failed = problemsOf(connection, WHERE[kind].resource)
   return (
     <main className="shell-page">
       <section className="panel" aria-label={`${kind} ${name}`}>
@@ -61,8 +61,8 @@ export function ObjectPage({
           {kind} · {data.namespace}
         </div>
         <h1 className="panel-title mono">{name}</h1>
-        {unread ? (
-          <ReadProblem problem={unread} />
+        {failed.length ? (
+          <ReadProblems problems={failed} />
         ) : (
           <p className="panel-text">
             {/* An optional kind's list may come after the required ones. */}

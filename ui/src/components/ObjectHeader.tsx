@@ -8,7 +8,7 @@
 import { useState, type ReactNode } from 'react'
 import type { Condition } from '../k8s/types'
 import { hasPhases, lifecycleOf, type LifecycleKind, type NextStep, type StepView } from '../model/lifecycle'
-import { ConditionList } from './bits'
+import { ConditionList, When } from './bits'
 import { ExternalLinkIcon } from './icons'
 import { pageHref } from './objects/links'
 import './objects.css'
@@ -32,7 +32,7 @@ export interface ChildRef {
   name: string
   /** Its object page, for kinds that have one. */
   href?: string
-  note?: string
+  note?: ReactNode
 }
 
 export interface OutLink {
@@ -153,9 +153,9 @@ export function ObjectHeader(props: ObjectHeaderProps) {
                 <li key={t.key} className={`timeline-${t.tone ?? 'ok'}`}>
                   <span className="timeline-title">{t.title}</span>
                   {t.at ? (
-                    <time className="timeline-at" dateTime={t.at}>
-                      {new Date(t.at).toLocaleString()}
-                    </time>
+                    <span className="timeline-at">
+                      <When at={t.at} full />
+                    </span>
                   ) : null}
                   {t.detail ? <span className="timeline-detail">{t.detail}</span> : null}
                 </li>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { combineConnection, mergeConnections, unreadOf } from './sources'
+import { combineConnection, mergeConnections, problemsOf, readOf, unreadOf } from './sources'
 import { ApiError, type WatchState } from './watch'
 
 const state = (loaded: boolean, error?: Error): WatchState<unknown> => ({ items: [], phase: 'live', loaded, error })
@@ -57,5 +57,35 @@ describe('mergeConnections', () => {
         .unread?.map((p) => p.resource)
         .sort(),
     ).toEqual(['computes', 'standards'])
+  })
+})
+
+describe('problemsOf', () => {
+  it('finds the failed reads, required or optional, of the kinds a panel shows', () => {
+    const c = combineConnection([
+      { what: 'containers', state: refused, resource: 'containers' },
+      { what: 'standards', state: refused, optional: true, resource: 'standards' },
+      { what: 'tasks', state: live, resource: 'tasks' },
+    ])
+    expect(problemsOf(c, 'containers', 'standards').map((p) => p.what)).toEqual(['containers', 'standards'])
+    expect(problemsOf(c, 'tasks')).toEqual([])
+  })
+})
+
+describe('readOf', () => {
+  it('is true for kinds whose lists loaded or failed, while another still loads', () => {
+    const c = combineConnection([
+      { what: 'containers', state: live, resource: 'containers' },
+      { what: 'sessions', state: refused, resource: 'sessions' },
+      { what: 'tasks', state: state(false), resource: 'tasks' },
+    ])
+    expect(c.loaded).toBe(false)
+    expect(readOf(c, 'containers', 'sessions')).toBe(true)
+    expect(readOf(c, 'containers', 'tasks')).toBe(false)
+  })
+
+  it('falls back to loaded where the source says nothing of its lists', () => {
+    expect(readOf({ phase: 'demo', loaded: true, problems: [] }, 'tasks')).toBe(true)
+    expect(readOf({ phase: 'connecting', loaded: false, problems: [] }, 'tasks')).toBe(false)
   })
 })

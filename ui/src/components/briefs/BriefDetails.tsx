@@ -3,8 +3,8 @@
 
 import type { ReactNode } from 'react'
 import type { BriefAppView, BriefView } from '../../model/brief'
-import { plural, timeAgo } from '../../model/describe'
-import { UsageLine } from '../bits'
+import { plural } from '../../model/describe'
+import { UsageLine, When } from '../bits'
 import { ExternalLinkIcon, RepoIcon } from '../icons'
 import { failedAnswers, suggestionAnswers } from '../../model/answers'
 import { AnswerButtons, type AnswerContext } from './Answers'
@@ -14,7 +14,7 @@ const SHOWN = 3
 const SHOWN_CHIPS = 6
 
 /** With `answers`, each failed issue Needs you doesn't list and each suggestion has its one-click answers. */
-export function BriefDetails({ view, now, answers }: { view: BriefView; now: number; answers?: AnswerContext }) {
+export function BriefDetails({ view, answers }: { view: BriefView; answers?: AnswerContext }) {
   return (
     <>
       {view.tended.length ? (
@@ -197,7 +197,7 @@ export function BriefDetails({ view, now, answers }: { view: BriefView; now: num
           <Clipped
             className="brief-list brief-apps"
             items={view.apps.map((a) => (
-              <AppLine key={a.container} app={a} now={now} />
+              <AppLine key={a.container} app={a} />
             ))}
           />
         </>
@@ -231,7 +231,7 @@ export function BriefDetails({ view, now, answers }: { view: BriefView; now: num
 }
 
 /** An app of the Brief: releases on or off, its latest release and where it was published. */
-function AppLine({ app, now }: { app: BriefAppView; now: number }) {
+function AppLine({ app }: { app: BriefAppView }) {
   return (
     <li className="brief-app">
       <div className="brief-app-head">
@@ -249,7 +249,12 @@ function AppLine({ app, now }: { app: BriefAppView; now: number }) {
             ) : (
               <span className="mono">{app.release.tag}</span>
             )}
-            {app.release.time ? <span className="brief-issue-title"> {timeAgo(app.release.time, now)}</span> : null}
+            {app.release.time ? (
+              <span className="brief-issue-title">
+                {' '}
+                <When at={app.release.time} />
+              </span>
+            ) : null}
           </span>
         ) : null}
         {app.publishedURL ? (

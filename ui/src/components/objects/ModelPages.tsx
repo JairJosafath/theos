@@ -14,12 +14,11 @@ import {
   type Session,
   type SoftwareSystem,
 } from '../../k8s/types'
-import { useNow } from '../../lib/hooks'
-import { timeAgo } from '../../model/describe'
 import { appliesConnector, relationshipPhase, type NextStep } from '../../model/lifecycle'
 import { ObjectHeader, type ChildRef, type OutLink } from '../ObjectHeader'
 import { CatalogList } from './CatalogPages'
 import { pageHref, projectCrumb, storyHref } from './links'
+import { When } from '../bits'
 
 /** A count from status, or that it has not been reported. */
 function count(n: number | undefined): string {
@@ -218,7 +217,6 @@ export function RelationshipPage({ relationship, data }: { relationship: Relatio
 }
 
 export function SessionPage({ session, data }: { session: Session; data: StoryData }) {
-  const now = useNow()
   const ns = session.metadata.namespace ?? data.namespace
   const containerName = session.spec.containerRef.name
   const container = data.containers.find((c) => c.metadata.name === containerName)
@@ -255,25 +253,12 @@ export function SessionPage({ session, data }: { session: Session; data: StoryDa
           <dt>What</dt>
           <dd>{session.spec.summary || <span className="muted">No summary given.</span>}</dd>
           <dt>Last heartbeat</dt>
-          <dd>
-            {heartbeat ? (
-              <time dateTime={heartbeat} title={new Date(heartbeat).toLocaleString()}>
-                {timeAgo(heartbeat, now)}
-              </time>
-            ) : (
-              <span className="muted">None yet.</span>
-            )}
-          </dd>
+          <dd>{heartbeat ? <When at={heartbeat} full /> : <span className="muted">None yet.</span>}</dd>
           {session.metadata.creationTimestamp ? (
             <>
               <dt>Started</dt>
               <dd>
-                <time
-                  dateTime={session.metadata.creationTimestamp}
-                  title={new Date(session.metadata.creationTimestamp).toLocaleString()}
-                >
-                  {timeAgo(session.metadata.creationTimestamp, now)}
-                </time>
+                <When at={session.metadata.creationTimestamp} full />
               </dd>
             </>
           ) : null}

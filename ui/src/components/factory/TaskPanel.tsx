@@ -3,8 +3,7 @@
 
 import { findCondition, LABEL_CREW, type Agent, type Task } from '../../k8s/types'
 import { describeUsage } from '../../model/brief'
-import { timeAgo } from '../../model/describe'
-import { AgentName, UsageLine } from '../bits'
+import { AgentName, UsageLine, When } from '../bits'
 import { CrossIcon, ExternalLinkIcon } from '../icons'
 import {
   agentBackAt,
@@ -136,7 +135,9 @@ export function TaskPanel({
           {agent?.spec.maxRounds ? ` of ${agent.spec.maxRounds}` : ''}
         </dd>
         <dt>Started</dt>
-        <dd>{timeAgo(task.metadata.creationTimestamp, now)}</dd>
+        <dd>
+          <When at={task.metadata.creationTimestamp} />
+        </dd>
         {usage ? (
           <>
             <dt>Used</dt>
@@ -232,14 +233,17 @@ export function TaskPanel({
           </p>
           <ol className="timeline">
             {timelineSteps(segments).map((s, i) => (
-              <TimelineStep key={i} step={s} now={now} />
+              <TimelineStep key={i} step={s} />
             ))}
             {isFinal(task.status?.phase) ? (
               <li className={`timeline-step stage-done ${task.status?.phase === 'Merged' ? 'tone-ok' : 'tone-error'}`}>
                 <span className="timeline-dot" aria-hidden="true" />
                 <div>
                   <strong>{task.status?.phase}</strong>
-                  <span className="muted"> · {timeAgo(task.status?.completedAt, now)}</span>
+                  <span className="muted">
+                    {' '}
+                    · <When at={task.status?.completedAt} />
+                  </span>
                 </div>
               </li>
             ) : null}
@@ -276,7 +280,7 @@ function firstLine(text: string): string {
   return line.length > 120 ? `${line.slice(0, 119)}…` : line
 }
 
-function TimelineStep({ step: segment, now }: { step: Step; now: number }) {
+function TimelineStep({ step: segment }: { step: Step }) {
   return (
     <li className={`timeline-step stage-${segment.stage}${segment.current ? ' is-current' : ''}`}>
       <span className="timeline-dot" aria-hidden="true" />
@@ -292,9 +296,9 @@ function TimelineStep({ step: segment, now }: { step: Step; now: number }) {
             {m}
           </p>
         ))}
-        <time className="timeline-at" dateTime={new Date(segment.start).toISOString()}>
-          {timeAgo(new Date(segment.start).toISOString(), now)}
-        </time>
+        <span className="timeline-at">
+          <When at={segment.start} />
+        </span>
       </div>
     </li>
   )
