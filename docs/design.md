@@ -208,7 +208,10 @@ enforces.
   that ran against the `main` it merges into: when `main` moved since the
   approved head's checks ran, the operator merges `main` into the branch through
   the Git host, with no agent run and no round spent, waits for the checks
-  again, and merges when they pass, without another review. A branch that
+  again, and merges when they pass, without another review. A Standard
+  change's gated merge needs the approving review run to last: when it ends
+  while CI runs again, the change is checked and reviewed again in the same
+  round, not failed, and spends no try. A branch that
   conflicts with `main` goes back to its implementer in the same round instead.
   Only that merge through the Git host decides a conflict: the host's
   "mergeable" flag is stale while it tests the pull request against a `main`
