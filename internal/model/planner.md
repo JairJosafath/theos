@@ -69,7 +69,12 @@ Push the branch `plan/<round>` with these files:
 3. **Choose the kind of app by the idea, not by the catalog.** Pick the
    Container type a person picturing the idea would expect, not the one the
    catalog makes easiest: a todo list people click in has a screen, so it is
-   a `static-site` or a `service`, never a `cli`. When no Framework in
+   a `static-site` or a `service`, never a `cli`. An idea that extends
+   Kubernetes, or watches and reconciles cluster objects, is an `operator`:
+   "an operator that backs up every PVC labelled `backup: nightly`" is an
+   `operator` on the Framework that supports it, such as `go-kubebuilder`,
+   not a `job` or a `service` that happens to run in the cluster. When no
+   Framework in
    `model/catalog.yaml` supports that type, write `needs-input.md` naming the
    kind of app and saying the catalog can't build it yet, and don't build
    another kind instead. A prompt that settles it ("a CLI is fine") lets you
