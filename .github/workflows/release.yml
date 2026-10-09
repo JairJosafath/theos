@@ -61,8 +61,8 @@ jobs:
       - name: Build the images
         run: |
           set -x
-          docker build -t "$REGISTRY/operator:$VERSION" .
-          docker build -t "$REGISTRY/ui:$VERSION" ui
+          docker build -t "$REGISTRY/operator:$VERSION" --build-arg VERSION="$VERSION" .
+          docker build -t "$REGISTRY/ui:$VERSION" --build-arg VERSION="$VERSION" ui
           docker build -t "$REGISTRY/seed:$VERSION" -f hack/seed/Dockerfile .
           docker build -t "$REGISTRY/base:$VERSION" hack/toolchain-base
           docker build -t "$REGISTRY/go:$VERSION" hack/toolchain-go

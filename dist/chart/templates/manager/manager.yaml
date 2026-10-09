@@ -102,6 +102,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        # The chart this operator was installed with, reported in Project
+        # status for the UI's version line.
+        - name: C4_CHART_VERSION
+          value: {{ .Chart.Version | quote }}
         image: "{{ .Values.manager.image.repository | default "controller" }}{{- if not (contains "@" (.Values.manager.image.repository | default "controller")) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
         {{- with .Values.manager.image.pullPolicy }}
         imagePullPolicy: {{ . }}

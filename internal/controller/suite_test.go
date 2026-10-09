@@ -49,6 +49,13 @@ import (
 // testStaleAfter is the Session Stale window in tests, much shorter than in production.
 const testStaleAfter = 3 * time.Second
 
+// testOperatorVersion and testChartVersion are what the Project reconciler
+// reports in status.factory in tests.
+const (
+	testOperatorVersion = "1.2.3"
+	testChartVersion    = "0.9.0"
+)
+
 // testScaffoldTimeout bounds a scaffold attempt in tests; the fake Git host answers at once.
 const testScaffoldTimeout = 3 * time.Second
 
@@ -198,7 +205,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 	for _, r := range []interface{ SetupWithManager(ctrl.Manager) error }{
 		&ProjectReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
 			SharedSecrets: []string{sharedToken}, SharedPullSecrets: []string{sharedPullSecret},
-			SourceNamespace: operatorNamespace, SharedSecretsRecheck: time.Second},
+			SourceNamespace: operatorNamespace, SharedSecretsRecheck: time.Second,
+			OperatorVersion: testOperatorVersion, ChartVersion: testChartVersion},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout},
