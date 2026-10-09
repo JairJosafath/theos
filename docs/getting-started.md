@@ -579,6 +579,12 @@ as them, so your cluster's RBAC decides who does what.
      --clusterrole=c4-factory-ui-actions --user=oidc:alice@example.com
    ```
 
+4. Sign in. With OIDC on, the UI's top bar shows **Sign in** (it opens
+   `https://factory.example.com/ui/login`, which sends you to the issuer and
+   back to the page you left); a write made while signed out is refused with
+   "Sign in to act" and the same link. Signed in, the top bar shows who the UI
+   acts as, and **Sign out**.
+
 The UI's ServiceAccount gets `impersonate` on users and groups, which RBAC
 can't narrow to the prefixed names: the UI pod can act as anyone, so keep
 who can exec into it or read its token as short as for the operator. Reads

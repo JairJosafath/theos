@@ -1,15 +1,24 @@
 // A Brief card's prompt field, and the error line the Brief forms share.
 
-import { useId, useState, type FormEvent } from 'react'
+import { useContext, useEffect, useId, useState, type FormEvent } from 'react'
 import { MAX_PROMPT, type BriefWriter } from '../../k8s/briefs'
+import { RefreshSession } from '../../lib/hooks'
+import { SignInLink } from '../Account'
 import { WarningIcon } from '../icons'
-import { errorText } from './errors'
+import { writeError, type WriteError } from './errors'
 
-export function FormError({ message }: { message: string }) {
+/** A refused write's message; with a "Sign in" link when nobody signed in was the reason. */
+export function FormError({ error }: { error: WriteError }) {
+  // A 401 means the session the page knew of is gone: ask again, so the top bar agrees.
+  const refresh = useContext(RefreshSession)
+  useEffect(() => {
+    if (error.signIn) refresh()
+  }, [error, refresh])
   return (
     <p className="form-error" role="alert">
       <WarningIcon size={14} />
-      <span>{message}</span>
+      <span>{error.message}</span>
+      {error.signIn ? <SignInLink /> : null}
     </p>
   )
 }
@@ -29,7 +38,7 @@ export function PromptForm({
   const id = useId()
   const [prompt, setPrompt] = useState('')
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string>()
+  const [error, setError] = useState<WriteError>()
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -40,7 +49,7 @@ export function PromptForm({
       await writer.addPrompt(namespace, name, prompt.trim())
       setPrompt('')
     } catch (err) {
-      setError(errorText(err))
+      setError(writeError(err))
     } finally {
       setSending(false)
     }
@@ -65,7 +74,7 @@ export function PromptForm({
           {sending ? 'Adding…' : 'Add'}
         </button>
       </div>
-      {error ? <FormError message={error} /> : null}
+      {error ? <FormError error={error} /> : null}
     </form>
   )
 }

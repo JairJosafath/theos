@@ -4,7 +4,7 @@ import { useId, useState, type FormEvent } from 'react'
 import { DEFAULT_PARALLEL, isBriefName, MAX_IDEA, MAX_PARALLEL, nameFromIdea, type BriefWriter } from '../../k8s/briefs'
 import type { BriefAutopilot } from '../../k8s/types'
 import { AUTOPILOT_MODES, DEFAULT_AUTOPILOT } from '../../model/brief'
-import { errorText } from './errors'
+import { writeError, type WriteError } from './errors'
 import { FormError } from './PromptForm'
 
 /** The "Describe an app" box: an idea and a name for it, prefilled from the idea. */
@@ -18,7 +18,7 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
   // 0 leaves spec.parallel unset: the factory's default.
   const [parallel, setParallel] = useState(0)
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string>()
+  const [error, setError] = useState<WriteError>()
   const [created, setCreated] = useState<string>()
   const name = typedName ?? (idea.trim() ? nameFromIdea(idea, taken) : '')
   const nameProblem =
@@ -42,7 +42,7 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
       setAutopilot('')
       setParallel(0)
     } catch (err) {
-      setError(errorText(err))
+      setError(writeError(err))
     } finally {
       setSending(false)
     }
@@ -139,7 +139,7 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
           </span>
         ) : null}
       </div>
-      {error ? <FormError message={error} /> : null}
+      {error ? <FormError error={error} /> : null}
     </form>
   )
 }
