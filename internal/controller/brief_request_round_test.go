@@ -117,6 +117,7 @@ var _ = Describe("Brief requests in rounds", func() {
 			g.Expect(issue.State).To(Equal("open"), "a planned request stays open until it ships")
 			g.Expect(comments).To(ConsistOf(And(
 				HavePrefix(model.RequestMarker("cel-lens", model.CommentPlanned)),
+				ContainSubstring(model.RequestRoundMarker("cel-lens", 2)),
 				ContainSubstring(`Planned as "Lint rule 1", in release v0.2.0.`))))
 			issue, comments = githubFake.gitHubIssue(repository, rules)
 			g.Expect(issue.State).To(Equal("closed"))

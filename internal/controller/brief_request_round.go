@@ -55,6 +55,17 @@ func releaseRequests(status *c4v1alpha1.BriefStatus) {
 	}
 }
 
+// heldRequests are the requests handed back by the last round, when it is
+// over and didn't apply: they wait for something new to start a round. A
+// request an applied round took and that came back, reopened, is new.
+func heldRequests(status *c4v1alpha1.BriefStatus) []string {
+	n := len(status.History)
+	if !roundOver(status) || status.History[n-1].Outcome == model.ReasonApplied {
+		return nil
+	}
+	return status.RoundRequests
+}
+
 // roundRequests are the requests the running round took, and those of them
 // still open on GitHub, which its plan must answer.
 func roundRequests(status *c4v1alpha1.BriefStatus) (took, open []string) {
@@ -153,7 +164,7 @@ func (r *BriefReconciler) owesRequests(brief *c4v1alpha1.Brief) bool {
 			return e.GitHub.Repository == s.Repository && requestsMode(&e) != model.RequestsOff
 		})
 		return reads && r.owesPlanned(brief, model.Request{Repository: s.Repository, Number: int(s.Number),
-			Stage: s.Stage})
+			Stage: s.Stage, Round: int(s.Round)})
 	})
 }
 
@@ -173,7 +184,7 @@ func (r *BriefReconciler) owesPlanned(brief *c4v1alpha1.Brief, req model.Request
 }
 
 func saidKey(brief *c4v1alpha1.Brief, req model.Request) string {
-	return requestsKey(brief, req.Repository) + fmt.Sprintf("#%d %s", req.Number, model.CommentPlanned)
+	return requestsKey(brief, req.Repository) + fmt.Sprintf("#%d %s %d", req.Number, model.CommentPlanned, req.Round)
 }
 
 // answerPlanned says on each request a round answered what it became, once:
@@ -193,6 +204,7 @@ func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1alpha1.B
 		if req.Stage == model.RequestPlanned {
 			text = model.PlannedComment(brief.Name, issueTitles(brief, req.Issues), req.Release)
 		}
+		text += model.RequestRoundMarker(brief.Name, req.Round) + "\n"
 		err := sayPlanned(ctx, tracker, brief.Name, req, text)
 		switch {
 		case gitprovider.IssuesReason(err) == gitprovider.ReasonIssueNotFound:
@@ -222,11 +234,11 @@ func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1alpha1.B
 	return out, first
 }
 
-// sayPlanned comments text on the request unless the Brief did before, then
-// closes a skipped one as not planned.
+// sayPlanned comments text on the request unless the Brief did for the
+// round that answered it, then closes a skipped one as not planned.
 func sayPlanned(ctx context.Context, tracker gitprovider.IssueTracker, brief string, req model.Request,
 	text string) error {
-	said, err := tracker.FindComment(ctx, req.Number, model.RequestMarker(brief, model.CommentPlanned))
+	said, err := tracker.FindComment(ctx, req.Number, model.RequestRoundMarker(brief, req.Round))
 	if err != nil {
 		return err
 	}

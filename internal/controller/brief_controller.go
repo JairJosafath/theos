@@ -218,8 +218,9 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 	// Requests are read before the round's step, so a request waiting in Ask
 	// is in needsYou when the Brief is tended.
 	takesRequests := r.syncRequests(ctx, brief)
+	owed := r.owesRequests(brief)
 	result, err := r.reconcileRound(ctx, brief, orig)
-	if err == nil && r.owesRequests(brief) {
+	if err == nil && !owed && r.owesRequests(brief) {
 		// The round just answered requests: say so on GitHub now, not at
 		// the next read.
 		r.syncRequests(ctx, brief)

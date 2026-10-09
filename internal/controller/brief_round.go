@@ -74,7 +74,7 @@ func roundFacts(brief *c4v1alpha1.Brief, task *c4v1alpha1.Task) model.BriefRound
 		Prompts:            len(brief.Spec.Prompts),
 		Round:              int(status.Round),
 		RoundPrompts:       int(status.RoundPrompts),
-		NewRequests:        model.NewRequests(modelRequests(status.Requests), status.RoundRequests),
+		NewRequests:        model.NewRequests(modelRequests(status.Requests), heldRequests(status)),
 		RoundOver:          roundOver(status),
 		OperatorNeedsInput: operatorWaits(status),
 		Paused:             brief.Spec.Paused,
@@ -275,9 +275,10 @@ func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1alpha
 	*orig = *brief.DeepCopy()
 	logf.FromContext(ctx).Info("Started Brief round", "round", status.Round, "newPrompts", len(taken),
 		"requests", len(status.RoundRequests), "tending", tend)
-	if len(status.RoundRequests) > 0 {
-		// The workspace this reconcile wrote may lack a request let through
-		// since: the planner reads the round's.
+	if len(status.Requests) > 0 {
+		// The workspace this reconcile wrote may list other requests than
+		// the round took, let through or closed since: the planner reads
+		// the round's.
 		if _, err := r.prepareWorkspace(ctx, brief); err != nil {
 			return err
 		}

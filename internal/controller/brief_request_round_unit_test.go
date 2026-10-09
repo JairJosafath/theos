@@ -40,7 +40,13 @@ func TestTakeAndReleaseRequests(t *testing.T) {
 	if r := status.Requests[2]; r.Stage != model.RequestPlanned || r.Round != 2 {
 		t.Errorf("an earlier round's request = %s in round %d, want it kept", r.Stage, r.Round)
 	}
-	if n := model.NewRequests(modelRequests(status.Requests), status.RoundRequests); n != 0 {
+	status.History = []c4v1alpha1.BriefRound{{Round: 4, Outcome: model.ReasonRoundFailed}}
+	if n := model.NewRequests(modelRequests(status.Requests), heldRequests(status)); n != 0 {
 		t.Errorf("NewRequests = %d after a failed round, want 0: its requests wait for something new", n)
+	}
+	status.History[0].Outcome = model.ReasonApplied
+	if n := model.NewRequests(modelRequests(status.Requests), heldRequests(status)); n != 1 {
+		t.Errorf("NewRequests = %d after an applied round, want 1: a request it took that came back, "+
+			"reopened, is new", n)
 	}
 }

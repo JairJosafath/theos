@@ -210,6 +210,11 @@ Choices the decisions left open, made in #801:
 - **The workspace is written again when a round takes requests,** so a
   request let through in the same reconcile is in `model/requests.yaml`
   before the planner starts.
+- **The planned comment names its round.** It ends with a second marker,
+  `<!-- c4factory:request brief=NAME round=N -->`, and the Brief looks for
+  that one, so a request reopened on GitHub and answered by a later round
+  hears that round's answer too. A reopened request that an applied round
+  took counts as new and starts a round.
 - **The planned comment is remembered in memory.** Once the Brief posted it,
   or found its marker, it doesn't look again; after a restart it looks once
   per planned request. A request owed a comment is read again first, with the
