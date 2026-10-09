@@ -157,7 +157,7 @@ func watchedTask(t *c4v1alpha1.Task) model.WatchedTask {
 
 // tend classifies what the Brief watches and records it: status.attention,
 // status.needsYou, the NeedsYou condition and an Event per new entry. With
-// autopilot Off it lists nothing. It returns the classification and when the
+// autopilot Off it lists only the requests waiting in Ask. It returns the classification and when the
 // Brief acts next on its own, zero when it waits for a change.
 func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now time.Time) (
 	model.Attention, time.Time, error) {
@@ -170,6 +170,8 @@ func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now
 		}
 		att = model.BriefAttention(facts, now)
 	}
+	// A request waiting in Ask is a door, whatever the autopilot says.
+	att = model.WithNeedsYou(att, waitingRequests(brief))
 	var next time.Time
 	attention := make([]c4v1alpha1.BriefHealing, 0, len(att.Healing))
 	for _, h := range att.Healing[:min(len(att.Healing), maxAttention)] {
