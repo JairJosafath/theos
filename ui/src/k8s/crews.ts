@@ -40,13 +40,17 @@ export function settledEdits(crew: Crew, edits: Partial<CrewReleaseSettings>): P
   return Object.keys(left).length === Object.keys(edits).length ? edits : left
 }
 
-type Op = { op: 'add'; path: string; value: unknown } | { op: 'remove'; path: string }
+type Op = { op: 'add' | 'test'; path: string; value: unknown } | { op: 'remove'; path: string }
 
 /**
  * The JSON patch from a Crew's settings to `next`: only what changed, so an
  * unchanged form sends nothing. Turning publishing off removes the field.
+ * publishReleases is sent whole, so a patch that sets or removes it starts
+ * with a test of `from`, the resourceVersion of the Crew its publish fields
+ * were worked out from (the Crew's own by default): a Crew changed since is
+ * refused rather than lose that change. server.mjs refuses it without one.
  */
-export function releasePatch(crew: Crew, next: CrewReleaseSettings): Op[] {
+export function releasePatch(crew: Crew, next: CrewReleaseSettings, from?: string): Op[] {
   const now = releaseSettings(crew)
   const ops: Op[] = []
   if (next.tagReleases !== now.tagReleases) ops.push({ op: 'add', path: '/spec/tagReleases', value: next.tagReleases })
@@ -66,6 +70,10 @@ export function releasePatch(crew: Crew, next: CrewReleaseSettings): Op[] {
     ops.push({ op: 'add', path: '/spec/publishReleases', value })
   } else if (!same) {
     ops.push({ op: 'remove', path: '/spec/publishReleases' })
+  }
+  const resourceVersion = from ?? crew.metadata.resourceVersion
+  if (!same && resourceVersion !== undefined) {
+    ops.unshift({ op: 'test', path: '/metadata/resourceVersion', value: resourceVersion })
   }
   return ops
 }

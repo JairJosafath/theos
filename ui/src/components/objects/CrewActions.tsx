@@ -127,14 +127,23 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
   const { sending, error, done, run } = useWrite()
   // Once the Crew has an edited value, that field follows it again.
   const rv = crew.metadata.resourceVersion
+  // The publish fields are sent as one object, so the save says which Crew
+  // they were worked out from: one changed since refuses it rather than
+  // write back a field someone else changed meanwhile.
+  const [publishFrom, setPublishFrom] = useState<string>()
   const [seen, setSeen] = useState(rv)
   if (seen !== rv) {
     setSeen(rv)
-    setEdits(settledEdits(crew, edits))
+    const settled = settledEdits(crew, edits)
+    setEdits(settled)
+    if (!('publish' in settled)) setPublishFrom(undefined)
   }
   const form = { ...releaseSettings(crew), ...edits }
-  const setForm = (next: Partial<CrewReleaseSettings>) => setEdits({ ...edits, ...next })
-  const ops = releasePatch(crew, form)
+  const setForm = (next: Partial<CrewReleaseSettings>) => {
+    if ('publish' in next && !('publish' in edits)) setPublishFrom(rv)
+    setEdits({ ...edits, ...next })
+  }
+  const ops = releasePatch(crew, form, publishFrom)
   const publish = form.publish ?? { repository: '', tokenSecret: '', tagPrefix: '' }
   const setPublish = (patch: Partial<typeof publish>) => setForm({ publish: { ...publish, ...patch } })
 
