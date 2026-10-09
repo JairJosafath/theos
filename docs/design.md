@@ -229,6 +229,17 @@ enforces.
   goes on to name something (`none of the engine's releases has the fix`) is.
   The
   Container's Crew decides how many Tasks run at once.
+- **A Task waits for checks a runner will run.** The commit status gives the
+  checks' result; the Git host's Actions runs at the head commit say whether
+  the job is queued or running, and its runners whether one is online. A run
+  queued while a runner is online, behind other jobs, is waited for (up to 6
+  hours), and a running one up to its runner's 3 hour job timeout. The Task
+  fails, reason `NoCIResult`, when no run starts within 30 minutes, when its
+  run is queued with no runner online 30 minutes in, or past those bounds.
+  That failure is the infrastructure's, so it costs the issue no try; a later
+  try that continues its pull request, with green checks on the commit the
+  failed try pushed, goes straight to review
+  ([plan](plans/checks-wait-for-runner.md)).
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
   repository only; `main` takes no pushes, only the operator merges (the reviewed
@@ -341,7 +352,7 @@ model and context it needs.
   Gitea dependencies (also across repositories) to close, and starts up to `parallel`
   Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
   first after the Standard changes that `Blocked` Tasks wait on, up to three
-  tries per issue. A try continues an earlier try's pull request that is
+  tries per issue (a `NoCIResult` failure is not one). A try continues an earlier try's pull request that is
   still open: it works on that branch, with that try's feedback, and reports
   to that pull request (`status.continues` names the earlier Task). A round
   that changes only the pull request, such as its description, and commits
