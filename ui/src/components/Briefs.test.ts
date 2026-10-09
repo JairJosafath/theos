@@ -155,7 +155,7 @@ describe('the Describe an app form', () => {
   it('copies none of the CRD’s limits or defaults', () => {
     expect(html).toContain('Parallel')
     expect(html).toMatch(
-      /<input id="[^"]*-parallel" class="input" type="number" [^>]*placeholder="the factory’s default"/,
+      /<input id="[^"]*-parallel" class="input" inputMode="numeric" [^>]*placeholder="the factory’s default"/,
     )
     expect(html).toContain('<option value="" selected="">The factory’s default</option>')
     expect(html).not.toMatch(/maxLength|maxlength|min=|max=|pattern=/)

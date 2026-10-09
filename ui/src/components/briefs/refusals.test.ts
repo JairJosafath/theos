@@ -76,6 +76,23 @@ describe('a refused Brief create', () => {
     expect(page.querySelector('[role="status"]')).toBeNull()
   })
 
+  it.each([
+    ['', undefined],
+    [' 3 ', 3],
+    ['abc', 'abc'],
+    ['2.5', '2.5'],
+  ])('sends parallel %j as %j, for the server to judge', async (typed, sent) => {
+    const fetchImpl = vi.fn(async () => new Response('{}', { status: 201 }))
+    const page = await render(
+      createElement(NewBrief, { namespace: 'webshop', taken: [], writer: new LiveBriefWriter('k8s', fetchImpl) }),
+    )
+    await type(page.querySelector('textarea')!, 'Plant care reminders')
+    await type(page.querySelector<HTMLInputElement>('input[id$="-parallel"]')!, typed)
+    await submit(page.querySelector('form')!)
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string).spec.parallel).toBe(sent)
+  })
+
   it('takes any name and leaves its rule to the server', async () => {
     const fetchImpl = vi.fn(async () =>
       refused(

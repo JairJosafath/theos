@@ -38,8 +38,10 @@ describe('isBriefName', () => {
   it.each([
     ['shop', true],
     ['web-shop-2', true],
-    ['a'.repeat(63), true],
-    ['a'.repeat(64), false],
+    ['web.shop', true],
+    ['a'.repeat(253), true],
+    ['a'.repeat(254), false],
+    ['.shop', false],
     ['Shop', false],
     ['-shop', false],
     ['shop-', false],

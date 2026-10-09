@@ -11,9 +11,9 @@ export const BRIEF_LIMITS = {
   parallel: { min: 1, max: 5 },
 }
 
-/** Whether the demo takes name for a Brief: a DNS label of at most 63 characters. */
-const DNS_LABEL = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
+/** The API server's rule for a custom resource's name: a DNS subdomain of at most 253 characters. */
+const DNS_SUBDOMAIN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/
 
 export function isBriefName(name: string): boolean {
-  return name.length <= 63 && DNS_LABEL.test(name)
+  return name.length <= 253 && DNS_SUBDOMAIN.test(name)
 }

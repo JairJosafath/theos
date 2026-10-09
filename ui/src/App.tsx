@@ -246,7 +246,13 @@ export default function App() {
         <>
           <ProjectHeader data={data} namespace={namespace} loaded={story.connection.loaded} />
           {namespace && story.connection.loaded ? (
-            <Briefs briefs={data.briefs} namespace={namespace} canCreate={Boolean(data.project)} writer={writer} />
+            <Briefs
+              briefs={data.briefs}
+              namespace={namespace}
+              canCreate={Boolean(data.project)}
+              writer={writer}
+              agents={data.agents}
+            />
           ) : null}
 
           <nav className="tabs" aria-label="Views">

@@ -33,7 +33,7 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
     try {
       await writer.create(namespace, name, idea.trim(), {
         autopilot: autopilot || undefined,
-        parallel: parallel.trim() ? Number(parallel) : undefined,
+        parallel: parallelValue(parallel),
       })
       setCreated(name)
       setIdea('')
@@ -108,7 +108,6 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
       <input
         id={`${id}-parallel`}
         className="input"
-        type="number"
         inputMode="numeric"
         value={parallel}
         placeholder="the factory’s default"
@@ -128,4 +127,14 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
       {error ? <FormError message={error} /> : null}
     </form>
   )
+}
+
+/**
+ * spec.parallel as typed: unset when empty, a number when it reads as a whole
+ * number, else the text itself, so the API server refuses it with its message.
+ */
+function parallelValue(typed: string): number | string | undefined {
+  const t = typed.trim()
+  if (!t) return undefined
+  return /^-?\d+$/.test(t) ? Number(t) : t
 }

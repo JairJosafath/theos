@@ -400,6 +400,17 @@ describe('describeUsage', () => {
       },
     ])
   })
+
+  it('marks a round past its planner Agent’s limit when it is known', () => {
+    const view = describeBrief(
+      {
+        ...brief('shop', '2026-01-01T00:00:00Z'),
+        status: { history: [{ round: 1, outcome: 'Applied', tokens: { output: 14_000, largestSession: 150_000 } }] },
+      },
+      120_000,
+    )
+    expect(view.rounds[0].usage).toMatchObject({ pastLimit: true, largestRun: 'largest run 150k, past the 120k limit' })
+  })
 })
 
 describe('describeBriefApp', () => {
@@ -584,7 +595,7 @@ describe('the Needs you box', () => {
     )
   })
 
-  it('with the factory’s default mode, counts a failed issue as waiting unless Needs you lists it', () => {
+  it('with the factory’s default mode, claims no failed issue waits and says how to answer them', () => {
     const view = describeBrief({
       ...brief('lens', '2026-01-01T00:00:00Z'),
       spec: { idea: 'A lens' },
@@ -599,8 +610,9 @@ describe('the Needs you box', () => {
       },
     })
     expect(view.phase.explanation).toBe(
-      'The last round is done; 1 item under Needs you and 1 failed issue wait for your answer in a prompt.',
+      'The last round is done; 1 item under Needs you waits for your answer in a prompt.',
     )
+    expect(view.failedHint).toMatch(/^The Brief asks you under Needs you about those it can’t decide/)
   })
 })
 

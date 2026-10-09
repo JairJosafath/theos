@@ -117,7 +117,11 @@ const ROUND_OUTCOMES: Record<
   Tended: 'Tended',
 }
 
-export function describeBrief(brief: Brief): BriefView {
+/**
+ * A Brief for display. plannerLimit is its planner Agent's
+ * spec.sessionTokenLimit, when known, to mark a round's agent run past it.
+ */
+export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
   const status = brief.status ?? {}
   const conditions = status.conditions
   const needs = findCondition(conditions, 'NeedsInput')
@@ -146,15 +150,9 @@ export function describeBrief(brief: Brief): BriefView {
   const asked = status.needsYouWaiting ?? listed.length
   // With autopilot on or asking, the failed issues that wait for the person
   // are under Needs you already; the rest the Brief decides by itself. Unset,
-  // the mode in effect is the operator's and status doesn't say it, so a
-  // failed issue waits unless Needs you lists it.
-  const askedIssues = new Set((status.needsYou ?? []).map((n) => n.name))
-  const unanswered =
-    autopilot.mode === 'Off'
-      ? failedWaiting
-      : autopilot.mode
-        ? 0
-        : failedWaiting - (status.failed ?? []).filter((f) => askedIssues.has(`${f.container}#${f.number}`)).length
+  // the mode in effect is the operator's and status doesn't say it, so the
+  // count claims none and the failed-issues hint says how to answer them.
+  const unanswered = autopilot.mode === 'Off' ? failedWaiting : 0
   if (status.phase === 'Planned' && (unanswered > 0 || suggestionsWaiting > 0 || asked > 0)) {
     const waiting = [
       asked ? `${asked} ${asked === 1 ? 'item' : 'items'} under Needs you` : '',
@@ -198,13 +196,13 @@ export function describeBrief(brief: Brief): BriefView {
     suggestionsWaiting,
     apps: (status.apps ?? []).map(describeBriefApp),
     repositoryURL: status.repositoryURL,
-    usage: describeUsage(status.costMilliUSD, status.runsWithoutCost, status.tokens),
+    usage: describeUsage(status.costMilliUSD, status.runsWithoutCost, status.tokens, plannerLimit),
     rounds: (status.history ?? [])
       .map((h) => ({
         round: h.round,
         summary: h.summary?.trim() || undefined,
         outcome: h.outcome ? ROUND_OUTCOMES[h.outcome] : undefined,
-        usage: describeUsage(h.costMilliUSD, h.runsWithoutCost, h.tokens),
+        usage: describeUsage(h.costMilliUSD, h.runsWithoutCost, h.tokens, plannerLimit),
       }))
       .reverse(),
   }

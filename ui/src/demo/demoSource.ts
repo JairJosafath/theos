@@ -61,7 +61,9 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
     const data = this.snapshot.data
     const invalid = (detail: string) => new Error(`Brief.c4.factory.io "${name}" is invalid: ${detail}`)
     if (!isBriefName(name))
-      throw invalid(`metadata.name: Invalid value: "${name}": must be lowercase letters, digits and '-'`)
+      throw invalid(
+        `metadata.name: Invalid value: "${name}": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.'`,
+      )
     if (data.briefs.some((b) => b.metadata.name === name))
       throw new Error(`briefs.c4.factory.io "${name}" already exists`)
     const { idea: ideaLimit, parallel: parallelLimit } = BRIEF_LIMITS
@@ -71,10 +73,15 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
     const parallel = options?.parallel
     if (
       parallel !== undefined &&
-      !(Number.isInteger(parallel) && parallel >= parallelLimit.min && parallel <= parallelLimit.max)
+      !(
+        typeof parallel === 'number' &&
+        Number.isInteger(parallel) &&
+        parallel >= parallelLimit.min &&
+        parallel <= parallelLimit.max
+      )
     )
       throw invalid(
-        `spec.parallel: Invalid value: ${parallel}: should be from ${parallelLimit.min} to ${parallelLimit.max}`,
+        `spec.parallel: Invalid value: ${JSON.stringify(parallel)}: should be a whole number from ${parallelLimit.min} to ${parallelLimit.max}`,
       )
     const brief = briefManifest(namespace, name, idea, options)
     brief.metadata = { ...brief.metadata, uid: `demo-${name}`, creationTimestamp: new Date().toISOString() }

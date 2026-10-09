@@ -9,8 +9,8 @@ import { errorFromResponse } from './watch'
 /** What a new Brief may choose besides its idea; each unset leaves the factory's default. */
 export interface BriefOptions {
   autopilot?: BriefAutopilot
-  /** How many issues each of its Crews works on at once. */
-  parallel?: number
+  /** How many issues each of its Crews works on at once; sent as given, so the API server judges it. */
+  parallel?: number | string
 }
 
 /**
@@ -20,7 +20,7 @@ export interface BriefOptions {
 export function briefManifest(namespace: string, name: string, idea: string, options: BriefOptions = {}): Brief {
   const spec: Brief['spec'] = { idea }
   if (options.autopilot) spec.autopilot = options.autopilot
-  if (options.parallel) spec.parallel = options.parallel
+  if (options.parallel !== undefined && options.parallel !== '') spec.parallel = options.parallel as number
   return {
     apiVersion: `${GROUP}/${VERSION}`,
     kind: 'Brief',
