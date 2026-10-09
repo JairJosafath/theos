@@ -72,9 +72,9 @@ makes its namespace, labeled `c4.factory.io/shared-secrets=true` so the
 operator shares the pull secret and the agents' token into it, and the seed
 makes a Gitea organization, Secret `gitea-credentials` with its token
 and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
-pushed, pinned to their tags: Frameworks `go-cli`, `node-cli`,
+pushed, pinned to their tags: Frameworks `go-cli`, `go-kubebuilder`, `node-cli`,
 `python-cli`, `python-fastapi`, `react-vite` and `vscode-extension`, Standards `go-standard`,
-`ts-standard` and `python-standard`, Compute `small`,
+`go-operator-standard`, `ts-standard` and `python-standard`, Compute `small`,
 Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four
 Agents on the release's `agent-go` image: `planner`, `designer` and `reviewer`
 on Opus, `implementer` on Sonnet. The Agents read Secret `claude-credentials`,

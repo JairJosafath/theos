@@ -1,0 +1,138 @@
+# Agent guide
+
+This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` operator of {{ .SoftwareSystem }}: a
+Kubernetes operator in Go, scaffolded by C4 Factory with kubebuilder and the
+`{{ .Standard }}` Standard. Build it to the rules below. What the operator is for,
+and what it must never do, is in the issue you were given and the system's
+needs: follow those.
+
+## The one rule
+
+`make check` must pass before every commit. It checks that `go.mod` is tidy and
+that the generated files are what `make manifests generate` writes, that the
+code is formatted (gofmt, goimports), then runs `go vet`, golangci-lint with
+`.golangci.yml` and `go test -race` with envtest (a real API server and etcd,
+no cluster). CI runs the same command, and nothing reaches `main` without it
+passing and a review. Never commit red.
+
+## Workflow
+
+1. Read the issue, its acceptance criteria, and your role guide:
+   `docs/agents/implementer.md` or `docs/agents/reviewer.md`.
+2. Read the code you are about to change and match it.
+3. Write a failing test first: one per acceptance criterion, or one that shows the bug.
+4. Make the smallest change that meets every criterion. One concern per commit.
+5. After editing `api/` types or any `// +kubebuilder` marker, run
+   `make manifests generate` and commit what they write.
+6. `make check`, then commit with a Conventional Commit message
+   (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`).
+7. `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` never change. Other protected files
+   change only through a Standard change (see your role guide), never in a normal pull
+   request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
+   `Makefile`, `.golangci.yml`, `.editorconfig`, `AGENTS.md`, `docs/style/` and
+   `docs/agents/` belong to the Standard.
+
+## kubebuilder
+
+This is a kubebuilder v4 project (`go/v4` layout):
+
+```
+cmd/main.go                   the manager: registers controllers and webhooks, nothing else
+api/<version>/*_types.go      the CRD schemas, with +kubebuilder markers
+api/<version>/zz_generated.*  generated DeepCopy methods
+internal/controller/          reconcilers, one per kind, and their envtest suite
+internal/webhook/<version>/   defaulting and validating webhooks, if any
+config/crd/bases/             generated CRDs
+config/rbac/role.yaml         generated RBAC, from the reconcilers' +kubebuilder:rbac markers
+config/samples/               example resources (edit these)
+PROJECT                       kubebuilder's record of what was scaffolded
+```
+
+- **Never edit generated files:** `config/crd/bases/`, `config/rbac/role.yaml`,
+  `zz_generated.*` and `PROJECT`. Change the types and markers, then
+  `make manifests generate`; `make check` fails, listing the files, when they
+  differ from what the generators write.
+- **Scaffold with the CLI:** add a kind with
+  `kubebuilder create api --group <group> --version <version> --kind <Kind>`, a
+  webhook with `kubebuilder create webhook`; never write those files by hand.
+  `kubebuilder` is on PATH in the toolchain image; elsewhere `make kubebuilder`
+  downloads it into `bin/` and prints its path.
+- **Keep the scaffold markers:** never remove a `// +kubebuilder:scaffold:*`
+  comment; the CLI inserts code there.
+- **Keep the layout:** don't move the files above; the CLI and `PROJECT` expect
+  them where they are.
+- **Test where the rule lives:** reconcilers and CEL validation rules
+  (`+kubebuilder:validation:XValidation`) are tested in envtest, in the suite
+  `kubebuilder create api` writes next to the controller: what a reconcile
+  creates, updates and deletes, the status it reports, and every CEL rule's
+  failing case. `make test` runs them. `make test-e2e` needs a Kind cluster:
+  never run it, and never touch a cluster.
+
+## Lints
+
+- Fix every finding; don't silence it. A `//nolint:<linter> // <why>` is a last
+  resort for a false positive: one linter, one reason.
+- `make fmt` formats; never hand-format.
+- Add modules with `go get`, then `go mod tidy`. Prefer the standard library,
+  controller-runtime and the Kubernetes libraries go.mod already has; then
+  few, maintained, well-known modules with a licence that fits.
+
+## Review rules (lint can't check these)
+
+1. **Packages:** `cmd/main.go` only parses flags and wires the manager.
+   Reconcilers live in `internal/controller/`, webhooks in `internal/webhook/`;
+   logic that needs no API server lives in `internal/<name>/`, one purpose per
+   package, named for what it provides; never `util`, `common`, `helpers`.
+   Dependencies point one way; no import cycles. Unexported by default.
+2. **API types:** `spec` is what the user wants, `status` what the operator
+   saw. Status is `metav1.Condition`s (`Ready` first), not free-form strings;
+   times are `metav1.Time`. Every field has a doc comment (it becomes the CRD's
+   description) and the validation markers that keep bad input out: required,
+   enums, bounds, patterns, and CEL rules for what spans fields. Follow the
+   Kubernetes API conventions.
+3. **Reconcilers:** idempotent: a reconcile may run any number of times, in any
+   order, after a crash. Re-read before an update; on a conflict, requeue.
+   Children get a controller reference (`SetControllerReference`) so deletion
+   cascades, and are watched with `Owns` or `Watches`, never polled with
+   `RequeueAfter`. Finalizers only to clean up what lives outside the cluster.
+   Never sleep in a reconcile; return a requeue.
+4. **RBAC:** the `+kubebuilder:rbac` markers grant exactly what the reconciler
+   calls, no wildcard groups, resources or verbs.
+5. **Errors:** wrap with what was being done and the input,
+   `fmt.Errorf("get Deployment %s: %w", key, err)`; `%w` when callers may
+   inspect it. Handle an error once: return it or log it, never both. A
+   reconcile returns the error (controller-runtime logs it and backs off), or
+   sets a condition when the user must act. Never panic on bad input.
+6. **Context:** `ctx context.Context` first in anything that blocks, does I/O or
+   can be cancelled; never stored in a struct. Use the reconcile's `ctx`.
+7. **Logging:** `log.FromContext(ctx)`, Kubernetes' message style: capitalised,
+   no final period, past tense, the object kind named
+   (`log.Info("Created Deployment", "name", d.Name)`), balanced key-value pairs.
+   Never log secrets.
+8. **Goroutines:** the manager runs the controllers; start no goroutine of
+   your own unless the issue needs one, and then a `manager.Runnable` that stops
+   with the manager's context.
+9. **Tests:** envtest suites use Ginkgo and Gomega, as kubebuilder scaffolds
+   them, with `Eventually` for what the API server does asynchronously, never
+   `time.Sleep`. Logic outside the controllers gets table tests with `t.Run`
+   and named cases. Test behaviour through the package's API.
+10. **Docs:** every exported name and package has a doc comment that says
+    something. `config/samples/` holds one working example per kind.
+11. **Names:** short and clear in context, no stutter, no `Get` prefix,
+    initialisms in one case (`URL`, `ID`).
+12. **No dead code:** no commented-out code, speculative options or "for later"
+    features; no TODO without an issue number, except the scaffold's own.
+
+## Style guides
+
+Offline digests (read the one for what you are touching):
+
+- `docs/style/go.md`: Effective Go, Code Review Comments, Google's Go style and
+  the Go Proverbs, each rule marked [lint] or [review]
+- `docs/style/principles.md`: cross-language principles, with sources
+- `docs/style/SOURCES.md`: every source URL, with the date it was read
+
+Online (canonical): https://book.kubebuilder.io/ ·
+https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md ·
+https://go.dev/doc/effective_go · https://go.dev/wiki/CodeReviewComments ·
+https://google.github.io/styleguide/go/ · https://go.dev/doc/comment

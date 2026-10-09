@@ -78,7 +78,7 @@ vet: ## Run go vet against code.
 ifeq ($(MAKECMDGOALS)$(C4_HEAVY_SLOT),check)
 CHECK_CACHED := $(shell hack/check-cache.sh lookup)
 endif
-HEAVY_GOALS = check test lint lint-fix docker-build deploy e2e test-e2e
+HEAVY_GOALS = check test lint lint-fix docker-build deploy e2e test-e2e test-templates-operator
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
 ifeq ($(C4_HEAVY_SLOT)$(CHECK_CACHED),)
 $(shell hack/heavy-slot.sh acquire $$PPID "make $(MAKECMDGOALS)" >&2)
@@ -103,6 +103,26 @@ test: manifests generate fmt vet setup-envtest install-helm ## Run tests.
 .PHONY: test-hack
 test-hack: install-helm ## Run the shell tests of the scripts in hack/.
 	@hack/test-hack.sh
+
+# Renders the operator combo (go-kubebuilder, go-operator-standard, small) and
+# runs its make check before and after kubebuilder create api, with this
+# repository's pinned tools (hack/test-templates-operator.sh). Not part of
+# make check: run it when a change touches either operator template.
+.PHONY: test-templates-operator
+test-templates-operator: kubebuilder kustomize controller-gen envtest ## Render the operator combo and run its make check before and after kubebuilder create api.
+	@# GOLANGCI_LINT_BASE is defined further down, too late for a prerequisite.
+	@$(MAKE) --no-print-directory "$(GOLANGCI_LINT_BASE)"
+	KUBEBUILDER="$(KUBEBUILDER)" CONTROLLER_GEN="$(CONTROLLER_GEN)" KUSTOMIZE="$(KUSTOMIZE)" ENVTEST="$(ENVTEST)" \
+		GOLANGCI_LINT="$(GOLANGCI_LINT_BASE)" \
+		ENVTEST_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
+		hack/test-templates-operator.sh
+
+# Regenerates the go-kubebuilder Framework from the pinned kubebuilder; review
+# the diff, then tag the template (hack/template-go-kubebuilder/main.go says how
+# each path is sorted).
+.PHONY: template-go-kubebuilder
+template-go-kubebuilder: kubebuilder ## Regenerate templates/go-kubebuilder from a pinned kubebuilder init.
+	go run ./hack/template-go-kubebuilder -kubebuilder "$(KUBEBUILDER)" -out templates/go-kubebuilder
 
 # The e2e tests run against the dedicated Kind cluster $(KIND_CLUSTER), never
 # another one. make e2e builds everything it needs first; it's safe to repeat.
@@ -264,6 +284,8 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.13.1
+# The kubebuilder that make template-go-kubebuilder runs.
+KUBEBUILDER_VERSION ?= v4.16.0
 
 ## Tool Binaries
 KUBECTL ?= kubectl
@@ -276,6 +298,7 @@ GOLANGCI_LINT_BASE = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 # a checksum of that file.
 GOLANGCI_LINT_PLUGINS := $(shell [ -f .custom-gcl.yml ] && cksum < .custom-gcl.yml | cut -d' ' -f1)
 KUBECTL_VALIDATE ?= $(LOCALBIN)/kubectl-validate-$(KUBECTL_VALIDATE_VERSION)
+KUBEBUILDER ?= $(LOCALBIN)/kubebuilder-$(KUBEBUILDER_VERSION)
 GOLANGCI_LINT = $(GOLANGCI_LINT_BASE)$(if $(GOLANGCI_LINT_PLUGINS),-custom-$(GOLANGCI_LINT_PLUGINS))
 
 # setup-envtest under a lock, so worktrees don't download the same Kubernetes
@@ -350,6 +373,15 @@ tmp="$$(mktemp -d "$(1).tmp.XXXXXX")"; trap 'rm -rf "$$tmp"' EXIT; \
 $(2); \
 mv "$$tmp"/* "$(1)"
 endef
+
+# kubebuilder is a release binary.
+.PHONY: kubebuilder
+kubebuilder: $(KUBEBUILDER) ## Download kubebuilder locally if necessary.
+$(KUBEBUILDER):
+	$(call install-tool,$@,echo "Downloading kubebuilder $(KUBEBUILDER_VERSION)"; \
+		curl -fsSL -o "$$tmp/kubebuilder" \
+		"https://github.com/kubernetes-sigs/kubebuilder/releases/download/$(KUBEBUILDER_VERSION)/kubebuilder_$(shell go env GOOS)_$(shell go env GOARCH)"; \
+		chmod +x "$$tmp/kubebuilder")
 
 .PHONY: kubectl-validate
 kubectl-validate: $(KUBECTL_VALIDATE) ## Download kubectl-validate locally if necessary.

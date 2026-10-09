@@ -1,9 +1,11 @@
 python-fastapi v1.3.0
-small v1.0.1
+small v1.1.0
 k8s-manifests v1.2.1
 postgres v1.1.0
 go-cli v1.0.0
+go-kubebuilder v1.0.0
 go-standard v1.1.6
+go-operator-standard v1.0.0
 vscode-extension v1.0.0
 react-vite v1.0.0
 node-cli v1.0.0
