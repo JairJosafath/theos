@@ -9,4 +9,7 @@ if [[ ! -s /data/.runner ]]; then
     --instance "$GITEA_INSTANCE" --token "$RUNNER_TOKEN" \
     --name "${RUNNER_NAME:-$(hostname)}" --labels "${RUNNER_LABELS:-base:host}"
 fi
+# /tmp outlives each job; clear what jobs left there long ago, past the 1h job
+# timeout, so it can't fill up and fail a later job (#814).
+(while sleep 600; do c4-tmp-sweep /tmp 120; done) &
 exec gitea-runner daemon --config "$config"
