@@ -118,43 +118,61 @@ var githubRepository = regexp.MustCompile(`^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$`)
 // has no overall timeout, since an upload takes as long as the file is big; ctx
 // bounds each call.
 func (c Client) GitHubReleases(cfg GitHubConfig) (ReleaseTarget, error) {
+	api, err := c.githubAPI(cfg)
+	if err != nil {
+		return nil, err
+	}
+	upload, err := githubURL(cfg.UploadURL, GitHubUploadURL)
+	if err != nil {
+		return nil, err
+	}
+	return &githubReleases{githubAPI: api, upload: upload, releases: api.repo + "/releases"}, nil
+}
+
+// githubAPI checks cfg and returns the API host's client for its repository.
+func (c Client) githubAPI(cfg GitHubConfig) (githubAPI, error) {
 	if !githubRepository.MatchString(cfg.Repository) {
-		return nil, fmt.Errorf("github: repository %q is not owner/name", cfg.Repository)
+		return githubAPI{}, fmt.Errorf("github: repository %q is not owner/name", cfg.Repository)
 	}
 	if cfg.Token == "" {
-		return nil, errors.New("github: token is required")
+		return githubAPI{}, errors.New("github: token is required")
 	}
-	parse := func(raw, def string) (*url.URL, error) {
-		if raw == "" {
-			raw = def
-		}
-		u, err := url.Parse(strings.TrimSuffix(raw, "/"))
-		if err != nil || u.Scheme == "" || u.Host == "" {
-			return nil, fmt.Errorf("github: invalid URL %q", raw)
-		}
-		return u, nil
-	}
-	api, err := parse(cfg.APIURL, GitHubAPIURL)
+	api, err := githubURL(cfg.APIURL, GitHubAPIURL)
 	if err != nil {
-		return nil, err
-	}
-	upload, err := parse(cfg.UploadURL, GitHubUploadURL)
-	if err != nil {
-		return nil, err
+		return githubAPI{}, err
 	}
 	client := c.HTTP
 	if client == nil {
 		client = &http.Client{}
 	}
 	owner, name, _ := strings.Cut(cfg.Repository, "/")
-	return &githubReleases{api: api, upload: upload, token: cfg.Token, http: client,
-		releases: "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/releases"}, nil
+	return githubAPI{api: api, token: cfg.Token, http: client,
+		repo: "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name)}, nil
+}
+
+func githubURL(raw, def string) (*url.URL, error) {
+	if raw == "" {
+		raw = def
+	}
+	u, err := url.Parse(strings.TrimSuffix(raw, "/"))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return nil, fmt.Errorf("github: invalid URL %q", raw)
+	}
+	return u, nil
+}
+
+// githubAPI is GitHub's REST API for one repository, with a token.
+type githubAPI struct {
+	api   *url.URL
+	token string
+	http  *http.Client
+	// repo is /repos/{owner}/{repo}.
+	repo string
 }
 
 type githubReleases struct {
-	api, upload *url.URL
-	token       string
-	http        *http.Client
+	githubAPI
+	upload *url.URL
 	// releases is /repos/{owner}/{repo}/releases, the prefix of every path it calls.
 	releases string
 }
@@ -323,27 +341,26 @@ func (g *githubReleases) call(ctx context.Context, method string, host *url.URL,
 	return g.send(req, want, what, out)
 }
 
-func (g *githubReleases) request(ctx context.Context, method string, host *url.URL, path string, body io.Reader) (*http.Request, error) {
+func (g *githubAPI) request(ctx context.Context, method string, host *url.URL, path string, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, host.String()+path, body)
 	if err != nil {
 		return nil, &ReleaseError{Reason: ReasonGitHubError, Message: "github: " + err.Error()}
 	}
+	setGitHubHeaders(req, g.token)
+	return req, nil
+}
+
+func setGitHubHeaders(req *http.Request, token string) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "c4factory")
-	req.Header.Set("Authorization", "Bearer "+g.token)
-	return req, nil
+	req.Header.Set("Authorization", "Bearer "+token)
 }
 
 // send makes req and decodes a want response into out; any other response is a
 // ReleaseError with its reason.
 func (g *githubReleases) send(req *http.Request, want int, what string, out any) error {
-	resp, err := g.http.Do(req)
-	if err != nil {
-		return &ReleaseError{Reason: ReasonGitHubError, Message: fmt.Sprintf("github: %s: %v", what, err)}
-	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, githubMaxBody))
+	resp, data, err := g.do(req)
 	if err != nil {
 		return &ReleaseError{Reason: ReasonGitHubError, Message: fmt.Sprintf("github: %s: %v", what, err)}
 	}
@@ -355,6 +372,21 @@ func (g *githubReleases) send(req *http.Request, want int, what string, out any)
 			Message: fmt.Sprintf("github: %s: unreadable response", what)}
 	}
 	return nil
+}
+
+// do makes req and reads its response, at most githubMaxBody of it. An error
+// is the network's: no response came, or it broke off.
+func (g *githubAPI) do(req *http.Request) (*http.Response, []byte, error) {
+	resp, err := g.http.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, githubMaxBody))
+	if err != nil {
+		return nil, nil, err
+	}
+	return resp, data, nil
 }
 
 type githubErrorBody struct {
@@ -371,16 +403,7 @@ const maxFailureMessage = 300
 
 // githubFailure maps a response GitHub refused to the reason it failed.
 func githubFailure(resp *http.Response, data []byte, what string) *ReleaseError {
-	var body githubErrorBody
-	_ = json.Unmarshal(data, &body)
-	message := body.Message
-	if message == "" {
-		// Not GitHub's JSON: an HTML error page, say. Keep the Crew's message short.
-		message = http.StatusText(resp.StatusCode)
-	}
-	if r := []rune(message); len(r) > maxFailureMessage {
-		message = string(r[:maxFailureMessage]) + "..."
-	}
+	body, message := githubMessage(resp, data)
 	e := &ReleaseError{Reason: ReasonGitHubError, Status: resp.StatusCode,
 		Message: fmt.Sprintf("github: %s failed: %s", what, message)}
 	switch resp.StatusCode {
@@ -405,6 +428,22 @@ func githubFailure(resp *http.Response, data []byte, what string) *ReleaseError 
 		}
 	}
 	return e
+}
+
+// githubMessage reads GitHub's error body and its message, cut to
+// maxFailureMessage.
+func githubMessage(resp *http.Response, data []byte) (githubErrorBody, string) {
+	var body githubErrorBody
+	_ = json.Unmarshal(data, &body)
+	message := body.Message
+	if message == "" {
+		// Not GitHub's JSON: an HTML error page, say. Keep the message short.
+		message = http.StatusText(resp.StatusCode)
+	}
+	if r := []rune(message); len(r) > maxFailureMessage {
+		message = string(r[:maxFailureMessage]) + "..."
+	}
+	return body, message
 }
 
 // says reports whether the message, or one of the errors', contains text.
