@@ -11,14 +11,34 @@ import type {
   ContainerPhase,
   Crew,
   CrewPhase,
+  Relationship,
+  SessionPhase,
   Task,
   TaskPhase,
 } from '../k8s/types'
 import { findCondition } from '../k8s/types'
 import { describeBriefPhase } from './brief'
-import { describeContainerPhase, describeCrewPhase, describeTaskPhase, type Tone } from './describe'
+import {
+  describeContainerPhase,
+  describeCrewPhase,
+  describeSessionPhase,
+  describeTaskPhase,
+  type Tone,
+} from './describe'
 
-export type LifecycleKind = 'Brief' | 'Container' | 'Crew' | 'Task'
+export type LifecycleKind =
+  | 'Brief'
+  | 'Container'
+  | 'Crew'
+  | 'Task'
+  | 'Project'
+  | 'SoftwareSystem'
+  | 'Relationship'
+  | 'Session'
+  | 'Standard'
+  | 'Compute'
+  | 'Deployment'
+  | 'GitProvider'
 
 interface StepDef {
   phase: string
@@ -33,7 +53,44 @@ interface LifecycleDef {
   /** What moves the object along its path. */
   moves: string
   describe: (phase: string | undefined) => { label: string; tone: Tone; explanation: string }
+  /** For a kind with no phases (an empty path): what a person does with it, always. */
+  still?: string
 }
+
+/** A kind with no phases: no path, no exits, and the same thing to do always. */
+function phaseless(moves: string, still: string): LifecycleDef {
+  return {
+    path: [],
+    exits: [],
+    moves,
+    still,
+    describe: () => ({ label: '', tone: 'unknown', explanation: '' }),
+  }
+}
+
+const SESSION_TONES: Record<SessionPhase, Tone> = { Active: 'ok', Stale: 'waiting' }
+
+/** The Applied reasons of a Container to DataStore Relationship, as steps. */
+const APPLIED: Record<string, { label: string; tone: Tone; explanation: string }> = {
+  WaitingForScaffold: {
+    label: 'Waiting for the scaffold',
+    tone: 'waiting',
+    explanation: 'Its Connector is applied when the Container is scaffolded.',
+  },
+  AppliedAtScaffold: {
+    label: 'Applied at the scaffold',
+    tone: 'ok',
+    explanation: 'Its Connector was part of the Container’s scaffold.',
+  },
+  AddedAfterScaffold: {
+    label: 'Added after the scaffold',
+    tone: 'waiting',
+    explanation: 'The Container was scaffolded before it existed; the factory scaffolds once, so it is not applied.',
+  },
+}
+
+const CATALOG_STILL =
+  'Nothing: Containers name it, and it is rendered into their repositories when they are scaffolded. A new template ref reaches only new Containers.'
 
 const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
   Brief: {
@@ -127,6 +184,73 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
     moves: 'The agent, CI and the reviewer, round by round, up to its implementer’s maxRounds.',
     describe: (phase) => describeTaskPhase(phase as TaskPhase | undefined),
   },
+  Project: phaseless(
+    'One per namespace, made by the chart or the planner; it counts what its namespace holds.',
+    'Nothing: pick it to see its story. Its conditions say when something about the namespace is wrong.',
+  ),
+  SoftwareSystem: phaseless(
+    'Part of the model; its counts follow its Containers.',
+    'Nothing: its Containers are where the work is. Open one below.',
+  ),
+  Relationship: {
+    path: [
+      { phase: 'WaitingForScaffold', person: 'Nothing: its Connector is applied when the Container is scaffolded.' },
+      { phase: 'AppliedAtScaffold', person: 'Nothing: its Connector is in the Container’s repository.' },
+    ],
+    exits: [
+      {
+        phase: 'AddedAfterScaffold',
+        person:
+          'Add what its Connector would have, by hand, in the Container’s repository: the factory scaffolds a Container once and never again.',
+      },
+    ],
+    moves: 'Only a Container to DataStore relationship moves: the Container’s scaffold applies its Connector.',
+    describe: (phase) =>
+      (phase ? APPLIED[phase] : undefined) ?? {
+        label: 'Not reported yet',
+        tone: 'unknown',
+        explanation: 'The factory has not reported whether it is applied.',
+      },
+  },
+  Session: {
+    path: [{ phase: 'Active', person: 'Open it in the editor to join the work.' }],
+    exits: [
+      {
+        phase: 'Stale',
+        person: 'Nothing: its client stopped sending heartbeats. It turns Active again when they come back.',
+      },
+    ],
+    moves: 'Its client (c4session) sends heartbeats; the operator marks it Stale when they stop.',
+    describe: (phase) => ({
+      ...describeSessionPhase(phase as SessionPhase | undefined),
+      tone: SESSION_TONES[phase as SessionPhase] ?? 'unknown',
+    }),
+  },
+  Standard: phaseless(
+    'A catalog entry. A new template ref opens an update pull request on each Ready Container that names it; the factory merges it once its checks pass.',
+    'Nothing: its Containers’ update pull requests carry a new ref; open a Container to see its own.',
+  ),
+  Compute: phaseless('A catalog entry, rendered into a Container once, at its scaffold.', CATALOG_STILL),
+  Deployment: phaseless('A catalog entry, rendered into a Container once, at its scaffold.', CATALOG_STILL),
+  GitProvider: phaseless(
+    'Where the factory creates each Container’s repository, with the credentials of the Secret it names.',
+    'Nothing, unless a Container fails to create its repository: then check the Secret it names, in the cluster.',
+  ),
+}
+
+/** Whether the kind has phases to show on a stepper. */
+export function hasPhases(kind: LifecycleKind): boolean {
+  return LIFECYCLES[kind].path.length > 0
+}
+
+/** Where a Relationship is on its lifecycle: its Applied condition's reason, when it has one. */
+export function relationshipPhase(relationship: Relationship): string | undefined {
+  return relationship.status?.conditions?.find((c) => c.type === 'Applied')?.reason
+}
+
+/** Whether the factory applies this Relationship: only a Container to DataStore one adds a Connector. */
+export function appliesConnector(relationship: Relationship): boolean {
+  return relationship.spec.source.kind === 'Container' && relationship.spec.target.kind === 'DataStore'
 }
 
 /** Whether the shell has an object page for this kind. */
@@ -176,7 +300,7 @@ export function lifecycleOf(kind: LifecycleKind, phase: string | undefined): Lif
     path,
     exits,
     current,
-    person: step?.person ?? `Nothing yet: the factory has not reported on this ${kind} yet.`,
+    person: step?.person ?? def.still ?? `Nothing yet: the factory has not reported on this ${kind} yet.`,
     moves: def.moves,
   }
 }

@@ -36,12 +36,15 @@ describe('the new shell', () => {
   let page
   let base
   let namespace
+  let session
   const errors = []
+  const requests = []
 
   before(async () => {
     const { demoStory, demoFactory } = await loadFixture()
     const story = demoStory(NOW)
     namespace = story.namespace
+    session = story.sessions[0].metadata.name
     api = fakeApi(namespace)
     // Story keys that differ from the plural.
     const PLURAL = { project: RESOURCES.projects, systems: RESOURCES.softwareSystems }
@@ -63,6 +66,7 @@ describe('the new shell', () => {
     // The fixture's clock, so its times read as they do in demo mode.
     await page.clock.setFixedTime(NOW)
     page.on('pageerror', (err) => errors.push(err.message))
+    page.on('request', (req) => requests.push(req.url()))
   })
 
   after(async () => {
@@ -292,6 +296,71 @@ describe('the new shell', () => {
       await crew.locator('.command-line code').textContent(),
       `kubectl -n ${namespace} patch crews.c4.factory.io storefront --type merge -p '{"spec":{"paused":false}}'`,
     )
+  })
+
+  it('opens a read-only page of each remaining kind', async () => {
+    const PAGES = [
+      ['Project', namespace, 'Its catalog and Git hosts'],
+      ['SoftwareSystem', 'webshop-core', 'What it is for'],
+      ['Relationship', 'orders-api-to-cart-cache', 'Its ends'],
+      ['Session', session, 'Who and when'],
+      ['Standard', 'python-standard', 'Its template'],
+      ['Compute', 'small', 'Its template'],
+      ['Deployment', 'k8s-manifests', 'Its template'],
+      ['GitProvider', 'gitea', 'Where repositories go'],
+    ]
+    for (const [kind, name, section] of PAGES) {
+      await page.goto(`${base}/?shell=next&ns=${namespace}&kind=${kind}&name=${name}`)
+      await page.getByRole('region', { name: `${kind} ${name}`, exact: true }).waitFor({ timeout: 10000 })
+      await page.getByRole('heading', { name: section }).first().waitFor({ timeout: 5000 })
+      assert.match(await page.title(), new RegExp(`^${kind} ${name} · C4 Factory$`))
+      if (process.env.C4_UI_SHOTS) {
+        await page.waitForTimeout(300)
+        await page.screenshot({
+          path: path.join(process.env.C4_UI_SHOTS, `ui-object-${kind.toLowerCase()}.png`),
+          fullPage: true,
+        })
+      }
+    }
+  })
+
+  it('walks from a Container to its Standard, and up to the Project', async () => {
+    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Container&name=orders-api`)
+    await page.getByRole('link', { name: 'python-standard', exact: true }).click()
+    const standard = page.getByRole('region', { name: 'Standard python-standard', exact: true })
+    await standard.waitFor({ timeout: 10000 })
+    await standard.getByRole('link', { name: 'orders-api', exact: true }).waitFor({ timeout: 5000 })
+    await standard.getByRole('link', { name: `Project ${namespace}` }).click()
+    const project = page.getByRole('region', { name: `Project ${namespace}`, exact: true })
+    await project.waitFor({ timeout: 10000 })
+    await project.getByRole('link', { name: 'webshop-core', exact: true }).waitFor({ timeout: 5000 })
+  })
+
+  it('shows a GitProvider’s Secret by name, and never reads a Secret', async () => {
+    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=GitProvider&name=gitea`)
+    const header = page.getByRole('region', { name: 'GitProvider gitea', exact: true })
+    await header.waitFor({ timeout: 10000 })
+    await page.getByText('the UI never reads Secrets').waitFor({ timeout: 5000 })
+    assert.match(await page.locator('main').textContent(), /Secret gitea-credentials/)
+    assert.deepEqual(
+      requests.filter((u) => /secrets/i.test(u)),
+      [],
+      'no request for a Secret',
+    )
+  })
+
+  it('says a refused read of an optional kind in its panel', async () => {
+    api.refuse('standards')
+    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Standard&name=python-standard`)
+    await page.getByText(/^Could not read standards \(403\)/).waitFor({ timeout: 10000 })
+    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Project&name=${namespace}`)
+    const catalog = page.getByRole('region', { name: 'Its catalog and Git hosts' })
+    await catalog.getByText(/^Could not read standards \(403\)/).waitFor({ timeout: 10000 })
+    await catalog.getByRole('link', { name: 'small', exact: true }).waitFor({ timeout: 5000 })
+    if (process.env.C4_UI_SHOTS) {
+      await page.waitForTimeout(300)
+      await catalog.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-refused-read.png') })
+    }
   })
 
   it('is not linked from the old layout', async () => {

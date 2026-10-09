@@ -42,6 +42,9 @@ func TestFailedReason(t *testing.T) {
 			FailedMerged, []string{"Task `cli-1-2` already merged it", "close it"}, 2, ""},
 		{"exhausted", nil, clearBody, []IssueTask{failed("cli-1-3", 3, "c"), failed("cli-1", 1, "a"), failed("cli-1-2", 2, "b")},
 			FailedExhausted, []string{"tried it 3 times (Tasks `cli-1`, `cli-1-2`, `cli-1-3`)"}, 3, ""},
+		{"no-CI failures don't exhaust it", nil, clearBody, []IssueTask{failed("cli-1", 1, "a"), failed("cli-1-2", 2, "b"),
+			{Name: "cli-1-3", Issue: 1, Failed: true, NoCI: true, Message: "No CI run started", Created: at(3)}},
+			FailedTask, []string{"Task `cli-1-3` failed: No CI run started"}, 3, "tried"},
 		{"the newest failed Task", nil, clearBody, []IssueTask{
 			failed("cli-1-2", 2, "Failed after 3 rounds:\nthe agent made no changes"), failed("cli-1", 1, "older"),
 			{Name: "cli-2", Issue: 2, Failed: true, Message: "another issue's", Created: at(5)}},

@@ -1027,3 +1027,36 @@ func TestEarlierTry(t *testing.T) {
 		})
 	}
 }
+
+func TestStartsAtReview(t *testing.T) {
+	green := InheritedWork{Pushed: "abc", Head: "abc", Unreviewed: true, Checks: "success"}
+	tests := []struct {
+		name string
+		edit func(*InheritedWork)
+		want bool
+	}{
+		{"its checks went green", func(*InheritedWork) {}, true},
+		{"its checks still pending", func(w *InheritedWork) { w.Checks = "pending" }, false},
+		{"its checks failed", func(w *InheritedWork) { w.Checks = "failure" }, false},
+		{"someone moved the head", func(w *InheritedWork) { w.Head = "def" }, false},
+		{"a reviewer judged it", func(w *InheritedWork) { w.Unreviewed = false }, false},
+		{"the earlier try pushed nothing", func(w *InheritedWork) { w.Pushed, w.Head = "", "" }, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := green
+			tt.edit(&w)
+			if got := StartsAtReview(w); got != tt.want {
+				t.Errorf("StartsAtReview(%+v) = %v, want %v", w, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInheritedChecks(t *testing.T) {
+	got := InheritedChecks(TaskProgress{Phase: TaskPending, Feedback: "say how to try it"}, "abc")
+	want := TaskProgress{Phase: TaskChecking, Round: 1, Commit: "abc", Feedback: "say how to try it"}
+	if got != want {
+		t.Errorf("InheritedChecks = %+v, want %+v", got, want)
+	}
+}

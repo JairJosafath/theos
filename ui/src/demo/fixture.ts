@@ -15,11 +15,13 @@ import type {
   Container,
   Crew,
   DataStore,
+  GitProvider,
   Person,
   Project,
   Relationship,
   Session,
   SoftwareSystem,
+  Standard,
   Task,
   TaskPhase,
   TaskTransition,
@@ -148,13 +150,21 @@ export function demoStory(now: number): StoryData {
         description: 'Takes and tracks orders.',
         type: 'service',
         frameworkRef: { name: 'python-fastapi' },
+        standardRef: { name: 'python-standard' },
         computeRef: { name: 'small' },
         deploymentRef: { name: 'k8s-manifests' },
       },
       {
         phase: 'Ready',
         repositoryURL: `${GITEA}/webshop/orders-api`,
-        scaffoldedFrom: ['python-fastapi@v1.3.0', 'small@v1.0.0', 'k8s-manifests@v1.1.0', 'postgres@v1.1.0'],
+        scaffoldedFrom: [
+          'python-fastapi@v1.3.0',
+          'python-standard@v1.2.0',
+          'small@v1.0.0',
+          'k8s-manifests@v1.1.0',
+          'postgres@v1.1.0',
+        ],
+        standard: { name: 'python-standard', ref: 'v1.2.0' },
         appliedRelationships: ['orders-api-to-orders-db'],
         appliedConnectors: [{ relationship: 'orders-api-to-orders-db', dataStore: 'orders-db', connector: 'postgres' }],
         activeSessions: 1,
@@ -705,6 +715,34 @@ export function demoStory(now: number): StoryData {
     catalog('Connector', 'redis', 'Redis', ['service', 'worker'], 'v1.0.0', created),
   ]
 
+  const standards: Standard[] = [
+    {
+      apiVersion: API_VERSION,
+      kind: 'Standard',
+      metadata: meta('python-standard', created),
+      spec: {
+        displayName: 'Python standard (ruff, pytest)',
+        description: 'Lint, format and test rules, and the CI that checks them.',
+        supportedTypes: ['service', 'worker', 'job'],
+        template: { url: `${GITEA}/templates/python-standard`, ref: 'v1.2.0' },
+        supportedFrameworks: ['python-fastapi'],
+        protectedPaths: ['ruff.toml', '.c4/checks/'],
+      },
+    },
+  ]
+  const computes = [catalog('Compute', 'small', 'Small: 1 replica, 256 MiB', ['service', 'worker'], 'v1.0.0', created)]
+  const deployments = [
+    catalog('Deployment', 'k8s-manifests', 'Kubernetes manifests', ['service', 'worker', 'job'], 'v1.1.0', created),
+  ]
+  const gitProviders: GitProvider[] = [
+    {
+      apiVersion: API_VERSION,
+      kind: 'GitProvider',
+      metadata: meta('gitea', created),
+      spec: { provider: 'gitea', url: GITEA, owner: 'webshop', credentialsSecretRef: { name: 'gitea-credentials' } },
+    },
+  ]
+
   const briefs: Brief[] = [
     // Two rounds applied; a third prompt came in since and waits for the next.
     {
@@ -979,6 +1017,10 @@ export function demoStory(now: number): StoryData {
     sessions,
     frameworks,
     connectors,
+    standards,
+    computes,
+    deployments,
+    gitProviders,
     crews,
     agents,
     tasks,

@@ -359,7 +359,10 @@ model and context it needs.
   first after the Standard changes that `Blocked` Tasks wait on, up to three
   tries per issue (a `NoCIResult` failure is not one). A try continues an earlier try's pull request that is
   still open: it works on that branch, with that try's feedback, and reports
-  to that pull request (`status.continues` names the earlier Task). A round
+  to that pull request (`status.continues` names the earlier Task). When the
+  earlier try ended waiting for the checks of its commit, that commit is still
+  the head, and its checks now pass, the try skips the implementer: it enters
+  `Checking` at that commit and starts the review. A round
   that changes only the pull request, such as its description, and commits
   nothing goes to the reviewer as it is, and merges when approved; without a
   pull request, a round with no commit has nothing to review

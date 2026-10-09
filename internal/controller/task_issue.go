@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -59,13 +60,16 @@ func (r *TaskReconciler) announce(ctx context.Context, provider gitprovider.Prov
 
 // continueEarlierTry takes over the pull request of the issue's earlier try
 // when it is still open: its branch, number and feedback become the Task's, so
-// the try goes on from where the last one stopped (#607).
+// the try goes on from where the last one stopped (#607). It returns the
+// commit the try starts at instead of implementing, when the earlier try's
+// unreviewed commit is still the head and its checks now pass
+// (model.StartsAtReview); empty otherwise.
 func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitprovider.Provider,
-	repo gitprovider.Repository, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) error {
+	repo gitprovider.Repository, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) (string, error) {
 	var list c4v1alpha1.TaskList
 	if err := r.List(ctx, &list, client.InNamespace(task.Namespace),
 		client.MatchingFields{indexTaskContainer: task.Spec.ContainerRef.Name}); err != nil {
-		return err
+		return "", err
 	}
 	tries := make([]model.Try, 0, len(list.Items))
 	byName := make(map[string]*c4v1alpha1.Task, len(list.Items))
@@ -77,7 +81,7 @@ func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitpro
 	}
 	earlier, ok := model.EarlierTry(task.Name, task.CreationTimestamp.Unix(), int(task.Spec.Issue), tries)
 	if !ok {
-		return nil
+		return "", nil
 	}
 	pr, err := provider.GetPullRequest(ctx, repo, earlier.PullRequest)
 	if errors.Is(err, gitprovider.ErrPullRequestNotFound) {
@@ -85,19 +89,44 @@ func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitpro
 		// the Task starts on its own branch.
 		logf.FromContext(ctx).Info("Earlier pull request not found", "number", earlier.PullRequest,
 			"earlierTask", earlier.Name)
-		return nil
+		return "", nil
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	if pr.State != stateOpen || pr.Merged || pr.Head == "" {
-		return nil
+		return "", nil
 	}
+	prior := byName[earlier.Name].Status
 	status.Continues, status.Branch = earlier.Name, pr.Head
 	status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
-	status.Feedback = byName[earlier.Name].Status.Feedback
+	status.Feedback = prior.Feedback
 	logf.FromContext(ctx).Info("Continuing pull request", "url", pr.URL, "branch", pr.Head, "earlierTask", earlier.Name)
-	return nil
+
+	work := model.InheritedWork{Pushed: prior.Commit, Head: pr.HeadSHA, Unreviewed: endedChecking(prior.History)}
+	if work.Unreviewed && work.Pushed != "" && work.Head == work.Pushed {
+		checks, err := provider.CombinedStatus(ctx, repo, work.Head)
+		if err != nil {
+			return "", err
+		}
+		work.Checks = checks.State
+	}
+	if !model.StartsAtReview(work) {
+		return "", nil
+	}
+	status.Summary = prior.Summary
+	return work.Head, nil
+}
+
+// endedChecking reports whether a Task's timeline ended waiting for the checks
+// of its commit: the step before it finished was Checking.
+func endedChecking(history []c4v1alpha1.TaskTransition) bool {
+	for _, h := range slices.Backward(history) {
+		if h.Phase != c4v1alpha1.TaskFailed && h.Phase != c4v1alpha1.TaskMerged {
+			return h.Phase == c4v1alpha1.TaskChecking
+		}
+	}
+	return false
 }
 
 // noteContinued says on the pull request a Task took over that it goes on with
