@@ -3,7 +3,7 @@
 // project: the webshop. The story source also takes the UI's three writes in
 // memory, so the Brief box and its Pause button work without a cluster.
 
-import { briefManifest, type BriefOptions, type BriefWriter } from '../k8s/briefs'
+import { briefManifest, type BriefOptions, type BriefSettings, type BriefWriter } from '../k8s/briefs'
 import type { FactoryHealth } from '../k8s/health'
 import type { Connection, FactoryData, Snapshot, Source, StoryData } from '../k8s/sources'
 import type { Condition, Project } from '../k8s/types'
@@ -66,23 +66,11 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
       )
     if (data.briefs.some((b) => b.metadata.name === name))
       throw new Error(`briefs.c4.factory.io "${name}" already exists`)
-    const { idea: ideaLimit, parallel: parallelLimit } = BRIEF_LIMITS
+    const { idea: ideaLimit } = BRIEF_LIMITS
     if (idea.length < ideaLimit.min)
       throw invalid(`spec.idea: Invalid value: "": should be at least ${ideaLimit.min} chars long`)
     if (idea.length > ideaLimit.max) throw invalid(`spec.idea: Too long: may not be more than ${ideaLimit.max} bytes`)
-    const parallel = options?.parallel
-    if (
-      parallel !== undefined &&
-      !(
-        typeof parallel === 'number' &&
-        Number.isInteger(parallel) &&
-        parallel >= parallelLimit.min &&
-        parallel <= parallelLimit.max
-      )
-    )
-      throw invalid(
-        `spec.parallel: Invalid value: ${JSON.stringify(parallel)}: should be a whole number from ${parallelLimit.min} to ${parallelLimit.max}`,
-      )
+    checkParallel(options?.parallel, invalid)
     const brief = briefManifest(namespace, name, idea, options)
     brief.metadata = { ...brief.metadata, uid: `demo-${name}`, creationTimestamp: new Date().toISOString() }
     brief.status = { phase: 'Pending' }
@@ -122,6 +110,20 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
     this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
   }
 
+  /** Sets the settings given, refusing a parallel the CRD would; the demo has no operator to apply them. */
+  async setSettings(_namespace: string, name: string, settings: BriefSettings): Promise<void> {
+    const data = this.snapshot.data
+    const brief = data.briefs.find((b) => b.metadata.name === name)
+    if (!brief) throw new Error(`briefs.c4.factory.io "${name}" not found`)
+    checkParallel(settings.parallel, (detail) => new Error(`Brief.c4.factory.io "${name}" is invalid: ${detail}`))
+    const spec = { ...brief.spec }
+    if (settings.autopilot !== undefined) spec.autopilot = settings.autopilot
+    if (settings.parallel !== undefined) spec.parallel = settings.parallel as number
+    if (settings.releases !== undefined) spec.releases = settings.releases
+    const changed = { ...brief, spec }
+    this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
+  }
+
   private update(data: StoryData): void {
     this.snapshot = { ...this.snapshot, data }
     for (const listener of this.listeners) listener()
@@ -155,4 +157,16 @@ export class DemoHealthSource extends StaticSource<FactoryHealth | undefined> {
   constructor(now = Date.now()) {
     super(demoHealth(now))
   }
+}
+
+/** Throws as the API server would for a parallel out of the CRD's range; unset passes. */
+function checkParallel(parallel: number | string | undefined, invalid: (detail: string) => Error): void {
+  const { min, max } = BRIEF_LIMITS.parallel
+  if (
+    parallel !== undefined &&
+    !(typeof parallel === 'number' && Number.isInteger(parallel) && parallel >= min && parallel <= max)
+  )
+    throw invalid(
+      `spec.parallel: Invalid value: ${JSON.stringify(parallel)}: should be a whole number from ${min} to ${max}`,
+    )
 }

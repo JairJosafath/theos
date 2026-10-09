@@ -175,7 +175,7 @@ describe('a Crew page’s actions', () => {
     assert.equal(await rerun.isDisabled(), true, 'asked once, until the release’s re-run time changes')
     const asked = crew().metadata.annotations?.['c4.factory.io/rerun-release']
     assert.ok(asked && !Number.isNaN(Date.parse(asked)), `the annotation is a time: ${asked}`)
-    assert.equal(api.writes.at(-1).type, 'application/merge-patch+json')
+    assert.equal(api.writes.at(-1).contentType, 'application/merge-patch+json')
   })
 
   it('says to sign in, instead of offering the buttons, when nobody is signed in with OIDC', async () => {

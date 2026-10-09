@@ -1,10 +1,11 @@
 // A tiny in-memory Kubernetes API for the c4.factory.io kinds, with lists and
 // watches, for the end-to-end test and the screenshots of every view. It
 // answers GETs of collections, and the factory health's Pods and Nodes as
-// empty lists; a POST that creates an object (generateName included) and a
-// merge patch or JSON patch (add and remove) of one, refusing what a CRD rule of REFUSE would, with the API
-// server's message; everything else is 404. A kind it is told to refuse
-// answers 403, as RBAC would.
+// empty lists; a GET of one object; a POST that creates an object
+// (generateName included), a merge patch of one and a JSON patch of add,
+// remove, replace and test ops, refusing what a CRD rule of REFUSE would, or
+// what refuseNextWrite() asks, with the API server's message; everything
+// else is 404. A kind it is told to refuse answers 403, as RBAC would.
 
 import http from 'node:http'
 // The UI's own list of kinds, so the fake API serves every one.
@@ -28,6 +29,10 @@ const REFUSE = {
     }
     return undefined
   },
+  standards: (obj) =>
+    typeof obj.spec?.template?.ref === 'string' && obj.spec.template.ref.length < 1
+      ? `Standard.c4.factory.io "${obj.metadata.name}" is invalid: spec.template.ref: Invalid value: "": spec.template.ref in body should be at least 1 chars long`
+      : undefined,
 }
 
 function status(res, code, reason, message) {
@@ -60,17 +65,37 @@ function mergePatch(target, patch) {
   return out
 }
 
-/** A JSON patch (RFC 6902) of add and remove onto `target`, or undefined when an op can't apply. */
+/**
+ * A JSON patch (RFC 6902) of add, remove, replace and test ops onto `target`, on
+ * object members, and an add at `-` appending to a list; undefined for any
+ * other op or path, or when a test fails.
+ */
 function jsonPatch(target, ops) {
+  if (!Array.isArray(ops)) return undefined
   const out = structuredClone(target)
-  for (const op of Array.isArray(ops) ? ops : []) {
-    const keys = String(op.path).split('/').slice(1)
+  for (const op of ops) {
+    if (
+      !['add', 'remove', 'replace', 'test'].includes(op?.op) ||
+      typeof op.path !== 'string' ||
+      !op.path.startsWith('/')
+    )
+      return undefined
+    const keys = op.path.slice(1).split('/')
     const last = keys.pop()
-    const parent = keys.reduce((o, k) => o?.[k], out)
-    if (parent === null || typeof parent !== 'object') return undefined
-    if (op.op === 'add') parent[last] = op.value
-    else if (op.op === 'remove' && last in parent) delete parent[last]
-    else return undefined
+    let at = out
+    for (const [i, k] of keys.entries()) {
+      // A list only as the target of an append.
+      const list = Array.isArray(at[k]) && i === keys.length - 1 && last === '-'
+      if (at[k] === null || typeof at[k] !== 'object' || (Array.isArray(at[k]) && !list)) return undefined
+      at = at[k]
+    }
+    if (op.op === 'test') {
+      if (at[last] !== op.value) return undefined
+    } else if (op.op === 'remove') {
+      if (Array.isArray(at) || !(last in at)) return undefined
+      delete at[last]
+    } else if (last === '-' && Array.isArray(at)) at.push(op.value)
+    else at[last] = op.value
   }
   return out
 }
@@ -107,10 +132,17 @@ export function fakeApi(namespace) {
   /** Every write it took or refused, in order: method, path, body. */
   const writes = []
   let suffix = 0
+  // The message the next write is refused with, set by refuseNextWrite().
+  let refusal
   const write = async (req, res, plural, ns, name) => {
     const body = await readJson(req)
-    const type = req.headers['content-type']
-    writes.push({ method: req.method, path: new URL(req.url, 'http://x').pathname, type, body })
+    const contentType = req.headers['content-type']
+    writes.push({ method: req.method, path: new URL(req.url, 'http://x').pathname, contentType, body })
+    if (refusal) {
+      const message = refusal
+      refusal = undefined
+      return status(res, 422, 'Invalid', message)
+    }
     let obj
     if (req.method === 'POST') {
       if (!body?.metadata) return status(res, 400, 'BadRequest', 'the body is not an object')
@@ -120,12 +152,13 @@ export function fakeApi(namespace) {
       obj = { ...body, metadata: { ...body.metadata, namespace: ns, name: body.metadata.name ?? generated } }
       delete obj.metadata.generateName
     } else {
+      const type = req.headers['content-type']
       if (type !== 'application/merge-patch+json' && type !== 'application/json-patch+json')
-        return status(res, 415, 'UnsupportedMediaType', 'the fake API takes only merge patches and JSON patches')
+        return status(res, 415, 'UnsupportedMediaType', 'the fake API takes only merge and JSON patches')
       const old = store.get(plural).get(`${ns}/${name}`)
       if (!old) return status(res, 404, 'NotFound', `${plural} "${name}" not found`)
       obj = type === 'application/merge-patch+json' ? mergePatch(old, body) : jsonPatch(old, body)
-      if (!obj) return status(res, 422, 'Invalid', 'the JSON patch does not apply')
+      if (!obj) return status(res, 422, 'UnprocessableEntity', 'the fake API takes only add, remove and replace ops')
     }
     const refused = REFUSE[plural]?.(obj)
     if (refused) return status(res, 422, 'Invalid', refused)
@@ -142,6 +175,12 @@ export function fakeApi(namespace) {
     if (one && store.has(one[2]) && ((req.method === 'POST' && !one[3]) || (req.method === 'PATCH' && one[3]))) {
       void write(req, res, one[2], one[1], one[3] && decodeURIComponent(one[3]))
       return
+    }
+    if (one && store.has(one[2]) && req.method === 'GET' && one[3]) {
+      const obj = store.get(one[2]).get(`${one[1]}/${decodeURIComponent(one[3])}`)
+      if (!obj) return status(res, 404, 'NotFound', `${one[2]} "${one[3]}" not found`)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify(obj))
     }
     if (req.method === 'GET' && (url.pathname === '/api/v1/pods' || url.pathname === '/api/v1/nodes')) {
       res.writeHead(200, { 'content-type': 'application/json' })
@@ -185,6 +224,10 @@ export function fakeApi(namespace) {
     /** The stored object of a kind, as the API has it now. */
     get(plural, name) {
       return store.get(plural).get(`${namespace}/${name}`)
+    },
+    /** Refuses the next write with 422 and `message`, as the API server does when the CRD refuses a value. */
+    refuseNextWrite(message) {
+      refusal = message
     },
     /** How many watches of a kind are open. */
     watching(plural) {

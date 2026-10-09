@@ -7,7 +7,12 @@ import type { Brief } from '../k8s/types'
 import { FixedNow } from '../lib/hooks'
 import { Briefs } from './Briefs'
 
-const writer: BriefWriter = { create: async () => {}, addPrompt: async () => {}, setPaused: async () => {} }
+const writer: BriefWriter = {
+  create: async () => {},
+  addPrompt: async () => {},
+  setPaused: async () => {},
+  setSettings: async () => {},
+}
 
 /** The Brief cards of `briefs` as HTML, with the clock stopped at `now`. */
 function render(briefs: Brief[], now: number): string {

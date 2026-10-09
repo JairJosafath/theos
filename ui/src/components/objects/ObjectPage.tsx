@@ -5,6 +5,7 @@
 import type { BriefWriter } from '../../k8s/briefs'
 import type { ContainerWriter } from '../../k8s/containers'
 import type { CrewWriter } from '../../k8s/crews'
+import type { StandardWriter } from '../../k8s/standards'
 import { RESOURCES, type K8sObject } from '../../k8s/types'
 import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
 import type { LifecycleKind } from '../../model/lifecycle'
@@ -14,6 +15,7 @@ import { ContainerPage } from './ContainerPage'
 import { CrewPage } from './CrewPage'
 import { ProjectPage, RelationshipPage, SessionPage, SystemPage } from './ModelPages'
 import { ReadProblem } from './ReadProblem'
+import { StandardActions } from './StandardActions'
 import { TaskPage } from './TaskPage'
 import '../objects.css'
 
@@ -41,6 +43,7 @@ export function ObjectPage({
   writer,
   containerWriter,
   crewWriter,
+  standardWriter,
 }: {
   kind: LifecycleKind
   name: string
@@ -49,8 +52,9 @@ export function ObjectPage({
   writer: BriefWriter
   containerWriter: ContainerWriter
   crewWriter: CrewWriter
+  standardWriter: StandardWriter
 }) {
-  const page = pageFor(kind, name, data, connection, writer, containerWriter, crewWriter)
+  const page = pageFor(kind, name, data, connection, writer, containerWriter, crewWriter, standardWriter)
   if (page) return page
   const unread = unreadOf(connection, WHERE[kind].resource)
   return (
@@ -83,6 +87,7 @@ function pageFor(
   writer: BriefWriter,
   containerWriter: ContainerWriter,
   crewWriter: CrewWriter,
+  standardWriter: StandardWriter,
 ) {
   const named = <T extends K8sObject>(list: T[]) => list.find((o) => o.metadata.name === name)
   switch (kind) {
@@ -145,7 +150,16 @@ function pageFor(
     }
     case 'Standard': {
       const standard = named(data.standards)
-      return standard && <CatalogPage kind="Standard" entry={standard} containers={data.containers} />
+      return (
+        standard && (
+          <CatalogPage
+            kind="Standard"
+            entry={standard}
+            containers={data.containers}
+            actions={<StandardActions standard={standard} containers={data.containers} writer={standardWriter} />}
+          />
+        )
+      )
     }
     case 'Compute': {
       const compute = named(data.computes)

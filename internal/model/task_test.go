@@ -1028,6 +1028,44 @@ func TestEarlierTry(t *testing.T) {
 	}
 }
 
+func TestEndedUnreviewed(t *testing.T) {
+	step := func(phase string, round int) TryStep { return TryStep{Phase: phase, Round: round} }
+	pending, failed := step(TaskPending, 0), step(TaskFailed, 0)
+	tests := []struct {
+		name    string
+		history []TryStep
+		want    bool
+	}{
+		{"implemented, then failed checking with NoCIResult", []TryStep{pending,
+			step(TaskImplementing, 1), step(TaskChecking, 1), step(TaskFailed, 1)}, true},
+		{"red checks on the last round, which may later re-run green", []TryStep{pending,
+			step(TaskImplementing, 1), step(TaskChecking, 1), step(TaskImplementing, 2), step(TaskChecking, 2),
+			step(TaskFailed, 2)}, true},
+		{"reviewed, then changes requested, then failed checking", []TryStep{pending,
+			step(TaskImplementing, 1), step(TaskChecking, 1), step(TaskReviewing, 1),
+			step(TaskImplementing, 2), step(TaskChecking, 2), step(TaskFailed, 2)}, false},
+		{"approved, then failed checking main merged in", []TryStep{pending,
+			step(TaskImplementing, 1), step(TaskChecking, 1), step(TaskReviewing, 1), step(TaskChecking, 1),
+			step(TaskFailed, 1)}, false},
+		{"changes requested on the last round", []TryStep{pending,
+			step(TaskImplementing, 1), step(TaskChecking, 1), step(TaskReviewing, 1), step(TaskFailed, 1)}, false},
+		{"failed implementing", []TryStep{pending, step(TaskImplementing, 1), failed}, false},
+		{"failed waiting for a Standard change", []TryStep{pending,
+			step(TaskImplementing, 1), step(TaskBlocked, 1), failed}, false},
+		{"started at review and failed checking", []TryStep{step(TaskChecking, 1), failed}, true},
+		{"its start dropped from the timeline", []TryStep{step(TaskImplementing, 2), step(TaskChecking, 2),
+			failed}, false},
+		{"no timeline", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EndedUnreviewed(tt.history); got != tt.want {
+				t.Errorf("EndedUnreviewed(%v) = %v, want %v", tt.history, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStartsAtReview(t *testing.T) {
 	green := InheritedWork{Pushed: "abc", Head: "abc", Unreviewed: true, Checks: "success"}
 	tests := []struct {

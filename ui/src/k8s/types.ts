@@ -257,6 +257,21 @@ export interface TaskTransition {
   message?: string
 }
 
+/** What a Task keeps of one agent run once it ended: its round, role, cost, tokens and handoff sizes. */
+export interface TaskAgentRun {
+  round: number
+  /** implement, review or plan; omitted when neither c4agent nor the sandbox's name said. */
+  role?: string
+  sandbox?: string
+  /** When the Task saw the run end. */
+  endedAt: string
+  /** What the run cost, in thousandths of a US dollar; omitted when the agent didn't say. */
+  costMilliUSD?: number
+  tokens?: TokenUsage
+  /** The sizes, in tokens, at which the run's sessions handed off to fresh ones. */
+  sessionHandoffs?: number[]
+}
+
 export interface CheckStatus {
   commit?: string
   /** pending, success, failure or error. */
@@ -324,6 +339,8 @@ export interface Task extends K8sObject {
     slotWaitSince?: string
     phaseChangedAt?: string
     completedAt?: string
+    /** The Task's agent runs as each ended, oldest first; the newest 64. */
+    runs?: TaskAgentRun[]
     history?: TaskTransition[]
     conditions?: Condition[]
   }
@@ -450,6 +467,19 @@ export interface BriefFailedIssue {
   tries?: number
 }
 
+/** A Container whose releases the person asks for, and the GitHub repository they are published to. */
+export interface BriefRelease {
+  /** The Container, a DNS label. */
+  container: string
+  github: {
+    /** owner/name */
+    repository: string
+    /** The Secret in the Brief's namespace with the GitHub token. */
+    tokenSecretRef: LocalRef
+  }
+  tagPrefix?: string
+}
+
 /** Whether a Brief tends its handed-back work by itself: Off, Ask (decides and asks you) or On (applies). */
 export type BriefAutopilot = 'Off' | 'Ask' | 'On'
 
@@ -502,6 +532,8 @@ export interface Brief extends K8sObject {
     autopilot?: BriefAutopilot
     /** How many issues each Crew the Brief made works on at once; unset is the operator's default. */
     parallel?: number
+    /** The Containers whose releases are published to GitHub; each entry turns releases on for its Container's Crew. */
+    releases?: BriefRelease[]
     /** Pauses the Brief and every Crew it made; a Task already started runs to its end. The Paused condition says what still runs. */
     paused?: boolean
   }

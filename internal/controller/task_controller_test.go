@@ -276,6 +276,23 @@ var _ = Describe("Task", func() {
 			}
 			g.Expect(notes).To(Equal([]string{"Round 2's implement run handed off 2 times, at 134k and 141k tokens."}))
 		}).Should(Succeed())
+
+		By("recording each run: its round, role, cost, tokens and handoff sizes")
+		task := getTask(Default, ns, "add-crop")
+		runs := task.Status.Runs
+		for i := range runs {
+			Expect(runs[i].EndedAt.IsZero()).To(BeFalse())
+			runs[i].EndedAt = metav1.Time{}
+		}
+		Expect(runs).To(Equal([]c4v1alpha1.TaskAgentRun{
+			{Round: 1, Role: "implement", Sandbox: "add-crop-r1-implement", CostMilliUSD: new(int64(312)),
+				Tokens: &c4v1alpha1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000, CacheWrite: 30000, LargestSession: 140000}},
+			{Round: 1, Role: "review", Sandbox: "add-crop-r1-review-a1", Tokens: &c4v1alpha1.TokenUsage{RunsWithout: 1}},
+			{Round: 2, Role: "implement", Sandbox: "add-crop-r2-implement", CostMilliUSD: new(int64(100)),
+				Tokens: &c4v1alpha1.TokenUsage{Input: 5, Output: 1000, CacheRead: 40000, CacheWrite: 8000,
+					LargestSession: 60000, SessionHandoffs: 2},
+				SessionHandoffs: []int64{134000, 141200}},
+		}))
 	})
 
 	It("sends failed checks back to the implementer", func() {

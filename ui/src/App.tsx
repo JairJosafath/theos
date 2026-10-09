@@ -19,6 +19,7 @@ import { VersionLine } from './components/Versions'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
 import { LiveContainerWriter } from './k8s/containers'
 import { LiveCrewWriter } from './k8s/crews'
+import { LiveStandardWriter } from './k8s/standards'
 import { HealthSource, type FactoryHealth } from './k8s/health'
 import { fetchSession, signOut, type UiSession } from './k8s/session'
 import { WatchMux } from './k8s/mux'
@@ -57,6 +58,8 @@ const LIVE_WRITER = new LiveBriefWriter(API.baseUrl)
 const CONTAINER_WRITER = new LiveContainerWriter(API.baseUrl)
 /** A Crew page's writes, taken only with the UI server's actions on. */
 const CREW_WRITER = new LiveCrewWriter(API.baseUrl)
+/** With UI actions on: a Standard's ref bump. */
+const STANDARD_WRITER = new LiveStandardWriter(API.baseUrl)
 
 /** A source with nothing in it: for a view that is not shown, or no project yet. */
 class Idle<T> implements Source<T> {
@@ -412,6 +415,7 @@ export default function App() {
             writer={writer}
             containerWriter={CONTAINER_WRITER}
             crewWriter={CREW_WRITER}
+            standardWriter={STANDARD_WRITER}
           />
         ) : undefined
       }

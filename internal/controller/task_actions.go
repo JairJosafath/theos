@@ -615,7 +615,8 @@ func (r *TaskReconciler) reviewRun(ctx context.Context, task *c4v1alpha1.Task,
 }
 
 // endRun deletes the current sandbox, once its result is in status, adds
-// what the run cost to the Task's, and posts when its sessions handed off.
+// what the run cost to the Task's, records the run, and posts when its
+// sessions handed off.
 func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) error {
 	if status.Sandbox == "" {
 		return nil
@@ -638,12 +639,26 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, stat
 	status.CostMilliUSD += milliUSD
 	status.RunsWithoutCost += withoutCost
 	status.Tokens = addTokens(status.Tokens, run.Tokens())
+	if rec, ok := run.Record(int(status.Round), status.Sandbox, r.now()); ok {
+		status.Runs = model.KeepNewest(append(status.Runs, runRecord(rec)), model.MaxRunRecords)
+	}
 	if run.Result != nil && len(run.Result.SessionHandoffs) > 0 && r.Recorder != nil {
 		r.Recorder.Eventf(task, nil, corev1.EventTypeNormal, eventSessionHandedOff, "HandOff", "%s",
 			model.HandoffNote(int(status.Round), run.Result.Role, run.Result.SessionHandoffs))
 	}
 	status.Sandbox, status.SandboxPod = "", ""
 	return nil
+}
+
+// runRecord is rec as Task status keeps it.
+func runRecord(rec model.RunRecord) c4v1alpha1.TaskAgentRun {
+	out := c4v1alpha1.TaskAgentRun{Round: int32(rec.Round), Role: rec.Role, Sandbox: rec.Sandbox,
+		EndedAt: metav1.NewTime(rec.EndedAt), SessionHandoffs: rec.SessionHandoffs,
+		Tokens: addTokens(nil, rec.Tokens)}
+	if rec.CostReported {
+		out.CostMilliUSD = &rec.CostMilliUSD
+	}
+	return out
 }
 
 // addTokens adds add to tokens, which stays nil while nothing is counted.

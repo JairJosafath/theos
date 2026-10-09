@@ -111,3 +111,28 @@ func labelChanged(label string) builder.WatchesOption {
 		GenericFunc: func(event.GenericEvent) bool { return false },
 	})
 }
+
+// briefSpecOrOperatorWait passes a Brief's creation, deletion and spec
+// changes, and the status write that starts the operator's own wait. A
+// GitProvider or Agent that comes back right after it went may reconcile a
+// copy of the Brief from before that write, see nothing to clear, and write
+// nothing (#783); the write reaching the cache reconciles the Brief again,
+// and that reconcile sees the wait.
+func briefSpecOrOperatorWait() builder.Predicates {
+	return builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, startsOperatorWait()))
+}
+
+// startsOperatorWait passes the Brief updates that start the operator's own
+// NeedsInput.
+func startsOperatorWait() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return false },
+		DeleteFunc:  func(event.DeleteEvent) bool { return false },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldBrief, ok1 := e.ObjectOld.(*c4v1alpha1.Brief)
+			newBrief, ok2 := e.ObjectNew.(*c4v1alpha1.Brief)
+			return ok1 && ok2 && !operatorWaits(&oldBrief.Status) && operatorWaits(&newBrief.Status)
+		},
+	}
+}
