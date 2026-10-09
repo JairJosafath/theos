@@ -287,3 +287,41 @@
   color: var(--error);
   font-size: 13px;
 }
+
+/* A Crew's settings and its release re-run (CrewActions). */
+.crew-form,
+.crew-rerun {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.crew-rerun {
+  border-top: none;
+  padding-top: 0;
+}
+
+.crew-parallel {
+  max-width: 6em;
+}
+
+.crew-check {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.crew-publish {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 22px;
+}
+
+.crew-sign-in .account-signin {
+  margin-left: 4px;
+}

@@ -487,6 +487,13 @@ describe('server.mjs', () => {
         ],
       ],
       [
+        "a Crew's publishing turned off, with its tagging",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [{ op: 'remove', path: '/spec/publishReleases' }, add('/spec/tagReleases', false)],
+      ],
+      [
         "a Crew's release re-run",
         'PATCH',
         '/crews/orders-api',
@@ -741,6 +748,25 @@ describe('server.mjs', () => {
         403,
       ],
       ["a Crew's paused removed", 'PATCH', '/crews/orders-api', JP, [{ op: 'remove', path: '/spec/paused' }], 403],
+      [
+        "a Crew's publishing removed with a value",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [{ op: 'remove', path: '/spec/publishReleases', value: {} }],
+        403,
+      ],
+      [
+        "a Crew's publishing removed twice",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [
+          { op: 'remove', path: '/spec/publishReleases' },
+          { op: 'remove', path: '/spec/publishReleases' },
+        ],
+        403,
+      ],
       [
         "a Standard's ref moved",
         'PATCH',

@@ -288,22 +288,22 @@ function hasType(value, type) {
 
 /**
  * A JSON patch of `add` operations, each on one of `fields` (path to JSON
- * type), no path twice. `add` sets a field whether or not it is there. Returns
- * the operations, or undefined for any other patch.
+ * type), no path twice. `add` sets a field whether or not it is there; a path
+ * in `removable` may instead be a `remove`, which unsets it. Returns the
+ * operations, or undefined for any other patch.
  */
-function addsFields(fields) {
+function addsFields(fields, removable = []) {
   return (body) => {
     if (!Array.isArray(body) || body.length === 0 || body.length > Object.keys(fields).length) return undefined
     const paths = new Set()
     for (const op of body) {
-      if (!isObject(op) || Object.keys(op).sort().join() !== 'op,path,value' || op.op !== 'add') return undefined
-      if (
-        typeof op.path !== 'string' ||
-        !Object.hasOwn(fields, op.path) ||
-        paths.has(op.path) ||
-        !hasType(op.value, fields[op.path])
-      )
+      if (!isObject(op) || typeof op.path !== 'string' || !Object.hasOwn(fields, op.path) || paths.has(op.path)) {
         return undefined
+      }
+      const keys = Object.keys(op).sort().join()
+      const adds = op.op === 'add' && keys === 'op,path,value' && hasType(op.value, fields[op.path])
+      const removes = op.op === 'remove' && keys === 'op,path' && removable.includes(op.path)
+      if (!adds && !removes) return undefined
       paths.add(op.path)
     }
     return body
@@ -448,17 +448,20 @@ const ACTIONS = [
     write: setBriefSettings,
   },
   {
-    what: "set a Crew's /spec/paused, /spec/parallel, /spec/tagReleases, /spec/prepareReleases, /spec/publishReleases",
+    what: "set a Crew's /spec/paused, /spec/parallel, /spec/tagReleases, /spec/prepareReleases, /spec/publishReleases (or remove it)",
     method: 'PATCH',
     path: resourcePath('crews', true),
     type: JSON_PATCH,
-    check: addsFields({
-      '/spec/paused': 'boolean',
-      '/spec/parallel': 'integer',
-      '/spec/tagReleases': 'boolean',
-      '/spec/prepareReleases': 'boolean',
-      '/spec/publishReleases': 'object',
-    }),
+    check: addsFields(
+      {
+        '/spec/paused': 'boolean',
+        '/spec/parallel': 'integer',
+        '/spec/tagReleases': 'boolean',
+        '/spec/prepareReleases': 'boolean',
+        '/spec/publishReleases': 'object',
+      },
+      ['/spec/publishReleases'],
+    ),
   },
   {
     what: 'set annotation c4.factory.io/rerun-release on a Crew',

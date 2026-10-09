@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { BriefWriter } from '../../k8s/briefs'
 import type { ContainerWriter } from '../../k8s/containers'
+import type { CrewWriter } from '../../k8s/crews'
 import type { Connection, StoryData } from '../../k8s/sources'
 import type { StandardWriter } from '../../k8s/standards'
 import type { GitProvider } from '../../k8s/types'
@@ -15,6 +16,7 @@ const NOW = Date.parse('2026-06-01T12:00:00Z')
 const LIVE: Connection = { phase: 'live', loaded: true, problems: [] }
 const WRITER = {} as BriefWriter
 const CONTAINER_WRITER = {} as ContainerWriter
+const CREW_WRITER = {} as CrewWriter
 const STANDARD_WRITER = {} as StandardWriter
 
 beforeAll(() => {
@@ -34,6 +36,7 @@ function page(kind: LifecycleKind, name: string, data: StoryData = demoStory(NOW
       connection,
       writer: WRITER,
       containerWriter: CONTAINER_WRITER,
+      crewWriter: CREW_WRITER,
       standardWriter: STANDARD_WRITER,
     }),
   )

@@ -4,6 +4,7 @@
 
 import type { BriefWriter } from '../../k8s/briefs'
 import type { ContainerWriter } from '../../k8s/containers'
+import type { CrewWriter } from '../../k8s/crews'
 import type { StandardWriter } from '../../k8s/standards'
 import { RESOURCES, type K8sObject } from '../../k8s/types'
 import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
@@ -41,6 +42,7 @@ export function ObjectPage({
   connection,
   writer,
   containerWriter,
+  crewWriter,
   standardWriter,
 }: {
   kind: LifecycleKind
@@ -49,9 +51,10 @@ export function ObjectPage({
   connection: Connection
   writer: BriefWriter
   containerWriter: ContainerWriter
+  crewWriter: CrewWriter
   standardWriter: StandardWriter
 }) {
-  const page = pageFor(kind, name, data, connection, writer, containerWriter, standardWriter)
+  const page = pageFor(kind, name, data, connection, writer, containerWriter, crewWriter, standardWriter)
   if (page) return page
   const unread = unreadOf(connection, WHERE[kind].resource)
   return (
@@ -83,6 +86,7 @@ function pageFor(
   connection: Connection,
   writer: BriefWriter,
   containerWriter: ContainerWriter,
+  crewWriter: CrewWriter,
   standardWriter: StandardWriter,
 ) {
   const named = <T extends K8sObject>(list: T[]) => list.find((o) => o.metadata.name === name)
@@ -113,11 +117,13 @@ function pageFor(
       return (
         crew && (
           <CrewPage
+            key={`${data.namespace}/${name}`}
             crew={crew}
             agents={data.agents}
             tasks={data.tasks}
             containers={data.containers}
             briefs={data.briefs}
+            writer={crewWriter}
           />
         )
       )
