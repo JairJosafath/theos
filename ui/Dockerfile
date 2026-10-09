@@ -19,7 +19,7 @@ ENV NODE_ENV=production \
 WORKDIR /app
 # server.mjs has no dependencies, so no node_modules in the runtime image.
 COPY --from=build /src/dist ./dist
-COPY server.mjs health.mjs ./
+COPY server.mjs health.mjs oidc.mjs ./
 # The node user (uid 1000) ships with the official image.
 USER 1000:1000
 EXPOSE 8080

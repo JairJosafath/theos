@@ -3,12 +3,13 @@
 // Run with: node --test test/server.test.mjs
 
 import assert from 'node:assert/strict'
-import { randomBytes } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import http from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
+import { identity, oidcFromEnv } from '../oidc.mjs'
 import { actionsFromEnv, allowedHostsFromEnv, createServer, resolveUpstream } from '../server.mjs'
 
 /** Starts a server on a free port and returns its base URL. */
@@ -56,7 +57,13 @@ describe('server.mjs', () => {
     upstream = http.createServer(async (req, res) => {
       let text = ''
       for await (const chunk of req) text += chunk
-      seen.push({ method: req.method, url: req.url, headers: req.headers, body: text ? JSON.parse(text) : undefined })
+      seen.push({
+        method: req.method,
+        url: req.url,
+        headers: req.headers,
+        groups: req.headersDistinct['impersonate-group'],
+        body: text ? JSON.parse(text) : undefined,
+      })
       const url = new URL(req.url, 'http://x')
       const json = (status, value) => {
         res.writeHead(status, { 'content-type': 'application/json' })
@@ -754,46 +761,317 @@ describe('server.mjs', () => {
     }
   })
 
-  describe('the action table behind an Ingress (UI_ACTIONS=oidc), before anyone can sign in', () => {
+  describe('the action table behind an Ingress (UI_ACTIONS=oidc), as the person signed in', () => {
+    const clientID = 'c4-factory-ui'
+    /** The client secret only the UI server and the issuer know. */
+    const clientSecret = randomBytes(18).toString('base64url')
+    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    const ec = generateKeyPairSync('ec', { namedCurve: 'P-256' })
+    const stranger = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    /** Codes the fake issuer has handed out: the PKCE challenge and the ID token each one buys. */
+    const codes = new Map()
+    let issuerServer
+    let issuer
     let oidcServer
     let oidcBase
+    let bare
+    let bareBase
+    const api = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop'
+    const pause = [{ op: 'add', path: '/spec/paused', value: true }]
+
     before(async () => {
-      oidcServer = createServer({
+      issuerServer = http.createServer(async (req, res) => {
+        let text = ''
+        for await (const chunk of req) text += chunk
+        const json = (status, value) => {
+          res.writeHead(status, { 'content-type': 'application/json' })
+          res.end(JSON.stringify(value))
+        }
+        if (req.url === '/.well-known/openid-configuration') {
+          return json(200, {
+            issuer,
+            authorization_endpoint: `${issuer}/authorize`,
+            token_endpoint: `${issuer}/token`,
+            jwks_uri: `${issuer}/keys`,
+          })
+        }
+        if (req.url === '/keys') {
+          return json(200, {
+            keys: [
+              { ...rsa.publicKey.export({ format: 'jwk' }), kid: 'rsa-1', alg: 'RS256', use: 'sig' },
+              { ...ec.publicKey.export({ format: 'jwk' }), kid: 'ec-1', alg: 'ES256', use: 'sig' },
+            ],
+          })
+        }
+        if (req.url === '/token' && req.method === 'POST') {
+          const form = new URLSearchParams(text)
+          const grant = codes.get(form.get('code'))
+          codes.delete(form.get('code'))
+          const verifier = form.get('code_verifier') ?? ''
+          const basic = `Basic ${Buffer.from(`${clientID}:${clientSecret}`).toString('base64')}`
+          if (req.headers.authorization !== basic) return json(401, { error: 'invalid_client' })
+          if (
+            !grant ||
+            form.get('grant_type') !== 'authorization_code' ||
+            form.get('redirect_uri') !== grant.redirectURI ||
+            createHash('sha256').update(verifier).digest('base64url') !== grant.challenge
+          ) {
+            return json(400, { error: 'invalid_grant' })
+          }
+          return json(200, { access_token: 'opaque', token_type: 'Bearer', id_token: grant.idToken })
+        }
+        json(404, { error: 'not_found' })
+      })
+      issuer = await listen(issuerServer)
+      const options = {
         distDir: dist,
         upstream: resolveUpstream({ K8S_API: upstreamUrl }),
         log: () => {},
         actions: 'oidc',
+      }
+      oidcServer = createServer({
+        ...options,
+        oidc: oidcFromEnv({
+          OIDC_ISSUER_URL: issuer,
+          OIDC_CLIENT_ID: clientID,
+          OIDC_CLIENT_SECRET: clientSecret,
+        }),
       })
       oidcBase = await listen(oidcServer)
+      bare = createServer({ ...options, oidc: undefined })
+      bareBase = await listen(bare)
     })
-    after(() => close(oidcServer))
+    after(async () => {
+      await close(oidcServer)
+      await close(bare)
+      await close(issuerServer)
+    })
 
-    it('says on /ui/session that actions need a person, and nobody is signed in', async () => {
+    /** An ID token signed with `key` (the issuer's RSA key unless given). */
+    function idToken(claims, { key = rsa.privateKey, alg = 'RS256', kid = 'rsa-1' } = {}) {
+      const part = (value) => Buffer.from(JSON.stringify(value)).toString('base64url')
+      const data = `${part({ alg, kid, typ: 'JWT' })}.${part(claims)}`
+      const options = alg === 'ES256' ? { key, dsaEncoding: 'ieee-p1363' } : key
+      return `${data}.${sign('sha256', Buffer.from(data), options).toString('base64url')}`
+    }
+
+    /**
+     * Signs in as the fake issuer's alice: starts at /ui/login, has the issuer
+     * hand out a code for an ID token with `claims` (changed by `change`), and
+     * answers /ui/callback. Returns the callback's answer and the session cookie.
+     */
+    async function signIn({ change = {}, token = {}, returnTo = '/crews/webshop/builders' } = {}) {
+      const start = await fetch(`${oidcBase}/ui/login?return=${encodeURIComponent(returnTo)}`, { redirect: 'manual' })
+      assert.equal(start.status, 302)
+      const to = new URL(start.headers.get('location'))
+      assert.equal(`${to.origin}${to.pathname}`, `${issuer}/authorize`)
+      const q = to.searchParams
+      assert.deepEqual(
+        [q.get('response_type'), q.get('client_id'), q.get('code_challenge_method'), q.get('scope')],
+        ['code', clientID, 'S256', 'openid email profile'],
+      )
+      const loginCookie = start.headers.getSetCookie()[0].split(';')[0]
+      const now = Math.floor(Date.now() / 1000)
+      const claims = {
+        iss: issuer,
+        aud: clientID,
+        sub: 'alice-1',
+        email: 'alice@example.com',
+        email_verified: true,
+        groups: ['factory-actors', 'system:masters'],
+        nonce: q.get('nonce'),
+        iat: now,
+        exp: now + 3600,
+        ...change,
+      }
+      const code = randomBytes(9).toString('base64url')
+      codes.set(code, {
+        challenge: q.get('code_challenge'),
+        redirectURI: q.get('redirect_uri'),
+        idToken: idToken(claims, token),
+      })
+      const back = await fetch(`${oidcBase}/ui/callback?code=${code}&state=${q.get('state')}`, {
+        redirect: 'manual',
+        headers: { cookie: loginCookie },
+      })
+      const session = back.headers.getSetCookie().find((c) => /^__Host-c4ui_session=[^;]/.test(c))
+      return { back, session, cookie: session?.split(';')[0] }
+    }
+
+    it('says on /ui/session that actions need a person, nobody is signed in, and where to sign in', async () => {
       const answer = await (await fetch(`${oidcBase}/ui/session`)).json()
       assert.deepEqual([answer.actions, answer.mode, answer.user], [true, 'oidc', null])
+      assert.deepEqual([answer.login, answer.logout], ['/ui/login', '/ui/logout'])
     })
 
-    it('refuses every write with 401, the three Brief writes included, and writes nothing upstream', async () => {
-      const api = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop'
-      for (const [method, p, type, body] of [
-        ['POST', '/briefs', 'application/json', { apiVersion: 'c4.factory.io/v1alpha1', kind: 'Brief', spec: {} }],
-        ['PATCH', '/briefs/lens', 'application/json-patch+json', [{ op: 'add', path: '/spec/paused', value: true }]],
+    it('signs in with a code and PKCE, back to the page, behind an HttpOnly, Secure, SameSite=Lax cookie', async () => {
+      const { back, session, cookie } = await signIn()
+      assert.equal(back.status, 302)
+      assert.equal(back.headers.get('location'), '/crews/webshop/builders')
+      assert.match(session, /; HttpOnly; Secure; SameSite=Lax$/)
+      const res = await fetch(`${oidcBase}/ui/session`, { headers: { cookie } })
+      const text = await res.text()
+      // The prefix keeps the token's system:masters from being the cluster's.
+      assert.deepEqual(JSON.parse(text).user, {
+        name: 'oidc:alice@example.com',
+        groups: ['oidc:factory-actors', 'oidc:system:masters'],
+      })
+      assert.ok(!text.includes(clientSecret) && !text.includes('eyJ'), 'the session answer holds no secret or token')
+    })
+
+    it('returns only to a path on this site', async () => {
+      for (const returnTo of ['//evil.example/x', 'https://evil.example/', '/\\evil.example']) {
+        const { back } = await signIn({ returnTo })
+        assert.equal(back.headers.get('location'), '/', returnTo)
+      }
+    })
+
+    it('makes a write as the person: the prefixed user and groups, the browser naming no one', async () => {
+      const { cookie } = await signIn()
+      seen.length = 0
+      const res = await fetch(`${oidcBase}${api}/crews/builders`, {
+        method: 'PATCH',
+        headers: {
+          cookie,
+          'content-type': 'application/json-patch+json',
+          'impersonate-user': 'system:admin',
+          'impersonate-group': 'system:masters',
+        },
+        body: JSON.stringify(pause),
+      })
+      assert.equal(res.status, 200)
+      assert.equal(seen.length, 1)
+      assert.equal(seen[0].headers['impersonate-user'], 'oidc:alice@example.com')
+      assert.deepEqual(seen[0].groups, ['oidc:factory-actors', 'oidc:system:masters'])
+      assert.equal(seen[0].headers.cookie, undefined)
+    })
+
+    it('reads as the UI itself, even for a write that reads first', async () => {
+      const { cookie } = await signIn({ change: { groups: ['factory-actors', 'leads'] } })
+      seen.length = 0
+      assert.equal((await fetch(`${oidcBase}${api}/crews`, { headers: { cookie } })).status, 200)
+      const res = await fetch(`${oidcBase}${api}/briefs`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ apiVersion: 'c4.factory.io/v1alpha1', kind: 'Brief', spec: { idea: 'x' } }),
+      })
+      assert.equal(res.status, 201)
+      assert.deepEqual(
+        seen.map((r) => [r.method, r.headers['impersonate-user'], r.groups]),
         [
-          'PATCH',
-          '/containers/orders-api',
-          'application/merge-patch+json',
-          { metadata: { annotations: { 'c4.factory.io/retry': '1' } } },
+          ['GET', undefined, undefined],
+          ['GET', undefined, undefined],
+          ['POST', 'oidc:alice@example.com', ['oidc:factory-actors', 'oidc:leads']],
         ],
-      ]) {
+      )
+    })
+
+    it('refuses a write with no session, or an unknown one, with 401 and a message to sign in', async () => {
+      for (const cookie of [undefined, '__Host-c4ui_session=made-up']) {
         seen.length = 0
-        const res = await fetch(`${oidcBase}${api}${p}`, {
-          method,
-          headers: { 'content-type': type },
-          body: JSON.stringify(body),
+        const res = await fetch(`${oidcBase}${api}/briefs/lens`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json-patch+json', ...(cookie ? { cookie } : {}) },
+          body: JSON.stringify(pause),
         })
-        assert.equal(res.status, 401, `${method} ${p}`)
+        assert.equal(res.status, 401)
+        assert.match((await res.json()).message, /^Sign in to act/)
         assert.equal(seen.length, 0)
       }
+    })
+
+    it('takes an ES256 ID token', async () => {
+      const { back } = await signIn({ token: { key: ec.privateKey, alg: 'ES256', kid: 'ec-1' } })
+      assert.equal(back.status, 302)
+    })
+
+    it('refuses an ID token with a bad signature, issuer, audience, nonce or expiry, or an unverified email', async () => {
+      const now = Math.floor(Date.now() / 1000)
+      for (const [why, refused, sent] of [
+        ['signature', /signature/, { token: { key: stranger.privateKey } }],
+        ['algorithm', /HS256/, { token: { alg: 'HS256' } }],
+        ['issuer', /issuer/, { change: { iss: 'https://other.example' } }],
+        ['audience', /not for client/, { change: { aud: 'someone-else' } }],
+        ['audience, issued to another', /not issued to/, { change: { aud: [clientID, 'b'], azp: 'b' } }],
+        ['issued to another', /not issued to/, { change: { azp: 'b' } }],
+        ['nonce', /nonce/, { change: { nonce: 'replayed' } }],
+        ['expiry', /expired/, { change: { exp: now - 3600 } }],
+        ['unverified email', /not verified/, { change: { email_verified: false } }],
+        ['no email', /no email claim/, { change: { email: undefined } }],
+      ]) {
+        const { back, session } = await signIn(sent)
+        assert.equal(back.status, 401, why)
+        assert.match((await back.json()).message, refused, why)
+        assert.equal(session, undefined, why)
+      }
+    })
+
+    it('lets no flood of sign-ins lock out the next one', async () => {
+      await Promise.all(Array.from({ length: 1100 }, () => fetch(`${oidcBase}/ui/login`, { redirect: 'manual' })))
+      const { back } = await signIn()
+      assert.equal(back.status, 302)
+    })
+
+    it("keeps the issuer's error to one quoted log line", async () => {
+      const start = await fetch(`${oidcBase}/ui/login`, { redirect: 'manual' })
+      const state = new URL(start.headers.get('location')).searchParams.get('state')
+      const res = await fetch(`${oidcBase}/ui/callback?state=${state}&error=x%0aSigned%20in`, {
+        redirect: 'manual',
+        headers: { cookie: start.headers.getSetCookie()[0].split(';')[0] },
+      })
+      assert.equal(res.status, 401)
+      assert.match((await res.json()).message, /answered "x\\nSigned in"/)
+    })
+
+    it('refuses a callback the browser did not start, or one used twice', async () => {
+      const start = await fetch(`${oidcBase}/ui/login`, { redirect: 'manual' })
+      const state = new URL(start.headers.get('location')).searchParams.get('state')
+      const res = await fetch(`${oidcBase}/ui/callback?code=x&state=${state}`, { redirect: 'manual' })
+      assert.equal(res.status, 401)
+      assert.match((await res.json()).message, /did not start/)
+      const again = await fetch(`${oidcBase}/ui/callback?code=x&state=${state}`, { redirect: 'manual' })
+      assert.match((await again.json()).message, /unknown or too old/)
+    })
+
+    it('signs out: the session ends, and the next write is refused', async () => {
+      const { cookie } = await signIn()
+      assert.equal((await fetch(`${oidcBase}/ui/logout`, { headers: { cookie } })).status, 405)
+      const cross = await fetch(`${oidcBase}/ui/logout`, {
+        method: 'POST',
+        headers: { cookie, origin: 'https://evil.example' },
+      })
+      assert.equal(cross.status, 403)
+      const out = await fetch(`${oidcBase}/ui/logout`, { method: 'POST', headers: { cookie } })
+      assert.equal(out.status, 200)
+      assert.match(out.headers.getSetCookie()[0], /^__Host-c4ui_session=; Path=\/; Max-Age=0;/)
+      assert.equal((await (await fetch(`${oidcBase}/ui/session`, { headers: { cookie } })).json()).user, null)
+      const res = await fetch(`${oidcBase}${api}/crews/builders`, {
+        method: 'PATCH',
+        headers: { cookie, 'content-type': 'application/json-patch+json' },
+        body: JSON.stringify(pause),
+      })
+      assert.equal(res.status, 401)
+    })
+
+    it('without the OIDC settings, signs nobody in and refuses every write', async () => {
+      assert.equal((await fetch(`${bareBase}/ui/login`, { redirect: 'manual' })).status, 503)
+      seen.length = 0
+      const res = await fetch(`${bareBase}${api}/briefs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ apiVersion: 'c4.factory.io/v1alpha1', kind: 'Brief', spec: {} }),
+      })
+      assert.equal(res.status, 401)
+      assert.equal(seen.length, 0)
+    })
+  })
+
+  it('never acts as a system: user or group, whatever the prefixes', () => {
+    const config = { usernameClaim: 'sub', usernamePrefix: '', groupsClaim: 'groups', groupsPrefix: '' }
+    assert.throws(() => identity({ sub: 'system:admin' }, config), /never acts as system:admin/)
+    assert.deepEqual(identity({ sub: 'alice', groups: ['system:masters', 'devs'] }, config), {
+      user: 'alice',
+      groups: ['devs'],
     })
   })
 

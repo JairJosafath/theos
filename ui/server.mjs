@@ -9,6 +9,8 @@
 //
 //   GET /ui/session       whether actions are on, who makes them, who is signed in, and the writes
 //   POST, PATCH /k8s/...  the writes of the action table (see ACTIONS)
+//   GET /ui/login, GET /ui/callback, POST /ui/logout
+//                         sign-in with OIDC, with UI_ACTIONS=oidc (oidc.mjs)
 //
 // Read-only but for the action table's writes: GET reaches the API only under
 // /apis/c4.factory.io/. With actions off (UI_ACTIONS unset) the only writes
@@ -17,7 +19,9 @@
 // /spec/paused. With UI_ACTIONS=service-account (over port-forward) the table
 // also takes design.md's UI actions: a Brief's and a Crew's settings, a
 // release re-run, a Container's scaffold retry, a Task from a goal and a
-// Standard's ref. With UI_ACTIONS=oidc every write needs a person signed in.
+// Standard's ref. With UI_ACTIONS=oidc every write needs a person signed in,
+// and is made as them: Impersonate-User and Impersonate-Group, names the
+// server takes from their ID token. Reads stay the UI's own.
 // Every other method on /k8s gets 405, every other write 403. The browser's
 // own headers (cookies, Authorization, impersonation) never go upstream.
 //
@@ -36,6 +40,7 @@ import https from 'node:https'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { componentsFromEnv, createHealthHandler } from './health.mjs'
+import { createOIDC, oidcFromEnv } from './oidc.mjs'
 
 const SERVICE_ACCOUNT_DIR = '/var/run/secrets/kubernetes.io/serviceaccount'
 
@@ -135,12 +140,20 @@ export function isAllowedApiPath(apiPath) {
   )
 }
 
-function upstreamRequest(upstream, apiPath, search, onResponse, { method = 'GET', contentType } = {}) {
+/**
+ * One request to the API. `as`, a person signed in ({ user, groups }), makes
+ * it a write as them: the UI's own credentials, impersonating.
+ */
+function upstreamRequest(upstream, apiPath, search, onResponse, { method = 'GET', contentType, as } = {}) {
   const target = new URL(upstream.url)
   target.pathname = `${upstream.url.pathname.replace(/\/$/, '')}${apiPath}`
   target.search = search
   const headers = { accept: 'application/json' }
   if (contentType) headers['content-type'] = contentType
+  if (as) {
+    headers['impersonate-user'] = as.user
+    if (as.groups.length) headers['impersonate-group'] = as.groups
+  }
   const token = upstream.token()
   if (token) headers.authorization = `Bearer ${token}`
   const client = target.protocol === 'https:' ? https : http
@@ -162,9 +175,9 @@ function getJson(upstream, apiPath) {
  * One request of the server's own to the API, with an optional JSON body.
  * Resolves to { status, body }.
  */
-function requestJson(upstream, apiPath, { method = 'GET', search = '', contentType, body } = {}) {
+function requestJson(upstream, apiPath, { method = 'GET', search = '', contentType, body, as } = {}) {
   return new Promise((resolve, reject) => {
-    const options = { method, contentType: body === undefined ? undefined : contentType }
+    const options = { method, contentType: body === undefined ? undefined : contentType, as }
     const req = upstreamRequest(
       upstream,
       apiPath,
@@ -450,16 +463,19 @@ function isWritePath(table, apiPath) {
 /**
  * One write from the browser: finds the table's entries for its method and
  * path, checks the content type and body, and makes it as the UI (over
- * port-forward) or refuses it unsigned (OIDC, until a person can sign in).
+ * port-forward) or as the person signed in (OIDC), refusing it with no one.
  */
-async function actionWrite(req, res, apiPath, upstream, log, table, mode) {
+async function actionWrite(req, res, apiPath, upstream, log, table, mode, oidc) {
   const writes = table.map((entry) => `${entry.method} ${entry.what}`).join('; ')
   const entries = table.filter((entry) => entry.method === req.method && entry.path.test(apiPath))
   if (!entries.length) {
     return sendStatus(res, 403, 'Forbidden', `The C4 Factory UI writes only these: ${writes}`)
   }
   if (isCrossSite(req)) return sendStatus(res, 403, 'Forbidden', 'Writes come only from the UI itself')
-  if (mode === 'oidc') return sendStatus(res, 401, 'Unauthorized', 'Sign in to act')
+  const as = mode === 'oidc' ? oidc?.who(req) : undefined
+  if (mode === 'oidc' && !as) {
+    return sendStatus(res, 401, 'Unauthorized', 'Sign in to act: the UI makes writes only as a person signed in')
+  }
   const types = [...new Set(entries.map((entry) => entry.type))]
   const typed = entries.filter((entry) => entry.type === mediaType(req))
   if (!typed.length) {
@@ -473,21 +489,21 @@ async function actionWrite(req, res, apiPath, upstream, log, table, mode) {
     const checked = entry.check(body, namespace)
     if (checked === undefined) continue
     const write = entry.write ?? forwardPatch
-    return write({ res, upstream, log, apiPath, namespace, name, entry, body: checked })
+    return write({ res, upstream, log, apiPath, namespace, name, entry, body: checked, as })
   }
   const here = typed.map((entry) => entry.what).join('; or ')
   return sendStatus(res, 403, 'Forbidden', `The C4 Factory UI writes here only: ${here}`)
 }
 
 /** Creates a Brief, once the namespace is known to hold a Project. */
-async function createBrief({ res, upstream, log, apiPath, namespace, body }) {
+async function createBrief({ res, upstream, log, apiPath, namespace, body, as }) {
   const projects = await requestJson(upstream, `/apis/c4.factory.io/v1alpha1/namespaces/${namespace}/projects`)
   if (projects.status !== 200) return send(res, projects.status, `${JSON.stringify(projects.body)}\n`, JSON_TYPE)
   if (!projects.body?.items?.length) {
     return sendStatus(res, 403, 'Forbidden', `Namespace ${namespace} holds no Project, so the UI makes no Brief there`)
   }
-  log(`Creating a Brief in ${namespace}`)
-  return forwardWrite(res, upstream, 'POST', apiPath, JSON_MEDIA, body)
+  log(`Creating a Brief in ${namespace}${by(as)}`)
+  return forwardWrite(res, upstream, 'POST', apiPath, JSON_MEDIA, body, as)
 }
 
 /**
@@ -495,7 +511,7 @@ async function createBrief({ res, upstream, log, apiPath, namespace, body }) {
  * a Brief without prompts has none: then the patch adds the list, guarded by
  * the resourceVersion just read so it never replaces a list made meanwhile.
  */
-async function addPrompt({ res, upstream, log, apiPath, namespace, name, body: op }) {
+async function addPrompt({ res, upstream, log, apiPath, namespace, name, body: op, as }) {
   const current = await requestJson(upstream, apiPath)
   if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
   const ops = Array.isArray(current.body?.spec?.prompts)
@@ -504,36 +520,41 @@ async function addPrompt({ res, upstream, log, apiPath, namespace, name, body: o
         { op: 'test', path: '/metadata/resourceVersion', value: current.body?.metadata?.resourceVersion },
         { op: 'add', path: '/spec/prompts', value: [op.value] },
       ]
-  log(`Adding a prompt to Brief ${namespace}/${name}`)
-  return forwardWrite(res, upstream, 'PATCH', apiPath, JSON_PATCH, ops)
+  log(`Adding a prompt to Brief ${namespace}/${name}${by(as)}`)
+  return forwardWrite(res, upstream, 'PATCH', apiPath, JSON_PATCH, ops, as)
 }
+
+/** " as <user>" for a log line about a write made as a person, else "". */
+const by = (as) => (as ? ` as ${as.user}` : '')
 
 /**
  * What GET /ui/session answers: whether actions are on, who makes them, who is
- * signed in (nobody, until OIDC sign-in), and the writes the table takes. Never
- * a token.
+ * signed in (with OIDC: the names the writes impersonate, and where to sign
+ * in and out), and the writes the table takes. Never a token.
  */
-function session(actions, table) {
-  return {
+function session(actions, table, person) {
+  const answer = {
     actions: Boolean(actions),
     mode: actions || 'off',
-    user: null,
+    user: person ? { name: person.user, groups: person.groups } : null,
     writes: table.map((entry) => ({ method: entry.method, type: entry.type, what: entry.what })),
   }
+  if (actions === 'oidc') Object.assign(answer, { login: '/ui/login', logout: '/ui/logout' })
+  return answer
 }
 
 /** Any other entry: sends the checked body as the entry's write. */
-function forwardPatch({ res, upstream, log, apiPath, namespace, name, entry, body }) {
-  log(`UI action: ${entry.what}${name ? `: ${namespace}/${name}` : ` in ${namespace}`}`)
-  return forwardWrite(res, upstream, entry.method, apiPath, entry.type, body)
+function forwardPatch({ res, upstream, log, apiPath, namespace, name, entry, body, as }) {
+  log(`UI action: ${entry.what}${name ? `: ${namespace}/${name}` : ` in ${namespace}`}${by(as)}`)
+  return forwardWrite(res, upstream, entry.method, apiPath, entry.type, body, as)
 }
 
 const JSON_TYPE = { 'content-type': 'application/json', 'cache-control': 'no-store' }
 
 /** Sends one write upstream and the API's answer, a refusal included, back to the browser. */
-async function forwardWrite(res, upstream, method, apiPath, contentType, body) {
+async function forwardWrite(res, upstream, method, apiPath, contentType, body, as) {
   const search = `?${new URLSearchParams({ fieldManager: FIELD_MANAGER })}`
-  const answer = await requestJson(upstream, apiPath, { method, search, contentType, body })
+  const answer = await requestJson(upstream, apiPath, { method, search, contentType, body, as })
   send(
     res,
     answer.status,
@@ -678,8 +699,15 @@ export function createApiHandler({
   components = componentsFromEnv(process.env, log),
   sampleEveryMs = 0,
   actions = actionsFromEnv(),
+  oidc = oidcFromEnv(),
+  fetch: fetchIssuer = fetch,
 } = {}) {
   const table = actionTable(actions)
+  // Sign-in, only with UI_ACTIONS=oidc; without its settings nobody can sign in.
+  const signIn =
+    actions === 'oidc' && oidc
+      ? createOIDC(oidc, { log, fetch: fetchIssuer, send, sendStatus, isCrossSite })
+      : undefined
   const health = createHealthHandler({ getJson: (apiPath) => getJson(upstream, apiPath), components, sampleEveryMs })
   return (req, res) => {
     let url
@@ -709,12 +737,17 @@ export function createApiHandler({
       )
       return true
     }
+    if (actions === 'oidc' && ['/ui/login', '/ui/callback', '/ui/logout'].includes(url.pathname)) {
+      if (signIn) return signIn.handle(req, res, url)
+      sendStatus(res, 503, 'ServiceUnavailable', 'Sign-in is not set up: OIDC_ISSUER_URL is empty (ui.auth.oidc)')
+      return true
+    }
     if (url.pathname === '/ui/session') {
       if (req.method !== 'GET') {
         sendStatus(res, 405, 'MethodNotAllowed', 'Only GET is allowed here', { allow: 'GET' })
         return true
       }
-      send(res, 200, `${JSON.stringify(session(actions, table))}\n`, JSON_TYPE)
+      send(res, 200, `${JSON.stringify(session(actions, table, signIn?.who(req)))}\n`, JSON_TYPE)
       return true
     }
     const isProxy = url.pathname === '/k8s' || url.pathname.startsWith('/k8s/')
@@ -725,7 +758,7 @@ export function createApiHandler({
     const apiPath = url.pathname.slice('/k8s'.length)
     // Nothing but GET reaches the API, except the action table's writes.
     if (isProxy && (req.method === 'POST' || req.method === 'PATCH') && isWritePath(table, apiPath)) {
-      actionWrite(req, res, apiPath, upstream, log, table, actions).catch((err) => {
+      actionWrite(req, res, apiPath, upstream, log, table, actions, signIn).catch((err) => {
         log(`Write failed: ${err.message}`)
         if (!res.headersSent) sendStatus(res, 502, 'BadGateway', `Cannot reach the Kubernetes API: ${err.message}`)
         else res.destroy()

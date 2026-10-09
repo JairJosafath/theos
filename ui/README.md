@@ -127,15 +127,41 @@ back as-is. The chart sets `UI_ACTIONS` from the values:
   ServiceAccount makes the writes, bound to ClusterRole
   `c4-factory-ui-actions` (`create` on briefs and tasks, `patch` on briefs,
   crews, containers and standards) in place of the brief writer;
-- with `ui.auth.oidc`, `oidc`: each write is made as the person signed in, and
-  the ServiceAccount has no write binding. Until sign-in lands, every write
-  answers 401;
+- with `ui.auth.oidc`, `oidc`: each write is made as the person signed in
+  (below), and the ServiceAccount has no write binding, only `impersonate`
+  on users and groups; `ui.auth.oidc.actionGroups` binds
+  `c4-factory-ui-actions` to those groups, prefixed;
 - with `ui.allowedHosts` and no `ui.auth.oidc`, the chart refuses to render.
 
 `GET /ui/session` tells the page whether actions are on, the mode (`off`,
 `service-account` or `oidc`), who is signed in and the writes the table takes;
-never a token. `UI_ACTIONS` unset is off, as with `npm run dev`; set it to
+never a token. With `oidc` it also names `/ui/login` and `/ui/logout`. `UI_ACTIONS` unset is off, as with `npm run dev`; set it to
 `service-account` to try the actions against a `kubectl proxy`.
+
+### Sign-in: `ui.auth.oidc`
+
+With `UI_ACTIONS=oidc`, [oidc.mjs](oidc.mjs) signs a person in at the issuer
+the chart names (`OIDC_*` from `ui.auth.oidc`), with only Node's standard
+library:
+
+- `GET /ui/login?return=/path` reads the issuer's discovery and sends the
+  browser there: an authorization code with PKCE (`S256`), a `state` and a
+  `nonce`, and a short-lived `__Host-c4ui_login` cookie that ties the answer to this
+  browser;
+- `GET /ui/callback` exchanges the code (client secret by HTTP Basic), checks
+  the ID token with `node:crypto` against the issuer's JWKS (RS256 or ES256;
+  `iss`, `aud`, `azp`, `exp`, `nbf`, `nonce`; ES256 on P-256 only), and requires `email_verified`
+  when the username claim is `email`. The person is then `usernamePrefix` +
+  that claim and `groupsPrefix` + each group, never a `system:` name; the
+  session holds only those and the token's expiry, in memory, behind
+  `__Host-c4ui_session` (`HttpOnly`, `Secure`, `SameSite=Lax`). A restart, or the
+  ID token's expiry, signs everyone out;
+- `POST /ui/logout` ends the session.
+
+Every write then carries `Impersonate-User` and `Impersonate-Group` (one
+header per group) with the UI's own credentials; reads, the ones a write makes
+first included, carry none. A write with no session answers 401, "Sign in to
+act".
 
 ### The factory's health
 

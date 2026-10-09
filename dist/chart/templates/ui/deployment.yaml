@@ -51,6 +51,34 @@ spec:
         - name: UI_ACTIONS
           value: {{ . | quote }}
         {{- end }}
+        {{- if eq (include "c4-factory.uiActions" .) "oidc" }}
+        {{- $oidc := .Values.ui.auth.oidc }}
+        # Sign-in (ui/oidc.mjs). The client secret comes from the Secret the
+        # person made, never from values.
+        - name: OIDC_ISSUER_URL
+          value: {{ $oidc.issuerURL | quote }}
+        - name: OIDC_CLIENT_ID
+          value: {{ $oidc.clientID | quote }}
+        - name: OIDC_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ $oidc.existingSecret }}
+              key: {{ $oidc.existingSecretKey | default "client-secret" }}
+        {{- with $oidc.redirectURL }}
+        - name: OIDC_REDIRECT_URL
+          value: {{ . | quote }}
+        {{- end }}
+        - name: OIDC_SCOPES
+          value: {{ join " " ($oidc.scopes | default (list "openid" "email" "profile")) | quote }}
+        - name: OIDC_USERNAME_CLAIM
+          value: {{ $oidc.usernameClaim | default "email" | quote }}
+        - name: OIDC_USERNAME_PREFIX
+          value: {{ include "c4-factory.uiOIDC" (list $oidc "usernamePrefix" "oidc:") | quote }}
+        - name: OIDC_GROUPS_CLAIM
+          value: {{ $oidc.groupsClaim | default "groups" | quote }}
+        - name: OIDC_GROUPS_PREFIX
+          value: {{ include "c4-factory.uiOIDC" (list $oidc "groupsPrefix" "oidc:") | quote }}
+        {{- end }}
         ports:
         - name: http
           containerPort: 8080
