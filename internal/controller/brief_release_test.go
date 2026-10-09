@@ -424,6 +424,78 @@ var _ = Describe("Brief releases", func() {
 			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring("spec.releases[0].tagPrefix")))
 		})
 	})
+
+	// Step 1 of docs/plans/brief-requests.md: decision 1's rules.
+	Describe("spec.releases[].requests", func() {
+		requesting := func(repository string, requests c4v1alpha1.BriefRequests) c4v1alpha1.BriefRelease {
+			entry := linterRelease(repository)
+			entry.Requests = &requests
+			return entry
+		}
+
+		It("is Off when unset, and takes Ask with authors and teams", func() {
+			brief := newBrief(ns, "ask")
+			brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens", c4v1alpha1.BriefRequests{
+				Mode: "Ask", Authors: []string{"gray-lenovo", "a1"}, Teams: []string{"acme/maintainers"},
+				Accepted: []int32{12}, Declined: []int32{13}})}
+			mustCreate(brief)
+			brief = newBrief(ns, "off")
+			brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens", c4v1alpha1.BriefRequests{})}
+			mustCreate(brief)
+			Expect(k8sClient.Get(ctx, key(ns, "off"), brief)).To(Succeed())
+			Expect(brief.Spec.Releases[0].Requests.Mode).To(Equal("Off"))
+		})
+
+		It("needs authors or teams unless Off", func() {
+			brief := newBrief(ns, "nobody")
+			brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens",
+				c4v1alpha1.BriefRequests{Mode: "On"})}
+			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
+				"requests need authors or teams unless mode is Off")))
+		})
+
+		It("takes requests in one entry per repository", func() {
+			brief := newBrief(ns, "twice")
+			other := requesting("Acme/Cel-Lens", c4v1alpha1.BriefRequests{Mode: "Ask", Teams: []string{"acme/devs"}})
+			other.Container = "cli"
+			other.TagPrefix = "cli-"
+			brief.Spec.Releases = []c4v1alpha1.BriefRelease{
+				requesting("acme/cel-lens", c4v1alpha1.BriefRequests{Mode: "On", Authors: []string{"gray-lenovo"}}), other}
+			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
+				"at most one releases entry per GitHub repository may take requests")))
+			other.Requests.Mode = "Off"
+			brief.Spec.Releases[1] = other
+			mustCreate(brief)
+		})
+
+		It("refuses a number both accepted and declined", func() {
+			brief := newBrief(ns, "both")
+			brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens", c4v1alpha1.BriefRequests{
+				Mode: "Ask", Authors: []string{"gray-lenovo"}, Accepted: []int32{12, 14}, Declined: []int32{14}})}
+			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
+				"an issue number can't be both accepted and declined")))
+		})
+
+		It("refuses a login GitHub wouldn't give", func() {
+			for _, login := range []string{"-gray", "gray--lenovo", "gray_lenovo", strings.Repeat("a", 40)} {
+				brief := newBrief(ns, "login")
+				brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens", c4v1alpha1.BriefRequests{
+					Mode: "On", Authors: []string{login}})}
+				Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
+					"spec.releases[0].requests.authors[0]")), login)
+			}
+		})
+
+		It("refuses a team that isn't org/slug", func() {
+			for _, team := range []string{"maintainers", "acme/", "acme/main tainers", "https://github.com/orgs/acme/teams/x"} {
+				brief := newBrief(ns, "team")
+				brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens", c4v1alpha1.BriefRequests{
+					Mode: "On", Teams: []string{team}})}
+				Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
+					"spec.releases[0].requests.teams[0]")), team)
+			}
+		})
+	})
 })
 
 // briefApp returns the line of container in Brief cel-lens's status.apps.
