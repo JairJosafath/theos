@@ -284,7 +284,9 @@ describe('the new shell', () => {
     await page.getByRole('link', { name: 'Open the Task’s page' }).click()
     const task = page.getByRole('region', { name: 'Task orders-api-14', exact: true })
     await task.waitFor({ timeout: 10000 })
-    assert.equal(await task.locator('[aria-current="step"]').count(), 1)
+    // The region shows "Loading the Task…" before the Task arrives: textContent
+    // waits for the one current step (strict, so two would fail) where count would not.
+    assert.equal(await task.locator('[aria-current="step"]').textContent({ timeout: 10000 }), 'Implementing')
   })
 
   it('gives a paused Crew the patch that resumes it', async () => {
