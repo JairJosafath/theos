@@ -13,6 +13,7 @@ import {
 import type { UsageView } from '../model/brief'
 import type { AgentRole } from '../model/factory'
 import { AgentIcon, CheckIcon, ClockIcon, CrossIcon, HumanIcon, QuestionIcon } from './icons'
+import './bits.css'
 
 export function PhaseBadge({ phase, size = 'md' }: { phase: ContainerPhase | undefined; size?: 'sm' | 'md' }) {
   const info = describeContainerPhase(phase)

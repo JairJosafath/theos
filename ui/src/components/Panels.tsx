@@ -9,6 +9,7 @@ import { crewDoing, issueList, type ActiveCrewTask, type CrewSummary } from '../
 import { linksOf, type ContainerNode, type DiagramNode, type Link } from '../model/story'
 import { AgentName, ConditionList, CrewPhaseBadge, PhaseBadge, SessionRow } from './bits'
 import { AgentIcon, ArrowRightIcon, CrossIcon, ExternalLinkIcon, HumanIcon, WarningIcon } from './icons'
+import './panels.css'
 
 export function DetailsPanel({
   node,

@@ -1,0 +1,159 @@
+/* The health panel of Health.tsx: node usage, components and sparklines. */
+
+.node-usage {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.node-usage-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.meter-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.meter-track {
+  height: 8px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--tone);
+}
+
+.components {
+  display: grid;
+  gap: 2px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.component {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+.component .badge-dot {
+  background: var(--tone);
+  transform: translateY(-1px);
+}
+
+.component-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 550;
+}
+
+.component-sub {
+  font-size: 12px;
+}
+
+.component-usage {
+  display: grid;
+  justify-items: end;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.history {
+  display: grid;
+  gap: 10px;
+}
+
+.history .section-title {
+  margin-bottom: 0;
+}
+
+.spark {
+  margin: 0;
+}
+
+.spark svg {
+  display: block;
+  width: 100%;
+  height: 44px;
+  margin-top: 4px;
+  overflow: visible;
+}
+
+.spark-base {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark-line {
+  fill: none;
+  stroke: var(--spark);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark-mark {
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark-stall {
+  stroke: var(--error);
+  opacity: 0.55;
+}
+
+.spark-api,
+.spark-node {
+  --spark: var(--text-2);
+}
+
+.spark-ci {
+  --spark: var(--progress);
+}
+
+.spark-agents {
+  --spark: var(--agent);
+}
+
+.spark-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.spark-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.spark-key {
+  width: 10px;
+  height: 2px;
+  background: var(--spark);
+}

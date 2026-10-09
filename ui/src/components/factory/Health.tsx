@@ -5,6 +5,7 @@ import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../.
 import { plural, timeAgo } from '../../model/describe'
 import { API_STALL_MS } from '../../model/attention'
 import { formatBytes, formatCpu, formatDuration, percent } from '../../model/format'
+import './health.css'
 
 const COMPONENT_TONE: Record<ComponentHealth['state'], string> = {
   ok: 'ok',

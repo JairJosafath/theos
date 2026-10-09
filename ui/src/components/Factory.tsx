@@ -17,6 +17,7 @@ import { TimePanel } from './factory/TimePanel'
 import { TaskPanel } from './factory/TaskPanel'
 import { HealthPanel } from './factory/Health'
 import { SlotsPanel } from './factory/Slots'
+import './factory.css'
 
 export interface FactoryPageProps {
   data: FactoryData

@@ -15,6 +15,7 @@ import { NewBrief } from './briefs/NewBrief'
 import { BriefDetails } from './briefs/BriefDetails'
 import { FormError, PromptForm } from './briefs/PromptForm'
 import { errorText } from './briefs/errors'
+import './briefs.css'
 
 export function Briefs({
   briefs,

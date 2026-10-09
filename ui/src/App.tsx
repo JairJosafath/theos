@@ -3,6 +3,7 @@
 // a legend.
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import './app.css'
 import { Briefs } from './components/Briefs'
 import { Diagram } from './components/Diagram'
 import { FactoryPage } from './components/Factory'
