@@ -220,6 +220,48 @@ func TestAddDistIgnore(t *testing.T) {
 	}
 }
 
+func TestAddReleaseNote(t *testing.T) {
+	src := "## Project Distribution\n\n" + bundleHeading +
+		"\nkubectl apply -f https://raw/{{ .Container }}/dist/install.yaml\n\n" +
+		helmHeading + "\nkubebuilder edit\n"
+	p, got, err := addReleaseNote(readme+".tmpl", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != readme+".tmpl" {
+		t.Errorf("path = %q, want %q", p, readme+".tmpl")
+	}
+	out := render(t, p, got, data)
+	for _, want := range []string{
+		"## Project Distribution\n\n### From a release\n",
+		"`make dist VERSION=<tag>`",
+		"SHA256SUMS",
+		"IMG=<some-registry>/backup-op:<tag>",
+		"image: controller:<tag>|image: <some-registry>/backup-op:<tag>|",
+		"\n" + helmHeading + "\nkubebuilder edit\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered README lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "raw/") {
+		t.Errorf("rendered README still applies install.yaml from a raw URL:\n%s", out)
+	}
+
+	// A README with no placeholder becomes a template, its braces escaped.
+	p, got, err = addReleaseNote(readme, []byte("{{x}}\n"+bundleHeading+helmHeading))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != readme+".tmpl" || !strings.HasPrefix(render(t, p, got, data), "{{x}}\n### From a release") {
+		t.Errorf("addReleaseNote of a plain README = %q, %q", p, got)
+	}
+
+	if _, _, err := addReleaseNote(readme+".tmpl", []byte(helmHeading)); err == nil {
+		t.Error("want an error when the README has no bundle section")
+	}
+}
+
 // TestCommittedTemplate checks templates/go-kubebuilder as committed: only
 // Framework paths, every .go file a .go.tmpl, no placeholder left, and every
 // template renders.

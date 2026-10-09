@@ -109,7 +109,7 @@ test-hack: install-helm ## Run the shell tests of the scripts in hack/.
 # repository's pinned tools (hack/test-templates-operator.sh). Not part of
 # make check: run it when a change touches either operator template.
 .PHONY: test-templates-operator
-test-templates-operator: kubebuilder kustomize controller-gen envtest ## Render the operator combo and run its make check before and after kubebuilder create api.
+test-templates-operator: kubebuilder kustomize controller-gen envtest ## Render the operator combo and run its make check before and after kubebuilder create api, then its make dist.
 	@# GOLANGCI_LINT_BASE is defined further down, too late for a prerequisite.
 	@$(MAKE) --no-print-directory "$(GOLANGCI_LINT_BASE)"
 	KUBEBUILDER="$(KUBEBUILDER)" CONTROLLER_GEN="$(CONTROLLER_GEN)" KUSTOMIZE="$(KUSTOMIZE)" ENVTEST="$(ENVTEST)" \

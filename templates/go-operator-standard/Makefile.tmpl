@@ -163,9 +163,12 @@ build: manifests generate fmt vet ## Build bin/{{ .Container }} for this machine
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd
 
+# Removes only its own files: dist/chart/, kubebuilder's helm plugin's, stays.
+DIST_FILES = dist/$(BINARY)_* dist/install.yaml dist/SHA256SUMS
+
 .PHONY: dist
 dist: ## Cross-compile the release binaries, dist/install.yaml and SHA256SUMS into dist/.
-	rm -rf dist
+	rm -f $(DIST_FILES)
 	mkdir -p dist
 	@set -e; for platform in $(DIST_PLATFORMS); do \
 		os=$${platform%/*}; arch=$${platform#*/}; ext=; \
@@ -180,7 +183,7 @@ dist: ## Cross-compile the release binaries, dist/install.yaml and SHA256SUMS in
 
 .PHONY: clean
 clean: ## Remove build output (not the tools in bin/).
-	rm -rf dist bin/$(BINARY)
+	rm -f $(DIST_FILES) bin/$(BINARY)
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.

@@ -59,6 +59,7 @@ var templateCombos = []struct {
 		{model.SideFramework, "go-kubebuilder"},
 		{model.SideStandard, "go-operator-standard"},
 		{model.SideCompute, "small"},
+		{model.SideDeployment, "gitea-release"},
 	}},
 	{"react web app", "static-site", []side{
 		{model.SideFramework, "react-vite"},
