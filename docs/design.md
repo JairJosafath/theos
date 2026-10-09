@@ -868,7 +868,7 @@ only when `status` carries the effective one. The plan behind it is
 ## UI actions: as the person signed in
 
 Decided on 9 October 2026 for GitHub issue #706; the plan, with every decision
-and why, is [plans/ui-actions.md](plans/ui-actions.md).
+and why, is [plans/done/ui-actions.md](plans/done/ui-actions.md).
 
 Most of what a person does to steer the factory is a field on a resource, so
 the UI can take it, made by the API server like any other write: the CRD
@@ -909,7 +909,7 @@ server's message when it refuses one. The UI still enforces nothing.
   | --- | --- | --- |
   | Brief | `POST` | a new Brief (as today) |
   | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.autopilot`, `spec.parallel`, `spec.releases` (only after a `test` of the `resourceVersion` it was worked out from; a stale one is refused) |
-  | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (set, or removed to stop publishing) |
+  | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (set, or removed to stop publishing; only after a `test` of the `resourceVersion` it was worked out from, and a stale one is refused) |
   | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
   | Container | `PATCH`, merge patch | annotation `c4.factory.io/retry` |
   | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |

@@ -1,0 +1,19 @@
+# expect: an issue number can't be both accepted and declined
+apiVersion: c4.factory.io/v1alpha1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: webshop
+spec:
+  idea: A linter for CEL rules.
+  releases:
+  - container: linter
+    github:
+      repository: acme/cel-lens
+      tokenSecretRef:
+        name: cel-lens-github
+    requests:
+      mode: Ask
+      authors: [gray-lenovo]
+      accepted: [12, 14]
+      declined: [14]

@@ -53,6 +53,7 @@ type BriefSpec struct {
 	// +listType=map
 	// +listMapKey=container
 	// +kubebuilder:validation:MaxItems=10
+	// +kubebuilder:validation:XValidation:rule="self.all(a, !has(a.requests) || !has(a.requests.mode) || a.requests.mode == 'Off' || self.exists_one(b, has(b.requests) && has(b.requests.mode) && b.requests.mode != 'Off' && b.github.repository.lowerAscii() == a.github.repository.lowerAscii()))",message="at most one releases entry per GitHub repository may take requests: an issue is read once"
 	// +optional
 	Releases []BriefRelease `json:"releases,omitempty"`
 
@@ -96,6 +97,60 @@ type BriefRelease struct {
 	// The GitHub repository, its token Secret in the Brief's namespace, and
 	// the tag prefix, as in a Crew's publishReleases.
 	CrewPublishReleases `json:",inline"`
+
+	// requests says whether the Brief takes requests from the repository's
+	// GitHub issues, and whose (docs/plans/brief-requests.md). Unset takes
+	// none.
+	// +optional
+	Requests *BriefRequests `json:"requests,omitempty"`
+}
+
+// BriefRequests turns on requests from a releases repository's GitHub issues:
+// an open issue whose author is in authors, or a member of one of teams,
+// becomes input to a planning round, at once (On) or once a person accepts
+// it (Ask). Every other issue is left alone.
+// +kubebuilder:validation:XValidation:rule="(has(self.mode) && self.mode == 'Off') || (has(self.authors) && size(self.authors) > 0) || (has(self.teams) && size(self.teams) > 0)",message="requests need authors or teams unless mode is Off"
+// +kubebuilder:validation:XValidation:rule="!has(self.accepted) || !has(self.declined) || !self.accepted.exists(n, n in self.declined)",message="an issue number can't be both accepted and declined"
+type BriefRequests struct {
+	// mode is Off (the default), which reads no issue; Ask, where a request
+	// waits in status.needsYou until its number is in accepted; or On, which
+	// lets each request through when first seen.
+	// +kubebuilder:validation:Enum=Off;Ask;On
+	// +kubebuilder:default=Off
+	// +optional
+	Mode string `json:"mode,omitempty"`
+
+	// authors are the GitHub logins whose issues are requests.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MaxLength=39
+	// +kubebuilder:validation:items:Pattern=`^[A-Za-z0-9](-?[A-Za-z0-9])*$`
+	// +optional
+	Authors []string `json:"authors,omitempty"`
+
+	// teams are GitHub teams, org/slug, whose members' issues are requests.
+	// The token then needs Organization members read.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=140
+	// +kubebuilder:validation:items:Pattern=`^[A-Za-z0-9](-?[A-Za-z0-9])*/[A-Za-z0-9][A-Za-z0-9_-]*$`
+	// +optional
+	Teams []string `json:"teams,omitempty"`
+
+	// accepted are the numbers of the issues a person let through, in Ask.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=200
+	// +kubebuilder:validation:items:Minimum=1
+	// +optional
+	Accepted []int32 `json:"accepted,omitempty"`
+
+	// declined are the numbers of the issues a person turned down; the Brief
+	// says so on each and closes it.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=200
+	// +kubebuilder:validation:items:Minimum=1
+	// +optional
+	Declined []int32 `json:"declined,omitempty"`
 }
 
 // BriefAgents names the Agent for each role: the planner turns the Brief into
@@ -278,12 +333,14 @@ type BriefFailedIssue struct {
 // BriefHealing is an item the Brief watches and leaves alone for now, as it
 // may heal by itself, and when the Brief acts if it hasn't.
 type BriefHealing struct {
-	// kind of the item: Issue, Task, Crew or Container.
-	// +kubebuilder:validation:Enum=Issue;Task;Crew;Container
+	// kind of the item: Issue, Task, Crew, Container or Request. A Request
+	// is answered in spec.releases[].requests, not by a prompt.
+	// +kubebuilder:validation:Enum=Issue;Task;Crew;Container;Request
 	// +required
 	Kind string `json:"kind"`
 
-	// name of the item; container#number for an issue.
+	// name of the item; container#number for an issue, owner/name#number for
+	// a request.
 	// +kubebuilder:validation:MaxLength=320
 	// +required
 	Name string `json:"name"`
@@ -302,12 +359,14 @@ type BriefHealing struct {
 // BriefNeedsYou is an item only the person can decide: the question, what the
 // Brief would do and why. A prompt answers it.
 type BriefNeedsYou struct {
-	// kind of the item: Issue, Task, Crew or Container.
-	// +kubebuilder:validation:Enum=Issue;Task;Crew;Container
+	// kind of the item: Issue, Task, Crew, Container or Request. A Request
+	// is answered in spec.releases[].requests, not by a prompt.
+	// +kubebuilder:validation:Enum=Issue;Task;Crew;Container;Request
 	// +required
 	Kind string `json:"kind"`
 
-	// name of the item; container#number for an issue.
+	// name of the item; container#number for an issue, owner/name#number for
+	// a request.
 	// +kubebuilder:validation:MaxLength=320
 	// +required
 	Name string `json:"name"`
@@ -328,6 +387,72 @@ type BriefNeedsYou struct {
 	Why string `json:"why,omitempty"`
 
 	// since when the item needs the person.
+	// +optional
+	Since *metav1.Time `json:"since,omitempty"`
+}
+
+// BriefRequest is a GitHub issue taken as a request: its text as it was when
+// let through, and how far it got.
+type BriefRequest struct {
+	// repository is owner/name on github.com.
+	// +kubebuilder:validation:MaxLength=140
+	// +required
+	Repository string `json:"repository"`
+
+	// number is the issue's number.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Number int32 `json:"number"`
+
+	// author is the issue's author's GitHub login.
+	// +kubebuilder:validation:MaxLength=39
+	// +required
+	Author string `json:"author"`
+
+	// title is the issue's title.
+	// +kubebuilder:validation:MaxLength=256
+	// +required
+	Title string `json:"title"`
+
+	// body is the issue's body when it was let through, cut at 4000
+	// characters on a whole sentence; empty while it waits in Ask.
+	// +kubebuilder:validation:MaxLength=4000
+	// +optional
+	Body string `json:"body,omitempty"`
+
+	// url is the issue's page.
+	// +kubebuilder:validation:MaxLength=300
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// stage is Waiting (for a person, in Ask), Accepted (for a round),
+	// Planning, Planned, Skipped, Declined or Released.
+	// +kubebuilder:validation:Enum=Waiting;Accepted;Planning;Planned;Skipped;Declined;Released
+	// +required
+	Stage string `json:"stage"`
+
+	// round is the round that took it; 0 before one did.
+	// +optional
+	Round int32 `json:"round,omitempty"`
+
+	// issues are the issues it became, container#number.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=320
+	// +optional
+	Issues []string `json:"issues,omitempty"`
+
+	// release is the release its issues are filed in, such as v0.3.0.
+	// +kubebuilder:validation:MaxLength=100
+	// +optional
+	Release string `json:"release,omitempty"`
+
+	// why is the round's reason for skipping it.
+	// +kubebuilder:validation:MaxLength=500
+	// +optional
+	Why string `json:"why,omitempty"`
+
+	// since is when the Brief first saw it.
 	// +optional
 	Since *metav1.Time `json:"since,omitempty"`
 }
@@ -529,6 +654,14 @@ type BriefStatus struct {
 	// +optional
 	RoundPrompts int32 `json:"roundPrompts,omitempty"`
 
+	// roundRequests are the requests the running or last round took, by
+	// owner/name#number, as roundPrompts counts its prompts.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MaxLength=200
+	// +optional
+	RoundRequests []string `json:"roundRequests,omitempty"`
+
 	// promptsPlanned is how many of spec.prompts the last applied round took;
 	// the prompts after them wait for the next round.
 	// +optional
@@ -613,6 +746,19 @@ type BriefStatus struct {
 	// listed too.
 	// +optional
 	NeedsYouWaiting int32 `json:"needsYouWaiting,omitempty"`
+
+	// requests are the GitHub issues of spec.releases repositories taken as
+	// requests and still open, oldest first; at most 50. A request leaves
+	// the list once it is closed on GitHub.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=50
+	// +optional
+	Requests []BriefRequest `json:"requests,omitempty"`
+
+	// requestsWaiting is how many requests are open, those past the 50
+	// listed too.
+	// +optional
+	RequestsWaiting int32 `json:"requestsWaiting,omitempty"`
 
 	// tended are the failed issues rounds answered and the Brief remembers,
 	// so it raises one again only when its tries grow or a wait lapses; at

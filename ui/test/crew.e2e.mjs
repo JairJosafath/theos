@@ -117,6 +117,14 @@ describe('a Crew page’s actions', () => {
     await field.fill('4')
   })
 
+  // Each publishReleases write tests the resourceVersion of the Crew it was worked out from.
+  const tested = (ops) => {
+    assert.equal(ops[0].op, 'test')
+    assert.equal(ops[0].path, '/metadata/resourceVersion')
+    assert.match(ops[0].value, /^\d+$/)
+    return ops.slice(1)
+  }
+
   it('changes the release settings, naming the token Secret only', async () => {
     const form = releaseForm()
     await form.getByLabel('Prepare releases').check()
@@ -126,7 +134,7 @@ describe('a Crew page’s actions', () => {
     assert.deepEqual(crew().spec.publishReleases, {
       github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'orders-api-release-token' } },
     })
-    assert.deepEqual(api.writes.at(-1).body, [
+    assert.deepEqual(tested(api.writes.at(-1).body), [
       { op: 'add', path: '/spec/prepareReleases', value: true },
       {
         op: 'add',
@@ -151,7 +159,7 @@ describe('a Crew page’s actions', () => {
     await form.getByLabel('Publish releases to GitHub').uncheck()
     await form.getByRole('button', { name: 'Save release settings' }).click()
     await until((c) => c.spec.tagReleases === false && !c.spec.publishReleases, 'stopped tagging and publishing')
-    assert.deepEqual(api.writes.at(-1).body, [
+    assert.deepEqual(tested(api.writes.at(-1).body), [
       { op: 'add', path: '/spec/tagReleases', value: false },
       { op: 'remove', path: '/spec/publishReleases' },
     ])

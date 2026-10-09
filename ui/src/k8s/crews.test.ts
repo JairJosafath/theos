@@ -51,6 +51,34 @@ describe('a Crew’s release settings as a patch', () => {
   })
 })
 
+describe('a Crew’s publishing worked out from a version', () => {
+  const at = (crew: Crew, resourceVersion: string): Crew => ({
+    ...crew,
+    metadata: { ...crew.metadata, resourceVersion },
+  })
+
+  it('tests the version it was worked out from before setting or removing it', () => {
+    const next = { ...releaseSettings(publishing), publish: undefined }
+    expect(releasePatch(at(publishing, '6'), next, '5')).toEqual([
+      { op: 'test', path: '/metadata/resourceVersion', value: '5' },
+      { op: 'remove', path: '/spec/publishReleases' },
+    ])
+    // The Crew's own version when no other is given.
+    expect(releasePatch(at(publishing, '6'), next)[0]).toEqual({
+      op: 'test',
+      path: '/metadata/resourceVersion',
+      value: '6',
+    })
+  })
+
+  it('tests nothing when only the switches change, as each is one value', () => {
+    const next = { ...releaseSettings(publishing), prepareReleases: true }
+    expect(releasePatch(at(publishing, '6'), next, '5')).toEqual([
+      { op: 'add', path: '/spec/prepareReleases', value: true },
+    ])
+  })
+})
+
 describe('a form’s edits over a Crew that changes', () => {
   it('never writes back a field the person did not touch', () => {
     // The person ticks Prepare; meanwhile someone else turns tagging on.

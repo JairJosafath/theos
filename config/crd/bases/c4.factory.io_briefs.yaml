@@ -246,6 +246,74 @@ spec:
                       - repository
                       - tokenSecretRef
                       type: object
+                    requests:
+                      description: |-
+                        requests says whether the Brief takes requests from the repository's
+                        GitHub issues, and whose (docs/plans/brief-requests.md). Unset takes
+                        none.
+                      properties:
+                        accepted:
+                          description: accepted are the numbers of the issues a person
+                            let through, in Ask.
+                          items:
+                            format: int32
+                            minimum: 1
+                            type: integer
+                          maxItems: 200
+                          type: array
+                          x-kubernetes-list-type: set
+                        authors:
+                          description: authors are the GitHub logins whose issues
+                            are requests.
+                          items:
+                            maxLength: 39
+                            pattern: ^[A-Za-z0-9](-?[A-Za-z0-9])*$
+                            type: string
+                          maxItems: 50
+                          type: array
+                          x-kubernetes-list-type: set
+                        declined:
+                          description: |-
+                            declined are the numbers of the issues a person turned down; the Brief
+                            says so on each and closes it.
+                          items:
+                            format: int32
+                            minimum: 1
+                            type: integer
+                          maxItems: 200
+                          type: array
+                          x-kubernetes-list-type: set
+                        mode:
+                          default: "Off"
+                          description: |-
+                            mode is Off (the default), which reads no issue; Ask, where a request
+                            waits in status.needsYou until its number is in accepted; or On, which
+                            lets each request through when first seen.
+                          enum:
+                          - "Off"
+                          - Ask
+                          - "On"
+                          type: string
+                        teams:
+                          description: |-
+                            teams are GitHub teams, org/slug, whose members' issues are requests.
+                            The token then needs Organization members read.
+                          items:
+                            maxLength: 140
+                            pattern: ^[A-Za-z0-9](-?[A-Za-z0-9])*/[A-Za-z0-9][A-Za-z0-9_-]*$
+                            type: string
+                          maxItems: 20
+                          type: array
+                          x-kubernetes-list-type: set
+                      type: object
+                      x-kubernetes-validations:
+                      - message: requests need authors or teams unless mode is Off
+                        rule: (has(self.mode) && self.mode == 'Off') || (has(self.authors)
+                          && size(self.authors) > 0) || (has(self.teams) && size(self.teams)
+                          > 0)
+                      - message: an issue number can't be both accepted and declined
+                        rule: '!has(self.accepted) || !has(self.declined) || !self.accepted.exists(n,
+                          n in self.declined)'
                     tagPrefix:
                       description: |-
                         tagPrefix goes before the Crew's tag on the target, such as "cli-" when
@@ -262,6 +330,13 @@ spec:
                 x-kubernetes-list-map-keys:
                 - container
                 x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: 'at most one releases entry per GitHub repository may take
+                    requests: an issue is read once'
+                  rule: self.all(a, !has(a.requests) || !has(a.requests.mode) || a.requests.mode
+                    == 'Off' || self.exists_one(b, has(b.requests) && has(b.requests.mode)
+                    && b.requests.mode != 'Off' && b.github.repository.lowerAscii()
+                    == a.github.repository.lowerAscii()))
             required:
             - idea
             type: object
@@ -369,15 +444,20 @@ spec:
                       format: date-time
                       type: string
                     kind:
-                      description: 'kind of the item: Issue, Task, Crew or Container.'
+                      description: |-
+                        kind of the item: Issue, Task, Crew, Container or Request. A Request
+                        is answered in spec.releases[].requests, not by a prompt.
                       enum:
                       - Issue
                       - Task
                       - Crew
                       - Container
+                      - Request
                       type: string
                     name:
-                      description: name of the item; container#number for an issue.
+                      description: |-
+                        name of the item; container#number for an issue, owner/name#number for
+                        a request.
                       maxLength: 320
                       type: string
                     reason:
@@ -720,15 +800,20 @@ spec:
                     Brief would do and why. A prompt answers it.
                   properties:
                     kind:
-                      description: 'kind of the item: Issue, Task, Crew or Container.'
+                      description: |-
+                        kind of the item: Issue, Task, Crew, Container or Request. A Request
+                        is answered in spec.releases[].requests, not by a prompt.
                       enum:
                       - Issue
                       - Task
                       - Crew
                       - Container
+                      - Request
                       type: string
                     name:
-                      description: name of the item; container#number for an issue.
+                      description: |-
+                        name of the item; container#number for an issue, owner/name#number for
+                        a request.
                       maxLength: 320
                       type: string
                     question:
@@ -802,6 +887,97 @@ spec:
                   repositoryURL is the Brief's own repository, where every round's plan
                   is kept.
                 type: string
+              requests:
+                description: |-
+                  requests are the GitHub issues of spec.releases repositories taken as
+                  requests and still open, oldest first; at most 50. A request leaves
+                  the list once it is closed on GitHub.
+                items:
+                  description: |-
+                    BriefRequest is a GitHub issue taken as a request: its text as it was when
+                    let through, and how far it got.
+                  properties:
+                    author:
+                      description: author is the issue's author's GitHub login.
+                      maxLength: 39
+                      type: string
+                    body:
+                      description: |-
+                        body is the issue's body when it was let through, cut at 4000
+                        characters on a whole sentence; empty while it waits in Ask.
+                      maxLength: 4000
+                      type: string
+                    issues:
+                      description: issues are the issues it became, container#number.
+                      items:
+                        maxLength: 320
+                        type: string
+                      maxItems: 20
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    number:
+                      description: number is the issue's number.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    release:
+                      description: release is the release its issues are filed in,
+                        such as v0.3.0.
+                      maxLength: 100
+                      type: string
+                    repository:
+                      description: repository is owner/name on github.com.
+                      maxLength: 140
+                      type: string
+                    round:
+                      description: round is the round that took it; 0 before one did.
+                      format: int32
+                      type: integer
+                    since:
+                      description: since is when the Brief first saw it.
+                      format: date-time
+                      type: string
+                    stage:
+                      description: |-
+                        stage is Waiting (for a person, in Ask), Accepted (for a round),
+                        Planning, Planned, Skipped, Declined or Released.
+                      enum:
+                      - Waiting
+                      - Accepted
+                      - Planning
+                      - Planned
+                      - Skipped
+                      - Declined
+                      - Released
+                      type: string
+                    title:
+                      description: title is the issue's title.
+                      maxLength: 256
+                      type: string
+                    url:
+                      description: url is the issue's page.
+                      maxLength: 300
+                      type: string
+                    why:
+                      description: why is the round's reason for skipping it.
+                      maxLength: 500
+                      type: string
+                  required:
+                  - author
+                  - number
+                  - repository
+                  - stage
+                  - title
+                  type: object
+                maxItems: 50
+                type: array
+                x-kubernetes-list-type: atomic
+              requestsWaiting:
+                description: |-
+                  requestsWaiting is how many requests are open, those past the 50
+                  listed too.
+                format: int32
+                type: integer
               round:
                 description: |-
                   round is the number of the round running now or last run; 0 before the
@@ -813,6 +989,16 @@ spec:
                   or last round took.
                 format: int32
                 type: integer
+              roundRequests:
+                description: |-
+                  roundRequests are the requests the running or last round took, by
+                  owner/name#number, as roundPrompts counts its prompts.
+                items:
+                  maxLength: 200
+                  type: string
+                maxItems: 50
+                type: array
+                x-kubernetes-list-type: atomic
               runsWithoutCost:
                 description: |-
                   runsWithoutCost counts the planner runs, over all rounds, whose agent

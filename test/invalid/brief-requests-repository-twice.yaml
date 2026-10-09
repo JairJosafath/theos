@@ -1,0 +1,26 @@
+# expect: at most one releases entry per GitHub repository may take requests
+apiVersion: c4.factory.io/v1alpha1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: webshop
+spec:
+  idea: A linter for CEL rules.
+  releases:
+  - container: linter
+    github:
+      repository: acme/cel-lens
+      tokenSecretRef:
+        name: cel-lens-github
+    requests:
+      mode: "On"
+      authors: [gray-lenovo]
+  - container: cli
+    tagPrefix: cli-
+    github:
+      repository: acme/cel-lens
+      tokenSecretRef:
+        name: cel-lens-github
+    requests:
+      mode: Ask
+      teams: [acme/devs]
