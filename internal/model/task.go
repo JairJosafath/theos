@@ -224,6 +224,10 @@ type TaskFacts struct {
 	ChecksURL string
 	// ChecksLog is the failed CI job's log, when it could be read.
 	ChecksLog string
+	// CIRun is the state of the runs at the round's commit while its checks
+	// are pending, and CheckingSince when the Task entered Checking.
+	CIRun         CIRun
+	CheckingSince time.Time
 	// ReviewAttempts counts reviewer runs without a verdict in this round.
 	ReviewAttempts int
 	// Reruns counts the free reruns of interrupted runs in this round.
@@ -399,9 +403,111 @@ const updatedChecksFeedback = "Your change was approved, but main moved since it
 // say when it is back.
 const AgentRetryDelay = 15 * time.Minute
 
-// ChecksTimeout is how long a Task waits for CI to report before it fails. CI that
-// never reports is a broken runner, not the agent's fault, so it costs no round.
-const ChecksTimeout = 30 * time.Minute
+// A Task in Checking waits for checks a runner will run, and fails, reason
+// ReasonNoCIResult, when CI won't report: CI that never reports is the
+// infrastructure's fault, not the agent's, so it costs no round.
+const (
+	// ChecksStartLimit is how long a Task waits for a CI run to start at its
+	// commit, and for a runner to come online while its run is queued.
+	ChecksStartLimit = 30 * time.Minute
+	// QueuedChecksLimit is how long a Task waits while its run is queued with
+	// a runner online, behind other jobs.
+	QueuedChecksLimit = 6 * time.Hour
+	// RunningChecksLimit is how long a run may run: act_runner's default job
+	// timeout, plus 15 minutes for it to report.
+	RunningChecksLimit = 3*time.Hour + 15*time.Minute
+)
+
+// ReasonNoCIResult is the reason of a Task that failed because CI won't report.
+const ReasonNoCIResult = "NoCIResult"
+
+// The states of the CI runs at a Task's commit (CIRun.State).
+const (
+	// CIRunNone means no run at the commit.
+	CIRunNone = ""
+	// CIRunQueued means a run waits for a runner.
+	CIRunQueued = "queued"
+	// CIRunRunning means a runner runs one.
+	CIRunRunning = "running"
+	// CIRunCompleted means every run at the commit has ended.
+	CIRunCompleted = "completed"
+	// CIRunUnknown means the Git host didn't say.
+	CIRunUnknown = "unknown"
+)
+
+// CIRun is what the Git host's Actions say of the runs at a Task's commit,
+// read while its checks are pending: whether one is queued or running, which,
+// and whether any runner is online.
+type CIRun struct {
+	// Commit is the round's commit.
+	Commit string
+	State  string
+	// URL is the run's page, and Started when a runner started it.
+	URL     string
+	Started time.Time
+	// Running is how long it has run.
+	Running time.Duration
+	// NoRunnerOnline means the Git host says none of its runners is online. A
+	// host that doesn't say counts as having one: a wrong "offline" fails good
+	// work, a wrong "online" only waits longer.
+	NoRunnerOnline bool
+}
+
+// WorkflowRun is one CI run at a commit, as the Git host lists it.
+type WorkflowRun struct {
+	// Status is queued, waiting, in_progress or completed.
+	Status  string
+	Started time.Time
+	URL     string
+}
+
+// CommitRunState sums up the runs at a commit: running when any runs (the
+// longest running one), else queued when any waits (the first one listed),
+// else completed when there are runs, else none.
+func CommitRunState(runs []WorkflowRun) (string, WorkflowRun) {
+	state, pick := CIRunNone, WorkflowRun{}
+	for _, run := range runs {
+		switch {
+		case run.Status == "in_progress":
+			if state != CIRunRunning || !run.Started.IsZero() && (pick.Started.IsZero() || run.Started.Before(pick.Started)) {
+				state, pick = CIRunRunning, run
+			}
+		case run.Status == "completed":
+			if state == CIRunNone {
+				state, pick = CIRunCompleted, run
+			}
+		case state != CIRunRunning && state != CIRunQueued:
+			state, pick = CIRunQueued, run
+		}
+	}
+	return state, pick
+}
+
+// The messages of a Task that waits for checks, by the state of its run.
+const (
+	waitingQueued    = "Waiting for checks: queued behind other jobs since "
+	waitingNoRunner  = "Waiting for checks: queued with no runner online since "
+	waitingRunning   = "Waiting for checks: running since "
+	waitingNoRun     = "Waiting for checks: no CI run has started yet"
+	waitingUnknownCI = "Waiting for checks; the Git host doesn't say whether a CI run is queued"
+)
+
+// ChecksBound says when the operator gives up on a Task that waits for checks
+// with message, its Progressing condition's.
+func ChecksBound(message string) string {
+	switch {
+	case strings.HasPrefix(message, waitingRunning):
+		return fmt.Sprintf("The operator fails it if its CI run is still running %s after it started.",
+			spellDuration(RunningChecksLimit))
+	case strings.HasPrefix(message, waitingNoRunner):
+		return fmt.Sprintf("The operator fails it %s into its checks unless a runner comes online.",
+			spellDuration(ChecksStartLimit))
+	case strings.HasPrefix(message, waitingQueued), strings.HasPrefix(message, waitingUnknownCI):
+		return fmt.Sprintf("The operator fails it if its CI run is still queued %s into its checks.",
+			spellDuration(QueuedChecksLimit))
+	}
+	return fmt.Sprintf("The operator fails it if no CI run starts within %s.", spellDuration(ChecksStartLimit))
+}
 
 // TaskAction is what the operator does next.
 type TaskAction string
@@ -522,16 +628,89 @@ func nextTaskStep(f TaskFacts) TaskStep {
 			}
 			return roundFailed(f, feedback)
 		}
-		if f.InPhase > ChecksTimeout {
-			return TaskStep{Action: ActionFail, Message: fmt.Sprintf(
-				"No CI result after %s; check that a runner for the repository is online", ChecksTimeout)}
-		}
-		return TaskStep{Action: ActionWait, Message: "Waiting for checks"}
+		return checksPendingStep(f)
 
 	case TaskReviewing:
 		return reviewingStep(f)
 	}
 	return TaskStep{Action: ActionNone}
+}
+
+// checksPendingStep decides what follows while the checks have no result: wait
+// while the run is queued on an online runner or running, and fail when CI
+// won't report.
+func checksPendingStep(f TaskFacts) TaskStep {
+	noCI := func(format string, args ...any) TaskStep {
+		return TaskStep{Action: ActionFail, Reason: ReasonNoCIResult, Message: fmt.Sprintf(format, args...)}
+	}
+	ci := f.CIRun
+	switch ci.State {
+	case CIRunRunning:
+		running := ci.Running
+		if ci.Started.IsZero() {
+			running = f.InPhase // the host didn't say when it started
+		}
+		if running > RunningChecksLimit {
+			return noCI("CI run %s has run for %s, past %s; check its runner", orUnknown(ci.URL),
+				running.Round(time.Minute), RunningChecksLimit)
+		}
+		return TaskStep{Action: ActionWait, Message: waitingRunning + clock(ci.Started)}
+	case CIRunQueued:
+		switch {
+		case ci.NoRunnerOnline && f.InPhase > ChecksStartLimit:
+			return noCI("CI run %s is queued and no runner is online; start a runner for the repository",
+				orUnknown(ci.URL))
+		case f.InPhase > QueuedChecksLimit:
+			return noCI("CI run %s has been queued for %s; check the repository's runners", orUnknown(ci.URL),
+				QueuedChecksLimit)
+		case ci.NoRunnerOnline:
+			return TaskStep{Action: ActionWait, Message: waitingNoRunner + clock(f.CheckingSince)}
+		}
+		return TaskStep{Action: ActionWait, Message: waitingQueued + clock(f.CheckingSince)}
+	case CIRunUnknown:
+		if f.InPhase > QueuedChecksLimit {
+			return noCI("No CI result for %s after %s; check that a runner for the repository is online",
+				short(ci.Commit), QueuedChecksLimit)
+		}
+		return TaskStep{Action: ActionWait, Message: waitingUnknownCI}
+	case CIRunCompleted:
+		if f.InPhase > ChecksStartLimit {
+			return noCI("No CI result for %s after %s, though its CI runs ended; check that the workflows "+
+				"report the checks main requires", short(ci.Commit), ChecksStartLimit)
+		}
+		return TaskStep{Action: ActionWait, Message: "Waiting for checks"}
+	}
+	if f.InPhase > ChecksStartLimit {
+		return noCI("No CI run started for %s after %s; check that the repository's workflows run on pull requests",
+			short(ci.Commit), ChecksStartLimit)
+	}
+	return TaskStep{Action: ActionWait, Message: waitingNoRun}
+}
+
+// spellDuration writes d in hours and minutes, such as 3 hours 15 minutes.
+func spellDuration(d time.Duration) string {
+	unit := func(n int, name string) string {
+		if n == 1 {
+			return "1 " + name
+		}
+		return fmt.Sprintf("%d %ss", n, name)
+	}
+	hours, minutes := int(d.Hours()), int(d.Minutes())%60
+	switch {
+	case hours == 0:
+		return unit(minutes, "minute")
+	case minutes == 0:
+		return unit(hours, "hour")
+	}
+	return unit(hours, "hour") + " " + unit(minutes, "minute")
+}
+
+// clock is t as a time of day in UTC, such as 01:13Z; unknown when zero.
+func clock(t time.Time) string {
+	if t.IsZero() {
+		return "an unknown time"
+	}
+	return t.UTC().Format("15:04Z")
 }
 
 // planStep decides what happens next to a Plan Task: the planner pushes a
