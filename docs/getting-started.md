@@ -502,8 +502,8 @@ reaches an agent.
 In `Ask`, each new request waits under the Brief's *Needs you* until you
 accept or decline it: the *Accept* and *Decline* buttons on its page, or its
 issue number added to `requests.accepted` or `requests.declined` with kubectl.
-`On` lets every request through when first seen. A declined request gets a
-comment saying it isn't taken and is closed. The Brief reads the issues every
+`On` lets every request through when first seen. A request declined before a
+round takes it gets a comment saying it isn't taken and is closed. The Brief reads the issues every
 ten minutes and at once when the entry changes. Rounds planning the accepted
 requests, and the comments when one is planned and when it ships, are steps 4
 and 5 of [the plan](plans/brief-requests.md).

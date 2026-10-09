@@ -9,6 +9,7 @@
 // Needs a build and Chromium:  npm run test:e2e
 // C4_UI_SHOTS=DIR also saves a picture of the page in DIR (docs/screenshots).
 
+import { AxeBuilder } from '@axe-core/playwright'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -95,7 +96,9 @@ describe('a Brief’s requests in the browser', () => {
     })
     base = await listen(ui)
     browser = await launchChromium()
-    page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' })
+    // A context of its own, as axe needs.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' })
+    page = await context.newPage()
     page.on('pageerror', (err) => errors.push(err.message))
     await page.goto(`${base}/?ns=${NS}&kind=Brief&name=lens`)
     await page.getByRole('region', { name: 'Brief lens', exact: true }).waitFor({ timeout: 10000 })
@@ -147,12 +150,25 @@ describe('a Brief’s requests in the browser', () => {
     }
   })
 
+  it('has no WCAG 2.1 AA violation, with the requests settings open', async () => {
+    await settings().getByText('Requests of cel-lens').click()
+    await settings().getByRole('form', { name: 'Requests of cel-lens' }).waitFor()
+    const { violations } = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze()
+    assert.deepEqual(
+      violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`),
+      [],
+    )
+    await settings().getByText('Requests of cel-lens').click()
+  })
+
   it('accepts a request by adding its number to accepted', async () => {
     const ops = await patchOf(() => button(`Accept ${REPO} #12`).click())
     assert.deepEqual(ops, [
       { op: 'add', path: '/spec/releases', value: [{ ...lens, requests: { ...lens.requests, accepted: [12] } }] },
     ])
-    await page.getByText('Accepted, for the next round').waitFor({ timeout: 5000 })
+    await page.getByText('Accepted; it waits for a round').waitFor({ timeout: 5000 })
     assert.equal(await button(`Accept ${REPO} #12`).count(), 0)
   })
 
@@ -189,7 +205,7 @@ describe('a Brief’s requests in the browser', () => {
       },
     })
     await list().getByText('2 open').waitFor({ timeout: 5000 })
-    await list().getByText('Accepted; the next round plans it.').waitFor()
+    await list().getByText('Accepted; it waits for a round to plan it.').waitFor()
     await list().getByText('It can’t read or answer requests (TokenLacksIssues).').waitFor()
     assert.equal(await page.locator('.brief-needs-you').count(), 0)
   })
@@ -223,6 +239,8 @@ describe('a Brief’s requests in the browser', () => {
   })
 
   it('shows the API server’s message when it refuses requests', async () => {
+    // A saved change starts the form again from the entry, folded.
+    await settings().getByText('Requests of cel-lens').click()
     const form = settings().getByRole('form', { name: 'Requests of cel-lens' })
     await form.getByLabel(/^Requests from its GitHub issues/).selectOption('Ask')
     await form.getByLabel(/^Authors/).fill('')

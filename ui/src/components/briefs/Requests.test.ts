@@ -107,6 +107,23 @@ async function render(session: UiSession, fetchImpl = vi.fn(async () => ok()), s
   return { page: host, fetchImpl }
 }
 
+/** Renders the page again, as the watch does with a newer Brief. */
+async function rerender(session: UiSession, shown: Brief, fetchImpl = vi.fn(async () => ok())) {
+  await act(async () =>
+    root!.render(
+      createElement(
+        SessionContext.Provider,
+        { value: session },
+        createElement(
+          FixedNow.Provider,
+          { value: NOW },
+          createElement(BriefPage, { brief: shown, agents: [], writer: new LiveBriefWriter('k8s', fetchImpl) }),
+        ),
+      ),
+    ),
+  )
+}
+
 function ok(): Response {
   return new Response(JSON.stringify(brief), { status: 200, headers: { 'content-type': 'application/json' } })
 }
@@ -154,6 +171,15 @@ describe("a Brief's requests", () => {
     ])
   })
 
+  it('stay off once one is sent, until the watch brings the Brief it made', async () => {
+    const { page } = await render(ACTING)
+    await act(async () => button(page, `Accept ${repo} #12`)!.click())
+    expect(button(page, `Accept ${repo} #12`)!.disabled).toBe(true)
+    expect(button(page, `Decline ${repo} #12`)!.disabled).toBe(true)
+    await rerender(ACTING, { ...brief, metadata: { ...brief.metadata, resourceVersion: '8' } })
+    expect(button(page, `Decline ${repo} #12`)!.disabled).toBe(false)
+  })
+
   it('decline one by adding its number to declined', async () => {
     const { page, fetchImpl } = await render(ACTING)
     await act(async () => button(page, `Decline ${repo} #12`)!.click())
@@ -186,7 +212,7 @@ describe("a Brief's requests", () => {
     }
     const { page } = await render(ACTING, undefined, accepted)
     expect(button(page, `Accept ${repo} #12`)).toBeNull()
-    expect(page.querySelector('.brief-needs-you')!.textContent).toContain('Accepted, for the next round')
+    expect(page.querySelector('.brief-needs-you')!.textContent).toContain('Accepted; it waits for a round')
   })
 
   it('offer no button with actions off or nobody signed in, and say why', async () => {
@@ -247,6 +273,19 @@ describe("a releases entry's requests in the settings", () => {
         ],
       },
     ])
+  })
+
+  it('start again from the entry when it changed meanwhile', async () => {
+    const { page } = await render(ACTING)
+    const authors = () => field(page.querySelector('form[aria-label="Requests of cel-lens"]')!, 'Authors').value
+    expect(authors()).toBe('gray-lenovo')
+    const changed = { ...lens, requests: { ...lens.requests, authors: ['gray-lenovo', 'b'] } }
+    await rerender(ACTING, {
+      ...brief,
+      metadata: { ...brief.metadata, resourceVersion: '8' },
+      spec: { ...brief.spec, releases: [changed] },
+    })
+    expect(authors()).toBe('gray-lenovo, b')
   })
 
   it('are set when an app’s releases are first published', async () => {

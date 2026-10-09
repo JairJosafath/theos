@@ -19,9 +19,9 @@ export const REQUEST_MODES: Record<BriefRequestsMode, { label: string; explanati
   Off: { label: 'Off', explanation: 'Reads no issue of the repository.' },
   Ask: {
     label: 'Ask',
-    explanation: 'Lists each new request under Needs you; a round plans it once you accept it.',
+    explanation: 'Lists each new request under Needs you; it reaches the planner once you accept it.',
   },
-  On: { label: 'On', explanation: 'The next round plans each new request, as it would a prompt.' },
+  On: { label: 'On', explanation: 'Lets each new request through to the planner when first seen.' },
 }
 
 /** A request, for display. */
@@ -95,7 +95,7 @@ function requestDetail(r: BriefRequest): string {
     case 'Waiting':
       return 'Waits for you to accept or decline it.'
     case 'Accepted':
-      return 'Accepted; the next round plans it.'
+      return 'Accepted; it waits for a round to plan it.'
     case 'Planning':
       return `${round} is planning it.`
     case 'Planned':

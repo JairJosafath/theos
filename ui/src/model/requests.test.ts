@@ -38,7 +38,7 @@ describe('describeRequest', () => {
   const base = { repository: 'gray-lenovo/cel-lens', number: 12, author: 'gray-lenovo', title: 'Dark mode' }
   it.each([
     [{ stage: 'Waiting' as const }, 'Waits for you', 'waiting', 'Waits for you to accept or decline it.'],
-    [{ stage: 'Accepted' as const }, 'Accepted', 'waiting', 'Accepted; the next round plans it.'],
+    [{ stage: 'Accepted' as const }, 'Accepted', 'waiting', 'Accepted; it waits for a round to plan it.'],
     [{ stage: 'Planning' as const, round: 4 }, 'Planning', 'progress', 'Round 4 is planning it.'],
     [
       { stage: 'Planned' as const, round: 4, issues: ['cel-lens#7', 'cel-lens#8'], release: 'v0.3.0' },

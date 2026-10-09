@@ -194,6 +194,8 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
               ) : null}
               {act ? (
                 <EditRequests
+                  // Its fields start from the entry's requests: one changed meanwhile starts them again.
+                  key={JSON.stringify(r.requests ?? {})}
                   release={r}
                   releases={releases}
                   resourceVersion={resourceVersion}

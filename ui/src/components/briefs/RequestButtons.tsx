@@ -15,7 +15,7 @@ import { FormError } from './PromptForm'
 import { writeError, type WriteError } from './errors'
 
 const ANSWERS: { answer: RequestAnswer; label: string; explanation: string }[] = [
-  { answer: 'accept', label: 'Accept', explanation: 'Let it through: the next round plans it' },
+  { answer: 'accept', label: 'Accept', explanation: 'Let it through to the planner' },
   {
     answer: 'decline',
     label: 'Decline',
@@ -44,6 +44,10 @@ export function RequestButtons({
   const session = useContext(SessionContext)
   const [sending, setSending] = useState<RequestAnswer>()
   const [error, setError] = useState<WriteError>()
+  // The resourceVersion an answer was sent from: until the watch brings the
+  // Brief it made, a second click would send a stale list.
+  const [sentFrom, setSentFrom] = useState<string>()
+  const waitingForWatch = sentFrom !== undefined && sentFrom === resourceVersion
   const answered = requestAnswered(releases, request.repository, request.number)
   const can = canWrite(session, 'setting')
 
@@ -51,7 +55,7 @@ export function RequestButtons({
     return (
       <div className="brief-answers" role="status">
         <span className="pill pill-waiting">
-          {answered === 'accepted' ? 'Accepted, for the next round' : 'Declined; the Brief closes the issue'}
+          {answered === 'accepted' ? 'Accepted; it waits for a round' : 'Declined; the Brief closes the issue'}
         </span>
       </div>
     )
@@ -84,6 +88,7 @@ export function RequestButtons({
     setError(undefined)
     try {
       await writer.setSettings(namespace, name, { releases: list, resourceVersion })
+      setSentFrom(resourceVersion)
     } catch (err) {
       setError(writeError(err))
     } finally {
@@ -100,8 +105,8 @@ export function RequestButtons({
           className={`button button-small${a.answer === 'accept' ? '' : ' button-secondary'}`}
           title={a.explanation}
           aria-label={`${a.label} ${label}`}
-          // No entry takes requests from the repository any more: nothing to answer with.
-          disabled={sending !== undefined || !next(a.answer)}
+          // Off while one is sent and until the watch brings it, or when no entry takes requests from the repository.
+          disabled={sending !== undefined || waitingForWatch || !next(a.answer)}
           onClick={() => send(a.answer)}
         >
           {sending === a.answer ? `${a.label === 'Accept' ? 'Accepting' : 'Declining'}…` : a.label}
