@@ -312,6 +312,26 @@ var _ = Describe("Task", func() {
 		}).Should(Succeed())
 	})
 
+	It("fails a Task whose checks ran the runner out of room, costing no round", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 2), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1"}, "")
+		gitFake.setCheckLog("compile: writing output: write $WORK/b001/_pkg_.a: no space left on device\n")
+		DeferCleanup(gitFake.setCheckLog, "")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", "failure")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(
+				HaveField("Reason", model.ReasonRunnerOutOfSpace))
+			g.Expect(failedNoCI(&task.Status)).To(BeTrue(), "it costs its issue no try")
+		}).Should(Succeed())
+	})
+
 	It("fails after the last round, saying why", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)

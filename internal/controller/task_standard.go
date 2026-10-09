@@ -239,6 +239,10 @@ func (r *TaskReconciler) resume(ctx context.Context, task *c4v1alpha1.Task, stat
 		"round", status.Round)
 }
 
+// reasonDoneByStandardChange ends a Task its Standard change finished: it is
+// Merged with no merge of its own, and a release counts the change's merge.
+const reasonDoneByStandardChange = "DoneByStandardChange"
+
 // doneByStandardChange ends a resumed Task whose branch has nothing beyond main:
 // its Standard change did the whole issue. It closes the Task's pull request from
 // an earlier round, if any, and the issue, with a comment naming the change.
@@ -263,7 +267,7 @@ func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1alp
 		"Done by Standard change #%d (%s): with it merged, this issue needed nothing more.",
 		change.Issue, change.IssueURL))...)
 	logNotes(ctx, task, notes)
-	r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, "DoneByStandardChange", step.Message)
+	r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, reasonDoneByStandardChange, step.Message)
 	logf.FromContext(ctx).Info("Merged Task done by its Standard change", "issue", change.Issue)
 	return nil
 }

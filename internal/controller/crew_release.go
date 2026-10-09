@@ -265,6 +265,10 @@ func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitpr
 			if t.Status.CompletedAt != nil {
 				merged.At = t.Status.CompletedAt.Time
 			}
+			done := apimeta.FindStatusCondition(t.Status.Conditions, ConditionSucceeded)
+			if done != nil && done.Reason == reasonDoneByStandardChange && t.Status.StandardChange != nil {
+				merged.DoneBy = int(t.Status.StandardChange.Issue)
+			}
 			facts.Merged = append(facts.Merged, merged)
 		}
 	}

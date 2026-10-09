@@ -92,8 +92,8 @@ type CrewTask struct {
 	// Final means Merged or Failed; Failed tells which.
 	Final  bool
 	Failed bool
-	// NoCI means it failed because CI never reported (ReasonNoCIResult): the
-	// runner's fault, so it costs the issue no try.
+	// NoCI means it failed through its CI runner's fault (RunnerFault: CI
+	// never reported, or the runner ran out of room), so it costs the issue no try.
 	NoCI bool
 	// Blocked means the Task waits on a Standard change; it keeps its issue but
 	// takes no place from Parallel.

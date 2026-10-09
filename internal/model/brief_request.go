@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // A request is an open GitHub issue of a Brief's releases repository, opened
@@ -216,4 +217,139 @@ func ReleasedComment(brief, tag, url string) string {
 // Container that publishes nowhere: the issues' pages.
 func DoneComment(brief string, urls []string) string {
 	return requestComment(brief, CommentReleased, "Done in "+joinAnd(urls)+".")
+}
+
+// Request is a request as a Brief's status keeps it.
+type Request struct {
+	Repository string
+	Number     int
+	Author     string
+	Title      string
+	// Body is the issue's body when it was let through; empty while it waits.
+	Body  string
+	URL   string
+	Stage string
+	// Round is the round that took it; 0 before one did.
+	Round int
+	// Since is when the Brief first saw it.
+	Since time.Time
+}
+
+// RequestsRead is a read of the open issues of a releases repository whose
+// requests mode isn't Off.
+type RequestsRead struct {
+	Repository string
+	Mode       string
+	Authors    []string
+	// Members are the logins found to be members of the entry's teams.
+	Members []string
+	// Unsure are the logins whose membership couldn't be read.
+	Unsure   []string
+	Accepted []int32
+	Declined []int32
+	// Open are the repository's open issues.
+	Open []RequestIssue
+}
+
+// ReadRequests is what a read of its repository makes of the Brief's
+// requests from it, known as its status keeps them (decisions 2, 5 and 6):
+// each open issue of an allowed author is one, Waiting, Accepted or
+// Declined; one a round took stays as it is; one closed on GitHub is
+// dropped, and so is one whose author is no longer allowed before a round
+// took it. A request whose author's membership couldn't be read stays as it
+// was. A mode of Off reads nothing: only what a round took stays.
+func ReadRequests(known []Request, read RequestsRead, now time.Time) []Request {
+	mine := map[int]Request{}
+	for _, r := range known {
+		if r.Repository == read.Repository {
+			mine[r.Number] = r
+		}
+	}
+	var out []Request
+	if read.Mode == RequestsOff || read.Mode == "" {
+		for _, r := range known {
+			if r.Repository == read.Repository && r.Round > 0 {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	for _, issue := range read.Open {
+		prev, seen := mine[issue.Number]
+		switch {
+		case seen && prev.Round > 0:
+			out = append(out, prev)
+		case IsRequest(issue, read.Authors, read.Members):
+			var p *Request
+			if seen {
+				p = &prev
+			}
+			out = append(out, readRequest(p, read, issue, now))
+		case seen && slices.ContainsFunc(read.Unsure, func(l string) bool { return strings.EqualFold(l, issue.Author) }):
+			out = append(out, prev)
+		}
+	}
+	return out
+}
+
+// readRequest is an open request no round took yet. Its text is taken when
+// it is let through, and kept from then on; one that waits keeps no body.
+func readRequest(known *Request, read RequestsRead, issue RequestIssue, now time.Time) Request {
+	n := int32(issue.Number)
+	stage := RequestStage(RequestFacts{LetThrough: read.Mode == RequestsOn || slices.Contains(read.Accepted, n),
+		Declined: slices.Contains(read.Declined, n)})
+	r := Request{Repository: read.Repository, Number: issue.Number, Stage: stage, Since: now,
+		Author: issue.Author, Title: Clip(oneParagraph(issue.Title), 256), URL: Clip(issue.URL, 300)}
+	if known != nil {
+		r.Since = known.Since
+	}
+	switch {
+	case known != nil && stage != RequestWaiting && (known.Stage == RequestAccepted || known.Stage == stage):
+		// Let through before: the text it was let through with.
+		r.Author, r.Title, r.Body, r.URL = known.Author, known.Title, known.Body, known.URL
+	case stage == RequestAccepted:
+		r.Body = RequestBody(issue.Body)
+	}
+	return r
+}
+
+// ListRequests orders a Brief's requests oldest first, by repository and
+// number when they were first seen together, and returns the MaxRequests its
+// status lists and how many there are.
+func ListRequests(all []Request) ([]Request, int) {
+	all = slices.Clone(all)
+	slices.SortStableFunc(all, func(a, b Request) int {
+		if c := a.Since.Compare(b.Since); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a.Repository, b.Repository); c != 0 {
+			return c
+		}
+		return a.Number - b.Number
+	})
+	return all[:min(len(all), MaxRequests)], len(all)
+}
+
+// RequestNeedsYou is the status.needsYou item of a request waiting in Ask:
+// its title and author, and none of its body.
+func RequestNeedsYou(r Request) NeedsYou {
+	name := RequestName(r.Repository, r.Number)
+	return NeedsYou{Kind: AttentionRequest, Name: name,
+		Question:  fmt.Sprintf("Request %s %q by %s waits for you.", name, r.Title, r.Author),
+		Recommend: fmt.Sprintf("Add %d to the accepted requests of %s to plan it, or to the declined ones.", r.Number, r.Repository),
+		Why:       "In Ask, a request reaches the planner only once a person lets it through.",
+		Since:     r.Since}
+}
+
+// WithNeedsYou adds more items to a's Needs you, oldest first, listing at
+// most MaxNeedsYou and counting them all.
+func WithNeedsYou(a Attention, more []NeedsYou) Attention {
+	if len(more) == 0 {
+		return a
+	}
+	a.NeedsYou = append(slices.Clone(a.NeedsYou), more...)
+	slices.SortStableFunc(a.NeedsYou, func(x, y NeedsYou) int { return x.Since.Compare(y.Since) })
+	a.Waiting += len(more)
+	a.NeedsYou = a.NeedsYou[:min(len(a.NeedsYou), MaxNeedsYou)]
+	return a
 }

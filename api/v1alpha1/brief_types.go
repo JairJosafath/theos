@@ -214,6 +214,10 @@ const (
 	// ConditionPaused is True while spec.paused is; it names the Tasks still
 	// running in the Brief's Crews and its planner Task.
 	ConditionPaused = "Paused"
+	// ConditionRequests is True while the Brief reads the issues of each
+	// spec.releases repository that takes requests, and False, with the
+	// reason, while one of them can't be read or answered.
+	ConditionRequests = "Requests"
 )
 
 // BriefObject names an object a Brief created.
@@ -818,7 +822,8 @@ type BriefStatus struct {
 	// conditions: Planned says whether the last round's plan is applied, and
 	// why not. NeedsInput, while True, says in one sentence what the Brief
 	// waits for from the person. NeedsYou, while True, says the first of
-	// needsYou and how many more.
+	// needsYou and how many more. Requests says whether the issues of the
+	// repositories that take requests can be read.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

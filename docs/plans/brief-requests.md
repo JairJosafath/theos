@@ -162,6 +162,37 @@ API.
    and which token permissions to tick. Done when Vitest and Playwright
    against the fake API cover the list, both buttons and a refusal.
 
+## What step 3 settled
+
+Choices the decisions left open, made in #800:
+
+- **What was read lives in memory.** The ETag, the open issues and the team
+  answers of each repository are kept by the operator, not in status; a
+  restart reads each repository once, in full. Spec changes to `mode`,
+  `authors`, `teams` or the token Secret read again at once; `accepted` and
+  `declined` only re-sort what was read.
+- **Team answers last while the list is the same.** An author found in or
+  out of `teams` keeps that answer until the issue list changes (a 200, not
+  a 304); one whose membership couldn't be read is asked again on each read,
+  and a request already kept for that author stays meanwhile.
+- **A request no round took follows its author.** If its author leaves
+  `authors` and `teams`, it leaves `status.requests` with no word on GitHub;
+  once a round took it, it stays until it closes.
+- **A missing Secret is a reason too.** The condition `Requests` says
+  `SecretMissing` or `SecretUnreadable`, as publishing does, besides the
+  reasons of decision 3 and `Unauthorized`, `RepositoryNotFound`,
+  `IssuesDisabled` and `GitHubError` from the client. The Warning Event's
+  note starts with the reason.
+- **The text is taken when a request enters `status.requests`.** Past the
+  50 it holds, a request is only counted in `requestsWaiting`; its text is
+  taken, as it reads then, when one ahead of it leaves, and an Ask request
+  shows in `needsYou` from then on.
+- **A decline reads the list again first,** with the ETag, so a request its
+  author closed since the last read is dropped, not commented on.
+- **A declined number names only a request.** A number in `declined` whose
+  issue isn't an allowed author's open issue is ignored: a stranger's issue
+  is never commented on, even by number.
+
 ## What a human run of Kind would check
 
 That a real fine-grained token with the permissions of decision 3 reads,

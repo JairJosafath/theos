@@ -37,6 +37,9 @@ type MergedTask struct {
 	Commit string
 	// At is when the Task completed.
 	At time.Time
+	// DoneBy is the issue of the Standard change that did the Task's whole
+	// issue, so the Task never had a merge of its own; 0 for any other Task.
+	DoneBy int
 }
 
 // ReleaseFacts is everything tagging a release depends on.
@@ -163,6 +166,7 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 	slices.SortStableFunc(releases, func(a, b ReleaseMilestone) int {
 		return compareReleases(&a.Release, &b.Release)
 	})
+	f.Merged = doneByChanges(f.Merged)
 	first := releases[0]
 	if !releaseDone(first, f.Active) {
 		for _, later := range releases[1:] {
@@ -185,19 +189,22 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 	}
 
 	// A merge without its commit or time holds the release, unless another
-	// merged Task of the same issue (a later try) has them.
-	recorded := func(t MergedTask) bool { return t.Commit != "" && !t.At.IsZero() }
+	// merged Task of the same issue (a later try) has them, or a Standard change
+	// did its issue: that one's merge is not among the Crew's Tasks, and never
+	// will be.
 	var newest *MergedTask
 	for i, t := range f.Merged {
 		if !slices.Contains(first.Closed, t.Issue) {
 			continue
 		}
 		if !recorded(t) {
-			if slices.ContainsFunc(f.Merged, func(o MergedTask) bool { return o.Issue == t.Issue && recorded(o) }) {
+			if t.DoneBy != 0 ||
+				slices.ContainsFunc(f.Merged, func(o MergedTask) bool { return o.Issue == t.Issue && recorded(o) }) {
 				continue
 			}
-			return held(first.Title, ReleaseNoMergeCommit, "%s waits for the merge commit of Task %s (#%d)",
-				first.Title, t.Name, t.Issue)
+			return held(first.Title, ReleaseNoMergeCommit, "%s waits for the merge commit of Task %s (#%d); "+
+				"a person moves #%d out of %s to release it without", first.Title, t.Name, t.Issue, t.Issue,
+				first.Title)
 		}
 		if newest == nil || mergedAfter(t, *newest) {
 			newest = &f.Merged[i]
@@ -229,6 +236,31 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 	moved, emptied := carriedWork(releases[1:], f.Merged, *newest)
 	return ReleaseStep{Tag: first.Title, Commit: newest.Commit, Milestone: first.ID, CreateTag: !tagged,
 		Moved: moved, Emptied: emptied}
+}
+
+// recorded reports whether a merge has its commit and time.
+func recorded(t MergedTask) bool { return t.Commit != "" && !t.At.IsZero() }
+
+// doneByChanges returns merged with each Task its Standard change finished
+// merged at that change's newest recorded merge: the change's commit is where
+// the issue's work landed. The slice given is left as it is.
+func doneByChanges(merged []MergedTask) []MergedTask {
+	out := slices.Clone(merged)
+	for i, t := range out {
+		if t.DoneBy == 0 || recorded(t) {
+			continue
+		}
+		var change *MergedTask
+		for j, c := range merged {
+			if c.Issue == t.DoneBy && recorded(c) && (change == nil || mergedAfter(c, *change)) {
+				change = &merged[j]
+			}
+		}
+		if change != nil {
+			out[i].Commit, out[i].At = change.Commit, change.At
+		}
+	}
+	return out
 }
 
 // releaseDone reports whether a release has no open issue and no Task at work on
@@ -332,8 +364,9 @@ func mergedAfter(a, b MergedTask) bool {
 }
 
 // carriedWork returns the later releases' closed issues, prepare issues left
-// out, whose newest recorded merge came before newest, so a tag at newest
-// carries them, and the later releases that moving them leaves with no issue.
+// out, whose newest recorded merge came before newest or is its commit, so a
+// tag at newest carries them, and the later releases that moving them leaves
+// with no issue.
 // An open issue stays in its release, whose tag carries the rest of its work.
 func carriedWork(later []ReleaseMilestone, merged []MergedTask, newest MergedTask) ([]ReleaseMove, []EmptiedRelease) {
 	var moved []ReleaseMove
@@ -342,7 +375,10 @@ func carriedWork(later []ReleaseMilestone, merged []MergedTask, newest MergedTas
 		left := len(m.Open)
 		for _, n := range m.Closed {
 			last := newestOf(merged, []int{n})
-			if slices.Contains(m.Prepared, n) || last == nil || !mergedAfter(newest, *last) {
+			// A Task its Standard change finished shares the change's merge, so
+			// the tag at that commit carries both.
+			if slices.Contains(m.Prepared, n) || last == nil ||
+				(!mergedAfter(newest, *last) && last.Commit != newest.Commit) {
 				left++
 				continue
 			}

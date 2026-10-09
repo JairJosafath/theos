@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -40,7 +41,8 @@ type BriefReconciler struct {
 	APIReader client.Reader
 	Git       GitClient
 	// Recorder emits the Brief's Events: Planned, NeedsInput, PlanRefused,
-	// ApplyFailed, BotNotDeleted, BotLeft, Tended and NeedsYou; nil emits none.
+	// ApplyFailed, BotNotDeleted, BotLeft, Tended, NeedsYou and Requests; nil
+	// emits none.
 	Recorder events.EventRecorder
 	// GitTimeout bounds the Git calls of one reconcile; 0 means two minutes.
 	GitTimeout time.Duration
@@ -64,6 +66,12 @@ type BriefReconciler struct {
 	// there.
 	SharedSecrets   []string
 	SourceNamespace string
+	// Issues reaches the GitHub repositories a Brief takes requests from; nil
+	// means GitHub.
+	Issues IssueTrackers
+	// requestsReads are what each Brief last read of each repository's issues.
+	requestsMu    sync.Mutex
+	requestsReads map[string]*requestsRead
 	// Now tells the time of the Brief's heal windows and tending rounds; nil
 	// means time.Now.
 	Now func() time.Time
@@ -136,6 +144,10 @@ func (r *BriefReconciler) needsInputRecheck() time.Duration {
 func (r *BriefReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var brief c4v1alpha1.Brief
 	if err := r.Get(ctx, req.NamespacedName, &brief); err != nil {
+		if apierrors.IsNotFound(err) {
+			brief.Namespace, brief.Name = req.Namespace, req.Name
+			r.forgetReads(&brief, nil)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !brief.DeletionTimestamp.IsZero() {
@@ -200,6 +212,9 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 		logf.FromContext(ctx).Info("Could not bring a Crew's pause up to date", "error", pausedErr.Error())
 		syncErr = errors.Join(syncErr, pausedErr)
 	}
+	// Requests are read before the round's step, so a request waiting in Ask
+	// is in needsYou when the Brief is tended.
+	takesRequests := r.syncRequests(ctx, brief)
 	result, err := r.reconcileRound(ctx, brief, orig)
 	if err == nil {
 		// What the Brief made is tended once the round's step is taken, so a
@@ -214,9 +229,10 @@ func (r *BriefReconciler) reconcileBrief(ctx context.Context, brief, orig *c4v1a
 	} else if err == nil {
 		return ctrl.Result{}, fmt.Errorf("reading the apps' Crews: %w", appsErr)
 	}
-	if err == nil && madeContainers(brief) {
-		// A person may answer a suggestion on the Git host, and a Task of the
-		// Brief's Containers may start waiting: look again now and then.
+	if err == nil && (madeContainers(brief) || takesRequests) {
+		// A person may answer a suggestion on the Git host, a Task of the
+		// Brief's Containers may start waiting, and a request may be opened
+		// on GitHub: look again now and then.
 		result = sooner(result, ctrl.Result{RequeueAfter: r.suggestionsRecheck()})
 	}
 	if err == nil && syncErr != nil {
