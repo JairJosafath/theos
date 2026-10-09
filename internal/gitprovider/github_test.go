@@ -35,6 +35,8 @@ type fakeGitHub struct {
 	fail func(w http.ResponseWriter)
 	// uploads records each upload's Content-Length and Transfer-Encoding.
 	uploads []string
+	// makeLatest records each PATCH's make_latest.
+	makeLatest []string
 }
 
 func newFakeGitHub(t *testing.T) (*fakeGitHub, ReleaseTarget) {
@@ -112,9 +114,13 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 			f.reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
 			return
 		}
-		var in struct{ Draft bool }
+		var in struct {
+			Draft      bool
+			MakeLatest string `json:"make_latest"`
+		}
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		rel.Draft = in.Draft
+		f.makeLatest = append(f.makeLatest, in.MakeLatest)
 		rel.HTMLURL = "https://github.com/" + fakeGitHubRepo + "/releases/tag/" + rel.TagName
 		f.json(w, http.StatusOK, rel)
 	case len(rest) == 2 && rest[0] == "assets" && r.Method == http.MethodDelete:
@@ -216,8 +222,8 @@ func TestGitHubReleasesPublish(t *testing.T) {
 	if err != nil || found != nil {
 		t.Fatalf("FindRelease() on no releases = %+v, %v; want nil", found, err)
 	}
-	draft, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", "- Add a lens (#3)\n\n"+testMarker)
-	if err != nil || !draft.Draft || draft.TagName != "v0.2.0" || draft.ID == 0 {
+	draft, err := g.CreateDraft(ctx, "v0.2.0", "CEL Lens v0.2.0", "- Add a lens (#3)\n\n"+testMarker)
+	if err != nil || !draft.Draft || draft.TagName != "v0.2.0" || draft.Name != "CEL Lens v0.2.0" || draft.ID == 0 {
 		t.Fatalf("CreateDraft() = %+v, %v", draft, err)
 	}
 
@@ -261,9 +267,12 @@ func TestGitHubReleasesPublish(t *testing.T) {
 	if err != nil || found == nil || found.ID != draft.ID || !found.Draft {
 		t.Fatalf("FindRelease() = %+v, %v; want the draft %d", found, err, draft.ID)
 	}
-	published, err := g.PublishRelease(ctx, draft.ID)
+	published, err := g.PublishRelease(ctx, draft.ID, false)
 	if err != nil || published.Draft || published.URL != "https://github.com/acme/cel-lens/releases/tag/v0.2.0" {
 		t.Errorf("PublishRelease() = %+v, %v", published, err)
+	}
+	if !reflect.DeepEqual(f.makeLatest, []string{"false"}) {
+		t.Errorf("make_latest sent = %q, want [false]: a string, as GitHub takes it", f.makeLatest)
 	}
 	if _, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", "again"); ReleaseReason(err) != ReasonTagTaken {
 		t.Errorf("CreateDraft() of a published tag error = %v, reason %s; want %s", err, ReleaseReason(err), ReasonTagTaken)
@@ -395,7 +404,7 @@ func TestGitHubReleasesFailures(t *testing.T) {
 					_, err := g.UploadAsset(ctx, 1, "SHA256SUMS", 2, strings.NewReader("ab"))
 					return err
 				},
-				"PublishRelease": func() error { _, err := g.PublishRelease(ctx, 1); return err },
+				"PublishRelease": func() error { _, err := g.PublishRelease(ctx, 1, true); return err },
 				"DeleteAsset":    func() error { return g.DeleteAsset(ctx, 1) },
 			}
 			for name, call := range calls {

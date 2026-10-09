@@ -174,7 +174,8 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
               <span className="field-hint">
                 {' '}
                 · token Secret {r.github.tokenSecretRef.name}
-                {r.tagPrefix ? ` · tags ${r.tagPrefix}v…` : ''} · {requestsSummary(r.requests)}
+                {r.tagPrefix ? ` · tags ${r.tagPrefix}v…` : ''}
+                {r.latest === false ? ' · never Latest' : ''} · {requestsSummary(r.requests)}
               </span>
               {act ? (
                 <button
@@ -241,6 +242,7 @@ function AddRelease({
   const [repository, setRepository] = useState('')
   const [secret, setSecret] = useState('')
   const [tagPrefix, setTagPrefix] = useState('')
+  const [latest, setLatest] = useState(true)
   const [requests, setRequests] = useState<RequestsFields>(NO_REQUESTS)
   const picked = container || containers[0] || ''
 
@@ -251,6 +253,7 @@ function AddRelease({
       github: { repository: repository.trim(), tokenSecretRef: { name: secret.trim() } },
     }
     if (tagPrefix.trim()) entry.tagPrefix = tagPrefix.trim()
+    if (!latest) entry.latest = false
     const set = requestsOf(undefined, requests)
     if (set) entry.requests = set
     if (await save('add-release', { releases: [...releases, entry], resourceVersion })) {
@@ -258,6 +261,7 @@ function AddRelease({
       setRepository('')
       setSecret('')
       setTagPrefix('')
+      setLatest(true)
       setRequests(NO_REQUESTS)
     }
   }
@@ -314,6 +318,15 @@ function AddRelease({
         onChange={(e) => setTagPrefix(e.target.value)}
         disabled={busy}
       />
+      <label className="crew-check">
+        <input type="checkbox" checked={latest} onChange={(e) => setLatest(e.target.checked)} disabled={busy} />
+        <span>
+          <span className="field-label">Latest on GitHub</span>{' '}
+          <span className="field-hint">
+            Its releases become the repository’s Latest. Turn it off for every app but the one people install.
+          </span>
+        </span>
+      </label>
       <RequestsInputs fields={requests} onChange={setRequests} busy={busy} />
       <div className="form-row">
         <button type="submit" className="button button-secondary" disabled={busy || !picked}>

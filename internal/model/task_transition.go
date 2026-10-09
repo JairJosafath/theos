@@ -185,6 +185,18 @@ func Recheck(p TaskProgress, head string) TaskProgress {
 	return p
 }
 
+// ReviewAgain is the progress of an approved Standard change whose approving
+// review run ended while CI ran again: it waits for the checks on its commit,
+// in the same round, and is reviewed again once they pass. The new review run
+// counts as an attempt, so it gets a sandbox of its own.
+func ReviewAgain(p TaskProgress) TaskProgress {
+	p.ReviewAttempts++
+	p.HasChecks = false
+	p.MergeWhenChecksPass = false
+	p.Phase = TaskChecking
+	return p
+}
+
 // UpdatedBranch is the progress of an approved Task whose branch took in main
 // at head, as main had moved since its checks ran: it waits for head's checks,
 // and merges once they pass, in the same round and with no new review.

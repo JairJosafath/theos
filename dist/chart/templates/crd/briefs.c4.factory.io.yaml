@@ -249,6 +249,14 @@ spec:
                       - repository
                       - tokenSecretRef
                       type: object
+                    latest:
+                      description: |-
+                        latest says whether each release published becomes the repository's
+                        Latest release on GitHub. It defaults to true; set it to false for every
+                        app but the one people install, when several publish to one repository,
+                        so a library's release doesn't take Latest from it. A release published
+                        before it changed keeps what it got.
+                      type: boolean
                     requests:
                       description: |-
                         requests says whether the Brief takes requests from the repository's

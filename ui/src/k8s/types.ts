@@ -383,7 +383,7 @@ export interface Crew extends K8sObject {
     /** Lets the Crew file each release's prepare issue. */
     prepareReleases?: boolean
     /** Copies each release the Crew tags to another repository once its runs succeed. */
-    publishReleases?: { github: { repository: string; tokenSecretRef: LocalRef }; tagPrefix?: string }
+    publishReleases?: { github: { repository: string; tokenSecretRef: LocalRef }; tagPrefix?: string; latest?: boolean }
   }
   status?: {
     phase?: CrewPhase
@@ -478,6 +478,8 @@ export interface BriefRelease {
     tokenSecretRef: LocalRef
   }
   tagPrefix?: string
+  /** False keeps its releases from taking Latest on a repository other apps publish to. */
+  latest?: boolean
   /** Whether the Brief takes requests from the repository's GitHub issues, and whose; unset takes none. */
   requests?: BriefRequests
 }

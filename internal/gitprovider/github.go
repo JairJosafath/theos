@@ -92,8 +92,9 @@ type ReleaseTarget interface {
 	UploadAsset(ctx context.Context, id int64, name string, size int64, content io.Reader) (TargetAsset, error)
 	// DeleteAsset removes a file from a release. It is safe to repeat.
 	DeleteAsset(ctx context.Context, assetID int64) error
-	// PublishRelease turns draft id into a published release.
-	PublishRelease(ctx context.Context, id int64) (TargetRelease, error)
+	// PublishRelease turns draft id into a published release, the repository's
+	// Latest when latest is set, else leaving Latest where it is.
+	PublishRelease(ctx context.Context, id int64, latest bool) (TargetRelease, error)
 }
 
 // GitHub's hosts on github.com.
@@ -308,8 +309,10 @@ func (g *githubReleases) DeleteAsset(ctx context.Context, assetID int64) error {
 	return err
 }
 
-func (g *githubReleases) PublishRelease(ctx context.Context, id int64) (TargetRelease, error) {
-	payload, _ := json.Marshal(map[string]bool{"draft": false})
+func (g *githubReleases) PublishRelease(ctx context.Context, id int64, latest bool) (TargetRelease, error) {
+	// make_latest is a string: "true", "false" or "legacy", GitHub's default
+	// that picks by date and version.
+	payload, _ := json.Marshal(map[string]any{"draft": false, "make_latest": strconv.FormatBool(latest)})
 	var r githubRelease
 	err := g.call(ctx, http.MethodPatch, g.api, g.releasePath(id), payload, http.StatusOK,
 		"publishing release "+strconv.FormatInt(id, 10), &r)

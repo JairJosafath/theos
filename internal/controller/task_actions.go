@@ -133,8 +133,15 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		log.Info("Started next round of Task", "round", status.Round, "feedback", firstLine(step.Feedback))
 		return ctrl.Result{}, nil // the status write triggers the next step
 
-	case model.ActionRefuseMerge:
-		return ctrl.Result{}, r.failWith(ctx, task, status, container, model.GatedMergeRefused(step.Message))
+	case model.ActionReviewAgain:
+		r.comment(ctx, task, status, container, step.Message+".")
+		if err := r.endRun(ctx, task, status); err != nil {
+			return ctrl.Result{}, err
+		}
+		setProgress(status, model.ReviewAgain(progressOf(status)))
+		r.progress(task, status, metav1.ConditionTrue, "ApprovalEnded", step.Message)
+		log.Info("Checking and reviewing an approved Standard change again", "round", status.Round)
+		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionFail:
 		if review := r.reviewFrom(ctx, task, status); review != nil {
@@ -444,8 +451,8 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1alpha1.Task, statu
 	}
 	reviewRun := r.reviewRun(ctx, task, status)
 	if len(task.Spec.AllowedProtectedPaths) > 0 && status.MergeWhenChecksPass && reviewRun == nil {
-		// As in noVerdictStep: a gated merge waits for CI only while the review
-		// run that approved it lasts.
+		// The model reviews such a change again (ApprovalEnded); never merge it
+		// without the approval of a review run that lasts.
 		return ctrl.Result{}, r.failWith(ctx, task, status, container, model.GatedMergeRefused(
 			"the review run that approved it ended while CI ran again with main merged in"))
 	}

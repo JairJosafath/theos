@@ -208,7 +208,10 @@ enforces.
   that ran against the `main` it merges into: when `main` moved since the
   approved head's checks ran, the operator merges `main` into the branch through
   the Git host, with no agent run and no round spent, waits for the checks
-  again, and merges when they pass, without another review. A branch that
+  again, and merges when they pass, without another review. A Standard
+  change's gated merge needs the approving review run to last: when it ends
+  while CI runs again, the change is checked and reviewed again in the same
+  round, not failed, and spends no try. A branch that
   conflicts with `main` goes back to its implementer in the same round instead.
   Only that merge through the Git host decides a conflict: the host's
   "mergeable" flag is stale while it tests the pull request against a `main`
@@ -491,7 +494,13 @@ model and context it needs.
   there once the release runs succeed: the same tag (with an optional
   `tagPrefix`), the same notes (the Gitea release's body, or the titles of the
   release's merged issues, which the operator writes on both) and the same
-  files, streamed from the Gitea release. The operator does it, not CI, so the
+  files, streamed from the Gitea release. The release is named after the app
+  and its version (the Container's `displayName`, else its name, then the tag:
+  `CEL Lens for VS Code v0.6.1`), so a repository several apps publish to says
+  whose each release is. It becomes the repository's Latest unless
+  `publishReleases.latest` is `false`: on a shared repository, every app but
+  the one people install sets it, so a library's release doesn't take Latest
+  from it. The operator does it, not CI, so the
   token never reaches the code the agents write. It only adds releases: a draft
   marked with the Container and tag, its files, then published, so a retry
   carries on and nobody sees half a release; a release of that tag it didn't

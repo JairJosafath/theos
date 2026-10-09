@@ -370,6 +370,7 @@ file.
          repository: your-name/orders-cli   # owner/name on github.com
          tokenSecretRef: {name: orders-cli-github}
        tagPrefix: ""            # optional: "cli-" publishes v0.2.0 as cli-v0.2.0
+       latest: true             # optional: false never makes its releases GitHub's Latest
    ```
 
 Once a release's runs succeed, the Crew copies it: the notes are the Gitea
@@ -379,6 +380,13 @@ publishes it, so a release is never seen half done. Only the last release is
 published; one tagged before the previous was published leaves that one to
 you, with a Warning Event `ReleaseNotPublished`. Removing `publishReleases`
 stops publishing; what is on GitHub stays.
+
+Each release is named after the app and its version, the Container's
+`displayName` (else its name) then the tag, such as `Orders CLI v0.2.0`, so a
+repository several apps publish to (each with its own `tagPrefix`) says whose
+each release is. GitHub's Latest goes to the release published last; set
+`latest: false` on every app but the one people install, and only its
+releases take Latest.
 
 **Reading how it went:**
 
@@ -433,6 +441,7 @@ Gitea release. Nothing on the Crew needs editing by hand.
          repository: your-name/cel-lens     # owner/name on github.com
          tokenSecretRef: {name: cel-lens-github}
        tagPrefix: ""                        # optional, as on a Crew
+       latest: true                         # optional, as on a Crew
    ```
 
    ```bash

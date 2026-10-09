@@ -13,8 +13,11 @@ type PublishFacts struct {
 	// Configured says the Crew sets publishReleases.
 	Configured bool
 	// Namespace and Container name the release's Container; Tag is the Crew's
-	// tag, and TagPrefix what goes before it on GitHub.
-	Namespace, Container, Tag, TagPrefix string
+	// tag, and TagPrefix what goes before it on GitHub. App is the app's name
+	// a person reads, the Container's display name or else its name.
+	Namespace, Container, Tag, TagPrefix, App string
+	// Latest says the release becomes the repository's Latest when published.
+	Latest bool
 	// Repository is the GitHub repository, owner/name.
 	Repository string
 	// Published says status already records this release as published: it is
@@ -102,13 +105,14 @@ const (
 	// PublishWriteNotes sets Body on the Gitea release, so both releases read
 	// the same.
 	PublishWriteNotes PublishAction = "WriteNotes"
-	// PublishCreateDraft creates the GitHub release Tag, named Tag, as a draft
+	// PublishCreateDraft creates the GitHub release Tag, named Name, as a draft
 	// with Body.
 	PublishCreateDraft PublishAction = "CreateDraft"
 	// PublishUploadAsset streams Gitea's Asset to the draft Release, deleting
 	// the draft's Replace first when it is set.
 	PublishUploadAsset PublishAction = "UploadAsset"
-	// PublishDraft publishes the draft Release.
+	// PublishDraft publishes the draft Release, as the repository's Latest
+	// when Latest is set.
 	PublishDraft PublishAction = "PublishDraft"
 	// PublishDone records the release as published at URL.
 	PublishDone PublishAction = "Done"
@@ -140,6 +144,8 @@ type PublishStep struct {
 	// Tag is the GitHub tag, and Body the notes for PublishWriteNotes or the
 	// draft's body, marker included, for PublishCreateDraft.
 	Tag, Body string
+	// Name is the draft's name, for PublishCreateDraft.
+	Name string
 	// Release is the draft, for PublishUploadAsset and PublishDraft.
 	Release int64
 	// Asset is the Gitea asset to upload, and Replace the draft's asset of the
@@ -148,12 +154,24 @@ type PublishStep struct {
 	Replace *ReleaseAsset
 	// URL is the published release, for PublishDone.
 	URL string
+	// Latest says the release becomes the repository's Latest, for
+	// PublishDraft.
+	Latest bool
 }
 
 // GitHubTag is the tag a release goes out under on GitHub: the prefix, then
 // the Crew's tag.
 func GitHubTag(prefix, tag string) string {
 	return prefix + tag
+}
+
+// ReleaseName is the name a published release goes by: the app, then the
+// Crew's tag, so a repository several apps publish to says whose each is.
+func ReleaseName(app, tag string) string {
+	if app == "" {
+		return tag
+	}
+	return app + " " + tag
 }
 
 // PublishMarker is the hidden line that ends the body of a release the
@@ -212,7 +230,7 @@ func NextPublishStep(f PublishFacts) PublishStep {
 		return PublishStep{Action: PublishDone, Reason: PublishPublished, URL: ours.URL,
 			Message: fmt.Sprintf("%s is published at %s", tag, ours.URL)}
 	case ours != nil:
-		return draftStep(f.Gitea.Assets, ours)
+		return draftStep(f.Gitea.Assets, ours, f.Latest)
 	case f.GitHub.TagExists || hasTag(f.GitHub.Releases, tag):
 		return fail(PublishTagTaken, "%s already has a release or tag %s the factory didn't make; it leaves it alone",
 			f.Repository, tag)
@@ -233,12 +251,13 @@ func NextPublishStep(f PublishFacts) PublishStep {
 	if strings.TrimSpace(notes) != "" {
 		body = strings.TrimRight(notes, "\n") + "\n\n" + body
 	}
-	return PublishStep{Action: PublishCreateDraft, Tag: tag, Body: body}
+	return PublishStep{Action: PublishCreateDraft, Tag: tag, Name: ReleaseName(f.App, f.Tag), Body: body}
 }
 
 // draftStep uploads the first of Gitea's assets the draft lacks, or has at a
-// different size, and publishes the draft once it has them all.
-func draftStep(assets []ReleaseAsset, draft *TargetRelease) PublishStep {
+// different size, and publishes the draft once it has them all, as Latest when
+// latest is set.
+func draftStep(assets []ReleaseAsset, draft *TargetRelease, latest bool) PublishStep {
 	for _, a := range assets {
 		var have *ReleaseAsset
 		for i, d := range draft.Assets {
@@ -254,7 +273,7 @@ func draftStep(assets []ReleaseAsset, draft *TargetRelease) PublishStep {
 			return PublishStep{Action: PublishUploadAsset, Release: draft.ID, Asset: a, Replace: have}
 		}
 	}
-	return PublishStep{Action: PublishDraft, Release: draft.ID}
+	return PublishStep{Action: PublishDraft, Release: draft.ID, Latest: latest}
 }
 
 // failed reports the GitHub call that failed in this pass.

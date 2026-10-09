@@ -14,8 +14,11 @@ export const RERUN_RELEASE = 'c4.factory.io/rerun-release'
 export interface CrewReleaseSettings {
   tagReleases: boolean
   prepareReleases: boolean
-  /** Where releases are published; undefined publishes nowhere. */
-  publish?: { repository: string; tokenSecret: string; tagPrefix: string }
+  /**
+   * Where releases are published; undefined publishes nowhere. latest says a
+   * published release becomes the repository's Latest on GitHub.
+   */
+  publish?: { repository: string; tokenSecret: string; tagPrefix: string; latest: boolean }
 }
 
 /** The settings a Crew has now, as its form starts. */
@@ -25,7 +28,12 @@ export function releaseSettings(crew: Crew): CrewReleaseSettings {
     tagReleases: Boolean(crew.spec.tagReleases),
     prepareReleases: Boolean(crew.spec.prepareReleases),
     publish: p
-      ? { repository: p.github.repository, tokenSecret: p.github.tokenSecretRef.name, tagPrefix: p.tagPrefix ?? '' }
+      ? {
+          repository: p.github.repository,
+          tokenSecret: p.github.tokenSecretRef.name,
+          tagPrefix: p.tagPrefix ?? '',
+          latest: p.latest !== false,
+        }
       : undefined,
   }
 }
@@ -60,13 +68,15 @@ export function releasePatch(crew: Crew, next: CrewReleaseSettings, from?: strin
   const same =
     next.publish?.repository === now.publish?.repository &&
     next.publish?.tokenSecret === now.publish?.tokenSecret &&
-    next.publish?.tagPrefix === now.publish?.tagPrefix
+    next.publish?.tagPrefix === now.publish?.tagPrefix &&
+    next.publish?.latest === now.publish?.latest
   if (!same && next.publish) {
-    const { repository, tokenSecret, tagPrefix } = next.publish
+    const { repository, tokenSecret, tagPrefix, latest } = next.publish
     const value: NonNullable<Crew['spec']['publishReleases']> = {
       github: { repository, tokenSecretRef: { name: tokenSecret } },
     }
     if (tagPrefix) value.tagPrefix = tagPrefix
+    if (!latest) value.latest = false
     ops.push({ op: 'add', path: '/spec/publishReleases', value })
   } else if (!same) {
     ops.push({ op: 'remove', path: '/spec/publishReleases' })

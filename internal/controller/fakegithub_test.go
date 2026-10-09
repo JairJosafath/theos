@@ -35,6 +35,8 @@ type fakeGitHubRelease struct {
 	Draft   bool   `json:"draft"`
 	HTMLURL string `json:"html_url"`
 	assets  []fakeGitHubAsset
+	// makeLatest is the make_latest it was published with.
+	makeLatest string
 }
 
 type fakeGitHubAsset struct {
@@ -81,6 +83,11 @@ func (f *fakeGitHub) releases(repository string) []fakeGitHubRelease {
 func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if req.URL.Path == "/user" && req.Method == http.MethodGet {
+		// Every repository's token is the factory's account.
+		reply(w, http.StatusOK, fakeGitHubUser{"c4factory-bot"})
+		return
+	}
 	if team, ok := strings.CutPrefix(req.URL.Path, "/orgs/"); ok {
 		f.serveTeam(w, req, strings.Split(team, "/"))
 		return
@@ -152,9 +159,12 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 func (f *fakeGitHub) serveRelease(w http.ResponseWriter, req *http.Request, rel *fakeGitHubRelease, rest []string) {
 	switch {
 	case len(rest) == 0 && req.Method == http.MethodPatch:
-		var patch struct{ Draft bool }
+		var patch struct {
+			Draft      bool
+			MakeLatest string `json:"make_latest"`
+		}
 		_ = json.NewDecoder(req.Body).Decode(&patch)
-		rel.Draft = patch.Draft
+		rel.Draft, rel.makeLatest = patch.Draft, patch.MakeLatest
 		reply(w, http.StatusOK, rel)
 	case len(rest) == 1 && rest[0] == "assets" && req.Method == http.MethodGet:
 		if req.URL.Query().Get("page") != "1" {

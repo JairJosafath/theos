@@ -97,7 +97,9 @@ they built.
 9. **The operator speaks on the issue, once per stage, with a marker.**
    Every comment carries `<!-- c4factory:request brief=NAME stage=S -->`, and
    the operator looks for its own before posting, so a retry never posts
-   twice. The stages:
+   twice. Its own is one written by the token's account (`GET /user`, read
+   once per read of the repository): anyone can copy a marker into a
+   comment, and a stranger's copy is ignored (#816). The stages:
    - `planned`: applying the round, "Planned as: <issue titles>, in release
      vX.Y.Z" (the milestone the round filed them in), or for `skip` the why,
      then the issue is closed as *not planned*.
