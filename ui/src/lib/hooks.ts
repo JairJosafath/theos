@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore } from 'react'
+import type { UiSession } from '../k8s/session'
 import type { Snapshot, Source } from '../k8s/sources'
 
 /** Subscribes to a data source for as long as the component is mounted. */
@@ -12,6 +13,12 @@ export function useSource<T>(source: Source<T>): Snapshot<T> {
     () => source.getSnapshot(),
   )
 }
+
+/** The UI server's session answer for the page; unset until it comes, and in demo mode. */
+export const SessionContext = createContext<UiSession | undefined>(undefined)
+
+/** Asks the UI server's session again; a no-op outside the page. */
+export const RefreshSession = createContext<() => void>(() => undefined)
 
 /** A fixed time for every useNow below it, for tests; unset, useNow follows the clock. */
 export const FixedNow = createContext<number | undefined>(undefined)

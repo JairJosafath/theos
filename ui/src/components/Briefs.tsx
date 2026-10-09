@@ -14,7 +14,7 @@ import { ExternalLinkIcon } from './icons'
 import { NewBrief } from './briefs/NewBrief'
 import { BriefDetails } from './briefs/BriefDetails'
 import { FormError, PromptForm } from './briefs/PromptForm'
-import { errorText } from './briefs/errors'
+import { writeError, type WriteError } from './briefs/errors'
 import './briefs.css'
 
 export function Briefs({
@@ -58,7 +58,7 @@ export function Briefs({
 function BriefCard({ brief, namespace, writer }: { brief: Brief; namespace: string; writer: BriefWriter }) {
   const now = useNow()
   const view = describeBrief(brief)
-  const [pauseError, setPauseError] = useState<string>()
+  const [pauseError, setPauseError] = useState<WriteError>()
   return (
     <article className={`panel brief brief-${view.phase.tone}`} aria-label={`Brief ${view.name}`}>
       <div className="panel-head">
@@ -100,7 +100,7 @@ function BriefCard({ brief, namespace, writer }: { brief: Brief; namespace: stri
       <p className="brief-idea" title={view.idea}>
         {view.idea}
       </p>
-      {pauseError ? <FormError message={pauseError} /> : null}
+      {pauseError ? <FormError error={pauseError} /> : null}
       {view.pausedNote ? (
         <div className="brief-note brief-note-waiting brief-paused" role="status">
           {view.pausedNote}
@@ -131,7 +131,7 @@ function PauseButton({
   namespace: string
   view: BriefView
   writer: BriefWriter
-  onError: (message: string | undefined) => void
+  onError: (error: WriteError | undefined) => void
 }) {
   const [sending, setSending] = useState(false)
   const action = pauseAction(view)
@@ -142,7 +142,7 @@ function PauseButton({
     try {
       await writer.setPaused(namespace, view.name, action.paused)
     } catch (err) {
-      onError(errorText(err))
+      onError(writeError(err))
     } finally {
       setSending(false)
     }

@@ -163,6 +163,11 @@ header per group) with the UI's own credentials; reads, the ones a write makes
 first included, carry none. A write with no session answers 401, "Sign in to
 act".
 
+The page asks `GET /ui/session` once: with `oidc` its top bar shows a **Sign
+in** link to `/ui/login` (returning to the page) while nobody is signed in,
+else who it acts as and **Sign out**; a write refused with 401 shows the same
+link under its message.
+
 ### The factory's health
 
 `GET /factory/health` is answered by [health.mjs](health.mjs), not proxied: the
