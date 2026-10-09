@@ -9,10 +9,10 @@ permission. See the LICENSE file.
 package controller
 
 import (
-	"slices"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"

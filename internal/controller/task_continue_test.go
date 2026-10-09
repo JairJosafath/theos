@@ -174,6 +174,10 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 		Expect(gitFake.issue(ns, "orders-api", n).comments).To(ContainElement(
 			ContainSubstring("this try doesn't count towards the limit")))
 		gitFake.setChecks(ns, "orders-api", "sha-try1", gitprovider.CheckSuccess)
+		taskKey := client.ObjectKey{Namespace: ns, Name: "orders-api-2"}
+		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1alpha1.Task) bool {
+			return t.Status.Phase == c4v1alpha1.TaskChecking
+		})
 
 		second := newTask(ns, "orders-api-2", "")
 		second.Spec.Issue = int32(n)
@@ -190,8 +194,11 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 		Expect(getTask(Default, ns, "orders-api-2").Status.History).To(ContainElement(And(
 			HaveField("Phase", c4v1alpha1.TaskChecking),
 			HaveField("Message", ContainSubstring("which Task orders-api-1 pushed and no one reviewed")))))
-		Expect(gitFake.pullComments(ns, "orders-api", 1)).To(ContainElement(
-			ContainSubstring("Task `orders-api-2` continues this pull request")))
+		Expect(taskStatusFaults.pending(taskKey)).To(BeZero())
+		Expect(countContaining(gitFake.pullComments(ns, "orders-api", 1),
+			"Task `orders-api-2` continues this pull request")).To(Equal(1))
+		Expect(countContaining(gitFake.issue(ns, "orders-api", n).comments,
+			"Task `orders-api-2` picked this up")).To(Equal(1))
 
 		By("merging it once the reviewer approves")
 		finishSandbox(ns, "orders-api-2-r1-review-a1", "orders-api-2",
@@ -217,6 +224,17 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 		}).Should(Succeed())
 	})
 })
+
+// countContaining counts the comments that contain s.
+func countContaining(comments []string, s string) int {
+	n := 0
+	for _, c := range comments {
+		if strings.Contains(c, s) {
+			n++
+		}
+	}
+	return n
+}
 
 // failTryNoCI fails a first Task on a new issue of orders-api with
 // NoCIResult: its run at sha-try1 stays queued with no runner online. Its pull

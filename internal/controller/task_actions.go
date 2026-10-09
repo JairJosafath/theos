@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -256,7 +257,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 				return ctrl.Result{}, err
 			}
 			if commit != "" {
-				return r.startAtReview(protectCtx, provider, repo, task, status, container, agents, commit)
+				return r.startAtReview(ctx, task, status, commit)
 			}
 		}
 	}
@@ -285,7 +286,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	// Comment with the sandbox that starts the first run, not when a retry
 	// finds it made: then the status write after it failed, and the comments
 	// are there.
-	if err == nil && firstIssueRun {
+	if err == nil && (firstIssueRun || firstReviewAtStart(status, role)) {
 		if status.Continues != "" {
 			r.noteContinued(protectCtx, provider, repo, task, status)
 		}
@@ -299,17 +300,25 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 
 // startAtReview starts a try that continues an earlier try's green, unreviewed
 // commit at its checks, with no implementer run: they pass, so the next step
-// starts the review (model.StartsAtReview).
-func (r *TaskReconciler) startAtReview(ctx context.Context, provider gitprovider.Provider,
-	repo gitprovider.Repository, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, agents taskAgents, commit string) (ctrl.Result, error) {
+// starts the review (model.StartsAtReview). The review's first sandbox posts
+// the comments a first run does, so a failed status write here posts none.
+func (r *TaskReconciler) startAtReview(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	commit string) (ctrl.Result, error) {
 	setProgress(status, model.InheritedChecks(progressOf(status), commit))
-	r.noteContinued(ctx, provider, repo, task, status)
-	r.announce(ctx, provider, repo, task, container, agents)
 	r.progress(task, status, metav1.ConditionTrue, "Checking", model.StartAtReviewMessage(commit, status.Continues))
 	logf.FromContext(ctx).Info("Starting a try at the earlier try's review", "commit", commit,
 		"earlierTask", status.Continues)
 	return ctrl.Result{}, nil // the status write triggers the next step
+}
+
+// firstReviewAtStart reports whether role's run is the first of a try that
+// started at review (startAtReview): its round 1 never implemented.
+func firstReviewAtStart(status *c4v1alpha1.TaskStatus, role string) bool {
+	return role == model.RoleReviewer && status.Continues != "" && status.Round == 1 &&
+		status.ReviewAttempts == 0 && status.Reruns == 0 &&
+		!slices.ContainsFunc(status.History, func(h c4v1alpha1.TaskTransition) bool {
+			return h.Phase == c4v1alpha1.TaskImplementing
+		})
 }
 
 // agentCredentials reports whether the Agent's credentials Secret, if it names
