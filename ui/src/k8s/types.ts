@@ -370,9 +370,19 @@ export interface Crew extends K8sObject {
     ready?: number[]
     /** Ready issues blocked by open dependencies. */
     waiting?: number[]
+    /** The release the Crew tagged last, when spec.tagReleases is set. */
+    lastRelease?: {
+      tag: string
+      commit: string
+      time: string
+      /** How the CI runs the tag started went. */
+      run?: 'Waiting' | 'Running' | 'Succeeded' | 'Failed'
+      /** The failed run, else the newest one. */
+      runURL?: string
+    }
     lastPolled?: string
     observedGeneration?: number
-    /** Ready: whether the Crew can pick up issues, and why not. */
+    /** Ready: whether the Crew can pick up issues, and why not; Released: whether its next release went out, and why not. */
     conditions?: Condition[]
   }
 }

@@ -1,8 +1,8 @@
 // The new shell (docs/plans/ui-lifecycle.md, decision 2), reached only with
 // ?shell=next until it becomes the default: navigation for the six areas, a
 // freshness line, and the area on screen or an object's page. Story, Briefs,
-// Work and Factory show today's components; Needs you comes in a later step,
-// and the pages of the kinds that have none yet say so.
+// Work and Factory show today's components, and the pages of the kinds that
+// have none yet say so.
 
 import type { MouseEvent, ReactNode } from 'react'
 import type { FactoryHealth } from '../k8s/health'
@@ -32,8 +32,8 @@ export interface ShellProps {
   picker: ReactNode
   /** The demo and problem banners. */
   banners: ReactNode
-  /** Today's components for these areas. */
-  areas: Record<'briefs' | 'story' | 'work' | 'factory', ReactNode>
+  /** Needs you, and today's components for the other areas of the cluster. */
+  areas: Record<'needs' | 'briefs' | 'story' | 'work' | 'factory', ReactNode>
   /** The object page the URL names, for kinds that have one. */
   objectPage?: ReactNode
 }
@@ -93,8 +93,6 @@ export function Shell({
 
       {object ? (
         (objectPage ?? <ObjectPlaceholder {...object} />)
-      ) : area === 'needs' ? (
-        <NeedsArea />
       ) : area === 'about' ? (
         <AboutArea versions={versions} />
       ) : (
@@ -151,20 +149,6 @@ function Ago({ at }: { at: number }) {
     <time dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString()}>
       {ms < 1000 ? 'just now' : `${formatDuration(ms)} ago`}
     </time>
-  )
-}
-
-function NeedsArea() {
-  return (
-    <main className="shell-page">
-      <section className="panel">
-        <h1 className="panel-title">Needs you</h1>
-        <p className="panel-text">
-          This area will list what waits on a person across projects, each with where to do it. Until it does, Work
-          shows what needs a look among the Tasks, and each Brief says when it needs your input.
-        </p>
-      </section>
-    </main>
   )
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { combineConnection, mergeConnections, unreadOf } from './sources'
 import { ApiError, type WatchState } from './watch'
 
+const state = (loaded: boolean, error?: Error): WatchState<unknown> => ({ items: [], phase: 'live', loaded, error })
 const live: WatchState<unknown> = { items: [], phase: 'live', loaded: true }
 const refused: WatchState<unknown> = {
   items: [],
@@ -11,6 +12,19 @@ const refused: WatchState<unknown> = {
 }
 
 describe('combineConnection', () => {
+  it('is loaded with the required lists, and settled only once the optional ones loaded or failed', () => {
+    const waiting = combineConnection([
+      { what: 'tasks', state: state(true) },
+      { what: 'briefs', state: state(false), optional: true },
+    ])
+    expect([waiting.loaded, waiting.settled]).toEqual([true, false])
+    const failed = combineConnection([
+      { what: 'tasks', state: state(true) },
+      { what: 'briefs', state: state(false, new Error('forbidden')), optional: true },
+    ])
+    expect([failed.loaded, failed.settled, failed.problems]).toEqual([true, true, []])
+  })
+
   it('keeps a refused optional read for its panel, and raises no banner for it', () => {
     const c = combineConnection([
       { what: 'containers', state: live },

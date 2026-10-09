@@ -172,6 +172,14 @@ func (p *fakeProvider) TagRuns(_ context.Context, repo gitprovider.Repository, t
 	return slices.Clone(p.git.releaseState().runs[repo.Owner+"/"+repo.Name+"@"+tag+"@"+commit]), nil
 }
 
+// CommitRuns returns no runs: nothing reads them yet.
+func (p *fakeProvider) CommitRuns(context.Context, gitprovider.Repository, string) ([]gitprovider.WorkflowRun, error) {
+	return nil, nil
+}
+
+// RunnersOnline doesn't know.
+func (p *fakeProvider) RunnersOnline(context.Context) (int, bool) { return 0, false }
+
 // RerunFailedJobs queues run id again, as Gitea's new attempt of it does.
 func (p *fakeProvider) RerunFailedJobs(_ context.Context, repo gitprovider.Repository, id int64) error {
 	p.git.mu.Lock()

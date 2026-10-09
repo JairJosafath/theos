@@ -206,6 +206,12 @@ type Provider interface {
 	// TagRuns returns the CI workflow runs a push of tag at commit started,
 	// newest first.
 	TagRuns(ctx context.Context, repo Repository, tag, commit string) ([]WorkflowRun, error)
+	// CommitRuns returns the CI workflow runs at commit, of any event, newest
+	// first.
+	CommitRuns(ctx context.Context, repo Repository, commit string) ([]WorkflowRun, error)
+	// RunnersOnline returns how many CI runners the instance has online, idle
+	// or busy; known is false when the provider doesn't say.
+	RunnersOnline(ctx context.Context) (online int, known bool)
 	// RerunFailedJobs runs the failed jobs of workflow run id again, as a new
 	// attempt of the same run.
 	RerunFailedJobs(ctx context.Context, repo Repository, id int64) error

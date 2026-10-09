@@ -212,6 +212,64 @@ func TestGiteaChecksIntegration(t *testing.T) {
 	}
 }
 
+// TestGiteaCommitRunsIntegration pushes a commit with a workflow to the seeded
+// Gitea and reads its run and the runners, like TestGiteaIntegration. The
+// local Gitea has Actions on and no runner, so the run stays queued.
+func TestGiteaCommitRunsIntegration(t *testing.T) {
+	base := os.Getenv("C4_GITEA_URL")
+	if base == "" {
+		t.Skip("C4_GITEA_URL not set")
+	}
+	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	p, err := Client{}.Provider(Config{URL: base, Owner: "webshop", Credentials: creds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("it-runs-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteRepo(t, base, "webshop", name, creds.Token) })
+	repo, err := p.EnsureRepository(ctx, name, "integration test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := "on: [push]\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make check\n"
+	commit, err := p.PushInitialCommit(ctx, repo, scaffold.Tree{
+		".gitea/workflows/check.yaml": {Data: []byte(workflow)},
+		"Makefile":                    {Data: []byte("check:\n")},
+	}, "Scaffold\n", testAuthor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	online, known := p.RunnersOnline(ctx)
+	if !known {
+		t.Fatal("RunnersOnline() = unknown, want the admin token to read the runners")
+	}
+	// Gitea schedules the run after the push returns.
+	var runs []WorkflowRun
+	for ctx.Err() == nil {
+		if runs, err = p.CommitRuns(ctx, repo, commit); err != nil {
+			t.Fatal(err)
+		}
+		if len(runs) > 0 {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if len(runs) != 1 || runs[0].Workflow != "check.yaml" || runs[0].Event != "push" || runs[0].URL == "" {
+		t.Fatalf("CommitRuns() = %+v, want one push run of check.yaml", runs)
+	}
+	if online == 0 && (runs[0].Status != "queued" && runs[0].Status != "waiting" || !runs[0].Started.IsZero()) {
+		t.Errorf("CommitRuns() with no runner online = %+v, want it queued and not started", runs[0])
+	}
+	t.Logf("runners online: %d; run: %+v", online, runs[0])
+	if other, err := p.CommitRuns(ctx, repo, strings.Repeat("0", 40)); err != nil || len(other) != 0 {
+		t.Errorf("CommitRuns() of a commit with no runs = %+v, %v; want none", other, err)
+	}
+}
+
 // TestGiteaPullRequestUpdateIntegration checks that a pull request whose base
 // moved reads as behind, and that updating it merges the base in, or fails with
 // ErrConflict when they conflict, like TestGiteaIntegration.

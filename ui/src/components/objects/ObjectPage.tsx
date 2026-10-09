@@ -54,7 +54,8 @@ export function ObjectPage({
           <ReadProblem problem={unread} />
         ) : (
           <p className="panel-text">
-            {connection.loaded
+            {/* An optional kind's list may come after the required ones. */}
+            {(connection.settled ?? connection.loaded)
               ? `There is no ${kind} named ${name} in ${data.namespace}: it may have been deleted.`
               : `Loading the ${kind}…`}
           </p>

@@ -138,3 +138,11 @@ describe('a failed re-watch of an optional kind', () => {
     expect(t).toContain('Computes Could not read computes: Cannot reach the Kubernetes API small')
   })
 })
+
+describe('an optional kind still loading', () => {
+  it('says it is loading, not that the object is not there', () => {
+    const loading: Connection = { ...LIVE, settled: false }
+    const data = { ...demoStory(NOW), computes: [] }
+    expect(text(page('Compute', 'small', data, loading))).toContain('Loading the Compute')
+  })
+})

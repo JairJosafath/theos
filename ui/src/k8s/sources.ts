@@ -64,6 +64,8 @@ export interface Connection {
   phase: 'demo' | 'connecting' | 'live' | 'reconnecting'
   /** True once every required list has loaded at least once. */
   loaded: boolean
+  /** True once every list, the optional ones too, has loaded or failed; unset where that is `loaded`. */
+  settled?: boolean
   problems: Problem[]
   /**
    * Optional reads that failed. They raise no banner; the panel that shows
@@ -144,7 +146,8 @@ export function combineConnection(
   let phase: Connection['phase'] = 'live'
   if (!loaded) phase = 'connecting'
   else if (required.some((s) => s.state.phase !== 'live' || s.state.error)) phase = 'reconnecting'
-  return { phase, loaded, problems, unread }
+  const settled = states.every((s) => s.state.loaded || Boolean(s.state.error))
+  return { phase, loaded, settled, problems, unread }
 }
 
 /** The failed optional read of this kind, by its plural, if it failed. */

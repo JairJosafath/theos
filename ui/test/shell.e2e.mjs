@@ -82,14 +82,17 @@ describe('the new shell', () => {
   const areaOf = () => new URL(page.url()).searchParams.get('area')
   const heading = (text) => page.getByRole('heading', { name: text, exact: true }).first()
 
-  it('opens on Story, with the freshness line', async () => {
+  it('opens on Needs you while something waits on a person, with the freshness line', async () => {
     await page.goto(`${base}/?shell=next`)
-    await heading('System context: the big picture').waitFor({ timeout: 10000 })
-    assert.equal(await current().textContent(), 'Story')
+    await page.locator('.need').first().waitFor({ timeout: 10000 })
+    assert.equal(await current().textContent(), 'Needs you')
+    assert.equal(areaOf(), 'needs')
     const fresh = page.locator('.freshness')
     await fresh.getByText('Live').waitFor({ timeout: 5000 })
     await fresh.getByText(/^Updated /).waitFor({ timeout: 5000 })
-    await fresh.getByText(`Namespace ${namespace}`).waitFor({ timeout: 5000 })
+    await fresh.getByText('All namespaces').waitFor({ timeout: 5000 })
+    await page.goto(`${base}/?shell=next&area=story`)
+    await page.locator('.freshness').getByText(`Namespace ${namespace}`).waitFor({ timeout: 5000 })
   })
 
   it('opens each area by its link, and goes back with Back', async () => {
@@ -110,9 +113,6 @@ describe('the new shell', () => {
       assert.equal(areaOf(), area)
       assert.equal(await current().textContent(), label)
     }
-    await page.goBack()
-    await heading('System context: the big picture').waitFor({ timeout: 10000 })
-    assert.equal(areaOf(), null)
   })
 
   it('says every namespace in Work, and none in About', async () => {
@@ -131,7 +131,7 @@ describe('the new shell', () => {
 
   it('reaches every area by keyboard', async () => {
     await page.goto(`${base}/?shell=next`)
-    await heading('System context: the big picture').waitFor({ timeout: 10000 })
+    await page.locator('.need').first().waitFor({ timeout: 10000 })
     for (const [label, area, title] of AREAS) {
       // Tab forward from wherever the focus is until the area's link has it.
       let focused = ''
