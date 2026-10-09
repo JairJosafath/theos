@@ -149,7 +149,8 @@ Docker, so the Gitea tests run on any device, lite ones included:
 - It downloads the Gitea binary `config/gitea` runs (`GITEA_VERSION`, linux
   amd64 or arm64) into `bin/` and checks its sha256.
 - It starts it from `.gitea-local/` (gitignored): SQLite, `INSTALL_LOCK`,
-  offline, listening on 127.0.0.1 only, with Actions, mail, SSH and LFS off.
+  offline, listening on 127.0.0.1 only, with mail, SSH and LFS off, and Actions on
+  with no runner, so a pushed workflow's run stays queued.
 - The first start picks a free port in 13000-13999 near one derived from the
   checkout's path, so worktrees don't collide, and keeps it in
   `.gitea-local/app.ini`. There is no lease.

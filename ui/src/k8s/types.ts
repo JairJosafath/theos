@@ -355,7 +355,7 @@ export interface Crew extends K8sObject {
     rerunRelease?: string
     lastPolled?: string
     observedGeneration?: number
-    /** Ready: whether the Crew can pick up issues, and why not. */
+    /** Ready: whether the Crew can pick up issues, and why not; Released: whether its next release went out, and why not. */
     conditions?: Condition[]
   }
 }
