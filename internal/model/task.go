@@ -429,7 +429,8 @@ const (
 	CIRunQueued = "queued"
 	// CIRunRunning means a runner runs one.
 	CIRunRunning = "running"
-	// CIRunCompleted means every run at the commit has ended.
+	// CIRunCompleted means every run at the commit has ended, as a run that
+	// ended has that status.
 	CIRunCompleted = "completed"
 	// CIRunUnknown means the Git host didn't say.
 	CIRunUnknown = "unknown"
@@ -472,7 +473,7 @@ func CommitRunState(runs []WorkflowRun) (string, WorkflowRun) {
 			if state != CIRunRunning || !run.Started.IsZero() && (pick.Started.IsZero() || run.Started.Before(pick.Started)) {
 				state, pick = CIRunRunning, run
 			}
-		case run.Status == "completed":
+		case run.Status == CIRunCompleted:
 			if state == CIRunNone {
 				state, pick = CIRunCompleted, run
 			}
