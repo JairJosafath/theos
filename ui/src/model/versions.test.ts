@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Project } from '../k8s/types'
-import { DEV_VERSION, factoryVersions, versionSkew } from './versions'
+import { aboutLinks, DEV_VERSION, factoryVersions, REPO_URL, runningRelease, versionSkew } from './versions'
 
 const project = (name: string, factory?: { operatorVersion?: string; chartVersion?: string }): Project => ({
   metadata: { name, namespace: name },
@@ -51,5 +51,30 @@ describe('factoryVersions', () => {
     const v = factoryVersions([project('webshop', { operatorVersion: DEV_VERSION })], DEV_VERSION, 'x/v1')
     expect(v.operator).toBe(DEV_VERSION)
     expect(v.chart).toBeUndefined()
+  })
+})
+
+describe('aboutLinks', () => {
+  it('links the docs and release notes of the release the operator reported', () => {
+    expect(runningRelease({ ui: DEV_VERSION, operator: '1.4.0' })).toBe('1.4.0')
+    expect(aboutLinks({ ui: '1.3.0', operator: '1.4.0' })).toEqual({
+      docs: `${REPO_URL}/blob/v1.4.0/docs/design.md`,
+      releaseNotes: `${REPO_URL}/releases/tag/v1.4.0`,
+      repo: REPO_URL,
+    })
+  })
+
+  it("falls back to the UI's release while the operator is unknown or unreleased", () => {
+    expect(aboutLinks({ ui: '1.3.0', operator: DEV_VERSION }).releaseNotes).toBe(`${REPO_URL}/releases/tag/v1.3.0`)
+    expect(aboutLinks({ ui: '1.3.0', operator: undefined }).releaseNotes).toBe(`${REPO_URL}/releases/tag/v1.3.0`)
+  })
+
+  it('links main and every release when nothing is released', () => {
+    expect(runningRelease({ ui: DEV_VERSION, operator: DEV_VERSION })).toBeUndefined()
+    expect(aboutLinks({ ui: DEV_VERSION, operator: undefined })).toEqual({
+      docs: `${REPO_URL}/blob/main/docs/design.md`,
+      releaseNotes: `${REPO_URL}/releases`,
+      repo: REPO_URL,
+    })
   })
 })

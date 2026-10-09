@@ -20,7 +20,7 @@
     "test": "vitest run && node --test test/server.test.mjs test/health.test.mjs test/ansi.test.mjs test/browser.test.mjs",
     "test:unit": "vitest run",
     "test:node": "node --test test/server.test.mjs test/health.test.mjs test/ansi.test.mjs test/browser.test.mjs",
-    "test:e2e": "npm run build && node --test test/bundle.test.mjs test/live.e2e.mjs",
+    "test:e2e": "npm run build && node --test test/bundle.test.mjs test/live.e2e.mjs test/shell.e2e.mjs",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
     "screenshot": "node scripts/screenshot.mjs",
     "screenshot:views": "npm run build && node scripts/views.mjs",

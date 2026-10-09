@@ -56,6 +56,19 @@ export interface Connection {
   /** True once every required list has loaded at least once. */
   loaded: boolean
   problems: Problem[]
+  /** When the data last changed, in ms since the epoch; unset until it does, and for demo data. */
+  updatedAt?: number
+}
+
+/** Two sources shown as one: the less connected phase, and both sets of problems. */
+export function mergeConnections(a: Connection, b: Connection): Connection {
+  const order: Connection['phase'][] = ['demo', 'live', 'reconnecting', 'connecting']
+  return {
+    phase: order[Math.max(order.indexOf(a.phase), order.indexOf(b.phase))],
+    loaded: a.loaded && b.loaded,
+    problems: [...a.problems, ...b.problems],
+    updatedAt: Math.max(a.updatedAt ?? 0, b.updatedAt ?? 0) || undefined,
+  }
 }
 
 export interface Snapshot<T> {
@@ -154,11 +167,14 @@ abstract class WatchingSource<T> implements Source<T> {
   }
 
   private changed(): void {
+    const connection = combineConnection(
+      this.watched.map(({ what, watcher, optional }) => ({ what, state: watcher.getState(), optional })),
+    )
+    // Only news from a live connection counts as an update; a retry is none.
+    const live = connection.phase === 'live' && !connection.problems.length
     this.snapshot = {
       data: this.build(),
-      connection: combineConnection(
-        this.watched.map(({ what, watcher, optional }) => ({ what, state: watcher.getState(), optional })),
-      ),
+      connection: { ...connection, updatedAt: live ? Date.now() : this.snapshot.connection.updatedAt },
     }
     for (const listener of this.listeners) listener()
   }
