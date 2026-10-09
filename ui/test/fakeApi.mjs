@@ -1,7 +1,8 @@
 // A tiny in-memory Kubernetes API for the c4.factory.io kinds, with lists and
 // watches, for the end-to-end test and the screenshots of every view. It
 // answers only GETs of collections, and the factory health's Pods and Nodes
-// as empty lists; everything else is 404.
+// as empty lists; everything else is 404. A kind it is told to refuse answers
+// 403, as RBAC would.
 
 import http from 'node:http'
 // The UI's own list of kinds, so the fake API serves every one.
@@ -12,6 +13,7 @@ export function fakeApi(namespace) {
   let rv = 1
   const store = new Map() // plural -> Map(namespace/name -> object)
   const watchers = new Map() // plural -> Set(res)
+  const refused = new Set() // plurals answered with 403
   for (const k of Object.values(RESOURCES)) {
     store.set(k, new Map())
     watchers.set(k, new Set())
@@ -47,6 +49,17 @@ export function fakeApi(namespace) {
       return res.end(JSON.stringify({ kind: 'Status', code: 404, message: 'not found' }))
     }
     const [, ns, plural] = m
+    if (refused.has(plural)) {
+      res.writeHead(403, { 'content-type': 'application/json' })
+      return res.end(
+        JSON.stringify({
+          kind: 'Status',
+          code: 403,
+          reason: 'Forbidden',
+          message: `${plural}.c4.factory.io is forbidden: the UI's role cannot list it`,
+        }),
+      )
+    }
     const inScope = (objNs) => !ns || objNs === ns
     if (url.searchParams.get('watch') === '1') {
       res.writeHead(200, { 'content-type': 'application/json' })
@@ -79,6 +92,14 @@ export function fakeApi(namespace) {
       const obj = store.get(plural).get(k)
       store.get(plural).delete(k)
       send(plural, 'DELETED', { ...obj, metadata: { ...obj.metadata, resourceVersion: String(++rv) } })
+    },
+    /** Answers every read of a kind with 403 from now on, and ends its open watches. */
+    refuse(plural) {
+      refused.add(plural)
+      for (const w of [...watchers.get(plural)]) {
+        watchers.get(plural).delete(w)
+        w.res.end()
+      }
     },
     /** Ends every open watch of a kind with an "expired" error, as the API does after compaction. */
     expire(plural) {

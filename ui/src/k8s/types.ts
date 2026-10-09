@@ -191,6 +191,29 @@ export interface CatalogEntry extends K8sObject {
   }
 }
 
+/** A Standard: a catalog entry with the coding rules and checks of a Container. */
+export interface Standard extends K8sObject {
+  spec: CatalogEntry['spec'] & {
+    /** The Frameworks, by name, whose code it can check. */
+    supportedFrameworks: string[]
+    /** Files agents must not change: a path, or a directory ending in "/". */
+    protectedPaths?: string[]
+  }
+}
+
+/**
+ * Where repositories are created. Its Secret is named, never read: the UI's
+ * proxy serves only c4.factory.io, so no Secret data reaches the browser.
+ */
+export interface GitProvider extends K8sObject {
+  spec: {
+    provider?: string
+    url: string
+    owner: string
+    credentialsSecretRef: LocalRef
+  }
+}
+
 /** Plural resource names, as used in API paths. */
 export const RESOURCES = {
   projects: 'projects',
@@ -202,6 +225,10 @@ export const RESOURCES = {
   sessions: 'sessions',
   frameworks: 'frameworks',
   connectors: 'connectors',
+  standards: 'standards',
+  computes: 'computes',
+  deployments: 'deployments',
+  gitProviders: 'gitproviders',
   tasks: 'tasks',
   agents: 'agents',
   crews: 'crews',

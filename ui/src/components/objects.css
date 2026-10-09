@@ -227,3 +227,29 @@
   justify-content: start;
   gap: 16px;
 }
+
+.object-page .facts {
+  grid-template-columns: 180px minmax(0, 1fr);
+}
+
+/* A dt and dd pair wrapped for its key; the grid still lays them out. */
+.facts-row {
+  display: contents;
+}
+
+.object-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.read-problem {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 13px;
+}

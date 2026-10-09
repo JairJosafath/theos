@@ -372,7 +372,7 @@ export default function App() {
       }}
       objectPage={
         objectKind && url.name ? (
-          <ObjectPage kind={objectKind} name={url.name} data={data} loaded={story.connection.loaded} writer={writer} />
+          <ObjectPage kind={objectKind} name={url.name} data={data} connection={story.connection} writer={writer} />
         ) : undefined
       }
     />

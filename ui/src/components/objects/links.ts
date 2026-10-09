@@ -27,3 +27,8 @@ export function storyHref(project: string, system?: string): string {
 export function briefsHref(project: string): string {
   return hrefFor({ ...NO_OBJECT, area: 'briefs', project, view: 'context', system: undefined, task: undefined })
 }
+
+/** The breadcrumb's first step: the namespace's Project page. */
+export function projectCrumb(ns: string): { label: string; href?: string } {
+  return { label: `Project ${ns}`, href: pageHref(ns, 'Project', ns) }
+}

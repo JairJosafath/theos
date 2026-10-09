@@ -11,12 +11,14 @@ import {
   type Container,
   type Crew,
   type DataStore,
+  type GitProvider,
   type K8sObject,
   type Person,
   type Project,
   type Relationship,
   type Session,
   type SoftwareSystem,
+  type Standard,
   type Task,
 } from './types'
 import type { WatchMux } from './mux'
@@ -35,6 +37,11 @@ export interface StoryData {
   /** Catalog entries, used only for display names. Optional: may stay empty. */
   frameworks: CatalogEntry[]
   connectors: CatalogEntry[]
+  /** The rest of the catalog and the Git hosts, for their pages. Optional: may stay empty. */
+  standards: Standard[]
+  computes: CatalogEntry[]
+  deployments: CatalogEntry[]
+  gitProviders: GitProvider[]
   /** Who works on each Container's issues, with their Agents and Tasks. Optional: may stay empty. */
   crews: Crew[]
   agents: Agent[]
@@ -48,6 +55,8 @@ export interface Problem {
   what: string
   message: string
   code?: number
+  /** The plural of the kind that could not be read, such as "standards". */
+  resource?: string
 }
 
 export interface Connection {
@@ -56,6 +65,11 @@ export interface Connection {
   /** True once every required list has loaded at least once. */
   loaded: boolean
   problems: Problem[]
+  /**
+   * Optional reads that failed. They raise no banner; the panel that shows
+   * the kind says it could not read it, so the failure is never hidden.
+   */
+  unread?: Problem[]
   /** When the data last changed, in ms since the epoch; unset until it does, and for demo data. */
   updatedAt?: number
 }
@@ -67,6 +81,7 @@ export function mergeConnections(a: Connection, b: Connection): Connection {
     phase: order[Math.max(order.indexOf(a.phase), order.indexOf(b.phase))],
     loaded: a.loaded && b.loaded,
     problems: [...a.problems, ...b.problems],
+    unread: [...(a.unread ?? []), ...(b.unread ?? [])],
     updatedAt: Math.max(a.updatedAt ?? 0, b.updatedAt ?? 0) || undefined,
   }
 }
@@ -94,6 +109,10 @@ export function emptyStory(namespace: string): StoryData {
     sessions: [],
     frameworks: [],
     connectors: [],
+    standards: [],
+    computes: [],
+    deployments: [],
+    gitProviders: [],
     crews: [],
     agents: [],
     tasks: [],
@@ -103,29 +122,37 @@ export function emptyStory(namespace: string): StoryData {
 
 /** Combines the state of several watchers into one connection state. */
 export function combineConnection(
-  states: { what: string; state: WatchState<unknown>; optional?: boolean }[],
+  states: { what: string; state: WatchState<unknown>; optional?: boolean; resource?: string }[],
 ): Connection {
   const required = states.filter((s) => !s.optional)
   const problems: Problem[] = []
-  for (const { what, state, optional } of states) {
-    // Optional kinds (the catalog, Agents, Crews) only add details, so a
-    // failure there is not worth alarming anyone about.
-    if (state.error && !optional) {
-      problems.push({
-        what,
-        message: state.error.message,
-        code: state.error instanceof ApiError ? state.error.code : undefined,
-      })
+  const unread: Problem[] = []
+  for (const { what, state, optional, resource } of states) {
+    if (!state.error) continue
+    const problem = {
+      what,
+      message: state.error.message,
+      code: state.error instanceof ApiError ? state.error.code : undefined,
+      resource,
     }
+    // Optional kinds (the catalog, Agents, Crews) only add details, so a
+    // failure there raises no banner: the panel that shows the kind says it.
+    if (optional) unread.push(problem)
+    else problems.push(problem)
   }
   const loaded = required.every((s) => s.state.loaded)
   let phase: Connection['phase'] = 'live'
   if (!loaded) phase = 'connecting'
   else if (required.some((s) => s.state.phase !== 'live' || s.state.error)) phase = 'reconnecting'
-  return { phase, loaded, problems }
+  return { phase, loaded, problems, unread }
 }
 
-type Watched = { what: string; watcher: ResourceWatcher<K8sObject>; optional?: boolean }
+/** The failed optional read of this kind, by its plural, if it failed. */
+export function unreadOf(connection: Connection, resource: string): Problem | undefined {
+  return connection.unread?.find((p) => p.resource === resource)
+}
+
+type Watched = { what: string; watcher: ResourceWatcher<K8sObject>; optional?: boolean; resource?: string }
 
 /** Base class: owns a set of watchers and rebuilds a cached snapshot on change. */
 abstract class WatchingSource<T> implements Source<T> {
@@ -168,7 +195,12 @@ abstract class WatchingSource<T> implements Source<T> {
 
   private changed(): void {
     const connection = combineConnection(
-      this.watched.map(({ what, watcher, optional }) => ({ what, state: watcher.getState(), optional })),
+      this.watched.map(({ what, watcher, optional, resource }) => ({
+        what,
+        state: watcher.getState(),
+        optional,
+        resource,
+      })),
     )
     // Only news from a live connection counts as an update; a retry is none.
     const live = connection.phase === 'live' && !connection.problems.length
@@ -195,6 +227,14 @@ function watcher(api: Api, plural: string, namespace?: string): ResourceWatcher<
   })
 }
 
+/** The kinds only object pages read, in words. */
+const READ_NAMES = {
+  standards: 'standards',
+  computes: 'computes',
+  deployments: 'deployments',
+  gitProviders: 'Git providers',
+} as const
+
 /** Watches every story kind in one project namespace. */
 export class LiveStorySource extends WatchingSource<StoryData> {
   private readonly namespace: string
@@ -209,13 +249,40 @@ export class LiveStorySource extends WatchingSource<StoryData> {
         { what: 'data stores', watcher: watcher(api, RESOURCES.dataStores, namespace) },
         { what: 'relationships', watcher: watcher(api, RESOURCES.relationships, namespace) },
         { what: 'sessions', watcher: watcher(api, RESOURCES.sessions, namespace) },
-        { what: 'frameworks', watcher: watcher(api, RESOURCES.frameworks, namespace), optional: true },
-        { what: 'connectors', watcher: watcher(api, RESOURCES.connectors, namespace), optional: true },
-        { what: 'crews', watcher: watcher(api, RESOURCES.crews, namespace), optional: true },
-        { what: 'agents', watcher: watcher(api, RESOURCES.agents, namespace), optional: true },
-        { what: 'tasks', watcher: watcher(api, RESOURCES.tasks, namespace), optional: true },
+        {
+          what: 'frameworks',
+          watcher: watcher(api, RESOURCES.frameworks, namespace),
+          optional: true,
+          resource: RESOURCES.frameworks,
+        },
+        {
+          what: 'connectors',
+          watcher: watcher(api, RESOURCES.connectors, namespace),
+          optional: true,
+          resource: RESOURCES.connectors,
+        },
+        { what: 'crews', watcher: watcher(api, RESOURCES.crews, namespace), optional: true, resource: RESOURCES.crews },
+        {
+          what: 'agents',
+          watcher: watcher(api, RESOURCES.agents, namespace),
+          optional: true,
+          resource: RESOURCES.agents,
+        },
+        { what: 'tasks', watcher: watcher(api, RESOURCES.tasks, namespace), optional: true, resource: RESOURCES.tasks },
         // Optional, so a cluster without the Brief kind still shows its story.
-        { what: 'briefs', watcher: watcher(api, RESOURCES.briefs, namespace), optional: true },
+        {
+          what: 'briefs',
+          watcher: watcher(api, RESOURCES.briefs, namespace),
+          optional: true,
+          resource: RESOURCES.briefs,
+        },
+        // Only their pages read them; a refused read shows there.
+        ...(['standards', 'computes', 'deployments', 'gitProviders'] as const).map((k) => ({
+          what: READ_NAMES[k],
+          watcher: watcher(api, RESOURCES[k], namespace),
+          optional: true,
+          resource: RESOURCES[k],
+        })),
       ],
       emptyStory(namespace),
     )
@@ -240,6 +307,10 @@ export class LiveStorySource extends WatchingSource<StoryData> {
       agents: this.items<Agent>(10),
       tasks: this.items<Task>(11),
       briefs: this.items<Brief>(12),
+      standards: this.items<Standard>(13),
+      computes: this.items<CatalogEntry>(14),
+      deployments: this.items<CatalogEntry>(15),
+      gitProviders: this.items<GitProvider>(16),
     }
   }
 }
@@ -278,12 +349,12 @@ export class LiveFactorySource extends WatchingSource<FactoryData> {
       [
         { what: 'projects', watcher: watcher(api, RESOURCES.projects) },
         { what: 'tasks', watcher: watcher(api, RESOURCES.tasks) },
-        { what: 'agents', watcher: watcher(api, RESOURCES.agents), optional: true },
+        { what: 'agents', watcher: watcher(api, RESOURCES.agents), optional: true, resource: RESOURCES.agents },
         { what: 'containers', watcher: watcher(api, RESOURCES.containers) },
         { what: 'sessions', watcher: watcher(api, RESOURCES.sessions) },
         // Optional, so a cluster without the Crew kind still shows its Tasks.
-        { what: 'crews', watcher: watcher(api, RESOURCES.crews), optional: true },
-        { what: 'briefs', watcher: watcher(api, RESOURCES.briefs), optional: true },
+        { what: 'crews', watcher: watcher(api, RESOURCES.crews), optional: true, resource: RESOURCES.crews },
+        { what: 'briefs', watcher: watcher(api, RESOURCES.briefs), optional: true, resource: RESOURCES.briefs },
       ],
       emptyFactory(),
     )
