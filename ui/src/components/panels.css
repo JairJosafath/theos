@@ -199,9 +199,12 @@
   border-style: dashed;
 }
 
-.session-stale .session-avatar,
-.session-stale .session-summary {
+.session-stale .session-avatar {
   opacity: 0.55;
+}
+
+.session-stale .session-summary {
+  color: var(--text-3);
 }
 
 .session-stale .session-avatar {

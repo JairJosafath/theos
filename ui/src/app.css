@@ -170,14 +170,6 @@
   cursor: pointer;
 }
 
-.picker select:focus-visible,
-.tab:focus-visible,
-.button:focus-visible,
-.icon-button:focus-visible {
-  outline: 2px solid var(--link);
-  outline-offset: 2px;
-}
-
 .banner {
   display: flex;
   align-items: flex-start;

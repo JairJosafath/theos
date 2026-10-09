@@ -239,7 +239,8 @@ export function CommandLine({ command }: { command: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="command-line">
-      <code>{command}</code>
+      {/* Focusable, so a keyboard can scroll a line wider than the box. */}
+      <code tabIndex={0}>{command}</code>
       <button
         type="button"
         className="button button-secondary button-small"
