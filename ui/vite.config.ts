@@ -27,6 +27,10 @@ function k8sGateway(): Plugin {
 export default defineConfig({
   // Relative asset URLs, so the build works behind any path prefix.
   base: './',
+  // The release this UI is: the image's VERSION build arg (Dockerfile), dev otherwise.
+  define: {
+    __C4_UI_VERSION__: JSON.stringify(process.env.C4_UI_VERSION || 'dev'),
+  },
   plugins: [react(), k8sGateway()],
   test: {
     include: ['src/**/*.test.ts'],

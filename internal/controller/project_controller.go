@@ -53,6 +53,10 @@ type ProjectReconciler struct {
 	// SharedSecretsRecheck is how often an opted-in Project looks at its
 	// sources again; DefaultSharedSecretsRecheck when zero.
 	SharedSecretsRecheck time.Duration
+	// OperatorVersion and ChartVersion are written to status.factory:
+	// buildinfo.Version and the chart's C4_CHART_VERSION.
+	OperatorVersion string
+	ChartVersion    string
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects,verbs=get;list;watch;create;update;patch;delete
@@ -165,6 +169,7 @@ func (r *ProjectReconciler) rollUp(ctx context.Context, project *c4v1alpha1.Proj
 	status.ReadyContainers = int32(ready)
 	status.ActiveSessions = int32(active)
 	status.Summary = model.Summary(ready, len(containers.Items), active)
+	status.Factory = &c4v1alpha1.FactoryVersions{OperatorVersion: r.OperatorVersion, ChartVersion: r.ChartVersion}
 	return nil
 }
 

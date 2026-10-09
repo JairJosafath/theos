@@ -111,4 +111,16 @@ var _ = Describe("Project", func() {
 				To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 	})
+
+	It("reports the operator's and the chart's versions", func() {
+		ns := newProjectNamespace()
+		Eventually(func(g Gomega) {
+			var project c4v1alpha1.Project
+			g.Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+			g.Expect(project.Status.Factory).To(Equal(&c4v1alpha1.FactoryVersions{
+				OperatorVersion: testOperatorVersion,
+				ChartVersion:    testChartVersion,
+			}))
+		}).Should(Succeed())
+	})
 })

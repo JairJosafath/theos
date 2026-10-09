@@ -142,6 +142,22 @@ spec:
                 description: containers is the number of Containers in the project.
                 format: int32
                 type: integer
+              factory:
+                description: |-
+                  factory is the operator that last reconciled the Project: its version
+                  and the Helm chart's it was installed with. The UI compares them with
+                  its own.
+                properties:
+                  chartVersion:
+                    description: |-
+                      chartVersion is the Helm chart's version the operator was installed
+                      with, empty when it wasn't installed by the chart.
+                    type: string
+                  operatorVersion:
+                    description: operatorVersion is the operator's release, "dev"
+                      for an unreleased build.
+                    type: string
+                type: object
               readyContainers:
                 description: readyContainers is the number of Containers in phase
                   Ready.

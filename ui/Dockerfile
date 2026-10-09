@@ -11,6 +11,10 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
+# The release this image is; vite.config.ts defines it as __C4_UI_VERSION__.
+# release.yml passes it, a local build stays dev.
+ARG VERSION=dev
+ENV C4_UI_VERSION=${VERSION}
 RUN npm run build
 
 FROM ${NODE_IMAGE}

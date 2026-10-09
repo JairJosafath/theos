@@ -463,6 +463,23 @@
   text-align: center;
 }
 
+.versions p {
+  margin: 8px 0 0;
+}
+
+.versions-skew {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warn);
+}
+
+.versions-skew svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
 .empty {
   max-width: 620px;
   margin: 72px auto;
