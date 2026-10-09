@@ -85,6 +85,9 @@ describe('server.mjs', () => {
       if (url.pathname === `${briefs}fresh`) {
         return json(200, { kind: 'Brief', metadata: { name: 'fresh', resourceVersion: '8' }, spec: { idea: 'x' } })
       }
+      if (url.pathname === '/apis/c4.factory.io/v1alpha1/namespaces/webshop/crews/orders-api') {
+        return json(200, { kind: 'Crew', metadata: { name: 'orders-api', resourceVersion: '7' }, spec: {} })
+      }
       if (url.pathname === `${briefs}gone`) {
         return json(404, { kind: 'Status', code: 404, reason: 'NotFound', message: 'briefs "gone" not found' })
       }
@@ -483,15 +486,7 @@ describe('server.mjs', () => {
           add('/spec/parallel', 3),
           add('/spec/tagReleases', true),
           add('/spec/prepareReleases', false),
-          add('/spec/publishReleases', { registry: 'ghcr.io' }),
         ],
-      ],
-      [
-        "a Crew's publishing turned off, with its tagging",
-        'PATCH',
-        '/crews/orders-api',
-        JP,
-        [{ op: 'remove', path: '/spec/publishReleases' }, add('/spec/tagReleases', false)],
       ],
       [
         "a Crew's release re-run",
@@ -579,6 +574,40 @@ describe('server.mjs', () => {
       )
     })
 
+    const publish = add('/spec/publishReleases', { github: { repository: 'webshop-co/orders-api' } })
+
+    it("sets a Crew's publishing worked out from the Crew as it is, test and all", async () => {
+      for (const body of [
+        [tested('7'), add('/spec/tagReleases', true), publish],
+        [tested('7'), { op: 'remove', path: '/spec/publishReleases' }, add('/spec/tagReleases', false)],
+      ]) {
+        seen.length = 0
+        const res = await write('PATCH', '/crews/orders-api', body, JP)
+        assert.equal(res.status, 200)
+        assert.deepEqual(
+          seen.map((r) => [r.method, r.url]),
+          [
+            ['GET', `${api}/crews/orders-api`],
+            ['PATCH', `${api}/crews/orders-api?fieldManager=c4-factory-ui`],
+          ],
+        )
+        assert.deepEqual(seen[1].body, body)
+      }
+    })
+
+    it("refuses a Crew's publishing worked out from a stale Crew as a Conflict, and writes nothing", async () => {
+      seen.length = 0
+      const res = await write('PATCH', '/crews/orders-api', [tested('6'), publish], JP)
+      assert.equal(res.status, 409)
+      const answer = await res.json()
+      assert.equal(answer.reason, 'Conflict')
+      assert.match(answer.message, /^Crew webshop\/orders-api changed since this page showed it, so nothing was saved/)
+      assert.deepEqual(
+        seen.map((r) => r.method),
+        ['GET'],
+      )
+    })
+
     it("passes the API server's refusal back as-is", async () => {
       seen.length = 0
       const res = await write('PATCH', '/crews/denied', [add('/spec/parallel', 0)], JP)
@@ -640,6 +669,16 @@ describe('server.mjs', () => {
       ],
       ['a test of an empty resourceVersion', 'PATCH', '/briefs/lens', JP, [tested(''), releases], 403],
       ['a test alone', 'PATCH', '/briefs/lens', JP, [tested('7')], 403],
+      ["a Crew's publishing with no test of its resourceVersion", 'PATCH', '/crews/orders-api', JP, [publish], 403],
+      [
+        "a Crew's publishing removed with no test of its resourceVersion",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [{ op: 'remove', path: '/spec/publishReleases' }],
+        403,
+      ],
+      ['a test of a Crew alone', 'PATCH', '/crews/orders-api', JP, [tested('7')], 403],
       [
         'a Brief setting with a prompt',
         'PATCH',
