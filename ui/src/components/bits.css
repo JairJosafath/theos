@@ -1,0 +1,211 @@
+/* The small pieces bits.tsx draws for every view: badges, pills, avatars,
+   the model and agent names, checks (conditions) and usage lines. */
+
+/* Badges and avatars */
+
+.badge {
+  --tone: var(--unknown);
+  --tone-bg: var(--unknown-bg);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--tone-bg);
+  color: var(--tone);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.badge-sm {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badge-progress .badge-dot {
+  animation: blink 1.4s ease-in-out infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.badge-ok,
+.tone-ok,
+.check-ok,
+.pill-ok {
+  --tone: var(--ok);
+  --tone-bg: var(--ok-bg);
+}
+
+.badge-progress,
+.tone-progress,
+.check-progress {
+  --tone: var(--progress);
+  --tone-bg: var(--progress-bg);
+}
+
+.badge-waiting,
+.tone-waiting,
+.check-waiting,
+.pill-waiting {
+  --tone: var(--waiting);
+  --tone-bg: var(--waiting-bg);
+}
+
+.badge-error,
+.tone-error,
+.check-error {
+  --tone: var(--error);
+  --tone-bg: var(--error-bg);
+}
+
+.badge-unknown,
+.tone-unknown,
+.check-unknown,
+.pill-muted {
+  --tone: var(--unknown);
+  --tone-bg: var(--unknown-bg);
+}
+
+.pill-warn {
+  --tone: var(--warn);
+  --tone-bg: var(--waiting-bg);
+}
+
+.avatars {
+  display: inline-flex;
+}
+
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--agent-bg);
+  color: var(--agent);
+}
+
+.avatar-human {
+  background: var(--human-bg);
+  color: var(--human);
+}
+
+.avatars .avatar {
+  border: 2px solid var(--c4-container);
+}
+
+.avatars .avatar + .avatar {
+  margin-left: -6px;
+}
+
+.avatar-stale {
+  opacity: 0.5;
+  filter: grayscale(1);
+}
+
+/* Checks (conditions) */
+
+.checks {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+}
+
+.check-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--tone-bg);
+  color: var(--tone);
+}
+
+.check-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 18px;
+}
+
+.check-detail {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 1px;
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--text-2);
+}
+
+.check-tech {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.pill {
+  --tone: var(--unknown);
+  --tone-bg: var(--unknown-bg);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--tone-bg);
+  color: var(--tone);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* The model an Agent runs, after its name. */
+
+.model {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.agent-name {
+  overflow-wrap: anywhere;
+}
+
+.usage .sep {
+  margin: 0 5px;
+  opacity: 0.6;
+}
+
+.usage-past {
+  color: var(--warn);
+  font-weight: 600;
+}

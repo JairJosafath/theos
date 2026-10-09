@@ -19,7 +19,7 @@ import {
   type Session,
 } from '../k8s/types'
 import { describeContainerType, plural, titleOf } from './describe'
-import { activeCrewTasks, crewSummary, type CrewSummary } from './factory'
+import { activeCrewTasks, crewSummary, type CrewSummary } from './crews'
 
 export type NodeRole = 'person' | 'system' | 'external-system' | 'container' | 'datastore'
 

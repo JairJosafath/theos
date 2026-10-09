@@ -6,11 +6,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useElementWidth } from '../lib/hooks'
 import { describeContainerPhase } from '../model/describe'
 import { layoutDiagram, type Layout, type Rect } from '../model/layout'
-import { nodeSize } from '../model/sizes'
+import { cardSizeVars, nodeSize } from '../model/sizes'
 import type { ContainerNode, Diagram as DiagramModel, DiagramEdge } from '../model/story'
 import { ConditionList, PhaseBadge } from './bits'
 import { WarningIcon } from './icons'
 import { NodeCard } from './NodeCard'
+import './diagram.css'
 
 export interface DiagramProps {
   diagram: DiagramModel
@@ -60,7 +61,7 @@ export function Diagram({ diagram, selectedId, onSelect, onOpenSystem, emptyBoun
         <div className="diagram-sizer" style={{ width: layout.width * scale, height: layout.height * scale }}>
           <div
             className="diagram-canvas"
-            style={{ width: layout.width, height: layout.height, transform: `scale(${scale})` }}
+            style={{ ...cardSizeVars, width: layout.width, height: layout.height, transform: `scale(${scale})` }}
           >
             <svg className="diagram-svg" width={layout.width} height={layout.height} aria-hidden="true">
               <defs>

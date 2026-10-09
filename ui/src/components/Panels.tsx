@@ -3,33 +3,26 @@
 
 import type { StoryData } from '../k8s/sources'
 import type { Condition, ContainerPhase } from '../k8s/types'
-import { describeContainerPhase, plural, splitTemplateRef } from '../model/describe'
-import { crewDoing, issueList, type ActiveCrewTask, type CrewSummary } from '../model/factory'
+import { useNow } from '../lib/hooks'
+import { describeContainerPhase, KIND_LABEL, plural, splitTemplateRef } from '../model/describe'
+import { crewDoing, issueList, type ActiveCrewTask, type CrewSummary } from '../model/crews'
 import { linksOf, type ContainerNode, type DiagramNode, type Link } from '../model/story'
 import { AgentName, ConditionList, CrewPhaseBadge, PhaseBadge, SessionRow } from './bits'
 import { AgentIcon, ArrowRightIcon, CrossIcon, ExternalLinkIcon, HumanIcon, WarningIcon } from './icons'
-
-const KIND_LABEL: Record<DiagramNode['role'], string> = {
-  person: 'Person',
-  system: 'Software system',
-  'external-system': 'Software system (outside this one)',
-  container: 'Container',
-  datastore: 'Data store',
-}
+import './panels.css'
 
 export function DetailsPanel({
   node,
   data,
-  now,
   onClose,
   onOpenSystem,
 }: {
   node: DiagramNode
   data: StoryData
-  now: number
   onClose: () => void
   onOpenSystem: (name: string) => void
 }) {
+  const now = useNow()
   const links = linksOf(data, node.kind, node.name)
   return (
     <section className="panel details" aria-label={`Details of ${node.title}`}>
@@ -263,14 +256,13 @@ function LinkRow({ link }: { link: Link }) {
 export function SessionsPanel({
   containers,
   tasks,
-  now,
   scope,
 }: {
   containers: ContainerNode[]
   tasks: ActiveCrewTask[]
-  now: number
   scope: string
 }) {
+  const now = useNow()
   const withSessions = containers.filter((c) => c.sessions.length)
   const all = withSessions.flatMap((c) => c.sessions)
   const active = all.filter((s) => s.status?.phase === 'Active').length

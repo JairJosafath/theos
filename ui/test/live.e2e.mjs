@@ -7,95 +7,17 @@
 // (npx playwright install chromium-headless-shell, once)
 
 import assert from 'node:assert/strict'
-import http from 'node:http'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { launchChromium } from '../scripts/browser.mjs'
 import { createServer, resolveUpstream } from '../server.mjs'
+import { fakeApi, listen } from './fakeApi.mjs'
 // The UI's own list of kinds, so the fake API serves and the test expects every one.
 import { RESOURCES, resourcePath } from '../src/k8s/types.ts'
 
 const NS = 'webshop'
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
-
-/** A tiny in-memory API server for the c4.factory.io kinds, with watches. */
-function fakeApi() {
-  let rv = 1
-  const store = new Map() // plural -> Map(name -> object)
-  const watchers = new Map() // plural -> Set(res)
-  const kinds = Object.values(RESOURCES)
-  for (const k of kinds) {
-    store.set(k, new Map())
-    watchers.set(k, new Set())
-  }
-  const put = (plural, obj) => {
-    obj.metadata = { namespace: NS, ...obj.metadata, resourceVersion: String(++rv) }
-    store.get(plural).set(obj.metadata.name, obj)
-    return obj
-  }
-  // Every event, so a watch from resourceVersion R first gets what happened
-  // after R, as the real API server does.
-  const history = []
-  const send = (plural, type, obj) => {
-    history.push({
-      plural,
-      rv: Number(obj.metadata.resourceVersion),
-      line: `${JSON.stringify({ type, object: obj })}\n`,
-    })
-    for (const res of watchers.get(plural)) res.write(history.at(-1).line)
-  }
-  const server = http.createServer((req, res) => {
-    const url = new URL(req.url, 'http://x')
-    const m = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1alpha1(?:\/namespaces\/([^/]+))?\/([a-z]+)$/)
-    if (!m || !store.has(m[2])) {
-      res.writeHead(404, { 'content-type': 'application/json' })
-      return res.end(JSON.stringify({ kind: 'Status', code: 404, message: 'not found' }))
-    }
-    const plural = m[2]
-    if (url.searchParams.get('watch') === '1') {
-      res.writeHead(200, { 'content-type': 'application/json' })
-      res.flushHeaders()
-      const from = Number(url.searchParams.get('resourceVersion') || 0)
-      for (const h of history) if (h.plural === plural && h.rv > from) res.write(h.line)
-      watchers.get(plural).add(res)
-      res.on('close', () => watchers.get(plural).delete(res))
-      return
-    }
-    res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ metadata: { resourceVersion: String(rv) }, items: [...store.get(plural).values()] }))
-  })
-  return {
-    server,
-    watchers,
-    add(plural, obj) {
-      send(plural, 'ADDED', put(plural, obj))
-    },
-    modify(plural, obj) {
-      send(plural, 'MODIFIED', put(plural, obj))
-    },
-    remove(plural, name) {
-      const obj = store.get(plural).get(name)
-      store.get(plural).delete(name)
-      send(plural, 'DELETED', { ...obj, metadata: { ...obj.metadata, resourceVersion: String(++rv) } })
-    },
-    /** Ends every open watch of a kind with an "expired" error, as the API does after compaction. */
-    expire(plural) {
-      for (const res of [...watchers.get(plural)]) {
-        watchers.get(plural).delete(res)
-        res.end(
-          `${JSON.stringify({ type: 'ERROR', object: { kind: 'Status', code: 410, reason: 'Expired', message: 'too old resource version' } })}\n`,
-        )
-      }
-    },
-  }
-}
-
-function listen(server) {
-  return new Promise((resolve) =>
-    server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}`)),
-  )
-}
 
 describe('live updates in the browser', () => {
   let api
@@ -107,7 +29,7 @@ describe('live updates in the browser', () => {
   const requests = []
 
   before(async () => {
-    api = fakeApi()
+    api = fakeApi(NS)
     const apiUrl = await listen(api.server)
     api.add('projects', { metadata: { name: NS }, spec: { displayName: 'Webshop' } })
     api.add('people', { metadata: { name: 'customer' }, spec: { displayName: 'Customer' } })
@@ -216,9 +138,8 @@ describe('live updates in the browser', () => {
     })
     await card().getByText('Orders API (v2)').waitFor({ timeout: 10000 })
     // And it is watching again afterwards.
-    for (let i = 0; i < 50 && api.watchers.get('containers').size === 0; i++)
-      await new Promise((r) => setTimeout(r, 100))
-    assert.ok(api.watchers.get('containers').size > 0, 'a new watch is open')
+    for (let i = 0; i < 50 && api.watching('containers') === 0; i++) await new Promise((r) => setTimeout(r, 100))
+    assert.ok(api.watching('containers') > 0, 'a new watch is open')
   })
 
   it('watches all kinds over a few connections, not one each', () => {

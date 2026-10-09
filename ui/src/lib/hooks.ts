@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore } from 'react'
 import type { Snapshot, Source } from '../k8s/sources'
 
 /** Subscribes to a data source for as long as the component is mounted. */
@@ -13,14 +13,50 @@ export function useSource<T>(source: Source<T>): Snapshot<T> {
   )
 }
 
-/** The current time, updated every `intervalMs`, for "12 s ago" style labels. */
-export function useNow(intervalMs = 1000): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), intervalMs)
-    return () => clearInterval(timer)
-  }, [intervalMs])
-  return now
+/** A fixed time for every useNow below it, for tests; unset, useNow follows the clock. */
+export const FixedNow = createContext<number | undefined>(undefined)
+
+/**
+ * One clock for the whole page, ticking every second while anything shows it,
+ * so two panels showing the same heartbeat agree.
+ */
+const clock = {
+  now: Date.now(),
+  listeners: new Set<() => void>(),
+  timer: undefined as ReturnType<typeof setInterval> | undefined,
+  subscribe(listener: () => void): () => void {
+    clock.listeners.add(listener)
+    if (!clock.timer) {
+      clock.now = Date.now()
+      clock.timer = setInterval(() => {
+        clock.now = Date.now()
+        for (const l of clock.listeners) l()
+      }, 1000)
+    }
+    return () => {
+      clock.listeners.delete(listener)
+      if (!clock.listeners.size) {
+        clearInterval(clock.timer)
+        clock.timer = undefined
+      }
+    }
+  },
+}
+const noSubscription = () => () => undefined
+
+/**
+ * The current time, updated every second, for "12 s ago" style labels. Only
+ * the components that show a running clock call it, so the tick re-renders
+ * them and nothing above them.
+ */
+export function useNow(): number {
+  const fixed = useContext(FixedNow)
+  const now = useSyncExternalStore(
+    fixed === undefined ? clock.subscribe : noSubscription,
+    () => clock.now,
+    () => clock.now,
+  )
+  return fixed ?? now
 }
 
 export type View = 'context' | 'containers' | 'factory'

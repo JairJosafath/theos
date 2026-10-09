@@ -2,24 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { demoFactory, demoHealth } from '../demo/factoryFixture'
 import type { FactoryHealth } from '../k8s/health'
 import type { Agent, Brief, Container, Crew, Session, Task, TaskTransition } from '../k8s/types'
+import { attention, briefOn, recentStall } from './attention'
+import { activeCrewTasks, crewDoing, crewSummaries, crewSummary } from './crews'
 import {
-  activeCrewTasks,
   agentBackAt,
   agentRole,
-  attention,
   boardColumns,
-  briefOn,
-  crewDoing,
-  crewSummaries,
-  crewSummary,
   currentStage,
   factoryStats,
   followUpLinks,
   stageOf,
   standardChangeLink,
-  formatClock,
-  formatDuration,
-  recentStall,
   slotQueue,
   taskHeadline,
   taskRoles,
@@ -27,6 +20,7 @@ import {
   timeByStage,
   timelineSteps,
 } from './factory'
+import { formatClock, formatDuration } from './format'
 
 const T0 = Date.parse('2026-10-01T12:00:00Z')
 const at = (min: number) => new Date(T0 + min * 60_000).toISOString()
@@ -702,6 +696,13 @@ describe('formatDuration', () => {
     [120 * 60_000, '2 h'],
     [76 * 60 * 60_000, '3 d 4 h'],
   ])('formats %d ms as %s', (ms, want) => expect(formatDuration(ms)).toBe(want))
+
+  it.each([
+    [2, '2 ms'],
+    [999, '999 ms'],
+    [1500, '1.5 s'],
+    [90_000, '90.0 s'],
+  ])('formats a fine %d ms as %s', (ms, want) => expect(formatDuration(ms, { fine: true })).toBe(want))
 })
 
 describe('timelineSteps', () => {
