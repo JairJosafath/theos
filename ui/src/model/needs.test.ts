@@ -76,7 +76,13 @@ describe('needs', () => {
             ...repo,
             conditions: [
               cond('ReferencesResolved', 'True', 'Resolved', ''),
-              cond('Scaffolded', 'False', 'ForeignCommits', 'The repository has commits the factory did not make'),
+              cond('Scaffolded', 'False', 'Scaffolding', 'Creating the repository and rendering the templates'),
+              cond(
+                'RepositoryCreated',
+                'False',
+                'ForeignCommits',
+                'The repository has commits the factory did not make',
+              ),
             ],
           }),
         ],

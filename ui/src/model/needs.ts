@@ -55,6 +55,9 @@ export const RELEASE_HELD_BY_PERSON = ['NoMergedIssue', 'TagClash', 'MergedAfter
 /** The StandardUpdated reasons whose update pull request waits on a person. */
 export const STANDARD_UPDATE_HELD = ['ChecksFailed', 'UpdateRefused']
 
+/** Condition reasons that say a Container is on its way, not why it failed. */
+const IN_PROGRESS = ['Scaffolding', 'WaitingForScaffold']
+
 /** Every item, grouped by namespace in name order, oldest first within each. */
 export function needs(input: NeedsInput): Need[] {
   const items: Need[] = [
@@ -118,7 +121,8 @@ function containerNeeds(c: Container): Need[] {
   }
   const items: Need[] = []
   if (c.status?.phase === 'Failed') {
-    const failed = (c.status.conditions ?? []).find((cond) => cond.status === 'False')
+    const unmet = (c.status.conditions ?? []).filter((cond) => cond.status === 'False')
+    const failed = unmet.find((cond) => !IN_PROGRESS.includes(cond.reason ?? '')) ?? unmet[0]
     items.push({
       ...base('Container', c, 'Failed'),
       title: 'failed to scaffold',

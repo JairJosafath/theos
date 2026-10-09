@@ -128,7 +128,11 @@ export default function App() {
   const story = useSource(storySource)
   const data = story.data
   const needItems = useMemo(() => needs(factory.data), [factory.data])
-  const pickArea = shell && !url.area && !objectPage && factory.connection.loaded
+  // Every list, Briefs and Crews included, so a late one can't hide its items;
+  // a factory that can't be read goes to Story rather than waiting on it.
+  const factoryRead = factory.connection.settled ?? factory.connection.loaded
+  const factoryBroken = factory.connection.problems.length > 0 || Boolean(demoProblem)
+  const pickArea = shell && !url.area && !objectPage && ((factory.connection.loaded && factoryRead) || factoryBroken)
   const firstArea = needItems.length > 0 ? 'needs' : 'story'
   useEffect(() => {
     // Once, so the area doesn't change under the person as items come and go.
