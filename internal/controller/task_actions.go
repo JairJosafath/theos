@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -251,8 +252,12 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		status.IssueTitle, status.IssueURL = issue.Title, issue.URL
 		goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
 		if firstIssueRun {
-			if err := r.continueEarlierTry(protectCtx, provider, repo, task, status); err != nil {
+			commit, err := r.continueEarlierTry(protectCtx, provider, repo, task, status)
+			if err != nil {
 				return ctrl.Result{}, err
+			}
+			if commit != "" {
+				return r.startAtReview(ctx, task, status, commit)
 			}
 		}
 	}
@@ -281,7 +286,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	// Comment with the sandbox that starts the first run, not when a retry
 	// finds it made: then the status write after it failed, and the comments
 	// are there.
-	if err == nil && firstIssueRun {
+	if err == nil && (firstIssueRun || firstReviewAtStart(status, role)) {
 		if status.Continues != "" {
 			r.noteContinued(protectCtx, provider, repo, task, status)
 		}
@@ -291,6 +296,29 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", message, name))
 	logf.FromContext(ctx).Info("Started agent sandbox", "sandbox", name, "role", role, "round", status.Round)
 	return ctrl.Result{}, nil
+}
+
+// startAtReview starts a try that continues an earlier try's green, unreviewed
+// commit at its checks, with no implementer run: they pass, so the next step
+// starts the review (model.StartsAtReview). The review's first sandbox posts
+// the comments a first run does, so a failed status write here posts none.
+func (r *TaskReconciler) startAtReview(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	commit string) (ctrl.Result, error) {
+	setProgress(status, model.InheritedChecks(progressOf(status), commit))
+	r.progress(task, status, metav1.ConditionTrue, "Checking", model.StartAtReviewMessage(commit, status.Continues))
+	logf.FromContext(ctx).Info("Starting a try at the earlier try's review", "commit", commit,
+		"earlierTask", status.Continues)
+	return ctrl.Result{}, nil // the status write triggers the next step
+}
+
+// firstReviewAtStart reports whether role's run is the first of a try that
+// started at review (startAtReview): its round 1 never implemented.
+func firstReviewAtStart(status *c4v1alpha1.TaskStatus, role string) bool {
+	return role == model.RoleReviewer && status.Continues != "" && status.Round == 1 &&
+		status.ReviewAttempts == 0 && status.Reruns == 0 &&
+		!slices.ContainsFunc(status.History, func(h c4v1alpha1.TaskTransition) bool {
+			return h.Phase == c4v1alpha1.TaskImplementing
+		})
 }
 
 // agentCredentials reports whether the Agent's credentials Secret, if it names
@@ -587,7 +615,8 @@ func (r *TaskReconciler) reviewRun(ctx context.Context, task *c4v1alpha1.Task,
 }
 
 // endRun deletes the current sandbox, once its result is in status, adds
-// what the run cost to the Task's, and posts when its sessions handed off.
+// what the run cost to the Task's, records the run, and posts when its
+// sessions handed off.
 func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) error {
 	if status.Sandbox == "" {
 		return nil
@@ -610,12 +639,26 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, stat
 	status.CostMilliUSD += milliUSD
 	status.RunsWithoutCost += withoutCost
 	status.Tokens = addTokens(status.Tokens, run.Tokens())
+	if rec, ok := run.Record(int(status.Round), status.Sandbox, r.now()); ok {
+		status.Runs = model.KeepNewest(append(status.Runs, runRecord(rec)), model.MaxRunRecords)
+	}
 	if run.Result != nil && len(run.Result.SessionHandoffs) > 0 && r.Recorder != nil {
 		r.Recorder.Eventf(task, nil, corev1.EventTypeNormal, eventSessionHandedOff, "HandOff", "%s",
 			model.HandoffNote(int(status.Round), run.Result.Role, run.Result.SessionHandoffs))
 	}
 	status.Sandbox, status.SandboxPod = "", ""
 	return nil
+}
+
+// runRecord is rec as Task status keeps it.
+func runRecord(rec model.RunRecord) c4v1alpha1.TaskAgentRun {
+	out := c4v1alpha1.TaskAgentRun{Round: int32(rec.Round), Role: rec.Role, Sandbox: rec.Sandbox,
+		EndedAt: metav1.NewTime(rec.EndedAt), SessionHandoffs: rec.SessionHandoffs,
+		Tokens: addTokens(nil, rec.Tokens)}
+	if rec.CostReported {
+		out.CostMilliUSD = &rec.CostMilliUSD
+	}
+	return out
 }
 
 // addTokens adds add to tokens, which stays nil while nothing is counted.
@@ -684,7 +727,11 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1alpha1.Task, status
 	}
 	r.dropProposal(ctx, task, status, container)
 	r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, reason, message)
-	r.handBack(ctx, task, container, message)
+	why := message
+	if reason == model.ReasonNoCIResult {
+		why += "\n\nCI never reported, so this try doesn't count towards the limit; start or fix the runner first."
+	}
+	r.handBack(ctx, task, container, why)
 	logf.FromContext(ctx).Info("Failed Task", "reason", reason, "message", message)
 	return nil
 }

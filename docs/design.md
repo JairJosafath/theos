@@ -233,7 +233,8 @@ enforces.
   checks' result; the Git host's Actions runs at the head commit say whether
   the job is queued or running, and its runners whether one is online. A run
   queued while a runner is online, behind other jobs, is waited for (up to 6
-  hours), and a running one up to its runner's 3 hour job timeout. The Task
+  hours), and a running one up to 3 hours 15 minutes: its runner's 3 hour job
+  timeout, plus 15 minutes for the runner to report the result. The Task
   fails, reason `NoCIResult`, when no run starts within 30 minutes, when its
   run is queued with no runner online 30 minutes in, or past those bounds.
   That failure is the infrastructure's, so it costs the issue no try; a later
@@ -302,7 +303,12 @@ without kubectl, and cheaply: it lives on a laptop.
   unreported. After three handoffs in one call the last session runs to its
   end. A custom `C4AGENT_COMMAND` runs one session, unguarded. The Task counts
   handoffs in `status.tokens.sessionHandoffs`, with a `SessionHandedOff` Event
-  for each run that handed off, saying the sizes it happened at.
+  for each run that handed off, saying the sizes it happened at. It also
+  keeps a record of each agent run as it ends in `status.runs` (the newest
+  64): its round and role, what it cost and used, and the sizes its sessions
+  handed off at, so the Task page names the run that handed off ("Run 3
+  (round 2, implement) handed off 2 times, at 131k and 138k tokens") without
+  reading Events.
 - **The UI has a Factory view** next to the story, across all projects: component
   health with CPU and memory, the last hour, the Tasks on a board by stage with
   their timelines, where the time goes, agent slots, and what needs a look.
@@ -354,7 +360,10 @@ model and context it needs.
   first after the Standard changes that `Blocked` Tasks wait on, up to three
   tries per issue (a `NoCIResult` failure is not one). A try continues an earlier try's pull request that is
   still open: it works on that branch, with that try's feedback, and reports
-  to that pull request (`status.continues` names the earlier Task). A round
+  to that pull request (`status.continues` names the earlier Task). When the
+  earlier try ended waiting for the checks of its commit, that commit is still
+  the head, and its checks now pass, the try skips the implementer: it enters
+  `Checking` at that commit and starts the review. A round
   that changes only the pull request, such as its description, and commits
   nothing goes to the reviewer as it is, and merges when approved; without a
   pull request, a round with no commit has nothing to review

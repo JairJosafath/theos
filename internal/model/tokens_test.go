@@ -1,6 +1,11 @@
 package model
 
-import "testing"
+import (
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestRunStateTokens(t *testing.T) {
 	used := &TokenUsage{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4, LargestSession: 8}
@@ -54,6 +59,44 @@ func TestHandoffNote(t *testing.T) {
 	for _, tt := range tests {
 		if got := HandoffNote(tt.round, tt.role, tt.sizes); got != tt.want {
 			t.Errorf("HandoffNote(%d, %q, %v) = %q, want %q", tt.round, tt.role, tt.sizes, got, tt.want)
+		}
+	}
+}
+
+func TestRunRecord(t *testing.T) {
+	at := time.Date(2026, 10, 9, 3, 0, 0, 0, time.UTC)
+	if _, ok := (RunState{}).Record(1, "add-crop-r1-implement", at); ok {
+		t.Error("a sandbox that is gone has a record")
+	}
+	got, _ := RunState{Started: true, Done: true, Result: &RunResult{Role: "review", CostMilliUSD: 120, CostReported: true,
+		SessionHandoffs: []int64{1, 2, 3, 4, 5, 6, 7, 8, 9}}}.Record(2, "add-crop-r2-review-a1", at)
+	want := RunRecord{Round: 2, Role: "review", Sandbox: "add-crop-r2-review-a1", EndedAt: at, CostMilliUSD: 120,
+		CostReported: true, Tokens: TokenUsage{RunsWithout: 1, SessionHandoffs: 9},
+		SessionHandoffs: []int64{1, 2, 3, 4, 5, 6, 7, 8}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Record = %+v, want %+v", got, want)
+	}
+	got, _ = RunState{Started: true, Done: true, Failure: "OOMKilled"}.Record(1, "add-crop-r1-implement-x1", at)
+	if got.Role != RoleImplementer || got.CostReported || got.Tokens != (TokenUsage{RunsWithout: 1}) {
+		t.Errorf("a run without a result: %+v", got)
+	}
+}
+
+func TestSandboxRole(t *testing.T) {
+	for name, want := range map[string]string{
+		"add-crop-r1-implement":    RoleImplementer,
+		"add-crop-r1-implement-x2": RoleImplementer,
+		"add-crop-r3-review-a2":    RoleReviewer,
+		"add-crop-r3-review-a2-x1": RoleReviewer,
+		"plan-review-r1-plan":      RolePlanner,
+		"fix-review-r1-implement":  RoleImplementer,
+		"add-crop":                 "",
+		"add-crop-rx-implement":    "",
+		"implement-r1-reviewer-a1": "",
+		SandboxName(strings.Repeat("long-task-", 8), 2, RoleReviewer, 1, 3): RoleReviewer,
+	} {
+		if got := SandboxRole(name); got != want {
+			t.Errorf("SandboxRole(%q) = %q, want %q", name, got, want)
 		}
 	}
 }

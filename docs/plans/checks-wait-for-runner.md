@@ -92,7 +92,10 @@ The failure handed the issue back and spent one of its three tries.
    that commit now pass, skips the implementer: it enters `Checking` at that
    commit, sees success, and starts the review, as any Task with passing
    checks does. Checks still pending or failed, or a head someone moved, start
-   round 1 as today. The reviewer, not the implementer, is what a finished
+   round 1 as today. So does an earlier try that ended after its reviewer
+   judged the commit (it asked for changes it never got): only a try that
+   ended waiting for that commit's checks, its last phase before `Failed`
+   being `Checking`, left work no one reviewed (#759). The reviewer, not the implementer, is what a finished
    change still needs; this is the "shouldn't need a fresh try from scratch"
    of the report, without reviving a Failed Task (a Failed Task stays
    terminal; its pull request carries the work).
