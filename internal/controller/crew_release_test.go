@@ -259,6 +259,37 @@ var _ = Describe("Crew releases", func() {
 		}).Should(Succeed())
 	})
 
+	It("releases an issue its Standard change did at the change's merge", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssueAt(ns, "5a-merge")
+		change := getTask(Default, ns, "orders-api-merged").Spec.Issue
+		n := gitFake.addIssue(ns, "orders-api", "Tidy the Makefile", clearIssue, nil)
+		gitFake.setIssueRelease(ns, "orders-api", n, "v0.1.0", releaseDue)
+		Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
+		mergedTask(ns, "orders-api-done", n, "", time.Now())
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-done")
+			task.Status.StandardChange = &c4v1alpha1.TaskStandardChange{Issue: change, Paths: []string{"Makefile"},
+				Count: 1}
+			task.Status.Conditions = append(task.Status.Conditions, metav1.Condition{Type: ConditionSucceeded,
+				Status: metav1.ConditionTrue, Reason: reasonDoneByStandardChange, Message: "done",
+				LastTransitionTime: metav1.Now()})
+			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
+		}).Should(Succeed())
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(Equal("5a-merge"))
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReleased)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		}).Should(Succeed())
+	})
+
 	It("drops the Released condition when spec.tagReleases is switched off", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
