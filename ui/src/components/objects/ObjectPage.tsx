@@ -34,6 +34,7 @@ export function ObjectPage({
     if (crew)
       return (
         <CrewPage
+          key={`${crew.metadata.namespace}/${name}`}
           crew={crew}
           agents={data.agents}
           tasks={data.tasks}

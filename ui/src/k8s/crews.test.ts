@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LiveCrewWriter, RERUN_RELEASE, releasePatch, releaseSettings } from './crews'
+import { LiveCrewWriter, RERUN_RELEASE, releasePatch, releaseSettings, settledEdits } from './crews'
 import type { Crew } from './types'
 
 const base: Crew = {
@@ -48,6 +48,26 @@ describe('a Crew’s release settings as a patch', () => {
       { op: 'add', path: '/spec/tagReleases', value: false },
       { op: 'remove', path: '/spec/publishReleases' },
     ])
+  })
+})
+
+describe('a form’s edits over a Crew that changes', () => {
+  it('never writes back a field the person did not touch', () => {
+    // The person ticks Prepare; meanwhile someone else turns tagging on.
+    const edits = { prepareReleases: true }
+    const changed: Crew = { ...base, spec: { ...base.spec, tagReleases: true } }
+    expect(releasePatch(changed, { ...releaseSettings(changed), ...edits })).toEqual([
+      { op: 'add', path: '/spec/prepareReleases', value: true },
+    ])
+  })
+
+  it('drops the edits the Crew now has, so those fields follow it again', () => {
+    const saved: Crew = { ...base, spec: { ...base.spec, prepareReleases: true } }
+    expect(settledEdits(saved, { prepareReleases: true, tagReleases: true })).toEqual({ tagReleases: true })
+    expect(settledEdits(publishing, { publish: releaseSettings(publishing).publish })).toEqual({})
+    expect(settledEdits(base, { publish: undefined })).toEqual({})
+    const kept = { tagReleases: false }
+    expect(settledEdits(publishing, kept)).toBe(kept)
   })
 })
 

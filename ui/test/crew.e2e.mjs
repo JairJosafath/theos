@@ -183,6 +183,7 @@ describe('a Crew page’s actions', () => {
     }
     await rerun.click()
     await page.getByText('Asked the operator to re-run them').waitFor()
+    assert.equal(await rerun.isDisabled(), true, 'asked once, until the release’s re-run time changes')
     const asked = crew().metadata.annotations?.['c4.factory.io/rerun-release']
     assert.ok(asked && !Number.isNaN(Date.parse(asked)), `the annotation is a time: ${asked}`)
     assert.equal(api.patches.at(-1).type, 'application/merge-patch+json')

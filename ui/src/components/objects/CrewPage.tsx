@@ -133,7 +133,9 @@ export function CrewPage({
           {crew.spec.publishReleases ? ` It publishes them to ${crew.spec.publishReleases.github.repository}.` : ''}
         </p>
         {release ? <ReleaseFacts release={release} now={now} /> : <p className="muted small">No release yet.</p>}
-        {acts === 'act' && release?.run === 'Failed' ? <RerunButton crew={crew} writer={writer} /> : null}
+        {acts === 'act' && release?.run === 'Failed' ? (
+          <RerunButton key={`${release.tag}|${release.rerunTime ?? ''}`} crew={crew} writer={writer} />
+        ) : null}
         {acts === 'act' ? <ReleaseForm crew={crew} writer={writer} /> : null}
       </section>
     </main>

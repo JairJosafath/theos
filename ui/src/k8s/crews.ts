@@ -30,6 +30,16 @@ export function releaseSettings(crew: Crew): CrewReleaseSettings {
   }
 }
 
+/** `edits` without those the Crew has now, so those fields follow the Crew again. */
+export function settledEdits(crew: Crew, edits: Partial<CrewReleaseSettings>): Partial<CrewReleaseSettings> {
+  const now = releaseSettings(crew)
+  const left: Partial<CrewReleaseSettings> = { ...edits }
+  for (const key of Object.keys(edits) as (keyof CrewReleaseSettings)[]) {
+    if (JSON.stringify(edits[key]) === JSON.stringify(now[key])) delete left[key]
+  }
+  return Object.keys(left).length === Object.keys(edits).length ? edits : left
+}
+
 type Op = { op: 'add'; path: string; value: unknown } | { op: 'remove'; path: string }
 
 /**

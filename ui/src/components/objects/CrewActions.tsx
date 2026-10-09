@@ -5,7 +5,7 @@
 // API server decides each write; a refusal shows its message.
 
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
-import { releasePatch, releaseSettings, type CrewReleaseSettings, type CrewWriter } from '../../k8s/crews'
+import { releasePatch, releaseSettings, settledEdits, type CrewReleaseSettings, type CrewWriter } from '../../k8s/crews'
 import type { Crew } from '../../k8s/types'
 import { SignInLink } from '../Account'
 import { writeError, type WriteError } from '../briefs/errors'
@@ -68,15 +68,23 @@ export function CrewPauseButton({ crew, writer }: { crew: Crew; writer: CrewWrit
 export function ParallelForm({ crew, writer }: { crew: Crew; writer: CrewWriter }) {
   const id = useId()
   const current = crew.spec.parallel ?? 1
-  const [typed, setTyped] = useState(String(current))
+  // What the person typed; unset, the field follows the Crew.
+  const [typed, setTyped] = useState<string>()
   const { sending, error, done, run } = useWrite()
-  const value = Number(typed.trim())
-  const changed = typed.trim() !== '' && value !== current
+  // Once the Crew has what was typed, the field follows it again.
+  const [seen, setSeen] = useState(current)
+  if (seen !== current) {
+    setSeen(current)
+    if (typed !== undefined && Number(typed) === current) setTyped(undefined)
+  }
+  const shown = typed ?? String(current)
+  const value = Number(shown.trim())
+  // A whole number only, so what is sent is an integer the API server judges.
+  const changed = shown.trim() !== '' && Number.isInteger(value) && value !== current
 
   function submit(e: FormEvent) {
     e.preventDefault()
     if (!changed) return
-    // Sent as typed when it reads as a number, so the API server judges it.
     void run(() => writer.setParallel(crew.metadata.namespace ?? '', crew.metadata.name, value), 'Saved')
   }
 
@@ -91,8 +99,9 @@ export function ParallelForm({ crew, writer }: { crew: Crew; writer: CrewWriter 
           id={`${id}-parallel`}
           className="input crew-parallel"
           type="number"
+          step={1}
           inputMode="numeric"
-          value={typed}
+          value={shown}
           onChange={(e) => setTyped(e.target.value)}
           disabled={sending}
         />
@@ -113,11 +122,21 @@ export function ParallelForm({ crew, writer }: { crew: Crew; writer: CrewWriter 
  */
 export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }) {
   const id = useId()
-  const [form, setForm] = useState<CrewReleaseSettings>(() => releaseSettings(crew))
+  // What the person changed; the rest follows the Crew, so a save never writes back a value read earlier.
+  const [edits, setEdits] = useState<Partial<CrewReleaseSettings>>({})
   const { sending, error, done, run } = useWrite()
+  // Once the Crew has an edited value, that field follows it again.
+  const rv = crew.metadata.resourceVersion
+  const [seen, setSeen] = useState(rv)
+  if (seen !== rv) {
+    setSeen(rv)
+    setEdits(settledEdits(crew, edits))
+  }
+  const form = { ...releaseSettings(crew), ...edits }
+  const setForm = (next: Partial<CrewReleaseSettings>) => setEdits({ ...edits, ...next })
   const ops = releasePatch(crew, form)
   const publish = form.publish ?? { repository: '', tokenSecret: '', tagPrefix: '' }
-  const setPublish = (patch: Partial<typeof publish>) => setForm({ ...form, publish: { ...publish, ...patch } })
+  const setPublish = (patch: Partial<typeof publish>) => setForm({ publish: { ...publish, ...patch } })
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -132,21 +151,21 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
         hint="Tag a release once its milestone is done."
         checked={form.tagReleases}
         disabled={sending}
-        onChange={(tagReleases) => setForm({ ...form, tagReleases })}
+        onChange={(tagReleases) => setForm({ tagReleases })}
       />
       <Check
         label="Prepare releases"
         hint="File each release’s prepare issue: the version and the changelog."
         checked={form.prepareReleases}
         disabled={sending}
-        onChange={(prepareReleases) => setForm({ ...form, prepareReleases })}
+        onChange={(prepareReleases) => setForm({ prepareReleases })}
       />
       <Check
         label="Publish releases to GitHub"
         hint="Copy each tagged release to a GitHub repository once its runs succeed."
         checked={Boolean(form.publish)}
         disabled={sending}
-        onChange={(on) => setForm({ ...form, publish: on ? (releaseSettings(crew).publish ?? publish) : undefined })}
+        onChange={(on) => setForm({ publish: on ? (releaseSettings(crew).publish ?? publish) : undefined })}
       />
       {form.publish ? (
         <div className="crew-publish">
@@ -210,7 +229,8 @@ export function RerunButton({ crew, writer }: { crew: Crew; writer: CrewWriter }
         <button
           type="button"
           className="button button-secondary"
-          disabled={sending}
+          // Asked once; CrewPage gives a new button when the release's re-run time changes.
+          disabled={sending || Boolean(done)}
           onClick={() =>
             run(
               () => writer.rerunRelease(crew.metadata.namespace ?? '', crew.metadata.name, new Date().toISOString()),
