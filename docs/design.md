@@ -556,8 +556,13 @@ model and context it needs.
   Standard `go-operator-standard` (kubebuilder's Makefile with `make check` and
   `make dist`, its lint config and the agents' rules) and Compute `small`, which
   patches the manager's resources; `make test-templates-operator` renders that
-  combo and runs its `make check` before and after `kubebuilder create api`.
-  `gitea-release` doesn't ship an operator yet. Until a catalog entry supports
+  combo and runs its `make check` before and after `kubebuilder create api`,
+  then its `make dist`. Deployment `gitea-release` ships an operator's release
+  on a version tag: the manager binaries for Linux, macOS and Windows,
+  `install.yaml` (the CRDs, RBAC and the manager, from kubebuilder's
+  `make build-installer`) and `SHA256SUMS`. No image is built or pushed:
+  `install.yaml` names the image `controller:<tag>`, and the operator's README
+  says to build and push the image and set it there before applying it. Until a catalog entry supports
   a type, the planner answers that it needs input rather than planning it.
   GitHub issue #723 has the plan, [plans/kubebuilder-operators.md](plans/kubebuilder-operators.md).
 

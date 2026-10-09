@@ -2,10 +2,11 @@
 
 Ships a Container's release files on a Gitea release whenever a version tag is
 pushed: binaries for a Go CLI, an npm tarball for a Node CLI, a wheel and an
-sdist for a Python CLI, a `.vsix` for an extension. No registry, no store:
-download them from the release page.
+sdist for a Python CLI, a `.vsix` for an extension, the manager binaries and
+`install.yaml` for an operator. No registry, no store: download them from the
+release page.
 
-- **Supports:** `cli`, `extension`
+- **Supports:** `cli`, `extension`, `operator`
 - **Writes:** `.gitea/workflows/release.yaml`
 - **Contract:** the repository's `Makefile` has a `dist` target that takes
   `VERSION=<tag>` and writes the release files, and only those, into `dist/`.
@@ -13,7 +14,13 @@ download them from the release page.
   packages the `.vsix` (`vscode-extension`) or packs the `.tgz` with `npm pack`
   (`node-cli`), and fails when the tag doesn't match `package.json`;
   python-standard's builds the wheel and sdist with `uv build` (`python-cli`)
-  and fails when the tag doesn't match `pyproject.toml`.
+  and fails when the tag doesn't match `pyproject.toml`; go-operator-standard's
+  cross-compiles the manager binaries and writes `install.yaml` (kubebuilder's
+  `make build-installer`, the image set to `controller:<tag>`) and a
+  `SHA256SUMS` of both. Only files directly in `dist/` are attached, so a
+  `dist/chart/` from kubebuilder's helm plugin is not. No image is built or
+  pushed: whoever installs an operator's release builds the image and sets it
+  in `install.yaml`, as the operator's README says.
 - **Needs:** a runner labelled `go` (the Go and Node toolchain image, with uv
   for Python projects), which the checks use too. The workflow token creates the release and uploads the files;
   no secrets.

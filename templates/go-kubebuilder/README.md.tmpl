@@ -70,27 +70,26 @@ make undeploy
 
 Following the options to release and provide this solution to the users.
 
-### By providing a bundle with all YAML files
+### From a release
 
-1. Build the installer for the image built and published in the registry:
+`make dist VERSION=<tag>` writes the release files into `dist/`: the manager
+binaries `{{ .Container }}_<os>_<arch>` for Linux, macOS and Windows,
+`install.yaml` (the CRDs, RBAC and the manager Deployment, from
+`make build-installer`) and `SHA256SUMS`. A version tag's release pipeline,
+such as the factory's gitea-release, attaches them to the tag's release.
 
-```sh
-make build-installer IMG=<some-registry>/{{ .Container }}:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
+No image is built or pushed: `install.yaml` names the manager image
+`controller:<tag>`, which no registry has. Before applying it, build and push
+the image from a checkout of the tag, and set it in `install.yaml`:
 
 ```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/{{ .Container }}/<tag or branch>/dist/install.yaml
+make docker-build docker-push IMG=<some-registry>/{{ .Container }}:<tag>
+sed -i 's|image: controller:<tag>|image: <some-registry>/{{ .Container }}:<tag>|' install.yaml
+kubectl apply -f install.yaml
 ```
+
+Or, in that checkout, `make build-installer IMG=<some-registry>/{{ .Container }}:<tag>`
+writes `dist/install.yaml` with the image set.
 
 ### By providing a Helm Chart
 

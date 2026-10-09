@@ -8,8 +8,8 @@
 // sorts every path it writes into the Framework, the Standard (go-operator-standard
 // writes its own) or dropped; a path no rule matches fails the run, so a
 // kubebuilder bump that writes a new path is a decision, not a surprise. The
-// Framework's files have their placeholders turned into template fields, two
-// edits follow (addComputePatch and addDistIgnore), and they replace everything
+// Framework's files have their placeholders turned into template fields, three
+// edits follow (addComputePatch, addDistIgnore and addReleaseNote), and they replace everything
 // in the output folder except its .c4factory/.
 package main
 
@@ -159,7 +159,7 @@ patches:
 {{- end }}
 `
 
-// addComputePatch is one of the two edits besides the substitutions: it makes
+// addComputePatch is one of the three edits besides the substitutions: it makes
 // config/manager/kustomization.yaml a template that applies the Compute's
 // patch. p and data are transform's result.
 func addComputePatch(p string, data []byte) (string, []byte, error) {
@@ -186,7 +186,7 @@ const distIgnore = `
 /dist/
 `
 
-// addDistIgnore is the other edit besides the substitutions: it appends
+// addDistIgnore is another edit besides the substitutions: it appends
 // distIgnore to .gitignore. p and data are transform's result.
 func addDistIgnore(p string, data []byte) (string, []byte, error) {
 	if bytes.Contains(data, []byte("/dist/")) {
@@ -196,6 +196,64 @@ func addDistIgnore(p string, data []byte) (string, []byte, error) {
 		data = append(data, '\n')
 	}
 	return p, append(data, distIgnore...), nil
+}
+
+// readme is the README the release section is replaced in.
+const readme = "README.md"
+
+// The section of kubebuilder's README that addReleaseNote replaces, from its
+// heading up to the next one: it applies dist/install.yaml from a raw URL in
+// the repository, where /dist/ is ignored.
+const (
+	bundleHeading = "### By providing a bundle with all YAML files\n"
+	helmHeading   = "### By providing a Helm Chart\n"
+)
+
+// releaseNote says what go-operator-standard's `make dist` writes and that the
+// manager image in install.yaml is a placeholder to replace
+// (docs/plans/kubebuilder-operators.md, decision 8). It is template text: the
+// README is a .tmpl once the substitutions name the Container.
+const releaseNote = `### From a release
+
+` + "`make dist VERSION=<tag>`" + ` writes the release files into ` + "`dist/`" + `: the manager
+binaries ` + "`{{ .Container }}_<os>_<arch>`" + ` for Linux, macOS and Windows,
+` + "`install.yaml`" + ` (the CRDs, RBAC and the manager Deployment, from
+` + "`make build-installer`" + `) and ` + "`SHA256SUMS`" + `. A version tag's release pipeline,
+such as the factory's gitea-release, attaches them to the tag's release.
+
+No image is built or pushed: ` + "`install.yaml`" + ` names the manager image
+` + "`controller:<tag>`" + `, which no registry has. Before applying it, build and push
+the image from a checkout of the tag, and set it in ` + "`install.yaml`" + `:
+
+` + "```sh" + `
+make docker-build docker-push IMG=<some-registry>/{{ .Container }}:<tag>
+sed -i 's|image: controller:<tag>|image: <some-registry>/{{ .Container }}:<tag>|' install.yaml
+kubectl apply -f install.yaml
+` + "```" + `
+
+Or, in that checkout, ` + "`make build-installer IMG=<some-registry>/{{ .Container }}:<tag>`" + `
+writes ` + "`dist/install.yaml`" + ` with the image set.
+
+`
+
+// addReleaseNote is the third edit besides the substitutions: it replaces the
+// README's bundle section with releaseNote. p and data are transform's result.
+func addReleaseNote(p string, data []byte) (string, []byte, error) {
+	start := bytes.Index(data, []byte(bundleHeading))
+	end := bytes.Index(data, []byte(helmHeading))
+	if start < 0 || end < start {
+		return "", nil, fmt.Errorf("%s: no %q section before %q; place the release note by hand in addReleaseNote",
+			p, strings.TrimSpace(bundleHeading), strings.TrimSpace(helmHeading))
+	}
+	if !strings.HasSuffix(p, ".tmpl") {
+		p += ".tmpl"
+		data = []byte(escaper.Replace(string(data)))
+		start = bytes.Index(data, []byte(bundleHeading))
+		end = bytes.Index(data, []byte(helmHeading))
+	}
+	out := append([]byte{}, data[:start]...)
+	out = append(out, releaseNote...)
+	return p, append(out, data[end:]...), nil
 }
 
 // file is one file of the generated template.
@@ -241,6 +299,9 @@ func frameworkFiles(dir string) (map[string]file, error) {
 		if err == nil && p == gitignore {
 			name, data, err = addDistIgnore(name, data)
 		}
+		if err == nil && p == readme {
+			name, data, err = addReleaseNote(name, data)
+		}
 		if err != nil {
 			errs = append(errs, err)
 			return nil
@@ -260,6 +321,9 @@ func frameworkFiles(dir string) (map[string]file, error) {
 	if !plain && !tmpl && len(errs) == 0 {
 		errs = append(errs, fmt.Errorf("%s: kubebuilder no longer writes it; /dist/ has nowhere to be ignored",
 			gitignore))
+	}
+	if _, ok := out[readme+".tmpl"]; !ok && len(errs) == 0 {
+		errs = append(errs, fmt.Errorf("%s: kubebuilder no longer writes it; the release note has nowhere to go", readme))
 	}
 	return out, errors.Join(errs...)
 }

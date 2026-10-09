@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # make test-templates-operator: renders the operator combo (Framework
-# go-kubebuilder, Standard go-operator-standard, Compute small) the way the
+# go-kubebuilder, Standard go-operator-standard, Compute small, Deployment
+# gitea-release) the way the
 # operator scaffolds it, commits it in a new git repository and runs its
 # `make check`; then does what an agent does first, `kubebuilder create api`
 # and `make manifests generate`, fails if that changed a protected path of
-# go-operator-standard, commits, and runs `make check` again. No cluster, no
+# go-operator-standard, commits, and runs `make check` again; last, what
+# gitea-release runs for a tag, `make dist VERSION=v0.1.0`, and fails unless
+# dist/ holds the binaries, install.yaml and SHA256SUMS. No cluster, no
 # Docker. make check doesn't run it; a change to either operator template does
 # (docs/plans/kubebuilder-operators.md, decision 6).
 #
@@ -51,7 +54,7 @@ unset MAKEFLAGS MFLAGS MAKELEVEL MAKEOVERRIDES C4_HEAVY_SLOT
 
 repo="$T/backup-operator"
 (cd "$ROOT" && go run ./hack/render -out "$repo" -type operator -container backup-operator \
-	-display-name "Backup Operator" Framework=go-kubebuilder Standard=go-operator-standard Compute=small)
+	-display-name "Backup Operator" Framework=go-kubebuilder Standard=go-operator-standard Compute=small Deployment=gitea-release)
 cd "$repo"
 
 git() { command git -c user.name="test-templates-operator" -c user.email="test@c4factory.local" \
@@ -78,5 +81,23 @@ echo "No protected path changed (${protected[*]})"
 git add -A
 git commit -q -m "Add the demo/v1 Widget API"
 step make check
+
+step make dist VERSION=v0.1.0
+step ls dist
+want=(install.yaml SHA256SUMS)
+for platform in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64.exe windows_arm64.exe; do
+	want+=("backup-operator_$platform")
+done
+for f in "${want[@]}"; do
+	[ -s "dist/$f" ] || { echo "make dist didn't write dist/$f" >&2; exit 1; }
+done
+grep -q '^        image: controller:v0.1.0$' dist/install.yaml ||
+	{ echo "dist/install.yaml doesn't name the image controller:v0.1.0" >&2; exit 1; }
+(cd dist && sha256sum -c --quiet SHA256SUMS)
+if [ -n "$(git status --porcelain)" ]; then
+	echo "make dist changed the working tree:" >&2
+	git status --porcelain >&2
+	exit 1
+fi
 echo
-echo "test-templates-operator: the operator combo passes make check before and after kubebuilder create api"
+echo "test-templates-operator: the operator combo passes make check before and after kubebuilder create api, and make dist writes the release files"

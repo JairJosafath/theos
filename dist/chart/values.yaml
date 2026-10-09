@@ -511,7 +511,7 @@ catalog:
         supportedTypes: [cli]
     - kind: Framework
       name: go-kubebuilder
-      ref: v1.0.0
+      ref: v1.0.1
       spec:
         displayName: Kubernetes operator (Go, kubebuilder)
         description: "An operator that extends Kubernetes: watches and reconciles cluster objects. What kubebuilder init writes, in Go, ready for kubebuilder create api."
@@ -528,7 +528,7 @@ catalog:
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
     - kind: Standard
       name: go-operator-standard
-      ref: v1.0.0
+      ref: v1.0.1
       spec:
         displayName: Go operator quality standard
         description: kubebuilder's golangci-lint, gofmt and goimports, envtest tests, generated files kept up to date, role guides for agents and the make check CI.
@@ -569,11 +569,11 @@ catalog:
         supportedTypes: [service, worker, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.0.3
+      ref: v1.1.0
       spec:
         displayName: Gitea release
-        description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist) on a Gitea release for each version tag.
-        supportedTypes: [cli, extension]
+        description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml) on a Gitea release for each version tag.
+        supportedTypes: [cli, extension, operator]
     - kind: Connector
       name: postgres
       ref: v1.1.0
