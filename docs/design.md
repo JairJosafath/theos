@@ -355,7 +355,8 @@ model and context it needs.
   tries per issue (a `NoCIResult` failure is not one). A try continues an earlier try's pull request that is
   still open: it works on that branch, with that try's feedback, and reports
   to that pull request (`status.continues` names the earlier Task). When the
-  earlier try ended waiting for the checks of its commit, that commit is still
+  earlier try ended waiting for the checks of its commit (red checks
+  included) before a reviewer ran in any of its rounds, that commit is still
   the head, and its checks now pass, the try skips the implementer: it enters
   `Checking` at that commit and starts the review. A round
   that changes only the pull request, such as its description, and commits
