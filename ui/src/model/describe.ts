@@ -77,9 +77,9 @@ export function describeCrewPhase(phase: CrewPhase | undefined): PhaseInfo {
 export function describeSessionPhase(phase: SessionPhase | undefined): { label: string; explanation: string } {
   switch (phase) {
     case 'Active':
-      return { label: 'Active', explanation: 'Working now: heartbeats arrive every 30 seconds.' }
+      return { label: 'Active', explanation: 'Working now: its heartbeats arrive.' }
     case 'Stale':
-      return { label: 'Stale', explanation: 'No heartbeat for over 2 minutes: probably stopped.' }
+      return { label: 'Stale', explanation: 'The factory saw no heartbeat for a while: probably stopped.' }
     default:
       return { label: 'Starting', explanation: 'Registered, but has not reported yet.' }
   }

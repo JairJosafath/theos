@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { briefManifest, isBriefName, LiveBriefWriter, nameFromIdea, pausedPatch, promptPatch } from './briefs'
+import { isBriefName } from '../demo/limits'
+import { briefManifest, LiveBriefWriter, nameFromIdea, pausedPatch, promptPatch } from './briefs'
 
 function respond(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -64,22 +65,6 @@ describe('nameFromIdea', () => {
     const name = nameFromIdea('Supercalifragilisticexpialidocious extraordinarily-long words everywhere', [])
     expect(name.length).toBeLessThanOrEqual(40)
     expect(isBriefName(name)).toBe(true)
-  })
-})
-
-describe('isBriefName', () => {
-  it.each([
-    ['shop', true],
-    ['web-shop-2', true],
-    ['a'.repeat(63), true],
-    ['a'.repeat(64), false],
-    ['Shop', false],
-    ['-shop', false],
-    ['shop-', false],
-    ['web_shop', false],
-    ['', false],
-  ])('%j is %s', (name, want) => {
-    expect(isBriefName(name)).toBe(want)
   })
 })
 

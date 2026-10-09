@@ -271,8 +271,8 @@ export function SessionsPanel({
     <section className="panel" aria-label="Who is working right now">
       <h2 className="panel-title small-title">Who&apos;s working right now</h2>
       <p className="panel-caption">
-        People and AI agents working in a devcontainer on {scope}. Each checks in every 30 seconds; after 2 minutes of
-        silence a session turns stale. Crews&apos; Tasks that run now are listed too.
+        People and AI agents working in a devcontainer on {scope}, each a Session that checks in while it works; the
+        factory marks one stale when it stops checking in. Crews&apos; Tasks that run now are listed too.
       </p>
       {tasks.length ? (
         <div className="session-group">
@@ -440,7 +440,7 @@ export function Legend({ view }: { view: 'context' | 'containers' }) {
               <span className="avatar avatar-human avatar-stale" aria-hidden="true">
                 <HumanIcon size={12} />
               </span>
-              <span>Faded: stale, no heartbeat for 2 minutes</span>
+              <span>Faded: stale, its heartbeats stopped</span>
             </li>
           </ul>
         </>

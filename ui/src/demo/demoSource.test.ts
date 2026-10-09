@@ -25,8 +25,8 @@ describe('DemoStorySource as a BriefWriter', () => {
   it('refuses a name that is taken or invalid, as the API would', async () => {
     const source = new DemoStorySource()
     await expect(source.create(DEMO_NAMESPACE, 'webshop', 'Again')).rejects.toThrow('already exists')
-    await expect(source.create(DEMO_NAMESPACE, 'Web Shop', 'Again')).rejects.toThrow('lowercase')
-    await expect(source.create(DEMO_NAMESPACE, 'empty', '  ')).rejects.toThrow('spec.idea')
+    await expect(source.create(DEMO_NAMESPACE, 'Web Shop', 'Again')).rejects.toThrow('metadata.name')
+    await expect(source.create(DEMO_NAMESPACE, 'empty', '')).rejects.toThrow('spec.idea')
   })
 
   it('appends a prompt to a Brief', async () => {
@@ -35,6 +35,9 @@ describe('DemoStorySource as a BriefWriter', () => {
     const brief = source.getSnapshot().data.briefs.find((b) => b.metadata.name === 'returns')
     expect(brief?.spec.prompts).toEqual(['Only unopened items'])
     await expect(source.addPrompt(DEMO_NAMESPACE, 'nope', 'x')).rejects.toThrow('not found')
+    await expect(source.addPrompt(DEMO_NAMESPACE, 'returns', 'x'.repeat(2001))).rejects.toThrow(
+      'spec.prompts[1]: Too long',
+    )
   })
 
   it('pauses and resumes a Brief, saying what still runs', async () => {

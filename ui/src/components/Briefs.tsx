@@ -5,7 +5,7 @@
 
 import { useState } from 'react'
 import type { BriefWriter } from '../k8s/briefs'
-import type { Brief } from '../k8s/types'
+import type { Agent, Brief } from '../k8s/types'
 import { describeBrief, pauseAction, sortBriefs, type BriefView } from '../model/brief'
 import { useNow } from '../lib/hooks'
 import { timeAgo } from '../model/describe'
@@ -22,9 +22,12 @@ export function Briefs({
   namespace,
   canCreate,
   writer,
+  agents = [],
 }: {
   briefs: Brief[]
   namespace: string
+  /** The namespace's Agents, for each planner's sessionTokenLimit. */
+  agents?: Agent[]
   /** False when the namespace holds no Project: the server makes no Brief there. */
   canCreate: boolean
   writer: BriefWriter
@@ -48,16 +51,32 @@ export function Briefs({
           <NewBrief namespace={namespace} taken={briefs.map((b) => b.metadata.name)} writer={writer} />
         ) : null}
         {sorted.map((b) => (
-          <BriefCard key={b.metadata.uid ?? b.metadata.name} brief={b} namespace={namespace} writer={writer} />
+          <BriefCard
+            key={b.metadata.uid ?? b.metadata.name}
+            brief={b}
+            namespace={namespace}
+            writer={writer}
+            plannerLimit={agents.find((a) => a.metadata.name === b.spec.agents?.planner?.name)?.spec.sessionTokenLimit}
+          />
         ))}
       </div>
     </section>
   )
 }
 
-function BriefCard({ brief, namespace, writer }: { brief: Brief; namespace: string; writer: BriefWriter }) {
+function BriefCard({
+  brief,
+  namespace,
+  writer,
+  plannerLimit,
+}: {
+  brief: Brief
+  namespace: string
+  writer: BriefWriter
+  plannerLimit?: number
+}) {
   const now = useNow()
-  const view = describeBrief(brief)
+  const view = describeBrief(brief, plannerLimit)
   const [pauseError, setPauseError] = useState<WriteError>()
   return (
     <article className={`panel brief brief-${view.phase.tone}`} aria-label={`Brief ${view.name}`}>
@@ -75,10 +94,7 @@ function BriefCard({ brief, namespace, writer }: { brief: Brief; namespace: stri
               </>
             ) : null}
             <span className="sep">·</span>
-            <span title={view.autopilot.explanation}>
-              {view.autopilot.label}
-              {view.autopilot.isDefault ? ' (default)' : ''}
-            </span>
+            <span title={view.autopilot.explanation}>{view.autopilot.label}</span>
             {brief.metadata.creationTimestamp ? (
               <>
                 <span className="sep">·</span>

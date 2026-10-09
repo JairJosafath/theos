@@ -291,6 +291,8 @@ export interface Agent extends K8sObject {
     /** Such as claude-sonnet-5-5; empty means the harness's default. */
     model?: string
     maxRounds?: number
+    /** How large, in tokens, one agent run may grow before it hands off; the API server fills in its default. */
+    sessionTokenLimit?: number
     timeoutMinutes?: number
   }
 }
@@ -421,7 +423,7 @@ export interface Brief extends K8sObject {
     gitProviderRef?: LocalRef
     /** Whether it tends its handed-back work by itself; unset is the operator's default. */
     autopilot?: BriefAutopilot
-    /** How many issues each Crew the Brief made works on at once, 1 to 5; unset is the operator's default. */
+    /** How many issues each Crew the Brief made works on at once; unset is the operator's default. */
     parallel?: number
     /** Pauses the Brief and every Crew it made; a Task already started runs to its end. The Paused condition says what still runs. */
     paused?: boolean
@@ -490,7 +492,7 @@ export interface Brief extends K8sObject {
   }
 }
 
-/** What agent sessions used, in tokens, as the agents reported it; every field is omitted when zero. */
+/** What agent runs used, in tokens, as the agents reported it; every field is omitted when zero. */
 export interface TokenUsage {
   /** Prompt tokens neither read from nor written to the cache. */
   input?: number
@@ -500,10 +502,10 @@ export interface TokenUsage {
   cacheRead?: number
   /** Prompt tokens written to the cache. */
   cacheWrite?: number
-  /** How large the largest agent session got: the prompt of its biggest turn. */
+  /** How large the largest agent run got: the prompt of its biggest turn. */
   largestSession?: number
   /** The agent runs whose agent didn't report their tokens; the other fields leave them out. */
   runsWithout?: number
-  /** The agent sessions that handed their work to a fresh session. */
+  /** The agent runs that handed their work to a fresh one. */
   sessionHandoffs?: number
 }

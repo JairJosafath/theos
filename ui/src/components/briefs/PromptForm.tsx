@@ -1,7 +1,7 @@
 // A Brief card's prompt field, and the error line the Brief forms share.
 
 import { useContext, useEffect, useId, useState, type FormEvent } from 'react'
-import { MAX_PROMPT, type BriefWriter } from '../../k8s/briefs'
+import type { BriefWriter } from '../../k8s/briefs'
 import { RefreshSession } from '../../lib/hooks'
 import { SignInLink } from '../Account'
 import { WarningIcon } from '../icons'
@@ -23,7 +23,7 @@ export function FormError({ error }: { error: WriteError }) {
   )
 }
 
-/** A follow-up prompt for one Brief; the planner takes it in its next round. */
+/** A follow-up prompt for one Brief; the planner takes it in its next round. A refused prompt shows the API server's message. */
 export function PromptForm({
   namespace,
   name,
@@ -65,7 +65,6 @@ export function PromptForm({
           id={`${id}-prompt`}
           className="input"
           value={prompt}
-          maxLength={MAX_PROMPT}
           placeholder={needsInput ? 'Answer in a prompt…' : 'Add a prompt to steer it…'}
           onChange={(e) => setPrompt(e.target.value)}
           disabled={sending}

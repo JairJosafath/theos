@@ -3,20 +3,13 @@
 // project: the webshop. The story source also takes the UI's three writes in
 // memory, so the Brief box and its Pause button work without a cluster.
 
-import {
-  briefManifest,
-  isBriefName,
-  MAX_IDEA,
-  MAX_PARALLEL,
-  MAX_PROMPT,
-  type BriefOptions,
-  type BriefWriter,
-} from '../k8s/briefs'
+import { briefManifest, type BriefOptions, type BriefWriter } from '../k8s/briefs'
 import type { FactoryHealth } from '../k8s/health'
 import type { Connection, FactoryData, Snapshot, Source, StoryData } from '../k8s/sources'
 import type { Condition, Project } from '../k8s/types'
 import { demoFactory, demoHealth } from './factoryFixture'
 import { demoStory } from './fixture'
+import { BRIEF_LIMITS, isBriefName } from './limits'
 
 const DEMO_CONNECTION: Connection = { phase: 'demo', loaded: true, problems: [] }
 const HEARTBEAT_MS = 30_000
@@ -43,8 +36,6 @@ class StaticSource<T> implements Source<T> {
   stop(): void {}
 }
 
-const MAX_PROMPTS = 50
-
 export class DemoStorySource extends StaticSource<StoryData> implements BriefWriter {
   private timer?: ReturnType<typeof setInterval>
 
@@ -62,16 +53,36 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
     this.timer = undefined
   }
 
-  /** A new Brief shows up as Pending, as the API would answer before the operator picks it up. */
+  /**
+   * A new Brief shows up as Pending, as the API would answer before the operator
+   * picks it up; one the CRD would refuse is refused with a message like the API server's.
+   */
   async create(namespace: string, name: string, idea: string, options?: BriefOptions): Promise<void> {
     const data = this.snapshot.data
-    if (!isBriefName(name)) throw new Error(`Brief name "${name}" must be lowercase letters, digits and '-'`)
+    const invalid = (detail: string) => new Error(`Brief.c4.factory.io "${name}" is invalid: ${detail}`)
+    if (!isBriefName(name))
+      throw invalid(
+        `metadata.name: Invalid value: "${name}": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.'`,
+      )
     if (data.briefs.some((b) => b.metadata.name === name))
       throw new Error(`briefs.c4.factory.io "${name}" already exists`)
-    if (!idea.trim() || idea.length > MAX_IDEA) throw new Error(`spec.idea must be 1 to ${MAX_IDEA} characters`)
+    const { idea: ideaLimit, parallel: parallelLimit } = BRIEF_LIMITS
+    if (idea.length < ideaLimit.min)
+      throw invalid(`spec.idea: Invalid value: "": should be at least ${ideaLimit.min} chars long`)
+    if (idea.length > ideaLimit.max) throw invalid(`spec.idea: Too long: may not be more than ${ideaLimit.max} bytes`)
     const parallel = options?.parallel
-    if (parallel !== undefined && !(Number.isInteger(parallel) && parallel >= 1 && parallel <= MAX_PARALLEL))
-      throw new Error(`spec.parallel must be 1 to ${MAX_PARALLEL}`)
+    if (
+      parallel !== undefined &&
+      !(
+        typeof parallel === 'number' &&
+        Number.isInteger(parallel) &&
+        parallel >= parallelLimit.min &&
+        parallel <= parallelLimit.max
+      )
+    )
+      throw invalid(
+        `spec.parallel: Invalid value: ${JSON.stringify(parallel)}: should be a whole number from ${parallelLimit.min} to ${parallelLimit.max}`,
+      )
     const brief = briefManifest(namespace, name, idea, options)
     brief.metadata = { ...brief.metadata, uid: `demo-${name}`, creationTimestamp: new Date().toISOString() }
     brief.status = { phase: 'Pending' }
@@ -82,9 +93,15 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
     const data = this.snapshot.data
     const brief = data.briefs.find((b) => b.metadata.name === name)
     if (!brief) throw new Error(`briefs.c4.factory.io "${name}" not found`)
-    if (!prompt.trim() || prompt.length > MAX_PROMPT) throw new Error(`a prompt must be 1 to ${MAX_PROMPT} characters`)
+    const invalid = (detail: string) => new Error(`Brief.c4.factory.io "${name}" is invalid: ${detail}`)
     const prompts = brief.spec.prompts ?? []
-    if (prompts.length >= MAX_PROMPTS) throw new Error(`spec.prompts: at most ${MAX_PROMPTS} prompts`)
+    const at = `spec.prompts[${prompts.length}]`
+    if (prompt.length < BRIEF_LIMITS.prompt.min)
+      throw invalid(`${at}: Invalid value: "": should be at least ${BRIEF_LIMITS.prompt.min} chars long`)
+    if (prompt.length > BRIEF_LIMITS.prompt.max)
+      throw invalid(`${at}: Too long: may not be more than ${BRIEF_LIMITS.prompt.max} bytes`)
+    if (prompts.length >= BRIEF_LIMITS.prompts)
+      throw invalid(`spec.prompts: Too many: ${prompts.length + 1}: must have at most ${BRIEF_LIMITS.prompts} items`)
     const changed = { ...brief, spec: { ...brief.spec, prompts: [...prompts, prompt] } }
     this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
   }

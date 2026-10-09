@@ -386,8 +386,13 @@ export function demoStory(now: number): StoryData {
       apiVersion: API_VERSION,
       kind: 'Agent',
       metadata: meta('claude', created),
-      // No model: Claude Code's default.
-      spec: { displayName: 'Claude Code (Python)', image: 'c4factory/agent-python:dev', maxRounds: 3 },
+      // No model: Claude Code's default. sessionTokenLimit as the API server fills it in.
+      spec: {
+        displayName: 'Claude Code (Python)',
+        image: 'c4factory/agent-python:dev',
+        maxRounds: 3,
+        sessionTokenLimit: 130_000,
+      },
     },
     {
       apiVersion: API_VERSION,
@@ -400,6 +405,7 @@ export function demoStory(now: number): StoryData {
         harness: 'claude-code',
         model: 'claude-sonnet-5-5',
         maxRounds: 3,
+        sessionTokenLimit: 130_000,
         timeoutMinutes: 90,
       },
     },
@@ -414,6 +420,7 @@ export function demoStory(now: number): StoryData {
         harness: 'claude-code',
         model: 'claude-opus-5-5',
         maxRounds: 3,
+        sessionTokenLimit: 130_000,
         timeoutMinutes: 45,
       },
     },
@@ -515,7 +522,7 @@ export function demoStory(now: number): StoryData {
       checks: { state: 'failure' },
       review: { verdict: 'changes', summary: 'A retried refund pays out twice; send an idempotency key.' },
       feedback: 'CI failed: test_refund_retry pays out twice.',
-      // A long session, past the Agent's limit, that handed off twice, on a Task that failed.
+      // A long agent run, past the Agent's limit, that handed off twice, on a Task that failed.
       costMilliUSD: 6_120,
       tokens: {
         input: 31_000,

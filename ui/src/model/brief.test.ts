@@ -302,7 +302,7 @@ describe('formatTokens', () => {
 })
 
 describe('describeUsage', () => {
-  it('shows the cost, the tokens with their cache reads, and the largest session', () => {
+  it('shows the cost, the tokens with their cache reads, and the largest agent run', () => {
     const usage = describeUsage(6_120, 0, {
       input: 40_000,
       output: 160_000,
@@ -313,27 +313,31 @@ describe('describeUsage', () => {
     expect(usage).toEqual({
       cost: '$6.12',
       tokens: '1.4M tokens, 1.1M of them cache reads',
-      largestSession: 'largest session 112k',
+      largestRun: 'largest run 112k',
       pastLimit: false,
-      line: '$6.12 · 1.4M tokens, 1.1M of them cache reads · largest session 112k',
+      line: '$6.12 · 1.4M tokens, 1.1M of them cache reads · largest run 112k',
     })
   })
 
-  it('marks a largest session past the limit, 130k by default', () => {
-    const usage = describeUsage(6_120, 0, { output: 1_400_000, largestSession: 142_000 })
+  it('marks a largest agent run past the Agent’s limit, and none when the limit is unknown', () => {
+    const usage = describeUsage(6_120, 0, { output: 1_400_000, largestSession: 142_000 }, 120_000)
     expect(usage?.pastLimit).toBe(true)
-    expect(usage?.largestSession).toBe('largest session 142k, past the 130k limit')
-    expect(describeUsage(6_120, 0, { output: 1_400_000, largestSession: 130_000 })?.pastLimit).toBe(false)
+    expect(usage?.largestRun).toBe('largest run 142k, past the 120k limit')
+    expect(describeUsage(6_120, 0, { output: 1_400_000, largestSession: 120_000 }, 120_000)?.pastLimit).toBe(false)
     expect(describeUsage(6_120, 0, { output: 1_400_000, largestSession: 142_000 }, 200_000)?.pastLimit).toBe(false)
+    expect(describeUsage(6_120, 0, { output: 1_400_000, largestSession: 942_000 })).toMatchObject({
+      pastLimit: false,
+      largestRun: 'largest run 942k',
+    })
   })
 
-  it('says how often a session handed off, and nothing when none did', () => {
-    const usage = describeUsage(6_120, 0, { output: 1_400_000, largestSession: 142_000, sessionHandoffs: 2 })
+  it('says how often an agent run handed off, and nothing when none did', () => {
+    const usage = describeUsage(6_120, 0, { output: 1_400_000, largestSession: 142_000, sessionHandoffs: 2 }, 120_000)
     expect(usage?.handoffs).toBe('handed off 2×')
-    expect(usage?.line).toBe('$6.12 · 1.4M tokens · largest session 142k, past the 130k limit · handed off 2×')
+    expect(usage?.line).toBe('$6.12 · 1.4M tokens · largest run 142k, past the 120k limit · handed off 2×')
     const none = describeUsage(6_120, 0, { output: 1_400_000, largestSession: 112_000, sessionHandoffs: 0 })
     expect(none?.handoffs).toBeUndefined()
-    expect(none?.line).toBe('$6.12 · 1.4M tokens · largest session 112k')
+    expect(none?.line).toBe('$6.12 · 1.4M tokens · largest run 112k')
   })
 
   it.each([
@@ -378,7 +382,7 @@ describe('describeUsage', () => {
         usage: {
           cost: undefined,
           tokens: 'tokens not reported by the agent',
-          largestSession: undefined,
+          largestRun: undefined,
           pastLimit: false,
           handoffs: 'handed off 1×',
           line: 'tokens not reported by the agent · handed off 1×',
@@ -389,12 +393,23 @@ describe('describeUsage', () => {
         summary: 'Planned the shop',
         outcome: 'Applied',
         usage: expect.objectContaining({
-          line: '$0.31 · 500k tokens, 486k of them cache reads · largest session 150k, past the 130k limit',
-          pastLimit: true,
+          line: '$0.31 · 500k tokens, 486k of them cache reads · largest run 150k',
+          pastLimit: false,
           handoffs: undefined,
         }),
       },
     ])
+  })
+
+  it('marks a round past its planner Agent’s limit when it is known', () => {
+    const view = describeBrief(
+      {
+        ...brief('shop', '2026-01-01T00:00:00Z'),
+        status: { history: [{ round: 1, outcome: 'Applied', tokens: { output: 14_000, largestSession: 150_000 } }] },
+      },
+      120_000,
+    )
+    expect(view.rounds[0].usage).toMatchObject({ pastLimit: true, largestRun: 'largest run 150k, past the 120k limit' })
   })
 })
 
@@ -579,6 +594,26 @@ describe('the Needs you box', () => {
       'The last round is done; 1 item under Needs you waits for your answer in a prompt.',
     )
   })
+
+  it('with the factory’s default mode, claims no failed issue waits and says how to answer them', () => {
+    const view = describeBrief({
+      ...brief('lens', '2026-01-01T00:00:00Z'),
+      spec: { idea: 'A lens' },
+      status: {
+        phase: 'Planned',
+        failed: [
+          { container: 'cli', number: 3, kind: 'failed' },
+          { container: 'cli', number: 4, kind: 'failed' },
+        ],
+        failedWaiting: 2,
+        needsYou: [{ kind: 'Issue', name: 'cli#3', question: 'Issue cli#3 needs you.' }],
+      },
+    })
+    expect(view.phase.explanation).toBe(
+      'The last round is done; 1 item under Needs you waits for your answer in a prompt.',
+    )
+    expect(view.failedHint).toMatch(/^The Brief asks you under Needs you about those it can’t decide/)
+  })
 })
 
 describe('what the Brief did by itself', () => {
@@ -644,10 +679,13 @@ describe('describeAutopilot', () => {
     expect(describeAutopilot(mode)).toMatchObject({ mode, isDefault: false, label })
   })
 
-  it('says when the factory’s default applies', () => {
+  it('says the factory’s default applies, naming no mode', () => {
     const info = describeAutopilot(undefined)
-    expect(info).toMatchObject({ mode: 'Ask', isDefault: true, label: 'Autopilot asks' })
-    expect(info.explanation).toMatch(/default\.$/)
+    expect(info).toEqual({
+      isDefault: true,
+      label: 'Autopilot: factory default',
+      explanation: 'The factory’s default mode decides whether it tends its failed issues by itself.',
+    })
   })
 
   it('points failed issues at a prompt only while it is off', () => {

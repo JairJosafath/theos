@@ -40,7 +40,7 @@ import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForP
  * All watches of the page share connections through one WatchMux.
  */
 const API: Api = { baseUrl: 'k8s', mux: new WatchMux({ url: 'k8s-watch' }) }
-/** The page's only writes, through the same proxy: create a Brief, add a prompt to one. */
+/** The page's only writes, through the same proxy: create a Brief, add a prompt to one, pause or resume one. */
 const LIVE_WRITER = new LiveBriefWriter(API.baseUrl)
 
 /** A source with nothing in it: for a view that is not shown, or no project yet. */
@@ -179,8 +179,11 @@ export default function App() {
         <div className="brand">
           <LogoMark size={22} />
           <span className="brand-name">C4 Factory</span>
-          <span className="brand-sub" title="Reads everything; writes only Briefs and their prompts">
-            read-only but for Briefs
+          <span
+            className="brand-sub"
+            title="Reads everything; its only writes create a Brief, add a prompt to one, and pause or resume one"
+          >
+            read-only but for creating, prompting and pausing Briefs
           </span>
         </div>
         <nav className="modes" aria-label="Mode">
@@ -247,7 +250,13 @@ export default function App() {
         <>
           <ProjectHeader data={data} namespace={namespace} loaded={story.connection.loaded} />
           {namespace && story.connection.loaded ? (
-            <Briefs briefs={data.briefs} namespace={namespace} canCreate={Boolean(data.project)} writer={writer} />
+            <Briefs
+              briefs={data.briefs}
+              namespace={namespace}
+              canCreate={Boolean(data.project)}
+              writer={writer}
+              agents={data.agents}
+            />
           ) : null}
 
           <nav className="tabs" aria-label="Views">
@@ -341,8 +350,9 @@ export default function App() {
       )}
 
       <footer className="footer">
-        This page reads the C4 Factory resources in the cluster and updates as they change. It can change only two
-        things: create a Brief from an app idea, and add a prompt to a Brief.
+        This page reads the C4 Factory resources in the cluster and updates as they change. It can change only three
+        things: create a Brief from an app idea, add a prompt to a Brief, and pause or resume a Brief. The cluster
+        decides what it accepts, and a refusal shows its message.
       </footer>
     </div>
   )

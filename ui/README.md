@@ -16,8 +16,9 @@ and pauses or resumes one ([docs/plans/upgrade-in-place.md](../docs/plans/upgrad
   the GitHub release, and how many issues its crew works on at once), its prompts (those not yet planned marked
   _next round_), its repository and cost, a field to add a prompt, and a Pause or Resume
   button that sets `spec.paused`; while paused, the card shows its `Paused`
-  condition: which Tasks still run, or that nothing does. The API's
-  answer shows as is when it refuses. Only shown in a namespace with a Project.
+  condition: which Tasks still run, or that nothing does. The forms check none
+  of the CRD's rules: submit is enabled for any non-empty input, and the API
+  server's message shows as is when it refuses. Only shown in a namespace with a Project.
 - **System context** (C4 level 1): the People and SoftwareSystems, the
   Relationships between them, each system's needs, KPIs and roll-up summary.
 - **Containers** (C4 level 2) of one system: its Containers and DataStores inside
@@ -62,7 +63,9 @@ with every state: containers Pending, Scaffolding, Ready and Failed, agent and
 human Sessions, a Stale one, a Relationship added after scaffolding, and Crews
 working on issues, paused and waiting for their Container; and Briefs Planned,
 needing input and Planning. A Brief created or a prompt added there stays in the
-page's memory. It needs no cluster and is clearly labelled as demo data.
+page's memory, and one the CRD would refuse is refused there too, by the limits
+in `src/demo/limits.ts` that a test checks against `config/crd/bases/`. It
+needs no cluster and is clearly labelled as demo data.
 
 Other query parameters: `project=<namespace>`, `view=containers` or
 `view=factory`, `system=<name>` and `task=<namespace>/<name>`, so any view can
@@ -225,7 +228,8 @@ src/model/layout.ts     a small layered layout and edge routing
 src/model/describe.ts   plain-language wording for phases, conditions and times
 src/model/factory.ts    the factory view: stages, timelines, stats, Crews, what needs a look
 src/model/brief.ts      a Brief for display: phase, what it waits for, planned and waiting prompts
-src/demo/               the demo fixture; in demo mode the Brief writes stay in memory
+src/demo/               the demo fixture; in demo mode the Brief writes stay in memory,
+                        refused by the CRD's limits (limits.ts) as the API server would
 src/components/         the diagram, cards and side panels
 ```
 
