@@ -797,7 +797,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 ## UI actions: as the person signed in
 
 Decided on 9 October 2026 for GitHub issue #706; the plan, with every decision
-and why, is [plans/ui-actions.md](plans/ui-actions.md).
+and why, is [plans/done/ui-actions.md](plans/done/ui-actions.md).
 
 Most of what a person does to steer the factory is a field on a resource, so
 the UI can take it, made by the API server like any other write: the CRD
