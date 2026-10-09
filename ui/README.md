@@ -177,7 +177,7 @@ events and the test checks that the page follows.
 
 ## Screenshots
 
-Two scripts, used for the whole project's evidence in `docs/screenshots/`. They
+Three scripts, used for the whole project's evidence in `docs/screenshots/`. They
 need Chromium once: `npx playwright install chromium-headless-shell`.
 
 Chromium also needs a few system libraries a minimal Linux lacks (libnspr4,
@@ -207,6 +207,25 @@ node scripts/screenshot.mjs 'http://localhost:8080/?view=containers' ../docs/scr
 node scripts/screenshot.mjs 'http://localhost:8080/?demo=1' demo-dark.png --full --dark --wait-for .node
 node scripts/screenshot.mjs http://localhost:3000/webshop/orders-api gitea-repo.png
 ```
+
+### Every view, before and after: `scripts/views.mjs`
+
+Screenshots every view of the built UI in demo mode and live, against the
+end-to-end test's fake API (`test/fakeApi.mjs`) serving the demo fixture, at a
+fixed clock, so two runs of the same UI give the same pictures: the system
+context and each system's containers with every node selected in turn, the
+factory with every Task selected in turn, each also with every `<details>` open,
+and the main views in the dark theme. A change that should look the same
+compares its after with its before:
+
+```
+npm run screenshot:views -- /tmp/before
+# ... change ...
+npm run screenshot:views -- /tmp/after --compare /tmp/before
+```
+
+`--compare` exits 1 naming the pictures that differ; `--only <prefix>` limits
+the run.
 
 ### Terminal output: `scripts/term-shot.mjs`
 

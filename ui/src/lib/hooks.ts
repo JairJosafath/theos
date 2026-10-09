@@ -17,18 +17,45 @@ export function useSource<T>(source: Source<T>): Snapshot<T> {
 export const FixedNow = createContext<number | undefined>(undefined)
 
 /**
- * The current time, updated every `intervalMs`, for "12 s ago" style labels.
- * Only the components that show a running clock call it, so the timer
- * re-renders them and nothing above them.
+ * One clock for the whole page, ticking every second while anything shows it,
+ * so two panels showing the same heartbeat agree.
  */
-export function useNow(intervalMs = 1000): number {
+const clock = {
+  now: Date.now(),
+  listeners: new Set<() => void>(),
+  timer: undefined as ReturnType<typeof setInterval> | undefined,
+  subscribe(listener: () => void): () => void {
+    clock.listeners.add(listener)
+    if (!clock.timer) {
+      clock.now = Date.now()
+      clock.timer = setInterval(() => {
+        clock.now = Date.now()
+        for (const l of clock.listeners) l()
+      }, 1000)
+    }
+    return () => {
+      clock.listeners.delete(listener)
+      if (!clock.listeners.size) {
+        clearInterval(clock.timer)
+        clock.timer = undefined
+      }
+    }
+  },
+}
+const noSubscription = () => () => undefined
+
+/**
+ * The current time, updated every second, for "12 s ago" style labels. Only
+ * the components that show a running clock call it, so the tick re-renders
+ * them and nothing above them.
+ */
+export function useNow(): number {
   const fixed = useContext(FixedNow)
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (fixed !== undefined) return
-    const timer = setInterval(() => setNow(Date.now()), intervalMs)
-    return () => clearInterval(timer)
-  }, [intervalMs, fixed])
+  const now = useSyncExternalStore(
+    fixed === undefined ? clock.subscribe : noSubscription,
+    () => clock.now,
+    () => clock.now,
+  )
   return fixed ?? now
 }
 

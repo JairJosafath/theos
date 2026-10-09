@@ -9,7 +9,8 @@
 //   npm run build && node scripts/views.mjs /tmp/after --compare /tmp/before
 //
 //   --compare <dir>   compare each picture with the one of the same name in
-//                     <dir>; exit 1 naming the ones that differ
+//                     <dir>; exit 1 naming the ones that differ or are
+//                     missing. A page error also exits 1.
 //   --only <prefix>   only the pictures whose name starts with this
 //
 // Views: the system context and each system's containers, with every node
@@ -18,7 +19,7 @@
 // the factory's last-hour history is masked: it shows measured times.
 // Needs Chromium once: npx playwright install chromium-headless-shell.
 
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -80,6 +81,7 @@ const views = [
 
 const browser = await launchChromiumOrExit()
 const written = []
+const pageErrors = []
 try {
   for (const mode of ['demo', 'live']) {
     for (const dark of [false, true]) {
@@ -125,7 +127,7 @@ try {
           await page.locator('[aria-label="Close details"]').click()
         }
       }
-      if (errors.length) console.warn(`Page errors (${mode}${dark ? ', dark' : ''}):\n  ${errors.join('\n  ')}`)
+      pageErrors.push(...errors.map((e) => `${mode}${dark ? ', dark' : ''}: ${e}`))
       await context.close()
     }
   }
@@ -136,6 +138,10 @@ try {
   api.server.close()
 }
 console.log(`Saved ${written.length} pictures in ${out}`)
+if (pageErrors.length) {
+  console.error(`The page threw:\n  ${pageErrors.join('\n  ')}`)
+  process.exit(1)
+}
 
 if (values.compare) {
   const differ = []
@@ -144,6 +150,9 @@ if (values.compare) {
     const b = await readFile(path.join(out, file))
     if (!a || !a.equals(b)) differ.push(file)
   }
+  // A view that is gone (a node or Task no longer found) is a difference too.
+  const before = (await readdir(values.compare)).filter((f) => f.endsWith('.png') && f.startsWith(values.only))
+  for (const file of before) if (!written.includes(file)) differ.push(`${file} (missing)`)
   if (differ.length) {
     console.error(`${differ.length} of ${written.length} differ from ${values.compare}:\n  ${differ.join('\n  ')}`)
     process.exit(1)

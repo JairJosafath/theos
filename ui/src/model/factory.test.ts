@@ -701,7 +701,7 @@ describe('formatDuration', () => {
     [2, '2 ms'],
     [999, '999 ms'],
     [1500, '1.5 s'],
-    [90_000, '1 min'],
+    [90_000, '90.0 s'],
   ])('formats a fine %d ms as %s', (ms, want) => expect(formatDuration(ms, { fine: true })).toBe(want))
 })
 

@@ -27,6 +27,7 @@ import {
   type StoryData,
 } from './k8s/sources'
 import type { Project } from './k8s/types'
+import { useDemo } from './lib/demo'
 import { useSource, useUrlState, type View } from './lib/hooks'
 import { plural, titleOf } from './model/describe'
 import { activeCrewTasks } from './model/crews'
@@ -62,24 +63,10 @@ const NO_HEALTH = new Idle<FactoryHealth | undefined>(undefined)
 
 const MemoDiagram = memo(Diagram)
 
-type DemoModule = typeof import('./demo/demoSource')
-
-/**
- * Demo mode's sources, loaded only in demo mode: the fixture is a chunk of its
- * own, so a page on a cluster never downloads it. Undefined until it arrives.
- */
-function useDemo(demo: boolean): DemoModule | undefined {
-  const [module, setModule] = useState<DemoModule>()
-  useEffect(() => {
-    if (demo && !module) void import('./demo/demoSource').then(setModule)
-  }, [demo, module])
-  return demo ? module : undefined
-}
-
 export default function App() {
   const [url, setUrl] = useUrlState()
   const demo = url.demo
-  const demoModule = useDemo(demo)
+  const { module: demoModule, problem: demoProblem } = useDemo(demo)
 
   const projectsSource = useMemo<Source<Project[]>>(() => {
     if (!demo) return new LiveProjectsSource(API)
@@ -170,13 +157,16 @@ export default function App() {
   useEffect(() => {
     document.title = pageTitle
   }, [pageTitle])
-  const connection = factoryView
+  const shownConnection = factoryView
     ? demo
       ? factory.connection
       : mergeConnections(factory.connection, health.connection)
     : demo
       ? projects.connection
       : mergeConnections(projects.connection, story.connection)
+  const connection = demoProblem
+    ? { ...shownConnection, problems: [...shownConnection.problems, demoProblem] }
+    : shownConnection
   const noProjects = !demo && projects.connection.loaded && sortedProjects.length === 0
   const systemTitle = systems.find((s) => s.name === systemName)?.title
 
