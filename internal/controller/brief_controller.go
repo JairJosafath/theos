@@ -20,11 +20,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -284,7 +282,7 @@ func (r *BriefReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return nil
 	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.Brief{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&c4v1alpha1.Brief{}, briefSpecOrOperatorWait()).
 		Owns(&c4v1alpha1.Task{}, taskPhaseChanges()).
 		// A Task on a Container the Brief made may file reviewers' suggestions.
 		Watches(&c4v1alpha1.Task{}, handler.EnqueueRequestsFromMapFunc(briefOfTaskContainer(mgr.GetClient())),
