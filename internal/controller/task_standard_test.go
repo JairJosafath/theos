@@ -638,7 +638,7 @@ var _ = Describe("Task with a gated merge", func() {
 			HaveField("Commit", "sha-1"))))
 	})
 
-	It("refuses the merge, not reviews again, when the review expires while CI is pending", func() {
+	It("checks and reviews it again, not fails, when the review expires while CI is pending", func() {
 		ns := newProjectNamespace()
 		n := gatedTaskInReview(ns, "Makefile")
 		gitFake.setChecks(ns, "orders-api", "sha-1", "pending")
@@ -654,17 +654,69 @@ var _ = Describe("Task with a gated merge", func() {
 		expireSandbox(ns, "orders-api-1-r1-review-a1", 0)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
-			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
-				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("GatedMergeRefused"),
-				"Message": ContainSubstring("CI is still pending on the reviewed commit")})))
-			g.Expect(task.Status.ReviewAttempts).To(BeZero(), "no reviewer run is spent on a CI wait")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Round).To(Equal(int32(1)), "an approval that ran out costs no round")
+			g.Expect(task.Status.Commit).To(Equal("sha-1"))
+			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ApprovalEnded")))
 		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(BeNil())
+		}, "2s").Should(Succeed())
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-review-a2"), newSandbox()))).
-			To(BeTrue(), "no second reviewer run")
-		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
-		Expect(gitFake.issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
+			To(BeTrue(), "no reviewer run is spent on a CI wait")
+		Expect(gitFake.pullComments(ns, "orders-api", 1)).To(ContainElement(
+			ContainSubstring("ended while CI ran again on the reviewed commit")))
+
+		By("reviewing it again once CI passed, and merging on that approval")
+		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a2") }).Should(Succeed())
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty(), "never merged without a lasting approval")
+		finishSandbox(ns, "orders-api-1-r1-review-a2", "orders-api-1",
+			&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Still only the dist target."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+		}).Should(Succeed())
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
+		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
+	})
+
+	It("checks and reviews it again, not fails, when the review expires while CI runs with main merged in", func() {
+		// #812: main kept moving while the shared runner was busy.
+		ns := newProjectNamespace()
+		n := gatedTaskInReview(ns, "Makefile")
+		gitFake.fallBehind(ns, "orders-api", 1)
+		approveGated(ns)
+		var head string
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.MergeWhenChecksPass).To(BeTrue())
+			g.Expect(task.Status.Commit).NotTo(Equal("sha-1"))
+			head = task.Status.Commit
+		}).Should(Succeed())
+
+		By("expiring the review sandbox before the checks with main merged in pass")
+		expireSandbox(ns, "orders-api-1-r1-review-a1", 0)
+		gitFake.setChecks(ns, "orders-api", head, "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a2") }).Should(Succeed())
+		task := getTask(Default, ns, "orders-api-1")
+		Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+		Expect(task.Status.Round).To(Equal(int32(1)), "an approval that ran out costs no round")
+		Expect(task.Status.Commit).To(Equal(head))
+		Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ApprovalEnded")))
+		Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(BeNil())
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty(), "never merged without a lasting approval")
+
+		By("merging on the new approval")
+		finishSandbox(ns, "orders-api-1-r1-review-a2", "orders-api-1",
+			&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Still only the dist target."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+		}).Should(Succeed())
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
+		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
 	It("refuses a Standard change whose CI no longer reports the check main requires", func() {

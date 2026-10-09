@@ -253,6 +253,10 @@ type TaskFacts struct {
 	// MergeWaitsForChecks means the reviewer approved a Standard change whose
 	// gated merge waits for CI, which runs again on the reviewed commit.
 	MergeWaitsForChecks bool
+	// ApprovalEnded means the review run that approved a Standard change ended
+	// while its branch, with main merged in, was checked again: its gated merge
+	// has no approval to merge with.
+	ApprovalEnded bool
 	// StandardChanges counts the Standard changes filed so far for the Task.
 	StandardChanges int
 	// Resumed means this implement run is in the round the Task resumed in after
@@ -542,9 +546,10 @@ const (
 	// ActionRerun ends a run the infrastructure interrupted and runs the same
 	// step again, in the same round.
 	ActionRerun TaskAction = "Rerun"
-	// ActionRefuseMerge fails a Standard change whose gated merge is refused, and
-	// hands its issue back.
-	ActionRefuseMerge TaskAction = "RefuseMerge"
+	// ActionReviewAgain checks and reviews an approved Standard change again, in
+	// the same round, as the review run whose approval its gated merge needs
+	// ended while CI ran again: no try and no round is spent.
+	ActionReviewAgain TaskAction = "ReviewAgain"
 	// ActionAwaitPlanCheck records the plan a planner pushed and waits for the
 	// Brief's verdict on it.
 	ActionAwaitPlanCheck TaskAction = "AwaitPlanCheck"
@@ -613,7 +618,10 @@ func nextTaskStep(f TaskFacts) TaskStep {
 	case TaskChecking:
 		switch f.Checks {
 		case checkSuccess:
-			if f.MergeWhenChecksPass {
+			switch {
+			case f.MergeWhenChecksPass && f.ApprovalEnded:
+				return reviewAgainStep(f, "with main merged in")
+			case f.MergeWhenChecksPass:
 				return approvedStep(f, "Checks passed on the branch with main merged in; merging")
 			}
 			return TaskStep{Action: ActionStartReview, Message: "Checks passed; starting the review"}
@@ -820,19 +828,29 @@ func approvedStep(f TaskFacts, merging string) TaskStep {
 	return TaskStep{Action: ActionMerge, Message: merging}
 }
 
+// reviewAgainStep sends an approved Standard change, whose approving review run
+// ended while CI ran again on its branch (where), back to be checked and
+// reviewed again. The approval ran out only because CI waited, often behind
+// other jobs while main moved: neither the agent's fault nor the change's, so
+// it costs no round and no try. The new review starts only once the checks
+// pass, so no reviewer run is spent on a CI wait.
+func reviewAgainStep(f TaskFacts, where string) TaskStep {
+	return TaskStep{Action: ActionReviewAgain, Message: fmt.Sprintf(
+		"The review run that approved it ended while CI ran again %s; checking and reviewing it again in round %d",
+		where, f.Round)}
+}
+
 // noVerdictStep decides what follows a review run that ended without a verdict:
 // another run, up to maxReviewAttempts. A run that ends while the approved
 // change's merge waits for CI, its sandbox expired, can no longer vouch for the
-// change: the merge is refused, and no reviewer run is spent on a CI wait.
+// change: it is checked and reviewed again.
 func noVerdictStep(f TaskFacts) TaskStep {
 	reason := f.Run.Failure
 	if f.Run.Result != nil {
 		reason = f.Run.Result.Error
 	}
 	if f.MergeWaitsForChecks {
-		return TaskStep{Action: ActionRefuseMerge, Message: fmt.Sprintf(
-			"CI is still pending on the reviewed commit, and the review run that approved it ended (%s)",
-			orUnknown(reason))}
+		return reviewAgainStep(f, "on the reviewed commit")
 	}
 	if f.ReviewAttempts+1 < maxReviewAttempts {
 		return TaskStep{Action: ActionRetryReview, Message: "The reviewer gave no verdict: " + orUnknown(reason)}

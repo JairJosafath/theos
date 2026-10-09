@@ -86,13 +86,23 @@ func TestNextTaskStep(t *testing.T) {
 			want: ActionFail, message: "The reviewer failed 3 times"},
 		{name: "an approval waiting for CI still merges", facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
 			MergeWaitsForChecks: true, Run: done(RunResult{Verdict: VerdictApprove})}, want: ActionMerge},
-		{name: "a review that ends while its merge waits for CI refuses the merge, not reviews again",
-			facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, MergeWaitsForChecks: true,
+		{name: "a review that ends while its merge waits for CI is checked and reviewed again, not failed",
+			facts: TaskFacts{Phase: TaskReviewing, Round: 2, MaxRounds: 3, MergeWaitsForChecks: true,
 				Run: RunState{Started: true, Done: true, Failure: "the sandbox reached its shutdown time"}},
-			want: ActionRefuseMerge, message: "CI is still pending on the reviewed commit"},
+			want: ActionReviewAgain, message: "ended while CI ran again on the reviewed commit; checking and " +
+				"reviewing it again in round 2"},
 		{name: "even after earlier reviewer failures", facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
 			MergeWaitsForChecks: true, ReviewAttempts: 2, Run: RunState{Started: true, Done: true}},
-			want: ActionRefuseMerge, message: "CI is still pending"},
+			want: ActionReviewAgain},
+		{name: "green checks with main merged in merge", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
+			Checks: "success", MergeWhenChecksPass: true}, want: ActionMerge, message: "with main merged in; merging"},
+		{name: "green checks with main merged in review again once the approval ended", facts: TaskFacts{
+			Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "success", MergeWhenChecksPass: true,
+			ApprovalEnded: true, Behind: true}, want: ActionReviewAgain, message: "ended while CI ran again with " +
+			"main merged in; checking and reviewing it again in round 1"},
+		{name: "red checks with main merged in still send it back once the approval ended", facts: TaskFacts{
+			Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "failure", MergeWhenChecksPass: true,
+			ApprovalEnded: true}, want: ActionRetry},
 
 		{name: "waits for a free agent slot to start", facts: TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true,
 			Round: 1, MaxRounds: 3, NoFreeSlot: true}, want: ActionWait, message: "Waiting for a free agent slot"},

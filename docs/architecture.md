@@ -199,8 +199,11 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    matching context that succeeded and every other match succeeded too or was
    skipped (a push run off main), as branch protection requires, so a renamed
    workflow or job is refused. CI still pending: it
-   waits until the review run ends, then refuses (reason `GatedMergeRefused`); no
-   reviewer run is spent on a CI wait. A pull request too large to list (1000+
+   waits while the review run that approved it lasts. When that run ends first,
+   on the reviewed commit or on the branch with `main` merged in, the change
+   goes back to `Checking` in the same round (reason `ApprovalEnded`), no try
+   spent, and is reviewed again once CI passes, so no reviewer run is spent on
+   a CI wait and nothing merges without a lasting approval. A pull request too large to list (1000+
    files) is refused too. A gated change may touch only its allowed paths, so
    neither its implementer nor its reviewer is asked for tests; the check
    command passing and the reviewer's three checks decide. The gated
