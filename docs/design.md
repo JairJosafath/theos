@@ -482,7 +482,13 @@ model and context it needs.
   there once the release runs succeed: the same tag (with an optional
   `tagPrefix`), the same notes (the Gitea release's body, or the titles of the
   release's merged issues, which the operator writes on both) and the same
-  files, streamed from the Gitea release. The operator does it, not CI, so the
+  files, streamed from the Gitea release. The release is named after the app
+  and its version (the Container's `displayName`, else its name, then the tag:
+  `CEL Lens for VS Code v0.6.1`), so a repository several apps publish to says
+  whose each release is. It becomes the repository's Latest unless
+  `publishReleases.latest` is `false`: on a shared repository, every app but
+  the one people install sets it, so a library's release doesn't take Latest
+  from it. The operator does it, not CI, so the
   token never reaches the code the agents write. It only adds releases: a draft
   marked with the Container and tag, its files, then published, so a retry
   carries on and nobody sees half a release; a release of that tag it didn't

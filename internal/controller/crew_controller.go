@@ -188,7 +188,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 		// Before the Crew picks issues: a prepare issue filed now keeps its
 		// release the current one, so the next release's work waits for it.
-		if filed := r.release(ctx, &crew, status, provider, repo, containerTasks); filed != nil {
+		if filed := r.release(ctx, &crew, &container, status, provider, repo, containerTasks); filed != nil {
 			facts.Issues = append(facts.Issues, *filed)
 		}
 	}
@@ -254,8 +254,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 // prepares or tags the next release, reports the last release's overdue runs,
 // publishes its Go module, files its bumps and publishes it, as the Crew's
 // switches say. It returns the prepare issue filed now, if any.
-func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
-	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) *model.Issue {
+func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
+	status *c4v1alpha1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
+	tasks []c4v1alpha1.Task) *model.Issue {
 	if crew.Spec.TagReleases {
 		r.rerunRelease(ctx, crew, status, provider, repo)
 		r.watchReleaseRun(ctx, crew, status, provider, repo)
@@ -269,7 +270,7 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, sta
 		r.publishGoModule(ctx, crew, status, provider, repo)
 		r.fileBumps(ctx, crew, status, repo)
 	}
-	r.publishRelease(ctx, crew, status, provider, repo)
+	r.publishRelease(ctx, crew, container, status, provider, repo)
 	return filed
 }
 

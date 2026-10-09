@@ -93,6 +93,14 @@ type CrewPublishReleases struct {
 	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/-]*$`
 	// +optional
 	TagPrefix string `json:"tagPrefix,omitempty"`
+
+	// latest says whether each release published becomes the repository's
+	// Latest release on GitHub. It defaults to true; set it to false for every
+	// app but the one people install, when several publish to one repository,
+	// so a library's release doesn't take Latest from it. A release published
+	// before it changed keeps what it got.
+	// +optional
+	Latest *bool `json:"latest,omitempty"`
 }
 
 // CrewPublishGitHub is a repository on github.com and the token that publishes

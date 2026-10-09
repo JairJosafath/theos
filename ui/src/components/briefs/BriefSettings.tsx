@@ -173,6 +173,7 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
                 {' '}
                 · token Secret {r.github.tokenSecretRef.name}
                 {r.tagPrefix ? ` · tags ${r.tagPrefix}v…` : ''}
+                {r.latest === false ? ' · never Latest' : ''}
               </span>
               {act ? (
                 <button
@@ -227,6 +228,7 @@ function AddRelease({
   const [repository, setRepository] = useState('')
   const [secret, setSecret] = useState('')
   const [tagPrefix, setTagPrefix] = useState('')
+  const [latest, setLatest] = useState(true)
   const picked = container || containers[0] || ''
 
   async function submit(e: FormEvent) {
@@ -236,11 +238,13 @@ function AddRelease({
       github: { repository: repository.trim(), tokenSecretRef: { name: secret.trim() } },
     }
     if (tagPrefix.trim()) entry.tagPrefix = tagPrefix.trim()
+    if (!latest) entry.latest = false
     if (await save('add-release', { releases: [...releases, entry], resourceVersion })) {
       setContainer('')
       setRepository('')
       setSecret('')
       setTagPrefix('')
+      setLatest(true)
     }
   }
 
@@ -296,6 +300,15 @@ function AddRelease({
         onChange={(e) => setTagPrefix(e.target.value)}
         disabled={busy}
       />
+      <label className="crew-check">
+        <input type="checkbox" checked={latest} onChange={(e) => setLatest(e.target.checked)} disabled={busy} />
+        <span>
+          <span className="field-label">Latest on GitHub</span>{' '}
+          <span className="field-hint">
+            Its releases become the repository’s Latest. Turn it off for every app but the one people install.
+          </span>
+        </span>
+      </label>
       <div className="form-row">
         <button type="submit" className="button button-secondary" disabled={busy || !picked}>
           Publish its releases

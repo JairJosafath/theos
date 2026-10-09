@@ -144,7 +144,7 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
     setEdits({ ...edits, ...next })
   }
   const ops = releasePatch(crew, form, publishFrom)
-  const publish = form.publish ?? { repository: '', tokenSecret: '', tagPrefix: '' }
+  const publish = form.publish ?? { repository: '', tokenSecret: '', tagPrefix: '', latest: true }
   const setPublish = (patch: Partial<typeof publish>) => setForm({ publish: { ...publish, ...patch } })
 
   function submit(e: FormEvent) {
@@ -212,6 +212,13 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
               disabled={sending}
             />
           </Text>
+          <Check
+            label="Latest on GitHub"
+            hint="Each release becomes the repository’s Latest. Turn it off for every app but the one people install, when several publish to one repository."
+            checked={publish.latest}
+            disabled={sending}
+            onChange={(latest) => setPublish({ latest })}
+          />
         </div>
       ) : null}
       <div className="form-row">

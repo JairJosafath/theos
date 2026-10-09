@@ -61,9 +61,10 @@ type ReleaseTargets interface {
 // publishRelease takes the next steps of publishing the Crew's last release
 // to its GitHub repository: the reads the decision needs, then one write, or
 // the report of why it waits, failed or is done. A failure is a Warning Event
-// once per release and reason, and is tried again on the next poll.
-func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
-	provider gitprovider.Provider, repo gitprovider.Repository) {
+// once per release and reason, and is tried again on the next poll. The
+// release is named after the Container, its display name or else its name.
+func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
+	status *c4v1alpha1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository) {
 	spec := crew.Spec.PublishReleases
 	release := status.LastRelease
 	if spec == nil || release == nil {
@@ -71,10 +72,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 		return
 	}
 	log := logf.FromContext(ctx).WithValues("tag", release.Tag, "repository", spec.GitHub.Repository)
-	facts := model.PublishFacts{Configured: true, Namespace: crew.Namespace, Container: crew.Spec.ContainerRef.Name,
-		Tag: release.Tag, TagPrefix: spec.TagPrefix, Repository: spec.GitHub.Repository,
-		Published: release.Publish != nil && release.Publish.State == publishPublished, Runs: release.Run,
-		Secret: spec.GitHub.TokenSecretRef.Name}
+	facts := publishFacts(crew, container, release)
 	if facts.Published {
 		return
 	}
@@ -142,7 +140,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 			log.Info("Wrote release notes")
 		case model.PublishCreateDraft:
 			var draft gitprovider.TargetRelease
-			if draft, err = target.CreateDraft(pubCtx, step.Tag, step.Tag, step.Body); err == nil {
+			if draft, err = target.CreateDraft(pubCtx, step.Tag, step.Name, step.Body); err == nil {
 				log.Info("Created release draft", "draft", draft.ID)
 			}
 		case model.PublishUploadAsset:
@@ -156,8 +154,8 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 				log.Info("Uploaded release file", "file", step.Asset.Name, "size", step.Asset.Size)
 			}
 		case model.PublishDraft:
-			if _, err = target.PublishRelease(pubCtx, step.Release); err == nil {
-				log.Info("Published release draft", "draft", step.Release)
+			if _, err = target.PublishRelease(pubCtx, step.Release, step.Latest); err == nil {
+				log.Info("Published release draft", "draft", step.Release, "latest", step.Latest)
 			}
 		}
 		if err != nil {
@@ -170,6 +168,22 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 			fmt.Sprintf("Publishing %s to %s", model.GitHubTag(spec.TagPrefix, release.Tag), spec.GitHub.Repository))
 		return
 	}
+}
+
+// publishFacts are what the Crew's spec and its last release say of publishing
+// that release.
+func publishFacts(crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
+	release *c4v1alpha1.CrewRelease) model.PublishFacts {
+	spec := crew.Spec.PublishReleases
+	app := container.Spec.DisplayName
+	if app == "" {
+		app = container.Name
+	}
+	return model.PublishFacts{Configured: true, Namespace: crew.Namespace, Container: crew.Spec.ContainerRef.Name,
+		Tag: release.Tag, TagPrefix: spec.TagPrefix, App: app, Latest: spec.Latest == nil || *spec.Latest,
+		Repository: spec.GitHub.Repository,
+		Published:  release.Publish != nil && release.Publish.State == publishPublished, Runs: release.Run,
+		Secret: spec.GitHub.TokenSecretRef.Name}
 }
 
 // publishToken reads the token from the Secret named name, live, so a Secret

@@ -30,7 +30,7 @@ describe('a Crew’s release settings as a patch', () => {
     const next = {
       tagReleases: true,
       prepareReleases: false,
-      publish: { repository: 'webshop-co/orders-api', tokenSecret: 'orders-api-github', tagPrefix: '' },
+      publish: { repository: 'webshop-co/orders-api', tokenSecret: 'orders-api-github', tagPrefix: '', latest: true },
     }
     expect(releasePatch(base, next)).toEqual([
       { op: 'add', path: '/spec/tagReleases', value: true },
@@ -40,6 +40,23 @@ describe('a Crew’s release settings as a patch', () => {
         value: { github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'orders-api-github' } } },
       },
     ])
+  })
+
+  it('sets latest only when it is off', () => {
+    const now = releaseSettings(publishing)
+    const next = { ...now, publish: { ...now.publish!, latest: false } }
+    const ops = releasePatch(publishing, next)
+    expect(ops).toContainEqual({
+      op: 'add',
+      path: '/spec/publishReleases',
+      value: { github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'gh' } }, latest: false },
+    })
+    const off: Crew = {
+      ...publishing,
+      spec: { ...publishing.spec, publishReleases: { ...publishing.spec.publishReleases!, latest: false } },
+    }
+    expect(releaseSettings(off).publish?.latest).toBe(false)
+    expect(releasePatch(off, releaseSettings(off))).toEqual([])
   })
 
   it('removes publishing turned off', () => {

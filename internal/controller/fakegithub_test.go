@@ -34,6 +34,8 @@ type fakeGitHubRelease struct {
 	Draft   bool   `json:"draft"`
 	HTMLURL string `json:"html_url"`
 	assets  []fakeGitHubAsset
+	// makeLatest is the make_latest it was published with.
+	makeLatest string
 }
 
 type fakeGitHubAsset struct {
@@ -143,9 +145,12 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 func (f *fakeGitHub) serveRelease(w http.ResponseWriter, req *http.Request, rel *fakeGitHubRelease, rest []string) {
 	switch {
 	case len(rest) == 0 && req.Method == http.MethodPatch:
-		var patch struct{ Draft bool }
+		var patch struct {
+			Draft      bool
+			MakeLatest string `json:"make_latest"`
+		}
 		_ = json.NewDecoder(req.Body).Decode(&patch)
-		rel.Draft = patch.Draft
+		rel.Draft, rel.makeLatest = patch.Draft, patch.MakeLatest
 		reply(w, http.StatusOK, rel)
 	case len(rest) == 1 && rest[0] == "assets" && req.Method == http.MethodGet:
 		if req.URL.Query().Get("page") != "1" {
