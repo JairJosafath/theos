@@ -434,6 +434,10 @@ model and context it needs.
   `ReleaseRunOverdue`. A value set while the run hasn't failed re-runs
   nothing, now or later: it is a Normal Event `NoFailedReleaseRun`. A re-run the Git host
   refuses is a Warning Event `ReleaseRunRerunFailed`; a new value tries again.
+  The operator asks for each failed run's re-run even after one is refused;
+  when the host refused only some, the Warning names the runs it re-ran and the
+  ones it refused, the release stays `Failed`, and a new value re-runs only the
+  refused ones, since the others are no longer failed.
 - **A released Go app is a module others can fetch.** Right after the Crew
   tags a release, it publishes the repository's Go module at that tag to the
   Git host's Go package registry (Gitea's, per owner), under the module path
