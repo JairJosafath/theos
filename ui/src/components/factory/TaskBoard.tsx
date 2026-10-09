@@ -1,5 +1,5 @@
-// The factory view's Task board: a card per Task, with its checks, verdict and
-// a small timeline.
+// The Work area's Task board: a card per Task, with its checks, verdict and a
+// small timeline, each a link to the Task's page.
 
 import type { Agent, Task } from '../../k8s/types'
 import { CheckIcon, CrossIcon } from '../icons'
@@ -7,7 +7,7 @@ import { agentBackAt, isFinal, stageSince, taskHeadline, taskSegments } from '..
 import { formatClock, formatDuration } from '../../model/format'
 import { When } from '../bits'
 
-export function ChecksPill({ state }: { state?: string }) {
+function ChecksPill({ state }: { state?: string }) {
   if (!state) return null
   const tone = state === 'success' ? 'ok' : state === 'pending' ? 'progress' : 'error'
   return (
@@ -18,7 +18,7 @@ export function ChecksPill({ state }: { state?: string }) {
   )
 }
 
-export function VerdictPill({ verdict }: { verdict?: string }) {
+function VerdictPill({ verdict }: { verdict?: string }) {
   if (!verdict) return null
   return (
     <span className={`badge badge-sm badge-${verdict === 'approve' ? 'ok' : 'waiting'}`} title={`Review: ${verdict}`}>
@@ -31,16 +31,12 @@ export function TaskCard({
   task,
   agent,
   now,
-  selected,
-  onSelect,
   href,
 }: {
   task: Task
   agent?: Agent
   now: number
-  selected: boolean
-  onSelect: () => void
-  /** The Task's page, in the shell: the card links there instead of selecting the Task. */
+  /** The Task's page. */
   href?: string
 }) {
   const phase = task.status?.phase
@@ -48,7 +44,7 @@ export function TaskCard({
   const maxRounds = agent?.spec.maxRounds
   const headline = taskHeadline(task)
   const back = agentBackAt(task)
-  const className = `task-card${selected ? ' is-selected' : ''}${phase === 'Failed' ? ' is-failed' : ''}`
+  const className = `task-card${phase === 'Failed' ? ' is-failed' : ''}`
   const body = (
     <>
       <span className="task-card-name">{task.metadata.name}</span>
@@ -89,14 +85,10 @@ export function TaskCard({
       <MiniTimeline task={task} now={now} />
     </>
   )
-  return href ? (
+  return (
     <a className={className} href={href}>
       {body}
     </a>
-  ) : (
-    <button type="button" className={className} aria-pressed={selected} onClick={onSelect}>
-      {body}
-    </button>
   )
 }
 

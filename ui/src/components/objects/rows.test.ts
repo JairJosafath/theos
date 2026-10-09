@@ -196,7 +196,7 @@ describe('agentRuns', () => {
 
 describe('crewTasks', () => {
   beforeEach(() => {
-    vi.stubGlobal('window', { location: { pathname: '/', search: '?shell=next', hash: '' } })
+    vi.stubGlobal('window', { location: { pathname: '/', search: '', hash: '' } })
   })
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -218,13 +218,13 @@ describe('crewTasks', () => {
       {
         kind: 'Task',
         name: 'api-7',
-        href: '/?shell=next&ns=shop&kind=Task&name=api-7',
+        href: '/?ns=shop&kind=Task&name=api-7',
         note: '#7 Refunds · Checking',
       },
       {
         kind: 'Task',
         name: 'api-6',
-        href: '/?shell=next&ns=shop&kind=Task&name=api-6',
+        href: '/?ns=shop&kind=Task&name=api-6',
         note: '#7 Refunds · Merged',
       },
     ])

@@ -35,8 +35,8 @@ export function Briefs({
   loaded?: boolean
   /** The failed reads of Briefs and the Project. */
   problems?: Problem[]
-  /** Each Brief's object page, in the new shell; the old layout links none. */
-  pageHref?: (name: string) => string
+  /** Each Brief's object page. */
+  pageHref: (name: string) => string
   namespace: string
   /** The namespace's Agents, for each planner's sessionTokenLimit. */
   agents?: Agent[]
@@ -70,7 +70,7 @@ export function Briefs({
               namespace={namespace}
               writer={writer}
               plannerLimit={plannerLimit(agents, b)}
-              href={pageHref?.(b.metadata.name)}
+              href={pageHref(b.metadata.name)}
             />
           ))}
         </div>
@@ -90,7 +90,8 @@ function BriefCard({
   namespace: string
   writer: BriefWriter
   plannerLimit?: number
-  href?: string
+  /** The Brief's page. */
+  href: string
 }) {
   const view = describeBrief(brief, plannerLimit)
   const [pauseError, setPauseError] = useState<WriteError>()
@@ -98,7 +99,9 @@ function BriefCard({
     <article className={`panel brief brief-${view.phase.tone}`} aria-label={`Brief ${view.name}`}>
       <div className="panel-head">
         <div className="brief-title">
-          <h3 className="panel-title small-title mono">{href ? <a href={href}>{view.name}</a> : view.name}</h3>
+          <h3 className="panel-title small-title mono">
+            <a href={href}>{view.name}</a>
+          </h3>
           <span className="brief-meta">
             {view.round ? `Round ${view.round}` : 'No round yet'}
             {view.usage ? (

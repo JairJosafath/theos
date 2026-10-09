@@ -1,4 +1,4 @@
-// Accessibility of the new shell (?shell=next) against a fake Kubernetes API
+// Accessibility of the UI against a fake Kubernetes API
 // serving the demo fixture: axe finds no WCAG 2.1 A or AA violation in any
 // area or object page, in the light theme or the dark one, and everything
 // the keyboard reaches shows that it has the focus.
@@ -29,7 +29,7 @@ function describeViolations(violations) {
     .join('\n')
 }
 
-describe('accessibility of the new shell', () => {
+describe('accessibility of the UI', () => {
   let api
   let ui
   let browser
@@ -85,7 +85,7 @@ describe('accessibility of the new shell', () => {
       const found = []
       try {
         for (const [name, query, role] of pages) {
-          await page.goto(`${base}/?shell=next&${query}`)
+          await page.goto(`${base}/?${query}`)
           await page.getByRole(role, { name, exact: true }).first().waitFor({ timeout: 10000 })
           const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze()
           if (violations.length) found.push(`${query}:\n${describeViolations(violations)}`)
@@ -105,7 +105,7 @@ describe('accessibility of the new shell', () => {
     let reached = 0
     try {
       for (const [name, query, role] of pages) {
-        await page.goto(`${base}/?shell=next&${query}`)
+        await page.goto(`${base}/?${query}`)
         await page.getByRole(role, { name, exact: true }).first().waitFor({ timeout: 10000 })
         const seen = new Set()
         for (let i = 0; i < 80; i++) {

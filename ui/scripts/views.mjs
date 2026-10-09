@@ -13,10 +13,10 @@
 //                     missing. A page error also exits 1.
 //   --only <prefix>   only the pictures whose name starts with this
 //
-// Views: the system context and each system's containers, with every node
-// selected in turn; the factory, with every Task selected in turn; each one
-// also with every <details> opened, and the main ones in the dark theme. Live,
-// the factory's last-hour history is masked: it shows measured times.
+// Views: each area, each system's containers and each Task's page; in Story,
+// every box without a page of its own selected in turn; each one also with
+// every <details> opened, and the areas and containers in the dark theme.
+// Live, the factory's last-hour history is masked: it shows measured times.
 // Needs Chromium once: npx playwright install chromium-headless-shell.
 
 import { mkdir, readdir, readFile } from 'node:fs/promises'
@@ -72,12 +72,17 @@ function closeUi() {
 const systems = story.systems.map((s) => s.metadata.name)
 const tasks = factory.tasks.map((t) => `${t.metadata.namespace}/${t.metadata.name}`)
 /** name -> query string, without demo=1. */
+const AREAS = ['needs', 'briefs', 'story', 'work', 'factory', 'about']
 const views = [
-  ['context', ''],
-  ...systems.map((s) => [`containers-${s}`, `view=containers&system=${s}`]),
-  ['factory', 'view=factory'],
-  ...tasks.map((t) => [`factory-task-${t.replace('/', '-')}`, `view=factory&task=${encodeURIComponent(t)}`]),
+  ...AREAS.map((a) => [a, `area=${a}`]),
+  ...systems.map((s) => [`containers-${s}`, `area=story&view=containers&system=${s}`]),
+  ...tasks.map((t) => {
+    const [ns, name] = t.split('/')
+    return [`task-${ns}-${name}`, `ns=${ns}&kind=Task&name=${name}`]
+  }),
 ]
+/** Boxes of these kinds open their page; the others show their details. */
+const OPENS_PAGE = /^(SoftwareSystem|Container)\//
 
 const browser = await launchChromiumOrExit()
 const written = []
@@ -105,7 +110,7 @@ try {
         written.push(file)
       }
       await mkdir(out, { recursive: true })
-      for (const [name, query] of dark ? views.slice(0, 1 + systems.length + 1) : views) {
+      for (const [name, query] of dark ? views.slice(0, AREAS.length + systems.length) : views) {
         const q = [mode === 'demo' ? 'demo=1' : '', query].filter(Boolean).join('&')
         const base = await freshUi()
         await page.goto(`${base}/${q ? `?${q}` : ''}`, { waitUntil: 'load' })
@@ -116,9 +121,9 @@ try {
         if (dark) continue
         await page.evaluate(() => globalThis.document.querySelectorAll('details').forEach((d) => (d.open = true)))
         await shoot(`${name}-open`)
-        if (query.includes('factory')) continue
+        if (!query.startsWith('area=story')) continue
         const nodes = await page.locator('[data-node-id]').evaluateAll((els) => els.map((e) => e.dataset.nodeId))
-        for (const id of nodes) {
+        for (const id of nodes.filter((n) => !OPENS_PAGE.test(n))) {
           await page
             .locator(`[data-node-id="${id}"]`)
             .first()

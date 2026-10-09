@@ -205,13 +205,6 @@ export function followUpLinks(task: Task): { url: string; label: string }[] {
   })
 }
 
-/** The Standard change a Blocked Task waits on: its issue, and the protected paths it asks for. */
-export function standardChangeLink(task: Task): { label: string; url?: string; paths: string[] } | undefined {
-  const change = task.status?.standardChange
-  if (task.status?.phase !== 'Blocked' || !change) return undefined
-  return { label: `#${change.issue}`, url: change.issueURL, paths: change.paths }
-}
-
 export type Column = Stage | 'done'
 
 export const COLUMNS: { key: Column; label: string }[] = [
@@ -323,37 +316,4 @@ export function factoryStats(tasks: Task[], now: number): FactoryStats {
     timeByStage: totals,
     withTimeline,
   }
-}
-
-/** A timeline row: consecutive segments of one stage and round, with their messages. */
-export interface Step {
-  stage: Stage
-  round: number
-  start: number
-  end: number
-  current: boolean
-  messages: string[]
-}
-
-/** Joins consecutive segments of the same stage and round, such as "Running" and then "Waiting". */
-export function timelineSteps(segments: Segment[]): Step[] {
-  const steps: Step[] = []
-  for (const s of segments) {
-    const last = steps[steps.length - 1]
-    if (last && last.stage === s.stage && last.round === s.round) {
-      last.end = s.end
-      last.current = s.current
-      if (s.message && !last.messages.includes(s.message)) last.messages.push(s.message)
-      continue
-    }
-    steps.push({
-      stage: s.stage,
-      round: s.round,
-      start: s.start,
-      end: s.end,
-      current: s.current,
-      messages: s.message ? [s.message] : [],
-    })
-  }
-  return steps
 }

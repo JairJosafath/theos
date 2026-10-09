@@ -1,7 +1,7 @@
-// End-to-end check of the new shell (?shell=next) against a fake Kubernetes
-// API serving the demo fixture: each area opens by its link and Back returns
-// through them, every area is reachable by keyboard, and the old layout links
-// nowhere into the shell.
+// End-to-end check of the shell against a fake Kubernetes API serving the
+// demo fixture: each area opens by its link and Back returns through them,
+// every area is reachable by keyboard, and the links from before the areas
+// open the area they showed.
 //
 // Needs a build and Chromium:  npm run test:e2e
 // C4_UI_SHOTS=DIR also saves a picture of each area in DIR (docs/screenshots).
@@ -28,7 +28,7 @@ const AREAS = [
   ['About', 'about', 'About this factory'],
 ]
 
-describe('the new shell', () => {
+describe('the shell', () => {
   let api
   let ui
   let browser
@@ -73,7 +73,7 @@ describe('the new shell', () => {
   const heading = (text) => page.getByRole('heading', { name: text, exact: true }).first()
 
   it('opens on Needs you while something waits on a person, with the freshness line', async () => {
-    await page.goto(`${base}/?shell=next`)
+    await page.goto(`${base}/`)
     await page.locator('.need').first().waitFor({ timeout: 10000 })
     assert.equal(await current().textContent(), 'Needs you')
     assert.equal(areaOf(), 'needs')
@@ -81,7 +81,7 @@ describe('the new shell', () => {
     await fresh.getByText('Live').waitFor({ timeout: 5000 })
     await fresh.getByText(/^Updated /).waitFor({ timeout: 5000 })
     await fresh.getByText('All namespaces').waitFor({ timeout: 5000 })
-    await page.goto(`${base}/?shell=next&area=story`)
+    await page.goto(`${base}/?area=story`)
     await page.locator('.freshness').getByText(`Namespace ${namespace}`).waitFor({ timeout: 5000 })
   })
 
@@ -106,9 +106,9 @@ describe('the new shell', () => {
   })
 
   it('says every namespace in Work, and none in About', async () => {
-    await page.goto(`${base}/?shell=next&area=work`)
+    await page.goto(`${base}/?area=work`)
     await page.locator('.freshness').getByText('All namespaces').waitFor({ timeout: 5000 })
-    await page.goto(`${base}/?shell=next&area=about`)
+    await page.goto(`${base}/?area=about`)
     await heading('About this factory').waitFor({ timeout: 5000 })
     assert.equal(
       await page
@@ -120,7 +120,7 @@ describe('the new shell', () => {
   })
 
   it('reaches every area by keyboard', async () => {
-    await page.goto(`${base}/?shell=next`)
+    await page.goto(`${base}/`)
     await page.locator('.need').first().waitFor({ timeout: 10000 })
     for (const [label, area, title] of AREAS) {
       // Tab forward from wherever the focus is until the area's link has it.
@@ -140,7 +140,7 @@ describe('the new shell', () => {
   })
 
   it('shows the versions and where to read about them in About', async () => {
-    await page.goto(`${base}/?shell=next&area=about`)
+    await page.goto(`${base}/?area=about`)
     const about = page.locator('.about')
     await about.getByText('c4.factory.io/v1alpha1').waitFor({ timeout: 5000 })
     const href = (name) => about.getByRole('link', { name }).getAttribute('href')
@@ -151,7 +151,7 @@ describe('the new shell', () => {
   })
 
   it('keeps an object route in the URL', async () => {
-    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Container&name=orders-api`)
+    await page.goto(`${base}/?ns=${namespace}&kind=Container&name=orders-api`)
     await heading('orders-api').waitFor({ timeout: 5000 })
     assert.equal(await current().count(), 0)
     await nav().getByRole('link', { name: 'Work', exact: true }).click()
@@ -161,7 +161,7 @@ describe('the new shell', () => {
   })
 
   it('opens a Brief page from its card, and a Container page from what the Brief made', async () => {
-    await page.goto(`${base}/?shell=next&area=briefs`)
+    await page.goto(`${base}/?area=briefs`)
     await page.getByRole('link', { name: 'webshop', exact: true }).click()
     const header = page.getByRole('region', { name: 'Brief webshop', exact: true })
     await header.waitFor({ timeout: 10000 })
@@ -205,7 +205,7 @@ describe('the new shell', () => {
   })
 
   it('opens a Ready Container page with its relationships and templates', async () => {
-    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Container&name=orders-api`)
+    await page.goto(`${base}/?ns=${namespace}&kind=Container&name=orders-api`)
     const container = page.getByRole('region', { name: 'Container orders-api', exact: true })
     await container.waitFor({ timeout: 10000 })
     assert.equal(await container.locator('[aria-current="step"]').textContent(), 'Ready')
@@ -218,7 +218,7 @@ describe('the new shell', () => {
   })
 
   it('opens a Crew page from Work, and a Task page from the Crew', async () => {
-    await page.goto(`${base}/?shell=next&area=work`)
+    await page.goto(`${base}/?area=work`)
     await page.getByRole('link', { name: 'Orders API crew', exact: true }).click()
     const crew = page.getByRole('region', { name: 'Crew orders-api', exact: true })
     await crew.waitFor({ timeout: 10000 })
@@ -270,12 +270,12 @@ describe('the new shell', () => {
   })
 
   it('opens a Task page from a board card in Work, and lists the releases', async () => {
-    await page.goto(`${base}/?shell=next&area=work`)
+    await page.goto(`${base}/?area=work`)
     const releases = page.getByRole('region', { name: 'Releases', exact: true })
     await releases.getByText('v0.2.0', { exact: true }).waitFor({ timeout: 10000 })
     assert.equal(
       await releases.getByRole('link', { name: 'Crew orders-api', exact: true }).getAttribute('href'),
-      `/?shell=next&area=work&ns=${namespace}&kind=Crew&name=orders-api`,
+      `/?area=work&ns=${namespace}&kind=Crew&name=orders-api`,
     )
     if (process.env.C4_UI_SHOTS) {
       await page.waitForTimeout(300)
@@ -294,7 +294,7 @@ describe('the new shell', () => {
   })
 
   it('tells the story in one line, and opens a page from a diagram node', async () => {
-    await page.goto(`${base}/?shell=next&area=story`)
+    await page.goto(`${base}/?area=story`)
     const line = page.getByRole('navigation', { name: 'The project’s story' })
     await line.getByText('Releases').waitFor({ timeout: 10000 })
     assert.deepEqual(await line.locator('.storyline-label').allTextContents(), [
@@ -312,7 +312,7 @@ describe('the new shell', () => {
     await heading('System context: the big picture').waitFor({ timeout: 10000 })
 
     // A container's box, by keyboard, opens the Container's page.
-    await page.goto(`${base}/?shell=next&area=story&view=containers&system=webshop-core`)
+    await page.goto(`${base}/?area=story&view=containers&system=webshop-core`)
     const node = page.locator('[data-node-id="Container/orders-api"]')
     assert.equal(await node.getAttribute('role'), 'link')
     assert.equal(await node.getAttribute('aria-pressed'), null)
@@ -328,7 +328,7 @@ describe('the new shell', () => {
   })
 
   it('gives a paused Crew the patch that resumes it', async () => {
-    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Crew&name=storefront`)
+    await page.goto(`${base}/?ns=${namespace}&kind=Crew&name=storefront`)
     const crew = page.getByRole('region', { name: 'Crew storefront', exact: true })
     await crew.waitFor({ timeout: 10000 })
     assert.equal(await crew.locator('[aria-current="step"]').textContent(), 'Paused')
@@ -350,7 +350,7 @@ describe('the new shell', () => {
       ['GitProvider', 'gitea', 'Where repositories go'],
     ]
     for (const [kind, name, section] of PAGES) {
-      await page.goto(`${base}/?shell=next&ns=${namespace}&kind=${kind}&name=${name}`)
+      await page.goto(`${base}/?ns=${namespace}&kind=${kind}&name=${name}`)
       await page.getByRole('region', { name: `${kind} ${name}`, exact: true }).waitFor({ timeout: 10000 })
       await page.getByRole('heading', { name: section }).first().waitFor({ timeout: 5000 })
       assert.match(await page.title(), new RegExp(`^${kind} ${name} · C4 Factory$`))
@@ -365,7 +365,7 @@ describe('the new shell', () => {
   })
 
   it('walks from a Container to its Standard, and up to the Project', async () => {
-    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Container&name=orders-api`)
+    await page.goto(`${base}/?ns=${namespace}&kind=Container&name=orders-api`)
     await page.getByRole('link', { name: 'python-standard', exact: true }).click()
     const standard = page.getByRole('region', { name: 'Standard python-standard', exact: true })
     await standard.waitFor({ timeout: 10000 })
@@ -377,7 +377,7 @@ describe('the new shell', () => {
   })
 
   it('shows a GitProvider’s Secret by name, and never reads a Secret', async () => {
-    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=GitProvider&name=gitea`)
+    await page.goto(`${base}/?ns=${namespace}&kind=GitProvider&name=gitea`)
     const header = page.getByRole('region', { name: 'GitProvider gitea', exact: true })
     await header.waitFor({ timeout: 10000 })
     await page.getByText('the UI never reads Secrets').waitFor({ timeout: 5000 })
@@ -391,9 +391,9 @@ describe('the new shell', () => {
 
   it('says a refused read of an optional kind in its panel', async () => {
     api.refuse('standards')
-    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Standard&name=python-standard`)
+    await page.goto(`${base}/?ns=${namespace}&kind=Standard&name=python-standard`)
     await page.getByText(/^Could not read standards\. The UI is not allowed/).waitFor({ timeout: 10000 })
-    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Project&name=${namespace}`)
+    await page.goto(`${base}/?ns=${namespace}&kind=Project&name=${namespace}`)
     const catalog = page.getByRole('region', { name: 'Its catalog and Git hosts' })
     await catalog.getByText(/^Could not read standards \(403\)/).waitFor({ timeout: 10000 })
     await catalog.getByRole('link', { name: 'small', exact: true }).waitFor({ timeout: 5000 })
@@ -403,18 +403,33 @@ describe('the new shell', () => {
     }
   })
 
-  it('is not linked from the old layout', async () => {
-    for (const q of ['', '?view=containers', '?view=factory']) {
-      await page.goto(`${base}/${q}`)
-      await page.locator('.status', { hasText: 'Live' }).waitFor({ timeout: 10000 })
-      assert.equal(await page.locator('nav[aria-label="Areas"]').count(), 0)
-      const links = await page.locator('a[href]').evaluateAll((as) => as.map((a) => a.getAttribute('href')))
-      assert.deepEqual(
-        links.filter((h) => h.includes('shell')),
-        [],
-        `no link into the shell from ${q || 'the story'}`,
-      )
+  it('opens each area by its default link, and the links from before the areas', async () => {
+    const containers = /^Containers of /
+    const LINKS = [
+      ...AREAS.map(([label, area, title]) => [`?area=${area}`, area, label, title]),
+      ['?view=context', 'story', 'Story', 'System context: the big picture'],
+      ['?view=containers', 'story', 'Story', containers],
+      ['?system=webshop-core', 'story', 'Story', containers],
+      ['?view=factory', 'work', 'Work', 'Tasks'],
+    ]
+    for (const [query, area, label, title] of LINKS) {
+      await page.goto(`${base}/${query}`)
+      await page
+        .getByRole('heading', { name: title, exact: typeof title === 'string' })
+        .first()
+        .waitFor({ timeout: 10000 })
+      assert.equal(areaOf(), area, `${query} opens ${area}`)
+      assert.equal(await current().textContent(), label, `${query} marks ${label}`)
     }
+    // A Task selected in the factory view opens its page.
+    await page.goto(`${base}/?view=factory&task=${namespace}/orders-api-14`)
+    await page.getByRole('region', { name: 'Task orders-api-14', exact: true }).waitFor({ timeout: 10000 })
+    const params = new URL(page.url()).searchParams
+    assert.deepEqual(
+      [params.get('area'), params.get('ns'), params.get('kind'), params.get('name'), params.get('task')],
+      ['work', namespace, 'Task', 'orders-api-14', null],
+    )
+    assert.equal(await current().count(), 0)
   })
 
   it('raises no page error', () => {

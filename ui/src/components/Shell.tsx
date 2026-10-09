@@ -1,8 +1,6 @@
-// The new shell (docs/plans/ui-lifecycle.md, decision 2), reached only with
-// ?shell=next until it becomes the default: navigation for the six areas, a
-// freshness line, and the area on screen or an object's page. Story, Briefs,
-// Work and Factory show today's components, and the pages of the kinds that
-// have none yet say so.
+// The page's shell (docs/plans/ui-lifecycle.md, decisions 1 and 2): navigation
+// for the six areas, a freshness line, the area on screen or an object's page,
+// and a footer with the versions running.
 
 import type { MouseEvent, ReactNode } from 'react'
 import type { FactoryHealth } from '../k8s/health'
@@ -11,12 +9,13 @@ import { RESOURCES } from '../k8s/types'
 import { hrefFor, useNow, type UrlState } from '../lib/hooks'
 import { AREAS, inNamespace, type Area } from '../model/areas'
 import { absoluteTime, formatDuration } from '../model/format'
-import { aboutLinks, versionSkew, type Versions } from '../model/versions'
+import { aboutLinks, type Versions } from '../model/versions'
 import { Account } from './Account'
 import { HealthPanel } from './factory/Health'
 import { SlotsPanel } from './factory/Slots'
-import { ExternalLinkIcon, LogoMark, WarningIcon } from './icons'
+import { ExternalLinkIcon, LogoMark } from './icons'
 import { ConnectionStatus } from './Status'
+import { VersionLine } from './Versions'
 import './factory.css'
 import './shell.css'
 
@@ -33,7 +32,7 @@ export interface ShellProps {
   picker: ReactNode
   /** The demo and problem banners. */
   banners: ReactNode
-  /** Needs you, and today's components for the other areas of the cluster. */
+  /** What each area but About shows. */
   areas: Record<'needs' | 'briefs' | 'story' | 'work' | 'factory', ReactNode>
   /** The object page the URL names, for kinds that have one. */
   objectPage?: ReactNode
@@ -103,6 +102,7 @@ export function Shell({
       <footer className="footer">
         This page reads the C4 Factory resources in the cluster and updates as they change. It can change only three
         things: create a Brief from an app idea, add a prompt to a Brief, and pause or resume a Brief.
+        <VersionLine versions={versions} />
       </footer>
     </div>
   )
@@ -154,9 +154,8 @@ function Ago({ at }: { at: number }) {
   )
 }
 
-/** The versions running, and where to read about them. */
+/** The versions running, and where to read about them; the footer warns of a skew. */
 function AboutArea({ versions }: { versions: Versions }) {
-  const skew = versionSkew(versions)
   const links = aboutLinks(versions)
   return (
     <main className="shell-page">
@@ -172,12 +171,6 @@ function AboutArea({ versions }: { versions: Versions }) {
           <dt>API</dt>
           <dd>{versions.api}</dd>
         </dl>
-        {skew ? (
-          <p className="versions-skew" role="alert">
-            <WarningIcon />
-            {skew}
-          </p>
-        ) : null}
         <ul className="about-links">
           <li>
             <ExternalLink href={links.docs}>The design: what the factory does, and why</ExternalLink>
@@ -202,6 +195,7 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
   )
 }
 
+/** The page of a kind the UI shows no page for, such as a link typed by hand. */
 function ObjectPlaceholder({ ns, kind, name }: { ns?: string; kind: string; name: string }) {
   return (
     <main className="shell-page">
@@ -211,15 +205,13 @@ function ObjectPlaceholder({ ns, kind, name }: { ns?: string; kind: string; name
           {ns ? ` · ${ns}` : ''}
         </div>
         <h1 className="panel-title">{name}</h1>
-        <p className="panel-text">
-          Object pages come in a later release. Until then, find this {kind} in Story or Work.
-        </p>
+        <p className="panel-text">The UI has no page for a {kind}.</p>
       </section>
     </main>
   )
 }
 
-/** Today's factory health and agent slots, as the Factory area. */
+/** The factory's health and agent slots: the Factory area. */
 export function FactoryArea({
   data,
   connection,

@@ -36,14 +36,6 @@
   white-space: nowrap;
 }
 
-.brand-sub {
-  color: var(--text-3);
-  font-size: 13px;
-  padding-left: 10px;
-  border-left: 1px solid var(--border);
-  white-space: nowrap;
-}
-
 .topbar-right {
   display: flex;
   align-items: center;
@@ -528,7 +520,6 @@
 }
 
 @media (max-width: 640px) {
-  .brand-sub,
   .topbar .picker-label {
     display: none;
   }

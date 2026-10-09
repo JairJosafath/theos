@@ -1,4 +1,4 @@
-// The new shell's areas (docs/plans/ui-lifecycle.md, decisions 1 and 2): their
+// The shell's areas (docs/plans/ui-lifecycle.md, decisions 1 and 2): their
 // order in the navigation, their names, and what each one is about.
 
 export type Area = 'needs' | 'briefs' | 'story' | 'work' | 'factory' | 'about'

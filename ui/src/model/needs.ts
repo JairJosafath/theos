@@ -14,7 +14,7 @@ export type NeedKind = 'Brief' | 'Container' | 'Task' | 'Crew'
 
 /** A place in the UI, as the URL says it: an area, or an object's page. */
 export type Place =
-  | { area: Area; project?: string; view?: 'containers'; system?: string; task?: string }
+  | { area: Area; project?: string; view?: 'containers'; system?: string }
   | { page: { ns: string; kind: string; name: string } }
 
 export interface Need {
@@ -91,7 +91,7 @@ function base(kind: NeedKind, obj: { metadata: { namespace?: string; name: strin
   return { key: `${kind}|${namespace}|${obj.metadata.name}|${what}`, kind, namespace, name: obj.metadata.name }
 }
 
-/** The object's page where its kind has one, else the place in today's views. */
+/** The object's page where its kind has one, else the area that shows it. */
 function placeOf(kind: NeedKind, ns: string, name: string, fallback: Need['place']): Need['place'] {
   return hasPage(kind) ? { label: `Open the ${kind}`, to: { page: { ns, kind, name } } } : fallback
 }
@@ -155,7 +155,7 @@ function taskNeeds(task: Task, input: NeedsInput): Need[] {
   const ns = task.metadata.namespace ?? ''
   const place = placeOf('Task', ns, task.metadata.name, {
     label: 'Open it in Work',
-    to: { area: 'work', task: `${ns}/${task.metadata.name}` },
+    to: { area: 'work' },
   })
   const s = task.status
   if (s?.phase === 'Blocked') {

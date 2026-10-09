@@ -77,7 +77,7 @@ describe('a Crew page’s actions', () => {
     }
   })
 
-  const crewPage = (at) => `${at}/?shell=next&ns=${namespace}&kind=Crew&name=${CREW}`
+  const crewPage = (at) => `${at}/?ns=${namespace}&kind=Crew&name=${CREW}`
   const crew = () => api.get('crews', CREW)
   const button = (name) => page.getByRole('button', { name, exact: true })
   const releaseForm = () => page.getByRole('form', { name: `Release settings of crew ${CREW}` })

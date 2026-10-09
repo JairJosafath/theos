@@ -75,7 +75,7 @@ describe('the Brief page’s actions', () => {
   })
 
   const open = async (at = base) => {
-    await page.goto(`${at}/?shell=next&ns=${namespace}&kind=Brief&name=webshop`)
+    await page.goto(`${at}/?ns=${namespace}&kind=Brief&name=webshop`)
     await page.getByRole('region', { name: 'Brief webshop', exact: true }).waitFor({ timeout: 10000 })
   }
   const settings = () => page.getByRole('region', { name: 'Settings of brief webshop' })

@@ -21,7 +21,7 @@ const STANDARD_WRITER = {} as StandardWriter
 
 beforeAll(() => {
   // The pages link to each other through the URL the shell is on.
-  vi.stubGlobal('window', { location: { pathname: '/', search: '?shell=next', hash: '' } })
+  vi.stubGlobal('window', { location: { pathname: '/', search: '', hash: '' } })
 })
 afterAll(() => {
   vi.unstubAllGlobals()
@@ -88,7 +88,7 @@ describe('the read-only object pages', () => {
 
   it('lists the Containers that name a catalog entry, each linked to its page', () => {
     const html = page('Standard', 'python-standard')
-    expect(html).toContain('href="/?shell=next&amp;ns=webshop&amp;kind=Container&amp;name=orders-api"')
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Container&amp;name=orders-api"')
     expect(text(html)).toContain('ruff.toml, .c4/checks/')
   })
 })
