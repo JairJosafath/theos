@@ -28,8 +28,8 @@ const (
 	ReasonGitHubUnavailable = "GitHubUnavailable"
 	// ReasonIssuesDisabled: the repository has its issues turned off (410).
 	ReasonIssuesDisabled = "IssuesDisabled"
-	// ReasonIssueNotFound: no such issue, or it was deleted or moved (404 on one
-	// issue's call). A 404 on the list is ReasonRepositoryNotFound.
+	// ReasonIssueNotFound: no such issue, or it was deleted or moved (404, 410
+	// or 301 on one issue's call). A 404 on the list is ReasonRepositoryNotFound.
 	ReasonIssueNotFound = "IssueNotFound"
 )
 
@@ -124,6 +124,19 @@ func (c Client) GitHubIssues(cfg GitHubConfig) (IssueTracker, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A redirect turns a PATCH or POST into a GET that answers 200: a moved
+	// issue would look closed. Only reads follow one.
+	client := *api.http
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if via[0].Method != http.MethodGet {
+			return http.ErrUseLastResponse
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	api.http = &client
 	return &githubIssues{githubAPI: api}, nil
 }
 
@@ -160,7 +173,7 @@ func (c githubComment) comment() GitHubComment {
 var (
 	// githubLogin is GitHub's rule for a user or organization name.
 	githubLogin = regexp.MustCompile(`^[A-Za-z0-9](-?[A-Za-z0-9])*$`)
-	githubSlug  = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	githubSlug  = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
 
 // githubMaxLogin is the longest login GitHub allows.
@@ -341,14 +354,17 @@ func issuesResult(resp *http.Response, data []byte, want int, what, lacks, notFo
 	switch status := resp.StatusCode; {
 	case status == http.StatusUnauthorized:
 		e.Reason = ReasonUnauthorized
+	case status == http.StatusForbidden && strings.Contains(strings.ToLower(message), "locked"):
+		// A locked issue refuses comments from anyone but collaborators.
 	case status == http.StatusForbidden && !rateLimited(resp, message):
 		e.Reason = lacks
 	case status == http.StatusForbidden, status == http.StatusTooManyRequests, status >= http.StatusInternalServerError:
 		e.Reason = ReasonGitHubUnavailable
-	case status == http.StatusNotFound:
-		e.Reason = notFound
-	case status == http.StatusGone:
+	case status == http.StatusGone && notFound == ReasonRepositoryNotFound:
 		e.Reason = ReasonIssuesDisabled
+	case status == http.StatusNotFound, status == http.StatusGone, status == http.StatusMovedPermanently:
+		// On one issue, a 410 is a deleted issue and a 301 a moved one.
+		e.Reason = notFound
 	}
 	return e
 }

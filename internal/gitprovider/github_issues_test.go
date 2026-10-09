@@ -307,6 +307,8 @@ func TestGitHubIssuesTeamMember(t *testing.T) {
 		{"maintainers", "a-colleague"},
 		{"gray-org/maintainers/x", "a-colleague"},
 		{"-org/maintainers", "a-colleague"},
+		{"gray-org/..", "a-colleague"},
+		{"gray-org/.", "a-colleague"},
 		{"gray-org/maintainers", "../../../repos/acme/cel-lens"},
 		{"gray-org/maintainers", strings.Repeat("a", 40)},
 		{"gray-org/maintainers", ""},
@@ -395,7 +397,9 @@ func TestGitHubIssuesFailures(t *testing.T) {
 		{"too many requests", response{429, nil, `{"message":"slow down"}`}, ReasonGitHubUnavailable, ""},
 		{"server error", response{502, nil, "<html>" + strings.Repeat("Bad Gateway ", 1000) + "</html>"}, ReasonGitHubUnavailable, ""},
 		{"not found", response{404, nil, `{"message":"Not Found"}`}, ReasonIssueNotFound, "-"},
-		{"issues disabled", response{410, nil, `{"message":"Issues are disabled for this repo"}`}, ReasonIssuesDisabled, ""},
+		{"gone", response{410, nil, `{"message":"Issues are disabled for this repo"}`}, ReasonIssueNotFound, ReasonGitHubError},
+		{"moved", response{301, map[string]string{"Location": "/repositories/1/issues/1"}, `{"message":"Moved Permanently"}`}, ReasonIssueNotFound, ""},
+		{"locked", response{403, nil, `{"message":"Unable to create comment because issue is locked."}`}, ReasonGitHubError, ""},
 		{"validation", response{422, nil, `{"message":"Validation Failed"}`}, ReasonGitHubError, ""},
 		{"unreadable success", response{200, nil, `not json`}, ReasonGitHubError, ""},
 	}
@@ -422,12 +426,17 @@ func TestGitHubIssuesFailures(t *testing.T) {
 				err := call()
 				want := tt.want
 				switch {
+				case tt.resp.status == http.StatusMovedPermanently && name != "Comment" && name != "CloseIssue":
+					// A read follows it, here round and round.
+					want = ReasonGitHubUnavailable
 				case name == "TeamMember" && tt.team == "-":
 					want = "" // not a member
 				case name == "TeamMember" && tt.team != "":
 					want = tt.team
 				case name == "ListOpenIssues" && tt.resp.status == http.StatusNotFound:
 					want = ReasonRepositoryNotFound
+				case name == "ListOpenIssues" && tt.resp.status == http.StatusGone:
+					want = ReasonIssuesDisabled
 				case name == "CloseIssue" && tt.resp.status == http.StatusOK:
 					want = "" // its response isn't read
 				}
