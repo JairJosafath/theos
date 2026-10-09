@@ -1,10 +1,12 @@
-// The read-only pages of the catalog and the Git hosts: a Standard, Compute or
-// Deployment (its template, what it supports, the Containers that name it), a
+// The pages of the catalog and the Git hosts: a Standard, Compute or
+// Deployment (its template, what it supports, the Containers that name it;
+// with UI actions on, a Standard's ref bump, StandardActions), a
 // GitProvider (where repositories go, and its Secret's name: the UI never
 // reads Secrets), and the Project page's list of them, where a refused read
 // of any of these kinds says so.
 
 import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
+import type { ReactNode } from 'react'
 import { RESOURCES, type CatalogEntry, type Container, type GitProvider, type Standard } from '../../k8s/types'
 import { describeContainerType } from '../../model/describe'
 import { ObjectHeader, type ChildRef } from '../ObjectHeader'
@@ -37,10 +39,13 @@ export function CatalogPage({
   kind,
   entry,
   containers,
+  actions,
 }: {
   kind: CatalogKind
   entry: CatalogEntry | Standard
   containers: Container[]
+  /** What a person may do on it, under the header. */
+  actions?: ReactNode
 }) {
   const ns = entry.metadata.namespace ?? ''
   const name = entry.metadata.name
@@ -57,6 +62,8 @@ export function CatalogPage({
         children={usedBy(kind, name, containers)}
         links={[]}
       />
+
+      {actions}
 
       <section className="panel" aria-labelledby="catalog-template">
         <h2 className="panel-title small-title" id="catalog-template">

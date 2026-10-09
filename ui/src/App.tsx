@@ -18,6 +18,7 @@ import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { VersionLine } from './components/Versions'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
 import { LiveContainerWriter } from './k8s/containers'
+import { LiveStandardWriter } from './k8s/standards'
 import { HealthSource, type FactoryHealth } from './k8s/health'
 import { fetchSession, signOut, type UiSession } from './k8s/session'
 import { WatchMux } from './k8s/mux'
@@ -54,6 +55,8 @@ const API: Api = { baseUrl: 'k8s', mux: new WatchMux({ url: 'k8s-watch' }) }
 const LIVE_WRITER = new LiveBriefWriter(API.baseUrl)
 /** With UI actions on: a Container's scaffold retry and a Task from a goal. */
 const CONTAINER_WRITER = new LiveContainerWriter(API.baseUrl)
+/** With UI actions on: a Standard's ref bump. */
+const STANDARD_WRITER = new LiveStandardWriter(API.baseUrl)
 
 /** A source with nothing in it: for a view that is not shown, or no project yet. */
 class Idle<T> implements Source<T> {
@@ -408,6 +411,7 @@ export default function App() {
             connection={story.connection}
             writer={writer}
             containerWriter={CONTAINER_WRITER}
+            standardWriter={STANDARD_WRITER}
           />
         ) : undefined
       }
