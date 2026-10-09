@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -178,5 +179,38 @@ func TestRecordRoundAddsUpTheTokens(t *testing.T) {
 	}
 	if got := status.History[2].Tokens; got != nil {
 		t.Errorf("round 3's tokens = %+v, want none: its Plan Task ran no agent", got)
+	}
+}
+
+// Only the status write that starts the operator's own wait reconciles a
+// Brief again (#783), not the planner's question nor the wait ending.
+func TestStartsOperatorWaitPassesOnlyTheWaitStarting(t *testing.T) {
+	brief := func(reason string) *c4v1alpha1.Brief {
+		b := &c4v1alpha1.Brief{ObjectMeta: objectMeta("apps", "cel-lens")}
+		if reason != "" {
+			meta.SetStatusCondition(&b.Status.Conditions, metav1.Condition{
+				Type: c4v1alpha1.ConditionNeedsInput, Status: metav1.ConditionTrue, Reason: reason})
+		}
+		return b
+	}
+	pred := startsOperatorWait()
+	for _, tc := range []struct {
+		name     string
+		old, new string
+		want     bool
+	}{
+		{"the planner's question gives way to the wait", model.ReasonPlannerNeedsInput, c4v1alpha1.ReasonNotFound, true},
+		{"nothing asked, then the wait", "", c4v1alpha1.ReasonNotFound, true},
+		{"the wait goes on", c4v1alpha1.ReasonNotFound, c4v1alpha1.ReasonNotFound, false},
+		{"the wait ends", c4v1alpha1.ReasonNotFound, model.ReasonPlannerNeedsInput, false},
+		{"the planner asks", "", model.ReasonPlannerNeedsInput, false},
+	} {
+		got := pred.Update(event.UpdateEvent{ObjectOld: brief(tc.old), ObjectNew: brief(tc.new)})
+		if got != tc.want {
+			t.Errorf("%s: passed %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	if pred.Create(event.CreateEvent{Object: brief(c4v1alpha1.ReasonNotFound)}) {
+		t.Error("a creation passed; the spec predicate passes those")
 	}
 }
