@@ -52,7 +52,10 @@ func autopilotBrief(ns, mode string) {
 	mustCreate(brief)
 	planRound(ns, 1, 1, linterPlan(ns, 0))
 	Eventually(func(g Gomega) {
-		g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		b := getBrief(g, ns)
+		g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		// #750: status says the mode in effect, the default when unset.
+		g.Expect(b.Status.Autopilot).To(Equal(model.AutopilotMode(mode)))
 	}).Should(Succeed())
 }
 

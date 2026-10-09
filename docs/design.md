@@ -716,7 +716,9 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   `status/needs-human`, or closes it, with a comment quoting the why and the
   round's prompts. See [plans/brief-failed-issues.md](plans/done/brief-failed-issues.md).
 - **A Brief looks after its own handed-back work** (#486).
-  `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. The Brief watches
+  `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. `status.autopilot`
+  reports the mode in effect, set every reconcile, so the UI copies no default
+  (#750). The Brief watches
   only what it made: failed issues, its Containers' Tasks and Crews. What
   heals by itself (a usage limit, an agent-slot queue, a Standard change in
   review, a Git host coming back) is left alone for a window from one table

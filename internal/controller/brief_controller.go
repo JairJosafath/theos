@@ -145,6 +145,7 @@ func (r *BriefReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 	orig := brief.DeepCopy()
 	brief.Status.ObservedGeneration = brief.Generation
+	brief.Status.Autopilot = model.AutopilotMode(brief.Spec.Autopilot)
 
 	result, err := r.reconcileBrief(ctx, &brief, orig)
 	return r.finishReconcile(ctx, &brief, orig, result, err)
