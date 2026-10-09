@@ -292,6 +292,9 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1
 		PromptParallel:      status.Parallel,
 		PromptParallelRound: status.ParallelRound,
 	}
+	if !ws.Tending {
+		ws.Requests = model.WorkspaceRequests(modelRequests(status.Requests), status.RoundRequests, roundRuns)
+	}
 	for _, entry := range brief.Spec.Releases {
 		ws.Releases = append(ws.Releases, model.WorkspaceRelease{Container: entry.Container,
 			Repository: entry.GitHub.Repository, TagPrefix: entry.TagPrefix})

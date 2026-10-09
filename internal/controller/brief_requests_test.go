@@ -60,6 +60,11 @@ func requestNumbers(g Gomega, ns string) map[int32]string {
 	return out
 }
 
+// letThrough is the stage of a request let through: Accepted, or Planning
+// once the running round took it, which the first round may, as it starts
+// when the Brief is made.
+var letThrough = BeElementOf(model.RequestAccepted, model.RequestPlanning)
+
 // requestsCondition reads the Requests condition of Brief cel-lens.
 func requestsCondition(g Gomega, ns string) *metav1.Condition {
 	return condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionRequests)
@@ -84,7 +89,7 @@ var _ = Describe("Brief requests", func() {
 			r := status.Requests[0]
 			g.Expect(r).To(And(HaveField("Repository", repository), HaveField("Number", int32(mine)),
 				HaveField("Author", "Gray-Lenovo"), HaveField("Title", "Dark theme"),
-				HaveField("Body", "Please add a dark theme. Thanks."), HaveField("Stage", model.RequestAccepted),
+				HaveField("Body", "Please add a dark theme. Thanks."), HaveField("Stage", letThrough),
 				HaveField("URL", HaveSuffix("/issues/1")), HaveField("Since", Not(BeNil()))))
 			g.Expect(status.RequestsWaiting).To(Equal(int32(1)))
 			g.Expect(status.NeedsYou).NotTo(ContainElement(HaveField("Kind", model.AttentionRequest)))
@@ -100,7 +105,7 @@ var _ = Describe("Brief requests", func() {
 			g.Expect(again).To(BeNumerically(">", asked))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(requestNumbers(g, ns)).To(Equal(map[int32]string{int32(mine): model.RequestAccepted}))
+			g.Expect(requestNumbers(g, ns)).To(And(HaveLen(1), HaveKeyWithValue(int32(mine), letThrough)))
 			g.Expect(getBrief(g, ns).Status.Requests[0].Body).To(Equal("Please add a dark theme. Thanks."))
 		}, "2s").Should(Succeed())
 		for _, n := range []int{theirs, pull} {
@@ -147,7 +152,7 @@ var _ = Describe("Brief requests", func() {
 		setRequests(ns, func(r *c4v1alpha1.BriefRequests) { r.Accepted = []int32{int32(n)} })
 		Eventually(func(g Gomega) {
 			status := getBrief(g, ns).Status
-			g.Expect(status.Requests).To(ConsistOf(And(HaveField("Stage", model.RequestAccepted),
+			g.Expect(status.Requests).To(ConsistOf(And(HaveField("Stage", letThrough),
 				HaveField("Body", "Please add a dark theme."))))
 			g.Expect(status.NeedsYou).NotTo(ContainElement(HaveField("Kind", model.AttentionRequest)))
 		}).Should(Succeed())
@@ -162,7 +167,7 @@ var _ = Describe("Brief requests", func() {
 		mate := githubFake.openIssue(repository, "team-mate", "Light theme", "Too.")
 		stranger := githubFake.openIssue(repository, "stranger", "Spam", "Spam.")
 		Eventually(func(g Gomega) {
-			g.Expect(requestNumbers(g, ns)).To(Equal(map[int32]string{int32(mate): model.RequestAccepted}))
+			g.Expect(requestNumbers(g, ns)).To(And(HaveLen(1), HaveKeyWithValue(int32(mate), letThrough)))
 		}).Should(Succeed())
 
 		By("going on with the authors when the token lacks Organization members read")
@@ -171,8 +176,8 @@ var _ = Describe("Brief requests", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(requestsCondition(g, ns)).To(And(HaveField("Status", metav1.ConditionFalse),
 				HaveField("Reason", gitprovider.ReasonTokenLacksMembers)))
-			g.Expect(requestNumbers(g, ns)).To(Equal(map[int32]string{int32(mate): model.RequestAccepted,
-				int32(mine): model.RequestAccepted}), "a member found unsure stays")
+			g.Expect(requestNumbers(g, ns)).To(And(HaveLen(2), HaveKeyWithValue(int32(mate), letThrough),
+				HaveKeyWithValue(int32(mine), letThrough)), "a member found unsure stays")
 			g.Expect(briefEventNotes(g, ns, "Requests")).To(ContainElement(ContainSubstring(repository)))
 		}).Should(Succeed())
 		_, comments := githubFake.gitHubIssue(repository, stranger)

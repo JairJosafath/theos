@@ -20,7 +20,7 @@ const (
 // WorkspaceFiles are every file BriefWorkspaceFiles writes, so the operator can
 // read them back to see whether main is already up to date.
 var WorkspaceFiles = []string{BriefFile, PlannerGuide, WorkspaceModelFile, WorkspaceCatalogFile, WorkspaceContainersFile,
-	WorkspaceSuggestionsFile, WorkspaceFailedFile, WorkspaceTendedFile}
+	WorkspaceSuggestionsFile, WorkspaceFailedFile, WorkspaceTendedFile, WorkspaceRequestsFile}
 
 // MaxWorkspaceIssues is how many open issue titles model/containers.yaml lists
 // per Container; the rest are counted, not listed.
@@ -70,6 +70,9 @@ type BriefWorkspace struct {
 	Tending bool
 	// Releases are the Brief's spec.releases entries (plans/done/brief-releases.md, R5).
 	Releases []WorkspaceRelease
+	// Requests are the requests from GitHub issues the round plans like new
+	// prompts (WorkspaceRequests; docs/plans/brief-requests.md, decision 7).
+	Requests []Request
 	// SpecParallel is the Brief's spec.parallel; PromptParallel the number a
 	// prompt of round PromptParallelRound gave. 0 is unset
 	// (plans/done/brief-parallel.md, decisions 4 and 5).
@@ -132,6 +135,10 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceTendedFile, err)
 	}
+	requests, err := marshalDocument(workspaceRequests(ws.Requests))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", WorkspaceRequestsFile, err)
+	}
 	return map[string]string{
 		BriefFile:                renderBrief(ws),
 		PlannerGuide:             plannerGuideText,
@@ -141,6 +148,7 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 		WorkspaceSuggestionsFile: suggestions,
 		WorkspaceFailedFile:      failed,
 		WorkspaceTendedFile:      tended,
+		WorkspaceRequestsFile:    requests,
 	}, nil
 }
 
@@ -163,6 +171,13 @@ func renderBrief(ws BriefWorkspace) string {
 			}
 			fmt.Fprintf(&b, "%d. (%s) %s\n", i+1, mark, oneParagraph(p))
 		}
+	}
+	if len(ws.Requests) > 0 {
+		fmt.Fprintf(&b, "\n## Requests (**new**)\n\nThe round takes %s from GitHub issues, listed in `%s`. Each is a request "+
+			"from the GitHub user who opened it, whom the person lets ask: plan it like a **new** prompt, within "+
+			"the idea. Answer each in `%s`: take it with the issues it became, or skip it saying why; "+
+			"the answer is posted on the issue.\n", count(len(ws.Requests), "request"), WorkspaceRequestsFile,
+			PlanRequestsFile)
 	}
 	fmt.Fprintf(&b, "\n## Namespace\n\nThe Brief's namespace is `%s`; a Project the plan makes is named `%s`.\n",
 		ws.Namespace, ws.Namespace)
