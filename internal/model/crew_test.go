@@ -103,6 +103,20 @@ func TestNextCrewStep(t *testing.T) {
 		{name: "retries a failed issue that is ready again", facts: CrewFacts{ContainerReady: true,
 			Issues: []Issue{ready(3)}, Tasks: []CrewTask{{Name: "cel-ls-3", Issue: 3, Final: true, Failed: true}}},
 			want: CrewStep{Phase: CrewWorking, Start: start(3, "cel-ls-3-2", 2), Message: "Starting Task cel-ls-3-2 for issue #3"}},
+		{name: "a no-CI failure costs no try", facts: CrewFacts{ContainerReady: true, Issues: []Issue{ready(3)},
+			Tasks: []CrewTask{
+				{Name: "cel-ls-3", Issue: 3, Final: true, Failed: true, NoCI: true},
+				{Name: "cel-ls-3-2", Issue: 3, Final: true, Failed: true, NoCI: true},
+				{Name: "cel-ls-3-3", Issue: 3, Final: true, Failed: true, NoCI: true},
+			}},
+			want: CrewStep{Phase: CrewWorking, Start: start(3, "cel-ls-3-4", 4), Message: "Starting Task cel-ls-3-4 for issue #3"}},
+		{name: "two failures and a no-CI one are not the limit", facts: CrewFacts{ContainerReady: true,
+			Issues: []Issue{ready(3)}, Tasks: []CrewTask{
+				{Name: "cel-ls-3", Issue: 3, Final: true, Failed: true},
+				{Name: "cel-ls-3-2", Issue: 3, Final: true, Failed: true, NoCI: true},
+				{Name: "cel-ls-3-3", Issue: 3, Final: true, Failed: true},
+			}},
+			want: CrewStep{Phase: CrewWorking, Start: start(3, "cel-ls-3-4", 4), Message: "Starting Task cel-ls-3-4 for issue #3"}},
 		{name: "gives up after three tries", facts: CrewFacts{ContainerReady: true, Issues: []Issue{ready(3)},
 			Tasks: []CrewTask{
 				{Name: "cel-ls-3", Issue: 3, Final: true, Failed: true},
