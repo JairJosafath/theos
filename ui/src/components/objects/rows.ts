@@ -3,6 +3,7 @@
 // Task's agent runs, and a Brief's planner limit.
 
 import { LABEL_CREW, type Agent, type Brief, type Crew, type Relationship, type Task } from '../../k8s/types'
+import { formatTokens } from '../../model/brief'
 import { describeTaskPhase } from '../../model/describe'
 import { isFinal, taskHeadline } from '../../model/factory'
 import type { ChildRef, TimelineEntry } from '../ObjectHeader'
@@ -65,29 +66,72 @@ export function taskTimeline(task: Task): TimelineEntry[] {
   }))
 }
 
-/** One agent run of a Task: an implement or a review run of a round. */
+/** One agent run of a Task: an implement, review or plan run of a round. */
 export interface AgentRun {
   /** 1 for the first run. */
   n: number
   round: number
-  role: 'implement' | 'review'
+  role: 'implement' | 'review' | 'plan'
   /** The Agent that ran it. */
   agent: string
-  /** When it started. */
+  /** When it started, or, for a run the Task recorded, when it ended. */
   at: string
   /** Whether it runs now. */
   current: boolean
+  /** Whether the Task recorded it (status.runs): it ended, at `at`. */
+  recorded?: boolean
+  /** The sizes, in tokens, at which its sessions handed off; only a recorded run knows them. */
+  handoffs?: number[]
 }
 
 /** History reasons on an Implementing or Reviewing step that mean no agent runs yet. */
 const NOT_RUNNING = new Set(['WaitingForSlot', 'AgentUnavailable'])
 
 /**
- * The Task's agent runs, oldest first, from status.history: each step into
- * Implementing or Reviewing starts one, unless it only waits for a slot or
- * for the agent; later steps of the same run (its round and role) don't.
+ * The Task's agent runs, oldest first. A Task records each run as it ends
+ * (status.runs); the one in its sandbox now follows them. A Task that recorded
+ * none derives them from status.history: each step into Implementing or
+ * Reviewing starts one, unless it only waits for a slot or for the agent;
+ * later steps of the same run (its round and role) don't.
  */
 export function agentRuns(task: Task): AgentRun[] {
+  const recorded = task.status?.runs ?? []
+  if (!recorded.length) return historyRuns(task)
+  const runs: AgentRun[] = recorded.map((r, i) => {
+    const role = r.role === 'review' || r.role === 'plan' ? r.role : 'implement'
+    return {
+      n: i + 1,
+      round: r.round,
+      role,
+      agent: runAgent(task, role),
+      at: r.endedAt,
+      current: false,
+      recorded: true,
+      handoffs: r.sessionHandoffs ?? [],
+    }
+  })
+  const status = task.status
+  if (status?.sandbox && !isFinal(status.phase)) {
+    const role = status.phase === 'Reviewing' ? 'review' : task.spec.kind === 'Plan' ? 'plan' : 'implement'
+    const history = status.history ?? []
+    const at = history[history.length - 1]?.at ?? status.phaseChangedAt ?? ''
+    runs.push({ n: runs.length + 1, round: status.round ?? 0, role, agent: runAgent(task, role), at, current: true })
+  }
+  return runs
+}
+
+/** When a run's sessions handed off: "handed off 2 times, at 134k and 141k tokens". */
+export function describeHandoffs(sizes: number[]): string {
+  const at = sizes.map(formatTokens)
+  const list = at.length > 1 ? `${at.slice(0, -1).join(', ')} and ${at[at.length - 1]}` : at[0]
+  return `handed off${sizes.length > 1 ? ` ${sizes.length} times,` : ''} at ${list} tokens`
+}
+
+function runAgent(task: Task, role: AgentRun['role']): string {
+  return role === 'review' ? (task.spec.reviewerRef?.name ?? task.spec.agentRef.name) : task.spec.agentRef.name
+}
+
+function historyRuns(task: Task): AgentRun[] {
   const runs: AgentRun[] = []
   const history = task.status?.history ?? []
   let last: string | undefined
@@ -101,14 +145,7 @@ export function agentRuns(task: Task): AgentRun[] {
     const key = `${role}|${round}`
     if (key === last) continue
     last = key
-    runs.push({
-      n: runs.length + 1,
-      round,
-      role,
-      agent: role === 'review' ? (task.spec.reviewerRef?.name ?? task.spec.agentRef.name) : task.spec.agentRef.name,
-      at: h.at,
-      current: false,
-    })
+    runs.push({ n: runs.length + 1, round, role, agent: runAgent(task, role), at: h.at, current: false })
   }
   // The run the newest step belongs to runs now, unless the Task has ended.
   const end = runs[runs.length - 1]

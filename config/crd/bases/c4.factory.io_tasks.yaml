@@ -471,6 +471,100 @@ spec:
                   maxRounds.
                 format: int32
                 type: integer
+              runs:
+                description: |-
+                  runs records the Task's agent runs as each ends, oldest first: its round
+                  and role, what it cost and used, and the sizes at which its sessions
+                  handed off. The newest 64 are kept.
+                items:
+                  description: TaskAgentRun is what a Task keeps of one agent run
+                    once it ended.
+                  properties:
+                    costMilliUSD:
+                      description: |-
+                        costMilliUSD is what the run cost, in thousandths of a US dollar, as its
+                        agent reported it; unset when the agent didn't say.
+                      format: int64
+                      type: integer
+                    endedAt:
+                      description: endedAt is when the Task saw the run end.
+                      format: date-time
+                      type: string
+                    role:
+                      description: |-
+                        role is implement, review or plan; empty when neither c4agent nor the
+                        sandbox's name said.
+                      maxLength: 32
+                      type: string
+                    round:
+                      description: round is the implement round the run belonged to.
+                      format: int32
+                      type: integer
+                    sandbox:
+                      description: sandbox names the Sandbox the run ran in.
+                      maxLength: 63
+                      type: string
+                    sessionHandoffs:
+                      description: |-
+                        sessionHandoffs are the sizes, in tokens, at which the run's agent
+                        sessions handed their work to a fresh session, the first 8.
+                      items:
+                        format: int64
+                        type: integer
+                      maxItems: 8
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    tokens:
+                      description: |-
+                        tokens is what the run's agent sessions used; runsWithout is 1 when the
+                        agent didn't report them.
+                      properties:
+                        cacheRead:
+                          description: cacheRead are the prompt tokens read from the
+                            cache.
+                          format: int64
+                          type: integer
+                        cacheWrite:
+                          description: cacheWrite are the prompt tokens written to
+                            the cache.
+                          format: int64
+                          type: integer
+                        input:
+                          description: |-
+                            input are the prompt tokens that were neither read from nor written to
+                            the cache.
+                          format: int64
+                          type: integer
+                        largestSession:
+                          description: |-
+                            largestSession is how large the largest agent session got: the prompt
+                            of its biggest turn, in tokens.
+                          format: int64
+                          type: integer
+                        output:
+                          description: output are the tokens the agents wrote.
+                          format: int64
+                          type: integer
+                        runsWithout:
+                          description: |-
+                            runsWithout counts the agent runs whose agent didn't report their
+                            tokens; the other fields leave them out.
+                          format: int32
+                          type: integer
+                        sessionHandoffs:
+                          description: |-
+                            sessionHandoffs counts the agent sessions that handed their work to a
+                            fresh session.
+                          format: int32
+                          type: integer
+                      type: object
+                  required:
+                  - endedAt
+                  - round
+                  type: object
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: atomic
               runsWithoutCost:
                 description: |-
                   runsWithoutCost counts the Task's agent runs whose agent didn't report

@@ -547,6 +547,21 @@ export function demoStory(now: number): StoryData {
         step(54, 'Checking', 3, 'Checking', 'Waiting for checks'),
         step(52, 'Failed', 3, 'RoundsExhausted', 'Failed after 3 rounds'),
       ],
+      // Round 2's implement run is the one that handed off.
+      runs: [
+        { round: 1, role: 'implement', sandbox: 'orders-api-13-r1-implement', endedAt: at(74), costMilliUSD: 1_420 },
+        { round: 1, role: 'review', sandbox: 'orders-api-13-r1-review-a1', endedAt: at(68), costMilliUSD: 380 },
+        {
+          round: 2,
+          role: 'implement',
+          sandbox: 'orders-api-13-r2-implement',
+          endedAt: at(61),
+          costMilliUSD: 3_010,
+          tokens: { largestSession: 142_000, sessionHandoffs: 2 },
+          sessionHandoffs: [131_000, 138_400],
+        },
+        { round: 3, role: 'implement', sandbox: 'orders-api-13-r3-implement', endedAt: at(54), costMilliUSD: 1_310 },
+      ],
     }),
     issueTask(
       'orders-api',

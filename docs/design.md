@@ -302,7 +302,12 @@ without kubectl, and cheaply: it lives on a laptop.
   unreported. After three handoffs in one call the last session runs to its
   end. A custom `C4AGENT_COMMAND` runs one session, unguarded. The Task counts
   handoffs in `status.tokens.sessionHandoffs`, with a `SessionHandedOff` Event
-  for each run that handed off, saying the sizes it happened at.
+  for each run that handed off, saying the sizes it happened at. It also
+  keeps a record of each agent run as it ends in `status.runs` (the newest
+  64): its round and role, what it cost and used, and the sizes its sessions
+  handed off at, so the Task page names the run that handed off ("Run 3
+  (round 2, implement) handed off 2 times, at 131k and 138k tokens") without
+  reading Events.
 - **The UI has a Factory view** next to the story, across all projects: component
   health with CPU and memory, the last hour, the Tasks on a board by stage with
   their timelines, where the time goes, agent slots, and what needs a look.

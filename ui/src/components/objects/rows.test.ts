@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Brief, Crew, Relationship, Task, TaskTransition } from '../../k8s/types'
-import { agentRuns, briefTimeline, crewTasks, relationshipsOf, taskTimeline } from './rows'
+import { agentRuns, briefTimeline, describeHandoffs, crewTasks, relationshipsOf, taskTimeline } from './rows'
 
 describe('briefTimeline', () => {
   it('turns each round into an entry, with the question when it asked one', () => {
@@ -118,6 +118,60 @@ describe('agentRuns', () => {
       history: [step('Implementing', 1, 'Running'), step('Checking', 1, 'Checking')],
     })
     expect(agentRuns(checking)[0].current).toBe(false)
+  })
+
+  it('reads the runs the Task recorded, then the one in its sandbox now', () => {
+    const t = task('api-7', {
+      phase: 'Reviewing',
+      round: 2,
+      sandbox: 'api-7-r2-review-a1',
+      history: [step('Implementing', 1, 'Running'), step('Reviewing', 2, 'Running')],
+      runs: [
+        { round: 1, role: 'implement', endedAt: '2026-06-01T10:05:00Z', sessionHandoffs: [134_000] },
+        { round: 1, role: 'review', endedAt: '2026-06-01T10:06:00Z' },
+        { round: 2, role: 'implement', endedAt: '2026-06-01T10:07:00Z' },
+      ],
+    })
+    expect(agentRuns(t)).toEqual([
+      {
+        n: 1,
+        round: 1,
+        role: 'implement',
+        agent: 'dev',
+        at: '2026-06-01T10:05:00Z',
+        current: false,
+        recorded: true,
+        handoffs: [134_000],
+      },
+      {
+        n: 2,
+        round: 1,
+        role: 'review',
+        agent: 'rev',
+        at: '2026-06-01T10:06:00Z',
+        current: false,
+        recorded: true,
+        handoffs: [],
+      },
+      {
+        n: 3,
+        round: 2,
+        role: 'implement',
+        agent: 'dev',
+        at: '2026-06-01T10:07:00Z',
+        current: false,
+        recorded: true,
+        handoffs: [],
+      },
+      { n: 4, round: 2, role: 'review', agent: 'rev', at: '2026-06-01T10:02:00Z', current: true },
+    ])
+    t.status!.phase = 'Merged'
+    expect(agentRuns(t).map((r) => r.n)).toEqual([1, 2, 3])
+  })
+
+  it('says when a run handed off, and at what sizes', () => {
+    expect(describeHandoffs([134_000])).toBe('handed off at 134k tokens')
+    expect(describeHandoffs([131_000, 138_400, 140_000])).toBe('handed off 3 times, at 131k, 138k and 140k tokens')
   })
 
   it('has the implementer review when the Task has no reviewer', () => {
