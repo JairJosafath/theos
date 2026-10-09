@@ -57,7 +57,8 @@ const (
 )
 
 // MaxIssueAttempts is how many Tasks a Crew starts for one issue before it asks a
-// person: an issue that failed three times needs splitting or clarifying.
+// person: an issue that failed three times needs splitting or clarifying. A
+// Task that failed because CI never reported (NoCI) costs no try.
 const MaxIssueAttempts = 3
 
 // Issue is an open issue labelled ready, as a Crew sees it.
@@ -91,6 +92,9 @@ type CrewTask struct {
 	// Final means Merged or Failed; Failed tells which.
 	Final  bool
 	Failed bool
+	// NoCI means it failed because CI never reported (ReasonNoCIResult): the
+	// runner's fault, so it costs the issue no try.
+	NoCI bool
 	// Blocked means the Task waits on a Standard change; it keeps its issue but
 	// takes no place from Parallel.
 	Blocked bool
@@ -197,8 +201,11 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			if t.Issue != issue.Number || !t.Final {
 				continue
 			}
-			if !t.Failed {
+			switch {
+			case !t.Failed:
 				merged = t.Name
+			case t.NoCI:
+				continue
 			}
 			tried = append(tried, t.Name)
 		}

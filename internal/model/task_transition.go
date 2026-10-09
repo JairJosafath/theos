@@ -66,6 +66,14 @@ func OpenedPR(p TaskProgress, commit string) TaskProgress {
 	return p
 }
 
+// InheritedChecks is the progress of a new try that starts at the earlier
+// try's commit (StartsAtReview): round 1 waits for that commit's checks, as
+// if its implementer had pushed it.
+func InheritedChecks(p TaskProgress, commit string) TaskProgress {
+	p.Round = 1
+	return OpenedPR(p, commit)
+}
+
 // PlanPushed is the progress of a Plan Task whose planner pushed a plan at
 // commit: it waits for the Brief's verdict on that commit.
 func PlanPushed(p TaskProgress, commit string) TaskProgress {

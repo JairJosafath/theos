@@ -1044,6 +1044,35 @@ func EarlierTry(task string, created int64, issue int, tries []Try) (Try, bool) 
 	return best, found
 }
 
+// InheritedWork is what a new try knows of the earlier try's pull request it
+// continues.
+type InheritedWork struct {
+	// Pushed is the commit the earlier try pushed last; Head the pull
+	// request's head now.
+	Pushed, Head string
+	// Unreviewed means the earlier try ended waiting for the checks of Pushed,
+	// so no reviewer has judged it.
+	Unreviewed bool
+	// Checks is the combined state of the checks on Head.
+	Checks string
+}
+
+// StartsAtReview reports whether a try that continues an earlier try's pull
+// request skips the implementer and enters Checking at w.Head, whose passing
+// checks start the review: the earlier try pushed it and ended before anyone
+// reviewed it, no one moved the head since, and its checks now pass. Anything
+// else, a reviewer's changes to make included, starts round 1.
+func StartsAtReview(w InheritedWork) bool {
+	return w.Unreviewed && w.Pushed != "" && w.Head == w.Pushed && w.Checks == checkSuccess
+}
+
+// StartAtReviewMessage says why a try that continues earlier's pull request
+// starts at commit's checks (StartsAtReview).
+func StartAtReviewMessage(commit, earlier string) string {
+	return fmt.Sprintf("Continuing commit %s, which Task %s pushed and no one reviewed; its checks passed, "+
+		"so the review starts with no implement run", short(commit), earlier)
+}
+
 func short(sha string) string {
 	if len(sha) > 7 {
 		return sha[:7]

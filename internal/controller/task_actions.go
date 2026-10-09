@@ -251,8 +251,12 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		status.IssueTitle, status.IssueURL = issue.Title, issue.URL
 		goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
 		if firstIssueRun {
-			if err := r.continueEarlierTry(protectCtx, provider, repo, task, status); err != nil {
+			commit, err := r.continueEarlierTry(protectCtx, provider, repo, task, status)
+			if err != nil {
 				return ctrl.Result{}, err
+			}
+			if commit != "" {
+				return r.startAtReview(protectCtx, provider, repo, task, status, container, agents, commit)
 			}
 		}
 	}
@@ -291,6 +295,21 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", message, name))
 	logf.FromContext(ctx).Info("Started agent sandbox", "sandbox", name, "role", role, "round", status.Round)
 	return ctrl.Result{}, nil
+}
+
+// startAtReview starts a try that continues an earlier try's green, unreviewed
+// commit at its checks, with no implementer run: they pass, so the next step
+// starts the review (model.StartsAtReview).
+func (r *TaskReconciler) startAtReview(ctx context.Context, provider gitprovider.Provider,
+	repo gitprovider.Repository, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container, agents taskAgents, commit string) (ctrl.Result, error) {
+	setProgress(status, model.InheritedChecks(progressOf(status), commit))
+	r.noteContinued(ctx, provider, repo, task, status)
+	r.announce(ctx, provider, repo, task, container, agents)
+	r.progress(task, status, metav1.ConditionTrue, "Checking", model.StartAtReviewMessage(commit, status.Continues))
+	logf.FromContext(ctx).Info("Starting a try at the earlier try's review", "commit", commit,
+		"earlierTask", status.Continues)
+	return ctrl.Result{}, nil // the status write triggers the next step
 }
 
 // agentCredentials reports whether the Agent's credentials Secret, if it names
@@ -684,7 +703,11 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1alpha1.Task, status
 	}
 	r.dropProposal(ctx, task, status, container)
 	r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, reason, message)
-	r.handBack(ctx, task, container, message)
+	why := message
+	if reason == model.ReasonNoCIResult {
+		why += "\n\nCI never reported, so this try doesn't count towards the limit; start or fix the runner first."
+	}
+	r.handBack(ctx, task, container, why)
 	logf.FromContext(ctx).Info("Failed Task", "reason", reason, "message", message)
 	return nil
 }
