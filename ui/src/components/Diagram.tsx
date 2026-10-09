@@ -7,7 +7,7 @@ import { useElementWidth } from '../lib/hooks'
 import { describeContainerPhase } from '../model/describe'
 import { layoutDiagram, type Layout, type Rect } from '../model/layout'
 import { cardSizeVars, nodeSize } from '../model/sizes'
-import type { ContainerNode, Diagram as DiagramModel, DiagramEdge } from '../model/story'
+import type { ContainerNode, Diagram as DiagramModel, DiagramEdge, DiagramNode } from '../model/story'
 import { ConditionList, PhaseBadge } from './bits'
 import { WarningIcon } from './icons'
 import { NodeCard } from './NodeCard'
@@ -18,6 +18,8 @@ export interface DiagramProps {
   selectedId?: string
   onSelect: (id: string) => void
   onOpenSystem?: (name: string) => void
+  /** A box's page, for the boxes that open one rather than being selected. */
+  nodeHref?: (node: DiagramNode) => string | undefined
   /** Shown inside an empty boundary. */
   emptyBoundaryText?: string
 }
@@ -25,7 +27,7 @@ export interface DiagramProps {
 /** Smallest scale before the diagram scrolls sideways instead of shrinking. */
 const MIN_SCALE = 0.55
 
-export function Diagram({ diagram, selectedId, onSelect, onOpenSystem, emptyBoundaryText }: DiagramProps) {
+export function Diagram({ diagram, selectedId, onSelect, onOpenSystem, nodeHref, emptyBoundaryText }: DiagramProps) {
   const layout = useMemo(() => layoutDiagram(diagram, { sizeOf: nodeSize }), [diagram])
   const [ref, available, scroller] = useElementWidth<HTMLDivElement>()
   const [hovered, setHovered] = useState<string>()
@@ -153,6 +155,7 @@ export function Diagram({ diagram, selectedId, onSelect, onOpenSystem, emptyBoun
                   onSelect={onSelect}
                   onHover={setHovered}
                   onOpenSystem={onOpenSystem}
+                  href={nodeHref?.(node)}
                 />
               )
             })}

@@ -110,6 +110,7 @@
   font: inherit;
   text-align: left;
   color: var(--text);
+  text-decoration: none;
   cursor: pointer;
 }
 

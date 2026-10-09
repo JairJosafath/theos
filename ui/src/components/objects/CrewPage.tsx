@@ -10,6 +10,7 @@ import type { Agent, Brief, Container, Crew, CrewRelease, Task } from '../../k8s
 import { useActs, useNow } from '../../lib/hooks'
 import { crewSummary, issueList } from '../../model/crews'
 import { timeAgo } from '../../model/describe'
+import { RELEASE_RUN } from '../../model/releases'
 import { crewNextStep } from '../../model/lifecycle'
 import { AgentName } from '../bits'
 import { ExternalLinkIcon } from '../icons'
@@ -142,13 +143,6 @@ export function CrewPage({
   )
 }
 
-const RUN: Record<NonNullable<CrewRelease['run']>, string> = {
-  Waiting: 'waiting to start',
-  Running: 'running',
-  Succeeded: 'succeeded',
-  Failed: 'one failed',
-}
-
 function ReleaseFacts({ release, now }: { release: CrewRelease; now: number }) {
   return (
     <dl className="facts">
@@ -158,7 +152,7 @@ function ReleaseFacts({ release, now }: { release: CrewRelease; now: number }) {
       </dd>
       <dt>CI runs</dt>
       <dd>
-        {release.run ? RUN[release.run] : 'not reported yet'}
+        {release.run ? RELEASE_RUN[release.run] : 'not reported yet'}
         {release.runURL ? (
           <>
             {' '}
