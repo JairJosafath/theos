@@ -26,6 +26,7 @@ const templatesURL = "http://gitea.gitea.svc.cluster.local:3000/templates/"
 func createFactory(ns string) {
 	GinkgoHelper()
 	service, worker, job := c4v1alpha1.ContainerTypeService, c4v1alpha1.ContainerTypeWorker, c4v1alpha1.ContainerTypeJob
+	operator := c4v1alpha1.ContainerTypeOperator
 	mustCreate(
 		&corev1.Secret{
 			ObjectMeta: objectMeta(ns, "gitea-credentials"),
@@ -41,8 +42,10 @@ func createFactory(ns string) {
 		},
 		&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "python-fastapi"),
 			Spec: newCatalogSpec(templatesURL+"python-fastapi", "v1.3.0", service)},
+		&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "go-kubebuilder"),
+			Spec: newCatalogSpec(templatesURL+"go-kubebuilder", "v1.0.0", operator)},
 		&c4v1alpha1.Compute{ObjectMeta: objectMeta(ns, "small"),
-			Spec: newCatalogSpec(templatesURL+"small", "v1.1.0", service, worker, job)},
+			Spec: newCatalogSpec(templatesURL+"small", "v1.1.0", service, worker, job, operator)},
 		&c4v1alpha1.Deployment{ObjectMeta: objectMeta(ns, "k8s-manifests"),
 			Spec: newCatalogSpec(templatesURL+"k8s-manifests", "v1.2.1", service, worker)},
 		&c4v1alpha1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
@@ -90,6 +93,35 @@ var _ = Describe("Container catalog choices", func() {
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUnsupportedType))
 			g.Expect(cond.Message).To(Equal("python-fastapi does not support static-site"))
+		}).Should(Succeed())
+	})
+
+	It("accepts an operator on go-kubebuilder and rejects it on a Framework without operator", func() {
+		ns := newProjectNamespace()
+		createFactory(ns)
+		mustCreate(newSystem(ns, "webshop-core"))
+		operator := func(name, framework string) *c4v1alpha1.Container {
+			container := newContainer(ns, name, "webshop-core", c4v1alpha1.ContainerTypeOperator)
+			container.Spec.FrameworkRef.Name = framework
+			container.Spec.DeploymentRef = nil
+			return container
+		}
+		accepted, rejected := operator("orders-operator", "go-kubebuilder"), operator("orders-sync", "python-fastapi")
+		mustCreate(accepted, rejected)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-operator"), accepted)).To(Succeed())
+			g.Expect(condition(accepted.Status.Conditions, c4v1alpha1.ConditionChoicesValid)).
+				To(HaveField("Status", metav1.ConditionTrue))
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-sync"), rejected)).To(Succeed())
+			g.Expect(rejected.Status.Phase).To(Equal(c4v1alpha1.ContainerFailed))
+			cond := condition(rejected.Status.Conditions, c4v1alpha1.ConditionChoicesValid)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUnsupportedType))
+			g.Expect(cond.Message).To(Equal("python-fastapi does not support operator"))
 		}).Should(Succeed())
 	})
 
