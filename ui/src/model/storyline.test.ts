@@ -181,6 +181,11 @@ describe('storyline', () => {
     })
     const one = { ...empty(), crews: [crew('api', release('v0.1.0', '2026-06-01T10:00:00Z'))] }
     expect(step(one, 'releases').to).toEqual({ kind: 'Crew', name: 'api' })
+    const unpublished = {
+      ...release('v0.1.0', '2026-06-01T10:00:00Z', 'Succeeded'),
+      publish: { state: 'Failed' as const },
+    }
+    expect(step({ ...empty(), crews: [crew('api', unpublished)] }, 'releases').tone).toBe('error')
   })
 })
 

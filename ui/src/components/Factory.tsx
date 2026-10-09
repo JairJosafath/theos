@@ -150,7 +150,7 @@ export function FactoryPage({
 
           <CrewsPanel crews={crews} loaded={loaded} now={now} onSelectTask={onSelectTask} pageHref={pageHref} />
 
-          <ReleasesPanel crews={data.crews} loaded={loaded} now={now} pageHref={pageHref} />
+          {pageHref ? <ReleasesPanel crews={data.crews} loaded={loaded} now={now} pageHref={pageHref} /> : null}
 
           <TimePanel stats={stats} />
         </section>

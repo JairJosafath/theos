@@ -8,6 +8,7 @@ import { Account } from './components/Account'
 import { Briefs } from './components/Briefs'
 import { Diagram } from './components/Diagram'
 import { StoryLine } from './components/StoryLine'
+import { ViewCaption } from './components/ViewCaption'
 import { FactoryPage } from './components/Factory'
 import { LogoMark, WarningIcon } from './components/icons'
 import { NeedsArea } from './components/Needs'
@@ -44,7 +45,14 @@ import { factoryVersions } from './model/versions'
 import { hasPage } from './model/lifecycle'
 import { activeCrewTasks } from './model/crews'
 import { needs } from './model/needs'
-import { buildContainerDiagram, buildContextDiagram, containerNodes, systemsForPicker, workingNow } from './model/story'
+import {
+  buildContainerDiagram,
+  buildContextDiagram,
+  containerNodes,
+  systemsForPicker,
+  type DiagramNode,
+  workingNow,
+} from './model/story'
 
 /**
  * Where the Kubernetes API is proxied, relative to the page (see server.mjs).
@@ -185,6 +193,10 @@ export default function App() {
       setSelection((cur) => (cur?.scope === scope && cur.id === id ? undefined : { scope, id }))
     },
     [scope, shell, diagram, namespace, setUrl],
+  )
+  const nodeHref = useMemo(
+    () => (shell && namespace ? (node: DiagramNode) => pageHref(namespace, node.kind, node.name) : undefined),
+    [shell, namespace],
   )
   const openSystem = useCallback((name: string) => setUrl({ view: 'containers', system: name }), [setUrl])
 
@@ -329,6 +341,7 @@ export default function App() {
               selectedId={selectedId}
               onSelect={onSelect}
               onOpenSystem={view === 'context' ? openSystem : undefined}
+              nodeHref={nodeHref}
               emptyBoundaryText="No containers or data stores in this system yet."
             />
           )}
@@ -551,31 +564,6 @@ function ProjectHeader({ data, namespace, loaded }: { data: StoryData; namespace
         </div>
       </dl>
     </section>
-  )
-}
-
-function ViewCaption({ view, systemTitle, opensPages }: { view: View; systemTitle?: string; opensPages: boolean }) {
-  if (view === 'context') {
-    return (
-      <div className="view-head">
-        <h2 className="view-title">System context: the big picture</h2>
-        <p className="view-caption">
-          Who uses the software, and which software systems are involved. Each arrow says who uses what, and what for.{' '}
-          {opensPages ? 'Open a system for its page' : 'Select a box for details'}, or <em>Look inside</em> a system to
-          see what it is made of.
-        </p>
-      </div>
-    )
-  }
-  return (
-    <div className="view-head">
-      <h2 className="view-title">Containers of {systemTitle ?? 'a system'}</h2>
-      <p className="view-caption">
-        The applications (containers) and data stores inside the dashed box make up this system. The factory gives each
-        container its own Git repository, started from templates. People and grey systems around it are outside. Hover
-        over a container to see how the factory is getting on{opensPages ? ', or open it for its page' : ''}.
-      </p>
-    </div>
   )
 }
 

@@ -139,7 +139,7 @@ function tasksStep(data: StoryData): StoryStep {
 function releasesStep(data: StoryData): StoryStep {
   const released = crewReleases(data.crews)
   const newest = released[0]
-  const failed = released.some((r) => r.release.run === 'Failed')
+  const failed = released.some((r) => r.release.run === 'Failed' || r.release.publish?.state === 'Failed')
   return {
     key: 'releases',
     label: 'Releases',

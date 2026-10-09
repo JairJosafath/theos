@@ -319,6 +319,8 @@ describe('the new shell', () => {
     // A container's box, by keyboard, opens the Container's page.
     await page.goto(`${base}/?shell=next&area=story&view=containers&system=webshop-core`)
     const node = page.locator('[data-node-id="Container/orders-api"]')
+    assert.equal(await node.getAttribute('role'), 'link')
+    assert.equal(await node.getAttribute('aria-pressed'), null)
     await node.focus()
     await page.keyboard.press('Enter')
     const container = page.getByRole('region', { name: 'Container orders-api', exact: true })
