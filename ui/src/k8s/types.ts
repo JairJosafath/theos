@@ -124,6 +124,19 @@ export interface Container extends K8sObject {
     appliedConnectors?: { relationship: string; dataStore: string; connector: string }[]
     activeSessions?: number
     observedGeneration?: number
+    /** The ref its Standard's files are at, and the Standard update in flight or the last one, stopped. */
+    standard?: {
+      name: string
+      ref: string
+      leftOut?: string[]
+      update?: {
+        ref: string
+        pullRequest?: number
+        pullRequestURL?: string
+        /** Why the update stopped without merging, such as UpdateClosed. */
+        stopped?: string
+      }
+    }
     conditions?: Condition[]
   }
 }
@@ -322,9 +335,19 @@ export interface Crew extends K8sObject {
     ready?: number[]
     /** Ready issues blocked by open dependencies. */
     waiting?: number[]
+    /** The release the Crew tagged last, when spec.tagReleases is set. */
+    lastRelease?: {
+      tag: string
+      commit: string
+      time: string
+      /** How the CI runs the tag started went. */
+      run?: 'Waiting' | 'Running' | 'Succeeded' | 'Failed'
+      /** The failed run, else the newest one. */
+      runURL?: string
+    }
     lastPolled?: string
     observedGeneration?: number
-    /** Ready: whether the Crew can pick up issues, and why not. */
+    /** Ready: whether the Crew can pick up issues, and why not; Released: whether its next release went out, and why not. */
     conditions?: Condition[]
   }
 }

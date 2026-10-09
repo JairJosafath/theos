@@ -1,7 +1,7 @@
 // The new shell (docs/plans/ui-lifecycle.md, decision 2), reached only with
 // ?shell=next until it becomes the default: navigation for the six areas, a
 // freshness line, and the area on screen. Story, Briefs, Work and Factory show
-// today's components; Needs you and the object pages come in later steps.
+// today's components; the object pages come in later steps.
 
 import type { MouseEvent, ReactNode } from 'react'
 import type { FactoryHealth } from '../k8s/health'
@@ -31,8 +31,8 @@ export interface ShellProps {
   picker: ReactNode
   /** The demo and problem banners. */
   banners: ReactNode
-  /** Today's components for these areas. */
-  areas: Record<'briefs' | 'story' | 'work' | 'factory', ReactNode>
+  /** Needs you, and today's components for the other areas of the cluster. */
+  areas: Record<'needs' | 'briefs' | 'story' | 'work' | 'factory', ReactNode>
 }
 
 /** Leaves an object page: the area alone. */
@@ -87,15 +87,7 @@ export function Shell({
       {banners}
       <Freshness connection={connection} scope={scope} />
 
-      {object ? (
-        <ObjectPlaceholder {...object} />
-      ) : area === 'needs' ? (
-        <NeedsArea />
-      ) : area === 'about' ? (
-        <AboutArea versions={versions} />
-      ) : (
-        areas[area]
-      )}
+      {object ? <ObjectPlaceholder {...object} /> : area === 'about' ? <AboutArea versions={versions} /> : areas[area]}
 
       <footer className="footer">
         This page reads the C4 Factory resources in the cluster and updates as they change. It can change only three
@@ -147,20 +139,6 @@ function Ago({ at }: { at: number }) {
     <time dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString()}>
       {ms < 1000 ? 'just now' : `${formatDuration(ms)} ago`}
     </time>
-  )
-}
-
-function NeedsArea() {
-  return (
-    <main className="shell-page">
-      <section className="panel">
-        <h1 className="panel-title">Needs you</h1>
-        <p className="panel-text">
-          This area will list what waits on a person across projects, each with where to do it. Until it does, Work
-          shows what needs a look among the Tasks, and each Brief says when it needs your input.
-        </p>
-      </section>
-    </main>
   )
 }
 
