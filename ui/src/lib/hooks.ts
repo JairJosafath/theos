@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore } from 'react'
 import type { UiSession } from '../k8s/session'
+import { isArea, type Area } from '../model/areas'
 import type { Snapshot, Source } from '../k8s/sources'
 
 /** Subscribes to a data source for as long as the component is mounted. */
@@ -70,10 +71,18 @@ export type View = 'context' | 'containers' | 'factory'
 
 export interface UrlState {
   demo: boolean
+  /** The new shell, reached only with shell=next until it becomes the default. */
+  shell: boolean
+  /** The shell's area; unset, the shell picks one. */
+  area?: Area
+  /** An object page in the shell: ns=<namespace>&kind=<Kind>&name=<name>. */
+  ns?: string
+  kind?: string
+  name?: string
   project?: string
   view: View
   system?: string
-  /** The Task selected in the factory view, as namespace/name. */
+  /** The Task selected in the factory view, or the shell's Work area, as namespace/name. */
   task?: string
 }
 
@@ -83,6 +92,11 @@ function readUrl(): UrlState {
   const params = new URLSearchParams(window.location.search)
   return {
     demo: params.get('demo') === '1',
+    shell: params.get('shell') === 'next',
+    area: isArea(params.get('area')) ? (params.get('area') as Area) : undefined,
+    ns: params.get('ns') || undefined,
+    kind: params.get('kind') || undefined,
+    name: params.get('name') || undefined,
     project: params.get('project') || undefined,
     view: VIEWS.includes(params.get('view') as View) ? (params.get('view') as View) : 'context',
     system: params.get('system') || undefined,
@@ -90,9 +104,34 @@ function readUrl(): UrlState {
   }
 }
 
+/** The link to the page with `next` merged into what the URL says now. */
+export function hrefFor(next: Partial<UrlState>): string {
+  const merged = { ...readUrl(), ...next }
+  const params = new URLSearchParams()
+  if (merged.demo) params.set('demo', '1')
+  if (merged.shell) {
+    params.set('shell', 'next')
+    if (merged.area) params.set('area', merged.area)
+    if (merged.kind && merged.name) {
+      if (merged.ns) params.set('ns', merged.ns)
+      params.set('kind', merged.kind)
+      params.set('name', merged.name)
+    }
+  }
+  if (merged.project) params.set('project', merged.project)
+  // The shell has no factory view: Work and Factory are areas.
+  if (merged.view !== 'context' && !(merged.shell && merged.view === 'factory')) params.set('view', merged.view)
+  if (merged.system && merged.view === 'containers') params.set('system', merged.system)
+  if (merged.task && (merged.shell ? merged.area === 'work' : merged.view === 'factory'))
+    params.set('task', merged.task)
+  const query = params.toString()
+  return `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
+}
+
 /**
- * Which project, view and system are shown, kept in the query string so a view
- * can be bookmarked or shared, and the back button works.
+ * Which project, view and system are shown (and in the new shell, which area
+ * or object), kept in the query string so a view can be bookmarked or shared,
+ * and the back button works.
  */
 export function useUrlState(): [UrlState, (next: Partial<UrlState>, replace?: boolean) => void] {
   const [state, setState] = useState(readUrl)
@@ -104,14 +143,7 @@ export function useUrlState(): [UrlState, (next: Partial<UrlState>, replace?: bo
   const update = useCallback((next: Partial<UrlState>, replace = false) => {
     // The URL is the source of truth, so merge into what it says now.
     const merged = { ...readUrl(), ...next }
-    const params = new URLSearchParams()
-    if (merged.demo) params.set('demo', '1')
-    if (merged.project) params.set('project', merged.project)
-    if (merged.view !== 'context') params.set('view', merged.view)
-    if (merged.system && merged.view === 'containers') params.set('system', merged.system)
-    if (merged.task && merged.view === 'factory') params.set('task', merged.task)
-    const query = params.toString()
-    const url = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
+    const url = hrefFor(next)
     if (url !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
       window.history[replace ? 'replaceState' : 'pushState'](null, '', url)
     }

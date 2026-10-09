@@ -40,3 +40,30 @@ export function versionSkew(v: Pick<Versions, 'ui' | 'operator'>): string | unde
     `read the resources differently. Upgrade them together, with the chart.`
   )
 }
+
+/** Where the factory's code, docs and releases live. */
+export const REPO_URL = 'https://github.com/JairJosafath/c4factory'
+
+/**
+ * The release the factory runs, for the About area's links: the operator's
+ * version when it reported a release, else the UI's; undefined for
+ * unreleased (`dev`) builds.
+ */
+export function runningRelease(v: Pick<Versions, 'ui' | 'operator'>): string | undefined {
+  return [v.operator, v.ui].find((x) => x && x !== DEV_VERSION)
+}
+
+/**
+ * The About area's links: the docs and release notes of the running release
+ * (its tag is `v` and the version), or main's docs and every release's notes
+ * when no release is known; and the repository.
+ */
+export function aboutLinks(v: Pick<Versions, 'ui' | 'operator'>): { docs: string; releaseNotes: string; repo: string } {
+  const release = runningRelease(v)
+  const tag = release ? `v${release.replace(/^v/, '')}` : undefined
+  return {
+    docs: `${REPO_URL}/blob/${tag ?? 'main'}/docs/design.md`,
+    releaseNotes: tag ? `${REPO_URL}/releases/tag/${tag}` : `${REPO_URL}/releases`,
+    repo: REPO_URL,
+  }
+}

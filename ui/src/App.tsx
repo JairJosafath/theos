@@ -1,6 +1,6 @@
 // The page: a header with the project, its Briefs, two views of its story
 // (system context and containers), and a side panel with details, sessions and
-// a legend.
+// a legend. With ?shell=next, the same parts inside the new shell's areas.
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import './app.css'
@@ -9,6 +9,8 @@ import { Briefs } from './components/Briefs'
 import { Diagram } from './components/Diagram'
 import { FactoryPage } from './components/Factory'
 import { LogoMark, WarningIcon } from './components/icons'
+import { FactoryArea, Shell } from './components/Shell'
+import { ConnectionStatus, ProblemsBanner } from './components/Status'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { VersionLine } from './components/Versions'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
@@ -21,10 +23,9 @@ import {
   LiveFactorySource,
   LiveProjectsSource,
   LiveStorySource,
+  mergeConnections,
   type Api,
-  type Connection,
   type FactoryData,
-  type Problem,
   type Snapshot,
   type Source,
   type StoryData,
@@ -32,6 +33,7 @@ import {
 import { GROUP, VERSION, type Project } from './k8s/types'
 import { useDemo } from './lib/demo'
 import { RefreshSession, SessionContext, useSource, useUrlState, type View } from './lib/hooks'
+import { areaLabel } from './model/areas'
 import { plural, titleOf } from './model/describe'
 import { factoryVersions } from './model/versions'
 import { activeCrewTasks } from './model/crews'
@@ -92,14 +94,20 @@ export default function App() {
     () => factoryVersions(sortedProjects, __C4_UI_VERSION__, `${GROUP}/${VERSION}`),
     [sortedProjects],
   )
-  const factoryView = url.view === 'factory'
+  const shell = url.shell
+  // The Needs you step opens the shell on Needs you when it has items.
+  const area = url.area ?? 'story'
+  const objectPage = shell && Boolean(url.kind && url.name)
+  // In the shell, Story and Briefs show one project; Work and Factory every one.
+  const factoryView = shell ? !objectPage && (area === 'work' || area === 'factory') : url.view === 'factory'
+  const storyView = shell ? !objectPage && (area === 'story' || area === 'briefs') : !factoryView
 
   // Only the view on screen watches the cluster.
   const storySource = useMemo<Source<StoryData>>(() => {
-    if (!namespace || factoryView) return NO_STORY
+    if (!namespace || !storyView) return NO_STORY
     if (!demo) return new LiveStorySource(namespace, API)
     return demoModule ? new demoModule.DemoStorySource() : NO_STORY
-  }, [namespace, demo, demoModule, factoryView])
+  }, [namespace, demo, demoModule, storyView])
   const factorySource = useMemo<Source<FactoryData>>(() => {
     if (!factoryView) return NO_FACTORY
     if (!demo) return new LiveFactorySource(API)
@@ -122,6 +130,12 @@ export default function App() {
   const systems = useMemo(() => systemsForPicker(data), [data])
   const systemName = url.system && systems.some((s) => s.name === url.system) ? url.system : systems[0]?.name
   const view: Exclude<View, 'factory'> = url.view === 'containers' ? 'containers' : 'context'
+  const selectTask = useCallback(
+    // Selecting a Task replaces the history entry; opening one from Factory goes to Work.
+    (task: string | undefined) =>
+      setUrl(shell ? { area: 'work', task } : { view: 'factory', task }, !shell || area === 'work'),
+    [setUrl, shell, area],
+  )
 
   const contextDiagram = useMemo(() => buildContextDiagram(data), [data])
   const containerDiagram = useMemo(
@@ -158,11 +172,13 @@ export default function App() {
   )
 
   const project = data.project
-  const pageTitle = factoryView
-    ? `The factory${demo ? ' (demo)' : ''} · C4 Factory`
-    : project
-      ? `${titleOf(project)}${demo ? ' (demo)' : ''} · C4 Factory`
-      : 'C4 Factory'
+  const pageTitle = shell
+    ? `${objectPage ? `${url.kind} ${url.name}` : areaLabel(area)}${demo ? ' (demo)' : ''} · C4 Factory`
+    : factoryView
+      ? `The factory${demo ? ' (demo)' : ''} · C4 Factory`
+      : project
+        ? `${titleOf(project)}${demo ? ' (demo)' : ''} · C4 Factory`
+        : 'C4 Factory'
   useEffect(() => {
     document.title = pageTitle
   }, [pageTitle])
@@ -170,7 +186,7 @@ export default function App() {
     ? demo
       ? factory.connection
       : mergeConnections(factory.connection, health.connection)
-    : demo
+    : demo || !storyView
       ? projects.connection
       : mergeConnections(projects.connection, story.connection)
   const connection = demoProblem
@@ -179,7 +195,177 @@ export default function App() {
   const noProjects = !demo && projects.connection.loaded && sortedProjects.length === 0
   const systemTitle = systems.find((s) => s.name === systemName)?.title
 
-  const page = (
+  const picker =
+    sortedProjects.length > 0 ? (
+      <label className="picker">
+        <span className="picker-label">Project</span>
+        <select
+          value={namespace}
+          onChange={(e) => setUrl({ project: e.target.value, view: 'context', system: undefined })}
+        >
+          {sortedProjects.map((p) => (
+            <option key={`${p.metadata.namespace}/${p.metadata.name}`} value={p.metadata.namespace}>
+              {titleOf(p)}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : null
+  const banners = (
+    <>
+      {demo ? (
+        <div className="banner banner-demo" role="status">
+          <strong>Demo mode.</strong> You are looking at built-in example data, not a cluster. Nothing here is live.
+          <a href={shell ? '?shell=next' : '?'} className="banner-link">
+            Leave demo
+          </a>
+        </div>
+      ) : null}
+      <ProblemsBanner problems={connection.problems} />
+    </>
+  )
+  const briefs =
+    namespace && story.connection.loaded ? (
+      <Briefs
+        briefs={data.briefs}
+        namespace={namespace}
+        canCreate={Boolean(data.project)}
+        writer={writer}
+        agents={data.agents}
+      />
+    ) : null
+  const storyBody = noProjects ? (
+    <EmptyProjects />
+  ) : (
+    <>
+      <ProjectHeader data={data} namespace={namespace} loaded={story.connection.loaded} />
+      {shell ? null : briefs}
+      <nav className="tabs" aria-label="Views">
+        <div className="tablist" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'context'}
+            className="tab"
+            onClick={() => setUrl({ view: 'context' })}
+          >
+            <span className="tab-step">1</span> System context
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'containers'}
+            className="tab"
+            onClick={() => setUrl({ view: 'containers', system: systemName })}
+            disabled={!systems.length}
+          >
+            <span className="tab-step">2</span> Containers
+          </button>
+        </div>
+        {view === 'containers' && systems.length > 1 ? (
+          <label className="picker">
+            <span className="picker-label">System</span>
+            <select value={systemName} onChange={(e) => setUrl({ view: 'containers', system: e.target.value })}>
+              {systems.map((s) => (
+                <option key={s.name} value={s.name}>
+                  {s.title} ({plural(s.containers, 'container')})
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </nav>
+
+      <main className="workspace">
+        <section className="stage" aria-label="Diagram">
+          <ViewCaption view={view} systemTitle={systemTitle} />
+          {!story.connection.loaded ? (
+            <div className="placeholder">Loading the story…</div>
+          ) : !diagram || diagram.nodes.length + (diagram.boundary ? 1 : 0) === 0 ? (
+            <div className="placeholder">
+              {view === 'context'
+                ? 'This project has no people or software systems yet. They appear here as soon as they are added.'
+                : 'Pick a software system to see its containers.'}
+            </div>
+          ) : (
+            <MemoDiagram
+              diagram={diagram}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              onOpenSystem={view === 'context' ? openSystem : undefined}
+              emptyBoundaryText="No containers or data stores in this system yet."
+            />
+          )}
+          {diagram?.looseEnds.length ? (
+            <div className="loose-ends">
+              <h3 className="section-title">
+                <WarningIcon size={14} /> Not drawn
+              </h3>
+              <ul>
+                {diagram.looseEnds.map((text) => (
+                  <li key={text}>{text}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+
+        <aside className="side">
+          {selectedNode ? (
+            <DetailsPanel
+              node={selectedNode}
+              data={data}
+              onClose={() => setSelection(undefined)}
+              onOpenSystem={openSystem}
+            />
+          ) : null}
+          <SessionsPanel
+            containers={sessionContainers}
+            tasks={crewTasks}
+            scope={view === 'containers' && systemTitle ? systemTitle : project ? titleOf(project) : 'this project'}
+          />
+          <Legend view={view} />
+        </aside>
+      </main>
+    </>
+  )
+  const factoryPage = (
+    <FactoryPage
+      data={factory.data}
+      loaded={factory.connection.loaded}
+      health={health.data}
+      healthLoaded={health.connection.loaded}
+      selectedTask={url.task}
+      onSelectTask={selectTask}
+    />
+  )
+
+  const page = shell ? (
+    <Shell
+      url={url}
+      area={area}
+      setUrl={setUrl}
+      connection={connection}
+      namespace={namespace}
+      versions={versions}
+      onSignOut={onSignOut}
+      picker={picker}
+      banners={banners}
+      areas={{
+        briefs: noProjects ? <EmptyProjects /> : (briefs ?? <div className="placeholder">Loading the Briefs…</div>),
+        story: storyBody,
+        work: factoryPage,
+        factory: (
+          <FactoryArea
+            data={factory.data}
+            health={health.data}
+            healthLoaded={health.connection.loaded}
+            onSelectTask={selectTask}
+          />
+        ),
+      }}
+    />
+  ) : (
     <div className="app">
       <header className="topbar">
         <div className="brand">
@@ -213,147 +399,13 @@ export default function App() {
         <div className="topbar-right">
           <ConnectionStatus connection={connection} />
           <Account onSignOut={onSignOut} />
-          {sortedProjects.length > 0 && !factoryView ? (
-            <label className="picker">
-              <span className="picker-label">Project</span>
-              <select
-                value={namespace}
-                onChange={(e) => setUrl({ project: e.target.value, view: 'context', system: undefined })}
-              >
-                {sortedProjects.map((p) => (
-                  <option key={`${p.metadata.namespace}/${p.metadata.name}`} value={p.metadata.namespace}>
-                    {titleOf(p)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
+          {factoryView ? null : picker}
         </div>
       </header>
 
-      {demo ? (
-        <div className="banner banner-demo" role="status">
-          <strong>Demo mode.</strong> You are looking at built-in example data, not a cluster. Nothing here is live.
-          <a href="?" className="banner-link">
-            Leave demo
-          </a>
-        </div>
-      ) : null}
-      <ProblemsBanner problems={connection.problems} />
+      {banners}
 
-      {factoryView ? (
-        <FactoryPage
-          data={factory.data}
-          loaded={factory.connection.loaded}
-          health={health.data}
-          healthLoaded={health.connection.loaded}
-          selectedTask={url.task}
-          onSelectTask={(task) => setUrl({ view: 'factory', task }, true)}
-        />
-      ) : noProjects ? (
-        <EmptyProjects />
-      ) : (
-        <>
-          <ProjectHeader data={data} namespace={namespace} loaded={story.connection.loaded} />
-          {namespace && story.connection.loaded ? (
-            <Briefs
-              briefs={data.briefs}
-              namespace={namespace}
-              canCreate={Boolean(data.project)}
-              writer={writer}
-              agents={data.agents}
-            />
-          ) : null}
-
-          <nav className="tabs" aria-label="Views">
-            <div className="tablist" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={view === 'context'}
-                className="tab"
-                onClick={() => setUrl({ view: 'context' })}
-              >
-                <span className="tab-step">1</span> System context
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={view === 'containers'}
-                className="tab"
-                onClick={() => setUrl({ view: 'containers', system: systemName })}
-                disabled={!systems.length}
-              >
-                <span className="tab-step">2</span> Containers
-              </button>
-            </div>
-            {view === 'containers' && systems.length > 1 ? (
-              <label className="picker">
-                <span className="picker-label">System</span>
-                <select value={systemName} onChange={(e) => setUrl({ view: 'containers', system: e.target.value })}>
-                  {systems.map((s) => (
-                    <option key={s.name} value={s.name}>
-                      {s.title} ({plural(s.containers, 'container')})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </nav>
-
-          <main className="workspace">
-            <section className="stage" aria-label="Diagram">
-              <ViewCaption view={view} systemTitle={systemTitle} />
-              {!story.connection.loaded ? (
-                <div className="placeholder">Loading the story…</div>
-              ) : !diagram || diagram.nodes.length + (diagram.boundary ? 1 : 0) === 0 ? (
-                <div className="placeholder">
-                  {view === 'context'
-                    ? 'This project has no people or software systems yet. They appear here as soon as they are added.'
-                    : 'Pick a software system to see its containers.'}
-                </div>
-              ) : (
-                <MemoDiagram
-                  diagram={diagram}
-                  selectedId={selectedId}
-                  onSelect={onSelect}
-                  onOpenSystem={view === 'context' ? openSystem : undefined}
-                  emptyBoundaryText="No containers or data stores in this system yet."
-                />
-              )}
-              {diagram?.looseEnds.length ? (
-                <div className="loose-ends">
-                  <h3 className="section-title">
-                    <WarningIcon size={14} /> Not drawn
-                  </h3>
-                  <ul>
-                    {diagram.looseEnds.map((text) => (
-                      <li key={text}>{text}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </section>
-
-            <aside className="side">
-              {selectedNode ? (
-                <DetailsPanel
-                  node={selectedNode}
-                  data={data}
-                  onClose={() => setSelection(undefined)}
-                  onOpenSystem={openSystem}
-                />
-              ) : null}
-              <SessionsPanel
-                containers={sessionContainers}
-                tasks={crewTasks}
-                scope={view === 'containers' && systemTitle ? systemTitle : project ? titleOf(project) : 'this project'}
-              />
-              <Legend view={view} />
-            </aside>
-          </main>
-        </>
-      )}
+      {factoryView ? factoryPage : storyBody}
 
       <footer className="footer">
         This page reads the C4 Factory resources in the cluster and updates as they change. It can change only three
@@ -400,69 +452,6 @@ function useSession(demo: boolean): {
     setSession({ ...session, user: null })
   }, [session])
   return { session: demo ? undefined : session, onSignOut, refresh }
-}
-
-function mergeConnections(a: Connection, b: Connection): Connection {
-  const order: Connection['phase'][] = ['demo', 'live', 'reconnecting', 'connecting']
-  return {
-    phase: order[Math.max(order.indexOf(a.phase), order.indexOf(b.phase))],
-    loaded: a.loaded && b.loaded,
-    problems: [...a.problems, ...b.problems],
-  }
-}
-
-function ConnectionStatus({ connection }: { connection: Connection }) {
-  const labels: Record<Connection['phase'], [string, string]> = {
-    demo: ['Demo data', 'Built-in example data, not a cluster'],
-    live: ['Live', 'Watching the cluster: changes show up as they happen'],
-    reconnecting: ['Reconnecting…', 'Lost the connection to the cluster; retrying'],
-    connecting: ['Connecting…', 'Loading the story from the cluster'],
-  }
-  const [label, title] = labels[connection.phase]
-  return (
-    <span className={`status status-${connection.phase}`} title={title} role="status">
-      <span className="status-dot" aria-hidden="true" />
-      {label}
-    </span>
-  )
-}
-
-/** Explains why something couldn't be read, with a hint at the usual fix. */
-function ProblemsBanner({ problems }: { problems: Problem[] }) {
-  if (!problems.length) return null
-  const hint = (p: Problem) => {
-    if (p.code === 403)
-      return 'The UI is not allowed to read these. Its ClusterRole (config/ui) needs get, list and watch on them.'
-    if (p.code === 404) return 'This kind is not installed in the cluster. Are the C4 Factory CRDs installed?'
-    if (p.code === 502 || p.code === 503 || p.code === 504) return 'The UI server cannot reach the Kubernetes API.'
-    return 'Retrying automatically.'
-  }
-  // One line per distinct message, so nine failing watches read as one problem.
-  const distinct = [...new Map(problems.map((p) => [`${p.code}|${p.message}`, p])).values()]
-  return (
-    <div className="banner banner-problem" role="alert">
-      <WarningIcon size={16} />
-      <div>
-        {distinct.map((p) => (
-          <p key={`${p.code}|${p.message}`}>
-            <strong>
-              Could not read{' '}
-              {problems
-                .filter((q) => q.message === p.message)
-                .map((q) => q.what)
-                .join(', ')}
-              .
-            </strong>{' '}
-            {hint(p)}{' '}
-            <span className="muted">
-              ({p.code ? `${p.code}: ` : ''}
-              {p.message})
-            </span>
-          </p>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 function ProjectHeader({ data, namespace, loaded }: { data: StoryData; namespace?: string; loaded: boolean }) {

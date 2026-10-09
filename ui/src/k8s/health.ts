@@ -144,6 +144,7 @@ export class HealthSource implements Source<FactoryHealth | undefined> {
         phase: problem ? (data ? 'reconnecting' : 'connecting') : 'live',
         loaded: data !== undefined,
         problems: problem ? [problem] : [],
+        updatedAt: problem ? this.snapshot.connection.updatedAt : Date.now(),
       },
     }
     for (const listener of this.listeners) listener()
