@@ -137,29 +137,33 @@ export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
     url,
   }))
   const suggestionsWaiting = status.suggestionsWaiting ?? suggestions.length
-  const failed = (status.failed ?? []).map(describeFailedIssue)
+  const listed = (status.needsYou ?? []).map((n) => describeNeedsYou(n, status))
+  const asked = new Set(listed.flatMap((n) => (n.issue ? [`${n.issue.container}#${n.issue.number}`] : [])))
+  const failed = (status.failed ?? []).map((f) => ({
+    ...describeFailedIssue(f),
+    asked: asked.has(`${f.container}#${f.number}`),
+  }))
   const failedWaiting = status.failedWaiting ?? failed.length
   const needsInput = needs?.status === 'True' ? needs.message?.trim() || 'It waits for you.' : undefined
-  const listed = (status.needsYou ?? []).map((n) => describeNeedsYou(n, status.failed ?? []))
   const needsYou: BriefNeedsYouView[] = needsInput
     ? [{ kind: 'Input', label: 'The Brief', question: needsInput }, ...listed]
     : listed
   const needsYouWaiting = (status.needsYouWaiting ?? listed.length) + (needsInput ? 1 : 0)
   const autopilot = describeAutopilot(brief.spec.autopilot, status.autopilot)
   const phase = describeBriefPhase(status.phase)
-  const asked = status.needsYouWaiting ?? listed.length
+  const askedCount = status.needsYouWaiting ?? listed.length
   // With autopilot on or asking, the failed issues that wait for the person
   // are under Needs you already; the rest the Brief decides by itself. With
   // no mode known, the operator's not having reported it yet, the count
   // claims none and the failed-issues hint says how to answer them.
   const unanswered = autopilot.mode === 'Off' ? failedWaiting : 0
-  if (status.phase === 'Planned' && (unanswered > 0 || suggestionsWaiting > 0 || asked > 0)) {
+  if (status.phase === 'Planned' && (unanswered > 0 || suggestionsWaiting > 0 || askedCount > 0)) {
     const waiting = [
-      asked ? `${asked} ${asked === 1 ? 'item' : 'items'} under Needs you` : '',
+      askedCount ? `${askedCount} ${askedCount === 1 ? 'item' : 'items'} under Needs you` : '',
       unanswered ? plural(unanswered, 'failed issue') : '',
       suggestionsWaiting ? plural(suggestionsWaiting, 'reviewer suggestion') : '',
     ].filter(Boolean)
-    const verb = asked + unanswered + suggestionsWaiting === 1 ? 'waits' : 'wait'
+    const verb = askedCount + unanswered + suggestionsWaiting === 1 ? 'waits' : 'wait'
     phase.explanation = `The last round is done; ${waiting.join(', ').replace(/, ([^,]*)$/, ' and $1')} ${verb} for your answer in a prompt.`
   }
   return {
@@ -288,6 +292,10 @@ export interface BriefNeedsYouView {
   label: string
   /** The issue's address, for an issue the Brief lists as failed. */
   url?: string
+  /** The issue it is about, with its title when the Brief lists it; unset for any other kind. */
+  issue?: { container: string; number: number; title?: string }
+  /** The answer the Brief would give the issue, from the tending round that asked. */
+  recommended?: 'retry' | 'close' | 'wait'
   question: string
   /** What the Brief would do. */
   recommend?: string
@@ -295,13 +303,25 @@ export interface BriefNeedsYouView {
   since?: string
 }
 
-export function describeNeedsYou(entry: BriefNeedsYou, failed: BriefFailedIssue[]): BriefNeedsYouView {
+export function describeNeedsYou(
+  entry: BriefNeedsYou,
+  status: Pick<NonNullable<Brief['status']>, 'failed' | 'issues' | 'tended'>,
+): BriefNeedsYouView {
   const issue = entry.kind === 'Issue' ? splitIssue(entry.name) : undefined
-  const url = issue && failed.find((f) => f.container === issue.container && f.number === issue.number)?.url
+  const same = (t: { container: string; number: number }) =>
+    issue !== undefined && t.container === issue.container && t.number === issue.number
+  const failed = (status.failed ?? []).find(same)
+  const filed =
+    issue &&
+    (status.issues ?? []).find((i) => i.number === issue.number && i.repository.split('/').pop() === issue.container)
+  // The newest round that asked about it says what it would do.
+  const tended = (status.tended ?? []).filter((t) => same(t) && t.answer === 'ask').at(-1)
   return {
     kind: entry.kind,
     label: issue ? `${issue.container} #${issue.number}` : `${entry.kind} ${entry.name}`,
-    url: url || undefined,
+    url: failed?.url || undefined,
+    issue: issue && { ...issue, title: failed?.title || filed?.title || undefined },
+    recommended: tended?.recommend?.answer,
     question: entry.question.trim(),
     recommend: entry.recommend?.trim() || undefined,
     why: entry.why?.trim() || undefined,
@@ -375,6 +395,8 @@ export interface BriefFailedView {
   tries: number
   /** What answering it in a prompt does, when that isn't trying it again. */
   note?: string
+  /** Whether Needs you lists it too, where it is answered. */
+  asked?: boolean
 }
 
 export function describeFailedIssue(issue: BriefFailedIssue): BriefFailedView {

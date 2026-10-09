@@ -6,12 +6,15 @@ import type { BriefAppView, BriefView } from '../../model/brief'
 import { plural, timeAgo } from '../../model/describe'
 import { UsageLine } from '../bits'
 import { ExternalLinkIcon, RepoIcon } from '../icons'
+import { failedAnswers, suggestionAnswers } from '../../model/answers'
+import { AnswerButtons, type AnswerContext } from './Answers'
 
 /** How many items of a long list show before "N more"; chips are smaller, so more of them. */
 const SHOWN = 3
 const SHOWN_CHIPS = 6
 
-export function BriefDetails({ view, now }: { view: BriefView; now: number }) {
+/** With `answers`, each failed issue Needs you doesn't list and each suggestion has its one-click answers. */
+export function BriefDetails({ view, now, answers }: { view: BriefView; now: number; answers?: AnswerContext }) {
   return (
     <>
       {view.tended.length ? (
@@ -140,6 +143,9 @@ export function BriefDetails({ view, now }: { view: BriefView; now: number }) {
                   {f.title ? <span className="brief-issue-title"> {f.title}</span> : null}
                   <div className="brief-failed-reason">{f.reason}</div>
                   {f.note ? <div className="field-hint">{f.note}</div> : null}
+                  {answers && !f.asked ? (
+                    <AnswerButtons context={answers} label={label} answers={failedAnswers(f)} />
+                  ) : null}
                 </li>
               )
             })}
@@ -167,6 +173,7 @@ export function BriefDetails({ view, now }: { view: BriefView; now: number }) {
                     <span className="mono">{label}</span>
                   )}
                   {g.title ? <span className="brief-issue-title"> {g.title}</span> : null}
+                  {answers ? <AnswerButtons context={answers} label={label} answers={suggestionAnswers(g)} /> : null}
                 </li>
               )
             })}
@@ -176,7 +183,10 @@ export function BriefDetails({ view, now }: { view: BriefView; now: number }) {
               {view.suggestionsWaiting - view.suggestions.length} more wait than are listed here.
             </p>
           ) : null}
-          <p className="field-hint">Answer in a prompt, such as "take the input-safety ones, skip the rest".</p>
+          <p className="field-hint">
+            {answers ? 'Take or skip each with a button, or answer' : 'Answer'} in a prompt, such as "take the
+            input-safety ones, skip the rest".
+          </p>
         </>
       ) : null}
       {view.apps.length ? (

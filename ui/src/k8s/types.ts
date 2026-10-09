@@ -467,6 +467,19 @@ export interface BriefFailedIssue {
   tries?: number
 }
 
+/** A Container whose releases the person asks for, and the GitHub repository they are published to. */
+export interface BriefRelease {
+  /** The Container, a DNS label. */
+  container: string
+  github: {
+    /** owner/name */
+    repository: string
+    /** The Secret in the Brief's namespace with the GitHub token. */
+    tokenSecretRef: LocalRef
+  }
+  tagPrefix?: string
+}
+
 /** Whether a Brief tends its handed-back work by itself: Off, Ask (decides and asks you) or On (applies). */
 export type BriefAutopilot = 'Off' | 'Ask' | 'On'
 
@@ -519,6 +532,8 @@ export interface Brief extends K8sObject {
     autopilot?: BriefAutopilot
     /** How many issues each Crew the Brief made works on at once; unset is the operator's default. */
     parallel?: number
+    /** The Containers whose releases are published to GitHub; each entry turns releases on for its Container's Crew. */
+    releases?: BriefRelease[]
     /** Pauses the Brief and every Crew it made; a Task already started runs to its end. The Paused condition says what still runs. */
     paused?: boolean
   }
