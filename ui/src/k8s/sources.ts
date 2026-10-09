@@ -357,7 +357,7 @@ export class LiveProjectsSource extends WatchingSource<Project[]> {
   }
 }
 
-/** Everything the factory view needs, across all projects. */
+/** Everything the Needs you, Work and Factory areas need, across all projects. */
 export interface FactoryData {
   projects: Project[]
   tasks: Task[]

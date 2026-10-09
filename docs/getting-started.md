@@ -156,8 +156,8 @@ Open the UI:
 kubectl -n c4-factory-system port-forward svc/c4-factory-ui 8080 &   # http://localhost:8080
 ```
 
-Pick project `cel-lens`, write the idea in the box under *Describe an app*,
-and create the Brief. Or, the same without the UI,
+Open *Briefs* in the top bar, pick project `cel-lens`, write the idea in the
+box under *Describe an app*, and create the Brief. Or, the same without the UI,
 [config/samples/brief/cel-lens.yaml](../config/samples/brief/cel-lens.yaml)
 holds the idea from [#240](https://github.com/JairJosafath/c4factory/issues/240):
 

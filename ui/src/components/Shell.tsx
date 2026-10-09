@@ -1,4 +1,4 @@
-// The page's shell (docs/plans/ui-lifecycle.md, decisions 1 and 2): navigation
+// The page's shell (docs/plans/done/ui-lifecycle.md, decisions 1 and 2): navigation
 // for the six areas, a freshness line, the area on screen or an object's page,
 // and a footer with the versions running.
 
@@ -6,7 +6,7 @@ import type { MouseEvent, ReactNode } from 'react'
 import type { FactoryHealth } from '../k8s/health'
 import { problemsOf, readOf, type Connection, type FactoryData, type Problem } from '../k8s/sources'
 import { RESOURCES } from '../k8s/types'
-import { hrefFor, useNow, type UrlState } from '../lib/hooks'
+import { hrefFor, useActs, useNow, type UrlState } from '../lib/hooks'
 import { AREAS, inNamespace, type Area } from '../model/areas'
 import { absoluteTime, formatDuration } from '../model/format'
 import { aboutLinks, type Versions } from '../model/versions'
@@ -54,6 +54,7 @@ export function Shell({
   areas,
   objectPage,
 }: ShellProps) {
+  const acts = useActs()
   const object = url.kind && url.name ? { ns: url.ns, kind: url.kind, name: url.name } : undefined
   const scope = object ? object.ns : inNamespace(area) ? namespace : area === 'about' ? undefined : ''
   return (
@@ -100,8 +101,11 @@ export function Shell({
       )}
 
       <footer className="footer">
-        This page reads the C4 Factory resources in the cluster and updates as they change. It can change only three
-        things: create a Brief from an app idea, add a prompt to a Brief, and pause or resume a Brief.
+        This page reads the C4 Factory resources in the cluster and updates as they change.{' '}
+        {acts === 'none'
+          ? 'It can change only three things: create a Brief from an app idea, add a prompt to a Brief, and pause or resume a Brief.'
+          : "With actions on, it also changes Brief and Crew settings, retries a Container, reruns a release, starts a Task and moves a Standard's template ref."}{' '}
+        The cluster decides what it accepts.
         <VersionLine versions={versions} />
       </footer>
     </div>

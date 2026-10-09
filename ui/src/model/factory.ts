@@ -1,6 +1,6 @@
-// The factory view's model of Tasks: their stages and timelines, the board, the
+// The Work area's model of Tasks: their stages and timelines, the board, the
 // agent slots and the stats. Plain functions over resources, so they are tested
-// without React; attention.ts, crews.ts and format.ts hold the rest of the view's model.
+// without React; attention.ts, crews.ts and format.ts hold the rest of the area's model.
 
 import type { Agent, Task, TaskPhase, TaskTransition } from '../k8s/types'
 import { findCondition } from '../k8s/types'

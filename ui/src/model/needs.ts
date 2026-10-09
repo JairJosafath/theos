@@ -1,4 +1,4 @@
-// What waits on a person, across projects (docs/plans/ui-lifecycle.md,
+// What waits on a person, across projects (docs/plans/done/ui-lifecycle.md,
 // decision 5): a plain function over the data the Factory source reads. Every
 // item comes from status, never from timing, and says why in the condition's
 // own words and where it is done: a place in the UI, a link out, a kubectl line.

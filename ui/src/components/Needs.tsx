@@ -1,4 +1,4 @@
-// The shell's Needs you area (docs/plans/ui-lifecycle.md, decision 5): what
+// The shell's Needs you area (docs/plans/done/ui-lifecycle.md, decision 5): what
 // waits on a person across projects, each with why, in status's own words, and
 // where it is done.
 

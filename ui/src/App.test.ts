@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import source from './App.tsx?raw'
 import demoSource from './lib/demo.ts?raw'
 
-// Decision 10 of docs/plans/ui-lifecycle.md: no timer re-renders the tree. A
+// Decision 10 of docs/plans/done/ui-lifecycle.md: no timer re-renders the tree. A
 // running clock lives in the components that show one (useNow), so App, which
 // holds every view, re-renders only when the URL or the data changes.
 describe('App', () => {

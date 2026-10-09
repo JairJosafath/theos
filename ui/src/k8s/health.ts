@@ -1,5 +1,5 @@
 // The factory's health, from GET /factory/health (server.mjs and health.mjs).
-// Polled while someone looks at the factory view; the server caches it for a
+// Polled while someone looks at the Work or Factory area; the server caches it for a
 // few seconds, so several open pages cost the cluster no more than one.
 
 import type { Snapshot, Source } from './sources'

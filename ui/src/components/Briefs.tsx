@@ -1,6 +1,6 @@
 // The Briefs of a project: a box to describe a new app, and a card per Brief
 // with what the planner made of it, a field to steer it with a prompt and a
-// button to pause or resume it. These are the UI's only three writes; the CRD
+// button to pause or resume it. These are the UI's three writes when actions are off; the CRD
 // decides what is accepted.
 
 import { useState } from 'react'

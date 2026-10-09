@@ -1,4 +1,4 @@
-// The factory view's demo: the webshop's Tasks in every stage, one that ran
+// The Work area's demo: the webshop's Tasks in every stage, one that ran
 // before timelines, a component that just restarted, and an agent slot in use
 // with another Task waiting for it; the story adds the Crews and their issue
 // Tasks. Times are relative to `now`.

@@ -309,9 +309,10 @@ without kubectl, and cheaply: it lives on a laptop.
   handed off at, so the Task page names the run that handed off ("Run 3
   (round 2, implement) handed off 2 times, at 131k and 138k tokens") without
   reading Events.
-- **The UI has a Factory view** next to the story, across all projects: component
-  health with CPU and memory, the last hour, the Tasks on a board by stage with
-  their timelines, where the time goes, agent slots, and what needs a look.
+- **The UI shows the factory at work,** across all projects (*The UI* below):
+  component health with CPU and memory, the last hour, the Tasks on a board by
+  stage with their timelines, where the time goes, agent slots, and what needs
+  a look.
 - **The UI server reads the factory's health itself** (`GET /factory/health`):
   pods, nodes and metrics-server, summarized; pod specs never reach the browser,
   which still reads only `c4.factory.io`. It samples every 15 seconds and keeps
@@ -768,7 +769,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   round failed or asked for input: a prompt goes first. The Brief's card
   shows one *Needs you* box (`needsYou` with `NeedsInput`), its tending
   rounds and its mode, and the create form lets the person choose the mode;
-  the Factory view's *Needs a look* names the Brief that watches an item and
+  the Work area's *Needs a look* names the Brief that watches an item and
   when it acts. A failed Task leaves *Needs a look* once it is answered: a
   newer Task works the same issue of the same Container, or a round tended
   the issue with a retry or a close after the Task failed; so an issue that
@@ -793,6 +794,76 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   is missing says where to give it: in the release namespace for every
   project, or in its own for this one, and names the namespace label when
   its namespace hasn't opted in.
+
+## The UI: areas and object pages
+
+The UI draws the story and the factory from the resources, live through
+watches. It is one client among several: the CRDs are the truth, and the UI
+enforces nothing; a write it makes is checked by the API server like any
+other, and a refusal shows the API server's message. Where it needs a default
+to describe an object, it says "the factory's default" and shows a number
+only when `status` carries the effective one. The plan behind it is
+[plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md).
+
+- **Six areas,** in the navigation in this order:
+  - *Needs you*: what waits on a person, across projects (below).
+  - *Briefs*: one project's Briefs, a card each, and the box to describe a
+    new app.
+  - *Story*: one project's model, the system context (C4 level 1) and one
+    system's containers (level 2), with the project's story in one line from
+    its Briefs to its releases.
+  - *Work*: across projects, the Tasks on a board by stage, the Crews and
+    their releases, where the time goes, and what needs a look; beside
+    them, the factory's health and agent slots.
+  - *Factory*: the factory's health (`GET /factory/health`) and the agent
+    slots.
+  - *About*: the versions running, and links to the running release's docs
+    and notes and to the repository.
+
+  The UI opens on *Needs you* when it has items, else on *Story*, and stays
+  where it opened as items come and go. Only the area on screen watches the
+  cluster.
+- **An object page** for each kind the UI shows: Brief, Container, Crew,
+  Task, Project, SoftwareSystem, Relationship, Session, Standard, Compute,
+  Deployment and GitProvider (its Secret's name, never its data). Every page
+  opens with the same header (`ui/src/components/ObjectHeader.tsx`): the kind
+  and name with a breadcrumb to what it belongs to; the kind's lifecycle as a
+  stepper, the current phase marked and side exits such as `Failed` or
+  `Blocked` off the path; what a person does now; then its conditions, its
+  timeline where the kind keeps one, its children and its links out. Each
+  kind's path and what a person does at each step live in one table,
+  `ui/src/model/lifecycle.ts`, read only from `status`, so no page invents
+  its own. A step the UI can't take shows the exact next one: a link to the
+  pull request or issue, or a `kubectl` line to copy.
+- ***Needs you*** lists, across projects and grouped by project, every item
+  the resources flag for a person (`ui/src/model/needs.ts`): a Brief whose
+  `NeedsInput` or `NeedsYou` is True; a Container `Failed`, or whose
+  `StandardUpdated` says its update pull request waits on a person; a Task
+  `Blocked`, or `Failed` and not yet answered by a newer Task or a round; a
+  Crew whose `Released` leaves a release to a person, or whose
+  `status.lastRelease.run` is `Failed`. Each says why in the condition's own
+  reason and message, since when, and where it is done: the object's page, a
+  link out, or a `kubectl` line. Every item comes from `status`, none from
+  timing.
+- **Versions,** in the footer of every page and in *About*: the UI's own
+  (stamped by its build, `dev` otherwise), the operator's and the chart's
+  from Project status (*Status* above), and the CRD API version it reads. A
+  UI and an operator of different versions get a warning to upgrade them
+  together; two `dev` builds don't, and no Project reporting one yet shows
+  "unknown".
+- **The writes.** With actions off, three: create a Brief, append a prompt
+  to one, and pause or resume one, each from the Brief's card or page. With
+  `ui.actions.enabled`, those under *UI actions* below, each offered on the
+  page of the object it changes. Nothing else: no deletes, no Secrets,
+  nothing in the Git host.
+- **Every page is a link.** The address is query parameters:
+  `area=needs|briefs|story|work|factory|about`; an object page is
+  `ns=<namespace>&kind=<Kind>&name=<name>`; `project=`, `view=containers`
+  and `system=` pick Story's project and diagram; `demo=1` is demo mode. Back
+  works. Links from before the areas still open what they showed:
+  `view=factory` opens *Work* (with `task=<namespace>/<name>`, that Task's
+  page), and `view=`, `system=` or `project=` alone open *Story*; the
+  address is rewritten to the area's.
 
 ## UI actions: as the person signed in
 
