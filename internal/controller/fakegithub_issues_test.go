@@ -99,6 +99,13 @@ func (f *fakeGitHub) closeIssue(repository string, n int) {
 	f.issueState().issues[repository][n-1].State = "closed"
 }
 
+// editIssue changes the body of issue n as its author would.
+func (f *fakeGitHub) editIssue(repository string, n int, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.issueState().issues[repository][n-1].Body = body
+}
+
 // gitHubIssue returns a copy of issue n of repository and its comments.
 func (f *fakeGitHub) gitHubIssue(repository string, n int) (fakeGitHubIssue, []string) {
 	f.mu.Lock()

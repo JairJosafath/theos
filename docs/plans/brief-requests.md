@@ -183,6 +183,12 @@ Choices the decisions left open, made in #800:
   reasons of decision 3 and `Unauthorized`, `RepositoryNotFound`,
   `IssuesDisabled` and `GitHubError` from the client. The Warning Event's
   note starts with the reason.
+- **The text is taken when a request enters `status.requests`.** Past the
+  50 it holds, a request is only counted in `requestsWaiting`; its text is
+  taken, as it reads then, when one ahead of it leaves, and an Ask request
+  shows in `needsYou` from then on.
+- **A decline reads the list again first,** with the ETag, so a request its
+  author closed since the last read is dropped, not commented on.
 - **A declined number names only a request.** A number in `declined` whose
   issue isn't an allowed author's open issue is ignored: a stranger's issue
   is never commented on, even by number.

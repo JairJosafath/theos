@@ -189,7 +189,12 @@ func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1alpha1.Brie
 	r.requestsMu.Lock()
 	last := r.requestsReads[key]
 	r.requestsMu.Unlock()
-	if last != nil && last.entry == fingerprint && now.Sub(last.readAt) < r.suggestionsRecheck() {
+	// A request about to be declined is read again first, with the ETag, so
+	// one its author closed meanwhile is dropped rather than answered.
+	if last != nil && last.entry == fingerprint && now.Sub(last.readAt) < r.suggestionsRecheck() &&
+		!slices.ContainsFunc(last.open, func(i gitprovider.GitHubIssue) bool {
+			return slices.Contains(spec.Declined, int32(i.Number))
+		}) {
 		return last
 	}
 	next := &requestsRead{entry: fingerprint, readAt: now}
