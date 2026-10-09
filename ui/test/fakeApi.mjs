@@ -1,7 +1,9 @@
 // A tiny in-memory Kubernetes API for the c4.factory.io kinds, with lists and
 // watches, for the end-to-end test and the screenshots of every view. It
-// answers only GETs of collections, and the factory health's Pods and Nodes
-// as empty lists; everything else is 404.
+// answers GETs of collections, the factory health's Pods and Nodes as empty
+// lists, and PATCHes of one object (a JSON patch of add and remove, or a merge
+// patch), refused with 422 when a rule given to refuse() says so, as a CRD's
+// rule would; everything else is 404.
 
 import http from 'node:http'
 // The UI's own list of kinds, so the fake API serves every one.
@@ -35,8 +37,55 @@ export function fakeApi(namespace) {
     for (const w of watchers.get(plural))
       if (!w.namespace || w.namespace === obj.metadata.namespace) w.res.write(history.at(-1).line)
   }
+  const rules = [] // (plural, obj) => a refusal's message, or undefined
+  const patches = [] // { plural, name, type, body }, each PATCH as it came
+  const status = (res, code, message) => {
+    res.writeHead(code, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ kind: 'Status', code, message }))
+  }
+  const patch = async (req, res, ns, plural, name) => {
+    const old = store.get(plural)?.get(`${ns}/${name}`)
+    if (!old) return status(res, 404, `${plural} "${name}" not found`)
+    let text = ''
+    for await (const chunk of req) text += chunk
+    const body = JSON.parse(text)
+    const type = (req.headers['content-type'] ?? '').split(';')[0]
+    patches.push({ plural, name, type, body })
+    const obj = structuredClone(old)
+    if (type === 'application/json-patch+json') {
+      for (const op of body) {
+        const keys = op.path.split('/').slice(1)
+        const last = keys.pop()
+        const parent = keys.reduce((o, k) => (o[k] ??= {}), obj)
+        if (op.op === 'add') parent[last] = op.value
+        else if (op.op === 'remove' && last in parent) delete parent[last]
+        else return status(res, 422, `the ${op.op} of ${op.path} failed`)
+      }
+    } else if (type === 'application/merge-patch+json') {
+      const merge = (into, from) => {
+        for (const [k, v] of Object.entries(from)) {
+          if (v === null) delete into[k]
+          else if (typeof v === 'object' && !Array.isArray(v)) merge((into[k] ??= {}), v)
+          else into[k] = v
+        }
+      }
+      merge(obj, body)
+    } else {
+      return status(res, 415, `unsupported media type ${type}`)
+    }
+    const refusal = rules.map((rule) => rule(plural, obj)).find(Boolean)
+    if (refusal) return status(res, 422, refusal)
+    send(plural, 'MODIFIED', put(plural, obj))
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(obj))
+  }
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x')
+    const one = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1alpha1\/namespaces\/([^/]+)\/([a-z]+)\/([^/]+)$/)
+    if (req.method === 'PATCH' && one) {
+      patch(req, res, one[1], one[2], decodeURIComponent(one[3])).catch((err) => status(res, 500, err.message))
+      return
+    }
     if (req.method === 'GET' && (url.pathname === '/api/v1/pods' || url.pathname === '/api/v1/nodes')) {
       res.writeHead(200, { 'content-type': 'application/json' })
       return res.end(JSON.stringify({ metadata: { resourceVersion: String(rv) }, items: [] }))
@@ -64,6 +113,16 @@ export function fakeApi(namespace) {
   })
   return {
     server,
+    /** Every PATCH so far, in order. */
+    patches,
+    /** Refuses a PATCH whose result `rule(plural, obj)` returns a message for, with that message. */
+    refuse(rule) {
+      rules.push(rule)
+    },
+    /** The stored object, as the API has it now. */
+    get(plural, name) {
+      return store.get(plural).get(`${namespace}/${name}`)
+    },
     /** How many watches of a kind are open. */
     watching(plural) {
       return watchers.get(plural).size

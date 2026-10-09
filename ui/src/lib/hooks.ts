@@ -18,6 +18,17 @@ export function useSource<T>(source: Source<T>): Snapshot<T> {
 /** The UI server's session answer for the page; unset until it comes, and in demo mode. */
 export const SessionContext = createContext<UiSession | undefined>(undefined)
 
+/**
+ * Whether the page offers its action buttons: 'act' when the UI server takes
+ * actions, 'sign-in' when it does so only as a person and nobody is signed
+ * in, else 'none' (actions off, demo mode, or before the answer comes).
+ */
+export function useActs(): 'act' | 'sign-in' | 'none' {
+  const session = useContext(SessionContext)
+  if (!session?.actions) return 'none'
+  return session.mode === 'oidc' && !session.user ? 'sign-in' : 'act'
+}
+
 /** Asks the UI server's session again; a no-op outside the page. */
 export const RefreshSession = createContext<() => void>(() => undefined)
 
