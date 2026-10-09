@@ -80,6 +80,20 @@ func TestRunRecord(t *testing.T) {
 	if got.Role != RoleImplementer || got.CostReported || got.Tokens != (TokenUsage{RunsWithout: 1}) {
 		t.Errorf("a run without a result: %+v", got)
 	}
+	for reported, want := range map[string]string{
+		strings.Repeat("review", 6): RoleReviewer,
+		"triage":                    RoleReviewer,
+		"plan":                      RolePlanner,
+	} {
+		got, _ = RunState{Started: true, Done: true, Result: &RunResult{Role: reported}}.Record(1, "add-crop-r1-review-a1", at)
+		if got.Role != want || len(got.Role) > 32 {
+			t.Errorf("c4agent reported role %q: recorded %q, want %q", reported, got.Role, want)
+		}
+	}
+	got, _ = RunState{Started: true, Done: true, Result: &RunResult{Role: strings.Repeat("x", 40)}}.Record(1, "add-crop", at)
+	if got.Role != "" {
+		t.Errorf("an unknown role on a sandbox without one: recorded %q, want none", got.Role)
+	}
 }
 
 func TestSandboxRole(t *testing.T) {

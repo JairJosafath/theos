@@ -112,7 +112,8 @@ type RunRecord struct {
 
 // Record is the record of a run of sandbox in round that ends at, and false
 // for a sandbox that is gone: whoever ended it recorded it. The role is the one
-// c4agent reported, else the one in the sandbox's name.
+// c4agent reported when it is a known role, else the one in the sandbox's name,
+// so a role the Task's status can't hold never fails its status write.
 func (s RunState) Record(round int, sandbox string, at time.Time) (RunRecord, bool) {
 	if !s.Started {
 		return RunRecord{}, false
@@ -121,7 +122,7 @@ func (s RunState) Record(round int, sandbox string, at time.Time) (RunRecord, bo
 	rec.CostMilliUSD, _ = s.Cost()
 	if s.Result != nil {
 		rec.CostReported = s.Result.CostReported
-		if s.Result.Role != "" {
+		if slices.Contains([]string{RoleImplementer, RoleReviewer, RolePlanner}, s.Result.Role) {
 			rec.Role = s.Result.Role
 		}
 		rec.SessionHandoffs = slices.Clone(s.Result.SessionHandoffs[:min(len(s.Result.SessionHandoffs), MaxRecordedHandoffs)])
