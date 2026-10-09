@@ -187,6 +187,11 @@ const PausedByBrief = "brief"
 // to scaffold it again: after emptying its repository, for example.
 const AnnotationRetry = "c4.factory.io/retry"
 
+// AnnotationRerunRelease, set or changed on a Crew whose last release's run
+// Failed, makes the operator re-run that release's failed workflow runs, once
+// per value.
+const AnnotationRerunRelease = "c4.factory.io/rerun-release"
+
 // CheckStatus is the combined state of the CI checks on one commit.
 type CheckStatus struct {
 	// commit is the SHA the checks ran on.

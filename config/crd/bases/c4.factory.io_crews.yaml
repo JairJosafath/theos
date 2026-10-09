@@ -370,6 +370,13 @@ spec:
                     required:
                     - state
                     type: object
+                  rerunTime:
+                    description: |-
+                      rerunTime is when the operator last re-ran the release's failed runs, on
+                      a c4.factory.io/rerun-release request; the hour the runs have to end
+                      counts from it instead of from time.
+                    format: date-time
+                    type: string
                   run:
                     description: |-
                       run is how the CI workflow runs the tag started went: Waiting until one
@@ -420,6 +427,11 @@ spec:
                 maxItems: 100
                 type: array
                 x-kubernetes-list-type: atomic
+              rerunRelease:
+                description: |-
+                  rerunRelease is the c4.factory.io/rerun-release value the operator last
+                  answered, so each value re-runs the failed release runs once.
+                type: string
               waiting:
                 description: |-
                   waiting lists the ready issues that wait: on open dependencies, or for an

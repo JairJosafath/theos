@@ -377,6 +377,8 @@ func behindPrevious(previous *ReleasedTag, release Release, merged []MergedTask,
 
 // ReleaseRun is one CI workflow run a release's tag started.
 type ReleaseRun struct {
+	// ID is the run's ID on the Git host.
+	ID int64
 	// Workflow is the workflow file it runs, such as release.yaml.
 	Workflow string
 	// Status is queued, waiting, in_progress or completed.
@@ -417,6 +419,47 @@ func ReleaseRunResult(runs []ReleaseRun) (string, ReleaseRun) {
 		seen[run.Workflow] = true
 	}
 	return result, runs[0]
+}
+
+// FailedReleaseRuns returns the runs a re-run of a release starts again, newest
+// first: of each workflow's newest run, the ones that ended other than success
+// or skipped, as ReleaseRunResult counts them.
+func FailedReleaseRuns(runs []ReleaseRun) []ReleaseRun {
+	var failed []ReleaseRun
+	seen := map[string]bool{}
+	for _, run := range runs {
+		if !seen[run.Workflow] && run.Status == "completed" && run.Conclusion != "success" &&
+			run.Conclusion != "skipped" {
+			failed = append(failed, run)
+		}
+		seen[run.Workflow] = true
+	}
+	return failed
+}
+
+// What a Crew does with its rerun-release annotation's value.
+const (
+	// RerunNone: the value is empty or answered already.
+	RerunNone = ""
+	// RerunRuns: re-run the last release's failed runs.
+	RerunRuns = "Rerun"
+	// RerunNothingFailed: say there is no failed run to re-run.
+	RerunNothingFailed = "NothingFailed"
+)
+
+// ReleaseRerun says what a Crew does with value, its rerun-release
+// annotation, given the value it answered last and its last release's run
+// result, "" when it tagged none. Each value is answered once: a value set
+// while the run hasn't failed doesn't wait for it to fail.
+func ReleaseRerun(value, answered, run string) string {
+	switch {
+	case value == "" || value == answered:
+		return RerunNone
+	case run == RunFailed:
+		return RerunRuns
+	default:
+		return RerunNothingFailed
+	}
 }
 
 // ReleaseRunBound is how long after tagging a release's runs may take to end

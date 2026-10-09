@@ -940,6 +940,10 @@ func (in *CrewPublishReleases) DeepCopy() *CrewPublishReleases {
 func (in *CrewRelease) DeepCopyInto(out *CrewRelease) {
 	*out = *in
 	in.Time.DeepCopyInto(&out.Time)
+	if in.RerunTime != nil {
+		in, out := &in.RerunTime, &out.RerunTime
+		*out = (*in).DeepCopy()
+	}
 	if in.Bumps != nil {
 		in, out := &in.Bumps, &out.Bumps
 		*out = make([]CrewReleaseBump, len(*in))

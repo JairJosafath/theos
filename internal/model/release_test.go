@@ -370,6 +370,55 @@ func TestReleaseRunResult(t *testing.T) {
 	}
 }
 
+func TestFailedReleaseRuns(t *testing.T) {
+	passed := ReleaseRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "success"}
+	failed := ReleaseRun{ID: 7, Workflow: "release.yaml", Status: "completed", Conclusion: "failure"}
+	cancelled := ReleaseRun{ID: 8, Workflow: "notes.yaml", Status: "completed", Conclusion: "cancelled"}
+	skipped := ReleaseRun{ID: 6, Workflow: "notes.yaml", Status: "completed", Conclusion: "skipped"}
+	running := ReleaseRun{ID: 9, Workflow: "notes.yaml", Status: "in_progress"}
+	tests := []struct {
+		name string
+		runs []ReleaseRun
+		want []ReleaseRun
+	}{
+		{"no runs", nil, nil},
+		{"all ended well", []ReleaseRun{passed, skipped}, nil},
+		{"a failed and a cancelled run", []ReleaseRun{cancelled, failed}, []ReleaseRun{cancelled, failed}},
+		{"one failed, one still running", []ReleaseRun{running, failed}, []ReleaseRun{failed}},
+		{"an older failure a newer run passed", []ReleaseRun{passed, failed}, nil},
+		{"a newer failure after a pass", []ReleaseRun{failed, passed}, []ReleaseRun{failed}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FailedReleaseRuns(tt.runs); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("FailedReleaseRuns() = %+v; want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReleaseRerun(t *testing.T) {
+	tests := []struct {
+		name, value, answered, run string
+		want                       string
+	}{
+		{"no annotation", "", "", RunFailed, RerunNone},
+		{"a new value on a failed run", "1", "", RunFailed, RerunRuns},
+		{"a changed value on a failed run", "2", "1", RunFailed, RerunRuns},
+		{"the answered value again", "1", "1", RunFailed, RerunNone},
+		{"a new value on a run that succeeded", "1", "", RunSucceeded, RerunNothingFailed},
+		{"a new value on a running run", "1", "", RunRunning, RerunNothingFailed},
+		{"a new value with no release", "1", "", "", RerunNothingFailed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ReleaseRerun(tt.value, tt.answered, tt.run); got != tt.want {
+				t.Errorf("ReleaseRerun(%q, %q, %q) = %q; want %q", tt.value, tt.answered, tt.run, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReleaseRunLate(t *testing.T) {
 	tagged := time.Date(2026, 10, 6, 1, 0, 0, 0, time.UTC)
 	tests := []struct {

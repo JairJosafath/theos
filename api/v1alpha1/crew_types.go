@@ -136,6 +136,12 @@ type CrewRelease struct {
 	// +optional
 	RunURL string `json:"runURL,omitempty"`
 
+	// rerunTime is when the operator last re-ran the release's failed runs, on
+	// a c4.factory.io/rerun-release request; the hour the runs have to end
+	// counts from it instead of from time.
+	// +optional
+	RerunTime *metav1.Time `json:"rerunTime,omitempty"`
+
 	// bumps are the bump issues filed for this release, one per Container that
 	// bundles this one.
 	// +listType=map
@@ -254,6 +260,11 @@ type CrewStatus struct {
 	// lastRelease is the release the Crew tagged last, when spec.tagReleases is set.
 	// +optional
 	LastRelease *CrewRelease `json:"lastRelease,omitempty"`
+
+	// rerunRelease is the c4.factory.io/rerun-release value the operator last
+	// answered, so each value re-runs the failed release runs once.
+	// +optional
+	RerunRelease string `json:"rerunRelease,omitempty"`
 
 	// lastPolled is when the Crew last read the issues.
 	// +optional

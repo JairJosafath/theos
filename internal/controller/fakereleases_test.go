@@ -21,6 +21,8 @@ type fakeReleaseState struct {
 	closed map[string][]string                  // owner/name, closed milestones' titles
 	tags   map[string]string                    // owner/name@tag, the commit it names
 	runs   map[string][]gitprovider.WorkflowRun // owner/name@tag@commit, newest first
+	// reruns counts the RerunFailedJobs calls, by owner/name#run ID.
+	reruns map[string]int
 	// published is the Gitea releases, by owner/name@tag, and assets their
 	// files' contents, by UUID.
 	published map[string]*gitprovider.Release
@@ -48,7 +50,7 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			runs: map[string][]gitprovider.WorkflowRun{}, published: map[string]*gitprovider.Release{},
 			assets: map[string][]byte{}, created: map[string]gitprovider.Milestone{},
 			goMods: map[string]string{}, uploads: map[string]int{}, moduleFailures: map[string]int{},
-			modulePublishes: map[string]int{}}
+			modulePublishes: map[string]int{}, reruns: map[string]int{}}
 	}
 	return g.releases
 }
@@ -166,6 +168,35 @@ func (p *fakeProvider) TagRuns(_ context.Context, repo gitprovider.Repository, t
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	return slices.Clone(p.git.releaseState().runs[repo.Owner+"/"+repo.Name+"@"+tag+"@"+commit]), nil
+}
+
+// RerunFailedJobs queues run id again, as Gitea's new attempt of it does.
+func (p *fakeProvider) RerunFailedJobs(_ context.Context, repo gitprovider.Repository, id int64) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	s := p.git.releaseState()
+	s.reruns[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, id)]++
+	for key, runs := range s.runs {
+		if !strings.HasPrefix(key, repo.Owner+"/"+repo.Name+"@") {
+			continue
+		}
+		for i := range runs {
+			if runs[i].ID == id {
+				runs[i].Status, runs[i].Conclusion = "queued", ""
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("run %d of %s/%s not found", id, repo.Owner, repo.Name)
+}
+
+// reruns is how many times run id of owner/name was re-run.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) reruns(owner, name string, id int64) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().reruns[fmt.Sprintf("%s/%s#%d", owner, name, id)]
 }
 
 func (p *fakeProvider) GetRelease(_ context.Context, repo gitprovider.Repository, tag string) (
