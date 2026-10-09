@@ -17,5 +17,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["vite.config.ts", "server.mjs"]
+  "include": ["vite.config.ts", "server.mjs", "oidc.mjs"]
 }

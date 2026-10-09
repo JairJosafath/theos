@@ -247,6 +247,35 @@ ui:
   actions:
     enabled: false
 
+  ## Sign-in for the actions behind an Ingress (docs/getting-started.md, UI
+  ## actions behind an Ingress). With oidc set and actions enabled, a person
+  ## signs in at the issuer (authorization code with PKCE) and every write is
+  ## made as them: the UI impersonates usernamePrefix + the usernameClaim (an
+  ## email only when the issuer verified it) and groupsPrefix + each of the
+  ## ID token's groups, so the cluster's RBAC decides. The UI's ServiceAccount
+  ## gets impersonate on users and groups, so the UI pod can act as anyone the
+  ## prefixes allow. Reads stay the ServiceAccount's.
+  ##
+  ##   issuerURL          the issuer, exactly as its ID tokens name it (required)
+  ##   clientID           the UI's client at the issuer (required)
+  ##   existingSecret     a Secret you make, holding the client secret (required)
+  ##   existingSecretKey  its key, client-secret by default
+  ##   redirectURL        the callback the issuer knows; https://<Host>/ui/callback by default
+  ##   scopes             openid, email and profile by default; add groups for Dex
+  ##   usernameClaim      email by default
+  ##   usernamePrefix     oidc: by default
+  ##   groupsClaim        groups by default
+  ##   groupsPrefix       oidc: by default
+  ##   actionGroups       groups, unprefixed, bound to ClusterRole <release>-ui-actions
+  ##
+  auth: {}
+  #   oidc:
+  #     issuerURL: https://dex.example.com
+  #     clientID: c4-factory-ui
+  #     existingSecret: c4-factory-ui-oidc
+  #     scopes: [openid, email, profile, groups]
+  #     actionGroups: [factory-actors]
+
   resources:
     limits:
       cpu: 200m

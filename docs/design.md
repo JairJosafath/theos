@@ -767,7 +767,9 @@ server's message when it refuses one. The UI still enforces nothing.
   with `ui.auth.oidc.groupsPrefix`, never a name the browser sends, so no
   signed-in person can become a cluster user or `system:` group. The
   ServiceAccount gets `impersonate` on users and groups only when
-  `ui.auth.oidc` is set. The OIDC client secret is a Secret the person makes
+  `ui.auth.oidc` is set; RBAC can't narrow that to the prefixed names, so
+  the UI pod is as strong as the strongest user it may impersonate. A
+  username from the `email` claim needs `email_verified`. The OIDC client secret is a Secret the person makes
   and the chart names (`ui.auth.oidc.existingSecret`); the browser never sees
   it, nor the tokens: the session is an opaque, `HttpOnly`, `Secure`,
   `SameSite=Lax` cookie keyed to server memory, so a restart of the UI signs

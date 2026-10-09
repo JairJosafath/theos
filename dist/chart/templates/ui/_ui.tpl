@@ -53,10 +53,25 @@ the pod could act through it.
 */}}
 {{- define "c4-factory.uiActions" -}}
 {{- if dig "actions" "enabled" false .Values.ui }}
-{{- if kindIs "map" (dig "auth" "oidc" nil .Values.ui) }}oidc
+{{- if kindIs "map" (dig "auth" "oidc" nil .Values.ui) }}
+{{- $oidc := .Values.ui.auth.oidc }}
+{{- range list "issuerURL" "clientID" "existingSecret" }}
+{{- if not (get $oidc .) }}
+{{- fail (printf "ui.auth.oidc.%s is required: the UI signs people in with it" .) }}
+{{- end }}
+{{- end }}oidc
 {{- else if .Values.ui.allowedHosts }}
 {{- fail "ui.actions.enabled with ui.allowedHosts needs ui.auth.oidc: behind an Ingress the UI acts only as a person signed in" }}
 {{- else }}service-account
 {{- end }}
 {{- end }}
+{{- end }}
+
+{{/*
+A ui.auth.oidc setting, or its default when unset: "" is a setting, so an
+empty prefix stays empty. Takes (list $oidc key default).
+*/}}
+{{- define "c4-factory.uiOIDC" -}}
+{{- $oidc := index . 0 }}{{- $key := index . 1 }}
+{{- if hasKey $oidc $key }}{{ get $oidc $key }}{{ else }}{{ index . 2 }}{{ end }}
 {{- end }}

@@ -152,6 +152,60 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "c4-factory.uiName" . }}
   namespace: {{ .Release.Namespace }}
+{{- else }}
+{{- $oidc := .Values.ui.auth.oidc }}
+---
+# With ui.auth.oidc every write is made as the person signed in: the UI
+# impersonates the names it takes from their ID token, prefixed. RBAC can't
+# narrow impersonate to prefixed names, so the UI pod can act as any user or
+# group (design.md, UI actions).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-impersonator
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: [users, groups]
+  verbs: [impersonate]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-impersonator
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "c4-factory.uiName" . }}-impersonator
+subjects:
+- kind: ServiceAccount
+  name: {{ include "c4-factory.uiName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- with $oidc.actionGroups }}
+{{- $prefix := include "c4-factory.uiOIDC" (list $oidc "groupsPrefix" "oidc:") }}
+---
+# The people in ui.auth.oidc.actionGroups may take every action; grant others
+# with your own bindings to ClusterRole {{ include "c4-factory.uiName" $ }}-actions.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "c4-factory.uiName" $ }}-actions
+  labels:
+    {{- include "c4-factory.uiLabels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "c4-factory.uiName" $ }}-actions
+subjects:
+{{- range . }}
+- apiGroup: rbac.authorization.k8s.io
+  kind: Group
+  name: {{ printf "%s%s" $prefix . | quote }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

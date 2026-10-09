@@ -531,6 +531,60 @@ Brief unpauses only the Crews it paused (the annotation
 `c4.factory.io/paused-by: brief` marks them), so a Crew you paused by hand
 stays paused.
 
+## UI actions behind an Ingress
+
+Off by default, the UI's actions (a Brief's and a Crew's settings, a release
+re-run, a scaffold retry, a Task from a goal, a Standard's `ref`) are made as
+the UI's ServiceAccount over port-forward, with `ui.actions.enabled: true`
+alone. Behind an Ingress a person signs in with OIDC, and every write is made
+as them, so your cluster's RBAC decides who does what.
+
+1. Register the UI as a client at your issuer (Dex, Keycloak, Google, ...),
+   with the redirect URL `https://factory.example.com/ui/callback` for your
+   Ingress host, and keep its client secret in a Secret:
+
+   ```bash
+   kubectl -n c4-factory-system create secret generic c4-factory-ui-oidc \
+     --from-file=client-secret=./client-secret   # a file holding the secret, mode 0600
+   ```
+
+2. Set the values and upgrade:
+
+   ```yaml
+   ui:
+     allowedHosts: [factory.example.com]
+     actions:
+       enabled: true
+     auth:
+       oidc:
+         issuerURL: https://dex.example.com   # exactly as the ID tokens name it
+         clientID: c4-factory-ui
+         existingSecret: c4-factory-ui-oidc
+         scopes: [openid, email, profile, groups]   # groups only if the issuer has it
+         actionGroups: [factory-actors]            # may take every action
+   ```
+
+   Then put your Ingress in front of Service `c4-factory-ui`, port 8080, with
+   TLS: the session cookie is `Secure`, so sign-in needs `https`.
+
+3. Grant the people. The UI acts as `oidc:` + their verified email and as
+   `oidc:` + each of their groups (`usernamePrefix` and `groupsPrefix` change
+   the prefixes), so no one signed in becomes a cluster user or a `system:`
+   group. `actionGroups` binds ClusterRole `c4-factory-ui-actions` (exactly
+   the UI's writes) to those groups; grant anyone else with your own binding,
+   in one namespace if you like:
+
+   ```bash
+   kubectl -n webshop create rolebinding ui-actions-alice \
+     --clusterrole=c4-factory-ui-actions --user=oidc:alice@example.com
+   ```
+
+The UI's ServiceAccount gets `impersonate` on users and groups, which RBAC
+can't narrow to the prefixed names: the UI pod can act as anyone, so keep
+who can exec into it or read its token as short as for the operator. Reads
+stay the ServiceAccount's, the same for everyone who reaches the page. A
+restart of the UI, or the ID token's expiry, signs everyone out.
+
 ## Next
 
 - Your own project: add it to `gitea.projects` and `helm upgrade` with the
