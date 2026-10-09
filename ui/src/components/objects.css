@@ -1,0 +1,229 @@
+/* Object pages (ObjectHeader.tsx and pages/): the header with its breadcrumb,
+   lifecycle stepper, next step and sections, and the panels below it. */
+
+.object-page {
+  display: grid;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.crumbs li + li::before {
+  content: '›';
+  margin-right: 4px;
+}
+
+.crumbs a {
+  color: var(--link);
+}
+
+.object-title {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.object-section {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+
+.stepper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 16px;
+}
+
+.stepper ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stepper-exits {
+  padding-left: 16px !important;
+  border-left: 1px dashed var(--border-strong);
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-3);
+}
+
+.step-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.step-done {
+  color: var(--text-2);
+}
+
+.step-done .step-dot {
+  background: var(--ok);
+}
+
+.step-off {
+  border-style: dashed;
+}
+
+.step-current {
+  font-weight: 650;
+  color: var(--text);
+  border-color: var(--text-2);
+}
+
+.step-current.step-tone-ok .step-dot {
+  background: var(--ok);
+}
+
+.step-current.step-tone-progress .step-dot {
+  background: var(--progress);
+}
+
+.step-current.step-tone-waiting .step-dot {
+  background: var(--waiting);
+}
+
+.step-current.step-tone-error {
+  color: var(--error);
+  border-color: var(--error);
+  background: var(--error-bg);
+}
+
+.step-current.step-tone-error .step-dot {
+  background: var(--error);
+}
+
+.object-moves {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.object-next {
+  margin-top: 14px;
+  padding: 10px 14px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.object-next-person {
+  background: var(--waiting-bg);
+}
+
+.object-next .object-section {
+  margin-top: 0;
+}
+
+.object-next p + p,
+.object-next .command-line {
+  margin-top: 8px;
+}
+
+.object-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.command-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.command-line code {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.timeline,
+.object-children,
+.object-links {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.timeline li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding-left: 12px;
+  border-left: 3px solid var(--ok);
+}
+
+.timeline-waiting {
+  border-left-color: var(--waiting) !important;
+}
+
+.timeline-error {
+  border-left-color: var(--error) !important;
+}
+
+.timeline-title {
+  font-weight: 600;
+}
+
+.timeline-at {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.timeline-detail {
+  grid-column: 1 / -1;
+  color: var(--text-2);
+}
+
+.object-child-kind {
+  display: inline-block;
+  min-width: 96px;
+  color: var(--text-3);
+}
+
+.object-links {
+  margin-top: 16px;
+  grid-auto-flow: column;
+  justify-content: start;
+  gap: 16px;
+}

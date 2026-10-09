@@ -29,6 +29,16 @@ describe('timeAgo', () => {
 })
 
 describe('describeCondition', () => {
+  it.each([
+    ['NeedsInput', 'False', 'ok'],
+    ['NeedsInput', 'True', 'waiting'],
+    ['NeedsYou', 'False', 'ok'],
+    ['IssuesFailed', 'True', 'waiting'],
+    ['Paused', 'False', 'ok'],
+  ] as const)('reads a Brief flag %s=%s as %s', (type, status, tone) => {
+    expect(describeCondition({ type, status, reason: 'X' }).tone).toBe(tone)
+  })
+
   it('explains a failed type check, keeping the operator message', () => {
     const info = describeCondition({
       type: 'ChoicesValid',

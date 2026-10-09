@@ -166,6 +166,62 @@ describe('the new shell', () => {
     assert.deepEqual([params.get('kind'), params.get('name'), params.get('ns')], [null, null, null])
   })
 
+  it('opens a Brief page from its card, and a Container page from what the Brief made', async () => {
+    await page.goto(`${base}/?shell=next&area=briefs`)
+    await page.getByRole('link', { name: 'webshop', exact: true }).click()
+    const header = page.getByRole('region', { name: 'Brief webshop', exact: true })
+    await header.waitFor({ timeout: 10000 })
+    let params = new URL(page.url()).searchParams
+    assert.deepEqual([params.get('ns'), params.get('kind'), params.get('name')], [namespace, 'Brief', 'webshop'])
+    assert.match(await page.title(), /^Brief webshop · C4 Factory$/)
+    // The lifecycle with Planned current, the rounds, and its writes: pause and prompt.
+    assert.equal(await header.locator('[aria-current="step"]').textContent(), 'Planned')
+    await header.getByText(/^Round 1 applied$/).waitFor({ timeout: 5000 })
+    await header.getByRole('button', { name: /^(Pause|Resume) brief webshop$/ }).waitFor({ timeout: 5000 })
+    await page.getByRole('heading', { name: 'Rounds' }).first().waitFor({ timeout: 5000 })
+    if (process.env.C4_UI_SHOTS) {
+      await page.waitForTimeout(300)
+      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-brief.png'), fullPage: true })
+    }
+
+    await header.getByRole('link', { name: 'storefront', exact: true }).click()
+    const container = page.getByRole('region', { name: 'Container storefront', exact: true })
+    await container.waitFor({ timeout: 10000 })
+    params = new URL(page.url()).searchParams
+    assert.deepEqual([params.get('kind'), params.get('name')], ['Container', 'storefront'])
+    // Failed, with the condition's reason and the exact retry line.
+    assert.equal(await container.locator('[aria-current="step"]').textContent(), 'Failed')
+    await container.getByText('Choices valid: no · UnsupportedType').waitFor({ timeout: 5000 })
+    assert.equal(
+      await container.locator('.command-line code').textContent(),
+      `kubectl -n ${namespace} annotate containers.c4.factory.io storefront c4.factory.io/retry=$(date +%s) --overwrite`,
+    )
+    await container.getByRole('link', { name: 'Made by Brief webshop' }).waitFor({ timeout: 5000 })
+    if (process.env.C4_UI_SHOTS) {
+      await page.waitForTimeout(300)
+      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-container.png'), fullPage: true })
+    }
+
+    // Back returns through both pages to the Briefs.
+    await page.goBack()
+    await header.waitFor({ timeout: 10000 })
+    await page.goBack()
+    await heading('Briefs').waitFor({ timeout: 10000 })
+  })
+
+  it('opens a Ready Container page with its relationships and templates', async () => {
+    await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Container&name=orders-api`)
+    const container = page.getByRole('region', { name: 'Container orders-api', exact: true })
+    await container.waitFor({ timeout: 10000 })
+    assert.equal(await container.locator('[aria-current="step"]').textContent(), 'Ready')
+    await container
+      .getByText(/Applied: True, AppliedAtScaffold/)
+      .first()
+      .waitFor({ timeout: 5000 })
+    await page.getByRole('heading', { name: 'What it is made from' }).waitFor({ timeout: 5000 })
+    assert.equal(await container.locator('.command-line').count(), 0)
+  })
+
   it('is not linked from the old layout', async () => {
     for (const q of ['', '?view=containers', '?view=factory']) {
       await page.goto(`${base}/${q}`)

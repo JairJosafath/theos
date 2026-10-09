@@ -1,7 +1,8 @@
 // The new shell (docs/plans/ui-lifecycle.md, decision 2), reached only with
 // ?shell=next until it becomes the default: navigation for the six areas, a
-// freshness line, and the area on screen. Story, Briefs, Work and Factory show
-// today's components; Needs you and the object pages come in later steps.
+// freshness line, and the area on screen or an object's page. Story, Briefs,
+// Work and Factory show today's components; Needs you comes in a later step,
+// and the pages of the kinds that have none yet say so.
 
 import type { MouseEvent, ReactNode } from 'react'
 import type { FactoryHealth } from '../k8s/health'
@@ -33,6 +34,8 @@ export interface ShellProps {
   banners: ReactNode
   /** Today's components for these areas. */
   areas: Record<'briefs' | 'story' | 'work' | 'factory', ReactNode>
+  /** The object page the URL names, for kinds that have one. */
+  objectPage?: ReactNode
 }
 
 /** Leaves an object page: the area alone. */
@@ -49,6 +52,7 @@ export function Shell({
   picker,
   banners,
   areas,
+  objectPage,
 }: ShellProps) {
   const object = url.kind && url.name ? { ns: url.ns, kind: url.kind, name: url.name } : undefined
   const scope = object ? object.ns : inNamespace(area) ? namespace : area === 'about' ? undefined : ''
@@ -88,7 +92,7 @@ export function Shell({
       <Freshness connection={connection} scope={scope} />
 
       {object ? (
-        <ObjectPlaceholder {...object} />
+        (objectPage ?? <ObjectPlaceholder {...object} />)
       ) : area === 'needs' ? (
         <NeedsArea />
       ) : area === 'about' ? (
