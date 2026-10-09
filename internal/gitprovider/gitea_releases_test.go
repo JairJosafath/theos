@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -198,8 +199,8 @@ func TestTagRuns(t *testing.T) {
 		queries = append(queries, r.URL.Query())
 		// Gitea lists newest first; the check run on main shares the tag's commit.
 		_, _ = w.Write([]byte(`{"total_count":4,"workflow_runs":[
-			{"id":9,"path":"release.yaml@refs/tags/v0.2.0","head_sha":"694db57","status":"completed","conclusion":"failure","html_url":"http://gitea/webshop/orders-api/actions/runs/9"},
-			{"id":8,"path":"notes.yaml@refs/tags/v0.2.0","head_sha":"694db57","status":"queued","conclusion":"","html_url":"http://gitea/webshop/orders-api/actions/runs/8"},
+			{"id":9,"path":"release.yaml@refs/tags/v0.2.0","event":"push","head_sha":"694db57","status":"completed","conclusion":"failure","started_at":"2026-10-09T01:40:53Z","html_url":"http://gitea/webshop/orders-api/actions/runs/9"},
+			{"id":8,"path":"notes.yaml@refs/tags/v0.2.0","event":"push","head_sha":"694db57","status":"queued","conclusion":"","started_at":"1970-01-01T00:00:00Z","html_url":"http://gitea/webshop/orders-api/actions/runs/8"},
 			{"id":7,"path":"check.yaml@refs/heads/main","head_sha":"694db57","status":"completed","conclusion":"success","html_url":"http://gitea/webshop/orders-api/actions/runs/7"},
 			{"id":6,"path":"release.yaml@refs/tags/v0.2.0","head_sha":"1cedb81","status":"completed","conclusion":"success","html_url":"http://gitea/webshop/orders-api/actions/runs/6"}]}`))
 	}))
@@ -213,9 +214,10 @@ func TestTagRuns(t *testing.T) {
 		t.Fatalf("TagRuns() error = %v", err)
 	}
 	want := []WorkflowRun{
-		{ID: 9, Workflow: "release.yaml", Status: "completed", Conclusion: "failure",
-			URL: "http://gitea/webshop/orders-api/actions/runs/9"},
-		{ID: 8, Workflow: "notes.yaml", Status: "queued", URL: "http://gitea/webshop/orders-api/actions/runs/8"},
+		{ID: 9, Workflow: "release.yaml", Event: "push", Status: "completed", Conclusion: "failure",
+			Started: time.Date(2026, 10, 9, 1, 40, 53, 0, time.UTC), URL: "http://gitea/webshop/orders-api/actions/runs/9"},
+		{ID: 8, Workflow: "notes.yaml", Event: "push", Status: "queued",
+			URL: "http://gitea/webshop/orders-api/actions/runs/8"},
 	}
 	if !reflect.DeepEqual(runs, want) {
 		t.Errorf("TagRuns() = %+v, want %+v", runs, want)
@@ -227,6 +229,141 @@ func TestTagRuns(t *testing.T) {
 	if _, err := p.TagRuns(context.Background(), p.Repository("payments"), "v0.2.0", "694db57"); err == nil ||
 		!strings.Contains(err.Error(), "HTTP 404") {
 		t.Errorf("TagRuns() of a missing repository error = %v, want HTTP 404", err)
+	}
+}
+
+func TestCommitRuns(t *testing.T) {
+	var queries []url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/repos/webshop/orders-api/actions/runs" {
+			http.NotFound(w, r)
+			return
+		}
+		queries = append(queries, r.URL.Query())
+		// A full first page of old pushes, then the pull request's runs.
+		var runs []string
+		if r.URL.Query().Get("page") == "1" {
+			for i := range issuePageSize {
+				runs = append(runs, fmt.Sprintf(`{"id":%d,"path":"check.yaml@refs/heads/main","event":"push",`+
+					`"head_sha":"694db57","status":"completed","conclusion":"success",`+
+					`"started_at":"2026-10-08T10:00:00Z","html_url":"http://gitea/runs/%d"}`, 100+i, 100+i))
+			}
+		} else {
+			runs = []string{
+				`{"id":5,"path":"check.yaml@refs/pull/3/head","event":"pull_request","head_sha":"694db57","status":"in_progress","conclusion":"","started_at":"2026-10-09T01:40:53+02:00","html_url":"http://gitea/runs/5"}`,
+				`{"id":4,"path":"lint.yaml@refs/pull/3/head","event":"pull_request","head_sha":"694db57","status":"waiting","conclusion":"","started_at":"1970-01-01T00:00:00Z","html_url":"http://gitea/runs/4"}`,
+				// Another commit's run, which Gitea's filter should have left out.
+				`{"id":3,"path":"check.yaml@refs/pull/2/head","event":"pull_request","head_sha":"1cedb81","status":"queued","conclusion":"","html_url":"http://gitea/runs/3"}`,
+			}
+		}
+		_, _ = w.Write([]byte(`{"workflow_runs":[` + strings.Join(runs, ",") + `]}`))
+	}))
+	t.Cleanup(srv.Close)
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := p.CommitRuns(context.Background(), p.Repository("orders-api"), "694db57")
+	if err != nil {
+		t.Fatalf("CommitRuns() error = %v", err)
+	}
+	if len(runs) != issuePageSize+2 {
+		t.Fatalf("CommitRuns() = %d runs, want %d", len(runs), issuePageSize+2)
+	}
+	want := []WorkflowRun{
+		{ID: 5, Workflow: "check.yaml", Event: "pull_request", Status: "in_progress",
+			Started: time.Date(2026, 10, 8, 23, 40, 53, 0, time.UTC), URL: "http://gitea/runs/5"},
+		{ID: 4, Workflow: "lint.yaml", Event: "pull_request", Status: "waiting", URL: "http://gitea/runs/4"},
+	}
+	got := runs[issuePageSize:]
+	if len(got) != 2 || got[0].ID != 5 || !got[0].Started.Equal(want[0].Started) {
+		t.Fatalf("CommitRuns() second page = %+v, want %+v", got, want)
+	}
+	got[0].Started = want[0].Started
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("CommitRuns() second page = %+v, want %+v", got, want)
+	}
+	if first := runs[0]; first.ID != 100 || first.Workflow != "check.yaml" || first.Event != "push" ||
+		first.Conclusion != "success" {
+		t.Errorf("CommitRuns() first = %+v, want run 100, a push of check.yaml that passed", first)
+	}
+	if len(queries) != 2 || queries[0].Get("head_sha") != "694db57" || queries[0].Has("event") ||
+		queries[1].Get("page") != "2" {
+		t.Errorf("queries = %v, want two pages of runs of any event at 694db57", queries)
+	}
+
+	if _, err := p.CommitRuns(context.Background(), p.Repository("payments"), "694db57"); err == nil ||
+		!strings.Contains(err.Error(), "HTTP 404") {
+		t.Errorf("CommitRuns() of a missing repository error = %v, want HTTP 404", err)
+	}
+}
+
+func TestRunnersOnline(t *testing.T) {
+	page := func(n int, status string, busy bool) string {
+		runners := make([]string, 0, n)
+		for i := range n {
+			runners = append(runners, fmt.Sprintf(`{"id":%d,"name":"runner-%d","status":%q,"busy":%t}`, i, i, status, busy))
+		}
+		return `{"runners":[` + strings.Join(runners, ",") + `],"total_count":` + strconv.Itoa(n) + `}`
+	}
+	for _, tc := range []struct {
+		name       string
+		pages      map[string]string
+		status     int
+		wantOnline int
+		wantKnown  bool
+	}{
+		{name: "none", pages: map[string]string{"1": `{"runners":[],"total_count":0}`}, wantKnown: true},
+		{name: "online, idle and busy count, offline doesn't",
+			pages: map[string]string{"1": `{"runners":[
+				{"id":1,"status":"online","busy":false},
+				{"id":2,"status":"idle","busy":false},
+				{"id":3,"status":"active","busy":true},
+				{"id":4,"status":"offline","busy":false}]}`},
+			wantOnline: 3, wantKnown: true},
+		{name: "paged", pages: map[string]string{"1": page(issuePageSize, "online", false), "2": page(2, "offline", false)},
+			wantOnline: issuePageSize, wantKnown: true},
+		{name: "older Gitea", status: http.StatusNotFound},
+		{name: "not an admin", status: http.StatusForbidden},
+		{name: "not JSON", pages: map[string]string{"1": `<html>`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var pages []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v1/admin/actions/runners" {
+					http.NotFound(w, r)
+					return
+				}
+				pages = append(pages, r.URL.Query().Get("page"))
+				if tc.status != 0 {
+					w.WriteHeader(tc.status)
+					return
+				}
+				_, _ = w.Write([]byte(tc.pages[r.URL.Query().Get("page")]))
+			}))
+			t.Cleanup(srv.Close)
+			p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			online, known := p.RunnersOnline(context.Background())
+			if online != tc.wantOnline || known != tc.wantKnown {
+				t.Errorf("RunnersOnline() = %d, %t; want %d, %t", online, known, tc.wantOnline, tc.wantKnown)
+			}
+			if tc.wantKnown && len(pages) != len(tc.pages) {
+				t.Errorf("read pages %v, want %d", pages, len(tc.pages))
+			}
+		})
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	srv.Close()
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if online, known := p.RunnersOnline(context.Background()); online != 0 || known {
+		t.Errorf("RunnersOnline() of a Gitea that is down = %d, %t; want unknown", online, known)
 	}
 }
 
