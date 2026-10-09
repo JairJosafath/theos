@@ -838,7 +838,7 @@ server's message when it refuses one. The UI still enforces nothing.
   | --- | --- | --- |
   | Brief | `POST` | a new Brief (as today) |
   | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.autopilot`, `spec.parallel`, `spec.releases` |
-  | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` |
+  | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (set, or removed to stop publishing) |
   | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
   | Container | `PATCH`, merge patch | annotation `c4.factory.io/retry` |
   | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
