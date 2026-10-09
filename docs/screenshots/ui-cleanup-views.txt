@@ -1,0 +1,33 @@
+$ npm run screenshot:views -- /tmp/c4views-v4 --compare /tmp/c4views-before   # before: origin/main ef8a61a + the harness
+Saved 110 pictures in /tmp/c4views-v4
+All 110 match /tmp/c4views-before
+
+$ npm run test:e2e   # bundle test + live e2e
+  ✔ keeps the demo fixture out of the main chunk, and loads it as a chunk of its own (46.4687ms)
+✔ the build (47.8058ms)
+  ✔ starts from the list, with no status yet (11.1875ms)
+  ✔ shows a new phase as soon as it is written (196.677901ms)
+  ✔ shows a Session that starts, and fades it when it goes Stale (28.8327ms)
+  ✔ removes a deleted DataStore (6.4738ms)
+  ✔ recovers from an expired watch by listing again (328.5394ms)
+  ✔ watches all kinds over a few connections, not one each (1.8465ms)
+  ✔ never sends anything but GET (10.208ms)
+✔ live updates in the browser (1024.436902ms)
+ℹ tests 8
+ℹ pass 8
+ℹ fail 0
+
+$ npm run check
+ Test Files  12 passed (12)
+      Tests  245 passed (245)
+ℹ tests 121
+ℹ pass 121
+ℹ fail 0
+
+$ wc -l (largest files in ui/src outside demo/ and tests)
+   487 src/App.tsx
+   508 src/k8s/types.ts
+   540 src/model/brief.ts
+   543 src/model/story.ts
+   547 src/app.css
+ 11106 total
