@@ -169,6 +169,19 @@ describe('agentRuns', () => {
     expect(agentRuns(t).map((r) => r.n)).toEqual([1, 2, 3])
   })
 
+  it('reads the running role from the sandbox name, as a review re-checks the branch', () => {
+    const t = task('api-7', {
+      phase: 'Checking',
+      round: 2,
+      sandbox: 'api-7-r2-review-a1',
+      runs: [{ round: 1, role: 'implement', endedAt: '2026-06-01T10:05:00Z' }],
+    })
+    expect(agentRuns(t).map((r) => [r.n, r.role, r.agent, r.current])).toEqual([
+      [1, 'implement', 'dev', false],
+      [2, 'review', 'rev', true],
+    ])
+  })
+
   it('says when a run handed off, and at what sizes', () => {
     expect(describeHandoffs([134_000])).toBe('handed off at 134k tokens')
     expect(describeHandoffs([131_000, 138_400, 140_000])).toBe('handed off 3 times, at 131k, 138k and 140k tokens')

@@ -98,7 +98,7 @@ export function agentRuns(task: Task): AgentRun[] {
   const recorded = task.status?.runs ?? []
   if (!recorded.length) return historyRuns(task)
   const runs: AgentRun[] = recorded.map((r, i) => {
-    const role = r.role === 'review' || r.role === 'plan' ? r.role : 'implement'
+    const role = r.role === 'review' || r.role === 'plan' || r.role === 'implement' ? r.role : defaultRole(task)
     return {
       n: i + 1,
       round: r.round,
@@ -112,7 +112,7 @@ export function agentRuns(task: Task): AgentRun[] {
   })
   const status = task.status
   if (status?.sandbox && !isFinal(status.phase)) {
-    const role = status.phase === 'Reviewing' ? 'review' : task.spec.kind === 'Plan' ? 'plan' : 'implement'
+    const role = sandboxRole(status.sandbox) ?? (status.phase === 'Reviewing' ? 'review' : defaultRole(task))
     const history = status.history ?? []
     const at = history[history.length - 1]?.at ?? status.phaseChangedAt ?? ''
     runs.push({ n: runs.length + 1, round: status.round ?? 0, role, agent: runAgent(task, role), at, current: true })
@@ -125,6 +125,19 @@ export function describeHandoffs(sizes: number[]): string {
   const at = sizes.map(formatTokens)
   const list = at.length > 1 ? `${at.slice(0, -1).join(', ')} and ${at[at.length - 1]}` : at[0]
   return `handed off${sizes.length > 1 ? ` ${sizes.length} times,` : ''} at ${list} tokens`
+}
+
+function defaultRole(task: Task): AgentRun['role'] {
+  return task.spec.kind === 'Plan' ? 'plan' : 'implement'
+}
+
+/**
+ * The role a sandbox name carries (<task>-r<round>-<role>[-a<n>|-x<n>]), as
+ * model.SandboxRole reads it: a review sandbox also runs while Checking.
+ */
+function sandboxRole(sandbox: string): AgentRun['role'] | undefined {
+  const m = /-r\d+-(implement|review|plan)(?:-[ax]\d+)?$/.exec(sandbox)
+  return m ? (m[1] as AgentRun['role']) : undefined
 }
 
 function runAgent(task: Task, role: AgentRun['role']): string {
