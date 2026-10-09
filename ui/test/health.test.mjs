@@ -309,6 +309,20 @@ describe('createHealthHandler', () => {
     assert.equal(health.state, 'unknown')
     assert.deepEqual(health.errors, ['/api/v1/pods: 403 forbidden'])
   })
+
+  it('lists a failed read once, however many times the health was loaded', async () => {
+    let clock = NOW
+    const health = createHealthHandler({
+      getJson: async (path) =>
+        path.startsWith('/api/v1/') ? { status: 404, body: { message: 'not found' } } : answers[path],
+      now: () => clock,
+    })
+    for (let i = 0; i < 3; i++) {
+      await Promise.all([health(), health()])
+      clock += 6_000
+    }
+    assert.deepEqual((await health()).errors, ['/api/v1/pods: 404 not found', '/api/v1/nodes: 404 not found'])
+  })
 })
 
 describe('history', () => {
