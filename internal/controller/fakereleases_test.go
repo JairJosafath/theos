@@ -21,8 +21,10 @@ type fakeReleaseState struct {
 	closed map[string][]string                  // owner/name, closed milestones' titles
 	tags   map[string]string                    // owner/name@tag, the commit it names
 	runs   map[string][]gitprovider.WorkflowRun // owner/name@tag@commit, newest first
-	// reruns counts the RerunFailedJobs calls, by owner/name#run ID.
-	reruns map[string]int
+	// reruns counts the RerunFailedJobs calls, by owner/name#run ID, and
+	// refused is the runs whose re-run the host refuses.
+	reruns  map[string]int
+	refused map[string]bool
 	// published is the Gitea releases, by owner/name@tag, and assets their
 	// files' contents, by UUID.
 	published map[string]*gitprovider.Release
@@ -50,7 +52,7 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			runs: map[string][]gitprovider.WorkflowRun{}, published: map[string]*gitprovider.Release{},
 			assets: map[string][]byte{}, created: map[string]gitprovider.Milestone{},
 			goMods: map[string]string{}, uploads: map[string]int{}, moduleFailures: map[string]int{},
-			modulePublishes: map[string]int{}, reruns: map[string]int{}}
+			modulePublishes: map[string]int{}, reruns: map[string]int{}, refused: map[string]bool{}}
 	}
 	return g.releases
 }
@@ -175,7 +177,11 @@ func (p *fakeProvider) RerunFailedJobs(_ context.Context, repo gitprovider.Repos
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	s := p.git.releaseState()
-	s.reruns[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, id)]++
+	key := fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, id)
+	s.reruns[key]++
+	if s.refused[key] {
+		return fmt.Errorf("re-run of run %d refused", id)
+	}
 	for key, runs := range s.runs {
 		if !strings.HasPrefix(key, repo.Owner+"/"+repo.Name+"@") {
 			continue
@@ -190,7 +196,17 @@ func (p *fakeProvider) RerunFailedJobs(_ context.Context, repo gitprovider.Repos
 	return fmt.Errorf("run %d of %s/%s not found", id, repo.Owner, repo.Name)
 }
 
-// reruns is how many times run id of owner/name was re-run.
+// refuseRerun makes the host refuse, or no longer refuse, to re-run run id of
+// owner/name.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) refuseRerun(owner, name string, id int64, refuse bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().refused[fmt.Sprintf("%s/%s#%d", owner, name, id)] = refuse
+}
+
+// reruns is how many times a re-run of run id of owner/name was asked for.
 //
 //nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) reruns(owner, name string, id int64) int {
