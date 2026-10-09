@@ -143,7 +143,10 @@ var _ = Describe("Brief autopilot", func() {
 		}).Should(Succeed())
 		issue := gitFake.issue(ns, "linter", n)
 		Expect(issue.State).To(Equal("open"))
-		Expect(issue.Labels).To(ContainElement(model.LabelReady))
+		// #823: no check of the issue's labels here. The Crew starts the next
+		// Task once the issue is status/ready, and the linter has no Standard,
+		// so that Task can fail and label it status/needs-human before a
+		// check sees status/ready. The next Task below shows it was readied.
 		Expect(issue.Body).To(HaveSuffix("\n\n## Clarification (Brief round 2)\n\nImport the checker from the engine.\n"))
 		Expect(issue.comments).To(ContainElement(And(
 			ContainSubstring("Tried again by Brief `cel-lens` in tending round 2, with no prompt"),
@@ -152,7 +155,7 @@ var _ = Describe("Brief autopilot", func() {
 			ContainSubstring("Tending round 2 retried 1, closed 0, waits on 0 and asks you about 0 failed issues")))
 		Expect(getBrief(Default, ns).Status.PromptsPlanned).To(BeZero(), "a tending round plans no prompt")
 
-		By("the Crew starting the issue's next Task")
+		By("the Crew starting the issue's next Task, which it does only for a status/ready issue")
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, model.IssueTaskName("linter", n, 2)).Spec.Issue).To(Equal(int32(n)))
 		}).Should(Succeed())
