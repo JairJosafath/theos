@@ -66,6 +66,8 @@ export interface Connection {
   loaded: boolean
   /** True once every list, the optional ones too, has loaded or failed; unset where that is `loaded`. */
   settled?: boolean
+  /** The plurals of the lists that have neither loaded nor failed yet; unset where that is every list until `loaded`. */
+  waiting?: string[]
   problems: Problem[]
   /**
    * Optional reads that failed. They raise no banner; the panel that shows
@@ -84,6 +86,7 @@ export function mergeConnections(a: Connection, b: Connection): Connection {
     loaded: a.loaded && b.loaded,
     problems: [...a.problems, ...b.problems],
     unread: [...(a.unread ?? []), ...(b.unread ?? [])],
+    waiting: a.waiting && b.waiting ? [...a.waiting, ...b.waiting] : undefined,
     updatedAt: Math.max(a.updatedAt ?? 0, b.updatedAt ?? 0) || undefined,
   }
 }
@@ -147,12 +150,29 @@ export function combineConnection(
   if (!loaded) phase = 'connecting'
   else if (required.some((s) => s.state.phase !== 'live' || s.state.error)) phase = 'reconnecting'
   const settled = states.every((s) => s.state.loaded || Boolean(s.state.error))
-  return { phase, loaded, settled, problems, unread }
+  const waiting = states.filter((s) => !s.state.loaded && !s.state.error && s.resource).map((s) => s.resource!)
+  return { phase, loaded, settled, problems, unread, waiting }
 }
 
 /** The failed optional read of this kind, by its plural, if it failed. */
 export function unreadOf(connection: Connection, resource: string): Problem | undefined {
   return connection.unread?.find((p) => p.resource === resource)
+}
+
+/**
+ * Whether the lists of these kinds, by their plurals, have each loaded or
+ * failed: a panel showing only them need not wait for the others.
+ */
+export function readOf(connection: Connection, ...resources: string[]): boolean {
+  if (!connection.waiting) return connection.loaded
+  return !connection.waiting.some((r) => resources.includes(r))
+}
+
+/** The failed reads, required or optional, of these kinds by their plurals: what a panel showing them says. */
+export function problemsOf(connection: Connection, ...resources: string[]): Problem[] {
+  return [...connection.problems, ...(connection.unread ?? [])].filter(
+    (p) => p.resource !== undefined && resources.includes(p.resource),
+  )
 }
 
 type Watched = { what: string; watcher: ResourceWatcher<K8sObject>; optional?: boolean; resource?: string }
@@ -245,13 +265,21 @@ export class LiveStorySource extends WatchingSource<StoryData> {
   constructor(namespace: string, api: Api) {
     super(
       [
-        { what: 'the project', watcher: watcher(api, RESOURCES.projects, namespace) },
-        { what: 'people', watcher: watcher(api, RESOURCES.people, namespace) },
-        { what: 'software systems', watcher: watcher(api, RESOURCES.softwareSystems, namespace) },
-        { what: 'containers', watcher: watcher(api, RESOURCES.containers, namespace) },
-        { what: 'data stores', watcher: watcher(api, RESOURCES.dataStores, namespace) },
-        { what: 'relationships', watcher: watcher(api, RESOURCES.relationships, namespace) },
-        { what: 'sessions', watcher: watcher(api, RESOURCES.sessions, namespace) },
+        { what: 'the project', watcher: watcher(api, RESOURCES.projects, namespace), resource: RESOURCES.projects },
+        { what: 'people', watcher: watcher(api, RESOURCES.people, namespace), resource: RESOURCES.people },
+        {
+          what: 'software systems',
+          watcher: watcher(api, RESOURCES.softwareSystems, namespace),
+          resource: RESOURCES.softwareSystems,
+        },
+        { what: 'containers', watcher: watcher(api, RESOURCES.containers, namespace), resource: RESOURCES.containers },
+        { what: 'data stores', watcher: watcher(api, RESOURCES.dataStores, namespace), resource: RESOURCES.dataStores },
+        {
+          what: 'relationships',
+          watcher: watcher(api, RESOURCES.relationships, namespace),
+          resource: RESOURCES.relationships,
+        },
+        { what: 'sessions', watcher: watcher(api, RESOURCES.sessions, namespace), resource: RESOURCES.sessions },
         {
           what: 'frameworks',
           watcher: watcher(api, RESOURCES.frameworks, namespace),
@@ -321,7 +349,7 @@ export class LiveStorySource extends WatchingSource<StoryData> {
 /** Watches Projects across all namespaces, for the project picker. */
 export class LiveProjectsSource extends WatchingSource<Project[]> {
   constructor(api: Api) {
-    super([{ what: 'projects', watcher: watcher(api, RESOURCES.projects) }], [])
+    super([{ what: 'projects', watcher: watcher(api, RESOURCES.projects), resource: RESOURCES.projects }], [])
   }
 
   protected build(): Project[] {
@@ -350,11 +378,11 @@ export class LiveFactorySource extends WatchingSource<FactoryData> {
   constructor(api: Api) {
     super(
       [
-        { what: 'projects', watcher: watcher(api, RESOURCES.projects) },
-        { what: 'tasks', watcher: watcher(api, RESOURCES.tasks) },
+        { what: 'projects', watcher: watcher(api, RESOURCES.projects), resource: RESOURCES.projects },
+        { what: 'tasks', watcher: watcher(api, RESOURCES.tasks), resource: RESOURCES.tasks },
         { what: 'agents', watcher: watcher(api, RESOURCES.agents), optional: true, resource: RESOURCES.agents },
-        { what: 'containers', watcher: watcher(api, RESOURCES.containers) },
-        { what: 'sessions', watcher: watcher(api, RESOURCES.sessions) },
+        { what: 'containers', watcher: watcher(api, RESOURCES.containers), resource: RESOURCES.containers },
+        { what: 'sessions', watcher: watcher(api, RESOURCES.sessions), resource: RESOURCES.sessions },
         // Optional, so a cluster without the Crew kind still shows its Tasks.
         { what: 'crews', watcher: watcher(api, RESOURCES.crews), optional: true, resource: RESOURCES.crews },
         { what: 'briefs', watcher: watcher(api, RESOURCES.briefs), optional: true, resource: RESOURCES.briefs },

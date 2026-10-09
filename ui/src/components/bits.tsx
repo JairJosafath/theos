@@ -11,9 +11,29 @@ import {
   type Tone,
 } from '../model/describe'
 import type { UsageView } from '../model/brief'
+import { absoluteTime } from '../model/format'
+import { useNow } from '../lib/hooks'
 import type { AgentRole } from '../model/factory'
 import { AgentIcon, CheckIcon, ClockIcon, CrossIcon, HumanIcon, QuestionIcon } from './icons'
 import './bits.css'
+
+/**
+ * A moment, relative and absolute: "12 min ago", with the date and time on
+ * hover and to a screen reader, or shown beside it with `full`. It follows
+ * the clock itself, so only it re-renders as time passes.
+ */
+export function When({ at, full }: { at?: string | number; full?: boolean }) {
+  const now = useNow()
+  const abs = absoluteTime(at)
+  if (!abs) return <>{timeAgo(typeof at === 'string' ? at : undefined, now)}</>
+  const iso = typeof at === 'number' ? new Date(at).toISOString() : at!
+  return (
+    <time dateTime={iso} title={abs}>
+      {timeAgo(iso, now)}
+      {full ? <> ({abs})</> : <span className="visually-hidden"> ({abs})</span>}
+    </time>
+  )
+}
 
 export function PhaseBadge({ phase, size = 'md' }: { phase: ContainerPhase | undefined; size?: 'sm' | 'md' }) {
   const info = describeContainerPhase(phase)
@@ -93,12 +113,10 @@ export function ConditionList({ conditions, empty }: { conditions: Condition[]; 
 /** One Session: who (agent or human), what, and how recently they checked in. */
 export function SessionRow({
   session,
-  now,
   compact = false,
   href,
 }: {
   session: Session
-  now: number
   compact?: boolean
   /** Its object page, in the shell. */
   href?: string
@@ -127,10 +145,14 @@ export function SessionRow({
             {info.label}
           </span>
           <span className="sep">·</span>
-          <span title={session.status?.lastHeartbeat ?? ''}>
-            {session.status?.lastHeartbeat
-              ? `heartbeat ${timeAgo(session.status.lastHeartbeat, now)}`
-              : 'no heartbeat yet'}
+          <span>
+            {session.status?.lastHeartbeat ? (
+              <>
+                heartbeat <When at={session.status.lastHeartbeat} />
+              </>
+            ) : (
+              'no heartbeat yet'
+            )}
           </span>
         </span>
         {session.status?.openInEditor ? (

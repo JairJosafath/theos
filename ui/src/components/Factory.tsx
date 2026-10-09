@@ -2,9 +2,9 @@
 // time go, and what needs a look. Across all projects; read-only.
 
 import { useMemo } from 'react'
-import type { FactoryData } from '../k8s/sources'
+import { problemsOf, readOf, type Connection, type FactoryData, type Problem } from '../k8s/sources'
 import type { FactoryHealth } from '../k8s/health'
-import type { Task } from '../k8s/types'
+import { RESOURCES, type Task } from '../k8s/types'
 import { useNow } from '../lib/hooks'
 import { boardColumns, COLUMNS, factoryStats, runningTasks, slotQueue, taskKey, taskRoles } from '../model/factory'
 import { attention } from '../model/attention'
@@ -17,6 +17,7 @@ import { ReleasesPanel } from './factory/Releases'
 import { TimePanel } from './factory/TimePanel'
 import { TaskPanel } from './factory/TaskPanel'
 import { HealthPanel } from './factory/Health'
+import { PanelState } from './PanelState'
 import { SlotsPanel } from './factory/Slots'
 import './factory.css'
 
@@ -26,8 +27,12 @@ export type ObjectHref = (ns: string, kind: string, name: string) => string | un
 export interface FactoryPageProps {
   data: FactoryData
   loaded: boolean
+  /** In the shell, the reads behind the data: each panel says those of its kinds that failed. */
+  connection?: Connection
   health?: FactoryHealth
   healthLoaded: boolean
+  /** In the shell, the health check's failure, said in the Health panel. */
+  healthProblems?: Problem[]
   selectedTask?: string
   onSelectTask: (key: string | undefined) => void
   /** In the shell, an object's page: Crews and Tasks link to theirs. */
@@ -37,8 +42,10 @@ export interface FactoryPageProps {
 export function FactoryPage({
   data,
   loaded,
+  connection,
   health,
   healthLoaded,
+  healthProblems,
   selectedTask,
   onSelectTask,
   pageHref,
@@ -68,6 +75,10 @@ export function FactoryPage({
   const selected = data.tasks.find((t) => taskKey(t) === selectedTask)
   const running = runningTasks(data.tasks)
   const maxSlots = health?.agents.maxSandboxes
+  const problems = (...resources: string[]) => (connection ? problemsOf(connection, ...resources) : undefined)
+  const read = (...resources: string[]) => (connection ? readOf(connection, ...resources) : loaded)
+  // The kinds only Needs a look reads: a failure there would hide its items.
+  const attentionProblems = problems(RESOURCES.projects, RESOURCES.containers, RESOURCES.sessions, RESOURCES.briefs)
 
   return (
     <>
@@ -106,7 +117,9 @@ export function FactoryPage({
 
       <main className="workspace factory">
         <section className="factory-main" aria-label="Work">
-          {items.length ? <AttentionPanel items={items} onSelectTask={onSelectTask} /> : null}
+          {items.length || attentionProblems?.length ? (
+            <AttentionPanel items={items} problems={attentionProblems} onSelectTask={onSelectTask} />
+          ) : null}
 
           <div className="panel">
             <div className="panel-head">
@@ -118,11 +131,13 @@ export function FactoryPage({
                 </p>
               </div>
             </div>
-            {!loaded && !data.tasks.length ? (
-              <div className="placeholder">Loading the Tasks…</div>
-            ) : !data.tasks.length ? (
-              <div className="placeholder">No Tasks yet. They show up here as soon as one is created.</div>
-            ) : (
+            <PanelState
+              loaded={read(RESOURCES.tasks) || data.tasks.length > 0}
+              problems={problems(RESOURCES.tasks, RESOURCES.agents)}
+              empty={!data.tasks.length}
+              loading="Loading the Tasks…"
+              emptyText="No Tasks yet. They show up here as soon as one is created."
+            >
               <div className="board" role="list">
                 {COLUMNS.map((col) => (
                   <div key={col.key} className={`board-col stage-${col.key}`} role="listitem">
@@ -145,12 +160,25 @@ export function FactoryPage({
                   </div>
                 ))}
               </div>
-            )}
+            </PanelState>
           </div>
 
-          <CrewsPanel crews={crews} loaded={loaded} now={now} onSelectTask={onSelectTask} pageHref={pageHref} />
+          <CrewsPanel
+            crews={crews}
+            loaded={read(RESOURCES.crews)}
+            problems={problems(RESOURCES.crews, RESOURCES.agents)}
+            onSelectTask={onSelectTask}
+            pageHref={pageHref}
+          />
 
-          {pageHref ? <ReleasesPanel crews={data.crews} loaded={loaded} now={now} pageHref={pageHref} /> : null}
+          {pageHref ? (
+            <ReleasesPanel
+              crews={data.crews}
+              loaded={read(RESOURCES.crews)}
+              problems={problems(RESOURCES.crews)}
+              pageHref={pageHref}
+            />
+          ) : null}
 
           <TimePanel stats={stats} />
         </section>
@@ -166,8 +194,16 @@ export function FactoryPage({
               onClose={() => onSelectTask(undefined)}
             />
           ) : null}
-          <HealthPanel health={health} loaded={healthLoaded} now={now} />
-          <SlotsPanel tasks={data.tasks} health={health} now={now} onSelectTask={onSelectTask} />
+          <HealthPanel health={health} loaded={healthLoaded} problems={healthProblems} now={now} />
+          <SlotsPanel
+            tasks={data.tasks}
+            // The old layout always showed the slots.
+            loaded={connection ? read(RESOURCES.tasks) : true}
+            problems={problems(RESOURCES.tasks)}
+            health={health}
+            now={now}
+            onSelectTask={onSelectTask}
+          />
         </aside>
       </main>
     </>

@@ -1,14 +1,14 @@
 // The side panels: details of the selected box, who is working right now, and
 // the legend.
 
-import type { StoryData } from '../k8s/sources'
+import type { Problem, StoryData } from '../k8s/sources'
 import type { Condition, ContainerPhase } from '../k8s/types'
-import { useNow } from '../lib/hooks'
 import { describeContainerPhase, KIND_LABEL, plural, splitTemplateRef } from '../model/describe'
 import { crewDoing, issueList, type ActiveCrewTask, type CrewSummary } from '../model/crews'
 import { linksOf, type ContainerNode, type DiagramNode, type Link } from '../model/story'
 import { AgentName, ConditionList, CrewPhaseBadge, PhaseBadge, SessionRow } from './bits'
 import { AgentIcon, ArrowRightIcon, CrossIcon, ExternalLinkIcon, HumanIcon, WarningIcon } from './icons'
+import { PanelState } from './PanelState'
 import './panels.css'
 
 export function DetailsPanel({
@@ -22,7 +22,6 @@ export function DetailsPanel({
   onClose: () => void
   onOpenSystem: (name: string) => void
 }) {
-  const now = useNow()
   const links = linksOf(data, node.kind, node.name)
   return (
     <section className="panel details" aria-label={`Details of ${node.title}`}>
@@ -54,7 +53,7 @@ export function DetailsPanel({
         </>
       ) : null}
 
-      {node.role === 'container' ? <ContainerDetails node={node} now={now} /> : null}
+      {node.role === 'container' ? <ContainerDetails node={node} /> : null}
 
       {node.role === 'datastore' ? (
         <>
@@ -103,7 +102,7 @@ function DetailList({ title, hint, items }: { title: string; hint: string; items
   )
 }
 
-function ContainerDetails({ node, now }: { node: ContainerNode; now: number }) {
+function ContainerDetails({ node }: { node: ContainerNode }) {
   const phase = describeContainerPhase(node.phase)
   return (
     <>
@@ -162,7 +161,7 @@ function ContainerDetails({ node, now }: { node: ContainerNode; now: number }) {
       {node.sessions.length ? (
         <ul className="sessions">
           {node.sessions.map((s) => (
-            <SessionRow key={s.metadata.name} session={s} now={now} />
+            <SessionRow key={s.metadata.name} session={s} />
           ))}
         </ul>
       ) : (
@@ -257,12 +256,17 @@ export function SessionsPanel({
   containers,
   tasks,
   scope,
+  loaded = true,
+  problems,
 }: {
   containers: ContainerNode[]
   tasks: ActiveCrewTask[]
   scope: string
+  /** The Sessions, Crews and Tasks have loaded; unset where the caller waits for them. */
+  loaded?: boolean
+  /** The failed reads of Sessions, Crews, Tasks and Agents. */
+  problems?: Problem[]
 }) {
-  const now = useNow()
   const withSessions = containers.filter((c) => c.sessions.length)
   const all = withSessions.flatMap((c) => c.sessions)
   const active = all.filter((s) => s.status?.phase === 'Active').length
@@ -274,64 +278,72 @@ export function SessionsPanel({
         People and AI agents working in a devcontainer on {scope}, each a Session that checks in while it works; the
         factory marks one stale when it stops checking in. Crews&apos; Tasks that run now are listed too.
       </p>
-      {tasks.length ? (
-        <div className="session-group">
-          <div className="session-group-head">
-            <span className="session-group-title">Crew Tasks</span>
-          </div>
-          <ul className="sessions">
-            {tasks.map((t) => (
-              <li key={t.key} className="session session-compact">
-                <span className="session-avatar session-avatar-agent">
-                  <AgentIcon size={14} title="Agent" />
-                </span>
-                <span className="session-body">
-                  <span className="session-summary">
-                    {t.issue ? `#${t.issue}` : t.name}
-                    {t.issueTitle ? ` ${t.issueTitle}` : ''}
-                  </span>
-                  <span className="session-meta">
-                    <AgentName role={t.agent} />
-                    {t.phase ? (
-                      <>
-                        <span className="sep">·</span>
-                        {t.phase}
-                      </>
-                    ) : null}
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {all.length ? (
-        <>
-          <p className="counts">
-            <span className="count-active">{active} active</span>
-            {stale ? <span className="count-stale">{stale} stale</span> : null}
-          </p>
-          {withSessions.map((c) => (
-            <div key={c.id} className="session-group">
-              <div className="session-group-head">
-                <span className="session-group-title">{c.title}</span>
-                <PhaseBadge phase={c.phase as ContainerPhase | undefined} size="sm" />
-              </div>
-              <ul className="sessions">
-                {c.sessions.map((s) => (
-                  <SessionRow key={s.metadata.name} session={s} now={now} compact />
-                ))}
-              </ul>
+      <PanelState
+        small
+        loaded={loaded}
+        problems={problems}
+        loading="Loading who is working…"
+        empty={!all.length && !tasks.length}
+      >
+        {tasks.length ? (
+          <div className="session-group">
+            <div className="session-group-head">
+              <span className="session-group-title">Crew Tasks</span>
             </div>
-          ))}
-        </>
-      ) : (
-        !tasks.length && (
-          <p className="muted small">
-            Nobody is working right now. When someone opens a devcontainer, they show up here.
-          </p>
-        )
-      )}
+            <ul className="sessions">
+              {tasks.map((t) => (
+                <li key={t.key} className="session session-compact">
+                  <span className="session-avatar session-avatar-agent">
+                    <AgentIcon size={14} title="Agent" />
+                  </span>
+                  <span className="session-body">
+                    <span className="session-summary">
+                      {t.issue ? `#${t.issue}` : t.name}
+                      {t.issueTitle ? ` ${t.issueTitle}` : ''}
+                    </span>
+                    <span className="session-meta">
+                      <AgentName role={t.agent} />
+                      {t.phase ? (
+                        <>
+                          <span className="sep">·</span>
+                          {t.phase}
+                        </>
+                      ) : null}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {all.length ? (
+          <>
+            <p className="counts">
+              <span className="count-active">{active} active</span>
+              {stale ? <span className="count-stale">{stale} stale</span> : null}
+            </p>
+            {withSessions.map((c) => (
+              <div key={c.id} className="session-group">
+                <div className="session-group-head">
+                  <span className="session-group-title">{c.title}</span>
+                  <PhaseBadge phase={c.phase as ContainerPhase | undefined} size="sm" />
+                </div>
+                <ul className="sessions">
+                  {c.sessions.map((s) => (
+                    <SessionRow key={s.metadata.name} session={s} compact />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </>
+        ) : (
+          !tasks.length && (
+            <p className="muted small">
+              Nobody is working right now. When someone opens a devcontainer, they show up here.
+            </p>
+          )
+        )}
+      </PanelState>
     </section>
   )
 }

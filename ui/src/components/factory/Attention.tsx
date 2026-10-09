@@ -2,13 +2,25 @@
 
 import { WarningIcon } from '../icons'
 import { attentionKey, type Attention } from '../../model/attention'
+import type { Problem } from '../../k8s/sources'
+import { ReadProblems } from '../Status'
 
-export function AttentionPanel({ items, onSelectTask }: { items: Attention[]; onSelectTask: (key: string) => void }) {
+export function AttentionPanel({
+  items,
+  problems = [],
+  onSelectTask,
+}: {
+  items: Attention[]
+  /** The failed reads that may hide items. */
+  problems?: Problem[]
+  onSelectTask: (key: string) => void
+}) {
   return (
     <div className="panel attention">
       <h2 className="panel-title small-title">
         <WarningIcon size={16} /> Needs a look
       </h2>
+      <ReadProblems problems={problems} />
       <ul className="attention-list">
         {items.map((item) => (
           <li

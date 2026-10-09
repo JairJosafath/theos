@@ -209,3 +209,21 @@
   color: var(--warn);
   font-weight: 600;
 }
+
+/* A failed read, said in the panel that shows its kind. */
+.read-problem {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 13px;
+}
+
+.read-problem + * {
+  margin-top: 8px;
+}
+
+.read-problem .muted {
+  color: inherit;
+}

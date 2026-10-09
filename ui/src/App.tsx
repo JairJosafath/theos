@@ -15,7 +15,8 @@ import { NeedsArea } from './components/Needs'
 import { FactoryArea, Shell } from './components/Shell'
 import { pageHref } from './components/objects/links'
 import { ObjectPage } from './components/objects/ObjectPage'
-import { ConnectionStatus, ProblemsBanner } from './components/Status'
+import { ConnectionStatus, ProblemsBanner, ReadProblems } from './components/Status'
+import { PanelState } from './components/PanelState'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { VersionLine } from './components/Versions'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
@@ -32,13 +33,15 @@ import {
   LiveProjectsSource,
   LiveStorySource,
   mergeConnections,
+  problemsOf,
+  readOf,
   type Api,
   type FactoryData,
   type Snapshot,
   type Source,
   type StoryData,
 } from './k8s/sources'
-import { GROUP, VERSION, type Project } from './k8s/types'
+import { GROUP, RESOURCES, VERSION, type Project } from './k8s/types'
 import { useDemo } from './lib/demo'
 import { RefreshSession, SessionContext, useSource, useUrlState, type View } from './lib/hooks'
 import { areaLabel } from './model/areas'
@@ -91,6 +94,24 @@ const NO_FACTORY = new Idle<FactoryData>(emptyFactory())
 const NO_HEALTH = new Idle<FactoryHealth | undefined>(undefined)
 
 const MemoDiagram = memo(Diagram)
+
+/** The kinds the Story diagram draws, and those of who is working, by their plurals. */
+const DIAGRAM_KINDS = [
+  RESOURCES.projects,
+  RESOURCES.people,
+  RESOURCES.softwareSystems,
+  RESOURCES.containers,
+  RESOURCES.dataStores,
+  RESOURCES.relationships,
+]
+const WORKING_KINDS = [
+  RESOURCES.softwareSystems,
+  RESOURCES.containers,
+  RESOURCES.sessions,
+  RESOURCES.crews,
+  RESOURCES.tasks,
+  RESOURCES.agents,
+]
 
 export default function App() {
   const [url, setUrl] = useUrlState()
@@ -274,9 +295,24 @@ export default function App() {
           </a>
         </div>
       ) : null}
-      <ProblemsBanner problems={connection.problems} />
+      {/* In the shell, each panel says the reads behind it that failed; only demo mode's own failure is the page's. */}
+      <ProblemsBanner problems={shell ? (demoProblem ? [demoProblem] : []) : connection.problems} />
     </>
   )
+  // In the shell, the failed reads behind a Story panel; the old layout has the banner.
+  // Every list read or failed: a failed one doesn't hold up the rest of the story.
+  const storyRead = story.connection.settled ?? story.connection.loaded
+  const storyProblems = (...resources: string[]) => (shell ? problemsOf(story.connection, ...resources) : undefined)
+  // Without the list of projects there is no project to show.
+  const projectsFailed =
+    shell && !namespace && projects.connection.problems.length ? (
+      <main className="shell-page">
+        <section className="panel">
+          <h1 className="panel-title">Projects</h1>
+          <ReadProblems problems={projects.connection.problems} />
+        </section>
+      </main>
+    ) : null
   const briefs =
     namespace && story.connection.loaded ? (
       <Briefs
@@ -292,8 +328,8 @@ export default function App() {
     <EmptyProjects />
   ) : (
     <>
-      <ProjectHeader data={data} namespace={namespace} loaded={story.connection.loaded} />
-      {shell ? story.connection.loaded ? <StoryLine data={data} /> : null : briefs}
+      <ProjectHeader data={data} namespace={namespace} loaded={storyRead} />
+      {shell ? storyRead ? <StoryLine data={data} /> : null : briefs}
       <nav className="tabs" aria-label="Views">
         <div className="tablist" role="tablist">
           <button
@@ -333,24 +369,28 @@ export default function App() {
       <main className="workspace">
         <section className="stage" aria-label="Diagram">
           <ViewCaption view={view} systemTitle={systemTitle} opensPages={shell} />
-          {!story.connection.loaded ? (
-            <div className="placeholder">Loading the story…</div>
-          ) : !diagram || diagram.nodes.length + (diagram.boundary ? 1 : 0) === 0 ? (
-            <div className="placeholder">
-              {view === 'context'
+          <PanelState
+            loaded={readOf(story.connection, ...DIAGRAM_KINDS)}
+            problems={storyProblems(...DIAGRAM_KINDS)}
+            empty={!diagram || diagram.nodes.length + (diagram.boundary ? 1 : 0) === 0}
+            loading="Loading the story…"
+            emptyText={
+              view === 'context'
                 ? 'This project has no people or software systems yet. They appear here as soon as they are added.'
-                : 'Pick a software system to see its containers.'}
-            </div>
-          ) : (
-            <MemoDiagram
-              diagram={diagram}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              onOpenSystem={view === 'context' ? openSystem : undefined}
-              nodeHref={nodeHref}
-              emptyBoundaryText="No containers or data stores in this system yet."
-            />
-          )}
+                : 'Pick a software system to see its containers.'
+            }
+          >
+            {diagram ? (
+              <MemoDiagram
+                diagram={diagram}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onOpenSystem={view === 'context' ? openSystem : undefined}
+                nodeHref={nodeHref}
+                emptyBoundaryText="No containers or data stores in this system yet."
+              />
+            ) : null}
+          </PanelState>
           {diagram?.looseEnds.length ? (
             <div className="loose-ends">
               <h3 className="section-title">
@@ -378,6 +418,8 @@ export default function App() {
             containers={sessionContainers}
             tasks={crewTasks}
             scope={view === 'containers' && systemTitle ? systemTitle : project ? titleOf(project) : 'this project'}
+            loaded={readOf(story.connection, ...WORKING_KINDS)}
+            problems={storyProblems(...WORKING_KINDS)}
           />
           <Legend view={view} />
         </aside>
@@ -388,8 +430,10 @@ export default function App() {
     <FactoryPage
       data={factory.data}
       loaded={factory.connection.loaded}
+      connection={shell ? factory.connection : undefined}
       health={health.data}
       healthLoaded={health.connection.loaded}
+      healthProblems={shell ? health.connection.problems : undefined}
       selectedTask={url.task}
       onSelectTask={selectTask}
       pageHref={shell ? pageHref : undefined}
@@ -412,18 +456,42 @@ export default function App() {
           <NeedsArea
             items={needItems}
             projects={factory.data.projects}
-            loaded={factory.connection.loaded}
+            // An optional list read late may still add items.
+            loaded={factory.connection.loaded && factoryRead}
+            problems={[...factory.connection.problems, ...(factory.connection.unread ?? [])]}
             setUrl={setUrl}
           />
         ),
-        briefs: noProjects ? <EmptyProjects /> : (briefs ?? <div className="placeholder">Loading the Briefs…</div>),
-        story: storyBody,
+        briefs: noProjects ? (
+          <EmptyProjects />
+        ) : (
+          (projectsFailed ??
+          (namespace ? (
+            <Briefs
+              briefs={data.briefs}
+              namespace={namespace}
+              canCreate={Boolean(data.project)}
+              writer={writer}
+              agents={data.agents}
+              pageHref={(name) => pageHref(namespace, 'Brief', name)!}
+              loaded={readOf(story.connection, RESOURCES.briefs, RESOURCES.projects)}
+              problems={problemsOf(story.connection, RESOURCES.briefs, RESOURCES.projects)}
+            />
+          ) : (
+            <div className="placeholder" role="status">
+              Loading the projects…
+            </div>
+          )))
+        ),
+        story: projectsFailed ?? storyBody,
         work: factoryPage,
         factory: (
           <FactoryArea
             data={factory.data}
+            connection={factory.connection}
             health={health.data}
             healthLoaded={health.connection.loaded}
+            healthProblems={health.connection.problems}
             onSelectTask={selectTask}
           />
         ),

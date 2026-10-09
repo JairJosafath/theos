@@ -6,18 +6,16 @@
 // own words.
 
 import { LABEL_CREW, type Agent, type Task } from '../../k8s/types'
-import { useNow } from '../../lib/hooks'
 import { describeUsage, formatTokens } from '../../model/brief'
-import { plural, timeAgo } from '../../model/describe'
+import { plural } from '../../model/describe'
 import { followUpLinks, taskHeadline, taskRoles } from '../../model/factory'
 import { taskNextStep } from '../../model/lifecycle'
-import { AgentName, UsageLine } from '../bits'
+import { AgentName, UsageLine, When } from '../bits'
 import { CommandLine, ObjectHeader, type ChildRef, type OutLink } from '../ObjectHeader'
 import { pageHref, storyHref } from './links'
 import { agentRuns, describeHandoffs, taskTimeline } from './rows'
 
 export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
-  const now = useNow()
   const ns = task.metadata.namespace ?? ''
   const name = task.metadata.name
   const status = task.status
@@ -43,7 +41,13 @@ export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
   const runs: ChildRef[] = all.map((r) => ({
     kind: 'Agent run',
     name: `run ${r.n}`,
-    note: `round ${r.round}, ${r.role} by ${r.agent} · ${r.recorded ? 'ended' : 'started'} ${timeAgo(r.at, now)}${r.current ? ' · running now' : ''}${r.handoffs?.length ? ` · ${describeHandoffs(r.handoffs)}` : ''}`,
+    note: (
+      <>
+        round {r.round}, {r.role} by {r.agent} · {r.recorded ? 'ended' : 'started'} <When at={r.at} full />
+        {r.current ? ' · running now' : ''}
+        {r.handoffs?.length ? ` · ${describeHandoffs(r.handoffs)}` : ''}
+      </>
+    ),
   }))
   // A Task that records its runs names the ones that handed off; an older one
   // has only the count, and the sizes in its events.

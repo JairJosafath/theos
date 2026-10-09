@@ -80,7 +80,7 @@ describe('ObjectHeader for a Failed Container', () => {
     const t = text(html)
     expect(t).toContain('Empty it, then retry the scaffold.')
     expect(html).toContain('href="https://gitea.example/webshop/catalog-api"')
-    const command = /<code>([^<]*)<\/code>/.exec(html)![1].replace(/&#x27;/g, "'")
+    const command = /<code[^>]*>([^<]*)<\/code>/.exec(html)![1].replace(/&#x27;/g, "'")
     expect(command).toBe(
       'kubectl -n webshop annotate containers.c4.factory.io catalog-api c4.factory.io/retry=$(date +%s) --overwrite',
     )

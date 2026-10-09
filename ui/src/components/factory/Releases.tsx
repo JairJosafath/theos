@@ -1,21 +1,24 @@
 // The Work area's releases: each Crew's last one, newest first, with how its
 // CI runs and publishing went.
 
-import { timeAgo } from '../../model/describe'
 import { crewReleases, RELEASE_RUN } from '../../model/releases'
 import type { Crew } from '../../k8s/types'
 import { ExternalLinkIcon } from '../icons'
 import type { ObjectHref } from '../Factory'
+import { PanelState } from '../PanelState'
+import type { Problem } from '../../k8s/sources'
+import { When } from '../bits'
 
 export function ReleasesPanel({
   crews,
   loaded,
-  now,
+  problems,
   pageHref,
 }: {
   crews: Crew[]
   loaded: boolean
-  now: number
+  /** The failed read of Crews, which carry the releases. */
+  problems?: Problem[]
   pageHref?: ObjectHref
 }) {
   const rows = crewReleases(crews)
@@ -27,7 +30,14 @@ export function ReleasesPanel({
       <p className="panel-caption">
         The release each Crew tagged last, newest first. A Crew tags one once its milestone is done, if it is set to.
       </p>
-      {rows.length ? (
+      <PanelState
+        small
+        loaded={loaded}
+        problems={problems}
+        empty={!rows.length}
+        loading="Loading the releases…"
+        emptyText="No release yet: a Crew tags one once its milestone is done."
+      >
         <ul className="crews">
           {rows.map(({ key, namespace, crew, container, release }) => {
             const href = pageHref?.(namespace, 'Crew', crew)
@@ -51,7 +61,7 @@ export function ReleasesPanel({
                 <dl className="facts crew-facts">
                   <dt>Tagged</dt>
                   <dd>
-                    {timeAgo(release.time, now)} <span className="muted mono">at {release.commit.slice(0, 7)}</span>
+                    <When at={release.time} /> <span className="muted mono">at {release.commit.slice(0, 7)}</span>
                   </dd>
                   <dt>CI runs</dt>
                   <dd>
@@ -84,11 +94,7 @@ export function ReleasesPanel({
             )
           })}
         </ul>
-      ) : (
-        <div className="placeholder small">
-          {loaded ? 'No release yet: a Crew tags one once its milestone is done.' : 'Loading the releases…'}
-        </div>
-      )}
+      </PanelState>
     </section>
   )
 }

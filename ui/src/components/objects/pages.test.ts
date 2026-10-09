@@ -120,7 +120,8 @@ describe('a refused read of an optional kind', () => {
   it('shows on the kind’s page instead of “not there”', () => {
     const data = { ...demoStory(NOW), standards: [] }
     const t = text(page('Standard', 'python-standard', data, refused))
-    expect(t).toContain('Could not read standards (403): standards.c4.factory.io is forbidden')
+    expect(t).toContain('Could not read standards. The UI is not allowed to read these.')
+    expect(t).toContain('(403: standards.c4.factory.io is forbidden)')
     expect(t).not.toContain('There is no Standard')
   })
 

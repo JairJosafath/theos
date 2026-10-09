@@ -209,9 +209,8 @@ p {
   margin: 0;
 }
 
-.mode:focus-visible,
-.task-card:focus-visible,
-.link-button:focus-visible {
+/* Every focusable element shows where the keyboard is; a component may draw its own ring instead. */
+:focus-visible {
   outline: 2px solid var(--link);
   outline-offset: 2px;
 }

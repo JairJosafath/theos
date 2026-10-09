@@ -279,15 +279,6 @@
   list-style: none;
 }
 
-.read-problem {
-  margin: 0;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: var(--error-bg);
-  color: var(--error);
-  font-size: 13px;
-}
-
 /* A Crew's settings and its release re-run (CrewActions). */
 .crew-form,
 .crew-rerun {

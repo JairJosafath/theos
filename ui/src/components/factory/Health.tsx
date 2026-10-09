@@ -2,10 +2,13 @@
 // charts of the last hours.
 
 import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../../k8s/health'
-import { plural, timeAgo } from '../../model/describe'
+import { plural } from '../../model/describe'
 import { API_STALL_MS } from '../../model/attention'
 import { formatBytes, formatCpu, formatDuration, percent } from '../../model/format'
+import type { Problem } from '../../k8s/sources'
+import { ReadProblems } from '../Status'
 import './health.css'
+import { When } from '../bits'
 
 const COMPONENT_TONE: Record<ComponentHealth['state'], string> = {
   ok: 'ok',
@@ -15,11 +18,23 @@ const COMPONENT_TONE: Record<ComponentHealth['state'], string> = {
   unknown: 'unknown',
 }
 
-export function HealthPanel({ health, loaded, now }: { health?: FactoryHealth; loaded: boolean; now: number }) {
+export function HealthPanel({
+  health,
+  loaded,
+  problems = [],
+  now,
+}: {
+  health?: FactoryHealth
+  loaded: boolean
+  /** The health check that failed; what it read before still shows. */
+  problems?: Problem[]
+  now: number
+}) {
   return (
     <div className="panel">
       <h2 className="panel-title small-title">Health</h2>
-      {!loaded || !health ? (
+      <ReadProblems problems={problems} />
+      {problems.length && !health ? null : !loaded || !health ? (
         <p className="panel-note">Reading the factory’s health…</p>
       ) : (
         <>
@@ -29,7 +44,7 @@ export function HealthPanel({ health, loaded, now }: { health?: FactoryHealth; l
           <HistoryCharts health={health} now={now} />
           <ul className="components">
             {health.components.map((c) => (
-              <ComponentRow key={c.key} component={c} now={now} />
+              <ComponentRow key={c.key} component={c} />
             ))}
           </ul>
           {!health.metrics ? (
@@ -39,7 +54,9 @@ export function HealthPanel({ health, loaded, now }: { health?: FactoryHealth; l
               ).
             </p>
           ) : null}
-          <p className="panel-note">Checked {timeAgo(health.generatedAt, now)}.</p>
+          <p className="panel-note">
+            Checked <When at={health.generatedAt} />.
+          </p>
         </>
       )}
     </div>
@@ -101,7 +118,7 @@ function NodeUsage({ node, metrics }: { node: NodeHealth; metrics: boolean }) {
   )
 }
 
-function ComponentRow({ component, now }: { component: ComponentHealth; now: number }) {
+function ComponentRow({ component }: { component: ComponentHealth }) {
   const cpu = sumOf(component.pods, 'cpuMilli')
   const memory = sumOf(component.pods, 'memoryBytes')
   const restarts = component.pods.reduce((n, p) => n + p.restarts, 0)
@@ -120,7 +137,12 @@ function ComponentRow({ component, now }: { component: ComponentHealth; now: num
           <div className="component-sub muted">
             {component.pods.filter((p) => p.ready).length}/{component.pods.length} ready
             {restarts ? ` · ${plural(restarts, 'restart')}` : ''}
-            {recent ? ` · last ${timeAgo(recent.at, now)}` : ''}
+            {recent ? (
+              <>
+                {' '}
+                · last <When at={recent.at} />
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>

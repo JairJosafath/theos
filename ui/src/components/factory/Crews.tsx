@@ -1,21 +1,23 @@
 // The factory view's Crews: who implements and reviews, and what each Crew is doing.
 
-import { timeAgo } from '../../model/describe'
-import { AgentName, CrewPhaseBadge } from '../bits'
+import { AgentName, CrewPhaseBadge, When } from '../bits'
 import { WarningIcon } from '../icons'
+import { PanelState } from '../PanelState'
+import type { Problem } from '../../k8s/sources'
 import { crewDoing, issueList, type CrewSummary } from '../../model/crews'
 import type { ObjectHref } from '../Factory'
 
 export function CrewsPanel({
   crews,
   loaded,
-  now,
+  problems,
   onSelectTask,
   pageHref,
 }: {
   crews: CrewSummary[]
   loaded: boolean
-  now: number
+  /** The failed reads of Crews and their Agents. */
+  problems?: Problem[]
   onSelectTask: (key: string) => void
   pageHref?: ObjectHref
 }) {
@@ -26,35 +28,35 @@ export function CrewsPanel({
         A Crew picks up its Container’s ready issues one at a time, lowest number first, once their dependencies are
         closed. One Agent implements, another reviews.
       </p>
-      {crews.length ? (
+      <PanelState
+        small
+        loaded={loaded}
+        problems={problems}
+        empty={!crews.length}
+        loading="Loading the Crews…"
+        emptyText="No Crews yet: Tasks are only started by hand."
+      >
         <ul className="crews">
           {crews.map((crew) => (
             <CrewCard
               key={crew.key}
               crew={crew}
-              now={now}
               onSelectTask={onSelectTask}
               href={pageHref?.(crew.namespace, 'Crew', crew.name)}
             />
           ))}
         </ul>
-      ) : (
-        <div className="placeholder small">
-          {loaded ? 'No Crews yet: Tasks are only started by hand.' : 'Loading the Crews…'}
-        </div>
-      )}
+      </PanelState>
     </div>
   )
 }
 
 function CrewCard({
   crew,
-  now,
   onSelectTask,
   href,
 }: {
   crew: CrewSummary
-  now: number
   onSelectTask: (key: string) => void
   /** The Crew's page, in the shell. */
   href?: string
@@ -143,7 +145,13 @@ function CrewCard({
         </dd>
       </dl>
       <div className="crew-time">
-        {crew.lastPolled ? `Read the issues ${timeAgo(crew.lastPolled, now)}` : 'Has not read the issues yet'}
+        {crew.lastPolled ? (
+          <>
+            Read the issues <When at={crew.lastPolled} />
+          </>
+        ) : (
+          'Has not read the issues yet'
+        )}
       </div>
     </li>
   )

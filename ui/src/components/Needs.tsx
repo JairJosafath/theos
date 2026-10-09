@@ -3,10 +3,12 @@
 // where it is done.
 
 import { useState, type MouseEvent } from 'react'
+import type { Problem } from '../k8s/sources'
 import type { Project } from '../k8s/types'
 import { hrefFor, type UrlState } from '../lib/hooks'
 import { byProject, type Need, type Place } from '../model/needs'
 import { ExternalLinkIcon } from './icons'
+import { PanelState } from './PanelState'
 import './needs.css'
 
 /** Leaves an object page and any Task or system the URL had selected. */
@@ -16,11 +18,14 @@ export function NeedsArea({
   items,
   projects,
   loaded,
+  problems,
   setUrl,
 }: {
   items: Need[]
   projects: Project[]
   loaded: boolean
+  /** The failed reads: any of them may hide an item. */
+  problems: Problem[]
   setUrl: (next: Partial<UrlState>) => void
 }) {
   const groups = byProject(items, projects)
@@ -31,14 +36,14 @@ export function NeedsArea({
         <p className="panel-caption">
           What waits on a person, across projects: why, as the factory says it, and where it is done.
         </p>
-        {!loaded ? (
-          <p className="panel-text">Loading…</p>
-        ) : groups.length === 0 ? (
-          <p className="panel-text">
-            Nothing waits on you. Briefs, Containers, Tasks and Crews will show up here when one does.
-          </p>
-        ) : (
-          groups.map((g) => (
+        <PanelState
+          loaded={loaded}
+          problems={problems}
+          empty={groups.length === 0}
+          loading="Loading what waits on a person…"
+          emptyText="Nothing waits on you. Briefs, Containers, Tasks and Crews will show up here when one does."
+        >
+          {groups.map((g) => (
             <section key={g.namespace} className="needs-project" aria-label={`Project ${g.title}`}>
               <h2 className="needs-project-title">
                 {g.title}
@@ -50,8 +55,8 @@ export function NeedsArea({
                 ))}
               </ul>
             </section>
-          ))
-        )}
+          ))}
+        </PanelState>
       </section>
     </main>
   )

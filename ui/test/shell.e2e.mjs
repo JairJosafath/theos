@@ -12,9 +12,8 @@ import { after, before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { launchChromium } from '../scripts/browser.mjs'
 import { createServer, resolveUpstream } from '../server.mjs'
-import { fakeApi, listen } from './fakeApi.mjs'
-import { loadFixture } from './fixture.mjs'
-import { RESOURCES } from '../src/k8s/types.ts'
+import { listen } from './fakeApi.mjs'
+import { fixtureApi } from './fixture.mjs'
 
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 const NOW = Date.parse('2026-06-01T12:00:00Z')
@@ -41,20 +40,11 @@ describe('the new shell', () => {
   const requests = []
 
   before(async () => {
-    const { demoStory, demoFactory } = await loadFixture()
-    const story = demoStory(NOW)
+    const fixture = await fixtureApi(NOW)
+    api = fixture.api
+    const story = fixture.story
     namespace = story.namespace
     session = story.sessions[0].metadata.name
-    api = fakeApi(namespace)
-    // Story keys that differ from the plural.
-    const PLURAL = { project: RESOURCES.projects, systems: RESOURCES.softwareSystems }
-    for (const data of [story, demoFactory(NOW)]) {
-      for (const [k, v] of Object.entries(data)) {
-        const plural = PLURAL[k] ?? RESOURCES[k] ?? (Object.values(RESOURCES).includes(k) ? k : undefined)
-        if (!plural || !v) continue
-        for (const obj of Array.isArray(v) ? v : [v]) api.add(plural, structuredClone(obj))
-      }
-    }
     ui = createServer({
       distDir: dist,
       upstream: resolveUpstream({ K8S_API: await listen(api.server) }),
@@ -402,7 +392,7 @@ describe('the new shell', () => {
   it('says a refused read of an optional kind in its panel', async () => {
     api.refuse('standards')
     await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Standard&name=python-standard`)
-    await page.getByText(/^Could not read standards \(403\)/).waitFor({ timeout: 10000 })
+    await page.getByText(/^Could not read standards\. The UI is not allowed/).waitFor({ timeout: 10000 })
     await page.goto(`${base}/?shell=next&ns=${namespace}&kind=Project&name=${namespace}`)
     const catalog = page.getByRole('region', { name: 'Its catalog and Git hosts' })
     await catalog.getByText(/^Could not read standards \(403\)/).waitFor({ timeout: 10000 })

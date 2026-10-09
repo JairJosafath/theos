@@ -6,10 +6,11 @@
 
 import type { MouseEvent, ReactNode } from 'react'
 import type { FactoryHealth } from '../k8s/health'
-import type { Connection, FactoryData } from '../k8s/sources'
+import { problemsOf, readOf, type Connection, type FactoryData, type Problem } from '../k8s/sources'
+import { RESOURCES } from '../k8s/types'
 import { hrefFor, useNow, type UrlState } from '../lib/hooks'
 import { AREAS, inNamespace, type Area } from '../model/areas'
-import { formatDuration } from '../model/format'
+import { absoluteTime, formatDuration } from '../model/format'
 import { aboutLinks, versionSkew, type Versions } from '../model/versions'
 import { Account } from './Account'
 import { HealthPanel } from './factory/Health'
@@ -146,8 +147,9 @@ function Ago({ at }: { at: number }) {
   const now = useNow()
   const ms = now - at
   return (
-    <time dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString()}>
+    <time dateTime={new Date(at).toISOString()} title={absoluteTime(at)}>
       {ms < 1000 ? 'just now' : `${formatDuration(ms)} ago`}
+      <span className="visually-hidden"> ({absoluteTime(at)})</span>
     </time>
   )
 }
@@ -220,20 +222,31 @@ function ObjectPlaceholder({ ns, kind, name }: { ns?: string; kind: string; name
 /** Today's factory health and agent slots, as the Factory area. */
 export function FactoryArea({
   data,
+  connection,
   health,
   healthLoaded,
+  healthProblems,
   onSelectTask,
 }: {
   data: FactoryData
+  connection: Connection
   health?: FactoryHealth
   healthLoaded: boolean
+  healthProblems: Problem[]
   onSelectTask: (key: string) => void
 }) {
   const now = useNow()
   return (
     <main className="shell-page shell-columns">
-      <HealthPanel health={health} loaded={healthLoaded} now={now} />
-      <SlotsPanel tasks={data.tasks} health={health} now={now} onSelectTask={onSelectTask} />
+      <HealthPanel health={health} loaded={healthLoaded} problems={healthProblems} now={now} />
+      <SlotsPanel
+        tasks={data.tasks}
+        loaded={readOf(connection, RESOURCES.tasks)}
+        problems={problemsOf(connection, RESOURCES.tasks)}
+        health={health}
+        now={now}
+        onSelectTask={onSelectTask}
+      />
     </main>
   )
 }
