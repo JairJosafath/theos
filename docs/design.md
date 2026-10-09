@@ -233,7 +233,8 @@ enforces.
   checks' result; the Git host's Actions runs at the head commit say whether
   the job is queued or running, and its runners whether one is online. A run
   queued while a runner is online, behind other jobs, is waited for (up to 6
-  hours), and a running one up to its runner's 3 hour job timeout. The Task
+  hours), and a running one up to 3 hours 15 minutes: its runner's 3 hour job
+  timeout, plus 15 minutes for the runner to report the result. The Task
   fails, reason `NoCIResult`, when no run starts within 30 minutes, when its
   run is queued with no runner online 30 minutes in, or past those bounds.
   That failure is the infrastructure's, so it costs the issue no try; a later
