@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -99,6 +100,8 @@ func (f *fakeGitHubIssues) serve(w http.ResponseWriter, r *http.Request) {
 	issues := "/repos/" + fakeGitHubRepo + "/issues"
 	path := r.URL.Path
 	switch {
+	case path == "/user" && r.Method == http.MethodGet:
+		writeJSON(w, http.StatusOK, githubUser{Login: "C4Factory-Bot"})
 	case path == issues && r.Method == http.MethodGet:
 		q := r.URL.Query()
 		if q.Get("state") != "open" || q.Get("sort") != "created" || q.Get("direction") != "asc" {
@@ -347,6 +350,15 @@ func TestGitHubIssuesCommentAndClose(t *testing.T) {
 	if err != nil || found == nil || found.ID != posted.ID || found.Author != "c4factory-bot" {
 		t.Errorf("FindComment() = %+v, %v; want comment %d", found, err, posted.ID)
 	}
+	if calls := f.takeCalls(); !slices.Contains(calls, "GET /user") {
+		t.Errorf("FindComment() called %q; want GET /user", calls)
+	}
+	if _, err := g.FindComment(ctx, n, marker); err != nil {
+		t.Fatal(err)
+	}
+	if calls := f.takeCalls(); slices.Contains(calls, "GET /user") {
+		t.Errorf("a second FindComment() read the token's account again: %q", calls)
+	}
 	if found, err := g.FindComment(ctx, n, "<!-- c4factory:request brief=shop stage=released -->"); err != nil || found != nil {
 		t.Errorf("FindComment(another stage) = %+v, %v; want nil", found, err)
 	}
@@ -372,6 +384,31 @@ func TestGitHubIssuesCommentAndClose(t *testing.T) {
 
 	if _, err := g.Comment(ctx, 99, "hello"); IssuesReason(err) != ReasonIssueNotFound {
 		t.Errorf("Comment() on no issue error = %v; want reason %s", err, ReasonIssueNotFound)
+	}
+}
+
+// TestGitHubIssuesFindCommentStranger ignores a marker in a comment by anyone
+// but the token's own account, and finds the factory's after it.
+func TestGitHubIssuesFindCommentStranger(t *testing.T) {
+	f, g := newFakeGitHubIssues(t)
+	ctx := context.Background()
+	n := f.open("dark mode", "gray-lenovo", false)
+	const marker = "<!-- c4factory:request brief=shop stage=declined -->"
+	f.mu.Lock()
+	f.comments[n] = []githubComment{{ID: 1, Body: "Declined.\n\n" + marker, User: githubUser{Login: "a-stranger"}}}
+	f.mu.Unlock()
+
+	found, err := g.FindComment(ctx, n, marker)
+	if err != nil || found != nil {
+		t.Fatalf("FindComment() with a stranger's marker = %+v, %v; want nil", found, err)
+	}
+	posted, err := g.Comment(ctx, n, "Declined.\n\n"+marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found, err = g.FindComment(ctx, n, marker)
+	if err != nil || found == nil || found.ID != posted.ID {
+		t.Errorf("FindComment() = %+v, %v; want the factory's comment %d", found, err, posted.ID)
 	}
 }
 

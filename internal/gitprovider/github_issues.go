@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -107,8 +108,9 @@ type IssueTracker interface {
 	// TeamMember reports whether login is an active member of team, org/slug.
 	// A pending invitation is not; neither is a team the token can't see.
 	TeamMember(ctx context.Context, team, login string) (bool, error)
-	// FindComment returns the first comment on issue number whose body
-	// contains marker, nil when there is none.
+	// FindComment returns the first comment on issue number written by the
+	// token's own account whose body contains marker, nil when there is none.
+	// Anyone can copy a marker into a comment of their own; theirs is ignored.
 	FindComment(ctx context.Context, number int, marker string) (*GitHubComment, error)
 	// Comment posts body on issue number.
 	Comment(ctx context.Context, number int, body string) (GitHubComment, error)
@@ -142,6 +144,10 @@ func (c Client) GitHubIssues(cfg GitHubConfig) (IssueTracker, error) {
 
 type githubIssues struct {
 	githubAPI
+
+	// login is the token's own account, read once by self.
+	mu    sync.Mutex
+	login string
 }
 
 type githubUser struct {
@@ -269,7 +275,14 @@ func (g *githubIssues) FindComment(ctx context.Context, number int, marker strin
 			return nil, err
 		}
 		for _, c := range batch {
-			if marker != "" && strings.Contains(c.Body, marker) {
+			if marker == "" || !strings.Contains(c.Body, marker) {
+				continue
+			}
+			self, err := g.self(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if strings.EqualFold(c.User.Login, self) {
 				comment := c.comment()
 				return &comment, nil
 			}
@@ -280,6 +293,25 @@ func (g *githubIssues) FindComment(ctx context.Context, number int, marker strin
 	}
 	return nil, &IssuesError{Reason: ReasonGitHubError,
 		Message: fmt.Sprintf("github: issue %d has more than %d comments", number, githubMaxPages*githubPageSize)}
+}
+
+// self returns the login of the token's account, asked of GitHub the first
+// time a marker is found. GitHub compares logins without case.
+func (g *githubIssues) self(ctx context.Context) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.login != "" {
+		return g.login, nil
+	}
+	var user githubUser
+	if err := g.call(ctx, http.MethodGet, "/user", nil, http.StatusOK, "reading the token's account", &user); err != nil {
+		return "", err
+	}
+	if user.Login == "" {
+		return "", &IssuesError{Reason: ReasonGitHubError, Message: "github: the token's account has no login"}
+	}
+	g.login = user.Login
+	return g.login, nil
 }
 
 func (g *githubIssues) Comment(ctx context.Context, number int, body string) (GitHubComment, error) {

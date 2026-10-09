@@ -224,19 +224,28 @@ var _ = Describe("Brief requests", func() {
 			Authors: []string{"gray-lenovo"}})
 		first := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please.")
 		second := githubFake.openIssue(repository, "gray-lenovo", "Light theme", "Too.")
+		third := githubFake.openIssue(repository, "gray-lenovo", "Sepia theme", "Also.")
 		stranger := githubFake.openIssue(repository, "stranger", "Spam", "Spam.")
-		// The second was commented on before a restart that came before its close.
+		// The second was commented on before a restart that came before its
+		// close; on the third a stranger copied the marker, which doesn't count.
 		githubFake.mu.Lock()
 		githubFake.issueState().issues[repository][second-1].comments = []fakeGitHubComment{
-			{ID: 999, Body: model.DeclinedComment("cel-lens")}}
+			{ID: 999, Body: model.DeclinedComment("cel-lens"), User: fakeGitHubUser{"c4factory-bot"}}}
+		githubFake.issueState().issues[repository][third-1].comments = []fakeGitHubComment{
+			{ID: 998, Body: model.DeclinedComment("cel-lens"), User: fakeGitHubUser{"stranger"}}}
 		githubFake.mu.Unlock()
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Requests).To(HaveLen(2))
+			g.Expect(getBrief(g, ns).Status.Requests).To(HaveLen(3))
 		}).Should(Succeed())
 
 		setRequests(ns, func(r *c4v1alpha1.BriefRequests) {
-			r.Declined = []int32{int32(first), int32(second), int32(stranger)}
+			r.Declined = []int32{int32(first), int32(second), int32(third), int32(stranger)}
 		})
+		Eventually(func(g Gomega) {
+			issue, comments := githubFake.gitHubIssue(repository, third)
+			g.Expect(issue.State).To(Equal("closed"))
+			g.Expect(comments).To(HaveLen(2), "the stranger's marker and the Brief's own decline")
+		}).Should(Succeed())
 		for _, n := range []int{first, second} {
 			Eventually(func(g Gomega) {
 				issue, comments := githubFake.gitHubIssue(repository, n)

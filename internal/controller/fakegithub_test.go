@@ -81,6 +81,11 @@ func (f *fakeGitHub) releases(repository string) []fakeGitHubRelease {
 func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if req.URL.Path == "/user" && req.Method == http.MethodGet {
+		// Every repository's token is the factory's account.
+		reply(w, http.StatusOK, fakeGitHubUser{"c4factory-bot"})
+		return
+	}
 	if team, ok := strings.CutPrefix(req.URL.Path, "/orgs/"); ok {
 		f.serveTeam(w, req, strings.Split(team, "/"))
 		return
