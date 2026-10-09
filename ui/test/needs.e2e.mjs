@@ -258,10 +258,21 @@ describe('Needs you', () => {
   })
 
   it('opens the place in the UI where an item is seen', async () => {
-    await item('Task', 'tickets-4').getByRole('link', { name: 'Open it in Work' }).click()
-    await page.getByRole('heading', { name: 'Tasks', exact: true }).first().waitFor({ timeout: 10000 })
+    await item('Task', 'tickets-4').getByRole('link', { name: 'Open the Task' }).click()
+    const task = page.getByRole('region', { name: 'Task tickets-4', exact: true })
+    await task.waitFor({ timeout: 10000 })
     const params = new URL(page.url()).searchParams
-    assert.deepEqual([params.get('area'), params.get('task')], ['work', 'zoo/tickets-4'])
+    assert.deepEqual([params.get('ns'), params.get('kind'), params.get('name')], ['zoo', 'Task', 'tickets-4'])
+    assert.equal(await task.locator('[aria-current="step"]').textContent(), 'Failed')
+    await page.goBack()
+    await item('Crew', 'orders').getByRole('link', { name: 'Open the Crew' }).click()
+    const crew = page.getByRole('region', { name: 'Crew orders', exact: true })
+    await crew.waitFor({ timeout: 10000 })
+    // The page gives the same next step: re-run the failed release run.
+    assert.match(
+      await crew.locator('.command-line code').textContent(),
+      /^kubectl -n shop annotate crews\.c4\.factory\.io orders c4\.factory\.io\/rerun-release=/,
+    )
     await page.goBack()
     await item('Brief', 'checkout').getByRole('link', { name: 'Open the Brief' }).click()
     await page.getByRole('heading', { name: 'checkout' }).first().waitFor({ timeout: 10000 })

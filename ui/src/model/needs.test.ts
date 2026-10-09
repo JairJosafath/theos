@@ -142,7 +142,7 @@ describe('needs', () => {
         reason: 'WaitingForStandardChange',
         message: 'Waits for #12 to change .golangci.yml',
         links: ['https://git.example/shop/api/issues/12'],
-        place: 'work',
+        place: 'Task',
       },
     },
     {
@@ -164,7 +164,7 @@ describe('needs', () => {
         reason: 'ReviewRejected',
         message: 'The reviewer rejected it 3 times',
         links: ['https://git.example/shop/api/issues/7', 'https://git.example/shop/api/pulls/9'],
-        place: 'work',
+        place: 'Task',
       },
     },
     {
@@ -190,7 +190,7 @@ describe('needs', () => {
         reason: 'NoMergedIssue',
         message: 'v1.2.0 is done but none of its issues was merged by a Task; a person tags it',
         links: ['https://git.example/shop/api/milestones'],
-        place: 'work',
+        place: 'Crew',
       },
     },
     {
@@ -215,7 +215,7 @@ describe('needs', () => {
         message: 'status.lastRelease.run is Failed for v1.1.0 at abcdef012345',
         links: ['https://git.example/run/4'],
         command: 'kubectl -n shop annotate crew api c4.factory.io/rerun-release=$(date +%s) --overwrite',
-        place: 'work',
+        place: 'Crew',
       },
     },
   ]

@@ -332,8 +332,14 @@ export interface Crew extends K8sObject {
     reviewer: LocalRef
     /** Stops picking up new issues; a Task already started runs to its end. */
     paused?: boolean
-    /** How many Tasks run at once; 1 when unset. */
+    /** How many Tasks run at once; the API server fills in its default. */
     parallel?: number
+    /** Lets the Crew tag a release once its milestone is done; off, a person tags it. */
+    tagReleases?: boolean
+    /** Lets the Crew file each release's prepare issue. */
+    prepareReleases?: boolean
+    /** Copies each release the Crew tags to another repository once its runs succeed. */
+    publishReleases?: { github: { repository: string; tokenSecretRef: LocalRef }; tagPrefix?: string }
   }
   status?: {
     phase?: CrewPhase
@@ -343,21 +349,32 @@ export interface Crew extends K8sObject {
     ready?: number[]
     /** Ready issues blocked by open dependencies. */
     waiting?: number[]
-    /** The release the Crew tagged last, when spec.tagReleases is set. */
-    lastRelease?: {
-      tag: string
-      commit: string
-      time: string
-      /** How the CI runs the tag started went. */
-      run?: 'Waiting' | 'Running' | 'Succeeded' | 'Failed'
-      /** The failed run, else the newest one. */
-      runURL?: string
-    }
+    /** The release the Crew tagged last, and how its runs and publishing went. */
+    lastRelease?: CrewRelease
+    /** The c4.factory.io/rerun-release value the Crew answered last. */
+    rerunRelease?: string
     lastPolled?: string
     observedGeneration?: number
     /** Ready: whether the Crew can pick up issues, and why not; Released: whether its next release went out, and why not. */
     conditions?: Condition[]
   }
+}
+
+/** A release a Crew tagged. */
+export interface CrewRelease {
+  tag: string
+  commit: string
+  time: string
+  /** How the CI runs the tag started went. */
+  run?: 'Waiting' | 'Running' | 'Succeeded' | 'Failed'
+  /** The failed run, else the newest one. */
+  runURL?: string
+  /** When the operator last re-ran the release's failed runs. */
+  rerunTime?: string
+  /** The bump issues filed in the Containers that bundle this one. */
+  bumps?: { container: string; issueURL?: string }[]
+  publish?: { state: 'Pending' | 'Publishing' | 'Published' | 'Failed'; url?: string; message?: string }
+  goModule?: { state: 'Published' | 'NotGo' | 'Invalid' | 'Failed'; path?: string; version?: string; message?: string }
 }
 
 export type BriefPhase = 'Pending' | 'Planning' | 'Applying' | 'Planned' | 'NeedsInput' | 'Failed'

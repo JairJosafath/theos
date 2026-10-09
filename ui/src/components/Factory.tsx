@@ -19,6 +19,9 @@ import { HealthPanel } from './factory/Health'
 import { SlotsPanel } from './factory/Slots'
 import './factory.css'
 
+/** The page of an object, by namespace, kind and name; undefined for a kind without one. */
+export type ObjectHref = (ns: string, kind: string, name: string) => string | undefined
+
 export interface FactoryPageProps {
   data: FactoryData
   loaded: boolean
@@ -26,9 +29,19 @@ export interface FactoryPageProps {
   healthLoaded: boolean
   selectedTask?: string
   onSelectTask: (key: string | undefined) => void
+  /** In the shell, an object's page: Crews and Tasks link to theirs. */
+  pageHref?: ObjectHref
 }
 
-export function FactoryPage({ data, loaded, health, healthLoaded, selectedTask, onSelectTask }: FactoryPageProps) {
+export function FactoryPage({
+  data,
+  loaded,
+  health,
+  healthLoaded,
+  selectedTask,
+  onSelectTask,
+  pageHref,
+}: FactoryPageProps) {
   const now = useNow()
   const stats = useMemo(() => factoryStats(data.tasks, now), [data.tasks, now])
   const columns = useMemo(() => boardColumns(data.tasks), [data.tasks])
@@ -133,7 +146,7 @@ export function FactoryPage({ data, loaded, health, healthLoaded, selectedTask, 
             )}
           </div>
 
-          <CrewsPanel crews={crews} loaded={loaded} now={now} onSelectTask={onSelectTask} />
+          <CrewsPanel crews={crews} loaded={loaded} now={now} onSelectTask={onSelectTask} pageHref={pageHref} />
 
           <TimePanel stats={stats} />
         </section>
@@ -145,6 +158,7 @@ export function FactoryPage({ data, loaded, health, healthLoaded, selectedTask, 
               agent={agentOf(selected)}
               roles={taskRoles(selected, data.agents)}
               now={now}
+              pageHref={pageHref?.(selected.metadata.namespace ?? '', 'Task', selected.metadata.name)}
               onClose={() => onSelectTask(undefined)}
             />
           ) : null}
