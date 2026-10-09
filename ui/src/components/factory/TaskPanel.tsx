@@ -29,12 +29,15 @@ export function TaskPanel({
   agent,
   roles,
   now,
+  pageHref,
   onClose,
 }: {
   task: Task
   agent?: Agent
   roles: { implementer: AgentRole; reviewer: AgentRole }
   now: number
+  /** The Task's page, in the shell. */
+  pageHref?: string
   onClose: () => void
 }) {
   const segments = taskSegments(task, now)
@@ -73,6 +76,11 @@ export function TaskPanel({
           <strong>{headline.text}</strong>
         )}
       </p>
+      {pageHref ? (
+        <p className="panel-text">
+          <a href={pageHref}>Open the Task’s page</a>
+        </p>
+      ) : null}
       {goalRest ? (
         <details className="goal-more">
           <summary>The whole goal</summary>

@@ -343,6 +343,7 @@ export default function App() {
       healthLoaded={health.connection.loaded}
       selectedTask={url.task}
       onSelectTask={selectTask}
+      pageHref={shell ? pageHref : undefined}
     />
   )
 
