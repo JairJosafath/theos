@@ -3,6 +3,7 @@
 
 import type { ReactNode } from 'react'
 import type { BriefAppView, BriefView } from '../../model/brief'
+import type { RequestView } from '../../model/requests'
 import { plural } from '../../model/describe'
 import { UsageLine, When } from '../bits'
 import { ExternalLinkIcon, RepoIcon } from '../icons'
@@ -202,6 +203,7 @@ export function BriefDetails({ view, answers }: { view: BriefView; answers?: Ans
           />
         </>
       ) : null}
+      <Requests view={view} />
       {view.prompts.length ? (
         <>
           <h4 className="section-title">
@@ -227,6 +229,67 @@ export function BriefDetails({ view, answers }: { view: BriefView; answers?: Ans
         </a>
       ) : null}
     </>
+  )
+}
+
+/**
+ * The GitHub issues the Brief takes as requests, each with how far it got,
+ * and why it can't read or answer them while it can't.
+ */
+function Requests({ view }: { view: BriefView }) {
+  const { list, waiting, taking, failure } = view.requests
+  if (!taking && !list.length && !failure) return null
+  return (
+    <section aria-label="Requests from GitHub">
+      <h4 className="section-title">
+        Requests from GitHub <span className="section-hint">{waiting ? `${waiting} open` : 'none open'}</span>
+      </h4>
+      {failure ? (
+        <div className="brief-note brief-note-error" role="status">
+          <strong>It can’t read or answer requests ({failure.reason}).</strong> {failure.message}
+        </div>
+      ) : null}
+      {list.length ? (
+        <Clipped
+          className="brief-list brief-apps brief-requests"
+          items={list.map((r) => (
+            <RequestLine key={r.key} request={r} />
+          ))}
+        />
+      ) : (
+        <p className="field-hint">
+          No open request: an issue of an author it allows, in a repository it takes requests from, shows here.
+        </p>
+      )}
+      {waiting > list.length ? (
+        <p className="field-hint">{waiting - list.length} more wait than are listed here.</p>
+      ) : null}
+    </section>
+  )
+}
+
+/** A request: its issue, title and author, its stage and what happened to it. */
+function RequestLine({ request: r }: { request: RequestView }) {
+  return (
+    <li className="brief-app brief-request">
+      <div className="brief-app-head">
+        {r.url ? (
+          <a className="mono" href={r.url} target="_blank" rel="noreferrer" title={`Issue ${r.label} on GitHub`}>
+            {r.label} <ExternalLinkIcon size={11} />
+          </a>
+        ) : (
+          <span className="mono">{r.label}</span>
+        )}
+        <span className={`badge badge-${r.tone} badge-sm`}>
+          <span className="badge-dot" aria-hidden="true" />
+          {r.stageLabel}
+        </span>
+        <span className="brief-issue-title">
+          {r.title} <span className="section-hint">by {r.author}</span>
+        </span>
+      </div>
+      <p className="brief-app-message">{r.detail}</p>
+    </li>
   )
 }
 

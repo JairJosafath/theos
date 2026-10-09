@@ -478,13 +478,57 @@ export interface BriefRelease {
     tokenSecretRef: LocalRef
   }
   tagPrefix?: string
+  /** Whether the Brief takes requests from the repository's GitHub issues, and whose; unset takes none. */
+  requests?: BriefRequests
+}
+
+/** How a Brief takes requests: Off reads no issue, Ask waits for a person's yes, On lets each through. */
+export type BriefRequestsMode = 'Off' | 'Ask' | 'On'
+
+/** Requests from a releases repository's GitHub issues: an open issue of one of authors, or of a member of teams. */
+export interface BriefRequests {
+  /** Unset is Off. */
+  mode?: BriefRequestsMode
+  /** GitHub logins. */
+  authors?: string[]
+  /** GitHub teams, org/slug. */
+  teams?: string[]
+  /** Ask: the issue numbers a person let through. */
+  accepted?: number[]
+  /** The issue numbers a person turned down; the Brief says so on each and closes it. */
+  declined?: number[]
+}
+
+/** How far a request got: waiting for a person (Ask), for a round, in one, and after. */
+export type BriefRequestStage = 'Waiting' | 'Accepted' | 'Planning' | 'Planned' | 'Skipped' | 'Declined' | 'Released'
+
+/** A GitHub issue taken as a request, its text as it was when let through, and how far it got. */
+export interface BriefRequest {
+  /** owner/name on github.com */
+  repository: string
+  number: number
+  author: string
+  title: string
+  /** Empty while it waits in Ask. */
+  body?: string
+  url?: string
+  stage: BriefRequestStage
+  /** The round that took it; 0 or unset before one did. */
+  round?: number
+  /** The issues it became, container#number. */
+  issues?: string[]
+  /** The release its issues are filed in, such as v0.3.0. */
+  release?: string
+  /** The round's reason for skipping it. */
+  why?: string
+  since?: string
 }
 
 /** Whether a Brief tends its handed-back work by itself: Off, Ask (decides and asks you) or On (applies). */
 export type BriefAutopilot = 'Off' | 'Ask' | 'On'
 
-/** What a Brief's item is: a failed issue, or a Task, Crew or Container it made. */
-export type BriefItemKind = 'Issue' | 'Task' | 'Crew' | 'Container'
+/** What a Brief's item is: a failed issue, a Task, Crew or Container it made, or a request from GitHub. */
+export type BriefItemKind = 'Issue' | 'Task' | 'Crew' | 'Container' | 'Request'
 
 /** An item the Brief leaves alone for now, as it may heal by itself, and when it acts if it hasn't. */
 export interface BriefHealing {
@@ -499,7 +543,7 @@ export interface BriefHealing {
 /** An item only the person can decide: the question, what the Brief would do and why. */
 export interface BriefNeedsYou {
   kind: BriefItemKind
-  /** The item's name; container#number for an issue. */
+  /** The item's name; container#number for an issue, owner/name#number for a request. */
   name: string
   question: string
   recommend?: string
@@ -567,6 +611,12 @@ export interface Brief extends K8sObject {
     needsYou?: BriefNeedsYou[]
     /** How many items need the person in all; can exceed the listed ones. */
     needsYouWaiting?: number
+    /** The GitHub issues taken as requests and still open, oldest first, at most 50. */
+    requests?: BriefRequest[]
+    /** How many requests are open in all; can exceed the listed ones. */
+    requestsWaiting?: number
+    /** The requests the running or last round took, owner/name#number. */
+    roundRequests?: string[]
     /** The failed issues rounds answered, at most 50. */
     tended?: BriefTendedIssue[]
     /** The last tending round: a round with no new prompt that decides the failed issues. */
@@ -598,7 +648,7 @@ export interface Brief extends K8sObject {
     /** What the planner runs used, in tokens, over all rounds. */
     tokens?: TokenUsage
     observedGeneration?: number
-    /** Planned, and NeedsInput: while True, its message says what the Brief waits for. */
+    /** Planned, and NeedsInput: while True, its message says what the Brief waits for; Requests: whether the issues of the repositories that take requests can be read. */
     conditions?: Condition[]
   }
 }

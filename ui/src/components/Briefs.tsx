@@ -17,6 +17,7 @@ import { BriefDetails } from './briefs/BriefDetails'
 import { FormError, PromptForm } from './briefs/PromptForm'
 import { writeError, type WriteError } from './briefs/errors'
 import { AnswerButtons, type AnswerContext } from './briefs/Answers'
+import { RequestButtons } from './briefs/RequestButtons'
 import { failedAnswers } from '../model/answers'
 import './briefs.css'
 
@@ -261,6 +262,17 @@ function NeedsYouBox({ view, answers }: { view: BriefView; answers?: AnswerConte
                 recommended={n.recommended}
               />
             ) : null}
+            {answers && n.request ? (
+              <RequestButtons
+                namespace={answers.namespace}
+                name={answers.name}
+                writer={answers.writer}
+                releases={view.releases}
+                resourceVersion={view.resourceVersion}
+                request={n.request}
+                label={n.label}
+              />
+            ) : null}
           </li>
         ))}
       </ul>
@@ -268,9 +280,14 @@ function NeedsYouBox({ view, answers }: { view: BriefView; answers?: AnswerConte
         <p className="field-hint">{view.needsYouWaiting - view.needsYou.length} more wait than are listed here.</p>
       ) : null}
       <p className="field-hint">
-        {answers && view.needsYou.some((n) => n.issue)
-          ? 'Answer with a button, which adds a prompt saying so, or in a prompt of your own, such as "do what you suggest".'
-          : 'Answer in a prompt, such as "do what you suggest" or "close the CLI issue instead".'}
+        {view.needsYou.some((n) => !n.request)
+          ? answers && view.needsYou.some((n) => n.issue)
+            ? 'Answer with a button, which adds a prompt saying so, or in a prompt of your own, such as "do what you suggest".'
+            : 'Answer in a prompt, such as "do what you suggest" or "close the CLI issue instead".'
+          : ''}
+        {view.needsYou.some((n) => n.request)
+          ? `${view.needsYou.some((n) => !n.request) ? ' ' : ''}A request from GitHub is answered by accepting or declining it, not by a prompt: its words reach the planner only once you said yes.`
+          : ''}
       </p>
     </div>
   )
