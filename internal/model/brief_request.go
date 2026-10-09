@@ -289,7 +289,7 @@ func RequestShipped(issues []ShipIssue) ([]Shipped, bool) {
 			}
 			continue
 		}
-		if !i.LastPublished || !holds(i.LastTag, i.Milestone) {
+		if !i.LastPublished || !ReleaseHolds(i.LastTag, i.Milestone) {
 			return nil, false
 		}
 		if !slices.ContainsFunc(releases, func(s Shipped) bool { return s.Tag == i.LastTag }) {
@@ -299,9 +299,9 @@ func RequestShipped(issues []ShipIssue) ([]Shipped, bool) {
 	return append(releases, done...), true
 }
 
-// holds reports whether release tag holds the work of milestone: it is that
-// release, or a later version.
-func holds(tag, milestone string) bool {
+// ReleaseHolds reports whether release tag holds the work of milestone: it
+// is that release, or a later version.
+func ReleaseHolds(tag, milestone string) bool {
 	if tag == milestone {
 		return true
 	}

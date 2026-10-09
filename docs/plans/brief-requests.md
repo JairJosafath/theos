@@ -237,7 +237,12 @@ Choices the decisions left open, made in #802:
   published and is the issue's milestone or a later version; the comment
   names the release that is out. A Crew tags its next release whether or
   not the last one published, so waiting for the milestone's own release
-  could wait forever.
+  could wait forever. The Brief also remembers, in memory, the newest
+  release of each Crew it saw published, so a later one whose publishing
+  failed doesn't hide it.
+- **A deleted issue or Container is done.** An issue Gitea no longer has,
+  or one whose Container is gone, counts as done, with the page the Brief
+  recorded when it filed it.
 - **Closed outside a release counts as done.** A closed issue with no
   milestone, or in a Container that publishes nowhere, says "Done in" its
   page. A request split over Containers waits for all of its issues and says

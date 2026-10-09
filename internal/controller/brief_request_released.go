@@ -10,6 +10,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -40,12 +41,16 @@ type shipCheck struct {
 }
 
 // shipContainer is what the Brief knows of a Container a request's issues are
-// in: its repository and its Crew's releases.
+// in: its repository and its Crew's releases. A Container deleted since has
+// none: its issues count as done.
 type shipContainer struct {
+	gone      bool
 	provider  gitprovider.Provider
 	repo      gitprovider.Repository
 	publishes bool
 	last      *c4v1alpha1.CrewRelease
+	// published is the newest release of the Crew the Brief saw published.
+	published model.Shipped
 }
 
 // shipRequests marks each planned request of a repository the Brief reads
@@ -60,8 +65,16 @@ func (r *BriefReconciler) shipRequests(ctx context.Context, brief *c4v1alpha1.Br
 	for i := range brief.Status.Requests {
 		s := &brief.Status.Requests[i]
 		req := model.Request{Repository: s.Repository, Number: int(s.Number), Stage: s.Stage, Round: int(s.Round)}
-		if s.Stage != model.RequestPlanned || len(s.Issues) == 0 || !readsRequests(brief, s.Repository) ||
-			r.owesPlanned(brief, req) {
+		if s.Stage != model.RequestPlanned || len(s.Issues) == 0 || !readsRequests(brief, s.Repository) {
+			continue
+		}
+		// Its Containers' Crews are read even while it waits for its planned
+		// comment, so a release published meanwhile is remembered.
+		for _, name := range s.Issues {
+			container, _, _ := strings.Cut(name, "#")
+			_, _ = r.shipContainer(ctx, brief, container, containers)
+		}
+		if r.owesPlanned(brief, req) {
 			continue
 		}
 		shipped, err := r.requestShipped(ctx, brief, s, containers, now)
@@ -127,18 +140,21 @@ func (r *BriefReconciler) requestShipped(ctx context.Context, brief *c4v1alpha1.
 			return nil, fmt.Errorf("issue %s: %w", name, err)
 		}
 		c := containers[container]
-		issue, err := c.provider.GetIssue(gitCtx, c.repo, n)
-		if err != nil {
+		var issue gitprovider.Issue
+		if !c.gone {
+			issue, err = c.provider.GetIssue(gitCtx, c.repo, n)
+		}
+		switch {
+		case c.gone || errors.Is(err, gitprovider.ErrIssueNotFound):
+			// Deleted with its Container, or on its own: nothing more comes of it.
+			facts = append(facts, model.ShipIssue{URL: filedURL(brief, name), Closed: true})
+			continue
+		case err != nil:
 			return nil, fmt.Errorf("issue %s: %w", name, err)
 		}
-		fact := model.ShipIssue{URL: issue.URL, Closed: issue.State == stateClosed, Milestone: issue.MilestoneTitle,
-			Publishes: c.publishes}
-		if c.last != nil && c.last.Publish != nil {
-			fact.LastTag = c.last.Tag
-			fact.LastPublished = c.last.Publish.State == model.PublishPublished
-			fact.LastURL = c.last.Publish.URL
-		}
-		facts = append(facts, fact)
+		facts = append(facts, model.ShipIssue{URL: issue.URL, Closed: issue.State == stateClosed,
+			Milestone: issue.MilestoneTitle, Publishes: c.publishes, LastTag: c.published.Tag,
+			LastPublished: c.published.Tag != "", LastURL: c.published.URL})
 	}
 	r.requestsMu.Lock()
 	if r.requestsShip == nil {
@@ -157,7 +173,12 @@ func (r *BriefReconciler) shipContainer(ctx context.Context, brief *c4v1alpha1.B
 		return c, nil
 	}
 	var container c4v1alpha1.Container
-	if err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: name}, &container); err != nil {
+	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: name}, &container)
+	if apierrors.IsNotFound(err) {
+		containers[name] = &shipContainer{gone: true}
+		return containers[name], nil
+	}
+	if err != nil {
 		return nil, err
 	}
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace,
@@ -175,8 +196,43 @@ func (r *BriefReconciler) shipContainer(ctx context.Context, brief *c4v1alpha1.B
 	default:
 		c.publishes, c.last = crew.Spec.PublishReleases != nil, crew.Status.LastRelease
 	}
+	c.published = r.notePublished(brief, name, c.last)
 	containers[name] = c
 	return c, nil
+}
+
+// notePublished remembers the newest release of a Container's Crew the Brief
+// saw published, and returns it: a later release whose publishing failed
+// doesn't hide one that went out. It lives in memory; after a restart only
+// the Crew's latest release counts.
+func (r *BriefReconciler) notePublished(brief *c4v1alpha1.Brief, container string,
+	last *c4v1alpha1.CrewRelease) model.Shipped {
+	key := brief.Namespace + "/" + brief.Name + " " + container
+	r.requestsMu.Lock()
+	defer r.requestsMu.Unlock()
+	seen := r.requestsPublished[key]
+	if last == nil || last.Publish == nil || last.Publish.State != model.PublishPublished ||
+		(seen.Tag != "" && !model.ReleaseHolds(last.Tag, seen.Tag)) {
+		return seen
+	}
+	if r.requestsPublished == nil {
+		r.requestsPublished = map[string]model.Shipped{}
+	}
+	seen = model.Shipped{Tag: last.Tag, URL: last.Publish.URL}
+	r.requestsPublished[key] = seen
+	return seen
+}
+
+// filedURL is the page of an issue the Brief filed, container#number, as its
+// status recorded it; the name when it has none.
+func filedURL(brief *c4v1alpha1.Brief, name string) string {
+	container, number, _ := strings.Cut(name, "#")
+	for _, i := range brief.Status.Issues {
+		if strings.HasSuffix(i.Repository, "/"+container) && fmt.Sprint(i.Number) == number && i.URL != "" {
+			return i.URL
+		}
+	}
+	return name
 }
 
 // answerReleased says on each released request where it shipped, once, and
