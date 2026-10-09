@@ -134,9 +134,7 @@ describe('a Brief’s requests in the browser', () => {
 
   it('lists the requests, each with its stage', async () => {
     await list().getByText('3 open').waitFor({ timeout: 5000 })
-    await list()
-      .getByText('Round 2 planned it as cel-lens#7, in release v0.3.0; the issue hears when it ships.')
-      .waitFor()
+    await list().getByText('Round 2 planned it as cel-lens#7, in release v0.3.0.').waitFor()
     assert.equal(await list().getByText('Waits for you', { exact: true }).count(), 2)
     assert.equal(
       await list()

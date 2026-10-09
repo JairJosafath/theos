@@ -126,6 +126,8 @@ type Plan struct {
 	Answers []SuggestionAnswer
 	// FailedAnswers are the plan's answers to failed issues.
 	FailedAnswers []FailedAnswer
+	// Requests are the plan's answers to the requests its round took.
+	Requests []RequestAnswer
 	// Summary is summary.md's text: what the round does for the person's app,
 	// in a sentence or two.
 	Summary string
@@ -239,6 +241,13 @@ func parsePlan(files map[string]string, needModel bool) (Plan, error) {
 			return Plan{}, fmt.Errorf("%s: %w", PlanFailedFile, err)
 		}
 		plan.FailedAnswers = answers
+	}
+	if s, ok := files[PlanRequestsFile]; ok {
+		answers, err := parseRequestAnswers(s)
+		if err != nil {
+			return Plan{}, fmt.Errorf("%s: %w", PlanRequestsFile, err)
+		}
+		plan.Requests = answers
 	}
 	paths := make([]string, 0, len(files))
 	for path := range files {

@@ -195,6 +195,39 @@ Choices the decisions left open, made in #800:
   issue isn't an allowed author's open issue is ignored: a stranger's issue
   is never commented on, even by number.
 
+## What step 4 settled
+
+Choices the decisions left open, made in #801:
+
+- **An answer names its request.** `plan/requests.yaml` is a list of
+  `{request: owner/name#N, answer: take|skip, issues: [n...], why}`;
+  `model/requests.yaml` gives each request that name. A why is at most 500
+  bytes, as for suggestions, and is posted as written.
+- **A round that doesn't apply hands its requests back.** A round that fails
+  or asks for input puts its requests back to `Accepted`; the next round
+  takes them, but they don't start it by themselves, as that round's prompts
+  don't, so a failing round doesn't start again and again.
+- **A request closed during its round needn't be answered.** The plan must
+  answer the round's requests still open; it may answer one closed since.
+- **The workspace is written again when a round takes requests,** so a
+  request let through in the same reconcile is in `model/requests.yaml`
+  before the planner starts.
+- **The planned comment names its round.** It ends with a second marker,
+  `<!-- c4factory:request brief=NAME round=N -->`, and the Brief looks for
+  that one, so a request reopened on GitHub and answered by a later round
+  hears that round's answer too. A reopened request that an applied round
+  took counts as new and starts a round.
+- **The planned comment is remembered in memory.** Once the Brief posted it,
+  or found its marker, it doesn't look again; after a restart it looks once
+  per planned request. A request owed a comment is read again first, with the
+  ETag, as a decline is. The release in the comment is the title of the
+  round's release milestone of the first of its issues' Containers that has
+  one.
+- **The stand-in takes every request it has room for,** one issue each after
+  the prompts', and skips the rest, or all of them when there is no Container.
+- **A tending round takes no request.** A request let through waits for, and
+  starts, a prompt round, as a waiting prompt does.
+
 ## What step 6 settled
 
 Choices made in #803:

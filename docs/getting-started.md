@@ -513,9 +513,11 @@ accept or decline it: the *Accept* and *Decline* buttons on its page, or its
 issue number added to `requests.accepted` or `requests.declined` with kubectl.
 `On` lets every request through when first seen. A request declined before a
 round takes it gets a comment saying it isn't taken and is closed. The Brief reads the issues every
-ten minutes and at once when the entry changes. Rounds planning the accepted
-requests, and the comments when one is planned and when it ships, are steps 4
-and 5 of [the plan](plans/brief-requests.md).
+ten minutes and at once when the entry changes. A request let through starts
+a round, like a new prompt; the round takes it or skips it, and the Brief says
+on the issue what it became (the issues and their release) or why it was
+skipped, and closes a skipped one. The comment when its release ships is step
+5 of [the plan](plans/brief-requests.md).
 
 The Brief's page lists the open requests with how far each got
 (`status.requests`), and the condition `Requests` says whether the issues can

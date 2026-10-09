@@ -725,7 +725,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for
-  each follow-up prompt. `make e2e` takes a Brief through two rounds that way,
+  each follow-up prompt and each request it takes. `make e2e` takes a Brief through two rounds that way,
   with no token, and *Verify Release*, when a human dispatches it, takes one
   through a round on the published chart, whose Agent `stand-in` any project can name.
   How well a real planner plans an idea is the person's run.
@@ -743,6 +743,22 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   round's prompts. A suggestion no prompt answers keeps waiting: nothing is
   built without the person's say, and labels and milestones stay the
   operator's.
+- **A request from GitHub is planned like a prompt** (#796). A Brief whose
+  `spec.releases` entry takes requests keeps the allowed authors' open issues
+  in `status.requests`; one let through (at once, or once its number is in
+  `accepted`) starts a round as a new prompt does, unless the Brief is paused,
+  and is never written into `spec.prompts`. The round takes every request let
+  through (`status.roundRequests`); the workspace lists them in
+  `model/requests.yaml` and `brief.md` says each is a request from that GitHub
+  user. The plan answers each in `plan/requests.yaml`: `take` with the round's
+  issues it became, or `skip` with why. A plan that leaves one out, answers
+  one the round didn't take, or takes one with no issue of the round is
+  refused like any bad plan. Applying the round records each request's issues
+  and release, then comments on the GitHub issue once, with a marker: what it
+  became and the release it is in, or the skip's why, closing a skipped one as
+  not planned. A round that fails or asks for input hands its requests back
+  to the next round, which they don't start by themselves. See
+  [plans/brief-requests.md](plans/brief-requests.md).
 - **A failed issue shows on the Brief and is tried again from it** (#429).
   An open issue handed back with `status/needs-human` in the repository of a
   Container the Brief made is listed in the Brief's `status.failed` and card,

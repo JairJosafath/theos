@@ -42,6 +42,9 @@ type BriefRoundFacts struct {
 	Round int
 	// RoundPrompts is how many prompts that round took.
 	RoundPrompts int
+	// NewRequests is how many requests wait for a round, other than the ones
+	// that round took (NewRequests).
+	NewRequests int
 	// RoundOver says the round is in the history: it applied, failed or asked
 	// for input.
 	RoundOver bool
@@ -58,8 +61,9 @@ type BriefRoundFacts struct {
 
 // StartsRound reports whether the Brief starts its next round: none ran yet,
 // or the last one is over and prompts were appended after the ones it took
-// (B12). A prompt appended during a round waits for the next one; a paused
-// Brief starts none, and its prompts wait for it to resume.
+// (B12), or requests were let through since. A prompt appended or a request
+// let through during a round waits for the next one; a paused Brief starts
+// none, and its prompts and requests wait for it to resume.
 func StartsRound(f BriefRoundFacts) bool {
 	if f.Paused {
 		return false
@@ -67,7 +71,7 @@ func StartsRound(f BriefRoundFacts) bool {
 	if f.Round == 0 {
 		return true
 	}
-	return f.RoundOver && f.Prompts > f.RoundPrompts
+	return f.RoundOver && (f.Prompts > f.RoundPrompts || f.NewRequests > 0)
 }
 
 // BriefPhaseOf derives a Brief's phase from its round (B13). The operator's

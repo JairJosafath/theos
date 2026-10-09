@@ -152,6 +152,14 @@ func RequestMarker(brief, stage string) string {
 	return fmt.Sprintf("<!-- c4factory:request brief=%s stage=%s -->", brief, stage)
 }
 
+// RequestRoundMarker is the hidden line that ends the planned comment of the
+// round that answered a request. The Brief looks for it, not the stage's
+// marker alone, so a request reopened on GitHub and answered by a later
+// round hears that round's answer too.
+func RequestRoundMarker(brief string, round int) string {
+	return fmt.Sprintf("<!-- c4factory:request brief=%s round=%d -->", brief, round)
+}
+
 // requestMarker reads a marker back: the Brief and the stage.
 var requestMarker = regexp.MustCompile(`<!-- c4factory:request brief=(\S+) stage=(\S+) -->`)
 
@@ -233,6 +241,12 @@ type Request struct {
 	Round int
 	// Since is when the Brief first saw it.
 	Since time.Time
+	// Issues are the issues the round that took it filed for it,
+	// container#number, and Release the release they are in; Why is the
+	// round's reason when it skipped it.
+	Issues  []string
+	Release string
+	Why     string
 }
 
 // RequestsRead is a read of the open issues of a releases repository whose

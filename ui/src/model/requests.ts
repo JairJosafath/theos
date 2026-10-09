@@ -99,7 +99,7 @@ function requestDetail(r: BriefRequest): string {
     case 'Planning':
       return `${round} is planning it.`
     case 'Planned':
-      return `${round} planned it${issues}${release}; the issue hears when it ships.`
+      return `${round} planned it${issues}${release}.`
     case 'Skipped':
       return `${round} skipped it${r.why?.trim() ? `: ${r.why.trim()}` : '.'}`
     case 'Declined':

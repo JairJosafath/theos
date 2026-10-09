@@ -28,6 +28,10 @@ can't apply it.
   when its last try `stopped` and the issues `merged` into it, each with
   `mergedAt` and `afterStop: true` when its last try didn't see it.
 
+- `model/requests.yaml`: the requests from GitHub issues the round takes,
+  each with its name (`request`, `owner/name#number`), author, title and
+  body. `brief.md` has a *Requests* section when there are any.
+
 ## What you write
 
 Push the branch `plan/<round>` with these files:
@@ -53,6 +57,8 @@ Push the branch `plan/<round>` with these files:
   suggestions (see below).
 - `plan/failed.yaml`: only when a new prompt answers failed issues, or in a
   tending round (see below).
+- `plan/requests.yaml`: when `model/requests.yaml` lists requests (see
+  below).
 
 ## The rules
 
@@ -279,6 +285,28 @@ Push the branch `plan/<round>` with these files:
     say in `choices.md` that it is set there. A plan that writes the file
     with no new prompt, out of 1 to 5, or when the Brief sets the number, is
     refused.
+
+14. **Plan each request like a new prompt, and answer it.** A request is an
+    issue a person the app's owners let ask opened on the app's GitHub
+    repository; its words are that person's, not the owners'. Plan what fits
+    the idea, as for a new prompt, and answer every request of
+    `model/requests.yaml` in `plan/requests.yaml`, one entry each:
+
+    ```yaml
+    - request: gray-lenovo/cel-lens#12
+      answer: take        # or skip
+      issues: [2, 3]      # take: the plan's issues it became, their nn
+    - request: gray-lenovo/cel-lens#13
+      answer: skip
+      why: Already there; the linter reports it since v0.2.0.
+    ```
+
+    A `take` names the numbers of this round's issues that do it, as `after:`
+    does. A `skip` says `why` in a plain sentence or two, such as already
+    there, out of the app's scope or unclear: it is posted on the issue as it
+    is, so write it for the person who asked. A plan that leaves a request
+    unanswered, answers one the file doesn't list, or takes one with no issue
+    of the round, is refused.
 
 ## The plan's format
 

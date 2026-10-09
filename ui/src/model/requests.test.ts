@@ -44,7 +44,7 @@ describe('describeRequest', () => {
       { stage: 'Planned' as const, round: 4, issues: ['cel-lens#7', 'cel-lens#8'], release: 'v0.3.0' },
       'Planned',
       'ok',
-      'Round 4 planned it as cel-lens#7, cel-lens#8, in release v0.3.0; the issue hears when it ships.',
+      'Round 4 planned it as cel-lens#7, cel-lens#8, in release v0.3.0.',
     ],
     [
       { stage: 'Skipped' as const, round: 4, why: 'It is there already.' },
