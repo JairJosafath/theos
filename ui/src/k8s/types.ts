@@ -77,6 +77,8 @@ export interface Project extends K8sObject {
     readyContainers?: number
     activeSessions?: number
     summary?: string
+    /** The operator that last reconciled the Project, and the chart it was installed with. */
+    factory?: { operatorVersion?: string; chartVersion?: string }
     conditions?: Condition[]
   }
 }

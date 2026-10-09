@@ -172,6 +172,7 @@ In v1, the client authenticates with a per-namespace ServiceAccount that may onl
 
 - **Container phase:** `Pending`, `Scaffolding`, then `Ready` or `Failed`, with conditions `ReferencesResolved`, `ChoicesValid`, `RepositoryCreated` and `Scaffolded`.
 - **Roll-up:** SoftwareSystem and Project show counts, such as "3 of 4 containers Ready, 2 active sessions".
+- **Versions:** Project status carries `factory: {operatorVersion, chartVersion}`, the operator's release (`dev` for an unreleased build, stamped at build time in `internal/buildinfo`) and the Helm chart's it was installed with (`C4_CHART_VERSION`, empty outside the chart). The UI shows them beside its own version and the CRD API version it reads, and warns when its version and the operator's differ (two `dev` builds don't; no Project reporting one yet shows "unknown").
 - **kubectl:** printer columns (Type, Phase, Sessions, Age) make `kubectl get containers` a quick text view.
 
 ## v2: agents build the apps

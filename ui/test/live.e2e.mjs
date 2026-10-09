@@ -4,6 +4,8 @@
 // (410 Gone) must recover by relisting.
 //
 // Needs a build and Chromium:  npm run test:e2e
+// C4_UI_SHOTS=DIR also saves the footer's version line, with and without the
+// skew warning, in DIR (docs/screenshots).
 // (npx playwright install chromium-headless-shell, once)
 
 import assert from 'node:assert/strict'
@@ -162,6 +164,29 @@ describe('live updates in the browser', () => {
     assert.deepEqual(seen, want, `watch requests carry every kind: ${[...seen].join(', ')}`)
     assert.ok(used < 6, `${used} watch requests for ${want.size} kinds leave no connection for the rest`)
     assert.ok(requests.every((r) => r.method === 'GET'))
+  })
+
+  it('shows the versions in the footer, and warns when the operator is another release', async () => {
+    const line = page.locator('.versions-line')
+    const skew = page.locator('.versions-skew')
+    // The test build stamps no release, and no Project has reported the operator yet.
+    await line
+      .getByText('UI dev · operator unknown · chart unknown · API c4.factory.io/v1alpha1')
+      .waitFor({ timeout: 5000 })
+    assert.equal(await skew.count(), 0)
+
+    const project = { metadata: { name: NS }, spec: { displayName: 'Webshop' } }
+    api.modify('projects', { ...project, status: { factory: { operatorVersion: '0.14.0', chartVersion: '0.14.0' } } })
+    await line.getByText('operator 0.14.0 · chart 0.14.0').waitFor({ timeout: 5000 })
+    await skew.getByText('This UI is dev and the operator 0.14.0').waitFor({ timeout: 5000 })
+    if (process.env.C4_UI_SHOTS)
+      await page.locator('footer').screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-versions-skew.png') })
+
+    api.modify('projects', { ...project, status: { factory: { operatorVersion: 'dev' } } })
+    await line.getByText('operator dev · chart unknown').waitFor({ timeout: 5000 })
+    await skew.waitFor({ state: 'detached', timeout: 5000 })
+    if (process.env.C4_UI_SHOTS)
+      await page.locator('footer').screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-versions.png') })
   })
 
   it('never sends anything but GET', async () => {

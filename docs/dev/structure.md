@@ -16,6 +16,7 @@ internal/scaffold/                 Pure rendering: layers, conflicts, devcontain
 internal/gitprovider/              GitProvider interface and the Gitea implementation (REST + go-git)
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete
 internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report
+internal/buildinfo/                What a build stamps into the binary: the release Version (-ldflags -X)
 features/src/c4session/            The c4session devcontainer feature, embedded by the operator
 config/crd/bases/*                 Generated CRDs (DO NOT EDIT)
 config/rbac/role.yaml              Generated RBAC (DO NOT EDIT)
