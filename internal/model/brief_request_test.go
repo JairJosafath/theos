@@ -1,8 +1,10 @@
 package model
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIsRequest(t *testing.T) {
@@ -170,5 +172,136 @@ func TestHasRequestComment(t *testing.T) {
 				t.Errorf("HasRequestComment = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestReadRequests(t *testing.T) {
+	repo := "gray-lenovo/cel-lens"
+	then := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	now := then.Add(time.Hour)
+	mine := RequestIssue{Number: 1, Author: "gray-lenovo", Title: "Dark theme", Body: "Please. Thanks.", URL: "u1"}
+	edited := RequestIssue{Number: 1, Author: "gray-lenovo", Title: "Edited", Body: "Edited.", URL: "u1"}
+	mate := RequestIssue{Number: 2, Author: "team-mate", Title: "Light theme", Body: "Too.", URL: "u2"}
+	stranger := RequestIssue{Number: 3, Author: "stranger", Title: "Spam", Body: "Spam."}
+	read := func(mode string, open ...RequestIssue) RequestsRead {
+		return RequestsRead{Repository: repo, Mode: mode, Authors: []string{"gray-lenovo"}, Members: []string{"team-mate"},
+			Open: open}
+	}
+	waiting := Request{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", URL: "u1",
+		Stage: RequestWaiting, Since: then}
+	accepted := Request{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", Body: "Please. Thanks.",
+		URL: "u1", Stage: RequestAccepted, Since: then}
+	taken := Request{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", Stage: RequestPlanning,
+		Round: 2, Since: then}
+	other := Request{Repository: "gray-lenovo/other", Number: 1, Stage: RequestWaiting, Since: then}
+	tests := []struct {
+		name  string
+		known []Request
+		read  RequestsRead
+		want  []Request
+	}{
+		{"Ask: a new request waits, without its body", nil, read(RequestsAsk, mine, stranger),
+			[]Request{{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", URL: "u1",
+				Stage: RequestWaiting, Since: now}}},
+		{"On: a new request is let through with its body", nil, read(RequestsOn, mine),
+			[]Request{{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", Body: "Please. Thanks.",
+				URL: "u1", Stage: RequestAccepted, Since: now}}},
+		{"a team member's issue is a request", nil, read(RequestsOn, mate),
+			[]Request{{Repository: repo, Number: 2, Author: "team-mate", Title: "Light theme", Body: "Too.", URL: "u2",
+				Stage: RequestAccepted, Since: now}}},
+		{"a stranger's issue is nothing", nil, read(RequestsOn, stranger), nil},
+		{"Ask: accepted takes the text then", []Request{waiting},
+			func() RequestsRead { r := read(RequestsAsk, edited); r.Accepted = []int32{1}; return r }(),
+			[]Request{{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Edited", Body: "Edited.", URL: "u1",
+				Stage: RequestAccepted, Since: then}}},
+		{"an edit after it was let through changes nothing", []Request{accepted}, read(RequestsOn, edited),
+			[]Request{accepted}},
+		{"declined", []Request{waiting},
+			func() RequestsRead { r := read(RequestsAsk, mine); r.Declined = []int32{1}; return r }(),
+			[]Request{{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", URL: "u1",
+				Stage: RequestDeclined, Since: then}}},
+		{"closed before it was taken: dropped", []Request{accepted}, read(RequestsOn), nil},
+		{"taken by a round: kept as it is", []Request{taken}, read(RequestsOn, edited), []Request{taken}},
+		{"taken by a round and closed: dropped", []Request{taken}, read(RequestsOn), nil},
+		{"an author no longer allowed: dropped",
+			[]Request{accepted}, func() RequestsRead { r := read(RequestsOn, mine); r.Authors = nil; return r }(), nil},
+		{"an author whose membership couldn't be read: kept",
+			[]Request{accepted}, func() RequestsRead {
+				r := read(RequestsOn, mine)
+				r.Authors, r.Unsure = nil, []string{"Gray-Lenovo"}
+				return r
+			}(), []Request{accepted}},
+		{"Off: only what a round took stays", []Request{waiting, taken, other}, read(RequestsOff, mine),
+			[]Request{taken}},
+		{"another repository's requests are not this read's", []Request{other}, read(RequestsAsk), nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ReadRequests(tc.known, tc.read, now); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("ReadRequests =\n%+v\nwant\n%+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestListRequests(t *testing.T) {
+	then := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	all := []Request{
+		{Repository: "b/b", Number: 1, Since: then},
+		{Repository: "a/a", Number: 2, Since: then},
+		{Repository: "a/a", Number: 1, Since: then},
+		{Repository: "a/a", Number: 9, Since: then.Add(-time.Hour)},
+	}
+	listed, count := ListRequests(all)
+	got := make([]string, 0, len(listed))
+	for _, r := range listed {
+		got = append(got, RequestName(r.Repository, r.Number))
+	}
+	if want := []string{"a/a#9", "a/a#1", "a/a#2", "b/b#1"}; !reflect.DeepEqual(got, want) || count != 4 {
+		t.Errorf("ListRequests = %v, %d; want %v, 4", got, count, want)
+	}
+	many := make([]Request, MaxRequests+3)
+	for i := range many {
+		many[i] = Request{Repository: "a/a", Number: i + 1, Since: then}
+	}
+	if listed, count := ListRequests(many); len(listed) != MaxRequests || count != MaxRequests+3 ||
+		listed[MaxRequests-1].Number != MaxRequests {
+		t.Errorf("ListRequests of %d = %d listed, %d counted", len(many), len(listed), count)
+	}
+}
+
+func TestRequestNeedsYou(t *testing.T) {
+	r := Request{Repository: "gray-lenovo/cel-lens", Number: 12, Author: "gray-lenovo", Title: "Dark theme",
+		Body: "secret words", Since: time.Unix(5, 0)}
+	n := RequestNeedsYou(r)
+	if n.Kind != AttentionRequest || n.Name != "gray-lenovo/cel-lens#12" || !n.Since.Equal(r.Since) {
+		t.Errorf("RequestNeedsYou = %+v", n)
+	}
+	for _, s := range []string{n.Question, n.Recommend, n.Why} {
+		if strings.Contains(s, "secret") {
+			t.Errorf("RequestNeedsYou says the body: %q", s)
+		}
+	}
+	if !strings.Contains(n.Question, `"Dark theme"`) || !strings.Contains(n.Question, "gray-lenovo") ||
+		!strings.Contains(n.Recommend, "12") {
+		t.Errorf("RequestNeedsYou = %+v", n)
+	}
+}
+
+func TestWithNeedsYou(t *testing.T) {
+	at := func(s int64) time.Time { return time.Unix(s, 0) }
+	a := Attention{NeedsYou: []NeedsYou{{Name: "x", Since: at(1)}, {Name: "z", Since: at(3)}}, Waiting: 2}
+	got := WithNeedsYou(a, []NeedsYou{{Name: "y", Since: at(2)}})
+	if names := []string{got.NeedsYou[0].Name, got.NeedsYou[1].Name, got.NeedsYou[2].Name}; !reflect.DeepEqual(names,
+		[]string{"x", "y", "z"}) || got.Waiting != 3 {
+		t.Errorf("WithNeedsYou = %+v", got)
+	}
+	if len(a.NeedsYou) != 2 {
+		t.Error("WithNeedsYou changed its argument")
+	}
+	full := Attention{NeedsYou: make([]NeedsYou, MaxNeedsYou), Waiting: MaxNeedsYou + 4}
+	got = WithNeedsYou(full, []NeedsYou{{Name: "late", Since: at(9)}})
+	if len(got.NeedsYou) != MaxNeedsYou || got.Waiting != MaxNeedsYou+5 {
+		t.Errorf("WithNeedsYou past the cap = %d listed, %d waiting", len(got.NeedsYou), got.Waiting)
 	}
 }

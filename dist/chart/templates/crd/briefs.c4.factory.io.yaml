@@ -497,7 +497,8 @@ spec:
                   conditions: Planned says whether the last round's plan is applied, and
                   why not. NeedsInput, while True, says in one sentence what the Brief
                   waits for from the person. NeedsYou, while True, says the first of
-                  needsYou and how many more.
+                  needsYou and how many more. Requests says whether the issues of the
+                  repositories that take requests can be read.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

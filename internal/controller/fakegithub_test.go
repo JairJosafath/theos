@@ -13,7 +13,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
 
-// fakeGitHub is GitHub's release API over httptest, for the repositories made
+// fakeGitHub is GitHub's release and issues API over httptest, for the repositories made
 // with addRepository; any other repository is a 404, as GitHub answers a token
 // that can't see it.
 type fakeGitHub struct {
@@ -24,6 +24,7 @@ type fakeGitHub struct {
 	repos  map[string][]*fakeGitHubRelease
 	tokens map[string]string
 	nextID int64
+	is     *fakeGitHubIssues
 }
 
 type fakeGitHubRelease struct {
@@ -80,9 +81,13 @@ func (f *fakeGitHub) releases(repository string) []fakeGitHubRelease {
 func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// /repos/{owner}/{name}/releases[/...]
+	if team, ok := strings.CutPrefix(req.URL.Path, "/orgs/"); ok {
+		f.serveTeam(w, req, strings.Split(team, "/"))
+		return
+	}
+	// /repos/{owner}/{name}/releases[/...] or /repos/{owner}/{name}/issues[/...]
 	parts := strings.Split(strings.TrimPrefix(req.URL.Path, "/repos/"), "/")
-	if len(parts) < 3 || parts[2] != "releases" {
+	if len(parts) < 3 || (parts[2] != "releases" && parts[2] != "issues") {
 		reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return
 	}
@@ -97,6 +102,10 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	rest := parts[3:]
+	if parts[2] == "issues" {
+		f.serveIssues(w, req, repository, rest)
+		return
+	}
 	switch {
 	case len(rest) == 0 && req.Method == http.MethodGet:
 		if req.URL.Query().Get("page") != "1" {
