@@ -1,12 +1,12 @@
-// The factory view: is the factory healthy, what is it doing, where does the
-// time go, and what needs a look. Across all projects; read-only.
+// The Work area: is the factory healthy, what is it doing, where does the time
+// go, and what needs a look. Across all projects; read-only.
 
 import { useMemo } from 'react'
 import { problemsOf, readOf, type Connection, type FactoryData, type Problem } from '../k8s/sources'
 import type { FactoryHealth } from '../k8s/health'
 import { RESOURCES, type Task } from '../k8s/types'
 import { useNow } from '../lib/hooks'
-import { boardColumns, COLUMNS, factoryStats, runningTasks, slotQueue, taskKey, taskRoles } from '../model/factory'
+import { boardColumns, COLUMNS, factoryStats, runningTasks, slotQueue, taskKey } from '../model/factory'
 import { attention } from '../model/attention'
 import { formatDuration } from '../model/format'
 import { crewSummaries } from '../model/crews'
@@ -15,7 +15,6 @@ import { TaskCard } from './factory/TaskBoard'
 import { CrewsPanel } from './factory/Crews'
 import { ReleasesPanel } from './factory/Releases'
 import { TimePanel } from './factory/TimePanel'
-import { TaskPanel } from './factory/TaskPanel'
 import { HealthPanel } from './factory/Health'
 import { PanelState } from './PanelState'
 import { SlotsPanel } from './factory/Slots'
@@ -26,27 +25,24 @@ export type ObjectHref = (ns: string, kind: string, name: string) => string | un
 
 export interface FactoryPageProps {
   data: FactoryData
-  loaded: boolean
-  /** In the shell, the reads behind the data: each panel says those of its kinds that failed. */
-  connection?: Connection
+  /** The reads behind the data: each panel says those of its kinds that failed. */
+  connection: Connection
   health?: FactoryHealth
   healthLoaded: boolean
-  /** In the shell, the health check's failure, said in the Health panel. */
-  healthProblems?: Problem[]
-  selectedTask?: string
-  onSelectTask: (key: string | undefined) => void
-  /** In the shell, an object's page: Crews and Tasks link to theirs. */
-  pageHref?: ObjectHref
+  /** The health check's failure, said in the Health panel. */
+  healthProblems: Problem[]
+  /** Opens a Task, by namespace/name. */
+  onSelectTask: (key: string) => void
+  /** An object's page: Crews and Tasks link to theirs. */
+  pageHref: ObjectHref
 }
 
 export function FactoryPage({
   data,
-  loaded,
   connection,
   health,
   healthLoaded,
   healthProblems,
-  selectedTask,
   onSelectTask,
   pageHref,
 }: FactoryPageProps) {
@@ -72,11 +68,10 @@ export function FactoryPage({
   )
   const agentOf = (t: Task) => agents.get(`${t.metadata.namespace}/${t.spec.agentRef.name}`)
   const crews = useMemo(() => crewSummaries(data.crews, data.agents, data.tasks), [data])
-  const selected = data.tasks.find((t) => taskKey(t) === selectedTask)
   const running = runningTasks(data.tasks)
   const maxSlots = health?.agents.maxSandboxes
-  const problems = (...resources: string[]) => (connection ? problemsOf(connection, ...resources) : undefined)
-  const read = (...resources: string[]) => (connection ? readOf(connection, ...resources) : loaded)
+  const problems = (...resources: string[]) => problemsOf(connection, ...resources)
+  const read = (...resources: string[]) => readOf(connection, ...resources)
   // The kinds only Needs a look reads: a failure there would hide its items.
   const attentionProblems = problems(RESOURCES.projects, RESOURCES.containers, RESOURCES.sessions, RESOURCES.briefs)
 
@@ -117,7 +112,7 @@ export function FactoryPage({
 
       <main className="workspace factory">
         <section className="factory-main" aria-label="Work">
-          {items.length || attentionProblems?.length ? (
+          {items.length || attentionProblems.length ? (
             <AttentionPanel items={items} problems={attentionProblems} onSelectTask={onSelectTask} />
           ) : null}
 
@@ -126,8 +121,8 @@ export function FactoryPage({
               <div>
                 <h2 className="panel-title">Tasks</h2>
                 <p className="panel-caption">
-                  Each Task moves left to right every round: an agent implements, CI checks, an agent reviews.{' '}
-                  {pageHref ? 'Open one for its page.' : 'Select one for its timeline.'}
+                  Each Task moves left to right every round: an agent implements, CI checks, an agent reviews. Open one
+                  for its page.
                 </p>
               </div>
             </div>
@@ -152,9 +147,7 @@ export function FactoryPage({
                         task={t}
                         agent={agentOf(t)}
                         now={now}
-                        selected={taskKey(t) === selectedTask}
-                        onSelect={() => onSelectTask(taskKey(t) === selectedTask ? undefined : taskKey(t))}
-                        href={pageHref?.(t.metadata.namespace ?? '', 'Task', t.metadata.name)}
+                        href={pageHref(t.metadata.namespace ?? '', 'Task', t.metadata.name)}
                       />
                     ))}
                   </div>
@@ -171,34 +164,21 @@ export function FactoryPage({
             pageHref={pageHref}
           />
 
-          {pageHref ? (
-            <ReleasesPanel
-              crews={data.crews}
-              loaded={read(RESOURCES.crews)}
-              problems={problems(RESOURCES.crews)}
-              pageHref={pageHref}
-            />
-          ) : null}
+          <ReleasesPanel
+            crews={data.crews}
+            loaded={read(RESOURCES.crews)}
+            problems={problems(RESOURCES.crews)}
+            pageHref={pageHref}
+          />
 
           <TimePanel stats={stats} />
         </section>
 
         <aside className="side">
-          {selected ? (
-            <TaskPanel
-              task={selected}
-              agent={agentOf(selected)}
-              roles={taskRoles(selected, data.agents)}
-              now={now}
-              pageHref={pageHref?.(selected.metadata.namespace ?? '', 'Task', selected.metadata.name)}
-              onClose={() => onSelectTask(undefined)}
-            />
-          ) : null}
           <HealthPanel health={health} loaded={healthLoaded} problems={healthProblems} now={now} />
           <SlotsPanel
             tasks={data.tasks}
-            // The old layout always showed the slots.
-            loaded={connection ? read(RESOURCES.tasks) : true}
+            loaded={read(RESOURCES.tasks)}
             problems={problems(RESOURCES.tasks)}
             health={health}
             now={now}

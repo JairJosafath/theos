@@ -1,4 +1,4 @@
-// A panel's own loading, empty and error states (docs/plans/ui-lifecycle.md,
+// A panel's own loading, empty and error states (docs/plans/done/ui-lifecycle.md,
 // step 10): a read that failed is said in the panel that shows its kind, never
 // only in one banner for the page, and what was read before it failed still
 // shows under it.

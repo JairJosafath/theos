@@ -2,12 +2,25 @@
 
 A view of a C4 Factory project, drawn live from the custom resources.
 Milestone 6 in [docs/design.md](../docs/design.md#mvp-v1-plan): someone who has
-never used kubectl can read the story in a browser. It reads everything and
-changes only three things: it creates a Brief from an app idea, adds a
-follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)),
+never used kubectl can read the story in a browser. It reads everything and,
+with actions off, changes only three things: it creates a Brief from an app
+idea, adds a follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)),
 and pauses or resumes one ([docs/plans/upgrade-in-place.md](../docs/plans/upgrade-in-place.md)).
+With actions on it takes a few more (_Actions_ below). design.md's _The UI:
+areas and object pages_ says what it shows and why.
 
-- **Briefs**, above the views: a _Describe an app_ box that creates a Brief (an
+The top bar has six areas; the page opens on _Needs you_ when it has items,
+else on _Story_:
+
+- **Needs you**, across all projects, grouped by project: what waits on a
+  person, read only from status ([src/model/needs.ts](src/model/needs.ts)): a
+  Brief needing input or a decision, a Container that failed to scaffold or
+  whose Standard update pull request waits, a Task blocked or failed (until a
+  newer Task or a round answers it), a Crew that left a release to a person or
+  whose release run failed. Each item says why in the condition's own words,
+  since when, and where it is done: the object's page, a link out, or a
+  `kubectl` line to copy.
+- **Briefs** of one project: a _Describe an app_ box that creates a Brief (an
   idea and a name, suggested from the idea, and optionally its autopilot mode
   and how many issues each of its crews works on at once), and a card per Brief with its
   phase, what it waits for when it needs input, the planner's latest choices,
@@ -19,25 +32,45 @@ and pauses or resumes one ([docs/plans/upgrade-in-place.md](../docs/plans/upgrad
   condition: which Tasks still run, or that nothing does. The forms check none
   of the CRD's rules: submit is enabled for any non-empty input, and the API
   server's message shows as is when it refuses. Only shown in a namespace with a Project.
-- **System context** (C4 level 1): the People and SoftwareSystems, the
+- **Story** of one project: its story in one line (Briefs, plan, model,
+  repositories, Tasks and releases, each a link), then two diagrams.
+  **System context** (C4 level 1): the People and SoftwareSystems, the
   Relationships between them, each system's needs, KPIs and roll-up summary.
-- **Containers** (C4 level 2) of one system: its Containers and DataStores inside
+  **Containers** (C4 level 2) of one system: its Containers and DataStores inside
   a dashed boundary, with the People and other systems they are linked with
   around it. Each Container shows its phase, repository, the templates it was
-  started from and who is working on it. Hover for its checks (conditions) in
-  plain words; click for everything, including its Crew: who implements and who
-  reviews its issues, with their models, and the issue they work on.
-- **Who's working right now**: the Sessions per Container, agent or human, Active
-  or Stale, with the age of the last heartbeat.
-- **The factory** (`?view=factory`, the _Factory_ switch in the top bar), across
-  all projects: whether each part of the factory is healthy, with restarts, CPU
+  started from and who is working on it; hover for its checks (conditions) in
+  plain words. A box of a kind with a page opens it; the side panels show
+  the details of any other box, **who's working right now** (the Sessions per
+  Container, agent or human, Active or Stale, with the age of the last
+  heartbeat) and a legend.
+- **Work**, across all projects: a list of what needs a look, such as a Task
+  waiting for an unavailable agent or a Crew that can't pick up issues; the
+  Tasks on a board by stage, each with its timeline; the Crews, each with its
+  Agents and their models, the Task it works on and its ready and waiting
+  issues; their releases; where the time goes across Tasks; and beside them
+  the factory's health and the agent slots. Each Task and Crew opens its page.
+- **Factory**: whether each part of the factory is healthy, with restarts, CPU
   and memory; the node's usage and the last hour (API server response, CPU,
-  memory); the Tasks on a board by stage, each with its timeline; the Crews,
-  each with its Agents and their models, the Task it works on and its ready and
-  waiting issues; where the time goes across Tasks; the agent slots and who
-  waits for one; and a list of what needs a look, such as a Task waiting for an
-  unavailable agent or a Crew that can't pick up issues. Select a Task for its
-  issue or goal, its Agents, rounds, timeline, feedback and follow-up issues.
+  memory); the agent slots and who waits for one.
+- **About**: the versions running, and links to the running release's design
+  and release notes, and to the repository.
+
+**Object pages.** Brief, Container, Crew, Task, Project, SoftwareSystem,
+Relationship, Session, Standard, Compute, Deployment and GitProvider each have
+a page that opens with the same header
+([src/components/ObjectHeader.tsx](src/components/ObjectHeader.tsx)): kind,
+name and a breadcrumb to what it belongs to; the kind's lifecycle as a stepper
+([src/model/lifecycle.ts](src/model/lifecycle.ts)), side exits such as Failed
+or Blocked off the path; what a person does now, as an action the UI takes or
+the exact next step (a link, or a `kubectl` line with a copy button); then its
+conditions, timeline, children and links out. The Task page adds its rounds,
+checks, review and agent runs; the Crew page its slots, Tasks and last release.
+
+**Versions.** The footer of every page shows the UI's version (stamped by its
+build, `dev` otherwise), the operator's and the chart's (from Project status,
+`status.factory`), and the CRD API version, and warns when the UI and the
+operator differ; _About_ repeats them.
 
 Everything updates as the resources change: the browser lists each kind, then
 watches it.
@@ -67,9 +100,14 @@ page's memory, and one the CRD would refuse is refused there too, by the limits
 in `src/demo/limits.ts` that a test checks against `config/crd/bases/`. It
 needs no cluster and is clearly labelled as demo data.
 
-Other query parameters: `project=<namespace>`, `view=containers` or
-`view=factory`, `system=<name>` and `task=<namespace>/<name>`, so any view can
-be bookmarked. `?demo=1&view=factory` shows the factory view with every state.
+**The address** says what is on screen, so any page can be bookmarked or
+shared and Back works: `area=needs|briefs|story|work|factory|about`; an
+object's page, `ns=<namespace>&kind=<Kind>&name=<name>`; and for Story and
+Briefs `project=<namespace>`, `view=containers` and `system=<name>`.
+`?demo=1&area=work` shows Work with every state. Links from before the areas
+still work: `view=factory` opens Work (with `task=<namespace>/<name>`, that
+Task's page), and `view=`, `system=` or `project=` alone open Story; the page
+rewrites the address to the area's.
 
 ## Read-only but for three writes
 
@@ -221,16 +259,19 @@ src/k8s/types.ts        the CRD shapes, mirroring api/v1alpha1
 src/k8s/watch.ts        list-then-watch: NDJSON events, reconnect with backoff, relist on 410
 src/k8s/mux.ts          many watches over one connection
 src/k8s/sources.ts      one watcher per kind, combined into a story snapshot
-src/k8s/health.ts       polls /factory/health while the factory view is open
+src/k8s/health.ts       polls /factory/health while Work or Factory is open
 src/k8s/briefs.ts       the three writes: create a Brief, add a prompt, pause or resume; a name from the idea
 src/model/story.ts      resources -> diagram model (boxes, arrows, roll-ups)
 src/model/layout.ts     a small layered layout and edge routing
 src/model/describe.ts   plain-language wording for phases, conditions and times
-src/model/factory.ts    the factory view: stages, timelines, stats, Crews, what needs a look
+src/model/factory.ts    Work: stages, timelines, stats, the board and the agent slots
+src/model/needs.ts      the Needs you items, from status
+src/model/lifecycle.ts  each kind's lifecycle and next step, for the object pages
 src/model/brief.ts      a Brief for display: phase, what it waits for, planned and waiting prompts
 src/demo/               the demo fixture; in demo mode the Brief writes stay in memory,
                         refused by the CRD's limits (limits.ts) as the API server would
-src/components/         the diagram, cards and side panels
+src/components/         the shell (Shell.tsx), the areas, the diagram and side panels;
+                        objects/ holds the object pages, ObjectHeader.tsx their header
 ```
 
 Everything under `src/k8s` and `src/model` is plain TypeScript without React, so
@@ -278,7 +319,7 @@ keep connections open never become "network idle", so the script waits for
 `load`, the selector and fonts, then `--delay` (300 ms by default).
 
 ```
-node scripts/screenshot.mjs 'http://localhost:8080/?view=containers' ../docs/screenshots/ui-containers.png --full --wait-for .node
+node scripts/screenshot.mjs 'http://localhost:8080/?area=story&view=containers' ../docs/screenshots/ui-containers.png --full --wait-for .node
 node scripts/screenshot.mjs 'http://localhost:8080/?demo=1' demo-dark.png --full --dark --wait-for .node
 node scripts/screenshot.mjs http://localhost:3000/webshop/orders-api gitea-repo.png
 ```
@@ -288,10 +329,10 @@ node scripts/screenshot.mjs http://localhost:3000/webshop/orders-api gitea-repo.
 Screenshots every view of the built UI in demo mode and live, against the
 end-to-end test's fake API (`test/fakeApi.mjs`) serving the demo fixture, at a
 fixed clock, so two runs of the same UI give the same pictures: the system
-context and each system's containers with every node selected in turn, the
-factory with every Task selected in turn, each also with every `<details>` open,
-and the main views in the dark theme. A change that should look the same
-compares its after with its before:
+areas, each system's containers and each Task's page; in Story, every box
+without a page of its own selected in turn; each also with every `<details>`
+open, and the areas and containers in the dark theme. A change that should
+look the same compares its after with its before:
 
 ```
 npm run screenshot:views -- /tmp/before
@@ -301,6 +342,17 @@ npm run screenshot:views -- /tmp/after --compare /tmp/before
 
 `--compare` exits 1 naming the pictures that differ; `--only <prefix>` limits
 the run.
+
+### What ships: `C4_UI_SHOTS`
+
+The end-to-end tests save the pictures in `docs/screenshots/` that show what
+ships: each area (`ui-shell-*.png`), each object page (`ui-object-*.png`),
+_Needs you_, the version line with and without a skew, the actions' dialogs and
+the refused reads. Set `C4_UI_SHOTS` to the directory:
+
+```
+C4_UI_SHOTS=$PWD/../docs/screenshots npm run test:e2e
+```
 
 ### Terminal output: `scripts/term-shot.mjs`
 

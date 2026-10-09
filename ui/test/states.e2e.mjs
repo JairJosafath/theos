@@ -1,4 +1,4 @@
-// End-to-end check of the new shell's per-panel states (?shell=next) against a
+// End-to-end check of the shell's per-panel states against a
 // fake Kubernetes API serving the demo fixture, with some kinds refused as
 // RBAC would: each panel that shows a refused kind says so with the fix, the
 // rest of the area still shows, and no banner speaks for the whole page.
@@ -19,7 +19,7 @@ import { fixtureApi } from './fixture.mjs'
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 const NOW = Date.parse('2026-06-01T12:00:00Z')
 
-describe('the new shell with refused reads', () => {
+describe('the shell with refused reads', () => {
   let api
   let ui
   let browser
@@ -62,7 +62,7 @@ describe('the new shell with refused reads', () => {
   const refusal = (what) => page.getByRole('alert').filter({ hasText: `Could not read ${what}.` })
 
   it('says each refused kind in the Work panel that shows it, and no banner', async () => {
-    await page.goto(`${base}/?shell=next&area=work`)
+    await page.goto(`${base}/?area=work`)
     await panel('Tasks').getByRole('alert').getByText('Could not read tasks.').waitFor({ timeout: 10000 })
     await panel('Crews').getByRole('alert').getByText('Could not read crews.').waitFor({ timeout: 10000 })
     assert.match(await refusal('tasks').first().textContent(), /The UI is not allowed to read these/)
@@ -86,7 +86,7 @@ describe('the new shell with refused reads', () => {
   })
 
   it('says it in Needs you, which a refused kind may hide items from', async () => {
-    await page.goto(`${base}/?shell=next&area=needs`)
+    await page.goto(`${base}/?area=needs`)
     const needs = panel('Needs you')
     await needs.getByRole('alert').waitFor({ timeout: 10000 })
     const said = await needs.getByRole('alert').textContent()
@@ -96,14 +96,14 @@ describe('the new shell with refused reads', () => {
   })
 
   it('says it in Agent slots, and still shows the health beside it', async () => {
-    await page.goto(`${base}/?shell=next&area=factory`)
+    await page.goto(`${base}/?area=factory`)
     await panel('Agent slots').getByRole('alert').getByText('Could not read tasks.').waitFor({ timeout: 10000 })
     await panel('Health').waitFor({ timeout: 5000 })
     assert.equal(await panel('Agent slots').getByText('No sandbox is running.').count(), 0)
   })
 
   it('says it beside the diagram in Story, which still draws', async () => {
-    await page.goto(`${base}/?shell=next&area=story`)
+    await page.goto(`${base}/?area=story`)
     await page.getByRole('region', { name: 'Who is working right now' }).getByRole('alert').waitFor({ timeout: 10000 })
     const working = await page.getByRole('region', { name: 'Who is working right now' }).textContent()
     for (const what of ['sessions', 'crews', 'tasks']) assert.match(working, new RegExp(`Could not read ${what}\\.`))

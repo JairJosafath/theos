@@ -156,7 +156,7 @@ done
 
 echo
 if [[ $failed == 0 ]]; then
-  printf '\033[32mThe factory is healthy.\033[0m Watch it with make ui-forward, then open http://localhost:8080/?view=factory\n'
+  printf '\033[32mThe factory is healthy.\033[0m Watch it with make ui-forward, then open http://localhost:8080/?area=factory\n'
 else
   printf '\033[31mThe factory needs attention:\033[0m see the ✗ lines above.\n'
 fi

@@ -118,7 +118,7 @@ export function SessionRow({
 }: {
   session: Session
   compact?: boolean
-  /** Its object page, in the shell. */
+  /** Its object page. */
   href?: string
 }) {
   const phase = session.status?.phase

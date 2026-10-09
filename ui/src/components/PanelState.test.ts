@@ -75,6 +75,7 @@ describe('the Crews panel', () => {
           loaded,
           problems,
           onSelectTask: () => {},
+          pageHref: () => undefined,
         }),
       ),
     )

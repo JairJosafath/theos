@@ -51,7 +51,7 @@ and pausing or resuming one (a JSON patch whose only operation is `add` of a
 boolean at `/spec/paused`).
 The server refuses every other write, and its RBAC grants only `create` and
 `patch` on `briefs` beyond its reads, so what a Brief may say stays the CRD's to
-check. It shares nothing with the Go code but the resource shapes. For the Factory view it also reads pods, nodes and
+check. It shares nothing with the Go code but the resource shapes. For the Factory and Work areas it also reads pods, nodes and
 metrics-server itself (`ui/health.mjs`) and sends the browser only a summary.
 
 `make lint` enforces the rows marked "must not import" with golangci-lint's

@@ -39,8 +39,8 @@ such as ArgoCD, Flux and Crossplane.
 
 The factory runs end to end in a local Kind cluster: the story model, the
 catalog, scaffolding into Gitea, Sessions, Tasks and Crews that build from
-issues, Standards that keep their Containers current, and a UI with the story
-and a factory view. [docs/design.md](docs/design.md) holds the design,
+issues, Standards that keep their Containers current, and a UI with the story,
+the work and what needs a person. [docs/design.md](docs/design.md) holds the design,
 [docs/results.md](docs/results.md) shows v1 working, with screenshots, and
 [docs/results-v3.md](docs/results-v3.md) the factory watching itself.
 

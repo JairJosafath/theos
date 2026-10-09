@@ -78,41 +78,58 @@ export function useNow(): number {
   return fixed ?? now
 }
 
-export type View = 'context' | 'containers' | 'factory'
+/** Story's two diagrams. */
+export type View = 'context' | 'containers'
 
 export interface UrlState {
   demo: boolean
-  /** The new shell, reached only with shell=next until it becomes the default. */
-  shell: boolean
-  /** The shell's area; unset, the shell picks one. */
+  /** The area on screen; unset, the shell picks one. */
   area?: Area
-  /** An object page in the shell: ns=<namespace>&kind=<Kind>&name=<name>. */
+  /** An object page: ns=<namespace>&kind=<Kind>&name=<name>. */
   ns?: string
   kind?: string
   name?: string
   project?: string
   view: View
   system?: string
-  /** The Task selected in the factory view, or the shell's Work area, as namespace/name. */
-  task?: string
 }
 
-const VIEWS: View[] = ['context', 'containers', 'factory']
+const VIEWS: View[] = ['context', 'containers']
+
+/**
+ * The URL state of a query string. A link from before the areas (view=,
+ * system=, project=, task=) still opens what it showed: the factory view is
+ * Work, a Task in it is its page, and the story's views are Story. An area=
+ * in the link wins.
+ */
+export function parseUrl(search: string): UrlState {
+  const params = new URLSearchParams(search)
+  const get = (key: string) => params.get(key) || undefined
+  const system = get('system')
+  const viewParam = params.get('view')
+  const state: UrlState = {
+    demo: params.get('demo') === '1',
+    area: isArea(params.get('area')) ? (params.get('area') as Area) : undefined,
+    ns: get('ns'),
+    kind: get('kind'),
+    name: get('name'),
+    project: get('project'),
+    // A system alone was always shown with its containers.
+    view: VIEWS.includes(viewParam as View) ? (viewParam as View) : system ? 'containers' : 'context',
+    system,
+  }
+  if (state.area) return state
+  if (viewParam === 'factory') {
+    const [ns, name] = get('task')?.split('/') ?? []
+    const task = ns && name && !(state.kind || state.name) ? { ns, kind: 'Task', name } : {}
+    return { ...state, ...task, area: 'work' }
+  }
+  if (VIEWS.includes(viewParam as View) || system || state.project) return { ...state, area: 'story' }
+  return state
+}
 
 function readUrl(): UrlState {
-  const params = new URLSearchParams(window.location.search)
-  return {
-    demo: params.get('demo') === '1',
-    shell: params.get('shell') === 'next',
-    area: isArea(params.get('area')) ? (params.get('area') as Area) : undefined,
-    ns: params.get('ns') || undefined,
-    kind: params.get('kind') || undefined,
-    name: params.get('name') || undefined,
-    project: params.get('project') || undefined,
-    view: VIEWS.includes(params.get('view') as View) ? (params.get('view') as View) : 'context',
-    system: params.get('system') || undefined,
-    task: params.get('task') || undefined,
-  }
+  return parseUrl(window.location.search)
 }
 
 /** The link to the page with `next` merged into what the URL says now. */
@@ -120,33 +137,37 @@ export function hrefFor(next: Partial<UrlState>): string {
   const merged = { ...readUrl(), ...next }
   const params = new URLSearchParams()
   if (merged.demo) params.set('demo', '1')
-  if (merged.shell) {
-    params.set('shell', 'next')
-    if (merged.area) params.set('area', merged.area)
-    if (merged.kind && merged.name) {
-      if (merged.ns) params.set('ns', merged.ns)
-      params.set('kind', merged.kind)
-      params.set('name', merged.name)
-    }
+  if (merged.area) params.set('area', merged.area)
+  if (merged.kind && merged.name) {
+    if (merged.ns) params.set('ns', merged.ns)
+    params.set('kind', merged.kind)
+    params.set('name', merged.name)
   }
   if (merged.project) params.set('project', merged.project)
-  // The shell has no factory view: Work and Factory are areas.
-  if (merged.view !== 'context' && !(merged.shell && merged.view === 'factory')) params.set('view', merged.view)
-  if (merged.system && merged.view === 'containers') params.set('system', merged.system)
-  if (merged.task && (merged.shell ? merged.area === 'work' : merged.view === 'factory'))
-    params.set('task', merged.task)
+  if (merged.view === 'containers') {
+    params.set('view', merged.view)
+    if (merged.system) params.set('system', merged.system)
+  }
   const query = params.toString()
   return `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
 }
 
+/** The page's address as it is now. */
+function currentHref(): string {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`
+}
+
 /**
- * Which project, view and system are shown (and in the new shell, which area
- * or object), kept in the query string so a view can be bookmarked or shared,
- * and the back button works.
+ * Which area, object, project, view and system are shown, kept in the query
+ * string so a page can be bookmarked or shared, and the back button works.
+ * An old link is rewritten in place to the area it opens, so the address bar
+ * names the area.
  */
 export function useUrlState(): [UrlState, (next: Partial<UrlState>, replace?: boolean) => void] {
   const [state, setState] = useState(readUrl)
   useEffect(() => {
+    const canonical = hrefFor({})
+    if (canonical !== currentHref()) window.history.replaceState(null, '', canonical)
     const onPop = () => setState(readUrl())
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
@@ -155,7 +176,7 @@ export function useUrlState(): [UrlState, (next: Partial<UrlState>, replace?: bo
     // The URL is the source of truth, so merge into what it says now.
     const merged = { ...readUrl(), ...next }
     const url = hrefFor(next)
-    if (url !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+    if (url !== currentHref()) {
       window.history[replace ? 'replaceState' : 'pushState'](null, '', url)
     }
     setState(merged)

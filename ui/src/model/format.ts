@@ -1,4 +1,4 @@
-// How the factory view writes durations, clock times, bytes, CPU and shares.
+// How the Work and Factory areas write durations, clock times, bytes, CPU and shares.
 
 /**
  * "45 s", "3 min", "2 h 5 min", "3 d 4 h". `fine` is for short measured times

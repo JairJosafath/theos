@@ -14,13 +14,15 @@ const writer: BriefWriter = {
   setSettings: async () => {},
 }
 
+const pageHref = (name: string) => `?kind=Brief&name=${name}`
+
 /** The Brief cards of `briefs` as HTML, with the clock stopped at `now`. */
 function render(briefs: Brief[], now: number): string {
   return renderToStaticMarkup(
     createElement(
       FixedNow.Provider,
       { value: now },
-      createElement(Briefs, { briefs, namespace: DEMO_NAMESPACE, canCreate: false, writer }),
+      createElement(Briefs, { briefs, namespace: DEMO_NAMESPACE, canCreate: false, writer, pageHref }),
     ),
   )
 }
@@ -154,7 +156,7 @@ describe('the Brief card paused or not', () => {
 
 describe('the Describe an app form', () => {
   const html = renderToStaticMarkup(
-    createElement(Briefs, { briefs: [], namespace: DEMO_NAMESPACE, canCreate: true, writer }),
+    createElement(Briefs, { briefs: [], namespace: DEMO_NAMESPACE, canCreate: true, writer, pageHref }),
   )
 
   it('copies none of the CRD’s limits or defaults', () => {

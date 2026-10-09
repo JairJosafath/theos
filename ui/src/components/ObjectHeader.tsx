@@ -1,4 +1,4 @@
-// The header every object page opens with (docs/plans/ui-lifecycle.md,
+// The header every object page opens with (docs/plans/done/ui-lifecycle.md,
 // decisions 3 and 4): what it is and what it belongs to, where it is on its
 // lifecycle, what a person does now (an action the UI takes, or the exact next
 // step: a link or a kubectl line to copy), then its conditions, its timeline,

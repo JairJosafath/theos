@@ -98,7 +98,7 @@ describe('the Container page’s actions', () => {
     before(async () => {
       env = await start('service-account')
       page = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' })
-      await page.goto(`${env.base}/?shell=next&project=${NS}&ns=${NS}&kind=Container&name=orders-api`)
+      await page.goto(`${env.base}/?project=${NS}&ns=${NS}&kind=Container&name=orders-api`)
       await panel().waitFor({ timeout: 10000 })
     })
     after(async () => {
@@ -155,7 +155,7 @@ describe('the Container page’s actions', () => {
     })
 
     it('shows the API server’s message when it refuses an empty goal', async () => {
-      await page.goto(`${env.base}/?shell=next&project=${NS}&ns=${NS}&kind=Container&name=orders-api`)
+      await page.goto(`${env.base}/?project=${NS}&ns=${NS}&kind=Container&name=orders-api`)
       await panel().waitFor({ timeout: 10000 })
       env.api.writes.length = 0
       await panel().getByRole('button', { name: 'Start the Task' }).click()
@@ -182,7 +182,7 @@ describe('the Container page’s actions', () => {
     })
 
     it('says to sign in instead of offering the buttons', async () => {
-      await page.goto(`${env.base}/?shell=next&project=${NS}&ns=${NS}&kind=Container&name=orders-api`)
+      await page.goto(`${env.base}/?project=${NS}&ns=${NS}&kind=Container&name=orders-api`)
       const panel = page.getByRole('region', { name: 'Act on it' })
       await panel.getByText('Sign in to retry its scaffold or start a Task on it.').waitFor({ timeout: 10000 })
       const signIn = new URL(await panel.getByRole('link', { name: 'Sign in' }).getAttribute('href'), env.base)

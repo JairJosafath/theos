@@ -19,7 +19,7 @@ export function ReleasesPanel({
   loaded: boolean
   /** The failed read of Crews, which carry the releases. */
   problems?: Problem[]
-  pageHref?: ObjectHref
+  pageHref: ObjectHref
 }) {
   const rows = crewReleases(crews)
   return (
@@ -40,7 +40,7 @@ export function ReleasesPanel({
       >
         <ul className="crews">
           {rows.map(({ key, namespace, crew, container, release }) => {
-            const href = pageHref?.(namespace, 'Crew', crew)
+            const href = pageHref(namespace, 'Crew', crew)
             const failed = release.run === 'Failed' || release.publish?.state === 'Failed'
             return (
               <li key={key} className={`crew-card${failed ? ' tone-error' : ''}`}>

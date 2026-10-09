@@ -23,7 +23,7 @@ Task, `C` a Crew.
 kubectl -n P get crews,tasks                 # phases, rounds, checks, verdicts
 kubectl top node; kubectl top pods -A --sort-by=cpu | head -6
 make doctor                                  # every part, from Docker to Secrets
-make ui-forward                              # http://localhost:8080/?view=factory
+make ui-forward                              # http://localhost:8080/?area=work
 ```
 
 ## One Task

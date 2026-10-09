@@ -1,4 +1,4 @@
-// Links between the shell's pages: an object's page, and the areas a
+// Links between the pages: an object's page, and the areas a
 // breadcrumb leads back to.
 
 import { hrefFor } from '../../lib/hooks'
@@ -8,7 +8,7 @@ const NO_OBJECT = { ns: undefined, kind: undefined, name: undefined }
 
 /** The object's page, when its kind has one. */
 export function pageHref(ns: string, kind: string, name: string): string | undefined {
-  return hasPage(kind) ? hrefFor({ ns, kind, name, task: undefined }) : undefined
+  return hasPage(kind) ? hrefFor({ ns, kind, name }) : undefined
 }
 
 /** The project's story: its system context, or one system's containers. */
@@ -19,13 +19,12 @@ export function storyHref(project: string, system?: string): string {
     project,
     view: system ? 'containers' : 'context',
     system,
-    task: undefined,
   })
 }
 
 /** The project's Briefs. */
 export function briefsHref(project: string): string {
-  return hrefFor({ ...NO_OBJECT, area: 'briefs', project, view: 'context', system: undefined, task: undefined })
+  return hrefFor({ ...NO_OBJECT, area: 'briefs', project, view: 'context', system: undefined })
 }
 
 /** The breadcrumb's first step: the namespace's Project page. */

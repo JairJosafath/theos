@@ -1,5 +1,5 @@
-/* The new shell (Shell.tsx): the areas' navigation, the freshness line, and
-   the pages of the areas that aren't today's components. */
+/* The shell (Shell.tsx): the areas' navigation, the freshness line, and the
+   pages of the areas and objects. */
 
 .areas a.mode {
   text-decoration: none;
@@ -38,11 +38,6 @@
 
 .about-versions {
   margin-top: 14px;
-}
-
-.about .versions-skew {
-  margin-top: 12px;
-  font-size: 13px;
 }
 
 .about-links {

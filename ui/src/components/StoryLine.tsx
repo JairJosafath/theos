@@ -1,4 +1,4 @@
-// The project's story in one line, in the shell's Story area: Briefs, plan,
+// The project's story in one line, in the Story area: Briefs, plan,
 // model, repositories, Tasks and releases, each a link to where they are.
 
 import type { StoryData } from '../k8s/sources'
@@ -12,8 +12,8 @@ const NO_OBJECT = { ns: undefined, kind: undefined, name: undefined }
 function hrefOf(to: StoryTarget, ns: string): string | undefined {
   if ('kind' in to) return pageHref(ns, to.kind, to.name)
   if (to.area === 'briefs') return briefsHref(ns)
-  if (to.area === 'story') return hrefFor({ ...NO_OBJECT, area: 'story', project: ns, view: to.view, task: undefined })
-  return hrefFor({ ...NO_OBJECT, area: 'work', task: undefined })
+  if (to.area === 'story') return hrefFor({ ...NO_OBJECT, area: 'story', project: ns, view: to.view })
+  return hrefFor({ ...NO_OBJECT, area: 'work' })
 }
 
 export function StoryLine({ data }: { data: StoryData }) {

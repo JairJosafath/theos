@@ -195,7 +195,7 @@ describe('Needs you', () => {
   const item = (kind, name) => page.getByRole('listitem', { name: `${kind} ${name}` })
 
   it('opens on Needs you and lists one item of each kind, by project', async () => {
-    await page.goto(`${flagged.base}/?shell=next`)
+    await page.goto(`${flagged.base}/`)
     await page.locator('.need').first().waitFor({ timeout: 10000 })
     assert.equal(new URL(page.url()).searchParams.get('area'), 'needs')
     const projects = await page.locator('.needs-project-title').allTextContents()
@@ -281,10 +281,10 @@ describe('Needs you', () => {
   })
 
   it('opens on Story when nothing waits on a person', async () => {
-    await page.goto(`${quiet.base}/?shell=next`)
+    await page.goto(`${quiet.base}/`)
     await page.getByRole('heading', { name: 'System context: the big picture' }).waitFor({ timeout: 10000 })
     assert.equal(new URL(page.url()).searchParams.get('area'), 'story')
-    await page.goto(`${quiet.base}/?shell=next&area=needs`)
+    await page.goto(`${quiet.base}/?area=needs`)
     await page.getByText('Nothing waits on you.').waitFor({ timeout: 10000 })
   })
 

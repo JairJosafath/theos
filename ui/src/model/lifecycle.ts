@@ -1,4 +1,4 @@
-// Each kind's lifecycle (docs/plans/ui-lifecycle.md, decision 3; #705's table,
+// Each kind's lifecycle (docs/plans/done/ui-lifecycle.md, decision 3; #705's table,
 // "Lifecycle of each level"): the phases on its path, the side exits off it,
 // what moves it along, and what a person does at each step. Object pages read
 // it from here, so no page invents its own. Pure, and read only from status.

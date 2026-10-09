@@ -1,4 +1,4 @@
-// The factory view's "where the time goes": time per stage over all Tasks.
+// The Work area's "where the time goes": time per stage over all Tasks.
 
 import { factoryStats, STAGES } from '../../model/factory'
 import { formatDuration, percent } from '../../model/format'

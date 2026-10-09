@@ -1,4 +1,4 @@
-// The factory view's "needs a look" list: errors first, each linking to its Task.
+// The Work area's "needs a look" list: errors first, each linking to its Task.
 
 import { WarningIcon } from '../icons'
 import { attentionKey, type Attention } from '../../model/attention'

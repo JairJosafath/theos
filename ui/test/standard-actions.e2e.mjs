@@ -18,7 +18,7 @@ import { fakeApi, listen } from './fakeApi.mjs'
 
 const NS = 'webshop'
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
-const PAGE = `/?shell=next&project=${NS}&ns=${NS}&kind=Standard&name=python-standard`
+const PAGE = `/?project=${NS}&ns=${NS}&kind=Standard&name=python-standard`
 
 function container(name, phase, standard = 'python-standard') {
   return {

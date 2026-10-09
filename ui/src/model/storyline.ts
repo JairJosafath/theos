@@ -1,4 +1,4 @@
-// A project's story in one line (docs/plans/ui-lifecycle.md, step 9): from its
+// A project's story in one line (docs/plans/done/ui-lifecycle.md, step 9): from its
 // Briefs to the plan, the model, the repositories, the Tasks and the releases,
 // each step counted from `status` and pointing at where its objects are.
 

@@ -1,4 +1,4 @@
-// The factory view's Crews: who implements and reviews, and what each Crew is doing.
+// The Work area's Crews: who implements and reviews, and what each Crew is doing.
 
 import { AgentName, CrewPhaseBadge, When } from '../bits'
 import { WarningIcon } from '../icons'
@@ -18,8 +18,9 @@ export function CrewsPanel({
   loaded: boolean
   /** The failed reads of Crews and their Agents. */
   problems?: Problem[]
+  /** Opens a Task, by namespace/name. */
   onSelectTask: (key: string) => void
-  pageHref?: ObjectHref
+  pageHref: ObjectHref
 }) {
   return (
     <div className="panel">
@@ -42,7 +43,7 @@ export function CrewsPanel({
               key={crew.key}
               crew={crew}
               onSelectTask={onSelectTask}
-              href={pageHref?.(crew.namespace, 'Crew', crew.name)}
+              href={pageHref(crew.namespace, 'Crew', crew.name)}
             />
           ))}
         </ul>
@@ -58,7 +59,7 @@ function CrewCard({
 }: {
   crew: CrewSummary
   onSelectTask: (key: string) => void
-  /** The Crew's page, in the shell. */
+  /** The Crew's page. */
   href?: string
 }) {
   const tone = crew.notReady ? 'error' : crew.paused ? 'waiting' : undefined

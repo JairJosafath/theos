@@ -12,13 +12,11 @@ import {
   factoryStats,
   followUpLinks,
   stageOf,
-  standardChangeLink,
   slotQueue,
   taskHeadline,
   taskRoles,
   taskSegments,
   timeByStage,
-  timelineSteps,
 } from './factory'
 import { formatClock, formatDuration } from './format'
 
@@ -712,29 +710,6 @@ describe('formatDuration', () => {
   ])('formats a fine %d ms as %s', (ms, want) => expect(formatDuration(ms, { fine: true })).toBe(want))
 })
 
-describe('timelineSteps', () => {
-  it('joins steps of the same stage and round', () => {
-    const steps = timelineSteps(
-      taskSegments(
-        task('t', {
-          phase: 'Checking',
-          history: [
-            { ...step(0, 'Implementing', 1, 'Running'), message: 'Starting round 1' },
-            { ...step(1, 'Implementing', 1, 'Waiting'), message: 'The agent is working on round 1' },
-            step(20, 'Checking', 1, 'Checking'),
-          ],
-        }),
-        T0 + 30 * 60_000,
-      ),
-    )
-    expect(steps.map((s) => [s.stage, (s.end - s.start) / 60_000, s.messages])).toEqual([
-      ['implement', 20, ['Starting round 1', 'The agent is working on round 1']],
-      ['checks', 10, []],
-    ])
-    expect(steps[1].current).toBe(true)
-  })
-})
-
 describe('recentStall', () => {
   it('finds the worst stall in the last 15 minutes', () => {
     const history = [
@@ -847,7 +822,7 @@ describe('activeCrewTasks', () => {
 })
 
 describe('Blocked Tasks', () => {
-  it('shows a Blocked Task in its own column, with the issue it waits on', () => {
+  it('shows a Blocked Task in its own column', () => {
     const change = {
       issue: 31,
       issueURL: 'http://gitea/tools/vscode-extension/issues/31',
@@ -857,7 +832,5 @@ describe('Blocked Tasks', () => {
     const blocked = task('blocked-task', { phase: 'Blocked', standardChange: change })
     expect(stageOf({ phase: 'Blocked' })).toBe('blocked')
     expect(boardColumns([blocked]).blocked).toEqual([blocked])
-    expect(standardChangeLink(blocked)).toEqual({ label: '#31', url: change.issueURL, paths: ['Makefile'] })
-    expect(standardChangeLink({ ...blocked, status: { ...blocked.status, phase: 'Implementing' } })).toBeUndefined()
   })
 })

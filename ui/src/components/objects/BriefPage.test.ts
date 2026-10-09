@@ -22,7 +22,7 @@ const OFF: UiSession = { actions: false, mode: 'off', user: null }
 const SIGNED_OUT: UiSession = { actions: true, mode: 'oidc', user: null, login: '/ui/login', logout: '/ui/logout' }
 
 // The page's links read the address; the sign-in link comes back to it.
-vi.stubGlobal('window', { location: { pathname: '/', search: '?shell=next&kind=Brief&name=webshop' } })
+vi.stubGlobal('window', { location: { pathname: '/', search: '?kind=Brief&name=webshop' } })
 
 function render(session: UiSession | undefined, brief: Brief = webshop): string {
   return renderToStaticMarkup(

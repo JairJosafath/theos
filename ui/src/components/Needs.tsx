@@ -1,4 +1,4 @@
-// The shell's Needs you area (docs/plans/ui-lifecycle.md, decision 5): what
+// The shell's Needs you area (docs/plans/done/ui-lifecycle.md, decision 5): what
 // waits on a person across projects, each with why, in status's own words, and
 // where it is done.
 
@@ -11,8 +11,8 @@ import { ExternalLinkIcon } from './icons'
 import { PanelState } from './PanelState'
 import './needs.css'
 
-/** Leaves an object page and any Task or system the URL had selected. */
-const PLACE_ONLY = { ns: undefined, kind: undefined, name: undefined, task: undefined, system: undefined }
+/** Leaves an object page and any system the URL had selected. */
+const PLACE_ONLY = { ns: undefined, kind: undefined, name: undefined, system: undefined }
 
 export function NeedsArea({
   items,
@@ -102,7 +102,6 @@ function placeUrl(p: Place): Partial<UrlState> {
     area: p.area,
     view: p.view ?? 'context',
     system: p.system,
-    task: p.task,
     ...(p.project ? { project: p.project } : {}),
   }
 }
