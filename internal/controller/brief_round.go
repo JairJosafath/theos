@@ -71,7 +71,7 @@ func operatorWaits(status *c4v1alpha1.BriefStatus) bool {
 func roundFacts(brief *c4v1alpha1.Brief, task *c4v1alpha1.Task) model.BriefRoundFacts {
 	status := &brief.Status
 	facts := model.BriefRoundFacts{
-		Prompts:            len(brief.Spec.Prompts),
+		Prompts:            len(briefPrompts(brief)),
 		Round:              int(status.Round),
 		RoundPrompts:       int(status.RoundPrompts),
 		NewRequests:        model.NewRequests(modelRequests(status.Requests), heldRequests(status)),
@@ -254,9 +254,9 @@ func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1alpha
 			"so the planner has something to build Containers with", brief.Namespace)}
 	}
 	status := &brief.Status
-	taken := model.RoundPrompts(brief.Spec.Prompts, int(status.PromptsPlanned))
+	taken := model.RoundPrompts(briefPrompts(brief), int(status.PromptsPlanned))
 	status.Round++
-	status.RoundPrompts = int32(len(brief.Spec.Prompts))
+	status.RoundPrompts = int32(len(briefPrompts(brief)))
 	status.RoundRequests = nil
 	if tend {
 		status.TendRound, status.LastTendTime = status.Round, &metav1.Time{Time: r.now()}

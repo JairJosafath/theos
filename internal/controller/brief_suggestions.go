@@ -91,8 +91,7 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 	}
 	brief := run.brief
 	status := &brief.Status
-	prompts := model.RoundPrompts(brief.Spec.Prompts[:min(max(int(status.RoundPrompts), 0), len(brief.Spec.Prompts))],
-		int(status.PromptsPlanned))
+	prompts := takenPrompts(brief)
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	for _, a := range answers {

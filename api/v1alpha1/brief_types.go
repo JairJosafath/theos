@@ -16,6 +16,8 @@ import (
 // BriefSpec is an app idea in plain words, the follow-up prompts that steer
 // it, and the Agents that plan and build it.
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.prompts) || size(oldSelf.prompts) == 0 || has(self.prompts)",message="prompts are append-only: an earlier prompt can't change or go"
+// +kubebuilder:validation:XValidation:rule="(has(self.promptsRetired) ? self.promptsRetired : 0) >= (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)",message="promptsRetired only grows"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.prompts) ? (has(self.promptsRetired) ? self.promptsRetired : 0) <= (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0) : (((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)) < 0 || (((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)) <= size(oldSelf.prompts) && (has(self.prompts) ? size(self.prompts) : 0) >= size(oldSelf.prompts) - ((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)) && oldSelf.prompts.all(i, p, i < ((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)) || self.prompts[i - ((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0))] == p)))",message="prompts are append-only: only the oldest can go, each counted in promptsRetired, and an earlier prompt can't change"
 type BriefSpec struct {
 	// idea says in plain words what the app is for and who uses it. It can't
 	// change; steer with prompts.
@@ -26,14 +28,23 @@ type BriefSpec struct {
 	Idea string `json:"idea"`
 
 	// prompts are follow-ups in plain words, oldest first. A prompt is only
-	// ever appended: an earlier one can't change or go.
+	// ever appended: an earlier one can't change. Once rounds have planned
+	// more than ten, the operator retires the oldest planned ones, counting
+	// them in promptsRetired, so the list never fills up.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=2000
-	// +kubebuilder:validation:XValidation:rule="size(self) >= size(oldSelf) && oldSelf.all(i, p, self[i] == p)",message="prompts are append-only: an earlier prompt can't change or go"
 	// +optional
 	Prompts []string `json:"prompts,omitempty"`
+
+	// promptsRetired is how many of the oldest prompts were taken out of
+	// prompts once planned; it only grows. The status counts every prompt
+	// ever written, retired ones included, so prompts[i] is prompt number
+	// promptsRetired+i+1.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	PromptsRetired int32 `json:"promptsRetired,omitempty"`
 
 	// agents names the Agents the Brief works with.
 	// +kubebuilder:default={}

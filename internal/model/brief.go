@@ -1111,7 +1111,26 @@ func RoundPrompts(prompts []string, promptsPlanned int) []string {
 	if promptsPlanned < 0 || promptsPlanned >= len(prompts) {
 		return nil
 	}
-	return slices.Clone(prompts[promptsPlanned:])
+	return slices.DeleteFunc(slices.Clone(prompts[promptsPlanned:]), func(p string) bool { return p == "" })
+}
+
+// KeptPlannedPrompts is how many of the prompts rounds have planned a Brief
+// keeps in spec.prompts; the operator retires older ones, so a Brief takes
+// prompts for as long as its project runs (#835).
+const KeptPlannedPrompts = 10
+
+// PromptsToRetire returns how many of the oldest of listed prompts the
+// operator retires now, given how many were retired before and how many
+// prompts, retired ones included, the last applied round planned: the planned
+// ones past the newest KeptPlannedPrompts. A prompt no round planned stays.
+func PromptsToRetire(retired, listed, promptsPlanned int) int {
+	return max(min(promptsPlanned-retired-KeptPlannedPrompts, listed), 0)
+}
+
+// PlacedPrompts returns a Brief's prompts where the status counts them: every
+// prompt ever written, oldest first, the retired ones empty.
+func PlacedPrompts(retired int, prompts []string) []string {
+	return append(make([]string, max(retired, 0), max(retired, 0)+len(prompts)), prompts...)
 }
 
 // IssueMarker is the line that ties an issue to the Brief's round and the

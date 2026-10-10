@@ -61,6 +61,14 @@ func TestBriefWorkspaceBrief(t *testing.T) {
 			not:  []string{"## Idea (**new**)"},
 		},
 		{
+			name: "retired prompts keep their numbers and are said, not listed",
+			ws: BriefWorkspace{Brief: "b", Idea: "Idea.", IdeaPlanned: true, PromptsPlanned: 3,
+				Prompts: []string{"", "", "three", "four"}},
+			want: []string{"The oldest 2 prompts were planned and retired",
+				"\n\n3. (planned) three\n4. (**new**) four\n"},
+			not: []string{"1. ", "2. "},
+		},
+		{
 			name: "without spec.releases there is no Releases section",
 			ws:   BriefWorkspace{Brief: "b", Idea: "Idea.", GitProvider: "gitea"},
 			not:  []string{"## Releases", "releases.yaml"},

@@ -136,7 +136,8 @@ export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
   const planned = findCondition(conditions, 'Planned')
   const pausedCondition = findCondition(conditions, 'Paused')
   const paused = Boolean(brief.spec.paused)
-  const taken = status.promptsPlanned ?? 0
+  // The status counts every prompt written, the retired ones too.
+  const taken = (status.promptsPlanned ?? 0) - (brief.spec.promptsRetired ?? 0)
   const prompts = (brief.spec.prompts ?? []).map((text, i) => ({ text, planned: i < taken }))
   const suggestions = (status.suggestions ?? []).map(({ container, number, title, url }) => ({
     container,

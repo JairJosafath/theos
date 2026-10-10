@@ -37,8 +37,10 @@ func BriefRepository(brief string) string { return "brief-" + brief }
 // BriefWorkspace is what the planner reads before a round: the Brief, the
 // namespace's story, the installed catalog and the Containers' repositories.
 type BriefWorkspace struct {
-	Brief   string
-	Idea    string
+	Brief string
+	Idea  string
+	// Prompts are every prompt written, oldest first, the retired ones empty
+	// (PlacedPrompts).
 	Prompts []string
 	// PromptsPlanned is how many of Prompts earlier rounds took; the rest are
 	// the round's new ones.
@@ -164,7 +166,23 @@ func renderBrief(ws BriefWorkspace) string {
 	b.WriteString("\n\n" + strings.TrimSpace(ws.Idea) + "\n")
 	if len(ws.Prompts) > 0 {
 		b.WriteString("\n## Prompts\n\nOldest first. The planned ones are done; plan the new ones on top of them.\n\n")
+		retired := 0
+		for _, p := range ws.Prompts {
+			if p == "" {
+				retired++
+			}
+		}
+		switch {
+		case retired == 1:
+			b.WriteString("The oldest prompt was planned and retired; the model holds what it asked for.\n\n")
+		case retired > 1:
+			fmt.Fprintf(&b, "The oldest %d prompts were planned and retired; the model holds what they asked for.\n\n",
+				retired)
+		}
 		for i, p := range ws.Prompts {
+			if p == "" {
+				continue
+			}
 			mark := "planned"
 			if i >= ws.PromptsPlanned {
 				mark = "**new**"
