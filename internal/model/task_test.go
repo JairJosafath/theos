@@ -440,16 +440,67 @@ func TestAgentUsername(t *testing.T) {
 }
 
 func TestSandboxName(t *testing.T) {
-	if got := SandboxName("add-crop", 2, RoleReviewer, 1, 0); got != "add-crop-r2-review-a1" {
+	if got := SandboxName("add-crop", 2, 0, RoleReviewer, 1, 0); got != "add-crop-r2-review-a1" {
 		t.Errorf("SandboxName() = %q", got)
 	}
-	if got := SandboxName("add-crop", 1, RoleImplementer, 1, 2); got != "add-crop-r1-implement-x2" {
+	if got := SandboxName("add-crop", 1, 0, RoleImplementer, 1, 2); got != "add-crop-r1-implement-x2" {
 		t.Errorf("SandboxName() of a rerun = %q", got)
 	}
-	long := SandboxName(strings.Repeat("x", 80), 10, RoleImplementer, 0, 2)
+	if got := SandboxName("add-crop", 1, 2, RoleReviewer, 1, 1); got != "add-crop-r1-review-s2-a1-x1" {
+		t.Errorf("SandboxName() of a restarted round = %q", got)
+	}
+	long := SandboxName(strings.Repeat("x", 80), 10, 3, RoleReviewer, 3, 2)
 	if len(long) > 63 {
 		t.Errorf("SandboxName() = %q is longer than 63", long)
 	}
+}
+
+// TestRestartedRoundsNameRunsAfresh walks a round that is sent back to resolve
+// conflicts and later resumed after a Standard change: every implement and
+// review run in it gets a sandbox name no earlier run of the round had, so an
+// earlier sandbox still being deleted is never read as the new run's.
+func TestRestartedRoundsNameRunsAfresh(t *testing.T) {
+	p := StartRun(TaskProgress{}, RoleImplementer)
+	seen := map[string]string{}
+	run := func(step string) {
+		t.Helper()
+		role := RoleImplementer
+		if p.Phase == TaskReviewing {
+			role = RoleReviewer
+		}
+		name := SandboxName("t", p.Round, p.Restarts, role, p.ReviewAttempts+p.ReviewAgains+1, p.Reruns)
+		if earlier, ok := seen[name]; ok {
+			t.Fatalf("%s reuses sandbox %s of %s", step, name, earlier)
+		}
+		seen[name] = step
+	}
+	review := func() { p = StartRun(OpenedPR(p, "abc"), RoleReviewer) }
+
+	run("the first implement run")
+	review()
+	run("the first review run")
+	p = RetryReview(p)
+	run("the review retry")
+	p = ResolveConflicts(p, ConflictFeedback)
+	run("the conflict's implement run")
+	review()
+	run("the review after the conflict")
+	p = RetryReview(p)
+	run("the review retry after the conflict")
+	p = Rerun(p)
+	run("the rerun after the conflict")
+	p = ResumeRound(Proposed(p, "std"), "the change is in main")
+	run("the resumed implement run")
+	review()
+	run("the review after the resume")
+	p = ResolveConflicts(p, ConflictFeedback)
+	run("the second conflict's implement run")
+	review()
+	run("the review after the second conflict")
+	p = NextRound(p, "again")
+	run("round 2's implement run")
+	review()
+	run("round 2's review run")
 }
 
 func TestHasSlotTurn(t *testing.T) {
@@ -883,7 +934,7 @@ func TestRanOutApprovalsSpendNoReviewAttempt(t *testing.T) {
 		return TaskFacts{Phase: p.Phase, Round: p.Round, MaxRounds: 3, ReviewAttempts: p.ReviewAttempts,
 			ReviewAgains: p.ReviewAgains, MergeWaitsForChecks: true, Run: run}
 	}
-	sandbox := func() string { return SandboxName("t", p.Round, RoleReviewer, p.ReviewAttempts+p.ReviewAgains+1, 0) }
+	sandbox := func() string { return SandboxName("t", p.Round, 0, RoleReviewer, p.ReviewAttempts+p.ReviewAgains+1, 0) }
 	seen := map[string]bool{sandbox(): true}
 	ended := RunState{Started: true, Done: true, Failure: "the sandbox reached its shutdown time"}
 	for i := range 2 {

@@ -102,12 +102,14 @@ func TestSandboxRole(t *testing.T) {
 		"add-crop-r1-implement-x2": RoleImplementer,
 		"add-crop-r3-review-a2":    RoleReviewer,
 		"add-crop-r3-review-a2-x1": RoleReviewer,
+		"add-crop-r3-review-s1-a1": RoleReviewer,
+		"add-crop-r1-implement-s2": RoleImplementer,
 		"plan-review-r1-plan":      RolePlanner,
 		"fix-review-r1-implement":  RoleImplementer,
 		"add-crop":                 "",
 		"add-crop-rx-implement":    "",
 		"implement-r1-reviewer-a1": "",
-		SandboxName(strings.Repeat("long-task-", 8), 2, RoleReviewer, 1, 3): RoleReviewer,
+		SandboxName(strings.Repeat("long-task-", 8), 2, 0, RoleReviewer, 1, 3): RoleReviewer,
 	} {
 		if got := SandboxRole(name); got != want {
 			t.Errorf("SandboxRole(%q) = %q, want %q", name, got, want)

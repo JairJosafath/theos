@@ -247,6 +247,12 @@ type TaskStatus struct {
 	// +optional
 	Reruns int32 `json:"reruns,omitempty"`
 
+	// restarts counts how often this round started over in place: sent back to
+	// resolve conflicts with main, or resumed after its Standard change merged.
+	// It gives each run of the round a sandbox name of its own.
+	// +optional
+	Restarts int32 `json:"restarts,omitempty"`
+
 	// issueTitle is the title of spec.issue when the Task last read it, and
 	// issueURL where to find the issue.
 	// +optional

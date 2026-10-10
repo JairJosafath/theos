@@ -140,7 +140,7 @@ func SandboxRole(sandbox string) string {
 		}
 		rest := sandbox[i+1+len(role):]
 		if j := strings.LastIndex(sandbox[:i], "-r"); j >= 0 && isDigits(sandbox[j+2:i]) &&
-			(rest == "" || strings.HasPrefix(rest, "-a") || strings.HasPrefix(rest, "-x")) {
+			(rest == "" || strings.HasPrefix(rest, "-a") || strings.HasPrefix(rest, "-s") || strings.HasPrefix(rest, "-x")) {
 			return role
 		}
 	}

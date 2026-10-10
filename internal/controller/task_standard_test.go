@@ -292,7 +292,7 @@ var _ = Describe("Task with a Standard change", func() {
 			"Done by Standard change #%d (%s): with it merged, this issue needed nothing more.", m,
 			task.Status.StandardChange.IssueURL)))
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1), "the resumed Task opened no pull request")
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement"), newSandbox()))).To(BeTrue())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement-s1"), newSandbox()))).To(BeTrue())
 	})
 
 	It("closes its pull request when its Standard change did the whole issue", func() {
@@ -348,25 +348,21 @@ var _ = Describe("Task with a Standard change", func() {
 		mergeChange(ns, 1)
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.StandardChange).To(PointTo(HaveField("ResumedRound", int32(1))))
-			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement")).To(ContainElement(
+			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement-s1")).To(ContainElement(
 				map[string]any{"name": "C4_RESUMED", "value": "true"}))
 		}).Should(Succeed(), fmt.Sprintf("resumed after Standard change #%d", m))
 
 		By("the resumed run changing the branch, so a pull request is opened and reviewed")
-		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-implement")})).To(Succeed())
-		Eventually(func(g Gomega) {
-			g.Expect(sandboxExists(g, ns, "orders-api-1-r1-implement").GetDeletionTimestamp()).To(BeNil())
-		}).Should(Succeed())
 		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-r1")
-		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
+		finishSandbox(ns, "orders-api-1-r1-implement-s1", "orders-api-1",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Uses the dist target."}, "")
 		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
-		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }).Should(Succeed())
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-s1-a1") }).Should(Succeed())
 
 		By("sending the approved, conflicting change back to resolve conflicts")
 		pulls := gitFake.pullRequests(ns, "orders-api")
 		gitFake.conflict(ns, "orders-api", pulls[len(pulls)-1].Number, true)
-		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+		finishSandbox(ns, "orders-api-1-r1-review-s1-a1", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Good."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
@@ -374,10 +370,8 @@ var _ = Describe("Task with a Standard change", func() {
 			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
 			g.Expect(task.Status.StandardChange).To(PointTo(HaveField("ResumedRound", int32(0))))
 		}).Should(Succeed())
-		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-implement")})).To(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(sandboxExists(g, ns, "orders-api-1-r1-implement").GetDeletionTimestamp()).To(BeNil())
-			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement")).NotTo(ContainElement(
+			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement-s2")).NotTo(ContainElement(
 				map[string]any{"name": "C4_RESUMED", "value": "true"}))
 		}).Should(Succeed())
 	})
@@ -485,14 +479,13 @@ func mergeChange(ns string, pr int) {
 }
 
 // finishResumed has the resumed implement run of orders-api-1 in round find its
-// branch equal to main: the Standard change did the whole issue.
+// branch equal to main: the Standard change did the whole issue. The resume
+// restarts the round, so the run's sandbox is named apart from the one that
+// proposed, whose pod is still there (envtest collects no garbage).
 func finishResumed(ns string, round int) {
 	GinkgoHelper()
-	name := fmt.Sprintf("orders-api-1-r%d-implement", round)
-	// The pod of the run that proposed is still there: envtest collects no garbage.
-	Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, name)})).To(Succeed())
+	name := fmt.Sprintf("orders-api-1-r%d-implement-s1", round)
 	Eventually(func(g Gomega) {
-		g.Expect(sandboxExists(g, ns, name).GetDeletionTimestamp()).To(BeNil())
 		g.Expect(sandboxEnv(g, ns, name)).To(ContainElement(map[string]any{"name": "C4_RESUMED", "value": "true"}))
 	}).Should(Succeed())
 	finishSandbox(ns, name, "orders-api-1", &agentrunner.Result{Role: "implement", Empty: true}, "")

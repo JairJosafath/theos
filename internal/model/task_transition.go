@@ -14,8 +14,11 @@ type TaskProgress struct {
 	ReviewAttempts int
 	ReviewAgains   int
 	Reruns         int
-	Feedback       string
-	Commit         string
+	// Restarts counts how often the round started over in place (conflicts,
+	// a resume); sandbox names include it.
+	Restarts int
+	Feedback string
+	Commit   string
 	// HasChecks means the round's check results are kept; a transition that
 	// clears it drops them.
 	HasChecks bool
@@ -91,6 +94,7 @@ func NextRound(p TaskProgress, feedback string) TaskProgress {
 	p.ReviewAttempts = 0
 	p.ReviewAgains = 0
 	p.Reruns = 0
+	p.Restarts = 0
 	p.HasChecks = false
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskImplementing
@@ -99,8 +103,25 @@ func NextRound(p TaskProgress, feedback string) TaskProgress {
 
 // ResolveConflicts is the progress of an approved Task sent back, in the same
 // round, to resolve conflicts with main. Only the first run after a resume
-// skips the empty-branch guard, so the resume is forgotten.
+// skips the empty-branch guard, so the resume is forgotten. The round restarts,
+// so its next runs get sandbox names of their own.
 func ResolveConflicts(p TaskProgress, feedback string) TaskProgress {
+	return restartRound(p, feedback)
+}
+
+// ResumeRound is the progress of a Task whose Standard change merged: the
+// round it was in starts over, its implementer told the change is in main.
+func ResumeRound(p TaskProgress, feedback string) TaskProgress {
+	p = restartRound(p, feedback)
+	p.ResumedRound = p.Round
+	return p
+}
+
+// restartRound starts the round over in place: its review counters start
+// again, and Restarts keeps the next runs' sandbox names apart from the
+// earlier ones, which may still be being deleted.
+func restartRound(p TaskProgress, feedback string) TaskProgress {
+	p.Restarts++
 	p.Feedback = feedback
 	p.ReviewAttempts = 0
 	p.ReviewAgains = 0

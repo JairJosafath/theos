@@ -1129,12 +1129,16 @@ func AgentUsername(project, container string) string {
 	return strings.TrimRight(name[:maxUsername-len(suffix)], "-") + suffix
 }
 
-// SandboxName names the sandbox of one run: task, round, role, for reviews the
-// attempt, and the rerun after an interruption, if any. A rerun gets a name of
-// its own, so the sandbox it replaces, still being deleted, is never read as its
-// own. It fits a DNS label.
-func SandboxName(task string, round int, role string, attempt, rerun int) string {
+// SandboxName names the sandbox of one run: task, round, role, the round's
+// restart (conflicts, a resume), if any, for reviews the attempt, and the rerun
+// after an interruption, if any. A rerun or a restarted round's run gets a name
+// of its own, so the sandbox it replaces, still being deleted, is never read as
+// its own. It fits a DNS label.
+func SandboxName(task string, round, restart int, role string, attempt, rerun int) string {
 	suffix := "-r" + strconv.Itoa(round) + "-" + role
+	if restart > 0 {
+		suffix += "-s" + strconv.Itoa(restart)
+	}
 	if role == RoleReviewer {
 		suffix += "-a" + strconv.Itoa(attempt)
 	}
