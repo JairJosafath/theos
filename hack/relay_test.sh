@@ -163,6 +163,7 @@ check "triage: names the issues" "$(grep -c 'status/proposed: #40 #41\.' <<<"$ou
 check "triage: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$out")" 1
 check "triage: needs-human stays the user's" "$(grep -c "needs-human stays the user's" <<<"$out")" 1
 check "triage: writes a missing Depends on itself" "$(grep -c 'a "Depends on #M" line it lacks' <<<"$out")" 1
+check "triage: gives a kind label before readying" "$(grep -c 'exactly one `kind/\*` label' <<<"$out") $(grep -c 'refuses an issue with no kind' <<<"$out")" "1 1"
 check "triage: escalates a user's decision to the maintainer" "$(grep -c 'hack/lib/github.sh status N needs-maintainer' <<<"$out")" 1
 check "triage: never sets needs-human" "$(grep -c 'status N needs-human' <<<"$out") $(grep -c 'never set status/needs-human' <<<"$out")" "0 1"
 check "triage: needs-maintainer is the maintainer's" "$(grep -c "needs-maintainer is the maintainer's" <<<"$out")" 1
