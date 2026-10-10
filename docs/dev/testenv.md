@@ -581,6 +581,12 @@ queue:
   that ends, fails or is killed frees its slot within a second; its sub-makes
   don't take another. `hack/heavy-slot.sh status` shows the slots and the
   waiters.
+- Two checks at once still start several envtest control planes at once, so
+  `make test` gives them slack: 2 minutes for etcd and kube-apiserver to
+  start (`ENVTEST_START_TIMEOUT`), and etcd a 10 s election timeout
+  (`ENVTEST_ETCD_ELECTION_TIMEOUT`, in ms), which makes its request timeout
+  25 s instead of 7 s. Running a spec outside `make test` (an IDE) uses
+  envtest's defaults.
 - `make check` remembers a passing tree, device-wide (`hack/check-cache.sh`).
   A pass is recorded under the git tree hash of the working state as the
   check left it (tracked and untracked non-ignored files, after `manifests`,
