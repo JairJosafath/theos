@@ -173,6 +173,18 @@ func TestNextRelease(t *testing.T) {
 				Merged: []MergedTask{merged("server-44", 44, "aaa4444", 3),
 					{Name: "server-46", Issue: 46, At: day(5), DoneBy: 205}}},
 			ReleaseStep{Tag: "v0.2.0", Commit: "aaa4444", Milestone: 2, CreateTag: true}},
+		{"an issue done by a Standard change whose merge waits for its commit holds the release",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(2, "v0.2.0", 12, nil, []int{44, 46})},
+				Merged: []MergedTask{merged("server-44", 44, "aaa4444", 3), merged("t-205", 205, "", 4),
+					{Name: "server-46", Issue: 46, At: day(5), DoneBy: 205}}},
+			ReleaseStep{Tag: "v0.2.0", Reason: ReleaseNoMergeCommit, Held: "v0.2.0 waits for the merge commit of " +
+				"Task t-205 (#205), the Standard change that did #46; a person moves #46 out of v0.2.0 to release it " +
+				"without"}},
+		{"a Standard change's later try with its commit releases the issue it did",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(2, "v0.2.0", 12, nil, []int{44, 46})},
+				Merged: []MergedTask{merged("server-44", 44, "aaa4444", 3), merged("t-205-old", 205, "", 2),
+					merged("t-205", 205, "116291b", 4), {Name: "server-46", Issue: 46, At: day(5), DoneBy: 205}}},
+			ReleaseStep{Tag: "v0.2.0", Commit: "116291b", Milestone: 2, CreateTag: true}},
 		{"a merge without its time holds the release",
 			ReleaseFacts{Milestones: []ReleaseMilestone{v020},
 				Merged: append(serverMerges[1:], MergedTask{Name: "server-44", Issue: 44, Commit: "aaa4444"})},
