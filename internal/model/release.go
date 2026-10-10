@@ -190,17 +190,26 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 
 	// A merge without its commit or time holds the release, unless another
 	// merged Task of the same issue (a later try) has them, or a Standard change
-	// did its issue: that one's merge is not among the Crew's Tasks, and never
-	// will be.
+	// did its issue and that change's merge is lost: it is not among the Crew's
+	// Tasks, and never will be. A change's merge still waiting for its commit
+	// holds the release like the issue's own would.
 	var newest *MergedTask
 	for i, t := range f.Merged {
 		if !slices.Contains(first.Closed, t.Issue) {
 			continue
 		}
 		if !recorded(t) {
-			if t.DoneBy != 0 ||
-				slices.ContainsFunc(f.Merged, func(o MergedTask) bool { return o.Issue == t.Issue && recorded(o) }) {
+			if slices.ContainsFunc(f.Merged, func(o MergedTask) bool { return o.Issue == t.Issue && recorded(o) }) {
 				continue
+			}
+			if t.DoneBy != 0 {
+				change := slices.IndexFunc(f.Merged, func(o MergedTask) bool { return o.Issue == t.DoneBy })
+				if change < 0 {
+					continue
+				}
+				return held(first.Title, ReleaseNoMergeCommit, "%s waits for the merge commit of Task %s (#%d), "+
+					"the Standard change that did #%d; a person moves #%d out of %s to release it without",
+					first.Title, f.Merged[change].Name, t.DoneBy, t.Issue, t.Issue, first.Title)
 			}
 			return held(first.Title, ReleaseNoMergeCommit, "%s waits for the merge commit of Task %s (#%d); "+
 				"a person moves #%d out of %s to release it without", first.Title, t.Name, t.Issue, t.Issue,
