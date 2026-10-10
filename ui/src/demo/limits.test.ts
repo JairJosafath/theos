@@ -11,6 +11,7 @@ interface Schema {
   maximum?: number
   maxItems?: number
   items?: Schema
+  'x-kubernetes-validations'?: { rule: string }[]
   properties?: Record<string, Schema>
 }
 
@@ -28,7 +29,10 @@ describe('the demo limits', () => {
     expect({
       idea: { min: spec.idea.minLength, max: spec.idea.maxLength },
       prompt: { min: spec.prompts.items?.minLength, max: spec.prompts.items?.maxLength },
-      prompts: spec.prompts.maxItems,
+      // maxItems is one more, so the CEL rule refuses the 51st with its message (#855).
+      prompts: Number(
+        spec.prompts['x-kubernetes-validations']?.map((v) => /^size\(self\) <= (\d+)$/.exec(v.rule)?.[1]).find(Boolean),
+      ),
       parallel: { min: spec.parallel.minimum, max: spec.parallel.maximum },
     }).toEqual(BRIEF_LIMITS)
   })

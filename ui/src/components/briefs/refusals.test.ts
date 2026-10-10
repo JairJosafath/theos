@@ -115,7 +115,7 @@ describe('a refused Brief create', () => {
 describe('a refused prompt', () => {
   it('shows the API server’s message and keeps the prompt', async () => {
     const message =
-      'Brief.c4.factory.io "returns" is invalid: spec.prompts[50]: Too many: 51: must have at most 50 items'
+      'Brief.c4.factory.io "returns" is invalid: spec.prompts: Invalid value: a Brief lists at most 50 prompts: in the write that appends, drop the oldest prompts rounds have planned (status.promptsPlanned counts them) and raise promptsRetired by as many'
     const fetchImpl = vi.fn(async () => refused(message))
     const page = await render(
       createElement(PromptForm, {
