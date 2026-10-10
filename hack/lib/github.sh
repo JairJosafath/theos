@@ -64,7 +64,8 @@
 #   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, waiting,
 #                                        needs-maintainer, needs-human. Agents escalate with needs-maintainer; only
 #                                        the maintainer sets needs-human (GOVERNANCE.md). Those two and waiting
-#                                        (a plan's parent, waiting on its steps) release the claim and lease
+#                                        (a plan's parent, waiting on its steps) release the claim and lease. ready is refused
+#                                        (exit 1) for an issue with no kind/* label: take names the branch by it
 #   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, drop its status labels,
 #                                        release the claim and lease, then close the plan parents N finishes (parents).
 #                                        Refused (exit 1) while a "Depends on #S" line of N's body names an open S:
@@ -615,6 +616,12 @@ gh_set_status() {
     *) echo "github: status must be proposed, ready, in-progress, waiting, needs-maintainer or needs-human" >&2; return 1 ;;
   esac
   labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n/labels?per_page=100" --jq '.[].name') || return 1
+  # take names the branch from the kind/* label, and the release notes file
+  # the work by it, so a ready issue needs one.
+  if [ "$want" = status/ready ] && ! grep -q '^kind/' <<<"$labels"; then
+    echo "github: #$n has no kind/* label; give it one (kind/bug, kind/feature, kind/improvement, kind/chore or kind/docs) before readying it" >&2
+    return 1
+  fi
   while IFS= read -r l; do
     [[ $l == status/* && $l != "$want" ]] || continue
     gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/$n/labels/${l//\//%2F}" >/dev/null || return 1

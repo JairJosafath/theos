@@ -275,6 +275,13 @@ clear; claim "$T/main" 51 "$(date +%s)"; lease "$T/main" 51 "$(date +%s)"
 real_set_status 51 needs-human >/dev/null 2>&1
 check "needs-human drops the lease and the claim" \
   "$([ -e "$LEASE" ] && echo kept || echo gone) $([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" "gone released"
+# ready needs a kind/* label: take names the branch by it, the release notes file by it.
+clear; : >"$T/calls"
+out=$(real_set_status 51 ready 2>&1); rc=$?
+check "ready without a kind label is refused" "$rc $(grep -c 'no kind/\* label' <<<"$out") $(grep -c . "$T/calls")" "1 1 0"
+clear; : >"$T/calls"
+real_set_status 72 ready >/dev/null 2>&1; rc=$?
+check "ready with a kind label" "$rc $(cat "$T/calls")" "0 DELETE repos/JairJosafath/c4factory/issues/72/labels/status%2Fin-progress"
 # Marking, handing off or closing another issue keeps this checkout's lease and claim.
 clear; claim "$T/main" 52 "$(date +%s)"; lease "$T/main" 52 "$(date +%s)"
 real_set_status 51 needs-human >/dev/null 2>&1

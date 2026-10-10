@@ -261,7 +261,13 @@ For each proposed issue, decide one of these:
   of work, its goal fits docs/design.md or says which part of the design it
   changes), says when it is done (a checkable "Done when"), isn't a duplicate
   of an open issue, and names what it waits on with a "Depends on #M" line in
-  its body, or waits on nothing.
+  its body, or waits on nothing. Before you ready any issue, it carries
+  exactly one \`kind/*\` label (kind/bug, kind/feature, kind/improvement,
+  kind/chore or kind/docs: \`take\` names its branch by it, and the release
+  notes file it by it) and a \`source/*\` one; give it the one that fits
+  (\`gh issue edit N --repo $C4_GITHUB_REPO --add-label kind/bug\`, and
+  \`--remove-label\` for a second kind), or \`hack/lib/github.sh intake N\`
+  for its source. \`status N ready\` refuses an issue with no kind.
 - Ready it as design work, when what it wants is clear but docs/design.md
   doesn't settle how, or it is more than one piece of work: comment (first
   line \`<!-- relay-triage -->\`) that its session makes the design choices,
