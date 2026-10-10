@@ -159,7 +159,7 @@ export function BriefBody({
   answering?: boolean
 }) {
   const answers: AnswerContext | undefined = answering
-    ? { namespace, name: view.name, writer, prompts: view.prompts }
+    ? { namespace, name: view.name, writer, prompts: view.prompts, written: view.promptsWritten }
     : undefined
   return (
     <>

@@ -80,3 +80,23 @@ export function answeredWith(answers: Answer[], prompts: BriefPrompt[]): Answer 
   const waiting = new Set(prompts.filter((p) => !p.planned).map((p) => p.text))
   return answers.find((a) => waiting.has(a.prompt))
 }
+
+/** An answer sent from the page, and how many prompts the Brief had written then. */
+export interface SentAnswer {
+  answer: Answer
+  written: number
+}
+
+/**
+ * The answer to show as sent: the one whose prompt waits, or else the one just
+ * sent until the watch brings its prompt. written counts every prompt the Brief
+ * had, the retired ones too, as retiring shrinks the prompts listed.
+ */
+export function shownAnswer(
+  answers: Answer[],
+  prompts: BriefPrompt[],
+  written: number,
+  sent?: SentAnswer,
+): Answer | undefined {
+  return answeredWith(answers, prompts) ?? (sent && written <= sent.written ? sent.answer : undefined)
+}

@@ -66,6 +66,8 @@ export interface BriefView {
   pausedNote?: string
   round: number
   prompts: BriefPrompt[]
+  /** Every prompt the Brief was written, the retired ones too: spec.prompts shrinks, this doesn't. */
+  promptsWritten: number
   waitingPrompts: number
   choices: string[]
   created: { kind: string; name: string }[]
@@ -188,6 +190,7 @@ export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
       : undefined,
     round: status.round ?? 0,
     prompts,
+    promptsWritten: prompts.length + (brief.spec.promptsRetired ?? 0),
     waitingPrompts: prompts.filter((p) => !p.planned).length,
     choices: status.choices ?? [],
     created: status.created ?? [],

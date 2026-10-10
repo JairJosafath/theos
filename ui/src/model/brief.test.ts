@@ -67,6 +67,7 @@ describe('describeBrief', () => {
       { text: 'Ship to Belgium', planned: false },
     ])
     expect(view.waitingPrompts).toBe(1)
+    expect(view.promptsWritten).toBe(13)
   })
 
   it('lists the reviewer suggestions and how many wait in all', () => {
