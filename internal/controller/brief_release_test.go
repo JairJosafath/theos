@@ -186,6 +186,14 @@ var _ = Describe("Brief releases", func() {
 		Expect(milestones[1].Due).To(BeTemporally(">", milestones[0].Due), "lined up after v0.1.0")
 
 		By("taking a reviewer's suggestion into the round's release, which makes it a minor one")
+		// Paused, the Crew doesn't start a Task on the taken suggestion,
+		// which under load could fail and hand it back before the labels are
+		// read (#845).
+		crew := linterCrew(Default, ns)
+		Expect(patch(crew, func() { crew.Spec.Paused = true })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(linterCrew(g, ns).Status.Phase).To(Equal(c4v1alpha1.CrewPaused))
+		}).Should(Succeed())
 		safety := gitFake.addIssue(ns, "linter", "Reject control characters", model.FollowUpIssue(model.FollowUp{
 			Body: "A rule's text takes them.", Criteria: []string{"A rule with a control character is refused"}},
 			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
