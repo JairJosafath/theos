@@ -76,17 +76,19 @@ func sandboxExists(g Gomega, ns, name string) *unstructured.Unstructured {
 
 // finishSandbox plays Agent Sandbox and c4agent: it creates the sandbox's pod,
 // owned by the sandbox, and ends it with result as termination message, or with
-// reason and no message.
+// reason and no message. Its writes are tried again: a loaded API server can
+// time a request out (#829), and nothing else writes the pod.
 func finishSandbox(ns, name, task string, result *agentrunner.Result, reason string) {
 	GinkgoHelper()
 	sandbox := newSandbox()
-	Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed())
+	Eventually(func(g Gomega) { g.Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed()) }).Should(Succeed())
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name, Labels: map[string]string{LabelTask: task},
 			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "agent", Image: "agent"}}},
 	}
-	Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+	Eventually(func() error { return client.IgnoreAlreadyExists(k8sClient.Create(ctx, pod.DeepCopy())) }).
+		Should(Succeed())
 	terminated := &corev1.ContainerStateTerminated{Reason: reason, ExitCode: 0}
 	phase := corev1.PodSucceeded
 	if result != nil {
@@ -97,10 +99,17 @@ func finishSandbox(ns, name, task string, result *agentrunner.Result, reason str
 	} else {
 		phase, terminated.ExitCode = corev1.PodFailed, 137
 	}
-	pod.Status = corev1.PodStatus{Phase: phase, ContainerStatuses: []corev1.ContainerStatus{{
+	status := corev1.PodStatus{Phase: phase, ContainerStatuses: []corev1.ContainerStatus{{
 		Name: "agent", Image: "agent", State: corev1.ContainerState{Terminated: terminated},
 	}}}
-	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+	Eventually(func(g Gomega) {
+		got := &corev1.Pod{}
+		g.Expect(k8sClient.Get(ctx, key(ns, name), got)).To(Succeed())
+		g.Expect(got.OwnerReferences).To(ContainElement(HaveField("UID", sandbox.GetUID())),
+			"a pod of an earlier sandbox with this name")
+		got.Status = status
+		g.Expect(k8sClient.Status().Update(ctx, got)).To(Succeed())
+	}).Should(Succeed())
 }
 
 var _ = Describe("Task", func() {
