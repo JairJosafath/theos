@@ -89,7 +89,9 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
     if (prompt.length > BRIEF_LIMITS.prompt.max)
       throw invalid(`${at}: Too long: may not be more than ${BRIEF_LIMITS.prompt.max} bytes`)
     if (prompts.length >= BRIEF_LIMITS.prompts)
-      throw invalid(`spec.prompts: Too many: ${prompts.length + 1}: must have at most ${BRIEF_LIMITS.prompts} items`)
+      throw invalid(
+        `spec.prompts: Invalid value: a Brief lists at most ${BRIEF_LIMITS.prompts} prompts: in the write that appends, drop the oldest prompts rounds have planned (status.promptsPlanned counts them) and raise promptsRetired by as many`,
+      )
     const changed = { ...brief, spec: { ...brief.spec, prompts: [...prompts, prompt] } }
     this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
   }
