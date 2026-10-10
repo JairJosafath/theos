@@ -519,6 +519,18 @@ on the issue what it became (the issues and their release) or why it was
 skipped, and closes a skipped one. The comment when its release ships is step
 5 of [the plan](plans/brief-requests.md).
 
+`requests.accepted` and `requests.declined` hold at most 200 numbers each,
+and the operator never changes them. Once an issue is closed and done with,
+its number does nothing more: the Brief lists those numbers per repository in
+`status.requestsSettled`, and *Accept* and *Decline* drop them from both
+lists with each answer. With kubectl, remove them yourself when a list nears
+200; the API server refuses the 201st. A dropped number whose issue is
+reopened is a new request, asked again in `Ask`:
+
+```sh
+kubectl get brief app -o jsonpath='{.status.requestsSettled}'
+```
+
 The Brief's page lists the open requests with how far each got
 (`status.requests`), and the condition `Requests` says whether the issues can
 be read:

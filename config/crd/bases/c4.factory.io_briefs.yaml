@@ -1005,6 +1005,42 @@ spec:
                 maxItems: 50
                 type: array
                 x-kubernetes-list-type: atomic
+              requestsSettled:
+                description: |-
+                  requestsSettled are, per repository that takes requests, the numbers
+                  in its entry's accepted and declined whose issues are closed on GitHub
+                  and no request has: they do nothing more, and may be dropped from the
+                  spec, which keeps the lists under their cap. The UI drops them when it
+                  answers a request.
+                items:
+                  description: |-
+                    BriefRequestsSettled are the answered numbers of one repository that do
+                    nothing more.
+                  properties:
+                    numbers:
+                      description: |-
+                        numbers are the issue numbers in its entry's accepted or declined whose
+                        issues are closed, as the last read of the repository saw them.
+                      items:
+                        format: int32
+                        type: integer
+                      maxItems: 400
+                      type: array
+                      x-kubernetes-list-type: set
+                    repository:
+                      description: |-
+                        repository is the GitHub repository, owner/name, as spec.releases
+                        names it.
+                      maxLength: 140
+                      type: string
+                  required:
+                  - repository
+                  type: object
+                maxItems: 10
+                type: array
+                x-kubernetes-list-map-keys:
+                - repository
+                x-kubernetes-list-type: map
               requestsWaiting:
                 description: |-
                   requestsWaiting is how many requests are open, those past the 50

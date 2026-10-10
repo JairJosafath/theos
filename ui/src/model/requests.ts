@@ -56,6 +56,11 @@ export interface RequestsView {
   failure?: { reason: string; message: string }
   /** The Requests condition while True: which repositories it reads. */
   reading?: string
+  /**
+   * The answered numbers whose issues are closed, by repository in lower
+   * case; an answer drops them, so accepted and declined stay under the CRD's cap.
+   */
+  settled: Record<string, number[]>
 }
 
 const STAGES: Record<BriefRequestStage, { label: string; tone: Tone }> = {
@@ -124,6 +129,9 @@ export function describeRequests(brief: Brief): RequestsView {
         ? { reason: condition.reason ?? 'Unknown', message: condition.message?.trim() ?? '' }
         : undefined,
     reading: condition?.status === 'True' ? condition.message?.trim() || undefined : undefined,
+    settled: Object.fromEntries(
+      (status.requestsSettled ?? []).map((s) => [s.repository.toLowerCase(), s.numbers ?? []]),
+    ),
   }
 }
 
@@ -150,20 +158,24 @@ function requestsEntry(releases: BriefRelease[], repository: string): number {
 /**
  * The releases list with number added to the accepted (accept) or declined
  * (decline) requests of the entry that takes requests from repository, and
- * taken out of the other; undefined when no entry does.
+ * taken out of the other; undefined when no entry does. The settled numbers,
+ * those of closed issues, leave both lists, which keeps them under the CRD's
+ * cap of 200 (#824).
  */
 export function answerRequest(
   releases: BriefRelease[],
   repository: string,
   number: number,
   answer: RequestAnswer,
+  settled: number[] = [],
 ): BriefRelease[] | undefined {
   const i = requestsEntry(releases, repository)
   if (i < 0) return undefined
   const requests = releases[i].requests!
   const [to, from] = answer === 'accept' ? (['accepted', 'declined'] as const) : (['declined', 'accepted'] as const)
-  const next: BriefRequests = { ...requests, [to]: [...(requests[to] ?? []).filter((n) => n !== number), number] }
-  const rest = (requests[from] ?? []).filter((n) => n !== number)
+  const keep = (n: number) => n !== number && !settled.includes(n)
+  const next: BriefRequests = { ...requests, [to]: [...(requests[to] ?? []).filter(keep), number] }
+  const rest = (requests[from] ?? []).filter(keep)
   if (rest.length) next[from] = rest
   else delete next[from]
   return releases.map((r, j) => (j === i ? { ...r, requests: next } : r))

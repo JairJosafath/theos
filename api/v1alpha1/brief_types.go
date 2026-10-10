@@ -530,6 +530,23 @@ type BriefTendedIssue struct {
 	Round int32 `json:"round"`
 }
 
+// BriefRequestsSettled are the answered numbers of one repository that do
+// nothing more.
+type BriefRequestsSettled struct {
+	// repository is the GitHub repository, owner/name, as spec.releases
+	// names it.
+	// +kubebuilder:validation:MaxLength=140
+	// +required
+	Repository string `json:"repository"`
+
+	// numbers are the issue numbers in its entry's accepted or declined whose
+	// issues are closed, as the last read of the repository saw them.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=400
+	// +optional
+	Numbers []int32 `json:"numbers,omitempty"`
+}
+
 // BriefRequestShipped is where a request's issues went out.
 type BriefRequestShipped struct {
 	// tag is the published release's version; empty for an issue done in a
@@ -785,6 +802,17 @@ type BriefStatus struct {
 	// listed too.
 	// +optional
 	RequestsWaiting int32 `json:"requestsWaiting,omitempty"`
+
+	// requestsSettled are, per repository that takes requests, the numbers
+	// in its entry's accepted and declined whose issues are closed on GitHub
+	// and no request has: they do nothing more, and may be dropped from the
+	// spec, which keeps the lists under their cap. The UI drops them when it
+	// answers a request.
+	// +listType=map
+	// +listMapKey=repository
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	RequestsSettled []BriefRequestsSettled `json:"requestsSettled,omitempty"`
 
 	// tended are the failed issues rounds answered and the Brief remembers,
 	// so it raises one again only when its tries grow or a wait lapses; at

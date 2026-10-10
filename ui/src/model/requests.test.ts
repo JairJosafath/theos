@@ -92,6 +92,12 @@ describe('describeRequests', () => {
     })
   })
 
+  it('keeps the settled numbers by repository in lower case', () => {
+    const view = describeRequests(brief({ requestsSettled: [{ repository: 'Gray-Lenovo/CEL-lens', numbers: [1, 2] }] }))
+    expect(view.settled).toEqual({ 'gray-lenovo/cel-lens': [1, 2] })
+    expect(describeRequests(brief({})).settled).toEqual({})
+  })
+
   it('takes none without an entry whose mode reads issues', () => {
     expect(describeRequests(brief({}, [cli, { ...lens, requests: { mode: 'Off' } }])).taking).toBe(false)
     expect(describeRequests(brief({}, [cli])).list).toEqual([])
@@ -114,6 +120,23 @@ describe('answerRequest', () => {
     expect(answerRequest([lens], 'gray-lenovo/cel-lens', 3, 'decline')).toEqual([
       { ...lens, requests: { mode: 'Ask', authors: ['gray-lenovo'], declined: [3] } },
     ])
+  })
+
+  it('drops the settled numbers, those of closed issues, from both lists', () => {
+    const full: BriefRelease = {
+      ...lens,
+      requests: { mode: 'Ask', authors: ['gray-lenovo'], accepted: [1, 3], declined: [2, 4] },
+    }
+    expect(answerRequest([full], 'gray-lenovo/cel-lens', 12, 'decline', [1, 2, 4])).toEqual([
+      { ...lens, requests: { mode: 'Ask', authors: ['gray-lenovo'], accepted: [3], declined: [12] } },
+    ])
+  })
+
+  it('answers again once an entry answered 200 requests whose issues closed', () => {
+    const answered = Array.from({ length: 200 }, (_, i) => i + 1)
+    const full: BriefRelease = { ...lens, requests: { mode: 'Ask', authors: ['gray-lenovo'], declined: answered } }
+    const releases = answerRequest([full], 'gray-lenovo/cel-lens', 201, 'decline', answered)!
+    expect(releases[0].requests!.declined).toEqual([201])
   })
 
   it('has nothing to answer with when no entry takes requests from the repository', () => {

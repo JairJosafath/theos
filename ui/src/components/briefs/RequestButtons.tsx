@@ -31,6 +31,7 @@ export function RequestButtons({
   resourceVersion,
   request,
   label,
+  settled,
 }: {
   namespace: string
   name: string
@@ -40,6 +41,8 @@ export function RequestButtons({
   request: { repository: string; number: number }
   /** The request, as its buttons name it: "gray-lenovo/cel-lens #12". */
   label: string
+  /** The repository's answered numbers whose issues are closed, which an answer drops. */
+  settled?: number[]
 }) {
   const session = useContext(SessionContext)
   const [sending, setSending] = useState<RequestAnswer>()
@@ -79,7 +82,7 @@ export function RequestButtons({
     )
   }
 
-  const next = (answer: RequestAnswer) => answerRequest(releases, request.repository, request.number, answer)
+  const next = (answer: RequestAnswer) => answerRequest(releases, request.repository, request.number, answer, settled)
 
   async function send(answer: RequestAnswer) {
     const list = next(answer)
