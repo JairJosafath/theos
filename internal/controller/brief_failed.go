@@ -247,8 +247,7 @@ func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1alpha1.Br
 	}
 	status := &brief.Status
 	round := int(status.Round)
-	prompts := model.RoundPrompts(brief.Spec.Prompts[:min(max(int(status.RoundPrompts), 0), len(brief.Spec.Prompts))],
-		int(status.PromptsPlanned))
+	prompts := takenPrompts(brief)
 	var filed []string
 	for _, i := range status.Issues {
 		if i.Round == status.Round {

@@ -56,6 +56,19 @@ describe('describeBrief', () => {
     expect(view.usage?.line).toBe('$1.23')
   })
 
+  it('counts the retired prompts when it splits the rest', () => {
+    const view = describeBrief({
+      ...brief('shop', '2026-01-01T00:00:00Z'),
+      spec: { idea: 'A shop', prompts: ['Add gift cards', 'Ship to Belgium'], promptsRetired: 11 },
+      status: { phase: 'Planned', round: 9, promptsPlanned: 12 },
+    })
+    expect(view.prompts).toEqual([
+      { text: 'Add gift cards', planned: true },
+      { text: 'Ship to Belgium', planned: false },
+    ])
+    expect(view.waitingPrompts).toBe(1)
+  })
+
   it('lists the reviewer suggestions and how many wait in all', () => {
     const view = describeBrief({
       ...brief('shop', ''),

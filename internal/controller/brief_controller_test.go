@@ -362,6 +362,41 @@ var _ = Describe("Brief", func() {
 			Expect(k8sClient.Create(ctx, newBrief(ns, "too-long", strings.Repeat("p", 2001)))).
 				To(MatchError(ContainSubstring("spec.prompts[0]")))
 		})
+
+		It("let the oldest go when promptsRetired counts them", func() {
+			brief := newBrief(ns, "retired", "one", "two", "three")
+			mustCreate(brief)
+			Expect(patch(brief, func() {
+				brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"three", "four"}, 2
+			})).To(Succeed())
+			Expect(patch(brief, func() {
+				brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"four"}, 3
+			})).To(Succeed())
+		})
+
+		It("refuse a retirement promptsRetired doesn't count right", func() {
+			brief := newBrief(ns, "miscounted", "one", "two", "three")
+			mustCreate(brief)
+			for _, change := range []func(){
+				func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"three"}, 1 },
+				func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"two", "three"}, 2 },
+				func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"one", "three"}, 1 },
+				func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"two", "3"}, 1 },
+				func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"x"}, 4 },
+			} {
+				Expect(patch(brief, change)).To(MatchError(ContainSubstring(appendOnly)))
+				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(brief), brief)).To(Succeed())
+			}
+		})
+
+		It("refuse a promptsRetired that goes down", func() {
+			brief := newBrief(ns, "unretired", "one", "two")
+			mustCreate(brief)
+			Expect(patch(brief, func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"two"}, 1 })).
+				To(Succeed())
+			Expect(patch(brief, func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"one", "two"}, 0 })).
+				To(MatchError(ContainSubstring("promptsRetired only grows")))
+		})
 	})
 })
 

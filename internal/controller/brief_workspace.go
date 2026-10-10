@@ -281,7 +281,7 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1
 	ws := model.BriefWorkspace{
 		Brief:               brief.Name,
 		Idea:                brief.Spec.Idea,
-		Prompts:             model.WorkspacePrompts(brief.Spec.Prompts, int(status.RoundPrompts), roundRuns),
+		Prompts:             model.WorkspacePrompts(briefPrompts(brief), int(status.RoundPrompts), roundRuns),
 		PromptsPlanned:      int(status.PromptsPlanned),
 		IdeaPlanned:         model.IdeaPlanned(outcomes, int(status.PromptsPlanned)),
 		Namespace:           brief.Namespace,

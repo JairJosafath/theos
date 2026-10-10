@@ -620,8 +620,18 @@ product. A Brief lets a person give the idea in plain words and steer with
 follow-up prompts; a planner Agent does the rest and says what it chose.
 
 - **A Brief is one more writer of the model.** `spec.idea` is the idea,
-  immutable; `spec.prompts` takes follow-ups and only grows. Anything can
-  write it: the UI's box, kubectl or GitOps. With actions off, the UI server
+  immutable; `spec.prompts` takes follow-ups, at most 50 listed at once, and
+  an earlier prompt never changes. Once rounds have planned more than ten,
+  the operator retires the oldest planned ones: it takes them out of the
+  list and counts them in `spec.promptsRetired`, which only grows, so a Brief
+  takes prompts for as long as its project runs. A prompt no round planned is
+  never retired; the status counts every prompt written, retired ones
+  included, and the planner's `brief.md` keeps their numbers and says how
+  many retired, the model holding what they asked for. The retiring patch
+  carries the `resourceVersion` it read, so a prompt appended meanwhile is
+  never lost. A Brief kept in Git takes the retirement into Git (drop the
+  oldest prompts, raise `promptsRetired`), or its sync is refused (#835).
+  Anything can write it: the UI's box, kubectl or GitOps. With actions off, the UI server
   writes nothing but this: creating a Brief, appending a prompt, and setting
   `spec.paused` from the card's Pause and Resume buttons. With them on, it
   takes the actions under *UI actions* below.

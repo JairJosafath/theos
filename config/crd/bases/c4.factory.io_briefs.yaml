@@ -184,7 +184,9 @@ spec:
               prompts:
                 description: |-
                   prompts are follow-ups in plain words, oldest first. A prompt is only
-                  ever appended: an earlier one can't change or go.
+                  ever appended: an earlier one can't change. Once rounds have planned
+                  more than ten, the operator retires the oldest planned ones, counting
+                  them in promptsRetired, so the list never fills up.
                 items:
                   maxLength: 2000
                   minLength: 1
@@ -192,11 +194,15 @@ spec:
                 maxItems: 50
                 type: array
                 x-kubernetes-list-type: atomic
-                x-kubernetes-validations:
-                - message: 'prompts are append-only: an earlier prompt can''t change
-                    or go'
-                  rule: size(self) >= size(oldSelf) && oldSelf.all(i, p, self[i] ==
-                    p)
+              promptsRetired:
+                description: |-
+                  promptsRetired is how many of the oldest prompts were taken out of
+                  prompts once planned; it only grows. The status counts every prompt
+                  ever written, retired ones included, so prompts[i] is prompt number
+                  promptsRetired+i+1.
+                format: int32
+                minimum: 0
+                type: integer
               releases:
                 description: |-
                   releases name the Containers whose releases the person asks for, and the
@@ -352,6 +358,24 @@ spec:
             - message: 'prompts are append-only: an earlier prompt can''t change or
                 go'
               rule: '!has(oldSelf.prompts) || size(oldSelf.prompts) == 0 || has(self.prompts)'
+            - message: promptsRetired only grows
+              rule: '(has(self.promptsRetired) ? self.promptsRetired : 0) >= (has(oldSelf.promptsRetired)
+                ? oldSelf.promptsRetired : 0)'
+            - message: 'prompts are append-only: only the oldest can go, each counted
+                in promptsRetired, and an earlier prompt can''t change'
+              rule: '!has(oldSelf.prompts) ? (has(self.promptsRetired) ? self.promptsRetired
+                : 0) <= (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)
+                : (((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired)
+                ? oldSelf.promptsRetired : 0)) < 0 || (((has(self.promptsRetired)
+                ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired
+                : 0)) <= size(oldSelf.prompts) && (has(self.prompts) ? size(self.prompts)
+                : 0) >= size(oldSelf.prompts) - ((has(self.promptsRetired) ? self.promptsRetired
+                : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0))
+                && oldSelf.prompts.all(i, p, i < ((has(self.promptsRetired) ? self.promptsRetired
+                : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0))
+                || self.prompts[i - ((has(self.promptsRetired) ? self.promptsRetired
+                : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0))]
+                == p)))'
           status:
             description: status defines the observed state of Brief
             properties:

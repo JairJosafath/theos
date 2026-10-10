@@ -162,6 +162,12 @@ func (r *BriefReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if !brief.DeletionTimestamp.IsZero() {
 		return r.deleteBot(ctx, &brief)
 	}
+	if err := r.retirePrompts(ctx, &brief); errors.Is(err, errStaleBrief) {
+		logf.FromContext(ctx).V(1).Info("Brief changed since it was read; reading it again")
+		return ctrl.Result{RequeueAfter: staleBriefRetry}, nil
+	} else if err != nil {
+		return ctrl.Result{}, err
+	}
 	orig := brief.DeepCopy()
 	brief.Status.ObservedGeneration = brief.Generation
 	brief.Status.Autopilot = model.AutopilotMode(brief.Spec.Autopilot)

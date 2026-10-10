@@ -570,8 +570,10 @@ export interface Brief extends K8sObject {
   spec: {
     /** What the app is for and who uses it; it can't change. */
     idea: string
-    /** Follow-ups, oldest first; only ever appended. */
+    /** Follow-ups, oldest first; only ever appended, the oldest planned ones retired by the operator. */
     prompts?: string[]
+    /** How many of the oldest prompts the operator took out of prompts once planned. */
+    promptsRetired?: number
     agents?: { planner?: LocalRef; implementer?: LocalRef; reviewer?: LocalRef; designer?: LocalRef }
     gitProviderRef?: LocalRef
     /** Whether it tends its handed-back work by itself; unset is the operator's default. */

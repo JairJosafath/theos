@@ -689,6 +689,7 @@ func TestRoundPrompts(t *testing.T) {
 		{"none when every prompt was planned", []string{"a", "b"}, 2, nil},
 		{"none when planned is past the end", []string{"a"}, 3, nil},
 		{"none for a negative count", []string{"a"}, -1, nil},
+		{"none of the retired ones", []string{"", "", "c"}, 1, []string{"c"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -852,5 +853,36 @@ func TestSpecLimitsMatchTheCRDs(t *testing.T) {
 				t.Errorf("the plan check's limits are %v, the CRD's %v", got, want)
 			}
 		})
+	}
+}
+
+func TestPromptsToRetire(t *testing.T) {
+	tests := []struct {
+		name                     string
+		retired, listed, planned int
+		want                     int
+	}{
+		{"none while ten or fewer are planned", 0, 12, KeptPlannedPrompts, 0},
+		{"the planned past the newest ten", 0, 50, 49, 39},
+		{"none retired twice", 39, 11, 49, 0},
+		{"the planned past the newest ten after an earlier retirement", 39, 15, 54, 5},
+		{"never more than are listed", 0, 3, 20, 3},
+		{"none for a planned count behind the retired", 30, 5, 10, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PromptsToRetire(tt.retired, tt.listed, tt.planned); got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPlacedPrompts(t *testing.T) {
+	if got, want := PlacedPrompts(2, []string{"c", "d"}), []string{"", "", "c", "d"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got := PlacedPrompts(0, nil); len(got) != 0 {
+		t.Errorf("got %q, want none", got)
 	}
 }
