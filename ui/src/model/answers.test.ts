@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { answeredWith, failedAnswers, suggestionAnswers } from './answers'
+import { answeredWith, failedAnswers, shownAnswer, suggestionAnswers } from './answers'
 
 describe('the prompt worded for each answer', () => {
   it('takes or skips a reviewer suggestion, naming it and its title', () => {
@@ -53,5 +53,27 @@ describe('answeredWith', () => {
 
   it('ignores a prompt that only resembles one', () => {
     expect(answeredWith(answers, [{ text: 'Retry issue #7 in cli. Now.', planned: false }])).toBe(undefined)
+  })
+})
+
+describe('shownAnswer', () => {
+  const answers = failedAnswers({ container: 'cli', number: 7 })
+  const close = answers.find((a) => a.kind === 'close')!
+  const older = (n: number) => Array.from({ length: n }, (_, i) => ({ text: `Prompt ${i}`, planned: true }))
+
+  it('shows the answer just sent until the watch brings its prompt', () => {
+    expect(shownAnswer(answers, older(30), 30, { answer: close, written: 30 })).toBe(close)
+  })
+
+  it('shows the waiting prompt once the watch brings it', () => {
+    const prompts = [...older(30), { text: close.prompt, planned: false }]
+    expect(shownAnswer(answers, prompts, 31, { answer: close, written: 30 })).toBe(close)
+  })
+
+  it('stops showing it once a round plans the prompt, though retiring shrank the list', () => {
+    // 30 prompts, the answer lands as the 31st, a round plans it and
+    // retires the five oldest: 26 listed, 31 written.
+    const prompts = [...older(25), { text: close.prompt, planned: true }]
+    expect(shownAnswer(answers, prompts, 31, { answer: close, written: 30 })).toBe(undefined)
   })
 })

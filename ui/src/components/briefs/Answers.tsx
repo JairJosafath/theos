@@ -6,7 +6,7 @@ import { useContext, useState } from 'react'
 import type { BriefWriter } from '../../k8s/briefs'
 import { canWrite } from '../../k8s/session'
 import { SessionContext } from '../../lib/hooks'
-import { answeredWith, type Answer, type AnswerKind } from '../../model/answers'
+import { shownAnswer, type Answer, type AnswerKind, type SentAnswer } from '../../model/answers'
 import type { BriefPrompt } from '../../model/brief'
 import { SignInLink } from '../Account'
 import { FormError } from './PromptForm'
@@ -18,6 +18,8 @@ export interface AnswerContext {
   name: string
   writer: BriefWriter
   prompts: BriefPrompt[]
+  /** Every prompt the Brief was written, the retired ones too. */
+  written: number
 }
 
 export function AnswerButtons({
@@ -35,12 +37,11 @@ export function AnswerButtons({
 }) {
   const session = useContext(SessionContext)
   const [sending, setSending] = useState<Answer>()
-  // The answer sent, and how many prompts the Brief had then: it shows as
-  // answered until the watch brings the prompt, then the prompts say.
-  const [sent, setSent] = useState<{ answer: Answer; prompts: number }>()
+  // The answer sent, and how many prompts the Brief had written then: it shows
+  // as answered until the watch brings the prompt, then the prompts say.
+  const [sent, setSent] = useState<SentAnswer>()
   const [error, setError] = useState<WriteError>()
-  const answered =
-    answeredWith(answers, context.prompts) ?? (sent && context.prompts.length <= sent.prompts ? sent.answer : undefined)
+  const answered = shownAnswer(answers, context.prompts, context.written, sent)
   const can = canWrite(session, 'prompt')
 
   if (answered) {
@@ -64,9 +65,9 @@ export function AnswerButtons({
     setSending(a)
     setError(undefined)
     try {
-      const prompts = context.prompts.length
+      const written = context.written
       await context.writer.addPrompt(context.namespace, context.name, a.prompt)
-      setSent({ answer: a, prompts })
+      setSent({ answer: a, written })
     } catch (err) {
       setError(writeError(err))
     } finally {
