@@ -276,6 +276,34 @@ Choices made in #803:
   keep removes `requests`. Values go as typed: the CRD judges them, and a
   refusal shows the API server's message.
 
+## What #824 settled
+
+`accepted` and `declined` only grew: the UI's buttons and kubectl add
+numbers, and the CRD caps each at 200, so a busy repository ran out of room
+to answer. The UI couldn't prune, since `status.requests` lists only open
+requests, at most 50, and doesn't say which numbers are of closed issues.
+
+- **The operator says which numbers are done; the person's side drops
+  them.** After each full read of a repository, `status.requestsSettled`
+  lists the numbers in its entry's `accepted` and `declined` that are not an
+  open issue of the repository and no request of it has
+  (`model.SettledAnswers`). The UI's *Accept* and *Decline* drop them from
+  both lists in the same write; getting-started.md says to drop them with
+  kubectl. The operator still never writes the spec (decision 7): GitOps
+  would put the numbers back, and writing them back and forth would fight
+  it. A status-side record of every number handled would only move the
+  growth into status.
+- **A repository that couldn't be read keeps what it had,** and one no
+  longer read leaves the list.
+- **A dropped number is forgotten.** Decision 10's "a number in `declined`
+  stays declined" holds while the number is in `declined`; once dropped,
+  a reopened issue is a new request, asked again in `Ask`. The numbers come
+  from the last full read, up to ten minutes old, so a number added by hand
+  for an issue the Brief hasn't read yet can show as settled until the next
+  read; dropping it only asks again. So can an open issue that a page-by-page
+  read of more than 100 open issues missed, when one ahead of it closed
+  between pages.
+
 ## What a human run of Kind would check
 
 That a real fine-grained token with the permissions of decision 3 reads,

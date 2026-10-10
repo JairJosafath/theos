@@ -254,6 +254,50 @@ func TestReadRequests(t *testing.T) {
 	}
 }
 
+// TestSettledAnswers: an answered number whose issue is closed, and no
+// request has, can go; an open issue's number, a request's and another
+// repository's request don't count.
+func TestSettledAnswers(t *testing.T) {
+	repo := "gray-lenovo/cel-lens"
+	open := []RequestIssue{{Number: 5}, {Number: 9}}
+	tests := []struct {
+		name               string
+		accepted, declined []int32
+		requests           []Request
+		want               []int32
+	}{
+		{"nothing answered", nil, nil, nil, nil},
+		{"an open issue's number stays", []int32{5}, []int32{9}, nil, nil},
+		{"a closed issue's numbers go, sorted, once", []int32{7, 1, 5}, []int32{3, 9}, nil, []int32{1, 3, 7}},
+		{"a request's number stays", []int32{4}, nil, []Request{{Repository: repo, Number: 4}}, nil},
+		{"another repository's request doesn't count", nil, []int32{4},
+			[]Request{{Repository: "gray-lenovo/other", Number: 4}}, []int32{4}},
+		{"a number in both lists is listed once", []int32{2}, []int32{2}, nil, []int32{2}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			read := RequestsRead{Repository: repo, Mode: RequestsAsk, Accepted: tt.accepted, Declined: tt.declined,
+				Open: open}
+			if got := SettledAnswers(read, tt.requests); !slices.Equal(got, tt.want) {
+				t.Errorf("SettledAnswers() = %v; want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSettledAnswersOver200: an entry that answered 200 requests whose issues
+// closed has them all settled, so dropping them leaves room for the next.
+func TestSettledAnswersOver200(t *testing.T) {
+	read := RequestsRead{Repository: "o/r", Mode: RequestsAsk, Open: []RequestIssue{{Number: 200}}}
+	for n := int32(1); n <= 200; n++ {
+		read.Accepted = append(read.Accepted, n)
+		read.Declined = append(read.Declined, 200+n)
+	}
+	if got := SettledAnswers(read, nil); len(got) != 399 || slices.Contains(got, 200) {
+		t.Errorf("SettledAnswers() of 400 answers, one open = %d numbers; want 399 without 200", len(got))
+	}
+}
+
 func TestListRequests(t *testing.T) {
 	then := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	all := []Request{

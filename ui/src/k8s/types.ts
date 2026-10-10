@@ -619,6 +619,11 @@ export interface Brief extends K8sObject {
     requests?: BriefRequest[]
     /** How many requests are open in all; can exceed the listed ones. */
     requestsWaiting?: number
+    /**
+     * Per repository, the numbers in its entry's accepted and declined whose
+     * issues are closed: they do nothing more, and an answer drops them.
+     */
+    requestsSettled?: { repository: string; numbers?: number[] }[]
     /** The requests the running or last round took, owner/name#number. */
     roundRequests?: string[]
     /** The failed issues rounds answered, at most 50. */

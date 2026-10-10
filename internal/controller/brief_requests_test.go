@@ -10,6 +10,7 @@ package controller
 
 import (
 	"crypto/rand"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -269,6 +270,47 @@ var _ = Describe("Brief requests", func() {
 		issue, comments := githubFake.gitHubIssue(repository, stranger)
 		Expect(issue.State).To(Equal("open"), "a stranger's issue is left alone, even declined")
 		Expect(comments).To(BeEmpty())
+	})
+
+	It("lists the answered numbers of closed issues as settled, so a full list can answer again (#824)", func() {
+		var old []int32
+		for n := int32(1000); n < 1200; n++ {
+			old = append(old, n)
+		}
+		repository, _ := requestsBrief(ns, c4v1alpha1.BriefRequests{Mode: model.RequestsAsk,
+			Authors: []string{"gray-lenovo"}, Declined: old})
+		n := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please.")
+		Eventually(func(g Gomega) {
+			status := getBrief(g, ns).Status
+			g.Expect(status.Requests).To(ConsistOf(HaveField("Stage", model.RequestWaiting)))
+			g.Expect(status.RequestsSettled).To(ConsistOf(c4v1alpha1.BriefRequestsSettled{Repository: repository,
+				Numbers: old}))
+		}).Should(Succeed())
+
+		brief := getBrief(Default, ns)
+		err := patch(brief, func() {
+			brief.Spec.Releases[0].Requests.Accepted = []int32{int32(n)}
+			brief.Spec.Releases[0].Requests.Declined = append(slices.Clone(old), 1200)
+		})
+		Expect(err).To(MatchError(ContainSubstring("Too many")), "the CRD caps declined at 200")
+
+		// Dropping the settled numbers, as the UI does, leaves room.
+		setRequests(ns, func(r *c4v1alpha1.BriefRequests) {
+			r.Declined = []int32{int32(n)}
+		})
+		Eventually(func(g Gomega) {
+			issue, _ := githubFake.gitHubIssue(repository, n)
+			g.Expect(issue.State).To(Equal("closed"))
+			status := getBrief(g, ns).Status
+			g.Expect(status.Requests).To(BeEmpty())
+			g.Expect(status.RequestsSettled).To(ConsistOf(c4v1alpha1.BriefRequestsSettled{Repository: repository,
+				Numbers: []int32{int32(n)}}))
+		}).Should(Succeed())
+
+		setRequests(ns, func(r *c4v1alpha1.BriefRequests) { r.Mode = model.RequestsOff })
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.RequestsSettled).To(BeEmpty())
+		}).Should(Succeed())
 	})
 
 	It("stops reading when requests are turned off", func() {

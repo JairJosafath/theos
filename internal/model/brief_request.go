@@ -390,6 +390,33 @@ func ReadRequests(known []Request, read RequestsRead, now time.Time) []Request {
 	return out
 }
 
+// SettledAnswers are the numbers in an entry's accepted and declined that
+// no longer do anything: their issues are closed on GitHub, or never were an
+// open issue, as the last full read of the repository saw it, and no request
+// of the repository has them (#824). A person may drop them from the spec, and
+// the UI does when it answers a request, so the lists stay under the CRD's
+// cap. A settled number dropped and then reopened on GitHub is a new request,
+// asked again in Ask. Sorted, each once.
+func SettledAnswers(read RequestsRead, requests []Request) []int32 {
+	live := map[int32]bool{}
+	for _, issue := range read.Open {
+		live[int32(issue.Number)] = true
+	}
+	for _, r := range requests {
+		if r.Repository == read.Repository {
+			live[int32(r.Number)] = true
+		}
+	}
+	var out []int32
+	for _, n := range slices.Concat(read.Accepted, read.Declined) {
+		if !live[n] {
+			out = append(out, n)
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
 // readRequest is an open request no round took yet. Its text is taken when
 // it is let through, and kept from then on; one that waits keeps no body.
 func readRequest(known *Request, read RequestsRead, issue RequestIssue, now time.Time) Request {

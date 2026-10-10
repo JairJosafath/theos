@@ -271,6 +271,7 @@ function NeedsYouBox({ view, answers }: { view: BriefView; answers?: AnswerConte
                 resourceVersion={view.resourceVersion}
                 request={n.request}
                 label={n.label}
+                settled={view.requests.settled[n.request.repository.toLowerCase()]}
               />
             ) : null}
           </li>

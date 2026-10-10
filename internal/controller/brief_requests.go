@@ -99,6 +99,7 @@ func (r *BriefReconciler) syncRequests(ctx context.Context, brief *c4v1alpha1.Br
 	var reading []string
 	var failure *requestsFailure
 	read := map[string]bool{}
+	settled := map[string][]int32{}
 	for i := range brief.Spec.Releases {
 		entry := &brief.Spec.Releases[i]
 		repository := entry.GitHub.Repository
@@ -107,7 +108,7 @@ func (r *BriefReconciler) syncRequests(ctx context.Context, brief *c4v1alpha1.Br
 		}
 		read[repository] = true
 		reading = append(reading, repository)
-		got, fail := r.readRepository(ctx, brief, entry, known, now)
+		got, fail := r.readRepository(ctx, brief, entry, known, settled, now)
 		if fail != nil && failure == nil {
 			fail.message = repository + ": " + fail.message
 			failure = fail
@@ -123,15 +124,17 @@ func (r *BriefReconciler) syncRequests(ctx context.Context, brief *c4v1alpha1.Br
 		}
 	}
 	r.recordRequests(ctx, brief, all)
+	recordSettled(brief, reading, settled)
 	r.setRequestsCondition(ctx, brief, reading, failure)
 	return len(reading) > 0
 }
 
 // readRepository reads one entry's repository and answers its declined
 // requests. It returns the repository's requests: those known when it can't
-// be read.
+// be read. A read puts the entry's settled answers in settled.
 func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1alpha1.Brief,
-	entry *c4v1alpha1.BriefRelease, known []model.Request, now time.Time) ([]model.Request, *requestsFailure) {
+	entry *c4v1alpha1.BriefRelease, known []model.Request, settled map[string][]int32,
+	now time.Time) ([]model.Request, *requestsFailure) {
 	repository := entry.GitHub.Repository
 	same := slices.DeleteFunc(slices.Clone(known), func(k model.Request) bool { return k.Repository != repository })
 	secret := entry.GitHub.TokenSecretRef.Name
@@ -189,6 +192,7 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1alpha1.
 	if err != nil && failure == nil {
 		failure = &requestsFailure{gitprovider.IssuesReason(err), err.Error()}
 	}
+	settled[repository] = model.SettledAnswers(in, got)
 	return got, failure
 }
 
@@ -417,6 +421,27 @@ func (r *BriefReconciler) recordRequests(ctx context.Context, brief *c4v1alpha1.
 		status.Requests = requests
 	}
 	status.RequestsWaiting = int32(count)
+}
+
+// recordSettled keeps status.requestsSettled: each repository read now gets
+// what its read found, one that couldn't be read keeps what it had, and one
+// no longer read goes.
+func recordSettled(brief *c4v1alpha1.Brief, reading []string, settled map[string][]int32) {
+	before := map[string][]int32{}
+	for _, s := range brief.Status.RequestsSettled {
+		before[s.Repository] = s.Numbers
+	}
+	var out []c4v1alpha1.BriefRequestsSettled
+	for _, repository := range reading {
+		numbers, read := settled[repository]
+		if !read {
+			numbers = before[repository]
+		}
+		if len(numbers) > 0 {
+			out = append(out, c4v1alpha1.BriefRequestsSettled{Repository: repository, Numbers: numbers})
+		}
+	}
+	brief.Status.RequestsSettled = out
 }
 
 // setRequestsCondition says whether the repositories that take requests are

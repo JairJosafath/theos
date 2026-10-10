@@ -777,7 +777,11 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   with the published page, or "Done in" the issue for one in a Container
   that publishes nowhere, closes the GitHub issue as completed, and drops it
   from `status.requests`. A request a person closed on GitHub meanwhile hears
-  nothing more. See [plans/brief-requests.md](plans/brief-requests.md).
+  nothing more. `accepted` and `declined` hold at most 200 numbers each, and
+  the operator never writes them: it lists in `status.requestsSettled` the
+  numbers whose issues are closed and no request has, the UI's *Accept* and
+  *Decline* drop those, and a kubectl user may (#824). See
+  [plans/brief-requests.md](plans/brief-requests.md).
 - **A failed issue shows on the Brief and is tried again from it** (#429).
   An open issue handed back with `status/needs-human` in the repository of a
   Container the Brief made is listed in the Brief's `status.failed` and card,
