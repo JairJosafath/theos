@@ -366,6 +366,7 @@ var _ = Describe("Brief", func() {
 		It("let the oldest go when promptsRetired counts them", func() {
 			brief := newBrief(ns, "retired", "one", "two", "three")
 			mustCreate(brief)
+			planned(brief, 3)
 			Expect(patch(brief, func() {
 				brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"three", "four"}, 2
 			})).To(Succeed())
@@ -377,6 +378,7 @@ var _ = Describe("Brief", func() {
 		It("refuse a retirement promptsRetired doesn't count right", func() {
 			brief := newBrief(ns, "miscounted", "one", "two", "three")
 			mustCreate(brief)
+			planned(brief, 3)
 			for _, change := range []func(){
 				func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"three"}, 1 },
 				func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"two", "three"}, 2 },
@@ -392,13 +394,46 @@ var _ = Describe("Brief", func() {
 		It("refuse a promptsRetired that goes down", func() {
 			brief := newBrief(ns, "unretired", "one", "two")
 			mustCreate(brief)
+			planned(brief, 2)
 			Expect(patch(brief, func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"two"}, 1 })).
 				To(Succeed())
 			Expect(patch(brief, func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"one", "two"}, 0 })).
 				To(MatchError(ContainSubstring("promptsRetired only grows")))
 		})
+
+		It("refuse retiring a prompt no round planned (#859)", func() {
+			const unplanned = "promptsRetired can't pass status.promptsPlanned"
+			brief := newBrief(ns, "unplanned", "one", "two", "three")
+			mustCreate(brief)
+			Expect(patch(brief, func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"two", "three"}, 1 })).
+				To(MatchError(ContainSubstring(unplanned)), "no round planned any")
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(brief), brief)).To(Succeed())
+			planned(brief, 1)
+			Expect(patch(brief, func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"three"}, 2 })).
+				To(MatchError(ContainSubstring(unplanned)), "the second prompt is unplanned")
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(brief), brief)).To(Succeed())
+			Expect(patch(brief, func() { brief.Spec.Prompts, brief.Spec.PromptsRetired = []string{"two", "three"}, 1 })).
+				To(Succeed(), "the planned prompt goes")
+			Expect(patch(brief, func() { brief.Spec.Prompts = append(brief.Spec.Prompts, "four") })).
+				To(Succeed(), "a write that retires nothing passes")
+		})
+
+		It("take a Brief made with prompts retired", func() {
+			brief := newBrief(ns, "made-retired", "six")
+			brief.Spec.PromptsRetired = 5
+			mustCreate(brief)
+		})
 	})
 })
+
+// planned records in brief's status that rounds planned n of its prompts, as
+// an applied round does.
+func planned(brief *c4v1alpha1.Brief, n int32) {
+	GinkgoHelper()
+	orig := brief.DeepCopy()
+	brief.Status.PromptsPlanned = n
+	Expect(k8sClient.Status().Patch(ctx, brief, client.MergeFrom(orig))).To(Succeed())
+}
 
 // make50 returns 50 copies of prompt.
 func make50(prompt string) []string {
