@@ -94,9 +94,23 @@ endif
 # toward the limit the log says which specs to speed up before raising this.
 TEST_TIMEOUT ?= 15m
 
+# The envtest packages each start their own etcd and kube-apiserver, in
+# parallel, and HEAVY_JOBS lets two make checks run at once: on a loaded device
+# envtest's defaults (20 s for a component to start, etcd's 7 s request timeout,
+# 5 s + 2 x its election timeout) fail specs no change touched (#830). Give the
+# control plane 2 minutes to start, and etcd, which reads ETCD_* from the
+# environment it inherits, a 10 s election timeout (25 s per request) and the
+# 1 s heartbeat that goes with it; a single-member etcd still starts in about a
+# second, as it fast-forwards its first election.
+ENVTEST_START_TIMEOUT ?= 2m
+ENVTEST_ETCD_ELECTION_TIMEOUT ?= 10000
+ENVTEST_ETCD_HEARTBEAT_INTERVAL ?= 1000
+ENVTEST_ENV = KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=$(ENVTEST_START_TIMEOUT) \
+	ETCD_ELECTION_TIMEOUT=$(ENVTEST_ETCD_ELECTION_TIMEOUT) ETCD_HEARTBEAT_INTERVAL=$(ENVTEST_ETCD_HEARTBEAT_INTERVAL)
+
 .PHONY: test
 test: manifests generate fmt vet setup-envtest install-helm ## Run tests.
-	HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') -timeout $(TEST_TIMEOUT) -coverprofile cover.out
+	$(ENVTEST_ENV) HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') -timeout $(TEST_TIMEOUT) -coverprofile cover.out
 
 # The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
 # calls, so none needs a cluster or the network. make check runs them.
