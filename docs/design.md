@@ -211,7 +211,10 @@ enforces.
   again, and merges when they pass, without another review. A Standard
   change's gated merge needs the approving review run to last: when it ends
   while CI runs again, the change is checked and reviewed again in the same
-  round, not failed, and spends no try. A branch that
+  round, not failed, and spends no try and none of the reviewer's three runs
+  without a verdict. When an approval runs out a fourth time in a round, CI
+  keeps taking longer than a review run lasts: the Task fails, reason
+  `ApprovalRanOut`, costing no try. A branch that
   conflicts with `main` goes back to its implementer in the same round instead.
   Only that merge through the Git host decides a conflict: the host's
   "mergeable" flag is stale while it tests the pull request against a `main`
@@ -367,7 +370,7 @@ model and context it needs.
   Gitea dependencies (also across repositories) to close, and starts up to `parallel`
   Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
   first after the Standard changes that `Blocked` Tasks wait on, up to three
-  tries per issue (a `NoCIResult` or `RunnerOutOfSpace` failure is not one). A try continues an earlier try's pull request that is
+  tries per issue (a `NoCIResult`, `RunnerOutOfSpace` or `ApprovalRanOut` failure is not one). A try continues an earlier try's pull request that is
   still open: it works on that branch, with that try's feedback, and reports
   to that pull request (`status.continues` names the earlier Task). When the
   earlier try ended waiting for the checks of its commit (red checks

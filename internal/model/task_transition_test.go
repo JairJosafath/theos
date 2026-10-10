@@ -8,7 +8,7 @@ import (
 
 func TestTaskProgressTransitions(t *testing.T) {
 	// mid is a Task in the middle of round 2, with everything set.
-	mid := TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 1, Reruns: 1, Feedback: "earlier",
+	mid := TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 1, ReviewAgains: 1, Reruns: 1, Feedback: "earlier",
 		Commit: "abc", HasChecks: true, ResumedRound: 2, MergeWhenChecksPass: true}
 
 	tests := []struct {
@@ -23,7 +23,7 @@ func TestTaskProgressTransitions(t *testing.T) {
 			got:  StartRun(TaskProgress{Phase: TaskImplementing, Round: 3, Feedback: "fix it"}, RoleImplementer),
 			want: TaskProgress{Phase: TaskImplementing, Round: 3, Feedback: "fix it"}},
 		{name: "an opened pull request waits for the commit's checks", got: OpenedPR(mid, "def"),
-			want: TaskProgress{Phase: TaskChecking, Round: 2, ReviewAttempts: 1, Reruns: 1, Feedback: "earlier",
+			want: TaskProgress{Phase: TaskChecking, Round: 2, ReviewAttempts: 1, ReviewAgains: 1, Reruns: 1, Feedback: "earlier",
 				Commit: "def", ResumedRound: 2}},
 		{name: "a pushed plan waits for the Brief's verdict on its commit",
 			got:  PlanPushed(TaskProgress{Phase: TaskImplementing, Round: 2, Reruns: 1, Feedback: "refused"}, "def"),
@@ -36,25 +36,25 @@ func TestTaskProgressTransitions(t *testing.T) {
 			want: TaskProgress{Phase: TaskImplementing, Round: 2, Reruns: 1, Feedback: ConflictFeedback,
 				Commit: "abc"}},
 		{name: "a review without verdict counts an attempt", got: RetryReview(mid),
-			want: TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 2, Reruns: 1, Feedback: "earlier",
+			want: TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 2, ReviewAgains: 1, Reruns: 1, Feedback: "earlier",
 				Commit: "abc", HasChecks: true, ResumedRound: 2, MergeWhenChecksPass: true}},
 		{name: "an interrupted run counts a rerun", got: Rerun(mid),
-			want: TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 1, Reruns: 2, Feedback: "earlier",
+			want: TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 1, ReviewAgains: 1, Reruns: 2, Feedback: "earlier",
 				Commit: "abc", HasChecks: true, ResumedRound: 2, MergeWhenChecksPass: true}},
 		{name: "a moved branch checks its new head", got: Recheck(mid, "fed"),
-			want: TaskProgress{Phase: TaskChecking, Round: 2, ReviewAttempts: 1, Reruns: 1, Feedback: "earlier",
+			want: TaskProgress{Phase: TaskChecking, Round: 2, ReviewAttempts: 1, ReviewAgains: 1, Reruns: 1, Feedback: "earlier",
 				Commit: "fed", ResumedRound: 2}},
 		{name: "an approved branch that took in main waits for its new head's checks, and merges on them",
 			got: UpdatedBranch(TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 1, Feedback: "earlier",
 				Commit: "abc", HasChecks: true}, "fed"),
 			want: TaskProgress{Phase: TaskChecking, Round: 2, ReviewAttempts: 1, Feedback: "earlier", Commit: "fed",
 				MergeWhenChecksPass: true}},
-		{name: "an approval that ended checks its commit again, in the same round, for a new review attempt",
+		{name: "an approval that ended checks its commit again, in the same round, without spending a review attempt",
 			got: ReviewAgain(mid),
-			want: TaskProgress{Phase: TaskChecking, Round: 2, ReviewAttempts: 2, Reruns: 1, Feedback: "earlier",
+			want: TaskProgress{Phase: TaskChecking, Round: 2, ReviewAttempts: 1, ReviewAgains: 2, Reruns: 1, Feedback: "earlier",
 				Commit: "abc", ResumedRound: 2}},
 		{name: "a proposal blocks the Task on its commit", got: Proposed(mid, "std"),
-			want: TaskProgress{Phase: TaskBlocked, Round: 2, ReviewAttempts: 1, Reruns: 1, Feedback: "earlier",
+			want: TaskProgress{Phase: TaskBlocked, Round: 2, ReviewAttempts: 1, ReviewAgains: 1, Reruns: 1, Feedback: "earlier",
 				Commit: "std", HasChecks: true, ResumedRound: 2, MergeWhenChecksPass: true}},
 	}
 	for _, tt := range tests {

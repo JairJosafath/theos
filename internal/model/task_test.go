@@ -98,6 +98,18 @@ func TestNextTaskStep(t *testing.T) {
 		{name: "even after earlier reviewer failures", facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
 			MergeWaitsForChecks: true, ReviewAttempts: 2, Run: RunState{Started: true, Done: true}},
 			want: ActionReviewAgain},
+		{name: "a reviewer after two ran-out approvals still gets its no-verdict attempts", facts: TaskFacts{
+			Phase: TaskReviewing, Round: 1, MaxRounds: 3, ReviewAgains: 2, ReviewAttempts: 1,
+			Run: done(RunResult{Error: "the reviewer gave no JSON verdict"})}, want: ActionRetryReview},
+		{name: "an approval that keeps running out fails the Task at the bound", facts: TaskFacts{
+			Phase: TaskReviewing, Round: 2, MaxRounds: 3, MergeWaitsForChecks: true, ReviewAgains: 3,
+			Run: RunState{Started: true, Done: true}}, want: ActionFail, message: "4 times in round 2"},
+		{name: "the bound holds with main merged in too", facts: TaskFacts{Phase: TaskChecking, Round: 1,
+			MaxRounds: 3, Checks: "success", MergeWhenChecksPass: true, ApprovalEnded: true, ReviewAgains: 3},
+			want: ActionFail, message: "with main merged in, 4 times"},
+		{name: "below the bound it is reviewed again", facts: TaskFacts{Phase: TaskReviewing, Round: 1,
+			MaxRounds: 3, MergeWaitsForChecks: true, ReviewAgains: 2, Run: RunState{Started: true, Done: true}},
+			want: ActionReviewAgain},
 		{name: "green checks with main merged in merge", facts: TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3,
 			Checks: "success", MergeWhenChecksPass: true}, want: ActionMerge, message: "with main merged in; merging"},
 		{name: "green checks with main merged in review again once the approval ended", facts: TaskFacts{
@@ -855,10 +867,59 @@ func TestRunnerOutOfSpace(t *testing.T) {
 		}
 	}
 	for reason, want := range map[string]bool{ReasonNoCIResult: true, ReasonRunnerOutOfSpace: true,
-		"RoundsExhausted": false, "": false} {
+		ReasonApprovalRanOut: true, "RoundsExhausted": false, "": false} {
 		if got := RunnerFault(reason); got != want {
 			t.Errorf("RunnerFault(%q) = %v, want %v", reason, got, want)
 		}
+	}
+}
+
+// TestRanOutApprovalsSpendNoReviewAttempt walks a round whose approval runs
+// out twice: its reviewer still gets maxReviewAttempts runs without a verdict,
+// each in a sandbox of its own, and review-again has a bound of its own.
+func TestRanOutApprovalsSpendNoReviewAttempt(t *testing.T) {
+	p := TaskProgress{Phase: TaskReviewing, Round: 1, Commit: "abc", HasChecks: true}
+	facts := func(run RunState) TaskFacts {
+		return TaskFacts{Phase: p.Phase, Round: p.Round, MaxRounds: 3, ReviewAttempts: p.ReviewAttempts,
+			ReviewAgains: p.ReviewAgains, MergeWaitsForChecks: true, Run: run}
+	}
+	sandbox := func() string { return SandboxName("t", p.Round, RoleReviewer, p.ReviewAttempts+p.ReviewAgains+1, 0) }
+	seen := map[string]bool{sandbox(): true}
+	ended := RunState{Started: true, Done: true, Failure: "the sandbox reached its shutdown time"}
+	for i := range 2 {
+		if got := NextTaskStep(facts(ended)); got.Action != ActionReviewAgain {
+			t.Fatalf("approval %d ran out: NextTaskStep() = %+v, want %s", i+1, got, ActionReviewAgain)
+		}
+		p = ReviewAgain(p)
+		p.Phase, p.HasChecks = TaskReviewing, true
+		if seen[sandbox()] {
+			t.Fatalf("review-again %d reuses sandbox %s", i+1, sandbox())
+		}
+		seen[sandbox()] = true
+	}
+	noVerdict := RunState{Started: true, Done: true, Result: &RunResult{Error: "the reviewer gave no JSON verdict"}}
+	for i := range maxReviewAttempts - 1 {
+		f := facts(noVerdict)
+		f.MergeWaitsForChecks = false
+		if got := NextTaskStep(f); got.Action != ActionRetryReview {
+			t.Fatalf("no-verdict run %d: NextTaskStep() = %+v, want %s", i+1, got, ActionRetryReview)
+		}
+		p = RetryReview(p)
+		if seen[sandbox()] {
+			t.Fatalf("retry %d reuses sandbox %s", i+1, sandbox())
+		}
+		seen[sandbox()] = true
+	}
+	f := facts(noVerdict)
+	f.MergeWaitsForChecks = false
+	if got := NextTaskStep(f); got.Action != ActionFail || !strings.Contains(got.Message, "failed 3 times") {
+		t.Errorf("third no-verdict run: NextTaskStep() = %+v, want the reviewer failed 3 times", got)
+	}
+
+	p.ReviewAgains = maxReviewAgains
+	got := NextTaskStep(facts(ended))
+	if got.Action != ActionFail || got.Reason != ReasonApprovalRanOut {
+		t.Errorf("past the bound: NextTaskStep() = %+v, want ActionFail, reason %s", got, ReasonApprovalRanOut)
 	}
 }
 

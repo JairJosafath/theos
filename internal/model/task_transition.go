@@ -12,6 +12,7 @@ type TaskProgress struct {
 	Phase          string
 	Round          int
 	ReviewAttempts int
+	ReviewAgains   int
 	Reruns         int
 	Feedback       string
 	Commit         string
@@ -88,6 +89,7 @@ func NextRound(p TaskProgress, feedback string) TaskProgress {
 	p.Round++
 	p.Feedback = feedback
 	p.ReviewAttempts = 0
+	p.ReviewAgains = 0
 	p.Reruns = 0
 	p.HasChecks = false
 	p.MergeWhenChecksPass = false
@@ -101,6 +103,7 @@ func NextRound(p TaskProgress, feedback string) TaskProgress {
 func ResolveConflicts(p TaskProgress, feedback string) TaskProgress {
 	p.Feedback = feedback
 	p.ReviewAttempts = 0
+	p.ReviewAgains = 0
 	p.HasChecks = false
 	p.ResumedRound = 0
 	p.MergeWhenChecksPass = false
@@ -188,9 +191,9 @@ func Recheck(p TaskProgress, head string) TaskProgress {
 // ReviewAgain is the progress of an approved Standard change whose approving
 // review run ended while CI ran again: it waits for the checks on its commit,
 // in the same round, and is reviewed again once they pass. The new review run
-// counts as an attempt, so it gets a sandbox of its own.
+// counts as a review-again, not as an attempt without a verdict.
 func ReviewAgain(p TaskProgress) TaskProgress {
-	p.ReviewAttempts++
+	p.ReviewAgains++
 	p.HasChecks = false
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskChecking

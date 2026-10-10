@@ -461,6 +461,13 @@ spec:
                     description: verdict is approve or changes.
                     type: string
                 type: object
+              reviewAgains:
+                description: |-
+                  reviewAgains counts the review runs in this round that started again
+                  because the review run that approved a Standard change ended while CI ran
+                  again. They spend no review attempt.
+                format: int32
+                type: integer
               reviewAttempts:
                 description: reviewAttempts counts reviewer runs in this round that
                   gave no verdict.

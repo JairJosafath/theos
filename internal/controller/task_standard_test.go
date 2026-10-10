@@ -658,6 +658,8 @@ var _ = Describe("Task with a gated merge", func() {
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "an approval that ran out costs no round")
 			g.Expect(task.Status.Commit).To(Equal("sha-1"))
 			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ApprovalEnded")))
+			g.Expect(task.Status.ReviewAttempts).To(BeZero(), "an approval that ran out costs no review attempt")
+			g.Expect(task.Status.ReviewAgains).To(Equal(int32(1)))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
