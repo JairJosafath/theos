@@ -300,7 +300,9 @@ requests, at most 50, and doesn't say which numbers are of closed issues.
   a reopened issue is a new request, asked again in `Ask`. The numbers come
   from the last full read, up to ten minutes old, so a number added by hand
   for an issue the Brief hasn't read yet can show as settled until the next
-  read; dropping it only asks again.
+  read; dropping it only asks again. So can an open issue that a page-by-page
+  read of more than 100 open issues missed, when one ahead of it closed
+  between pages.
 
 ## What a human run of Kind would check
 
