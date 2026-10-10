@@ -152,10 +152,10 @@ func releaseMilestone(ctx context.Context, provider gitprovider.Provider, repo g
 }
 
 // adoptStrayWork puts the work each released Container the Brief made
-// already has, in no milestone, into its first open release (#599): issues
-// filed before releases were turned on would otherwise come after every
-// release, the next round's included. A Container that isn't Ready, or has
-// no open release, is left as it is.
+// already has, in no milestone, into its first release that can still take
+// work (#599, #834): issues filed before releases were turned on would
+// otherwise come after every release, the next round's included. A Container
+// that isn't Ready, or has no release without a prepare issue, is left as it is.
 func (r *BriefReconciler) adoptStrayWork(ctx context.Context, run *roundApply) error {
 	for _, name := range slices.Sorted(maps.Keys(run.released)) {
 		var c c4v1alpha1.Container
@@ -184,15 +184,10 @@ func (r *BriefReconciler) adoptContainerWork(ctx context.Context, c *c4v1alpha1.
 	repo := provider.Repository(c.Name)
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	milestones, err := provider.ListMilestones(gitCtx, repo)
+	first, err := releaseTakingWork(gitCtx, provider, repo)
 	if err != nil {
 		return err
 	}
-	releases := make([]model.ReleaseMilestone, 0, len(milestones))
-	for _, m := range milestones {
-		releases = append(releases, model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID})
-	}
-	first := model.FirstOpenRelease(releases)
 	if first == 0 {
 		return nil
 	}

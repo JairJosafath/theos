@@ -11,6 +11,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -93,7 +94,8 @@ func (r *CrewReconciler) bundlers(ctx context.Context, ns, name string) ([]model
 
 // fileBump returns the open bump issue for the release in the bundler's
 // repository, or files it there: labelled kind/bump and status/ready, in the
-// bundler's first open release. isNew says it was filed now.
+// bundler's first release that can still take work (releaseTakingWork). isNew
+// says it was filed now.
 func (r *CrewReconciler) fileBump(ctx context.Context, ns string, bump model.Bump) (gitprovider.Issue, bool, error) {
 	var bundler c4v1alpha1.Container
 	if err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: bump.Bundler.Container}, &bundler); err != nil {
@@ -121,16 +123,40 @@ func (r *CrewReconciler) fileBump(ctx context.Context, ns string, bump model.Bum
 			return issue, false, nil
 		}
 	}
-	milestones, err := provider.ListMilestones(gitCtx, repo)
+	release, err := releaseTakingWork(gitCtx, provider, repo)
 	if err != nil {
-		return gitprovider.Issue{}, false, fmt.Errorf("milestones: %w", err)
-	}
-	releases := make([]model.ReleaseMilestone, 0, len(milestones))
-	for _, m := range milestones {
-		releases = append(releases, model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID})
+		return gitprovider.Issue{}, false, err
 	}
 	title, body := model.BumpIssue(bump)
 	issue, err := provider.CreateIssue(gitCtx, repo, title, body, []string{model.LabelBump, model.LabelReady},
-		model.FirstOpenRelease(releases))
+		release)
 	return issue, err == nil, err
+}
+
+// releaseTakingWork returns the ID of repo's release due first that has no
+// prepare issue, open or closed (model.ReleaseTakingWork), or 0 when there is
+// none.
+func releaseTakingWork(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository) (int64, error) {
+	milestones, err := provider.ListMilestones(ctx, repo)
+	if err != nil {
+		return 0, fmt.Errorf("milestones: %w", err)
+	}
+	releases := make([]model.ReleaseMilestone, 0, len(milestones))
+	for _, m := range milestones {
+		if !model.IsReleaseTitle(m.Title) || m.Due.IsZero() {
+			continue
+		}
+		issues, err := provider.MilestoneIssues(ctx, repo, m.ID)
+		if err != nil {
+			return 0, fmt.Errorf("issues of milestone %s: %w", m.Title, err)
+		}
+		release := model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID}
+		for _, i := range issues {
+			if slices.Contains(i.Labels, model.LabelRelease) {
+				release.Prepared = append(release.Prepared, i.Number)
+			}
+		}
+		releases = append(releases, release)
+	}
+	return model.ReleaseTakingWork(releases), nil
 }

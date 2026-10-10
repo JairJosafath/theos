@@ -142,11 +142,11 @@ type OpenIssue struct {
 
 // StrayWork returns the numbers of the issues a Crew works, status/ready or
 // status/in-progress, that sit in no milestone, so they would come after
-// every release. A released Container's are put in its first open release,
-// so work it already has never waits behind its own later releases (#599).
-// A suggestion still proposed, a person's kind/by-hand work and an issue
-// handed back to a person stay where they are: none of them may hold a
-// release.
+// every release. A released Container's are put in its first release that
+// takes work (ReleaseTakingWork), so work it already has never waits behind
+// its own later releases (#599). A suggestion still proposed, a person's
+// kind/by-hand work and an issue handed back to a person stay where they are:
+// none of them may hold a release.
 func StrayWork(issues []OpenIssue) []int {
 	var out []int
 	for _, i := range issues {

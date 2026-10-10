@@ -52,10 +52,14 @@ func TestBundlersToBump(t *testing.T) {
 	}
 }
 
-func TestFirstOpenRelease(t *testing.T) {
+func TestReleaseTakingWork(t *testing.T) {
 	day := func(d int) time.Time { return time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC) }
 	m := func(id int64, title string, due time.Time) ReleaseMilestone {
 		return ReleaseMilestone{ID: id, Release: Release{Title: title, Due: due}}
+	}
+	prepared := func(m ReleaseMilestone, issue int) ReleaseMilestone {
+		m.Prepared = []int{issue}
+		return m
 	}
 	tests := []struct {
 		name       string
@@ -66,9 +70,11 @@ func TestFirstOpenRelease(t *testing.T) {
 		{"only Later and undated ones", []ReleaseMilestone{m(1, "Later", day(1)), m(2, "v0.2.0", time.Time{})}, 0},
 		{"the one due first", []ReleaseMilestone{m(3, "v0.3.0", day(19)), m(2, "v0.2.0", day(12)), m(9, "Later", day(1))}, 2},
 		{"title breaks a tie", []ReleaseMilestone{m(4, "v0.4.0", day(12)), m(3, "v0.3.0", day(12))}, 3},
+		{"not one being prepared", []ReleaseMilestone{prepared(m(2, "v0.2.0", day(12)), 7), m(3, "v0.3.0", day(19))}, 3},
+		{"none when every release is being prepared", []ReleaseMilestone{prepared(m(2, "v0.2.0", day(12)), 7)}, 0},
 	}
 	for _, tt := range tests {
-		if got := FirstOpenRelease(tt.milestones); got != tt.want {
+		if got := ReleaseTakingWork(tt.milestones); got != tt.want {
 			t.Errorf("%s: got %d, want %d", tt.name, got, tt.want)
 		}
 	}

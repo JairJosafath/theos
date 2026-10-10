@@ -51,12 +51,15 @@ func BundlersToBump(released time.Time, bundlers []Bundler, filed []string) []Bu
 	return out
 }
 
-// FirstOpenRelease returns the ID of the release due first among milestones,
-// the dated vMAJOR.MINOR.PATCH ones, or 0 when there is none.
-func FirstOpenRelease(milestones []ReleaseMilestone) int64 {
+// ReleaseTakingWork returns the ID of the release due first among milestones,
+// the dated vMAJOR.MINOR.PATCH ones, that can still take work: one with no
+// prepare issue, open or closed. Work put in a release whose prepare issue is
+// filed would merge after it and hold the release as MergedAfterPrepare (#834).
+// It returns 0 when there is none.
+func ReleaseTakingWork(milestones []ReleaseMilestone) int64 {
 	var first *ReleaseMilestone
 	for i, m := range milestones {
-		if !IsReleaseTitle(m.Title) || m.Due.IsZero() {
+		if !IsReleaseTitle(m.Title) || m.Due.IsZero() || len(m.Prepared) > 0 {
 			continue
 		}
 		if first == nil || compareReleases(&m.Release, &first.Release) < 0 {

@@ -420,8 +420,12 @@ model and context it needs.
   the release's files (`status.lastRelease.run` is `Succeeded`, or no run
   started within the hour a release's runs get), it files `Bump B to vX`
   in A's repository, labelled `kind/bump` and `status/ready` with acceptance
-  criteria, in A's first open release, so A's Crew picks it up and A's next
-  release carries it. Each Container gets one issue per release, recorded in
+  criteria, in A's first open release that has no prepare issue (open or
+  closed), so A's Crew picks it up and A's next release carries it; a release
+  already being prepared would otherwise wait for a person once the bump
+  merged after its prepare issue (#834). When every open release is being
+  prepared, it goes in no milestone, where the next round of a Brief that
+  releases A picks it up. Each Container gets one issue per release, recorded in
   `status.lastRelease.bumps` and found again by a marker in its body; only the
   newest release is bumped, a link created after the release files nothing, and
   a bundler not yet Ready gets its issue once it is. A release whose runs fail
@@ -720,8 +724,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   all fixes (`kind/bug`, and no suggestion taken), else the next minor one,
   each due after every open release before it. Applying a round also puts
   such a Container's open ready or in-progress issues that sit in no
-  milestone (filed before releases were on) into its first open release, so
-  work it already has never waits behind its own later releases (#599); a
+  milestone (filed before releases were on) into its first open release with
+  no prepare issue, so work it already has never waits behind its own later releases (#599); a
   proposed suggestion, a `kind/by-hand` issue and one handed back to a person
   stay where they are. A person turns releases on
   with a prompt, or by naming the Container in `spec.releases` with a GitHub
