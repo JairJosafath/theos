@@ -201,7 +201,7 @@ func (r *TaskReconciler) startPlan(ctx context.Context, task *c4v1alpha1.Task, s
 	if found, err := r.agentCredentials(ctx, task, status, agent); err != nil {
 		return ctrl.Result{}, err
 	} else if !found {
-		return ctrl.Result{RequeueAfter: taskSecretRecheck}, nil
+		return ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
 	}
 	gitSecret := briefGitSecret(brief.Name)
 	var secret corev1.Secret
@@ -209,7 +209,7 @@ func (r *TaskReconciler) startPlan(ctx context.Context, task *c4v1alpha1.Task, s
 	if apierrors.IsNotFound(err) {
 		r.progress(task, status, metav1.ConditionFalse, "CredentialsNotFound",
 			fmt.Sprintf("Secret %s of Brief %s not found; the Brief makes it with its repository", gitSecret, brief.Name))
-		return ctrl.Result{RequeueAfter: taskSecretRecheck}, nil
+		return ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
 	}
 	if err != nil {
 		return ctrl.Result{}, err

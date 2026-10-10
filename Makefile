@@ -87,12 +87,14 @@ endif
 endif
 
 # TEST_TIMEOUT bounds each package's test binary. The slowest is the controller
-# envtest suite: 296-375 s on the CI runner in October 2026, so 15m leaves it
-# about 2.5 times its runtime, more than go test's 10m default, and still ends a
+# envtest suite, whose specs run one after another: 286 specs in 557 s on the CI
+# runner in October 2026, and 665 s in a make check beside another one, as
+# HEAVY_JOBS allows (#843). 15m left that loaded run under 1.3 times its
+# runtime; 20m leaves it 1.75 times, and the CI run 2 times, and still ends a
 # hung spec. The suite stops itself 30 s earlier, naming the spec that was
 # running; CI prints its 10 slowest specs (C4_SLOWEST_SPECS), so when it grows
 # toward the limit the log says which specs to speed up before raising this.
-TEST_TIMEOUT ?= 15m
+TEST_TIMEOUT ?= 20m
 
 # The envtest packages each start their own etcd and kube-apiserver, in
 # parallel, and HEAVY_JOBS lets two make checks run at once: on a loaded device

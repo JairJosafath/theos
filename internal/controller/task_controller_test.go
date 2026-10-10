@@ -434,7 +434,7 @@ var _ = Describe("Task", func() {
 		}).Should(Succeed())
 		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "claude-credentials"),
 			StringData: map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": rand.Text()}})
-		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }, "30s").Should(Succeed())
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
 	})
 })
 

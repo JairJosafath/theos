@@ -46,8 +46,8 @@ const (
 	defaultChecksRecheck = 15 * time.Second
 	// defaultGitTimeout: how long the operator waits on a Git host at a time.
 	defaultGitTimeout = 30 * time.Second
-	// taskSecretRecheck: Secrets are read uncached, so not watched.
-	taskSecretRecheck = 15 * time.Second
+	// defaultTaskSecretRecheck: Secrets are read uncached, so not watched.
+	defaultTaskSecretRecheck = 15 * time.Second
 	// slotRecheck: a Task waiting for a free agent slot looks again.
 	slotRecheck = 20 * time.Second
 	// mergeCommitRetry: a Merged Task whose merge commit couldn't be read tries
@@ -79,6 +79,9 @@ type TaskReconciler struct {
 	Now func() time.Time
 	// ChecksRecheck is how often a Checking Task reads its checks; zero means 15 seconds.
 	ChecksRecheck time.Duration
+	// SecretRecheck is how often a Task waiting for a credentials Secret looks
+	// again; zero means 15 seconds.
+	SecretRecheck time.Duration
 	// StandardChangeRecheck is how often a Blocked Task looks at its Standard
 	// change; zero means a minute.
 	StandardChangeRecheck time.Duration
@@ -631,6 +634,13 @@ func (r *TaskReconciler) gitTimeout() time.Duration {
 		return r.GitTimeout
 	}
 	return defaultGitTimeout
+}
+
+func (r *TaskReconciler) secretRecheck() time.Duration {
+	if r.SecretRecheck > 0 {
+		return r.SecretRecheck
+	}
+	return defaultTaskSecretRecheck
 }
 
 func (r *TaskReconciler) checksRecheck() time.Duration {
