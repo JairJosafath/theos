@@ -438,9 +438,85 @@ func RunnerFault(reason string) bool {
 
 // RunnerOutOfSpace reports whether a failed CI log shows the runner out of
 // room: Go, Node and the shell all say "no space left on device" (ENOSPC).
+// Only what the runner and the toolchain print counts, not what the change's
+// own tests and code print, since a test of disk-full handling says the phrase
+// too: a Go test's messages, compiler and linter findings, the failure reports
+// and summary of pytest and Vitest, and the output Vitest captures from a test
+// are passed over. What a Go test prints to stdout can't be told from the
+// toolchain's and still counts.
 func RunnerOutOfSpace(log string) bool {
-	return strings.Contains(strings.ToLower(log), "no space left on device")
+	section := noSection
+	goMessage := -1 // the indent of the Go test message whose lines follow, or -1
+	for raw := range strings.SplitSeq(log, "\n") {
+		line := stripLogPrefix(raw)
+		trimmed := strings.TrimSpace(line)
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		if goMessage >= 0 && (trimmed == "" || indent > goMessage) {
+			continue
+		}
+		goMessage = -1
+		if section != noSection {
+			if section.ends(trimmed) {
+				section = noSection
+			}
+			continue
+		}
+		switch {
+		case goTestMessage.MatchString(line):
+			goMessage = indent
+		case sourceFinding.MatchString(trimmed), pytestSummary.MatchString(trimmed):
+		case pytestReport.MatchString(trimmed):
+			section = pytestSection
+		case strings.HasPrefix(trimmed, "FAIL  "), strings.HasPrefix(trimmed, "⎯") && strings.Contains(trimmed, "Failed"):
+			section = vitestSection
+		case strings.HasPrefix(trimmed, "stdout | "), strings.HasPrefix(trimmed, "stderr | "):
+			section = capturedSection
+		case strings.Contains(strings.ToLower(line), "no space left on device"):
+			return true
+		}
+	}
+	return false
 }
+
+// testSection is a part of a CI log where a test framework reports a test's
+// own output.
+type testSection int
+
+const (
+	noSection testSection = iota
+	// pytestSection is the failed tests' reports, from the first's
+	// "___ name ___" heading to the summary.
+	pytestSection
+	// vitestSection is the failed tests' reports, up to the summary.
+	vitestSection
+	// capturedSection is what Vitest captured from a test's stdout or stderr.
+	capturedSection
+)
+
+// ends reports whether a line, trimmed, closes the section.
+func (s testSection) ends(trimmed string) bool {
+	if strings.HasPrefix(trimmed, "::endgroup::") {
+		return true
+	}
+	switch s {
+	case pytestSection:
+		return strings.HasPrefix(trimmed, "===")
+	case vitestSection:
+		return strings.HasPrefix(trimmed, "Test Files ")
+	case capturedSection:
+		return trimmed == ""
+	}
+	return true
+}
+
+var (
+	// goTestMessage is a Go test's message (t.Log, t.Error): file_test.go:line: message.
+	goTestMessage = regexp.MustCompile(`^\s+\S+_test\.go:\d+: `)
+	// pytestReport heads a failed pytest test's report: ___ test_name ___.
+	pytestReport = regexp.MustCompile(`^_{3,} .+ _{3,}$`)
+	// pytestSummary is a line of pytest's short summary: FAILED path.py::test - message.
+	pytestSummary = regexp.MustCompile(`^(FAILED|ERROR) \S+\.py`)
+)
 
 // The states of the CI runs at a Task's commit (CIRun.State).
 const (

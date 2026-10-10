@@ -797,7 +797,56 @@ func TestNextTaskStepBehindMain(t *testing.T) {
 	}
 }
 
+func TestRunnerOutOfSpaceLog(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		log  string
+		want bool
+	}{
+		{name: "the Go compiler", want: true,
+			log: "compile: writing output: write $WORK/b001/_pkg_.a: no space left on device\n"},
+		{name: "the go command, behind the runner's timestamps", want: true,
+			log: "2026-10-10T08:00:00.0000000Z go: creating work dir: mkdir /tmp/go-build1: no space left on device\n"},
+		{name: "npm", want: true, log: "npm error code ENOSPC\nENOSPC: No space left on device, write\n"},
+		{name: "the shell", want: true, log: "cp: error writing 'dist/app': No space left on device\n"},
+		{name: "the toolchain after a Go test's message", want: true, log: "--- FAIL: TestDisk (0.00s)\n" +
+			"    disk_test.go:9: got nil\nFAIL\nlink: write /tmp/go-link/a.out: no space left on device\n"},
+		{name: "the toolchain after pytest's reports", want: true, log: "___ test_disk ___\n" +
+			"E   assert 'no space left on device' == ''\n=== 1 failed in 0.1s ===\n" +
+			"OSError: [Errno 28] No space left on device: '/root/.cache/pip'\n"},
+		{name: "a passing log", log: "ok  \texample.com/app\t0.01s\n"},
+		{name: "a Go test's message",
+			log: "--- FAIL: TestDiskFull (0.00s)\n    disk_test.go:12: Save() = write /tmp/x: no space left on device, want ErrFull\nFAIL\n"},
+		{name: "a Go subtest's message over lines", log: "--- FAIL: TestSave (0.00s)\n    --- FAIL: TestSave/full (0.00s)\n" +
+			"        save_test.go:30: \n            \tError Trace:\tsave_test.go:30\n" +
+			"            \tError:      \tNot equal:\n            \t            \texpected: \"no space left on device\"\n" +
+			"\nFAIL\texample.com/app\t0.01s\n"},
+		{name: "a linter's finding", log: "store/disk.go:14:9: string `no space left on device` has 3 occurrences (goconst)\n"},
+		{name: "a pytest report and summary", log: "_________________ test_disk_full _________________\n" +
+			"    def test_disk_full():\n>       assert save() == 'no space left on device'\n" +
+			"E       AssertionError: assert 'ok' == 'no space left on device'\n" +
+			"------ Captured stdout call ------\nno space left on device\n" +
+			"=========== short test summary info ===========\n" +
+			"FAILED tests/test_disk.py::test_disk_full - AssertionError: assert 'ok' == 'no space left on device'\n"},
+		{name: "a Vitest report", log: "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  src/disk.test.ts > save > reports a full disk\n" +
+			"AssertionError: expected 'ok' to be 'ENOSPC: no space left on device'\n" +
+			"  5|   expect(save()).toBe('ENOSPC: no space left on device')\n\n Test Files  1 failed (1)\n"},
+		{name: "a Vitest test's output", log: "stdout | src/disk.test.ts > save > reports a full disk\n" +
+			"ENOSPC: no space left on device, write 'out.txt'\n\n ❯ src/disk.test.ts (1 test | 1 failed)\n"},
+	} {
+		if got := RunnerOutOfSpace(tc.log); got != tc.want {
+			t.Errorf("%s: RunnerOutOfSpace() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestRunnerOutOfSpace(t *testing.T) {
+	got := NextTaskStep(TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "failure",
+		ChecksLog: "--- FAIL: TestDiskFull (0.00s)\n    disk_test.go:12: Save() = no space left on device, want ErrFull\nFAIL\n"})
+	if got.Action != ActionRetry || got.Reason == ReasonRunnerOutOfSpace ||
+		!strings.Contains(got.Feedback, "disk_test.go:12: Save() = no space left on device") {
+		t.Errorf("a test's own output: NextTaskStep() = %+v, want ActionRetry with the failure as feedback", got)
+	}
 	for _, merge := range []bool{false, true} {
 		got := NextTaskStep(TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, MergeWhenChecksPass: merge,
 			Checks: "error", ChecksLog: "npm error code ENOSPC\nnpm error syscall write\nENOSPC: No space left on device\n"})
