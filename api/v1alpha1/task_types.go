@@ -235,6 +235,12 @@ type TaskStatus struct {
 	// +optional
 	ReviewAttempts int32 `json:"reviewAttempts,omitempty"`
 
+	// reviewAgains counts the review runs in this round that started again
+	// because the review run that approved a Standard change ended while CI ran
+	// again. They spend no review attempt.
+	// +optional
+	ReviewAgains int32 `json:"reviewAgains,omitempty"`
+
 	// reruns counts the runs in this round that the infrastructure interrupted
 	// (a node shutdown, an eviction, a preemption) and that ran again without
 	// spending the round.

@@ -42,6 +42,12 @@ const (
 // so it doesn't cost a round.
 const maxReviewAttempts = 3
 
+// maxReviewAgains is how often an approved Standard change may be checked and
+// reviewed again in one round because its approval ran out while CI ran
+// again. A runner that keeps CI waiting longer than a review run lasts would
+// otherwise loop through review runs without end.
+const maxReviewAgains = 3
+
 // RunResult is what one sandbox run reported.
 type RunResult struct {
 	Commit  string
@@ -230,6 +236,9 @@ type TaskFacts struct {
 	CheckingSince time.Time
 	// ReviewAttempts counts reviewer runs without a verdict in this round.
 	ReviewAttempts int
+	// ReviewAgains counts the review runs in this round started again because
+	// an approval ran out (ReviewAgain).
+	ReviewAgains int
 	// Reruns counts the free reruns of interrupted runs in this round.
 	Reruns int
 	// InPhase is how long the Task has been in its current phase.
@@ -430,10 +439,16 @@ const ReasonNoCIResult = "NoCIResult"
 // fault, not the change's, so it costs no round and its issue no try.
 const ReasonRunnerOutOfSpace = "RunnerOutOfSpace"
 
+// ReasonApprovalRanOut is the reason of a Task whose approved Standard change
+// was reviewed again maxReviewAgains times in a round and whose approval ran
+// out once more while CI ran again: the runner's slowness, not the change's
+// fault, so it costs no round and its issue no try.
+const ReasonApprovalRanOut = "ApprovalRanOut"
+
 // RunnerFault reports whether a Task that failed for reason failed through
 // its CI runner's fault, so the failure costs its issue no try.
 func RunnerFault(reason string) bool {
-	return reason == ReasonNoCIResult || reason == ReasonRunnerOutOfSpace
+	return reason == ReasonNoCIResult || reason == ReasonRunnerOutOfSpace || reason == ReasonApprovalRanOut
 }
 
 // RunnerOutOfSpace reports whether a failed CI log shows the runner out of
@@ -855,8 +870,16 @@ func approvedStep(f TaskFacts, merging string) TaskStep {
 // reviewed again. The approval ran out only because CI waited, often behind
 // other jobs while main moved: neither the agent's fault nor the change's, so
 // it costs no round and no try. The new review starts only once the checks
-// pass, so no reviewer run is spent on a CI wait.
+// pass, so no reviewer run is spent on a CI wait. After maxReviewAgains of
+// them in a round, the Task fails: CI keeps taking longer than a review run
+// lasts, which another review won't change.
 func reviewAgainStep(f TaskFacts, where string) TaskStep {
+	if f.ReviewAgains >= maxReviewAgains {
+		return TaskStep{Action: ActionFail, Reason: ReasonApprovalRanOut, Message: fmt.Sprintf(
+			"The review run that approved it ended while CI ran again %s, %d times in round %d; "+
+				"CI takes longer than a review run lasts, so free or speed up the runner",
+			where, maxReviewAgains+1, f.Round)}
+	}
 	return TaskStep{Action: ActionReviewAgain, Message: fmt.Sprintf(
 		"The review run that approved it ended while CI ran again %s; checking and reviewing it again in round %d",
 		where, f.Round)}

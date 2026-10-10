@@ -322,7 +322,7 @@ func (r *TaskReconciler) startAtReview(ctx context.Context, task *c4v1alpha1.Tas
 // started at review (startAtReview): its round 1 never implemented.
 func firstReviewAtStart(status *c4v1alpha1.TaskStatus, role string) bool {
 	return role == model.RoleReviewer && status.Continues != "" && status.Round == 1 &&
-		status.ReviewAttempts == 0 && status.Reruns == 0 &&
+		status.ReviewAttempts == 0 && status.ReviewAgains == 0 && status.Reruns == 0 &&
 		!slices.ContainsFunc(status.History, func(h c4v1alpha1.TaskTransition) bool {
 			return h.Phase == c4v1alpha1.TaskImplementing
 		})
@@ -685,8 +685,9 @@ func addTokens(tokens *c4v1alpha1.TokenUsage, add model.TokenUsage) *c4v1alpha1.
 // progressOf copies the part of status that the model's transitions change.
 func progressOf(status *c4v1alpha1.TaskStatus) model.TaskProgress {
 	p := model.TaskProgress{Phase: string(status.Phase), Round: int(status.Round),
-		ReviewAttempts: int(status.ReviewAttempts), Reruns: int(status.Reruns), Feedback: status.Feedback,
-		Commit: status.Commit, HasChecks: status.Checks != nil, MergeWhenChecksPass: status.MergeWhenChecksPass}
+		ReviewAttempts: int(status.ReviewAttempts), ReviewAgains: int(status.ReviewAgains), Reruns: int(status.Reruns),
+		Feedback: status.Feedback,
+		Commit:   status.Commit, HasChecks: status.Checks != nil, MergeWhenChecksPass: status.MergeWhenChecksPass}
 	if status.StandardChange != nil {
 		p.ResumedRound = int(status.StandardChange.ResumedRound)
 	}
@@ -696,7 +697,8 @@ func progressOf(status *c4v1alpha1.TaskStatus) model.TaskProgress {
 // setProgress copies a transition's result back into status.
 func setProgress(status *c4v1alpha1.TaskStatus, p model.TaskProgress) {
 	status.Phase, status.Round = c4v1alpha1.TaskPhase(p.Phase), int32(p.Round)
-	status.ReviewAttempts, status.Reruns = int32(p.ReviewAttempts), int32(p.Reruns)
+	status.ReviewAttempts, status.ReviewAgains = int32(p.ReviewAttempts), int32(p.ReviewAgains)
+	status.Reruns = int32(p.Reruns)
 	status.Feedback, status.Commit = p.Feedback, p.Commit
 	status.MergeWhenChecksPass = p.MergeWhenChecksPass
 	if !p.HasChecks {
@@ -740,6 +742,9 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1alpha1.Task, status
 		why += "\n\nCI never reported, so this try doesn't count towards the limit; start or fix the runner first."
 	case model.ReasonRunnerOutOfSpace:
 		why += "\n\nThe runner ran out of room, so this try doesn't count towards the limit; free its space first."
+	case model.ReasonApprovalRanOut:
+		why += "\n\nCI kept taking longer than a review run lasts, so this try doesn't count towards the limit; " +
+			"free or speed up the runner first."
 	}
 	r.handBack(ctx, task, container, why)
 	logf.FromContext(ctx).Info("Failed Task", "reason", reason, "message", message)
