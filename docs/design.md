@@ -421,7 +421,10 @@ model and context it needs.
   link can say it, and most don't (a client calling a service follows its
   deploys, not its tags). When B's Crew tags a release and its runs have built
   the release's files (`status.lastRelease.run` is `Succeeded`, or no run
-  started within the hour a release's runs get), it files `Bump B to vX`
+  started within the hour a release's runs get), and, when B's Crew has
+  `spec.publishReleases`, the release is published there with its files
+  (`status.lastRelease.publish` is `Published`; the hour doesn't apply, since
+  publishing needs the runs to succeed), it files `Bump B to vX`
   in A's repository, labelled `kind/bump` and `status/ready` with acceptance
   criteria, in A's first open release that has no prepare issue (open or
   closed), so A's Crew picks it up and A's next release carries it; a release
@@ -432,7 +435,9 @@ model and context it needs.
   `status.lastRelease.bumps` and found again by a marker in its body; only the
   newest release is bumped, a link created after the release files nothing, and
   a bundler not yet Ready gets its issue once it is. A release whose runs fail
-  or never end files nothing until a run of it again succeeds. Each is an Event
+  or never end, or whose publishing fails, files nothing until a run of it
+  again succeeds or it is published: a bundler pins the published files, which
+  don't exist before (#864). Each is an Event
   `BumpFiled`. See [plans/done/release-bumps.md](plans/done/release-bumps.md).
 - **The Crew prepares a release** when its `spec.prepareReleases` is true (off
   by default, independent of `tagReleases`). Once the first open release is

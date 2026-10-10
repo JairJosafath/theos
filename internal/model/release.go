@@ -521,8 +521,13 @@ func ReleaseRunLate(result string, tagged, now time.Time) bool {
 // runs are at result, may be filed at now: once its runs all ended well, since
 // they build the files a bump reads, or once ReleaseRunBound has passed with no
 // run started (or none read), for a repository whose tags start no workflow. A
-// release whose runs failed or haven't ended waits, however long.
-func ReleaseBumpable(result string, tagged, now time.Time) bool {
+// release whose runs failed or haven't ended waits, however long. A release its
+// Crew publishes waits until it is published, since a bundler pins the published
+// files (#864); publishing needs its runs to succeed, so the bound doesn't apply.
+func ReleaseBumpable(result string, publishes, published bool, tagged, now time.Time) bool {
+	if publishes {
+		return published
+	}
 	switch result {
 	case RunSucceeded:
 		return true

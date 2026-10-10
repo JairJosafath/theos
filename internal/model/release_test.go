@@ -502,8 +502,33 @@ func TestReleaseBumpable(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ReleaseBumpable(tt.result, tagged, tagged.Add(tt.after)); got != tt.want {
+			if got := ReleaseBumpable(tt.result, false, false, tagged, tagged.Add(tt.after)); got != tt.want {
 				t.Errorf("ReleaseBumpable(%q, +%s) = %v; want %v", tt.result, tt.after, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReleaseBumpablePublished(t *testing.T) {
+	tagged := time.Date(2026, 10, 6, 1, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		result    string
+		published bool
+		after     time.Duration
+		want      bool
+	}{
+		{"succeeded, not yet published", RunSucceeded, false, time.Minute, false},
+		{"succeeded and published", RunSucceeded, true, time.Minute, true},
+		{"no run past the bound, not published", RunWaiting, false, 2 * time.Hour, false},
+		{"never read past the bound, not published", "", false, 2 * time.Hour, false},
+		{"failed, not published", RunFailed, false, time.Minute, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ReleaseBumpable(tt.result, true, tt.published, tagged, tagged.Add(tt.after)); got != tt.want {
+				t.Errorf("ReleaseBumpable(%q, published %v, +%s) = %v; want %v",
+					tt.result, tt.published, tt.after, got, tt.want)
 			}
 		})
 	}

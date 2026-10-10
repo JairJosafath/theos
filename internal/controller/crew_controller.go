@@ -268,9 +268,12 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, con
 	if crew.Spec.TagReleases {
 		r.noteOverdueRun(ctx, crew, status)
 		r.publishGoModule(ctx, crew, status, provider, repo)
-		r.fileBumps(ctx, crew, status, repo)
 	}
 	r.publishRelease(ctx, crew, container, status, provider, repo)
+	if crew.Spec.TagReleases {
+		// After publishing, so a release published this poll files its bumps.
+		r.fileBumps(ctx, crew, status, repo)
+	}
 	return filed
 }
 
