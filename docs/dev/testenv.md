@@ -75,7 +75,7 @@ fails on a render error, a path two layers write, or YAML that doesn't parse. A 
 template needs a row there. In tests, write with merge patches
 (`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
 
-`make test` bounds each package at `TEST_TIMEOUT` (15m; the Makefile says why). The
+`make test` bounds each package at `TEST_TIMEOUT` (20m; the Makefile says why). The
 controller suite ends itself 30 s before that, failing the spec that was running by
 name. With `C4_SLOWEST_SPECS=FILE` it writes its 10 slowest specs to FILE; the
 *Tests* workflow prints them, so a slow run's log says which specs to speed up.

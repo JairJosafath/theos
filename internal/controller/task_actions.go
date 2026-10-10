@@ -222,7 +222,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	if found, err := r.agentCredentials(ctx, task, status, agent); err != nil {
 		return ctrl.Result{}, err
 	} else if !found {
-		return ctrl.Result{RequeueAfter: taskSecretRecheck}, nil
+		return ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
 	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {

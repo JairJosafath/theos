@@ -47,6 +47,9 @@ type ContainerReconciler struct {
 	ScaffoldTimeout time.Duration
 	// ChecksRecheck is how often a Ready Container reads its checks; zero means a minute.
 	ChecksRecheck time.Duration
+	// SecretRecheck is how often a Container waiting for its credentials Secret
+	// looks again; zero means 15 seconds.
+	SecretRecheck time.Duration
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
@@ -57,8 +60,16 @@ type ContainerReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
-// secretRecheck is how often a Container waiting for its credentials Secret looks again.
-const secretRecheck = 15 * time.Second
+// defaultSecretRecheck is how often a Container waiting for its credentials
+// Secret looks again, unless SecretRecheck says.
+const defaultSecretRecheck = 15 * time.Second
+
+func (r *ContainerReconciler) secretRecheck() time.Duration {
+	if r.SecretRecheck > 0 {
+		return r.SecretRecheck
+	}
+	return defaultSecretRecheck
+}
 
 // Reconcile adopts the Container, resolves its references, checks its catalog
 // choices and scaffolds its repository once.
@@ -126,7 +137,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// Secrets aren't watched (they're read uncached), so look again for one.
 		var result ctrl.Result
 		if slices.ContainsFunc(missing, func(m string) bool { return strings.HasPrefix(m, "Secret ") }) {
-			result.RequeueAfter = secretRecheck
+			result.RequeueAfter = r.secretRecheck()
 		}
 		return result, r.writeStatus(ctx, &container, status)
 	}

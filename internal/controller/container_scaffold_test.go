@@ -462,6 +462,6 @@ var _ = Describe("Container scaffolding", func() {
 			var container c4v1alpha1.Container
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
 			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
-		}).WithTimeout(secretRecheck + 10*time.Second).Should(Succeed())
+		}).Should(Succeed())
 	})
 })
