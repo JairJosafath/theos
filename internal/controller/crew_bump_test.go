@@ -143,6 +143,31 @@ var _ = Describe("Crew release bumps", func() {
 		Expect(crewEvents(Default, ns)).NotTo(ContainElement(HaveField("Reason", "BumpFiled")))
 	})
 
+	It("files the bump in the first release whose prepare issue isn't filed (#834)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		bundlerContainer(ns, "web")
+		// web's v0.5.0 is being prepared: its prepare issue merged, its tag not yet made.
+		prepare := gitFake.addIssue(ns, "web", "Prepare v0.5.0", clearIssue, []string{model.LabelRelease})
+		gitFake.setIssueRelease(ns, "web", prepare, "v0.5.0", releaseDue)
+		Expect(gitFake.closeIssue(ns, "web", prepare)).To(Succeed())
+		n := gitFake.addIssue(ns, "web", "Later work", clearIssue, nil)
+		gitFake.setIssueRelease(ns, "web", n, "v0.6.0", releaseDue.AddDate(0, 0, 7))
+		mustCreate(bundles(ns, "web", true))
+		mergedIssue(ns)
+		releaseRun(ns, "completed", "success")
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			issues := bumpIssues(ns, "web")
+			g.Expect(issues).To(HaveLen(1))
+			g.Expect(issues[0].milestone).To(Equal("v0.6.0"))
+		}).Should(Succeed())
+	})
+
 	It("files no bump for a link created after the release", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
