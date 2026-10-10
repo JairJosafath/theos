@@ -14,7 +14,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -335,19 +334,17 @@ var _ = Describe("Crew", func() {
 		}, "30s").Should(Succeed())
 		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
 
-		By("merging once the implementer merged main")
-		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-implement")})).To(Succeed())
+		By("merging once the implementer merged main, its runs in sandboxes named afresh")
 		Eventually(func(g Gomega) {
-			sandbox := sandboxExists(g, ns, "orders-api-1-r1-implement")
-			g.Expect(sandbox.GetDeletionTimestamp()).To(BeNil())
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Restarts).To(Equal(int32(1)))
+			sandboxExists(g, ns, "orders-api-1-r1-implement-s1")
 		}, "30s").Should(Succeed())
 		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-2")
 		gitFake.conflict(ns, "orders-api", pr.Number, false)
-		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement", Commit: "sha-2"}, "")
+		finishSandbox(ns, "orders-api-1-r1-implement-s1", "orders-api-1", &agentrunner.Result{Role: "implement", Commit: "sha-2"}, "")
 		gitFake.setChecks(ns, "orders-api", "sha-2", "success")
-		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }, "30s").Should(Succeed())
-		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-review-a1")})).To(Succeed())
-		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-s1-a1") }, "30s").Should(Succeed())
+		finishSandbox(ns, "orders-api-1-r1-review-s1-a1", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Conflicts resolved."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
@@ -484,20 +481,17 @@ var _ = Describe("Crew", func() {
 		}, "30s").Should(Succeed())
 
 		By("the implementer finding no conflict and committing nothing")
-		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-implement")})).To(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(sandboxExists(g, ns, "orders-api-1-r1-implement").GetDeletionTimestamp()).To(BeNil())
-			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement")).To(ContainElement(
+			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement-s1")).To(ContainElement(
 				map[string]any{"name": agentrunner.EnvPullRequest, "value": fmt.Sprint(pr.Number)}))
 		}, "30s").Should(Succeed())
 		gitFake.conflict(ns, "orders-api", pr.Number, false)
-		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
+		finishSandbox(ns, "orders-api-1-r1-implement-s1", "orders-api-1",
 			&agentrunner.Result{Role: "implement", Commit: "sha-1", Summary: "Main merges cleanly; nothing to resolve."}, "")
 
 		By("reviewing the branch as it is and merging it, in the same round")
-		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }, "30s").Should(Succeed())
-		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, "orders-api-1-r1-review-a1")})).To(Succeed())
-		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-s1-a1") }, "30s").Should(Succeed())
+		finishSandbox(ns, "orders-api-1-r1-review-s1-a1", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Still good."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")

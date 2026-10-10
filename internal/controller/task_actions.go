@@ -686,6 +686,7 @@ func addTokens(tokens *c4v1alpha1.TokenUsage, add model.TokenUsage) *c4v1alpha1.
 func progressOf(status *c4v1alpha1.TaskStatus) model.TaskProgress {
 	p := model.TaskProgress{Phase: string(status.Phase), Round: int(status.Round),
 		ReviewAttempts: int(status.ReviewAttempts), ReviewAgains: int(status.ReviewAgains), Reruns: int(status.Reruns),
+		Restarts: int(status.Restarts),
 		Feedback: status.Feedback,
 		Commit:   status.Commit, HasChecks: status.Checks != nil, MergeWhenChecksPass: status.MergeWhenChecksPass}
 	if status.StandardChange != nil {
@@ -698,7 +699,7 @@ func progressOf(status *c4v1alpha1.TaskStatus) model.TaskProgress {
 func setProgress(status *c4v1alpha1.TaskStatus, p model.TaskProgress) {
 	status.Phase, status.Round = c4v1alpha1.TaskPhase(p.Phase), int32(p.Round)
 	status.ReviewAttempts, status.ReviewAgains = int32(p.ReviewAttempts), int32(p.ReviewAgains)
-	status.Reruns = int32(p.Reruns)
+	status.Reruns, status.Restarts = int32(p.Reruns), int32(p.Restarts)
 	status.Feedback, status.Commit = p.Feedback, p.Commit
 	status.MergeWhenChecksPass = p.MergeWhenChecksPass
 	if !p.HasChecks {

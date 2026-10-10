@@ -229,12 +229,7 @@ func (r *TaskReconciler) resume(ctx context.Context, task *c4v1alpha1.Task, stat
 		cancel()
 	}
 	logNotes(ctx, task, notes)
-	change.ResumedRound = status.Round
-	status.Feedback = step.Feedback
-	status.Checks = nil
-	status.ReviewAttempts = 0
-	status.ReviewAgains = 0
-	status.Phase = c4v1alpha1.TaskImplementing
+	setProgress(status, model.ResumeRound(progressOf(status), step.Feedback))
 	r.progress(task, status, metav1.ConditionTrue, "Resumed", step.Message)
 	logf.FromContext(ctx).Info("Resumed Task after its Standard change merged", "issue", change.Issue,
 		"round", status.Round)

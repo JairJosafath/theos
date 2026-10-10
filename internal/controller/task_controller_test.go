@@ -467,7 +467,7 @@ var _ = Describe("Task with an interrupted run", func() {
 		killed := &agentrunner.Result{Role: "implement", Error: "claude failed: signal: killed", Interrupted: true}
 		for rerun := 1; rerun <= model.MaxReruns+1; rerun++ {
 			// Each rerun has a sandbox of its own: add-crop-r1-implement, then -x1, -x2.
-			name := model.SandboxName("add-crop", 1, model.RoleImplementer, 1, rerun-1)
+			name := model.SandboxName("add-crop", 1, 0, model.RoleImplementer, 1, rerun-1)
 			Eventually(func(g Gomega) { sandboxExists(g, ns, name) }, "20s").Should(Succeed())
 			finishSandbox(ns, name, "add-crop", killed, "")
 			if rerun > model.MaxReruns {
@@ -498,7 +498,7 @@ var _ = Describe("Task with an interrupted run", func() {
 			"Couldn't connect to server"}
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop", unreachable, "")
 
-		rerun := model.SandboxName("add-crop", 1, model.RoleImplementer, 1, 1)
+		rerun := model.SandboxName("add-crop", 1, 0, model.RoleImplementer, 1, 1)
 		Eventually(func(g Gomega) {
 			sandboxExists(g, ns, rerun)
 			task := getTask(g, ns, "add-crop")
@@ -538,7 +538,7 @@ var _ = Describe("Task with an interrupted run", func() {
 		Expect(k8sClient.Delete(ctx, first, client.GracePeriodSeconds(0))).To(Succeed())
 		startPod()
 
-		rerun := model.SandboxName("add-crop", 1, model.RoleImplementer, 1, 1)
+		rerun := model.SandboxName("add-crop", 1, 0, model.RoleImplementer, 1, 1)
 		Eventually(func(g Gomega) {
 			sandboxExists(g, ns, rerun)
 			task := getTask(g, ns, "add-crop")
@@ -568,7 +568,7 @@ var _ = Describe("Task with an interrupted run", func() {
 
 		By("rerunning the review whose pod an outage past its shutdown time took")
 		expireSandbox(ns, "add-crop-r1-review-a1", 7*time.Hour)
-		rerun := model.SandboxName("add-crop", 1, model.RoleReviewer, 1, 1)
+		rerun := model.SandboxName("add-crop", 1, 0, model.RoleReviewer, 1, 1)
 		Eventually(func(g Gomega) {
 			sandboxExists(g, ns, rerun)
 			task := getTask(g, ns, "add-crop")
@@ -579,7 +579,7 @@ var _ = Describe("Task with an interrupted run", func() {
 		By("spending an attempt on a review that ran out its time")
 		expireSandbox(ns, rerun, 0)
 		Eventually(func(g Gomega) {
-			sandboxExists(g, ns, model.SandboxName("add-crop", 1, model.RoleReviewer, 2, 1))
+			sandboxExists(g, ns, model.SandboxName("add-crop", 1, 0, model.RoleReviewer, 2, 1))
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.ReviewAttempts).To(Equal(int32(1)))
 			g.Expect(task.Status.Reruns).To(Equal(int32(1)))

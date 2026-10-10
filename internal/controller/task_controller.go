@@ -488,7 +488,7 @@ func runRole(phase c4v1alpha1.TaskPhase) string {
 }
 
 func sandboxName(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, role string) string {
-	return model.SandboxName(task.Name, int(status.Round), role,
+	return model.SandboxName(task.Name, int(status.Round), int(status.Restarts), role,
 		int(status.ReviewAttempts+status.ReviewAgains)+1, int(status.Reruns))
 }
 
