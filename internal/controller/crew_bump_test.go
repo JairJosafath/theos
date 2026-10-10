@@ -9,6 +9,7 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"crypto/rand"
 	"sync/atomic"
 	"time"
 
@@ -258,6 +259,38 @@ var _ = Describe("Crew release bumps", func() {
 		Eventually(func(g Gomega) {
 			issues := bumpIssues(ns, "web")
 			g.Expect(issues).To(HaveLen(1))
+			g.Expect(getCrew(g, ns).Status.LastRelease.Bumps).To(ConsistOf(
+				c4v1alpha1.CrewReleaseBump{Container: "web", IssueURL: issues[0].URL}))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(bumpIssues(ns, "web")).To(HaveLen(1))
+		}, 2*time.Second).Should(Succeed())
+	})
+
+	It("files the bumps of a release its Crew publishes only once it is published (#864)", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		token := rand.Text()
+		githubFake.addRepository(repository, token)
+		// The bundler and its link come before the Crew tags the release.
+		files := publishingCrew(ns, repository, func(*c4v1alpha1.Crew) {
+			bundlerContainer(ns, "web")
+			mustCreate(bundles(ns, "web", true))
+		})
+
+		// The runs succeeded, but without its Secret the release isn't published.
+		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
+		Consistently(func(g Gomega) {
+			g.Expect(bumpIssues(ns, "web")).To(BeEmpty(), "a bump waits for the release to be published")
+			g.Expect(getCrew(g, ns).Status.LastRelease.Bumps).To(BeEmpty())
+		}, 2*time.Second).Should(Succeed())
+
+		mustCreate(publishSecret(ns, token))
+		publishedTo(ns, repository, files)
+		Eventually(func(g Gomega) {
+			issues := bumpIssues(ns, "web")
+			g.Expect(issues).To(HaveLen(1))
+			g.Expect(issues[0].Title).To(Equal("Bump orders-api to v0.1.0"))
 			g.Expect(getCrew(g, ns).Status.LastRelease.Bumps).To(ConsistOf(
 				c4v1alpha1.CrewReleaseBump{Container: "web", IssueURL: issues[0].URL}))
 		}).Should(Succeed())

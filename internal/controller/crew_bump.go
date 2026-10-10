@@ -28,12 +28,17 @@ const reasonBumpFiled = "BumpFiled"
 
 // fileBumps files a bump issue for the Crew's last release in each Container
 // that bundles its Container and has none yet, once the release's runs have
-// built its files (model.ReleaseBumpable). A failure is logged and tried again
-// on the next poll.
+// built its files and, when the Crew publishes its releases, the release is
+// published (model.ReleaseBumpable). A failure is logged and tried again on the
+// next poll.
 func (r *CrewReconciler) fileBumps(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
 	repo gitprovider.Repository) {
 	release := status.LastRelease
-	if release == nil || !model.ReleaseBumpable(release.Run, release.Time.Time, r.now()) {
+	if release == nil {
+		return
+	}
+	published := release.Publish != nil && release.Publish.State == publishPublished
+	if !model.ReleaseBumpable(release.Run, crew.Spec.PublishReleases != nil, published, release.Time.Time, r.now()) {
 		return
 	}
 	log := logf.FromContext(ctx)
