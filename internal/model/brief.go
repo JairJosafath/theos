@@ -1115,14 +1115,17 @@ func RoundPrompts(prompts []string, promptsPlanned int) []string {
 }
 
 // KeptPlannedPrompts is how many of the prompts rounds have planned a Brief
-// keeps in spec.prompts; the operator retires older ones, so a Brief takes
-// prompts for as long as its project runs (#835).
+// keeps in spec.prompts when a prompt is appended to a full list; the writer
+// that appends retires older ones in the same write, so a Brief takes prompts
+// for as long as its project runs (#835). The operator never writes the spec
+// (#855).
 const KeptPlannedPrompts = 10
 
-// PromptsToRetire returns how many of the oldest of listed prompts the
-// operator retires now, given how many were retired before and how many
-// prompts, retired ones included, the last applied round planned: the planned
-// ones past the newest KeptPlannedPrompts. A prompt no round planned stays.
+// PromptsToRetire returns how many of the oldest of listed prompts a writer
+// appending to a full list retires, given how many were retired before and
+// how many prompts, retired ones included, the last applied round planned:
+// the planned ones past the newest KeptPlannedPrompts. A prompt no round
+// planned stays. The UI server's append (ui/server.mjs) follows the same rule.
 func PromptsToRetire(retired, listed, promptsPlanned int) int {
 	return max(min(promptsPlanned-retired-KeptPlannedPrompts, listed), 0)
 }

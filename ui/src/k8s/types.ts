@@ -570,7 +570,7 @@ export interface Brief extends K8sObject {
   spec: {
     /** What the app is for and who uses it; it can't change. */
     idea: string
-    /** Follow-ups, oldest first; only ever appended, the oldest planned ones retired by the operator. */
+    /** Follow-ups, oldest first; only ever appended, the oldest planned ones retired by the write that appends to a full list. */
     prompts?: string[]
     /** How many of the oldest prompts the operator took out of prompts once planned. */
     promptsRetired?: number

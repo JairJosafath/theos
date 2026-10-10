@@ -82,6 +82,15 @@ describe('server.mjs', () => {
       if (url.pathname === `${briefs}lens`) {
         return json(200, { kind: 'Brief', metadata: { name: 'lens', resourceVersion: '7' }, spec: { prompts: ['a'] } })
       }
+      if (url.pathname === `${briefs}full`) {
+        const prompts = Array.from({ length: 50 }, (_, i) => `p${i + 1}`)
+        return json(200, {
+          kind: 'Brief',
+          metadata: { name: 'full', resourceVersion: '9' },
+          spec: { prompts },
+          status: { promptsPlanned: 49 },
+        })
+      }
       if (url.pathname === `${briefs}fresh`) {
         return json(200, { kind: 'Brief', metadata: { name: 'fresh', resourceVersion: '8' }, spec: { idea: 'x' } })
       }
@@ -276,6 +285,18 @@ describe('server.mjs', () => {
       assert.deepEqual(seen[1].body, [
         { op: 'test', path: '/metadata/resourceVersion', value: '8' },
         { op: 'add', path: '/spec/prompts', value: ['First'] },
+      ])
+    })
+
+    it('retires the planned prompts past the newest ten when it appends to a full list, in the same patch', async () => {
+      seen.length = 0
+      const res = await write('PATCH', `${briefsPath}/full`, prompt('p51'))
+      assert.equal(res.status, 200)
+      const numbered = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => `p${from + i}`)
+      assert.deepEqual(seen[1].body, [
+        { op: 'test', path: '/spec/prompts', value: numbered(1, 50) },
+        { op: 'replace', path: '/spec/prompts', value: numbered(40, 51) },
+        { op: 'add', path: '/spec/promptsRetired', value: 39 },
       ])
     })
 

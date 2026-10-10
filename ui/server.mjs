@@ -15,8 +15,9 @@
 // Read-only but for the action table's writes: GET reaches the API only under
 // /apis/c4.factory.io/. With actions off (UI_ACTIONS unset) the only writes
 // are creating a Brief in a namespace that holds a Project, and a JSON patch
-// on a Brief that appends a prompt at /spec/prompts/- or adds a boolean at
-// /spec/paused. With UI_ACTIONS=service-account (over port-forward) the table
+// on a Brief that appends a prompt at /spec/prompts/- (to a full list, the
+// server retires the planned prompts past the newest ten in the same patch)
+// or adds a boolean at /spec/paused. With UI_ACTIONS=service-account (over port-forward) the table
 // also takes design.md's UI actions: a Brief's and a Crew's settings, a
 // release re-run, a Container's scaffold retry, a Task from a goal and a
 // Standard's ref. With UI_ACTIONS=oidc every write needs a person signed in,
@@ -569,22 +570,53 @@ async function createBrief({ res, upstream, log, apiPath, namespace, body, as })
   return forwardWrite(res, upstream, 'POST', apiPath, JSON_MEDIA, body, as)
 }
 
+/** Most prompts a Brief lists at once (spec.prompts' CEL rule). */
+const MAX_PROMPTS = 50
+
+/** How many of the prompts rounds planned a full list keeps (model.KeptPlannedPrompts). */
+const KEPT_PLANNED_PROMPTS = 10
+
 /**
  * Appends a prompt. A JSON patch can't append to a list that isn't there, and
  * a Brief without prompts has none: then the patch adds the list, guarded by
  * the resourceVersion just read so it never replaces a list made meanwhile.
+ * To a full list, the append retires the planned prompts past the newest ten
+ * in the same write (retiringAppend); the operator never writes the spec.
  */
 async function addPrompt({ res, upstream, log, apiPath, namespace, name, body: op, as }) {
   const current = await requestJson(upstream, apiPath)
   if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
-  const ops = Array.isArray(current.body?.spec?.prompts)
-    ? [op]
-    : [
+  const prompts = current.body?.spec?.prompts
+  const ops = !Array.isArray(prompts)
+    ? [
         { op: 'test', path: '/metadata/resourceVersion', value: current.body?.metadata?.resourceVersion },
         { op: 'add', path: '/spec/prompts', value: [op.value] },
       ]
+    : (retiringAppend(current.body, op.value) ?? [op])
   log(`Adding a prompt to Brief ${namespace}/${name}${by(as)}`)
   return forwardWrite(res, upstream, 'PATCH', apiPath, JSON_PATCH, ops, as)
+}
+
+/**
+ * The patch that appends prompt to a Brief whose list is full, dropping the
+ * oldest planned prompts past the newest ten and counting them in
+ * spec.promptsRetired (model.PromptsToRetire), or undefined when the list
+ * has room or none can go. It is guarded by the prompts just read, not the
+ * resourceVersion the operator's status writes move, so a prompt appended
+ * meanwhile is never lost.
+ */
+function retiringAppend(brief, prompt) {
+  const prompts = brief?.spec?.prompts ?? []
+  if (prompts.length < MAX_PROMPTS) return undefined
+  const retired = brief.spec.promptsRetired ?? 0
+  const planned = brief.status?.promptsPlanned ?? 0
+  const n = Math.max(Math.min(planned - retired - KEPT_PLANNED_PROMPTS, prompts.length), 0)
+  if (n === 0) return undefined
+  return [
+    { op: 'test', path: '/spec/prompts', value: prompts },
+    { op: 'replace', path: '/spec/prompts', value: [...prompts.slice(n), prompt] },
+    { op: 'add', path: '/spec/promptsRetired', value: retired + n },
+  ]
 }
 
 /** " as <user>" for a log line about a write made as a person, else "". */

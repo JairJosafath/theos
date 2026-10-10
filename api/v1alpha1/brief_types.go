@@ -28,11 +28,13 @@ type BriefSpec struct {
 	Idea string `json:"idea"`
 
 	// prompts are follow-ups in plain words, oldest first. A prompt is only
-	// ever appended: an earlier one can't change. Once rounds have planned
-	// more than ten, the operator retires the oldest planned ones, counting
-	// them in promptsRetired, so the list never fills up.
+	// ever appended: an earlier one can't change. At most 50 are listed: the
+	// write that appends to a full list retires the oldest planned ones in
+	// the same write, dropping them and counting them in promptsRetired. The
+	// UI does it for the person; the operator never writes the spec.
 	// +listType=atomic
-	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:MaxItems=51
+	// +kubebuilder:validation:XValidation:rule="size(self) <= 50",message="a Brief lists at most 50 prompts: in the write that appends, drop the oldest prompts rounds have planned (status.promptsPlanned counts them) and raise promptsRetired by as many"
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=2000
 	// +optional

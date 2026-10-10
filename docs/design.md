@@ -400,7 +400,7 @@ model and context it needs.
   milestone. An issue its Standard change did whole (the Task ends Merged as
   `DoneByStandardChange`, with no pull request of its own) counts as merged at
   that change's merge commit and time; when that merge is lost, it doesn't
-  hold the release, and while it waits for its commit, it does. A merge still waiting for its commit holds the release, and
+  hold the release; while it waits for its commit, it holds the release, and
   the message says that a person can move the issue out of the milestone. Tags go out in due-date order, and a tag is never moved: a tag
   already at that commit only closes the milestone, one at another commit is
   left to a person. A release is also left to a person when it has no merged
@@ -628,18 +628,24 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 
 - **A Brief is one more writer of the model.** `spec.idea` is the idea,
   immutable; `spec.prompts` takes follow-ups, at most 50 listed at once, and
-  an earlier prompt never changes. Once rounds have planned more than ten,
-  the operator retires the oldest planned ones: it takes them out of the
-  list and counts them in `spec.promptsRetired`, which only grows, so a Brief
-  takes prompts for as long as its project runs. A prompt no round planned is
-  never retired; the status counts every prompt written, retired ones
-  included, and the planner's `brief.md` keeps their numbers and says how
-  many retired, the model holding what they asked for. The retiring patch
-  carries the `resourceVersion` it read, so a prompt appended meanwhile is
-  never lost. A Brief kept in Git takes the retirement into Git (drop the
-  oldest prompts, raise `promptsRetired`), or its sync is refused (#835).
+  an earlier prompt never changes. The write that appends to a full list
+  retires the oldest planned prompts in the same write: it takes them out of
+  the list and counts them in `spec.promptsRetired`, which only grows, so a
+  Brief takes prompts for as long as its project runs (#835). The status
+  says how many were planned (`status.promptsPlanned`); a prompt no round
+  planned is never retired. The status counts every prompt written, retired
+  ones included, and the planner's `brief.md` keeps their numbers and says
+  how many retired, the model holding what they asked for. The operator
+  never writes the spec, so GitOps keeps working (#855): the UI server's
+  append retires the planned prompts past the newest ten for the person, its
+  patch guarded by the prompts it read, so a prompt appended meanwhile is
+  never lost. With kubectl or in Git, the person drops the oldest planned
+  prompts and raises `promptsRetired` by as many in the commit that adds the
+  51st; a 51st alone is refused with a message that says so, and so is a
+  retirement that drops anything but the oldest or miscounts.
   Anything can write it: the UI's box, kubectl or GitOps. With actions off, the UI server
-  writes nothing but this: creating a Brief, appending a prompt, and setting
+  writes nothing but this: creating a Brief, appending a prompt (retiring
+  planned ones when the list is full), and setting
   `spec.paused` from the card's Pause and Resume buttons. With them on, it
   takes the actions under *UI actions* below.
 - **A planner Agent plans each round** (the idea, then each batch of new

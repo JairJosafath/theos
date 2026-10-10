@@ -292,7 +292,9 @@ requests, at most 50, and doesn't say which numbers are of closed issues.
   kubectl. The operator still never writes the spec (decision 7): GitOps
   would put the numbers back, and writing them back and forth would fight
   it. A status-side record of every number handled would only move the
-  growth into status.
+  growth into status. Retiring planned prompts follows the same rule: the
+  writer that appends to a full list retires them in the same write, never
+  the operator (#855).
 - **A repository that couldn't be read keeps what it had,** and one no
   longer read leaves the list.
 - **A dropped number is forgotten.** Decision 10's "a number in `declined`
