@@ -642,7 +642,13 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   never lost. With kubectl or in Git, the person drops the oldest planned
   prompts and raises `promptsRetired` by as many in the commit that adds the
   51st; a 51st alone is refused with a message that says so, and so is a
-  retirement that drops anything but the oldest or miscounts.
+  retirement that drops anything but the oldest or miscounts, or that
+  raises `promptsRetired` past `status.promptsPlanned`: a CEL rule refuses
+  the write rather than a condition reporting the prompt lost (#859). It
+  reads the stored status, so it holds only on updates (a Brief made with
+  prompts retired is taken) and status writes pass; `promptsPlanned` only
+  grows, so a stale read can only refuse a sound write, which a retry
+  passes, never let an unplanned prompt go.
   Anything can write it: the UI's box, kubectl or GitOps. With actions off, the UI server
   writes nothing but this: creating a Brief, appending a prompt (retiring
   planned ones when the list is full), and setting

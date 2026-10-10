@@ -1281,6 +1281,13 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: 'promptsRetired can''t pass status.promptsPlanned: retire only
+            prompts a round has planned'
+          rule: '(has(self.spec.promptsRetired) ? self.spec.promptsRetired : 0) <=
+            (has(oldSelf.spec.promptsRetired) ? oldSelf.spec.promptsRetired : 0) ||
+            (has(self.spec.promptsRetired) ? self.spec.promptsRetired : 0) <= (has(self.status)
+            && has(self.status.promptsPlanned) ? self.status.promptsPlanned : 0)'
     served: true
     storage: true
     subresources:

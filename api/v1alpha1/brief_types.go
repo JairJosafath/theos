@@ -903,6 +903,11 @@ type BriefStatus struct {
 // +kubebuilder:printcolumn:name="Needs you",type=integer,JSONPath=".status.needsYouWaiting"
 // +kubebuilder:printcolumn:name="Releases",type=string,JSONPath=".status.apps[*].lastRelease.tag"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+// A write that raises spec.promptsRetired may retire only prompts a round
+// has planned: a prompt no round took would be lost (#859). The rule reads
+// the stored status, so it holds on updates only; status writes leave the
+// spec as it was and pass.
+// +kubebuilder:validation:XValidation:rule="(has(self.spec.promptsRetired) ? self.spec.promptsRetired : 0) <= (has(oldSelf.spec.promptsRetired) ? oldSelf.spec.promptsRetired : 0) || (has(self.spec.promptsRetired) ? self.spec.promptsRetired : 0) <= (has(self.status) && has(self.status.promptsPlanned) ? self.status.promptsPlanned : 0)",message="promptsRetired can't pass status.promptsPlanned: retire only prompts a round has planned"
 
 // Brief is an app idea in plain words and its follow-up prompts. A planner
 // Agent turns each round (the idea, then each batch of new prompts) into the
