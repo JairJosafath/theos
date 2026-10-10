@@ -700,13 +700,16 @@ var _ = Describe("Task with a gated merge", func() {
 		By("expiring the review sandbox before the checks with main merged in pass")
 		expireSandbox(ns, "orders-api-1-r1-review-a1", 0)
 		gitFake.setChecks(ns, "orders-api", head, "success")
-		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a2") }).Should(Succeed())
-		task := getTask(Default, ns, "orders-api-1")
-		Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
-		Expect(task.Status.Round).To(Equal(int32(1)), "an approval that ran out costs no round")
-		Expect(task.Status.Commit).To(Equal(head))
-		Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ApprovalEnded")))
-		Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(BeNil())
+		// The reconciler creates the sandbox before it writes the Task's status (#829).
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, "orders-api-1-r1-review-a2")
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(task.Status.Round).To(Equal(int32(1)), "an approval that ran out costs no round")
+			g.Expect(task.Status.Commit).To(Equal(head))
+			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ApprovalEnded")))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(BeNil())
+		}).Should(Succeed())
 		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty(), "never merged without a lasting approval")
 
 		By("merging on the new approval")
