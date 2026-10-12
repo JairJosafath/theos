@@ -333,8 +333,10 @@ var _ = Describe("Task", func() {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "no round is spent")
-			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).To(HaveField("Message", ContainSubstring(
-				"`make check` fails on main in the agent's workspace too, so CI decides")))
+			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Phase", c4v1alpha1.TaskChecking),
+				HaveField("Round", int32(1)), HaveField("Message", ContainSubstring(
+					"`make check` fails on main in the agent's workspace too, so CI decides")))),
+				"the round's history keeps the step's message after the checks' wait replaces it")
 		}).Should(Succeed())
 		pr := getTask(Default, ns, "add-crop").Status.PullRequest
 		Expect(gitFake.pullComments(ns, "orders-api", int(pr))).To(ContainElement(And(

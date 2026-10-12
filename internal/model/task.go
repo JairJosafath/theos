@@ -1026,13 +1026,13 @@ func CheckFailsOnBaseEvent(round int, output string) string {
 }
 
 // CheckFailsOnBaseComment is the pull request's comment for a round whose
-// check fails on main in the agent's workspace too: the workspace and CI
-// disagree, so a person can fix the difference, while CI decides the change.
+// check fails on main in the agent's workspace too: CI decides the change,
+// and a person can give the workspace what CI has.
 func CheckFailsOnBaseComment(round int, output string) string {
 	return fmt.Sprintf("Round %d: `%s` fails in the agent's workspace on main too, before this change, so the "+
 		"workspace can't judge it. CI runs the same check on this head and decides; this costs no round. "+
-		"The workspace and CI disagree, so something CI has, such as a download or a service, is missing from "+
-		"the workspace. Its output on main ends:\n\n````\n%s\n````\n",
+		"If CI passes, the workspace lacks something CI has, such as a download or a service: give it that, "+
+		"so the workspace judges changes again. Its output on main ends:\n\n````\n%s\n````\n",
 		round, CheckCommand, strings.TrimRight(output, "\n"))
 }
 
