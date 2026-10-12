@@ -239,6 +239,11 @@ type Provider interface {
 	// published before and a module that can't be published at tag are
 	// outcomes, not errors; a repeat publishes nothing.
 	PublishGoModule(ctx context.Context, repo Repository, tag string) (GoModule, error)
+	// ReadSource calls fn with each file of repo as of tag, as git archive makes
+	// it, its path, mode and size, and its content, which is streamed, never
+	// held whole in memory, and read only during the call. A submodule fails the
+	// read. An error from fn stops the read and is returned.
+	ReadSource(ctx context.Context, repo Repository, tag string, fn func(SourceFile, io.Reader) error) error
 }
 
 // BranchRule is what a protected branch requires of a pull request.

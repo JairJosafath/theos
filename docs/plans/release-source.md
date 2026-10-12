@@ -60,7 +60,11 @@ published to GitHub*, says what they built.
 3. **Through GitHub's Git Data API, not a clone.** The operator reads the
    source at the tag from Gitea (the zip archive `PublishGoModule` already
    downloads to a temporary file, with each file's mode: plain, executable,
-   symlink), and writes to GitHub with the same token and client as the
+   symlink; the archive is what `git archive` makes, so the tag's
+   `.gitattributes` `export-ignore` and `export-subst` apply, and a
+   submodule, which the archive holds only as an empty folder, fails the
+   read rather than vanish from the published tree; the archive is capped
+   at 256 MiB, as the operator's `/tmp` is 1 GiB), and writes to GitHub with the same token and client as the
    releases: blobs, a tree, a commit, and the refs. Rejected: pushing with
    go-git, which needs a fetch of the public repository each release, and
    whose failures come back as text the `Published` reasons can't be read

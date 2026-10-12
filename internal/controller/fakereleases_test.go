@@ -317,6 +317,12 @@ func (p *fakeProvider) PublishGoModule(_ context.Context, repo gitprovider.Repos
 	return out, nil
 }
 
+// ReadSource reads nothing yet: no controller reads a repository's source.
+func (p *fakeProvider) ReadSource(_ context.Context, repo gitprovider.Repository, tag string,
+	_ func(gitprovider.SourceFile, io.Reader) error) error {
+	return fmt.Errorf("the fake can't read the source of %s/%s at %s", repo.Owner, repo.Name, tag)
+}
+
 // setGoMod gives owner/name a go.mod declaring module path.
 func (g *fakeGit) setGoMod(owner, name, path string) {
 	g.mu.Lock()

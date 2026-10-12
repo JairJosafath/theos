@@ -1,0 +1,15 @@
+--- PASS: TestGiteaGoProxyIntegration (0.98s)
+--- PASS: TestGiteaIntegration (1.82s)
+--- PASS: TestGiteaTemplatesIntegration (0.45s)
+--- PASS: TestGiteaChecksIntegration (0.65s)
+--- PASS: TestGiteaCommitRunsIntegration (1.72s)
+--- PASS: TestGiteaPullRequestUpdateIntegration (5.11s)
+--- PASS: TestGiteaIssuesIntegration (0.39s)
+--- PASS: TestGiteaCrossRepositoryDependencyIntegration (0.35s)
+--- PASS: TestGiteaReleasesIntegration (2.05s)
+--- PASS: TestGiteaMilestonesIntegration (0.23s)
+--- PASS: TestGiteaGoModuleIntegration (1.37s)
+=== RUN   TestGiteaSourceIntegration
+--- PASS: TestGiteaSourceIntegration (2.16s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/gitprovider	17.285s
