@@ -270,11 +270,13 @@ func TestStandardUpdateBody(t *testing.T) {
 	closing := "The operator merges this pull request itself once CI passes. " +
 		"Close it to drop the update until the Standard's ref or the Container's checks change again."
 	for _, tt := range []struct {
-		name            string
-		merged, leftOut []string
+		name    string
+		merged  []string
+		leftOut LeftOut
 	}{
 		{name: "everything planned"},
-		{name: "some files left out", leftOut: []string{"Makefile", "docs/style/go.md"}},
+		{name: "some files left out", leftOut: LeftOut{Files: []LeftOutFile{{Path: "Makefile", Ref: "v1.0.0"},
+			{Path: "docs/style/go.md", Ref: "v0.9.0"}}}},
 		{name: "a file merged", merged: []string{"AGENTS.md"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -289,8 +291,8 @@ func TestStandardUpdateBody(t *testing.T) {
 					t.Errorf("body lacks %q:\n%s", want, body)
 				}
 			}
-			if got := strings.Contains(body, "## Left out"); got != (len(tt.leftOut) > 0) {
-				t.Errorf("body has a Left out section = %v, want %v:\n%s", got, len(tt.leftOut) > 0, body)
+			if got := strings.Contains(body, "## Left out"); got != (len(tt.leftOut.Files) > 0) {
+				t.Errorf("body has a Left out section = %v, want %v:\n%s", got, len(tt.leftOut.Files) > 0, body)
 			}
 			const mergedTitle = "## Merged with the repository's changes"
 			if got := strings.Contains(body, mergedTitle); got != (len(tt.merged) > 0) {
@@ -301,9 +303,9 @@ func TestStandardUpdateBody(t *testing.T) {
 					t.Errorf("Merged section lacks %q:\n%s", p, body)
 				}
 			}
-			for _, p := range tt.leftOut {
-				if _, after, _ := strings.Cut(body, "## Left out"); !strings.Contains(after, "- `"+p+"`\n") {
-					t.Errorf("Left out section lacks %q:\n%s", p, body)
+			for _, f := range tt.leftOut.Files {
+				if _, after, _ := strings.Cut(body, "## Left out"); !strings.Contains(after, "### `"+f.Path+"`\n") {
+					t.Errorf("Left out section lacks %q:\n%s", f.Path, body)
 				}
 			}
 			if !strings.HasSuffix(body, closing+"\n") {
@@ -315,11 +317,91 @@ func TestStandardUpdateBody(t *testing.T) {
 
 func TestStandardUpdateBodyChangingChecks(t *testing.T) {
 	body := StandardUpdateBody("go-standard", StandardVersion{Ref: "v1.1.1"},
-		StandardVersion{Ref: "v1.1.1", Checks: ChecksBeforeRelease}, []string{".gitea/workflows/check.yaml"}, nil, nil)
+		StandardVersion{Ref: "v1.1.1", Checks: ChecksBeforeRelease}, []string{".gitea/workflows/check.yaml"}, nil, LeftOut{})
 	want := "from `v1.1.1` to `v1.1.1`, and CI from running the full check on every change to running it before release.\n"
 	if !strings.Contains(body, want) {
 		t.Errorf("body lacks %q:\n%s", want, body)
 	}
+}
+
+func TestStandardUpdateBodyLeftOut(t *testing.T) {
+	take := "kubectl -n shop annotate container orders-api c4.factory.io/standard-take=v1.2.1"
+	keep := "kubectl -n shop annotate container orders-api c4.factory.io/standard-keep=v1.2.1"
+	makefile := LeftOutFile{Path: "Makefile", Ref: "v1.1.6",
+		Diff: []string{"@@ -1,2 +1,2 @@", " check:", "-\ttrue", "+\tmake lint test"},
+		Take: TakenFile{Path: "Makefile", Dropped: [][]string{{"\tpytest\n"}}}}
+	body := StandardUpdateBody("go-standard", StandardVersion{Ref: "v1.1.6"}, StandardVersion{Ref: "v1.2.1"},
+		[]string{"AGENTS.md"}, nil, LeftOut{Take: take, Keep: keep, Files: []LeftOutFile{makefile,
+			{Path: "logo.png", Ref: "v1.0.0", Note: "It is a binary file, so no diff is shown.",
+				Take: TakenFile{Path: "logo.png", Note: "It doesn't merge line by line (binary file), so the " +
+					"Standard's file replaces the repository's whole."}},
+			{Path: "docs/style.md", Ref: "v1.1.6", Diff: []string{"@@ -1 +1 @@", "-a", "+b"},
+				Take: TakenFile{Path: "docs/style.md"}},
+		}})
+	for _, want := range []string{
+		"- take the Standard's version: `" + take + "`\n- or keep the repository's: `" + keep + "`\n",
+		"### `Makefile`\n\nWhat the Standard changed in it from `v1.1.6` to `v1.2.1`\n\n" +
+			"```diff\n--- Makefile (v1.1.6)\n+++ Makefile (v1.2.1)\n@@ -1,2 +1,2 @@\n check:\n-\ttrue\n+\tmake lint test\n```\n\n" +
+			"The repository's lines taking it drops:\n\n```diff\n-\tpytest\n```\n\n",
+		"### `logo.png`\n\nWhat the Standard changed in it from `v1.0.0` to `v1.2.1`: It is a binary file, so no " +
+			"diff is shown.\n\nTaking it: It doesn't merge line by line (binary file), so the Standard's file " +
+			"replaces the repository's whole.\n\n### ",
+		"+b\n```\n\nTaking it drops none of the repository's lines.\n\n",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body lacks %q:\n%s", want, body)
+		}
+	}
+
+	t.Run("a long diff is cut", func(t *testing.T) {
+		diff := make([]string, 0, 300)
+		diff = append(diff, "@@ -1,300 +1,300 @@")
+		for n := range 299 {
+			diff = append(diff, fmt.Sprintf("+line %d", n))
+		}
+		body := StandardUpdateBody("go-standard", StandardVersion{Ref: "v1.1.6"}, StandardVersion{Ref: "v1.2.1"},
+			nil, nil, LeftOut{Take: take, Keep: keep, Files: []LeftOutFile{{Path: "f", Ref: "v1.1.6", Diff: diff}}})
+		if !strings.Contains(body, "+line 198\n```\n\nAnd 100 more lines.\n") || strings.Contains(body, "+line 199\n") {
+			t.Errorf("the diff isn't cut after 200 lines and its header:\n%s", body)
+		}
+	})
+
+	t.Run("a body past its bound names the rest", func(t *testing.T) {
+		files := make([]LeftOutFile, 0, 40)
+		for n := range 40 {
+			diff := make([]string, 0, 200)
+			diff = append(diff, "@@ -1,200 +1,200 @@")
+			for range 199 {
+				diff = append(diff, "+"+strings.Repeat("x", 20))
+			}
+			files = append(files, LeftOutFile{Path: fmt.Sprintf("f%d", n), Ref: "v1.1.6", Diff: diff})
+		}
+		body := StandardUpdateBody("go-standard", StandardVersion{Ref: "v1.1.6"}, StandardVersion{Ref: "v1.2.1"},
+			nil, nil, LeftOut{Take: take, Keep: keep, Files: files})
+		if len(body) > maxBodyLength {
+			t.Errorf("body is %d characters, past %d", len(body), maxBodyLength)
+		}
+		if !strings.Contains(body, "### `f0`\n\nWhat the Standard changed") ||
+			!strings.Contains(body, ", `f39`.\n\n") || strings.Contains(body, "### `f39`") {
+			t.Errorf("body doesn't show the first file and name the last:\n%s", body)
+		}
+	})
+
+	t.Run("a body past its bound names as many files as fit", func(t *testing.T) {
+		files := make([]LeftOutFile, 0, 3000)
+		for n := range 3000 {
+			files = append(files, LeftOutFile{Path: fmt.Sprintf("docs/a-long-directory-name/file-%d.md", n), Ref: "v1.1.6",
+				Diff: []string{"@@ -1 +1 @@", "-" + strings.Repeat("a", 400), "+" + strings.Repeat("b", 400)}})
+		}
+		body := StandardUpdateBody("go-standard", StandardVersion{Ref: "v1.1.6"}, StandardVersion{Ref: "v1.2.1"},
+			nil, nil, LeftOut{Take: take, Keep: keep, Files: files})
+		if len(body) > maxBodyLength {
+			t.Errorf("body is %d characters, past %d", len(body), maxBodyLength)
+		}
+		if !strings.Contains(body, " more files.\n\n") {
+			t.Errorf("body doesn't count the files it can't name:\n%s", body[len(body)-500:])
+		}
+	})
 }
 
 func TestStandardUpdateRefusal(t *testing.T) {
