@@ -608,6 +608,27 @@ model and context it needs.
   update in flight, the condition `StandardUpdated` how it went;
   `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
   [plans/done/standard-update.md](plans/done/standard-update.md).
+- **The owner chooses when the full check runs.** A Container's
+  `spec.checks` is `EveryChange` (the default: CI runs `make check` on every
+  pull request and push to main) or `BeforeRelease`: each change runs the
+  Standard's `make check-light` (build, vet or type check, lint; no test
+  suites, no build for every platform), trusting the agent's own `make check`
+  in its workspace, and the full `make check` runs on the commit a release
+  will be tagged at, before the tag. It takes effect only when the Standard
+  says it can (`spec.checksBeforeRelease`); otherwise the full check stays on
+  every change and the Container's `ChecksApplied` is False
+  (`StandardRunsFullChecks`). The Standard's `check.yaml` renders the choice;
+  changing it reaches the repository through the Standard update's pull
+  request, and `status.standard.checks` records what the repository runs.
+  With `BeforeRelease` and `tagReleases`, a done release is not tagged at
+  once: the Crew pushes `release-check/vX.Y.Z` at the commit, the workflow's
+  `full` job runs `make check` there, and its success tags the release and
+  deletes the branch. A failure tags nothing (`FullCheckFailed`) and files
+  `Full check fails for vX.Y.Z`, `kind/bug`, in the release's milestone,
+  whose merge doesn't count as merged after the prepare issue; no run within
+  the hour leaves the release to a person (`NoFullCheck`). A person who tags
+  by hand pushes the branch and waits for `full` the same way. See
+  [plans/checks-before-release.md](plans/checks-before-release.md).
 - **New shapes, same operator.** Container types `cli` and `extension`, with
   their templates in the template catalog in `templates/`; a Go and Node toolchain whose image ships a warm build cache, a CI runner
   labelled `go`, and two agent sandboxes at once.
