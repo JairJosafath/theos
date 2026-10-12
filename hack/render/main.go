@@ -22,6 +22,7 @@ func main() {
 	flag.StringVar(&in.Container, "container", "sample-app", "Container name")
 	flag.StringVar(&in.DisplayName, "display-name", "Sample App", "Container display name")
 	flag.StringVar(&in.Type, "type", "cli", "Container type")
+	flag.StringVar(&in.Checks, "checks", "", "when CI runs the full check: EveryChange (the default) or BeforeRelease")
 	flag.Parse()
 	if *out == "" || flag.NArg() == 0 {
 		fmt.Fprintln(os.Stderr, "usage: render -out DIR Side=template ...")
