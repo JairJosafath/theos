@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 	"testing"
@@ -400,6 +401,66 @@ func TestStandardUpdateBodyLeftOut(t *testing.T) {
 		}
 		if !strings.Contains(body, " more files.\n\n") {
 			t.Errorf("body doesn't count the files it can't name:\n%s", body[len(body)-500:])
+		}
+	})
+}
+
+func TestBehindChanges(t *testing.T) {
+	makefile := LeftOutFile{Path: "Makefile", Ref: "v1.1.6",
+		Diff: []string{"@@ -1,2 +1,2 @@", " check:", "-\ttrue", "+\tmake lint test"},
+		Take: TakenFile{Path: "Makefile", Dropped: [][]string{{"\tpytest\n"}, {"\tmypy\r\n"}}}}
+	logo := LeftOutFile{Path: "logo.png", Ref: "v1.0.0", Note: "It is a binary file, so no diff is shown.",
+		Take: TakenFile{Path: "logo.png", Note: "the Standard's file replaces the repository's whole."}}
+	style := LeftOutFile{Path: "docs/style.md", Ref: "v1.1.6", Diff: []string{"@@ -1 +1 @@", "-a", "+b"}}
+	got := BehindChanges("v1.2.1", []LeftOutFile{makefile, logo, style})
+	want := map[string]string{
+		"Makefile": "--- Makefile (v1.1.6)\n+++ Makefile (v1.2.1)\n@@ -1,2 +1,2 @@\n check:\n-\ttrue\n" +
+			"+\tmake lint test\n\nThe repository's lines taking it drops:\n-\tpytest\n@@\n-\tmypy",
+		"logo.png": "It is a binary file, so no diff is shown.\n\n" +
+			"Taking it: the Standard's file replaces the repository's whole.",
+		"docs/style.md": "--- docs/style.md (v1.1.6)\n+++ docs/style.md (v1.2.1)\n@@ -1 +1 @@\n-a\n+b\n\n" +
+			"Taking it drops none of the repository's lines.",
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("BehindChanges = %q, want %q", got, want)
+	}
+
+	t.Run("a long change is cut at a line", func(t *testing.T) {
+		diff := []string{"@@ -1,300 +1,300 @@"}
+		for n := range 299 {
+			diff = append(diff, fmt.Sprintf("+line %d of the Standard's longer file", n))
+		}
+		got := BehindChanges("v1.2.1", []LeftOutFile{{Path: "f", Ref: "v1.1.6", Diff: diff}})["f"]
+		if len(got) > maxBehindChange {
+			t.Errorf("change is %d bytes, past %d", len(got), maxBehindChange)
+		}
+		last := got[strings.LastIndex(got, "\n")+1:]
+		if !strings.HasPrefix(last, "… ") || !strings.HasSuffix(last, " more lines not shown") ||
+			!strings.HasPrefix(got, "--- f (v1.1.6)\n+++ f (v1.2.1)\n@@") {
+			t.Errorf("change isn't cut at a line with a count:\n%s", got)
+		}
+	})
+
+	t.Run("one line past the bound is cut at a character", func(t *testing.T) {
+		got := BehindChanges("v1.2.1", []LeftOutFile{{Path: "f", Ref: "v1.1.6", Note: strings.Repeat("é", 3000)}})["f"]
+		if len(got) > maxBehindChange || !utf8.ValidString(got) || !strings.HasPrefix(got, "éé") ||
+			!strings.HasSuffix(got, "\n… 2 more lines not shown") {
+			t.Errorf("change of %d bytes isn't cut at a character:\n%s", len(got), got[len(got)-80:])
+		}
+	})
+
+	t.Run("only the first files carry their change", func(t *testing.T) {
+		files := make([]LeftOutFile, 0, 20)
+		for n := range 20 {
+			files = append(files, LeftOutFile{Path: fmt.Sprintf("f%02d", n), Ref: "v1.1.6",
+				Diff: []string{"@@ -1 +1 @@", "-a", "+b"}})
+		}
+		got := BehindChanges("v1.2.1", files)
+		if !strings.HasPrefix(got["f15"], "--- f15") {
+			t.Errorf("f15 lacks its change: %q", got["f15"])
+		}
+		if want := "Not shown: only the first 16 of the 20 files left out carry the Standard's change here."; got["f16"] != want || got["f19"] != want {
+			t.Errorf("f16 = %q, f19 = %q, want %q", got["f16"], got["f19"], want)
 		}
 	})
 }

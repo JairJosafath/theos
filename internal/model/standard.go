@@ -443,6 +443,91 @@ func writeTooLarge(b *strings.Builder, files []LeftOutFile) {
 	b.WriteString(".\n\n")
 }
 
+// Bounds of the change status.standard.behind carries: the bytes of each
+// file's, and the files that carry one, so the status grows by 64 KiB at most.
+const (
+	maxBehindChange  = 4096
+	maxBehindChanges = 16
+)
+
+// BehindChanges are, by path, the text status.standard.behind carries of each
+// of files an update to ref to leaves out: the Standard's change to it and the
+// repository's lines a take would drop, cut at maxBehindChange bytes. Only the
+// first maxBehindChanges files carry it; the rest say so.
+func BehindChanges(to string, files []LeftOutFile) map[string]string {
+	changes := make(map[string]string, len(files))
+	for i, f := range files {
+		if i >= maxBehindChanges {
+			changes[f.Path] = fmt.Sprintf("Not shown: only the first %d of the %d files left out carry the "+
+				"Standard's change here.", maxBehindChanges, len(files))
+			continue
+		}
+		changes[f.Path] = behindChange(to, f)
+	}
+	return changes
+}
+
+// behindChange is the text of f's change, at most maxBehindChange bytes: a note
+// when there is one, the diff, then the lines a take would drop.
+func behindChange(to string, f LeftOutFile) string {
+	var lines []string
+	if f.Note != "" {
+		lines = append(lines, f.Note, "")
+	}
+	if len(f.Diff) > 0 {
+		lines = append(lines, fmt.Sprintf("--- %s (%s)", f.Path, f.Ref), fmt.Sprintf("+++ %s (%s)", f.Path, to))
+		lines = append(lines, f.Diff...)
+		lines = append(lines, "")
+	}
+	switch {
+	case f.Take.Note != "":
+		lines = append(lines, "Taking it: "+f.Take.Note)
+	case len(f.Take.Dropped) == 0:
+		lines = append(lines, "Taking it drops none of the repository's lines.")
+	default:
+		lines = append(lines, "The repository's lines taking it drops:")
+		for i, stretch := range f.Take.Dropped {
+			if i > 0 {
+				lines = append(lines, "@@")
+			}
+			for _, line := range stretch {
+				lines = append(lines, "-"+strings.TrimRight(line, "\r\n"))
+			}
+		}
+	}
+	return cutLines(lines, maxBehindChange)
+}
+
+// cutLines joins lines, one per line, in at most limit bytes: past it, the
+// lines that fit and "… N more lines not shown".
+func cutLines(lines []string, limit int) string {
+	if text := strings.Join(lines, "\n"); len(text) <= limit {
+		return text
+	}
+	// Room for the last line at its widest.
+	room := limit - len(fmt.Sprintf("… %d more lines not shown", len(lines))) - 1
+	var b strings.Builder
+	shown := 0
+	for _, line := range lines {
+		if b.Len()+len(line)+1 > room {
+			break
+		}
+		b.WriteString(line + "\n")
+		shown++
+	}
+	if shown == 0 {
+		// One line too long for the bound shows cut, at a character's start.
+		cut := room - 1
+		for cut > 0 && !utf8.RuneStart(lines[0][cut]) {
+			cut--
+		}
+		b.WriteString(lines[0][:cut] + "\n")
+		shown = 1
+	}
+	fmt.Fprintf(&b, "… %d more lines not shown", len(lines)-shown)
+	return b.String()
+}
+
 // TakenFile is one file a take writes or removes, and the repository's lines
 // it drops for the Standard's.
 type TakenFile struct {
