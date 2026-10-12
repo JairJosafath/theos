@@ -313,3 +313,23 @@ func TestScaffoldedRef(t *testing.T) {
 		}
 	}
 }
+
+func TestEffectiveChecks(t *testing.T) {
+	tests := []struct {
+		asked       string
+		standardCan bool
+		want        string
+	}{
+		{ChecksEveryChange, false, ChecksEveryChange},
+		{ChecksEveryChange, true, ChecksEveryChange},
+		{ChecksBeforeRelease, false, ChecksEveryChange},
+		{ChecksBeforeRelease, true, ChecksBeforeRelease},
+		// A Container read before the field had a default asks for nothing.
+		{"", true, ChecksEveryChange},
+	}
+	for _, tt := range tests {
+		if got := EffectiveChecks(tt.asked, tt.standardCan); got != tt.want {
+			t.Errorf("EffectiveChecks(%q, %v) = %q, want %q", tt.asked, tt.standardCan, got, tt.want)
+		}
+	}
+}

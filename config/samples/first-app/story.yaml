@@ -36,6 +36,9 @@ spec:
     name: go-cli
   standardRef:
     name: go-standard
+  # When CI runs the full check: EveryChange (the default) or BeforeRelease,
+  # once the Standard can (its checksBeforeRelease).
+  checks: EveryChange
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Relationship

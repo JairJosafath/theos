@@ -33,6 +33,13 @@ type StandardSpec struct {
 	// +listType=set
 	// +optional
 	ProtectedPaths []string `json:"protectedPaths,omitempty"`
+
+	// checksBeforeRelease says the Standard's templates can run the full check
+	// only before a release: a light check on each change when a Container asks
+	// for checks BeforeRelease, and the full one on a release-check/** branch.
+	// Without it, its Containers run the full check on every change.
+	// +optional
+	ChecksBeforeRelease bool `json:"checksBeforeRelease,omitempty"`
 }
 
 // +kubebuilder:object:root=true

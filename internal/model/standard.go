@@ -289,3 +289,22 @@ func ScaffoldedRef(scaffoldedFrom []string, name string) string {
 	}
 	return ""
 }
+
+// When a Container's CI runs its full check (its spec.checks).
+const (
+	// ChecksEveryChange runs the full check on every pull request and push to main.
+	ChecksEveryChange = "EveryChange"
+	// ChecksBeforeRelease runs a light check on each change and the full one on
+	// the commit a release will be tagged at.
+	ChecksBeforeRelease = "BeforeRelease"
+)
+
+// EffectiveChecks is what a Container's templates render: BeforeRelease only
+// when the Container asks for it and its Standard can do it, else EveryChange.
+// asked is the Container's spec.checks, where empty reads as EveryChange.
+func EffectiveChecks(asked string, standardCan bool) string {
+	if asked == ChecksBeforeRelease && standardCan {
+		return ChecksBeforeRelease
+	}
+	return ChecksEveryChange
+}

@@ -70,6 +70,9 @@ type Input struct {
 	Deployment string
 	// Connectors are the unique Connector names, sorted.
 	Connectors []string
+	// Checks is when CI runs the full check: EveryChange or BeforeRelease, as
+	// model.EffectiveChecks decides. Empty reads as EveryChange.
+	Checks string
 }
 
 // Layer is one catalog entry's template repository at a pinned ref.
