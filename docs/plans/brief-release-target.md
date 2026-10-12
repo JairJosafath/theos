@@ -125,7 +125,7 @@ pull request.
 
 Each is its own issue and pull request, and leaves `main` working.
 
-1. **A publish names its target and checks the repository is the same one.**
+1. **A publish names its target and checks the repository is the same one (#990).**
    `internal/model/publish.go` (the `Unauthorized` message naming the target
    and who sets it; `RepositoryRenamed` and `RepositoryReplaced` from the
    facts), `internal/gitprovider/github_source.go` (the repository read
@@ -135,13 +135,13 @@ Each is its own issue and pull request, and leaves `main` working.
    replaced: another id); envtest: a replaced repository is not written to,
    the annotation accepts it.
 2. **The Brief remembers the target it set and holds a Crew changed under
-   it.** The annotation, the three-way rule in `releaseCrew` and at creation
+   it (#991).** The annotation, the three-way rule in `releaseCrew` and at creation
    (`brief_apply.go`), the `ReleaseTarget` condition, `Published`
    `TargetDiffersFromBrief`, the Event, the Brief's `needsYou` Crew item.
    Envtest: an entry change reaches the Crew; a Crew change is left, held and
    flagged; settling either way clears it; a Crew made before the annotation
    is adopted or held as above.
-3. **The Crew page says the Brief sets the target and edits it there.**
+3. **The Crew page says the Brief sets the target and edits it there (#992).**
    `CrewPage`, `ReleaseForm`, the lifecycle text, the two answers for a held
    Crew, the demo fixture. Vitest for each state. Depends on step 2.
 
