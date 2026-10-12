@@ -164,12 +164,18 @@ type StandardFile struct {
 	PullRequestURL string `json:"pullRequestURL,omitempty"`
 }
 
-// StandardUpdateStatus is one Standard update:a pull request the operator
-// opened to bring the Standard's files to another ref.
+// StandardUpdateStatus is one Standard update: a pull request the operator
+// opened to bring the Standard's files to another ref, or, when take is set, to
+// take the Standard's version at its ref of the files behind.
 type StandardUpdateStatus struct {
 	// ref is the Standard's template ref the update brings the files to.
 	// +required
 	Ref string `json:"ref"`
+
+	// take says the pull request takes the Standard's version at ref of the
+	// files behind, as a person answered with the standard-take annotation.
+	// +optional
+	Take bool `json:"take,omitempty"`
 
 	// branch is the update's branch, and commit the one commit on it.
 	// +optional

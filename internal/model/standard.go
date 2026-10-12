@@ -236,14 +236,25 @@ func StandardChangeIssue(issue int, task string, p Proposal) (title, body string
 // Standard name: "standard-update/<name>-<ref>", where every character of ref
 // outside [A-Za-z0-9._-] becomes "-".
 func StandardUpdateBranch(name, ref string) string {
-	safe := strings.Map(func(r rune) rune {
+	return "standard-update/" + name + "-" + branchSafe(ref)
+}
+
+// StandardTakeBranch is the branch that takes the Standard name's version at
+// ref of the files its updates left out: "standard-take/<name>-<ref>", ref as
+// in StandardUpdateBranch.
+func StandardTakeBranch(name, ref string) string {
+	return "standard-take/" + name + "-" + branchSafe(ref)
+}
+
+// branchSafe is ref with every character outside [A-Za-z0-9._-] made "-".
+func branchSafe(ref string) string {
+	return strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
 			return r
 		}
 		return '-'
 	}, ref)
-	return "standard-update/" + name + "-" + safe
 }
 
 // StandardUpdateTitle is the title of that update's pull request and commit:
@@ -271,12 +282,95 @@ func StandardUpdateBody(name, from, to string, paths, merged, leftOut []string) 
 	}
 	if len(leftOut) > 0 {
 		fmt.Fprintf(&b, "## Left out\n\nThese files changed in the repository since `%s` in ways that don't "+
-			"merge with the Standard's changes, so the update leaves them out; a person brings them up to date by hand:\n\n", from)
+			"merge with the Standard's changes, so the update leaves them out; a person takes the Standard's version "+
+			"or keeps the repository's, on the Container:\n\n", from)
 		writeCodeList(&b, leftOut)
 	}
 	b.WriteString("The operator merges this pull request itself once CI passes. " +
 		"Close it to drop the update until the Standard's ref changes again.\n")
 	return b.String()
+}
+
+// TakenFile is one file a take writes or removes, and the repository's lines
+// it drops for the Standard's.
+type TakenFile struct {
+	Path string
+	// Dropped are the stretches of the repository's lines the take replaces
+	// with the Standard's, each line with its ending.
+	Dropped [][]string
+	// Note says what the take does with the file as a whole, when it doesn't
+	// merge it line by line, or "".
+	Note string
+}
+
+// maxDroppedLines bounds the dropped lines a take's body shows per file.
+const maxDroppedLines = 100
+
+// StandardTakeTitle is the title of the pull request and commit that take the
+// Standard name's version at ref of paths: "Bring <paths> up to date with
+// <name> <ref>", naming at most three paths.
+func StandardTakeTitle(name, ref string, paths []string) string {
+	what := joinAnd(paths)
+	if len(paths) > 3 {
+		what = fmt.Sprintf("%d files", len(paths))
+	}
+	return fmt.Sprintf("Bring %s up to date with %s %s", what, name, ref)
+}
+
+// StandardTakeBody is that pull request's description: per file, the
+// repository's lines it drops.
+func StandardTakeBody(name, ref string, files []TakenFile) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "A person took the Standard's version of files the updates of `%s` left out, at `%s`, so the "+
+		"operator opened this pull request. Each file is merged with the repository's changes line by line; where "+
+		"both changed the same lines, the Standard's lines win. The repository's lines it drops are listed per "+
+		"file: add back what is still needed in a later change.\n\n", name, ref)
+	for _, f := range files {
+		fmt.Fprintf(&b, "## `%s`\n\n", f.Path)
+		if f.Note != "" {
+			b.WriteString(f.Note + "\n\n")
+		}
+		if len(f.Dropped) == 0 {
+			if f.Note == "" {
+				b.WriteString("Drops none of the repository's lines.\n\n")
+			}
+			continue
+		}
+		b.WriteString("The repository's lines it drops:\n\n")
+		writeDropped(&b, f.Dropped)
+	}
+	b.WriteString("The operator merges this pull request itself once CI passes. Close it to keep the files as " +
+		"they are; they stay waiting on a person.\n")
+	return b.String()
+}
+
+// writeDropped writes stretches of lines as a diff of removed lines, a gap
+// between stretches, at most maxDroppedLines of them.
+func writeDropped(b *strings.Builder, stretches [][]string) {
+	var lines []string
+	for i, stretch := range stretches {
+		if i > 0 {
+			lines = append(lines, "@@")
+		}
+		for _, line := range stretch {
+			lines = append(lines, "-"+strings.TrimRight(line, "\r\n"))
+		}
+	}
+	more := 0
+	if len(lines) > maxDroppedLines {
+		lines, more = lines[:maxDroppedLines], len(lines)-maxDroppedLines
+	}
+	// The fence is longer than any run of backticks in the lines.
+	fence := "```"
+	for _, line := range lines {
+		for strings.Contains(line, fence) {
+			fence += "`"
+		}
+	}
+	fmt.Fprintf(b, "%sdiff\n%s\n%s\n\n", fence, strings.Join(lines, "\n"), fence)
+	if more > 0 {
+		fmt.Fprintf(b, "And %d more lines.\n\n", more)
+	}
 }
 
 // writeCodeList writes items as a Markdown list in code font, then a blank line.

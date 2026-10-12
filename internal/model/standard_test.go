@@ -367,3 +367,47 @@ func TestEffectiveChecks(t *testing.T) {
 		}
 	}
 }
+
+func TestStandardTakeBranchAndTitle(t *testing.T) {
+	if got, want := StandardTakeBranch("go-standard", "v1.2.0+b/1"), "standard-take/go-standard-v1.2.0-b-1"; got != want {
+		t.Errorf("StandardTakeBranch() = %q, want %q", got, want)
+	}
+	tests := []struct {
+		paths []string
+		want  string
+	}{
+		{[]string{"Makefile"}, "Bring Makefile up to date with go-standard v1.2.0"},
+		{[]string{"Makefile", "a", "b"}, "Bring Makefile, a and b up to date with go-standard v1.2.0"},
+		{[]string{"Makefile", "a", "b", "c"}, "Bring 4 files up to date with go-standard v1.2.0"},
+	}
+	for _, tt := range tests {
+		if got := StandardTakeTitle("go-standard", "v1.2.0", tt.paths); got != tt.want {
+			t.Errorf("StandardTakeTitle(%v) = %q, want %q", tt.paths, got, tt.want)
+		}
+	}
+}
+
+func TestStandardTakeBody(t *testing.T) {
+	many := make([]string, 150)
+	for i := range many {
+		many[i] = fmt.Sprintf("line %d\n", i)
+	}
+	body := StandardTakeBody("go-standard", "v1.2.0", []TakenFile{
+		{Path: ".gitea/workflows/check.yaml", Dropped: [][]string{{"    runs-on: big\r\n"}, {"a ``` fence\n"}}},
+		{Path: "Makefile"},
+		{Path: "logo.png", Note: "It isn't text: the Standard's file replaces the repository's whole."},
+		{Path: "big.txt", Dropped: [][]string{many}},
+	})
+	for _, want := range []string{
+		"`go-standard` left out, at `v1.2.0`",
+		"## `.gitea/workflows/check.yaml`\n\nThe repository's lines it drops:\n\n````diff\n-    runs-on: big\n@@\n-a ``` fence\n````\n",
+		"## `Makefile`\n\nDrops none of the repository's lines.\n",
+		"## `logo.png`\n\nIt isn't text: the Standard's file replaces the repository's whole.\n\n## `big.txt`",
+		"-line 99\n```\n\nAnd 50 more lines.\n",
+		"Close it to keep the files as they are",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body lacks %q:\n%s", want, body)
+		}
+	}
+}

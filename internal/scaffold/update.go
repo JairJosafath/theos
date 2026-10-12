@@ -10,8 +10,12 @@ import (
 )
 
 // trailerUpdate marks the operator's commit that updates a Standard's files, as
-// <name>@<from>..<to>.
-const trailerUpdate = "Standard-Update"
+// <name>@<from>..<to>, and trailerTake the one that takes a Standard's version
+// of files its updates left out, as <name>@<ref>.
+const (
+	trailerUpdate = "Standard-Update"
+	trailerTake   = "Standard-Take"
+)
 
 // RenderLayer renders one layer's files with in, as Build does, without the
 // other layers, the devcontainer or the identity file.
@@ -138,6 +142,90 @@ func merge(old, next, current Tree, p string) (File, bool) {
 	return File{Data: data, Executable: executable}, true
 }
 
+// Take is what taking a render's version of the files a layer's updates left
+// out changes.
+type Take struct {
+	// Files are the paths to write, and Removes those to remove.
+	Files   Tree
+	Removes []string
+	// Taken are the paths written or removed, sorted, each with the
+	// repository's lines it drops.
+	Taken []model.TakenFile
+}
+
+// Paths returns every path the take writes or removes, sorted.
+func (t Take) Paths() []string {
+	paths := make([]string, 0, len(t.Taken))
+	for _, f := range t.Taken {
+		paths = append(paths, f.Path)
+	}
+	return paths
+}
+
+// Empty reports whether the take changes nothing.
+func (t Take) Empty() bool {
+	return len(t.Taken) == 0
+}
+
+// PlanTake plans taking next's version of the files behind, each with the
+// render its repository copy was last brought to. current holds the
+// repository's copy of each that it has. A file is merged three-way like an
+// update's, base its render, with each overlap resolved to next's lines, so
+// the repository's changes elsewhere in it stay; one that isn't text, or too
+// large to merge, is replaced whole. A file next doesn't have is removed, and
+// one the repository already holds as next makes it needs nothing.
+func PlanTake(behind map[string]Tree, next, current Tree) Take {
+	var t Take
+	paths := make([]string, 0, len(behind))
+	for p := range behind {
+		paths = append(paths, p)
+	}
+	slices.Sort(paths)
+	for _, p := range paths {
+		theirs, inNext := next[p]
+		ours, inCurrent := current[p]
+		taken := model.TakenFile{Path: p}
+		switch {
+		case same(current, next, p):
+			continue
+		case !inNext:
+			t.Removes = append(t.Removes, p)
+			taken.Note = "The Standard no longer has this file, so the pull request removes it."
+		case !inCurrent:
+			t.write(p, theirs)
+			taken.Note = "The repository had removed this file; the pull request brings back the Standard's."
+		default:
+			base := behind[p][p]
+			data, hunks, err := MergeTheirs(base.Data, ours.Data, theirs.Data)
+			if err != nil {
+				t.write(p, theirs)
+				taken.Note = fmt.Sprintf("It doesn't merge line by line (%v), so the Standard's file replaces "+
+					"the repository's whole.", err)
+				break
+			}
+			executable := theirs.Executable
+			if ours.Executable != base.Executable {
+				executable = ours.Executable
+			}
+			t.write(p, File{Data: data, Executable: executable})
+			for _, h := range hunks {
+				if len(h.Ours) > 0 {
+					taken.Dropped = append(taken.Dropped, h.Ours)
+				}
+			}
+		}
+		t.Taken = append(t.Taken, taken)
+	}
+	return t
+}
+
+func (t *Take) write(p string, f File) {
+	if t.Files == nil {
+		t.Files = Tree{}
+	}
+	t.Files[p] = f
+}
+
 func (t Tree) has(p string) bool {
 	_, ok := t[p]
 	return ok
@@ -165,6 +253,20 @@ func UpdateMessage(in Input, name, from, to string, u Update) string {
 	}
 	fmt.Fprintf(&b, "\n%s: %s/%s\n", trailerContainer, in.Project, in.Container)
 	fmt.Fprintf(&b, "%s: %s@%s..%s\n", trailerUpdate, name, from, to)
+	return b.String()
+}
+
+// TakeMessage is the message of the commit that takes, for in's Container, the
+// Standard name's version at ref of the files its updates left out.
+func TakeMessage(in Input, name, ref string, t Take) string {
+	var b strings.Builder
+	paths := t.Paths()
+	fmt.Fprintf(&b, "%s\n\n", model.StandardTakeTitle(name, ref, paths))
+	fmt.Fprintf(&b, "Takes the version of %s at %s of %s for Container %s, as a person answered: merged with "+
+		"the repository's changes, the Standard's lines kept where both changed the same ones.\n",
+		name, ref, joinAnd(paths), in.Container)
+	fmt.Fprintf(&b, "\n%s: %s/%s\n", trailerContainer, in.Project, in.Container)
+	fmt.Fprintf(&b, "%s: %s@%s\n", trailerTake, name, ref)
 	return b.String()
 }
 

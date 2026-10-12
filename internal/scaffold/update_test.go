@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 func TestPlanUpdate(t *testing.T) {
@@ -239,5 +241,76 @@ func TestJoinAnd(t *testing.T) {
 		if got := joinAnd(tt.items); got != tt.want {
 			t.Errorf("joinAnd(%q) = %q, want %q", tt.items, got, tt.want)
 		}
+	}
+}
+
+func TestPlanTake(t *testing.T) {
+	base := "one\ntwo\nthree\nfour\n"
+	tests := []struct {
+		name          string
+		behind        map[string]Tree
+		next, current Tree
+		wantFiles     Tree
+		wantRemoves   []string
+		wantTaken     []model.TakenFile
+	}{
+		{name: "an overlap resolved to the Standard, the repository's other change kept",
+			behind:    map[string]Tree{"check.yaml": tree("check.yaml", base)},
+			next:      tree("check.yaml", "one\nTWO\nthree\nfour\n"),
+			current:   tree("check.yaml", "one\nours\nthree\nFOUR\n"),
+			wantFiles: tree("check.yaml", "one\nTWO\nthree\nFOUR\n"),
+			wantTaken: []model.TakenFile{{Path: "check.yaml", Dropped: [][]string{{"ours\n"}}}}},
+		{name: "already as the Standard has it",
+			behind: map[string]Tree{"Makefile": tree("Makefile", "a")},
+			next:   tree("Makefile", "b"), current: tree("Makefile", "b")},
+		{name: "a file the Standard no longer has is removed",
+			behind: map[string]Tree{"old.md": tree("old.md", "a")},
+			next:   Tree{}, current: tree("old.md", "changed"),
+			wantRemoves: []string{"old.md"},
+			wantTaken: []model.TakenFile{{Path: "old.md",
+				Note: "The Standard no longer has this file, so the pull request removes it."}}},
+		{name: "a file the repository removed comes back",
+			behind: map[string]Tree{"AGENTS.md": tree("AGENTS.md", "a")},
+			next:   tree("AGENTS.md", "b"), current: Tree{},
+			wantFiles: tree("AGENTS.md", "b"),
+			wantTaken: []model.TakenFile{{Path: "AGENTS.md",
+				Note: "The repository had removed this file; the pull request brings back the Standard's."}}},
+		{name: "a binary file is replaced whole",
+			behind: map[string]Tree{"logo.png": tree("logo.png", "a\x00")},
+			next:   tree("logo.png", "b\x00"), current: tree("logo.png", "c\x00"),
+			wantFiles: tree("logo.png", "b\x00"),
+			wantTaken: []model.TakenFile{{Path: "logo.png", Note: "It doesn't merge line by line (binary file), " +
+				"so the Standard's file replaces the repository's whole."}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PlanTake(tt.behind, tt.next, tt.current)
+			if !reflect.DeepEqual(got.Files, tt.wantFiles) {
+				t.Errorf("Files = %v, want %v", got.Files, tt.wantFiles)
+			}
+			if !slices.Equal(got.Removes, tt.wantRemoves) {
+				t.Errorf("Removes = %v, want %v", got.Removes, tt.wantRemoves)
+			}
+			if !reflect.DeepEqual(got.Taken, tt.wantTaken) {
+				t.Errorf("Taken = %#v, want %#v", got.Taken, tt.wantTaken)
+			}
+			if got.Empty() != (len(tt.wantTaken) == 0) {
+				t.Errorf("Empty() = %v", got.Empty())
+			}
+		})
+	}
+}
+
+func TestTakeMessage(t *testing.T) {
+	in := Input{Project: "tools", SoftwareSystem: "tools", Container: "cel-lens-core"}
+	take := Take{Taken: []model.TakenFile{{Path: ".gitea/workflows/check.yaml"}}}
+	want := "Bring .gitea/workflows/check.yaml up to date with go-standard v1.1.6\n\n" +
+		"Takes the version of go-standard at v1.1.6 of .gitea/workflows/check.yaml for Container cel-lens-core, " +
+		"as a person answered: merged with the repository's changes, the Standard's lines kept where both " +
+		"changed the same ones.\n\n" +
+		"C4-Factory-Container: tools/cel-lens-core\n" +
+		"Standard-Take: go-standard@v1.1.6\n"
+	if got := TakeMessage(in, "go-standard", "v1.1.6", take); got != want {
+		t.Errorf("TakeMessage() =\n%s\nwant\n%s", got, want)
 	}
 }

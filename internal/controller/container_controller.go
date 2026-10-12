@@ -124,12 +124,16 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
 			metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
 		result := r.refreshChecks(ctx, &container, status)
+		answered := false
 		if container.Spec.StandardRef != nil {
-			r.updateStandard(ctx, &container, status)
+			answered = r.updateStandard(ctx, &container, status)
 		} else {
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 		}
-		return result, r.writeStatus(ctx, &container, status)
+		if err := r.writeStatus(ctx, &container, status); err != nil || !answered {
+			return result, err
+		}
+		return result, r.removeAnswers(ctx, &container)
 	}
 
 	res, missing, err := r.resolve(ctx, &container)
@@ -188,6 +192,15 @@ func (r *ContainerReconciler) writeStatus(ctx context.Context, container *c4v1al
 	orig := container.DeepCopy()
 	container.Status = *status
 	return r.Status().Patch(ctx, container, client.MergeFrom(orig))
+}
+
+// removeAnswers removes the person's answer to the Standard files behind once
+// the status records what it did, unless someone changed the Container since.
+func (r *ContainerReconciler) removeAnswers(ctx context.Context, container *c4v1alpha1.Container) error {
+	orig := container.DeepCopy()
+	delete(container.Annotations, c4v1alpha1.AnnotationStandardTake)
+	delete(container.Annotations, c4v1alpha1.AnnotationStandardKeep)
+	return r.Patch(ctx, container, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{}))
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -250,7 +263,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return []reconcile.Request{requestFor(rel.Namespace, rel.Spec.Source.Name)}
 	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.Container{}, specOrRetry()).
+		For(&c4v1alpha1.Container{}, specOrAsked()).
 		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).
 		Watches(&c4v1alpha1.SoftwareSystem{}, systemContainers, createOrDelete()).
 		Watches(&c4v1alpha1.Relationship{}, sourceContainer, specChanged()).

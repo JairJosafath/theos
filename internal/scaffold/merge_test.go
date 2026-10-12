@@ -112,3 +112,46 @@ func TestMerge3TooLarge(t *testing.T) {
 		t.Errorf("Merge3() error = %v, want %v", err, ErrTooLarge)
 	}
 }
+
+func TestMergeTheirs(t *testing.T) {
+	lines := func(l ...string) string { return strings.Join(l, "\n") + "\n" }
+	base := lines("one", "two", "three", "four", "five")
+	tests := []struct {
+		name               string
+		base, ours, theirs string
+		want               string
+		wantHunks          []Hunk
+		wantErr            error
+	}{
+		{name: "clean edits merge as in Merge3",
+			base: base, ours: lines("one", "TWO", "three", "four", "five"),
+			theirs: lines("one", "two", "three", "FOUR", "five"),
+			want:   lines("one", "TWO", "three", "FOUR", "five")},
+		{name: "an overlap takes theirs, the other edits of ours kept",
+			base: base, ours: lines("ONE", "two", "ours", "four", "five"),
+			theirs:    lines("one", "two", "theirs", "four", "FIVE"),
+			want:      lines("ONE", "two", "theirs", "four", "FIVE"),
+			wantHunks: []Hunk{{Start: 2, End: 3, Ours: []string{"ours\n"}, Theirs: []string{"theirs\n"}}}},
+		{name: "lines ours removed where theirs changed come back as theirs",
+			base: base, ours: lines("one", "two", "four", "five"),
+			theirs:    lines("one", "two", "THREE", "four", "five"),
+			want:      lines("one", "two", "THREE", "four", "five"),
+			wantHunks: []Hunk{{Start: 2, End: 3, Ours: []string{}, Theirs: []string{"THREE\n"}}}},
+		{name: "a binary file refused",
+			base: "one\x00", ours: "ONE\x00", theirs: "one\x00two", wantErr: ErrBinary},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, hunks, err := MergeTheirs([]byte(tt.base), []byte(tt.ours), []byte(tt.theirs))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("MergeTheirs() error = %v, want %v", err, tt.wantErr)
+			}
+			if len(hunks) != len(tt.wantHunks) || len(hunks) > 0 && !reflect.DeepEqual(hunks, tt.wantHunks) {
+				t.Errorf("MergeTheirs() hunks = %#v, want %#v", hunks, tt.wantHunks)
+			}
+			if tt.wantErr == nil && string(got) != tt.want {
+				t.Errorf("MergeTheirs() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

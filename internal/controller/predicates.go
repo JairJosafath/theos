@@ -27,18 +27,24 @@ func createOrDelete() builder.WatchesOption {
 	})
 }
 
-// specOrRetry passes a Container's creation, deletion and spec changes, and
-// changes to its retry annotation, but not the operator's own status and
-// metadata writes: a Failed Container stays failed until one of its inputs
-// changes or someone asks for a retry.
-func specOrRetry() builder.Predicates {
-	retryChanged := predicate.Funcs{
+// specOrAsked passes a Container's creation, deletion and spec changes, and
+// changes to the annotations a person asks with (retry, standard-take and
+// standard-keep), but not the operator's own status and metadata writes: a
+// Failed Container stays failed until one of its inputs changes or someone
+// asks for a retry.
+func specOrAsked() builder.Predicates {
+	asked := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return e.ObjectOld.GetAnnotations()[c4v1alpha1.AnnotationRetry] !=
-				e.ObjectNew.GetAnnotations()[c4v1alpha1.AnnotationRetry]
+			for _, key := range []string{c4v1alpha1.AnnotationRetry, c4v1alpha1.AnnotationStandardTake,
+				c4v1alpha1.AnnotationStandardKeep} {
+				if e.ObjectOld.GetAnnotations()[key] != e.ObjectNew.GetAnnotations()[key] {
+					return true
+				}
+			}
+			return false
 		},
 	}
-	return builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, retryChanged))
+	return builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, asked))
 }
 
 // sessionPhaseChanges ignores heartbeats: a Session matters to its ancestors only
