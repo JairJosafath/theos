@@ -537,20 +537,30 @@ func missingCriteria(body string) string {
 	if strings.TrimSpace(body) == "" {
 		return "This issue has no description, so an agent would have to guess what to build."
 	}
-	loc := criteriaHeading.FindStringIndex(body)
-	if loc == nil {
+	section, ok := criteriaSection(body)
+	if !ok {
 		return `This issue has no "Acceptance criteria" section with a checklist ("- [ ] ..."), so a reviewer ` +
 			"could not tell when it is done."
-	}
-	section := body[loc[1]:]
-	if next := anyHeading.FindStringIndex(section); next != nil {
-		section = section[:next[0]]
 	}
 	if !checklistItem.MatchString(section) {
 		return `The "Acceptance criteria" section has no checklist items ("- [ ] ..."), so a reviewer could ` +
 			"not tell when it is done."
 	}
 	return ""
+}
+
+// criteriaSection is the text under the body's first "Acceptance criteria"
+// heading, up to the next heading, and whether it has that heading.
+func criteriaSection(body string) (string, bool) {
+	loc := criteriaHeading.FindStringIndex(body)
+	if loc == nil {
+		return "", false
+	}
+	section := body[loc[1]:]
+	if next := anyHeading.FindStringIndex(section); next != nil {
+		section = section[:next[0]]
+	}
+	return section, true
 }
 
 // IssueTaskName names the Task for an issue: <container>-<issue>, with the

@@ -11,7 +11,8 @@ can't apply it.
   marked planned is done, so build on it and don't undo it. Its *Releases*
   section, when it has one, names the Containers whose releases the person
   asked for; its *Building at once* section says how many issues each Crew
-  builds at once now, and where that number comes from.
+  builds at once now, and where that number comes from; its *What no issue
+  can change* section names the paths no issue may ask to change.
 - `model/model.yaml`: the namespace's story now, as manifests.
 - `model/catalog.yaml`: the installed catalog. Each entry lists the Container
   types it supports (`supportedTypes`); a Standard also lists the Frameworks it
@@ -312,6 +313,23 @@ Push the branch `plan/<round>` with these files:
     is, so write it for the person who asked. A plan that leaves a request
     unanswered, answers one the file doesn't list, or takes one with no issue
     of the round, is refused.
+
+15. **File no issue that no change may make.** The paths `brief.md`'s *What
+    no issue can change* section names (`AGENTS.md`, `docs/agents/` and
+    `.c4factory.yaml`) are the agents' rules and the platform's settings: no
+    pull request may change them, so an issue that asks to could only end
+    blocked. No issue asks to change them, and none names them in its title
+    or acceptance criteria; the factory keeps them as they are, so a
+    criterion such as "AGENTS.md is unchanged" is never needed. Its body may
+    still refer to them ("as `AGENTS.md` says"). When a new prompt asks for
+    such a change, file no issue for it: say in `plan/summary.md` what wasn't
+    planned and why, and in `plan/choices.md` why and where it can go
+    instead. A note for the agents, such as how CI runs `make check`, goes in
+    `docs/project-notes.md`, which every agent reads and any issue may write:
+    file an issue that writes it there, and say so in `choices.md`. Answer a
+    request asking for such a change `skip` with that why, or `take` it as an
+    issue writing `docs/project-notes.md`. A plan with an issue that names
+    one of those paths in its title or criteria is refused.
 
 ## The plan's format
 

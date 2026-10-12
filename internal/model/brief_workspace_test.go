@@ -111,6 +111,22 @@ func TestBriefWorkspaceBrief(t *testing.T) {
 
 // The planner copies model/model.yaml to plan/model.yaml: what the operator
 // writes must parse back to the same objects.
+// brief.md names each path no issue may change, and where agents' notes go
+// instead (docs/plans/done/out-of-reach-asks.md).
+func TestBriefWorkspaceBriefNamesWhatNoIssueCanChange(t *testing.T) {
+	brief := renderBrief(BriefWorkspace{Brief: "b", Idea: "Idea."})
+	_, section, ok := strings.Cut(brief, "\n## What no issue can change\n")
+	if !ok {
+		t.Fatalf("brief.md has no section on what no issue can change:\n%s", brief)
+	}
+	section, _, _ = strings.Cut(section, "\n## ")
+	for _, want := range append(slices.Clone(AgentNeverPaths), ProjectNotesPath, PlanSummaryFile, PlanChoicesFile) {
+		if !strings.Contains(section, "`"+want+"`") {
+			t.Errorf("the section doesn't name `%s`:\n%s", want, section)
+		}
+	}
+}
+
 func TestBriefWorkspaceModelRoundTrip(t *testing.T) {
 	objects, err := parsePlanModel(happyModel + `---
 apiVersion: c4.factory.io/v1alpha1

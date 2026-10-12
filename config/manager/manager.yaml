@@ -101,12 +101,16 @@ spec:
             port: 8081
           initialDelaySeconds: 15
           periodSeconds: 20
+          # A busy single-node host can keep a healthy process from answering
+          # within the 1 s default; only a real hang should restart it (#957).
+          timeoutSeconds: 5
         readinessProbe:
           httpGet:
             path: /readyz
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 5
         # Templates are cloned in memory while scaffolding; they are small, but
         # leave some headroom.
         resources:

@@ -47,7 +47,20 @@ sed -n '/^## 1\. /,/^## 2\. /p' "$HACK/../docs/getting-started.md" |
 check "the install snippet runs the guide's install, without the pull secret" \
   "$(diff "$T/guide" "$T/snippet")" ""
 hasnt "  makes no project namespace by hand" "kubectl create namespace webshop"
-has "  says the chart makes them" "projects in \`gitea.projects\`, for each of which the chart makes a namespace:"
+has "  says the chart makes them" "\`gitea.projects\`, for each of which the chart makes a namespace:"
+
+# Every install text that applies Agent Sandbox's sandbox.yaml patches its
+# controller's leader election off next, as config/agent-sandbox does (#959).
+patch="kubectl -n agent-sandbox-system patch deployment agent-sandbox-controller --type=json"
+off='"value":"--leader-elect=false"'
+grep -qx -- "      value: --leader-elect=false" "$HACK/../config/agent-sandbox/kustomization.yaml"
+check "config/agent-sandbox turns leader election off" $? 0
+cp "$T/out" "$T/release-notes"
+for f in "$T/release-notes" docs/getting-started.md dist/chart/README.md dist/chart/templates/NOTES.txt; do
+  case $f in /*) ;; *) f=$HACK/../$f ;; esac
+  case $(grep -A2 -F '/sandbox.yaml' "$f") in *"$patch"*"$off"*) got=yes ;; *) got=no ;; esac
+  check "the leader-election patch follows sandbox.yaml in ${f##*/}" "$got" yes
+done
 
 grep -E '"number":(9|10|11|12|13|14),' "$HACK/testdata/release-notes-prs.jsonl" >"$T/none.jsonl"
 VERSION=1.2.0 "$NOTES" --prs "$T/none.jsonl" v1.1.0 >"$T/out" 2>&1

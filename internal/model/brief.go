@@ -805,6 +805,7 @@ var containerTypes = []string{TypeStaticSite, TypeService, TypeJob, TypeWorker, 
 var elementKinds = []string{KindPerson, KindSoftwareSystem, KindContainer, KindDataStore}
 
 func checkPlanIssue(plan Plan, current CurrentModel, issue PlanIssue, refuse func(string, string, ...any)) {
+	checkNeverPaths(issue, refuse)
 	container, ok := findObject(plan.Objects, Ref{KindContainer, issue.Container})
 	if !ok {
 		refuse(issue.File, "is for Container %q, which is not in the namespace or the plan", issue.Container)
@@ -822,6 +823,22 @@ func checkPlanIssue(plan Plan, current CurrentModel, issue PlanIssue, refuse fun
 	if MissingAcceptanceCriteria(issue.Body) != "" {
 		refuse(issue.File, "MissingAcceptanceCriteria: the body needs an \"## Acceptance criteria\" heading with "+
 			"a checklist (\"- [ ] ...\") under it, one check a reviewer can verify per item")
+	}
+}
+
+// checkNeverPaths refuses an issue whose title or acceptance criteria name a
+// path under AgentNeverPaths: no change may make it, so its Task could only end
+// Blocked. The rest of the body may name one ("as AGENTS.md says").
+func checkNeverPaths(issue PlanIssue, refuse func(string, string, ...any)) {
+	criteria, _ := criteriaSection(issue.Body)
+	for _, field := range [][2]string{{"title", issue.Title}, {"acceptance criteria", criteria}} {
+		if path := NeverPathNamed(field[1]); path != "" {
+			refuse(issue.File, "names %s in its %s, a path no change may make: %s are the agents' rules and "+
+				"the platform's settings. File no issue for it; say what wasn't planned in %s and why in %s. "+
+				"Notes for the agents go in %s, which an issue may write", path, field[0], neverPathsCode(),
+				PlanSummaryFile, PlanChoicesFile, ProjectNotesPath)
+			return
+		}
 	}
 }
 

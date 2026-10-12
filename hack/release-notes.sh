@@ -108,11 +108,14 @@ Images: \`$REGISTRY/<name>:$VERSION\` for operator, ui, seed, the toolchains
 base and go, agent-base, agent-go, gitea-runner-base and gitea-runner-go.
 
 Install, as the guide below does without a pull secret: [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
-first, then the release's namespace and Gitea's, then the chart with the
-projects in \`gitea.projects\`, for each of which the chart makes a namespace:
+first, its controller without leader election (the guide says why), then the
+release's namespace and Gitea's, then the chart with the projects in
+\`gitea.projects\`, for each of which the chart makes a namespace:
 
 \`\`\`bash
 kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
+kubectl -n agent-sandbox-system patch deployment agent-sandbox-controller --type=json \\
+  -p '[{"op":"replace","path":"/spec/template/spec/containers/0/args/0","value":"--leader-elect=false"}]'
 for ns in c4-factory-system gitea; do
   kubectl create namespace \$ns --dry-run=client -o yaml | kubectl apply -f -
 done

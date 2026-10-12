@@ -19,7 +19,7 @@ You need:
 - the GitHub CLI (`gh`), logged in, while this repository, the chart and the
   images on GHCR are private.
 
-The commands use the release `0.19.0`; for a later one, change `VERSION`. Run
+The commands use the release `0.21.0`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
 match the release (`gh` clones it while the repository is private). From the
 release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
@@ -27,17 +27,24 @@ its own template tags and agent image, and the samples make neither; `0.3.0`'s
 samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
-VERSION=0.19.0
+VERSION=0.21.0
 gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 ```
 
 ## 1. Install the factory
 
 **Agent Sandbox.** The operator runs its agents in Sandboxes and won't start
-without the `Sandbox` kind:
+without the `Sandbox` kind. Its controller runs one replica, which needs no
+leader election: with it on, the controller exits with "leader election lost"
+whenever a busy host slows the API server past its 10 s lease renewal, and
+v1.0.4 has no flag for the lease's length, so the patch turns it off. On an
+install made without the patch, run the patch alone; run it again after any
+`kubectl apply` of `sandbox.yaml`.
 
 ```bash
 kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
+kubectl -n agent-sandbox-system patch deployment agent-sandbox-controller --type=json \
+  -p '[{"op":"replace","path":"/spec/template/spec/containers/0/args/0","value":"--leader-elect=false"}]'
 ```
 
 **Namespaces.** The release goes in `c4-factory-system` and Gitea in `gitea`.
@@ -644,7 +651,7 @@ wait for a quiet moment. Use the new `VERSION` and the same values as the
 install (`--reuse-values` keeps them):
 
 ```bash
-VERSION=0.19.0
+VERSION=0.21.0
 helm upgrade c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
   -n c4-factory-system --reuse-values --wait --timeout 10m
 ```
