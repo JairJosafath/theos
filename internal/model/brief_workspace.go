@@ -101,6 +101,8 @@ type WorkspaceContainer struct {
 	IssuesUnread bool
 	// Released says the Container ships releases already.
 	Released bool
+	// Checks is the Container's spec.checks: when its CI runs the full check.
+	Checks string
 }
 
 // WorkspaceIssue is one open issue of a Container.
@@ -319,7 +321,9 @@ func optionalRef(name string) *refOut {
 }
 
 // renderWorkspaceModel writes the namespace's story objects as manifests, in
-// plan/model.yaml's format, so the planner starts its plan from a copy.
+// plan/model.yaml's format, so the planner starts its plan from a copy. A
+// Container's checks is left out, so a copy leaves it alone; containers.yaml
+// says it.
 func renderWorkspaceModel(objects []PlanObject) (string, error) {
 	sorted := slices.Clone(objects)
 	slices.SortStableFunc(sorted, func(a, b PlanObject) int {
@@ -373,6 +377,9 @@ type catalogEntryOut struct {
 	Description         string   `yaml:"description,omitempty"`
 	SupportedTypes      []string `yaml:"supportedTypes"`
 	SupportedFrameworks []string `yaml:"supportedFrameworks,omitempty"`
+	// ChecksBeforeRelease says a Standard can run the full check only before
+	// a release, so a Container's checks: BeforeRelease takes effect.
+	ChecksBeforeRelease bool `yaml:"checksBeforeRelease,omitempty"`
 }
 
 // workspaceCatalog lists the installed entries by side and name, with what
@@ -394,7 +401,8 @@ func workspaceCatalog(catalog []CatalogEntry) catalogOut {
 		slices.Sort(types)
 		frameworks := slices.Clone(e.SupportedFrameworks)
 		slices.Sort(frameworks)
-		*list = append(*list, catalogEntryOut{e.Name, strings.TrimSpace(e.Description), types, frameworks})
+		*list = append(*list, catalogEntryOut{e.Name, strings.TrimSpace(e.Description), types, frameworks,
+			e.ChecksBeforeRelease})
 	}
 	for _, list := range sides {
 		if *list == nil {
@@ -408,7 +416,10 @@ type containerFileOut struct {
 	Name       string `yaml:"name"`
 	Repository string `yaml:"repository"`
 	// Released says the Container ships releases already.
-	Released   bool     `yaml:"released"`
+	Released bool `yaml:"released"`
+	// Checks is when the Container's CI runs the full check now; a plan
+	// changes it by writing checks on the Container in plan/model.yaml.
+	Checks     string   `yaml:"checks"`
 	OpenIssues []string `yaml:"openIssues"`
 	// MoreIssues counts the open issues past MaxWorkspaceIssues.
 	MoreIssues int `yaml:"moreIssues,omitempty"`
@@ -426,7 +437,7 @@ func workspaceContainers(containers []WorkspaceContainer) []containerFileOut {
 		issues := slices.Clone(c.Issues)
 		slices.SortFunc(issues, func(a, b WorkspaceIssue) int { return a.Number - b.Number })
 		entry := containerFileOut{Name: c.Name, Repository: c.Repository, OpenIssues: []string{}, Unread: c.IssuesUnread,
-			Released: c.Released}
+			Released: c.Released, Checks: checksOrDefault(c.Checks)}
 		if len(issues) > MaxWorkspaceIssues {
 			entry.MoreIssues = len(issues) - MaxWorkspaceIssues
 			issues = issues[:MaxWorkspaceIssues]

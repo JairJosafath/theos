@@ -56,6 +56,8 @@ type roundApply struct {
 	// issuesRead says the issues the API server's Brief records were taken
 	// in, as they are once before an issue is filed.
 	issuesRead bool
+	// catalog is the namespace's installed catalog, for the round's summary.
+	catalog []model.CatalogEntry
 }
 
 // applyRound applies the plan the Brief accepted (B8), in order and each step
@@ -109,7 +111,8 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if err := r.applyParallel(ctx, brief, plan); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "setting the Crews' parallel", err)
 	}
-	run := &roundApply{brief: brief, orig: orig, round: strconv.Itoa(int(brief.Status.Round))}
+	run := &roundApply{brief: brief, orig: orig, round: strconv.Itoa(int(brief.Status.Round)),
+		catalog: current.Catalog}
 	var created []string
 	newRelationships := false
 	for _, o := range model.ApplyOrder(plan.Objects) {
@@ -292,6 +295,11 @@ func (r *BriefReconciler) applyObject(ctx context.Context, run *roundApply, o mo
 	if err := r.Patch(ctx, existing, client.MergeFrom(orig)); err != nil {
 		return false, err
 	}
+	before, _ := orig.(*c4v1alpha1.Container)
+	if c, ok := existing.(*c4v1alpha1.Container); ok && before != nil && c.Spec.Checks != before.Spec.Checks {
+		logf.FromContext(ctx).Info("Set the Container's checks from the plan", "container", o.Name,
+			"from", before.Spec.Checks, "checks", c.Spec.Checks, "round", run.round)
+	}
 	logf.FromContext(ctx).Info("Updated story text", "kind", o.Kind, "name", o.Name, "round", run.round)
 	return false, nil
 }
@@ -319,6 +327,7 @@ func storyObject(ns string, o model.PlanObject) (client.Object, error) {
 			StandardRef:    optionalLocalRef(o.Standard),
 			ComputeRef:     optionalLocalRef(o.Compute),
 			DeploymentRef:  optionalLocalRef(o.Deployment),
+			Checks:         c4v1alpha1.ChecksMode(o.Checks),
 		}}, nil
 	case model.KindDataStore:
 		return &c4v1alpha1.DataStore{ObjectMeta: objMeta, Spec: c4v1alpha1.DataStoreSpec{
@@ -344,7 +353,8 @@ func optionalLocalRef(name string) *c4v1alpha1.LocalRef {
 }
 
 // copyStoryText copies the story text a plan may change, displayName,
-// description, needs and kpis, from src to dst, of the same kind.
+// description, needs and kpis, from src to dst, of the same kind, and a
+// Container's checks when the plan sets it.
 func copyStoryText(dst, src client.Object) {
 	switch d := dst.(type) {
 	case *c4v1alpha1.Project:
@@ -360,6 +370,9 @@ func copyStoryText(dst, src client.Object) {
 	case *c4v1alpha1.Container:
 		s, _ := src.(*c4v1alpha1.Container)
 		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
+		if s.Spec.Checks != "" {
+			d.Spec.Checks = s.Spec.Checks
+		}
 	case *c4v1alpha1.DataStore:
 		s, _ := src.(*c4v1alpha1.DataStore)
 		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
@@ -710,7 +723,7 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	if err != nil {
 		return err
 	}
-	summary := model.RoundSummary(plan)
+	summary := model.AppliedRoundSummary(plan, run.catalog)
 	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices})
 	status.Choices = model.ClipList(plan.Choices, 50, 500)
 	status.PromptsPlanned = status.RoundPrompts

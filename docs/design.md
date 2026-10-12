@@ -807,7 +807,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 - **The operator checks and applies the plan.** A plan writes only story
   kinds (Project, Person, SoftwareSystem, Container, DataStore, Relationship),
   names only installed catalog entries that support the Container's type,
-  changes only the story text of what exists and deletes nothing; anything
+  changes only the story text of what exists (and a Container's `checks`,
+  below) and deletes nothing; anything
   else refuses it, and the planner's next round gets the reasons. The operator
   applies it (Relationships before the Containers they start from, so their
   Connectors are part of the scaffold), makes a Crew for each new Container
@@ -863,6 +864,20 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   form can set `spec.parallel`. The agent-slot queue
   still caps how many agents run. See
   [plans/done/brief-parallel.md](plans/done/brief-parallel.md).
+- **A Brief sets when its apps' CI runs the full check** (#977). A
+  Container's `checks` (`EveryChange` or `BeforeRelease`) is the Brief's to
+  set, as its Crews' `parallel` is: a plan's Container may say `checks` in
+  `plan/model.yaml`, only when a new prompt asks, never of the planner's
+  own accord, and the round sets it on the Container, a new one or one the
+  Brief made. A Container the plan writes without `checks` keeps its
+  setting, so one a person made isn't undone; `model/model.yaml` leaves it
+  out so a copy does too, and `model/containers.yaml` shows each
+  Container's setting, `model/catalog.yaml` each Standard's
+  `checksBeforeRelease`. A plan setting it with no new prompt, to another
+  value, or on a Container the Brief didn't make is refused. The Standard
+  still decides whether it takes effect (`ChecksApplied`, reason
+  `StandardRunsFullChecks`), and the applied round's summary says so in a
+  sentence the operator adds.
 - **A Brief pauses and resumes its Crews in one step** (#677). While
   `spec.paused` is true, the Brief sets `spec.paused` on every Crew it made,
   marking each with `c4.factory.io/paused-by: brief`, starts no new round and

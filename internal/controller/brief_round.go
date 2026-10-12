@@ -366,6 +366,14 @@ func (r *BriefReconciler) currentModel(ctx context.Context, brief *c4v1alpha1.Br
 			current.Released = append(current.Released, crew.Spec.ContainerRef.Name)
 		}
 	}
+	var containers c4v1alpha1.ContainerList
+	if err := r.List(ctx, &containers, client.InNamespace(brief.Namespace),
+		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		return current, err
+	}
+	for _, c := range containers.Items {
+		current.BriefContainers = append(current.BriefContainers, c.Name)
+	}
 	return current, nil
 }
 

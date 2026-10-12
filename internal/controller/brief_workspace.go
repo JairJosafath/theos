@@ -346,7 +346,7 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1
 		}
 		mine := c.Labels[c4v1alpha1.LabelBrief] == brief.Name
 		entry := model.WorkspaceContainer{Name: c.Name, Repository: c.Status.RepositoryURL,
-			Released: released[c.Name]}
+			Released: released[c.Name], Checks: string(c.Spec.Checks)}
 		issues, err := r.openIssues(ctx, providers, &c)
 		if err != nil {
 			logf.FromContext(ctx).Info("Could not read a Container's issues", "container", c.Name, "error", err.Error())
@@ -456,7 +456,8 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 		out = append(out, model.PlanObject{Kind: model.KindContainer, Name: o.Name,
 			DisplayName: s.DisplayName, Description: s.Description, SoftwareSystem: s.SoftwareSystemRef.Name,
 			Type: string(s.Type), GitProvider: s.GitProviderRef.Name, Framework: s.FrameworkRef.Name,
-			Standard: refName(s.StandardRef), Compute: refName(s.ComputeRef), Deployment: refName(s.DeploymentRef)})
+			Standard: refName(s.StandardRef), Compute: refName(s.ComputeRef), Deployment: refName(s.DeploymentRef),
+			Checks: string(s.Checks)})
 	}
 	var stores c4v1alpha1.DataStoreList
 	if err := c.List(ctx, &stores, in); err != nil {

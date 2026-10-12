@@ -83,6 +83,9 @@ type PlanObject struct {
 	Standard    string
 	Compute     string
 	Deployment  string
+	// Checks is a Container's spec.checks: from a plan, empty when model.yaml
+	// leaves it out, which leaves the Container's setting alone.
+	Checks string
 	// Connector is a DataStore's.
 	Connector string
 
@@ -153,12 +156,15 @@ const maxRoundSummary = 1000
 // RoundSummary is what a Brief's history says the plan's round did, for the
 // person: the planner's summary.md, or else what the plan holds. It ends on a
 // whole sentence and fits the history.
-func RoundSummary(plan Plan) string {
+func RoundSummary(plan Plan) string { return roundSummary(plan, maxRoundSummary) }
+
+// roundSummary is RoundSummary in at most n bytes of the planner's summary.
+func roundSummary(plan Plan, n int) string {
 	if plan.NeedsInput != "" {
 		return "Asked for input before planning."
 	}
 	if plan.Summary != "" {
-		return ClipSentences(strings.Join(strings.Fields(plan.Summary), " "), maxRoundSummary)
+		return ClipSentences(strings.Join(strings.Fields(plan.Summary), " "), n)
 	}
 	containers := 0
 	for _, o := range plan.Objects {
@@ -352,6 +358,7 @@ type planContainerSpec struct {
 	StandardRef       *planLocalRef `yaml:"standardRef"`
 	ComputeRef        *planLocalRef `yaml:"computeRef"`
 	DeploymentRef     *planLocalRef `yaml:"deploymentRef"`
+	Checks            string        `yaml:"checks"`
 }
 
 type planDataStoreSpec struct {
@@ -437,6 +444,7 @@ func decodePlanSpec(node *yaml.Node, o *PlanObject) error {
 		o.SoftwareSystem, o.Type, o.GitProvider = spec.SoftwareSystemRef.Name, spec.Type, spec.GitProviderRef.Name
 		o.Framework, o.Standard = spec.FrameworkRef.Name, spec.StandardRef.name()
 		o.Compute, o.Deployment = spec.ComputeRef.name(), spec.DeploymentRef.name()
+		o.Checks = spec.Checks
 	case KindDataStore:
 		var spec planDataStoreSpec
 		if err := strict(&spec); err != nil {
@@ -533,6 +541,9 @@ type CurrentModel struct {
 	// SpecParallel is the Brief's spec.parallel, 0 when unset; set, it wins
 	// over a prompt, so a plan may not write parallel.yaml.
 	SpecParallel int32
+	// BriefContainers are the existing Containers the Brief made: a plan
+	// sets the checks of only these.
+	BriefContainers []string
 }
 
 // Refusal is one reason a plan can't be applied, for the planner's next round.
@@ -552,7 +563,7 @@ func PlanDiff(plan Plan, current CurrentModel) (created, changed []PlanObject) {
 		switch {
 		case !ok:
 			created = append(created, o)
-		case !sameObject(before, o):
+		case !sameObject(before, o) || checksChange(before, o):
 			changed = append(changed, o)
 		}
 	}
@@ -609,7 +620,8 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 			was := lockedField(before, field[0])
 			if was != field[1] {
 				refuse(o.Ref().String(), "%s can't change (from %q to %q): a plan changes only the displayName, "+
-					"description, needs and kpis of what exists; to change it, file an issue in its repository",
+					"description, needs and kpis of what exists, and a Container's checks; to change it, file an "+
+					"issue in its repository",
 					field[0], was, field[1])
 			}
 		}
@@ -630,6 +642,7 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 		}
 	}
 	checkParallel(plan, current, refuse)
+	checkChecks(plan, current, refuse)
 	return out
 }
 
