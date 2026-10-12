@@ -219,7 +219,7 @@ func inFlight(update *c4v1alpha1.StandardUpdateStatus) *model.StandardUpdateInFl
 	return &model.StandardUpdateInFlight{
 		Ref: update.Ref, Mode: string(update.Checks), Stopped: update.Stopped, PullRequest: int(update.PullRequest),
 		PullRequestURL: update.PullRequestURL, Branch: update.Branch, Commit: update.Commit, Paths: update.Paths,
-		Take: update.Take,
+		Take: update.Take, Held: update.Stopped == c4v1alpha1.ReasonNoLightCheck,
 	}
 }
 
@@ -335,6 +335,14 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 			"standard", name, "from", from.String(), "to", to.String(), "leftOut", blocked)
 		return
 	}
+	if to.Checks == model.ChecksBeforeRelease && from.Checks != to.Checks &&
+		!model.HasLightCheck(plannedFile(plan, current, model.LightCheckFile)) {
+		s.Update = stopped(c4v1alpha1.ReasonNoLightCheck)
+		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonNoLightCheck, noLightCheck(s, plan))
+		log.Info("Held the change of a Container's checks until its Makefile has a light check",
+			"standard", name, "from", from.String(), "to", to.String())
+		return
+	}
 	if plan.Empty() {
 		u.alreadyUpToDate(ctx, to, nextBehind(behind, from.Ref, plan.LeftOut, ""))
 		return
@@ -366,6 +374,36 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 	u.updating()
 	log.Info("Opened a Standard update", "url", pr.URL, "standard", name, "from", from.String(), "to", to.String(),
 		"paths", plan.Paths(), "merged", plan.Merged, "leftOut", plan.LeftOut)
+}
+
+// plannedFile is path's content once plan merges into current, or nil when it
+// has no such path.
+func plannedFile(plan scaffold.Update, current scaffold.Tree, path string) []byte {
+	if f, ok := plan.Files[path]; ok {
+		return f.Data
+	}
+	if slices.Contains(plan.Removes, path) {
+		return nil
+	}
+	return current[path].Data
+}
+
+// noLightCheck says why CI can't change to run the full check only before a
+// release: the Makefile the update would leave has no check-light target,
+// and, when updates left the Makefile out, since which ref.
+func noLightCheck(s *c4v1alpha1.ContainerStandardStatus, plan scaffold.Update) string {
+	why := "has no check-light target"
+	for _, b := range s.Behind {
+		if b.Path == model.LightCheckFile {
+			why = fmt.Sprintf("was left out of the %s updates (at %s) and has no check-light target", s.Name, b.Ref)
+		}
+	}
+	if slices.Contains(plan.LeftOut, model.LightCheckFile) {
+		why = fmt.Sprintf("is left out of this %s update and has no check-light target", s.Name)
+	}
+	return fmt.Sprintf("CI can't change to run the full check only before a release: the repository's %s %s, "+
+		"which %s on each change needs; CI keeps running the full check on every change until the %s has one",
+		model.LightCheckFile, why, model.CheckLightCommand, model.LightCheckFile)
 }
 
 // standardRenders renders a Standard's files for the Container at the refs a

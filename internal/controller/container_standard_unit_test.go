@@ -75,3 +75,52 @@ func TestScaffoldInput(t *testing.T) {
 		t.Errorf("scaffoldInput() = %+v, want %+v", got, want)
 	}
 }
+
+func TestPlannedFile(t *testing.T) {
+	current := scaffold.Tree{"Makefile": {Data: []byte("check:\n")}}
+	for _, tc := range []struct {
+		name string
+		plan scaffold.Update
+		want string
+	}{
+		{"kept", scaffold.Update{}, "check:\n"},
+		{"written", scaffold.Update{Files: scaffold.Tree{"Makefile": {Data: []byte("check-light:\n")}}}, "check-light:\n"},
+		{"left out", scaffold.Update{LeftOut: []string{"Makefile"}}, "check:\n"},
+		{"removed", scaffold.Update{Removes: []string{"Makefile"}}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := string(plannedFile(tc.plan, current, "Makefile")); got != tc.want {
+				t.Errorf("plannedFile = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNoLightCheck(t *testing.T) {
+	const tail = ", which make check-light on each change needs; CI keeps running the full check on every change " +
+		"until the Makefile has one"
+	const head = "CI can't change to run the full check only before a release: the repository's Makefile "
+	behind := &c4v1alpha1.ContainerStandardStatus{Name: "go-standard", Ref: "v1.2.1",
+		Behind: []c4v1alpha1.StandardFile{{Path: "go.mod", Ref: "v1.0.0"}, {Path: "Makefile", Ref: "v1.1.6"}}}
+	for _, tc := range []struct {
+		name string
+		s    *c4v1alpha1.ContainerStandardStatus
+		plan scaffold.Update
+		want string
+	}{
+		{"its own", &c4v1alpha1.ContainerStandardStatus{Name: "go-standard"}, scaffold.Update{},
+			"has no check-light target"},
+		// The reporter's case: an earlier update left the Makefile out.
+		{"left out before", behind, scaffold.Update{},
+			"was left out of the go-standard updates (at v1.1.6) and has no check-light target"},
+		{"left out now", &c4v1alpha1.ContainerStandardStatus{Name: "go-standard"},
+			scaffold.Update{LeftOut: []string{"Makefile"}},
+			"is left out of this go-standard update and has no check-light target"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := noLightCheck(tc.s, tc.plan); got != head+tc.want+tail {
+				t.Errorf("noLightCheck =\n%s\nwant\n%s", got, head+tc.want+tail)
+			}
+		})
+	}
+}
