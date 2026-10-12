@@ -64,9 +64,16 @@ and the change merged.
 - **Not reading the old failure.** Right after a rerun the commit's combined
   status may still say `failure` until the runner picks the job up. The Task
   records when it reran (`status.checksRerunAt`) and treats a failed status
-  as pending while no run at the commit has started after that time
-  (`WorkflowRun.Started`); that pending wait is bounded by the existing
-  `ChecksStartLimit` and fails with `NoCIResult` past it, as today.
+  as pending until every run at the commit has ended and one started after
+  that time (`WorkflowRun.Started`): a run of another workflow that starts
+  meanwhile doesn't say the rerun did. That wait has the bounds of any
+  pending checks, counted from the rerun: a queued or running rerun the
+  queued and running limits, and no run started the existing
+  `ChecksStartLimit`, failing with `NoCIResult` past them, as today.
+- **A kill read while other runs still run.** The Git host runs a run's
+  jobs again only once it ended, so a killed failure whose commit still has
+  a run queued or running waits for it, with the same bounds, before its
+  jobs run again.
 - **The same commit pushed again.** When an implementer round ends with a
   commit equal to the one whose checks failed in the round before
   (`status.checks.commit` with a failed state), the Task enters `Checking`

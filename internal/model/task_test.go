@@ -1,6 +1,7 @@
 package model
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -918,10 +919,172 @@ func TestRunnerOutOfSpace(t *testing.T) {
 		}
 	}
 	for reason, want := range map[string]bool{ReasonNoCIResult: true, ReasonRunnerOutOfSpace: true,
-		ReasonApprovalRanOut: true, "RoundsExhausted": false, "": false} {
+		ReasonRunnerOutOfMemory: true, ReasonApprovalRanOut: true, "RoundsExhausted": false, "": false} {
 		if got := RunnerFault(reason); got != want {
 			t.Errorf("RunnerFault(%q) = %v, want %v", reason, got, want)
 		}
+	}
+}
+
+func TestRunnerKilledLog(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		log  string
+		want bool
+	}{
+		{name: "go build", want: true, log: "go build example.com/app: /usr/local/go/pkg/tool/compile: signal: killed\n"},
+		{name: "the shell's job report, behind the runner's timestamps", want: true,
+			log: "2026-10-10T14:39:00.0000000Z /bin/sh: line 1:  1234 Killed                  go test ./...\n"},
+		{name: "a bare Killed", want: true, log: "Killed\n"},
+		{name: "make", want: true, log: "make: *** [Makefile:12: test] Error 137\n"},
+		{name: "an exit code", want: true, log: "Process completed with exit code 137.\n"},
+		{name: "Node", want: true,
+			log: "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory\n"},
+		{name: "the toolchain after a Go test's message", want: true, log: "--- FAIL: TestA (0.00s)\n" +
+			"    a_test.go:9: got nil\nFAIL\ngo test: signal: killed\n"},
+		{name: "a passing log", log: "ok  \texample.com/app\t0.01s\n"},
+		{name: "a failed test", log: "--- FAIL: TestA (0.00s)\n    a_test.go:9: got 1, want 2\nFAIL\nmake: *** [test] Error 1\n"},
+		{name: "a Go test's message", log: "--- FAIL: TestRun (0.00s)\n" +
+			"    run_test.go:12: Run() = signal: killed, want exit status 0\nFAIL\n"},
+		{name: "a pytest report", log: "_________________ test_oom _________________\n" +
+			"E       AssertionError: assert 'ok' == 'Killed'\n" +
+			"=========== short test summary info ===========\n" +
+			"FAILED tests/test_oom.py::test_oom - AssertionError: exit code 137\n"},
+		{name: "a word in a sentence", log: "the worker was not Killed by the scheduler\n"},
+	} {
+		if got := RunnerKilled(tc.log); got != tc.want {
+			t.Errorf("%s: RunnerKilled() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestKilledChecksRunAgain walks a round whose checks the machine kills for
+// lack of memory: twice its failed jobs run again in the same round, with no
+// feedback for the agent, and the third kill fails the Task at no try.
+func TestKilledChecksRunAgain(t *testing.T) {
+	killed := "go build example.com/app: signal: killed\nFAIL\texample.com/app\t613.2s\n"
+	f := TaskFacts{Phase: TaskChecking, Round: 2, MaxRounds: 3, Checks: "failure", ChecksURL: "http://ci/962",
+		ChecksLog: killed}
+	p := TaskProgress{Phase: TaskChecking, Round: 2, Commit: "296c7ab", HasChecks: true}
+	at := time.Date(2026, 10, 10, 14, 40, 0, 0, time.UTC)
+	for i := range MaxChecksReruns {
+		got := NextTaskStep(f)
+		if got.Action != ActionRerunChecks || got.Feedback != "" || !strings.Contains(got.Message, "http://ci/962") {
+			t.Fatalf("kill %d: NextTaskStep() = %+v, want ActionRerunChecks with no feedback", i+1, got)
+		}
+		p = RerunChecks(p, at)
+		if p.Phase != TaskChecking || p.Round != 2 || p.ChecksReruns != i+1 || !p.ChecksRerunAt.Equal(at) {
+			t.Fatalf("kill %d: RerunChecks() = %+v, want Checking in round 2, %d reruns at %s", i+1, p, i+1, at)
+		}
+		f.ChecksReruns, f.ChecksRerunAt, f.ChecksRerunEnded = p.ChecksReruns, p.ChecksRerunAt, true
+	}
+	got := NextTaskStep(f)
+	if got.Action != ActionFail || got.Reason != ReasonRunnerOutOfMemory || !RunnerFault(got.Reason) ||
+		!strings.Contains(got.Message, "free memory on the runner") {
+		t.Fatalf("third kill: NextTaskStep() = %+v, want ActionFail, reason %s", got, ReasonRunnerOutOfMemory)
+	}
+
+	next := NextRound(p, "fix it")
+	if next.ChecksReruns != 0 || !next.ChecksRerunAt.IsZero() {
+		t.Errorf("NextRound() = %+v, want the checks' reruns reset", next)
+	}
+	if opened := OpenedPR(p, "abc1234"); opened.ChecksReruns != p.ChecksReruns || !opened.ChecksRerunAt.IsZero() {
+		t.Errorf("OpenedPR() = %+v, want the reruns kept and the rerun time dropped with the checks", opened)
+	}
+
+	running := f
+	running.ChecksReruns, running.CIRun = 0, CIRun{Commit: "296c7ab1", State: CIRunRunning,
+		Started: time.Date(2026, 10, 10, 14, 30, 0, 0, time.UTC), Running: time.Minute}
+	if got := NextTaskStep(running); got.Action != ActionWait {
+		t.Errorf("a kill while another run still runs: NextTaskStep() = %+v, want ActionWait", got)
+	}
+	running.CIRun.Running = RunningChecksLimit + time.Minute
+	if got := NextTaskStep(running); got.Action != ActionFail || got.Reason != ReasonNoCIResult {
+		t.Errorf("a kill while another run runs past its bound: NextTaskStep() = %+v, want %s", got, ReasonNoCIResult)
+	}
+
+	own := f
+	own.ChecksReruns, own.ChecksRerunAt = 0, time.Time{}
+	own.ChecksLog = "--- FAIL: TestRun (0.00s)\n    run_test.go:12: Run() = signal: killed, want nil\nFAIL\n"
+	if got := NextTaskStep(own); got.Action != ActionRetry || !strings.Contains(got.Feedback, "flaky") {
+		t.Errorf("a test's own signal: killed: NextTaskStep() = %+v, want ActionRetry with the failure as feedback", got)
+	}
+}
+
+// TestKilledRunsFailureIsNotRead checks that a failed status read before a
+// run at the commit started since the rerun waits as pending checks do.
+func TestKilledRunsFailureIsNotRead(t *testing.T) {
+	at := time.Date(2026, 10, 10, 14, 40, 0, 0, time.UTC)
+	f := TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "failure", ChecksURL: "http://ci/962",
+		ChecksReruns: 1, ChecksRerunAt: at, InPhase: 2 * time.Hour}
+	tests := []struct {
+		name    string
+		ci      CIRun
+		since   time.Duration
+		want    TaskAction
+		message string
+	}{
+		{"queued since the rerun waits", CIRun{Commit: "296c7ab1", State: CIRunQueued}, 5 * time.Minute,
+			ActionWait, "queued behind other jobs since 14:40Z"},
+		{"not yet listed again waits", CIRun{Commit: "296c7ab1", State: CIRunCompleted}, 5 * time.Minute,
+			ActionWait, "the failed jobs run again since 14:40Z"},
+		{"not started 30 minutes after the rerun fails", CIRun{Commit: "296c7ab1", State: CIRunCompleted},
+			31 * time.Minute, ActionFail, "The failed jobs at 296c7ab, run again at 14:40Z, didn't start within 30m0s"},
+		{"unknown runs wait", CIRun{State: CIRunUnknown}, 5 * time.Minute, ActionWait,
+			"doesn't say whether a CI run is queued"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := f
+			f.CIRun, f.SinceChecksRerun = tt.ci, tt.since
+			got := NextTaskStep(f)
+			if got.Action != tt.want || !strings.Contains(got.Message, tt.message) {
+				t.Fatalf("NextTaskStep() = %+v, want %s with %q", got, tt.want, tt.message)
+			}
+			if failed := got.Action == ActionFail; failed != (got.Reason == ReasonNoCIResult) {
+				t.Errorf("Reason = %q, want %s on each failure only", got.Reason, ReasonNoCIResult)
+			}
+		})
+	}
+
+	f.ChecksRerunEnded = true
+	if got := NextTaskStep(f); got.Action != ActionRetry {
+		t.Errorf("the rerun's own failure: NextTaskStep() = %+v, want ActionRetry", got)
+	}
+}
+
+func TestCommitRunsAfterAKill(t *testing.T) {
+	at := time.Date(2026, 10, 10, 14, 40, 0, 0, time.UTC)
+	runs := []WorkflowRun{ // newest first
+		{ID: 9, Workflow: "ci.yaml", Event: "pull_request", Status: "completed", Conclusion: "failure",
+			Started: at.Add(-20 * time.Minute)},
+		{ID: 8, Workflow: "ci.yaml", Event: "push", Status: "completed", Conclusion: "success"},
+		{ID: 7, Workflow: "lint.yaml", Event: "pull_request", Status: "completed", Conclusion: "skipped"},
+		{ID: 6, Workflow: "ci.yaml", Event: "pull_request", Status: "completed", Conclusion: "failure"},
+		{ID: 5, Workflow: "e2e.yaml", Event: "pull_request", Status: "completed", Conclusion: "cancelled"},
+		{ID: 4, Workflow: "docs.yaml", Event: "pull_request", Status: "in_progress"},
+	}
+	ids := make([]int64, 0, len(runs))
+	for _, run := range FailedCommitRuns(runs) {
+		ids = append(ids, run.ID)
+	}
+	if !slices.Equal(ids, []int64{9, 5}) {
+		t.Errorf("FailedCommitRuns() = %v, want the newest failed run of each workflow and event, [9 5]", ids)
+	}
+	if RunsEnded(runs) || RerunEnded(runs, at) {
+		t.Error("RunsEnded() or RerunEnded() with a run in progress = true, want false")
+	}
+	runs[5].Status = "completed"
+	if !RunsEnded(runs) || RerunEnded(runs, at) {
+		t.Error("with every run started before the rerun: want RunsEnded() and not RerunEnded()")
+	}
+	runs[0].Started = at.Add(time.Minute)
+	if !RerunEnded(runs, at) {
+		t.Error("RerunEnded() with every run ended, one started after the rerun = false, want true")
+	}
+	runs[1].Status = "queued"
+	if RerunEnded(runs, at) {
+		t.Error("RerunEnded() with a run started after the rerun but another one queued = true, want false")
 	}
 }
 

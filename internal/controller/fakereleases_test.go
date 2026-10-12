@@ -195,6 +195,8 @@ func (p *fakeProvider) RunnersOnline(context.Context) (int, bool) {
 }
 
 // setCommitRuns sets the CI runs at commit.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) setCommitRuns(owner, name, commit string, runs ...gitprovider.WorkflowRun) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -211,14 +213,16 @@ func (p *fakeProvider) RerunFailedJobs(_ context.Context, repo gitprovider.Repos
 	if s.refused[key] {
 		return fmt.Errorf("re-run of run %d refused", id)
 	}
-	for key, runs := range s.runs {
-		if !strings.HasPrefix(key, repo.Owner+"/"+repo.Name+"@") {
-			continue
-		}
-		for i := range runs {
-			if runs[i].ID == id {
-				runs[i].Status, runs[i].Conclusion = "queued", ""
-				return nil
+	for _, byRef := range []map[string][]gitprovider.WorkflowRun{s.runs, s.commitRuns} {
+		for key, runs := range byRef {
+			if !strings.HasPrefix(key, repo.Owner+"/"+repo.Name+"@") {
+				continue
+			}
+			for i := range runs {
+				if runs[i].ID == id {
+					runs[i].Status, runs[i].Conclusion = "queued", ""
+					return nil
+				}
 			}
 		}
 	}

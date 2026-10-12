@@ -171,7 +171,7 @@ func followStep(f StandardUpdateFacts) StandardStep {
 	case "":
 		return StandardStep{Action: StandardReadChecks}
 	case checkSuccess:
-	case "failure", "error":
+	case checkFailure, checkError:
 		return StandardStep{Action: StandardChecksFailed, Message: fmt.Sprintf(
 			"CI is %s on %s; the update merges once a re-run passes, or close %s to drop it",
 			f.Checks, f.ChecksURL, u.PullRequestURL)}
