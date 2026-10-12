@@ -94,12 +94,13 @@ func createUpdatableContainer(ns string, refs map[string]scaffold.Tree, checksBe
 	checks c4v1alpha1.ChecksMode) {
 	GinkgoHelper()
 	createFactory(ns)
-	standardContainer(ns, nil)
+	standardContainer(ns, nil, refs, checksBeforeRelease, checks)
 }
 
-// standardContainer creates orders-api as updatableContainer does, in a
-// namespace with a factory, with labels, and waits until it is Ready.
-func standardContainer(ns string, labels map[string]string) {
+// standardContainer creates orders-api as createUpdatableContainer does, in a
+// namespace with a factory, with labels.
+func standardContainer(ns string, labels map[string]string, refs map[string]scaffold.Tree,
+	checksBeforeRelease bool, checks c4v1alpha1.ChecksMode) {
 	GinkgoHelper()
 	url := templatesURL + ns + "/" + updatedStandard
 	for ref, tree := range refs {
