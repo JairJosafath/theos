@@ -105,11 +105,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionRerunChecks:
-		if status.Phase == c4v1alpha1.TaskImplementing {
-			// The round pushed the failed commit again: its checks run again once Checking.
-			return r.openPR(ctx, task, status, container, agents, step)
-		}
-		return r.rerunChecks(ctx, task, status, container, step)
+		return r.rerunChecks(ctx, task, status, container, agents, step)
 
 	case model.ActionAgentUnavailable:
 		if err := r.endRun(ctx, task, status); err != nil {
@@ -705,9 +701,8 @@ func progressOf(status *c4v1alpha1.TaskStatus) model.TaskProgress {
 	p := model.TaskProgress{Phase: string(status.Phase), Round: int(status.Round),
 		ReviewAttempts: int(status.ReviewAttempts), ReviewAgains: int(status.ReviewAgains), Reruns: int(status.Reruns),
 		Restarts: int(status.Restarts), ChecksReruns: int(status.ChecksReruns), ChecksRerunDue: status.ChecksRerunDue,
-		ChecksFailed: failedChecks(status),
-		Feedback: status.Feedback,
-		Commit:   status.Commit, HasChecks: status.Checks != nil, MergeWhenChecksPass: status.MergeWhenChecksPass}
+		Feedback: status.Feedback, ChecksFailed: failedChecks(status),
+		Commit: status.Commit, HasChecks: status.Checks != nil, MergeWhenChecksPass: status.MergeWhenChecksPass}
 	if status.ChecksRerunAt != nil {
 		p.ChecksRerunAt = status.ChecksRerunAt.Time
 	}
@@ -763,11 +758,15 @@ func (r *TaskReconciler) finish(task *c4v1alpha1.Task, status *c4v1alpha1.TaskSt
 
 // rerunChecks runs again the failed jobs of the CI runs at the round's commit,
 // which the machine killed for lack of memory or the round pushed again, and
-// waits for their result in the same round. It waits while a run at the commit still runs, as the
+// waits for their result in the same round. Ending an implement run, it opens
+// the pull request first, and the checks run again once Checking. It waits while a run at the commit still runs, as the
 // Git host runs a run's jobs again only once it ended. A rerun the Git host
 // refuses fails the Task at no try.
 func (r *TaskReconciler) rerunChecks(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, step model.TaskStep) (ctrl.Result, error) {
+	container *c4v1alpha1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
+	if status.Phase == c4v1alpha1.TaskImplementing {
+		return r.openPR(ctx, task, status, container, agents, step)
+	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
 		return ctrl.Result{}, err
