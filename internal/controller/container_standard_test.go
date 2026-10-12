@@ -306,6 +306,14 @@ var _ = Describe("Container Standard update", func() {
 		update := openedUpdate(ns, "v1.2.0")
 		Expect(update.Paths).To(Equal([]string{"AGENTS.md", implementer, reviewer}))
 		Expect(update.LeftOut).To(Equal([]string{makefile}))
+		annotate := "kubectl -n " + ns + " annotate container orders-api c4.factory.io/standard-"
+		_, body := gitFake.pullText(ns, "orders-api", int(update.PullRequest))
+		Expect(body).To(ContainSubstring("- take the Standard's version: `" + annotate + "take=v1.2.0`\n" +
+			"- or keep the repository's: `" + annotate + "keep=v1.2.0`\n"))
+		Expect(body).To(ContainSubstring("### `Makefile`\n\nWhat the Standard changed in it from `v1.0.0` to "+
+			"`v1.2.0`\n\n```diff\n--- Makefile (v1.0.0)\n+++ Makefile (v1.2.0)\n@@ -1,2 +1,2 @@\n check:\n"+
+			"-\ttrue\n+\tmake lint test\n```\n\nThe repository's lines taking it drops:\n\n```diff\n-\tpytest\n```\n"),
+			"the pull request shows the Standard's change to the file it leaves out, and what a take would drop")
 
 		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.2.0", makefile)
@@ -315,7 +323,6 @@ var _ = Describe("Container Standard update", func() {
 		container := getContainer(Default, ns)
 		Expect(container.Status.Standard.Behind).To(Equal([]c4v1alpha1.StandardFile{
 			{Path: makefile, Ref: "v1.0.0", PullRequestURL: update.PullRequestURL}}))
-		annotate := "kubectl -n " + ns + " annotate container orders-api c4.factory.io/standard-"
 		flagged := "python-strict is at v1.2.0, but its updates left out Makefile (at v1.0.0): the repository " +
 			"changed them in lines the Standard changed too. Take the Standard's version: `" + annotate +
 			"take=v1.2.0`; or keep the repository's: `" + annotate + "keep=v1.2.0`"
@@ -327,6 +334,9 @@ var _ = Describe("Container Standard update", func() {
 		next := openedUpdate(ns, "v1.3.0")
 		Expect(next.Paths).To(Equal([]string{implementer}))
 		Expect(next.LeftOut).To(Equal([]string{makefile}))
+		_, body = gitFake.pullText(ns, "orders-api", int(next.PullRequest))
+		Expect(body).To(ContainSubstring("--- Makefile (v1.0.0)\n+++ Makefile (v1.3.0)\n"),
+			"a carried-over file is diffed from the ref its copy is at")
 		gitFake.setChecks(ns, "orders-api", next.Commit, "success")
 		eventuallyAt(ns, "v1.3.0", makefile)
 		container = getContainer(Default, ns)

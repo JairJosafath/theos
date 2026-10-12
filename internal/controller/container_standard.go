@@ -362,7 +362,8 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		return
 	}
 	pr, err := git.provider.OpenPullRequest(gitCtx, repo, branch, gitprovider.DefaultBranch,
-		model.StandardUpdateTitle(name, from, to), model.StandardUpdateBody(name, from, to, plan.Paths(), plan.Merged, plan.LeftOut))
+		model.StandardUpdateTitle(name, from, to), model.StandardUpdateBody(name, from, to, plan.Paths(), plan.Merged,
+			u.leftOut(to.Ref, behind, from.Ref, old, bases, next, current, plan.LeftOut)))
 	if err != nil {
 		u.gitError(ctx, err)
 		return
@@ -374,6 +375,42 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 	u.updating()
 	log.Info("Opened a Standard update", "url", pr.URL, "standard", name, "from", from.String(), "to", to.String(),
 		"paths", plan.Paths(), "merged", plan.Merged, "leftOut", plan.LeftOut)
+}
+
+// leftOut is what the update's pull request says of the files it leaves out:
+// each one's change between the Standard's render at the ref its copy is at
+// (old at from, or its base in bases) and next, and what taking next's version
+// of it would drop from current.
+func (u *standardUpdate) leftOut(to string, behind []c4v1alpha1.StandardFile, from string, old scaffold.Tree,
+	bases map[string]scaffold.Tree, next, current scaffold.Tree, paths []string) model.LeftOut {
+	refs := map[string]string{}
+	for _, b := range behind {
+		refs[b.Path] = b.Ref
+	}
+	files := map[string]scaffold.Tree{}
+	for _, p := range paths {
+		files[p] = old
+		if base, ok := bases[p]; ok {
+			files[p] = base
+		}
+	}
+	take := scaffold.PlanTake(files, next, current)
+	out := model.LeftOut{Take: u.annotate(c4v1alpha1.AnnotationStandardTake, to),
+		Keep: u.annotate(c4v1alpha1.AnnotationStandardKeep, to)}
+	for _, p := range paths {
+		change := scaffold.StandardChange(files[p], next, p)
+		f := model.LeftOutFile{Path: p, Ref: cmp.Or(refs[p], from), Diff: change.Diff, Note: change.Note}
+		if i := slices.IndexFunc(take.Taken, func(t model.TakenFile) bool { return t.Path == p }); i >= 0 {
+			f.Take = take.Taken[i]
+		}
+		out.Files = append(out.Files, f)
+	}
+	return out
+}
+
+// annotate is the command that annotates the Container with key=ref.
+func (u *standardUpdate) annotate(key, ref string) string {
+	return fmt.Sprintf("kubectl -n %s annotate container %s %s=%s", u.container.Namespace, u.container.Name, key, ref)
 }
 
 // plannedFile is path's content once plan merges into current, or nil when it
@@ -864,11 +901,10 @@ func (u *standardUpdate) upToDate(ctx context.Context) {
 	for _, b := range behind {
 		files = append(files, fmt.Sprintf("%s (at %s)", b.Path, b.Ref))
 	}
-	annotate := fmt.Sprintf("kubectl -n %s annotate container %s", u.container.Namespace, u.container.Name)
 	message := fmt.Sprintf("%s is at %s, but its updates left out %s: the repository changed them in lines "+
-		"the Standard changed too. Take the Standard's version: `%s %s=%s`; or keep the repository's: `%s %s=%s`",
-		s.Name, u.version(), strings.Join(files, ", "), annotate, c4v1alpha1.AnnotationStandardTake, s.Ref,
-		annotate, c4v1alpha1.AnnotationStandardKeep, s.Ref)
+		"the Standard changed too. Take the Standard's version: `%s`; or keep the repository's: `%s`",
+		s.Name, u.version(), strings.Join(files, ", "), u.annotate(c4v1alpha1.AnnotationStandardTake, s.Ref),
+		u.annotate(c4v1alpha1.AnnotationStandardKeep, s.Ref))
 	was := meta.FindStatusCondition(u.container.Status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 	u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonFilesBehind, message)
 	if was != nil && was.Reason == c4v1alpha1.ReasonFilesBehind && was.Message == message {
