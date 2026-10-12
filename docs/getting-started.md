@@ -570,7 +570,8 @@ kubectl -n webshop patch container orders-api --type merge -p '{"spec":{"checks"
 With UI actions on, the Container's page sets it too (*When CI runs the full
 check*). The change reaches the repository through the Standard update's pull
 request, which the factory merges once its checks pass; the page says when the
-repository still runs the other mode. It takes effect only when the Container's
+repository still runs the other mode, and so does `ChecksApplied`: False,
+reason `Pending`, until the pull request merges. It takes effect only when the Container's
 Standard can do it (`checksBeforeRelease: true` on the Standard: go-standard,
 go-operator-standard, ts-standard and python-standard): otherwise CI keeps the
 full check on every change, and the Container's `ChecksApplied` condition is

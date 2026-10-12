@@ -682,7 +682,12 @@ model and context it needs.
   (`StandardRunsFullChecks`). The Standard's `check.yaml` renders the choice;
   changing it reaches the repository through the Standard update's pull
   request, and `status.standard.checks` records what the repository runs:
-  the scaffold's (also in `.c4factory.yaml`), then each merged update's. An
+  the scaffold's (also in `.c4factory.yaml`), then each merged update's.
+  Until it matches what the Container asks, `ChecksApplied` is False: reason
+  `Pending` naming the update's pull request, the update's stop as its reason
+  (such as `ChecksLeftOut` or `UpdateClosed`), or `AddedAfterScaffold` for a
+  Standard the scaffold didn't have, whose CI runs the full check on every
+  change. An
   update whose change of checks would leave out a file the repository changed
   since, such as a hand-edited `check.yaml`, isn't opened: `StandardUpdated`
   is False (`ChecksLeftOut`) naming the file, and the checks stay as they are

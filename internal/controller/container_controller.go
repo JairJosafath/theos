@@ -117,8 +117,6 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	r.reportChecksApplied(ctx, &container, status)
-
 	// Scaffolding happens once. After that the factory only reports.
 	if status.Phase == c4v1alpha1.ContainerReady {
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
@@ -129,8 +127,11 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		} else {
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 		}
+		// After the update's step, so it reads what the repository runs now.
+		r.reportChecksApplied(ctx, &container, status)
 		return result, r.writeStatus(ctx, &container, status)
 	}
+	r.reportChecksApplied(ctx, &container, status)
 
 	res, missing, err := r.resolve(ctx, &container)
 	if err != nil {
