@@ -18,7 +18,7 @@ export const CHECKS_MODES: { mode: ChecksMode; label: string; explanation: strin
     mode: 'BeforeRelease',
     label: 'Before a release',
     explanation:
-      'Each change runs a light check (make check-light); the full check runs on the commit a release will be tagged at, before the tag.',
+      "Each change runs a light check (make check-light, a target the repository's Makefile needs); the full check runs on the commit a release will be tagged at, before the tag.",
   },
 ]
 

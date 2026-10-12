@@ -46,6 +46,10 @@ type StandardUpdateInFlight struct {
 	// Take says the pull request takes the Standard's version at Ref of the
 	// files updates left out, as a person answered, instead of updating to Ref.
 	Take bool
+	// Held says the update stopped before opening a pull request for something
+	// the repository may fix itself, such as a missing light check: each pass
+	// plans it again.
+	Held bool
 }
 
 // UpdatePullRequest is what the Git host says about an update's pull request.
@@ -85,7 +89,7 @@ const (
 	// the other.
 	StandardPlan StandardAction = "Plan"
 	// StandardForget forgets a stopped update the Standard or the Container's
-	// checks moved past.
+	// checks moved past, or a held one, so it is planned again.
 	StandardForget StandardAction = "Forget"
 	// StandardRecordMerge records the merged pull request: the files are at the
 	// update's ref and checks.
@@ -148,6 +152,8 @@ func NextStandardStep(f StandardUpdateFacts) StandardStep {
 			return StandardStep{Action: StandardRecordMerge}
 		}
 		return StandardStep{Action: StandardDrop, Message: "Closed a Standard update its Standard or checks moved past"}
+	case u.Stopped != "" && u.Held && u.PullRequest == 0:
+		return StandardStep{Action: StandardForget}
 	case u.Stopped != "":
 		// A person may merge a stopped update after all.
 		switch {

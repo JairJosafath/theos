@@ -630,6 +630,17 @@ go-operator-standard, ts-standard and python-standard): otherwise CI keeps the
 full check on every change, and the Container's `ChecksApplied` condition is
 False, reason `StandardRunsFullChecks`, which the page shows.
 
+The light check is a target of the app's `Makefile`. A repository that still
+has its Standard's Makefile has it; an app with a Makefile of its own, such as
+one a Standard update left out because the app changed the same lines
+(`StandardUpdated` False, `FilesBehind`), needs a `check-light` target before
+it switches: lint and the type or vet checks, the fast part of its `check`.
+Until it has one, the factory holds the switch rather than let CI fail every
+change: `ChecksApplied` and `StandardUpdated` are False, reason
+`NoLightCheck`, and CI keeps running the full check on every change. Adding
+the target, through a normal issue for the app, lets the switch through on
+its own.
+
 With `BeforeRelease`, a Crew that tags releases (`tagReleases`) doesn't tag at
 once: it pushes the branch `release-check/vX.Y.Z` at the release's commit, waits
 for its `full` job, tags once it passes and deletes the branch. If you tag by

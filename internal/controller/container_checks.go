@@ -157,7 +157,8 @@ func recordedChecks(status *c4v1alpha1.ContainerStatus) string {
 
 // checksNotRunYet says why the repository's CI still runs the full check as
 // runs, not as effective, the Container's checks: an update in flight
-// (Pending), its stop, or a Standard the scaffold didn't have.
+// (Pending), its stop, or a Standard the scaffold didn't have. A switch held
+// for a missing light check says so in StandardUpdated's words.
 func checksNotRunYet(name string, status *c4v1alpha1.ContainerStatus, runs, effective string) (string, string) {
 	now := "CI runs the full check " + checksWhen(runs)
 	if status.Standard == nil || status.Standard.Name != name {
@@ -167,6 +168,12 @@ func checksNotRunYet(name string, status *c4v1alpha1.ContainerStatus, runs, effe
 	update := status.Standard.Update
 	if update == nil || updateChecks(update) != effective {
 		return c4v1alpha1.ReasonPending, fmt.Sprintf("%s until a Standard update brings it %s", now, checksWhen(effective))
+	}
+	if update.Stopped == c4v1alpha1.ReasonNoLightCheck {
+		if c := meta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionStandardUpdated); c != nil &&
+			c.Reason == c4v1alpha1.ReasonNoLightCheck {
+			return update.Stopped, c.Message
+		}
 	}
 	if update.Stopped != "" {
 		return update.Stopped, fmt.Sprintf("%s: the Standard update that brings it %s stopped (%s); StandardUpdated says why",

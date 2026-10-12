@@ -10,6 +10,7 @@ package controller
 
 import (
 	"maps"
+	"slices"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,11 +28,13 @@ import (
 const checkWorkflow = ".gitea/workflows/check.yaml"
 
 // checksRefs are standardRefs with a CI workflow that runs make check-light on
-// each change and a full job on release-check/** with checks BeforeRelease.
+// each change and a full job on release-check/** with checks BeforeRelease,
+// and a Makefile with a check-light target.
 func checksRefs() map[string]scaffold.Tree {
 	refs := standardRefs()
 	for ref, tree := range refs {
 		tree = maps.Clone(tree)
+		tree[makefile] = scaffold.File{Data: append(slices.Clone(tree[makefile].Data), "check-light:\n\ttrue\n"...)}
 		tree[checkWorkflow+".tmpl"] = scaffold.File{Data: []byte(
 			"check: make {{ if eq .Checks \"BeforeRelease\" }}check-light\nfull: make check{{ else }}check{{ end }}\n")}
 		refs[ref] = tree
@@ -180,6 +183,42 @@ var _ = Describe("Container Standard update of the checks", func() {
 			cond := checksApplied(g, ns)
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonEveryChange))
+		}).Should(Succeed())
+	})
+
+	It("holds the change to BeforeRelease until the repository's Makefile has a light check", func() {
+		ns := newProjectNamespace()
+		createUpdatableContainer(ns, checksRefs(), true, "")
+		eventuallyAtChecks(ns, everyChange)
+		// The app's own Makefile, with its own targets and no check-light.
+		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte(
+			"check:\n\ttrue\nrelease:\n\ttrue\n")}})
+
+		setChecks(ns, c4v1alpha1.ChecksBeforeRelease)
+		message := stoppedUpdate(ns, c4v1alpha1.ReasonNoLightCheck)
+		Expect(message).To(Equal("CI can't change to run the full check only before a release: the repository's " +
+			"Makefile has no check-light target, which make check-light on each change needs; CI keeps running " +
+			"the full check on every change until the Makefile has one"))
+		Eventually(func(g Gomega) {
+			g.Expect(checksApplied(g, ns)).To(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionFalse), "Reason": Equal(c4v1alpha1.ReasonNoLightCheck),
+				"Message": Equal(message)}))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+			g.Expect(getContainer(g, ns).Status.Standard.Checks).To(Equal(c4v1alpha1.ChecksEveryChange))
+		}).WithTimeout(2 * time.Second).Should(Succeed())
+		Expect(mainFile(ns, checkWorkflow)).To(Equal("check: make check\n"))
+
+		By("letting it through once the Makefile has one")
+		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte(
+			"check:\n\ttrue\ncheck-light:\n\ttrue\nrelease:\n\ttrue\n")}})
+		update := openedUpdateTo(ns, beforeRelease)
+		Expect(update.Paths).To(Equal([]string{checkWorkflow}))
+		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		eventuallyAtChecks(ns, beforeRelease)
+		Eventually(func(g Gomega) {
+			g.Expect(checksApplied(g, ns).Reason).To(Equal(c4v1alpha1.ReasonBeforeRelease))
 		}).Should(Succeed())
 	})
 

@@ -147,6 +147,11 @@ const (
 	// leave out a file the change of checks writes, changed in the repository
 	// since, so it isn't opened and the checks stay as they are.
 	ReasonChecksLeftOut = "ChecksLeftOut"
+	// ReasonNoLightCheck: an update that changes the Container's checks to
+	// BeforeRelease waits, unopened, because the repository's Makefile has no
+	// check-light target for each change's light check to run; it is planned
+	// again every pass, so adding the target lets it through.
+	ReasonNoLightCheck = "NoLightCheck"
 	// ReasonStandardRunsFullChecks: the Container asks for checks BeforeRelease
 	// and its Standard can't, so CI runs the full check on every change.
 	ReasonStandardRunsFullChecks = "StandardRunsFullChecks"
