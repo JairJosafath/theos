@@ -3,7 +3,7 @@
 # Build it from the repository root; BuildKit then uses Dockerfile.dockerignore
 # next to this file instead of the root .dockerignore (which only lets Go in):
 #   docker build -f hack/seed/Dockerfile -t c4factory/seed:dev .
-FROM alpine:3.24.2
+FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 RUN apk add --no-cache bash ca-certificates curl git jq kubectl openssl
 COPY --chmod=0755 hack/seed/seed.sh /usr/local/bin/seed
 COPY --chmod=0755 hack/seed/catalog.sh /usr/local/bin/catalog.sh
