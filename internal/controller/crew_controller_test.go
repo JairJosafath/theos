@@ -275,36 +275,30 @@ var _ = Describe("Crew", func() {
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-3"), &c4v1alpha1.Task{}))).To(BeTrue())
 	})
 
-	It("finishes one release before it starts the next", func() {
+	It("gives the release due first its places, and the next release the place it can't use", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 1)
 		later := gitFake.addIssue(ns, "orders-api", "Price orders", clearIssue, []string{model.LabelReady})
 		sooner := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		chained := gitFake.addIssue(ns, "orders-api", "Report invalid orders", clearIssue, []string{model.LabelReady},
+			fmt.Sprintf("#%d", sooner))
 		gitFake.setIssueRelease(ns, "orders-api", later, "v0.2.0", time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
-		gitFake.setIssueRelease(ns, "orders-api", sooner, "v0.1.1", time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC))
+		for _, n := range []int{sooner, chained} {
+			gitFake.setIssueRelease(ns, "orders-api", n, "v0.1.1", time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC))
+		}
 		crew := newCrew(ns)
 		crew.Spec.Parallel = 2
 		mustCreate(crew)
 
-		By("starting only the release due first, and holding the next while its issue is in progress")
-		task := fmt.Sprintf("orders-api-%d", sooner)
+		By("starting the release due first, and the next release in the place its chain can't use")
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.issue(ns, "orders-api", sooner).Labels).To(Equal([]string{model.LabelInProgress}))
-			crew := getCrew(g, ns)
-			g.Expect(crew.Status.ActiveTasks).To(Equal([]string{task}))
-			g.Expect(crew.Status.Waiting).To(Equal([]int32{int32(later)}))
-			g.Expect(condition(crew.Status.Conditions, ConditionReady).Message).
-				To(ContainSubstring("1 ready issue waits for release v0.1.1"))
-		}).Should(Succeed())
-		Consistently(func() bool {
-			return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, fmt.Sprintf("orders-api-%d", later)), &c4v1alpha1.Task{}))
-		}, 3*time.Second).Should(BeTrue(), "the next release waits while the first one's issue is in progress")
-
-		By("starting the next release once the first has no work left")
-		finishSandbox(ns, task+"-r1-implement", task, nil, "OOMKilled")
-		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, fmt.Sprintf("orders-api-%d", sooner)).Spec.Issue).To(Equal(int32(sooner)))
 			g.Expect(getTask(g, ns, fmt.Sprintf("orders-api-%d", later)).Spec.Issue).To(Equal(int32(later)))
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.ActiveTasks).To(ConsistOf(fmt.Sprintf("orders-api-%d", sooner),
+				fmt.Sprintf("orders-api-%d", later)))
+			g.Expect(crew.Status.Waiting).To(Equal([]int32{int32(chained)}))
 		}).Should(Succeed())
 	})
 

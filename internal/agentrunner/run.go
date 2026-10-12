@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -29,6 +30,10 @@ type Result struct {
 	Verdict string `json:"verdict,omitempty"`
 	// Error says why the run failed. Feedback for the next round when set.
 	Error string `json:"error,omitempty"`
+	// CheckFailsOnBase is the end of the check's output on the base commit,
+	// set when the check fails on the branch and on the base too: the
+	// workspace can't judge the change, so CI decides it.
+	CheckFailsOnBase string `json:"checkFailsOnBase,omitempty"`
 	// Proposal is the Standard change the agent asks for: its branch, paths and
 	// reason. The patch itself stays in Git.
 	Proposal *model.Proposal `json:"proposal,omitempty"`
@@ -113,6 +118,8 @@ func (r Result) Encode() []byte {
 			r.Summary = shorten(r.Summary, len(r.Summary)-(len(data)-MaxResultBytes)-16)
 		case len(r.Error) > 200:
 			r.Error = shorten(r.Error, len(r.Error)-(len(data)-MaxResultBytes)-16)
+		case len(r.CheckFailsOnBase) > 200:
+			r.CheckFailsOnBase = shortenHead(r.CheckFailsOnBase, len(r.CheckFailsOnBase)-(len(data)-MaxResultBytes)-16)
 		case len(r.Blocked) > 200:
 			r.Blocked = shortenWords(r.Blocked, len(r.Blocked)-(len(data)-MaxResultBytes)-16)
 		case r.Proposal != nil && len(r.Proposal.Reason) > 200:
@@ -129,12 +136,13 @@ func (r Result) Encode() []byte {
 		case stage == 0:
 			stage++
 			r.Summary, r.Error = shorten(r.Summary, 100), shorten(r.Error, 100)
+			r.CheckFailsOnBase = shortenHead(r.CheckFailsOnBase, 100)
 			if r.Proposal != nil {
 				r.Proposal.Reason = shorten(r.Proposal.Reason, 100)
 			}
 		case stage == 1:
 			stage++
-			r.Summary, r.Error = "", ""
+			r.Summary, r.Error, r.CheckFailsOnBase = "", "", ""
 			if r.Proposal != nil {
 				r.Proposal.Reason = ""
 			}
@@ -157,6 +165,22 @@ func shorten(s string, n int) string {
 		n--
 	}
 	return s[:n] + "…"
+}
+
+// shortenHead is the end of s in at most n bytes, after "…" when cut: the last
+// lines of an output are the ones that say why it failed.
+func shortenHead(s string, n int) string {
+	if n < 0 {
+		n = 0
+	}
+	if len(s) <= n {
+		return s
+	}
+	cut := len(s) - n
+	for cut < len(s) && !utf8.RuneStart(s[cut]) {
+		cut++
+	}
+	return "…" + s[cut:]
 }
 
 // shortenWords is s in at most n bytes: whole, or cut after its last whole word
@@ -236,26 +260,33 @@ func run(ctx context.Context, job Job, agent Agent, dir string) Result {
 
 func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, result Result) Result {
 	start := r.start
+	check := strings.Join(job.CheckCommand, " ")
+	base := baseCheck{job: job, r: r}
 	summary, err := agent.Run(ctx, r.dir, ImplementPrompt(job, ws))
+	if err != nil {
+		result.Summary = summary
+		return agentFailed(result, err)
+	}
+	if model.BlockedNote(summary) != "" {
+		if summary, err = sendBackBlocked(ctx, job, agent, r.dir, &base, summary); err != nil {
+			result.Summary = summary
+			return agentFailed(result, err)
+		}
+		if note := model.BlockedNote(summary); note != "" {
+			// The agent can't start the issue and says why: nothing it left is kept.
+			result.Summary, result.Blocked = summary, note
+			return result
+		}
+	}
 	result.Summary = summary
+
+	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, job, agent, r.dir, &base)
 	if err != nil {
 		return agentFailed(result, err)
 	}
-	if note := model.BlockedNote(summary); note != "" {
-		// The agent can't start the issue and says why: nothing it left is kept.
-		result.Blocked = note
-		return result
-	}
-
-	checkOutput, checkErr := runCheck(ctx, job, r.dir)
-	for attempt := 1; checkErr != nil && attempt <= checkFixAttempts && ctx.Err() == nil; attempt++ {
-		prompt := fmt.Sprintf("%q fails. Fix every failure, then run it again until it passes. Output:\n%s",
-			strings.Join(job.CheckCommand, " "), tail(checkOutput, 6000))
-		if _, err := agent.Run(ctx, r.dir, prompt); err != nil {
-			return agentFailed(result, err)
-		}
-		checkOutput, checkErr = runCheck(ctx, job, r.dir)
-	}
+	// With the check failing on the base too, the workspace can't judge the
+	// change: CI does.
+	failsOnBase := checkErr != nil && baseOutput != ""
 
 	message := fmt.Sprintf("%s\n\nTask %s, round %d.", firstLine(job.Goal), job.Task, job.Round)
 	if err := r.commitAll(ctx, message); err != nil {
@@ -307,7 +338,8 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 			return result
 		}
 		proposal.Reason = reason
-		if checkErr == nil {
+		// A proposal's own gated Task runs CI before it merges.
+		if checkErr == nil || failsOnBase {
 			if err := r.proposeBranch(ctx, job.Base, proposal.Branch, proposal.Paths, message); err != nil {
 				result.Error = err.Error()
 				return result
@@ -329,15 +361,102 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		return result
 	}
 	result.Commit = head
-	if checkErr != nil {
+	switch {
+	case failsOnBase:
+		result.CheckFailsOnBase = tail(baseOutput, maxCheckFailsOnBase)
+	case checkErr != nil:
 		result.Error = fmt.Sprintf("%q still fails after %d attempts to fix it:\n%s",
-			strings.Join(job.CheckCommand, " "), checkFixAttempts, tail(checkOutput, 2500))
+			check, checkFixAttempts, tail(checkOutput, 2500))
 		if len(split.Proposal) > 0 {
 			result.Error += fmt.Sprintf("\nYour change to %s was not kept: a Standard change is filed only when the check passes with it. Make it again.",
 				strings.Join(split.Proposal, ", "))
 		}
 	}
 	return result
+}
+
+// sendBackBlocked sends an agent that wrote a blocked note back once when the
+// check fails on the base: that is the workspace's, not a reason to block. It
+// returns the agent's newest summary.
+func sendBackBlocked(ctx context.Context, job Job, agent Agent, dir string, base *baseCheck, summary string) (string, error) {
+	baseOutput := base.fails(ctx)
+	if baseOutput == "" {
+		return summary, nil
+	}
+	prompt := fmt.Sprintf("You stopped with a %q line. %q fails on %s in this workspace too, before any change:\n%s\n"+
+		"That is not a reason to block the issue: CI runs the check and decides it. Do the issue now, "+
+		"and end your summary with a %q line again only if something else blocks it.",
+		model.BlockedPrefix, strings.Join(job.CheckCommand, " "), job.Base, tail(baseOutput, 3000), model.BlockedPrefix)
+	return agent.Run(ctx, dir, prompt)
+}
+
+// checkAndFix runs the check, and while it fails sends the agent back up to
+// checkFixAttempts times, telling it when the check fails on the base too. It
+// returns the check's last output, the base's output when the base fails too,
+// the check's error, and the agent's.
+func checkAndFix(ctx context.Context, job Job, agent Agent, dir string, base *baseCheck) (string, string, error, error) {
+	check := strings.Join(job.CheckCommand, " ")
+	checkOutput, checkErr := runCheck(ctx, job, dir)
+	var baseOutput string
+	if checkErr != nil {
+		baseOutput = base.fails(ctx)
+	}
+	for attempt := 1; checkErr != nil && attempt <= checkFixAttempts && ctx.Err() == nil; attempt++ {
+		prompt := fmt.Sprintf("%q fails. Fix every failure, then run it again until it passes. Output:\n%s",
+			check, tail(checkOutput, 6000))
+		if baseOutput != "" {
+			prompt = fmt.Sprintf("%q fails. It fails on %s in this workspace too, before your change:\n%s\n"+
+				"Fix the failures your change causes, and leave the rest to CI, which runs the check and decides it. "+
+				"Then run it again. Output on your branch:\n%s",
+				check, job.Base, tail(baseOutput, 2000), tail(checkOutput, 6000))
+		}
+		if _, err := agent.Run(ctx, dir, prompt); err != nil {
+			return checkOutput, baseOutput, checkErr, err
+		}
+		checkOutput, checkErr = runCheck(ctx, job, dir)
+	}
+	return checkOutput, baseOutput, checkErr, nil
+}
+
+// maxCheckFailsOnBase is how much of the base's check output the result carries.
+const maxCheckFailsOnBase = 1000
+
+// baseCheck runs the check on the base commit at most once per run, in a
+// worktree of the clone beside it, so the agent's work is left alone.
+type baseCheck struct {
+	job    Job
+	r      *repo
+	ran    bool
+	output string
+}
+
+// fails returns the end of the check's output on the base when it fails
+// there, and "" when it passes. A base that can't be checked out counts as
+// passing: the round is then judged as it was before the base check.
+func (b *baseCheck) fails(ctx context.Context) string {
+	if b.ran {
+		return b.output
+	}
+	b.ran = true
+	dir, err := os.MkdirTemp(filepath.Dir(b.r.dir), "base-check-")
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	if _, err := b.r.git(ctx, b.r.dir, "worktree", "add", "--quiet", "--detach", dir, "origin/"+b.job.Base); err != nil {
+		return ""
+	}
+	defer func() { _, _ = b.r.git(ctx, b.r.dir, "worktree", "remove", "--force", dir) }()
+	output, err := runCheck(ctx, b.job, dir)
+	var exitErr *exec.ExitError
+	// A check stopped with the run proves nothing about the base.
+	if errors.As(err, &exitErr) && ctx.Err() == nil {
+		b.output = strings.TrimSpace(output)
+		if b.output == "" {
+			b.output = err.Error()
+		}
+	}
+	return b.output
 }
 
 // maxProposalReason keeps a proposal's reason short enough for the result.

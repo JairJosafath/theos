@@ -252,14 +252,14 @@ type CrewStatus struct {
 	// +optional
 	ActiveTasks []string `json:"activeTasks,omitempty"`
 
-	// ready lists the ready issues waiting for a free place, in pick-up order.
+	// ready lists the ready issues waiting for a free place, in pick-up order:
+	// the release due first first, and issues outside a release last.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=100
 	// +optional
 	Ready []int32 `json:"ready,omitempty"`
 
-	// waiting lists the ready issues that wait: on open dependencies, or for an
-	// earlier release (a milestone due sooner) to have no work left.
+	// waiting lists the ready issues that wait on open dependencies.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=100
 	// +optional

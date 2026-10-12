@@ -233,6 +233,20 @@ enforces.
   line that says nothing blocks the issue (`Blocked: none`, `n/a`,
   `No blockers.`, `nothing blocks this issue`) is not a blocked note; one that
   goes on to name something (`none of the engine's releases has the fix`) is.
+  The implementer runs the Container's check in its sandbox and is sent back
+  twice to fix it while it fails; a round whose check still fails then fails
+  with its output. The check that fails on the branch runs once on the base
+  commit too, in a separate worktree. When it fails there as well, the
+  sandbox can't judge the change (a download or service it can't reach):
+  the fix attempts are told so and to leave the rest to CI, the round pushes
+  with no error and reports the base's output (`CheckFailsOnBase`), and the
+  operator goes on to the pull request and CI, which runs the same check and
+  decides. A Standard change is then proposed as on a passing check; its own
+  gated Task runs CI before it merges. A blocked note is checked the same
+  way: when the check fails on the base, the implementer is sent back once
+  to do the issue, since that is not a reason to block, and a second blocked
+  note stands. A base that can't be checked out counts as passing
+  ([plan](plans/workspace-check-differs.md)).
   The
   Container's Crew decides how many Tasks run at once.
 - **A Task waits for checks a runner will run.** The commit status gives the
@@ -391,15 +405,22 @@ model and context it needs.
   pull request, a round with no commit has nothing to review
   ([plan](plans/done/try-continues-open-pr.md)). Milestones group the
   backlog; Gitea 1.27 has no API for project boards.
-- **Releases go one at a time.** A milestone with a due date is a release. The
-  Crew starts only the ready issues of the release due first that still has work
-  (a ready issue, or a Task working on one of its issues); later releases wait,
-  so each release's tag holds only its own issues. Issues in an undated
-  milestone, or in none, come after every release. Two kinds start whatever
-  their release, or something would wait for ever: a Standard change a Task
-  waits on, and an issue the current release's issues depend on. An issue handed
+- **Releases go in order.** A milestone with a due date is a release. The Crew
+  starts ready issues release by release, the one due first first: the release
+  in progress (the first that still has work: a ready issue, one waiting on
+  dependencies, or a Task working on one of its issues) has first claim on any
+  free place, and the places it can't use, because its remaining issues wait
+  on each other or already run, go to the ready issues of the next releases,
+  due first first, up to `parallel`. Idle places buy nothing (#873). Issues in
+  an undated milestone, or in none, come after every release. Ahead of every
+  release go an urgent issue and a Standard change a Task waits on; an issue
+  the current release's issues depend on, directly or through each other,
+  goes with the current release, or it would wait for ever. An issue handed
   back to a person (`status/needs-human`) no longer holds its release, so the
-  factory keeps working. Running Tasks are never stopped.
+  factory keeps working. Running Tasks are never stopped. Tags still go out in
+  order (below): a later release that is done waits for the earlier one, and
+  when the earlier one's tag carries the later one's merged work, that work
+  moves into the earlier milestone, so each tag holds what its milestone says.
 - **The Crew tags a done release** when its `spec.tagReleases` is true (off by
   default). A release whose title is `vMAJOR.MINOR.PATCH` is done when its
   milestone has no open issue, `status/needs-human` included, and no active Task
@@ -620,6 +641,27 @@ model and context it needs.
   `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
   [plans/done/standard-update.md](plans/done/standard-update.md) and
   [plans/standard-left-out.md](plans/standard-left-out.md).
+- **The owner chooses when the full check runs.** A Container's
+  `spec.checks` is `EveryChange` (the default: CI runs `make check` on every
+  pull request and push to main) or `BeforeRelease`: each change runs the
+  Standard's `make check-light` (build, vet or type check, lint; no test
+  suites, no build for every platform), trusting the agent's own `make check`
+  in its workspace, and the full `make check` runs on the commit a release
+  will be tagged at, before the tag. It takes effect only when the Standard
+  says it can (`spec.checksBeforeRelease`); otherwise the full check stays on
+  every change and the Container's `ChecksApplied` is False
+  (`StandardRunsFullChecks`). The Standard's `check.yaml` renders the choice;
+  changing it reaches the repository through the Standard update's pull
+  request, and `status.standard.checks` records what the repository runs.
+  With `BeforeRelease` and `tagReleases`, a done release is not tagged at
+  once: the Crew pushes `release-check/vX.Y.Z` at the commit, the workflow's
+  `full` job runs `make check` there, and its success tags the release and
+  deletes the branch. A failure tags nothing (`FullCheckFailed`) and files
+  `Full check fails for vX.Y.Z`, `kind/bug`, in the release's milestone,
+  whose merge doesn't count as merged after the prepare issue; no run within
+  the hour leaves the release to a person (`NoFullCheck`). A person who tags
+  by hand pushes the branch and waits for `full` the same way. See
+  [plans/checks-before-release.md](plans/checks-before-release.md).
 - **New shapes, same operator.** Container types `cli` and `extension`, with
   their templates in the template catalog in `templates/`; a Go and Node toolchain whose image ships a warm build cache, a CI runner
   labelled `go`, and two agent sandboxes at once.

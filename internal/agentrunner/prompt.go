@@ -102,10 +102,13 @@ How to work:
   or developers need them. No placeholders, no TODOs, no dead code.
 `)
 	}
-	fmt.Fprintf(&b, `- Run %q and fix every failure until it passes. Fix lint findings instead of
-  silencing them.
+	fmt.Fprintf(&b, `- Run %[1]q and fix every failure until it passes. Fix lint findings instead of
+  silencing them. If it fails on %[2]s too, before your change, for a reason
+  outside it (a download, a service this workspace can't reach), that is the
+  workspace's, not a blocker: fix what your change causes, leave the rest to CI,
+  which runs the same check, and say so in your summary.
 - Keep the change focused on the goal.
-`, check)
+`, check, job.Base)
 	b.WriteString(`- Never make up evidence: no drawn or generated image, recording or sample output
   presented as the product's, and no message, log or output the code doesn't give.
   A screenshot, recording or sample output must come from running the product here.
@@ -199,6 +202,8 @@ func ReviewPrompt(job Job, ws Workspace) string {
 The change is on the current branch, %[1]s. See it with: git diff origin/%[2]s...HEAD
 Read AGENTS.md and docs/style/ for the rules the code must follow. You may read
 and run anything in the repository, including %[3]q, but do not change files.
+CI runs %[3]q on this head too: a failure of it that %[2]s has here as well is
+the workspace's, not the change's.
 
 Approve only if you would merge the change as it is:
 - it achieves the goal completely, with nothing stubbed or left out;
