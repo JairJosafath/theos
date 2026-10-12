@@ -785,6 +785,32 @@ var _ = Describe("Task with a gated merge", func() {
 		}).Should(Succeed())
 	})
 
+	// #906: a failed status write after the pull request opens doesn't post the
+	// round's note twice.
+	It("names a later round's unprotected file once when the status write after it fails", func() {
+		ns := newProjectNamespace()
+		gatedTaskInReview(ns, "Makefile")
+		taskKey := client.ObjectKey{Namespace: ns, Name: "orders-api-1"}
+		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
+			&agentrunner.Result{Role: "review", Verdict: model.VerdictChanges, Summary: "CI must pass."}, "")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r2-implement") }).Should(Succeed())
+		taskStatusFaults.failNext(taskKey, 1, func(t *c4v1alpha1.Task) bool {
+			return t.Status.Phase == c4v1alpha1.TaskChecking && t.Status.Round == 2
+		})
+		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-2")
+		finishSandbox(ns, "orders-api-1-r2-implement", "orders-api-1", &agentrunner.Result{Role: "implement",
+			Commit: "sha-2", Summary: "Updated the test.", Extra: []string{"tests/test_release.py"}}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).NotTo(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+		}).Should(Succeed())
+		Expect(taskStatusFaults.pending(taskKey)).To(BeZero())
+		Expect(countContaining(gitFake.pullComments(ns, "orders-api", 1),
+			"It also changes `tests/test_release.py`, which no Standard protects")).To(Equal(1))
+		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
+	})
+
 	It("refuses a Standard change that touches a path it may not", func() {
 		ns := newProjectNamespace()
 		n := gatedTaskInReview(ns, "Makefile", "ruff.toml")
