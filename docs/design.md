@@ -1100,6 +1100,7 @@ server's message when it refuses one. The UI still enforces nothing.
   | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (set, or removed to stop publishing; only after a `test` of the `resourceVersion` it was worked out from, and a stale one is refused) |
   | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
   | Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take` and `c4.factory.io/standard-keep` |
+  | Container | `PATCH`, JSON patch | `spec.checks` |
   | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
   | Standard | `PATCH`, JSON patch | `spec.template.ref` |
 
@@ -1124,7 +1125,8 @@ server's message when it refuses one. The UI still enforces nothing.
   credentials (the browser never sees them), anything in the Git host
   (merges, reviews, labels: the UI links there), and editing the model
   itself (Systems, Containers, DataStores, Relationships), which would be a
-  model editor of its own.
+  model editor of its own; a Container's `spec.checks` is a setting, not the
+  model.
 
 ## Distribution and issues
 

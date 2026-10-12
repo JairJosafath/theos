@@ -50,6 +50,14 @@ their own work. Each is a title and one to three sentences saying what and why.
 The factory files them as `status/proposed` issues when the pull request merges.
 A blocking problem is never a follow-up.
 
+## When CI runs the full check
+
+When `.gitea/workflows/check.yaml` has a `full` job, the Container's owner chose
+`BeforeRelease`: green CI on the pull request means `make check-light` passed
+(lint and the type or vet checks), not the tests. Take the tests' result
+from the implementer's _How it was checked_ and judge the tests in the diff
+yourself; the full `make check` runs on the release's commit before its tag.
+
 ## Standard changes
 
 - **In a normal pull request,** don't require a change to a protected file
