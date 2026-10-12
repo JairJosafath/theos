@@ -839,7 +839,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   in `internal/model`. When a failed issue is due, a tending round, a planner
   round with no new prompt, answers it `retry`, `close` (with new issues to
   split), `wait` (until a Task merges, an app releases or 24h pass) or `ask`;
-  in `Ask` every answer waits for the person. Everything else that is due,
+  in `Ask` every answer waits for the person, and the round's summary says
+  what it proposes, not the planner's `summary.md` (#872). Everything else that is due,
   and every `ask`, is one entry in `status.needsYou` with the choice the
   Brief would make and why. The Crew's three tries still hold, an issue is
   answered once per failure, and tending rounds come at most hourly. A

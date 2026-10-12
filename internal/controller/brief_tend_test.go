@@ -176,8 +176,11 @@ var _ = Describe("Brief autopilot", func() {
 			why := "The checker it needs is merged now, #2 on the engine, and the engine released it as v0.3.0 " +
 				"an hour after this issue's last try stopped, so the import that failed then resolves now; " +
 				"nothing else in its acceptance criteria changed, and no other Task touches the linter's files."
-			planRound(ns, 2, 1, tendPlan(fmt.Sprintf(
-				"- {container: linter, issue: %d, answer: retry, why: %q}\n", n, why)))
+			plan := tendPlan(fmt.Sprintf("- {container: linter, issue: %d, answer: retry, why: %q}\n", n, why))
+			// #872: the planner's summary says the issue goes back, as if the
+			// Brief acted; in Ask the history says it proposes and waits.
+			plan[model.PlanSummaryFile] = scaffold.File{Data: []byte("The linter goes back to its Crew.\n")}
+			planRound(ns, 2, 1, plan)
 
 			By("listing it under Needs you with the recommendation, and leaving the issue handed back")
 			name := fmt.Sprintf("linter#%d", n)
@@ -185,6 +188,9 @@ var _ = Describe("Brief autopilot", func() {
 				b := getBrief(g, ns)
 				g.Expect(b.Status.History).To(HaveLen(2))
 				g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
+				g.Expect(b.Status.History[1].Summary).To(And(
+					HavePrefix("Autopilot is Ask, so each proposal waits for your answer. Proposes trying "+name+" again: "),
+					Not(ContainSubstring("goes back"))))
 				g.Expect(b.Status.NeedsYou).To(ConsistOf(And(HaveField("Kind", model.AttentionIssue),
 					HaveField("Name", name), HaveField("Recommend", "Try it again."),
 					HaveField("Why", why))))

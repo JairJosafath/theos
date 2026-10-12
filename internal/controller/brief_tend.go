@@ -335,7 +335,7 @@ func (r *BriefReconciler) answerFailedRemembering(ctx context.Context, brief *c4
 func (r *BriefReconciler) tendApplied(ctx context.Context, brief *c4v1alpha1.Brief, task *c4v1alpha1.Task,
 	plan model.Plan, answers []model.FailedAnswer) {
 	status := &brief.Status
-	summary := model.TendSummary(plan.Summary, answers)
+	summary := model.TendSummary(brief.Spec.Autopilot, plan.Summary, answers)
 	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonTended, Summary: summary})
 	retried, closed, waited, asked := model.TendCounts(answers)
 	r.event(brief, corev1.EventTypeNormal, eventTended, "Tend",
