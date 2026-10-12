@@ -235,6 +235,7 @@ var _ = Describe("Brief autopilot", func() {
 		It("in "+mode+", lists a Container whose Standard files are behind under Needs you until they aren't", func() {
 			autopilotBrief(ns, mode)
 			standardContainer(ns, map[string]string{c4v1alpha1.LabelBrief: "cel-lens"}, standardRefs(), false, "")
+			eventuallyAt(ns, "v1.0.0")
 			gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
 			bumpStandard(ns, "v1.2.0")
 			gitFake.setChecks(ns, "orders-api", openedUpdate(ns, "v1.2.0").Commit, "success")
