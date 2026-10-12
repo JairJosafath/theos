@@ -16,9 +16,11 @@ can't apply it.
 - `model/model.yaml`: the namespace's story now, as manifests.
 - `model/catalog.yaml`: the installed catalog. Each entry lists the Container
   types it supports (`supportedTypes`); a Standard also lists the Frameworks it
-  fits (`supportedFrameworks`).
-- `model/containers.yaml`: each Container's repository, its open issues, and
-  whether it ships releases already (`released`).
+  fits (`supportedFrameworks`) and whether it can run the full check only
+  before a release (`checksBeforeRelease`).
+- `model/containers.yaml`: each Container's repository, its open issues,
+  whether it ships releases already (`released`) and when its CI runs the
+  full check (`checks`).
 - `model/suggestions.yaml`: the reviewers' suggestions waiting for the
   person's answer, each with its Container, issue number, title and whether
   it has acceptance criteria.
@@ -89,7 +91,8 @@ Push the branch `plan/<round>` with these files:
 4. **Never delete, and keep what is built.** Leave every object of
    `model/model.yaml` in your plan. Of an existing object you may change only
    its story text: `displayName`, `description`, and a SoftwareSystem's `needs`
-   and `kpis`. A change to an existing Container's code is an issue in its
+   and `kpis`; and a Container's `checks`, when a new prompt asks (rule 16).
+   A change to an existing Container's code is an issue in its
    repository, not a change to the model.
 5. **Keep a round small:** at most 20 objects created or changed, and at most
    10 issues. Names are DNS labels: lowercase letters, digits and `-`.
@@ -331,6 +334,21 @@ Push the branch `plan/<round>` with these files:
     issue writing `docs/project-notes.md`. A plan with an issue that names
     one of those paths in its title or criteria is refused.
 
+16. **Set when an app's CI runs its full check only when a new prompt
+    asks,** such as "run the engine's heavy checks only when a release is
+    prepared". It is the Container's `checks`, not a platform setting: write
+    `checks: BeforeRelease` (a light check on each change, the full one
+    before a release) or `checks: EveryChange` (the full check on every
+    change) in the Container's `spec` in `plan/model.yaml`, on a new
+    Container or one the Brief made, and the round sets it. Leave `checks`
+    out otherwise: left out, the Container keeps the setting
+    `model/containers.yaml` shows, so one a person made isn't undone. It
+    takes effect only when the Container's Standard has
+    `checksBeforeRelease: true` in `model/catalog.yaml`; when it doesn't,
+    say so in `plan/summary.md` (the operator adds a sentence saying so
+    too). A plan that sets it with no new prompt, to another value, or on a
+    Container the Brief didn't make, is refused.
+
 ## The plan's format
 
 The operator reads your files strictly: a field it doesn't know refuses the
@@ -385,6 +403,7 @@ spec:
   gitProviderRef: {name: gitea}
   frameworkRef: {name: react-site}
   standardRef: {name: web-standard}
+  checks: BeforeRelease # only when a new prompt asks (rule 16)
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Container
@@ -446,7 +465,8 @@ What each kind's `spec` takes, and nothing else:
 - Container: those two, `softwareSystemRef`, `type` (one of `static-site`,
   `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`),
   `gitProviderRef` and `frameworkRef`, and when you choose them
-  `standardRef`, `computeRef` and `deploymentRef`. Every `...Ref` is
+  `standardRef`, `computeRef` and `deploymentRef`, and `checks`
+  (`EveryChange` or `BeforeRelease`) only as rule 16 says. Every `...Ref` is
   `{name: ...}` alone.
 - DataStore: `displayName`, `description`, `softwareSystemRef`,
   `connectorRef`.
