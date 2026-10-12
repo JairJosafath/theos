@@ -90,23 +90,23 @@ pull request.
 
 Each is its own issue and pull request, and leaves `main` working.
 
-1. **Three-way line merge in Standard updates. (#890).** `internal/scaffold`: a line
+1. **Three-way line merge in Standard updates (#890).** `internal/scaffold`: a line
    diff and `Merge3(base, ours, theirs)` returning the merged content or the
    conflicting hunks; `PlanUpdate` writes clean merges and reports them
    (`Update.Merged`), leaving out only conflicts, binary files and
    remove-versus-change. Body and commit message name the merged paths.
    Table tests: disjoint edits, overlapping edits, edits at the file's ends,
    both sides the same edit, CRLF and missing final newline kept, binary.
-2. **Left-out files are tracked and flagged. (#891).** API: `status.standard.behind`
+2. **Left-out files are tracked and flagged (#891).** API: `status.standard.behind`
    (path, ref) and `kept`; `leftOut` kept in step. The update plans every
    `behind` path against its own base; `StandardUpdated` False `FilesBehind`;
    Event `StandardFilesBehind`. UI: *Needs a look* item, Container page and
    lifecycle text. Envtest: a left-out file flags the Container and stays
    flagged through a later ref that doesn't change it; a clean merge clears it.
-3. **The Brief lists its apps' left-out files. (#892).** `status.needsYou` gets a
+3. **The Brief lists its apps' left-out files (#892).** `status.needsYou` gets a
    `Container` item per flagged Container the Brief made, with the choice and
    why above; the UI's Brief card shows it with the two answers. Envtest.
-4. **Take or keep from one annotation. (#893).** The two annotations, the take pull
+4. **Take or keep from one annotation (#893).** The two annotations, the take pull
    request (merged like an update), `kept`, and the UI actions (server
    allowlist, ClusterRole unchanged, buttons on *Needs a look* and the
    Container page). Envtest with the fake Git host: take opens and merges the
