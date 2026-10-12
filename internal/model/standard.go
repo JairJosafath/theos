@@ -325,10 +325,42 @@ func checksPhrase(checks string) string {
 	return "on every change"
 }
 
+// LeftOutFile is a file a Standard update leaves out: what the Standard
+// changed in it, and what taking the Standard's version would drop.
+type LeftOutFile struct {
+	Path string
+	// Ref is the Standard's ref the repository's copy was last brought to.
+	Ref string
+	// Diff is the unified diff of the Standard's renders of the file at Ref
+	// and at the update's ref, its hunks only, each line without its ending.
+	Diff []string
+	// Note says what the Standard did to the file as a whole, or why no diff
+	// shows, or "".
+	Note string
+	// Take is what taking the Standard's version would do to the file.
+	Take TakenFile
+}
+
+// LeftOut is what a Standard update's body says of the files it leaves out.
+type LeftOut struct {
+	Files []LeftOutFile
+	// Take and Keep are the commands that settle them: take the Standard's
+	// version, or keep the repository's.
+	Take, Keep string
+}
+
+// Bounds of a Standard update's body: the diff lines shown per left-out file,
+// and the body's length, below GitHub's 65,536 characters.
+const (
+	maxDiffLines   = 200
+	maxBodyLength  = 60000
+	bodyCloseSlack = 1000
+)
+
 // StandardUpdateBody is that pull request's description. merged are the paths
 // it writes that the repository changed too, merged with the repository's
 // changes.
-func StandardUpdateBody(name string, from, to StandardVersion, paths, merged, leftOut []string) string {
+func StandardUpdateBody(name string, from, to StandardVersion, paths, merged []string, leftOut LeftOut) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "The operator opened this pull request to bring the files of the Standard `%s` from `%s` to `%s`",
 		name, from.Ref, to.Ref)
@@ -347,15 +379,68 @@ func StandardUpdateBody(name string, from, to StandardVersion, paths, merged, le
 			"read them as a merge:\n\n", from.Ref)
 		writeCodeList(&b, merged)
 	}
-	if len(leftOut) > 0 {
-		fmt.Fprintf(&b, "## Left out\n\nThese files changed in the repository since `%s` in ways that don't "+
-			"merge with the Standard's changes, so the update leaves them out; a person takes the Standard's version "+
-			"or keeps the repository's, on the Container:\n\n", from.Ref)
-		writeCodeList(&b, leftOut)
+	if len(leftOut.Files) > 0 {
+		writeLeftOut(&b, to.Ref, leftOut)
 	}
 	b.WriteString("The operator merges this pull request itself once CI passes. " +
 		"Close it to drop the update until the Standard's ref or the Container's checks change again.\n")
 	return b.String()
+}
+
+// writeLeftOut writes the section of an update's body on the files it leaves
+// out: per file, the Standard's change and the repository's lines a take would
+// drop, each file whole or, once the body would pass maxBodyLength, only named.
+func writeLeftOut(b *strings.Builder, to string, leftOut LeftOut) {
+	b.WriteString("## Left out\n\nThese files changed in the repository in lines the Standard changed too, so the " +
+		"update leaves them out. Below is what the Standard changed in each, and the repository's lines taking " +
+		"the Standard's version would drop; every other line the repository changed stays. Once this pull " +
+		"request merges, a person settles them all on the Container:\n\n")
+	fmt.Fprintf(b, "- take the Standard's version: `%s`\n- or keep the repository's: `%s`\n\n", leftOut.Take, leftOut.Keep)
+	for i, f := range leftOut.Files {
+		var section strings.Builder
+		fmt.Fprintf(&section, "### `%s`\n\n", f.Path)
+		fmt.Fprintf(&section, "What the Standard changed in it from `%s` to `%s`", f.Ref, to)
+		if f.Note != "" {
+			fmt.Fprintf(&section, ": %s", f.Note)
+		}
+		section.WriteString("\n\n")
+		if len(f.Diff) > 0 {
+			lines := append([]string{fmt.Sprintf("--- %s (%s)", f.Path, f.Ref), fmt.Sprintf("+++ %s (%s)", f.Path, to)},
+				f.Diff...)
+			writeDiff(&section, lines, maxDiffLines+2)
+		}
+		switch {
+		case f.Take.Note != "":
+			fmt.Fprintf(&section, "Taking it: %s\n\n", f.Take.Note)
+		case len(f.Take.Dropped) == 0:
+			section.WriteString("Taking it drops none of the repository's lines.\n\n")
+		}
+		if len(f.Take.Dropped) > 0 {
+			section.WriteString("The repository's lines taking it drops:\n\n")
+			writeDropped(&section, f.Take.Dropped)
+		}
+		if b.Len()+section.Len() > maxBodyLength-bodyCloseSlack {
+			writeTooLarge(b, leftOut.Files[i:])
+			return
+		}
+		b.WriteString(section.String())
+	}
+}
+
+// writeTooLarge names the left-out files past the body's bound, as many as fit.
+func writeTooLarge(b *strings.Builder, files []LeftOutFile) {
+	b.WriteString("Too large to show in this pull request:")
+	for i, f := range files {
+		if b.Len()+len(f.Path)+4 > maxBodyLength-bodyCloseSlack/2 {
+			fmt.Fprintf(b, " and %d more files", len(files)-i)
+			break
+		}
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(b, " `%s`", f.Path)
+	}
+	b.WriteString(".\n\n")
 }
 
 // TakenFile is one file a take writes or removes, and the repository's lines
@@ -423,9 +508,14 @@ func writeDropped(b *strings.Builder, stretches [][]string) {
 			lines = append(lines, "-"+strings.TrimRight(line, "\r\n"))
 		}
 	}
+	writeDiff(b, lines, maxDroppedLines)
+}
+
+// writeDiff writes lines as a diff block, at most limit of them.
+func writeDiff(b *strings.Builder, lines []string, limit int) {
 	more := 0
-	if len(lines) > maxDroppedLines {
-		lines, more = lines[:maxDroppedLines], len(lines)-maxDroppedLines
+	if len(lines) > limit {
+		lines, more = lines[:limit], len(lines)-limit
 	}
 	// The fence is longer than any run of backticks in the lines.
 	fence := "```"
