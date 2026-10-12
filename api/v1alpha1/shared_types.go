@@ -110,7 +110,8 @@ const (
 	// ConditionApplied is True when a Relationship's Connector was part of the scaffold.
 	ConditionApplied = "Applied"
 	// ConditionStandardUpdated is True when a Container's Standard files are at
-	// its Standard's ref.
+	// its Standard's ref; False with reason FilesBehind while some an update
+	// left out wait on a person.
 	ConditionStandardUpdated = "StandardUpdated"
 	// ConditionChecksApplied is True when a Container's Standard runs its CI's
 	// full check when the Container's spec.checks asks.
@@ -140,6 +141,7 @@ const (
 	ReasonChecksFailed         = "ChecksFailed"
 	ReasonUpdateClosed         = "UpdateClosed"
 	ReasonUpdateRefused        = "UpdateRefused"
+	ReasonFilesBehind          = "FilesBehind"
 	// ReasonStandardRunsFullChecks: the Container asks for checks BeforeRelease
 	// and its Standard can't, so CI runs the full check on every change.
 	ReasonStandardRunsFullChecks = "StandardRunsFullChecks"
@@ -197,6 +199,15 @@ const PausedByBrief = "brief"
 // AnnotationRetry, set or changed on a Failed Container, makes the operator try
 // to scaffold it again: after emptying its repository, for example.
 const AnnotationRetry = "c4.factory.io/retry"
+
+// AnnotationStandardTake and AnnotationStandardKeep, set on a Container to the
+// Standard ref its files are at, settle the files its Standard updates left
+// out (status.standard.behind): take the Standard's version, or keep the
+// repository's. An answer for another ref is ignored.
+const (
+	AnnotationStandardTake = "c4.factory.io/standard-take"
+	AnnotationStandardKeep = "c4.factory.io/standard-keep"
+)
 
 // AnnotationRerunRelease, set or changed on a Crew whose last release's run
 // Failed, makes the operator re-run that release's failed workflow runs, once

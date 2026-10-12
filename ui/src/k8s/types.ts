@@ -107,6 +107,13 @@ export interface SoftwareSystem extends K8sObject {
 /** When a Container's CI runs its full check (design.md, the owner chooses when the full check runs). */
 export type ChecksMode = 'EveryChange' | 'BeforeRelease'
 
+/** One of a Standard's files in a Container's repository, at a ref of the Standard. */
+export interface StandardFile {
+  path: string
+  ref: string
+  pullRequestURL?: string
+}
+
 export interface Container extends K8sObject {
   spec: {
     softwareSystemRef: LocalRef
@@ -135,8 +142,16 @@ export interface Container extends K8sObject {
       ref: string
       /** When the repository's CI runs the full check, as its Standard files were last rendered; empty is EveryChange. */
       checks?: ChecksMode
-      /** The files the last update left out, because the repository had changed them. */
+      /** The paths of behind. */
       leftOut?: string[]
+      /**
+       * The Standard's files its updates left out, because the repository changed them in lines the
+       * Standard changed too, each with the ref its copy was last brought to and the pull request that
+       * last left it out. They wait on a person (StandardUpdated False, FilesBehind).
+       */
+      behind?: StandardFile[]
+      /** The Standard's files a person kept as the repository has them, with the ref kept at. */
+      kept?: StandardFile[]
       /** The Standard update in flight, or the last one, stopped. */
       update?: {
         ref: string
@@ -145,6 +160,7 @@ export interface Container extends K8sObject {
         pullRequest?: number
         pullRequestURL?: string
         paths?: string[]
+        merged?: string[]
         leftOut?: string[]
         /** Why the update stopped without merging, such as UpdateClosed. */
         stopped?: string

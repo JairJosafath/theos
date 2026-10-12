@@ -289,6 +289,48 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              fullCheck:
+                description: |-
+                  fullCheck is the full check of the next release, while it holds the tag:
+                  set when the Container's checks are BeforeRelease and the release is done,
+                  until the release is tagged.
+                properties:
+                  commit:
+                    description: commit is the commit the tag will name, where the
+                      branch points.
+                    type: string
+                  issue:
+                    description: issue is the issue the Crew filed when the check
+                      failed at commit.
+                    format: int32
+                    type: integer
+                  run:
+                    description: run is how the runs the branch's push started went,
+                      as for a release.
+                    enum:
+                    - Waiting
+                    - Running
+                    - Succeeded
+                    - Failed
+                    type: string
+                  runURL:
+                    description: runURL links to the failed run, else to the newest
+                      one.
+                    type: string
+                  tag:
+                    description: tag is the release's version, the milestone's title.
+                    type: string
+                  time:
+                    description: |-
+                      time is when the Crew pushed the branch, or found it at the commit; the
+                      hour a run has to start counts from it.
+                    format: date-time
+                    type: string
+                required:
+                - commit
+                - tag
+                - time
+                type: object
               lastPolled:
                 description: lastPolled is when the Crew last read the issues.
                 format: date-time

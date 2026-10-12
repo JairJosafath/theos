@@ -142,6 +142,12 @@ type Provider interface {
 	DeleteBranch(ctx context.Context, repo Repository, branch string) error
 	// HasBranch reports whether repo has branch.
 	HasBranch(ctx context.Context, repo Repository, branch string) (bool, error)
+	// BranchCommit returns the commit branch points at, or "" when repo has no
+	// such branch.
+	BranchCommit(ctx context.Context, repo Repository, branch string) (string, error)
+	// CreateBranch creates branch at commit. It fails if the branch exists,
+	// wherever it points.
+	CreateBranch(ctx context.Context, repo Repository, branch, commit string) error
 	// ReviewPullRequest posts a review of commit: ReviewApprove,
 	// ReviewRequestChanges or ReviewComment, with body.
 	ReviewPullRequest(ctx context.Context, repo Repository, number int, commit, event, body string) error

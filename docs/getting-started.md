@@ -589,14 +589,14 @@ git push origin --delete release-check/v1.4.0
 ```
 
 A failed `full` job means the commit isn't fit to release: fix it on `main`
-and run the check again on the new commit.
+and run the check again on the new commit. The Crew tags nothing then (its
+`Released` condition says `FullCheckFailed`) and files `Full check fails for
+vX.Y.Z` in the release's milestone, whose merge brings the release round again.
 
-Two parts of this are still being built. A Container takes its checks when it
+One part of this is still being built: a Container takes its checks when it
 is scaffolded, but a change to one already scaffolded doesn't reach its
-repository yet (GitHub issue #896), and a Crew doesn't wait for the `full` job
-before it tags yet (#897). Until they land, choose the checks when you create
-the Container, and with `BeforeRelease` tag by hand as above rather than with
-`tagReleases`.
+repository yet (GitHub issue #896). Until it lands, choose the checks when you
+create the Container.
 
 ## Upgrading
 
