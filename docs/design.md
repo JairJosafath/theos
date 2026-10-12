@@ -233,6 +233,20 @@ enforces.
   line that says nothing blocks the issue (`Blocked: none`, `n/a`,
   `No blockers.`, `nothing blocks this issue`) is not a blocked note; one that
   goes on to name something (`none of the engine's releases has the fix`) is.
+  The implementer runs the Container's check in its sandbox and is sent back
+  twice to fix it while it fails; a round whose check still fails then fails
+  with its output. The check that fails on the branch runs once on the base
+  commit too, in a separate worktree. When it fails there as well, the
+  sandbox can't judge the change (a download or service it can't reach):
+  the fix attempts are told so and to leave the rest to CI, the round pushes
+  with no error and reports the base's output (`CheckFailsOnBase`), and the
+  operator goes on to the pull request and CI, which runs the same check and
+  decides. A Standard change is then proposed as on a passing check; its own
+  gated Task runs CI before it merges. A blocked note is checked the same
+  way: when the check fails on the base, the implementer is sent back once
+  to do the issue, since that is not a reason to block, and a second blocked
+  note stands. A base that can't be checked out counts as passing
+  ([plan](plans/workspace-check-differs.md)).
   The
   Container's Crew decides how many Tasks run at once.
 - **A Task waits for checks a runner will run.** The commit status gives the

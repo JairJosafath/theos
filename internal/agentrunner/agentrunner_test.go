@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -190,6 +191,19 @@ func TestResultEncodeFitsTerminationMessage(t *testing.T) {
 	}
 	if back.Commit != r.Commit {
 		t.Error("Encode() lost the commit")
+	}
+}
+
+func TestResultEncodeKeepsTheEndOfTheBasesCheck(t *testing.T) {
+	r := Result{Role: RoleImplement, Commit: strings.Repeat("a", 40), Summary: "Done.",
+		CheckFailsOnBase: strings.Repeat("é", 3000) + "\ncurl: (22) 404 Not Found"}
+	var back Result
+	if err := json.Unmarshal(r.Encode(), &back); err != nil {
+		t.Fatalf("Encode() is not JSON: %v", err)
+	}
+	if !strings.HasSuffix(back.CheckFailsOnBase, "404 Not Found") || !strings.HasPrefix(back.CheckFailsOnBase, "…") ||
+		!utf8.ValidString(back.CheckFailsOnBase) {
+		t.Errorf("CheckFailsOnBase = %q, want its end kept", back.CheckFailsOnBase)
 	}
 }
 
@@ -374,9 +388,14 @@ func TestRunImplementFailures(t *testing.T) {
 	t.Run("check keeps failing", func(t *testing.T) {
 		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
 		agent := &countingAgent{}
-		got := Run(ctx, testJob(t, url, RoleImplement, 1, "sh", "-c", "echo lint: bad; exit 1"), agent, t.TempDir())
+		// The check passes on the base, so the change broke it.
+		check := "if [ -e attempt.txt ]; then echo lint: bad; exit 1; fi"
+		got := Run(ctx, testJob(t, url, RoleImplement, 1, "sh", "-c", check), agent, t.TempDir())
 		if !strings.Contains(got.Error, "still fails after 2 attempts") || !strings.Contains(got.Error, "lint: bad") {
 			t.Errorf("Error = %q", got.Error)
+		}
+		if got.CheckFailsOnBase != "" {
+			t.Errorf("CheckFailsOnBase = %q, want empty for a base that passes", got.CheckFailsOnBase)
 		}
 		if agent.calls != 3 {
 			t.Errorf("agent ran %d times, want the work plus 2 fix attempts", agent.calls)
@@ -1263,7 +1282,7 @@ func TestRunImplementGated(t *testing.T) {
 func TestRunImplementKeepsNoProtectedEditWhenTheCheckFails(t *testing.T) {
 	url := standardRepo(t)
 	agent := filesAgent{files: map[string]string{"Makefile": "check:\n\techo more\n", "src.txt": "x\n"}, summary: "Standard change: needed"}
-	got := Run(context.Background(), standardJob(t, url, "sh", "-c", "exit 1"), agent, t.TempDir())
+	got := Run(context.Background(), standardJob(t, url, "sh", "-c", "test ! -e src.txt"), agent, t.TempDir())
 	if !strings.Contains(got.Error, "still fails") || !strings.Contains(got.Error, "was not kept") || got.Proposal != nil {
 		t.Errorf("Run() = %+v", got)
 	}
@@ -1506,5 +1525,97 @@ func TestImageListIsCapped(t *testing.T) {
 	prompt := ReviewPrompt(job, Workspace{Images: images})
 	if strings.Count(prompt, ".svg: 1 bytes") != maxListedImages || !strings.Contains(prompt, "and 3 more") {
 		t.Errorf("review prompt lists %d images and no overflow line:\n%s", strings.Count(prompt, ".svg:"), prompt)
+	}
+}
+
+// brokenCheck fails wherever the BROKEN marker is, as a check whose download
+// the workspace can't reach fails on every commit.
+var brokenCheck = []string{"sh", "-c", "if [ -e BROKEN ]; then echo 'download: 404 Not Found'; exit 1; fi"}
+
+// scriptAgent answers each run with the next of its replies, changing a file
+// every time, and records the prompts.
+type scriptAgent struct {
+	replies []string
+	prompts []string
+}
+
+func (a *scriptAgent) Run(_ context.Context, dir, prompt string) (string, error) {
+	a.prompts = append(a.prompts, prompt)
+	reply := a.replies[min(len(a.prompts), len(a.replies))-1]
+	return reply, os.WriteFile(filepath.Join(dir, "work.txt"), []byte(strconv.Itoa(len(a.prompts))), 0o644)
+}
+
+// #875: a check that fails on the base too is the workspace's; CI decides it.
+func TestRunImplementCheckFailsOnTheBaseToo(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n", "BROKEN": "x\n"})
+	agent := &scriptAgent{replies: []string{"Done."}}
+	dir := filepath.Join(t.TempDir(), "repo")
+	got := Run(context.Background(), testJob(t, url, RoleImplement, 1, brokenCheck...), agent, dir)
+	if got.Error != "" || got.Commit == "" || branchHead(t, url, "task/add-crop") != got.Commit {
+		t.Errorf("result = %+v, want the work pushed and no error", got)
+	}
+	if !strings.Contains(got.CheckFailsOnBase, "download: 404 Not Found") {
+		t.Errorf("CheckFailsOnBase = %q, want the base's output", got.CheckFailsOnBase)
+	}
+	if len(agent.prompts) != 1+checkFixAttempts {
+		t.Fatalf("agent ran %d times, want the work and %d fix attempts", len(agent.prompts), checkFixAttempts)
+	}
+	for _, prompt := range agent.prompts[1:] {
+		if !strings.Contains(prompt, "fails on main in this workspace too") ||
+			!strings.Contains(prompt, "download: 404 Not Found") || !strings.Contains(prompt, "leave the rest to CI") {
+			t.Errorf("fix prompt = %q, want it to name the base's failure", prompt)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Dir(dir))
+	if err != nil || len(entries) != 1 {
+		t.Errorf("beside the clone: %v, %v; want the base's worktree removed", entries, err)
+	}
+}
+
+func TestRunImplementBlockedWithAFailingBase(t *testing.T) {
+	ctx := context.Background()
+	blocked := "Nothing changed.\n" + model.BlockedPrefix + " the engine's release must be published first."
+	t.Run("sent back once, then goes on", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n", "BROKEN": "x\n"})
+		agent := &scriptAgent{replies: []string{blocked, "Done."}}
+		got := Run(ctx, testJob(t, url, RoleImplement, 1, brokenCheck...), agent, t.TempDir())
+		if got.Blocked != "" || got.Error != "" || got.Commit == "" || got.CheckFailsOnBase == "" {
+			t.Errorf("result = %+v, want the round to go on with the base's failure", got)
+		}
+		if len(agent.prompts) < 2 || !strings.Contains(agent.prompts[1], "not a reason to block") ||
+			!strings.Contains(agent.prompts[1], "download: 404 Not Found") {
+			t.Errorf("prompts = %q, want the agent sent back with the base's failure", agent.prompts)
+		}
+	})
+	t.Run("blocked again stands", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n", "BROKEN": "x\n"})
+		agent := &scriptAgent{replies: []string{blocked}}
+		got := Run(ctx, testJob(t, url, RoleImplement, 1, brokenCheck...), agent, t.TempDir())
+		if got.Blocked == "" || got.Commit != "" || len(agent.prompts) != 2 {
+			t.Errorf("result = %+v after %d runs, want blocked after one send-back", got, len(agent.prompts))
+		}
+		if branchHead(t, url, "task/add-crop") != "" {
+			t.Error("a blocked round pushed what it left")
+		}
+	})
+	t.Run("a passing base lets it stand", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		agent := &scriptAgent{replies: []string{blocked, "Done."}}
+		got := Run(ctx, testJob(t, url, RoleImplement, 1, brokenCheck...), agent, t.TempDir())
+		if got.Blocked == "" || got.Commit != "" || len(agent.prompts) != 1 {
+			t.Errorf("result = %+v after %d runs, want blocked at once", got, len(agent.prompts))
+		}
+	})
+}
+
+func TestRunImplementProposesAStandardChangeWhenTheBaseFailsToo(t *testing.T) {
+	url := bareRepo(t, map[string]string{"Makefile": "check:\n", "README.md": "hi\n", "BROKEN": "x\n"})
+	agent := filesAgent{files: map[string]string{"Makefile": "check:\n\techo more\n", "src.txt": "x\n"}, summary: "Standard change: needed"}
+	got := Run(context.Background(), standardJob(t, url, brokenCheck...), agent, t.TempDir())
+	if got.Error != "" || got.Proposal == nil || got.CheckFailsOnBase == "" {
+		t.Fatalf("Run() = %+v, want the proposal kept and the base's failure", got)
+	}
+	if branchHead(t, url, got.Proposal.Branch) == "" {
+		t.Error("the proposal was not pushed")
 	}
 }
