@@ -168,6 +168,23 @@ var _ = Describe("Crew publishing releases", func() {
 		Expect(rel.makeLatest).To(Equal("true"))
 	})
 
+	It("leaves an issue closed without a merge out of the notes", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		token := rand.Text()
+		githubFake.addRepository(repository, token)
+		mustCreate(publishSecret(ns, token))
+		files := publishingCrew(ns, repository, func(*c4v1alpha1.Crew) {
+			// Closed by prompt, as not doable: no Task merged it.
+			n := gitFake.addIssue(ns, "orders-api", "Check the cost of every expression", clearIssue, nil)
+			gitFake.setIssueRelease(ns, "orders-api", n, "v0.1.0", releaseDue)
+			Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
+		})
+
+		publishedTo(ns, repository, files)
+		Expect(gitFake.giteaReleaseBody(ns, "orders-api", "v0.1.0")).To(Equal("- Validate orders (#1)\n"))
+	})
+
 	It("names a release after the app's display name, and leaves Latest alone when latest is false", func() {
 		ns := newProjectNamespace()
 		repository := "acme/" + ns

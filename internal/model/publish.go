@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -237,6 +238,20 @@ func ReleaseNotes(issues []ReleaseIssue) string {
 		fmt.Fprintf(&b, "- %s (#%d)\n", i.Title, i.Number)
 	}
 	return b.String()
+}
+
+// MergedReleaseIssues returns the release's closed issues whose work merged,
+// meaning a Merged Task did them (one a Standard change did included), in the
+// order given. An issue closed without a merge, by prompt, as not doable or as
+// a duplicate, isn't in the release, so its notes leave it out.
+func MergedReleaseIssues(closed []ReleaseIssue, merged []int) []ReleaseIssue {
+	out := []ReleaseIssue{}
+	for _, i := range closed {
+		if slices.Contains(merged, i.Number) {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // NextPublishStep decides the next step of publishing the Crew's last release.

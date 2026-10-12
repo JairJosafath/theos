@@ -306,6 +306,18 @@ func TestReleaseNotes(t *testing.T) {
 	}
 }
 
+func TestMergedReleaseIssues(t *testing.T) {
+	closed := []ReleaseIssue{{3, "Lens the CEL"}, {7, "Check the cost of every expression"}, {12, "Show errors"}}
+	got := MergedReleaseIssues(closed, []int{12, 3, 40})
+	want := []ReleaseIssue{{3, "Lens the CEL"}, {12, "Show errors"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("MergedReleaseIssues() = %v, want %v: #7 closed without a merge", got, want)
+	}
+	if got := MergedReleaseIssues(closed, nil); len(got) != 0 {
+		t.Errorf("MergedReleaseIssues(no merges) = %v", got)
+	}
+}
+
 func TestPublishMarkerAndTag(t *testing.T) {
 	if got := GitHubTag("cli-", "v0.2.0"); got != "cli-v0.2.0" {
 		t.Errorf("GitHubTag = %q", got)

@@ -66,7 +66,8 @@ type ReleaseTargets interface {
 // once per release and reason, and is tried again on the next poll. The
 // release is named after the Container, its display name or else its name.
 func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
-	status *c4v1alpha1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository) {
+	status *c4v1alpha1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
+	tasks []c4v1alpha1.Task) {
 	spec := crew.Spec.PublishReleases
 	release := status.LastRelease
 	if spec == nil || release == nil {
@@ -94,7 +95,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 	pubCtx, cancel := context.WithTimeout(ctx, publishTimeout)
 	defer cancel()
 	pass := &publishPass{r: r, crew: crew, log: log, provider: provider, repo: repo, spec: spec, token: token,
-		tag: release.Tag, facts: &facts}
+		tag: release.Tag, facts: &facts, merged: mergedIssues(tasks)}
 	for {
 		step := model.NextPublishStep(facts)
 		var err error
@@ -150,9 +151,11 @@ type publishPass struct {
 	token    string
 	tag      string
 	facts    *model.PublishFacts
-	target   gitprovider.ReleaseTarget
-	gitea    *gitprovider.Release
-	gh       *githubSource
+	// merged are the issues of the Container's Merged Tasks.
+	merged []int
+	target gitprovider.ReleaseTarget
+	gitea  *gitprovider.Release
+	gh     *githubSource
 	// source is the release's source, once this pass put its tag out.
 	source *c4v1alpha1.CrewReleaseSource
 }
@@ -170,7 +173,7 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 		}
 		p.facts.Gitea = sourceRelease(p.gitea)
 	case model.PublishReadIssues:
-		if p.facts.Issues, err = releaseIssues(ctx, p.provider, p.repo, p.tag); err != nil {
+		if p.facts.Issues, err = releaseIssues(ctx, p.provider, p.repo, p.tag, p.merged); err != nil {
 			p.log.Error(err, "Failed to read the release's issues")
 			return false
 		}
@@ -310,9 +313,9 @@ func sourceRelease(rel *gitprovider.Release) *model.SourceRelease {
 }
 
 // releaseIssues reads the closed issues of the release's milestone, which the
-// Crew closed when it tagged the release.
+// Crew closed when it tagged the release, and keeps those a Task merged.
 func releaseIssues(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	tag string) ([]model.ReleaseIssue, error) {
+	tag string, merged []int) ([]model.ReleaseIssue, error) {
 	id, err := provider.EnsureMilestone(ctx, repo, tag, "")
 	if err != nil {
 		return nil, err
@@ -321,13 +324,24 @@ func releaseIssues(ctx context.Context, provider gitprovider.Provider, repo gitp
 	if err != nil {
 		return nil, err
 	}
-	out := []model.ReleaseIssue{}
+	closed := []model.ReleaseIssue{}
 	for _, i := range issues {
 		if i.State == stateClosed {
-			out = append(out, model.ReleaseIssue{Number: i.Number, Title: i.Title})
+			closed = append(closed, model.ReleaseIssue{Number: i.Number, Title: i.Title})
 		}
 	}
-	return out, nil
+	return model.MergedReleaseIssues(closed, merged), nil
+}
+
+// mergedIssues returns the issues of the Merged Tasks among tasks.
+func mergedIssues(tasks []c4v1alpha1.Task) []int {
+	var out []int
+	for _, t := range tasks {
+		if t.Spec.Issue != 0 && t.Status.Phase == c4v1alpha1.TaskMerged {
+			out = append(out, int(t.Spec.Issue))
+		}
+	}
+	return out
 }
 
 // targetReleases reads the GitHub release the operator made for the tag, or
