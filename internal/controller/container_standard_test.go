@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -71,13 +72,26 @@ func standardRefs() map[string]scaffold.Tree {
 // up to date.
 func updatableContainer(ns string) {
 	GinkgoHelper()
+	createUpdatableContainer(ns, standardRefs(), false, "")
+	eventuallyAt(ns, "v1.0.0")
+	Expect(gitFake.mainFiles(ns, "orders-api")).To(HaveKeyWithValue("AGENTS.md",
+		HaveField("Data", BeEquivalentTo("Rules for orders-api, which uses postgres\n"))))
+}
+
+// createUpdatableContainer creates orders-api, which uses orders-db and asks
+// for checks, on the Standard python-strict at v1.0.0 with the template refs,
+// which can run the full check only before a release when checksBeforeRelease.
+func createUpdatableContainer(ns string, refs map[string]scaffold.Tree, checksBeforeRelease bool,
+	checks c4v1alpha1.ChecksMode) {
+	GinkgoHelper()
 	createFactory(ns)
 	url := templatesURL + ns + "/" + updatedStandard
-	for ref, tree := range standardRefs() {
+	for ref, tree := range refs {
 		gitFake.addTemplate(url, ref, tree)
 	}
 	container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
 	container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: updatedStandard}
+	container.Spec.Checks = checks
 	mustCreate(
 		newSystem(ns, "webshop-core"),
 		newOrdersDB(ns),
@@ -89,13 +103,11 @@ func updatableContainer(ns string) {
 			Spec: c4v1alpha1.StandardSpec{
 				CatalogEntrySpec:    newCatalogSpec(url, "v1.0.0", c4v1alpha1.ContainerTypeService),
 				SupportedFrameworks: []string{"python-fastapi"},
+				ChecksBeforeRelease: checksBeforeRelease,
 			},
 		},
 		container,
 	)
-	eventuallyAt(ns, "v1.0.0")
-	Expect(gitFake.mainFiles(ns, "orders-api")).To(HaveKeyWithValue("AGENTS.md",
-		HaveField("Data", BeEquivalentTo("Rules for orders-api, which uses postgres\n"))))
 }
 
 func getContainer(g Gomega, ns string) *c4v1alpha1.Container {
@@ -119,10 +131,18 @@ func standardCondition(g Gomega, container *c4v1alpha1.Container) metav1.Conditi
 	return *cond
 }
 
-// eventuallyAt waits until orders-api's Standard files are at ref, with
-// leftOut left out and no update in flight.
+// eventuallyAt waits until orders-api's Standard files are at ref, with checks
+// EveryChange, leftOut left out and no update in flight.
 func eventuallyAt(ns, ref string, leftOut ...string) {
 	GinkgoHelper()
+	eventuallyAtChecks(ns, model.StandardVersion{Ref: ref, Checks: model.ChecksEveryChange}, leftOut...)
+}
+
+// eventuallyAtChecks waits until orders-api's Standard files are at the version
+// at, with leftOut left out and no update in flight.
+func eventuallyAtChecks(ns string, at model.StandardVersion, leftOut ...string) {
+	GinkgoHelper()
+	ref := at.Ref
 	leftOutMatcher := BeEmpty()
 	if len(leftOut) > 0 {
 		leftOutMatcher = Equal(leftOut)
@@ -132,12 +152,11 @@ func eventuallyAt(ns, ref string, leftOut ...string) {
 		g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
 		g.Expect(container.Status.Standard).To(PointTo(MatchAllFields(Fields{
 			"Name": Equal(updatedStandard), "Ref": Equal(ref), "Update": BeNil(), "LeftOut": leftOutMatcher,
-			// Nothing records the checks until a change of them reaches the repository (#896).
-			"Checks": BeEmpty()})))
+			"Checks": BeEquivalentTo(at.Checks)})))
 		cond := standardCondition(g, container)
 		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpToDate))
-		g.Expect(cond.Message).To(HavePrefix(updatedStandard + " is at " + ref))
+		g.Expect(cond.Message).To(HavePrefix(updatedStandard + " is at " + at.String()))
 	}).WithTimeout(standardSteps).Should(Succeed())
 }
 
@@ -269,7 +288,7 @@ var _ = Describe("Container Standard update", func() {
 		gitFake.closePull(ns, "orders-api", int(first.PullRequest))
 		message := stoppedUpdate(ns, c4v1alpha1.ReasonUpdateClosed)
 		Expect(message).To(Equal("Pull request " + first.PullRequestURL +
-			" was closed without merging; python-strict stays at v1.0.0 until its ref changes again"))
+			" was closed without merging; python-strict stays at v1.0.0 until its ref or the checks change again"))
 		Expect(gitFake.hasBranch(ns, "orders-api", first.Branch)).To(BeFalse())
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))

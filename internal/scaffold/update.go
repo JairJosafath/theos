@@ -13,6 +13,10 @@ import (
 // <name>@<from>..<to>.
 const trailerUpdate = "Standard-Update"
 
+// trailerChecks marks the operator's commit that changes when CI runs the full
+// check, as <from>..<to>, and its initial commit, as the checks it rendered.
+const trailerChecks = "Checks"
+
 // RenderLayer renders one layer's files with in, as Build does, without the
 // other layers, the devcontainer or the identity file.
 func RenderLayer(in Input, layer Layer) (Tree, error) {
@@ -133,6 +137,24 @@ func (t Tree) has(p string) bool {
 	return ok
 }
 
+// ChangedPaths returns the paths two renders hold differently, sorted: a path
+// one has and the other doesn't, or both have with other content or mode.
+func ChangedPaths(a, b Tree) []string {
+	var paths []string
+	for _, p := range a.Paths() {
+		if !same(a, b, p) {
+			paths = append(paths, p)
+		}
+	}
+	for _, p := range b.Paths() {
+		if !a.has(p) {
+			paths = append(paths, p)
+		}
+	}
+	slices.Sort(paths)
+	return paths
+}
+
 // same reports whether two trees hold p alike: neither has it, or both have it
 // with the same content and mode.
 func same(a, b Tree, p string) bool {
@@ -142,20 +164,35 @@ func same(a, b Tree, p string) bool {
 }
 
 // UpdateMessage is the message of the commit that updates in's Container from
-// the Standard name at ref from to ref to.
-func UpdateMessage(in Input, name, from, to string, u Update) string {
+// the Standard name at version from to version to.
+func UpdateMessage(in Input, name string, from, to model.StandardVersion, u Update) string {
+	from, to = from.Normal(), to.Normal()
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", model.StandardUpdateTitle(name, to))
-	fmt.Fprintf(&b, "Brings the files of %s from %s to %s for Container %s.\n", name, from, to, in.Container)
+	fmt.Fprintf(&b, "%s\n\n", model.StandardUpdateTitle(name, from, to))
+	fmt.Fprintf(&b, "Brings the files of %s from %s to %s for Container %s.\n", name, from.Ref, to.Ref, in.Container)
+	if from.Checks != to.Checks {
+		fmt.Fprintf(&b, "CI runs the full check %s.\n", checksWhen(to.Checks))
+	}
 	if len(u.Merged) > 0 {
-		fmt.Fprintf(&b, "Merged with the repository's changes since %s: %s.\n", from, joinAnd(u.Merged))
+		fmt.Fprintf(&b, "Merged with the repository's changes since %s: %s.\n", from.Ref, joinAnd(u.Merged))
 	}
 	if len(u.LeftOut) > 0 {
-		fmt.Fprintf(&b, "Left out, changed in the repository since %s: %s.\n", from, joinAnd(u.LeftOut))
+		fmt.Fprintf(&b, "Left out, changed in the repository since %s: %s.\n", from.Ref, joinAnd(u.LeftOut))
 	}
 	fmt.Fprintf(&b, "\n%s: %s/%s\n", trailerContainer, in.Project, in.Container)
-	fmt.Fprintf(&b, "%s: %s@%s..%s\n", trailerUpdate, name, from, to)
+	fmt.Fprintf(&b, "%s: %s@%s..%s\n", trailerUpdate, name, from.Ref, to.Ref)
+	if from.Checks != to.Checks {
+		fmt.Fprintf(&b, "%s: %s..%s\n", trailerChecks, from.Checks, to.Checks)
+	}
 	return b.String()
+}
+
+// checksWhen says when CI runs the full check with checks.
+func checksWhen(checks string) string {
+	if checks == model.ChecksBeforeRelease {
+		return "only before a release"
+	}
+	return "on every change"
 }
 
 // joinAnd joins items the way a sentence lists them: "a", "a and b", "a, b and c".

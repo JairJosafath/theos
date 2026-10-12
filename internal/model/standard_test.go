@@ -231,19 +231,44 @@ func TestStandardUpdateNames(t *testing.T) {
 		{"go-standard", "0a1b2c3d", "standard-update/go-standard-0a1b2c3d"},
 		{"go-standard", "v1~é", "standard-update/go-standard-v1--"},
 	} {
-		if got := StandardUpdateBranch(tt.name, tt.ref); got != tt.want {
+		if got := StandardUpdateBranch(tt.name, StandardVersion{Ref: tt.ref}); got != tt.want {
 			t.Errorf("StandardUpdateBranch(%q, %q) = %q, want %q", tt.name, tt.ref, got, tt.want)
 		}
 	}
-	if got := StandardUpdateTitle("go-standard", "v1.1.1"); got != "Update the Standard go-standard to v1.1.1" {
-		t.Errorf("StandardUpdateTitle = %q", got)
+	before := StandardVersion{Ref: "v1.1.1", Checks: ChecksBeforeRelease}
+	if got, want := StandardUpdateBranch("go-standard", before),
+		"standard-update/go-standard-v1.1.1-before-release"; got != want {
+		t.Errorf("StandardUpdateBranch(BeforeRelease) = %q, want %q", got, want)
+	}
+	if got := StandardUpdateBranch("go-standard", StandardVersion{Ref: "v1.1.1", Checks: ChecksEveryChange}); got !=
+		"standard-update/go-standard-v1.1.1" {
+		t.Errorf("StandardUpdateBranch(EveryChange) = %q", got)
+	}
+	for _, tt := range []struct {
+		from, to StandardVersion
+		want     string
+	}{
+		{StandardVersion{Ref: "v1.0.0"}, StandardVersion{Ref: "v1.1.1"}, "Update the Standard go-standard to v1.1.1"},
+		{StandardVersion{Ref: "v1.0.0", Checks: ChecksBeforeRelease}, before,
+			"Update the Standard go-standard to v1.1.1"},
+		{StandardVersion{Ref: "v1.1.1"}, before,
+			"Update the Standard go-standard to v1.1.1, with the full check before release"},
+		{before, StandardVersion{Ref: "v1.1.1", Checks: ChecksEveryChange},
+			"Update the Standard go-standard to v1.1.1, with the full check on every change"},
+	} {
+		if got := StandardUpdateTitle("go-standard", tt.from, tt.to); got != tt.want {
+			t.Errorf("StandardUpdateTitle(%v, %v) = %q, want %q", tt.from, tt.to, got, tt.want)
+		}
+	}
+	if got := before.String(); got != "v1.1.1 with the full check before release" {
+		t.Errorf("String() = %q", got)
 	}
 }
 
 func TestStandardUpdateBody(t *testing.T) {
 	paths := []string{"AGENTS.md", "docs/agents/implementer.md"}
 	closing := "The operator merges this pull request itself once CI passes. " +
-		"Close it to drop the update until the Standard's ref changes again."
+		"Close it to drop the update until the Standard's ref or the Container's checks change again."
 	for _, tt := range []struct {
 		name            string
 		merged, leftOut []string
@@ -253,7 +278,11 @@ func TestStandardUpdateBody(t *testing.T) {
 		{name: "a file merged", merged: []string{"AGENTS.md"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			body := StandardUpdateBody("go-standard", "v1.0.0", "v1.1.1", paths, tt.merged, tt.leftOut)
+			body := StandardUpdateBody("go-standard", StandardVersion{Ref: "v1.0.0"}, StandardVersion{Ref: "v1.1.1"},
+				paths, tt.merged, tt.leftOut)
+			if strings.Contains(body, "full check") {
+				t.Errorf("body of an update that keeps the checks names them:\n%s", body)
+			}
 			for _, want := range []string{"`go-standard`", "`v1.0.0`", "`v1.1.1`", "## Files",
 				"- `AGENTS.md`\n", "- `docs/agents/implementer.md`\n", closing} {
 				if !strings.Contains(body, want) {
@@ -281,6 +310,15 @@ func TestStandardUpdateBody(t *testing.T) {
 				t.Errorf("body doesn't end with the closing line:\n%s", body)
 			}
 		})
+	}
+}
+
+func TestStandardUpdateBodyChangingChecks(t *testing.T) {
+	body := StandardUpdateBody("go-standard", StandardVersion{Ref: "v1.1.1"},
+		StandardVersion{Ref: "v1.1.1", Checks: ChecksBeforeRelease}, []string{".gitea/workflows/check.yaml"}, nil, nil)
+	want := "from `v1.1.1` to `v1.1.1`, and CI from running the full check on every change to running it before release.\n"
+	if !strings.Contains(body, want) {
+		t.Errorf("body lacks %q:\n%s", want, body)
 	}
 }
 

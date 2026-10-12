@@ -19,6 +19,10 @@ type Identity struct {
 	Container      string   `yaml:"container"`
 	Type           string   `yaml:"type"`
 	ScaffoldedFrom []string `yaml:"scaffoldedFrom"`
+	// Checks is when CI ran the full check as the Standard's files were
+	// scaffolded: EveryChange or BeforeRelease. Only a Container with a Standard
+	// has it.
+	Checks string `yaml:"checks,omitempty"`
 }
 
 const identityHeader = "# Written once by C4 Factory when this repository was scaffolded.\n" +
@@ -72,6 +76,9 @@ func CommitMessage(in Input, scaffoldedFrom []string, relationships []model.Appl
 	for _, rel := range relationships {
 		fmt.Fprintf(&b, "%s: %s\n", trailerRelationship, rel)
 	}
+	if checks := scaffoldedChecks(in); checks != "" {
+		fmt.Fprintf(&b, "%s: %s\n", trailerChecks, checks)
+	}
 	return b.String()
 }
 
@@ -83,6 +90,10 @@ type CommitInfo struct {
 	// Relationships are the Relationships whose Connectors were applied. Commits
 	// made before targets were recorded give only their names.
 	Relationships []model.AppliedRelationship
+	// Checks is when CI runs the full check as the Standard's files were
+	// scaffolded; commits made before it was recorded, or of a Container without
+	// a Standard, leave it empty.
+	Checks string
 }
 
 // ErrNotOurs means a commit wasn't made by the operator.
@@ -104,10 +115,21 @@ func ParseCommitMessage(msg string) (CommitInfo, error) {
 			info.ScaffoldedFrom = append(info.ScaffoldedFrom, strings.TrimSpace(value))
 		case trailerRelationship:
 			info.Relationships = append(info.Relationships, model.ParseAppliedRelationship(value))
+		case trailerChecks:
+			info.Checks = strings.TrimSpace(value)
 		}
 	}
 	if info.Container == "" {
 		return CommitInfo{}, ErrNotOurs
 	}
 	return info, nil
+}
+
+// scaffoldedChecks is when CI runs the full check as in's Standard files
+// render, or "" for a Container without a Standard.
+func scaffoldedChecks(in Input) string {
+	if in.Standard == "" {
+		return ""
+	}
+	return model.StandardVersion{Checks: in.Checks}.Normal().Checks
 }
