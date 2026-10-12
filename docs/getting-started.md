@@ -557,8 +557,8 @@ Each Container chooses when its CI runs the app's full `make check`, in
 
 - `EveryChange`, the default: every pull request and every push to `main` runs
   `make check`.
-- `BeforeRelease`: each change runs a light check, `make check-light` (the
-  build, lint and type or vet checks, no tests), trusting the agent's own
+- `BeforeRelease`: each change runs a light check, `make check-light` (lint
+  and the type or vet checks, no tests), trusting the agent's own
   `make check` in its workspace; the full `make check` runs on the commit a
   release will be tagged at, before the tag. Choose it when the full check is
   slow and changes come often.
@@ -590,6 +590,13 @@ git push origin --delete release-check/v1.4.0
 
 A failed `full` job means the commit isn't fit to release: fix it on `main`
 and run the check again on the new commit.
+
+Two parts of this are still being built. A Container takes its checks when it
+is scaffolded, but a change to one already scaffolded doesn't reach its
+repository yet (GitHub issue #896), and a Crew doesn't wait for the `full` job
+before it tags yet (#897). Until they land, choose the checks when you create
+the Container, and with `BeforeRelease` tag by hand as above rather than with
+`tagReleases`.
 
 ## Upgrading
 

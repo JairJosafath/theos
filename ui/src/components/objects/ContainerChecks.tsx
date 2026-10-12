@@ -1,6 +1,7 @@
 // A Container's checks on its page: when CI runs the full check, what the
 // repository runs now, and ChecksApplied when False (its Standard keeps the
-// full check on every change). With UI actions on, the owner picks the mode;
+// full check on every change). The hand-tagging hint waits until the
+// repository runs BeforeRelease, since before then no full job exists. With UI actions on, the owner picks the mode;
 // the CRD's enum judges it and a refusal shows the API server's message
 // (design.md, UI actions).
 
@@ -37,7 +38,7 @@ export function ContainerChecks({ container, writer }: { container: Container; w
           update’s pull request brings the change.
         </p>
       ) : null}
-      {view.asked === 'BeforeRelease' && !view.notApplied ? (
+      {view.asked === 'BeforeRelease' && !view.notApplied && !view.pending ? (
         <p className="panel-text muted">
           A person who tags a release by hand first pushes the branch <span className="mono">release-check/vX.Y.Z</span>{' '}
           at the commit and waits for the <span className="mono">full</span> job to pass.

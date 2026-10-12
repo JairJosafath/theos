@@ -54,7 +54,7 @@ A blocking problem is never a follow-up.
 
 When `.gitea/workflows/check.yaml` has a `full` job, the Container's owner chose
 `BeforeRelease`: green CI on the pull request means `make check-light` passed
-(the build, lint and type or vet checks), not the tests. Take the tests' result
+(lint and the type or vet checks), not the tests. Take the tests' result
 from the implementer's _How it was checked_ and judge the tests in the diff
 yourself; the full `make check` runs on the release's commit before its tag.
 

@@ -67,6 +67,7 @@ describe('ContainerChecks', () => {
   it('says the repository still runs the other mode until the Standard update merges', () => {
     const html = render(undefined, container('BeforeRelease', 'EveryChange'))
     expect(html).toContain('The repository still runs the full check on every change')
+    expect(html).not.toContain('release-check/')
   })
 
   it('shows ChecksApplied when False, with its reason and message', () => {
