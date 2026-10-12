@@ -311,6 +311,8 @@ export interface BriefNeedsYouView {
   issue?: { container: string; number: number; title?: string }
   /** The GitHub issue a request is, for a request waiting in Ask; unset for any other kind. */
   request?: { repository: string; number: number }
+  /** The Container it is about, settled on the Container's page; unset for any other kind. */
+  container?: string
   /** The answer the Brief would give the issue, from the tending round that asked. */
   recommended?: 'retry' | 'close' | 'wait'
   question: string
@@ -349,6 +351,7 @@ export function describeNeedsYou(
     url: failed?.url || requested?.url || undefined,
     issue: issue && { ...issue, title: failed?.title || filed?.title || undefined },
     request,
+    container: entry.kind === 'Container' ? entry.name : undefined,
     recommended: tended?.recommend?.answer,
     question: entry.question.trim(),
     recommend: entry.recommend?.trim() || undefined,

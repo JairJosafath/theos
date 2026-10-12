@@ -15,6 +15,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega/gstruct"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -225,6 +226,50 @@ var _ = Describe("Brief autopilot", func() {
 			}).Should(Succeed())
 			Expect(gitFake.issue(ns, "linter", n).comments).To(ContainElement(
 				ContainSubstring("Tried again for Brief `cel-lens` in round 3")))
+		})
+	}
+
+	// #892: a Container's Standard files left out of an update wait on the
+	// person, whatever the autopilot says.
+	for _, mode := range []string{model.AutopilotOff, model.AutopilotAsk, model.AutopilotOn} {
+		It("in "+mode+", lists a Container whose Standard files are behind under Needs you until they aren't", func() {
+			autopilotBrief(ns, mode)
+			standardContainer(ns, map[string]string{c4v1alpha1.LabelBrief: "cel-lens"})
+			gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
+			bumpStandard(ns, "v1.2.0")
+			gitFake.setChecks(ns, "orders-api", openedUpdate(ns, "v1.2.0").Commit, "success")
+			eventuallyAt(ns, "v1.2.0", makefile)
+
+			Eventually(func(g Gomega) {
+				b := getBrief(g, ns)
+				g.Expect(b.Status.NeedsYou).To(ContainElement(MatchFields(IgnoreExtras, Fields{
+					"Kind": Equal(model.AttentionContainer), "Name": Equal("orders-api"),
+					"Question": Equal("Container `orders-api` is at python-strict v1.2.0, but its updates left out " +
+						"Makefile (at v1.0.0): the repository changed them in lines the Standard changed too."),
+					"Recommend": Equal("Take the Standard's version: annotate the Container " +
+						"`c4.factory.io/standard-take=v1.2.0`."),
+					"Why":   HavePrefix("The Standard's fix (python-strict v1.2.0) reaches the app"),
+					"Since": Not(BeNil()),
+				})))
+				g.Expect(b.Status.NeedsYouWaiting).To(BeNumerically(">=", 1))
+				g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)).To(PointTo(
+					HaveField("Status", metav1.ConditionTrue)))
+				g.Expect(briefEventNotes(g, ns, eventNeedsYou)).To(ContainElement(ContainSubstring("orders-api")))
+			}).Should(Succeed())
+
+			By("dropping it once an update brings the file up to date")
+			bumpStandard(ns, "v1.4.0")
+			gitFake.setChecks(ns, "orders-api", openedUpdate(ns, "v1.4.0").Commit, "success")
+			eventuallyAt(ns, "v1.4.0")
+			Eventually(func(g Gomega) {
+				b := getBrief(g, ns)
+				g.Expect(b.Status.NeedsYou).NotTo(ContainElement(HaveField("Name", "orders-api")))
+				if mode == model.AutopilotOff {
+					g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)).To(PointTo(
+						HaveField("Status", metav1.ConditionFalse)))
+				}
+			}).Should(Succeed())
+			Expect(getBrief(Default, ns).Status.Round).To(Equal(int32(1)), "no autopilot mode takes it")
 		})
 	}
 
