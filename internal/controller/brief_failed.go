@@ -245,12 +245,16 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.B
 // again, for the Crew; one to close is closed. Each gets a comment with the
 // planner's why and the round's prompts. An issue no longer handed back
 // (answered by an earlier try or by a person on the Git host, or gone with
-// its Container) is left as it is. It returns how many it retried and closed
-// now.
+// its Container) is left as it is. A close of an issue that waits on an open
+// one waits for the round's other closes, so a round closes an issue and the
+// Standard change it waits on in either order (#976); one still waiting
+// after them is refused: it gets a comment saying why and stays handed back,
+// and the rest of the round goes on. It returns how many it retried and
+// closed now, and the refused closes as "container#3 (waits on #4)".
 func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1alpha1.Brief,
-	answers []model.FailedAnswer) (retried, closed int, err error) {
+	answers []model.FailedAnswer) (retried, closed int, refused []string, err error) {
 	if len(answers) == 0 {
-		return 0, 0, nil
+		return 0, 0, nil, nil
 	}
 	status := &brief.Status
 	round := int(status.Round)
@@ -263,47 +267,122 @@ func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1alpha1.Br
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
+	// answer answers one issue; a close that waits on an open issue is left
+	// for later, with what it waits on.
+	answer := func(c answering) ([]string, error) {
+		if c.answer.Answer != model.AnswerRetry {
+			blockers, err := c.provider.OpenBlockers(gitCtx, c.repo, c.issue.Number)
+			if err != nil {
+				return nil, fmt.Errorf("reading %s#%d's dependencies: %w", c.answer.Container, c.issue.Number, err)
+			}
+			if len(blockers) > 0 {
+				return blockers, nil
+			}
+		}
+		err := answerFailedIssue(gitCtx, c.provider, c.repo, c.issue, c.answer, round,
+			model.FailedComment(c.answer, brief.Name, round, tending(status), prompts, filed))
+		if errors.Is(err, gitprovider.ErrOpenDependencies) {
+			return []string{"an open issue"}, nil // one opened since it was read
+		}
+		if err != nil {
+			return nil, fmt.Errorf("answering %s#%d: %w", c.answer.Container, c.issue.Number, err)
+		}
+		logf.FromContext(ctx).Info("Answered a failed issue", "container", c.answer.Container,
+			"number", c.issue.Number, "answer", c.answer.Answer)
+		if c.answer.Answer == model.AnswerRetry {
+			retried++
+		} else {
+			closed++
+		}
+		return nil, nil
+	}
+	var waiting []answering
 	for _, a := range answers {
 		if !a.Applies() {
 			continue // a wait or an ask leaves it handed back
 		}
 		forgetFailed(brief, a.Container, a.Issue)
-		var c c4v1alpha1.Container
-		err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c)
-		if apierrors.IsNotFound(err) {
-			continue // gone, and its issues with it
-		}
+		c, ok, err := r.openFailed(ctx, gitCtx, brief, a)
 		if err != nil {
-			return retried, closed, fmt.Errorf("reading Container %s: %w", a.Container, err)
+			return retried, closed, nil, err
 		}
-		provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
-		if err != nil {
-			return retried, closed, err
+		if !ok {
+			continue
 		}
-		repo := provider.Repository(c.Name)
-		issue, err := provider.GetIssue(gitCtx, repo, a.Issue)
-		if errors.Is(err, gitprovider.ErrIssueNotFound) {
-			continue // deleted on the Git host: nothing waits
+		if c.blockers, err = answer(c); err != nil {
+			return retried, closed, nil, err
 		}
-		if err != nil {
-			return retried, closed, fmt.Errorf("reading %s#%d: %w", a.Container, a.Issue, err)
-		}
-		if issue.State != stateOpen || !model.IsFailedIssue(issue.Labels) {
-			continue // answered by an earlier try, or by a person on the Git host
-		}
-		if err := answerFailedIssue(gitCtx, provider, repo, issue, a, round,
-			model.FailedComment(a, brief.Name, round, tending(status), prompts, filed)); err != nil {
-			return retried, closed, fmt.Errorf("answering %s#%d: %w", a.Container, a.Issue, err)
-		}
-		logf.FromContext(ctx).Info("Answered a failed issue", "container", a.Container, "number", a.Issue,
-			"answer", a.Answer)
-		if a.Answer == model.AnswerRetry {
-			retried++
-		} else {
-			closed++
+		if len(c.blockers) > 0 {
+			waiting = append(waiting, c)
 		}
 	}
-	return retried, closed, nil
+	// Each pass closes the waiting issues whose blockers the round closed.
+	for progress := true; progress && len(waiting) > 0; {
+		progress = false
+		var still []answering
+		for _, c := range waiting {
+			if c.blockers, err = answer(c); err != nil {
+				return retried, closed, nil, err
+			}
+			if len(c.blockers) > 0 {
+				still = append(still, c)
+			} else {
+				progress = true
+			}
+		}
+		waiting = still
+	}
+	for _, c := range waiting {
+		if err := c.provider.CommentIssue(gitCtx, c.repo, c.issue.Number,
+			model.CloseRefusedComment(c.answer, brief.Name, round, tending(status), c.blockers)); err != nil {
+			return retried, closed, nil, fmt.Errorf("commenting on %s#%d: %w", c.answer.Container, c.issue.Number, err)
+		}
+		logf.FromContext(ctx).Info("Could not close a failed issue: it waits on open issues",
+			"container", c.answer.Container, "number", c.issue.Number, "blockers", c.blockers)
+		refused = append(refused, fmt.Sprintf("%s#%d (waits on %s)", c.answer.Container, c.issue.Number,
+			strings.Join(c.blockers, ", ")))
+	}
+	return retried, closed, refused, nil
+}
+
+// answering is a failed issue a round answers, on its Git host, and while
+// its close waits, the open issues it waits on.
+type answering struct {
+	answer   model.FailedAnswer
+	provider gitprovider.Provider
+	repo     gitprovider.Repository
+	issue    gitprovider.Issue
+	blockers []string
+}
+
+// openFailed reads the failed issue an answer is to. It is not ok when the
+// issue or its Container is gone, or it is no longer handed back.
+func (r *BriefReconciler) openFailed(ctx, gitCtx context.Context, brief *c4v1alpha1.Brief,
+	a model.FailedAnswer) (answering, bool, error) {
+	var c c4v1alpha1.Container
+	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c)
+	if apierrors.IsNotFound(err) {
+		return answering{}, false, nil // gone, and its issues with it
+	}
+	if err != nil {
+		return answering{}, false, fmt.Errorf("reading Container %s: %w", a.Container, err)
+	}
+	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
+	if err != nil {
+		return answering{}, false, err
+	}
+	repo := provider.Repository(c.Name)
+	issue, err := provider.GetIssue(gitCtx, repo, a.Issue)
+	if errors.Is(err, gitprovider.ErrIssueNotFound) {
+		return answering{}, false, nil // deleted on the Git host: nothing waits
+	}
+	if err != nil {
+		return answering{}, false, fmt.Errorf("reading %s#%d: %w", a.Container, a.Issue, err)
+	}
+	if issue.State != stateOpen || !model.IsFailedIssue(issue.Labels) {
+		return answering{}, false, nil // answered by an earlier try, or by a person on the Git host
+	}
+	return answering{answer: a, provider: provider, repo: repo, issue: issue}, true, nil
 }
 
 // answerFailedIssue retries or closes one failed issue. What marks it

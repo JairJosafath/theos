@@ -379,9 +379,22 @@ func (g *gitea) CommentIssue(ctx context.Context, repo Repository, number int, b
 	return nil
 }
 
-// CloseIssue closes an issue.
+// CloseIssue closes an issue. Gitea refuses one that depends on an open issue
+// with HTTP 412: ErrOpenDependencies.
 func (g *gitea) CloseIssue(ctx context.Context, repo Repository, number int) error {
-	return g.editIssue(ctx, repo, number, map[string]any{"state": stateClosed})
+	payload, _ := json.Marshal(map[string]any{"state": stateClosed})
+	status, data, err := g.do(ctx, http.MethodPatch, issuePath(repo, number), payload)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusPreconditionFailed {
+		return fmt.Errorf("gitea: closing issue %d of %s (HTTP 412): %w", number, repoPath(repo),
+			ErrOpenDependencies)
+	}
+	if status != http.StatusCreated && status != http.StatusOK {
+		return fmt.Errorf("gitea: editing issue %d of %s failed (HTTP %d): %s", number, repoPath(repo), status, apiMessage(data))
+	}
+	return nil
 }
 
 // EditIssueBody replaces an issue's body.

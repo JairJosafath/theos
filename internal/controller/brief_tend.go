@@ -344,13 +344,13 @@ func (r *BriefReconciler) applyTend(ctx context.Context, brief, orig *c4v1alpha1
 	}
 	answers := model.TendAnswers(brief.Spec.Autopilot, plan.FailedAnswers,
 		model.BriefAttention(facts, r.now()).Due, true)
-	if run.retried, run.closed, err = r.answerFailedRemembering(ctx, brief, answers); err != nil {
+	if run.retried, run.closed, run.refused, err = r.answerFailedRemembering(ctx, brief, answers); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "answering the failed issues", err)
 	}
 	if err := r.mergePlan(ctx, brief, task.Status.Commit); err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "merging the plan", err)
 	}
-	r.tendApplied(ctx, brief, task, plan, answers)
+	r.tendApplied(ctx, brief, task, plan, answers, run.refused)
 	return ctrl.Result{}, nil
 }
 
@@ -358,9 +358,9 @@ func (r *BriefReconciler) applyTend(ctx context.Context, brief, orig *c4v1alpha1
 // remembers every answer in status.tended, so an answered issue is raised
 // again only when it changed.
 func (r *BriefReconciler) answerFailedRemembering(ctx context.Context, brief *c4v1alpha1.Brief,
-	answers []model.FailedAnswer) (retried, closed int, err error) {
+	answers []model.FailedAnswer) (retried, closed int, refused []string, err error) {
 	if len(answers) == 0 {
-		return 0, 0, nil
+		return 0, 0, nil, nil
 	}
 	status := &brief.Status
 	failed := make([]model.FailedIssue, 0, len(status.Failed))
@@ -375,16 +375,17 @@ func (r *BriefReconciler) answerFailedRemembering(ctx context.Context, brief *c4
 // and Event. The story's state, the Planned condition and the prompts
 // planned, is the last prompt round's and stays.
 func (r *BriefReconciler) tendApplied(ctx context.Context, brief *c4v1alpha1.Brief, task *c4v1alpha1.Task,
-	plan model.Plan, answers []model.FailedAnswer) {
+	plan model.Plan, answers []model.FailedAnswer, refused []string) {
 	status := &brief.Status
 	summary := model.TendSummary(brief.Spec.Autopilot, plan.Summary, answers)
 	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonTended, Summary: summary})
 	retried, closed, waited, asked := model.TendCounts(answers)
 	r.event(brief, corev1.EventTypeNormal, eventTended, "Tend",
 		fmt.Sprintf("Tending round %d retried %d, closed %d, waits on %d and asks you about %d failed issues, "+
-			"and filed %d issues. %s", status.Round, retried, closed, waited, asked, len(plan.Issues), summary))
+			"and filed %d issues%s. %s", status.Round, retried, closed-len(refused), waited, asked, len(plan.Issues),
+			model.CloseRefused(refused), summary))
 	logf.FromContext(ctx).Info("Applied tending round", "round", status.Round, "retried", retried,
-		"closed", closed, "waited", waited, "asked", asked, "issues", len(plan.Issues))
+		"closed", closed-len(refused), "refused", len(refused), "waited", waited, "asked", asked, "issues", len(plan.Issues))
 }
 
 // modelTended is status.tended as the model sees it.

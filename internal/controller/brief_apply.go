@@ -48,6 +48,9 @@ type roundApply struct {
 	took, skipped int
 	// retried and closed count the failed issues the round answered.
 	retried, closed int
+	// refused are the closes of failed issues the Git host refused, as
+	// "container#3 (waits on #4)".
+	refused []string
 	// uses holds what the round's uses: issues wait for, filled once a
 	// reconcile (brief_uses.go).
 	uses *usesLookup
@@ -167,7 +170,8 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 // records its answers to the round's requests, saying where it stopped.
 func (r *BriefReconciler) answerFailedAndRequests(ctx context.Context, run *roundApply, plan model.Plan) error {
 	var err error
-	if run.retried, run.closed, err = r.answerFailedRemembering(ctx, run.brief, plan.FailedAnswers); err != nil {
+	if run.retried, run.closed, run.refused, err = r.answerFailedRemembering(ctx, run.brief,
+		plan.FailedAnswers); err != nil {
 		return r.applyFailed(ctx, run.brief, "answering the failed issues", err)
 	}
 	if err := r.answerRequests(ctx, run, plan); err != nil {
@@ -717,7 +721,7 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	status.Created = created
 	message := fmt.Sprintf("Applied round %d", status.Round)
 	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionTrue,
-		model.ReasonApplied, message)
+		model.ReasonApplied, model.Clip(message+model.CloseRefused(run.refused), 1000))
 	answered := ""
 	if run.took+run.skipped > 0 {
 		answered = fmt.Sprintf(", took %d and skipped %d reviewers' suggestions", run.took, run.skipped)
@@ -725,6 +729,7 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	if run.retried+run.closed > 0 {
 		answered += fmt.Sprintf(", retried %d and closed %d failed issues", run.retried, run.closed)
 	}
+	answered += model.CloseRefused(run.refused)
 	r.event(brief, corev1.EventTypeNormal, eventPlanned, "Apply",
 		fmt.Sprintf("%s: %d objects, %d issues%s. %s", message, len(plan.Objects), len(plan.Issues), answered,
 			summary))
