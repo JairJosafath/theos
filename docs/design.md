@@ -564,6 +564,14 @@ model and context it needs.
   `Published` say how it went, with the reason; a failure is a Warning Event
   `ReleasePublishFailed`, once per reason, and is retried each poll. See
   [plans/done/release-publishing.md](plans/done/release-publishing.md).
+  A refused token's message names the target repository, and who sets it, as
+  a cause beside the token. The Crew records the GitHub id of the repository
+  it first published to (`status.publishTarget`); a target GitHub now
+  redirects to another name fails `RepositoryRenamed`, and one with the same
+  name but another id fails `RepositoryReplaced`, before anything is written
+  to it, until the target is changed or the annotation
+  `c4.factory.io/accept-repository: <id>` accepts the new one. See
+  [plans/brief-release-target.md](plans/brief-release-target.md).
   With `publishReleases.source.path`, the release also brings the app's
   source as of its tag into that folder of the repository (`.` is the whole
   repository), the factory's own files (`model.FactoryOwnPaths`: `AGENTS.md`,
@@ -924,12 +932,23 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   with a prompt, or by naming the Container in `spec.releases` with a GitHub
   repository and a Secret holding a token for that repository only, which
   also has the Crew publish its releases there. Releases only turn on; a Crew
-  the Brief didn't make is left alone. `status.apps` and the Brief's card show
+  the Brief didn't make is left alone. The Brief owns the target it sets: it keeps
+  the target it last wrote in the Crew's annotation
+  `c4.factory.io/brief-publish-releases`, the Crew's condition `ReleaseTarget`
+  (`SetByBrief`) says the Brief sets it, and the Crew page's release form
+  edits the Brief's entry. A target changed on the Crew itself is neither
+  undone nor used: the Brief leaves it, the Crew publishes nothing while the
+  two disagree (`ReleaseTarget` False `DiffersFromBrief`, `Published` False
+  `TargetDiffersFromBrief`, a Warning Event `ReleaseTargetDiffers`), and the
+  Brief lists the Crew in `status.needsYou` until the Brief's entry or the
+  Crew is changed to match; a changed entry is written to the Crew, as the
+  newest act on the owner. `status.apps` and the Brief's card show
   each app's latest release and where it went, and say plainly when releases
   are off and how to turn them on. See
   [plans/done/brief-releases.md](plans/done/brief-releases.md) and
   [plans/done/brief-patch-releases.md](plans/done/brief-patch-releases.md)
-  and [plans/done/fixes-patch-next.md](plans/done/fixes-patch-next.md).
+  and [plans/done/fixes-patch-next.md](plans/done/fixes-patch-next.md)
+  and [plans/brief-release-target.md](plans/brief-release-target.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for
