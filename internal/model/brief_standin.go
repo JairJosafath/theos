@@ -108,7 +108,7 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 		choices = append(choices, "The stand-in planner files no issue: the namespace has no Container to file it for.")
 	default:
 		for _, p := range prompts {
-			issues = append(issues, [2]string{shortTitle(p), p})
+			issues = append(issues, [2]string{shortTitle(p), oneParagraph(p)})
 		}
 		choices = append(choices, fmt.Sprintf("The stand-in planner files each new prompt as an issue for %s.", container))
 	}
@@ -222,9 +222,10 @@ func standInName(objects []PlanObject, base string) string {
 	return name
 }
 
-// shortTitle is s on one line, cut at a word to standInTitleRunes.
+// shortTitle is s on one line, cut at a word to standInTitleRunes, naming no
+// path under AgentNeverPaths, so the plan check takes it.
 func shortTitle(s string) string {
-	s = oneParagraph(s)
+	s = oneParagraph(withoutNeverPaths(s))
 	if r := []rune(s); len(r) > standInTitleRunes {
 		cut := string(r[:standInTitleRunes])
 		if i := strings.LastIndex(cut, " "); i > 0 {

@@ -213,6 +213,7 @@ func renderBrief(ws BriefWorkspace) string {
 	}
 	fmt.Fprintf(&b, "\n## Git provider\n\nEvery new Container names `gitProviderRef: {name: %s}`.\n", ws.GitProvider)
 	b.WriteString(renderParallel(ws))
+	b.WriteString(renderNeverPaths())
 	if len(ws.Releases) > 0 {
 		b.WriteString("\n## Releases\n\nThe person asked for these Containers' releases. Name each in " +
 			"`plan/releases.yaml`; plan the Container under that name if it isn't in the model yet.\n\n" +

@@ -463,6 +463,28 @@ func TestCheckPlan(t *testing.T) {
 		{"an issue for an unknown Container", func(p *Plan, _ *CurrentModel) {
 			p.Issues[1].Container = "mobile"
 		}, "plan/issues/02-api.md", `Container "mobile", which is not in the namespace or the plan`},
+		{"an issue titled to change AGENTS.md", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].Title = "Add a note to AGENTS.md"
+		}, "plan/issues/01-web.md", "names AGENTS.md in its title, a path no change may make"},
+		{"an issue whose criteria name a role guide", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].Body = "## Goal\n\nThe reviewer checks orders.\n\n## Acceptance criteria\n\n" +
+				"- [ ] `docs/agents/reviewer.md` says to check orders\n"
+		}, "plan/issues/01-web.md", "names docs/agents/reviewer.md in its acceptance criteria, a path no change " +
+			"may make: `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` are the agents' rules and the platform's " +
+			"settings. File no issue for it; say what wasn't planned in plan/summary.md and why in plan/choices.md. " +
+			"Notes for the agents go in docs/project-notes.md"},
+		{"an issue whose criteria name .c4factory.yaml", func(p *Plan, _ *CurrentModel) {
+			p.Issues[1].Body += "- [ ] .c4factory.yaml names the new check.\n"
+		}, "plan/issues/02-api.md", "names .c4factory.yaml in its acceptance criteria"},
+		{"an issue whose body names AGENTS.md outside its criteria", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].Body = "## Goal\n\nList the orders, as AGENTS.md says.\n\n## Acceptance criteria\n\n" +
+				"- [ ] A page lists the orders\n\n## Notes\n\nSee `docs/agents/implementer.md`.\n"
+		}, "", ""},
+		{"an issue writing the project's notes", func(p *Plan, _ *CurrentModel) {
+			p.Issues[0].Title = "Tell the agents how CI runs make check"
+			p.Issues[0].Body = "## Goal\n\nA note for the agents.\n\n## Acceptance criteria\n\n" +
+				"- [ ] `docs/project-notes.md` says CI runs `make check` with Go 1.24\n"
+		}, "", ""},
 		{"an issue without acceptance criteria", func(p *Plan, _ *CurrentModel) {
 			p.Issues[0].Body = "## Goal\n\nA page lists the orders."
 		}, "plan/issues/01-web.md", "MissingAcceptanceCriteria"},
