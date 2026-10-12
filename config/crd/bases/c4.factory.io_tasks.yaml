@@ -260,6 +260,11 @@ spec:
                   since.
                 format: date-time
                 type: string
+              checksRerunDue:
+                description: |-
+                  checksRerunDue means this round pushed again the commit whose checks
+                  failed: their failed jobs run again before the checks are read.
+                type: boolean
               checksReruns:
                 description: |-
                   checksReruns counts the CI runs at this round's commit whose failed jobs

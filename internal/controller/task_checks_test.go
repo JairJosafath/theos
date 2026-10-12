@@ -202,6 +202,55 @@ var _ = Describe("A Task's checks", func() {
 			g.Expect(failedNoCI(&task.Status)).To(BeTrue(), "it costs its issue no try")
 		}).Should(Succeed())
 	})
+
+	It("runs the failed jobs again when a round pushes the commit whose checks failed, and doesn't read the old run", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", killedRun(ns, time.Now().Add(-20*time.Minute)))
+		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			sandboxExists(g, ns, "add-crop-r2-implement")
+		}).Should(Succeed())
+		Expect(gitFake.reruns(ns, "orders-api", 962)).To(BeZero(), "a real failure goes back to the agent")
+
+		By("pushing the same commit again in round 2")
+		finishSandbox(ns, "add-crop-r2-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Found nothing to fix."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(task.Status.ChecksRerunAt).NotTo(BeNil())
+			g.Expect(task.Status.ChecksRerunDue).To(BeFalse())
+			g.Expect(task.Status.ChecksReruns).To(BeZero(), "it doesn't count towards MaxChecksReruns")
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
+		}, 3*time.Second).Should(Succeed(), "the failure from round 1 is not read again")
+
+		By("reviewing once the rerun passes")
+		rerun := killedRun(ns, time.Now().Add(time.Second))
+		rerun.Conclusion = "success"
+		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", rerun)
+		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+		}).Should(Succeed())
+	})
 })
 
 // killedRun is CI run 962 at sha-r1, failed after starting at started.

@@ -280,7 +280,7 @@ enforces.
   implementer pushes again the commit whose checks failed, having found
   nothing to fix, its failed jobs run again before the Task reads the checks;
   a failure from before a rerun is never read as its result
-  ([plan](plans/checks-run-again.md)).
+  ([plan](plans/done/checks-run-again.md)).
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
   repository only; `main` takes no pushes, only the operator merges (the reviewed
