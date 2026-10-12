@@ -281,6 +281,29 @@ func FailedComment(a FailedAnswer, brief string, round int, tending bool, prompt
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// CloseRefusedComment is what the operator writes on a failed issue Brief
+// brief's round answered with a close the Git host refused: the issue waits on
+// open issues, blockers, the round didn't close. It stays handed back.
+func CloseRefusedComment(a FailedAnswer, brief string, round int, tending bool, blockers []string) string {
+	by := fmt.Sprintf("Brief `%s`'s round %d", brief, round)
+	if tending {
+		by = fmt.Sprintf("Brief `%s`'s tending round %d", brief, round)
+	}
+	return fmt.Sprintf("%s answered this with close, but it can't be closed: it waits on %s, which the round "+
+		"didn't close. It stays handed back: close those, or answer it again in a prompt.\n\nThe planner: %s",
+		by, strings.Join(blockers, ", "), oneParagraph(a.Why))
+}
+
+// CloseRefused says, for a round's message, which failed issues it answered
+// with a close the Git host refused, each as "container#3 (waits on #4)".
+func CloseRefused(refused []string) string {
+	if len(refused) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("; could not close %s, which %s handed back: close what %s on first",
+		strings.Join(refused, ", "), plural(len(refused), "stays", "stay"), plural(len(refused), "it waits", "they wait"))
+}
+
 // parseFailedAnswers reads plan/failed.yaml: a list of answers.
 func parseFailedAnswers(s string) ([]FailedAnswer, error) {
 	var answers []FailedAnswer

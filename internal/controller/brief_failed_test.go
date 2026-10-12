@@ -189,6 +189,99 @@ var _ = Describe("Brief failed issues", func() {
 		}).Should(Succeed())
 	})
 
+	// #976: Gitea won't close an issue while one it depends on is open, so a
+	// round closes the issues it closes in dependency order, whatever order
+	// the plan lists them in, and one that still waits on an issue the round
+	// doesn't close is reported once, not retried forever.
+	It("closes an issue and the Standard change it waits on in either order, and reports a refused close", func() {
+		createFactory(ns)
+		briefAgents(ns, 2)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, linterPlan(ns, 0))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+
+		change := func(run string) int {
+			proposal := model.Proposal{Branch: model.ProposalBranch(run), Paths: []string{"Makefile"},
+				Reason: "make dist must build the packages"}
+			title, body := model.StandardChangeIssue(1, run, proposal)
+			gitFake.pushBranch(ns, "linter", proposal.Branch, "sha-"+run)
+			return gitFake.addIssue(ns, "linter", title, body, []string{model.LabelStandardChange, model.LabelNeedsHuman})
+		}
+		byHand := func(rule int, blocker int) int {
+			title, body := model.ByHandIssue(fmt.Sprintf("Lint rule %d", rule), rule, "http://gitea/pulls/2",
+				"linter-1", "Agent `reviewer`", []model.OpenCriterion{{Criterion: "A screenshot", Why: "No editor."}})
+			return gitFake.addIssue(ns, "linter", title, body, []string{model.LabelByHand, model.LabelNeedsHuman},
+				fmt.Sprintf("#%d", blocker))
+		}
+		firstChange := change("linter-1")
+		first := byHand(1, firstChange)
+		secondChange := change("linter-2")
+		second := byHand(2, secondChange)
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Failed).To(HaveLen(4))
+		}).Should(Succeed())
+
+		By("a round closing one issue before its Standard change and another after it")
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Drop rules 1 and 2 and their Makefile changes."} })).
+			To(Succeed())
+		closeAnswer := func(n int) string {
+			return fmt.Sprintf("- {container: linter, issue: %d, answer: close, why: The prompt drops it.}\n", n)
+		}
+		planRound(ns, 2, 1, failedPlan(ns, closeAnswer(first)+closeAnswer(firstChange)+closeAnswer(secondChange)+
+			closeAnswer(second)))
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
+			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Message).To(Equal("Applied round 2"))
+		}).Should(Succeed())
+		for _, n := range []int{first, firstChange, secondChange, second} {
+			issue := gitFake.issue(ns, "linter", n)
+			Expect(issue.State).To(Equal("closed"), "issue #%d", n)
+			Expect(issue.comments).To(ContainElement(ContainSubstring("Closed for Brief `cel-lens` in round 2.")))
+		}
+		Expect(briefEventNotes(Default, ns, eventPlanned)).To(ContainElement(
+			ContainSubstring("retried 0 and closed 4 failed issues")))
+
+		By("a round closing an issue that waits on one the round doesn't close")
+		other := gitFake.addIssue(ns, "linter", "Lint rule 3", linterIssue(3), nil)
+		blocked := byHand(4, other)
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Failed).To(ConsistOf(HaveField("Number", int32(blocked))))
+		}).Should(Succeed())
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() {
+			brief.Spec.Prompts = append(brief.Spec.Prompts, "Drop rule 4 too.")
+		})).To(Succeed())
+		planRound(ns, 3, 1, failedPlan(ns, closeAnswer(blocked)))
+		refused := fmt.Sprintf("could not close linter#%d (waits on #%d), which stays handed back", blocked, other)
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(2)))
+			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Message).To(And(HavePrefix("Applied round 3; "), ContainSubstring(refused)))
+			g.Expect(briefEventNotes(g, ns, eventPlanned)).To(ContainElement(ContainSubstring(refused)))
+			g.Expect(b.Status.Failed).To(ConsistOf(HaveField("Number", int32(blocked))), "it stays handed back")
+		}).Should(Succeed())
+		issue := gitFake.issue(ns, "linter", blocked)
+		Expect(issue.State).To(Equal("open"))
+		Expect(issue.comments).To(ContainElement(And(
+			ContainSubstring("Brief `cel-lens`'s round 3 answered this with close, but it can't be closed"),
+			ContainSubstring(fmt.Sprintf("it waits on #%d", other)))))
+		Expect(issue.comments).NotTo(ContainElement(ContainSubstring("Closed for Brief")))
+		Expect(briefEventNotes(Default, ns, eventApplyFailed)).To(BeEmpty())
+	})
+
 	// #889: a retry of a Standard change merges its proposal branch, so one
 	// whose branch is gone can't start; a close deletes the branch.
 	It("refuses retrying a Standard change whose proposal is gone, and deletes the proposal when one closes it", func() {

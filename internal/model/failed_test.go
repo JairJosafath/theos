@@ -234,6 +234,38 @@ func TestClarifiedBody(t *testing.T) {
 	}
 }
 
+// #976: a close the Git host refuses for an open dependency says so.
+func TestCloseRefused(t *testing.T) {
+	comment := CloseRefusedComment(FailedAnswer{Answer: AnswerClose, Why: "The prompt\ndrops it."}, "lens", 91, false,
+		[]string{"#378", "lens/web#2"})
+	for _, s := range []string{"Brief `lens`'s round 91 answered this with close", "it waits on #378, lens/web#2",
+		"stays handed back", "The planner: The prompt drops it."} {
+		if !strings.Contains(comment, s) {
+			t.Errorf("CloseRefusedComment() lacks %q:\n%s", s, comment)
+		}
+	}
+	if c := CloseRefusedComment(FailedAnswer{Answer: AnswerClose}, "lens", 4, true, []string{"#3"}); !strings.Contains(c,
+		"tending round 4") {
+		t.Errorf("CloseRefusedComment() of a tending round = %q", c)
+	}
+	tests := []struct {
+		refused []string
+		want    string
+	}{
+		{nil, ""},
+		{[]string{"core#367 (waits on #378)"},
+			"; could not close core#367 (waits on #378), which stays handed back: close what it waits on first"},
+		{[]string{"core#1 (waits on #2)", "core#3 (waits on #4)"},
+			"; could not close core#1 (waits on #2), core#3 (waits on #4), which stay handed back: " +
+				"close what they wait on first"},
+	}
+	for _, tt := range tests {
+		if got := CloseRefused(tt.refused); got != tt.want {
+			t.Errorf("CloseRefused(%q) = %q, want %q", tt.refused, got, tt.want)
+		}
+	}
+}
+
 func TestFailedComment(t *testing.T) {
 	prompts := []string{"Try the CLI again now that\nthe checker is merged."}
 	retry := FailedComment(FailedAnswer{Answer: AnswerRetry, Why: "The prompt says so.", Clarify: "Import it."},
