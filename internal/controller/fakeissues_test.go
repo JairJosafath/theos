@@ -28,6 +28,9 @@ type fakeIssue struct {
 	comments  []string
 	// milestone is the title of the milestone the issue was filed in.
 	milestone string
+	// filedLabels are the labels the issue was filed with, before anyone
+	// (a Crew taking it) changed them.
+	filedLabels []string
 }
 
 type fakeReview struct {
@@ -417,7 +420,9 @@ func (p *fakeProvider) CreateIssue(ctx context.Context, repo gitprovider.Reposit
 	p.git.mu.Unlock()
 	n := p.git.addIssue(repo.Owner, repo.Name, title, body, labels)
 	p.git.mu.Lock()
-	s.find(key, n).milestone = milestoneTitle
+	filed := s.find(key, n)
+	filed.milestone = milestoneTitle
+	filed.filedLabels = slices.Clone(labels)
 	late := s.late
 	p.git.mu.Unlock()
 	if late {
