@@ -561,6 +561,39 @@ func (g *gitea) HasBranch(ctx context.Context, repo Repository, branch string) (
 	return false, fmt.Errorf("gitea: reading branch %s of %s failed (HTTP %d): %s", branch, repoPath(repo), status, apiMessage(data))
 }
 
+func (g *gitea) BranchCommit(ctx context.Context, repo Repository, branch string) (string, error) {
+	status, data, err := g.do(ctx, http.MethodGet, branchPath(repo, branch), nil)
+	if err != nil {
+		return "", err
+	}
+	if status == http.StatusNotFound {
+		return "", nil
+	}
+	var b struct {
+		Commit struct {
+			ID string `json:"id"`
+		} `json:"commit"`
+	}
+	if status != http.StatusOK || json.Unmarshal(data, &b) != nil || b.Commit.ID == "" {
+		return "", fmt.Errorf("gitea: reading branch %s of %s failed (HTTP %d): %s", branch, repoPath(repo), status, apiMessage(data))
+	}
+	return b.Commit.ID, nil
+}
+
+// CreateBranch creates branch at commit: Gitea takes a commit ID as the ref
+// to branch from.
+func (g *gitea) CreateBranch(ctx context.Context, repo Repository, branch, commit string) error {
+	payload, _ := json.Marshal(map[string]string{"new_branch_name": branch, "old_ref_name": commit})
+	status, data, err := g.do(ctx, http.MethodPost, "/api/v1/repos/"+repoPath(repo)+"/branches", payload)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusCreated {
+		return fmt.Errorf("gitea: creating branch %s at %s in %s failed (HTTP %d): %s", branch, commit, repoPath(repo), status, apiMessage(data))
+	}
+	return nil
+}
+
 // branchPath is the API path of branch in repo. Gitea takes the branch's
 // slashes as they are; each segment is escaped.
 func branchPath(repo Repository, branch string) string {

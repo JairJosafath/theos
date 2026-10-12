@@ -263,7 +263,7 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, con
 	}
 	var filed *model.Issue
 	if crew.Spec.TagReleases || crew.Spec.PrepareReleases {
-		filed = r.tagRelease(ctx, crew, status, provider, repo, tasks)
+		filed = r.tagRelease(ctx, crew, container, status, provider, repo, tasks)
 	}
 	if crew.Spec.TagReleases {
 		r.noteOverdueRun(ctx, crew, status)

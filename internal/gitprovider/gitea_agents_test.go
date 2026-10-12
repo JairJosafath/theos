@@ -557,3 +557,70 @@ func TestDeleteBranch(t *testing.T) {
 		}
 	}
 }
+
+func TestBranchCommit(t *testing.T) {
+	for _, tc := range []struct {
+		status  int
+		body    string
+		want    string
+		wantErr bool
+	}{
+		{http.StatusOK, `{"name":"release-check/v0.2.0","commit":{"id":"694db57"}}`, "694db57", false},
+		{http.StatusNotFound, `{"message":"branch does not exist"}`, "", false},
+		{http.StatusOK, `{"name":"release-check/v0.2.0"}`, "", true},
+		{http.StatusForbidden, `{"message":"no"}`, "", true},
+	} {
+		var call string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			call = r.Method + " " + r.URL.EscapedPath()
+			w.WriteHeader(tc.status)
+			_, _ = w.Write([]byte(tc.body))
+		}))
+		p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "apps", Credentials: Credentials{Username: "c4admin", Token: rand.Text()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := p.BranchCommit(context.Background(), p.Repository("photo-editor"), "release-check/v0.2.0")
+		srv.Close()
+		if got != tc.want || (err != nil) != tc.wantErr {
+			t.Errorf("HTTP %d %s: BranchCommit() = %q, %v, want %q, error %v", tc.status, tc.body, got, err, tc.want,
+				tc.wantErr)
+		}
+		if want := "GET /api/v1/repos/apps/photo-editor/branches/release-check/v0.2.0"; call != want {
+			t.Errorf("call = %q, want %q", call, want)
+		}
+	}
+}
+
+func TestCreateBranch(t *testing.T) {
+	for _, tc := range []struct {
+		status  int
+		wantErr bool
+	}{
+		{http.StatusCreated, false},
+		{http.StatusConflict, true}, // exists already
+		{http.StatusNotFound, true}, // no such commit
+	} {
+		var call, body string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			data, _ := io.ReadAll(r.Body)
+			call, body = r.Method+" "+r.URL.EscapedPath(), string(data)
+			w.WriteHeader(tc.status)
+		}))
+		p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "apps", Credentials: Credentials{Username: "c4admin", Token: rand.Text()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = p.CreateBranch(context.Background(), p.Repository("photo-editor"), "release-check/v0.2.0", "694db57")
+		srv.Close()
+		if (err != nil) != tc.wantErr {
+			t.Errorf("HTTP %d: CreateBranch() error = %v, want error %v", tc.status, err, tc.wantErr)
+		}
+		if want := "POST /api/v1/repos/apps/photo-editor/branches"; call != want {
+			t.Errorf("call = %q, want %q", call, want)
+		}
+		if want := `{"new_branch_name":"release-check/v0.2.0","old_ref_name":"694db57"}`; body != want {
+			t.Errorf("body = %s, want %s", body, want)
+		}
+	}
+}

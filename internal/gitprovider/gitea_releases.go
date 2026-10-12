@@ -200,6 +200,8 @@ type WorkflowRun struct {
 	Workflow string
 	// Event is what started it: push, pull_request and the like.
 	Event string
+	// Ref is the ref it ran at, such as refs/heads/main or refs/pull/3/head.
+	Ref string
 	// Status is queued, waiting, in_progress or completed.
 	Status string
 	// Conclusion is how a completed run ended: success, failure, cancelled or
@@ -284,14 +286,14 @@ func (g *gitea) listRuns(ctx context.Context, repo Repository, commit string, qu
 			if r.HeadSHA != commit {
 				continue
 			}
-			workflow, _, _ := strings.Cut(r.Path, "@")
+			workflow, ref, _ := strings.Cut(r.Path, "@")
 			started := r.StartedAt
 			// Gitea writes a run no runner has started as starting at the epoch.
 			if started.Unix() <= 0 {
 				started = time.Time{}
 			}
 			out = append(out, giteaRun{path: r.Path, WorkflowRun: WorkflowRun{ID: r.ID, Workflow: workflow,
-				Event: r.Event, Status: r.Status, Conclusion: r.Conclusion, Started: started, URL: r.HTMLURL}})
+				Event: r.Event, Ref: ref, Status: r.Status, Conclusion: r.Conclusion, Started: started, URL: r.HTMLURL}})
 		}
 		if len(runs.WorkflowRuns) < issuePageSize {
 			break
