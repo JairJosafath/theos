@@ -528,4 +528,3 @@ func checksWhen(checks string) string {
 	}
 	return "on every change"
 }
-
