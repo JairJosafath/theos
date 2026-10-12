@@ -114,7 +114,8 @@ const (
 	// left out wait on a person.
 	ConditionStandardUpdated = "StandardUpdated"
 	// ConditionChecksApplied is True when a Container's Standard runs its CI's
-	// full check when the Container's spec.checks asks.
+	// full check when the Container's spec.checks asks, and its repository's CI
+	// already does; False with the update in flight or its stop while not.
 	ConditionChecksApplied = "ChecksApplied"
 )
 
@@ -153,6 +154,9 @@ const (
 	// runs the full check on every change, or only before a release.
 	ReasonEveryChange   = "EveryChange"
 	ReasonBeforeRelease = "BeforeRelease"
+	// ReasonPending: ChecksApplied is False while the Standard update that brings
+	// the Container's checks to its repository hasn't merged yet.
+	ReasonPending = "Pending"
 )
 
 // Labels the operator sets so a resource can be found by its ancestors.

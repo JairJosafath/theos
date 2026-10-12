@@ -1555,3 +1555,53 @@ func TestInheritedChecks(t *testing.T) {
 		t.Errorf("InheritedChecks = %+v, want %+v", got, want)
 	}
 }
+
+// A Standard change whose round left its paths as on main stops at once,
+// reason Blocked, with what the round before was sent back with: nothing is
+// left to review or merge (#929).
+func TestNextTaskStepEmptiedStandardChange(t *testing.T) {
+	done := func(r RunResult) RunState { return RunState{Started: true, Done: true, Result: &r} }
+	facts := TaskFacts{Phase: TaskImplementing, Container: "engine", Round: 2, MaxRounds: 3,
+		AllowedPaths: []string{".gitea/workflows/check.yaml"},
+		Feedback:     "The reviewer asked for changes:\nA Standard change may not skip a CI job.",
+		Run:          done(RunResult{Empty: true})}
+	got := NextTaskStep(facts)
+	if got.Action != ActionFail || got.Reason != ReasonBlocked {
+		t.Fatalf("NextTaskStep() = %+v, want a Blocked failure", got)
+	}
+	for _, want := range []string{"leaves .gitea/workflows/check.yaml as on main", "nothing to merge",
+		"sent back with: The reviewer asked for changes: A Standard change may not skip a CI job."} {
+		if !strings.Contains(got.Message, want) {
+			t.Errorf("Message = %q, want it to contain %q", got.Message, want)
+		}
+	}
+
+	facts.Feedback = ""
+	if got := NextTaskStep(facts); strings.Contains(got.Message, "sent back") {
+		t.Errorf("Message = %q names feedback there was none of", got.Message)
+	}
+	facts.AllowedPaths = nil
+	facts.Run = done(RunResult{Commit: "c", Empty: true})
+	if got := NextTaskStep(facts); got.Action != ActionOpenPR {
+		t.Errorf("a Task that is no Standard change: NextTaskStep() = %+v, want %s", got, ActionOpenPR)
+	}
+}
+
+func TestLeavesAllowedAsOnBase(t *testing.T) {
+	allowed := []string{"Makefile", ".gitea/"}
+	tests := []struct {
+		changed []string
+		want    bool
+	}{
+		{nil, true},
+		{[]string{"README.md"}, true},
+		{[]string{"makefile"}, true},
+		{[]string{"Makefile"}, false},
+		{[]string{"README.md", ".gitea/workflows/check.yaml"}, false},
+	}
+	for _, tt := range tests {
+		if got := LeavesAllowedAsOnBase(tt.changed, allowed); got != tt.want {
+			t.Errorf("LeavesAllowedAsOnBase(%v) = %v, want %v", tt.changed, got, tt.want)
+		}
+	}
+}

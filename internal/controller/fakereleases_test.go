@@ -48,6 +48,15 @@ type fakeReleaseState struct {
 	uploads         map[string]int
 	moduleFailures  map[string]int
 	modulePublishes map[string]int
+	// sources is each repository's files at a tag, by owner/name@tag.
+	sources map[string][]fakeSourceFile
+}
+
+// fakeSourceFile is a file of a repository at a tag, as ReadSource hands it on.
+type fakeSourceFile struct {
+	path string
+	mode gitprovider.SourceMode
+	data string
 }
 
 func (g *fakeGit) releaseState() *fakeReleaseState {
@@ -57,7 +66,7 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			assets: map[string][]byte{}, created: map[string]gitprovider.Milestone{},
 			goMods: map[string]string{}, uploads: map[string]int{}, moduleFailures: map[string]int{},
 			modulePublishes: map[string]int{}, reruns: map[string]int{}, refused: map[string]bool{},
-			commitRuns: map[string][]gitprovider.WorkflowRun{}}
+			commitRuns: map[string][]gitprovider.WorkflowRun{}, sources: map[string][]fakeSourceFile{}}
 	}
 	return g.releases
 }
@@ -317,10 +326,30 @@ func (p *fakeProvider) PublishGoModule(_ context.Context, repo gitprovider.Repos
 	return out, nil
 }
 
-// ReadSource reads nothing yet: no controller reads a repository's source.
+// ReadSource hands on the files setSource gave the repository at tag.
 func (p *fakeProvider) ReadSource(_ context.Context, repo gitprovider.Repository, tag string,
-	_ func(gitprovider.SourceFile, io.Reader) error) error {
-	return fmt.Errorf("the fake can't read the source of %s/%s at %s", repo.Owner, repo.Name, tag)
+	fn func(gitprovider.SourceFile, io.Reader) error) error {
+	p.git.mu.Lock()
+	key := repo.Owner + "/" + repo.Name + "@" + tag
+	files, ok := p.git.releaseState().sources[key]
+	p.git.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("gitea has no archive of %s", key)
+	}
+	for _, f := range files {
+		if err := fn(gitprovider.SourceFile{Path: f.path, Mode: f.mode, Size: int64(len(f.data))},
+			strings.NewReader(f.data)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// setSource gives owner/name the files at tag.
+func (g *fakeGit) setSource(owner, name, tag string, files ...fakeSourceFile) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().sources[owner+"/"+name+"@"+tag] = files
 }
 
 // setGoMod gives owner/name a go.mod declaring module path.

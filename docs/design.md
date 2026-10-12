@@ -556,15 +556,22 @@ model and context it needs.
   `Published` say how it went, with the reason; a failure is a Warning Event
   `ReleasePublishFailed`, once per reason, and is retried each poll. See
   [plans/done/release-publishing.md](plans/done/release-publishing.md).
-  *Planned:* with `publishReleases.source.path`, the release also brings the
-  app's source as of its tag into that folder of the repository, the
-  factory's own files (`AGENTS.md`, `docs/agents/`, `.c4factory.yaml`,
-  `.devcontainer/`, `.gitea/`) left out, tagged `source.tagPrefix` + the tag
-  (by default `<path>/vX.Y.Z`, the tag Go reads in a subfolder). It is one
-  commit on the default branch that changes only that folder, made through
-  GitHub's Git Data API with the same token, fast-forward only; folders of
-  apps sharing the repository may not overlap. The source goes first and the
-  release's tag names the same commit, so `Published` means both are out.
+  With `publishReleases.source.path`, the release also brings the app's
+  source as of its tag into that folder of the repository (`.` is the whole
+  repository), the factory's own files (`model.FactoryOwnPaths`: `AGENTS.md`,
+  `docs/agents/`, `.c4factory.yaml`, `.devcontainer/`, `.gitea/`) left out,
+  tagged `source.tagPrefix` + the tag (by default `<path>/vX.Y.Z`, the tag Go
+  reads in a subfolder). It is one commit on the default branch that replaces
+  only that folder, made through GitHub's Git Data API with the same token,
+  fast-forward only: a branch that moved on is built on at the next poll.
+  Folders of Crews publishing to one repository may not overlap (both fail
+  `FolderOverlaps`; a Brief's `spec.releases` refuses it at admission), and a
+  source tag on another folder tree is left alone (`SourceTagTaken`). The
+  source goes first and the release's tag names the same commit, so
+  `Published` means both are out; `status.lastRelease.publish.source` holds
+  the commit, tag and folder link, with a Normal Event `SourcePublished`. A
+  `go.mod` whose module path or tag `go install` can't find from GitHub
+  raises a Warning Event `SourceNotGoInstallable`, and is published anyway.
   See [plans/release-source.md](plans/release-source.md).
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other
@@ -602,7 +609,7 @@ model and context it needs.
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the agent of a client reads the service it calls.
-- **A project's notes to its agents** (#909). `docs/project-notes.md`, when a
+- **A project's notes to its agents** (#909). *Planned* (#930): `docs/project-notes.md`, when a
   repository has it, is the project's own word to its agents about its
   workspace and ways, such as how CI runs `make check`. No Standard protects
   it, so any issue changes it by a normal pull request; the implement and
@@ -633,7 +640,16 @@ model and context it needs.
   A round turned back for touching files the Task may not change, twice in a
   row, ends the Task `Blocked` instead of spending its last round, and the Task
   that waits on that Standard change ends `Blocked` too, so the Brief lists
-  both issues with the files that hold them. The change's proposal branch
+  both issues with the files that hold them. A Standard change weakens no
+  check: it removes or skips no target, test, lint rule or CI job, not even
+  for some changes. When the issue can't be met without that, the reviewer
+  names the rule and what the author can do instead (for CI that runs the full
+  check less often, the Container's `checks`), and the implementer stops on
+  purpose with a `Blocked:` line saying both rather than undoing the change.
+  A round that leaves every path the change is for as on `main` ends the Task
+  at once, `Blocked`, before any review: there is nothing to merge, and its
+  message carries what the round before was sent back with, which names the
+  rule; the waiting Task ends `Blocked` with it (#929). The change's proposal branch
   (`standard/<task>`) lives as long as its `kind/standard-change` issue is
   open, also after the waiting issue was handed back, so a retry of the
   change finds it; the operator deletes it when the change merges or a
@@ -686,7 +702,12 @@ model and context it needs.
   (`StandardRunsFullChecks`). The Standard's `check.yaml` renders the choice;
   changing it reaches the repository through the Standard update's pull
   request, and `status.standard.checks` records what the repository runs:
-  the scaffold's (also in `.c4factory.yaml`), then each merged update's. An
+  the scaffold's (also in `.c4factory.yaml`), then each merged update's.
+  Until it matches what the Container asks, `ChecksApplied` is False: reason
+  `Pending` naming the update's pull request, the update's stop as its reason
+  (such as `ChecksLeftOut` or `UpdateClosed`), or `AddedAfterScaffold` for a
+  Standard the scaffold didn't have, whose CI runs the full check on every
+  change. An
   update whose change of checks would leave out a file the repository changed
   since, such as a hand-edited `check.yaml`, isn't opened: `StandardUpdated`
   is False (`ChecksLeftOut`) naming the file, and the checks stay as they are
@@ -835,7 +856,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   nothing is. Set back to false, it unpauses only the Crews it marked, so a
   Crew a person paused by hand stays paused. The Brief's card pauses and
   resumes it. See [plans/upgrade-in-place.md](plans/upgrade-in-place.md).
-- **A Brief files no issue that no change may make** (#909). `AGENTS.md`,
+- **A Brief files no issue that no change may make** (#909). *Planned* (#931): `AGENTS.md`,
   `docs/agents/` and `.c4factory.yaml` (`model.AgentNeverPaths`) change
   through no pull request, so `brief.md` names them and a prompt that asks
   for a change to them gets no issue: the round's summary and choices say

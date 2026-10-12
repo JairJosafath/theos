@@ -2,9 +2,12 @@
 # Checks that every base image of the Dockerfiles is pinned by digest
 # (name:tag@sha256:...), so a tag that moves can't change what a release
 # builds (#912). A FROM naming an earlier stage passes; a FROM ${VAR} is checked
-# through VAR's default from an ARG before the first FROM. Prints each FROM that isn't pinned and exits 1.
-# hack/check-pinned-images_test.sh runs it in make check on the Dockerfiles
-# already pinned; add one there when its images are (#919).
+# through VAR's default from an ARG before the first FROM. A default naming
+# c4factory/... is one of our own toolchain images (hack/agent, hack/runner
+# build FROM ${BASE}), which the build always passes and whose own Dockerfile
+# is checked here, so it passes (#919). Prints each FROM that isn't pinned and
+# exits 1. hack/check-pinned-images_test.sh runs it in make check on every
+# Dockerfile Release builds.
 #
 #   hack/check-pinned-images.sh DOCKERFILE...
 set -euo pipefail
@@ -36,7 +39,9 @@ for f in "$@"; do
         if [[ $image =~ ^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$ ]]; then
           resolved=${args[${BASH_REMATCH[1]}]:-}
         fi
-        if ! [[ $resolved =~ ^[^@]+:[^@]+@sha256:[0-9a-f]{64}$ ]]; then
+        if [ "$resolved" != "$image" ] && [[ $resolved == c4factory/* ]]; then
+          :
+        elif ! [[ $resolved =~ ^[^@]+:[^@]+@sha256:[0-9a-f]{64}$ ]]; then
           shown=$image
           [ "$resolved" != "$image" ] && shown+=" (${resolved:-no default})"
           echo "$f: FROM $shown is not pinned as name:tag@sha256:digest" >&2

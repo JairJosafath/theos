@@ -6,11 +6,11 @@
 HACK="$(cd "$(dirname "$0")" && pwd)"
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
-pin() { sed -n 's/^ARG UV_VERSION=//p' "$HACK/$1/Dockerfile"; }
+pin() { sed -n 's/^ARG UV_IMAGE=//p' "$HACK/$1/Dockerfile"; }
 
 base=$(pin toolchain-base)
 go=$(pin toolchain-go)
-[[ $base =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; check "toolchain-base pins uv to a release ($base)" $? 0
+[[ $base =~ ^ghcr\.io/astral-sh/uv:[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}$ ]]; check "toolchain-base pins uv to a release by digest ($base)" $? 0
 check "toolchain-go pins the same uv as toolchain-base" "$go" "$base"
 for d in toolchain-base toolchain-go; do
   grep -q '^COPY --from=uv /uv /uvx /usr/local/bin/$' "$HACK/$d/Dockerfile"

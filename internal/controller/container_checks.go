@@ -102,9 +102,11 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 }
 
 // reportChecksApplied sets ChecksApplied: whether the Container's Standard runs
-// the full check when spec.checks asks. A Container without a Standard, or whose
-// Standard isn't there (ReferencesResolved says so), has no such condition; a
-// read error keeps the last one.
+// the full check when spec.checks asks. Once scaffolded, that is what the
+// repository's CI runs (status.standard.checks): while it differs, the condition
+// is False and says why, the update in flight or the stop. A Container without
+// a Standard, or whose Standard isn't there (ReferencesResolved says so), has no
+// such condition; a read error keeps the last one.
 func (r *ContainerReconciler) reportChecksApplied(ctx context.Context, container *c4v1alpha1.Container,
 	status *c4v1alpha1.ContainerStatus) {
 	if container.Spec.StandardRef == nil {
@@ -124,6 +126,13 @@ func (r *ContainerReconciler) reportChecksApplied(ctx context.Context, container
 	}
 	asked := string(container.Spec.Checks)
 	effective := model.EffectiveChecks(asked, standard.Spec.ChecksBeforeRelease)
+	if status.Phase == c4v1alpha1.ContainerReady {
+		if runs := recordedChecks(status); runs != effective {
+			reason, message := checksNotRunYet(name, status, runs, effective)
+			r.condition(container, status, c4v1alpha1.ConditionChecksApplied, metav1.ConditionFalse, reason, message)
+			return
+		}
+	}
 	if asked == model.ChecksBeforeRelease && effective != asked {
 		r.condition(container, status, c4v1alpha1.ConditionChecksApplied, metav1.ConditionFalse,
 			c4v1alpha1.ReasonStandardRunsFullChecks, fmt.Sprintf(
@@ -144,4 +153,37 @@ func recordedChecks(status *c4v1alpha1.ContainerStatus) string {
 		return model.ChecksEveryChange
 	}
 	return string(status.Standard.Checks)
+}
+
+// checksNotRunYet says why the repository's CI still runs the full check as
+// runs, not as effective, the Container's checks: an update in flight
+// (Pending), its stop, or a Standard the scaffold didn't have.
+func checksNotRunYet(name string, status *c4v1alpha1.ContainerStatus, runs, effective string) (string, string) {
+	now := "CI runs the full check " + checksWhen(runs)
+	if status.Standard == nil || status.Standard.Name != name {
+		return c4v1alpha1.ReasonAddedAfterScaffold, fmt.Sprintf(
+			"The Standard %s was not part of the scaffold, so its updates don't reach this Container; %s", name, now)
+	}
+	update := status.Standard.Update
+	if update == nil || updateChecks(update) != effective {
+		return c4v1alpha1.ReasonPending, fmt.Sprintf("%s until a Standard update brings it %s", now, checksWhen(effective))
+	}
+	if update.Stopped != "" {
+		return update.Stopped, fmt.Sprintf("%s: the Standard update that brings it %s stopped (%s); StandardUpdated says why",
+			now, checksWhen(effective), update.Stopped)
+	}
+	if update.PullRequestURL == "" {
+		return c4v1alpha1.ReasonPending, fmt.Sprintf("%s until the Standard update that brings it %s merges",
+			now, checksWhen(effective))
+	}
+	return c4v1alpha1.ReasonPending, fmt.Sprintf("%s until pull request %s merges", now, update.PullRequestURL)
+}
+
+// updateChecks is when CI runs the full check once update merges; empty reads
+// as EveryChange.
+func updateChecks(update *c4v1alpha1.StandardUpdateStatus) string {
+	if update.Checks == "" {
+		return model.ChecksEveryChange
+	}
+	return string(update.Checks)
 }

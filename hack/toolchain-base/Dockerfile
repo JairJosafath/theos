@@ -6,12 +6,12 @@
 # `make check` use. uv checks, builds and releases a Python project, with the
 # Python its `.python-version` pins, which uv downloads on first use.
 #
-# UV_VERSION is pinned here; hack/toolchain-go/Dockerfile pins the same one,
+# UV_IMAGE is pinned here; hack/toolchain-go/Dockerfile pins the same one,
 # and hack/toolchain-uv_test.sh (make check) fails when they differ.
-ARG UV_VERSION=0.12.21
-FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711
+FROM ${UV_IMAGE} AS uv
 
-FROM node:24-bookworm-slim
+FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates curl git make \

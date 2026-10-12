@@ -647,15 +647,46 @@ func (r *TaskReconciler) reviewRun(ctx context.Context, task *c4v1alpha1.Task,
 	return run.Result
 }
 
-// endRun deletes the current sandbox, once its result is in status, adds
-// what the run cost to the Task's, records the run, and posts when its
-// sessions handed off.
+// endRun adds what the current run cost to the Task's and records the run;
+// its sandbox goes, and the note that its sessions handed off is posted, once
+// writeStatus wrote that status. When the write fails, the next pass finds the
+// run and its result again instead of starting the role's run anew (#922).
 func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) error {
 	ended, err := r.recordRun(ctx, task, status)
 	if err != nil {
 		return err
 	}
+	if pending, ok := ctx.Value(endedRunsKey{}).(*[]endedRun); ok {
+		if ended.sandbox != "" {
+			*pending = append(*pending, ended)
+		}
+		return nil
+	}
 	return r.dropRun(ctx, task, ended)
+}
+
+// endedRunsKey keys the runs a Reconcile ended and writeStatus drops.
+type endedRunsKey struct{}
+
+// withEndedRuns gives ctx a place for the runs endRun ends, which writeStatus
+// drops once the status that records them is written.
+func withEndedRuns(ctx context.Context) context.Context {
+	return context.WithValue(ctx, endedRunsKey{}, &[]endedRun{})
+}
+
+// dropEndedRuns drops the runs endRun ended since the last status write.
+func (r *TaskReconciler) dropEndedRuns(ctx context.Context, task *c4v1alpha1.Task) error {
+	pending, ok := ctx.Value(endedRunsKey{}).(*[]endedRun)
+	if !ok {
+		return nil
+	}
+	runs := *pending
+	*pending = nil
+	var errs []error
+	for _, ended := range runs {
+		errs = append(errs, r.dropRun(ctx, task, ended))
+	}
+	return errors.Join(errs...)
 }
 
 // endedRun is a run recordRun took out of the Task's status, for dropRun.

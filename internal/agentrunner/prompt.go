@@ -131,8 +131,14 @@ as a test that checks what %[1]s produce, and only that file's lines the
 change makes wrong; never weaken or remove a check. Change no other protected
 file, and do not propose another Standard change. The pull request names every
 file you change besides %[1]s.
+A Standard change weakens no check: it removes or skips no target, test, lint
+rule or CI job, not even for some changes. If the issue can't be met without
+that, don't put %[1]s back as on %[3]s: stop on purpose as said below, naming
+the rule and what the issue's author can do instead (for CI that runs the full
+check less often: the Container's checks setting, BeforeRelease). A round that
+leaves %[1]s as on %[3]s ends the Task: it has nothing to merge.
 This holds even if your role guide or AGENTS.md says to stop or to leave such files alone.
-`, strings.Join(job.AllowedPaths, ", "), check)
+`, strings.Join(job.AllowedPaths, ", "), check, job.Base)
 	case job.Issue > 0:
 		fmt.Fprintf(&b, `
 Protected files: %[1]s.
@@ -241,10 +247,16 @@ four checks, decide. Require changes unless all four hold:
   it, such as a test that checks what %[1]s produce;
 - %[3]s works with this change alone, without another branch;
 - it does no more than its issue asks.
+If the issue can't be met without breaking one of these four, say so in the
+summary: which rule, and what the issue's author can do instead (for CI that
+runs the full check less often: the Container's checks setting, BeforeRelease),
+and ask the implementer to stop on purpose with a %[5]q line saying both,
+not to undo the change. Never approve a change that leaves %[1]s as on %[3]s:
+it has nothing to merge.
 The proposal branch named in the issue was only the starting point: %[4]s merged
 it, and the proposal branch is never merged itself. Judge %[4]s alone; never ask
 for the proposal branch to be changed.
-`, strings.Join(job.AllowedPaths, ", "), check, job.Base, job.Branch)
+`, strings.Join(job.AllowedPaths, ", "), check, job.Base, job.Branch, model.BlockedPrefix)
 	} else {
 		fmt.Fprintf(&b, `
 Protected files: %s. Changes to them come through a Standard change, a separate

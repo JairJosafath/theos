@@ -337,6 +337,43 @@ spec:
                       - message: an issue number can't be both accepted and declined
                         rule: '!has(self.accepted) || !has(self.declined) || !self.accepted.exists(n,
                           n in self.declined)'
+                    source:
+                      description: |-
+                        source puts the app's source, as of each release's tag, into a folder
+                        of the repository, with a tag of its own, so go install from GitHub
+                        finds it. The factory's own files are left out. Removing it stops
+                        publishing the source; what is on GitHub stays.
+                      properties:
+                        path:
+                          description: |-
+                            path is the folder, such as engine; "." is the whole repository. The
+                            folder is the app's: each release replaces what it holds. Two Crews
+                            publishing to one repository need folders apart, neither inside the
+                            other.
+                          maxLength: 100
+                          minLength: 1
+                          pattern: ^([.]|[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)$
+                          type: string
+                          x-kubernetes-validations:
+                          - message: path must have no '.', '..' or '.git' folder
+                              in it
+                            rule: self == '.' || !self.matches('(^|/)([.][.]?|[.][gG][iI][tT])(/|$)')
+                        tagPrefix:
+                          description: |-
+                            tagPrefix goes before the Crew's tag in the source's tag. Unset, it is
+                            the path and "/" (engine/v0.6.1, the tag go install looks for), and
+                            nothing for ".".
+                          maxLength: 101
+                          pattern: ^[A-Za-z0-9._/-]*$
+                          type: string
+                          x-kubernetes-validations:
+                          - message: 'tagPrefix must make a git tag name: no leading
+                              ''.'', ''/'' or ''-'', no ''..'', ''//'' or ''/.'',
+                              and no folder ending in .lock'
+                            rule: '!self.matches(''^[./-]|//|/[.]|[.][.]|[.]lock(/|$)'')'
+                      required:
+                      - path
+                      type: object
                     tagPrefix:
                       description: |-
                         tagPrefix goes before the Crew's tag on the target, such as "cli-" when
@@ -360,6 +397,13 @@ spec:
                     == 'Off' || self.exists_one(b, has(b.requests) && has(b.requests.mode)
                     && b.requests.mode != 'Off' && b.github.repository.lowerAscii()
                     == a.github.repository.lowerAscii()))
+                - message: two releases entries of one GitHub repository need source
+                    folders apart, neither inside the other
+                  rule: self.all(a, !has(a.source) || self.all(b, b.container == a.container
+                    || !has(b.source) || b.github.repository.lowerAscii() != a.github.repository.lowerAscii()
+                    || !(a.source.path == '.' || b.source.path == '.' || a.source.path
+                    == b.source.path || a.source.path.startsWith(b.source.path + '/')
+                    || b.source.path.startsWith(a.source.path + '/'))))
             required:
             - idea
             type: object

@@ -1,0 +1,21 @@
+# expect: path must have no '.', '..' or '.git' folder in it
+apiVersion: c4.factory.io/v1alpha1
+kind: Crew
+metadata:
+  name: engine
+  namespace: webshop
+spec:
+  containerRef:
+    name: engine
+  implementer:
+    name: claude-implementer
+  reviewer:
+    name: claude-reviewer
+  tagReleases: true
+  publishReleases:
+    github:
+      repository: acme/cel-lens
+      tokenSecretRef:
+        name: cel-lens-github
+    source:
+      path: .git/hooks

@@ -1,0 +1,15 @@
+# #915: envtest of a Crew publishing its release's source, against the fake GitHub's
+# Git Data API and the fake Gitea archive (internal/controller/crew_publish_source_test.go).
+# The CEL rules' failing cases are in test/invalid (make validate-yaml: All 14 invalid files rejected).
+
+Crew publishing a release's source puts each of two apps' source in its folder of one repository, the other's left alone
+• [9.380 seconds]
+Crew publishing a release's source builds on the new head when another app's commit lands first
+• [3.139 seconds]
+Crew publishing a release's source publishes nothing while two Crews' folders of one repository overlap
+• [7.661 seconds]
+Crew publishing a release's source leaves a source tag someone else made alone
+• [3.497 seconds]
+Ran 4 of 331 Specs in 28.124 seconds
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/controller	28.160s
