@@ -619,8 +619,19 @@ model and context it needs.
   with the difference: the new render of each file the repository still holds
   as the old ref rendered it, and the removal of files the new ref no longer
   renders. A file the repository changed since (a Standard change, or a person)
-  is left out and named in the pull request; a person brings it up to date by
-  hand. No agent takes part: the update is the template's own content, reviewed
+  is merged line by line, three-way, and written when the two changes don't
+  overlap, named in the pull request as merged with the repository's changes
+  (#880). One whose changes overlap is left out and stays in
+  `status.standard.behind`, with the ref its copy was last brought to, through
+  later updates until it is settled: `StandardUpdated` is False, reason
+  `FilesBehind`, the Container is in *Needs a look*, and the Brief that made it
+  lists it in `needsYou`. The person settles it with one annotation naming the
+  ref: `c4.factory.io/standard-take` has the operator open and merge a pull
+  request of the Standard's version (the repository's other changes kept, the
+  lines it drops listed), `c4.factory.io/standard-keep` keeps the repository's
+  (`status.standard.kept`) until the Standard changes the file again. No
+  autopilot takes it for the person. No agent takes part: the update is the
+  template's own content, reviewed
   here where the template changed, and it reaches the agents' rules, which
   agents never change. The operator merges it as admin once CI passes on it,
   with every check `main` requires, and it changes only the planned files.
@@ -628,7 +639,8 @@ model and context it needs.
   again. `status.standard` records the ref the Standard's files are at and the
   update in flight, the condition `StandardUpdated` how it went;
   `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
-  [plans/done/standard-update.md](plans/done/standard-update.md).
+  [plans/done/standard-update.md](plans/done/standard-update.md) and
+  [plans/standard-left-out.md](plans/standard-left-out.md).
 - **The owner chooses when the full check runs.** A Container's
   `spec.checks` is `EveryChange` (the default: CI runs `make check` on every
   pull request and push to main) or `BeforeRelease`: each change runs the
@@ -967,7 +979,8 @@ only when `status` carries the effective one. The plan behind it is
 - ***Needs you*** lists, across projects and grouped by project, every item
   the resources flag for a person (`ui/src/model/needs.ts`): a Brief whose
   `NeedsInput` or `NeedsYou` is True; a Container `Failed`, or whose
-  `StandardUpdated` says its update pull request waits on a person; a Task
+  `StandardUpdated` says its update pull request waits on a person or its
+  Standard files are behind (`FilesBehind`); a Task
   `Blocked`, or `Failed` and not yet answered by a newer Task or a round; a
   Crew whose `Released` leaves a release to a person, or whose
   `status.lastRelease.run` is `Failed`. Each says why in the condition's own
@@ -1040,7 +1053,7 @@ server's message when it refuses one. The UI still enforces nothing.
   | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.autopilot`, `spec.parallel`, `spec.releases` (only after a `test` of the `resourceVersion` it was worked out from; a stale one is refused) |
   | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (set, or removed to stop publishing; only after a `test` of the `resourceVersion` it was worked out from, and a stale one is refused) |
   | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
-  | Container | `PATCH`, merge patch | annotation `c4.factory.io/retry` |
+  | Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take` and `c4.factory.io/standard-keep` |
   | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
   | Standard | `PATCH`, JSON patch | `spec.template.ref` |
 
