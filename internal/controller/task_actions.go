@@ -210,6 +210,13 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 	setProgress(status, model.OpenedPR(progressOf(status), run.Result.Commit))
 	status.Summary = run.Result.Summary
 	status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
+	if failed := run.Result.CheckFailsOnBase; failed != "" {
+		r.comment(ctx, task, status, container, model.CheckFailsOnBaseComment(int(status.Round), failed))
+		if r.Recorder != nil {
+			r.Recorder.Eventf(task, nil, corev1.EventTypeNormal, eventCheckFailsOnBase, "Check", "%s",
+				model.CheckFailsOnBaseEvent(int(status.Round), failed))
+		}
+	}
 	r.progress(task, status, metav1.ConditionTrue, "Checking", step.Message+"; waiting for checks")
 	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
 }

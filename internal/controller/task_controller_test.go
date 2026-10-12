@@ -321,6 +321,40 @@ var _ = Describe("Task", func() {
 		}).Should(Succeed())
 	})
 
+	It("goes on to CI when the check fails on main in the workspace too, saying so", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 2), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1",
+			CheckFailsOnBase: "download engine\ncurl: (22) 404 Not Found\n"}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Round).To(Equal(int32(1)), "no round is spent")
+			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).To(HaveField("Message", ContainSubstring(
+				"`make check` fails on main in the agent's workspace too, so CI decides")))
+		}).Should(Succeed())
+		pr := getTask(Default, ns, "add-crop").Status.PullRequest
+		Expect(gitFake.pullComments(ns, "orders-api", int(pr))).To(ContainElement(And(
+			ContainSubstring("Round 1: `make check` fails in the agent's workspace on main too"),
+			ContainSubstring("curl: (22) 404 Not Found"))))
+		Eventually(func(g Gomega) {
+			var events eventsv1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+			var notes []string
+			for _, e := range events.Items {
+				if e.Regarding.Kind == "Task" && e.Regarding.Name == "add-crop" && e.Reason == eventCheckFailsOnBase {
+					g.Expect(e.Type).To(Equal(corev1.EventTypeNormal))
+					notes = append(notes, e.Note)
+				}
+			}
+			g.Expect(notes).To(Equal([]string{"Round 1: `make check` fails on main in the agent's workspace too, " +
+				"so CI decides (curl: (22) 404 Not Found)"}))
+		}).Should(Succeed())
+	})
+
 	It("fails a Task whose checks ran the runner out of room, costing no round", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)

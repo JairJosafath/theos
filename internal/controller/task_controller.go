@@ -112,6 +112,10 @@ type TaskReconciler struct {
 // handed off to fresh ones.
 const eventSessionHandedOff = "SessionHandedOff"
 
+// eventCheckFailsOnBase is the Normal Event of a round whose check fails on
+// main in the agent's workspace too: CI decides it.
+const eventCheckFailsOnBase = "CheckFailsOnBase"
+
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/finalizers,verbs=update

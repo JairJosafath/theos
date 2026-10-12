@@ -54,6 +54,10 @@ type RunResult struct {
 	Summary string
 	Verdict string
 	Error   string
+	// CheckFailsOnBase is the end of CheckCommand's output on main, set when
+	// the check fails in the agent's workspace on its branch and on main too:
+	// the workspace can't judge the change, so CI decides it.
+	CheckFailsOnBase string
 	// Proposal is a Standard change the agent asks for, besides its own change.
 	Proposal *Proposal
 	// Extra are the unprotected paths a Standard change changes besides its
@@ -1001,7 +1005,41 @@ func implementedStep(f TaskFacts) TaskStep {
 		msg += fmt.Sprintf("; besides its Standard change's files it changes %s, which no Standard protects",
 			joinAnd(res.Extra))
 	}
+	if res.CheckFailsOnBase != "" {
+		msg += "; " + checkFailsOnBase
+	}
 	return TaskStep{Action: ActionOpenPR, Message: msg}
+}
+
+// CheckCommand is the check every Standard's repository has: the agent's
+// workspace runs it after the agent, and CI on the pushed head.
+const CheckCommand = "make check"
+
+// checkFailsOnBase says that the workspace's check fails on main too. It costs
+// no round and no try: CI decides.
+const checkFailsOnBase = "`" + CheckCommand + "` fails on main in the agent's workspace too, so CI decides"
+
+// CheckFailsOnBaseEvent is the Task Event's note of a round whose check fails
+// on main in the agent's workspace too, with the output's last line, clipped.
+func CheckFailsOnBaseEvent(round int, output string) string {
+	return fmt.Sprintf("Round %d: %s (%s)", round, checkFailsOnBase, clipTitle(lastLine(output)))
+}
+
+// CheckFailsOnBaseComment is the pull request's comment for a round whose
+// check fails on main in the agent's workspace too: the workspace and CI
+// disagree, so a person can fix the difference, while CI decides the change.
+func CheckFailsOnBaseComment(round int, output string) string {
+	return fmt.Sprintf("Round %d: `%s` fails in the agent's workspace on main too, before this change, so the "+
+		"workspace can't judge it. CI runs the same check on this head and decides; this costs no round. "+
+		"The workspace and CI disagree, so something CI has, such as a download or a service, is missing from "+
+		"the workspace. Its output on main ends:\n\n````\n%s\n````\n",
+		round, CheckCommand, strings.TrimRight(output, "\n"))
+}
+
+// lastLine is s's last line that isn't blank.
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
 }
 
 // blockedStep waits for the Standard change a Task needs, then resumes or fails it.
