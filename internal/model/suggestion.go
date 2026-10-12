@@ -60,6 +60,10 @@ type SuggestionAnswer struct {
 	Answer    string `yaml:"answer"`
 	// Why says, in plain words, which prompt asked for it and how.
 	Why string `yaml:"why"`
+	// Fix says a taken suggestion fixes a bug or adds or fixes a test, so it
+	// goes into the patch release after the release in progress (F5 of
+	// plans/fixes-patch-next.md).
+	Fix bool `yaml:"fix,omitempty"`
 }
 
 // MaxAnswerWhy is how long an answer's why may be.
@@ -71,7 +75,7 @@ func parseAnswers(s string) ([]SuggestionAnswer, error) {
 	dec := yaml.NewDecoder(strings.NewReader(s))
 	dec.KnownFields(true)
 	if err := dec.Decode(&answers); err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("want a list of {container, issue, answer, why}: %w", err)
+		return nil, fmt.Errorf("want a list of {container, issue, answer, why, fix}: %w", err)
 	}
 	if err := checkCutText(s); err != nil {
 		return nil, err
@@ -80,8 +84,8 @@ func parseAnswers(s string) ([]SuggestionAnswer, error) {
 }
 
 // CheckAnswers returns every reason a plan's answers can't be applied: each
-// answers a waiting suggestion once, takes or skips it and says why, and takes
-// only one that has acceptance criteria.
+// answers a waiting suggestion once, takes or skips it and says why, takes
+// only one that has acceptance criteria, and marks only one it takes a fix.
 func CheckAnswers(answers []SuggestionAnswer, waiting []Suggestion) []Refusal {
 	var out []Refusal
 	refuse := func(format string, args ...any) {
@@ -108,6 +112,9 @@ func CheckAnswers(answers []SuggestionAnswer, waiting []Suggestion) []Refusal {
 					"and skip it saying so", subject)
 			}
 		case AnswerSkip:
+			if a.Fix {
+				refuse("skips %s as a fix; only a suggestion taken is a fix", subject)
+			}
 		default:
 			refuse("answers %s %q; an answer is %s or %s", subject, a.Answer, AnswerTake, AnswerSkip)
 		}
