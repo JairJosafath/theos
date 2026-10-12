@@ -65,7 +65,10 @@ name and a breadcrumb to what it belongs to; the kind's lifecycle as a stepper
 or Blocked off the path; what a person does now, as an action the UI takes or
 the exact next step (a link, or a `kubectl` line with a copy button); then its
 conditions, timeline, children and links out. The Task page adds its rounds,
-checks, review and agent runs; the Crew page its slots, Tasks and last release.
+checks, review and agent runs; the Crew page its slots, Tasks and last release;
+the Container page, for a Container with a Standard, when CI runs its full
+check (`spec.checks`), what its repository runs now and `ChecksApplied` when
+False, with a choice that sets it when actions are on.
 
 **Versions.** The footer of every page shows the UI's version (stamped by its
 build, `dev` otherwise), the operator's and the chart's (from Project status,
@@ -157,6 +160,7 @@ takes more writes, each one method, path, content type and body shape:
 | Crew      | `PATCH`, JSON patch  | `add` of any of `/spec/paused`, `/spec/parallel`, `/spec/tagReleases`, `/spec/prepareReleases`, `/spec/publishReleases` (or `remove` of it), `/spec/publishReleases` only after a `test` of `/metadata/resourceVersion`, and a Crew changed since that version is refused with `409 Conflict` |
 | Crew      | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` alone                                                                                                                                                                                                                                                |
 | Container | `PATCH`, merge patch | annotation `c4.factory.io/retry` alone                                                                                                                                                                                                                                                        |
+| Container | `PATCH`, JSON patch  | `add` at `/spec/checks`                                                                                                                                                                                                                                                                       |
 | Task      | `POST`, JSON         | `spec.kind: Implement` with `containerRef`, `agentRef`, `reviewerRef`, `goal`; only its name and spec go upstream                                                                                                                                                                             |
 | Standard  | `PATCH`, JSON patch  | `add` at `/spec/template/ref`                                                                                                                                                                                                                                                                 |
 

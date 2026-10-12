@@ -518,7 +518,7 @@ catalog:
         supportedTypes: [operator]
     - kind: Standard
       name: go-standard
-      ref: v1.2.0
+      ref: v1.2.1
       spec:
         displayName: Go quality standard
         description: Strict golangci-lint, gofumpt, race-checked tests, role guides for agents and the make check CI.
@@ -530,7 +530,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: go-operator-standard
-      ref: v1.1.0
+      ref: v1.1.1
       spec:
         displayName: Go operator quality standard
         description: kubebuilder's golangci-lint, gofmt and goimports, envtest tests, generated files kept up to date, role guides for agents and the make check CI.
@@ -540,7 +540,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: ts-standard
-      ref: v1.4.0
+      ref: v1.4.1
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
@@ -550,7 +550,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard
-      ref: v1.2.0
+      ref: v1.2.1
       spec:
         displayName: Python quality standard
         description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.

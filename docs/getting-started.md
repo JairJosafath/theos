@@ -550,6 +550,47 @@ kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions[?(@.type
 
 Releases still publish while requests can't be read.
 
+## When CI runs the full check
+
+Each Container chooses when its CI runs the app's full `make check`, in
+`spec.checks`:
+
+- `EveryChange`, the default: every pull request and every push to `main` runs
+  `make check`.
+- `BeforeRelease`: each change runs a light check, `make check-light` (the
+  build, lint and type or vet checks, no tests), trusting the agent's own
+  `make check` in its workspace; the full `make check` runs on the commit a
+  release will be tagged at, before the tag. Choose it when the full check is
+  slow and changes come often.
+
+```bash
+kubectl -n webshop patch container orders-api --type merge -p '{"spec":{"checks":"BeforeRelease"}}'
+```
+
+With UI actions on, the Container's page sets it too (*When CI runs the full
+check*). The change reaches the repository through the Standard update's pull
+request, which the factory merges once its checks pass; the page says when the
+repository still runs the other mode. It takes effect only when the Container's
+Standard can do it (`checksBeforeRelease: true` on the Standard: go-standard,
+go-operator-standard, ts-standard and python-standard): otherwise CI keeps the
+full check on every change, and the Container's `ChecksApplied` condition is
+False, reason `StandardRunsFullChecks`, which the page shows.
+
+With `BeforeRelease`, a Crew that tags releases (`tagReleases`) doesn't tag at
+once: it pushes the branch `release-check/vX.Y.Z` at the release's commit, waits
+for its `full` job, tags once it passes and deletes the branch. If you tag by
+hand, do the same, since nothing else runs the full check:
+
+```bash
+git push origin <commit>:refs/heads/release-check/v1.4.0
+# wait for "check / full (push)" on that commit to pass in the repository's Actions
+git tag v1.4.0 <commit> && git push origin v1.4.0
+git push origin --delete release-check/v1.4.0
+```
+
+A failed `full` job means the commit isn't fit to release: fix it on `main`
+and run the check again on the new commit.
+
 ## Upgrading
 
 Upgrade whenever a release is out, while Tasks run; there is no need to

@@ -36,6 +36,20 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
   `AGENTS.md`) change only through a Standard change, below. The Git host
   refuses them in a normal pull request.
 
+## When CI runs the full check
+
+The Container's owner chooses it (its `checks` setting). When
+`.gitea/workflows/check.yaml` has a `full` job, the choice is `BeforeRelease`:
+CI runs only `make check-light` (the build, lint and type or vet checks; no
+tests) on your pull request and on `main`, so your own `make check` before every
+commit is the only full check your change gets until a release. The full
+`make check` runs on a push to `release-check/vX.Y.Z` at the commit a release
+will be tagged at, and the factory tags only once that `full` job passes. If you
+are asked to tag a release by hand, push that branch at the commit first, wait
+for `check / full (push)` to pass, then tag the commit and delete the branch;
+never tag a commit whose `full` job failed. Without a `full` job, CI runs
+`make check` on every change.
+
 ## Standard changes
 
 If the issue truly needs a change to a protected file, make it in the same
