@@ -116,6 +116,9 @@ spec:
             port: {{ .Values.manager.healthProbe.port }}
           initialDelaySeconds: 15
           periodSeconds: 20
+          # A busy single-node host can keep a healthy process from answering
+          # within the 1 s default; only a real hang should restart it (#957).
+          timeoutSeconds: 5
         name: manager
         ports:
         - containerPort: {{ .Values.manager.healthProbe.port }}
@@ -127,6 +130,7 @@ spec:
             port: {{ .Values.manager.healthProbe.port }}
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 5
         resources:
           {{- if .Values.manager.resources }}
           {{- toYaml .Values.manager.resources | nindent 10 }}

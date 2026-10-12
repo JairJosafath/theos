@@ -67,7 +67,9 @@ func getTask(g Gomega, ns, name string) *c4v1alpha1.Task {
 	return task
 }
 
-// sandboxExists reports whether the operator created a Sandbox.
+// sandboxExists reports whether the operator created a Sandbox. A caller
+// waiting on it past a chain of reconciles gives it wholeRound, not the
+// suite's 10s default (#942).
 func sandboxExists(g Gomega, ns, name string) *unstructured.Unstructured {
 	sandbox := newSandbox()
 	g.Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed())
@@ -81,7 +83,8 @@ func sandboxExists(g Gomega, ns, name string) *unstructured.Unstructured {
 func finishSandbox(ns, name, task string, result *agentrunner.Result, reason string) {
 	GinkgoHelper()
 	sandbox := newSandbox()
-	Eventually(func(g Gomega) { g.Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed()) }).Should(Succeed())
+	Eventually(func(g Gomega) { g.Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed()) }).
+		WithTimeout(wholeRound).Should(Succeed())
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name, Labels: map[string]string{LabelTask: task},
 			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
