@@ -127,6 +127,8 @@ const eventCheckFailsOnBase = "CheckFailsOnBase"
 
 // Reconcile takes the next step of a Task.
 func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	// A run a step ends keeps its sandbox until the status write records it.
+	ctx = withEndedRuns(ctx)
 	// Read the live Task: steps have side effects (sandboxes, merges), and the cache
 	// can lag behind our own last status write.
 	var task c4v1alpha1.Task
@@ -587,13 +589,16 @@ func (r *TaskReconciler) writeStatus(ctx context.Context, task *c4v1alpha1.Task,
 		status.PhaseChangedAt = &now
 	}
 	status.History = recordTransition(status, r.now())
-	if equality.Semantic.DeepEqual(&task.Status, status) {
-		return nil
+	if !equality.Semantic.DeepEqual(&task.Status, status) {
+		orig := task.DeepCopy()
+		task.Status = *status
+		// A stale write fails with a conflict and the Task is reconciled again.
+		if err := r.Status().Patch(ctx, task, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{})); err != nil {
+			return err
+		}
 	}
-	orig := task.DeepCopy()
-	task.Status = *status
-	// A stale write fails with a conflict and the Task is reconciled again.
-	return r.Status().Patch(ctx, task, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{}))
+	// The ended runs' results are in the written status: their sandboxes can go.
+	return r.dropEndedRuns(ctx, task)
 }
 
 // recordTransition adds the Task's current phase, round and Progressing reason to

@@ -397,6 +397,35 @@ var _ = Describe("Task", func() {
 		}, "2s").Should(Succeed())
 	})
 
+	// #922: a review's verdict ends its run once, however often the status
+	// write that records it fails: the retry finds the run, not a new review.
+	It("keeps a review's verdict when the status write after it fails", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1"}, "")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
+		taskKey := client.ObjectKey{Namespace: ns, Name: "add-crop"}
+		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1alpha1.Task) bool { return t.Status.Round == 2 })
+		finishSandbox(ns, "add-crop-r1-review-a1", "add-crop", &agentrunner.Result{Role: "review", Verdict: "changes",
+			Summary: "Test an empty image.", CostMilliUSD: new(int64(40))}, "")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r2-implement") }).Should(Succeed())
+		Expect(taskStatusFaults.pending(taskKey)).To(BeZero())
+		task := getTask(Default, ns, "add-crop")
+		Expect(task.Status.Round).To(Equal(int32(2)))
+		Expect(task.Status.CostMilliUSD).To(Equal(int64(40)), "the review's cost is counted once")
+		roles := make([]string, 0, len(task.Status.Runs))
+		for _, run := range task.Status.Runs {
+			roles = append(roles, fmt.Sprintf("r%d-%s", run.Round, run.Role))
+		}
+		Expect(roles).To(Equal([]string{"r1-implement", "r1-review"}), "no second review ran")
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "add-crop-r1-review-a1"), newSandbox()))).To(BeTrue())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "add-crop-r1-review-a2"), newSandbox()))).To(BeTrue())
+	})
+
 	It("fails a Task whose checks ran the runner out of room, costing no round", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
