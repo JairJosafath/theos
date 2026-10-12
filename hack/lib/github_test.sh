@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL), for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -737,13 +737,15 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   gh_api() {
     local a
     [ "$1" = graphql ] && { echo "$PR"; return; }
+    # compare BASE...HEAD: how far the head is behind its base, BEHIND (0 by default).
+    [[ $1 == repos/*/compare/* ]] && { echo "$1" >>"$T/compared"; [ "${BEHIND:-0}" != fail ] || return 1; echo "${BEHIND:-0}"; return; }
     for a in "$@"; do case $a in repos/*/issues/*) a=${a##*/}; [[ " $* " == *" .state "* ]] && { [ -e "$T/open-$a" ] && echo open || echo closed; } || cat "$T/body-$a" 2>/dev/null; return 0 ;; esac; done
     return 1
   }
   gh_token() { :; }
   gh() { echo "gh $*" >>"$T/merged"; }
   pr() { jq -n --arg b "$1" --argjson c "${2:-[]}" --arg m "${3:-feat: plan}" \
-    '{body: $b, closingIssuesReferences: {nodes: [$c[] | {number: .}]}, commits: {nodes: [{commit: {message: $m}}]}}'; }
+    '{body: $b, baseRefName: "main", headRefOid: "h1", closingIssuesReferences: {nodes: [$c[] | {number: .}]}, commits: {nodes: [{commit: {message: $m}}]}}'; }
   rm -f "$T/merged"
   out=$(PR=$(pr $'Refs #7\n\n#9 (the prompt path; its PR closes #7)' '[7]') gh_merge 12 2>&1)
   check "merge: refuses Refs #7 plus prose that closes #7" "$? $(cat "$T/merged" 2>/dev/null)" "1 "
@@ -758,10 +760,10 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "merge: closingIssuesReferences alone refuses" "$? $out" '1 github: #12 says Refs #7, but GitHub would close #7 on merge (closingIssuesReferences); drop the link or the closing word before it'
   check "merge: nothing merged while refused" "$(cat "$T/merged" 2>/dev/null)" ""
   out=$(PR=$(pr $'Refs #7\n\nSteps: #8 (finishes #7), #9\nCloses #70' '[70]') gh_merge 12 2>&1)
-  check "merge: only Refs #7 merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 12 --repo $C4_GITHUB_REPO --merge"
+  check "merge: only Refs #7 merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 12 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
   rm -f "$T/merged"
   out=$(PR=$(pr 'Closes #565' '[565]') gh_merge 13 2>&1)
-  check "merge: a step's Closes #N merges" "$? $(cat "$T/merged")" "0 gh pr merge 13 --repo $C4_GITHUB_REPO --merge"
+  check "merge: a step's Closes #N merges" "$? $(cat "$T/merged")" "0 gh pr merge 13 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
   gh_merge abc 2>/dev/null; check "merge: bad argument" $? 1
   rm -f "$T/merged"
   out=$(PR=$(pr $'Closes #5\n\nFollows #8; its PR closes #9.' '[5, 9]') gh_merge 15 2>&1)
@@ -773,10 +775,10 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "merge: a linked issue with no Closes line refuses" "$? $out" '1 github: #15 would close #9 on merge (closingIssuesReferences), and no line starts with Closes #9; unlink #9, or put Closes #9 on its own line'
   check "merge: nothing merged while prose closes" "$(cat "$T/merged" 2>/dev/null)" ""
   out=$(PR=$(pr $'Closes #5\n  fixes: #6\nResolves '"$C4_GITHUB_REPO#7" '[5, 6, 7]') gh_merge 15 2>&1)
-  check "merge: only Closes, Fixes, Resolves lines merge" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 15 --repo $C4_GITHUB_REPO --merge"
+  check "merge: only Closes, Fixes, Resolves lines merge" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 15 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
   rm -f "$T/merged"
   out=$(PR=$(pr "Closes https://github.com/$C4_GITHUB_REPO/issues/5" '[5]') gh_merge 15 2>&1)
-  check "merge: a Closes line with the issue URL merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 15 --repo $C4_GITHUB_REPO --merge"
+  check "merge: a Closes line with the issue URL merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 15 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
   rm -f "$T/merged"
   printf 'Depends on #571\nDepends on #572\n' >"$T/body-570"
   touch "$T/open-571" "$T/open-572"
@@ -784,7 +786,18 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "merge: refuses closing a parent while another step is open" "$? $(grep -c 'its step #571 is open' <<<"$out") $(cat "$T/merged" 2>/dev/null)" "1 1 "
   rm "$T/open-571"
   out=$(PR=$(pr $'Closes #572\nCloses #570' '[572, 570]') gh_merge 14 2>&1)
-  check "merge: the last step closes its parent" "$? $(cat "$T/merged")" "0 gh pr merge 14 --repo $C4_GITHUB_REPO --merge"
+  check "merge: the last step closes its parent" "$? $(cat "$T/merged")" "0 gh pr merge 14 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  # A pull request behind main is refused: green alone, it may be red merged.
+  rm -f "$T/merged" "$T/compared"
+  out=$(BEHIND=3 PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
+  check "merge: refuses a pull request behind main" "$? $out $(cat "$T/merged" 2>/dev/null)" \
+    '1 github: #16 is 3 commit(s) behind main: merge main into its branch (git fetch origin && git merge origin/main), rerun make check, push, and merge again '
+  check "merge: compares main with the head it merges" "$(cat "$T/compared")" "repos/$C4_GITHUB_REPO/compare/main...h1"
+  out=$(BEHIND=fail PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
+  check "merge: refuses when GitHub can't say whether it is behind" "$? $out $(cat "$T/merged" 2>/dev/null)" \
+    '1 github: #16: could not ask GitHub whether it is behind main; merge refused '
+  out=$(BEHIND=0 PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
+  check "merge: merges a pull request that contains main" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
   exit $fail
 ) || fail=1
 exit $fail
