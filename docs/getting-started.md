@@ -19,7 +19,7 @@ You need:
 - the GitHub CLI (`gh`), logged in, while this repository, the chart and the
   images on GHCR are private.
 
-The commands use the release `0.21.1`; for a later one, change `VERSION`. Run
+The commands use the release `0.21.2`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
 match the release (`gh` clones it while the repository is private). From the
 release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
@@ -27,7 +27,7 @@ its own template tags and agent image, and the samples make neither; `0.3.0`'s
 samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
-VERSION=0.21.1
+VERSION=0.21.2
 gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 ```
 
@@ -469,6 +469,12 @@ due a week later, so once the round's issues are merged the Crew prepares the
 release (version files and a changelog), tags it and its release run makes the
 Gitea release. Nothing on the Crew needs editing by hand.
 
+The prepare step waits for the Tasks at work to end, so the changelog lists
+what the tag carries. Until they do, the Crew's `Released` condition is
+`False`, reason `PrepareWaitsForTasks`, and the Crew's message adds "N ready
+issues wait for a release to be prepared": it starts no new ready issue but an
+urgent one until the release is prepared, then picks them up again.
+
 1. **Ask for it.** If the Brief's choices don't say a Container ships
    releases, add a prompt, such as "Release the CLI.". The next round turns
    releases on and files at least one issue for it: a release with no merged
@@ -655,7 +661,7 @@ wait for a quiet moment. Use the new `VERSION` and the same values as the
 install (`--reuse-values` keeps them):
 
 ```bash
-VERSION=0.21.1
+VERSION=0.21.2
 helm upgrade c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
   -n c4-factory-system --reuse-values --wait --timeout 10m
 ```
