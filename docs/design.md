@@ -678,7 +678,11 @@ model and context it needs.
   `status.standard.behind`, with the ref its copy was last brought to, through
   later updates until it is settled: `StandardUpdated` is False, reason
   `FilesBehind`, the Container is in *Needs a look*, and the Brief that made it
-  lists it in `needsYou`. The person settles it with one annotation naming the
+  lists it in `needsYou`. Where the choice is asked, the Standard's change to
+  each such file shows: the diff of the Standard's renders of it at its ref
+  and at the new one, and the repository's lines a take would drop, per file
+  in the update's pull request and, bounded, in `status.standard.behind` and
+  on the Container's page (#975). The person settles it with one annotation naming the
   ref: `c4.factory.io/standard-take` has the operator open and merge a pull
   request of the Standard's version (the repository's other changes kept, the
   lines it drops listed), `c4.factory.io/standard-keep` keeps the repository's
@@ -696,8 +700,9 @@ model and context it needs.
   Container's checks, change again. `status.standard` records the ref the Standard's files are at and the
   update in flight, the condition `StandardUpdated` how it went;
   `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
-  [plans/done/standard-update.md](plans/done/standard-update.md) and
-  [plans/standard-left-out.md](plans/standard-left-out.md).
+  [plans/done/standard-update.md](plans/done/standard-update.md),
+  [plans/standard-left-out.md](plans/standard-left-out.md) and
+  [plans/standard-left-out-diff.md](plans/standard-left-out-diff.md).
 - **The owner chooses when the full check runs.** A Container's
   `spec.checks` is `EveryChange` (the default: CI runs `make check` on every
   pull request and push to main) or `BeforeRelease`: each change runs the
