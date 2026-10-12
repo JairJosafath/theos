@@ -1495,7 +1495,7 @@ func TestReviewIsShownTheChangedImages(t *testing.T) {
 	added, changed := encoded(t, 936, 189, png.Encode), encoded(t, 640, 480, jpg)
 	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)
 	implement := filesAgent{files: map[string]string{"added.png": string(added), "shot.jpg": string(changed),
-		"Logo.SVG": string(svg), "broken.gif": "not a gif", "notes.md": "no image\n"}, summary: "done"}
+		"Logo.SVG": string(svg), "broken.gif": "not a gif", "readme-extra.md": "no image\n"}, summary: "done"}
 	if got := Run(ctx, testJob(t, url, RoleImplement, 1), implement, t.TempDir()); got.Error != "" {
 		t.Fatalf("implement = %+v", got)
 	}
@@ -1513,7 +1513,7 @@ func TestReviewIsShownTheChangedImages(t *testing.T) {
 			t.Errorf("review prompt lacks %q:\n%s", want, agent.prompt)
 		}
 	}
-	for _, unwanted := range []string{"same.png", "notes.md"} {
+	for _, unwanted := range []string{"same.png", "readme-extra.md"} {
 		if strings.Contains(agent.prompt, unwanted) {
 			t.Errorf("review prompt lists %s, which the change doesn't add or change as an image", unwanted)
 		}
