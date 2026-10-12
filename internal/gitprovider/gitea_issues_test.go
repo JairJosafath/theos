@@ -1,10 +1,12 @@
 package gitprovider
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -147,10 +149,19 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 		}
 	})
 	mux.HandleFunc("PATCH "+repo+"/issues/{n}", func(w http.ResponseWriter, r *http.Request) {
-		if i := issue(w, r); i != nil {
-			i.edit(r)
-			reply(w, http.StatusCreated, i.giteaIssue)
+		i := issue(w, r)
+		if i == nil {
+			return
 		}
+		data, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(data), `"state":"closed"`) && h.openDependency(i) {
+			reply(w, http.StatusPreconditionFailed, map[string]string{
+				"message": "cannot close this issue or pull request because it still has open dependencies"})
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(data))
+		i.edit(r)
+		reply(w, http.StatusCreated, i.giteaIssue)
 	})
 	mux.HandleFunc("GET "+repo+"/issues/{n}/labels", func(w http.ResponseWriter, r *http.Request) {
 		if i := issue(w, r); i != nil {
@@ -202,7 +213,7 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 	})
 	mux.HandleFunc("GET "+repo+"/issues/{n}/dependencies", func(w http.ResponseWriter, r *http.Request) {
 		if i := issue(w, r); i != nil {
-			reply(w, http.StatusOK, i.deps)
+			reply(w, http.StatusOK, h.liveDeps(i))
 		}
 	})
 	mux.HandleFunc("POST "+repo+"/issues/{n}/dependencies", func(w http.ResponseWriter, r *http.Request) {
@@ -242,6 +253,23 @@ func newIssueHost(t *testing.T) (*issueHost, Provider) {
 }
 
 // handleReleases serves the milestone edits and tags of the issueHost.
+// liveDeps are an issue's dependencies as Gitea sees them now: one of the
+// host's own repository with its state.
+func (h *issueHost) liveDeps(i *hostIssue) []giteaIssue {
+	out := slices.Clone(i.deps)
+	for k, d := range out {
+		if of := h.issues[d.Number]; d.Repository.FullName == "webshop/orders-api" && of != nil {
+			out[k].State = of.State
+		}
+	}
+	return out
+}
+
+// openDependency reports whether an issue depends on an open one.
+func (h *issueHost) openDependency(i *hostIssue) bool {
+	return slices.ContainsFunc(h.liveDeps(i), func(d giteaIssue) bool { return d.State == "open" })
+}
+
 // edit applies the fields an issue PATCH sets.
 func (i *hostIssue) edit(r *http.Request) {
 	var body struct {
@@ -571,6 +599,35 @@ func TestOpenBlockers(t *testing.T) {
 	got, err := p.OpenBlockers(ctx, repo, 1)
 	if err != nil || !reflect.DeepEqual(got, []string{"#3", "webshop/web#7"}) {
 		t.Errorf("OpenBlockers() = %v, %v", got, err)
+	}
+}
+
+// Gitea won't close an issue while one it depends on is open (#976):
+// CloseIssue says so with ErrOpenDependencies, and closes it once the
+// dependency is closed.
+func TestCloseIssueWithOpenDependencies(t *testing.T) {
+	_, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	for _, title := range []string{"Use the new lint rule", "Standard change"} {
+		if _, err := p.CreateIssue(ctx, repo, title, "", nil, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := p.AddIssueDependency(ctx, repo, 1, repo, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.CloseIssue(ctx, repo, 1); !errors.Is(err, ErrOpenDependencies) {
+		t.Fatalf("CloseIssue() of an issue with an open dependency error = %v, want ErrOpenDependencies", err)
+	}
+	if err := p.CloseIssue(ctx, repo, 2); err != nil {
+		t.Fatalf("CloseIssue() of the dependency error = %v", err)
+	}
+	if err := p.CloseIssue(ctx, repo, 1); err != nil {
+		t.Fatalf("CloseIssue() once its dependency closed error = %v", err)
+	}
+	if err := p.CloseIssue(ctx, repo, 9); err == nil || errors.Is(err, ErrOpenDependencies) {
+		t.Errorf("CloseIssue() of a missing issue error = %v, want another error", err)
 	}
 }
 

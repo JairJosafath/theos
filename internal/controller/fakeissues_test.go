@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -282,7 +283,24 @@ func (p *fakeProvider) OpenBlockers(_ context.Context, repo gitprovider.Reposito
 	if err != nil {
 		return nil, err
 	}
-	return slices.Clone(i.blockers), nil
+	return p.openBlockers(repo, i), nil
+}
+
+// openBlockers are the blockers of an issue of repo that are open: a blocker
+// the fake host doesn't have counts as open. The caller holds the lock.
+func (p *fakeProvider) openBlockers(repo gitprovider.Repository, i *fakeIssue) []string {
+	var out []string
+	for _, ref := range i.blockers {
+		of, n, _ := strings.Cut(ref, "#")
+		if of == "" {
+			of = repo.Owner + "/" + repo.Name
+		}
+		number, _ := strconv.Atoi(n)
+		if b := p.git.issueState().find(of, number); b == nil || b.State != "closed" {
+			out = append(out, ref)
+		}
+	}
+	return out
 }
 
 // AddIssueLabel emulates Gitea's exclusive scoped labels for the "status/" scope.
@@ -341,6 +359,11 @@ func (p *fakeProvider) CloseIssue(ctx context.Context, repo gitprovider.Reposito
 	i, err := p.issueOf(repo, number)
 	if err != nil {
 		return err
+	}
+	if blockers := p.openBlockers(repo, i); len(blockers) > 0 {
+		// As Gitea does, with HTTP 412.
+		return fmt.Errorf("closing issue %d of %s/%s, which waits on %v: %w", number, repo.Owner, repo.Name,
+			blockers, gitprovider.ErrOpenDependencies)
 	}
 	i.State = "closed"
 	return nil
