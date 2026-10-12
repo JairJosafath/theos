@@ -12,9 +12,116 @@ import (
 // milestone is due; the date only orders releases (plans/done/brief-releases.md, R6).
 const ReleaseMilestoneDue = 7 * 24 * time.Hour
 
-// LabelBug marks a fix; a round whose work for a Container is all fixes gets a
-// patch release (plans/done/brief-patch-releases.md, P1).
+// LabelBug marks a fix, which goes into the patch release after the release in
+// progress (plans/done/fixes-patch-next.md, F5).
 const LabelBug = "kind/bug"
+
+// LabelTest marks work that adds or fixes a test; like kind/bug, it is a fix
+// (plans/done/fixes-patch-next.md, F5).
+const LabelTest = "kind/test"
+
+// IsFix reports whether an issue the Brief files is a fix, so it goes into the
+// patch release after the release in progress: labelled kind/bug or kind/test,
+// and not kind/by-hand, which no Task does (F5).
+func IsFix(labels []string) bool {
+	if IsByHand(labels) {
+		return false
+	}
+	return slices.ContainsFunc(labels, func(l string) bool {
+		l = strings.TrimSpace(l)
+		return l == LabelBug || l == LabelTest
+	})
+}
+
+// Slot is where a round's fixes go: an existing milestone to join (ID), or,
+// when ID is 0, a new one to make with Title, due at Due.
+type Slot struct {
+	ID    int64
+	Title string
+	Due   time.Time
+}
+
+// PatchSlot is where a Brief's round puts its fixes for a Container whose
+// milestones are milestones, at now (plans/done/fixes-patch-next.md, F1 to F4).
+// From the release in progress, the open, dated version milestone due first,
+// or the newest version milestone when none is open, it takes the next patch
+// title. An open milestone with that title that can still take work, with no
+// prepare issue, is joined; a title that is closed or prepared is skipped for
+// the patch after it. A new milestone is due halfway between the later of the
+// release in progress and the patches skipped, and the next open version
+// milestone after that, or as ReleaseMilestoneDueAt has it when nothing is
+// open after it. With no version milestone at all, the first release is v0.1.0.
+func PatchSlot(milestones []ReleaseMilestone, now time.Time) Slot {
+	var versions, open []ReleaseMilestone
+	var openReleases []Release
+	for _, m := range milestones {
+		if parseVersion(m.Title) == nil {
+			continue
+		}
+		versions = append(versions, m)
+		if !m.MilestoneClosed {
+			openReleases = append(openReleases, m.Release)
+			if !m.Due.IsZero() {
+				open = append(open, m)
+			}
+		}
+	}
+	if len(versions) == 0 {
+		return Slot{Title: ReleaseMilestoneTitle(nil, false), Due: ReleaseMilestoneDueAt(openReleases, now)}
+	}
+	follows := releaseInProgress(versions, open)
+	after := follows.Release
+	for {
+		version := parseVersion(follows.Title)
+		title := fmt.Sprintf("v%d.%d.%d", version[0], version[1], version[2]+1)
+		same := slices.DeleteFunc(slices.Clone(versions), func(m ReleaseMilestone) bool { return m.Title != title })
+		if len(same) == 0 {
+			return Slot{Title: title, Due: patchDue(after, open, openReleases, now)}
+		}
+		for _, m := range same {
+			if !m.MilestoneClosed && len(m.Prepared) == 0 {
+				return Slot{ID: m.ID, Title: m.Title, Due: m.Due}
+			}
+		}
+		follows = same[0]
+		if compareReleases(&follows.Release, &after) > 0 {
+			after = follows.Release
+		}
+	}
+}
+
+// releaseInProgress is the open, dated version milestone due first, or the
+// newest version milestone when none is open (F1).
+func releaseInProgress(versions, open []ReleaseMilestone) ReleaseMilestone {
+	if len(open) > 0 {
+		return slices.MinFunc(open, func(a, b ReleaseMilestone) int { return compareReleases(&a.Release, &b.Release) })
+	}
+	return slices.MaxFunc(versions, func(a, b ReleaseMilestone) int {
+		return compareVersions(parseVersion(a.Title), parseVersion(b.Title))
+	})
+}
+
+// patchDue is when a new patch milestone is due that comes after after, the
+// later of the release in progress and the patches skipped: halfway to the
+// next open, dated version milestone after it, else as ReleaseMilestoneDueAt
+// has it (F4). An after with no due date counts from now.
+func patchDue(after Release, open []ReleaseMilestone, openReleases []Release, now time.Time) time.Time {
+	var next *Release
+	for i := range open {
+		if compareReleases(&open[i].Release, &after) > 0 &&
+			(next == nil || compareReleases(&open[i].Release, next) < 0) {
+			next = &open[i].Release
+		}
+	}
+	if next == nil {
+		return ReleaseMilestoneDueAt(openReleases, now)
+	}
+	from := after.Due
+	if from.IsZero() {
+		from = now
+	}
+	return from.Add(next.Due.Sub(from) / 2)
+}
 
 // ReleaseMilestoneTitle is the title of the release milestone a Brief's round
 // makes in a repository whose milestones, open or closed, have titles: after
@@ -76,28 +183,6 @@ func ReleaseMilestoneDueAt(open []Release, now time.Time) time.Time {
 	return due
 }
 
-// RoundFixes reports, by Container, whether the plan's work for it is all
-// fixes: at least one issue that isn't by hand, each labelled kind/bug, and no
-// reviewer's suggestion taken, which is new work (P2).
-func RoundFixes(plan Plan) map[string]bool {
-	fixes := map[string]bool{}
-	for _, issue := range plan.Issues {
-		if IsByHand(issue.Labels) {
-			continue
-		}
-		bug := slices.ContainsFunc(issue.Labels, func(l string) bool { return strings.TrimSpace(l) == LabelBug })
-		if all, seen := fixes[issue.Container]; !seen || all {
-			fixes[issue.Container] = bug
-		}
-	}
-	for _, a := range plan.Answers {
-		if a.Answer == AnswerTake {
-			fixes[a.Container] = false
-		}
-	}
-	return fixes
-}
-
 func compareVersions(a, b []int) int {
 	for i := range a {
 		if a[i] != b[i] {
@@ -123,7 +208,31 @@ func ReleaseMilestoneDescription(brief string, round int) string {
 // HasReleaseMilestoneMarker reports whether a milestone's description carries
 // the marker of the Brief's round on a line of its own.
 func HasReleaseMilestoneMarker(description, brief string, round int) bool {
-	marker := ReleaseMilestoneMarker(brief, round)
+	return hasMarkerLine(description, ReleaseMilestoneMarker(brief, round))
+}
+
+// PatchMilestoneMarker is the line that ties a patch milestone a Brief's round
+// made for its fixes to the round, next to the round's release milestone, so
+// a restart finds each (F7).
+func PatchMilestoneMarker(brief string, round int) string {
+	return fmt.Sprintf("<!-- c4-brief: %s/%d fixes -->", brief, round)
+}
+
+// PatchMilestoneDescription is the description the operator gives the patch
+// milestone the Brief's round makes; it ends with the patch marker.
+func PatchMilestoneDescription(brief string, round int) string {
+	return fmt.Sprintf("The fixes Brief %s's round %d filed; released right after the release in progress.\n\n%s\n",
+		brief, round, PatchMilestoneMarker(brief, round))
+}
+
+// HasPatchMilestoneMarker reports whether a milestone's description carries
+// the patch marker of the Brief's round on a line of its own.
+func HasPatchMilestoneMarker(description, brief string, round int) bool {
+	return hasMarkerLine(description, PatchMilestoneMarker(brief, round))
+}
+
+// hasMarkerLine reports whether marker is a line of description.
+func hasMarkerLine(description, marker string) bool {
 	for line := range strings.SplitSeq(description, "\n") {
 		if strings.TrimSpace(line) == marker {
 			return true

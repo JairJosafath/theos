@@ -41,6 +41,27 @@ func bugLinterPlan(ns string, issues int) scaffold.Tree {
 	return files
 }
 
+// mixedLinterPlan is releasingLinterPlan with two issues: a kind/bug fix and a
+// feature.
+func mixedLinterPlan(ns string) scaffold.Tree {
+	files := releasingLinterPlan(ns, 2)
+	files["plan/issues/01-linter.md"] = scaffold.File{
+		Data: []byte(strings.Replace(linterIssue(1), "kind/feature", model.LabelBug, 1))}
+	return files
+}
+
+// milestoneDue returns the due date of the linter's milestone titled title.
+func milestoneDue(ns, title string) time.Time {
+	GinkgoHelper()
+	for _, m := range gitFake.allMilestones(ns, "linter") {
+		if m.Title == title {
+			return m.Due
+		}
+	}
+	Fail("no milestone " + title)
+	return time.Time{}
+}
+
 // allMilestones returns the fake host's milestones of owner/name, open and closed.
 //
 //nolint:unparam // takes owner and name like the other helpers
@@ -159,8 +180,9 @@ var _ = Describe("Brief releases", func() {
 	})
 
 	// #601: after the first release, a round of fixes is a patch release, and
-	// a suggestion a prompt takes lands in the round's release.
-	It("files a round of fixes in v0.1.1, and a taken suggestion with the next round in v0.2.0", func() {
+	// a suggestion a prompt takes lands in the round's release; #884: one
+	// with fix: true lands in the patch release, which later fixes join.
+	It("files a round of fixes in v0.1.1, then a fix and a fix suggestion in it and a taken suggestion in v0.2.0", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
 		brief := newBrief(ns, "cel-lens")
@@ -185,7 +207,7 @@ var _ = Describe("Brief releases", func() {
 		Expect(milestones).To(HaveLen(2))
 		Expect(milestones[1].Due).To(BeTemporally(">", milestones[0].Due), "lined up after v0.1.0")
 
-		By("taking a reviewer's suggestion into the round's release, which makes it a minor one")
+		By("taking a reviewer's fix into v0.1.1 with the round's fix, and its other suggestion into v0.2.0")
 		// Paused, the Crew doesn't start a Task on the taken suggestion,
 		// which under load could fail and hand it back before the labels are
 		// read (#845).
@@ -198,8 +220,12 @@ var _ = Describe("Brief releases", func() {
 			Body: "A rule's text takes them.", Criteria: []string{"A rule with a control character is refused"}},
 			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
 		gitFake.setIssueMilestone(ns, "linter", safety, model.FollowUpMilestone)
+		flaky := gitFake.addIssue(ns, "linter", "Test the empty rule", model.FollowUpIssue(model.FollowUp{
+			Body: "No test covers it.", Criteria: []string{"A test lints the empty rule"}},
+			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
+		gitFake.setIssueMilestone(ns, "linter", flaky, model.FollowUpMilestone)
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.SuggestionsWaiting).To(Equal(int32(1)))
+			g.Expect(getBrief(g, ns).Status.SuggestionsWaiting).To(Equal(int32(2)))
 		}).Should(Succeed())
 		brief = getBrief(Default, ns)
 		Expect(patch(brief, func() {
@@ -207,17 +233,21 @@ var _ = Describe("Brief releases", func() {
 		})).To(Succeed())
 		plan := bugLinterPlan(ns, 1)
 		plan[model.PlanSuggestionsFile] = scaffold.File{Data: []byte(fmt.Sprintf(
-			"- {container: linter, issue: %d, answer: take, why: The prompt takes it.}\n", safety))}
+			"- {container: linter, issue: %d, answer: take, why: The prompt takes it.}\n"+
+				"- {container: linter, issue: %d, answer: take, fix: true, why: It adds a test.}\n", safety, flaky))}
 		planRound(ns, 3, 1, plan)
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(3)))
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
 		}).WithTimeout(wholeRound).Should(Succeed())
-		Expect(roundIssueMilestones(Default, ns, 3)).To(Equal([]string{"v0.2.0"}))
+		Expect(roundIssueMilestones(Default, ns, 3)).To(Equal([]string{"v0.1.1"}))
 		taken := gitFake.issue(ns, "linter", safety)
 		Expect(taken.Labels).To(ContainElement(model.LabelReady))
 		Expect(taken.milestone).To(Equal("v0.2.0"))
+		fix := gitFake.issue(ns, "linter", flaky)
+		Expect(fix.Labels).To(ContainElement(model.LabelReady))
+		Expect(fix.milestone).To(Equal("v0.1.1"))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4), "v0.1.0, v0.1.1, Later and v0.2.0")
 
 		By("leaving no issue the Brief filed or took in no milestone")
@@ -247,20 +277,144 @@ var _ = Describe("Brief releases", func() {
 		n := int(getBrief(Default, ns).Status.Issues[0].Number)
 		failLinterTask(ns, model.IssueTaskName("linter", n, 1), n)
 
-		By("filing the tending round's new fix in v0.1.1")
+		By("filing the tending round's new fix in v0.1.1 and its feature in v0.2.0")
 		awaitTendRound(ns, 2)
 		plan := tendPlan(fmt.Sprintf(
 			"- {container: linter, issue: %d, answer: close, why: The fix below replaces it.}\n", n))
 		plan["plan/issues/01-linter.md"] = scaffold.File{
 			Data: []byte(strings.Replace(linterIssue(2), "kind/feature", model.LabelBug, 1))}
+		plan["plan/issues/02-linter.md"] = scaffold.File{Data: []byte(linterIssue(3))}
 		planRound(ns, 2, 1, plan)
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.History).To(HaveLen(2))
 			g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
 		}).WithTimeout(wholeRound).Should(Succeed())
-		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.1"}))
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(2), "v0.1.0 and v0.1.1")
+		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.1", "v0.2.0"}))
+		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3), "v0.1.0, v0.1.1 and v0.2.0")
+		Expect(milestoneDue(ns, "v0.1.1")).To(BeTemporally("<", milestoneDue(ns, "v0.2.0")))
+	})
+
+	It("finds a tending round's patch and release milestones again after a restart, making neither twice", func() {
+		createFactory(ns)
+		briefAgents(ns, 1)
+		brief := newBrief(ns, "cel-lens")
+		brief.Spec.Autopilot = model.AutopilotOn
+		mustCreate(brief)
+		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.History).NotTo(BeEmpty())
+			g.Expect(b.Status.History[0].Outcome).To(Equal(model.ReasonApplied))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		n := int(getBrief(Default, ns).Status.Issues[0].Number)
+		failLinterTask(ns, model.IssueTaskName("linter", n, 1), n)
+
+		By("finding round 2's milestones there already, titled as no new round would title them")
+		awaitTendRound(ns, 2)
+		gitFake.addMilestone(ns, "linter", "v0.1.7", model.PatchMilestoneDescription("cel-lens", 2),
+			time.Now().Add(time.Hour))
+		gitFake.addMilestone(ns, "linter", "v0.9.0", model.ReleaseMilestoneDescription("cel-lens", 2),
+			time.Now().Add(model.ReleaseMilestoneDue))
+		plan := tendPlan(fmt.Sprintf(
+			"- {container: linter, issue: %d, answer: close, why: The fix below replaces it.}\n", n))
+		plan["plan/issues/01-linter.md"] = scaffold.File{
+			Data: []byte(strings.Replace(linterIssue(2), "kind/feature", model.LabelBug, 1))}
+		plan["plan/issues/02-linter.md"] = scaffold.File{Data: []byte(linterIssue(3))}
+		planRound(ns, 2, 1, plan)
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.History).To(HaveLen(2))
+			g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.7", "v0.9.0"}))
+		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3), "v0.1.0, v0.1.7 and v0.9.0")
+	})
+
+	// #884: a mixed round files its fixes in the patch release right after
+	// the release in progress, and its other work in the next minor release.
+	It("files a mixed round's fix in a new v0.13.1 and its feature in v0.15.0", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		inProgress, planned := time.Now().Add(time.Hour), time.Now().Add(48*time.Hour)
+		gitFake.addMilestone(ns, "linter", "v0.13.0", "", inProgress)
+		gitFake.addMilestone(ns, "linter", "v0.14.0", "", planned)
+		mustCreate(newBrief(ns, "cel-lens"))
+		planRound(ns, 1, 1, mixedLinterPlan(ns))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.1", "v0.15.0"}))
+		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4))
+		Expect(milestoneDue(ns, "v0.13.1")).To(BeTemporally(">", inProgress))
+		Expect(milestoneDue(ns, "v0.13.1")).To(BeTemporally("<", planned))
+		Expect(milestoneDue(ns, "v0.15.0")).To(BeTemporally(">", planned))
+	})
+
+	It("files a round of only fixes in the open v0.13.1, making no milestone", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		gitFake.addMilestone(ns, "linter", "v0.13.0", "", time.Now().Add(time.Hour))
+		gitFake.addMilestone(ns, "linter", "v0.13.1", "", time.Now().Add(2*time.Hour))
+		gitFake.addMilestone(ns, "linter", "v0.14.0", "", time.Now().Add(48*time.Hour))
+		mustCreate(newBrief(ns, "cel-lens"))
+		plan := bugLinterPlan(ns, 2)
+		plan[model.PlanReleasesFile] = scaffold.File{Data: []byte("containers: [linter]\n")}
+		planRound(ns, 1, 1, plan)
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.1", "v0.13.1"}))
+		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3))
+	})
+
+	It("files a feature filed before a fix in v0.2.0, and the fix in a v0.1.1 due before it, after a closed v0.1.0", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		gitFake.addMilestone(ns, "linter", "v0.1.0", "", time.Now().Add(-time.Hour))
+		gitFake.closeMilestone(ns, "linter", "v0.1.0")
+		mustCreate(newBrief(ns, "cel-lens"))
+		plan := releasingLinterPlan(ns, 2)
+		plan["plan/issues/02-linter.md"] = scaffold.File{
+			Data: []byte(strings.Replace(linterIssue(2), "kind/feature", model.LabelBug, 1))}
+		planRound(ns, 1, 1, plan)
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.2.0", "v0.1.1"}))
+		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3))
+		Expect(milestoneDue(ns, "v0.1.1")).To(BeTemporally("<", milestoneDue(ns, "v0.2.0")))
+	})
+
+	It("files a mixed round's fix with its feature in v0.1.0 while the app has no release", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		mustCreate(newBrief(ns, "cel-lens"))
+		planRound(ns, 1, 1, mixedLinterPlan(ns))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0", "v0.1.0"}))
+		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(1))
+	})
+
+	It("finds a mixed round's patch and release milestones again after a restart, making neither twice", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		gitFake.addMilestone(ns, "linter", "v0.13.0", "", time.Now().Add(time.Hour))
+		gitFake.addMilestone(ns, "linter", "v0.14.0", "", time.Now().Add(48*time.Hour))
+		By("finding round 1's milestones there already, titled as no new round would title them")
+		gitFake.addMilestone(ns, "linter", "v0.13.4", model.PatchMilestoneDescription("cel-lens", 1),
+			time.Now().Add(2*time.Hour))
+		gitFake.addMilestone(ns, "linter", "v0.19.0", model.ReleaseMilestoneDescription("cel-lens", 1),
+			time.Now().Add(72*time.Hour))
+		mustCreate(newBrief(ns, "cel-lens"))
+		planRound(ns, 1, 1, mixedLinterPlan(ns))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).WithTimeout(wholeRound).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.4", "v0.19.0"}))
+		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4))
 	})
 
 	It("puts a released app's ready work in no milestone in its first open release, before the round's (#599)", func() {

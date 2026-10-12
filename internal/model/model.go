@@ -345,6 +345,15 @@ const checkSuccess = "success"
 // push run off main.
 const checkSkipped = "skipped"
 
+// checkFailure and checkError are the states of a commit's checks that failed.
+const (
+	checkFailure = "failure"
+	checkError   = "error"
+)
+
+// checksFailed reports whether a commit's checks, as a whole, failed.
+func checksFailed(state string) bool { return state == checkFailure || state == checkError }
+
 // UnpassedChecks returns the CheckContexts patterns that contexts, the state of
 // each check on a commit by its context, does not pass, the way branch protection
 // reads them: no check that ran matches the pattern, or one that matches has not

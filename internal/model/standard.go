@@ -148,6 +148,28 @@ func HasProposalMarker(body, branch string) bool {
 	return false
 }
 
+// ProposalBranchOf returns the branch whose marker body carries on a line of
+// its own, the proposal of a Standard change issue; "" when it has none.
+func ProposalBranchOf(body string) string {
+	prefix, suffix, _ := strings.Cut(ProposalMarker("\x00"), "\x00")
+	for line := range strings.SplitSeq(body, "\n") {
+		line = strings.TrimSpace(line)
+		if branch, ok := strings.CutPrefix(line, prefix); ok {
+			if branch, ok := strings.CutSuffix(branch, suffix); ok && branch != "" && !strings.ContainsAny(branch, " \t") {
+				return branch
+			}
+		}
+	}
+	return ""
+}
+
+// ProposalGoneNote says a Standard change's proposal branch is gone, so a
+// retry would have nothing to merge.
+func ProposalGoneNote(branch string) string {
+	return fmt.Sprintf("This Standard change's proposal branch `%s` is gone, so a retry would have nothing to merge: close it, "+
+		"and retry the issue that waits on it, which proposes the change again.", branch)
+}
+
 const reasonPrefix = "Standard change:"
 
 // ProposalReason takes the reason from an agent's summary: everything after the
@@ -230,8 +252,10 @@ func StandardUpdateTitle(name, ref string) string {
 	return "Update the Standard " + name + " to " + ref
 }
 
-// StandardUpdateBody is that pull request's description.
-func StandardUpdateBody(name, from, to string, paths, leftOut []string) string {
+// StandardUpdateBody is that pull request's description. merged are the paths
+// it writes that the repository changed too, merged with the repository's
+// changes.
+func StandardUpdateBody(name, from, to string, paths, merged, leftOut []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "The operator opened this pull request to bring the files of the Standard `%s` from `%s` to `%s`.\n\n",
 		name, from, to)
@@ -239,9 +263,15 @@ func StandardUpdateBody(name, from, to string, paths, leftOut []string) string {
 		b.WriteString("## Files\n\n")
 		writeCodeList(&b, paths)
 	}
+	if len(merged) > 0 {
+		fmt.Fprintf(&b, "## Merged with the repository's changes\n\nThese files changed in the repository since `%s` "+
+			"too, in other lines, so the update merges the Standard's changes with the repository's, line by line; "+
+			"read them as a merge:\n\n", from)
+		writeCodeList(&b, merged)
+	}
 	if len(leftOut) > 0 {
-		fmt.Fprintf(&b, "## Left out\n\nThese files changed in the repository since `%s`, so the update leaves them "+
-			"out; a person brings them up to date by hand:\n\n", from)
+		fmt.Fprintf(&b, "## Left out\n\nThese files changed in the repository since `%s` in ways that don't "+
+			"merge with the Standard's changes, so the update leaves them out; a person brings them up to date by hand:\n\n", from)
 		writeCodeList(&b, leftOut)
 	}
 	b.WriteString("The operator merges this pull request itself once CI passes. " +

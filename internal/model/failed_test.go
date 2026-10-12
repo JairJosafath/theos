@@ -130,6 +130,7 @@ func TestCheckFailedAnswers(t *testing.T) {
 		{Container: "cli", Number: 5, Kind: FailedPerson},
 		{Container: "cli", Number: 6, Kind: FailedUnclear, Body: "Add a CLI.\n\n## Acceptance criteria\n\nIt works.\n"},
 		{Container: "cli", Number: 7, Kind: FailedByHand},
+		{Container: "cli", Number: 8, Kind: FailedTask, ProposalGone: "standard/cli-1"},
 	}
 	const criteria = "Use the engine's checker.\n\n## Acceptance criteria\n\n- [ ] `lens check` uses it\n"
 	tests := []struct {
@@ -145,7 +146,12 @@ func TestCheckFailedAnswers(t *testing.T) {
 			fa("cli", 5, AnswerRetry, "The prompt asks to try it again.", ""),
 			fa("cli", 7, AnswerClose, "The prompt says the screenshot is in.", "")}, nil},
 		{"none", nil, nil},
-		{"unknown issue", []FailedAnswer{fa("cli", 8, AnswerClose, "why", "")}, []string{"cli#8, which is not a waiting"}},
+		{"unknown issue", []FailedAnswer{fa("cli", 9, AnswerClose, "why", "")}, []string{"cli#9, which is not a waiting"}},
+		{"retry a Standard change whose proposal is gone", []FailedAnswer{fa("cli", 8, AnswerRetry, "why", "")},
+			[]string{"proposal branch `standard/cli-1` is gone"}},
+		{"close a Standard change whose proposal is gone", []FailedAnswer{fa("cli", 8, AnswerClose, "why", "")}, nil},
+		{"ask recommending a retry of a Standard change whose proposal is gone", []FailedAnswer{
+			ask(8, &Recommendation{Answer: AnswerRetry, Why: "why"})}, []string{"is gone"}},
 		{"another Container's number", []FailedAnswer{fa("web", 1, AnswerClose, "why", "")}, []string{"web#1"}},
 		{"answered twice", []FailedAnswer{fa("cli", 1, AnswerClose, "why", ""), fa("cli", 1, AnswerRetry, "why", "")},
 			[]string{"twice"}},

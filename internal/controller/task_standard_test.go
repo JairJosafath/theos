@@ -397,6 +397,22 @@ var _ = Describe("Task with a Standard change", func() {
 		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
 		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
 			ContainSubstring("will not merge"))))
+		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeTrue(),
+			"the Standard change is open, and a retry merges its proposal")
+
+		By("retrying the Standard change, which starts with its proposal still there")
+		// #889: what answering a failed issue with a retry does.
+		Expect(gitFake.labelIssue(ns, "orders-api", m, model.LabelReady)).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-2-2").Spec.Issue).To(Equal(int32(m)))
+			sandboxExists(g, ns, "orders-api-2-2-r1-implement")
+		}).Should(Succeed())
+		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeTrue())
+
+		By("deleting the proposal once the retry merged the Standard change")
+		mergeChangeTask(ns, "orders-api-2-2", 1)
+		Expect(gitFake.issue(ns, "orders-api", m).State).To(Equal("closed"))
+		Expect(getTask(Default, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskFailed), "nothing resumed it")
 		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeFalse())
 	})
 
@@ -461,19 +477,25 @@ func blockedBesideChange(ns string, rounds int32) (n, m int) {
 // the reviewer approves.
 func mergeChange(ns string, pr int) {
 	GinkgoHelper()
-	gitFake.pushBranch(ns, "orders-api", "task/orders-api-2", "sha-change")
-	finishSandbox(ns, "orders-api-2-r1-implement", "orders-api-2",
+	mergeChangeTask(ns, "orders-api-2", pr)
+}
+
+// mergeChangeTask is mergeChange for the Standard change Task named task.
+func mergeChangeTask(ns, task string, pr int) {
+	GinkgoHelper()
+	gitFake.pushBranch(ns, "orders-api", "task/"+task, "sha-change")
+	finishSandbox(ns, task+"-r1-implement", task,
 		&agentrunner.Result{Role: "implement", Commit: "sha-change", Summary: "Added the dist target."}, "")
 	Eventually(func(g Gomega) {
-		g.Expect(getTask(g, ns, "orders-api-2").Status.PullRequest).To(Equal(int32(pr)))
+		g.Expect(getTask(g, ns, task).Status.PullRequest).To(Equal(int32(pr)))
 	}).Should(Succeed())
 	gitFake.setPullFiles(ns, "orders-api", pr, "Makefile")
 	gitFake.setChecks(ns, "orders-api", "sha-change", "success")
-	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-2-r1-review-a1") }).Should(Succeed())
-	finishSandbox(ns, "orders-api-2-r1-review-a1", "orders-api-2",
+	Eventually(func(g Gomega) { sandboxExists(g, ns, task+"-r1-review-a1") }).Should(Succeed())
+	finishSandbox(ns, task+"-r1-review-a1", task,
 		&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Only the dist target."}, "")
 	Eventually(func(g Gomega) {
-		g.Expect(getTask(g, ns, "orders-api-2").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+		g.Expect(getTask(g, ns, task).Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
 	}).Should(Succeed())
 	Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{pr}))
 }

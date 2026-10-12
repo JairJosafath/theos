@@ -537,13 +537,7 @@ func (g *gitea) ClosePullRequest(ctx context.Context, repo Repository, number in
 }
 
 func (g *gitea) DeleteBranch(ctx context.Context, repo Repository, branch string) error {
-	// Gitea takes the branch's slashes as they are; each segment is escaped.
-	segments := strings.Split(branch, "/")
-	for i, s := range segments {
-		segments[i] = url.PathEscape(s)
-	}
-	status, data, err := g.do(ctx, http.MethodDelete,
-		"/api/v1/repos/"+repoPath(repo)+"/branches/"+strings.Join(segments, "/"), nil)
+	status, data, err := g.do(ctx, http.MethodDelete, branchPath(repo, branch), nil)
 	if err != nil {
 		return err
 	}
@@ -551,6 +545,30 @@ func (g *gitea) DeleteBranch(ctx context.Context, repo Repository, branch string
 		return fmt.Errorf("gitea: deleting branch %s of %s failed (HTTP %d): %s", branch, repoPath(repo), status, apiMessage(data))
 	}
 	return nil
+}
+
+func (g *gitea) HasBranch(ctx context.Context, repo Repository, branch string) (bool, error) {
+	status, data, err := g.do(ctx, http.MethodGet, branchPath(repo, branch), nil)
+	if err != nil {
+		return false, err
+	}
+	switch status {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	}
+	return false, fmt.Errorf("gitea: reading branch %s of %s failed (HTTP %d): %s", branch, repoPath(repo), status, apiMessage(data))
+}
+
+// branchPath is the API path of branch in repo. Gitea takes the branch's
+// slashes as they are; each segment is escaped.
+func branchPath(repo Repository, branch string) string {
+	segments := strings.Split(branch, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return "/api/v1/repos/" + repoPath(repo) + "/branches/" + strings.Join(segments, "/")
 }
 
 func repoPath(repo Repository) string {

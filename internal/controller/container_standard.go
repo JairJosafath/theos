@@ -273,18 +273,18 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		return
 	}
 	pr, err := git.provider.OpenPullRequest(gitCtx, repo, branch, gitprovider.DefaultBranch,
-		model.StandardUpdateTitle(name, to), model.StandardUpdateBody(name, from, to, plan.Paths(), plan.LeftOut))
+		model.StandardUpdateTitle(name, to), model.StandardUpdateBody(name, from, to, plan.Paths(), plan.Merged, plan.LeftOut))
 	if err != nil {
 		u.gitError(ctx, err)
 		return
 	}
 	s.Update = &c4v1alpha1.StandardUpdateStatus{
 		Ref: to, Branch: branch, Commit: commit, PullRequest: int32(pr.Number), PullRequestURL: pr.URL,
-		Paths: plan.Paths(), LeftOut: plan.LeftOut,
+		Paths: plan.Paths(), Merged: plan.Merged, LeftOut: plan.LeftOut,
 	}
 	u.updating()
 	log.Info("Opened a Standard update", "url", pr.URL, "standard", name, "from", from, "to", to,
-		"paths", plan.Paths(), "leftOut", plan.LeftOut)
+		"paths", plan.Paths(), "merged", plan.Merged, "leftOut", plan.LeftOut)
 }
 
 // alreadyUpToDate records ref when main already holds what it renders, apart
@@ -407,7 +407,7 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 	update := s.Update
 	title = model.StandardUpdateTitle(s.Name, update.Ref)
 	full := scaffold.UpdateMessage(scaffoldInput(u.container, scaffoldedConnectors(u.status), recordedChecks(u.status)), s.Name, s.Ref,
-		update.Ref, scaffold.Update{LeftOut: update.LeftOut})
+		update.Ref, scaffold.Update{Merged: update.Merged, LeftOut: update.LeftOut})
 	message, _ = strings.CutPrefix(full, title+"\n\n")
 	return title, message
 }

@@ -428,6 +428,8 @@ func (p *fakeProvider) CreateIssue(ctx context.Context, repo gitprovider.Reposit
 }
 
 // labelIssue adds a label to an issue, as a person would in the Git host.
+//
+//nolint:unparam // a person may add any label
 func (g *fakeGit) labelIssue(owner, name string, number int, label string) error {
 	p := &fakeProvider{git: g}
 	return p.AddIssueLabel(context.Background(), gitprovider.Repository{Owner: owner, Name: name}, number, label)

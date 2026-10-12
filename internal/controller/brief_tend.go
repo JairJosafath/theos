@@ -287,8 +287,7 @@ func (r *BriefReconciler) applyTend(ctx context.Context, brief, orig *c4v1alpha1
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	run := &roundApply{brief: brief, orig: orig, round: fmt.Sprint(brief.Status.Round), released: released,
-		fixes: model.RoundFixes(plan)}
+	run := &roundApply{brief: brief, orig: orig, round: fmt.Sprint(brief.Status.Round), released: released}
 	waiting, err := r.finishContainers(ctx, run, model.RoundContainers(nil, plan.Issues), nil, plan.Issues)
 	if err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "filing the issues", err)

@@ -54,6 +54,10 @@ type RunResult struct {
 	Summary string
 	Verdict string
 	Error   string
+	// CheckFailsOnBase is the end of CheckCommand's output on main, set when
+	// the check fails in the agent's workspace on its branch and on main too:
+	// the workspace can't judge the change, so CI decides it.
+	CheckFailsOnBase string
 	// Proposal is a Standard change the agent asks for, besides its own change.
 	Proposal *Proposal
 	// Extra are the unprotected paths a Standard change changes besides its
@@ -241,6 +245,14 @@ type TaskFacts struct {
 	ReviewAgains int
 	// Reruns counts the free reruns of interrupted runs in this round.
 	Reruns int
+	// ChecksReruns counts the reruns of killed CI jobs in this round, and
+	// ChecksRerunAt is when the last one was asked for, SinceChecksRerun how long
+	// ago. ChecksRerunEnded means the rerun gave its result (RerunEnded), so a
+	// failed status is the rerun's, not the killed run's.
+	ChecksReruns     int
+	ChecksRerunAt    time.Time
+	SinceChecksRerun time.Duration
+	ChecksRerunEnded bool
 	// InPhase is how long the Task has been in its current phase.
 	InPhase time.Duration
 	// NoFreeSlot means the operator already runs as many agent sandboxes as it may.
@@ -439,6 +451,16 @@ const ReasonNoCIResult = "NoCIResult"
 // fault, not the change's, so it costs no round and its issue no try.
 const ReasonRunnerOutOfSpace = "RunnerOutOfSpace"
 
+// ReasonRunnerOutOfMemory is the reason of a Task whose checks the machine
+// killed for lack of memory more than MaxChecksReruns times in a round: the
+// runner's fault, not the change's, so it costs its issue no try.
+const ReasonRunnerOutOfMemory = "RunnerOutOfMemory"
+
+// MaxChecksReruns is how often a round's failed CI jobs run again after the
+// machine killed them for lack of memory. The cap keeps a runner that is always
+// short of memory from looping forever.
+const MaxChecksReruns = 2
+
 // ReasonApprovalRanOut is the reason of a Task whose approved Standard change
 // was reviewed again maxReviewAgains times in a round and whose approval ran
 // out once more while CI ran again: the runner's slowness, not the change's
@@ -448,7 +470,11 @@ const ReasonApprovalRanOut = "ApprovalRanOut"
 // RunnerFault reports whether a Task that failed for reason failed through
 // its CI runner's fault, so the failure costs its issue no try.
 func RunnerFault(reason string) bool {
-	return reason == ReasonNoCIResult || reason == ReasonRunnerOutOfSpace || reason == ReasonApprovalRanOut
+	switch reason {
+	case ReasonNoCIResult, ReasonRunnerOutOfSpace, ReasonRunnerOutOfMemory, ReasonApprovalRanOut:
+		return true
+	}
+	return false
 }
 
 // RunnerOutOfSpace reports whether a failed CI log shows the runner out of
@@ -460,6 +486,29 @@ func RunnerFault(reason string) bool {
 // are passed over. What a Go test prints to stdout can't be told from the
 // toolchain's and still counts.
 func RunnerOutOfSpace(log string) bool {
+	return runnerSays(log, func(line string) bool {
+		return strings.Contains(strings.ToLower(line), "no space left on device")
+	})
+}
+
+// RunnerKilled reports whether a failed CI log shows a job killed for lack of
+// memory: Go's "signal: killed", the shell's "Killed" report of a job, make's
+// "Error 137", exit code 137 and Node's "JavaScript heap out of memory". It
+// reads the log as RunnerOutOfSpace does, so a test that prints the phrase in
+// its own message doesn't count.
+func RunnerKilled(log string) bool {
+	return runnerSays(log, func(line string) bool { return killedLine.MatchString(strings.TrimSpace(line)) })
+}
+
+// killedLine is a line of the runner or toolchain saying a job was killed for
+// lack of memory.
+var killedLine = regexp.MustCompile(`signal: killed|^Killed(\s|$)|\d Killed(\s|$)|Error 137\b|` +
+	`exit (code|status) 137\b|JavaScript heap out of memory`)
+
+// runnerSays reports whether a line of a CI log that the runner or the
+// toolchain printed, not the change's own tests and code, says what says
+// reports.
+func runnerSays(log string, says func(line string) bool) bool {
 	section := noSection
 	goMessage := -1 // the indent of the Go test message whose lines follow, or -1
 	for raw := range strings.SplitSeq(log, "\n") {
@@ -486,7 +535,7 @@ func RunnerOutOfSpace(log string) bool {
 			section = vitestSection
 		case strings.HasPrefix(trimmed, "stdout | "), strings.HasPrefix(trimmed, "stderr | "):
 			section = capturedSection
-		case strings.Contains(strings.ToLower(line), "no space left on device"):
+		case says(line):
 			return true
 		}
 	}
@@ -568,10 +617,62 @@ type CIRun struct {
 
 // WorkflowRun is one CI run at a commit, as the Git host lists it.
 type WorkflowRun struct {
-	// Status is queued, waiting, in_progress or completed.
-	Status  string
-	Started time.Time
-	URL     string
+	ID int64
+	// Workflow is the workflow file it runs, and Event what started it.
+	Workflow string
+	Event    string
+	// Status is queued, waiting, in_progress or completed, and Conclusion how a
+	// completed run ended.
+	Status     string
+	Conclusion string
+	Started    time.Time
+	URL        string
+}
+
+// FailedCommitRuns are the runs at a commit, listed newest first, whose
+// failed jobs run again: the newest run of each workflow and event, when it
+// ended neither passing nor skipped.
+func FailedCommitRuns(runs []WorkflowRun) []WorkflowRun {
+	var failed []WorkflowRun
+	seen := map[string]bool{}
+	for _, run := range runs {
+		key := run.Workflow + "\x00" + run.Event
+		if !seen[key] && run.Status == CIRunCompleted && run.Conclusion != checkSuccess &&
+			run.Conclusion != checkSkipped {
+			failed = append(failed, run)
+		}
+		seen[key] = true
+	}
+	return failed
+}
+
+// RunsEnded reports whether every run at a commit has ended: only then are
+// its failed jobs run again, as the Git host runs a run's jobs again only
+// once it ended.
+func RunsEnded(runs []WorkflowRun) bool {
+	for _, run := range runs {
+		if run.Status != CIRunCompleted {
+			return false
+		}
+	}
+	return len(runs) > 0
+}
+
+// RerunEnded reports whether the runs at a commit whose failed jobs ran again
+// at at have given their result: every run has ended, and one started at or
+// after at. Only then is a failed status the rerun's result rather than the
+// killed run's; a run of another workflow that started since doesn't say the
+// rerun did.
+func RerunEnded(runs []WorkflowRun, at time.Time) bool {
+	if !RunsEnded(runs) {
+		return false
+	}
+	for _, run := range runs {
+		if !run.Started.IsZero() && !run.Started.Before(at) {
+			return true
+		}
+	}
+	return false
 }
 
 // CommitRunState sums up the runs at a commit: running when any runs (the
@@ -658,6 +759,10 @@ const (
 	// the same round, as the review run whose approval its gated merge needs
 	// ended while CI ran again: no try and no round is spent.
 	ActionReviewAgain TaskAction = "ReviewAgain"
+	// ActionRerunChecks runs again the failed jobs of the CI runs at the round's
+	// commit, which the machine killed for lack of memory, and waits for their
+	// result in the same round: the agent is told nothing.
+	ActionRerunChecks TaskAction = "RerunChecks"
 	// ActionAwaitPlanCheck records the plan a planner pushed and waits for the
 	// Brief's verdict on it.
 	ActionAwaitPlanCheck TaskAction = "AwaitPlanCheck"
@@ -724,6 +829,13 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		return blockedStep(f)
 
 	case TaskChecking:
+		if !f.ChecksRerunAt.IsZero() {
+			// The checks started again at the rerun: their wait counts from then.
+			f.CheckingSince, f.InPhase = f.ChecksRerunAt, min(f.InPhase, f.SinceChecksRerun)
+			if checksFailed(f.Checks) && !f.ChecksRerunEnded {
+				return rerunPendingStep(f)
+			}
+		}
 		switch f.Checks {
 		case checkSuccess:
 			switch {
@@ -733,11 +845,14 @@ func nextTaskStep(f TaskFacts) TaskStep {
 				return approvedStep(f, "Checks passed on the branch with main merged in; merging")
 			}
 			return TaskStep{Action: ActionStartReview, Message: "Checks passed; starting the review"}
-		case "failure", "error":
+		case checkFailure, checkError:
 			if RunnerOutOfSpace(f.ChecksLog) {
 				return TaskStep{Action: ActionFail, Reason: ReasonRunnerOutOfSpace, Message: fmt.Sprintf(
 					"CI run %s failed because the runner ran out of room (no space left on device); "+
 						"free the runner's space or restart it", orUnknown(f.ChecksURL))}
+			}
+			if RunnerKilled(f.ChecksLog) {
+				return killedStep(f)
 			}
 			feedback := fmt.Sprintf("The CI checks failed (%s). Run the check command, find the failure and fix it.",
 				orUnknown(f.ChecksURL))
@@ -756,6 +871,39 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		return reviewingStep(f)
 	}
 	return TaskStep{Action: ActionNone}
+}
+
+// killedStep runs again the checks the machine killed for lack of memory, up
+// to MaxChecksReruns times in a round, and then fails the Task at no try.
+func killedStep(f TaskFacts) TaskStep {
+	switch {
+	case f.CIRun.State == CIRunRunning || f.CIRun.State == CIRunQueued:
+		// The Git host runs a run's jobs again only once it ended.
+		return checksPendingStep(f)
+	case f.ChecksReruns < MaxChecksReruns:
+		return TaskStep{Action: ActionRerunChecks, Message: fmt.Sprintf("CI run %s was killed for lack of memory; "+
+			"running its failed jobs again (rerun %d of %d in round %d)", orUnknown(f.ChecksURL), f.ChecksReruns+1,
+			MaxChecksReruns, f.Round)}
+	}
+	return TaskStep{Action: ActionFail, Reason: ReasonRunnerOutOfMemory, Message: fmt.Sprintf(
+		"CI run %s was killed for lack of memory, %d times in round %d; free memory on the runner or run fewer "+
+			"jobs at once", orUnknown(f.ChecksURL), MaxChecksReruns+1, f.Round)}
+}
+
+// rerunPendingStep waits for the failed jobs run again after a kill: the
+// failed status is still the killed run's until the rerun ends.
+func rerunPendingStep(f TaskFacts) TaskStep {
+	switch f.CIRun.State {
+	case CIRunNone, CIRunCompleted:
+		if f.InPhase > ChecksStartLimit {
+			return TaskStep{Action: ActionFail, Reason: ReasonNoCIResult, Message: fmt.Sprintf(
+				"The failed jobs at %s, run again at %s, didn't start within %s; check the repository's runners",
+				short(f.CIRun.Commit), clock(f.ChecksRerunAt), ChecksStartLimit)}
+		}
+		return TaskStep{Action: ActionWait, Message: "Waiting for checks: the failed jobs run again since " +
+			clock(f.ChecksRerunAt)}
+	}
+	return checksPendingStep(f)
 }
 
 // checksPendingStep decides what follows while the checks have no result: wait
@@ -1001,7 +1149,41 @@ func implementedStep(f TaskFacts) TaskStep {
 		msg += fmt.Sprintf("; besides its Standard change's files it changes %s, which no Standard protects",
 			joinAnd(res.Extra))
 	}
+	if res.CheckFailsOnBase != "" {
+		msg += "; " + checkFailsOnBase
+	}
 	return TaskStep{Action: ActionOpenPR, Message: msg}
+}
+
+// CheckCommand is the check every Standard's repository has: the agent's
+// workspace runs it after the agent, and CI on the pushed head.
+const CheckCommand = "make check"
+
+// checkFailsOnBase says that the workspace's check fails on main too. It costs
+// no round and no try: CI decides.
+const checkFailsOnBase = "`" + CheckCommand + "` fails on main in the agent's workspace too, so CI decides"
+
+// CheckFailsOnBaseEvent is the Task Event's note of a round whose check fails
+// on main in the agent's workspace too, with the output's last line, clipped.
+func CheckFailsOnBaseEvent(round int, output string) string {
+	return fmt.Sprintf("Round %d: %s (%s)", round, checkFailsOnBase, clipTitle(lastLine(output)))
+}
+
+// CheckFailsOnBaseComment is the pull request's comment for a round whose
+// check fails on main in the agent's workspace too: CI decides the change,
+// and a person can give the workspace what CI has.
+func CheckFailsOnBaseComment(round int, output string) string {
+	return fmt.Sprintf("Round %d: `%s` fails in the agent's workspace on main too, before this change, so the "+
+		"workspace can't judge it. CI runs the same check on this head and decides; this costs no round. "+
+		"If CI passes, the workspace lacks something CI has, such as a download or a service: give it that, "+
+		"so the workspace judges changes again. Its output on main ends:\n\n````\n%s\n````\n",
+		round, CheckCommand, strings.TrimRight(output, "\n"))
+}
+
+// lastLine is s's last line that isn't blank.
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
 }
 
 // blockedStep waits for the Standard change a Task needs, then resumes or fails it.

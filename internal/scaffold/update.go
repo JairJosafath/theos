@@ -36,8 +36,13 @@ type Update struct {
 	// Removes are the paths the old render had and the new one doesn't, which
 	// the repository still holds as the old render left them.
 	Removes []string
-	// LeftOut are the paths both changed: the repository changed them since the
-	// old render, and the new render changes them too. Sorted.
+	// Merged are the paths of Files both changed, the repository since the old
+	// render and the new render too, in different lines: Files holds the two
+	// changes merged. Sorted.
+	Merged []string
+	// LeftOut are the paths both changed that don't merge: their changes
+	// overlap, the file is binary, or one side removed it while the other
+	// changed it. Sorted.
 	LeftOut []string
 }
 
@@ -58,11 +63,13 @@ func (u Update) Empty() bool {
 // to the next one. current holds the repository's copy of every path of either
 // render that it has.
 //
-// It goes by whole files. A path the next render leaves as the old one made it,
-// or that the repository already holds as the next render makes it, needs
-// nothing. A path the repository still holds as the old render made it is
-// written, or removed when the next render has no such path. Any other path
-// changed in the repository since the old render and is left out.
+// A path the next render leaves as the old one made it, or that the repository
+// already holds as the next render makes it, needs nothing. A path the
+// repository still holds as the old render made it is written, or removed when
+// the next render has no such path. Any other path changed in the repository
+// since the old render: it is merged line by line with the next render's
+// change (Merge3, base the old render) and written when the two don't overlap,
+// and left out otherwise.
 func PlanUpdate(old, next, current Tree) Update {
 	var u Update
 	paths := append(old.Paths(), next.Paths()...)
@@ -75,17 +82,50 @@ func PlanUpdate(old, next, current Tree) Update {
 			// The repository already holds the next render.
 		case !same(current, old, p):
 			// The repository changed it since the old render.
-			u.LeftOut = append(u.LeftOut, p)
-		case next.has(p):
-			if u.Files == nil {
-				u.Files = Tree{}
+			f, ok := merge(old, next, current, p)
+			switch {
+			case !ok:
+				u.LeftOut = append(u.LeftOut, p)
+			case !same(current, Tree{p: f}, p):
+				u.write(p, f)
+				u.Merged = append(u.Merged, p)
 			}
-			u.Files[p] = next[p]
+		case next.has(p):
+			u.write(p, next[p])
 		default:
 			u.Removes = append(u.Removes, p)
 		}
 	}
 	return u
+}
+
+func (u *Update) write(p string, f File) {
+	if u.Files == nil {
+		u.Files = Tree{}
+	}
+	u.Files[p] = f
+}
+
+// merge merges the repository's change of p since the old render with the
+// next render's, or reports false when they don't merge: a side has no p, the
+// file is binary, or the changes overlap. The executable bit is the one of the
+// side that changed it.
+func merge(old, next, current Tree, p string) (File, bool) {
+	base, inOld := old[p]
+	theirs, inNext := next[p]
+	ours, inCurrent := current[p]
+	if !inOld || !inNext || !inCurrent {
+		return File{}, false
+	}
+	data, hunks, err := Merge3(base.Data, ours.Data, theirs.Data)
+	if err != nil || len(hunks) > 0 {
+		return File{}, false
+	}
+	executable := theirs.Executable
+	if ours.Executable != base.Executable {
+		executable = ours.Executable
+	}
+	return File{Data: data, Executable: executable}, true
 }
 
 func (t Tree) has(p string) bool {
@@ -107,6 +147,9 @@ func UpdateMessage(in Input, name, from, to string, u Update) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", model.StandardUpdateTitle(name, to))
 	fmt.Fprintf(&b, "Brings the files of %s from %s to %s for Container %s.\n", name, from, to, in.Container)
+	if len(u.Merged) > 0 {
+		fmt.Fprintf(&b, "Merged with the repository's changes since %s: %s.\n", from, joinAnd(u.Merged))
+	}
 	if len(u.LeftOut) > 0 {
 		fmt.Fprintf(&b, "Left out, changed in the repository since %s: %s.\n", from, joinAnd(u.LeftOut))
 	}

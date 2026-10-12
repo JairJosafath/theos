@@ -44,6 +44,10 @@ func TestParsePlanAnswers(t *testing.T) {
 		t.Errorf("answers = %+v, want %+v", plan.Answers, want)
 	}
 
+	files[PlanSuggestionsFile] = "- container: todo\n  issue: 5\n  answer: take\n  why: It adds a test.\n  fix: true\n"
+	if plan, err := ParsePlan(files); err != nil || len(plan.Answers) != 1 || !plan.Answers[0].Fix {
+		t.Errorf("fix: true: answers %+v, err %v; want one fix", plan.Answers, err)
+	}
 	files[PlanSuggestionsFile] = "- container: todo\n  number: 5\n"
 	if _, err := ParsePlan(files); err == nil || !strings.Contains(err.Error(), PlanSuggestionsFile) {
 		t.Errorf("an unknown field: err = %v, want one naming %s", err, PlanSuggestionsFile)
@@ -65,17 +69,20 @@ func TestCheckAnswers(t *testing.T) {
 		want    []string // substrings, one per refusal
 	}{
 		{"take and skip", []SuggestionAnswer{
-			{"todo", 5, AnswerTake, "The prompt takes input safety."},
-			{"todo", 6, AnswerSkip, "The prompt skips the rest."}}, nil},
+			{"todo", 5, AnswerTake, "The prompt takes input safety.", false},
+			{"todo", 6, AnswerSkip, "The prompt skips the rest.", false}}, nil},
 		{"none", nil, nil},
-		{"not waiting", []SuggestionAnswer{{"todo", 7, AnswerSkip, "why"}}, []string{"todo#7, which is not a waiting"}},
-		{"another Container's number", []SuggestionAnswer{{"web", 5, AnswerSkip, "why"}}, []string{"web#5"}},
-		{"twice", []SuggestionAnswer{{"todo", 5, AnswerSkip, "why"}, {"todo", 5, AnswerTake, "why"}},
+		{"not waiting", []SuggestionAnswer{{"todo", 7, AnswerSkip, "why", false}}, []string{"todo#7, which is not a waiting"}},
+		{"another Container's number", []SuggestionAnswer{{"web", 5, AnswerSkip, "why", false}}, []string{"web#5"}},
+		{"twice", []SuggestionAnswer{{"todo", 5, AnswerSkip, "why", false}, {"todo", 5, AnswerTake, "why", false}},
 			[]string{"twice"}},
-		{"no criteria", []SuggestionAnswer{{"todo", 6, AnswerTake, "why"}}, []string{"no acceptance criteria"}},
-		{"unknown answer", []SuggestionAnswer{{"todo", 5, "maybe", "why"}}, []string{`"maybe"`}},
-		{"no why", []SuggestionAnswer{{"todo", 5, AnswerTake, " "}}, []string{"no why"}},
-		{"long why", []SuggestionAnswer{{"todo", 5, AnswerTake, strings.Repeat("a", MaxAnswerWhy+1)}},
+		{"no criteria", []SuggestionAnswer{{"todo", 6, AnswerTake, "why", false}}, []string{"no acceptance criteria"}},
+		{"a fix taken", []SuggestionAnswer{{"todo", 5, AnswerTake, "It adds a test.", true}}, nil},
+		{"a fix skipped", []SuggestionAnswer{{"todo", 6, AnswerSkip, "The prompt skips it.", true}},
+			[]string{"skips todo#6 as a fix"}},
+		{"unknown answer", []SuggestionAnswer{{"todo", 5, "maybe", "why", false}}, []string{`"maybe"`}},
+		{"no why", []SuggestionAnswer{{"todo", 5, AnswerTake, " ", false}}, []string{"no why"}},
+		{"long why", []SuggestionAnswer{{"todo", 5, AnswerTake, strings.Repeat("a", MaxAnswerWhy+1), false}},
 			[]string{"keep it under"}},
 	}
 	for _, tc := range tests {
@@ -95,14 +102,14 @@ func TestCheckAnswers(t *testing.T) {
 
 func TestSuggestionComment(t *testing.T) {
 	prompts := []string{"Take the reviewer's suggestions about input safety,\nskip the rest."}
-	take := SuggestionComment(SuggestionAnswer{"todo", 5, AnswerTake, "The prompt takes input safety."}, "todo", 2, prompts)
+	take := SuggestionComment(SuggestionAnswer{"todo", 5, AnswerTake, "The prompt takes input safety.", false}, "todo", 2, prompts)
 	for _, want := range []string{"Taken for Brief `todo` in round 2", LabelReady, "The planner: The prompt takes input safety.",
 		"> Take the reviewer's suggestions about input safety, skip the rest."} {
 		if !strings.Contains(take, want) {
 			t.Errorf("take comment %q lacks %q", take, want)
 		}
 	}
-	skip := SuggestionComment(SuggestionAnswer{"todo", 6, AnswerSkip, "Skipped: the rest."}, "todo", 2, prompts)
+	skip := SuggestionComment(SuggestionAnswer{"todo", 6, AnswerSkip, "Skipped: the rest.", false}, "todo", 2, prompts)
 	if !strings.HasPrefix(skip, "Closed for Brief `todo` in round 2: not taken.") || strings.Contains(skip, LabelReady) {
 		t.Errorf("skip comment = %q", skip)
 	}

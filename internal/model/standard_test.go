@@ -193,6 +193,30 @@ func TestHasProposalMarker(t *testing.T) {
 	}
 }
 
+func TestProposalBranchOf(t *testing.T) {
+	marker := ProposalMarker("standard/orders-api-1")
+	for _, tt := range []struct {
+		name, body, want string
+	}{
+		{name: "on its own line", body: "Why\n\n" + marker + "\n", want: "standard/orders-api-1"},
+		{name: "with carriage returns and spaces", body: "Why\r\n  " + marker + " \r\n", want: "standard/orders-api-1"},
+		{name: "as the issue writes it", body: func() string {
+			_, body := StandardChangeIssue(1, "orders-api-1", Proposal{Branch: "standard/orders-api-1",
+				Paths: []string{"Makefile"}, Reason: "make dist"})
+			return body
+		}(), want: "standard/orders-api-1"},
+		{name: "inside a line", body: "See " + marker + " here\n"},
+		{name: "empty branch", body: ProposalMarker("") + "\n"},
+		{name: "no marker", body: "Why\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ProposalBranchOf(tt.body); got != tt.want {
+				t.Errorf("ProposalBranchOf = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStandardChangeLabel(t *testing.T) {
 	l := StandardChangeLabel()
 	if l.Name != LabelStandardChange || l.Color != "#5319e7" || l.Exclusive || l.Description == "" {
@@ -221,14 +245,15 @@ func TestStandardUpdateBody(t *testing.T) {
 	closing := "The operator merges this pull request itself once CI passes. " +
 		"Close it to drop the update until the Standard's ref changes again."
 	for _, tt := range []struct {
-		name    string
-		leftOut []string
+		name            string
+		merged, leftOut []string
 	}{
 		{name: "everything planned"},
 		{name: "some files left out", leftOut: []string{"Makefile", "docs/style/go.md"}},
+		{name: "a file merged", merged: []string{"AGENTS.md"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			body := StandardUpdateBody("go-standard", "v1.0.0", "v1.1.1", paths, tt.leftOut)
+			body := StandardUpdateBody("go-standard", "v1.0.0", "v1.1.1", paths, tt.merged, tt.leftOut)
 			for _, want := range []string{"`go-standard`", "`v1.0.0`", "`v1.1.1`", "## Files",
 				"- `AGENTS.md`\n", "- `docs/agents/implementer.md`\n", closing} {
 				if !strings.Contains(body, want) {
@@ -237,6 +262,15 @@ func TestStandardUpdateBody(t *testing.T) {
 			}
 			if got := strings.Contains(body, "## Left out"); got != (len(tt.leftOut) > 0) {
 				t.Errorf("body has a Left out section = %v, want %v:\n%s", got, len(tt.leftOut) > 0, body)
+			}
+			const mergedTitle = "## Merged with the repository's changes"
+			if got := strings.Contains(body, mergedTitle); got != (len(tt.merged) > 0) {
+				t.Errorf("body has a Merged section = %v, want %v:\n%s", got, len(tt.merged) > 0, body)
+			}
+			for _, p := range tt.merged {
+				if _, after, _ := strings.Cut(body, mergedTitle); !strings.Contains(after, "- `"+p+"`\n") {
+					t.Errorf("Merged section lacks %q:\n%s", p, body)
+				}
 			}
 			for _, p := range tt.leftOut {
 				if _, after, _ := strings.Cut(body, "## Left out"); !strings.Contains(after, "- `"+p+"`\n") {

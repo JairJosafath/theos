@@ -14,6 +14,10 @@ type TaskProgress struct {
 	ReviewAttempts int
 	ReviewAgains   int
 	Reruns         int
+	// ChecksReruns counts the reruns of killed CI jobs in this round, and
+	// ChecksRerunAt is when the last was asked for, on the round's commit.
+	ChecksReruns  int
+	ChecksRerunAt time.Time
 	// Restarts counts how often the round started over in place (conflicts,
 	// a resume); sandbox names include it.
 	Restarts int
@@ -65,6 +69,7 @@ func IssueClosed(issue int) TaskEnd {
 func OpenedPR(p TaskProgress, commit string) TaskProgress {
 	p.Commit = commit
 	p.HasChecks = false
+	p.ChecksRerunAt = time.Time{}
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskChecking
 	return p
@@ -94,8 +99,10 @@ func NextRound(p TaskProgress, feedback string) TaskProgress {
 	p.ReviewAttempts = 0
 	p.ReviewAgains = 0
 	p.Reruns = 0
+	p.ChecksReruns = 0
 	p.Restarts = 0
 	p.HasChecks = false
+	p.ChecksRerunAt = time.Time{}
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskImplementing
 	return p
@@ -126,6 +133,7 @@ func restartRound(p TaskProgress, feedback string) TaskProgress {
 	p.ReviewAttempts = 0
 	p.ReviewAgains = 0
 	p.HasChecks = false
+	p.ChecksRerunAt = time.Time{}
 	p.ResumedRound = 0
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskImplementing
@@ -143,6 +151,14 @@ func RetryReview(p TaskProgress) TaskProgress {
 // the same step runs again, and counts the rerun.
 func Rerun(p TaskProgress) TaskProgress {
 	p.Reruns++
+	return p
+}
+
+// RerunChecks is the progress of a Task whose killed CI jobs run again at
+// now: it waits for their result in the same round, and counts the rerun.
+func RerunChecks(p TaskProgress, now time.Time) TaskProgress {
+	p.ChecksReruns++
+	p.ChecksRerunAt = now
 	return p
 }
 
@@ -204,6 +220,7 @@ func PullRequestClosed(url string) TaskEnd {
 func Recheck(p TaskProgress, head string) TaskProgress {
 	p.Commit = head
 	p.HasChecks = false
+	p.ChecksRerunAt = time.Time{}
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskChecking
 	return p
@@ -216,6 +233,7 @@ func Recheck(p TaskProgress, head string) TaskProgress {
 func ReviewAgain(p TaskProgress) TaskProgress {
 	p.ReviewAgains++
 	p.HasChecks = false
+	p.ChecksRerunAt = time.Time{}
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskChecking
 	return p
@@ -227,6 +245,7 @@ func ReviewAgain(p TaskProgress) TaskProgress {
 func UpdatedBranch(p TaskProgress, head string) TaskProgress {
 	p.Commit = head
 	p.HasChecks = false
+	p.ChecksRerunAt = time.Time{}
 	p.MergeWhenChecksPass = true
 	p.Phase = TaskChecking
 	return p

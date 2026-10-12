@@ -180,43 +180,6 @@ func TestReleaseMilestoneDueAt(t *testing.T) {
 	}
 }
 
-func TestRoundFixes(t *testing.T) {
-	issue := func(container string, labels ...string) PlanIssue {
-		return PlanIssue{Container: container, Labels: labels}
-	}
-	for _, tc := range []struct {
-		name string
-		plan Plan
-		want map[string]bool
-	}{
-		{"no issues", Plan{}, map[string]bool{}},
-		{"all fixes", Plan{Issues: []PlanIssue{issue("core", "kind/bug"), issue("core", " kind/bug ", "area/cli")}},
-			map[string]bool{"core": true}},
-		{"a feature among fixes", Plan{Issues: []PlanIssue{issue("core", "kind/bug"), issue("core", "kind/feature"),
-			issue("core", "kind/bug")}}, map[string]bool{"core": false}},
-		{"an unlabelled issue is not a fix", Plan{Issues: []PlanIssue{issue("core")}}, map[string]bool{"core": false}},
-		{"by Container", Plan{Issues: []PlanIssue{issue("core", "kind/bug"), issue("vscode", "kind/feature")}},
-			map[string]bool{"core": true, "vscode": false}},
-		{"a person's work doesn't count", Plan{Issues: []PlanIssue{issue("core", "kind/bug"),
-			issue("core", "kind/docs", "kind/by-hand")}}, map[string]bool{"core": true}},
-		{"only a person's work", Plan{Issues: []PlanIssue{issue("core", "kind/by-hand")}}, map[string]bool{}},
-		{"a taken suggestion is new work", Plan{Issues: []PlanIssue{issue("core", "kind/bug")},
-			Answers: []SuggestionAnswer{{Container: "core", Issue: 57, Answer: AnswerTake}}},
-			map[string]bool{"core": false}},
-		{"only a taken suggestion", Plan{Answers: []SuggestionAnswer{{Container: "vscode", Issue: 26, Answer: AnswerTake}}},
-			map[string]bool{"vscode": false}},
-		{"a skipped suggestion is no work", Plan{Issues: []PlanIssue{issue("core", "kind/bug")},
-			Answers: []SuggestionAnswer{{Container: "core", Issue: 57, Answer: AnswerSkip}}},
-			map[string]bool{"core": true}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := RoundFixes(tc.plan); !maps.Equal(got, tc.want) {
-				t.Fatalf("RoundFixes = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestReleaseMilestoneMarker(t *testing.T) {
 	if got, want := ReleaseMilestoneMarker("sprout", 2), "<!-- c4-brief: sprout/2 -->"; got != want {
 		t.Fatalf("marker = %q, want %q", got, want)
@@ -263,5 +226,119 @@ func TestStrayWork(t *testing.T) {
 	}
 	if got := StrayWork(nil); got != nil {
 		t.Fatalf("StrayWork(nil) = %v, want none", got)
+	}
+}
+
+func TestIsFix(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		labels []string
+		want   bool
+	}{
+		{"a bug", []string{"kind/bug", "area/cli"}, true},
+		{"a test", []string{" kind/test "}, true},
+		{"a feature", []string{"kind/feature"}, false},
+		{"no labels", nil, false},
+		{"a bug done by hand", []string{"kind/bug", LabelByHand}, false},
+		{"a test done by hand", []string{LabelByHand, "kind/test"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsFix(tc.labels); got != tc.want {
+				t.Fatalf("IsFix(%v) = %v, want %v", tc.labels, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPatchSlot(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	day := func(n int) time.Time { return now.Add(time.Duration(n) * 24 * time.Hour) }
+	m := func(id int64, title string, due time.Time) ReleaseMilestone {
+		return ReleaseMilestone{Release: Release{Title: title, Due: due}, ID: id}
+	}
+	closed := func(r ReleaseMilestone) ReleaseMilestone { r.MilestoneClosed = true; return r }
+	prepared := func(r ReleaseMilestone) ReleaseMilestone { r.Prepared = []int{90}; return r }
+	planned := []ReleaseMilestone{m(2, "v0.14.0", day(10)), m(3, "v0.15.0", day(20))}
+	for _, tc := range []struct {
+		name       string
+		milestones []ReleaseMilestone
+		want       Slot
+	}{
+		{"no milestone at all: v0.1.0 stays the first", nil, Slot{Title: "v0.1.0", Due: day(7)}},
+		{"only milestones that aren't versions", []ReleaseMilestone{m(1, "Later", day(1))},
+			Slot{Title: "v0.1.0", Due: day(7)}},
+		{"only closed milestones: the patch after the newest",
+			[]ReleaseMilestone{closed(m(1, "v0.12.0", day(-20))), closed(m(2, "v0.13.0", day(-10))),
+				closed(m(3, "v0.2.0", day(-30)))},
+			Slot{Title: "v0.13.1", Due: day(7)}},
+		{"v0.13.0 in progress with v0.14.0 and v0.15.0 planned: halfway to v0.14.0",
+			append([]ReleaseMilestone{m(1, "v0.13.0", day(2))}, planned...),
+			Slot{Title: "v0.13.1", Due: day(6)}},
+		{"v0.13.1 open and taking work: joined",
+			append([]ReleaseMilestone{m(1, "v0.13.0", day(2)), m(4, "v0.13.1", day(5))}, planned...),
+			Slot{ID: 4, Title: "v0.13.1", Due: day(5)}},
+		{"v0.13.1 prepared: a new v0.13.2 halfway between it and v0.14.0",
+			append([]ReleaseMilestone{m(1, "v0.13.0", day(2)), prepared(m(4, "v0.13.1", day(4)))}, planned...),
+			Slot{Title: "v0.13.2", Due: day(7)}},
+		{"v0.13.1 closed: v0.13.2",
+			append([]ReleaseMilestone{m(1, "v0.13.0", day(2)), closed(m(4, "v0.13.1", day(4)))}, planned...),
+			Slot{Title: "v0.13.2", Due: day(7)}},
+		{"v0.13.1 closed, due before the release in progress: v0.13.2 still after it",
+			append([]ReleaseMilestone{m(1, "v0.13.0", day(2)), closed(m(4, "v0.13.1", day(-2)))}, planned...),
+			Slot{Title: "v0.13.2", Due: day(6)}},
+		{"every patch closed: the patch after the newest",
+			[]ReleaseMilestone{closed(m(1, "v0.13.0", day(-4))), closed(m(4, "v0.13.1", day(-2)))},
+			Slot{Title: "v0.13.2", Due: day(7)}},
+		{"v0.13.0 being prepared is still the release in progress",
+			append([]ReleaseMilestone{prepared(m(1, "v0.13.0", day(2)))}, planned...),
+			Slot{Title: "v0.13.1", Due: day(6)}},
+		{"a closed and an open v0.13.1 taking work: the open one is joined",
+			append([]ReleaseMilestone{m(1, "v0.13.0", day(2)), closed(m(5, "v0.13.1", day(1))), m(4, "v0.13.1", day(5))},
+				planned...),
+			Slot{ID: 4, Title: "v0.13.1", Due: day(5)}},
+		{"nothing open after the release in progress: P4's date",
+			[]ReleaseMilestone{m(1, "v0.13.0", day(9))}, Slot{Title: "v0.13.1", Due: day(9).Add(time.Hour)}},
+		{"nothing open after it, due soon: a week from now",
+			[]ReleaseMilestone{m(1, "v0.13.0", day(1))}, Slot{Title: "v0.13.1", Due: day(7)}},
+		{"an undated open milestone isn't the release in progress",
+			[]ReleaseMilestone{m(1, "v0.13.0", time.Time{}), closed(m(2, "v0.12.0", day(-3)))},
+			Slot{Title: "v0.13.1", Due: day(7)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := PatchSlot(tc.milestones, now)
+			if got.ID != tc.want.ID || got.Title != tc.want.Title || !got.Due.Equal(tc.want.Due) {
+				t.Fatalf("PatchSlot = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPatchMilestoneMarker(t *testing.T) {
+	if got, want := PatchMilestoneMarker("sprout", 2), "<!-- c4-brief: sprout/2 fixes -->"; got != want {
+		t.Fatalf("marker = %q, want %q", got, want)
+	}
+	description := PatchMilestoneDescription("sprout", 2)
+	if !strings.HasSuffix(description, PatchMilestoneMarker("sprout", 2)+"\n") {
+		t.Fatalf("the description doesn't end with the marker:\n%s", description)
+	}
+	for _, tc := range []struct {
+		name        string
+		description string
+		patch       bool
+		release     bool
+	}{
+		{"the patch description", description, true, false},
+		{"the release description", ReleaseMilestoneDescription("sprout", 2), false, true},
+		{"another round's patch", PatchMilestoneDescription("sprout", 12), false, false},
+		{"the marker indented", "Text.\n  <!-- c4-brief: sprout/2 fixes -->  \n", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := HasPatchMilestoneMarker(tc.description, "sprout", 2); got != tc.patch {
+				t.Errorf("HasPatchMilestoneMarker = %v, want %v", got, tc.patch)
+			}
+			if got := HasReleaseMilestoneMarker(tc.description, "sprout", 2); got != tc.release {
+				t.Errorf("HasReleaseMilestoneMarker = %v, want %v", got, tc.release)
+			}
+		})
 	}
 }

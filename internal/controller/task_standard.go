@@ -279,19 +279,57 @@ func deleteProposal(ctx context.Context, provider gitprovider.Provider, repo git
 }
 
 // dropProposal deletes the proposal branch of a Task that fails while Blocked on
-// its Standard change.
+// its Standard change, once the change's issue is closed. While it is open the
+// change can still be retried, and its retry merges the branch, so it stays;
+// the change's own merge, or its close by a failed issue's answer, deletes it
+// then.
 func (r *TaskReconciler) dropProposal(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
 	container *c4v1alpha1.Container) {
-	if status.Phase != c4v1alpha1.TaskBlocked || status.StandardChange == nil {
+	change := status.StandardChange
+	if status.Phase != c4v1alpha1.TaskBlocked || change == nil {
 		return
 	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err == nil {
 		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
-		err = deleteProposal(gitCtx, provider, repo, status.StandardChange)
+		var issue gitprovider.Issue
+		issue, err = provider.GetIssue(gitCtx, repo, int(change.Issue))
+		switch {
+		case errors.Is(err, gitprovider.ErrIssueNotFound):
+			err = deleteProposal(gitCtx, provider, repo, change)
+		case err == nil && issue.State == stateClosed:
+			err = deleteProposal(gitCtx, provider, repo, change)
+		}
 		cancel()
 	}
 	logNotes(ctx, task, []error{err})
+}
+
+// deleteChangeProposal deletes the proposal branch a Standard change issue
+// names, if it names one: its change merged or was closed.
+func deleteChangeProposal(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	issue gitprovider.Issue) error {
+	branch := model.ProposalBranchOf(issue.Body)
+	if !slices.Contains(issue.Labels, model.LabelStandardChange) || branch == "" {
+		return nil
+	}
+	return provider.DeleteBranch(ctx, repo, branch)
+}
+
+// goneProposal returns the proposal branch of Standard change issue when the
+// Git host no longer has it, so a retry would have nothing to merge; "" for
+// another issue, or a branch still there.
+func goneProposal(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	issue gitprovider.Issue) (string, error) {
+	branch := model.ProposalBranchOf(issue.Body)
+	if !slices.Contains(issue.Labels, model.LabelStandardChange) || branch == "" {
+		return "", nil
+	}
+	ok, err := provider.HasBranch(ctx, repo, branch)
+	if err != nil || ok {
+		return "", err
+	}
+	return branch, nil
 }
 
 func quotePaths(paths []string) string { return model.QuotePaths(paths) }

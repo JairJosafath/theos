@@ -242,6 +242,24 @@ var _ = Describe("Container Standard update", func() {
 			"its last update left out Makefile, changed in the repository since: a person brings them up to date"))
 	})
 
+	It("merges a file the repository changed in other lines, and names it", func() {
+		ns := newProjectNamespace()
+		updatableContainer(ns)
+		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("# Our own targets.\ncheck:\n\ttrue\n")}})
+
+		bumpStandard(ns, "v1.2.0")
+		update := openedUpdate(ns, "v1.2.0")
+		Expect(update.Paths).To(Equal([]string{"AGENTS.md", makefile, implementer, reviewer}))
+		Expect(update.Merged).To(Equal([]string{makefile}))
+		Expect(update.LeftOut).To(BeEmpty())
+
+		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		eventuallyAt(ns, "v1.2.0")
+		Expect(mainFile(ns, makefile)).To(Equal("# Our own targets.\ncheck:\n\tmake lint test\n"))
+		Expect(gitFake.mainHead(ns, "orders-api").Message).
+			To(ContainSubstring("Merged with the repository's changes since v1.0.0: Makefile.\n"))
+	})
+
 	It("drops an update whose pull request a person closed until the ref changes again", func() {
 		ns := newProjectNamespace()
 		updatableContainer(ns)

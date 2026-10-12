@@ -241,7 +241,13 @@ enforces.
   the fix attempts are told so and to leave the rest to CI, the round pushes
   with no error and reports the base's output (`CheckFailsOnBase`), and the
   operator goes on to the pull request and CI, which runs the same check and
-  decides. A Standard change is then proposed as on a passing check; its own
+  decides. The operator shows the difference: the round's status message
+  says the check fails on main in the agent's workspace too and CI decides,
+  a Normal Event `CheckFailsOnBase` names the output's last line, and a
+  comment on the pull request names the check and carries the output, so a
+  person can give the workspace what CI has. It costs no round and no try,
+  and is no condition: the Task's outcome is CI's and the review's. A
+  Standard change is then proposed as on a passing check; its own
   gated Task runs CI before it merges. A blocked note is checked the same
   way: when the check fails on the base, the implementer is sent back once
   to do the issue, since that is not a reason to block, and a second blocked
@@ -610,7 +616,13 @@ model and context it needs.
   A round turned back for touching files the Task may not change, twice in a
   row, ends the Task `Blocked` instead of spending its last round, and the Task
   that waits on that Standard change ends `Blocked` too, so the Brief lists
-  both issues with the files that hold them. See
+  both issues with the files that hold them. The change's proposal branch
+  (`standard/<task>`) lives as long as its `kind/standard-change` issue is
+  open, also after the waiting issue was handed back, so a retry of the
+  change finds it; the operator deletes it when the change merges or a
+  failed issue's answer closes it. A Standard change whose branch is gone
+  anyway says so where failed issues are answered, and a retry of it is
+  refused: its Task would have nothing to merge. See
   [plans/done/2026-10-02-standard-change-design.md](plans/done/2026-10-02-standard-change-design.md)
   and [plans/done/standard-change-scope.md](plans/done/standard-change-scope.md).
 - **A Standard's fixes reach its Containers.** Bumping a Standard's pinned `ref`
@@ -802,10 +814,13 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 - **A Brief's apps are released when the plan says so.** A plan names the
   Containers that ship releases (`plan/releases.yaml`); the Crew the Brief
   made for each then tags and prepares releases, and each round files that
-  Container's issues in a release milestone of its own, so a release follows
-  once they are done: the next patch version when the round's work for it is
-  all fixes (`kind/bug`, and no suggestion taken), else the next minor one,
-  each due after every open release before it. Applying a round also puts
+  Container's issues in release milestones, so a release follows once they
+  are done. Each issue goes where it belongs: a fix (`kind/bug` or
+  `kind/test`, or a taken suggestion the plan marks `fix: true`) into the
+  patch release right after the release in progress, joining an open one that
+  takes work or else made and due before the planned releases; any other work
+  into the round's next minor version, due after every open release. A
+  milestone is made only when an issue goes into it. Applying a round also puts
   such a Container's open ready or in-progress issues that sit in no
   milestone (filed before releases were on) into its first open release with
   no prepare issue, so work it already has never waits behind its own later releases (#599); a
@@ -818,7 +833,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   each app's latest release and where it went, and say plainly when releases
   are off and how to turn them on. See
   [plans/done/brief-releases.md](plans/done/brief-releases.md) and
-  [plans/done/brief-patch-releases.md](plans/done/brief-patch-releases.md).
+  [plans/done/brief-patch-releases.md](plans/done/brief-patch-releases.md)
+  and [plans/done/fixes-patch-next.md](plans/done/fixes-patch-next.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for
