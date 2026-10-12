@@ -477,7 +477,7 @@ spec:
                         description: |-
                           stopped is why the update stopped without merging, such as UpdateClosed;
                           a stopped update waits for the Standard's ref or the Container's effective
-                          checks to change.
+                          checks to change, except NoLightCheck, which is planned again every pass.
                         type: string
                       take:
                         description: |-
