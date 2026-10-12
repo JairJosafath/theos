@@ -609,7 +609,7 @@ model and context it needs.
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the agent of a client reads the service it calls.
-- **A project's notes to its agents** (#909). `docs/project-notes.md`, when a
+- **A project's notes to its agents** (#909). *Planned* (#930): `docs/project-notes.md`, when a
   repository has it, is the project's own word to its agents about its
   workspace and ways, such as how CI runs `make check`. No Standard protects
   it, so any issue changes it by a normal pull request; the implement and
@@ -852,7 +852,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   nothing is. Set back to false, it unpauses only the Crews it marked, so a
   Crew a person paused by hand stays paused. The Brief's card pauses and
   resumes it. See [plans/upgrade-in-place.md](plans/upgrade-in-place.md).
-- **A Brief files no issue that no change may make** (#909). `AGENTS.md`,
+- **A Brief files no issue that no change may make** (#909). *Planned* (#931): `AGENTS.md`,
   `docs/agents/` and `.c4factory.yaml` (`model.AgentNeverPaths`) change
   through no pull request, so `brief.md` names them and a prompt that asks
   for a change to them gets no issue: the round's summary and choices say

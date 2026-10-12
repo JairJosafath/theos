@@ -113,7 +113,8 @@ that.
    A model table test pins that no catalog Standard in `dist/chart/values.yaml`
    protects it and that it is not under `AgentNeverPaths` or
    `PlatformProtectedPaths`. Done when `internal/agentrunner` tests show both
-   prompts naming the file and the order, and `make check` passes.
+   prompts naming the file and the order, design.md's *A project's notes to
+   its agents* no longer marked *Planned*, and `make check` passes.
 
 2. **The Brief never files an issue no change may make** (#931, `internal/model`,
    `internal/model/planner.md`, `docs/design.md`). Decisions 1 to 3 and 5:
@@ -128,8 +129,9 @@ that.
    refused with the issue and path named, a plan whose issue body (outside
    the criteria) says "as AGENTS.md says" accepted, a plan whose issue
    edits `docs/project-notes.md` accepted, `brief.md` holding the section
-   with each never path, the guide's examples still passing the check, and
-   `make check` passes. Depends on step 1 (the refusal and the guide name
+   with each never path, the guide's examples still passing the check,
+   design.md's *A Brief files no issue that no change may make* no longer
+   marked *Planned*, and `make check` passes. Depends on step 1 (the refusal and the guide name
    the notes file).
 
 ## Out of scope
