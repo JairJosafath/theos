@@ -21,7 +21,7 @@ slot and a restart making no second milestone. `make check` passes on each.
 ## What happens today
 
 `docs/design.md` (*A Brief's apps are released when the plan says so*) and
-[brief-patch-releases.md](done/brief-patch-releases.md) (P1 to P4): a round
+[brief-patch-releases.md](brief-patch-releases.md) (P1 to P4): a round
 makes one release milestone per released Container. It is the next patch
 version after the newest version milestone only when all of the round's work
 for the Container is `kind/bug` and the round takes no suggestion; otherwise

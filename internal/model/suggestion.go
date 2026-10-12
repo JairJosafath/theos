@@ -62,7 +62,7 @@ type SuggestionAnswer struct {
 	Why string `yaml:"why"`
 	// Fix says a taken suggestion fixes a bug or adds or fixes a test, so it
 	// goes into the patch release after the release in progress (F5 of
-	// plans/fixes-patch-next.md).
+	// plans/done/fixes-patch-next.md).
 	Fix bool `yaml:"fix,omitempty"`
 }
 

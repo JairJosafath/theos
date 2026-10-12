@@ -802,10 +802,13 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 - **A Brief's apps are released when the plan says so.** A plan names the
   Containers that ship releases (`plan/releases.yaml`); the Crew the Brief
   made for each then tags and prepares releases, and each round files that
-  Container's issues in a release milestone of its own, so a release follows
-  once they are done: the next patch version when the round's work for it is
-  all fixes (`kind/bug`, and no suggestion taken), else the next minor one,
-  each due after every open release before it. Applying a round also puts
+  Container's issues in release milestones, so a release follows once they
+  are done. Each issue goes where it belongs: a fix (`kind/bug` or
+  `kind/test`, or a taken suggestion the plan marks `fix: true`) into the
+  patch release right after the release in progress, joining an open one that
+  takes work or else made and due before the planned releases; any other work
+  into the round's next minor version, due after every open release. A
+  milestone is made only when an issue goes into it. Applying a round also puts
   such a Container's open ready or in-progress issues that sit in no
   milestone (filed before releases were on) into its first open release with
   no prepare issue, so work it already has never waits behind its own later releases (#599); a
@@ -818,7 +821,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   each app's latest release and where it went, and say plainly when releases
   are off and how to turn them on. See
   [plans/done/brief-releases.md](plans/done/brief-releases.md) and
-  [plans/done/brief-patch-releases.md](plans/done/brief-patch-releases.md).
+  [plans/done/brief-patch-releases.md](plans/done/brief-patch-releases.md)
+  and [plans/done/fixes-patch-next.md](plans/done/fixes-patch-next.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for

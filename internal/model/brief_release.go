@@ -12,12 +12,12 @@ import (
 // milestone is due; the date only orders releases (plans/done/brief-releases.md, R6).
 const ReleaseMilestoneDue = 7 * 24 * time.Hour
 
-// LabelBug marks a fix; a round whose work for a Container is all fixes gets a
-// patch release (plans/done/brief-patch-releases.md, P1).
+// LabelBug marks a fix, which goes into the patch release after the release in
+// progress (plans/done/fixes-patch-next.md, F5).
 const LabelBug = "kind/bug"
 
 // LabelTest marks work that adds or fixes a test; like kind/bug, it is a fix
-// (plans/fixes-patch-next.md, F5).
+// (plans/done/fixes-patch-next.md, F5).
 const LabelTest = "kind/test"
 
 // IsFix reports whether an issue the Brief files is a fix, so it goes into the
@@ -42,7 +42,7 @@ type Slot struct {
 }
 
 // PatchSlot is where a Brief's round puts its fixes for a Container whose
-// milestones are milestones, at now (plans/fixes-patch-next.md, F1 to F4).
+// milestones are milestones, at now (plans/done/fixes-patch-next.md, F1 to F4).
 // From the release in progress, the open, dated version milestone due first,
 // or the newest version milestone when none is open, it takes the next patch
 // title. An open milestone with that title that can still take work, with no
@@ -181,28 +181,6 @@ func ReleaseMilestoneDueAt(open []Release, now time.Time) time.Time {
 		}
 	}
 	return due
-}
-
-// RoundFixes reports, by Container, whether the plan's work for it is all
-// fixes: at least one issue that isn't by hand, each labelled kind/bug, and no
-// reviewer's suggestion taken, which is new work (P2).
-func RoundFixes(plan Plan) map[string]bool {
-	fixes := map[string]bool{}
-	for _, issue := range plan.Issues {
-		if IsByHand(issue.Labels) {
-			continue
-		}
-		bug := slices.ContainsFunc(issue.Labels, func(l string) bool { return strings.TrimSpace(l) == LabelBug })
-		if all, seen := fixes[issue.Container]; !seen || all {
-			fixes[issue.Container] = bug
-		}
-	}
-	for _, a := range plan.Answers {
-		if a.Answer == AnswerTake {
-			fixes[a.Container] = false
-		}
-	}
-	return fixes
 }
 
 func compareVersions(a, b []int) int {
