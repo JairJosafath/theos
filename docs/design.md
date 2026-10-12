@@ -610,7 +610,13 @@ model and context it needs.
   A round turned back for touching files the Task may not change, twice in a
   row, ends the Task `Blocked` instead of spending its last round, and the Task
   that waits on that Standard change ends `Blocked` too, so the Brief lists
-  both issues with the files that hold them. See
+  both issues with the files that hold them. The change's proposal branch
+  (`standard/<task>`) lives as long as its `kind/standard-change` issue is
+  open, also after the waiting issue was handed back, so a retry of the
+  change finds it; the operator deletes it when the change merges or a
+  failed issue's answer closes it. A Standard change whose branch is gone
+  anyway says so where failed issues are answered, and a retry of it is
+  refused: its Task would have nothing to merge. See
   [plans/done/2026-10-02-standard-change-design.md](plans/done/2026-10-02-standard-change-design.md)
   and [plans/done/standard-change-scope.md](plans/done/standard-change-scope.md).
 - **A Standard's fixes reach its Containers.** Bumping a Standard's pinned `ref`

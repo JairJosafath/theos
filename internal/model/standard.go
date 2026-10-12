@@ -148,6 +148,28 @@ func HasProposalMarker(body, branch string) bool {
 	return false
 }
 
+// ProposalBranchOf returns the branch whose marker body carries on a line of
+// its own, the proposal of a Standard change issue; "" when it has none.
+func ProposalBranchOf(body string) string {
+	prefix, suffix, _ := strings.Cut(ProposalMarker("\x00"), "\x00")
+	for line := range strings.SplitSeq(body, "\n") {
+		line = strings.TrimSpace(line)
+		if branch, ok := strings.CutPrefix(line, prefix); ok {
+			if branch, ok := strings.CutSuffix(branch, suffix); ok && branch != "" && !strings.ContainsAny(branch, " \t") {
+				return branch
+			}
+		}
+	}
+	return ""
+}
+
+// ProposalGoneNote says a Standard change's proposal branch is gone, so a
+// retry would have nothing to merge.
+func ProposalGoneNote(branch string) string {
+	return fmt.Sprintf("This Standard change's proposal branch `%s` is gone, so a retry would have nothing to merge: close it, "+
+		"and retry the issue that waits on it, which proposes the change again.", branch)
+}
+
 const reasonPrefix = "Standard change:"
 
 // ProposalReason takes the reason from an agent's summary: everything after the

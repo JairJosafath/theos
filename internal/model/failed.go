@@ -79,6 +79,9 @@ type FailedIssue struct {
 	// Release is a release step's milestone as it is now; nil for another
 	// issue.
 	Release *FailedRelease
+	// ProposalGone is the proposal branch of a Standard change whose branch is
+	// gone from the Git host, which no retry can merge; "" for another issue.
+	ProposalGone string
 }
 
 // IssueTask is a Task on a failed issue's Container, as FailedReason sees it.
@@ -438,6 +441,10 @@ func checkAnswer(answer, clarify string, f FailedIssue, subject string) []string
 			out = append(out, fmt.Sprintf("%s %s with a clarify; only a retry clarifies", verb(answer), subject))
 		}
 		return out
+	}
+	if f.ProposalGone != "" {
+		out = append(out, fmt.Sprintf("retries %s, a Standard change whose proposal branch `%s` is gone, so its "+
+			"Task would have nothing to merge: close it, and retry the issue that waits on it", subject, f.ProposalGone))
 	}
 	switch f.Kind {
 	case FailedMerged:
