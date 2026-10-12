@@ -75,7 +75,8 @@ func (g *gitea) PublishGoModule(ctx context.Context, repo Repository, tag string
 		return out, nil
 	}
 
-	archive, err := g.downloadArchive(ctx, repo, tag)
+	// An archive larger than a module zip may be can't become one.
+	archive, err := g.downloadArchive(ctx, repo, tag, modzip.MaxZipFile)
 	if err != nil {
 		return out, err
 	}
@@ -233,8 +234,9 @@ func (g *gitea) uploadClient() *http.Client {
 }
 
 // downloadArchive saves the zip archive of repo at tag to a temporary file and
-// returns it, open; the caller closes and removes it.
-func (g *gitea) downloadArchive(ctx context.Context, repo Repository, tag string) (*os.File, error) {
+// returns it, open; the caller closes and removes it. An archive larger than
+// limit bytes fails.
+func (g *gitea) downloadArchive(ctx context.Context, repo Repository, tag string, limit int64) (*os.File, error) {
 	req, err := g.request(ctx, http.MethodGet, "/api/v1/repos/"+repoPath(repo)+"/archive/"+url.PathEscape(tag)+".zip", nil)
 	if err != nil {
 		return nil, err
@@ -253,11 +255,9 @@ func (g *gitea) downloadArchive(ctx context.Context, repo Repository, tag string
 	if err != nil {
 		return nil, err
 	}
-	// An archive larger than a module zip may be can't become one.
-	n, err := io.Copy(f, io.LimitReader(resp.Body, modzip.MaxZipFile+1))
-	if err == nil && n > modzip.MaxZipFile {
-		err = fmt.Errorf("gitea: the archive of %s at %s is larger than a Go module may be (%d bytes)", repoPath(repo),
-			tag, int64(modzip.MaxZipFile))
+	n, err := io.Copy(f, io.LimitReader(resp.Body, limit+1))
+	if err == nil && n > limit {
+		err = fmt.Errorf("gitea: the archive of %s at %s is larger than %d bytes", repoPath(repo), tag, limit)
 	}
 	if err != nil {
 		removeTemp(f)
