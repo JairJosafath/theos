@@ -251,7 +251,16 @@ enforces.
   infrastructure's too: the Task fails, reason `RunnerOutOfSpace`, costing no
   round and no try. The runners keep `/tmp` from job to job, so they clear
   what jobs left there over two hours ago and run jobs without Node's compile
-  cache, which no later job reads.
+  cache, which no later job reads. Checks that fail because the machine killed
+  a job for lack of memory (the log says `signal: killed`, `Killed`, exit code
+  137 or `JavaScript heap out of memory`) are the infrastructure's as well, but
+  pass once the machine has room: the Task runs the failed jobs again in the
+  same round and tells the agent nothing, up to twice a round; a third killed
+  job fails the Task, reason `RunnerOutOfMemory`, costing no try. When an
+  implementer pushes again the commit whose checks failed, having found
+  nothing to fix, its failed jobs run again before the Task reads the checks;
+  a failure from before a rerun is never read as its result
+  ([plan](plans/checks-run-again.md)).
 - **The fence.** The sandbox pod has no ServiceAccount token and reports through
   its termination message; a per-Container Gitea bot user can write to that one
   repository only; `main` takes no pushes, only the operator merges (the reviewed
@@ -370,7 +379,7 @@ model and context it needs.
   Gitea dependencies (also across repositories) to close, and starts up to `parallel`
   Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
   first after the Standard changes that `Blocked` Tasks wait on, up to three
-  tries per issue (a `NoCIResult`, `RunnerOutOfSpace` or `ApprovalRanOut` failure is not one). A try continues an earlier try's pull request that is
+  tries per issue (a `NoCIResult`, `RunnerOutOfSpace`, `RunnerOutOfMemory` or `ApprovalRanOut` failure is not one). A try continues an earlier try's pull request that is
   still open: it works on that branch, with that try's feedback, and reports
   to that pull request (`status.continues` names the earlier Task). When the
   earlier try ended waiting for the checks of its commit (red checks
