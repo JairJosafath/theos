@@ -613,10 +613,12 @@ kubectl -n webshop patch container orders-api --type merge -p '{"spec":{"checks"
 ```
 
 With UI actions on, the Container's page sets it too (*When CI runs the full
-check*). The change reaches the repository through the Standard update's pull
-request, which the factory merges once its checks pass; the page says when the
-repository still runs the other mode, and so does `ChecksApplied`: False,
-reason `Pending`, until the pull request merges. It takes effect only when the Container's
+check*). A new Container is scaffolded with its checks. On a Container already
+scaffolded, earlier releases included, patching `spec.checks` is enough, with
+no need to recreate it: the change reaches the repository through the Standard
+update's pull request, which the factory merges once its checks pass; the page
+says when the repository still runs the other mode, and so does
+`ChecksApplied`: False, reason `Pending`, until the pull request merges. It takes effect only when the Container's
 Standard can do it (`checksBeforeRelease: true` on the Standard: go-standard,
 go-operator-standard, ts-standard and python-standard): otherwise CI keeps the
 full check on every change, and the Container's `ChecksApplied` condition is
@@ -639,10 +641,12 @@ and run the check again on the new commit. The Crew tags nothing then (its
 `Released` condition says `FullCheckFailed`) and files `Full check fails for
 vX.Y.Z` in the release's milestone, whose merge brings the release round again.
 
-One part of this is still being built: a Container takes its checks when it
-is scaffolded, but a change to one already scaffolded doesn't reach its
-repository yet (GitHub issue #896). Until it lands, choose the checks when you
-create the Container.
+One case doesn't reach the repository: a change of checks whose files were
+changed in the repository since in a way that doesn't merge with it, such as a
+hand-edited `.gitea/workflows/check.yaml`. No pull request opens; the
+Container's `StandardUpdated` and `ChecksApplied` are False, reason
+`ChecksLeftOut`, naming the file, and CI keeps its mode until the Container's
+checks or the Standard's `ref` change again.
 
 ## Upgrading
 
