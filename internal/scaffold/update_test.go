@@ -38,24 +38,47 @@ func TestPlanUpdate(t *testing.T) {
 			old: tree("Makefile", "a"), next: tree("Makefile", "b"), current: tree("Makefile", "changed here"),
 			want: Update{LeftOut: []string{"Makefile"}}},
 		{name: "removed path the repository changed",
-			old: tree("Makefile", "a"), next: Tree{}, current: tree("Makefile", "changed here"),
+			old: tree("Makefile", "a\nb\n"), next: Tree{}, current: tree("Makefile", "a\nB\n"),
 			want: Update{LeftOut: []string{"Makefile"}}},
 		{name: "changed path the repository deleted",
-			old: tree("Makefile", "a"), next: tree("Makefile", "b"), current: Tree{},
+			old: tree("Makefile", "a\nb\n"), next: tree("Makefile", "a\nB\n"), current: Tree{},
 			want: Update{LeftOut: []string{"Makefile"}}},
 		{name: "the executable bit changes",
 			old: script("x", false), next: script("x", true), current: script("x", false),
 			want: Update{Files: script("x", true)}},
 		{name: "the repository changed only the executable bit",
 			old: script("x", false), next: script("y", false), current: script("x", true),
-			want: Update{LeftOut: []string{"run.sh"}}},
-		{name: "many paths, sorted",
-			old:     tree("a", "1", "b", "1", "c", "1", "d", "1", "e", "1"),
-			next:    tree("a", "2", "c", "2", "e", "1", "f", "2"),
-			current: tree("a", "1", "b", "1", "c", "changed here", "d", "1", "e", "changed here"),
+			want: Update{Files: script("y", true), Merged: []string{"run.sh"}}},
+		{name: "a clean merge written",
+			old:     tree("Makefile", "check:\n\ttrue\n\nbuild:\n\tgo build\n"),
+			next:    tree("Makefile", "check:\n\tmake lint test\n\nbuild:\n\tgo build\n"),
+			current: tree("Makefile", "check:\n\ttrue\n\nbuild:\n\tgo build ./...\n"),
 			want: Update{
-				Files:   tree("a", "2", "f", "2"),
+				Files:  tree("Makefile", "check:\n\tmake lint test\n\nbuild:\n\tgo build ./...\n"),
+				Merged: []string{"Makefile"},
+			}},
+		{name: "a merge the repository already holds",
+			old:     tree("Makefile", "a\nb\nc\n"),
+			next:    tree("Makefile", "A\nb\nc\n"),
+			current: tree("Makefile", "A\nb\nC\n")},
+		{name: "overlapping changes left out",
+			old:     tree("Makefile", "a\nb\nc\n"),
+			next:    tree("Makefile", "a\nB\nc\n"),
+			current: tree("Makefile", "a\nours\nc\n"),
+			want:    Update{LeftOut: []string{"Makefile"}}},
+		{name: "a binary file left out",
+			old:     tree("logo.png", "a\x00\nb\nc\n"),
+			next:    tree("logo.png", "A\x00\nb\nc\n"),
+			current: tree("logo.png", "a\x00\nb\nC\n"),
+			want:    Update{LeftOut: []string{"logo.png"}}},
+		{name: "many paths, sorted",
+			old:     tree("a", "1", "b", "1", "c", "1", "d", "1", "e", "1", "g", "x\ny\n"),
+			next:    tree("a", "2", "c", "2", "e", "1", "f", "2", "g", "x\ny\nz\n"),
+			current: tree("a", "1", "b", "1", "c", "changed here", "d", "1", "e", "changed here", "g", "X\ny\n"),
+			want: Update{
+				Files:   tree("a", "2", "f", "2", "g", "X\ny\nz\n"),
 				Removes: []string{"b", "d"},
+				Merged:  []string{"g"},
 				LeftOut: []string{"c"},
 			}},
 	}
@@ -150,6 +173,17 @@ func TestUpdateMessage(t *testing.T) {
 		"Standard-Update: go-standard@v1.0.0..v1.1.1\n"
 	if got := UpdateMessage(in, "go-standard", "v1.0.0", "v1.1.1", u); got != want {
 		t.Errorf("UpdateMessage() with paths left out =\n%s\nwant\n%s", got, want)
+	}
+
+	u.Merged = []string{".gitea/workflows/check.yaml"}
+	want = "Update the Standard go-standard to v1.1.1\n\n" +
+		"Brings the files of go-standard from v1.0.0 to v1.1.1 for Container cel-language-server.\n" +
+		"Merged with the repository's changes since v1.0.0: .gitea/workflows/check.yaml.\n" +
+		"Left out, changed in the repository since v1.0.0: Makefile and docs/style/go.md.\n\n" +
+		"C4-Factory-Container: tools/cel-language-server\n" +
+		"Standard-Update: go-standard@v1.0.0..v1.1.1\n"
+	if got := UpdateMessage(in, "go-standard", "v1.0.0", "v1.1.1", u); got != want {
+		t.Errorf("UpdateMessage() with paths merged =\n%s\nwant\n%s", got, want)
 	}
 }
 

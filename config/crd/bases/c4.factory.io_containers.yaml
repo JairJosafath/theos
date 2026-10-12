@@ -346,7 +346,17 @@ spec:
                       leftOut:
                         description: |-
                           leftOut are the files the update leaves out, because the repository
-                          changed them since the Standard's files were last rendered.
+                          changed them since the Standard's files were last rendered in ways that
+                          don't merge with the Standard's changes.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      merged:
+                        description: |-
+                          merged are the paths the update writes that the repository changed too
+                          since the Standard's files were last rendered, in other lines: the update
+                          writes the two changes merged.
                         items:
                           type: string
                         type: array

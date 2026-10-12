@@ -132,8 +132,16 @@ type StandardUpdateStatus struct {
 	// +optional
 	Paths []string `json:"paths,omitempty"`
 
+	// merged are the paths the update writes that the repository changed too
+	// since the Standard's files were last rendered, in other lines: the update
+	// writes the two changes merged.
+	// +listType=atomic
+	// +optional
+	Merged []string `json:"merged,omitempty"`
+
 	// leftOut are the files the update leaves out, because the repository
-	// changed them since the Standard's files were last rendered.
+	// changed them since the Standard's files were last rendered in ways that
+	// don't merge with the Standard's changes.
 	// +listType=atomic
 	// +optional
 	LeftOut []string `json:"leftOut,omitempty"`
