@@ -1262,6 +1262,27 @@ func TestRunImplementGated(t *testing.T) {
 			t.Error("the unprotected change is missing from the task branch")
 		}
 	})
+	t.Run("none of the allowance changed", func(t *testing.T) {
+		// A round that undid the change on review has nothing to merge (#929).
+		url := standardRepo(t)
+		job := standardJob(t, url)
+		job.AllowedPaths = []string{"Makefile"}
+		got := Run(ctx, job, filesAgent{files: map[string]string{"README.md": "changed\n"}, summary: "Put it back."}, t.TempDir())
+		if !got.Empty || got.Error != "" || got.Commit != "" || got.Summary != "Put it back." {
+			t.Fatalf("Run() = %+v", got)
+		}
+		if branchHead(t, url, "task/add-crop") != "" {
+			t.Error("an empty Standard change was pushed")
+		}
+	})
+	t.Run("a round with a pull request that changes nothing", func(t *testing.T) {
+		url := standardRepo(t)
+		job := standardJob(t, url)
+		job.AllowedPaths, job.PullRequest = []string{"Makefile"}, 7
+		if got := Run(ctx, job, filesAgent{summary: "Done."}, t.TempDir()); !got.Empty || got.Error != "" {
+			t.Fatalf("Run() = %+v", got)
+		}
+	})
 	t.Run("a protected file outside the allowance", func(t *testing.T) {
 		url := standardRepo(t)
 		job := standardJob(t, url)
@@ -1434,7 +1455,10 @@ func TestStandardChangePrompts(t *testing.T) {
 		{"implement gated", ImplementPrompt(gated, Workspace{}), []string{"Change Makefile.", "git merge origin/standard/",
 			"proposal branch", "even if your role guide or AGENTS.md says to stop or to leave such files alone",
 			"Add no new tests", `"make check" passing with the change is the evidence`,
-			`only where "make check" fails without it`, "never weaken or remove a check", "Change no other protected file"},
+			`only where "make check" fails without it`, "never weaken or remove a check", "Change no other protected file",
+			"removes or skips no target, test, lint rule or CI job", "don't put Makefile back as on main",
+			"naming the rule and what the issue's author can do instead", "checks setting, BeforeRelease",
+			"A round that leaves Makefile as on main ends the Task"},
 			[]string{"Standard change:", "each with a test", "tests for it", "and tested"}},
 		{"review issue", ReviewPrompt(issue, Workspace{}), []string{"Makefile", "a Standard change",
 			"has tests for its behaviour", "where it is tested", "behaviour without tests"}, []string{"weakens no check"}},
@@ -1442,7 +1466,9 @@ func TestStandardChangePrompts(t *testing.T) {
 			"no more than its issue asks", "Do not require new tests", `"make check" passing with the change`,
 			`every file it changes besides Makefile changes only what "make check" fails on without it`,
 			"The proposal branch named in the issue was only the starting point", "is never merged",
-			"Judge task/x alone", "never ask for the proposal branch to be changed"},
+			"Judge task/x alone", "never ask for the proposal branch to be changed",
+			"which rule, and what the issue's author can do instead", `with a "Blocked:" line saying both`,
+			"not to undo the change", "Never approve a change that leaves Makefile as on main"},
 			[]string{"has tests for its behaviour", "where it is tested", "behaviour without tests"}},
 	}
 	for _, c := range cases {

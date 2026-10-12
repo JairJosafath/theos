@@ -289,6 +289,9 @@ type TaskFacts struct {
 	// Resumed means this implement run is in the round the Task resumed in after
 	// its Standard change merged.
 	Resumed bool
+	// AllowedPaths are the protected paths a Standard change's Task is for;
+	// empty for any other Task.
+	AllowedPaths []string
 	// Change is the Standard change the Task filed last. Its issue and paths come
 	// from status in every phase: the resumed run's DoneByStandardChange names it.
 	// Merged and Failed are read only while the Task is Blocked on it.
@@ -1164,6 +1167,10 @@ func implementedStep(f TaskFacts) TaskStep {
 	if f.Resumed && res.Empty {
 		return TaskStep{Action: ActionDoneByStandardChange, Message: fmt.Sprintf(
 			"Standard change #%d did the whole issue: the branch has nothing beyond main", f.Change.Issue)}
+	}
+	if len(f.AllowedPaths) > 0 && res.Empty {
+		// Nothing is left to review or merge: more rounds won't change that.
+		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Message: EmptiedMessage(f.AllowedPaths, f.Feedback)}
 	}
 	msg := "The agent pushed " + short(res.Commit)
 	action := ActionOpenPR

@@ -104,6 +104,25 @@ func ScopeBlockedMessage(refusal string) string {
 		"more rounds: " + strings.TrimPrefix(refusal, ScopePrefix)
 }
 
+// LeavesAllowedAsOnBase reports whether a Standard change's changed paths
+// touch none of the paths it is for: nothing is left for its gated merge.
+func LeavesAllowedAsOnBase(changed, allowed []string) bool {
+	return !slices.ContainsFunc(changed, func(p string) bool { return coveredByAny(allowed, p) })
+}
+
+// EmptiedMessage is the message of a Standard change whose round left every
+// path it is for as on main, most often because the review found the change
+// itself breaks a rule a Standard change keeps: more rounds and a review can't
+// give it anything to merge, so it stops. feedback is what the round was sent
+// back with, which names that rule.
+func EmptiedMessage(allowed []string, feedback string) string {
+	msg := fmt.Sprintf("The change leaves %s as on main, so a Standard change has nothing to merge", joinAnd(allowed))
+	if fb := ClipSentences(strings.Join(strings.Fields(feedback), " "), MaxBlockedNote); fb != "" {
+		msg += ". The round before was sent back with: " + fb
+	}
+	return msg
+}
+
 func coveredByAny(prots []string, path string) bool {
 	return slices.ContainsFunc(prots, func(prot string) bool { return covers(prot, path) })
 }
