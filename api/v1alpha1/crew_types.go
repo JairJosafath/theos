@@ -119,6 +119,36 @@ type CrewPublishGitHub struct {
 	TokenSecretRef LocalRef `json:"tokenSecretRef"`
 }
 
+// CrewFullCheck is a release's full check, run on the branch
+// release-check/<tag> at the commit the tag will name before the Crew tags it.
+type CrewFullCheck struct {
+	// tag is the release's version, the milestone's title.
+	// +required
+	Tag string `json:"tag"`
+
+	// commit is the commit the tag will name, where the branch points.
+	// +required
+	Commit string `json:"commit"`
+
+	// time is when the Crew pushed the branch, or found it at the commit; the
+	// hour a run has to start counts from it.
+	// +required
+	Time metav1.Time `json:"time"`
+
+	// run is how the runs the branch's push started went, as for a release.
+	// +kubebuilder:validation:Enum=Waiting;Running;Succeeded;Failed
+	// +optional
+	Run string `json:"run,omitempty"`
+
+	// runURL links to the failed run, else to the newest one.
+	// +optional
+	RunURL string `json:"runURL,omitempty"`
+
+	// issue is the issue the Crew filed when the check failed at commit.
+	// +optional
+	Issue int32 `json:"issue,omitempty"`
+}
+
 // CrewRelease is a release a Crew tagged.
 type CrewRelease struct {
 	// tag is the release's version, the milestone's title.
@@ -268,6 +298,12 @@ type CrewStatus struct {
 	// lastRelease is the release the Crew tagged last, when spec.tagReleases is set.
 	// +optional
 	LastRelease *CrewRelease `json:"lastRelease,omitempty"`
+
+	// fullCheck is the full check of the next release, while it holds the tag:
+	// set when the Container's checks are BeforeRelease and the release is done,
+	// until the release is tagged.
+	// +optional
+	FullCheck *CrewFullCheck `json:"fullCheck,omitempty"`
 
 	// rerunRelease is the c4.factory.io/rerun-release value the operator last
 	// answered, so each value re-runs the failed release runs once.

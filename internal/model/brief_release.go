@@ -16,6 +16,11 @@ const ReleaseMilestoneDue = 7 * 24 * time.Hour
 // progress (plans/done/fixes-patch-next.md, F5).
 const LabelBug = "kind/bug"
 
+// BugLabel is the fix's label, for the Git host.
+func BugLabel() IssueLabel {
+	return IssueLabel{LabelBug, "#d73a4a", "A fix: goes into the patch release after the release in progress", false}
+}
+
 // LabelTest marks work that adds or fixes a test; like kind/bug, it is a fix
 // (plans/done/fixes-patch-next.md, F5).
 const LabelTest = "kind/test"

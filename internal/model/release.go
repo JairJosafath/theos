@@ -29,6 +29,9 @@ type ReleaseMilestone struct {
 	Prepared []int
 	// MilestoneClosed says the milestone itself is closed.
 	MilestoneClosed bool
+	// FullChecks are the issues, open or closed, a Crew filed when the
+	// release's full check failed, and the commit each failed at.
+	FullChecks []FullCheckFix
 }
 
 // MergedTask is a Merged Task on the Crew's Container.
@@ -225,11 +228,14 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 		return held(first.Title, ReleaseNoMergedIssue,
 			"%s is done but none of its issues was merged by a Task; a person tags it", first.Title)
 	}
-	if f.Prepare && !slices.Contains(first.Prepared, newest.Issue) {
+	// A fix of the release's full check is the release's own: the changelog
+	// stays its prepare issue's.
+	if latest := newestOf(f.Merged, slices.DeleteFunc(slices.Clone(first.Closed), first.fullCheckFix)); f.Prepare &&
+		latest != nil && !slices.Contains(first.Prepared, latest.Issue) {
 		if prepared := newestOf(f.Merged, first.Prepared); prepared != nil {
 			return held(first.Title, ReleaseMergedAfterPrepare, "%s's #%d merged after its prepare issue #%d, so its "+
 				"changelog misses it; a person files another %s issue in %s or tags it",
-				first.Title, newest.Issue, prepared.Issue, LabelRelease, first.Title)
+				first.Title, latest.Issue, prepared.Issue, LabelRelease, first.Title)
 		}
 	}
 	// An existing tag is never moved; at the right commit, only the milestones

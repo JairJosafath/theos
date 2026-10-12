@@ -678,7 +678,9 @@ model and context it needs.
   With `BeforeRelease` and `tagReleases`, a done release is not tagged at
   once: the Crew pushes `release-check/vX.Y.Z` at the commit, the workflow's
   `full` job runs `make check` there, and its success tags the release and
-  deletes the branch. A failure tags nothing (`FullCheckFailed`) and files
+  deletes the branch. Meanwhile `Released` says `FullCheckRunning` and
+  `status.fullCheck` records the branch's commit, when it was pushed and how
+  its runs go; only the runs of that branch's push count. A failure tags nothing (`FullCheckFailed`) and files
   `Full check fails for vX.Y.Z`, `kind/bug`, in the release's milestone,
   whose merge doesn't count as merged after the prepare issue; no run within
   the hour leaves the release to a person (`NoFullCheck`). A person who tags
