@@ -406,7 +406,12 @@ export interface Crew extends K8sObject {
     /** Lets the Crew file each release's prepare issue. */
     prepareReleases?: boolean
     /** Copies each release the Crew tags to another repository once its runs succeed. */
-    publishReleases?: { github: { repository: string; tokenSecretRef: LocalRef }; tagPrefix?: string; latest?: boolean }
+    publishReleases?: {
+      github: { repository: string; tokenSecretRef: LocalRef }
+      tagPrefix?: string
+      latest?: boolean
+      source?: PublishSource
+    }
   }
   status?: {
     phase?: CrewPhase
@@ -427,6 +432,16 @@ export interface Crew extends K8sObject {
   }
 }
 
+/**
+ * The folder of the GitHub repository a release's source goes to; "." is the
+ * whole repository. tagPrefix goes before the release's tag in the source's
+ * tag; unset, it is path + "/", and nothing for ".".
+ */
+export interface PublishSource {
+  path: string
+  tagPrefix?: string
+}
+
 /** A release a Crew tagged. */
 export interface CrewRelease {
   tag: string
@@ -440,7 +455,13 @@ export interface CrewRelease {
   rerunTime?: string
   /** The bump issues filed in the Containers that bundle this one. */
   bumps?: { container: string; issueURL?: string }[]
-  publish?: { state: 'Pending' | 'Publishing' | 'Published' | 'Failed'; url?: string; message?: string }
+  publish?: {
+    state: 'Pending' | 'Publishing' | 'Published' | 'Failed'
+    url?: string
+    message?: string
+    /** The release's source on GitHub, once it is out. */
+    source?: { commit: string; tag: string; url?: string }
+  }
   goModule?: { state: 'Published' | 'NotGo' | 'Invalid' | 'Failed'; path?: string; version?: string; message?: string }
 }
 
@@ -503,6 +524,8 @@ export interface BriefRelease {
   tagPrefix?: string
   /** False keeps its releases from taking Latest on a repository other apps publish to. */
   latest?: boolean
+  /** The folder its source goes to with each release; unset publishes none. */
+  source?: PublishSource
   /** Whether the Brief takes requests from the repository's GitHub issues, and whose; unset takes none. */
   requests?: BriefRequests
 }

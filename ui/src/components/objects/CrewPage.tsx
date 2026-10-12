@@ -9,7 +9,7 @@ import type { CrewWriter } from '../../k8s/crews'
 import type { Agent, Brief, Container, Crew, CrewRelease, Task } from '../../k8s/types'
 import { useActs } from '../../lib/hooks'
 import { crewSummary, issueList } from '../../model/crews'
-import { RELEASE_RUN } from '../../model/releases'
+import { RELEASE_RUN, publishFailure } from '../../model/releases'
 import { crewNextStep } from '../../model/lifecycle'
 import { AgentName, When } from '../bits'
 import { ExternalLinkIcon } from '../icons'
@@ -131,7 +131,11 @@ export function CrewPage({
           {crew.spec.prepareReleases ? ' It files each release’s prepare issue.' : ''}
           {crew.spec.publishReleases ? ` It publishes them to ${crew.spec.publishReleases.github.repository}.` : ''}
         </p>
-        {release ? <ReleaseFacts release={release} /> : <p className="muted small">No release yet.</p>}
+        {release ? (
+          <ReleaseFacts release={release} failure={publishFailure(crew)} />
+        ) : (
+          <p className="muted small">No release yet.</p>
+        )}
         {acts === 'act' && release?.run === 'Failed' ? (
           <RerunButton key={`${release.tag}|${release.rerunTime ?? ''}`} crew={crew} writer={writer} />
         ) : null}
@@ -141,7 +145,7 @@ export function CrewPage({
   )
 }
 
-function ReleaseFacts({ release }: { release: CrewRelease }) {
+function ReleaseFacts({ release, failure }: { release: CrewRelease; failure?: string }) {
   return (
     <dl className="facts">
       <dt>Tagged</dt>
@@ -192,7 +196,23 @@ function ReleaseFacts({ release }: { release: CrewRelease }) {
             ) : (
               release.publish.state
             )}
+            {failure ? `: ${failure}` : null}
             {release.publish.message ? <span className="muted"> · {release.publish.message}</span> : null}
+          </dd>
+        </>
+      ) : null}
+      {release.publish?.source ? (
+        <>
+          <dt>Source</dt>
+          <dd>
+            {release.publish.source.url ? (
+              <a className="mono" href={release.publish.source.url} target="_blank" rel="noreferrer">
+                {release.publish.source.tag} <ExternalLinkIcon size={11} />
+              </a>
+            ) : (
+              <span className="mono">{release.publish.source.tag}</span>
+            )}
+            <span className="muted mono"> at {release.publish.source.commit.slice(0, 7)}</span>
           </dd>
         </>
       ) : null}

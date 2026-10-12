@@ -7,6 +7,7 @@
 
 import { useContext, useId, useState, type FormEvent } from 'react'
 import type { BriefSettings as Settings, BriefWriter } from '../../k8s/briefs'
+import { sourceTagPrefix } from '../../k8s/crews'
 import { canWrite } from '../../k8s/session'
 import type { Brief, BriefAutopilot, BriefRelease, BriefRequests, BriefRequestsMode } from '../../k8s/types'
 import { SessionContext } from '../../lib/hooks'
@@ -175,7 +176,9 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
                 {' '}
                 · token Secret {r.github.tokenSecretRef.name}
                 {r.tagPrefix ? ` · tags ${r.tagPrefix}v…` : ''}
-                {r.latest === false ? ' · never Latest' : ''} · {requestsSummary(r.requests)}
+                {r.latest === false ? ' · never Latest' : ''}
+                {r.source ? ` · source in ${r.source.path}, tags ${sourceTagPrefix(r.source)}v…` : ''} ·{' '}
+                {requestsSummary(r.requests)}
               </span>
               {act ? (
                 <button
@@ -243,6 +246,8 @@ function AddRelease({
   const [secret, setSecret] = useState('')
   const [tagPrefix, setTagPrefix] = useState('')
   const [latest, setLatest] = useState(true)
+  const [sourcePath, setSourcePath] = useState('')
+  const [sourcePrefix, setSourcePrefix] = useState('')
   const [requests, setRequests] = useState<RequestsFields>(NO_REQUESTS)
   const picked = container || containers[0] || ''
 
@@ -254,6 +259,10 @@ function AddRelease({
     }
     if (tagPrefix.trim()) entry.tagPrefix = tagPrefix.trim()
     if (!latest) entry.latest = false
+    if (sourcePath.trim()) {
+      entry.source = { path: sourcePath.trim() }
+      if (sourcePrefix.trim()) entry.source.tagPrefix = sourcePrefix.trim()
+    }
     const set = requestsOf(undefined, requests)
     if (set) entry.requests = set
     if (await save('add-release', { releases: [...releases, entry], resourceVersion })) {
@@ -262,6 +271,8 @@ function AddRelease({
       setSecret('')
       setTagPrefix('')
       setLatest(true)
+      setSourcePath('')
+      setSourcePrefix('')
       setRequests(NO_REQUESTS)
     }
   }
@@ -327,6 +338,39 @@ function AddRelease({
           </span>
         </span>
       </label>
+      <label className="field" htmlFor={`${id}-source-path`}>
+        <span className="field-label">Source folder</span>
+        <span className="field-hint">
+          Optional, such as engine (. is the whole repository): each release puts the app’s source there, without the
+          factory’s own files, so go install finds it.
+        </span>
+      </label>
+      <input
+        id={`${id}-source-path`}
+        className="input mono"
+        value={sourcePath}
+        onChange={(e) => setSourcePath(e.target.value)}
+        disabled={busy}
+      />
+      {sourcePath.trim() ? (
+        <>
+          <label className="field" htmlFor={`${id}-source-prefix`}>
+            <span className="field-label">Source tag prefix</span>
+            <span className="field-hint">
+              Optional. The source is tagged{' '}
+              {sourceTagPrefix({ path: sourcePath.trim(), tagPrefix: sourcePrefix.trim() || undefined })}vX.Y.Z.
+            </span>
+          </label>
+          <input
+            id={`${id}-source-prefix`}
+            className="input mono"
+            value={sourcePrefix}
+            placeholder={sourceTagPrefix({ path: sourcePath.trim() })}
+            onChange={(e) => setSourcePrefix(e.target.value)}
+            disabled={busy}
+          />
+        </>
+      ) : null}
       <RequestsInputs fields={requests} onChange={setRequests} busy={busy} />
       <div className="form-row">
         <button type="submit" className="button button-secondary" disabled={busy || !picked}>
