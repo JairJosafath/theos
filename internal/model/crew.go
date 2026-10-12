@@ -75,6 +75,8 @@ type Issue struct {
 	Release *Release
 	// Urgent is set for an issue labelled priority/urgent.
 	Urgent bool
+	// Prepare is set for a release's prepare issue, labelled kind/release.
+	Prepare bool
 }
 
 // Release is a milestone with a due date. A Crew works releases one at a time,
@@ -102,6 +104,8 @@ type CrewTask struct {
 	StandardChange *IssueChange
 	// Release is the release of the Task's issue; nil when it has none.
 	Release *Release
+	// Prepare means the Task's issue is a release's prepare issue.
+	Prepare bool
 }
 
 // IssueChange is a Standard change issue a Task filed, and the protected paths it
@@ -121,6 +125,9 @@ type CrewFacts struct {
 	Tasks []CrewTask
 	// Issues are the open issues labelled ready.
 	Issues []Issue
+	// Preparing is the release whose prepare issue waits for the Tasks at work
+	// to end before it is filed (ReleasePrepareWaits); empty when none.
+	Preparing string
 }
 
 // Crew phases, mirroring the API.
@@ -186,6 +193,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	var candidates []int
 	allowances := map[int][]string{}
 	urgent := map[int]bool{}
+	prepare := map[int]bool{}
 	for _, issue := range issues {
 		if working[issue.Number] {
 			// Taken a moment ago; its label changes when its Task starts.
@@ -226,6 +234,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			candidates = append(candidates, issue.Number)
 			allowances[issue.Number] = allowance
 			urgent[issue.Number] = issue.Urgent
+			prepare[issue.Number] = issue.Prepare
 		}
 	}
 	// An urgent issue goes first: a person asked for it at once. Then a Standard
@@ -258,12 +267,24 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	}
 
 	free := max(f.Parallel, 1) - (len(step.Active) - blockedTasks(f.Tasks))
+	// A release's prepare step is built on the main every other Task's work
+	// merged into, and lists that work (#956): while a release is being
+	// prepared, no other issue starts but an urgent one, and its prepare issue
+	// starts once the Tasks at work, Blocked ones aside, have ended.
+	preparing, others := preparingRelease(f, candidates, prepare)
+	held := 0
 	var started []string
 	for _, issue := range candidates {
+		if heldForRelease(preparing, others, urgent[issue] || len(allowances[issue]) > 0, prepare[issue]) {
+			step.Ready = append(step.Ready, issue)
+			held++
+			continue
+		}
 		if free <= 0 && !urgent[issue] {
 			step.Ready = append(step.Ready, issue)
 			continue
 		}
+		others = true // started now, it merges before a prepare issue
 		attempt := 1
 		for _, t := range f.Tasks {
 			if t.Issue == issue {
@@ -281,21 +302,59 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 		free--
 	}
 
+	step.Phase, step.Message = crewProgress(step, started, activeIssues, held, onDependencies)
+	return step
+}
+
+// crewProgress is a Crew's phase and message after its step: what it starts,
+// else what works, and what waits, held ready issues for a release to be
+// prepared.
+func crewProgress(step CrewStep, started []string, activeIssues []int, held, onDependencies int) (string, string) {
 	switch {
 	case len(started) > 0:
-		step.Phase, step.Message = CrewWorking, "Starting "+strings.Join(started, " and ")
+		return CrewWorking, "Starting " + strings.Join(started, " and ")
 	case len(step.Active) > 0:
-		step.Phase, step.Message = CrewWorking, workingMessage(step.Active, activeIssues)
-		if n := len(step.Ready); n > 0 {
-			step.Message += fmt.Sprintf("; %d ready %s %s for a free place", n, plural(n, "issue", "issues"),
+		msg := workingMessage(step.Active, activeIssues)
+		if n := len(step.Ready) - held; n > 0 {
+			msg += fmt.Sprintf("; %d ready %s %s for a free place", n, plural(n, "issue", "issues"),
 				plural(n, "waits", "wait"))
 		}
-		step.Message += dependenciesMessage(onDependencies)
+		return CrewWorking, msg + preparingMessage(held) + dependenciesMessage(onDependencies)
 	default:
-		step.Phase, step.Message = CrewIdle, "No ready issues"
-		step.Message += dependenciesMessage(onDependencies)
+		return CrewIdle, "No ready issues" + preparingMessage(held) + dependenciesMessage(onDependencies)
 	}
-	return step
+}
+
+// preparingRelease reports whether a release is being prepared, its prepare
+// issue waiting or at work, and whether a Task is at work, a Blocked one
+// aside: a prepare issue starts only when none is.
+func preparingRelease(f CrewFacts, candidates []int, prepare map[int]bool) (preparing, others bool) {
+	preparing = f.Preparing != "" || slices.ContainsFunc(candidates, func(n int) bool { return prepare[n] })
+	for _, t := range f.Tasks {
+		if !t.Final {
+			preparing = preparing || t.Prepare
+			others = others || !t.Blocked
+		}
+	}
+	return preparing, others
+}
+
+// heldForRelease reports whether a ready issue waits while a release is being
+// prepared: an urgent one never does, nor a Standard change a Blocked Task
+// (maybe the prepare issue's) waits on (exempt); the prepare issue only while
+// another Task is at work.
+func heldForRelease(preparing, others, exempt, prepare bool) bool {
+	return preparing && !exempt && (!prepare || others)
+}
+
+// preparingMessage tells how many ready issues wait for a release to be
+// prepared.
+func preparingMessage(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("; %d ready %s %s for a release to be prepared", n, plural(n, "issue", "issues"),
+		plural(n, "waits", "wait"))
 }
 
 // dependenciesMessage tells how many ready issues wait on open dependencies.

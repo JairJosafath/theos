@@ -58,10 +58,11 @@ const runOverdueNote = "; its runs have not ended an hour after tagging"
 // after its full check passed there when the Container's checks are
 // BeforeRelease. A release that is done but can't go out is a Warning Event,
 // once per release and reason. It returns the prepare issue it filed, as a
-// ready issue, or nil.
+// ready issue, or nil, and the release whose prepare issue waits for the Tasks
+// at work to end, or "".
 func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
 	status *c4v1alpha1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
-	tasks []c4v1alpha1.Task) *model.Issue {
+	tasks []c4v1alpha1.Task) (*model.Issue, string) {
 	log := logf.FromContext(ctx)
 	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -86,14 +87,18 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		if crew.Spec.TagReleases {
 			r.setReleased(crew, status, metav1.ConditionTrue, reasonPreparingRelease, message)
 		}
-		return &model.Issue{Number: filed.Number, Title: filed.Title, Body: filed.Body,
-			Release: releaseOf(facts, step.Milestone)}
+		return &model.Issue{Number: filed.Number, Title: filed.Title, Body: filed.Body, Prepare: true,
+			Release: releaseOf(facts, step.Milestone)}, ""
+	}
+	var preparing string
+	if err == nil && step.Reason == model.ReleasePrepareWaits {
+		preparing = step.Tag
 	}
 	if !crew.Spec.TagReleases {
 		if err != nil {
 			log.Error(err, "Failed to prepare a release", "container", crew.Spec.ContainerRef.Name, "tag", step.Tag)
 		}
-		return nil
+		return nil, preparing
 	}
 	switch {
 	case err != nil:
@@ -121,7 +126,7 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		last, _ := r.releaseSaid.Load(crew.UID)
 		// A full check that runs is no warning: its start had a Normal Event.
 		if (prev == nil || prev.Reason != step.Reason || prev.Message != step.Held) && last != said &&
-			step.Reason != model.FullCheckRunning {
+			step.Reason != model.FullCheckRunning && step.Reason != model.ReleasePrepareWaits {
 			log.Info("Left a release to a person", "tag", step.Tag, "reason", step.Reason)
 			r.event(crew, corev1.EventTypeWarning, step.Reason, "TagRelease", step.Held)
 		}
@@ -140,7 +145,7 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 			r.setReleased(crew, status, metav1.ConditionTrue, reasonNoReleaseDone, "No open release is done")
 		}
 	}
-	return nil
+	return nil, preparing
 }
 
 // takeReleaseStep tags release step's commit when step says so, after its full
@@ -312,6 +317,9 @@ func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitpr
 		}
 	}
 	for _, t := range tasks {
+		if !isFinal(t.Status.Phase) && t.Status.Phase != c4v1alpha1.TaskBlocked {
+			facts.Working = append(facts.Working, t.Name)
+		}
 		switch {
 		case t.Spec.Issue == 0:
 		case !isFinal(t.Status.Phase):
