@@ -252,8 +252,8 @@ func TestBriefWorkspaceContainers(t *testing.T) {
 				{Name: "web", Repository: "http://gitea/o/web", Issues: []WorkspaceIssue{{7, "Style"}, {2, "Login\npage"}}},
 				{Name: "api", Repository: "http://gitea/o/api"},
 			},
-			want: []string{"- name: api\n  repository: http://gitea/o/api\n  released: false\n  openIssues: []\n" +
-				"- name: web\n  repository: http://gitea/o/web\n  released: false\n  openIssues:\n" +
+			want: []string{"- name: api\n  repository: http://gitea/o/api\n  released: false\n  checks: EveryChange\n  openIssues: []\n" +
+				"- name: web\n  repository: http://gitea/o/web\n  released: false\n  checks: EveryChange\n  openIssues:\n" +
 				"    - '#2 Login page'\n    - '#7 Style'\n"},
 		},
 		{
