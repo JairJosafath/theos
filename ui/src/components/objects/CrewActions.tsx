@@ -5,8 +5,15 @@
 // API server decides each write; a refusal shows its message.
 
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
-import { releasePatch, releaseSettings, settledEdits, type CrewReleaseSettings, type CrewWriter } from '../../k8s/crews'
-import type { Crew } from '../../k8s/types'
+import {
+  releasePatch,
+  releaseSettings,
+  settledEdits,
+  sourceTagPrefix,
+  type CrewReleaseSettings,
+  type CrewWriter,
+} from '../../k8s/crews'
+import type { Crew, PublishSource } from '../../k8s/types'
 import { SignInLink } from '../Account'
 import { writeError, type WriteError } from '../briefs/errors'
 import { FormError } from '../briefs/PromptForm'
@@ -117,8 +124,9 @@ export function ParallelForm({ crew, writer }: { crew: Crew; writer: CrewWriter 
 
 /**
  * The release settings: tag, prepare, and where to publish with the name of
- * the Secret that holds the token. The browser never reads that Secret; the
- * person makes it in the Crew's namespace. Save sends only what changed.
+ * the Secret that holds the token, and the folder the app's source goes to.
+ * The browser never reads that Secret; the person makes it in the Crew's
+ * namespace. Save sends only what changed.
  */
 export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }) {
   const id = useId()
@@ -144,7 +152,12 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
     setEdits({ ...edits, ...next })
   }
   const ops = releasePatch(crew, form, publishFrom)
-  const publish = form.publish ?? { repository: '', tokenSecret: '', tagPrefix: '', latest: true }
+  const publish: NonNullable<CrewReleaseSettings['publish']> = form.publish ?? {
+    repository: '',
+    tokenSecret: '',
+    tagPrefix: '',
+    latest: true,
+  }
   const setPublish = (patch: Partial<typeof publish>) => setForm({ publish: { ...publish, ...patch } })
 
   function submit(e: FormEvent) {
@@ -219,6 +232,23 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
             disabled={sending}
             onChange={(latest) => setPublish({ latest })}
           />
+          <Check
+            label="Publish the source"
+            hint="Put the app’s source, as of each release’s tag, into a folder of the repository, so go install finds it. The factory’s own files stay out."
+            checked={Boolean(publish.source)}
+            disabled={sending}
+            onChange={(on) =>
+              setPublish({ source: on ? (releaseSettings(crew).publish?.source ?? { path: '' }) : undefined })
+            }
+          />
+          {publish.source ? (
+            <SourceFields
+              id={id}
+              source={publish.source}
+              sending={sending}
+              onChange={(source) => setPublish({ source })}
+            />
+          ) : null}
         </div>
       ) : null}
       <div className="form-row">
@@ -229,6 +259,55 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
       </div>
       {error ? <FormError error={error} /> : null}
     </form>
+  )
+}
+
+/** The source's folder and tag prefix, with the tag the prefix makes. */
+function SourceFields({
+  id,
+  source,
+  sending,
+  onChange,
+}: {
+  id: string
+  source: PublishSource
+  sending: boolean
+  onChange: (source: PublishSource) => void
+}) {
+  // Unset, the prefix follows the folder: what go install looks for.
+  const fallback = sourceTagPrefix({ path: source.path })
+  return (
+    <>
+      <Text
+        id={`${id}-source-path`}
+        label="Source folder"
+        hint="Such as engine; . is the whole repository. Each release replaces what the folder holds."
+      >
+        <input
+          id={`${id}-source-path`}
+          className="input mono"
+          value={source.path}
+          spellCheck={false}
+          onChange={(e) => onChange({ ...source, path: e.target.value })}
+          disabled={sending}
+        />
+      </Text>
+      <Text
+        id={`${id}-source-prefix`}
+        label="Source tag prefix"
+        hint={`Optional; empty, it is ${fallback ? fallback : 'nothing'}. The source is tagged ${sourceTagPrefix(source)}vX.Y.Z.`}
+      >
+        <input
+          id={`${id}-source-prefix`}
+          className="input mono"
+          value={source.tagPrefix ?? ''}
+          placeholder={fallback}
+          spellCheck={false}
+          onChange={(e) => onChange({ path: source.path, ...(e.target.value ? { tagPrefix: e.target.value } : {}) })}
+          disabled={sending}
+        />
+      </Text>
+    </>
   )
 }
 

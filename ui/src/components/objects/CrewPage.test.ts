@@ -71,3 +71,60 @@ describe('the Crew page’s actions', () => {
     }
   })
 })
+
+describe('the Crew page’s published release', () => {
+  const published = (state: 'Published' | 'Failed', reason?: string): Crew => ({
+    ...crew('Succeeded'),
+    spec: {
+      ...crew().spec,
+      publishReleases: {
+        github: { repository: 'me/cel-lens', tokenSecretRef: { name: 'gh' } },
+        source: { path: 'engine' },
+      },
+    },
+    status: {
+      lastRelease: {
+        tag: 'v0.6.1',
+        commit: 'a04e6f1',
+        time: '2026-06-01T09:00:00Z',
+        run: 'Succeeded',
+        publish: {
+          state,
+          message: reason ? 'what the operator says' : undefined,
+          source:
+            state === 'Published'
+              ? {
+                  commit: '9b1c2d3e4f',
+                  tag: 'engine/v0.6.1',
+                  url: 'https://github.com/me/cel-lens/tree/engine/v0.6.1/engine',
+                }
+              : undefined,
+        },
+      },
+      conditions: reason ? [{ type: 'Published', status: 'False', reason, message: 'what the operator says' }] : [],
+    },
+  })
+
+  it('links the published source at its tag', () => {
+    const html = render(undefined, published('Published'))
+    expect(html).toContain('<dt>Source</dt>')
+    expect(html).toContain('href="https://github.com/me/cel-lens/tree/engine/v0.6.1/engine"')
+    expect(html).toContain('engine/v0.6.1')
+    expect(html).toContain('at 9b1c2d3')
+  })
+
+  it('shows no source before it is out', () => {
+    expect(render(undefined, published('Failed', 'GitHubError'))).not.toContain('<dt>Source</dt>')
+  })
+
+  it.each([
+    ['SourceTagTaken', 'Failed: the source’s tag is taken by a commit with other files'],
+    ['FolderOverlaps', 'Failed: its source folder overlaps another Crew’s'],
+    ['SourceTooLarge', 'Failed: a file of the source is too large for GitHub'],
+    ['BranchProtected', 'Failed: the repository’s default branch is protected'],
+  ])('says why it failed with %s, in words, beside the message', (reason, words) => {
+    const html = render(undefined, published('Failed', reason))
+    expect(html).toContain(words)
+    expect(html).toContain('what the operator says')
+  })
+})

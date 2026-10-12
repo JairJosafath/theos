@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LiveCrewWriter, RERUN_RELEASE, releasePatch, releaseSettings, settledEdits } from './crews'
+import { LiveCrewWriter, RERUN_RELEASE, releasePatch, releaseSettings, settledEdits, sourceTagPrefix } from './crews'
 import type { Crew } from './types'
 
 const base: Crew = {
@@ -65,6 +65,54 @@ describe('a Crew’s release settings as a patch', () => {
       { op: 'add', path: '/spec/tagReleases', value: false },
       { op: 'remove', path: '/spec/publishReleases' },
     ])
+  })
+})
+
+describe('a Crew’s published source as a patch', () => {
+  const github = { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'gh' } }
+  const withSource = (source: { path: string; tagPrefix?: string }): Crew => ({
+    ...publishing,
+    spec: { ...publishing.spec, publishReleases: { github, source } },
+  })
+  const publishOps = (crew: Crew, source: { path: string; tagPrefix?: string } | undefined) => {
+    const now = releaseSettings(crew)
+    return releasePatch(crew, { ...now, publish: { ...now.publish!, source } })
+  }
+
+  it('reads the folder and its tag prefix, and sends nothing unchanged', () => {
+    const crew = withSource({ path: 'engine', tagPrefix: '' })
+    expect(releaseSettings(crew).publish?.source).toEqual({ path: 'engine', tagPrefix: '' })
+    expect(releasePatch(crew, releaseSettings(crew))).toEqual([])
+  })
+
+  it('sets the folder, leaving an unset tag prefix to its default', () => {
+    expect(publishOps(publishing, { path: 'engine' })).toEqual([
+      { op: 'add', path: '/spec/publishReleases', value: { github, source: { path: 'engine' } } },
+    ])
+  })
+
+  it('sends a changed folder or tag prefix, an empty prefix included', () => {
+    const crew = withSource({ path: 'engine' })
+    expect(publishOps(crew, { path: 'cli' })).toEqual([
+      { op: 'add', path: '/spec/publishReleases', value: { github, source: { path: 'cli' } } },
+    ])
+    expect(publishOps(crew, { path: 'engine', tagPrefix: '' })).toEqual([
+      { op: 'add', path: '/spec/publishReleases', value: { github, source: { path: 'engine', tagPrefix: '' } } },
+    ])
+  })
+
+  it('removes the source turned off and keeps publishing the release', () => {
+    expect(publishOps(withSource({ path: 'engine', tagPrefix: 'e/' }), undefined)).toEqual([
+      { op: 'add', path: '/spec/publishReleases', value: { github } },
+    ])
+  })
+
+  it('tags the source path + "/" by default, nothing for the whole repository', () => {
+    expect(sourceTagPrefix({ path: 'engine' })).toBe('engine/')
+    expect(sourceTagPrefix({ path: 'tools/engine' })).toBe('tools/engine/')
+    expect(sourceTagPrefix({ path: '.' })).toBe('')
+    expect(sourceTagPrefix({ path: 'engine', tagPrefix: '' })).toBe('')
+    expect(sourceTagPrefix({ path: 'engine', tagPrefix: 'core/' })).toBe('core/')
   })
 })
 

@@ -93,3 +93,71 @@ describe("a Crew's publish settings", () => {
     expect(page.querySelector('[role="alert"]')?.textContent).toBe(CONFLICT)
   })
 })
+
+/** Ticks the form's checkbox labelled `label`. */
+function tick(page: HTMLElement, label: string) {
+  const box = [...page.querySelectorAll('label.crew-check')]
+    .find((l) => l.textContent?.startsWith(label))!
+    .querySelector<HTMLInputElement>('input')!
+  box.click()
+}
+
+/**
+ * Renders the form on `c`, does `steps` as a person, and saves. Resolves to
+ * the page's text before the save and the publishReleases the patch sent.
+ */
+async function saveSource(c: Crew, steps: ((page: HTMLElement) => void)[]) {
+  const fetchImpl = vi.fn(async () => answer(200))
+  const writer = new LiveCrewWriter('k8s', fetchImpl)
+  host = document.createElement('div')
+  document.body.append(host)
+  root = createRoot(host)
+  await act(async () => root!.render(createElement(ReleaseForm, { crew: c, writer })))
+  for (const step of steps) await act(async () => step(host!))
+  const shown = host.textContent ?? ''
+  const save = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Save release settings')!
+  await act(async () => save.click())
+  expect(fetchImpl).toHaveBeenCalledTimes(1)
+  const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+  const ops = JSON.parse(init.body as string) as { op: string; path: string; value?: unknown }[]
+  return { shown, publish: ops.find((o) => o.path === '/spec/publishReleases')!.value }
+}
+
+describe("a Crew's published source", () => {
+  const github = { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'gh' } }
+  const withSource = (source: { path: string; tagPrefix?: string }): Crew => {
+    const c = crew('5', 'gh')
+    return { ...c, spec: { ...c.spec, publishReleases: { github, source } } }
+  }
+
+  it('is set by ticking it and naming the folder, showing the tag it defaults to', async () => {
+    const { shown, publish } = await saveSource(crew('5', 'gh'), [
+      (p) => tick(p, 'Publish the source'),
+      (p) => type(p, 'Source folder', 'engine'),
+    ])
+    expect(shown).toContain('The source is tagged engine/vX.Y.Z.')
+    expect(publish).toEqual({ github, source: { path: 'engine' } })
+  })
+
+  it('takes a changed folder and tag prefix', async () => {
+    const { shown, publish } = await saveSource(withSource({ path: 'engine' }), [
+      (p) => type(p, 'Source folder', 'cli'),
+      (p) => type(p, 'Source tag prefix', 'tools/'),
+    ])
+    expect(shown).toContain('The source is tagged tools/vX.Y.Z.')
+    expect(publish).toEqual({ github, source: { path: 'cli', tagPrefix: 'tools/' } })
+  })
+
+  it('goes back to the default tag when the prefix is emptied', async () => {
+    const { shown, publish } = await saveSource(withSource({ path: '.', tagPrefix: 'all-' }), [
+      (p) => type(p, 'Source tag prefix', ''),
+    ])
+    expect(shown).toContain('The source is tagged vX.Y.Z.')
+    expect(publish).toEqual({ github, source: { path: '.' } })
+  })
+
+  it('is removed by unticking it, still publishing the release', async () => {
+    const { publish } = await saveSource(withSource({ path: 'engine' }), [(p) => tick(p, 'Publish the source')])
+    expect(publish).toEqual({ github })
+  })
+})

@@ -85,3 +85,82 @@ describe("a Brief's releases", () => {
     expect(page.querySelector('button[aria-label="Stop publishing cli"]')).not.toBeNull()
   })
 })
+
+/** Types `value` into the add form's input labelled `label`, as a person does. */
+function type(page: HTMLElement, label: string, value: string) {
+  const form = page.querySelector('form[aria-label="Publish an app\'s releases"]')!
+  const id = [...form.querySelectorAll('label')].find((l) => l.textContent?.startsWith(label))!.htmlFor
+  const input = form.querySelector<HTMLInputElement>(`[id="${id}"]`)!
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+/** Renders a Brief that made the Container engine, adds its release with `fields` typed in, and resolves to the page and the releases sent. */
+async function addEngine(fields: [string, string][]) {
+  const fetchImpl = vi.fn(async () => answer(200))
+  const made: Brief = { ...brief, status: { created: [{ kind: 'Container', name: 'engine' }] } }
+  host = document.createElement('div')
+  document.body.append(host)
+  root = createRoot(host)
+  await act(async () =>
+    root!.render(
+      createElement(
+        SessionContext.Provider,
+        { value: ACTING },
+        createElement(BriefSettings, { brief: made, writer: new LiveBriefWriter('k8s', fetchImpl) }),
+      ),
+    ),
+  )
+  for (const [label, value] of fields) await act(async () => type(host!, label, value))
+  const page = host
+  const hint = () => page.querySelector('form[aria-label="Publish an app\'s releases"]')!.textContent ?? ''
+  const shown = hint()
+  const add = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Publish its releases')!
+  await act(async () => add.click())
+  expect(fetchImpl).toHaveBeenCalledTimes(1)
+  const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+  const ops = JSON.parse(init.body as string) as { path: string; value: unknown }[]
+  return { shown, releases: ops.find((o) => o.path === '/spec/releases')!.value as unknown[] }
+}
+
+describe("a Brief's release form", () => {
+  const github = { repository: 'me/tools', tokenSecretRef: { name: 'gh' } }
+  const base: [string, string][] = [
+    ['GitHub repository', 'me/tools'],
+    ['Token Secret', 'gh'],
+  ]
+
+  it('sends no source when the folder is empty', async () => {
+    const { releases } = await addEngine(base)
+    expect(releases).toEqual([cli, { container: 'engine', github }])
+  })
+
+  it('sends the source folder, showing the tag it defaults to', async () => {
+    const { shown, releases } = await addEngine([...base, ['Source folder', 'engine']])
+    expect(shown).toContain('The source is tagged engine/vX.Y.Z.')
+    expect(releases).toEqual([cli, { container: 'engine', github, source: { path: 'engine' } }])
+  })
+
+  it('sends a source tag prefix typed in, and tags with it', async () => {
+    const { shown, releases } = await addEngine([...base, ['Source folder', 'engine'], ['Source tag prefix', 'core/']])
+    expect(shown).toContain('The source is tagged core/vX.Y.Z.')
+    expect(releases).toEqual([cli, { container: 'engine', github, source: { path: 'engine', tagPrefix: 'core/' } }])
+  })
+
+  it('lists an entry’s source folder and the tag it makes', () => {
+    const withSource: Brief = { ...brief, spec: { ...brief.spec, releases: [{ ...cli, source: { path: '.' } }] } }
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    act(() =>
+      root!.render(
+        createElement(
+          SessionContext.Provider,
+          { value: ACTING },
+          createElement(BriefSettings, { brief: withSource, writer: new LiveBriefWriter('k8s', vi.fn()) }),
+        ),
+      ),
+    )
+    expect(host.textContent).toContain('source in ., tags v…')
+  })
+})

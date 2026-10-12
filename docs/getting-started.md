@@ -415,7 +415,10 @@ out first and the release's tag names the same commit, so the release's
 protection the token's user can't pass). Apps sharing a repository each take
 their own folder, neither inside the other's; turning `source` on applies from
 the next release, and removing it stops publishing the source, leaving what
-is on GitHub.
+is on GitHub. With UI actions on, the Crew's release settings (and a Brief's
+*Releases published to GitHub*) set the folder and its tag prefix, showing the
+tag they make, and the Crew's page links the source at its tag and says each
+`Failed` reason in words.
 
 **Reading how it went:**
 

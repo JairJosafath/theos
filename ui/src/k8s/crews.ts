@@ -4,7 +4,7 @@
 // are accepted, so this file copies none of them: a refused write shows the API
 // server's message.
 
-import { RESOURCES, resourcePath, type Crew } from './types'
+import { RESOURCES, resourcePath, type Crew, type PublishSource } from './types'
 import { errorFromResponse } from './watch'
 
 /** The annotation that asks the operator to re-run a failed release's runs, once per value. */
@@ -16,9 +16,16 @@ export interface CrewReleaseSettings {
   prepareReleases: boolean
   /**
    * Where releases are published; undefined publishes nowhere. latest says a
-   * published release becomes the repository's Latest on GitHub.
+   * published release becomes the repository's Latest on GitHub; source,
+   * the folder its source goes to, undefined publishing none.
    */
-  publish?: { repository: string; tokenSecret: string; tagPrefix: string; latest: boolean }
+  publish?: { repository: string; tokenSecret: string; tagPrefix: string; latest: boolean; source?: PublishSource }
+}
+
+/** What goes before a release's tag in its source's tag: tagPrefix, else path + "/", and nothing for ".". */
+export function sourceTagPrefix(source: PublishSource): string {
+  if (source.tagPrefix !== undefined) return source.tagPrefix
+  return source.path === '.' ? '' : `${source.path}/`
 }
 
 /** The settings a Crew has now, as its form starts. */
@@ -33,6 +40,7 @@ export function releaseSettings(crew: Crew): CrewReleaseSettings {
           tokenSecret: p.github.tokenSecretRef.name,
           tagPrefix: p.tagPrefix ?? '',
           latest: p.latest !== false,
+          source: p.source ? { ...p.source } : undefined,
         }
       : undefined,
   }
@@ -69,14 +77,17 @@ export function releasePatch(crew: Crew, next: CrewReleaseSettings, from?: strin
     next.publish?.repository === now.publish?.repository &&
     next.publish?.tokenSecret === now.publish?.tokenSecret &&
     next.publish?.tagPrefix === now.publish?.tagPrefix &&
-    next.publish?.latest === now.publish?.latest
+    next.publish?.latest === now.publish?.latest &&
+    next.publish?.source?.path === now.publish?.source?.path &&
+    next.publish?.source?.tagPrefix === now.publish?.source?.tagPrefix
   if (!same && next.publish) {
-    const { repository, tokenSecret, tagPrefix, latest } = next.publish
+    const { repository, tokenSecret, tagPrefix, latest, source } = next.publish
     const value: NonNullable<Crew['spec']['publishReleases']> = {
       github: { repository, tokenSecretRef: { name: tokenSecret } },
     }
     if (tagPrefix) value.tagPrefix = tagPrefix
     if (!latest) value.latest = false
+    if (source) value.source = source.tagPrefix === undefined ? { path: source.path } : { ...source }
     ops.push({ op: 'add', path: '/spec/publishReleases', value })
   } else if (!same) {
     ops.push({ op: 'remove', path: '/spec/publishReleases' })
