@@ -525,6 +525,8 @@ func (g *fakeGit) branchRule(owner, name string) (gitprovider.BranchRule, []stri
 }
 
 // closePull closes a pull request without merging it, as a person might.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) closePull(owner, name string, number int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -568,6 +570,7 @@ func (g *fakeGit) pullText(owner, name string, number int) (title, body string) 
 	return text[0], text[1]
 }
 
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) pullRequests(owner, name string) []gitprovider.PullRequest {
 	g.mu.Lock()
 	defer g.mu.Unlock()

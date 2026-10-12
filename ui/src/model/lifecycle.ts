@@ -378,9 +378,21 @@ export function containerNextStep(container: Container): NextStep | undefined {
   const pr = update?.pullRequestURL
     ? { href: update.pullRequestURL, label: `Open pull request${update.pullRequest ? ` #${update.pullRequest}` : ''}` }
     : undefined
+  if (update?.take && updated?.status === 'False' && updated.reason === 'ChecksFailed') {
+    return {
+      text: `Taking ${standard!.name} ${update.ref}’s version waits: its checks failed. Fix them in its pull request, or close it to leave the files behind.`,
+      link: pr,
+    }
+  }
   if (update && updated?.status === 'False' && updated.reason === 'ChecksFailed') {
     return {
       text: `The Standard update to ${update.ref} waits: its checks failed. Fix them in its pull request, or close it to drop the update.`,
+      link: pr,
+    }
+  }
+  if (update?.take && updated?.status === 'False' && updated.reason === 'UpdateRefused') {
+    return {
+      text: `The factory stopped taking ${standard!.name} ${update.ref}’s version; the condition says why. Look at its pull request; the files stay behind until the Standard’s ref changes again.`,
       link: pr,
     }
   }
@@ -408,6 +420,42 @@ export function containerNextStep(container: Container): NextStep | undefined {
 export function standardTakeCommand(container: Container): string {
   const ns = container.metadata.namespace ?? 'default'
   return `kubectl -n ${ns} annotate container ${container.metadata.name} c4.factory.io/standard-take=${container.status?.standard?.ref ?? ''}`
+}
+
+/** The command that keeps the repository's version of the files the Standard's updates left out. */
+export function standardKeepCommand(container: Container): string {
+  const ns = container.metadata.namespace ?? 'default'
+  return `kubectl -n ${ns} annotate container ${container.metadata.name} c4.factory.io/standard-keep=${container.status?.standard?.ref ?? ''}`
+}
+
+/**
+ * The Standard update in flight or stopped, in a heading and a sentence: a
+ * take of the Standard's version of the files left out reads as a take, any
+ * other as an update to its ref.
+ */
+export function describeStandardUpdate(container: Container): { title: string; text: string } | undefined {
+  const standard = container.status?.standard
+  const update = standard?.update
+  if (!standard || !update) return undefined
+  if (update.take) {
+    const paths = update.paths?.length ? ` of ${update.paths.join(', ')}` : ''
+    return {
+      title: `Taking ${standard.name} ${update.ref}’s version`,
+      text: update.stopped
+        ? `Stopped (${update.stopped}); the files stay behind until the Standard’s ref changes again.`
+        : update.pullRequestURL
+          ? `Its pull request takes ${standard.name} ${update.ref}’s version${paths}; the factory merges it once CI passes.`
+          : `The factory is preparing the pull request that takes ${standard.name} ${update.ref}’s version${paths}.`,
+    }
+  }
+  return {
+    title: `Standard update to ${update.ref}`,
+    text: update.stopped
+      ? `Stopped (${update.stopped}); it waits until the Standard’s ref changes again.`
+      : update.pullRequestURL
+        ? 'The factory merges its pull request once its checks pass.'
+        : 'The factory is preparing its pull request.',
+  }
 }
 
 /** The command that re-runs a Crew's failed release runs (design.md, *A failed release run re-runs on request*). */

@@ -2,12 +2,13 @@
 // conditions, its Relationships with their Applied reason and its Sessions,
 // the repository, and on Failed the retry kubectl line), then its template
 // refs and its Standard with the update pull request in flight; with UI
-// actions on, a scaffold retry and a Task from a goal (ContainerActions).
+// actions on, a scaffold retry, an answer to the Standard's files left out and
+// a Task from a goal (ContainerActions).
 
 import type { ContainerWriter } from '../../k8s/containers'
 import type { Brief, CatalogEntry, Container, Crew, Relationship, Session } from '../../k8s/types'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
-import { containerNextStep } from '../../model/lifecycle'
+import { containerNextStep, describeStandardUpdate } from '../../model/lifecycle'
 import { sessionsOf } from '../../model/story'
 import { SessionRow } from '../bits'
 import { ExternalLinkIcon } from '../icons'
@@ -41,11 +42,15 @@ export function ContainerPage({
   const own = sessionsOf(sessions, name)
   const madeBy = briefs.find((b) => b.status?.created?.some((c) => c.kind === 'Container' && c.name === name))
   const update = status?.standard?.update
+  const described = describeStandardUpdate(container)
   const links: OutLink[] = []
   if (status?.repositoryURL) links.push({ href: status.repositoryURL, label: 'Its repository' })
   if (status?.checks?.url) links.push({ href: status.checks.url, label: `Checks on main: ${status.checks.state}` })
   if (update?.pullRequestURL)
-    links.push({ href: update.pullRequestURL, label: `Standard update pull request #${update.pullRequest ?? ''}` })
+    links.push({
+      href: update.pullRequestURL,
+      label: `Standard ${update.take ? 'take' : 'update'} pull request #${update.pullRequest ?? ''}`,
+    })
   const framework = frameworks.find((f) => f.metadata.name === container.spec.frameworkRef.name)
   return (
     <main className="shell-page object-page">
@@ -146,18 +151,12 @@ export function ContainerPage({
         </dl>
       </section>
 
-      {update ? (
+      {update && described ? (
         <section className="panel" aria-labelledby="container-standard">
           <h2 className="panel-title small-title" id="container-standard">
-            Standard update to {update.ref}
+            {described.title}
           </h2>
-          <p className="panel-text">
-            {update.stopped
-              ? `Stopped (${update.stopped}); it waits until the Standard’s ref changes again.`
-              : update.pullRequestURL
-                ? 'The factory merges its pull request once its checks pass.'
-                : 'The factory is preparing its pull request.'}
-          </p>
+          <p className="panel-text">{described.text}</p>
           {update.pullRequestURL ? (
             <p className="panel-text">
               <a href={update.pullRequestURL} target="_blank" rel="noreferrer">

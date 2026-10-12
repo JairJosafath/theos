@@ -64,7 +64,7 @@ import {
 const API: Api = { baseUrl: 'k8s', mux: new WatchMux({ url: 'k8s-watch' }) }
 /** The Brief writes, through the same proxy: create a Brief, add a prompt to one, pause or resume one. */
 const LIVE_WRITER = new LiveBriefWriter(API.baseUrl)
-/** With UI actions on: a Container's scaffold retry and a Task from a goal. */
+/** With UI actions on: a Container's scaffold retry, its answer to the Standard's files left out and a Task from a goal. */
 const CONTAINER_WRITER = new LiveContainerWriter(API.baseUrl)
 /** A Crew page's writes, taken only with the UI server's actions on. */
 const CREW_WRITER = new LiveCrewWriter(API.baseUrl)
@@ -424,6 +424,7 @@ export default function App() {
             loaded={factory.connection.loaded && factoryRead}
             problems={[...factory.connection.problems, ...(factory.connection.unread ?? [])]}
             setUrl={setUrl}
+            writer={CONTAINER_WRITER}
           />
         ),
         briefs: noProjects ? (

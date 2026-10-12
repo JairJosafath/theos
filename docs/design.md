@@ -658,7 +658,11 @@ model and context it needs.
   ref: `c4.factory.io/standard-take` has the operator open and merge a pull
   request of the Standard's version (the repository's other changes kept, the
   lines it drops listed), `c4.factory.io/standard-keep` keeps the repository's
-  (`status.standard.kept`) until the Standard changes the file again. No
+  (`status.standard.kept`) until the Standard changes the file again. The
+  operator removes the annotation once it acted on it; one naming another ref,
+  given while an update is in flight, or both at once is ignored and removed.
+  A take runs like an update (branch `standard-take/<standard>-<ref>`, one
+  update or take in flight at a time); closing it leaves the files behind. No
   autopilot takes it for the person. No agent takes part: the update is the
   template's own content, reviewed
   here where the template changed, and it reaches the agents' rules, which

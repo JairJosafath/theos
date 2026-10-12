@@ -58,7 +58,7 @@ type standardUpdate struct {
 // It reports whether the pass answered the person's annotation, which the
 // caller removes once the status is written.
 func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus) (answered bool) {
+	status *c4v1alpha1.ContainerStatus) bool {
 	name := container.Spec.StandardRef.Name
 	if status.Standard == nil || status.Standard.Name != name {
 		ref := model.ScaffoldedRef(status.ScaffoldedFrom, name)
@@ -66,7 +66,7 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 			r.condition(container, status, c4v1alpha1.ConditionStandardUpdated, metav1.ConditionFalse,
 				c4v1alpha1.ReasonAddedAfterScaffold, fmt.Sprintf(
 					"The Standard %s was not part of the scaffold; its updates don't reach this Container", name))
-			return
+			return false
 		}
 		status.Standard = &c4v1alpha1.ContainerStandardStatus{Name: name, Ref: ref}
 	}
@@ -75,12 +75,12 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 	found, err := r.lookup(ctx, container.Namespace, name, &standard)
 	if err != nil {
 		logf.FromContext(ctx).Info("Could not read Standard", "standard", name, "error", err.Error())
-		return
+		return false
 	}
 	if !found {
 		r.condition(container, status, c4v1alpha1.ConditionStandardUpdated, metav1.ConditionFalse,
 			c4v1alpha1.ReasonNotFound, notFoundMessage([]string{"Standard " + name}))
-		return
+		return false
 	}
 
 	// The cache can lag behind our own status writes, and the steps act in Git
@@ -90,10 +90,10 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 	var live c4v1alpha1.Container
 	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(container), &live); err != nil {
 		logf.FromContext(ctx).Info("Could not read Container", "error", err.Error())
-		return
+		return false
 	}
 	if live.ResourceVersion != container.ResourceVersion {
-		return
+		return false
 	}
 
 	// Git calls get a deadline of their own, so the status write after them still lands.

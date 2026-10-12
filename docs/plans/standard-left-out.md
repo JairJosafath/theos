@@ -118,6 +118,11 @@ Each is its own issue and pull request, and leaves `main` working.
    Container page). Envtest with the fake Git host: take opens and merges the
    pull request and clears `behind`; keep records `kept`; a stale ref is
    ignored; closing the take pull request leaves the item.
+   Built by otter-893: the operator removes an answer once it acted on or
+   ignored it, so a person can take again after closing a take; an answer
+   waits while a take is in flight, and is ignored while an update to another
+   ref is. A take is `status.standard.update` with `take: true`, followed by
+   the same steps as an update; one that conflicts with main is opened again.
 
 Kind would show the whole loop on a real Gitea and runner; no step waits for
 it. Bringing cel-lens-core's `check.yaml` up to date now is not part of this
