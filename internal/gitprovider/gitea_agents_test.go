@@ -499,6 +499,36 @@ func TestForceMergePullRequest(t *testing.T) {
 	}
 }
 
+func TestHasBranch(t *testing.T) {
+	for _, tc := range []struct {
+		status  int
+		want    bool
+		wantErr bool
+	}{
+		{http.StatusOK, true, false},
+		{http.StatusNotFound, false, false},
+		{http.StatusForbidden, false, true},
+	} {
+		var call string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			call = r.Method + " " + r.URL.EscapedPath()
+			w.WriteHeader(tc.status)
+		}))
+		p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "apps", Credentials: Credentials{Username: "c4admin", Token: rand.Text()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := p.HasBranch(context.Background(), p.Repository("photo-editor"), "standard/photo-editor-4-1")
+		srv.Close()
+		if got != tc.want || (err != nil) != tc.wantErr {
+			t.Errorf("HTTP %d: HasBranch() = %v, %v, want %v, error %v", tc.status, got, err, tc.want, tc.wantErr)
+		}
+		if want := "GET /api/v1/repos/apps/photo-editor/branches/standard/photo-editor-4-1"; call != want {
+			t.Errorf("call = %q, want %q", call, want)
+		}
+	}
+}
+
 func TestDeleteBranch(t *testing.T) {
 	for _, tc := range []struct {
 		status  int

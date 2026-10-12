@@ -189,6 +189,52 @@ var _ = Describe("Brief failed issues", func() {
 		}).Should(Succeed())
 	})
 
+	// #889: a retry of a Standard change merges its proposal branch, so one
+	// whose branch is gone can't start; a close deletes the branch.
+	It("refuses retrying a Standard change whose proposal is gone, and deletes the proposal when one closes it", func() {
+		createFactory(ns)
+		briefAgents(ns, 2)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, linterPlan(ns, 0))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+
+		proposal := model.Proposal{Branch: model.ProposalBranch("linter-1"), Paths: []string{"Makefile"},
+			Reason: "make dist must build the packages"}
+		title, body := model.StandardChangeIssue(1, "linter-1", proposal)
+		n := gitFake.addIssue(ns, "linter", title, body, []string{model.LabelStandardChange, model.LabelNeedsHuman})
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Failed).To(ConsistOf(And(HaveField("Number", int32(n)),
+				HaveField("Reason", HavePrefix(model.ProposalGoneNote(proposal.Branch))))))
+			failed := string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
+			g.Expect(failed).To(ContainSubstring("is gone, so a retry would have nothing to merge"))
+		}).Should(Succeed())
+
+		By("refusing a plan that retries it")
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Try the Makefile change again."} })).To(Succeed())
+		planRound(ns, 2, 1, failedPlan(ns,
+			fmt.Sprintf("- {container: linter, issue: %d, answer: retry, why: Try it again.}\n", n)))
+		Eventually(func(g Gomega) {
+			g.Expect(briefEventNotes(g, ns, eventPlanRefused)).To(ContainElement(And(
+				ContainSubstring(fmt.Sprintf("retries linter#%d", n)),
+				ContainSubstring(fmt.Sprintf("proposal branch `%s` is gone", proposal.Branch)))))
+		}).Should(Succeed())
+		Expect(gitFake.issue(ns, "linter", n).State).To(Equal("open"))
+
+		By("deleting its proposal when a plan closes it")
+		gitFake.pushBranch(ns, "linter", proposal.Branch, "sha-proposal")
+		planRound(ns, 2, 2, failedPlan(ns,
+			fmt.Sprintf("- {container: linter, issue: %d, answer: close, why: The prompt drops it.}\n", n)))
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.issue(ns, "linter", n).State).To(Equal("closed"))
+		}).Should(Succeed())
+		Expect(gitFake.hasBranch(ns, "linter", proposal.Branch)).To(BeFalse())
+	})
+
 	// #624: a release step's last try found its milestone empty; work merged
 	// into it since, so it has something to release now.
 	It("shows a failed release step's milestone as it is now and refuses closing it after new merges", func() {

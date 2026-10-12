@@ -193,6 +193,30 @@ func TestHasProposalMarker(t *testing.T) {
 	}
 }
 
+func TestProposalBranchOf(t *testing.T) {
+	marker := ProposalMarker("standard/orders-api-1")
+	for _, tt := range []struct {
+		name, body, want string
+	}{
+		{name: "on its own line", body: "Why\n\n" + marker + "\n", want: "standard/orders-api-1"},
+		{name: "with carriage returns and spaces", body: "Why\r\n  " + marker + " \r\n", want: "standard/orders-api-1"},
+		{name: "as the issue writes it", body: func() string {
+			_, body := StandardChangeIssue(1, "orders-api-1", Proposal{Branch: "standard/orders-api-1",
+				Paths: []string{"Makefile"}, Reason: "make dist"})
+			return body
+		}(), want: "standard/orders-api-1"},
+		{name: "inside a line", body: "See " + marker + " here\n"},
+		{name: "empty branch", body: ProposalMarker("") + "\n"},
+		{name: "no marker", body: "Why\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ProposalBranchOf(tt.body); got != tt.want {
+				t.Errorf("ProposalBranchOf = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStandardChangeLabel(t *testing.T) {
 	l := StandardChangeLabel()
 	if l.Name != LabelStandardChange || l.Color != "#5319e7" || l.Exclusive || l.Description == "" {

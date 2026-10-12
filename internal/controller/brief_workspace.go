@@ -370,6 +370,15 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1
 					logf.FromContext(ctx).Info("Could not read a release step's milestone", "container", c.Name,
 						"number", i.Number, "error", err.Error())
 				}
+				if f.ProposalGone, err = r.readGoneProposal(ctx, providers[c.Spec.GitProviderRef.Name], &c,
+					i); err != nil {
+					// The plan's check reads it again before it retries the change.
+					logf.FromContext(ctx).Info("Could not read a Standard change's proposal branch",
+						"container", c.Name, "number", i.Number, "error", err.Error())
+				}
+				if f.ProposalGone != "" {
+					f.Reason = model.ProposalGoneNote(f.ProposalGone) + " " + f.Reason
+				}
 				failed = append(failed, f)
 			}
 		}
@@ -384,6 +393,14 @@ func (r *BriefReconciler) readFailedRelease(ctx context.Context, provider gitpro
 	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
 	defer cancel()
 	return failedRelease(gitCtx, provider, provider.Repository(c.Name), issue, tasks)
+}
+
+// readGoneProposal is goneProposal with the workspace's Git timeout.
+func (r *BriefReconciler) readGoneProposal(ctx context.Context, provider gitprovider.Provider,
+	c *c4v1alpha1.Container, issue gitprovider.Issue) (string, error) {
+	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
+	defer cancel()
+	return goneProposal(gitCtx, provider, provider.Repository(c.Name), issue)
 }
 
 func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]gitprovider.Provider,

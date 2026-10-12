@@ -173,7 +173,9 @@ func lastFailed(brief *c4v1alpha1.Brief, name string) []model.FailedIssue {
 // host: its clarification must make the whole body pass the Crew's check. So
 // is a release step the answers close, or recommend closing, with its
 // milestone as it is now: work merged since its last try stopped keeps it
-// open. One that is gone is checked without its body.
+// open. A Standard change the answers retry, or recommend retrying, is
+// checked for its proposal branch: a retry of one whose branch is gone has
+// nothing to merge. One that is gone is checked without its body.
 func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.Brief,
 	answers []model.FailedAnswer) ([]model.FailedIssue, error) {
 	out := make([]model.FailedIssue, 0, len(brief.Status.Failed))
@@ -190,9 +192,9 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.B
 				return a.Container == f.Container && a.Issue == f.Number && match(a)
 			})
 		}
-		body := f.Kind == model.FailedUnclear && answered(model.FailedAnswer.Retries)
+		retries := answered(model.FailedAnswer.Retries)
 		closes := answered(model.FailedAnswer.Closes)
-		if !body && !closes {
+		if !retries && !closes {
 			continue
 		}
 		var c c4v1alpha1.Container
@@ -216,6 +218,11 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.B
 			return nil, fmt.Errorf("reading %s#%d: %w", f.Container, f.Number, err)
 		}
 		out[i].Body = issue.Body
+		if retries {
+			if out[i].ProposalGone, err = goneProposal(gitCtx, provider, repo, issue); err != nil {
+				return nil, fmt.Errorf("reading %s#%d's proposal branch: %w", f.Container, f.Number, err)
+			}
+		}
 		if !closes {
 			continue
 		}
@@ -325,6 +332,10 @@ func answerFailedIssue(ctx context.Context, provider gitprovider.Provider, repo 
 		return provider.RemoveIssueLabel(ctx, repo, issue.Number, model.LabelNeedsHuman)
 	}
 	if err := provider.CommentIssue(ctx, repo, issue.Number, comment); err != nil {
+		return err
+	}
+	// A closed Standard change is never retried: nothing reads its proposal.
+	if err := deleteChangeProposal(ctx, provider, repo, issue); err != nil {
 		return err
 	}
 	return provider.CloseIssue(ctx, repo, issue.Number)

@@ -833,6 +833,10 @@ func (p *fakeProvider) DeleteBranch(_ context.Context, repo gitprovider.Reposito
 	return nil
 }
 
+func (p *fakeProvider) HasBranch(_ context.Context, repo gitprovider.Repository, branch string) (bool, error) {
+	return p.git.hasBranch(repo.Owner, repo.Name, branch), nil
+}
+
 // hasBranch reports whether the fake host has branch in owner/name.
 //
 //nolint:unparam // takes owner and name like the other helpers

@@ -212,6 +212,16 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Pr
 	if len(filed) > 0 {
 		comment += "\n\nThe reviewer suggested follow-ups, filed as " + model.LabelProposed + ":\n- " + strings.Join(filed, "\n- ")
 	}
+	if len(task.Spec.AllowedProtectedPaths) > 0 {
+		// A Standard change merged: nothing reads its proposal branch any more.
+		notes = append(notes, r.gitCall(ctx, func(ctx context.Context) error {
+			issue, err := provider.GetIssue(ctx, repo, n)
+			if err != nil {
+				return err
+			}
+			return deleteChangeProposal(ctx, provider, repo, issue)
+		}))
+	}
 	notes = append(notes, r.endIssue(ctx, provider, repo, n, comment)...)
 	logNotes(ctx, task, notes)
 	return filed

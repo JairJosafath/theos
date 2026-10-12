@@ -140,6 +140,8 @@ type Provider interface {
 	ClosePullRequest(ctx context.Context, repo Repository, number int) error
 	// DeleteBranch deletes branch; a branch already gone is no error.
 	DeleteBranch(ctx context.Context, repo Repository, branch string) error
+	// HasBranch reports whether repo has branch.
+	HasBranch(ctx context.Context, repo Repository, branch string) (bool, error)
 	// ReviewPullRequest posts a review of commit: ReviewApprove,
 	// ReviewRequestChanges or ReviewComment, with body.
 	ReviewPullRequest(ctx context.Context, repo Repository, number int, commit, event, body string) error
