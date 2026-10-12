@@ -107,7 +107,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		if err := protectRepository(gitCtx, r.Client, provider, repo, container); err != nil {
 			return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 		}
-		return r.ready(ctx, container, status, info.ScaffoldedFrom, info.Relationships,
+		return r.ready(ctx, container, status, info.ScaffoldedFrom, info.Relationships, info.Checks,
 			"Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonForeignCommits,
@@ -144,7 +144,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	}
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
 		"scaffoldedFrom", result.ScaffoldedFrom)
-	return r.ready(ctx, container, status, result.ScaffoldedFrom, res.use.Relationships,
+	return r.ready(ctx, container, status, result.ScaffoldedFrom, res.use.Relationships, in.Checks,
 		fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
 }
 
@@ -167,10 +167,20 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 }
 
 // ready records a finished scaffold. From here on the factory only reports.
+// checks is when CI runs the full check as the scaffold rendered the Standard's
+// files; empty reads as EveryChange.
 func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus, from []string, relationships []model.AppliedRelationship, message string) (ctrl.Result, error) {
+	status *c4v1alpha1.ContainerStatus, from []string, relationships []model.AppliedRelationship, checks string,
+	message string) (ctrl.Result, error) {
 	status.Phase = c4v1alpha1.ContainerReady
 	status.ScaffoldedFrom = from
+	if container.Spec.StandardRef != nil {
+		name := container.Spec.StandardRef.Name
+		if ref := model.ScaffoldedRef(from, name); ref != "" {
+			status.Standard = &c4v1alpha1.ContainerStandardStatus{Name: name, Ref: ref,
+				Checks: c4v1alpha1.ChecksMode(checks)}
+		}
+	}
 	status.AppliedRelationships, status.AppliedConnectors = appliedStatus(relationships)
 	r.condition(container, status, c4v1alpha1.ConditionScaffolded, metav1.ConditionTrue,
 		c4v1alpha1.ReasonScaffolded, message)

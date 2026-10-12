@@ -664,8 +664,8 @@ model and context it needs.
   here where the template changed, and it reaches the agents' rules, which
   agents never change. The operator merges it as admin once CI passes on it,
   with every check `main` requires, and it changes only the planned files.
-  Closing the pull request drops the update until the Standard's ref changes
-  again. `status.standard` records the ref the Standard's files are at and the
+  Closing the pull request drops the update until the Standard's ref, or the
+  Container's checks, change again. `status.standard` records the ref the Standard's files are at and the
   update in flight, the condition `StandardUpdated` how it went;
   `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
   [plans/done/standard-update.md](plans/done/standard-update.md) and
@@ -681,7 +681,12 @@ model and context it needs.
   every change and the Container's `ChecksApplied` is False
   (`StandardRunsFullChecks`). The Standard's `check.yaml` renders the choice;
   changing it reaches the repository through the Standard update's pull
-  request, and `status.standard.checks` records what the repository runs.
+  request, and `status.standard.checks` records what the repository runs:
+  the scaffold's (also in `.c4factory.yaml`), then each merged update's. An
+  update whose change of checks would leave out a file the repository changed
+  since, such as a hand-edited `check.yaml`, isn't opened: `StandardUpdated`
+  is False (`ChecksLeftOut`) naming the file, and the checks stay as they are
+  until the Container's checks or the Standard's ref change again.
   With `BeforeRelease` and `tagReleases`, a done release is not tagged at
   once: the Crew pushes `release-check/vX.Y.Z` at the commit, the workflow's
   `full` job runs `make check` there, and its success tags the release and

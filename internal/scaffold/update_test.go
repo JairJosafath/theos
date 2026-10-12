@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 func TestPlanUpdate(t *testing.T) {
@@ -174,6 +176,65 @@ func TestRenderLayerRendersLikeBuild(t *testing.T) {
 	}
 }
 
+// checksStandard is a Standard whose CI workflow follows the Container's checks.
+var checksStandard = tree(
+	".gitea/workflows/check.yaml.tmpl", "jobs:\n  check:\n"+
+		"    run: make {{ if eq .Checks \"BeforeRelease\" }}check-light{{ else }}check{{ end }}\n"+
+		"{{- if eq .Checks \"BeforeRelease\" }}\n  full:\n    on: release-check/**\n    run: make check\n{{- end }}\n",
+	"AGENTS.md.tmpl", "{{ .Container }} follows the Standard.\n")
+
+func TestPlanUpdateBetweenChecksModes(t *testing.T) {
+	render := func(checks string) Tree {
+		in := ordersAPI
+		in.Standard, in.Checks = "go-standard", checks
+		files, err := RenderLayer(in, Layer{Side: model.SideStandard, Name: "go-standard", Ref: "v1.0.0",
+			Files: checksStandard})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return files
+	}
+	const workflow = ".gitea/workflows/check.yaml"
+	every, before := render(model.ChecksEveryChange), render(model.ChecksBeforeRelease)
+	if !slices.Equal(ChangedPaths(every, before), []string{workflow}) {
+		t.Fatalf("ChangedPaths() = %v, want only %s", ChangedPaths(every, before), workflow)
+	}
+	if got := render(""); !reflect.DeepEqual(got, every) {
+		t.Errorf("empty checks render %q, want EveryChange's %q", got[workflow].Data, every[workflow].Data)
+	}
+
+	tests := []struct {
+		name               string
+		old, next, current Tree
+		want               Update
+	}{
+		{name: "to BeforeRelease", old: every, next: before, current: every,
+			want: Update{Files: Tree{workflow: before[workflow]}}},
+		{name: "back to EveryChange", old: before, next: every, current: before,
+			want: Update{Files: Tree{workflow: every[workflow]}}},
+		{name: "a hand-changed workflow is left out", old: every, next: before,
+			current: Tree{workflow: File{Data: []byte("jobs: {}\n")}, "AGENTS.md": every["AGENTS.md"]},
+			want:    Update{LeftOut: []string{workflow}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PlanUpdate(tt.old, tt.next, tt.current, nil)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("PlanUpdate() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChangedPaths(t *testing.T) {
+	a := tree("same", "x", "changed", "a", "removed", "r")
+	b := tree("same", "x", "changed", "b", "added", "n")
+	b["mode"], a["mode"] = File{Data: []byte("m"), Executable: true}, File{Data: []byte("m")}
+	if got, want := ChangedPaths(a, b), []string{"added", "changed", "mode", "removed"}; !slices.Equal(got, want) {
+		t.Errorf("ChangedPaths() = %v, want %v", got, want)
+	}
+}
+
 func TestRenderLayerRefusesOperatorPaths(t *testing.T) {
 	for _, tt := range []struct{ path, want string }{
 		{".devcontainer/devcontainer.json", "python-standard and the operator both write .devcontainer/devcontainer.json"},
@@ -200,7 +261,7 @@ func TestUpdateMessage(t *testing.T) {
 		"Brings the files of go-standard from v1.0.0 to v1.1.1 for Container cel-language-server.\n\n" +
 		"C4-Factory-Container: tools/cel-language-server\n" +
 		"Standard-Update: go-standard@v1.0.0..v1.1.1\n"
-	if got := UpdateMessage(in, "go-standard", "v1.0.0", "v1.1.1", u); got != want {
+	if got := UpdateMessage(in, "go-standard", model.StandardVersion{Ref: "v1.0.0"}, model.StandardVersion{Ref: "v1.1.1"}, u); got != want {
 		t.Errorf("UpdateMessage() =\n%s\nwant\n%s", got, want)
 	}
 
@@ -210,7 +271,7 @@ func TestUpdateMessage(t *testing.T) {
 		"Left out, changed in the repository since v1.0.0: Makefile and docs/style/go.md.\n\n" +
 		"C4-Factory-Container: tools/cel-language-server\n" +
 		"Standard-Update: go-standard@v1.0.0..v1.1.1\n"
-	if got := UpdateMessage(in, "go-standard", "v1.0.0", "v1.1.1", u); got != want {
+	if got := UpdateMessage(in, "go-standard", model.StandardVersion{Ref: "v1.0.0"}, model.StandardVersion{Ref: "v1.1.1"}, u); got != want {
 		t.Errorf("UpdateMessage() with paths left out =\n%s\nwant\n%s", got, want)
 	}
 
@@ -221,8 +282,36 @@ func TestUpdateMessage(t *testing.T) {
 		"Left out, changed in the repository since v1.0.0: Makefile and docs/style/go.md.\n\n" +
 		"C4-Factory-Container: tools/cel-language-server\n" +
 		"Standard-Update: go-standard@v1.0.0..v1.1.1\n"
-	if got := UpdateMessage(in, "go-standard", "v1.0.0", "v1.1.1", u); got != want {
+	if got := UpdateMessage(in, "go-standard", model.StandardVersion{Ref: "v1.0.0"}, model.StandardVersion{Ref: "v1.1.1"}, u); got != want {
 		t.Errorf("UpdateMessage() with paths merged =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestUpdateMessageBetweenChecksModes(t *testing.T) {
+	in := Input{Project: "tools", SoftwareSystem: "tools", Container: "cel-language-server"}
+	u := Update{Files: tree(".gitea/workflows/check.yaml", "x")}
+	want := "Update the Standard go-standard to v1.1.1, with the full check before release\n\n" +
+		"Brings the files of go-standard from v1.0.0 to v1.1.1 for Container cel-language-server.\n" +
+		"CI runs the full check only before a release.\n\n" +
+		"C4-Factory-Container: tools/cel-language-server\n" +
+		"Standard-Update: go-standard@v1.0.0..v1.1.1\n" +
+		"Checks: EveryChange..BeforeRelease\n"
+	got := UpdateMessage(in, "go-standard", model.StandardVersion{Ref: "v1.0.0"},
+		model.StandardVersion{Ref: "v1.1.1", Checks: model.ChecksBeforeRelease}, u)
+	if got != want {
+		t.Errorf("UpdateMessage() =\n%s\nwant\n%s", got, want)
+	}
+
+	want = "Update the Standard go-standard to v1.1.1, with the full check on every change\n\n" +
+		"Brings the files of go-standard from v1.1.1 to v1.1.1 for Container cel-language-server.\n" +
+		"CI runs the full check on every change.\n\n" +
+		"C4-Factory-Container: tools/cel-language-server\n" +
+		"Standard-Update: go-standard@v1.1.1..v1.1.1\n" +
+		"Checks: BeforeRelease..EveryChange\n"
+	got = UpdateMessage(in, "go-standard", model.StandardVersion{Ref: "v1.1.1", Checks: model.ChecksBeforeRelease},
+		model.StandardVersion{Ref: "v1.1.1"}, u)
+	if got != want {
+		t.Errorf("UpdateMessage() back to EveryChange =\n%s\nwant\n%s", got, want)
 	}
 }
 

@@ -171,6 +171,11 @@ type StandardUpdateStatus struct {
 	// +required
 	Ref string `json:"ref"`
 
+	// checks is when CI runs the full check once the update merges. Empty reads
+	// as EveryChange.
+	// +optional
+	Checks ChecksMode `json:"checks,omitempty"`
+
 	// branch is the update's branch, and commit the one commit on it.
 	// +optional
 	Branch string `json:"branch,omitempty"`
@@ -206,7 +211,8 @@ type StandardUpdateStatus struct {
 	LeftOut []string `json:"leftOut,omitempty"`
 
 	// stopped is why the update stopped without merging, such as UpdateClosed;
-	// a stopped update waits for the Standard's ref to change.
+	// a stopped update waits for the Standard's ref or the Container's effective
+	// checks to change.
 	// +optional
 	Stopped string `json:"stopped,omitempty"`
 }

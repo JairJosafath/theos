@@ -10,6 +10,10 @@ type StandardUpdateFacts struct {
 	// Name is the Standard, Ref the ref its files are at, and Target the
 	// Standard's template ref.
 	Name, Ref, Target string
+	// Mode is when CI runs the full check as the files were last rendered, and
+	// TargetMode the Container's effective checks (EffectiveChecks). Empty
+	// reads as ChecksEveryChange.
+	Mode, TargetMode string
 	// Update is the update in flight, or nil.
 	Update *StandardUpdateInFlight
 	// PR is the update's pull request, nil until read.
@@ -25,8 +29,9 @@ type StandardUpdateFacts struct {
 
 // StandardUpdateInFlight is an update's state in status.
 type StandardUpdateInFlight struct {
-	// Ref is the ref the update brings the files to.
-	Ref string
+	// Ref is the ref the update brings the files to, and Mode the checks; empty
+	// reads as ChecksEveryChange.
+	Ref, Mode string
 	// Stopped is the reason the update stopped, or "" while it runs.
 	Stopped string
 	// PullRequest is the pull request's number, 0 when the update stopped before
@@ -61,7 +66,8 @@ type StandardAction string
 // Standard update actions.
 const (
 	// StandardNone leaves a stopped update as it is: it waits for the Standard's
-	// ref to change, and the condition keeps saying why it stopped.
+	// ref or the Container's checks to change, and the condition keeps saying
+	// why it stopped.
 	StandardNone StandardAction = "None"
 	// StandardReadPR reads the update's pull request into PR.
 	StandardReadPR StandardAction = "ReadPR"
@@ -69,15 +75,17 @@ const (
 	StandardReadChecks StandardAction = "ReadChecks"
 	// StandardReadFiles reads the pull request's changed paths into Files.
 	StandardReadFiles StandardAction = "ReadFiles"
-	// StandardUpToDate reports the Standard's files at its ref.
+	// StandardUpToDate reports the Standard's files at its ref and checks.
 	StandardUpToDate StandardAction = "UpToDate"
-	// StandardPlan renders the Standard at Ref and Target and opens the pull
-	// request that brings the files from one to the other.
+	// StandardPlan renders the Standard at Ref and Mode and at Target and
+	// TargetMode, and opens the pull request that brings the files from one to
+	// the other.
 	StandardPlan StandardAction = "Plan"
-	// StandardForget forgets a stopped update the Standard moved past.
+	// StandardForget forgets a stopped update the Standard or the Container's
+	// checks moved past.
 	StandardForget StandardAction = "Forget"
 	// StandardRecordMerge records the merged pull request: the files are at the
-	// update's ref.
+	// update's ref and checks.
 	StandardRecordMerge StandardAction = "RecordMerge"
 	// StandardDrop closes the pull request, deletes its branch and forgets the
 	// update, so the Standard is planned again.
@@ -115,22 +123,24 @@ type StandardStep struct {
 // step ends the pass: every step but the reads, RecordMerge, Drop and Forget does.
 func NextStandardStep(f StandardUpdateFacts) StandardStep {
 	u := f.Update
+	target := StandardVersion{Ref: f.Target, Checks: f.TargetMode}.Normal()
 	switch {
-	case u == nil && f.Ref == f.Target:
+	case u == nil && (StandardVersion{Ref: f.Ref, Checks: f.Mode}).Normal() == target:
 		return StandardStep{Action: StandardUpToDate}
 	case u == nil:
 		return StandardStep{Action: StandardPlan}
-	case u.Ref != f.Target && u.Stopped != "":
+	case (StandardVersion{Ref: u.Ref, Checks: u.Mode}).Normal() != target && u.Stopped != "":
 		return StandardStep{Action: StandardForget}
-	case u.Ref != f.Target:
-		// The Standard moved on: end the update and plan towards its new ref.
+	case (StandardVersion{Ref: u.Ref, Checks: u.Mode}).Normal() != target:
+		// The Standard or the checks moved on: end the update and plan towards
+		// the new target.
 		switch {
 		case f.PR == nil:
 			return StandardStep{Action: StandardReadPR}
 		case f.PR.Merged:
 			return StandardStep{Action: StandardRecordMerge}
 		}
-		return StandardStep{Action: StandardDrop, Message: "Closed a Standard update its Standard moved past"}
+		return StandardStep{Action: StandardDrop, Message: "Closed a Standard update its Standard or checks moved past"}
 	case u.Stopped != "":
 		// A person may merge a stopped update after all.
 		switch {
@@ -157,8 +167,8 @@ func followStep(f StandardUpdateFacts) StandardStep {
 		return StandardStep{Action: StandardRecordMerge}
 	case pr.Closed:
 		return StandardStep{Action: StandardStopClosed, Message: fmt.Sprintf(
-			"Pull request %s was closed without merging; %s stays at %s until its ref changes again",
-			u.PullRequestURL, f.Name, f.Ref)}
+			"Pull request %s was closed without merging; %s stays at %s until its ref or the checks change again",
+			u.PullRequestURL, f.Name, StandardVersion{Ref: f.Ref, Checks: f.Mode})}
 	case !pr.Mergeable:
 		// main moved with conflicting changes: plan again from the new main.
 		return StandardStep{Action: StandardDrop, Message: "Closed a Standard update that conflicts with main"}
