@@ -140,7 +140,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 			log.Info("Wrote release notes")
 		case model.PublishCreateDraft:
 			var draft gitprovider.TargetRelease
-			if draft, err = target.CreateDraft(pubCtx, step.Tag, step.Name, step.Body); err == nil {
+			if draft, err = target.CreateDraft(pubCtx, step.Tag, step.Name, step.Body, ""); err == nil {
 				log.Info("Created release draft", "draft", draft.ID)
 			}
 		case model.PublishUploadAsset:
