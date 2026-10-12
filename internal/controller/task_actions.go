@@ -205,10 +205,10 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 		return ctrl.Result{}, err
 	}
 	log.Info("Opened pull request", "url", pr.URL, "commit", run.Result.Commit, "round", status.Round)
-	if reopened := status.PullRequest != 0; reopened && len(run.Result.Extra) > 0 {
-		// A later round's pull request is the first one, whose description stays.
-		r.comment(ctx, task, status, container, fmt.Sprintf("Round %d: %s", status.Round,
-			extrasNote(task, run.Result.Extra)))
+	reopened := status.PullRequest != 0
+	ended, err := r.recordRun(ctx, task, status)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 	if step.Action == model.ActionRerunChecks {
 		setProgress(status, model.PushedAgain(progressOf(status), run.Result.Commit))
@@ -217,6 +217,18 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 	}
 	status.Summary = run.Result.Summary
 	status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
+	r.progress(task, status, metav1.ConditionTrue, "Checking", step.Message+"; waiting for checks")
+	// Write the status before the sandbox goes and the notes are posted: when
+	// the write fails, the next pass finds the run's result again, the pull
+	// request open already, and no note posted yet (#906).
+	if err := r.writeStatus(ctx, task, status); err != nil {
+		return ctrl.Result{}, err
+	}
+	if reopened && len(run.Result.Extra) > 0 {
+		// A later round's pull request is the first one, whose description stays.
+		r.comment(ctx, task, status, container, fmt.Sprintf("Round %d: %s", status.Round,
+			extrasNote(task, run.Result.Extra)))
+	}
 	if failed := run.Result.CheckFailsOnBase; failed != "" {
 		r.comment(ctx, task, status, container, model.CheckFailsOnBaseComment(int(status.Round), failed))
 		if r.Recorder != nil {
@@ -224,8 +236,7 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 				model.CheckFailsOnBaseEvent(int(status.Round), failed))
 		}
 	}
-	r.progress(task, status, metav1.ConditionTrue, "Checking", step.Message+"; waiting for checks")
-	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
+	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.dropRun(ctx, task, ended)
 }
 
 // startRun creates the sandbox for this round's role, after making sure the
@@ -639,22 +650,31 @@ func (r *TaskReconciler) reviewRun(ctx context.Context, task *c4v1alpha1.Task,
 // what the run cost to the Task's, records the run, and posts when its
 // sessions handed off.
 func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) error {
-	if status.Sandbox == "" {
-		return nil
-	}
-	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
+	ended, err := r.recordRun(ctx, task, status)
 	if err != nil {
 		return err
 	}
-	sandbox := newSandbox()
-	sandbox.SetNamespace(task.Namespace)
-	sandbox.SetName(status.Sandbox)
-	if err := r.Delete(ctx, sandbox, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil &&
-		!apierrors.IsNotFound(err) {
-		return err
+	return r.dropRun(ctx, task, ended)
+}
+
+// endedRun is a run recordRun took out of the Task's status, for dropRun.
+type endedRun struct {
+	sandbox string
+	round   int32
+	result  *model.RunResult
+}
+
+// recordRun adds what the current run cost to the Task's, records the run,
+// and takes its sandbox out of status; dropRun then deletes it. An empty
+// sandbox means no run was current.
+func (r *TaskReconciler) recordRun(ctx context.Context, task *c4v1alpha1.Task,
+	status *c4v1alpha1.TaskStatus) (endedRun, error) {
+	if status.Sandbox == "" {
+		return endedRun{}, nil
 	}
-	if container := task.Spec.ContainerRef.Name; container != "" {
-		r.revokeOldAgentTokens(ctx, task.Namespace, container, status.Sandbox)
+	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
+	if err != nil {
+		return endedRun{}, err
 	}
 	milliUSD, withoutCost := run.Cost()
 	status.CostMilliUSD += milliUSD
@@ -663,11 +683,31 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1alpha1.Task, stat
 	if rec, ok := run.Record(int(status.Round), status.Sandbox, r.now()); ok {
 		status.Runs = model.KeepNewest(append(status.Runs, runRecord(rec)), model.MaxRunRecords)
 	}
-	if run.Result != nil && len(run.Result.SessionHandoffs) > 0 && r.Recorder != nil {
-		r.Recorder.Eventf(task, nil, corev1.EventTypeNormal, eventSessionHandedOff, "HandOff", "%s",
-			model.HandoffNote(int(status.Round), run.Result.Role, run.Result.SessionHandoffs))
-	}
+	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result}
 	status.Sandbox, status.SandboxPod = "", ""
+	return ended, nil
+}
+
+// dropRun deletes the sandbox of a run recordRun ended, and posts when its
+// sessions handed off.
+func (r *TaskReconciler) dropRun(ctx context.Context, task *c4v1alpha1.Task, ended endedRun) error {
+	if ended.sandbox == "" {
+		return nil
+	}
+	sandbox := newSandbox()
+	sandbox.SetNamespace(task.Namespace)
+	sandbox.SetName(ended.sandbox)
+	if err := r.Delete(ctx, sandbox, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil &&
+		!apierrors.IsNotFound(err) {
+		return err
+	}
+	if container := task.Spec.ContainerRef.Name; container != "" {
+		r.revokeOldAgentTokens(ctx, task.Namespace, container, ended.sandbox)
+	}
+	if res := ended.result; res != nil && len(res.SessionHandoffs) > 0 && r.Recorder != nil {
+		r.Recorder.Eventf(task, nil, corev1.EventTypeNormal, eventSessionHandedOff, "HandOff", "%s",
+			model.HandoffNote(int(ended.round), res.Role, res.SessionHandoffs))
+	}
 	return nil
 }
 

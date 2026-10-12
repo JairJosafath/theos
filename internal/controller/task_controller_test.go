@@ -357,6 +357,46 @@ var _ = Describe("Task", func() {
 		}).Should(Succeed())
 	})
 
+	// #906: the notes a pull request gets as it opens are posted once, however
+	// often the status write after them fails.
+	It("says the check fails on main once when the status write after opening the pull request fails", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 2), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		taskKey := client.ObjectKey{Namespace: ns, Name: "add-crop"}
+		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1alpha1.Task) bool {
+			return t.Status.Phase == c4v1alpha1.TaskChecking
+		})
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1",
+			CheckFailsOnBase: "download engine\ncurl: (22) 404 Not Found\n"}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.PullRequest).NotTo(BeZero())
+		}).Should(Succeed())
+		Expect(taskStatusFaults.pending(taskKey)).To(BeZero())
+		task := getTask(Default, ns, "add-crop")
+		Expect(task.Status.Round).To(Equal(int32(1)))
+		Expect(task.Status.Runs).To(HaveLen(1), "the retry keeps the run's result instead of implementing again")
+		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
+		Expect(countContaining(gitFake.pullComments(ns, "orders-api", int(task.Status.PullRequest)),
+			"`make check` fails in the agent's workspace on main too")).To(Equal(1))
+		Consistently(func(g Gomega) {
+			var events eventsv1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+			var notes []string
+			for _, e := range events.Items {
+				if e.Regarding.Kind == "Task" && e.Regarding.Name == "add-crop" && e.Reason == eventCheckFailsOnBase {
+					g.Expect(e.Series).To(BeNil(), "recorded once")
+					notes = append(notes, e.Note)
+				}
+			}
+			g.Expect(len(notes)).To(BeNumerically("<=", 1))
+		}, "2s").Should(Succeed())
+	})
+
 	It("fails a Task whose checks ran the runner out of room, costing no round", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
