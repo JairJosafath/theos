@@ -16,6 +16,7 @@ func TestPlanUpdate(t *testing.T) {
 	tests := []struct {
 		name               string
 		old, next, current Tree
+		behind             map[string]Tree
 		want               Update
 	}{
 		{name: "unchanged by the Standard",
@@ -83,10 +84,48 @@ func TestPlanUpdate(t *testing.T) {
 				Merged:  []string{"g"},
 				LeftOut: []string{"c"},
 			}},
+		{name: "behind, unchanged by this step, still overlapping",
+			old:     tree("Makefile", "a\nB\nc\n"),
+			next:    tree("Makefile", "a\nB\nc\n"),
+			current: tree("Makefile", "a\nours\nc\n"),
+			behind:  map[string]Tree{"Makefile": tree("Makefile", "a\nb\nc\n")},
+			want:    Update{LeftOut: []string{"Makefile"}}},
+		{name: "behind, merged against its own base",
+			old:     tree("Makefile", "a\nB\nc\nd\n"),
+			next:    tree("Makefile", "a\nB\nc\nd\n"),
+			current: tree("Makefile", "a\nb\nc\nours\n"),
+			behind:  map[string]Tree{"Makefile": tree("Makefile", "a\nb\nc\nd\n")},
+			want: Update{
+				Files:  tree("Makefile", "a\nB\nc\nours\n"),
+				Merged: []string{"Makefile"},
+			}},
+		{name: "behind, brought to next in the repository",
+			old:     tree("Makefile", "a\nB\nc\n"),
+			next:    tree("Makefile", "a\nB2\nc\n"),
+			current: tree("Makefile", "a\nB2\nc\n"),
+			behind:  map[string]Tree{"Makefile": tree("Makefile", "a\nb\nc\n")}},
+		{name: "behind, still at its base",
+			old:     tree("Makefile", "a\nB\nc\n"),
+			next:    tree("Makefile", "a\nB\nc\n"),
+			current: tree("Makefile", "a\nb\nc\n"),
+			behind:  map[string]Tree{"Makefile": tree("Makefile", "a\nb\nc\n")},
+			want:    Update{Files: tree("Makefile", "a\nB\nc\n")}},
+		{name: "behind, a path the next render no longer has",
+			old:     tree("Makefile", "a\nB\nc\n"),
+			next:    Tree{},
+			current: tree("Makefile", "a\nours\nc\n"),
+			behind:  map[string]Tree{"Makefile": tree("Makefile", "a\nb\nc\n")},
+			want:    Update{LeftOut: []string{"Makefile"}}},
+		{name: "behind, a path neither render has",
+			old:     Tree{},
+			next:    Tree{},
+			current: tree("Makefile", "a\nours\nc\n"),
+			behind:  map[string]Tree{"Makefile": tree("Makefile", "a\nb\nc\n")},
+			want:    Update{LeftOut: []string{"Makefile"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := PlanUpdate(tt.old, tt.next, tt.current); !reflect.DeepEqual(got, tt.want) {
+			if got := PlanUpdate(tt.old, tt.next, tt.current, tt.behind); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("PlanUpdate() = %+v, want %+v", got, tt.want)
 			}
 		})
@@ -179,7 +218,7 @@ func TestPlanUpdateBetweenChecksModes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := PlanUpdate(tt.old, tt.next, tt.current)
+			got := PlanUpdate(tt.old, tt.next, tt.current, nil)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("PlanUpdate() = %+v, want %+v", got, tt.want)
 			}

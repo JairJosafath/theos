@@ -148,6 +148,16 @@ function containerNeeds(c: Container): Need[] {
       links: url ? [{ label: 'The update pull request', url }] : [],
     })
   }
+  if (updated?.status === 'False' && updated.reason === 'FilesBehind') {
+    const urls = [...new Set((c.status?.standard?.behind ?? []).flatMap((b) => b.pullRequestURL ?? []))]
+    items.push({
+      ...base('Container', c, 'StandardFilesBehind'),
+      title: 'has Standard files left out of an update',
+      ...why(updated, 'FilesBehind'),
+      place,
+      links: urls.map((url) => ({ label: 'The update pull request', url })),
+    })
+  }
   return items
 }
 

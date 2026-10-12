@@ -32,6 +32,14 @@ request templates.
   `check / check`, skips the steps for a change to only `CHANGELOG.md`,
   `docs/` or images, and fetches the factory's `c4factory.local` modules from
   the package registry alone, as go-standard's README describes.
+- **Checks before a release** (`checksBeforeRelease: true`): with the
+  Container's `checks: BeforeRelease`, `check.yaml` renders a `check` job that
+  runs `make check-light` (`go mod download`, `go mod tidy -diff`, the
+  generated-files check, `golangci-lint fmt --diff`, `go vet`, `golangci-lint
+  run`; no tests) on pull requests and on `main`, with the same skip, and a
+  `full` job that runs `make check` on a push to a `release-check/**` branch,
+  whatever the push changes (status context `check / full (push)`). With
+  `EveryChange`, the default, it renders as before.
 - **Tools:** kubebuilder v4.16.0, controller-gen v0.22.0, kustomize v5.8.1 and
   setup-envtest (the controller-runtime version in `go.mod`) come from PATH
   when the one there prints the pinned version, as in the toolchain image;

@@ -44,6 +44,13 @@ and the `make check` contract CI runs.
   A change to only `CHANGELOG.md`, `docs/` or images (`.png`, `.jpg`, `.gif`,
   `.svg`) skips the steps after the checkout and passes, so the context still
   reports; any other file, `README.md` included, or a first push runs them.
+- **Checks before a release** (`checksBeforeRelease: true`): with the
+  Container's `checks: BeforeRelease`, `check.yaml` renders a `check` job that
+  runs `make check-light` (`npm ci`, `prettier --check`, `eslint
+  --max-warnings 0`, `tsc --noEmit`; no tests) on pull requests and on `main`,
+  with the same skip, and a `full` job that runs `make check` on a push to a
+  `release-check/**` branch, whatever the push changes (status context `check
+  / full (push)`). With `EveryChange`, the default, it renders as before.
 - **Releases:** `make dist VERSION=v1.2.3` packages
   `dist/<container>-1.2.3.vsix` and fails when the tag doesn't match
   `package.json`'s `version`; gitea-release attaches it to the release. For

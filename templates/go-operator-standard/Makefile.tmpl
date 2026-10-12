@@ -1,6 +1,8 @@
 # The quality contract of this repository, on kubebuilder's Makefile. CI runs
-# `make check` on every pull request; agents and people run it before every
-# commit. `make help` lists the targets.
+# `make check` on every pull request, or, when the Container's checks are
+# BeforeRelease, `make check-light` there and `make check` before each release;
+# agents and people run `make check` before every commit. `make help` lists the
+# targets.
 
 BINARY := {{ .Container }}
 # The version stamped into binaries: the tag at HEAD, else a describe such as
@@ -46,6 +48,11 @@ help: ## Display this help.
 
 .PHONY: check
 check: deps tidy-check generated-check fmt-check vet lint test ## Everything CI checks (not test-e2e, which needs a cluster).
+
+# Not build, which formats and regenerates the code instead of failing: vet
+# compiles every package, tests included.
+.PHONY: check-light
+check-light: deps tidy-check generated-check fmt-check vet lint ## check without the tests, which CI runs on each change with checks BeforeRelease.
 
 .PHONY: deps
 deps: ## Download the modules in go.mod.

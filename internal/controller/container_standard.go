@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -33,6 +35,10 @@ import (
 // once CI passes. It is a report on a Ready Container, never a failure: every
 // outcome is the condition StandardUpdated and status.standard, and a Git
 // error is retried at the next recheck. See docs/plans/done/standard-update.md.
+
+// eventStandardFilesBehind is the Warning Event that says a Container's
+// Standard files were left out of an update and wait on a person.
+const eventStandardFilesBehind = "StandardFilesBehind"
 
 // standardUpdate is one pass over a Container's Standard update.
 type standardUpdate struct {
@@ -143,7 +149,7 @@ func (u *standardUpdate) run(ctx, gitCtx context.Context, standard *c4v1alpha1.S
 				f.Files = &model.UpdateFiles{Changed: changed}
 			}
 		case model.StandardUpToDate:
-			u.upToDate()
+			u.upToDate(ctx)
 			return
 		case model.StandardPlan:
 			u.plan(ctx, gitCtx, standard)
@@ -266,15 +272,38 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		checksPaths = scaffold.ChangedPaths(keep, next)
 	}
 
+	// Each file a past update left out is merged against the render its copy
+	// was last brought to.
+	behind := behindFiles(s)
+	// They render with the checks the files are at.
+	renders := map[string]scaffold.Tree{from.Ref: old}
+	bases := map[string]scaffold.Tree{}
+	for _, b := range behind {
+		if _, ok := renders[b.Ref]; !ok {
+			files, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, b.Ref, creds)
+			if err != nil {
+				u.gitError(ctx, err)
+				return
+			}
+			if renders[b.Ref], ok = render(model.StandardVersion{Ref: b.Ref, Checks: from.Checks}, files); !ok {
+				return
+			}
+		}
+		bases[b.Path] = renders[b.Ref]
+	}
+
 	repo := git.provider.Repository(u.container.Name)
 	paths := append(old.Paths(), next.Paths()...)
+	for p := range bases {
+		paths = append(paths, p)
+	}
 	slices.Sort(paths)
 	current, base, err := git.provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, slices.Compact(paths))
 	if err != nil {
 		u.gitError(ctx, err)
 		return
 	}
-	plan := scaffold.PlanUpdate(old, next, current)
+	plan := scaffold.PlanUpdate(old, next, current, bases)
 	if blocked := intersect(plan.LeftOut, checksPaths); len(blocked) > 0 {
 		s.Update = stopped(c4v1alpha1.ReasonChecksLeftOut)
 		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonChecksLeftOut, fmt.Sprintf(
@@ -287,7 +316,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		return
 	}
 	if plan.Empty() {
-		u.alreadyUpToDate(ctx, to, plan.LeftOut)
+		u.alreadyUpToDate(ctx, to, nextBehind(behind, from.Ref, plan.LeftOut, ""))
 		return
 	}
 
@@ -297,7 +326,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		scaffold.UpdateMessage(in, name, from, to, plan), author)
 	if errors.Is(err, gitprovider.ErrEmptyChange) {
 		// main got there between the read and the push.
-		u.alreadyUpToDate(ctx, to, plan.LeftOut)
+		u.alreadyUpToDate(ctx, to, nextBehind(behind, from.Ref, plan.LeftOut, ""))
 		return
 	}
 	if err != nil {
@@ -320,19 +349,60 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 }
 
 // alreadyUpToDate records to when main already holds what it renders, apart
-// from leftOut.
-func (u *standardUpdate) alreadyUpToDate(ctx context.Context, to model.StandardVersion, leftOut []string) {
+// from the files behind.
+func (u *standardUpdate) alreadyUpToDate(ctx context.Context, to model.StandardVersion,
+	behind []c4v1alpha1.StandardFile) {
 	s := u.status.Standard
 	from := u.version()
-	s.Ref, s.Checks, s.LeftOut, s.Update = to.Ref, c4v1alpha1.ChecksMode(to.Checks), leftOut, nil
-	u.upToDate()
+	s.Ref, s.Checks, s.Update = to.Ref, c4v1alpha1.ChecksMode(to.Checks), nil
+	setBehind(s, behind)
+	u.upToDate(ctx)
 	logf.FromContext(ctx).Info("Found the Standard's files up to date", "standard", s.Name, "from", from.String(),
-		"to", to.String(), "leftOut", leftOut)
+		"to", to.String(), "leftOut", s.LeftOut)
 }
 
 // version is the ref and checks the Standard's files are at.
 func (u *standardUpdate) version() model.StandardVersion {
 	return model.StandardVersion{Ref: u.status.Standard.Ref, Checks: recordedChecks(u.status)}
+}
+
+// behindFiles are the files s says are behind. A path of leftOut that behind
+// doesn't list, recorded before behind was kept, is taken as at s.Ref.
+func behindFiles(s *c4v1alpha1.ContainerStandardStatus) []c4v1alpha1.StandardFile {
+	behind := slices.Clone(s.Behind)
+	for _, p := range s.LeftOut {
+		if !slices.ContainsFunc(behind, func(b c4v1alpha1.StandardFile) bool { return b.Path == p }) {
+			behind = append(behind, c4v1alpha1.StandardFile{Path: p, Ref: s.Ref})
+		}
+	}
+	return behind
+}
+
+// nextBehind are the files behind once an update from ref from leaves out
+// leftOut, through the pull request at url when it opened one: a file behind
+// before keeps the ref its copy was last brought to, a newly left-out one is
+// at from, and a file the update brought up to date is no longer behind.
+func nextBehind(behind []c4v1alpha1.StandardFile, from string, leftOut []string,
+	url string) []c4v1alpha1.StandardFile {
+	next := make([]c4v1alpha1.StandardFile, 0, len(leftOut))
+	for _, p := range leftOut {
+		f := c4v1alpha1.StandardFile{Path: p, Ref: from}
+		if i := slices.IndexFunc(behind, func(b c4v1alpha1.StandardFile) bool { return b.Path == p }); i >= 0 {
+			f = behind[i]
+		}
+		f.PullRequestURL = cmp.Or(url, f.PullRequestURL)
+		next = append(next, f)
+	}
+	return next
+}
+
+// setBehind records the files behind, and their paths in leftOut.
+func setBehind(s *c4v1alpha1.ContainerStandardStatus, behind []c4v1alpha1.StandardFile) {
+	s.Behind, s.LeftOut = nil, nil
+	for _, b := range behind {
+		s.Behind = append(s.Behind, b)
+		s.LeftOut = append(s.LeftOut, b.Path)
+	}
 }
 
 // readPullRequest reads the update's pull request. When quiet, the update
@@ -427,12 +497,14 @@ func (u *standardUpdate) drop(ctx, gitCtx context.Context, why string) bool {
 }
 
 // merged records the update's pull request as merged: the Standard's files are
-// at its ref.
+// at its ref. The pass goes on, and its next step reports it: up to date, or
+// the next update.
 func (u *standardUpdate) merged(ctx context.Context) {
 	s := u.status.Standard
 	update := s.Update
-	s.Ref, s.Checks, s.LeftOut, s.Update = update.Ref, update.Checks, update.LeftOut, nil
-	u.upToDate()
+	behind := nextBehind(behindFiles(s), s.Ref, update.LeftOut, update.PullRequestURL)
+	s.Ref, s.Checks, s.Update = update.Ref, update.Checks, nil
+	setBehind(s, behind)
 	logf.FromContext(ctx).Info("Recorded a merged Standard update", "url", update.PullRequestURL,
 		"standard", s.Name, "ref", s.Ref, "checks", recordedChecks(u.status))
 }
@@ -465,16 +537,36 @@ func (u *standardUpdate) access(ctx context.Context) (*gitAccess, bool) {
 	return u.git, true
 }
 
-// upToDate reports the Standard's files at its ref, naming the files the last
-// update left out.
-func (u *standardUpdate) upToDate() {
+// upToDate reports the Standard's files at its ref, or the files its updates
+// left out waiting on a person, with a Warning Event once per ref.
+func (u *standardUpdate) upToDate(ctx context.Context) {
 	s := u.status.Standard
-	message := fmt.Sprintf("%s is at %s", s.Name, u.version())
-	if len(s.LeftOut) > 0 {
-		message += fmt.Sprintf("; its last update left out %s, changed in the repository since: "+
-			"a person brings them up to date", strings.Join(s.LeftOut, ", "))
+	behind := behindFiles(s)
+	setBehind(s, behind)
+	if len(behind) == 0 {
+		u.condition(metav1.ConditionTrue, c4v1alpha1.ReasonUpToDate, fmt.Sprintf("%s is at %s", s.Name, u.version()))
+		return
 	}
-	u.condition(metav1.ConditionTrue, c4v1alpha1.ReasonUpToDate, message)
+	files := make([]string, 0, len(behind))
+	for _, b := range behind {
+		files = append(files, fmt.Sprintf("%s (at %s)", b.Path, b.Ref))
+	}
+	annotate := fmt.Sprintf("kubectl -n %s annotate container %s", u.container.Namespace, u.container.Name)
+	message := fmt.Sprintf("%s is at %s, but its updates left out %s: the repository changed them in lines "+
+		"the Standard changed too. Take the Standard's version: `%s %s=%s`; or keep the repository's: `%s %s=%s`",
+		s.Name, u.version(), strings.Join(files, ", "), annotate, c4v1alpha1.AnnotationStandardTake, s.Ref,
+		annotate, c4v1alpha1.AnnotationStandardKeep, s.Ref)
+	was := meta.FindStatusCondition(u.container.Status.Conditions, c4v1alpha1.ConditionStandardUpdated)
+	u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonFilesBehind, message)
+	if was != nil && was.Reason == c4v1alpha1.ReasonFilesBehind && was.Message == message {
+		return
+	}
+	logf.FromContext(ctx).Info("Standard files left out of an update wait on a person", "standard", s.Name,
+		"ref", s.Ref, "behind", files)
+	if u.r.Recorder != nil {
+		u.r.Recorder.Eventf(u.container, nil, corev1.EventTypeWarning, eventStandardFilesBehind,
+			"UpdateStandard", "%s", message)
+	}
 }
 
 // updating reports the update's pull request waiting for CI.

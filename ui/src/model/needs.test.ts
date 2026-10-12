@@ -120,6 +120,35 @@ describe('needs', () => {
       },
     },
     {
+      name: 'a Container with Standard files left out of an update',
+      input: input({
+        containers: [
+          container({
+            phase: 'Ready',
+            standard: {
+              name: 'go-standard',
+              ref: 'v3',
+              leftOut: ['Makefile', 'check.yaml'],
+              behind: [
+                { path: 'Makefile', ref: 'v1', pullRequestURL: 'https://git.example/shop/api/pulls/3' },
+                { path: 'check.yaml', ref: 'v2', pullRequestURL: 'https://git.example/shop/api/pulls/3' },
+              ],
+            },
+            conditions: [
+              cond('StandardUpdated', 'False', 'FilesBehind', 'go-standard is at v3, but its updates left out'),
+            ],
+          }),
+        ],
+      }),
+      want: {
+        kind: 'Container',
+        reason: 'FilesBehind',
+        message: 'go-standard is at v3, but its updates left out',
+        links: ['https://git.example/shop/api/pulls/3'],
+        place: 'Container',
+      },
+    },
+    {
       name: 'a Blocked Task',
       input: input({
         tasks: [
