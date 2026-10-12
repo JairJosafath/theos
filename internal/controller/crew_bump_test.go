@@ -100,7 +100,7 @@ var _ = Describe("Crew release bumps", func() {
 			issues := bumpIssues(ns, "web")
 			g.Expect(issues).To(HaveLen(1))
 			g.Expect(issues[0].Title).To(Equal("Bump orders-api to v0.1.0"))
-			g.Expect(issues[0].Labels).To(ContainElement(model.LabelReady))
+			g.Expect(issues[0].filedLabels).To(ContainElement(model.LabelReady))
 			g.Expect(issues[0].milestone).To(Equal("v0.5.0"))
 			g.Expect(issues[0].Body).To(ContainSubstring("orders-api released v0.1.0 at `5a-merge`"))
 			release := getCrew(g, ns).Status.LastRelease

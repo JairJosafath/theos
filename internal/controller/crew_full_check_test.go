@@ -168,7 +168,8 @@ var _ = Describe("Crew release full checks", func() {
 			issues := fullCheckIssues(ns)
 			g.Expect(issues).To(HaveLen(1))
 			filed = issues[0]
-			g.Expect(filed.Labels).To(ConsistOf(model.LabelBug, model.LabelReady))
+			// The Crew may take the issue before this reads it, so check the labels it was filed with.
+			g.Expect(filed.filedLabels).To(ConsistOf(model.LabelBug, model.LabelReady))
 			g.Expect(filed.milestone).To(Equal("v0.1.0"))
 			g.Expect(filed.Body).To(ContainSubstring(runURL))
 			cond := releasedCondition(g, ns, model.FullCheckFailed)
