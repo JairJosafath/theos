@@ -230,6 +230,14 @@ what it did. The tag must be the `version` of `dist/chart/Chart.yaml`, or
 [getting-started](../getting-started.md) too, so the guide at a tag installs
 that release (`make check` holds the two together).
 
+A release builds on the self-hosted runners' Docker, whose build cache a rerun
+reuses, so a step that leaves a broken layer fails every rerun too. The UI
+image's base is pinned by version and digest (`hack/check-pinned-images.sh`,
+in `make check`), and its `npm ci` step fails unless every native binding the
+lockfile lists for the platform is installed (`ui/scripts/check-native.mjs`):
+npm skips an optional package it fails to fetch without failing, which broke
+v0.19.0 (#912).
+
 GitHub workflows never run on pull requests. Lint, tests and UI checks run
 after a merge to main, each only when its paths change, or on demand. No
 workflow starts a Kind cluster on its own: *Test Chart*, *E2E Tests* and
