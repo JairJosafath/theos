@@ -1,8 +1,9 @@
 // A Container's page: the object header (its scaffold lifecycle and
 // conditions, its Relationships with their Applied reason and its Sessions,
 // the repository, and on Failed the retry kubectl line), then its template
-// refs and its Standard with the update pull request in flight; with UI
-// actions on, a scaffold retry and a Task from a goal (ContainerActions).
+// refs and its Standard with the update pull request in flight, and when CI
+// runs its full check (ContainerChecks, which sets it with UI actions on);
+// with UI actions on, a scaffold retry and a Task from a goal (ContainerActions).
 
 import type { ContainerWriter } from '../../k8s/containers'
 import type { Brief, CatalogEntry, Container, Crew, Relationship, Session } from '../../k8s/types'
@@ -13,6 +14,7 @@ import { SessionRow } from '../bits'
 import { ExternalLinkIcon } from '../icons'
 import { ObjectHeader, type OutLink } from '../ObjectHeader'
 import { ContainerActions } from './ContainerActions'
+import { ContainerChecks } from './ContainerChecks'
 import { relationshipsOf } from './rows'
 import { pageHref, storyHref } from './links'
 import '../briefs.css'
@@ -145,6 +147,8 @@ export function ContainerPage({
           </dd>
         </dl>
       </section>
+
+      {container.spec.standardRef ? <ContainerChecks container={container} writer={writer} /> : null}
 
       {update ? (
         <section className="panel" aria-labelledby="container-standard">

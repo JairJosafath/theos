@@ -104,6 +104,9 @@ export interface SoftwareSystem extends K8sObject {
   }
 }
 
+/** When a Container's CI runs its full check (design.md, the owner chooses when the full check runs). */
+export type ChecksMode = 'EveryChange' | 'BeforeRelease'
+
 export interface Container extends K8sObject {
   spec: {
     softwareSystemRef: LocalRef
@@ -115,6 +118,8 @@ export interface Container extends K8sObject {
     standardRef?: LocalRef
     computeRef?: LocalRef
     deploymentRef?: LocalRef
+    /** When CI runs the full check; the API server defaults it to EveryChange. */
+    checks?: ChecksMode
   }
   status?: {
     phase?: ContainerPhase
@@ -128,6 +133,8 @@ export interface Container extends K8sObject {
     standard?: {
       name: string
       ref: string
+      /** When the repository's CI runs the full check, as its Standard files were last rendered; empty is EveryChange. */
+      checks?: ChecksMode
       /** The files the last update left out, because the repository had changed them. */
       leftOut?: string[]
       /** The Standard update in flight, or the last one, stopped. */

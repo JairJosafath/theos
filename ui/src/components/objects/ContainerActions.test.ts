@@ -23,6 +23,7 @@ const crew: Crew = {
 }
 const writer: ContainerWriter = {
   retry: async () => undefined,
+  setChecks: async () => undefined,
   startTask: async () => 'orders-api-x7k2p',
 }
 const serviceAccount: UiSession = { actions: true, mode: 'service-account', user: null }

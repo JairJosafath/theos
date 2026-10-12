@@ -1,6 +1,6 @@
 // The Container page's actions in the browser (design.md, UI actions): the
-// scaffold retry behind its dialog, a Task from a goal, a write the API
-// server refuses, and in OIDC mode with nobody signed in, a page that says to
+// scaffold retry behind its dialog, a Task from a goal, when CI runs the full
+// check, a write the API server refuses, and in OIDC mode with nobody signed in, a page that says to
 // sign in. A fake Kubernetes API, server.mjs with actions on in front of it,
 // and the built UI in Chromium.
 //
@@ -31,10 +31,13 @@ function seed(api) {
       type: 'service',
       gitProviderRef: { name: 'gitea' },
       frameworkRef: { name: 'python-fastapi' },
+      standardRef: { name: 'python-standard' },
+      checks: 'EveryChange',
     },
     status: {
       phase: 'Failed',
       repositoryURL: REPO,
+      standard: { name: 'python-standard', ref: 'v1.0.0', checks: 'EveryChange' },
       conditions: [
         { type: 'RepositoryCreated', status: 'True', reason: 'Created' },
         {
@@ -128,6 +131,20 @@ describe('the Container page’s actions', () => {
       assert.equal(w.path, `/apis/c4.factory.io/v1alpha1/namespaces/${NS}/containers/orders-api`)
       assert.deepEqual(Object.keys(w.body.metadata.annotations), ['c4.factory.io/retry'])
       assert.ok(!Number.isNaN(Date.parse(w.body.metadata.annotations['c4.factory.io/retry'])))
+    })
+
+    it('sets when CI runs the full check, sending only spec.checks', async () => {
+      env.api.writes.length = 0
+      const checks = page.getByRole('region', { name: 'When CI runs the full check' })
+      await checks.getByLabel('Run the full check').selectOption('BeforeRelease')
+      await checks.getByRole('button', { name: 'Save' }).click()
+      await checks.getByRole('status').getByText('Saved').waitFor({ timeout: 5000 })
+      assert.equal(env.api.writes.length, 1)
+      const [w] = env.api.writes
+      assert.equal(w.method, 'PATCH')
+      assert.equal(w.path, `/apis/c4.factory.io/v1alpha1/namespaces/${NS}/containers/orders-api`)
+      assert.deepEqual(w.body, [{ op: 'add', path: '/spec/checks', value: 'BeforeRelease' }])
+      await checks.getByText('The repository still runs the full check on every change').waitFor({ timeout: 5000 })
     })
 
     it('starts a Task from a goal with the Crew’s Agents, and links to it', async () => {

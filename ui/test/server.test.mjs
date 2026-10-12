@@ -483,7 +483,7 @@ describe('server.mjs', () => {
     it('says on /ui/session that actions are on, made as the ServiceAccount, with every write', async () => {
       const answer = await (await fetch(`${actionBase}/ui/session`)).json()
       assert.deepEqual([answer.actions, answer.mode, answer.user], [true, 'service-account', null])
-      assert.equal(answer.writes.length, 8)
+      assert.equal(answer.writes.length, 9)
       assert.ok(!JSON.stringify(answer).includes(browserToken))
     })
 
@@ -523,6 +523,7 @@ describe('server.mjs', () => {
         MP,
         { metadata: { annotations: { 'c4.factory.io/retry': '1' } } },
       ],
+      ["a Container's checks", 'PATCH', '/containers/orders-api', JP, [add('/spec/checks', 'BeforeRelease')]],
       [
         'a Task from a goal, with only its name and spec',
         'POST',
@@ -671,7 +672,7 @@ describe('server.mjs', () => {
         '/containers/orders-api',
         JP,
         [add('/metadata/annotations/x', 'y')],
-        415,
+        403,
       ],
       ['a merge patch of a Standard', 'PATCH', '/standards/go-service', MP, { spec: { template: { ref: 'v2' } } }, 415],
       ['a server-side apply of a Crew', 'PATCH', '/crews/orders-api', 'application/apply-patch+yaml', {}, 415],
@@ -757,6 +758,25 @@ describe('server.mjs', () => {
         403,
       ],
       ['a retry as null', 'PATCH', '/containers/orders-api', MP, 'null', 403],
+      ["a Container's checks as a merge patch", 'PATCH', '/containers/orders-api', MP, { spec: { checks: 'x' } }, 403],
+      ["a Container's checks as a boolean", 'PATCH', '/containers/orders-api', JP, [add('/spec/checks', true)], 403],
+      [
+        "a Container's checks removed",
+        'PATCH',
+        '/containers/orders-api',
+        JP,
+        [{ op: 'remove', path: '/spec/checks' }],
+        403,
+      ],
+      ["a Container's Standard", 'PATCH', '/containers/orders-api', JP, [add('/spec/standardRef', { name: 'x' })], 403],
+      [
+        "a Container's checks with another field",
+        'PATCH',
+        '/containers/orders-api',
+        JP,
+        [add('/spec/checks', 'BeforeRelease'), add('/spec/type', 'worker')],
+        403,
+      ],
       [
         'a Task of kind Plan',
         'POST',
