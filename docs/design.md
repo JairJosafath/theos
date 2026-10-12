@@ -241,7 +241,13 @@ enforces.
   the fix attempts are told so and to leave the rest to CI, the round pushes
   with no error and reports the base's output (`CheckFailsOnBase`), and the
   operator goes on to the pull request and CI, which runs the same check and
-  decides. A Standard change is then proposed as on a passing check; its own
+  decides. The operator shows the difference: the round's status message
+  says the check fails on main in the agent's workspace too and CI decides,
+  a Normal Event `CheckFailsOnBase` names the output's last line, and a
+  comment on the pull request names the check and carries the output, so a
+  person can give the workspace what CI has. It costs no round and no try,
+  and is no condition: the Task's outcome is CI's and the review's. A
+  Standard change is then proposed as on a passing check; its own
   gated Task runs CI before it merges. A blocked note is checked the same
   way: when the check fails on the base, the implementer is sent back once
   to do the issue, since that is not a reason to block, and a second blocked

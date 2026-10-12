@@ -190,7 +190,7 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 	}
 	job.CheckCommand = strings.Fields(getenv(EnvCheckCommand))
 	if len(job.CheckCommand) == 0 {
-		job.CheckCommand = []string{"make", "check"}
+		job.CheckCommand = strings.Fields(model.CheckCommand)
 	}
 	round := getenv(EnvRound)
 	if round == "" {
