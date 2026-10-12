@@ -343,8 +343,12 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 			"standard", name, "from", from.String(), "to", to.String())
 		return
 	}
+	leftOut := u.leftOut(to.Ref, behind, from.Ref, old, bases, next, current, plan.LeftOut)
+	// The files behind once main holds the update, each with the Standard's
+	// change to it, as this plan sees it.
+	behindAfter := nextBehind(behind, from.Ref, plan.LeftOut, "", model.BehindChanges(to.Ref, leftOut.Files))
 	if plan.Empty() {
-		u.alreadyUpToDate(ctx, to, nextBehind(behind, from.Ref, plan.LeftOut, ""))
+		u.alreadyUpToDate(ctx, to, behindAfter)
 		return
 	}
 
@@ -354,7 +358,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		scaffold.UpdateMessage(in, name, from, to, plan), author)
 	if errors.Is(err, gitprovider.ErrEmptyChange) {
 		// main got there between the read and the push.
-		u.alreadyUpToDate(ctx, to, nextBehind(behind, from.Ref, plan.LeftOut, ""))
+		u.alreadyUpToDate(ctx, to, behindAfter)
 		return
 	}
 	if err != nil {
@@ -363,14 +367,14 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 	}
 	pr, err := git.provider.OpenPullRequest(gitCtx, repo, branch, gitprovider.DefaultBranch,
 		model.StandardUpdateTitle(name, from, to), model.StandardUpdateBody(name, from, to, plan.Paths(), plan.Merged,
-			u.leftOut(to.Ref, behind, from.Ref, old, bases, next, current, plan.LeftOut)))
+			leftOut))
 	if err != nil {
 		u.gitError(ctx, err)
 		return
 	}
 	s.Update = &c4v1alpha1.StandardUpdateStatus{
 		Ref: to.Ref, Checks: c4v1alpha1.ChecksMode(to.Checks), Branch: branch, Commit: commit, PullRequest: int32(pr.Number), PullRequestURL: pr.URL,
-		Paths: plan.Paths(), Merged: plan.Merged, LeftOut: plan.LeftOut,
+		Paths: plan.Paths(), Merged: plan.Merged, LeftOut: plan.LeftOut, Behind: behindAfter,
 	}
 	u.updating()
 	log.Info("Opened a Standard update", "url", pr.URL, "standard", name, "from", from.String(), "to", to.String(),
@@ -711,9 +715,11 @@ func behindFiles(s *c4v1alpha1.ContainerStandardStatus) []c4v1alpha1.StandardFil
 // nextBehind are the files behind once an update from ref from leaves out
 // leftOut, through the pull request at url when it opened one: a file behind
 // before keeps the ref its copy was last brought to, a newly left-out one is
-// at from, and a file the update brought up to date is no longer behind.
+// at from, and a file the update brought up to date is no longer behind. Each
+// carries its change in changes, the Standard's change to it up to the
+// update's ref.
 func nextBehind(behind []c4v1alpha1.StandardFile, from string, leftOut []string,
-	url string) []c4v1alpha1.StandardFile {
+	url string, changes map[string]string) []c4v1alpha1.StandardFile {
 	next := make([]c4v1alpha1.StandardFile, 0, len(leftOut))
 	for _, p := range leftOut {
 		f := c4v1alpha1.StandardFile{Path: p, Ref: from}
@@ -721,6 +727,7 @@ func nextBehind(behind []c4v1alpha1.StandardFile, from string, leftOut []string,
 			f = behind[i]
 		}
 		f.PullRequestURL = cmp.Or(url, f.PullRequestURL)
+		f.Change = changes[p]
 		next = append(next, f)
 	}
 	return next
@@ -837,7 +844,11 @@ func (u *standardUpdate) drop(ctx, gitCtx context.Context, why string) bool {
 func (u *standardUpdate) merged(ctx context.Context) {
 	s := u.status.Standard
 	update := s.Update
-	behind := nextBehind(behindFiles(s), s.Ref, update.LeftOut, update.PullRequestURL)
+	changes := map[string]string{}
+	for _, b := range update.Behind {
+		changes[b.Path] = b.Change
+	}
+	behind := nextBehind(behindFiles(s), s.Ref, update.LeftOut, update.PullRequestURL, changes)
 	s.Ref, s.Checks, s.Update = update.Ref, update.Checks, nil
 	setBehind(s, behind)
 	// A kept file the update wrote is the Standard's again.
@@ -902,7 +913,8 @@ func (u *standardUpdate) upToDate(ctx context.Context) {
 		files = append(files, fmt.Sprintf("%s (at %s)", b.Path, b.Ref))
 	}
 	message := fmt.Sprintf("%s is at %s, but its updates left out %s: the repository changed them in lines "+
-		"the Standard changed too. Take the Standard's version: `%s`; or keep the repository's: `%s`",
+		"the Standard changed too. What the Standard changed in each is in status.standard.behind and on the "+
+		"Container's page. Take the Standard's version: `%s`; or keep the repository's: `%s`",
 		s.Name, u.version(), strings.Join(files, ", "), u.annotate(c4v1alpha1.AnnotationStandardTake, s.Ref),
 		u.annotate(c4v1alpha1.AnnotationStandardKeep, s.Ref))
 	was := meta.FindStatusCondition(u.container.Status.Conditions, c4v1alpha1.ConditionStandardUpdated)

@@ -142,6 +142,9 @@ var _ = Describe("Container Standard files behind", func() {
 		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.4.0", makefile)
 		Expect(getContainer(Default, ns).Status.Standard.Behind).To(Equal([]c4v1alpha1.StandardFile{
-			{Path: makefile, Ref: "v1.2.0", PullRequestURL: update.PullRequestURL}}))
+			{Path: makefile, Ref: "v1.2.0", PullRequestURL: update.PullRequestURL,
+				Change: "--- Makefile (v1.2.0)\n+++ Makefile (v1.4.0)\n@@ -1,2 +1,5 @@\n+lint:\n+\truff check\n+\n" +
+					" check:\n-\tmake lint test\n+\ttrue\n\nThe repository's lines taking it drops:\n-# Ours.\n@@\n-\tpytest"}}),
+			"a kept file planned again carries the Standard's change from the ref it was kept at")
 	})
 })
