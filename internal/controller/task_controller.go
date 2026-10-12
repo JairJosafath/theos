@@ -262,6 +262,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		MergeWhenChecksPass: status.MergeWhenChecksPass,
 		StandardChanges:     standardChangeCount(status),
 		Resumed:             resumedRun(status),
+		AllowedPaths:        task.Spec.AllowedProtectedPaths,
 		Feedback:            status.Feedback,
 	}
 	change, err := r.changeFacts(ctx, task, status, container)

@@ -633,7 +633,16 @@ model and context it needs.
   A round turned back for touching files the Task may not change, twice in a
   row, ends the Task `Blocked` instead of spending its last round, and the Task
   that waits on that Standard change ends `Blocked` too, so the Brief lists
-  both issues with the files that hold them. The change's proposal branch
+  both issues with the files that hold them. A Standard change weakens no
+  check: it removes or skips no target, test, lint rule or CI job, not even
+  for some changes. When the issue can't be met without that, the reviewer
+  names the rule and what the author can do instead (for CI that runs the full
+  check less often, the Container's `checks`), and the implementer stops on
+  purpose with a `Blocked:` line saying both rather than undoing the change.
+  A round that leaves every path the change is for as on `main` ends the Task
+  at once, `Blocked`, before any review: there is nothing to merge, and its
+  message carries what the round before was sent back with, which names the
+  rule; the waiting Task ends `Blocked` with it (#929). The change's proposal branch
   (`standard/<task>`) lives as long as its `kind/standard-change` issue is
   open, also after the waiting issue was handed back, so a retry of the
   change finds it; the operator deletes it when the change merges or a

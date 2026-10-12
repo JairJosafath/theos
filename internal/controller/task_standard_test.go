@@ -446,6 +446,30 @@ var _ = Describe("Task with a Standard change", func() {
 		Expect(gitFake.issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
 		Expect(gitFake.issue(ns, "orders-api", m).Labels).To(ContainElement(model.LabelNeedsHuman))
 	})
+
+	It("stops both Tasks, blocked, when a round leaves its Standard change's paths as on main", func() {
+		// #929: an emptied change has nothing to review or merge.
+		ns := newProjectNamespace()
+		_, m := blockedBesideChange(ns, 3)
+		finishSandbox(ns, "orders-api-2-r1-implement", "orders-api-2",
+			&agentrunner.Result{Role: "implement", Empty: true, Summary: "A Standard change may not skip a CI job."}, "")
+
+		Eventually(func(g Gomega) {
+			change := getTask(g, ns, "orders-api-2")
+			g.Expect(change.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(condition(change.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Reason":  Equal(model.ReasonBlocked),
+				"Message": ContainSubstring("leaves Makefile as on main")})))
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Reason": Equal(model.ReasonBlocked),
+				"Message": And(ContainSubstring(fmt.Sprintf("Standard change #%d will not merge", m)),
+					ContainSubstring("leaves Makefile as on main"))})))
+		}).Should(Succeed())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-2-r1-review-a1"), newSandbox()))).
+			To(BeTrue(), "no review")
+	})
 })
 
 // blockedBesideChange runs a Crew whose Task orders-api-1 proposes a Standard

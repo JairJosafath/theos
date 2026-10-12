@@ -40,7 +40,8 @@ type Result struct {
 	// Extra are the unprotected paths a Standard change changes besides its
 	// allowed ones, so its checks pass: the history and the pull request name them.
 	Extra []string `json:"extra,omitempty"`
-	// Empty is set when the round leaves nothing for the Task branch.
+	// Empty is set when the round leaves nothing for the Task branch, or, in a
+	// Standard change, leaves every path it is for as on the base.
 	Empty bool `json:"empty,omitempty"`
 	// Blocked is the implementer's blocked note (model.BlockedNote): it can't
 	// start the issue, and says why.
@@ -304,22 +305,13 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		result.Error = model.NoChangeError(summary)
 		return result
 	}
-	if job.Resumed {
-		// The Standard change may have done the whole issue: nothing is left
-		// beyond main, which a merge commit can hide from the head comparison.
-		same, err := r.sameTreeAsBase(ctx, job.Base)
-		if err != nil {
-			result.Error = err.Error()
-			return result
-		}
-		if same {
-			result.Empty = true
-			return result
-		}
-	}
-	changed, err := r.changedPaths(ctx, job.Base)
+	changed, empty, err := roundChange(ctx, job, r)
 	if err != nil {
 		result.Error = err.Error()
+		return result
+	}
+	if empty {
+		result.Empty = true
 		return result
 	}
 	split := model.SplitChange(changed, model.AgentProtectedPaths(job.ProtectedPaths), job.AllowedPaths, job.Issue > 0)
@@ -373,6 +365,25 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		}
 	}
 	return result
+}
+
+// roundChange returns the paths the round's branch changes beside the base,
+// and whether it leaves nothing to merge.
+func roundChange(ctx context.Context, job Job, r *repo) (changed []string, empty bool, err error) {
+	if job.Resumed {
+		// The Standard change may have done the whole issue: nothing is left
+		// beyond main, which a merge commit can hide from the head comparison.
+		if same, err := r.sameTreeAsBase(ctx, job.Base); err != nil || same {
+			return nil, same, err
+		}
+	}
+	if changed, err = r.changedPaths(ctx, job.Base); err != nil {
+		return nil, false, err
+	}
+	// A Standard change that leaves its paths as on the base, often because
+	// the round undid it on review, has nothing to merge: no review or round
+	// can change that.
+	return changed, len(job.AllowedPaths) > 0 && model.LeavesAllowedAsOnBase(changed, job.AllowedPaths), nil
 }
 
 // sendBackBlocked sends an agent that wrote a blocked note back once when the
