@@ -324,9 +324,8 @@ func GoInstallProblem(repository, path, module, tag string) string {
 		base, major = strings.TrimSuffix(module, "/v"+m[1]), m[1]
 		// A major version kept in its own folder, engine/v2, is tagged as
 		// the folder above it: engine/v2.0.0.
-		if strings.HasSuffix(folder, "/v"+major) {
-			folder = strings.TrimSuffix(folder, "/v"+major)
-			tagPrefix = strings.TrimPrefix(folder+"/", "/")
+		if above, ok := strings.CutSuffix(folder, "/v"+major); ok {
+			folder, tagPrefix = above, strings.TrimPrefix(above+"/", "/")
 		}
 	}
 	// GitHub's owner and name are any case; the folder is as it is.
