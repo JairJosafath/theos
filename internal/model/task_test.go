@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestNextTaskStep(t *testing.T) {
@@ -319,6 +320,38 @@ func TestImplementedStepNamesExtras(t *testing.T) {
 	want := "besides its Standard change's files it changes e2e_test.go and release_test.go, which no Standard protects"
 	if got.Action != ActionOpenPR || !strings.Contains(got.Message, want) {
 		t.Errorf("NextTaskStep() = %+v, want a message with %q", got, want)
+	}
+}
+
+// A round whose check fails on main in the workspace too goes on to the pull
+// request and CI, saying so (docs/plans/workspace-check-differs.md).
+func TestImplementedStepCheckFailsOnBase(t *testing.T) {
+	got := NextTaskStep(TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Run: RunState{Started: true,
+		Done: true, Result: &RunResult{Commit: "abcdef1234", CheckFailsOnBase: "curl: (22) 404 Not Found"}}})
+	want := "The agent pushed abcdef1; `make check` fails on main in the agent's workspace too, so CI decides"
+	if got.Action != ActionOpenPR || got.Message != want {
+		t.Errorf("NextTaskStep() = %+v, want %s with %q", got, ActionOpenPR, want)
+	}
+}
+
+func TestCheckFailsOnBaseNotes(t *testing.T) {
+	output := "make: entering\n" + strings.Repeat("é", 300) + "\ncurl: (22) 404 Not Found\n\n"
+	event := CheckFailsOnBaseEvent(2, output)
+	if want := "Round 2: `make check` fails on main in the agent's workspace too, so CI decides " +
+		"(curl: (22) 404 Not Found)"; event != want {
+		t.Errorf("CheckFailsOnBaseEvent() = %q, want %q", event, want)
+	}
+	long := CheckFailsOnBaseEvent(1, strings.Repeat("é", 300))
+	if !utf8.ValidString(long) || !strings.HasSuffix(long, "…)") {
+		t.Errorf("CheckFailsOnBaseEvent() = %q, want a long last line clipped at a rune", long)
+	}
+	comment := CheckFailsOnBaseComment(2, output)
+	for _, want := range []string{"Round 2: `make check` fails in the agent's workspace on main too",
+		"CI runs the same check on this head and decides", "````\nmake: entering\n",
+		"404 Not Found\n````\n"} {
+		if !strings.Contains(comment, want) {
+			t.Errorf("CheckFailsOnBaseComment() = %q, want it to contain %q", comment, want)
+		}
 	}
 }
 

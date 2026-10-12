@@ -27,6 +27,8 @@ type ReleaseMilestone struct {
 	// Prepared are the numbers of its prepare issues, open or closed: those
 	// labelled kind/release.
 	Prepared []int
+	// MilestoneClosed says the milestone itself is closed.
+	MilestoneClosed bool
 }
 
 // MergedTask is a Merged Task on the Crew's Container.
