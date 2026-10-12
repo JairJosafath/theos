@@ -725,6 +725,13 @@ model and context it needs.
   since, such as a hand-edited `check.yaml`, isn't opened: `StandardUpdated`
   is False (`ChecksLeftOut`) naming the file, and the checks stay as they are
   until the Container's checks or the Standard's ref change again.
+  A change to `BeforeRelease` also waits, unopened, while the `Makefile` the
+  update would leave on main has no `check-light` target, such as an app's
+  own Makefile a Standard update left out: switching would fail every
+  change's check. `StandardUpdated` and `ChecksApplied` are False
+  (`NoLightCheck`), naming the Makefile and, when updates left it out, the
+  ref it is at; every pass plans it again, so adding the target lets the
+  change through, with no need to touch the Container.
   With `BeforeRelease` and `tagReleases`, a done release is not tagged at
   once: the Crew pushes `release-check/vX.Y.Z` at the commit, the workflow's
   `full` job runs `make check` there, and its success tags the release and
