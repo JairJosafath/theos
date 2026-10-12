@@ -192,9 +192,11 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 		// Before the Crew picks issues: a prepare issue filed now keeps its
 		// release the current one, so the next release's work waits for it.
-		if filed := r.release(ctx, &crew, &container, status, provider, repo, containerTasks); filed != nil {
+		filed, preparing := r.release(ctx, &crew, &container, status, provider, repo, containerTasks)
+		if filed != nil {
 			facts.Issues = append(facts.Issues, *filed)
 		}
+		facts.Preparing = preparing
 	}
 
 	step := model.NextCrewStep(container.Name, facts)
@@ -257,17 +259,19 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 // release re-runs the last release's failed runs when asked, watches its run,
 // prepares or tags the next release, reports the last release's overdue runs,
 // publishes its Go module, files its bumps and publishes it, as the Crew's
-// switches say. It returns the prepare issue filed now, if any.
+// switches say. It returns the prepare issue filed now, if any, and the
+// release whose prepare issue waits for the Tasks at work, if any.
 func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
 	status *c4v1alpha1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
-	tasks []c4v1alpha1.Task) *model.Issue {
+	tasks []c4v1alpha1.Task) (*model.Issue, string) {
 	if crew.Spec.TagReleases {
 		r.rerunRelease(ctx, crew, status, provider, repo)
 		r.watchReleaseRun(ctx, crew, status, provider, repo)
 	}
 	var filed *model.Issue
+	var preparing string
 	if crew.Spec.TagReleases || crew.Spec.PrepareReleases {
-		filed = r.tagRelease(ctx, crew, container, status, provider, repo, tasks)
+		filed, preparing = r.tagRelease(ctx, crew, container, status, provider, repo, tasks)
 	}
 	if crew.Spec.TagReleases {
 		r.noteOverdueRun(ctx, crew, status)
@@ -278,7 +282,7 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, con
 		// After publishing, so a release published this poll files its bumps.
 		r.fileBumps(ctx, crew, status, repo)
 	}
-	return filed
+	return filed, preparing
 }
 
 // crewTask is what a Crew reads of a Task: its issue, whether it ended or waits on
@@ -312,13 +316,14 @@ func readyIssues(ctx context.Context, provider gitprovider.Provider, repo gitpro
 		}
 		out = append(out, model.Issue{Number: i.Number, Title: i.Title, Body: i.Body, OpenBlockers: blockers,
 			StandardChange: slices.Contains(i.Labels, model.LabelStandardChange), Release: release(i),
-			Urgent: slices.Contains(i.Labels, model.LabelUrgent)})
+			Urgent: slices.Contains(i.Labels, model.LabelUrgent), Prepare: slices.Contains(i.Labels, model.LabelRelease)})
 	}
 	return out, nil
 }
 
 // taskReleases sets the release of each active Task's issue, so that a release
-// with work in progress holds back the later ones.
+// with work in progress holds back the later ones, and whether it is a
+// release's prepare issue, which runs alone.
 func taskReleases(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
 	tasks []model.CrewTask, ready []model.Issue) error {
 	for i, t := range tasks {
@@ -327,14 +332,14 @@ func taskReleases(ctx context.Context, provider gitprovider.Provider, repo gitpr
 		}
 		// A Task created a moment ago may still find its issue labelled ready.
 		if j := slices.IndexFunc(ready, func(issue model.Issue) bool { return issue.Number == t.Issue }); j >= 0 {
-			tasks[i].Release = ready[j].Release
+			tasks[i].Release, tasks[i].Prepare = ready[j].Release, ready[j].Prepare
 			continue
 		}
 		issue, err := provider.GetIssue(ctx, repo, t.Issue)
 		if err != nil {
 			return fmt.Errorf("issue #%d of Task %s: %w", t.Issue, t.Name, err)
 		}
-		tasks[i].Release = release(issue)
+		tasks[i].Release, tasks[i].Prepare = release(issue), slices.Contains(issue.Labels, model.LabelRelease)
 	}
 	return nil
 }
