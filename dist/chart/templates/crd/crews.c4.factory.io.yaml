@@ -430,8 +430,9 @@ spec:
                 - Paused
                 type: string
               ready:
-                description: ready lists the ready issues waiting for a free place,
-                  in pick-up order.
+                description: |-
+                  ready lists the ready issues waiting for a free place, in pick-up order:
+                  the release due first first, and issues outside a release last.
                 items:
                   format: int32
                   type: integer
@@ -444,9 +445,7 @@ spec:
                   answered, so each value re-runs the failed release runs once.
                 type: string
               waiting:
-                description: |-
-                  waiting lists the ready issues that wait: on open dependencies, or for an
-                  earlier release (a milestone due sooner) to have no work left.
+                description: waiting lists the ready issues that wait on open dependencies.
                 items:
                   format: int32
                   type: integer
