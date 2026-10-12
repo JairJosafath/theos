@@ -118,36 +118,109 @@ func (r *BriefReconciler) releasedContainers(ctx context.Context, brief *c4v1alp
 	return released, nil
 }
 
-// releaseMilestone returns the ID of the release milestone of the Brief's
-// round in repo (R6): the one whose description carries the round's marker,
-// open or closed, so a restart makes no second one, or a new one titled the
-// next patch version for a round of fixes, else the next minor one, due after
-// every open release (plans/done/brief-patch-releases.md).
+// releaseMilestone returns the ID of the milestone the Brief's round puts an
+// issue of a released Container in, in repo (plans/done/fixes-patch-next.md, F6,
+// F7). Any other work goes into the round's release milestone: the one whose
+// description carries the round's marker, open or closed, so a restart makes
+// no second one, or a new one titled the next minor version, due after every
+// open release (R6). A fix goes into the patch slot right after the release in
+// progress (patchMilestone), and into the round's release milestone while the
+// repository has no release yet.
 func releaseMilestone(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, brief string,
-	round int, fixes bool) (int64, error) {
+	round int, fix bool) (int64, error) {
 	milestones, err := provider.ListAllMilestones(ctx, repo)
 	if err != nil {
 		return 0, err
 	}
+	var minor *gitprovider.Milestone
+	var others []gitprovider.Milestone
+	for i, m := range milestones {
+		switch {
+		case model.HasReleaseMilestoneMarker(m.Description, brief, round):
+			minor = &milestones[i]
+		case model.HasPatchMilestoneMarker(m.Description, brief, round):
+			if fix {
+				return m.ID, nil
+			}
+		default:
+			others = append(others, m)
+		}
+	}
+	if fix {
+		id, err := patchMilestone(ctx, provider, repo, brief, round, others, minor)
+		if err != nil || id != 0 {
+			return id, err
+		}
+	}
+	if minor != nil {
+		return minor.ID, nil
+	}
 	titles := make([]string, 0, len(milestones))
 	var open []model.Release
 	for _, m := range milestones {
-		if model.HasReleaseMilestoneMarker(m.Description, brief, round) {
-			return m.ID, nil
-		}
 		titles = append(titles, m.Title)
 		if !m.Closed {
 			open = append(open, model.Release{Title: m.Title, Due: m.Due})
 		}
 	}
-	title := model.ReleaseMilestoneTitle(titles, fixes)
+	title := model.ReleaseMilestoneTitle(titles, false)
 	m, err := provider.CreateMilestone(ctx, repo, title, model.ReleaseMilestoneDescription(brief, round),
 		model.ReleaseMilestoneDueAt(open, time.Now()))
 	if err != nil {
 		return 0, err
 	}
 	logf.FromContext(ctx).Info("Made the round's release milestone", "repository", repo.Owner+"/"+repo.Name,
-		"milestone", title, "round", round, "fixes", fixes)
+		"milestone", title, "round", round)
+	return m.ID, nil
+}
+
+// patchMilestone returns the ID of the patch slot of the Brief's round among
+// others, the repository's milestones but the round's own (F1 to F4): an open
+// patch that can still take work, joined as it is, or a new one made with the
+// round's patch marker. It returns 0 when others hold no release, so the fix
+// goes into the round's release milestone. The round's own release milestone,
+// minor once made, is left out of where the patch goes, as it holds the
+// round's other work; a new patch is due before it.
+func patchMilestone(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, brief string,
+	round int, others []gitprovider.Milestone, minor *gitprovider.Milestone) (int64, error) {
+	var releases []model.ReleaseMilestone
+	for _, m := range others {
+		if !model.IsReleaseTitle(m.Title) {
+			continue
+		}
+		release := model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID,
+			MilestoneClosed: m.Closed}
+		if !m.Closed {
+			issues, err := provider.MilestoneIssues(ctx, repo, m.ID)
+			if err != nil {
+				return 0, fmt.Errorf("issues of milestone %s: %w", m.Title, err)
+			}
+			for _, i := range issues {
+				if slices.Contains(i.Labels, model.LabelRelease) {
+					release.Prepared = append(release.Prepared, i.Number)
+				}
+			}
+		}
+		releases = append(releases, release)
+	}
+	if len(releases) == 0 {
+		return 0, nil
+	}
+	slot := model.PatchSlot(releases, time.Now())
+	if slot.ID != 0 {
+		return slot.ID, nil
+	}
+	if minor != nil && !minor.Due.IsZero() && !slot.Due.Before(minor.Due) {
+		// Made an hour or more after every other open release (P4), so
+		// half an hour before it is still after the release in progress.
+		slot.Due = minor.Due.Add(-30 * time.Minute)
+	}
+	m, err := provider.CreateMilestone(ctx, repo, slot.Title, model.PatchMilestoneDescription(brief, round), slot.Due)
+	if err != nil {
+		return 0, err
+	}
+	logf.FromContext(ctx).Info("Made the round's patch milestone", "repository", repo.Owner+"/"+repo.Name,
+		"milestone", slot.Title, "round", round)
 	return m.ID, nil
 }
 

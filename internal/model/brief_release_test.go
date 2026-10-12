@@ -180,43 +180,6 @@ func TestReleaseMilestoneDueAt(t *testing.T) {
 	}
 }
 
-func TestRoundFixes(t *testing.T) {
-	issue := func(container string, labels ...string) PlanIssue {
-		return PlanIssue{Container: container, Labels: labels}
-	}
-	for _, tc := range []struct {
-		name string
-		plan Plan
-		want map[string]bool
-	}{
-		{"no issues", Plan{}, map[string]bool{}},
-		{"all fixes", Plan{Issues: []PlanIssue{issue("core", "kind/bug"), issue("core", " kind/bug ", "area/cli")}},
-			map[string]bool{"core": true}},
-		{"a feature among fixes", Plan{Issues: []PlanIssue{issue("core", "kind/bug"), issue("core", "kind/feature"),
-			issue("core", "kind/bug")}}, map[string]bool{"core": false}},
-		{"an unlabelled issue is not a fix", Plan{Issues: []PlanIssue{issue("core")}}, map[string]bool{"core": false}},
-		{"by Container", Plan{Issues: []PlanIssue{issue("core", "kind/bug"), issue("vscode", "kind/feature")}},
-			map[string]bool{"core": true, "vscode": false}},
-		{"a person's work doesn't count", Plan{Issues: []PlanIssue{issue("core", "kind/bug"),
-			issue("core", "kind/docs", "kind/by-hand")}}, map[string]bool{"core": true}},
-		{"only a person's work", Plan{Issues: []PlanIssue{issue("core", "kind/by-hand")}}, map[string]bool{}},
-		{"a taken suggestion is new work", Plan{Issues: []PlanIssue{issue("core", "kind/bug")},
-			Answers: []SuggestionAnswer{{Container: "core", Issue: 57, Answer: AnswerTake}}},
-			map[string]bool{"core": false}},
-		{"only a taken suggestion", Plan{Answers: []SuggestionAnswer{{Container: "vscode", Issue: 26, Answer: AnswerTake}}},
-			map[string]bool{"vscode": false}},
-		{"a skipped suggestion is no work", Plan{Issues: []PlanIssue{issue("core", "kind/bug")},
-			Answers: []SuggestionAnswer{{Container: "core", Issue: 57, Answer: AnswerSkip}}},
-			map[string]bool{"core": true}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := RoundFixes(tc.plan); !maps.Equal(got, tc.want) {
-				t.Fatalf("RoundFixes = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestReleaseMilestoneMarker(t *testing.T) {
 	if got, want := ReleaseMilestoneMarker("sprout", 2), "<!-- c4-brief: sprout/2 -->"; got != want {
 		t.Fatalf("marker = %q, want %q", got, want)

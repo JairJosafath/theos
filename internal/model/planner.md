@@ -152,11 +152,12 @@ Push the branch `plan/<round>` with these files:
    say ships a release (a CLI people download, a library, an app with
    versions), each one `brief.md`'s *Releases* section names, and each one a
    prompt asks to release. Each name is a Container of `plan/model.yaml`. Its
-   Crew then tags and prepares releases, and the round's issues for it go
-   into the next release: a patch release (`v0.1.1` after `v0.1.0`) when
-   every one of them is a fix, labelled `kind/bug`, and the round takes no
-   suggestion of it, else the next minor one, so label each fix `kind/bug`.
-   Releases only turn on: a Container `released`
+   Crew then tags and prepares releases, and each of the round's issues for
+   it goes into a release of its own kind: a fix into the patch release right
+   after the release in progress (`v0.13.1` after `v0.13.0`, ahead of a
+   planned `v0.14.0`), any other work into the next minor release. So label
+   each issue that fixes a bug `kind/bug`, and each that adds or fixes a test
+   `kind/test`. Releases only turn on: a Container `released`
    already stays released, so you needn't list it again, and leaving it out
    doesn't stop them. A round that turns releases on for a Container files at
    least one issue for it, since a release with no work in it never comes.
@@ -182,10 +183,14 @@ Push the branch `plan/<round>` with these files:
     - container: todo
       issue: 5
       answer: take        # or skip
+      fix: true           # take only: it fixes a bug or adds or fixes a test
       why: The prompt asks to take the input-safety suggestions.
     ```
 
-    `why` says in plain words which prompt asked for it. Only a suggestion with
+    `why` says in plain words which prompt asked for it. Mark a suggestion you
+    take `fix: true` when it fixes a bug or adds or fixes a test, so it ships
+    in the patch release right after the release in progress; leave `fix` out
+    for any other work and on a skip, which refuses it. Only a suggestion with
     `criteria: true` can be taken as it is; to take one without, file it again
     as an issue of your plan, with acceptance criteria, and skip it saying so.
     Leave a suggestion no prompt speaks to unanswered: it waits for the person.

@@ -42,9 +42,8 @@ type roundApply struct {
 	// made are the objects this reconcile created, which the cache may not
 	// show yet.
 	made []c4v1alpha1.BriefObject
-	// released are the Containers the round releases, and fixes those whose
-	// work in the round is all fixes, which get a patch release.
-	released, fixes map[string]bool
+	// released are the Containers the round releases.
+	released map[string]bool
 	// took and skipped count the reviewers' suggestions the round answered.
 	took, skipped int
 	// retried and closed count the failed issues the round answered.
@@ -132,7 +131,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	run.released, run.fixes = released, model.RoundFixes(plan)
+	run.released = released
 	waiting, err := r.finishContainers(ctx, run, model.RoundContainers(created, plan.Issues), created, plan.Issues)
 	if err != nil {
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "making the Crews and filing the issues", err)
@@ -415,21 +414,24 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 // issueRepo is a Container's repository as this reconcile files issues in it:
 // its labels made and its open issues listed once.
 type issueRepo struct {
-	provider  gitprovider.Provider
-	repo      gitprovider.Repository
-	open      []gitprovider.Issue
-	milestone int64
+	provider gitprovider.Provider
+	repo     gitprovider.Repository
+	open     []gitprovider.Issue
+	// minor and patch are the IDs of the milestones the round's other work and
+	// its fixes go into, once an issue needs each.
+	minor, patch int64
 	// later is the Later milestone's ID, once a by-hand issue needs it.
 	later int64
 }
 
 // fileIssues files the round's issues of the Ready Containers in their
 // repositories (B11), blockers first: status/ready, each body ending with its
-// marker, in the round's release milestone when the round releases the
-// Container (R6) and else in none. A by-hand issue, a person's work, is
-// labelled status/needs-human instead, in the Later milestone, and never
-// ready. An issue with after: is filed only once
-// each issue it names is filed and recorded; until then it waits with the
+// marker, when the round releases the Container, a fix in the patch release
+// right after the release in progress and any other work in the round's
+// release milestone (R6, plans/done/fixes-patch-next.md F6), and else in none. A
+// by-hand issue, a person's work, is labelled status/needs-human instead, in
+// the Later milestone, and never ready. An issue with after: is filed only
+// once each issue it names is filed and recorded; until then it waits with the
 // Container that isn't Ready. It is filed without status/ready, made to
 // depend in the Git host on each of them, across repositories, and only then
 // labelled ready, so no Crew picks it up before its order is there. An issue
@@ -535,7 +537,11 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 		// is never released (R7). A person's work waits in Later, so no
 		// release waits on it.
 		var err error
-		milestone := &ir.milestone
+		fix := model.IsFix(issue.Labels)
+		milestone := &ir.minor
+		if fix {
+			milestone = &ir.patch
+		}
 		switch {
 		case byHand:
 			milestone = &ir.later
@@ -545,9 +551,8 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 					return err
 				}
 			}
-		case run.released[c.Name] && ir.milestone == 0:
-			if ir.milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, round,
-				run.fixes[c.Name]); err != nil {
+		case run.released[c.Name] && *milestone == 0:
+			if *milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, round, fix); err != nil {
 				return err
 			}
 		}

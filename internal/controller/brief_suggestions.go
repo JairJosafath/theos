@@ -78,10 +78,11 @@ func lastSuggestions(brief *c4v1alpha1.Brief, name string) []model.Suggestion {
 }
 
 // answerSuggestions does what the plan's answers say: a suggestion to take
-// leaves the Later milestone for the round's release milestone when its
-// Container is released, else for none, and is labelled ready, for the Crew;
-// one to skip is closed. Each gets a comment with the planner's why and the round's
-// prompts. A suggestion that no longer waits (answered by an earlier try or
+// leaves the Later milestone, when its Container is released, for the patch
+// release right after the release in progress when its answer says fix: true,
+// else for the round's release milestone (F6), and else for none, and is
+// labelled ready, for the Crew; one to skip is closed. Each gets a comment
+// with the planner's why and the round's prompts. A suggestion that no longer waits (answered by an earlier try or
 // by a person on the Git host, or gone with its issue or Container) is left
 // as it is. It returns how many it took and skipped now.
 func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply,
@@ -122,7 +123,7 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 		var milestone int64
 		if a.Answer == model.AnswerTake && run.released[a.Container] {
 			if milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, int(status.Round),
-				run.fixes[a.Container]); err != nil {
+				a.Fix); err != nil {
 				return took, skipped, fmt.Errorf("making the release milestone of %s: %w", a.Container, err)
 			}
 		}
