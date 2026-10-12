@@ -273,6 +273,7 @@ func main() {
 		APIReader:       mgr.GetAPIReader(),
 		Git:             gitprovider.Client{},
 		ScaffoldOptions: scaffoldOptions,
+		Recorder:        mgr.GetEventRecorder("container"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "container")
 		os.Exit(1)

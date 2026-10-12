@@ -390,14 +390,24 @@ export function containerNextStep(container: Container): NextStep | undefined {
       link: pr,
     }
   }
-  if (standard?.leftOut?.length) {
-    const n = standard.leftOut.length
+  const behind = standard?.behind ?? []
+  if (standard && behind.length && !update) {
+    const n = behind.length
+    const files = behind.map((b) => `${b.path} (at ${b.ref})`).join(', ')
+    const url = behind.findLast((b) => b.pullRequestURL)?.pullRequestURL
     return {
-      text: `The last Standard update left ${n === 1 ? 'a file' : `${n} files`} out that the repository had changed: ${standard.leftOut.join(', ')}. Bring ${n === 1 ? 'it' : 'them'} up to date by hand.`,
-      link: status?.repositoryURL ? { href: status.repositoryURL, label: 'Open the repository' } : undefined,
+      text: `${standard.name}’s updates left ${n === 1 ? 'a file' : `${n} files`} out that the repository changed in the same lines: ${files}. Take ${standard.name} ${standard.ref}’s version with the command below, or keep the repository’s with c4.factory.io/standard-keep=${standard.ref} instead.`,
+      command: standardTakeCommand(container),
+      link: url ? { href: url, label: 'Open the update pull request' } : undefined,
     }
   }
   return undefined
+}
+
+/** The command that takes the Standard's version of the files its updates left out (design.md, *A Standard's fixes reach its Containers*). */
+export function standardTakeCommand(container: Container): string {
+  const ns = container.metadata.namespace ?? 'default'
+  return `kubectl -n ${ns} annotate container ${container.metadata.name} c4.factory.io/standard-take=${container.status?.standard?.ref ?? ''}`
 }
 
 /** The command that re-runs a Crew's failed release runs (design.md, *A failed release run re-runs on request*). */

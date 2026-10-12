@@ -103,6 +103,12 @@ Each is its own issue and pull request, and leaves `main` working.
    Event `StandardFilesBehind`. UI: *Needs a look* item, Container page and
    lifecycle text. Envtest: a left-out file flags the Container and stays
    flagged through a later ref that doesn't change it; a clean merge clears it.
+   Built by otter-891: each entry also keeps the pull request that last left
+   it out (`pullRequestURL`), so *Needs a look* links it once the update is
+   merged and gone from status. A `leftOut` path written before `behind` was
+   kept is taken as behind at the Container's ref, as the planner treated it
+   until now. The Event goes out when the condition's message changes, which
+   names the ref, so once per ref.
 3. **The Brief lists its apps' left-out files (#892).** `status.needsYou` gets a
    `Container` item per flagged Container the Brief made, with the choice and
    why above; the UI's Brief card shows it with the two answers. Envtest.

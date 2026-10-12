@@ -15,8 +15,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
+	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
@@ -42,7 +44,9 @@ const (
 
 // standardRefs are the Standard's template at each ref. v1.0.1 renders as
 // v1.0.0 does; v1.1.0 changes AGENTS.md and the implementer's guide; v1.2.0
-// changes them again and the Makefile, and drops the reviewer's guide.
+// changes them again and the Makefile, and drops the reviewer's guide; v1.3.0
+// changes the implementer's guide only; v1.4.0 puts back v1.0.0's check target
+// below a new lint target.
 func standardRefs() map[string]scaffold.Tree {
 	file := func(s string) scaffold.File { return scaffold.File{Data: []byte(s)} }
 	v100 := scaffold.Tree{
@@ -63,7 +67,12 @@ func standardRefs() map[string]scaffold.Tree {
 	v120[implementer] = file("Implement the issue.\nRun make check before you finish.\nAsk when unsure.\n")
 	v120[makefile] = file("check:\n\tmake lint test\n")
 	delete(v120, reviewer)
-	return map[string]scaffold.Tree{"v1.0.0": v100, "v1.0.1": v101, "v1.1.0": v110, "v1.2.0": v120}
+	v130 := maps.Clone(v120)
+	v130[implementer] = file("Implement the issue.\nRun make check before you finish.\nAsk when unsure.\nKeep it small.\n")
+	v140 := maps.Clone(v130)
+	v140[makefile] = file("lint:\n\truff check\n\ncheck:\n\ttrue\n")
+	return map[string]scaffold.Tree{"v1.0.0": v100, "v1.0.1": v101, "v1.1.0": v110, "v1.2.0": v120,
+		"v1.3.0": v130, "v1.4.0": v140}
 }
 
 // updatableContainer creates orders-api, which uses orders-db, on the Standard
@@ -120,25 +129,53 @@ func standardCondition(g Gomega, container *c4v1alpha1.Container) metav1.Conditi
 }
 
 // eventuallyAt waits until orders-api's Standard files are at ref, with
-// leftOut left out and no update in flight.
+// leftOut left out (behind) and no update in flight.
 func eventuallyAt(ns, ref string, leftOut ...string) {
 	GinkgoHelper()
-	leftOutMatcher := BeEmpty()
+	leftOutMatcher, behindMatcher := BeEmpty(), BeEmpty()
 	if len(leftOut) > 0 {
-		leftOutMatcher = Equal(leftOut)
+		leftOutMatcher, behindMatcher = Equal(leftOut), HaveExactElements(func() []any {
+			paths := make([]any, 0, len(leftOut))
+			for _, p := range leftOut {
+				paths = append(paths, HaveField("Path", p))
+			}
+			return paths
+		}()...)
 	}
 	Eventually(func(g Gomega) {
 		container := getContainer(g, ns)
 		g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
 		g.Expect(container.Status.Standard).To(PointTo(MatchAllFields(Fields{
 			"Name": Equal(updatedStandard), "Ref": Equal(ref), "Update": BeNil(), "LeftOut": leftOutMatcher,
+			"Behind": behindMatcher, "Kept": BeEmpty(),
 			// Nothing records the checks until a change of them reaches the repository (#896).
 			"Checks": BeEmpty()})))
 		cond := standardCondition(g, container)
-		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-		g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpToDate))
+		if len(leftOut) > 0 {
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonFilesBehind))
+		} else {
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpToDate))
+		}
 		g.Expect(cond.Message).To(HavePrefix(updatedStandard + " is at " + ref))
 	}).WithTimeout(standardSteps).Should(Succeed())
+}
+
+// behindEvents are the StandardFilesBehind Events about orders-api, each sent
+// once.
+func behindEvents(g Gomega, ns string) []string {
+	var events eventsv1.EventList
+	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+	var out []string
+	for _, e := range events.Items {
+		if e.Regarding.Kind == "Container" && e.Regarding.Name == "orders-api" && e.Reason == "StandardFilesBehind" {
+			g.Expect(e.Type).To(Equal("Warning"))
+			g.Expect(e.Series).To(BeNil(), "the recorder folds a repeat into a series")
+			out = append(out, e.Note)
+		}
+	}
+	return out
 }
 
 // openedUpdate waits for an update to ref in flight, and returns it.
@@ -223,7 +260,7 @@ var _ = Describe("Container Standard update", func() {
 			"scaffoldedFrom keeps recording the scaffold")
 	})
 
-	It("leaves out a file the repository changed since, and names it", func() {
+	It("leaves out a file the repository changed in the same lines, and flags it until it merges", func() {
 		ns := newProjectNamespace()
 		updatableContainer(ns)
 		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
@@ -238,8 +275,39 @@ var _ = Describe("Container Standard update", func() {
 		Expect(mainFile(ns, makefile)).To(Equal("check:\n\tpytest\n"))
 		Expect(mainFile(ns, implementer)).To(HaveSuffix("Ask when unsure.\n"))
 		Expect(gitFake.mainFiles(ns, "orders-api")).NotTo(HaveKey(reviewer), "v1.2.0 drops the reviewer's guide")
-		Expect(standardCondition(Default, getContainer(Default, ns)).Message).To(Equal("python-strict is at v1.2.0; " +
-			"its last update left out Makefile, changed in the repository since: a person brings them up to date"))
+		container := getContainer(Default, ns)
+		Expect(container.Status.Standard.Behind).To(Equal([]c4v1alpha1.StandardFile{
+			{Path: makefile, Ref: "v1.0.0", PullRequestURL: update.PullRequestURL}}))
+		annotate := "kubectl -n " + ns + " annotate container orders-api c4.factory.io/standard-"
+		flagged := "python-strict is at v1.2.0, but its updates left out Makefile (at v1.0.0): the repository " +
+			"changed them in lines the Standard changed too. Take the Standard's version: `" + annotate +
+			"take=v1.2.0`; or keep the repository's: `" + annotate + "keep=v1.2.0`"
+		Expect(standardCondition(Default, container).Message).To(Equal(flagged))
+		Eventually(behindEvents).WithArguments(ns).WithTimeout(standardSteps).Should(Equal([]string{flagged}))
+
+		By("keeping it flagged through a ref that doesn't change it")
+		bumpStandard(ns, "v1.3.0")
+		next := openedUpdate(ns, "v1.3.0")
+		Expect(next.Paths).To(Equal([]string{implementer}))
+		Expect(next.LeftOut).To(Equal([]string{makefile}))
+		gitFake.setChecks(ns, "orders-api", next.Commit, "success")
+		eventuallyAt(ns, "v1.3.0", makefile)
+		container = getContainer(Default, ns)
+		Expect(container.Status.Standard.Behind).To(Equal([]c4v1alpha1.StandardFile{
+			{Path: makefile, Ref: "v1.0.0", PullRequestURL: next.PullRequestURL}}),
+			"the file stays at the ref its copy was last brought to")
+		Eventually(behindEvents).WithArguments(ns).WithTimeout(standardSteps).Should(HaveLen(2), "once per ref")
+		Consistently(behindEvents).WithArguments(ns).WithTimeout(2 * time.Second).Should(HaveLen(2))
+
+		By("merging it once a ref's change no longer overlaps the repository's")
+		bumpStandard(ns, "v1.4.0")
+		last := openedUpdate(ns, "v1.4.0")
+		Expect(last.Paths).To(Equal([]string{makefile}))
+		Expect(last.Merged).To(Equal([]string{makefile}))
+		Expect(last.LeftOut).To(BeEmpty())
+		gitFake.setChecks(ns, "orders-api", last.Commit, "success")
+		eventuallyAt(ns, "v1.4.0")
+		Expect(mainFile(ns, makefile)).To(Equal("lint:\n\truff check\n\ncheck:\n\tpytest\n"))
 	})
 
 	It("merges a file the repository changed in other lines, and names it", func() {

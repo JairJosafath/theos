@@ -209,7 +209,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			OperatorVersion: testOperatorVersion, ChartVersion: testChartVersion},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
-			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout},
+			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container")},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
