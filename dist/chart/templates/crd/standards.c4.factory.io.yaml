@@ -61,6 +61,13 @@ spec:
             description: spec defines the template, and the Container types and Frameworks
               it supports
             properties:
+              checksBeforeRelease:
+                description: |-
+                  checksBeforeRelease says the Standard's templates can run the full check
+                  only before a release: a light check on each change when a Container asks
+                  for checks BeforeRelease, and the full one on a release-check/** branch.
+                  Without it, its Containers run the full check on every change.
+                type: boolean
               description:
                 description: description says what this entry adds to a Container.
                 maxLength: 1000

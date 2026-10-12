@@ -170,12 +170,14 @@ func (r *ContainerReconciler) lookup(ctx context.Context, ns, name string, obj c
 func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 	var spec c4v1alpha1.CatalogEntrySpec
 	var frameworks []string
+	var checksBeforeRelease bool
 	switch o := obj.(type) {
 	case *c4v1alpha1.Framework:
 		spec = o.Spec
 	case *c4v1alpha1.Standard:
 		spec = o.Spec.CatalogEntrySpec
 		frameworks = o.Spec.SupportedFrameworks
+		checksBeforeRelease = o.Spec.ChecksBeforeRelease
 	case *c4v1alpha1.Compute:
 		spec = o.Spec
 	case *c4v1alpha1.Deployment:
@@ -195,5 +197,6 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 		TemplateURL:         spec.Template.URL,
 		TemplateRef:         spec.Template.Ref,
 		SupportedFrameworks: frameworks,
+		ChecksBeforeRelease: checksBeforeRelease,
 	}
 }

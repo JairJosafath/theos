@@ -123,7 +123,8 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 
-	in := scaffoldInput(container, res.use.Connectors)
+	in := scaffoldInput(container, res.use.Connectors,
+		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease))
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
 	if err != nil {
 		reason := c4v1alpha1.ReasonFailed
@@ -205,8 +206,9 @@ func (r *ContainerReconciler) condition(container *c4v1alpha1.Container, status 
 }
 
 // scaffoldInput is what every template of the Container renders with.
-// connectors are the unique Connector names, sorted.
-func scaffoldInput(container *c4v1alpha1.Container, connectors []string) scaffold.Input {
+// connectors are the unique Connector names, sorted, and checks is when CI runs
+// the full check (model.EffectiveChecks).
+func scaffoldInput(container *c4v1alpha1.Container, connectors []string, checks string) scaffold.Input {
 	in := scaffold.Input{
 		Project:        container.Namespace,
 		SoftwareSystem: container.Spec.SoftwareSystemRef.Name,
@@ -215,6 +217,7 @@ func scaffoldInput(container *c4v1alpha1.Container, connectors []string) scaffol
 		Type:           string(container.Spec.Type),
 		Framework:      container.Spec.FrameworkRef.Name,
 		Connectors:     connectors,
+		Checks:         checks,
 	}
 	if container.Spec.StandardRef != nil {
 		in.Standard = container.Spec.StandardRef.Name

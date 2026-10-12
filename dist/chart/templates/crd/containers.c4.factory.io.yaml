@@ -66,6 +66,18 @@ spec:
           spec:
             description: spec defines the desired state of Container
             properties:
+              checks:
+                default: EveryChange
+                description: |-
+                  checks is when CI runs the application's full check: EveryChange runs it on
+                  every pull request and push to main; BeforeRelease runs a light check on each
+                  change and the full one on the commit a release will be tagged at. It takes
+                  effect only when the Standard says it can (checksBeforeRelease); the
+                  condition ChecksApplied says when it doesn't.
+                enum:
+                - EveryChange
+                - BeforeRelease
+                type: string
               computeRef:
                 description: 'computeRef names the Compute catalog entry: resource
                   sizing.'
@@ -232,7 +244,7 @@ spec:
               conditions:
                 description: |-
                   conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
-                  and, for a Container with a Standard, StandardUpdated.
+                  and, for a Container with a Standard, StandardUpdated and ChecksApplied.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -320,6 +332,15 @@ spec:
                   at, and the update in flight. Only a Ready Container with a Standard that
                   was part of its scaffold has it.
                 properties:
+                  checks:
+                    description: |-
+                      checks is when the repository's CI runs the full check, as its Standard
+                      files were last rendered: the scaffold's, then each merged update's. Empty
+                      reads as EveryChange.
+                    enum:
+                    - EveryChange
+                    - BeforeRelease
+                    type: string
                   leftOut:
                     description: |-
                       leftOut are the files the last update left out, because the repository had

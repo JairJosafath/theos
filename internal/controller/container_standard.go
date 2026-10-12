@@ -225,7 +225,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		return
 	}
 
-	in := scaffoldInput(u.container, scaffoldedConnectors(u.status))
+	in := scaffoldInput(u.container, scaffoldedConnectors(u.status), recordedChecks(u.status))
 	render := func(ref string, files scaffold.Tree) (scaffold.Tree, bool) {
 		tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideStandard, Name: name, Ref: ref, Files: files})
 		if err != nil {
@@ -406,7 +406,7 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 	s := u.status.Standard
 	update := s.Update
 	title = model.StandardUpdateTitle(s.Name, update.Ref)
-	full := scaffold.UpdateMessage(scaffoldInput(u.container, scaffoldedConnectors(u.status)), s.Name, s.Ref,
+	full := scaffold.UpdateMessage(scaffoldInput(u.container, scaffoldedConnectors(u.status), recordedChecks(u.status)), s.Name, s.Ref,
 		update.Ref, scaffold.Update{Merged: update.Merged, LeftOut: update.LeftOut})
 	message, _ = strings.CutPrefix(full, title+"\n\n")
 	return title, message

@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -97,4 +99,49 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 		return gitAccess{}, err
 	}
 	return gitAccess{gitProvider: &provider, creds: creds, provider: p}, nil
+}
+
+// reportChecksApplied sets ChecksApplied: whether the Container's Standard runs
+// the full check when spec.checks asks. A Container without a Standard, or whose
+// Standard isn't there (ReferencesResolved says so), has no such condition; a
+// read error keeps the last one.
+func (r *ContainerReconciler) reportChecksApplied(ctx context.Context, container *c4v1alpha1.Container,
+	status *c4v1alpha1.ContainerStatus) {
+	if container.Spec.StandardRef == nil {
+		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionChecksApplied)
+		return
+	}
+	name := container.Spec.StandardRef.Name
+	var standard c4v1alpha1.Standard
+	found, err := r.lookup(ctx, container.Namespace, name, &standard)
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read Standard", "standard", name, "error", err.Error())
+		return
+	}
+	if !found {
+		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionChecksApplied)
+		return
+	}
+	asked := string(container.Spec.Checks)
+	effective := model.EffectiveChecks(asked, standard.Spec.ChecksBeforeRelease)
+	if asked == model.ChecksBeforeRelease && effective != asked {
+		r.condition(container, status, c4v1alpha1.ConditionChecksApplied, metav1.ConditionFalse,
+			c4v1alpha1.ReasonStandardRunsFullChecks, fmt.Sprintf(
+				"The Standard %s can't run the full check only before a release; CI runs it on every change", name))
+		return
+	}
+	reason := c4v1alpha1.ReasonEveryChange
+	if effective == model.ChecksBeforeRelease {
+		reason = c4v1alpha1.ReasonBeforeRelease
+	}
+	r.condition(container, status, c4v1alpha1.ConditionChecksApplied, metav1.ConditionTrue, reason, "")
+}
+
+// recordedChecks is when the repository's CI runs the full check, as its
+// Standard files were last rendered; empty reads as EveryChange.
+func recordedChecks(status *c4v1alpha1.ContainerStatus) string {
+	if status.Standard == nil || status.Standard.Checks == "" {
+		return model.ChecksEveryChange
+	}
+	return string(status.Standard.Checks)
 }
