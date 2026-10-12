@@ -155,9 +155,46 @@ func watchedTask(t *c4v1alpha1.Task) model.WatchedTask {
 	return w
 }
 
+// standardBehind are the status.needsYou items of the Containers the Brief
+// made whose Standard files an update left out, waiting on the person.
+func (r *BriefReconciler) standardBehind(ctx context.Context, brief *c4v1alpha1.Brief) ([]model.NeedsYou, error) {
+	var containers c4v1alpha1.ContainerList
+	if err := r.List(ctx, &containers, client.InNamespace(brief.Namespace),
+		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		return nil, err
+	}
+	var out []model.NeedsYou
+	for _, c := range containers.Items {
+		cond := filesBehind(&c)
+		if cond == nil {
+			continue
+		}
+		s := c.Status.Standard
+		b := model.StandardBehind{Container: c.Name, Standard: s.Name, Ref: s.Ref,
+			Take: c4v1alpha1.AnnotationStandardTake + "=" + s.Ref, Since: cond.LastTransitionTime.Time}
+		for _, f := range behindFiles(s) {
+			b.Files = append(b.Files, model.BehindFile{Path: f.Path, Ref: f.Ref})
+		}
+		out = append(out, model.StandardBehindNeedsYou(b))
+	}
+	return out, nil
+}
+
+// filesBehind is the Container's StandardUpdated condition while its Standard
+// files wait on a person (FilesBehind), nil otherwise.
+func filesBehind(c *c4v1alpha1.Container) *metav1.Condition {
+	cond := meta.FindStatusCondition(c.Status.Conditions, c4v1alpha1.ConditionStandardUpdated)
+	if c.Status.Standard == nil || cond == nil || cond.Status != metav1.ConditionFalse ||
+		cond.Reason != c4v1alpha1.ReasonFilesBehind {
+		return nil
+	}
+	return cond
+}
+
 // tend classifies what the Brief watches and records it: status.attention,
 // status.needsYou, the NeedsYou condition and an Event per new entry. With
-// autopilot Off it lists only the requests waiting in Ask. It returns the classification and when the
+// autopilot Off it lists only the requests waiting in Ask and the Containers
+// whose Standard files wait on the person. It returns the classification and when the
 // Brief acts next on its own, zero when it waits for a change.
 func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now time.Time) (
 	model.Attention, time.Time, error) {
@@ -170,8 +207,14 @@ func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now
 		}
 		att = model.BriefAttention(facts, now)
 	}
-	// A request waiting in Ask is a door, whatever the autopilot says.
+	// A request waiting in Ask is a door, whatever the autopilot says, and so
+	// are Standard files waiting on the person: no mode takes them.
 	att = model.WithNeedsYou(att, waitingRequests(brief))
+	behind, err := r.standardBehind(ctx, brief)
+	if err != nil {
+		return att, time.Time{}, err
+	}
+	att = model.WithNeedsYou(att, behind)
 	var next time.Time
 	attention := make([]c4v1alpha1.BriefHealing, 0, len(att.Healing))
 	for _, h := range att.Healing[:min(len(att.Healing), maxAttention)] {

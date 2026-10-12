@@ -351,7 +351,8 @@ type BriefFailedIssue struct {
 // may heal by itself, and when the Brief acts if it hasn't.
 type BriefHealing struct {
 	// kind of the item: Issue, Task, Crew, Container or Request. A Request
-	// is answered in spec.releases[].requests, not by a prompt.
+	// is answered in spec.releases[].requests, and a Container whose Standard
+	// files an update left out on the Container, not by a prompt.
 	// +kubebuilder:validation:Enum=Issue;Task;Crew;Container;Request
 	// +required
 	Kind string `json:"kind"`
@@ -377,7 +378,8 @@ type BriefHealing struct {
 // Brief would do and why. A prompt answers it.
 type BriefNeedsYou struct {
 	// kind of the item: Issue, Task, Crew, Container or Request. A Request
-	// is answered in spec.releases[].requests, not by a prompt.
+	// is answered in spec.releases[].requests, and a Container whose Standard
+	// files an update left out on the Container, not by a prompt.
 	// +kubebuilder:validation:Enum=Issue;Task;Crew;Container;Request
 	// +required
 	Kind string `json:"kind"`

@@ -81,11 +81,19 @@ func standardRefs() map[string]scaffold.Tree {
 func updatableContainer(ns string) {
 	GinkgoHelper()
 	createFactory(ns)
+	standardContainer(ns, nil)
+}
+
+// standardContainer creates orders-api as updatableContainer does, in a
+// namespace with a factory, with labels, and waits until it is Ready.
+func standardContainer(ns string, labels map[string]string) {
+	GinkgoHelper()
 	url := templatesURL + ns + "/" + updatedStandard
 	for ref, tree := range standardRefs() {
 		gitFake.addTemplate(url, ref, tree)
 	}
 	container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+	container.Labels = labels
 	container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: updatedStandard}
 	mustCreate(
 		newSystem(ns, "webshop-core"),

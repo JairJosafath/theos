@@ -19,6 +19,7 @@ import { writeError, type WriteError } from './briefs/errors'
 import { AnswerButtons, type AnswerContext } from './briefs/Answers'
 import { RequestButtons } from './briefs/RequestButtons'
 import { failedAnswers } from '../model/answers'
+import { pageHref as objectHref } from './objects/links'
 import './briefs.css'
 
 export function Briefs({
@@ -169,7 +170,7 @@ export function BriefBody({
         </div>
       ) : null}
 
-      {view.needsYou.length ? <NeedsYouBox view={view} answers={answers} /> : null}
+      {view.needsYou.length ? <NeedsYouBox view={view} namespace={namespace} answers={answers} /> : null}
       {view.failure ? (
         <div className="brief-note brief-note-error">
           <strong>The last round failed.</strong> {view.failure}
@@ -225,7 +226,8 @@ export function PauseButton({
 }
 
 /** What only the person can decide: what the Brief waits for, then each item with what it would do and why. */
-function NeedsYouBox({ view, answers }: { view: BriefView; answers?: AnswerContext }) {
+function NeedsYouBox({ view, namespace, answers }: { view: BriefView; namespace: string; answers?: AnswerContext }) {
+  const prompted = view.needsYou.some((n) => !n.request && !n.container)
   return (
     <div className="brief-note brief-note-waiting brief-needs-you">
       <strong>Needs you ({view.needsYouWaiting})</strong>
@@ -239,6 +241,14 @@ function NeedsYouBox({ view, answers }: { view: BriefView; answers?: AnswerConte
                 {' '}
                 <a href={n.url} target="_blank" rel="noreferrer" title={n.label}>
                   open <ExternalLinkIcon size={11} />
+                </a>
+              </>
+            ) : null}
+            {n.container ? (
+              <>
+                {' '}
+                <a href={objectHref(namespace, 'Container', n.container)} title={n.label}>
+                  open the Container
                 </a>
               </>
             ) : null}
@@ -281,14 +291,19 @@ function NeedsYouBox({ view, answers }: { view: BriefView; answers?: AnswerConte
         <p className="field-hint">{view.needsYouWaiting - view.needsYou.length} more wait than are listed here.</p>
       ) : null}
       <p className="field-hint">
-        {view.needsYou.some((n) => !n.request)
-          ? answers && view.needsYou.some((n) => n.issue)
-            ? 'Answer with a button, which adds a prompt saying so, or in a prompt of your own, such as "do what you suggest".'
-            : 'Answer in a prompt, such as "do what you suggest" or "close the CLI issue instead".'
-          : ''}
-        {view.needsYou.some((n) => n.request)
-          ? `${view.needsYou.some((n) => !n.request) ? ' ' : ''}A request from GitHub is answered by accepting or declining it, not by a prompt: its words reach the planner only once you said yes.`
-          : ''}
+        {[
+          prompted
+            ? answers && view.needsYou.some((n) => n.issue)
+              ? 'Answer with a button, which adds a prompt saying so, or in a prompt of your own, such as "do what you suggest".'
+              : 'Answer in a prompt, such as "do what you suggest" or "close the CLI issue instead".'
+            : '',
+          view.needsYou.some((n) => n.container) ? 'A Container is settled on its page, which says what to do.' : '',
+          view.needsYou.some((n) => n.request)
+            ? 'A request from GitHub is answered by accepting or declining it, not by a prompt: its words reach the planner only once you said yes.'
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
       </p>
     </div>
   )

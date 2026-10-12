@@ -320,7 +320,7 @@ func (r *BriefReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			taskPhaseChanges()).
 		Watches(&c4v1alpha1.GitProvider{}, allInNamespace, createOrDelete()).
 		Watches(&c4v1alpha1.Agent{}, allInNamespace, createOrDelete()).
-		Watches(&c4v1alpha1.Container{}, fromBriefLabel, containerPhaseChanges()).
+		Watches(&c4v1alpha1.Container{}, fromBriefLabel, containerPhaseOrBehindChanges()).
 		// A Crew the Brief made changing its spec (its releases, or a hand
 		// edit of its parallel) or its latest release changes the Brief's apps;
 		// one it didn't make is read again with the suggestions.
