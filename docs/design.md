@@ -382,15 +382,22 @@ model and context it needs.
   pull request, a round with no commit has nothing to review
   ([plan](plans/done/try-continues-open-pr.md)). Milestones group the
   backlog; Gitea 1.27 has no API for project boards.
-- **Releases go one at a time.** A milestone with a due date is a release. The
-  Crew starts only the ready issues of the release due first that still has work
-  (a ready issue, or a Task working on one of its issues); later releases wait,
-  so each release's tag holds only its own issues. Issues in an undated
-  milestone, or in none, come after every release. Two kinds start whatever
-  their release, or something would wait for ever: a Standard change a Task
-  waits on, and an issue the current release's issues depend on. An issue handed
+- **Releases go in order.** A milestone with a due date is a release. The Crew
+  starts ready issues release by release, the one due first first: the release
+  in progress (the first that still has work: a ready issue, one waiting on
+  dependencies, or a Task working on one of its issues) has first claim on any
+  free place, and the places it can't use, because its remaining issues wait
+  on each other or already run, go to the ready issues of the next releases,
+  due first first, up to `parallel`. Idle places buy nothing (#873). Issues in
+  an undated milestone, or in none, come after every release. Ahead of every
+  release go an urgent issue and a Standard change a Task waits on; an issue
+  the current release's issues depend on, directly or through each other,
+  goes with the current release, or it would wait for ever. An issue handed
   back to a person (`status/needs-human`) no longer holds its release, so the
-  factory keeps working. Running Tasks are never stopped.
+  factory keeps working. Running Tasks are never stopped. Tags still go out in
+  order (below): a later release that is done waits for the earlier one, and
+  when the earlier one's tag carries the later one's merged work, that work
+  moves into the earlier milestone, so each tag holds what its milestone says.
 - **The Crew tags a done release** when its `spec.tagReleases` is true (off by
   default). A release whose title is `vMAJOR.MINOR.PATCH` is done when its
   milestone has no open issue, `status/needs-human` included, and no active Task

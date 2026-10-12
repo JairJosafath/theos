@@ -230,19 +230,18 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	}
 	// An urgent issue goes first: a person asked for it at once. Then a Standard
 	// change with its allowance: a Blocked Task waits on it, and that Task's
-	// branch ages behind every older ready issue otherwise.
+	// branch ages behind every older ready issue otherwise. Then the releases, due
+	// first first: the release in progress has first claim on a free place, and
+	// what it can't use goes to the next releases rather than sit empty. Tags
+	// still go out in order (NextRelease).
+	order := releaseOrder(f.Tasks, issues, candidates, step.Waiting)
 	slices.SortStableFunc(candidates, func(a, b int) int {
-		return startRank(urgent, allowances, a) - startRank(urgent, allowances, b)
+		if c := startRank(urgent, allowances, a) - startRank(urgent, allowances, b); c != 0 {
+			return c
+		}
+		return compareReleases(order[a], order[b])
 	})
-
-	// Releases go one at a time, so a release's tag holds only its own issues:
-	// a later release's ready issues wait while an earlier one has work.
 	onDependencies := len(step.Waiting)
-	candidates, held, current := holdLaterReleases(f.Tasks, issues, candidates, step.Waiting, allowances)
-	if len(held) > 0 {
-		step.Waiting = append(step.Waiting, held...)
-		slices.Sort(step.Waiting)
-	}
 
 	switch {
 	case f.Paused:
@@ -292,11 +291,9 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 				plural(n, "waits", "wait"))
 		}
 		step.Message += dependenciesMessage(onDependencies)
-		step.Message += heldMessage(held, current, "ready "+plural(len(held), "issue ", "issues "))
 	default:
 		step.Phase, step.Message = CrewIdle, "No ready issues"
 		step.Message += dependenciesMessage(onDependencies)
-		step.Message += heldMessage(held, current, "")
 	}
 	return step
 }
@@ -309,29 +306,20 @@ func dependenciesMessage(n int) string {
 	return fmt.Sprintf("; %d %s on open dependencies", n, plural(n, "waits", "wait"))
 }
 
-// holdLaterReleases keeps the candidates of the current release and holds back
-// those of later ones, so a release's tag holds only its own issues. A Standard
-// change with its allowance, and an issue the current release waits on, are
-// never held: a Task or the release would wait on them for ever. Nor is an
-// urgent issue: a person asked for it at once.
-func holdLaterReleases(tasks []CrewTask, issues []Issue, candidates, waiting []int,
-	allowances map[int][]string) (kept, held []int, current *Release) {
-	current = currentRelease(tasks, issues, candidates, waiting)
+// releaseOrder is the release each candidate starts in turn with: its own, or
+// the current release's for an issue the current release waits on, so the
+// release in progress isn't held up behind its own blockers.
+func releaseOrder(tasks []CrewTask, issues []Issue, candidates, waiting []int) map[int]*Release {
+	current := currentRelease(tasks, issues, candidates, waiting)
 	needed := neededBy(issues, waiting, current)
-	release := map[int]*Release{}
-	urgent := map[int]bool{}
+	order := map[int]*Release{}
 	for _, issue := range issues {
-		release[issue.Number] = issue.Release
-		urgent[issue.Number] = issue.Urgent
-	}
-	for _, n := range candidates {
-		if compareReleases(release[n], current) > 0 && !needed[n] && len(allowances[n]) == 0 && !urgent[n] {
-			held = append(held, n)
-		} else {
-			kept = append(kept, n)
+		order[issue.Number] = issue.Release
+		if needed[issue.Number] && compareReleases(current, issue.Release) < 0 {
+			order[issue.Number] = current
 		}
 	}
-	return kept, held, current
+	return order
 }
 
 // neededBy is every issue of this repository that the current release's waiting
@@ -363,16 +351,6 @@ func neededBy(issues []Issue, waiting []int, current *Release) map[int]bool {
 		}
 	}
 	return needed
-}
-
-// heldMessage tells how many ready issues wait for the current release; noun
-// goes between the count and the verb.
-func heldMessage(held []int, current *Release, noun string) string {
-	n := len(held)
-	if n == 0 {
-		return ""
-	}
-	return fmt.Sprintf("; %d %s%s for release %s", n, noun, plural(n, "waits", "wait"), current.Title)
 }
 
 // currentRelease is the release a Crew works on: the first, in release order, that
