@@ -53,6 +53,9 @@ type ReleaseFacts struct {
 	Milestones []ReleaseMilestone
 	// Active are the issues of the Tasks not yet Merged or Failed.
 	Active []int
+	// Working are the Tasks not yet Merged or Failed, Blocked ones left out:
+	// their work merges before a prepare issue filed now.
+	Working []string
 	// Merged are the Merged Tasks with an issue. A deleted Task's merge is lost:
 	// a release whose newest merge it was would be tagged at an older one, or
 	// clash with the tag already made.
@@ -112,6 +115,11 @@ const (
 	// ReleaseBehindPrevious holds a release whose tag would not come after
 	// the previous release's: it would ship older code under a newer version.
 	ReleaseBehindPrevious = "BehindPreviousRelease"
+	// ReleasePrepareWaits holds a done release's prepare issue until the
+	// Tasks at work have ended, so it is built on the main their work merges
+	// into and lists that work (#956). It is no warning: the Crew starts no
+	// other issue meanwhile (CrewFacts.Preparing).
+	ReleasePrepareWaits = "PrepareWaitsForTasks"
 )
 
 // ReleaseStep is what a Crew does about its releases. With File set, it files
@@ -183,14 +191,8 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 		return ReleaseStep{}
 	}
 
-	if f.Prepare && len(first.Prepared) == 0 {
-		if work := mergedWork(first, f.Merged); len(work) > 0 {
-			// The tag will carry the later releases' work merged so far.
-			for _, later := range releases[1:] {
-				work = append(work, mergedWork(later, f.Merged)...)
-			}
-			return ReleaseStep{Tag: first.Title, Milestone: first.ID, File: true, Merged: work}
-		}
+	if step, ok := prepareStep(f, releases); ok {
+		return step
 	}
 
 	// A merge without its commit or time holds the release, unless another
@@ -253,6 +255,30 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 	moved, emptied := carriedWork(releases[1:], f.Merged, *newest)
 	return ReleaseStep{Tag: first.Title, Commit: newest.Commit, Milestone: first.ID, CreateTag: !tagged,
 		Moved: moved, Emptied: emptied}
+}
+
+// prepareStep is the step about the done first release's prepare issue when
+// the Crew files one and the release has merged work but no prepare issue yet:
+// file it, or wait for the Tasks at work, whose merges move main under it.
+func prepareStep(f ReleaseFacts, releases []ReleaseMilestone) (ReleaseStep, bool) {
+	first := releases[0]
+	if !f.Prepare || len(first.Prepared) > 0 {
+		return ReleaseStep{}, false
+	}
+	work := mergedWork(first, f.Merged)
+	if len(work) == 0 {
+		return ReleaseStep{}, false
+	}
+	if len(f.Working) > 0 {
+		return held(first.Title, ReleasePrepareWaits, "%s is done; its prepare issue waits for %s %s to "+
+			"end, so it is built on the main their work merges into", first.Title,
+			plural(len(f.Working), "Task", "Tasks"), joinAnd(f.Working)), true
+	}
+	// The tag will carry the later releases' work merged so far.
+	for _, later := range releases[1:] {
+		work = append(work, mergedWork(later, f.Merged)...)
+	}
+	return ReleaseStep{Tag: first.Title, Milestone: first.ID, File: true, Merged: work}, true
 }
 
 // recorded reports whether a merge has its commit and time.

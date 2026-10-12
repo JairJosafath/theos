@@ -21,6 +21,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 var releaseDue = time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
@@ -661,6 +662,64 @@ var _ = Describe("Crew release preparation", func() {
 			g.Expect(condition(crew.Status.Conditions, ConditionReleased)).To(BeNil(), "tagging is off")
 			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
 		}, 3*time.Second).Should(Succeed())
+	})
+
+	It("files no prepare issue while a Task is at work, then one listing its work (#956)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		// The next release's fix is in review when v0.1.0 is done; its merge
+		// moves main under a prepare step started now.
+		fix := gitFake.addIssue(ns, "orders-api", "Track orders", clearIssue, nil)
+		gitFake.setIssueRelease(ns, "orders-api", fix, "v0.2.0", releaseDue.AddDate(0, 0, 7))
+		task := newTask(ns, "orders-api-fix-2", "")
+		task.Spec.AgentRef = c4v1alpha1.LocalRef{Name: "nobody"}
+		task.Spec.Issue = int32(fix)
+		mustCreate(task)
+		Eventually(func(g Gomega) {
+			cond := condition(getTask(g, ns, task.Name).Status.Conditions, ConditionProgressing)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Reason).To(Equal("AgentNotFound"))
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, task.Name)
+			task.Status.Phase = c4v1alpha1.TaskReviewing
+			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
+		}).Should(Succeed())
+		crew := newCrew(ns)
+		crew.Spec.Paused = true
+		crew.Spec.PrepareReleases = true
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReleased)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Reason).To(Equal(model.ReleasePrepareWaits))
+			g.Expect(cond.Message).To(ContainSubstring("Task orders-api-fix-2 to end"))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(prepareIssues(ns)).To(BeEmpty())
+			g.Expect(getTask(g, ns, task.Name).Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			for _, e := range crewEvents(g, ns) {
+				g.Expect(e.Type).NotTo(Equal("Warning"), "waiting for a Task is no warning")
+			}
+		}, 3*time.Second).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, task.Name)
+			completed := metav1.Now()
+			task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1alpha1.TaskMerged, "fix-merge", &completed
+			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
+		}).Should(Succeed())
+		Expect(gitFake.closeIssue(ns, "orders-api", fix)).To(Succeed())
+		Eventually(func(g Gomega) {
+			issues := prepareIssues(ns)
+			g.Expect(issues).To(HaveLen(1))
+			g.Expect(issues[0].Body).To(ContainSubstring("Validate orders"))
+			g.Expect(issues[0].Body).To(ContainSubstring("Track orders"))
+		}).Should(Succeed())
 	})
 
 	It("files the prepare issue before it tags, with both switches", func() {

@@ -2,6 +2,7 @@ package model
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -286,6 +287,21 @@ func TestNextReleasePrepares(t *testing.T) {
 				{ID: 3, Release: Release{Title: "v0.3.0", Due: day(19)}, Open: []int{9}, Closed: []int{5, 6, 8}}},
 				Merged: append(work, merged(6, "c6", 2), merged(5, "c5", 4))},
 			ReleaseStep{Tag: "v0.2.0", Milestone: 2, File: true, Merged: []int{1, 2, 3, 6, 5}}},
+		{"a later release's Task in review holds the prepare issue, so its work merges first (#956)",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3}, nil),
+				{ID: 3, Release: Release{Title: "v0.3.0", Due: day(19)}, Open: []int{332}}},
+				Merged: work, Active: []int{332}, Working: []string{"cel-332-2", "by-hand"}},
+			ReleaseStep{Tag: "v0.2.0", Reason: ReleasePrepareWaits, Held: "v0.2.0 is done; its prepare issue waits " +
+				"for Tasks cel-332-2 and by-hand to end, so it is built on the main their work merges into"}},
+		{"once that Task merged, the prepare issue lists its work",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3}, nil),
+				{ID: 3, Release: Release{Title: "v0.3.0", Due: day(19)}, Closed: []int{332}}},
+				Merged: append(slices.Clone(work), merged(332, "c332", 6))},
+			ReleaseStep{Tag: "v0.2.0", Milestone: 2, File: true, Merged: []int{1, 2, 3, 332}}},
+		{"a Task at work doesn't hold a release that already has its prepare issue",
+			ReleaseFacts{Prepare: true, Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3, 4}, []int{4})},
+				Merged: append(slices.Clone(work), merged(4, "c4", 6)), Working: []string{"cel-9"}},
+			ReleaseStep{Tag: "v0.2.0", Commit: "c4", Milestone: 2, CreateTag: true}},
 		{"without the switch it is tagged as before",
 			ReleaseFacts{Milestones: []ReleaseMilestone{release(nil, []int{1, 2, 3}, nil)}, Merged: work},
 			ReleaseStep{Tag: "v0.2.0", Commit: "c3", Milestone: 2, CreateTag: true}},
