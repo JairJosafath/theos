@@ -11,6 +11,11 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
+// projectNotes points the agent to the project's notes, right after AGENTS.md.
+const projectNotes = "If the repository has " + model.ProjectNotesPath + ", read it next: the project's own " +
+	"notes about its workspace and ways. Where it and AGENTS.md or your role guide disagree, AGENTS.md and " +
+	"the role guide win."
+
 // Review verdicts.
 const (
 	VerdictApprove = "approve"
@@ -78,6 +83,7 @@ func ImplementPrompt(job Job, ws Workspace) string {
 	fmt.Fprintf(&b, `
 How to work:
 - Read AGENTS.md first and follow it; the rules in docs/style/ apply.
+- `+projectNotes+`
 - You are on branch %s, which starts from %s. Stay on it.
 `, job.Branch, job.Base)
 	if job.Issue == 0 {
@@ -200,8 +206,9 @@ func ReviewPrompt(job Job, ws Workspace) string {
 	}
 	fmt.Fprintf(&b, `
 The change is on the current branch, %[1]s. See it with: git diff origin/%[2]s...HEAD
-Read AGENTS.md and docs/style/ for the rules the code must follow. You may read
-and run anything in the repository, including %[3]q, but do not change files.
+Read AGENTS.md and docs/style/ for the rules the code must follow.
+`+projectNotes+`
+You may read and run anything in the repository, including %[3]q, but do not change files.
 CI runs %[3]q on this head too: a failure of it that %[2]s has here as well is
 the workspace's, not the change's.
 

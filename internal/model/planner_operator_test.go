@@ -124,3 +124,43 @@ func TestOperatorIdeaPlansAnOperatorOnGoKubebuilder(t *testing.T) {
 		}
 	}
 }
+
+// TestProjectNotesUnprotected pins that any issue may change a project's notes:
+// neither the platform, nor the never-paths, nor a Standard of the chart's
+// catalog protects them.
+func TestProjectNotesUnprotected(t *testing.T) {
+	data, err := os.ReadFile(chartValues)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values struct {
+		Catalog struct {
+			Entries []struct {
+				Kind string `yaml:"kind"`
+				Name string `yaml:"name"`
+				Spec struct {
+					ProtectedPaths []string `yaml:"protectedPaths"`
+				} `yaml:"spec"`
+			} `yaml:"entries"`
+		} `yaml:"catalog"`
+	}
+	if err := yaml.Unmarshal(data, &values); err != nil {
+		t.Fatal(err)
+	}
+	lists := map[string][]string{"AgentNeverPaths": AgentNeverPaths, "PlatformProtectedPaths": PlatformProtectedPaths}
+	standards := 0
+	for _, e := range values.Catalog.Entries {
+		if e.Kind == "Standard" {
+			standards++
+			lists["Standard "+e.Name] = e.Spec.ProtectedPaths
+		}
+	}
+	if standards == 0 {
+		t.Fatal("the chart's catalog has no Standard")
+	}
+	for name, protected := range lists {
+		if got := TouchedPaths([]string{ProjectNotesPath}, protected); len(got) > 0 {
+			t.Errorf("%s protects %s: %v", name, ProjectNotesPath, protected)
+		}
+	}
+}
