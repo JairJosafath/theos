@@ -119,7 +119,7 @@ Each step is its own issue, filed `status/proposed`, naming #879. Steps 2 to 5
 depend on step 1; the setting does nothing visible until steps 2 and 3 have
 landed, and nothing waits on a full check until step 4.
 
-1. **The setting and who decides it.** `ContainerSpec.checks` (enum, default
+1. **The setting and who decides it** (#894). `ContainerSpec.checks` (enum, default
    `EveryChange`, mutable), `StandardSpec.checksBeforeRelease`,
    `ContainerStandardStatus.checks`, `scaffold.Input.Checks`, the
    `internal/model` function that decides the effective checks, and the
@@ -129,7 +129,7 @@ landed, and nothing waits on a full check until step 4.
    Standard can or can't); envtest shows the default, a change of the field
    accepted, an unknown value refused, and `ChecksApplied` False on a
    Standard that can't; `make check` passes.
-2. **The Standards render a light and a full check.** go-standard,
+2. **The Standards render a light and a full check** (#895). go-standard,
    go-operator-standard, ts-standard and python-standard: `check.yaml.tmpl`
    and `make check-light`, their catalog entries `checksBeforeRelease: true`,
    new tags pinned in `templates/versions.txt`. hello-standard and
@@ -139,7 +139,7 @@ landed, and nothing waits on a full check until step 4.
    `check` job running `make check-light` and a `full` job on
    `release-check/**` running `make check`; `make validate-yaml` and
    `make check` pass.
-3. **A change of the setting reaches the repository.** The Standard update
+3. **A change of the setting reaches the repository** (#896). The Standard update
    re-renders when the effective checks differ from `status.standard.checks`,
    and a new Container records them at scaffold.
    Done when: `internal/scaffold` tests plan an update between checks modes
@@ -147,7 +147,7 @@ landed, and nothing waits on a full check until step 4.
    operator's pull request after the field changes, `status.standard.checks`
    set once it merges, and nothing opened when only an unsupporting
    Standard's Container changes; `make check` passes.
-4. **The Crew runs the full check before it tags.** The gitprovider call to
+4. **The Crew runs the full check before it tags** (#897). The gitprovider call to
    create a branch at a commit; the gate in `crew_release.go` with
    `FullCheckRunning`, `FullCheckFailed` (and its issue), `NoFullCheck`; the
    gate's issue not counting as `MergedAfterPrepare`.
@@ -156,7 +156,7 @@ landed, and nothing waits on a full check until step 4.
    succeeds and the branch deleted, one issue filed on failure, and a release
    of an `EveryChange` Container tagged as today; `make test-gitea` creates
    and deletes the branch at a commit; `make check` passes.
-5. **The owner sees and sets it.** The UI's Container page shows the checks
+5. **The owner sees and sets it** (#898). The UI's Container page shows the checks
    and lets the owner change them, with `ChecksApplied` when False; the
    Standards' `docs/agents/` notes and `docs/getting-started.md` say what the
    choice does and how a person tags with `BeforeRelease`.
