@@ -2112,6 +2112,11 @@ func (in *StandardUpdateStatus) DeepCopyInto(out *StandardUpdateStatus) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.Merged != nil {
+		in, out := &in.Merged, &out.Merged
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.LeftOut != nil {
 		in, out := &in.LeftOut, &out.LeftOut
 		*out = make([]string, len(*in))
