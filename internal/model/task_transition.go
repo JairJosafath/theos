@@ -18,6 +18,9 @@ type TaskProgress struct {
 	// ChecksRerunAt is when the last was asked for, on the round's commit.
 	ChecksReruns  int
 	ChecksRerunAt time.Time
+	// ChecksRerunDue means the round pushed again the commit whose checks
+	// failed: their failed jobs run again before the checks are read.
+	ChecksRerunDue bool
 	// Restarts counts how often the round started over in place (conflicts,
 	// a resume); sandbox names include it.
 	Restarts int
@@ -26,6 +29,9 @@ type TaskProgress struct {
 	// HasChecks means the round's check results are kept; a transition that
 	// clears it drops them.
 	HasChecks bool
+	// ChecksFailed means the kept check results are a failure on Commit; the
+	// next round keeps them, so a push of the same commit runs them again.
+	ChecksFailed bool
 	// ResumedRound is the round a Blocked Task resumed in; 0 when it didn't.
 	ResumedRound int
 	// MergeWhenChecksPass means the approved change's branch took in main, and
@@ -69,9 +75,18 @@ func IssueClosed(issue int) TaskEnd {
 func OpenedPR(p TaskProgress, commit string) TaskProgress {
 	p.Commit = commit
 	p.HasChecks = false
-	p.ChecksRerunAt = time.Time{}
+	p.ChecksRerunAt, p.ChecksRerunDue = time.Time{}, false
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskChecking
+	return p
+}
+
+// PushedAgain is the progress of a Task whose round pushed again commit,
+// whose checks failed in an earlier round: it waits for that commit's checks,
+// and their failed jobs run again first, as the agent found nothing to change.
+func PushedAgain(p TaskProgress, commit string) TaskProgress {
+	p = OpenedPR(p, commit)
+	p.ChecksRerunDue = true
 	return p
 }
 
@@ -101,8 +116,8 @@ func NextRound(p TaskProgress, feedback string) TaskProgress {
 	p.Reruns = 0
 	p.ChecksReruns = 0
 	p.Restarts = 0
-	p.HasChecks = false
-	p.ChecksRerunAt = time.Time{}
+	p.HasChecks = p.HasChecks && p.ChecksFailed
+	p.ChecksRerunAt, p.ChecksRerunDue = time.Time{}, false
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskImplementing
 	return p
@@ -133,7 +148,7 @@ func restartRound(p TaskProgress, feedback string) TaskProgress {
 	p.ReviewAttempts = 0
 	p.ReviewAgains = 0
 	p.HasChecks = false
-	p.ChecksRerunAt = time.Time{}
+	p.ChecksRerunAt, p.ChecksRerunDue = time.Time{}, false
 	p.ResumedRound = 0
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskImplementing
@@ -159,6 +174,15 @@ func Rerun(p TaskProgress) TaskProgress {
 func RerunChecks(p TaskProgress, now time.Time) TaskProgress {
 	p.ChecksReruns++
 	p.ChecksRerunAt = now
+	return p
+}
+
+// RerunPushedChecks is the progress of a Task whose round pushed again the
+// commit whose checks failed, and whose failed jobs run again at now: it waits
+// for their result as after RerunChecks. Each round pushes once, so this rerun
+// doesn't count towards MaxChecksReruns.
+func RerunPushedChecks(p TaskProgress, now time.Time) TaskProgress {
+	p.ChecksRerunAt, p.ChecksRerunDue = now, false
 	return p
 }
 
@@ -220,7 +244,7 @@ func PullRequestClosed(url string) TaskEnd {
 func Recheck(p TaskProgress, head string) TaskProgress {
 	p.Commit = head
 	p.HasChecks = false
-	p.ChecksRerunAt = time.Time{}
+	p.ChecksRerunAt, p.ChecksRerunDue = time.Time{}, false
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskChecking
 	return p
@@ -233,7 +257,7 @@ func Recheck(p TaskProgress, head string) TaskProgress {
 func ReviewAgain(p TaskProgress) TaskProgress {
 	p.ReviewAgains++
 	p.HasChecks = false
-	p.ChecksRerunAt = time.Time{}
+	p.ChecksRerunAt, p.ChecksRerunDue = time.Time{}, false
 	p.MergeWhenChecksPass = false
 	p.Phase = TaskChecking
 	return p
@@ -245,7 +269,7 @@ func ReviewAgain(p TaskProgress) TaskProgress {
 func UpdatedBranch(p TaskProgress, head string) TaskProgress {
 	p.Commit = head
 	p.HasChecks = false
-	p.ChecksRerunAt = time.Time{}
+	p.ChecksRerunAt, p.ChecksRerunDue = time.Time{}, false
 	p.MergeWhenChecksPass = true
 	p.Phase = TaskChecking
 	return p

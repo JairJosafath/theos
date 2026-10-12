@@ -1,6 +1,6 @@
 # Plan: checks the machine killed, or a commit pushed again, run again
 
-GitHub issue #870 (reported by gray-lenovo). Agent: otter-870.
+GitHub issue #870 (reported by gray-lenovo). Agent: otter-870. Done: steps 1 (#877) and 2 (#878) landed; evidence in [checks-run-again.txt](../../screenshots/checks-run-again.txt).
 
 ## Goal
 

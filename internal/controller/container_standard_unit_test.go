@@ -65,11 +65,11 @@ func TestScaffoldInput(t *testing.T) {
 			DeploymentRef:     &c4v1alpha1.LocalRef{Name: "k8s-manifests"},
 		},
 	}
-	got := scaffoldInput(container, []string{"postgres"})
+	got := scaffoldInput(container, []string{"postgres"}, model.ChecksBeforeRelease)
 	want := scaffold.Input{
 		Project: "webshop", SoftwareSystem: "webshop-core", Container: "orders-api", DisplayName: "Orders API",
 		Type: "service", Framework: "python-fastapi", Standard: "python-strict", Deployment: "k8s-manifests",
-		Connectors: []string{"postgres"},
+		Connectors: []string{"postgres"}, Checks: "BeforeRelease",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput() = %+v, want %+v", got, want)

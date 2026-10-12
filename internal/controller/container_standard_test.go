@@ -147,7 +147,9 @@ func eventuallyAt(ns, ref string, leftOut ...string) {
 		g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
 		g.Expect(container.Status.Standard).To(PointTo(MatchAllFields(Fields{
 			"Name": Equal(updatedStandard), "Ref": Equal(ref), "Update": BeNil(), "LeftOut": leftOutMatcher,
-			"Behind": behindMatcher, "Kept": BeEmpty()})))
+			"Behind": behindMatcher, "Kept": BeEmpty(),
+			// Nothing records the checks until a change of them reaches the repository (#896).
+			"Checks": BeEmpty()})))
 		cond := standardCondition(g, container)
 		if len(leftOut) > 0 {
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))

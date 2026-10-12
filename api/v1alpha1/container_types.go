@@ -53,7 +53,26 @@ type ContainerSpec struct {
 	// deploymentRef names the Deployment catalog entry: how the application ships.
 	// +optional
 	DeploymentRef *LocalRef `json:"deploymentRef,omitempty"`
+
+	// checks is when CI runs the application's full check: EveryChange runs it on
+	// every pull request and push to main; BeforeRelease runs a light check on each
+	// change and the full one on the commit a release will be tagged at. It takes
+	// effect only when the Standard says it can (checksBeforeRelease); the
+	// condition ChecksApplied says when it doesn't.
+	// +kubebuilder:default=EveryChange
+	// +optional
+	Checks ChecksMode `json:"checks,omitempty"`
 }
+
+// ChecksMode is when a Container's CI runs its full check.
+// +kubebuilder:validation:Enum=EveryChange;BeforeRelease
+type ChecksMode string
+
+// Checks modes.
+const (
+	ChecksEveryChange   ChecksMode = "EveryChange"
+	ChecksBeforeRelease ChecksMode = "BeforeRelease"
+)
 
 // ContainerPhase is a one-word summary of where the Container is in scaffolding.
 // +kubebuilder:validation:Enum=Pending;Scaffolding;Ready;Failed
@@ -93,6 +112,12 @@ type ContainerStandardStatus struct {
 	// the scaffold's, then each merged update's.
 	// +required
 	Ref string `json:"ref"`
+
+	// checks is when the repository's CI runs the full check, as its Standard
+	// files were last rendered: the scaffold's, then each merged update's. Empty
+	// reads as EveryChange.
+	// +optional
+	Checks ChecksMode `json:"checks,omitempty"`
 
 	// leftOut are the paths of behind, kept for what reads them.
 	// +listType=atomic
@@ -234,7 +259,7 @@ type ContainerStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
-	// and, for a Container with a Standard, StandardUpdated.
+	// and, for a Container with a Standard, StandardUpdated and ChecksApplied.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

@@ -117,6 +117,8 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	r.reportChecksApplied(ctx, &container, status)
+
 	// Scaffolding happens once. After that the factory only reports.
 	if status.Phase == c4v1alpha1.ContainerReady {
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,

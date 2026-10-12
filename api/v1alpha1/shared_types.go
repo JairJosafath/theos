@@ -113,6 +113,9 @@ const (
 	// its Standard's ref; False with reason FilesBehind while some an update
 	// left out wait on a person.
 	ConditionStandardUpdated = "StandardUpdated"
+	// ConditionChecksApplied is True when a Container's Standard runs its CI's
+	// full check when the Container's spec.checks asks.
+	ConditionChecksApplied = "ChecksApplied"
 )
 
 // Condition reasons.
@@ -139,6 +142,13 @@ const (
 	ReasonUpdateClosed         = "UpdateClosed"
 	ReasonUpdateRefused        = "UpdateRefused"
 	ReasonFilesBehind          = "FilesBehind"
+	// ReasonStandardRunsFullChecks: the Container asks for checks BeforeRelease
+	// and its Standard can't, so CI runs the full check on every change.
+	ReasonStandardRunsFullChecks = "StandardRunsFullChecks"
+	// ReasonEveryChange and ReasonBeforeRelease: ChecksApplied is True, and CI
+	// runs the full check on every change, or only before a release.
+	ReasonEveryChange   = "EveryChange"
+	ReasonBeforeRelease = "BeforeRelease"
 )
 
 // Labels the operator sets so a resource can be found by its ancestors.

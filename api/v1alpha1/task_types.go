@@ -259,6 +259,11 @@ type TaskStatus struct {
 	// +optional
 	ChecksRerunAt *metav1.Time `json:"checksRerunAt,omitempty"`
 
+	// checksRerunDue means this round pushed again the commit whose checks
+	// failed: their failed jobs run again before the checks are read.
+	// +optional
+	ChecksRerunDue bool `json:"checksRerunDue,omitempty"`
+
 	// restarts counts how often this round started over in place: sent back to
 	// resolve conflicts with main, or resumed after its Standard change merged.
 	// It gives each run of the round a sandbox name of its own.

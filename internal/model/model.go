@@ -44,6 +44,9 @@ type CatalogEntry struct {
 	TemplateRef    string
 	// SupportedFrameworks lists the Frameworks a Standard fits; empty for other sides.
 	SupportedFrameworks []string
+	// ChecksBeforeRelease says a Standard can run the full check only before a
+	// release; false for other sides.
+	ChecksBeforeRelease bool
 }
 
 // Supports reports whether the entry lists the Container type.
