@@ -12,11 +12,11 @@ func TestMerge3(t *testing.T) {
 	lines := func(l ...string) string { return strings.Join(l, "\n") + "\n" }
 	base := lines("one", "two", "three", "four", "five")
 	tests := []struct {
-		name                string
-		base, ours, theirs  string
-		want                string
-		wantHunks           []Hunk
-		wantErr             error
+		name               string
+		base, ours, theirs string
+		want               string
+		wantHunks          []Hunk
+		wantErr            error
 	}{
 		{name: "edits in different places",
 			base: base, ours: lines("one", "TWO", "three", "four", "five"),
@@ -50,7 +50,7 @@ func TestMerge3(t *testing.T) {
 			want:   lines("ONE", "two", "THREE", "four", "five")},
 		{name: "overlapping edits",
 			base: base, ours: lines("one", "two", "ours", "four", "five"),
-			theirs: lines("one", "two", "theirs", "four", "five"),
+			theirs:    lines("one", "two", "theirs", "four", "five"),
 			wantHunks: []Hunk{{Start: 2, End: 3, Ours: []string{"ours\n"}, Theirs: []string{"theirs\n"}}}},
 		{name: "edits of neighbouring lines touch, as in git",
 			base: base, ours: lines("one", "TWO", "three", "four", "five"),
@@ -59,11 +59,11 @@ func TestMerge3(t *testing.T) {
 				Ours: []string{"TWO\n", "three\n"}, Theirs: []string{"two\n", "THREE\n"}}}},
 		{name: "both add different lines at the same place",
 			base: base, ours: lines("one", "two", "ours", "three", "four", "five"),
-			theirs: lines("one", "two", "theirs", "three", "four", "five"),
+			theirs:    lines("one", "two", "theirs", "three", "four", "five"),
 			wantHunks: []Hunk{{Start: 2, End: 2, Ours: []string{"ours\n"}, Theirs: []string{"theirs\n"}}}},
 		{name: "one overlap among clean edits",
 			base: base, ours: lines("ONE", "two", "ours", "four", "five"),
-			theirs: lines("one", "two", "theirs", "four", "FIVE"),
+			theirs:    lines("one", "two", "theirs", "four", "FIVE"),
 			wantHunks: []Hunk{{Start: 2, End: 3, Ours: []string{"ours\n"}, Theirs: []string{"theirs\n"}}}},
 		{name: "a missing final newline kept",
 			base: "one\ntwo\nthree", ours: "ONE\ntwo\nthree", theirs: "one\ntwo\nTHREE",
