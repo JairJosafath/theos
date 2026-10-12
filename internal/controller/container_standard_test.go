@@ -81,7 +81,16 @@ func standardRefs() map[string]scaffold.Tree {
 // up to date.
 func updatableContainer(ns string) {
 	GinkgoHelper()
-	createUpdatableContainer(ns, standardRefs(), false, "")
+	createFactory(ns)
+	standardContainer(ns, nil)
+}
+
+// standardContainer creates orders-api as updatableContainer does, in a
+// namespace with a factory, with labels, and waits until it is Ready with its
+// Standard files up to date.
+func standardContainer(ns string, labels map[string]string) {
+	GinkgoHelper()
+	createOnStandard(ns, standardRefs(), false, "", labels)
 	eventuallyAt(ns, "v1.0.0")
 	Expect(gitFake.mainFiles(ns, "orders-api")).To(HaveKeyWithValue("AGENTS.md",
 		HaveField("Data", BeEquivalentTo("Rules for orders-api, which uses postgres\n"))))
@@ -94,12 +103,13 @@ func createUpdatableContainer(ns string, refs map[string]scaffold.Tree, checksBe
 	checks c4v1alpha1.ChecksMode) {
 	GinkgoHelper()
 	createFactory(ns)
-	standardContainer(ns, nil)
+	createOnStandard(ns, refs, checksBeforeRelease, checks, nil)
 }
 
-// standardContainer creates orders-api as updatableContainer does, in a
-// namespace with a factory, with labels, and waits until it is Ready.
-func standardContainer(ns string, labels map[string]string) {
+// createOnStandard creates orders-api, with labels, as createUpdatableContainer
+// does, in a namespace with a factory.
+func createOnStandard(ns string, refs map[string]scaffold.Tree, checksBeforeRelease bool,
+	checks c4v1alpha1.ChecksMode, labels map[string]string) {
 	GinkgoHelper()
 	url := templatesURL + ns + "/" + updatedStandard
 	for ref, tree := range refs {
