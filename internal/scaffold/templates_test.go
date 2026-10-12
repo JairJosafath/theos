@@ -216,12 +216,19 @@ func assertContains(t *testing.T, name, got string, want []string) {
 // templates/, with the choices the layers make.
 func renderCombo(t *testing.T, typ string, sides []side) ([]Layer, Result) {
 	t.Helper()
+	return renderComboChecks(t, typ, sides, "")
+}
+
+// renderComboChecks is renderCombo with the Container's effective checks.
+func renderComboChecks(t *testing.T, typ string, sides []side, checks string) ([]Layer, Result) {
+	t.Helper()
 	in := Input{
 		Project:        "webshop",
 		SoftwareSystem: "shop",
 		Container:      "sample-app",
 		DisplayName:    "Sample App",
 		Type:           typ,
+		Checks:         checks,
 	}
 	layers := make([]Layer, 0, len(sides))
 	for _, l := range sides {

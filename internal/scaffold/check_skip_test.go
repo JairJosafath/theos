@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"go.yaml.in/yaml/v3"
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // The Standards whose check workflow skips make check on a change to only the
 // changelog, docs/ or images (#600).
-var skippingStandards = []string{"go-standard", "ts-standard", "python-standard"}
+var skippingStandards = []string{"go-standard", "go-operator-standard", "ts-standard", "python-standard"}
 
 type checkStep struct {
 	Name string            `yaml:"name"`
@@ -22,47 +22,42 @@ type checkStep struct {
 	Run  string            `yaml:"run"`
 }
 
-func checkSteps(t *testing.T, standard string) []checkStep {
+func checkSteps(t *testing.T, standard, checks string) []checkStep {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(templatesDir, standard, ".gitea/workflows/check.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var workflow struct {
-		Jobs map[string]struct {
-			Steps []checkStep `yaml:"steps"`
-		} `yaml:"jobs"`
-	}
-	if err := yaml.Unmarshal(data, &workflow); err != nil {
-		t.Fatalf("%s: %v", standard, err)
-	}
-	return workflow.Jobs["check"].Steps
+	return renderWorkflow(t, standard, checks).Jobs["check"].Steps
 }
 
 // Every Standard runs the same step right after the checkout, compares with
 // the pull request's base or the push's previous commit, and makes every step
 // after it depend on its answer, so the job, and the required "check" context,
-// always reports.
+// always reports, whichever check it runs.
 func TestStandardChecksShareTheSkipStep(t *testing.T) {
 	var want checkStep
 	for _, standard := range skippingStandards {
-		steps := checkSteps(t, standard)
-		if len(steps) < 3 || steps[1].ID != "changes" {
-			t.Fatalf("%s: want the changes step second, after the checkout; got %+v", standard, steps)
+		for _, checks := range []string{model.ChecksEveryChange, model.ChecksBeforeRelease} {
+			testSkipStep(t, standard, checks, &want)
 		}
-		got := steps[1]
-		if base := got.Env["BASE"]; base != "${{ gitea.event.pull_request.base.sha || gitea.event.before }}" {
-			t.Errorf("%s: BASE is %q; want the pull request's base, else the push's previous commit", standard, base)
-		}
-		if want.Run == "" {
-			want = got
-		} else if got.Run != want.Run || got.Name != want.Name || !equalEnv(got.Env, want.Env) {
-			t.Errorf("%s's changes step differs from %s's", standard, skippingStandards[0])
-		}
-		for _, step := range steps[2:] {
-			if step.If != "steps.changes.outputs.code == 'true'" {
-				t.Errorf("%s: step %q runs whatever the change touches (if: %q)", standard, step.Name, step.If)
-			}
+	}
+}
+
+func testSkipStep(t *testing.T, standard, checks string, want *checkStep) {
+	t.Helper()
+	steps := checkSteps(t, standard, checks)
+	if len(steps) < 3 || steps[1].ID != "changes" {
+		t.Fatalf("%s: want the changes step second, after the checkout; got %+v", standard, steps)
+	}
+	got := steps[1]
+	if base := got.Env["BASE"]; base != "${{ gitea.event.pull_request.base.sha || gitea.event.before }}" {
+		t.Errorf("%s: BASE is %q; want the pull request's base, else the push's previous commit", standard, base)
+	}
+	if want.Run == "" {
+		*want = got
+	} else if got.Run != want.Run || got.Name != want.Name || !equalEnv(got.Env, want.Env) {
+		t.Errorf("%s's changes step with %s checks differs from %s's", standard, checks, skippingStandards[0])
+	}
+	for _, step := range steps[2:] {
+		if step.If != "steps.changes.outputs.code == 'true'" {
+			t.Errorf("%s, %s: step %q runs whatever the change touches (if: %q)", standard, checks, step.Name, step.If)
 		}
 	}
 }
@@ -87,7 +82,7 @@ func TestStandardCheckSkipsChangesThatTouchNoCode(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	script := checkSteps(t, skippingStandards[0])[1].Run
+	script := checkSteps(t, skippingStandards[0], "")[1].Run
 
 	cases := []struct {
 		name   string

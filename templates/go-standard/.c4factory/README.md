@@ -29,6 +29,14 @@ issue and pull request templates, and the `make check` contract CI runs.
   in `~/.netrc`), and `make check` runs with `GOPRIVATE=c4factory.local`, so
   no proxy is asked for them; other modules come from proxy.golang.org. The
   factory's agent pods send those paths to the registry alone too.
+- **Checks before a release** (`checksBeforeRelease: true`): with the
+  Container's `checks: BeforeRelease`, `check.yaml` renders a `check` job that
+  runs `make check-light` (`go mod download`, `go mod tidy -diff`,
+  `golangci-lint fmt --diff`, `go vet`, `golangci-lint run` and `make build`;
+  no tests) on pull requests and on `main`, with the same skip, and a `full`
+  job that runs `make check` on a push to a `release-check/**` branch,
+  whatever the push changes (status context `check / full (push)`). With
+  `EveryChange`, the default, it renders as before.
 - **Releases:** `make build` writes `bin/<container>`; `make dist` cross-compiles
   `dist/<container>_<os>_<arch>[.exe]` for Linux, macOS and Windows on amd64 and
   arm64, with `CGO_ENABLED=0`, `-trimpath`, `-X main.version=$(VERSION)` and a

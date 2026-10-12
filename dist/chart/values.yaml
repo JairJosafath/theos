@@ -518,7 +518,7 @@ catalog:
         supportedTypes: [operator]
     - kind: Standard
       name: go-standard
-      ref: v1.1.6
+      ref: v1.2.0
       spec:
         displayName: Go quality standard
         description: Strict golangci-lint, gofumpt, race-checked tests, role guides for agents and the make check CI.
@@ -526,33 +526,38 @@ catalog:
         supportedFrameworks: [go-cli]
         # The quality contract: agents fix the code, not the rules it is checked by.
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
+        # Renders a light check per change and the full one on release-check/** (the Container's checks).
+        checksBeforeRelease: true
     - kind: Standard
       name: go-operator-standard
-      ref: v1.0.1
+      ref: v1.1.0
       spec:
         displayName: Go operator quality standard
         description: kubebuilder's golangci-lint, gofmt and goimports, envtest tests, generated files kept up to date, role guides for agents and the make check CI.
         supportedTypes: [operator]
         supportedFrameworks: [go-kubebuilder]
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
+        checksBeforeRelease: true
     - kind: Standard
       name: ts-standard
-      ref: v1.3.2
+      ref: v1.4.0
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
         supportedTypes: [extension, static-site, cli]
         supportedFrameworks: [vscode-extension, react-vite, node-cli]
         protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
+        checksBeforeRelease: true
     - kind: Standard
       name: python-standard
-      ref: v1.1.1
+      ref: v1.2.0
       spec:
         displayName: Python quality standard
         description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
         supportedTypes: [service, cli]
         supportedFrameworks: [python-fastapi, python-cli]
         protectedPaths: [AGENTS.md, Makefile, ruff.toml, mypy.ini, .editorconfig, docs/style/, docs/agents/]
+        checksBeforeRelease: true
     - kind: Compute
       name: small
       ref: v1.1.0
