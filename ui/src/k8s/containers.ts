@@ -1,12 +1,12 @@
 // The Container page's writes, with actions on (design.md, UI actions): retry
 // a Failed scaffold through the c4.factory.io/retry annotation, answer the
 // Standard's files left out through c4.factory.io/standard-take or
-// c4.factory.io/standard-keep, and start a Task from a goal with the
-// Container's Crew. server.mjs passes on
+// c4.factory.io/standard-keep, set when CI runs the full check (spec.checks),
+// and start a Task from a goal with the Container's Crew. server.mjs passes on
 // exactly these requests; the CRDs decide the rest, so a refused write shows
 // the API server's message and nothing here copies their rules.
 
-import { GROUP, VERSION, resourcePath, RESOURCES, type Crew, type Task } from './types'
+import { GROUP, VERSION, resourcePath, RESOURCES, type ChecksMode, type Crew, type Task } from './types'
 import { errorFromResponse } from './watch'
 
 /** The annotation whose new value makes the operator try a Failed Container's scaffold again. */
@@ -62,14 +62,21 @@ export function taskManifest(namespace: string, container: string, crew: Crew, g
   }
 }
 
+/** The JSON patch that sets spec.checks; the CRD's enum judges the value. */
+export function checksPatch(checks: ChecksMode): { op: 'add'; path: '/spec/checks'; value: ChecksMode }[] {
+  return [{ op: 'add', path: '/spec/checks', value: checks }]
+}
+
 /**
- * Retries a Container's scaffold, answers its Standard's files left out and
- * starts Tasks on it; rejects with the API's message when it refuses.
+ * Retries a Container's scaffold, answers its Standard's files left out, sets
+ * its checks and starts Tasks on it; rejects with the API's message when it
+ * refuses.
  */
 export interface ContainerWriter {
   retry(namespace: string, name: string): Promise<void>
   /** Takes or keeps the files left out at `ref`, the Standard's ref in the Container's status. */
   answerStandard(namespace: string, name: string, answer: StandardAnswer, ref: string): Promise<void>
+  setChecks(namespace: string, name: string, checks: ChecksMode): Promise<void>
   /** Resolves to the new Task's name. */
   startTask(namespace: string, container: string, crew: Crew, goal: string): Promise<string>
 }
@@ -105,6 +112,15 @@ export class LiveContainerWriter implements ContainerWriter {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/merge-patch+json', Accept: 'application/json' },
       body: JSON.stringify(standardAnswerPatch(answer, ref)),
+    })
+  }
+
+  async setChecks(namespace: string, name: string, checks: ChecksMode): Promise<void> {
+    const path = `${resourcePath(RESOURCES.containers, namespace)}/${encodeURIComponent(name)}`
+    await this.send(`${this.baseUrl}${path}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
+      body: JSON.stringify(checksPatch(checks)),
     })
   }
 

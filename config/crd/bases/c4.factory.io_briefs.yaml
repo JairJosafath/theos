@@ -484,7 +484,8 @@ spec:
                     kind:
                       description: |-
                         kind of the item: Issue, Task, Crew, Container or Request. A Request
-                        is answered in spec.releases[].requests, not by a prompt.
+                        is answered in spec.releases[].requests, and a Container whose Standard
+                        files an update left out on the Container, not by a prompt.
                       enum:
                       - Issue
                       - Task
@@ -841,7 +842,8 @@ spec:
                     kind:
                       description: |-
                         kind of the item: Issue, Task, Crew, Container or Request. A Request
-                        is answered in spec.releases[].requests, not by a prompt.
+                        is answered in spec.releases[].requests, and a Container whose Standard
+                        files an update left out on the Container, not by a prompt.
                       enum:
                       - Issue
                       - Task

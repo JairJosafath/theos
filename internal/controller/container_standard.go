@@ -112,12 +112,13 @@ func (u *standardUpdate) run(ctx, gitCtx context.Context, standard *c4v1alpha1.S
 	if u.answer(ctx, gitCtx, standard) {
 		return
 	}
-	f := model.StandardUpdateFacts{Name: s.Name, Target: standard.Spec.Template.Ref}
+	target := u.target(standard)
+	f := model.StandardUpdateFacts{Name: s.Name, Target: target.Ref, TargetMode: target.Checks}
 	for {
 		// What was read stays in f when the update is gone: the model looks at it
 		// only while an update is in flight, and only Plan, which ends the pass,
 		// starts one.
-		f.Ref, f.Update = s.Ref, inFlight(s.Update)
+		f.Ref, f.Mode, f.Update = s.Ref, recordedChecks(u.status), inFlight(s.Update)
 		step := model.NextStandardStep(f)
 		switch step.Action {
 		case model.StandardReadPR:
@@ -174,7 +175,7 @@ func (u *standardUpdate) run(ctx, gitCtx context.Context, standard *c4v1alpha1.S
 			}
 			// A take that conflicts with main is the person's answer still: take
 			// again from the new main.
-			if take && f.Ref == f.Target {
+			if take && u.version().Normal() == u.target(standard).Normal() {
 				u.take(ctx, gitCtx, standard)
 				return
 			}
@@ -216,38 +217,99 @@ func inFlight(update *c4v1alpha1.StandardUpdateStatus) *model.StandardUpdateInFl
 		return nil
 	}
 	return &model.StandardUpdateInFlight{
-		Ref: update.Ref, Stopped: update.Stopped, PullRequest: int(update.PullRequest),
+		Ref: update.Ref, Mode: string(update.Checks), Stopped: update.Stopped, PullRequest: int(update.PullRequest),
 		PullRequestURL: update.PullRequestURL, Branch: update.Branch, Commit: update.Commit, Paths: update.Paths,
 		Take: update.Take,
 	}
 }
 
-// plan renders the Standard at the ref its files are at and at target, and
-// opens a pull request with what main still holds as the old render made it.
+// plan renders the Standard at the ref and checks its files are at and at
+// target, and opens a pull request with what main still holds as the old render
+// made it. An update that changes the checks and would leave out a file the
+// change of checks writes isn't opened: the checks stay as they are.
 func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.Standard) {
 	log := logf.FromContext(ctx)
 	s := u.status.Standard
-	name, from, to := s.Name, s.Ref, standard.Spec.Template.Ref
+	name := s.Name
+	from := model.StandardVersion{Ref: s.Ref, Checks: recordedChecks(u.status)}
+	to := model.StandardVersion{Ref: standard.Spec.Template.Ref,
+		Checks: model.EffectiveChecks(string(u.container.Spec.Checks), standard.Spec.ChecksBeforeRelease)}
 	git, ok := u.access(ctx)
 	if !ok {
 		return
 	}
-	renders := u.renders(git, standard)
-	old, err := renders.at(gitCtx, from)
-	var next scaffold.Tree
-	if err == nil {
-		next, err = renders.at(gitCtx, to)
+	var creds *gitprovider.Credentials
+	if gitprovider.SameHost(git.gitProvider.Spec.URL, standard.Spec.Template.URL) {
+		creds = &git.creds
 	}
+	oldFiles, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, from.Ref, creds)
+	var nextFiles scaffold.Tree
+	if err == nil {
+		nextFiles, err = u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, to.Ref, creds)
+	}
+	stopped := func(reason string) *c4v1alpha1.StandardUpdateStatus {
+		return &c4v1alpha1.StandardUpdateStatus{Ref: to.Ref, Checks: c4v1alpha1.ChecksMode(to.Checks), Stopped: reason}
+	}
+	if errors.Is(err, gitprovider.ErrUnpinnedRef) {
+		s.Update = stopped(c4v1alpha1.ReasonUnpinnedRef)
+		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", name, err))
+		return
+	}
+	if err != nil {
+		u.gitError(ctx, err)
+		return
+	}
+
+	in := scaffoldInput(u.container, scaffoldedConnectors(u.status), to.Checks)
+	render := func(v model.StandardVersion, files scaffold.Tree) (scaffold.Tree, bool) {
+		in := in
+		in.Checks = v.Checks
+		tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideStandard, Name: name, Ref: v.Ref, Files: files})
+		if err != nil {
+			s.Update = stopped(c4v1alpha1.ReasonFailed)
+			u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonFailed,
+				fmt.Sprintf("Could not render the Standard %s at %s: %v", name, v, err))
+			return nil, false
+		}
+		return tree, true
+	}
+	old, ok := render(from, oldFiles)
+	if !ok {
+		return
+	}
+	next, ok := render(to, nextFiles)
+	if !ok {
+		return
+	}
+	// The files the change of checks writes: the new ref rendered with the old
+	// checks against the new render.
+	var checksPaths []string
+	if from.Checks != to.Checks {
+		keep, ok := render(model.StandardVersion{Ref: to.Ref, Checks: from.Checks}, nextFiles)
+		if !ok {
+			return
+		}
+		checksPaths = scaffold.ChangedPaths(keep, next)
+	}
+
 	// Each file a past update left out is merged against the render its copy
 	// was last brought to.
 	behind := behindFiles(s)
-	var bases map[string]scaffold.Tree
-	if err == nil {
-		bases, err = renders.bases(gitCtx, behind)
-	}
-	if err != nil {
-		u.renderFailed(ctx, err, to, true)
-		return
+	// They render with the checks the files are at.
+	renders := map[string]scaffold.Tree{from.Ref: old}
+	bases := map[string]scaffold.Tree{}
+	for _, b := range behind {
+		if _, ok := renders[b.Ref]; !ok {
+			files, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, b.Ref, creds)
+			if err != nil {
+				u.gitError(ctx, err)
+				return
+			}
+			if renders[b.Ref], ok = render(model.StandardVersion{Ref: b.Ref, Checks: from.Checks}, files); !ok {
+				return
+			}
+		}
+		bases[b.Path] = renders[b.Ref]
 	}
 
 	repo := git.provider.Repository(u.container.Name)
@@ -262,18 +324,29 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		return
 	}
 	plan := scaffold.PlanUpdate(old, next, current, bases)
+	if blocked := intersect(plan.LeftOut, checksPaths); len(blocked) > 0 {
+		s.Update = stopped(c4v1alpha1.ReasonChecksLeftOut)
+		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonChecksLeftOut, fmt.Sprintf(
+			"CI can't change to run the full check %s: %s changed in the repository since %s and doesn't merge "+
+				"with the change; CI keeps running it %s until the Container's checks or the Standard's ref "+
+				"change again",
+			checksWhen(to.Checks), strings.Join(blocked, ", "), from, checksWhen(from.Checks)))
+		log.Info("Did not change the checks of a Container whose repository changed their files",
+			"standard", name, "from", from.String(), "to", to.String(), "leftOut", blocked)
+		return
+	}
 	if plan.Empty() {
-		u.alreadyUpToDate(ctx, to, nextBehind(behind, from, plan.LeftOut, ""))
+		u.alreadyUpToDate(ctx, to, nextBehind(behind, from.Ref, plan.LeftOut, ""))
 		return
 	}
 
 	branch := model.StandardUpdateBranch(name, to)
 	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	commit, err := git.provider.PushBranch(gitCtx, repo, base, branch, plan.Files, plan.Removes,
-		scaffold.UpdateMessage(renders.in, name, from, to, plan), author)
+		scaffold.UpdateMessage(in, name, from, to, plan), author)
 	if errors.Is(err, gitprovider.ErrEmptyChange) {
 		// main got there between the read and the push.
-		u.alreadyUpToDate(ctx, to, nextBehind(behind, from, plan.LeftOut, ""))
+		u.alreadyUpToDate(ctx, to, nextBehind(behind, from.Ref, plan.LeftOut, ""))
 		return
 	}
 	if err != nil {
@@ -281,17 +354,17 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		return
 	}
 	pr, err := git.provider.OpenPullRequest(gitCtx, repo, branch, gitprovider.DefaultBranch,
-		model.StandardUpdateTitle(name, to), model.StandardUpdateBody(name, from, to, plan.Paths(), plan.Merged, plan.LeftOut))
+		model.StandardUpdateTitle(name, from, to), model.StandardUpdateBody(name, from, to, plan.Paths(), plan.Merged, plan.LeftOut))
 	if err != nil {
 		u.gitError(ctx, err)
 		return
 	}
 	s.Update = &c4v1alpha1.StandardUpdateStatus{
-		Ref: to, Branch: branch, Commit: commit, PullRequest: int32(pr.Number), PullRequestURL: pr.URL,
+		Ref: to.Ref, Checks: c4v1alpha1.ChecksMode(to.Checks), Branch: branch, Commit: commit, PullRequest: int32(pr.Number), PullRequestURL: pr.URL,
 		Paths: plan.Paths(), Merged: plan.Merged, LeftOut: plan.LeftOut,
 	}
 	u.updating()
-	log.Info("Opened a Standard update", "url", pr.URL, "standard", name, "from", from, "to", to,
+	log.Info("Opened a Standard update", "url", pr.URL, "standard", name, "from", from.String(), "to", to.String(),
 		"paths", plan.Paths(), "merged", plan.Merged, "leftOut", plan.LeftOut)
 }
 
@@ -361,25 +434,20 @@ func (r *standardRenders) bases(ctx context.Context, behind []c4v1alpha1.Standar
 	return bases, nil
 }
 
-// renderFailed reports a Standard that could not be fetched or rendered for an
-// update to ref, or a take when take is set: an unpinned ref and a render that
-// fails stop an update until the Standard's ref changes, and fail a take until
-// the next pass; a Git error is retried.
-func (u *standardUpdate) renderFailed(ctx context.Context, err error, ref string, update bool) {
+// renderFailed reports a Standard that could not be fetched or rendered for a
+// take: an unpinned ref or a render that fails, or a Git error, retried at the
+// next pass.
+func (u *standardUpdate) renderFailed(ctx context.Context, err error) {
 	s := u.status.Standard
-	reason, message := c4v1alpha1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", s.Name, err)
 	switch {
 	case errors.Is(err, gitprovider.ErrUnpinnedRef):
+		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", s.Name, err))
 	case errors.As(err, new(*renderError)):
-		reason, message = c4v1alpha1.ReasonFailed, fmt.Sprintf("Could not render the Standard %s %v", s.Name, err)
+		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonFailed,
+			fmt.Sprintf("Could not render the Standard %s %v", s.Name, err))
 	default:
 		u.gitError(ctx, err)
-		return
 	}
-	if update {
-		s.Update = &c4v1alpha1.StandardUpdateStatus{Ref: ref, Stopped: reason}
-	}
-	u.condition(metav1.ConditionFalse, reason, message)
 }
 
 // answer acts on the person's answer to the files behind, the standard-take or
@@ -403,9 +471,8 @@ func (u *standardUpdate) answer(ctx, gitCtx context.Context, standard *c4v1alpha
 	switch {
 	case len(behind) == 0:
 		ignored = "no Standard files are behind"
-	case s.Ref != standard.Spec.Template.Ref:
-		ignored = fmt.Sprintf("the Standard moved on to %s, whose update plans the files again",
-			standard.Spec.Template.Ref)
+	case u.version().Normal() != u.target(standard).Normal():
+		ignored = fmt.Sprintf("the Standard moved on to %s, whose update plans the files again", u.target(standard))
 	case takes && keeps:
 		ignored = "it both takes and keeps the files"
 	case !takes && !keeps:
@@ -455,7 +522,7 @@ func (u *standardUpdate) take(ctx, gitCtx context.Context, standard *c4v1alpha1.
 	}
 	if err != nil {
 		u.answered = false
-		u.renderFailed(ctx, err, s.Ref, false)
+		u.renderFailed(ctx, err)
 		return
 	}
 	repo := git.provider.Repository(u.container.Name)
@@ -490,7 +557,7 @@ func (u *standardUpdate) take(ctx, gitCtx context.Context, standard *c4v1alpha1.
 			model.StandardTakeTitle(s.Name, s.Ref, take.Paths()), model.StandardTakeBody(s.Name, s.Ref, take.Taken))
 		if err == nil {
 			s.Update = &c4v1alpha1.StandardUpdateStatus{
-				Ref: s.Ref, Take: true, Branch: branch, Commit: commit, PullRequest: int32(pr.Number),
+				Ref: s.Ref, Checks: c4v1alpha1.ChecksMode(recordedChecks(u.status)), Take: true, Branch: branch, Commit: commit, PullRequest: int32(pr.Number),
 				PullRequestURL: pr.URL, Paths: take.Paths(),
 			}
 			u.updating()
@@ -529,16 +596,29 @@ func pathsOf(files []c4v1alpha1.StandardFile) []string {
 	return paths
 }
 
-// alreadyUpToDate records ref when main already holds what it renders, apart
+// alreadyUpToDate records to when main already holds what it renders, apart
 // from the files behind.
-func (u *standardUpdate) alreadyUpToDate(ctx context.Context, ref string, behind []c4v1alpha1.StandardFile) {
+func (u *standardUpdate) alreadyUpToDate(ctx context.Context, to model.StandardVersion,
+	behind []c4v1alpha1.StandardFile) {
 	s := u.status.Standard
-	from := s.Ref
-	s.Ref, s.Update = ref, nil
+	from := u.version()
+	s.Ref, s.Checks, s.Update = to.Ref, c4v1alpha1.ChecksMode(to.Checks), nil
 	setBehind(s, behind)
 	u.upToDate(ctx)
-	logf.FromContext(ctx).Info("Found the Standard's files up to date", "standard", s.Name, "from", from, "to", ref,
-		"leftOut", s.LeftOut)
+	logf.FromContext(ctx).Info("Found the Standard's files up to date", "standard", s.Name, "from", from.String(),
+		"to", to.String(), "leftOut", s.LeftOut)
+}
+
+// target is the version the Container's Standard files are to be at: the
+// Standard's ref, with the Container's effective checks.
+func (u *standardUpdate) target(standard *c4v1alpha1.Standard) model.StandardVersion {
+	return model.StandardVersion{Ref: standard.Spec.Template.Ref,
+		Checks: model.EffectiveChecks(string(u.container.Spec.Checks), standard.Spec.ChecksBeforeRelease)}
+}
+
+// version is the ref and checks the Standard's files are at.
+func (u *standardUpdate) version() model.StandardVersion {
+	return model.StandardVersion{Ref: u.status.Standard.Ref, Checks: recordedChecks(u.status)}
 }
 
 // behindFiles are the files s says are behind. A path of leftOut that behind
@@ -683,14 +763,14 @@ func (u *standardUpdate) merged(ctx context.Context) {
 	s := u.status.Standard
 	update := s.Update
 	behind := nextBehind(behindFiles(s), s.Ref, update.LeftOut, update.PullRequestURL)
-	s.Ref, s.Update = update.Ref, nil
+	s.Ref, s.Checks, s.Update = update.Ref, update.Checks, nil
 	setBehind(s, behind)
 	// A kept file the update wrote is the Standard's again.
 	s.Kept = slices.DeleteFunc(s.Kept, func(k c4v1alpha1.StandardFile) bool {
 		return slices.Contains(update.Paths, k.Path)
 	})
 	logf.FromContext(ctx).Info("Recorded a merged Standard update", "url", update.PullRequestURL,
-		"standard", s.Name, "ref", s.Ref, "take", update.Take)
+		"standard", s.Name, "ref", s.Ref, "checks", recordedChecks(u.status), "take", update.Take)
 }
 
 // mergeMessage is the title and message of the update's squash commit on main:
@@ -709,9 +789,10 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 			title+"\n\n")
 		return title, message
 	}
-	title = model.StandardUpdateTitle(s.Name, update.Ref)
-	full := scaffold.UpdateMessage(in, s.Name, s.Ref,
-		update.Ref, scaffold.Update{Merged: update.Merged, LeftOut: update.LeftOut})
+	from, to := u.version(), model.StandardVersion{Ref: update.Ref, Checks: string(update.Checks)}
+	title = model.StandardUpdateTitle(s.Name, from, to)
+	full := scaffold.UpdateMessage(scaffoldInput(u.container, scaffoldedConnectors(u.status), to.Checks), s.Name,
+		from, to, scaffold.Update{Merged: update.Merged, LeftOut: update.LeftOut})
 	message, _ = strings.CutPrefix(full, title+"\n\n")
 	return title, message
 }
@@ -738,7 +819,7 @@ func (u *standardUpdate) upToDate(ctx context.Context) {
 	behind := behindFiles(s)
 	setBehind(s, behind)
 	if len(behind) == 0 {
-		u.condition(metav1.ConditionTrue, c4v1alpha1.ReasonUpToDate, fmt.Sprintf("%s is at %s", s.Name, s.Ref))
+		u.condition(metav1.ConditionTrue, c4v1alpha1.ReasonUpToDate, fmt.Sprintf("%s is at %s", s.Name, u.version()))
 		return
 	}
 	files := make([]string, 0, len(behind))
@@ -748,7 +829,7 @@ func (u *standardUpdate) upToDate(ctx context.Context) {
 	annotate := fmt.Sprintf("kubectl -n %s annotate container %s", u.container.Namespace, u.container.Name)
 	message := fmt.Sprintf("%s is at %s, but its updates left out %s: the repository changed them in lines "+
 		"the Standard changed too. Take the Standard's version: `%s %s=%s`; or keep the repository's: `%s %s=%s`",
-		s.Name, s.Ref, strings.Join(files, ", "), annotate, c4v1alpha1.AnnotationStandardTake, s.Ref,
+		s.Name, u.version(), strings.Join(files, ", "), annotate, c4v1alpha1.AnnotationStandardTake, s.Ref,
 		annotate, c4v1alpha1.AnnotationStandardKeep, s.Ref)
 	was := meta.FindStatusCondition(u.container.Status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 	u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonFilesBehind, message)
@@ -774,7 +855,8 @@ func (u *standardUpdate) updating() {
 	}
 	u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdating, fmt.Sprintf(
 		"Pull request %s brings %s from %s to %s; it merges once CI passes",
-		s.Update.PullRequestURL, s.Name, s.Ref, s.Update.Ref))
+		s.Update.PullRequestURL, s.Name, u.version(),
+		model.StandardVersion{Ref: s.Update.Ref, Checks: string(s.Update.Checks)}))
 }
 
 // gitError reports a Git error. The update's progress stays, and the next
@@ -799,4 +881,23 @@ func scaffoldedConnectors(status *c4v1alpha1.ContainerStatus) []string {
 	}
 	slices.Sort(names)
 	return slices.Compact(names)
+}
+
+// intersect returns the items of a that b holds too, in a's order.
+func intersect(a, b []string) []string {
+	var both []string
+	for _, item := range a {
+		if slices.Contains(b, item) {
+			both = append(both, item)
+		}
+	}
+	return both
+}
+
+// checksWhen says when CI runs the full check with checks.
+func checksWhen(checks string) string {
+	if checks == model.ChecksBeforeRelease {
+		return "only before a release"
+	}
+	return "on every change"
 }

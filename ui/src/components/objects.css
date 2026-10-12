@@ -316,3 +316,11 @@
 .crew-sign-in .account-signin {
   margin-left: 4px;
 }
+
+/* ChecksApplied False on a Container's checks (ContainerChecks). */
+.checks-not-applied {
+  padding: 6px 10px;
+  border-left: 3px solid var(--warn);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}

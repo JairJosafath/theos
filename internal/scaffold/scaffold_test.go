@@ -358,6 +358,19 @@ func TestIdentityRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(id, want) {
 		t.Errorf("identity = %+v, want %+v", id, want)
 	}
+
+	// A Container with a Standard records its checks; empty reads as EveryChange.
+	for checks, want := range map[string]string{"": "EveryChange", "BeforeRelease": "BeforeRelease"} {
+		in := ordersAPI
+		in.Standard, in.Checks = "python-standard", checks
+		res, err := Build(in, withStandard(webshopLayers()), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id, err := ParseIdentity(res.Files[IdentityPath].Data); err != nil || id.Checks != want {
+			t.Errorf("identity checks with %q = %q, %v, want %q", checks, id.Checks, err, want)
+		}
+	}
 	if _, err := ParseIdentity([]byte("project: webshop\n")); err == nil {
 		t.Error("ParseIdentity accepted a file without container")
 	}
@@ -380,6 +393,14 @@ func TestCommitMessageRoundTrip(t *testing.T) {
 	info, err = ParseCommitMessage(old)
 	if err != nil || !slices.Equal(info.Relationships, []model.AppliedRelationship{{Name: "orders-api-to-orders-db"}}) {
 		t.Errorf("info from a name-only commit = %+v, %v", info, err)
+	}
+	if info.Checks != "" {
+		t.Errorf("checks of a Container without a Standard = %q, want none", info.Checks)
+	}
+	in := ordersAPI
+	in.Standard, in.Checks = "python-standard", model.ChecksBeforeRelease
+	if info, err := ParseCommitMessage(CommitMessage(in, from, rels)); err != nil || info.Checks != "BeforeRelease" {
+		t.Errorf("checks = %q, %v, want BeforeRelease", info.Checks, err)
 	}
 	if _, err := ParseCommitMessage("Initial commit\n"); !errors.Is(err, ErrNotOurs) {
 		t.Errorf("ParseCommitMessage(foreign) error = %v, want ErrNotOurs", err)

@@ -183,6 +183,7 @@ func Build(in Input, layers []Layer, opts Options) (Result, error) {
 		Container:      in.Container,
 		Type:           in.Type,
 		ScaffoldedFrom: result.ScaffoldedFrom,
+		Checks:         scaffoldedChecks(in),
 	}.Marshal()
 	if err != nil {
 		return Result{}, err

@@ -258,8 +258,9 @@ func TestGiteaCommitRunsIntegration(t *testing.T) {
 		}
 		time.Sleep(time.Second)
 	}
-	if len(runs) != 1 || runs[0].Workflow != "check.yaml" || runs[0].Event != "push" || runs[0].URL == "" {
-		t.Fatalf("CommitRuns() = %+v, want one push run of check.yaml", runs)
+	if len(runs) != 1 || runs[0].Workflow != "check.yaml" || runs[0].Event != "push" || runs[0].URL == "" ||
+		runs[0].Ref != "refs/heads/main" {
+		t.Fatalf("CommitRuns() = %+v, want one push run of check.yaml at refs/heads/main", runs)
 	}
 	if online == 0 && (runs[0].Status != "queued" && runs[0].Status != "waiting" || !runs[0].Started.IsZero()) {
 		t.Errorf("CommitRuns() with no runner online = %+v, want it queued and not started", runs[0])
@@ -510,6 +511,9 @@ func TestGiteaReleasesIntegration(t *testing.T) {
 	id := createRelease(t, base, creds.Token, repo, "v0.1.0", commit)
 	file := strings.Repeat("orders-cli ", 100_000)
 	uploadAsset(t, base, creds.Token, repo, id, "orders-cli", file)
+
+	// The release waited for Gitea to see the push.
+	branchAtCommit(ctx, t, p, repo, commit)
 
 	rel, err := p.GetRelease(ctx, repo, "v0.1.0")
 	if err != nil || rel == nil {
@@ -842,4 +846,29 @@ func oldAgentToken(ctx context.Context, t *testing.T, base, adminToken, user str
 		t.Fatalf("reading the old token: %v", err)
 	}
 	return token.SHA1
+}
+
+// branchAtCommit creates, reads and deletes a branch at commit, as a Crew's
+// full check of a release does. Gitea must have seen commit's push.
+func branchAtCommit(ctx context.Context, t *testing.T, p Provider, repo Repository, commit string) {
+	t.Helper()
+	branch := "release-check/v0.1.0"
+	if at, err := p.BranchCommit(ctx, repo, branch); err != nil || at != "" {
+		t.Fatalf("BranchCommit() before CreateBranch = %q, %v; want none", at, err)
+	}
+	if err := p.CreateBranch(ctx, repo, branch, commit); err != nil {
+		t.Fatal(err)
+	}
+	if at, err := p.BranchCommit(ctx, repo, branch); err != nil || at != commit {
+		t.Fatalf("BranchCommit() = %q, %v; want %s", at, err, commit)
+	}
+	if err := p.CreateBranch(ctx, repo, branch, commit); err == nil {
+		t.Error("CreateBranch() of an existing branch succeeded, want an error")
+	}
+	if err := p.DeleteBranch(ctx, repo, branch); err != nil {
+		t.Fatal(err)
+	}
+	if at, err := p.BranchCommit(ctx, repo, branch); err != nil || at != "" {
+		t.Fatalf("BranchCommit() after DeleteBranch = %q, %v; want none", at, err)
+	}
 }

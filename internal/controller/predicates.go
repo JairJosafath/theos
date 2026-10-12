@@ -77,6 +77,26 @@ func containerPhaseChanges() builder.WatchesOption {
 	})
 }
 
+// containerPhaseOrBehindChanges passes what containerPhaseChanges passes, and
+// a change of the Container's Standard files waiting on a person: its Brief
+// lists them under Needs you.
+func containerPhaseOrBehindChanges() builder.WatchesOption {
+	behind := func(c *c4v1alpha1.Container) string {
+		if cond := filesBehind(c); cond != nil {
+			return cond.Message
+		}
+		return ""
+	}
+	return builder.WithPredicates(predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldContainer, ok1 := e.ObjectOld.(*c4v1alpha1.Container)
+			newContainer, ok2 := e.ObjectNew.(*c4v1alpha1.Container)
+			return !ok1 || !ok2 || oldContainer.Status.Phase != newContainer.Status.Phase ||
+				behind(oldContainer) != behind(newContainer)
+		},
+	})
+}
+
 // taskPhaseChanges passes a Task's creation, deletion and phase changes: a Task
 // finishing lets the next one on its Container start.
 func taskPhaseChanges() builder.Predicates {

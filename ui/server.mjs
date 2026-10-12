@@ -502,6 +502,13 @@ const ACTIONS = [
     check: setsAnnotation('c4.factory.io/standard-keep'),
   },
   {
+    what: "set a Container's /spec/checks",
+    method: 'PATCH',
+    path: resourcePath('containers', true),
+    type: JSON_PATCH,
+    check: addsFields({ '/spec/checks': 'string' }),
+  },
+  {
     what: 'create a Task of kind Implement with containerRef, agentRef, reviewerRef and goal',
     method: 'POST',
     path: resourcePath('tasks'),

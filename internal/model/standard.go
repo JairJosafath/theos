@@ -232,11 +232,40 @@ func StandardChangeIssue(issue int, task string, p Proposal) (title, body string
 	return title, body
 }
 
-// StandardUpdateBranch is the branch that updates a Container to ref of the
-// Standard name: "standard-update/<name>-<ref>", where every character of ref
-// outside [A-Za-z0-9._-] becomes "-".
-func StandardUpdateBranch(name, ref string) string {
-	return "standard-update/" + name + "-" + branchSafe(ref)
+// StandardVersion is what a Container's Standard files render from: the
+// Standard's template ref and when CI runs the full check. Checks is
+// ChecksEveryChange or ChecksBeforeRelease; empty reads as ChecksEveryChange.
+type StandardVersion struct {
+	Ref, Checks string
+}
+
+// Normal returns v with empty checks read as ChecksEveryChange.
+func (v StandardVersion) Normal() StandardVersion {
+	if v.Checks == "" {
+		v.Checks = ChecksEveryChange
+	}
+	return v
+}
+
+// String is the ref, followed by "with the full check before release" when
+// the checks are BeforeRelease.
+func (v StandardVersion) String() string {
+	if v.Checks == ChecksBeforeRelease {
+		return v.Ref + " with the full check before release"
+	}
+	return v.Ref
+}
+
+// StandardUpdateBranch is the branch that updates a Container to version to of
+// the Standard name: "standard-update/<name>-<ref>", where every character of
+// ref outside [A-Za-z0-9._-] becomes "-", followed by "-before-release" when
+// the checks are BeforeRelease.
+func StandardUpdateBranch(name string, to StandardVersion) string {
+	branch := "standard-update/" + name + "-" + branchSafe(to.Ref)
+	if to.Checks == ChecksBeforeRelease {
+		branch += "-before-release"
+	}
+	return branch
 }
 
 // StandardTakeBranch is the branch that takes the Standard name's version at
@@ -258,18 +287,37 @@ func branchSafe(ref string) string {
 }
 
 // StandardUpdateTitle is the title of that update's pull request and commit:
-// "Update the Standard <name> to <ref>".
-func StandardUpdateTitle(name, ref string) string {
-	return "Update the Standard " + name + " to " + ref
+// "Update the Standard <name> to <ref>", followed by when CI runs the full
+// check when the update changes that.
+func StandardUpdateTitle(name string, from, to StandardVersion) string {
+	title := "Update the Standard " + name + " to " + to.Ref
+	if from, to := from.Normal(), to.Normal(); from.Checks != to.Checks {
+		title += ", with the full check " + checksPhrase(to.Checks)
+	}
+	return title
+}
+
+// checksPhrase says when CI runs the full check: "on every change" or "before
+// release".
+func checksPhrase(checks string) string {
+	if checks == ChecksBeforeRelease {
+		return "before release"
+	}
+	return "on every change"
 }
 
 // StandardUpdateBody is that pull request's description. merged are the paths
 // it writes that the repository changed too, merged with the repository's
 // changes.
-func StandardUpdateBody(name, from, to string, paths, merged, leftOut []string) string {
+func StandardUpdateBody(name string, from, to StandardVersion, paths, merged, leftOut []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "The operator opened this pull request to bring the files of the Standard `%s` from `%s` to `%s`.\n\n",
-		name, from, to)
+	fmt.Fprintf(&b, "The operator opened this pull request to bring the files of the Standard `%s` from `%s` to `%s`",
+		name, from.Ref, to.Ref)
+	if from, to := from.Normal(), to.Normal(); from.Checks != to.Checks {
+		fmt.Fprintf(&b, ", and CI from running the full check %s to running it %s", checksPhrase(from.Checks),
+			checksPhrase(to.Checks))
+	}
+	b.WriteString(".\n\n")
 	if len(paths) > 0 {
 		b.WriteString("## Files\n\n")
 		writeCodeList(&b, paths)
@@ -277,17 +325,17 @@ func StandardUpdateBody(name, from, to string, paths, merged, leftOut []string) 
 	if len(merged) > 0 {
 		fmt.Fprintf(&b, "## Merged with the repository's changes\n\nThese files changed in the repository since `%s` "+
 			"too, in other lines, so the update merges the Standard's changes with the repository's, line by line; "+
-			"read them as a merge:\n\n", from)
+			"read them as a merge:\n\n", from.Ref)
 		writeCodeList(&b, merged)
 	}
 	if len(leftOut) > 0 {
 		fmt.Fprintf(&b, "## Left out\n\nThese files changed in the repository since `%s` in ways that don't "+
 			"merge with the Standard's changes, so the update leaves them out; a person takes the Standard's version "+
-			"or keeps the repository's, on the Container:\n\n", from)
+			"or keeps the repository's, on the Container:\n\n", from.Ref)
 		writeCodeList(&b, leftOut)
 	}
 	b.WriteString("The operator merges this pull request itself once CI passes. " +
-		"Close it to drop the update until the Standard's ref changes again.\n")
+		"Close it to drop the update until the Standard's ref or the Container's checks change again.\n")
 	return b.String()
 }
 

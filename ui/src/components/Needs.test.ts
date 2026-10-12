@@ -10,6 +10,7 @@ import { NeedsArea } from './Needs'
 const writer: ContainerWriter = {
   retry: async () => undefined,
   answerStandard: async () => undefined,
+  setChecks: async () => undefined,
   startTask: async () => 'api-x7k2p',
 }
 const take = 'kubectl -n shop annotate container api c4.factory.io/standard-take=v3'

@@ -852,6 +852,33 @@ func (p *fakeProvider) HasBranch(_ context.Context, repo gitprovider.Repository,
 	return p.git.hasBranch(repo.Owner, repo.Name, branch), nil
 }
 
+func (p *fakeProvider) BranchCommit(_ context.Context, repo gitprovider.Repository, branch string) (string, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	return p.git.agentState().branches[repo.Owner+"/"+repo.Name+"@"+branch], nil
+}
+
+func (p *fakeProvider) CreateBranch(_ context.Context, repo gitprovider.Repository, branch, commit string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	key := repo.Owner + "/" + repo.Name + "@" + branch
+	if _, ok := p.git.agentState().branches[key]; ok {
+		return fmt.Errorf("branch %s exists", key)
+	}
+	p.git.agentState().branches[key] = commit
+	return nil
+}
+
+// branchCommit is the commit branch of owner/name points at on the fake host,
+// "" when it has no such branch.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) branchCommit(owner, name, branch string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.agentState().branches[owner+"/"+name+"@"+branch]
+}
+
 // hasBranch reports whether the fake host has branch in owner/name.
 //
 //nolint:unparam // takes owner and name like the other helpers

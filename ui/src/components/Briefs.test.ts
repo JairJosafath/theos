@@ -1,6 +1,6 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DEMO_NAMESPACE, demoStory } from '../demo/fixture'
 import type { BriefWriter } from '../k8s/briefs'
 import type { Brief } from '../k8s/types'
@@ -127,6 +127,51 @@ describe('the Brief card with an item that needs you', () => {
   it('neither clamps nor keeps the item on one line', () => {
     const item = html.slice(html.indexOf('brief-needs-you'), html.indexOf(why))
     expect(item).not.toMatch(/clamp|nowrap|ellipsis/)
+  })
+})
+
+// #892: a Container whose Standard files an update left out links to the
+// Container's page, where it is settled, not to a prompt.
+describe('the Brief card with a Container whose Standard files are behind', () => {
+  const now = Date.parse('2026-10-12T17:00:00Z')
+  const question =
+    'Container `cel-lens-core` is at go-standard v1.2.0, but its updates left out .gitea/workflows/check.yaml ' +
+    '(at v1.1.6): the repository changed them in lines the Standard changed too.'
+  const brief: Brief = {
+    metadata: { name: 'cel-lens', namespace: DEMO_NAMESPACE, creationTimestamp: '2026-10-12T10:00:00Z' },
+    spec: { idea: 'A CEL lens', autopilot: 'Off' },
+    status: {
+      phase: 'Planned',
+      needsYou: [
+        {
+          kind: 'Container',
+          name: 'cel-lens-core',
+          question,
+          recommend: "Take the Standard's version: annotate the Container `c4.factory.io/standard-take=v1.2.0`.",
+          why: "The Standard's fix (go-standard v1.2.0) reaches the app.",
+          since: '2026-10-12T16:00:00Z',
+        },
+      ],
+      needsYouWaiting: 1,
+    },
+  }
+  // An object's page link reads the URL it is on.
+  vi.stubGlobal('window', { location: { pathname: '/', search: '', hash: '' } })
+  const html = render([brief], now)
+  vi.unstubAllGlobals()
+
+  it('shows the question and what the Brief would do', () => {
+    expect(html).toContain(question)
+    expect(html).toContain('It would: Take the Standard&#x27;s version')
+  })
+
+  it("links the item to the Container's page", () => {
+    expect(html).toMatch(new RegExp(`href="[^"]*kind=Container&amp;name=cel-lens-core"[^>]*>open the Container</a>`))
+  })
+
+  it('says a Container is settled on its page, not in a prompt', () => {
+    expect(html).toContain('A Container is settled on its page, which says what to do.')
+    expect(html).not.toContain('Answer in a prompt')
   })
 })
 

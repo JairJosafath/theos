@@ -54,11 +54,14 @@ const runOverdueNote = "; its runs have not ended an hour after tagging"
 // tagRelease looks after the Crew's first open release, as its switches say:
 // with prepareReleases, once the release is done with merged work and has no
 // prepare issue, it files one; with tagReleases, once it is done, it tags the
-// merge commit of its most recently merged issue and closes its milestone. A
-// release that is done but can't go out is a Warning Event, once per release and
-// reason. It returns the prepare issue it filed, as a ready issue, or nil.
-func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
-	provider gitprovider.Provider, repo gitprovider.Repository, tasks []c4v1alpha1.Task) *model.Issue {
+// merge commit of its most recently merged issue and closes its milestone,
+// after its full check passed there when the Container's checks are
+// BeforeRelease. A release that is done but can't go out is a Warning Event,
+// once per release and reason. It returns the prepare issue it filed, as a
+// ready issue, or nil.
+func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
+	status *c4v1alpha1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
+	tasks []c4v1alpha1.Task) *model.Issue {
 	log := logf.FromContext(ctx)
 	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -71,12 +74,9 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		switch {
 		case step.File:
 			filed, err = filePrepareIssue(gitCtx, provider, repo, step, titles)
-		case !crew.Spec.TagReleases:
-		case step.CreateTag:
-			err = provider.CreateTag(gitCtx, repo, step.Tag, step.Commit, "Release "+step.Tag)
-		}
-		if err == nil && step.Commit != "" && crew.Spec.TagReleases {
-			err = settleMilestones(gitCtx, provider, repo, step)
+		case crew.Spec.TagReleases:
+			step, err = r.takeReleaseStep(gitCtx, crew, container, status, provider, repo, step,
+				milestoneOf(facts, step.Milestone))
 		}
 	}
 	if step.File && err == nil {
@@ -119,7 +119,9 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		said := step.Reason + "\n" + step.Held
 		prev := apimeta.FindStatusCondition(status.Conditions, ConditionReleased)
 		last, _ := r.releaseSaid.Load(crew.UID)
-		if (prev == nil || prev.Reason != step.Reason || prev.Message != step.Held) && last != said {
+		// A full check that runs is no warning: its start had a Normal Event.
+		if (prev == nil || prev.Reason != step.Reason || prev.Message != step.Held) && last != said &&
+			step.Reason != model.FullCheckRunning {
 			log.Info("Left a release to a person", "tag", step.Tag, "reason", step.Reason)
 			r.event(crew, corev1.EventTypeWarning, step.Reason, "TagRelease", step.Held)
 		}
@@ -132,10 +134,53 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 			r.setReleased(crew, status, metav1.ConditionTrue, reasonReleased,
 				strings.TrimPrefix(said, reasonReleased+"\n"))
 		} else if prev := apimeta.FindStatusCondition(status.Conditions, ConditionReleased); prev == nil ||
-			prev.Reason != reasonReleased {
+			prev.Reason != reasonReleased && prev.Reason != model.FullCheckFailed {
+			// A failed full check's issue reopened the release: the condition
+			// keeps saying why until the release is done again.
 			r.setReleased(crew, status, metav1.ConditionTrue, reasonNoReleaseDone, "No open release is done")
 		}
 	}
+	return nil
+}
+
+// takeReleaseStep tags release step's commit when step says so, after its full
+// check passed there when the Container's checks are BeforeRelease, then
+// deletes the full check's branch and settles the milestones. It returns the
+// step that holds the release instead while its full check hasn't passed.
+func (r *CrewReconciler) takeReleaseStep(ctx context.Context, crew *c4v1alpha1.Crew,
+	container *c4v1alpha1.Container, status *c4v1alpha1.CrewStatus, provider gitprovider.Provider,
+	repo gitprovider.Repository, step model.ReleaseStep, release *model.ReleaseMilestone) (model.ReleaseStep, error) {
+	var err error
+	if step.CreateTag && checksBeforeRelease(container) {
+		if step, err = r.fullCheck(ctx, crew, status, provider, repo, step, release); err != nil {
+			return step, err
+		}
+	}
+	if step.CreateTag {
+		if err := provider.CreateTag(ctx, repo, step.Tag, step.Commit, "Release "+step.Tag); err != nil {
+			return step, err
+		}
+	}
+	if step.Commit == "" {
+		return step, nil
+	}
+	if err := endFullCheck(ctx, status, provider, repo, step.Tag); err != nil {
+		return step, err
+	}
+	return step, settleMilestones(ctx, provider, repo, step)
+}
+
+// endFullCheck deletes the branch of release tag's full check once the tag is
+// made, whoever made it, and forgets the check.
+func endFullCheck(ctx context.Context, status *c4v1alpha1.CrewStatus, provider gitprovider.Provider,
+	repo gitprovider.Repository, tag string) error {
+	if status.FullCheck == nil || status.FullCheck.Tag != tag {
+		return nil
+	}
+	if err := provider.DeleteBranch(ctx, repo, model.FullCheckBranch(tag)); err != nil {
+		return fmt.Errorf("deleting %s: %w", model.FullCheckBranch(tag), err)
+	}
+	status.FullCheck = nil
 	return nil
 }
 
@@ -171,9 +216,17 @@ func settleMilestones(ctx context.Context, provider gitprovider.Provider, repo g
 
 // releaseOf is the release of milestone id among the facts' releases.
 func releaseOf(facts model.ReleaseFacts, id int64) *model.Release {
-	for _, m := range facts.Milestones {
+	if m := milestoneOf(facts, id); m != nil {
+		return &m.Release
+	}
+	return nil
+}
+
+// milestoneOf is milestone id among the facts' releases.
+func milestoneOf(facts model.ReleaseFacts, id int64) *model.ReleaseMilestone {
+	for i, m := range facts.Milestones {
 		if m.ID == id {
-			return &m.Release
+			return &facts.Milestones[i]
 		}
 	}
 	return nil
@@ -230,6 +283,9 @@ func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitpr
 			}
 			if slices.Contains(i.Labels, model.LabelRelease) {
 				release.Prepared = append(release.Prepared, i.Number)
+			}
+			if commit, ok := model.FullCheckCommit(m.Title, i.Body); ok {
+				release.FullChecks = append(release.FullChecks, model.FullCheckFix{Issue: i.Number, Commit: commit})
 			}
 			titles[i.Number] = i.Title
 		}

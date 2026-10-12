@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { LiveContainerWriter, retryPatch, standardAnswerPatch, taskManifest } from './containers'
+import { LiveContainerWriter, checksPatch, retryPatch, standardAnswerPatch, taskManifest } from './containers'
 import type { Crew } from './types'
 
 function respond(status: number, body: unknown): Response {
@@ -67,6 +67,17 @@ describe('LiveContainerWriter', () => {
     })
   })
 
+  it('sets the checks with a JSON patch of spec.checks alone', async () => {
+    const fetchImpl = vi.fn(async () => respond(200, {}))
+    await new LiveContainerWriter('k8s', fetchImpl).setChecks('webshop', 'orders-api', 'BeforeRelease')
+    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
+      body: JSON.stringify([{ op: 'add', path: '/spec/checks', value: 'BeforeRelease' }]),
+    })
+    expect(checksPatch('EveryChange')).toEqual([{ op: 'add', path: '/spec/checks', value: 'EveryChange' }])
+  })
+
   it('creates the Task and resolves to the name the API server gave it', async () => {
     const fetchImpl = vi.fn(async () => respond(201, { metadata: { name: 'orders-api-x7k2p' } }))
     const name = await new LiveContainerWriter('k8s', fetchImpl).startTask('webshop', 'orders-api', crew, 'Add paging')
@@ -88,6 +99,9 @@ describe('LiveContainerWriter', () => {
     await expect(new LiveContainerWriter('k8s', fetchImpl).retry('webshop', 'orders-api')).rejects.toThrow(message)
     await expect(
       new LiveContainerWriter('k8s', fetchImpl).answerStandard('webshop', 'orders-api', 'take', 'v1'),
+    ).rejects.toThrow(message)
+    await expect(
+      new LiveContainerWriter('k8s', fetchImpl).setChecks('webshop', 'orders-api', 'BeforeRelease'),
     ).rejects.toThrow(message)
   })
 })

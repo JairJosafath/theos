@@ -112,6 +112,12 @@ Each is its own issue and pull request, and leaves `main` working.
 3. **The Brief lists its apps' left-out files (#892).** `status.needsYou` gets a
    `Container` item per flagged Container the Brief made, with the choice and
    why above; the UI's Brief card shows it with the two answers. Envtest.
+   Built by otter-892: the item is listed in every autopilot mode, as a
+   request waiting in Ask is, from the Containers labeled with the Brief whose
+   `StandardUpdated` is `FilesBehind`; the Brief's Container watch passes a
+   change of that condition's message. Its recommend names the take
+   annotation; the card links every Container item to the Container's page
+   and says it is settled there, not in a prompt; the buttons come with step 4.
 4. **Take or keep from one annotation (#893).** The two annotations, the take pull
    request (merged like an update), `kept`, and the UI actions (server
    allowlist, ClusterRole unchanged, buttons on *Needs a look* and the

@@ -142,6 +142,10 @@ const (
 	ReasonUpdateClosed         = "UpdateClosed"
 	ReasonUpdateRefused        = "UpdateRefused"
 	ReasonFilesBehind          = "FilesBehind"
+	// ReasonChecksLeftOut: an update that changes the Container's checks would
+	// leave out a file the change of checks writes, changed in the repository
+	// since, so it isn't opened and the checks stay as they are.
+	ReasonChecksLeftOut = "ChecksLeftOut"
 	// ReasonStandardRunsFullChecks: the Container asks for checks BeforeRelease
 	// and its Standard can't, so CI runs the full check on every change.
 	ReasonStandardRunsFullChecks = "StandardRunsFullChecks"

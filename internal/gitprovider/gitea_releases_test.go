@@ -214,9 +214,9 @@ func TestTagRuns(t *testing.T) {
 		t.Fatalf("TagRuns() error = %v", err)
 	}
 	want := []WorkflowRun{
-		{ID: 9, Workflow: "release.yaml", Event: "push", Status: "completed", Conclusion: "failure",
+		{ID: 9, Workflow: "release.yaml", Event: "push", Ref: "refs/tags/v0.2.0", Status: "completed", Conclusion: "failure",
 			Started: time.Date(2026, 10, 9, 1, 40, 53, 0, time.UTC), URL: "http://gitea/webshop/orders-api/actions/runs/9"},
-		{ID: 8, Workflow: "notes.yaml", Event: "push", Status: "queued",
+		{ID: 8, Workflow: "notes.yaml", Event: "push", Ref: "refs/tags/v0.2.0", Status: "queued",
 			URL: "http://gitea/webshop/orders-api/actions/runs/8"},
 	}
 	if !reflect.DeepEqual(runs, want) {
@@ -271,9 +271,10 @@ func TestCommitRuns(t *testing.T) {
 		t.Fatalf("CommitRuns() = %d runs, want %d", len(runs), issuePageSize+2)
 	}
 	want := []WorkflowRun{
-		{ID: 5, Workflow: "check.yaml", Event: "pull_request", Status: "in_progress",
+		{ID: 5, Workflow: "check.yaml", Event: "pull_request", Ref: "refs/pull/3/head", Status: "in_progress",
 			Started: time.Date(2026, 10, 8, 23, 40, 53, 0, time.UTC), URL: "http://gitea/runs/5"},
-		{ID: 4, Workflow: "lint.yaml", Event: "pull_request", Status: "waiting", URL: "http://gitea/runs/4"},
+		{ID: 4, Workflow: "lint.yaml", Event: "pull_request", Ref: "refs/pull/3/head", Status: "waiting",
+			URL: "http://gitea/runs/4"},
 	}
 	got := runs[issuePageSize:]
 	if len(got) != 2 || got[0].ID != 5 || !got[0].Started.Equal(want[0].Started) {

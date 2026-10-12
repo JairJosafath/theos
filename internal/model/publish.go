@@ -40,11 +40,23 @@ type PublishFacts struct {
 	Issues []ReleaseIssue
 	// GitHub is what the GitHub repository holds, nil until read.
 	GitHub *TargetReleases
+
+	// Source is the folder the release's source goes to, nil when the Crew
+	// publishes no source. Overlaps names the other Crews whose source
+	// folders in the repository overlap it (SourceOverlaps).
+	Source   *PublishSource
+	Overlaps []string
+	// SourceFiles is the release's source, read from Gitea at the tag, nil
+	// until read.
+	SourceFiles *ReleaseSource
+	// GitHubSource is what the repository holds of the folder, nil until read.
+	GitHubSource *GitHubSource
 }
 
 // PublishFailure is a GitHub call that failed, with its reason (one of
 // PublishUnauthorized, PublishRepositoryNotFound, PublishEmptyRepository,
-// PublishTagTaken, PublishGitHubError) and what GitHub said.
+// PublishTagTaken, PublishSourceTooLarge, PublishBranchProtected,
+// PublishBranchMoved, PublishGitHubError) and what GitHub said.
 type PublishFailure struct {
 	Reason, Detail string
 }
@@ -81,10 +93,13 @@ type TargetReleases struct {
 type TargetRelease struct {
 	ID      int64
 	TagName string
-	Draft   bool
-	Body    string
-	URL     string
-	Assets  []ReleaseAsset
+	// Target is the draft's target_commitish: a branch, or the commit its tag
+	// goes on.
+	Target string
+	Draft  bool
+	Body   string
+	URL    string
+	Assets []ReleaseAsset
 }
 
 // PublishAction is what the operator does next to publish a release.
@@ -105,8 +120,22 @@ const (
 	// PublishWriteNotes sets Body on the Gitea release, so both releases read
 	// the same.
 	PublishWriteNotes PublishAction = "WriteNotes"
+	// PublishReadSource reads the source at the tag from Gitea into
+	// SourceFiles (NewSource).
+	PublishReadSource PublishAction = "ReadSource"
+	// PublishReadGitHubSource reads what the repository holds of the source
+	// folder into GitHubSource.
+	PublishReadGitHubSource PublishAction = "ReadGitHubSource"
+	// PublishSourceCommit builds SourceCommit and fast-forwards the default
+	// branch to it.
+	PublishSourceCommit PublishAction = "SourceCommit"
+	// PublishSourceTag creates the source tag Tag on Commit, and raises
+	// Warning, when set, as the Warning Event SourceNotGoInstallable.
+	PublishSourceTag PublishAction = "SourceTag"
+	// PublishRetargetDraft points the draft Release at the commit Target.
+	PublishRetargetDraft PublishAction = "RetargetDraft"
 	// PublishCreateDraft creates the GitHub release Tag, named Name, as a draft
-	// with Body.
+	// with Body, on the commit Target when it is set.
 	PublishCreateDraft PublishAction = "CreateDraft"
 	// PublishUploadAsset streams Gitea's Asset to the draft Release, deleting
 	// the draft's Replace first when it is set.
@@ -133,7 +162,16 @@ const (
 	PublishNoReleaseFiles     = "NoReleaseFiles"
 	PublishTagTaken           = "TagTaken"
 	PublishGitHubError        = "GitHubError"
+	PublishSourceTagTaken     = "SourceTagTaken"
+	PublishFolderOverlaps     = "FolderOverlaps"
+	PublishSourceTooLarge     = "SourceTooLarge"
+	PublishBranchProtected    = "BranchProtected"
 )
+
+// PublishBranchMoved is the failure of a fast-forward GitHub refused because
+// another commit landed on the default branch first: no reason of Published,
+// since the next poll builds on the new head.
+const PublishBranchMoved = "BranchMoved"
 
 // PublishStep is the next step of publishing a release.
 type PublishStep struct {
@@ -157,6 +195,17 @@ type PublishStep struct {
 	// Latest says the release becomes the repository's Latest, for
 	// PublishDraft.
 	Latest bool
+	// Target is the commit the draft's tag goes on, for PublishCreateDraft and
+	// PublishRetargetDraft; "" leaves it to GitHub, the default branch.
+	Target string
+	// SourceCommit is the commit to build, for PublishSourceCommit.
+	SourceCommit *SourceCommit
+	// Commit is the commit the source tag goes on, and Warning why go install
+	// can't fetch it, or "", for PublishSourceTag.
+	Commit, Warning string
+	// Source is the published source, for PublishDone when the Crew publishes
+	// one and it is out.
+	Source *PublishedSource
 }
 
 // GitHubTag is the tag a release goes out under on GitHub: the prefix, then
@@ -213,6 +262,9 @@ func NextPublishStep(f PublishFacts) PublishStep {
 			f.Secret, f.Tag)
 	case f.Failure != nil:
 		return failed(f, tag)
+	case f.Source != nil && len(f.Overlaps) > 0:
+		return fail(PublishFolderOverlaps, "source folder %s of %s overlaps that of Crew %s; nothing is published until one moves",
+			f.Source.Path, f.Repository, strings.Join(f.Overlaps, ", "))
 	case f.Gitea == nil:
 		return PublishStep{Action: PublishReadGitea}
 	case f.Gitea.Missing:
@@ -225,15 +277,31 @@ func NextPublishStep(f PublishFacts) PublishStep {
 
 	marker := PublishMarker(f.Namespace, f.Container, tag)
 	ours := findMarked(f.GitHub.Releases, marker)
+	// The source tag may be the release's own: then the release takes the tag
+	// the source made.
+	sharedTag := f.Source != nil && SourceTag(*f.Source, f.Tag) == tag
 	switch {
 	case ours != nil && !ours.Draft:
-		return PublishStep{Action: PublishDone, Reason: PublishPublished, URL: ours.URL,
-			Message: fmt.Sprintf("%s is published at %s", tag, ours.URL)}
-	case ours != nil:
-		return draftStep(f.Gitea.Assets, ours, f.Latest)
-	case f.GitHub.TagExists || hasTag(f.GitHub.Releases, tag):
+		return doneStep(f, tag, ours.URL)
+	case ours == nil && (f.GitHub.TagExists && !sharedTag || hasTag(f.GitHub.Releases, tag)):
 		return fail(PublishTagTaken, "%s already has a release or tag %s the factory didn't make; it leaves it alone",
 			f.Repository, tag)
+	}
+
+	// The source goes out first, so the release's tag goes on its commit.
+	target := ""
+	if f.Source != nil {
+		step, src := sourceStep(f, tag)
+		if src == nil {
+			return step
+		}
+		target = src.Commit
+	}
+	if ours != nil {
+		if target != "" && ours.Target != target {
+			return PublishStep{Action: PublishRetargetDraft, Release: ours.ID, Target: target}
+		}
+		return draftStep(f.Gitea.Assets, ours, f.Latest)
 	}
 
 	notes := f.Gitea.Body
@@ -251,7 +319,32 @@ func NextPublishStep(f PublishFacts) PublishStep {
 	if strings.TrimSpace(notes) != "" {
 		body = strings.TrimRight(notes, "\n") + "\n\n" + body
 	}
-	return PublishStep{Action: PublishCreateDraft, Tag: tag, Name: ReleaseName(f.App, f.Tag), Body: body}
+	return PublishStep{Action: PublishCreateDraft, Tag: tag, Name: ReleaseName(f.App, f.Tag), Body: body,
+		Target: target}
+}
+
+// doneStep records the release as published at url, with its source when the
+// Crew publishes one and its tag is out. A release published before the Crew
+// set source has none: source applies from the next release.
+func doneStep(f PublishFacts, tag, url string) PublishStep {
+	step := PublishStep{Action: PublishDone, Reason: PublishPublished, URL: url,
+		Message: fmt.Sprintf("%s is published at %s", tag, url)}
+	if f.Source == nil {
+		return step
+	}
+	switch {
+	case f.SourceFiles == nil:
+		return PublishStep{Action: PublishReadSource}
+	case f.GitHubSource == nil:
+		return PublishStep{Action: PublishReadGitHubSource}
+	}
+	// A tag on another folder tree isn't this release's source.
+	if c := f.GitHubSource.TagCommit; c != "" && f.SourceFiles != nil && f.GitHubSource.TagTree == f.SourceFiles.Tree {
+		sourceTag := SourceTag(*f.Source, f.Tag)
+		step.Source = &PublishedSource{Commit: c, Tag: sourceTag, URL: SourceURL(f.Repository, f.Source.Path, sourceTag)}
+		step.Message += fmt.Sprintf(", its source at %s", step.Source.URL)
+	}
+	return step
 }
 
 // draftStep uploads the first of Gitea's assets the draft lacks, or has at a
@@ -295,6 +388,15 @@ func failed(f PublishFacts, tag string) PublishStep {
 	case PublishTagTaken:
 		return fail(PublishTagTaken, "%s already has a release or tag %s the factory didn't make; it leaves it alone%s",
 			f.Repository, tag, detail)
+	case PublishSourceTooLarge:
+		return fail(PublishSourceTooLarge, "GitHub refused a file of the source of %s as too large%s", f.Tag, detail)
+	case PublishBranchProtected:
+		return fail(PublishBranchProtected, "the default branch of %s is protected, so the source of %s can't go on it; "+
+			"let the token's user push to it, or drop the protection%s", f.Repository, f.Tag, detail)
+	case PublishBranchMoved:
+		return PublishStep{Action: PublishWait, Reason: PublishWaiting, Message: fmt.Sprintf(
+			"another commit landed on the default branch of %s first; the next poll puts the source of %s on it",
+			f.Repository, f.Tag)}
 	}
 	return fail(PublishGitHubError, "GitHub failed publishing %s to %s%s", tag, f.Repository, detail)
 }

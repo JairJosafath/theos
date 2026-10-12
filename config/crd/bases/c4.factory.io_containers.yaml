@@ -424,6 +424,14 @@ spec:
                         description: branch is the update's branch, and commit the
                           one commit on it.
                         type: string
+                      checks:
+                        description: |-
+                          checks is when CI runs the full check once the update merges. Empty reads
+                          as EveryChange.
+                        enum:
+                        - EveryChange
+                        - BeforeRelease
+                        type: string
                       commit:
                         type: string
                       leftOut:
@@ -465,7 +473,8 @@ spec:
                       stopped:
                         description: |-
                           stopped is why the update stopped without merging, such as UpdateClosed;
-                          a stopped update waits for the Standard's ref to change.
+                          a stopped update waits for the Standard's ref or the Container's effective
+                          checks to change.
                         type: string
                       take:
                         description: |-

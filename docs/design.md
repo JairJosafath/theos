@@ -668,8 +668,8 @@ model and context it needs.
   here where the template changed, and it reaches the agents' rules, which
   agents never change. The operator merges it as admin once CI passes on it,
   with every check `main` requires, and it changes only the planned files.
-  Closing the pull request drops the update until the Standard's ref changes
-  again. `status.standard` records the ref the Standard's files are at and the
+  Closing the pull request drops the update until the Standard's ref, or the
+  Container's checks, change again. `status.standard` records the ref the Standard's files are at and the
   update in flight, the condition `StandardUpdated` how it went;
   `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
   [plans/done/standard-update.md](plans/done/standard-update.md) and
@@ -685,11 +685,18 @@ model and context it needs.
   every change and the Container's `ChecksApplied` is False
   (`StandardRunsFullChecks`). The Standard's `check.yaml` renders the choice;
   changing it reaches the repository through the Standard update's pull
-  request, and `status.standard.checks` records what the repository runs.
+  request, and `status.standard.checks` records what the repository runs:
+  the scaffold's (also in `.c4factory.yaml`), then each merged update's. An
+  update whose change of checks would leave out a file the repository changed
+  since, such as a hand-edited `check.yaml`, isn't opened: `StandardUpdated`
+  is False (`ChecksLeftOut`) naming the file, and the checks stay as they are
+  until the Container's checks or the Standard's ref change again.
   With `BeforeRelease` and `tagReleases`, a done release is not tagged at
   once: the Crew pushes `release-check/vX.Y.Z` at the commit, the workflow's
   `full` job runs `make check` there, and its success tags the release and
-  deletes the branch. A failure tags nothing (`FullCheckFailed`) and files
+  deletes the branch. Meanwhile `Released` says `FullCheckRunning` and
+  `status.fullCheck` records the branch's commit, when it was pushed and how
+  its runs go; only the runs of that branch's push count. A failure tags nothing (`FullCheckFailed`) and files
   `Full check fails for vX.Y.Z`, `kind/bug`, in the release's milestone,
   whose merge doesn't count as merged after the prepare issue; no run within
   the hour leaves the release to a person (`NoFullCheck`). A person who tags
@@ -1102,6 +1109,7 @@ server's message when it refuses one. The UI still enforces nothing.
   | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (set, or removed to stop publishing; only after a `test` of the `resourceVersion` it was worked out from, and a stale one is refused) |
   | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
   | Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take` and `c4.factory.io/standard-keep` |
+  | Container | `PATCH`, JSON patch | `spec.checks` |
   | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
   | Standard | `PATCH`, JSON patch | `spec.template.ref` |
 
@@ -1126,7 +1134,8 @@ server's message when it refuses one. The UI still enforces nothing.
   credentials (the browser never sees them), anything in the Git host
   (merges, reviews, labels: the UI links there), and editing the model
   itself (Systems, Containers, DataStores, Relationships), which would be a
-  model editor of its own.
+  model editor of its own; a Container's `spec.checks` is a setting, not the
+  model.
 
 ## Distribution and issues
 
