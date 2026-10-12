@@ -444,7 +444,8 @@ func writeTooLarge(b *strings.Builder, files []LeftOutFile) {
 }
 
 // Bounds of the change status.standard.behind carries: the bytes of each
-// file's, and the files that carry one, so the status grows by 64 KiB at most.
+// file's, and the files that carry one, so behind grows by 64 KiB at most, and
+// as much again in the update in flight, which holds the next behind.
 const (
 	maxBehindChange  = 4096
 	maxBehindChanges = 16
