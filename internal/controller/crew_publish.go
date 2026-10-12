@@ -10,10 +10,12 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -82,11 +84,17 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 		facts.SecretError = err.Error()
 	}
 	facts.SecretFound = token != ""
+	if facts.Source != nil {
+		if facts.Overlaps, err = r.sourceOverlaps(ctx, crew); err != nil {
+			log.Error(err, "Failed to list the Crews publishing source")
+			return
+		}
+	}
 
 	pubCtx, cancel := context.WithTimeout(ctx, publishTimeout)
 	defer cancel()
-	var target gitprovider.ReleaseTarget
-	var gitea *gitprovider.Release
+	pass := &publishPass{r: r, crew: crew, log: log, provider: provider, repo: repo, spec: spec, token: token,
+		tag: release.Tag, facts: &facts}
 	for {
 		step := model.NextPublishStep(facts)
 		var err error
@@ -102,72 +110,161 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 		case model.PublishDone:
 			r.published(ctx, crew, status, step)
 			return
-
-		case model.PublishReadGitea:
-			gitea, err = provider.GetRelease(pubCtx, repo, release.Tag)
-			if err != nil {
-				log.Error(err, "Failed to read the Gitea release")
-				return
-			}
-			facts.Gitea = sourceRelease(gitea)
-			continue
-		case model.PublishReadIssues:
-			if facts.Issues, err = releaseIssues(pubCtx, provider, repo, release.Tag); err != nil {
-				log.Error(err, "Failed to read the release's issues")
+		case model.PublishReadGitea, model.PublishReadIssues, model.PublishReadGitHub, model.PublishReadSource,
+			model.PublishReadGitHubSource:
+			if !pass.read(pubCtx, step.Action) {
 				return
 			}
 			continue
-		case model.PublishReadGitHub:
-			if target == nil {
-				target, err = r.releaseTargets().GitHubReleases(gitprovider.GitHubConfig{
-					Repository: spec.GitHub.Repository, Token: token})
-				if err != nil {
-					log.Error(err, "Failed to build the GitHub client")
-					return
-				}
-			}
-			facts.GitHub, err = targetReleases(pubCtx, target, facts)
-			if err != nil {
-				facts.Failure = &model.PublishFailure{Reason: gitprovider.ReleaseReason(err), Detail: err.Error()}
-			}
-			continue
-
-		case model.PublishWriteNotes:
-			if err = provider.SetReleaseBody(pubCtx, repo, gitea.ID, step.Body); err != nil {
-				log.Error(err, "Failed to write the release notes")
+		default:
+			var ok bool
+			if ok, err = pass.write(pubCtx, step); !ok {
 				return
-			}
-			log.Info("Wrote release notes")
-		case model.PublishCreateDraft:
-			var draft gitprovider.TargetRelease
-			if draft, err = target.CreateDraft(pubCtx, step.Tag, step.Name, step.Body, ""); err == nil {
-				log.Info("Created release draft", "draft", draft.ID)
-			}
-		case model.PublishUploadAsset:
-			var giteaErr error
-			if giteaErr, err = uploadAsset(pubCtx, provider, repo, target, gitea, step); giteaErr != nil {
-				// Gitea's side: not a GitHub failure, tried again on the next poll.
-				log.Error(giteaErr, "Failed to download a release file from Gitea", "file", step.Asset.Name)
-				return
-			}
-			if err == nil {
-				log.Info("Uploaded release file", "file", step.Asset.Name, "size", step.Asset.Size)
-			}
-		case model.PublishDraft:
-			if _, err = target.PublishRelease(pubCtx, step.Release, step.Latest); err == nil {
-				log.Info("Published release draft", "draft", step.Release, "latest", step.Latest)
 			}
 		}
 		if err != nil {
 			// A failed write goes back in as a fact and comes out as its reason.
-			facts.Failure = &model.PublishFailure{Reason: gitprovider.ReleaseReason(err), Detail: err.Error()}
+			facts.Failure = publishFailure(err)
 			continue
 		}
 		// One write per poll: the next one starts over from what is there.
 		r.setPublish(crew, status, publishPublishing, "", reasonPublishing,
 			fmt.Sprintf("Publishing %s to %s", model.GitHubTag(spec.TagPrefix, release.Tag), spec.GitHub.Repository))
+		if pass.source != nil {
+			status.LastRelease.Publish.Source = pass.source
+		}
 		return
 	}
+}
+
+// publishPass is what one publishing pass read: the facts, and the Gitea
+// release, the GitHub client and what it read of the source folder, which the
+// writes use.
+type publishPass struct {
+	r        *CrewReconciler
+	crew     *c4v1alpha1.Crew
+	log      logr.Logger
+	provider gitprovider.Provider
+	repo     gitprovider.Repository
+	spec     *c4v1alpha1.CrewPublishReleases
+	token    string
+	tag      string
+	facts    *model.PublishFacts
+	target   gitprovider.ReleaseTarget
+	gitea    *gitprovider.Release
+	gh       *githubSource
+	// source is the release's source, once this pass put its tag out.
+	source *c4v1alpha1.CrewReleaseSource
+}
+
+// read takes a read step, adding what it read to the facts; false ends the
+// pass, on a failure Gitea's side or of building the GitHub client, both tried
+// again on the next poll. A failed GitHub read is a fact.
+func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool {
+	var err error
+	switch action {
+	case model.PublishReadGitea:
+		if p.gitea, err = p.provider.GetRelease(ctx, p.repo, p.tag); err != nil {
+			p.log.Error(err, "Failed to read the Gitea release")
+			return false
+		}
+		p.facts.Gitea = sourceRelease(p.gitea)
+	case model.PublishReadIssues:
+		if p.facts.Issues, err = releaseIssues(ctx, p.provider, p.repo, p.tag); err != nil {
+			p.log.Error(err, "Failed to read the release's issues")
+			return false
+		}
+	case model.PublishReadSource:
+		// A tag's source doesn't change: it is read once per release.
+		if last, ok := p.r.publishSources.Load(p.crew.UID); ok && last.(sourceRead).tag == p.tag {
+			p.facts.SourceFiles = last.(sourceRead).source
+			break
+		}
+		if p.facts.SourceFiles, err = readSource(ctx, p.provider, p.repo, p.tag); err != nil {
+			p.log.Error(err, "Failed to read the release's source from Gitea")
+			return false
+		}
+		p.r.publishSources.Store(p.crew.UID, sourceRead{tag: p.tag, source: p.facts.SourceFiles})
+	case model.PublishReadGitHub, model.PublishReadGitHubSource:
+		if p.target == nil {
+			p.target, err = p.r.releaseTargets().GitHubReleases(gitprovider.GitHubConfig{
+				Repository: p.spec.GitHub.Repository, Token: p.token})
+			if err != nil {
+				p.log.Error(err, "Failed to build the GitHub client")
+				return false
+			}
+		}
+		if action == model.PublishReadGitHub {
+			p.facts.GitHub, err = targetReleases(ctx, p.target, *p.facts)
+		} else if p.gh, err = readGitHubSource(ctx, p.target, p.facts.Source.Path,
+			model.SourceTag(*p.facts.Source, p.tag)); err == nil {
+			p.facts.GitHubSource = p.gh.facts
+		}
+		if err != nil {
+			p.facts.Failure = publishFailure(err)
+		}
+	}
+	return true
+}
+
+// write takes a write step; false ends the pass on a failure Gitea's side,
+// tried again on the next poll. A failed GitHub write is returned, for the
+// rule to read as a fact.
+func (p *publishPass) write(ctx context.Context, step model.PublishStep) (bool, error) {
+	var err error
+	switch step.Action {
+	case model.PublishWriteNotes:
+		if err = p.provider.SetReleaseBody(ctx, p.repo, p.gitea.ID, step.Body); err != nil {
+			p.log.Error(err, "Failed to write the release notes")
+			return false, nil
+		}
+		p.log.Info("Wrote release notes")
+	case model.PublishSourceCommit:
+		var commit string
+		var giteaErr error
+		commit, giteaErr, err = commitSource(ctx, p.provider, p.repo, p.tag, p.target, p.gh, step.SourceCommit)
+		if giteaErr != nil {
+			p.log.Error(giteaErr, "Failed to read the release's source from Gitea")
+			return false, nil
+		}
+		if err == nil {
+			p.log.Info("Committed release source", "commit", commit, "path", step.SourceCommit.Path,
+				"blobs", len(step.SourceCommit.Upload))
+		}
+	case model.PublishSourceTag:
+		err = p.target.CreateRef(ctx, "tags/"+step.Tag, step.Commit)
+		if errors.Is(err, gitprovider.ErrRefExists) {
+			// Made since it was read: the next poll reads whose it is.
+			return true, nil
+		}
+		if err == nil {
+			p.source = p.r.sourcePublished(p.log, p.crew, *p.facts, step)
+		}
+	case model.PublishRetargetDraft:
+		if _, err = p.target.RetargetDraft(ctx, step.Release, step.Target); err == nil {
+			p.log.Info("Retargeted release draft", "draft", step.Release, "commit", step.Target)
+		}
+	case model.PublishCreateDraft:
+		var draft gitprovider.TargetRelease
+		if draft, err = p.target.CreateDraft(ctx, step.Tag, step.Name, step.Body, step.Target); err == nil {
+			p.log.Info("Created release draft", "draft", draft.ID)
+		}
+	case model.PublishUploadAsset:
+		var giteaErr error
+		if giteaErr, err = uploadAsset(ctx, p.provider, p.repo, p.target, p.gitea, step); giteaErr != nil {
+			// Gitea's side: not a GitHub failure, tried again on the next poll.
+			p.log.Error(giteaErr, "Failed to download a release file from Gitea", "file", step.Asset.Name)
+			return false, nil
+		}
+		if err == nil {
+			p.log.Info("Uploaded release file", "file", step.Asset.Name, "size", step.Asset.Size)
+		}
+	case model.PublishDraft:
+		if _, err = p.target.PublishRelease(ctx, step.Release, step.Latest); err == nil {
+			p.log.Info("Published release draft", "draft", step.Release, "latest", step.Latest)
+		}
+	}
+	return true, err
 }
 
 // publishFacts are what the Crew's spec and its last release say of publishing
@@ -183,7 +280,7 @@ func publishFacts(crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
 		Tag: release.Tag, TagPrefix: spec.TagPrefix, App: app, Latest: spec.Latest == nil || *spec.Latest,
 		Repository: spec.GitHub.Repository,
 		Published:  release.Publish != nil && release.Publish.State == publishPublished, Runs: release.Run,
-		Secret: spec.GitHub.TokenSecretRef.Name}
+		Secret: spec.GitHub.TokenSecretRef.Name, Source: publishSource(crew)}
 }
 
 // publishToken reads the token from the Secret named name, live, so a Secret
@@ -242,8 +339,8 @@ func targetReleases(ctx context.Context, target gitprovider.ReleaseTarget,
 	if err != nil || found == nil {
 		return &model.TargetReleases{}, err
 	}
-	rel := model.TargetRelease{ID: found.ID, TagName: found.TagName, Draft: found.Draft, Body: found.Body,
-		URL: found.URL}
+	rel := model.TargetRelease{ID: found.ID, TagName: found.TagName, Target: found.Commit, Draft: found.Draft,
+		Body: found.Body, URL: found.URL}
 	if found.Draft {
 		assets, err := target.ListAssets(ctx, found.ID)
 		if err != nil {
@@ -317,7 +414,13 @@ func uploadAsset(ctx context.Context, provider gitprovider.Provider, repo gitpro
 // the Published condition.
 func (r *CrewReconciler) setPublish(crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus, state, url, reason,
 	message string) {
-	status.LastRelease.Publish = &c4v1alpha1.CrewReleasePublish{State: state, URL: url, Message: message}
+	var source *c4v1alpha1.CrewReleaseSource
+	if prev := status.LastRelease.Publish; prev != nil {
+		// The source stays recorded while the rest of the release goes out.
+		source = prev.Source
+	}
+	status.LastRelease.Publish = &c4v1alpha1.CrewReleasePublish{State: state, URL: url, Message: message,
+		Source: source}
 	value := metav1.ConditionFalse
 	if state == publishPublished {
 		value = metav1.ConditionTrue
@@ -356,6 +459,26 @@ func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, s
 	}
 	r.publishSaid.Store(crew.UID, said)
 	r.setPublish(crew, status, publishPublished, step.URL, model.PublishPublished, step.Message)
+	if s := step.Source; s != nil {
+		status.LastRelease.Publish.Source = &c4v1alpha1.CrewReleaseSource{Commit: s.Commit, Tag: s.Tag, URL: s.URL}
+	}
+}
+
+// sourcePublished says the release's source is out, with a Normal Event, and a
+// Warning Event when go install can't fetch it.
+func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew, facts model.PublishFacts,
+	step model.PublishStep) *c4v1alpha1.CrewReleaseSource {
+	url := model.SourceURL(facts.Repository, facts.Source.Path, step.Tag)
+	log.Info("Published source", "tag", step.Tag, "commit", step.Commit, "url", url)
+	r.event(crew, corev1.EventTypeNormal, reasonSourcePublished, "PublishRelease",
+		fmt.Sprintf("The source of %s is published at %s", facts.Tag, url))
+	if step.Warning != "" {
+		log.Info("Published source go install can't fetch from GitHub", "tag", step.Tag, "problem", step.Warning)
+		r.event(crew, corev1.EventTypeWarning, reasonSourceNotGoInstallable, "PublishRelease",
+			fmt.Sprintf("%s; the source of %s is published, but go install can't fetch it from GitHub",
+				step.Warning, facts.Tag))
+	}
+	return &c4v1alpha1.CrewReleaseSource{Commit: step.Commit, Tag: step.Tag, URL: url}
 }
 
 // notePublishSkipped warns, when a Crew that publishes tags a release before

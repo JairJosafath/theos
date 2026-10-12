@@ -101,6 +101,37 @@ type CrewPublishReleases struct {
 	// before it changed keeps what it got.
 	// +optional
 	Latest *bool `json:"latest,omitempty"`
+
+	// source puts the app's source, as of each release's tag, into a folder
+	// of the repository, with a tag of its own, so go install from GitHub
+	// finds it. The factory's own files are left out. Removing it stops
+	// publishing the source; what is on GitHub stays.
+	// +optional
+	Source *CrewPublishSource `json:"source,omitempty"`
+}
+
+// CrewPublishSource is the folder of the GitHub repository a Crew publishes
+// its releases' source to, and the tag the source goes out under.
+type CrewPublishSource struct {
+	// path is the folder, such as engine; "." is the whole repository. The
+	// folder is the app's: each release replaces what it holds. Two Crews
+	// publishing to one repository need folders apart, neither inside the
+	// other.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:Pattern=`^([.]|[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)$`
+	// +kubebuilder:validation:XValidation:rule="self == '.' || !self.matches('(^|/)([.][.]?|[.][gG][iI][tT])(/|$)')",message="path must have no '.', '..' or '.git' folder in it"
+	// +required
+	Path string `json:"path"`
+
+	// tagPrefix goes before the Crew's tag in the source's tag. Unset, it is
+	// the path and "/" (engine/v0.6.1, the tag go install looks for), and
+	// nothing for ".".
+	// +kubebuilder:validation:MaxLength=101
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/-]*$`
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[./-]|//|/[.]|[.][.]|[.]lock(/|$)')",message="tagPrefix must make a git tag name: no leading '.', '/' or '-', no '..', '//' or '/.', and no folder ending in .lock"
+	// +optional
+	TagPrefix *string `json:"tagPrefix,omitempty"`
 }
 
 // CrewPublishGitHub is a repository on github.com and the token that publishes
@@ -239,6 +270,26 @@ type CrewReleasePublish struct {
 	// message says what happened last, and why it failed.
 	// +optional
 	Message string `json:"message,omitempty"`
+
+	// source is the release's source on GitHub, once it is out, when the Crew
+	// publishes it.
+	// +optional
+	Source *CrewReleaseSource `json:"source,omitempty"`
+}
+
+// CrewReleaseSource is a release's source published to GitHub.
+type CrewReleaseSource struct {
+	// commit is the commit the source is in.
+	// +required
+	Commit string `json:"commit"`
+
+	// tag is the source's tag.
+	// +required
+	Tag string `json:"tag"`
+
+	// url is the source folder at the tag.
+	// +optional
+	URL string `json:"url,omitempty"`
 }
 
 // CrewReleaseBump is a bump issue filed in a Container that bundles the released

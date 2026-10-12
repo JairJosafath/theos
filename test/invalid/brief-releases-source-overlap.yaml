@@ -1,0 +1,23 @@
+# expect: two releases entries of one GitHub repository need source folders apart, neither inside the other
+apiVersion: c4.factory.io/v1alpha1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: webshop
+spec:
+  idea: A linter for CEL rules.
+  releases:
+  - container: engine
+    github:
+      repository: acme/cel-lens
+      tokenSecretRef:
+        name: cel-lens-github
+    source:
+      path: engine
+  - container: vscode
+    github:
+      repository: Acme/Cel-Lens
+      tokenSecretRef:
+        name: cel-lens-github
+    source:
+      path: engine/vscode

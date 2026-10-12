@@ -91,6 +91,10 @@ type CrewReconciler struct {
 	// publishSaid is, by Crew UID, the tag and reason of the last publish
 	// failure or success reported, so each gets one Event.
 	publishSaid sync.Map
+	// publishSources is, by Crew UID, the last release's source read from
+	// Gitea (sourceRead), so each poll of its publish doesn't download the
+	// archive again.
+	publishSources sync.Map
 	// moduleSaid is, by Crew UID, the tag and outcome of the last Go module
 	// publish reported, so each gets one Event or log line.
 	moduleSaid sync.Map

@@ -343,8 +343,9 @@ A Crew with `spec.tagReleases` tags each release (a Gitea milestone titled
 release run attaches the files to a Gitea release. Those live in the cluster's
 Gitea. To have every release also show up on a GitHub repository, with the
 same tag, notes and files, give the Crew that repository and a token for it.
-The factory only adds releases there: it never pushes a commit or changes a
-file.
+The factory only adds releases there, and, when you ask for the app's source
+too, one commit per release inside the folder you name: it never touches
+another file.
 
 1. **The token.** On GitHub, *Settings → Developer settings → Fine-grained
    tokens → Generate new token*: *Repository access: Only select repositories*,
@@ -371,6 +372,9 @@ file.
          tokenSecretRef: {name: orders-cli-github}
        tagPrefix: ""            # optional: "cli-" publishes v0.2.0 as cli-v0.2.0
        latest: true             # optional: false never makes its releases GitHub's Latest
+       source:                  # optional: the app's source goes out with each release
+         path: cli              # the folder in the repository; "." is the whole repository
+         tagPrefix: cli/        # optional; defaults to path + "/", "" for "."
    ```
 
 Once a release's runs succeed, the Crew copies it: the notes are the Gitea
@@ -388,6 +392,31 @@ each release is. GitHub's Latest goes to the release published last; set
 `latest: false` on every app but the one people install, and only its
 releases take Latest.
 
+**The source.** With `source`, each release also puts the app's source, as of
+its tag, into that folder of the repository: everything the Container's
+repository holds at the tag but the factory's own files (`AGENTS.md`,
+`docs/agents/`, `.c4factory.yaml`, `.devcontainer/`, `.gitea/`). It is one
+commit on the default branch that replaces only the folder, so files removed
+from the app disappear from it too, and whatever was in it before (a copy made
+by hand) is replaced on the first publish; every other file stays. It is
+tagged `source.tagPrefix` and the Crew's tag, by default the folder, a slash
+and the tag (`cli/v0.2.0`), which is the tag Go looks for, so
+
+```bash
+go install github.com/your-name/orders-cli/cli@v0.2.0
+```
+
+works once the app's `go.mod` declares `module github.com/your-name/orders-cli/cli`.
+A `go.mod` declaring another path is published anyway, with a Warning Event
+`SourceNotGoInstallable` that says the path and tag Go expects. The source goes
+out first and the release's tag names the same commit, so the release's
+*Source code* archive is that app's source. The token needs nothing more than
+*Contents: Read and write*; the default branch must take its pushes (no branch
+protection the token's user can't pass). Apps sharing a repository each take
+their own folder, neither inside the other's; turning `source` on applies from
+the next release, and removing it stops publishing the source, leaving what
+is on GitHub.
+
 **Reading how it went:**
 
 ```bash
@@ -397,7 +426,8 @@ kubectl -n webshop events --for crew/orders-cli
 ```
 
 `publish.state` is `Pending` until the release runs succeed, `Publishing`,
-then `Published` with the release's `url`, or `Failed`. A failure is a Warning
+then `Published` with the release's `url` (and `source`, its `commit`, `tag` and
+the folder's `url`, once the source is out), or `Failed`. A failure is a Warning
 Event `ReleasePublishFailed`, once per reason, and is tried again every
 minute, so fixing the cause is enough. The `Published` condition's reason
 says what to fix:
@@ -412,6 +442,10 @@ says what to fix:
 | `EmptyRepository` | The repository has no commit to tag; push one. |
 | `NoReleaseFiles` | The Gitea release of the tag is missing or has no files: check the tag's release run. |
 | `TagTaken` | The repository already has a release or tag of that name the factory didn't make; it leaves it alone. Delete it, or set a `tagPrefix`. |
+| `SourceTagTaken` | The repository already has the source tag on another folder tree; it leaves it alone. Delete the tag, or set `source.tagPrefix`. |
+| `FolderOverlaps` | Another Crew publishes source to the same repository in this folder, or one inside or around it; the message names it. Both wait until one moves. |
+| `SourceTooLarge` | A file of the source is over GitHub's 100 MiB; take it out of the repository, or mark it `export-ignore` in `.gitattributes`. |
+| `BranchProtected` | GitHub refused the source commit on the protected default branch: let the token's user push to it, or drop the protection. |
 | `GitHubError` | GitHub failed, rate-limited, or couldn't be reached; it is tried again. |
 
 ## Release a Brief's app
@@ -442,6 +476,7 @@ Gitea release. Nothing on the Crew needs editing by hand.
          tokenSecretRef: {name: cel-lens-github}
        tagPrefix: ""                        # optional, as on a Crew
        latest: true                         # optional, as on a Crew
+       source: {path: linter}               # optional, as on a Crew; entries of one repository need folders apart
    ```
 
    ```bash
