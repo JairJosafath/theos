@@ -214,7 +214,8 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 	status.Summary = run.Result.Summary
 	status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
 	if failed := run.Result.CheckFailsOnBase; failed != "" {
-		r.comment(ctx, task, status, container, model.CheckFailsOnBaseComment(int(status.Round), failed))
+		r.comment(ctx, task, status, container, model.CheckFailsOnBaseComment(int(status.Round), failed,
+			recordedChecks(&container.Status)))
 		if r.Recorder != nil {
 			r.Recorder.Eventf(task, nil, corev1.EventTypeNormal, eventCheckFailsOnBase, "Check", "%s",
 				model.CheckFailsOnBaseEvent(int(status.Round), failed))

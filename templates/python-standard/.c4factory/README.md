@@ -32,6 +32,13 @@ the `make check` contract CI runs.
   A change to only `CHANGELOG.md`, `docs/` or images (`.png`, `.jpg`, `.gif`,
   `.svg`) skips the steps after the checkout and passes, so the context still
   reports; any other file, `README.md` included, or a first push runs them.
+- **Checks before a release** (`checksBeforeRelease: true`): with the
+  Container's `checks: BeforeRelease`, `check.yaml` renders a `check` job that
+  runs `make check-light` (`uv sync --locked`, `ruff format --diff`, `ruff
+  check`, `mypy .`; no tests) on pull requests and on `main`, with the same
+  skip, and a `full` job that runs `make check` on a push to a
+  `release-check/**` branch, whatever the push changes (status context `check
+  / full (push)`). With `EveryChange`, the default, it renders as before.
 - **Releases:** `make dist VERSION=v1.2.3` builds `dist/<name>-1.2.3.tar.gz`
   and the wheel, and fails when the tag doesn't match `pyproject.toml`'s
   `version`; gitea-release attaches both for a CLI.

@@ -1159,6 +1159,10 @@ func implementedStep(f TaskFacts) TaskStep {
 // workspace runs it after the agent, and CI on the pushed head.
 const CheckCommand = "make check"
 
+// CheckLightCommand is the quick part of CheckCommand, without the tests, that
+// CI runs on each change of a repository whose checks are BeforeRelease.
+const CheckLightCommand = "make check-light"
+
 // checkFailsOnBase says that the workspace's check fails on main too. It costs
 // no round and no try: CI decides.
 const checkFailsOnBase = "`" + CheckCommand + "` fails on main in the agent's workspace too, so CI decides"
@@ -1171,13 +1175,21 @@ func CheckFailsOnBaseEvent(round int, output string) string {
 
 // CheckFailsOnBaseComment is the pull request's comment for a round whose
 // check fails on main in the agent's workspace too: CI decides the change,
-// and a person can give the workspace what CI has.
-func CheckFailsOnBaseComment(round int, output string) string {
+// and a person can give the workspace what CI has. checks is what the
+// repository's CI runs (status.standard.checks): with BeforeRelease, only
+// CheckLightCommand on each change, and the full check before a release.
+func CheckFailsOnBaseComment(round int, output, checks string) string {
+	ci := "CI runs the same check on this head and decides; this costs no round. " +
+		"If CI passes, the workspace lacks something CI has, such as a download or a service: give it that, " +
+		"so the workspace judges changes again."
+	if checks == ChecksBeforeRelease {
+		ci = "CI runs only the light check, `" + CheckLightCommand + "`, on this head and decides; this costs no " +
+			"round. `" + CheckCommand + "` runs in full before the release is tagged, and a failure there is " +
+			"filed then. Give the workspace what it lacks, such as a download or a service, so it judges changes again."
+	}
 	return fmt.Sprintf("Round %d: `%s` fails in the agent's workspace on main too, before this change, so the "+
-		"workspace can't judge it. CI runs the same check on this head and decides; this costs no round. "+
-		"If CI passes, the workspace lacks something CI has, such as a download or a service: give it that, "+
-		"so the workspace judges changes again. Its output on main ends:\n\n````\n%s\n````\n",
-		round, CheckCommand, strings.TrimRight(output, "\n"))
+		"workspace can't judge it. %s Its output on main ends:\n\n````\n%s\n````\n",
+		round, CheckCommand, ci, strings.TrimRight(output, "\n"))
 }
 
 // lastLine is s's last line that isn't blank.

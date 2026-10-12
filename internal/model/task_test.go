@@ -346,12 +346,17 @@ func TestCheckFailsOnBaseNotes(t *testing.T) {
 	if !utf8.ValidString(long) || !strings.HasSuffix(long, "…)") {
 		t.Errorf("CheckFailsOnBaseEvent() = %q, want a long last line clipped at a rune", long)
 	}
-	comment := CheckFailsOnBaseComment(2, output)
-	for _, want := range []string{"Round 2: `make check` fails in the agent's workspace on main too",
-		"CI runs the same check on this head and decides", "````\nmake: entering\n",
-		"404 Not Found\n````\n"} {
-		if !strings.Contains(comment, want) {
-			t.Errorf("CheckFailsOnBaseComment() = %q, want it to contain %q", comment, want)
+	for _, c := range []struct{ checks, ci string }{
+		{"", "CI runs the same check on this head and decides"},
+		{ChecksEveryChange, "CI runs the same check on this head and decides"},
+		{ChecksBeforeRelease, "CI runs only the light check, `make check-light`, on this head and decides"},
+	} {
+		comment := CheckFailsOnBaseComment(2, output, c.checks)
+		for _, want := range []string{"Round 2: `make check` fails in the agent's workspace on main too",
+			c.ci, "````\nmake: entering\n", "404 Not Found\n````\n"} {
+			if !strings.Contains(comment, want) {
+				t.Errorf("CheckFailsOnBaseComment(checks %q) = %q, want it to contain %q", c.checks, comment, want)
+			}
 		}
 	}
 }

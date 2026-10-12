@@ -84,6 +84,21 @@ owns.
   that commit. No run within the hour a release's runs get (no runner, or a
   Standard that renders no `full` job) leaves the release to a person:
   `NoFullCheck`.
+- **What the light check misses, the gate catches.** An agent's round runs
+  `make check` in its workspace and fails on it, so a change that breaks a
+  test doesn't reach CI. Only when `make check` already fails on main in the
+  workspace (#900) does CI decide alone, and with `BeforeRelease` CI runs
+  only `make check-light` on the change: a test it breaks merges unseen. The
+  full check on `release-check/vX.Y.Z` (step 4) runs every test on the
+  release's commit and files `Full check fails for vX.Y.Z` before anything is
+  tagged, so the breakage reaches no release. The pull request's note says
+  so: `model.CheckFailsOnBaseComment` names `make check-light` when the
+  repository's recorded checks (`status.standard.checks`) are `BeforeRelease`.
+- **The workflow keeps Gitea's expressions as is.** In `check.yaml.tmpl`,
+  `` {{`${{ gitea.token }}`}} `` writes `${{ gitea.token }}`: a raw string in
+  a template action, no new template function. The `full` job has no skip
+  step: on a branch pushed again, the diff against its previous commit could
+  be only the changelog, and the full check must still run.
 - **A fix of the full check doesn't count as merged after the prepare
   issue.** Work merged after the prepare issue leaves a release to a person
   (`MergedAfterPrepare`), since its changelog doesn't list it. The issue the
