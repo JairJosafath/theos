@@ -20,8 +20,8 @@ import (
 
 const fakeGitHubRepo = "acme/cel-lens"
 
-// fakeGitHub is GitHub's release API for one repository. It fails the test on a
-// request outside /repos/{owner}/{repo}/releases or without the token.
+// fakeGitHub is GitHub's release and Git Data API for one repository. It fails
+// the test on a request that isn't a githubCall, or without the token.
 type fakeGitHub struct {
 	errorf func(format string, args ...any)
 	token  string
@@ -37,11 +37,14 @@ type fakeGitHub struct {
 	uploads []string
 	// makeLatest records each PATCH's make_latest.
 	makeLatest []string
+	// git is the repository's objects and refs.
+	git *fakeGit
 }
 
 func newFakeGitHub(t *testing.T) (*fakeGitHub, ReleaseTarget) {
 	t.Helper()
-	f := &fakeGitHub{errorf: t.Errorf, token: rand.Text(), assets: map[int64][]githubAsset{}, nextID: 100}
+	f := &fakeGitHub{errorf: t.Errorf, token: rand.Text(), assets: map[int64][]githubAsset{}, nextID: 100,
+		git: newFakeGit()}
 	api := httptest.NewServer(f.on(false))
 	upload := httptest.NewServer(f.on(true))
 	t.Cleanup(api.Close)
@@ -68,13 +71,24 @@ func (f *fakeGitHub) on(upload bool) http.HandlerFunc {
 	}
 }
 
+// githubCall reports whether a request is one the client may make: under
+// /repos/{owner}/{repo}/releases, under /repos/{owner}/{repo}/git/, or GET
+// /repos/{owner}/{repo} for the default branch (the plan's decision 3).
+func githubCall(method, path string) bool {
+	repo := "/repos/" + fakeGitHubRepo
+	if strings.Contains(path, "..") || strings.Contains(path, "//") {
+		return false
+	}
+	return path == repo+"/releases" || strings.HasPrefix(path, repo+"/releases/") ||
+		strings.HasPrefix(path, repo+"/git/") || method == http.MethodGet && path == repo
+}
+
 func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.paths = append(f.paths, r.Method+" "+releaseCall.ReplaceAllString(r.URL.Path, "/{id}$1"))
-	prefix := "/repos/" + fakeGitHubRepo + "/releases"
-	if r.URL.Path != prefix && !strings.HasPrefix(r.URL.Path, prefix+"/") || strings.Contains(r.URL.Path, "..") {
-		f.errorf("request %s %s is not under %s", r.Method, r.URL.Path, prefix)
+	if !githubCall(r.Method, r.URL.Path) {
+		f.errorf("request %s %s is not a release, Git Data or default branch call", r.Method, r.URL.Path)
 		http.NotFound(w, r)
 		return
 	}
@@ -85,7 +99,16 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 		f.fail(w)
 		return
 	}
-	rest := strings.Split(strings.TrimPrefix(r.URL.Path, prefix), "/")[1:]
+	prefix := "/repos/" + fakeGitHubRepo + "/releases"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		f.git.serve(f, w, r)
+		return
+	}
+	f.serveReleases(w, r, strings.Split(strings.TrimPrefix(r.URL.Path, prefix), "/")[1:])
+}
+
+// serveReleases answers a release request, rest its path below /releases.
+func (f *fakeGitHub) serveReleases(w http.ResponseWriter, r *http.Request, rest []string) {
 	switch {
 	case len(rest) == 0 && r.Method == http.MethodGet:
 		out := make([]githubRelease, 0, len(f.releases))
@@ -104,8 +127,11 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		f.nextID++
+		if in.TargetCommitish == "" {
+			in.TargetCommitish = "main"
+		}
 		rel := &githubRelease{ID: f.nextID, TagName: in.TagName, Name: in.Name, Body: in.Body, Draft: in.Draft,
-			HTMLURL: "https://github.com/" + fakeGitHubRepo + "/releases/tag/untagged-" + strconv.FormatInt(f.nextID, 10)}
+			TargetCommitish: in.TargetCommitish, HTMLURL: "https://github.com/" + fakeGitHubRepo + "/releases/tag/untagged-" + strconv.FormatInt(f.nextID, 10)}
 		f.releases = append([]*githubRelease{rel}, f.releases...)
 		f.json(w, http.StatusCreated, rel)
 	case len(rest) == 1 && r.Method == http.MethodPatch:
@@ -115,13 +141,19 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var in struct {
-			Draft      bool
-			MakeLatest string `json:"make_latest"`
+			Draft           *bool
+			MakeLatest      string `json:"make_latest"`
+			TargetCommitish string `json:"target_commitish"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&in)
-		rel.Draft = in.Draft
-		f.makeLatest = append(f.makeLatest, in.MakeLatest)
-		rel.HTMLURL = "https://github.com/" + fakeGitHubRepo + "/releases/tag/" + rel.TagName
+		if in.TargetCommitish != "" {
+			rel.TargetCommitish = in.TargetCommitish
+		}
+		if in.Draft != nil {
+			rel.Draft = *in.Draft
+			f.makeLatest = append(f.makeLatest, in.MakeLatest)
+			rel.HTMLURL = "https://github.com/" + fakeGitHubRepo + "/releases/tag/" + rel.TagName
+		}
 		f.json(w, http.StatusOK, rel)
 	case len(rest) == 2 && rest[0] == "assets" && r.Method == http.MethodDelete:
 		for relID, list := range f.assets {
@@ -222,7 +254,7 @@ func TestGitHubReleasesPublish(t *testing.T) {
 	if err != nil || found != nil {
 		t.Fatalf("FindRelease() on no releases = %+v, %v; want nil", found, err)
 	}
-	draft, err := g.CreateDraft(ctx, "v0.2.0", "CEL Lens v0.2.0", "- Add a lens (#3)\n\n"+testMarker)
+	draft, err := g.CreateDraft(ctx, "v0.2.0", "CEL Lens v0.2.0", "- Add a lens (#3)\n\n"+testMarker, "")
 	if err != nil || !draft.Draft || draft.TagName != "v0.2.0" || draft.Name != "CEL Lens v0.2.0" || draft.ID == 0 {
 		t.Fatalf("CreateDraft() = %+v, %v", draft, err)
 	}
@@ -274,13 +306,13 @@ func TestGitHubReleasesPublish(t *testing.T) {
 	if !reflect.DeepEqual(f.makeLatest, []string{"false"}) {
 		t.Errorf("make_latest sent = %q, want [false]: a string, as GitHub takes it", f.makeLatest)
 	}
-	if _, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", "again"); ReleaseReason(err) != ReasonTagTaken {
+	if _, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", "again", ""); ReleaseReason(err) != ReasonTagTaken {
 		t.Errorf("CreateDraft() of a published tag error = %v, reason %s; want %s", err, ReleaseReason(err), ReasonTagTaken)
 	}
 
-	// Every method of ReleaseTarget must be walked above, so a method added to
-	// it is covered by the check below that every path is a release path.
-	// Each method's request, which the fake has checked is a release call.
+	// Every release method of ReleaseTarget must be walked above, so a method
+	// added to it is covered by the fake's check that every path is a release
+	// path; TestGitHubSource walks those of SourceTarget.
 	calls := map[string]bool{}
 	for _, p := range f.paths {
 		calls[p] = true
@@ -297,34 +329,88 @@ func TestGitHubReleasesPublish(t *testing.T) {
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Errorf("requests = %v, want %v", calls, wantCalls)
 	}
-	if n := reflect.TypeFor[ReleaseTarget]().NumMethod(); n != len(wantCalls) {
+	// RetargetDraft, walked in TestGitHubReleasesTarget, shares
+	// PublishRelease's request.
+	release := reflect.TypeFor[ReleaseTarget]().NumMethod() - reflect.TypeFor[SourceTarget]().NumMethod()
+	if n := release - 1; n != len(wantCalls) {
 		t.Errorf("ReleaseTarget has %d methods; walk the new ones in this test and add their requests above", n)
 	}
 }
 
-// TestGitHubReleasesStayUnderReleases fails when the client calls GitHub
-// outside /repos/{owner}/{repo}/releases.
-func TestGitHubReleasesStayUnderReleases(t *testing.T) {
+// TestGitHubReleasesTarget sets the commit a draft's tag is created at: none,
+// the default branch's head; one at creation; and one by a later PATCH.
+func TestGitHubReleasesTarget(t *testing.T) {
+	_, g := newFakeGitHub(t)
+	ctx := context.Background()
+	draft, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", testMarker, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Commit != "main" {
+		t.Errorf("CreateDraft() with no commit targets %q, want the default branch", draft.Commit)
+	}
+	const sourceCommit = "0123456789abcdef0123456789abcdef01234567"
+	retargeted, err := g.RetargetDraft(ctx, draft.ID, sourceCommit)
+	if err != nil || retargeted.Commit != sourceCommit || !retargeted.Draft {
+		t.Errorf("RetargetDraft() = %+v, %v; want the draft at %s", retargeted, err, sourceCommit)
+	}
+	if _, err := g.RetargetDraft(ctx, draft.ID, ""); err == nil {
+		t.Error("RetargetDraft() to no commit error = nil, want one")
+	}
+	at, err := g.CreateDraft(ctx, "v0.3.0", "v0.3.0", "at a commit", sourceCommit)
+	if err != nil || at.Commit != sourceCommit {
+		t.Errorf("CreateDraft() at a commit = %+v, %v; want target %s", at, err, sourceCommit)
+	}
+}
+
+// TestGitHubReleasesStayInTheirCalls fails when the client calls GitHub
+// outside /repos/{owner}/{repo}/releases, /repos/{owner}/{repo}/git/ and GET
+// /repos/{owner}/{repo}: the fake every other test uses must catch it.
+func TestGitHubReleasesStayInTheirCalls(t *testing.T) {
 	_, g := newFakeGitHub(t)
 	gh := g.(*githubReleases)
-	if gh.releases != "/repos/"+fakeGitHubRepo+"/releases" {
-		t.Fatalf("releases prefix = %q", gh.releases)
+	repo := "/repos/" + fakeGitHubRepo
+	if gh.releases != repo+"/releases" || gh.repo != repo {
+		t.Fatalf("paths = %q, %q", gh.repo, gh.releases)
 	}
-	var failures []string
-	f := &fakeGitHub{token: gh.token, assets: map[int64][]githubAsset{},
-		errorf: func(format string, args ...any) { failures = append(failures, fmt.Sprintf(format, args...)) }}
-	srv := httptest.NewServer(f.on(false))
-	defer srv.Close()
-	// A call outside the prefix, as a non-release call added to the client
-	// would make, must be caught by the fake every other test uses.
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/repos/"+fakeGitHubRepo+"/contents/idea.md", nil)
-	req.Header.Set("Authorization", "Bearer "+gh.token)
-	resp, err := http.DefaultClient.Do(req)
-	if err == nil {
-		_ = resp.Body.Close()
+	tests := []struct {
+		method, path string
+		allowed      bool
+	}{
+		{http.MethodGet, repo + "/releases", true},
+		{http.MethodPatch, repo + "/releases/1", true},
+		{http.MethodGet, repo + "/git/ref/heads/main", true},
+		{http.MethodPost, repo + "/git/blobs", true},
+		{http.MethodGet, repo, true},
+		{http.MethodPatch, repo, false},
+		{http.MethodDelete, repo, false},
+		{http.MethodGet, repo + "/contents/idea.md", false},
+		{http.MethodPut, repo + "/contents/idea.md", false},
+		{http.MethodGet, repo + "/branches/main/protection", false},
+		{http.MethodPost, repo + "/merges", false},
+		{http.MethodGet, repo + "/gitx", false},
+		{http.MethodGet, repo + "/releasesx", false},
+		{http.MethodGet, repo + "/git/../contents/idea.md", false},
+		{http.MethodGet, "/repos/acme/other/git/ref/heads/main", false},
+		{http.MethodGet, "/user", false},
 	}
-	if len(failures) == 0 {
-		t.Error("a request outside /releases did not fail the test")
+	for _, tt := range tests {
+		var failures []string
+		f := &fakeGitHub{token: gh.token, assets: map[int64][]githubAsset{}, git: newFakeGit(),
+			errorf: func(format string, args ...any) { failures = append(failures, fmt.Sprintf(format, args...)) }}
+		f.fail = func(w http.ResponseWriter) { f.reply(w, http.StatusNotFound, `{"message":"Not Found"}`) }
+		srv := httptest.NewServer(f.on(false))
+		req, _ := http.NewRequest(tt.method, srv.URL+tt.path, nil)
+		req.URL.Path = tt.path // as sent, ".." included
+		req.Header.Set("Authorization", "Bearer "+gh.token)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+		srv.Close()
+		if caught := len(failures) > 0; caught == tt.allowed {
+			t.Errorf("%s %s: failures %q; want allowed %v", tt.method, tt.path, failures, tt.allowed)
+		}
 	}
 }
 
@@ -398,7 +484,7 @@ func TestGitHubReleasesFailures(t *testing.T) {
 			ctx := context.Background()
 			calls := map[string]func() error{
 				"FindRelease": func() error { _, err := g.FindRelease(ctx, "v0.2.0", testMarker); return err },
-				"CreateDraft": func() error { _, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", testMarker); return err },
+				"CreateDraft": func() error { _, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", testMarker, ""); return err },
 				"ListAssets":  func() error { _, err := g.ListAssets(ctx, 1); return err },
 				"UploadAsset": func() error {
 					_, err := g.UploadAsset(ctx, 1, "SHA256SUMS", 2, strings.NewReader("ab"))
@@ -481,7 +567,7 @@ func TestGitHubReleasesConfig(t *testing.T) {
 func TestGitHubReleasesAssets(t *testing.T) {
 	f, g := newFakeGitHub(t)
 	ctx := context.Background()
-	draft, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", testMarker)
+	draft, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", testMarker, "")
 	if err != nil {
 		t.Fatal(err)
 	}
