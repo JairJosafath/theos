@@ -490,10 +490,10 @@ model and context it needs.
   tag carries (#956): while any Task is at work (a Blocked one aside,
   whatever its issue's release), the done release's prepare issue waits
   (`Released=False`, reason `PrepareWaitsForTasks`, no Event) and the Crew
-  starts no other issue but an urgent one, so the Tasks drain; a prepare
-  issue, filed by the Crew or a person, starts only once no other Task is
-  at work, and runs alone: no other issue but an urgent one starts until
-  its Task ends.
+  starts no other issue but an urgent one or a Standard change a Blocked
+  Task waits on, so the Tasks drain; a prepare issue, filed by the Crew or
+  a person, starts only once no other Task is at work, and runs alone: no
+  other issue but those starts until its Task ends.
 - **A release's tag comes after the one before it.** The newest closed release
   milestone's tag is the previous release; a release whose newest merge is
   that tag's commit, or a Task's merge that ended before the merge the tag

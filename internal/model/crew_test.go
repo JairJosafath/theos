@@ -283,6 +283,18 @@ func TestNextCrewStep(t *testing.T) {
 			Tasks: []CrewTask{{Name: "cel-ls-380", Issue: 380, Release: v011, Prepare: true}}},
 			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-380"}, Ready: []int{5},
 				Message: "Task cel-ls-380 is working on issue #380; 1 ready issue waits for a release to be prepared"}},
+		{name: "a Standard change a Blocked prepare Task waits on still starts", facts: CrewFacts{
+			ContainerReady: true, Parallel: 3, Issues: []Issue{change, in(v020, ready(5))},
+			Tasks: []CrewTask{{Name: "cel-ls-380", Issue: 380, Release: v011, Prepare: true, Blocked: true,
+				StandardChange: &IssueChange{Issue: 2, Paths: []string{"Makefile"}}}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-380"}, Ready: []int{5},
+				Start:   []IssueStart{{Issue: 2, Task: "cel-ls-2", Attempt: 1, AllowedPaths: []string{"Makefile"}}},
+				Message: "Starting Task cel-ls-2 for issue #2"}},
+		{name: "a second prepare issue waits for the one at work", facts: CrewFacts{
+			ContainerReady: true, Parallel: 3, Issues: []Issue{in(v011, prepare(ready(381)))},
+			Tasks: []CrewTask{{Name: "cel-ls-380", Issue: 380, Release: v011, Prepare: true}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-380"}, Ready: []int{381},
+				Message: "Task cel-ls-380 is working on issue #380; 1 ready issue waits for a release to be prepared"}},
 		{name: "a paused Crew starts no urgent issue", facts: CrewFacts{Paused: true, ContainerReady: true,
 			Issues: []Issue{urgent(ready(9))}},
 			want: CrewStep{Phase: CrewPaused, Ready: []int{9}, Message: "Paused; not picking up issues"}},

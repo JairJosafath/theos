@@ -275,7 +275,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	held := 0
 	var started []string
 	for _, issue := range candidates {
-		if heldForRelease(preparing, others, urgent[issue], prepare[issue]) {
+		if heldForRelease(preparing, others, urgent[issue] || len(allowances[issue]) > 0, prepare[issue]) {
 			step.Ready = append(step.Ready, issue)
 			held++
 			continue
@@ -284,7 +284,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			step.Ready = append(step.Ready, issue)
 			continue
 		}
-		others = others || !prepare[issue] // started now, it merges before a prepare issue
+		others = true // started now, it merges before a prepare issue
 		attempt := 1
 		for _, t := range f.Tasks {
 			if t.Issue == issue {
@@ -326,24 +326,25 @@ func crewProgress(step CrewStep, started []string, activeIssues []int, held, onD
 }
 
 // preparingRelease reports whether a release is being prepared, its prepare
-// issue waiting or at work, and whether a Task other than a prepare issue's
-// is at work, a Blocked one aside.
+// issue waiting or at work, and whether a Task is at work, a Blocked one
+// aside: a prepare issue starts only when none is.
 func preparingRelease(f CrewFacts, candidates []int, prepare map[int]bool) (preparing, others bool) {
 	preparing = f.Preparing != "" || slices.ContainsFunc(candidates, func(n int) bool { return prepare[n] })
 	for _, t := range f.Tasks {
 		if !t.Final {
 			preparing = preparing || t.Prepare
-			others = others || !t.Prepare && !t.Blocked
+			others = others || !t.Blocked
 		}
 	}
 	return preparing, others
 }
 
 // heldForRelease reports whether a ready issue waits while a release is being
-// prepared: an urgent one never does, the prepare issue only while another
-// Task is at work.
-func heldForRelease(preparing, others, urgent, prepare bool) bool {
-	return preparing && !urgent && (!prepare || others)
+// prepared: an urgent one never does, nor a Standard change a Blocked Task
+// (maybe the prepare issue's) waits on (exempt); the prepare issue only while
+// another Task is at work.
+func heldForRelease(preparing, others, exempt, prepare bool) bool {
+	return preparing && !exempt && (!prepare || others)
 }
 
 // preparingMessage tells how many ready issues wait for a release to be
