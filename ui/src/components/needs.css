@@ -74,6 +74,13 @@
   color: var(--link);
 }
 
+.need-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .need-command {
   display: flex;
   align-items: center;

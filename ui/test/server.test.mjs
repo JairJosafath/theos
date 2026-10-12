@@ -483,7 +483,7 @@ describe('server.mjs', () => {
     it('says on /ui/session that actions are on, made as the ServiceAccount, with every write', async () => {
       const answer = await (await fetch(`${actionBase}/ui/session`)).json()
       assert.deepEqual([answer.actions, answer.mode, answer.user], [true, 'service-account', null])
-      assert.equal(answer.writes.length, 9)
+      assert.equal(answer.writes.length, 11)
       assert.ok(!JSON.stringify(answer).includes(browserToken))
     })
 
@@ -524,6 +524,20 @@ describe('server.mjs', () => {
         { metadata: { annotations: { 'c4.factory.io/retry': '1' } } },
       ],
       ["a Container's checks", 'PATCH', '/containers/orders-api', JP, [add('/spec/checks', 'BeforeRelease')]],
+      [
+        "a Container's take of its Standard's files left out",
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        { metadata: { annotations: { 'c4.factory.io/standard-take': 'v1.4.0' } } },
+      ],
+      [
+        "a Container's keep of its Standard's files left out",
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        { metadata: { annotations: { 'c4.factory.io/standard-keep': 'v1.4.0' } } },
+      ],
       [
         'a Task from a goal, with only its name and spec',
         'POST',
@@ -777,6 +791,26 @@ describe('server.mjs', () => {
         [add('/spec/checks', 'BeforeRelease'), add('/spec/type', 'worker')],
         403,
       ],
+      [
+        'a take and a keep at once',
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        { metadata: { annotations: { 'c4.factory.io/standard-take': 'v1', 'c4.factory.io/standard-keep': 'v1' } } },
+        403,
+      ],
+      [
+        'a take with a retry',
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        { metadata: { annotations: { 'c4.factory.io/standard-take': 'v1', 'c4.factory.io/retry': '1' } } },
+        403,
+      ],
+      ['another Container annotation', 'PATCH', '/containers/orders-api', MP, crewAnn('c4.factory.io/standard'), 403],
+      ['a take as a number', 'PATCH', '/containers/orders-api', MP, crewAnn('c4.factory.io/standard-take', 1), 403],
+      ['a keep removed', 'PATCH', '/containers/orders-api', MP, crewAnn('c4.factory.io/standard-keep', null), 403],
+      ['the take annotation on a Crew', 'PATCH', '/crews/orders-api', MP, crewAnn('c4.factory.io/standard-take'), 403],
       [
         'a Task of kind Plan',
         'POST',

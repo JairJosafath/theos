@@ -394,6 +394,7 @@ type fakeAgentState struct {
 	comments  map[string][]string                   // owner/name#number
 	branches  map[string]string                     // owner/name@branch -> head sha
 	authors   map[string]string                     // owner/name#number -> who opened it
+	texts     map[string][2]string                  // owner/name#number -> its title and body
 	log       string                                // served for every CI job
 	files     map[string][]string                   // owner/name#number -> paths the pull request changes
 	forced    map[string][]int                      // owner/name -> pull requests force-merged
@@ -417,6 +418,7 @@ func (g *fakeGit) agentState() *fakeAgentState {
 			rules: map[string]gitprovider.BranchRule{}, tags: map[string][]string{},
 			agents: map[string]string{}, pulls: map[string][]*gitprovider.PullRequest{},
 			comments: map[string][]string{}, branches: map[string]string{}, authors: map[string]string{},
+			texts: map[string][2]string{},
 			files: map[string][]string{}, forced: map[string][]int{}, gone: map[string]bool{}, conflicts: map[string]bool{},
 			readErrs: map[string]int{},
 			edits:    map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{}, revoked: map[string]int{},
@@ -523,6 +525,8 @@ func (g *fakeGit) branchRule(owner, name string) (gitprovider.BranchRule, []stri
 }
 
 // closePull closes a pull request without merging it, as a person might.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) closePull(owner, name string, number int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -554,6 +558,16 @@ func (g *fakeGit) pullReadsToFail(owner, name string, number int) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.agentState().readErrs[fmt.Sprintf("%s/%s#%d", owner, name, number)]
+}
+
+// pullText is the title and body pull request number was opened with.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) pullText(owner, name string, number int) (title, body string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	text := g.agentState().texts[fmt.Sprintf("%s/%s#%d", owner, name, number)]
+	return text[0], text[1]
 }
 
 //nolint:unparam // takes owner and name like the other helpers
@@ -649,7 +663,7 @@ func (g *fakeGit) revocations(user string) int {
 	return g.agentState().revoked[user]
 }
 
-func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repository, head, _, _, _ string) (gitprovider.PullRequest, error) {
+func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repository, head, _, title, body string) (gitprovider.PullRequest, error) {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	s := p.git.agentState()
@@ -668,6 +682,7 @@ func (p *fakeProvider) OpenPullRequest(_ context.Context, repo gitprovider.Repos
 	pr.URL = fmt.Sprintf("%s/pulls/%d", strings.TrimSuffix(p.cfg.URL, "/")+"/"+key, pr.Number)
 	s.pulls[key] = append(s.pulls[key], pr)
 	s.authors[fmt.Sprintf("%s#%d", key, pr.Number)] = p.cfg.Credentials.Username
+	s.texts[fmt.Sprintf("%s#%d", key, pr.Number)] = [2]string{title, body}
 	return *pr, nil
 }
 

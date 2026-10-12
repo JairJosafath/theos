@@ -17,12 +17,26 @@ const container = (phase: 'Ready' | 'Failed'): Container => ({
   },
   status: { phase, repositoryURL: 'https://gitea.example/webshop/orders-api' },
 })
+const behind = (update?: NonNullable<NonNullable<Container['status']>['standard']>['update']): Container => {
+  const c = container('Ready')
+  c.status!.standard = {
+    name: 'go-standard',
+    ref: 'v1.3.0',
+    behind: [
+      { path: 'Makefile', ref: 'v1.1.0' },
+      { path: '.golangci.yml', ref: 'v1.2.0' },
+    ],
+    update,
+  }
+  return c
+}
 const crew: Crew = {
   metadata: { name: 'orders-api', namespace: 'webshop' },
   spec: { containerRef: { name: 'orders-api' }, implementer: { name: 'claude' }, reviewer: { name: 'codex' } },
 }
 const writer: ContainerWriter = {
   retry: async () => undefined,
+  answerStandard: async () => undefined,
   setChecks: async () => undefined,
   startTask: async () => 'orders-api-x7k2p',
 }
@@ -67,6 +81,25 @@ describe('ContainerActions', () => {
     expect(html).not.toContain('Start the Task')
   })
 
+  it('offers to take or keep the Standard’s files left out, naming each with its ref', () => {
+    const html = render(serviceAccount, behind())
+    expect(html).toContain('Standard files left out')
+    expect(html).toMatch(/Makefile<\/span> <span class="muted">at v1\.1\.0/)
+    expect(html).toMatch(/\.golangci\.yml<\/span> <span class="muted">at v1\.2\.0/)
+    expect(html).toContain('Take the Standard’s version')
+    expect(html).toContain('Keep ours')
+    expect(html).toContain('lists the lines it drops')
+    expect(render(serviceAccount, container('Ready'))).not.toContain('Standard files left out')
+  })
+
+  it('offers no answer while a take runs or stopped, and one after another update stopped', () => {
+    const take = { ref: 'v1.3.0', take: true, pullRequest: 9 }
+    expect(render(serviceAccount, behind(take))).not.toContain('Keep ours')
+    expect(render(serviceAccount, behind({ ...take, stopped: 'UpdateRefused' }))).not.toContain('Keep ours')
+    expect(render(serviceAccount, behind({ ref: 'v1.4.0' }))).not.toContain('Keep ours')
+    expect(render(serviceAccount, behind({ ref: 'v1.4.0', stopped: 'UpdateRefused' }))).toContain('Keep ours')
+  })
+
   it('says to sign in, in place of the buttons, in OIDC mode with nobody signed in', () => {
     const html = render(signedOut, container('Failed'))
     expect(html).toContain('Sign in to retry its scaffold or start a Task on it.')
@@ -74,5 +107,8 @@ describe('ContainerActions', () => {
     expect(html).not.toContain('<button')
     const signedIn = render({ ...signedOut, user: { name: 'oidc:ada@example.com', groups: [] } }, container('Failed'))
     expect(signedIn).toContain('Retry the scaffold…')
+    expect(render(signedOut, behind())).toContain(
+      'Sign in to take or keep its Standard’s files left out or start a Task on it.',
+    )
   })
 })

@@ -1,7 +1,8 @@
-// The Container page's writes, with actions on (design.md, UI actions):
-// retry a Failed scaffold through the c4.factory.io/retry annotation, set when
-// CI runs the full check (spec.checks), and start a Task from a goal with the
-// Container's Crew. server.mjs passes on
+// The Container page's writes, with actions on (design.md, UI actions): retry
+// a Failed scaffold through the c4.factory.io/retry annotation, answer the
+// Standard's files left out through c4.factory.io/standard-take or
+// c4.factory.io/standard-keep, set when CI runs the full check (spec.checks),
+// and start a Task from a goal with the Container's Crew. server.mjs passes on
 // exactly these requests; the CRDs decide the rest, so a refused write shows
 // the API server's message and nothing here copies their rules.
 
@@ -14,6 +15,28 @@ export const RETRY_ANNOTATION = 'c4.factory.io/retry'
 /** The merge patch that retries a scaffold: the annotation set to `at`, a value it never had. */
 export function retryPatch(at: Date): { metadata: { annotations: Record<string, string> } } {
   return { metadata: { annotations: { [RETRY_ANNOTATION]: at.toISOString() } } }
+}
+
+/** The annotation that makes the operator take the Standard's version, at its value's ref, of the files left out. */
+export const STANDARD_TAKE_ANNOTATION = 'c4.factory.io/standard-take'
+
+/** The annotation that makes the operator keep the repository's version, at its value's ref, of the files left out. */
+export const STANDARD_KEEP_ANNOTATION = 'c4.factory.io/standard-keep'
+
+/** A person's answer to the Standard's files left out: take the Standard's version, or keep the repository's. */
+export type StandardAnswer = 'take' | 'keep'
+
+/**
+ * The merge patch that answers the files left out: the answer's annotation set
+ * to `ref`, the Standard's ref in the Container's status, which the operator
+ * checks it against.
+ */
+export function standardAnswerPatch(
+  answer: StandardAnswer,
+  ref: string,
+): { metadata: { annotations: Record<string, string> } } {
+  const key = answer === 'take' ? STANDARD_TAKE_ANNOTATION : STANDARD_KEEP_ANNOTATION
+  return { metadata: { annotations: { [key]: ref } } }
 }
 
 /** A Task before the API server names it. */
@@ -44,9 +67,15 @@ export function checksPatch(checks: ChecksMode): { op: 'add'; path: '/spec/check
   return [{ op: 'add', path: '/spec/checks', value: checks }]
 }
 
-/** Retries a Container's scaffold, sets its checks and starts Tasks on it; rejects with the API's message when it refuses. */
+/**
+ * Retries a Container's scaffold, answers its Standard's files left out, sets
+ * its checks and starts Tasks on it; rejects with the API's message when it
+ * refuses.
+ */
 export interface ContainerWriter {
   retry(namespace: string, name: string): Promise<void>
+  /** Takes or keeps the files left out at `ref`, the Standard's ref in the Container's status. */
+  answerStandard(namespace: string, name: string, answer: StandardAnswer, ref: string): Promise<void>
   setChecks(namespace: string, name: string, checks: ChecksMode): Promise<void>
   /** Resolves to the new Task's name. */
   startTask(namespace: string, container: string, crew: Crew, goal: string): Promise<string>
@@ -74,6 +103,15 @@ export class LiveContainerWriter implements ContainerWriter {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/merge-patch+json', Accept: 'application/json' },
       body: JSON.stringify(retryPatch(this.now())),
+    })
+  }
+
+  async answerStandard(namespace: string, name: string, answer: StandardAnswer, ref: string): Promise<void> {
+    const path = `${resourcePath(RESOURCES.containers, namespace)}/${encodeURIComponent(name)}`
+    await this.send(`${this.baseUrl}${path}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/merge-patch+json', Accept: 'application/json' },
+      body: JSON.stringify(standardAnswerPatch(answer, ref)),
     })
   }
 

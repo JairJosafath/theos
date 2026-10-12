@@ -55,7 +55,15 @@ describe('needs', () => {
   const cases: {
     name: string
     input: NeedsInput
-    want: { kind: string; reason: string; message: string; links?: string[]; command?: string; place: string }
+    want: {
+      kind: string
+      reason: string
+      message: string
+      links?: string[]
+      command?: string
+      standardAnswer?: { ref: string; take: string; keep: string }
+      place: string
+    }
   }[] = [
     {
       name: 'a Brief waiting for input',
@@ -145,6 +153,11 @@ describe('needs', () => {
         reason: 'FilesBehind',
         message: 'go-standard is at v3, but its updates left out',
         links: ['https://git.example/shop/api/pulls/3'],
+        standardAnswer: {
+          ref: 'v3',
+          take: 'kubectl -n shop annotate container api c4.factory.io/standard-take=v3',
+          keep: 'kubectl -n shop annotate container api c4.factory.io/standard-keep=v3',
+        },
         place: 'Container',
       },
     },
@@ -259,6 +272,7 @@ describe('needs', () => {
     expect(item.message).toBe(want.message)
     expect(item.links.map((l) => l.url)).toEqual(want.links ?? [])
     expect(item.command).toBe(want.command)
+    expect(item.standardAnswer).toEqual(want.standardAnswer)
     // An object page where the kind has one, else an area.
     const to = item.place.to
     expect('page' in to ? to.page.kind : to.area).toBe(want.place)

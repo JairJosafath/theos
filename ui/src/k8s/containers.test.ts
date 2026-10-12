@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { LiveContainerWriter, checksPatch, retryPatch, taskManifest } from './containers'
+import { LiveContainerWriter, checksPatch, retryPatch, standardAnswerPatch, taskManifest } from './containers'
 import type { Crew } from './types'
 
 function respond(status: number, body: unknown): Response {
@@ -15,6 +15,15 @@ const at = new Date('2026-10-09T03:00:00Z')
 describe('retryPatch and taskManifest', () => {
   it('sets only the retry annotation, to the time', () => {
     expect(retryPatch(at)).toEqual({ metadata: { annotations: { 'c4.factory.io/retry': '2026-10-09T03:00:00.000Z' } } })
+  })
+
+  it('sets only the take or the keep annotation, to the Standard’s ref', () => {
+    expect(standardAnswerPatch('take', 'v1.4.0')).toEqual({
+      metadata: { annotations: { 'c4.factory.io/standard-take': 'v1.4.0' } },
+    })
+    expect(standardAnswerPatch('keep', 'v1.4.0')).toEqual({
+      metadata: { annotations: { 'c4.factory.io/standard-keep': 'v1.4.0' } },
+    })
   })
 
   it('makes an Implement Task for the Container with its Crew’s Agents, named by the API server', () => {
@@ -48,6 +57,16 @@ describe('LiveContainerWriter', () => {
     })
   })
 
+  it('answers the Standard’s files left out with a merge patch on the Container', async () => {
+    const fetchImpl = vi.fn(async () => respond(200, {}))
+    await new LiveContainerWriter('k8s', fetchImpl).answerStandard('webshop', 'orders-api', 'keep', 'v1.4.0')
+    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/merge-patch+json', Accept: 'application/json' },
+      body: JSON.stringify(standardAnswerPatch('keep', 'v1.4.0')),
+    })
+  })
+
   it('sets the checks with a JSON patch of spec.checks alone', async () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveContainerWriter('k8s', fetchImpl).setChecks('webshop', 'orders-api', 'BeforeRelease')
@@ -78,6 +97,9 @@ describe('LiveContainerWriter', () => {
       new LiveContainerWriter('k8s', fetchImpl).startTask('webshop', 'orders-api', crew, ''),
     ).rejects.toThrow(message)
     await expect(new LiveContainerWriter('k8s', fetchImpl).retry('webshop', 'orders-api')).rejects.toThrow(message)
+    await expect(
+      new LiveContainerWriter('k8s', fetchImpl).answerStandard('webshop', 'orders-api', 'take', 'v1'),
+    ).rejects.toThrow(message)
     await expect(
       new LiveContainerWriter('k8s', fetchImpl).setChecks('webshop', 'orders-api', 'BeforeRelease'),
     ).rejects.toThrow(message)

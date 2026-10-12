@@ -19,9 +19,9 @@
 // server retires the planned prompts past the newest ten in the same patch)
 // or adds a boolean at /spec/paused. With UI_ACTIONS=service-account (over port-forward) the table
 // also takes design.md's UI actions: a Brief's and a Crew's settings, a
-// release re-run, a Container's scaffold retry, a Task from a goal and a
-// Standard's ref. With UI_ACTIONS=oidc every write needs a person signed in,
-// and is made as them: Impersonate-User and Impersonate-Group, names the
+// release re-run, a Container's scaffold retry, its answer to the Standard's
+// files left out (take or keep), a Task from a goal and a Standard's ref.
+// With UI_ACTIONS=oidc every write needs a person signed in, and is made as them: Impersonate-User and Impersonate-Group, names the
 // server takes from their ID token. Reads stay the UI's own.
 // Every other method on /k8s gets 405, every other write 403. The browser's
 // own headers (cookies, Authorization, impersonation) never go upstream.
@@ -486,6 +486,20 @@ const ACTIONS = [
     path: resourcePath('containers', true),
     type: MERGE_PATCH,
     check: setsAnnotation('c4.factory.io/retry'),
+  },
+  {
+    what: 'set annotation c4.factory.io/standard-take on a Container',
+    method: 'PATCH',
+    path: resourcePath('containers', true),
+    type: MERGE_PATCH,
+    check: setsAnnotation('c4.factory.io/standard-take'),
+  },
+  {
+    what: 'set annotation c4.factory.io/standard-keep on a Container',
+    method: 'PATCH',
+    path: resourcePath('containers', true),
+    type: MERGE_PATCH,
+    check: setsAnnotation('c4.factory.io/standard-keep'),
   },
   {
     what: "set a Container's /spec/checks",

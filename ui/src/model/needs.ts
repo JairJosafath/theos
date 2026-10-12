@@ -8,7 +8,7 @@ import { findCondition } from '../k8s/types'
 import type { Area } from './areas'
 import { failureAnswered } from './attention'
 import { time } from './factory'
-import { hasPage } from './lifecycle'
+import { hasPage, standardKeepCommand, standardTakeCommand } from './lifecycle'
 
 export type NeedKind = 'Brief' | 'Container' | 'Task' | 'Crew'
 
@@ -36,6 +36,11 @@ export interface Need {
   links: { label: string; url: string }[]
   /** The command that does it, when no page can. */
   command?: string
+  /**
+   * The two answers to a Standard's files left out, at the Standard's ref the
+   * Container's status names: a button each with actions on, else their commands.
+   */
+  standardAnswer?: { ref: string; take: string; keep: string }
 }
 
 export interface NeedsInput {
@@ -156,6 +161,11 @@ function containerNeeds(c: Container): Need[] {
       ...why(updated, 'FilesBehind'),
       place,
       links: urls.map((url) => ({ label: 'The update pull request', url })),
+      standardAnswer: {
+        ref: c.status?.standard?.ref ?? '',
+        take: standardTakeCommand(c),
+        keep: standardKeepCommand(c),
+      },
     })
   }
   return items

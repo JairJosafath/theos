@@ -36,6 +36,22 @@ type Hunk struct {
 // lines and a missing final newline come through as the side that wrote them
 // left them. A binary file is refused with ErrBinary.
 func Merge3(base, ours, theirs []byte) ([]byte, []Hunk, error) {
+	merged, hunks, err := merge3(base, ours, theirs)
+	if err != nil || len(hunks) > 0 {
+		return nil, hunks, err
+	}
+	return merged, nil, nil
+}
+
+// MergeTheirs merges like Merge3, but resolves each Hunk to theirs: it returns
+// the merged content and the Hunks it resolved, whose Ours are the lines it
+// drops. A binary file is refused with ErrBinary.
+func MergeTheirs(base, ours, theirs []byte) ([]byte, []Hunk, error) {
+	return merge3(base, ours, theirs)
+}
+
+// merge3 is Merge3 with each Hunk resolved to theirs.
+func merge3(base, ours, theirs []byte) ([]byte, []Hunk, error) {
 	for _, data := range [][]byte{base, ours, theirs} {
 		if bytes.IndexByte(data[:min(len(data), binaryPeek)], 0) >= 0 {
 			return nil, nil, ErrBinary
@@ -98,18 +114,16 @@ func Merge3(base, ours, theirs []byte) ([]byte, []Hunk, error) {
 			merged = append(merged, theirsLines...)
 		default:
 			hunks = append(hunks, Hunk{Start: lo, End: hi, Ours: oursLines, Theirs: theirsLines})
+			merged = append(merged, theirsLines...)
 		}
 		pos = hi
-	}
-	if len(hunks) > 0 {
-		return nil, hunks, nil
 	}
 	merged = append(merged, b[pos:]...)
 	var out bytes.Buffer
 	for _, line := range merged {
 		out.WriteString(line)
 	}
-	return out.Bytes(), nil, nil
+	return out.Bytes(), hunks, nil
 }
 
 // edit is one change of a diff: base's lines [start, end) became the side's

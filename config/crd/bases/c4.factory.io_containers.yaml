@@ -476,6 +476,11 @@ spec:
                           a stopped update waits for the Standard's ref or the Container's effective
                           checks to change.
                         type: string
+                      take:
+                        description: |-
+                          take says the pull request takes the Standard's version at ref of the
+                          files behind, as a person answered with the standard-take annotation.
+                        type: boolean
                     required:
                     - ref
                     type: object

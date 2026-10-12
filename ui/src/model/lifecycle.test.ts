@@ -3,6 +3,7 @@ import type { Brief, Condition, Container, Crew, Relationship, Task } from '../k
 import {
   appliesConnector,
   containerNextStep,
+  describeStandardUpdate,
   crewNextStep,
   failedCondition,
   hasPage,
@@ -12,6 +13,7 @@ import {
   rerunReleaseCommand,
   resumeCrewCommand,
   retryCommand,
+  standardKeepCommand,
   taskNextStep,
   type LifecycleKind,
 } from './lifecycle'
@@ -211,6 +213,27 @@ describe('containerNextStep', () => {
     expect(containerNextStep(c)?.text).toMatch(/stopped the Standard update to v1\.3\.0/)
   })
 
+  it('reads a take whose checks failed, or that the factory stopped, as a take', () => {
+    const take = { ...update, ref: 'v1.2.0', take: true, paths: ['Makefile'] }
+    const failed = container({
+      phase: 'Ready',
+      standard: { name: 'go-standard', ref: 'v1.2.0', update: take },
+      conditions: [cond('StandardUpdated', 'False', 'ChecksFailed')],
+    })
+    expect(containerNextStep(failed)).toEqual({
+      text: expect.stringMatching(
+        /^Taking go-standard v1\.2\.0’s version waits: its checks failed\..*leave the files behind/,
+      ),
+      link: { href: update.pullRequestURL, label: 'Open pull request #7' },
+    })
+    const stopped = container({
+      phase: 'Ready',
+      standard: { name: 'go-standard', ref: 'v1.2.0', update: { ...take, stopped: 'UpdateRefused' } },
+      conditions: [cond('StandardUpdated', 'False', 'UpdateRefused')],
+    })
+    expect(containerNextStep(stopped)?.text).toMatch(/stopped taking go-standard v1\.2\.0’s version/)
+  })
+
   it('names the files the updates left out, and the two answers', () => {
     const c = container({
       phase: 'Ready',
@@ -231,6 +254,7 @@ describe('containerNextStep', () => {
     expect(next?.text).toMatch(/c4\.factory\.io\/standard-keep=v1\.3\.0/)
     expect(next?.text).not.toMatch(/by hand/)
     expect(next?.command).toBe('kubectl -n shop annotate container api c4.factory.io/standard-take=v1.3.0')
+    expect(standardKeepCommand(c)).toBe('kubectl -n shop annotate container api c4.factory.io/standard-keep=v1.3.0')
     expect(next?.link).toEqual({ href: 'https://git.example/shop/api/pulls/6', label: 'Open the update pull request' })
   })
 
@@ -516,5 +540,34 @@ describe('the read-only kinds', () => {
     }
     expect(relationshipPhase(uses)).toBeUndefined()
     expect(appliesConnector(uses)).toBe(false)
+  })
+})
+
+describe('describeStandardUpdate', () => {
+  const at = (update: NonNullable<NonNullable<Container['status']>['standard']>['update']) =>
+    container({ phase: 'Ready', standard: { name: 'go-standard', ref: 'v1.2.0', update } })
+
+  it('reads an update as one from ref to ref', () => {
+    expect(describeStandardUpdate(at({ ref: 'v1.3.0', pullRequestURL: 'https://git.example/pulls/7' }))).toEqual({
+      title: 'Standard update to v1.3.0',
+      text: 'The factory merges its pull request once its checks pass.',
+    })
+    expect(describeStandardUpdate(at({ ref: 'v1.3.0', stopped: 'UpdateClosed' }))?.text).toBe(
+      'Stopped (UpdateClosed); it waits until the Standard’s ref changes again.',
+    )
+  })
+
+  it('reads a take as a take of the Standard’s version of its paths', () => {
+    const take = { ref: 'v1.2.0', take: true, paths: ['Makefile', '.golangci.yml'] }
+    expect(describeStandardUpdate(at({ ...take, pullRequestURL: 'https://git.example/pulls/9' }))).toEqual({
+      title: 'Taking go-standard v1.2.0’s version',
+      text: 'Its pull request takes go-standard v1.2.0’s version of Makefile, .golangci.yml; the factory merges it once CI passes.',
+    })
+    expect(describeStandardUpdate(at(take))?.text).toMatch(/^The factory is preparing the pull request that takes/)
+    expect(describeStandardUpdate(at({ ...take, stopped: 'UpdateRefused' }))?.text).toMatch(/files stay behind/)
+  })
+
+  it('is nothing without an update', () => {
+    expect(describeStandardUpdate(container({ phase: 'Ready' }))).toBe(undefined)
   })
 })

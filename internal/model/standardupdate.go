@@ -43,6 +43,9 @@ type StandardUpdateInFlight struct {
 	Commit string
 	// Paths are the paths the update planned to change.
 	Paths []string
+	// Take says the pull request takes the Standard's version at Ref of the
+	// files updates left out, as a person answered, instead of updating to Ref.
+	Take bool
 }
 
 // UpdatePullRequest is what the Git host says about an update's pull request.
@@ -93,6 +96,9 @@ const (
 	// StandardStopClosed stops an update a person closed without merging and
 	// deletes its branch.
 	StandardStopClosed StandardAction = "StopClosed"
+	// StandardTakeClosed forgets a take a person closed without merging and
+	// deletes its branch: the files stay behind, waiting on a person.
+	StandardTakeClosed StandardAction = "TakeClosed"
 	// StandardStopPushed stops an update someone else pushed to.
 	StandardStopPushed StandardAction = "StopPushed"
 	// StandardRefuseMerge stops an update whose pull request may not merge.
@@ -120,7 +126,8 @@ type StandardStep struct {
 
 // NextStandardStep decides the next step of a Standard update. The operator
 // takes it, adds what it read or changed to the facts, and asks again until a
-// step ends the pass: every step but the reads, RecordMerge, Drop and Forget does.
+// step ends the pass: every step but the reads, RecordMerge, Drop, Forget and
+// TakeClosed does.
 func NextStandardStep(f StandardUpdateFacts) StandardStep {
 	u := f.Update
 	target := StandardVersion{Ref: f.Target, Checks: f.TargetMode}.Normal()
@@ -150,6 +157,8 @@ func NextStandardStep(f StandardUpdateFacts) StandardStep {
 			return StandardStep{Action: StandardReadPR, Quiet: true}
 		case f.PR.Merged:
 			return StandardStep{Action: StandardRecordMerge}
+		case f.PR.Closed && u.Take:
+			return StandardStep{Action: StandardTakeClosed}
 		}
 		return StandardStep{Action: StandardNone}
 	}
@@ -165,6 +174,8 @@ func followStep(f StandardUpdateFacts) StandardStep {
 		return StandardStep{Action: StandardReadPR}
 	case pr.Merged:
 		return StandardStep{Action: StandardRecordMerge}
+	case pr.Closed && u.Take:
+		return StandardStep{Action: StandardTakeClosed}
 	case pr.Closed:
 		return StandardStep{Action: StandardStopClosed, Message: fmt.Sprintf(
 			"Pull request %s was closed without merging; %s stays at %s until its ref or the checks change again",

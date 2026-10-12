@@ -16,6 +16,11 @@ func TestNextStandardStep(t *testing.T) {
 		u.Stopped, u.PullRequest = reason, pr
 		return u
 	}
+	take := func(stoppedFor string) *StandardUpdateInFlight {
+		u := running()
+		u.Take, u.Stopped, u.Branch = true, stoppedFor, "standard-take/python-strict-v2"
+		return u
+	}
 	open := &UpdatePullRequest{Mergeable: true, HeadSHA: "abc"}
 	green := map[string]string{"check": "success"}
 	// following is an update in flight at the target whose pull request, unless
@@ -101,6 +106,19 @@ func TestNextStandardStep(t *testing.T) {
 				PR: &UpdatePullRequest{Closed: true}},
 			want: StandardStopClosed, message: "Pull request " + url +
 				" was closed without merging; python-strict stays at v1 until its ref or the checks change again"},
+		{name: "a take closed without merging is forgotten",
+			facts: StandardUpdateFacts{Ref: "v2", Target: "v2", Update: take(""), PR: &UpdatePullRequest{Closed: true}},
+			want:  StandardTakeClosed},
+		{name: "a stopped take closed without merging is forgotten",
+			facts: StandardUpdateFacts{Ref: "v2", Target: "v2", Update: take("UpdateRefused"),
+				PR: &UpdatePullRequest{Closed: true}},
+			want: StandardTakeClosed},
+		{name: "a merged take is recorded",
+			facts: StandardUpdateFacts{Ref: "v2", Target: "v2", Update: take(""), PR: &UpdatePullRequest{Merged: true}},
+			want:  StandardRecordMerge},
+		{name: "a take the Standard moved past is dropped",
+			facts: StandardUpdateFacts{Ref: "v2", Target: "v3", Update: take(""), PR: open},
+			want:  StandardDrop},
 		{name: "an update that conflicts with main is dropped",
 			facts: StandardUpdateFacts{Ref: "v1", Target: "v2", Update: running(),
 				PR: &UpdatePullRequest{HeadSHA: "abc"}},

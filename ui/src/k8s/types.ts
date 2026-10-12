@@ -155,6 +155,8 @@ export interface Container extends K8sObject {
       /** The Standard update in flight, or the last one, stopped. */
       update?: {
         ref: string
+        /** The pull request takes the Standard's version at ref of the files behind, as a person answered. */
+        take?: boolean
         branch?: string
         commit?: string
         pullRequest?: number
