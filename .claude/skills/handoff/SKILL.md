@@ -111,7 +111,11 @@ Lost claim (the heartbeat hook says so):
 ## Finish
 
 - **Landed:** the pull request says `Closes #N` and is merged as AGENTS.md
-  ("How to Work") says, with `hack/lib/github.sh merge PR` (a merge commit). If N is still open: `hack/lib/github.sh close N FILE`,
+  ("How to Work") says, with `hack/lib/github.sh merge PR` (a merge commit).
+  `merge` refuses a branch behind main: two pull requests that each passed
+  `make check` alone can still break main together. Then `git fetch origin &&
+  git merge origin/main`, rerun `make check`, push and run `merge` again
+  (another may land meanwhile; repeat until it merges). If N is still open: `hack/lib/github.sh close N FILE`,
   FILE naming the pull request, SHAs and evidence. An issue with no plan is
   finished by its own pull request: its body says `Closes #N`, and neither the
   body nor a commit message says `Refs #N` (that is only a plan's), or `merge`

@@ -82,7 +82,10 @@
 #                                        prose or a commit message) or GitHub's closingIssuesReferences would
 #                                        still close N: a plan's pull request must not close its parent. Refused too
 #                                        when it would close an issue no line starts with Closes, Fixes or Resolves #N
-#                                        for (prose such as "its PR closes #9"), naming the line to reword
+#                                        for (prose such as "its PR closes #9"), naming the line to reword, and
+#                                        when its head is behind its base (main): two pull requests green alone can
+#                                        make main red together, so merge main into the branch, rerun make check,
+#                                        push and merge again
 #   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N; drops N's status labels
 #   hack/lib/github.sh closed N          drop closed issue N's status/* labels (open N is left alone); the
 #                                        Issue closed workflow runs it, for issues a pull request's Closes #N closes
@@ -1475,12 +1478,16 @@ gh_close() {
 # fix's prose ("its PR closes #9") closes #9 too, and the message names the line.
 # Refused too when it would close an issue with a "Depends on #S" step still
 # open (gh_closes_check), or GitHub can't be asked whether it would.
+# Refused last when its head doesn't contain its base's current commit: two
+# pull requests that each pass make check alone can still fail together, so
+# only a branch that has main merged in and passed make check merges. The
+# merge is pinned to the head checked, so a push after the check refuses too.
 gh_merge() {
-  local pr=${1:?usage: merge PR} view text refs closing meant line n bad=
+  local pr=${1:?usage: merge PR} view text refs closing meant line n bad= base head behind
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
-      body closingIssuesReferences(first: 100) { nodes { number } } commits(last: 100) { nodes { commit { message } } } } } }' \
+      body baseRefName headRefOid closingIssuesReferences(first: 100) { nodes { number } } commits(last: 100) { nodes { commit { message } } } } } }' \
     --jq .data.repository.pullRequest) || return 1
   text=$(jq -r '.body // "", (.commits.nodes[]?.commit.message)' <<<"$view")
   closing=$(jq -r '.closingIssuesReferences.nodes[]?.number' <<<"$view")
@@ -1511,8 +1518,18 @@ gh_merge() {
   [ -z "$bad" ] || return 1
   # Nor may it close an issue with a Depends on step still open (closes-check).
   gh_closes_check - <<<"$text" || return 1
+  # Nor may it be behind its base: the merged tree is one no make check ran on.
+  base=$(jq -r '.baseRefName // "main"' <<<"$view")
+  head=$(jq -r '.headRefOid // empty' <<<"$view")
+  [ -n "$head" ] || { echo "github: #$pr: GitHub did not say its head commit; merge refused" >&2; return 1; }
+  behind=$(gh_api "repos/$C4_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
+    echo "github: #$pr: could not ask GitHub whether it is behind $base; merge refused" >&2; return 1; }
+  if [ "$behind" != 0 ]; then
+    echo "github: #$pr is $behind commit(s) behind $base: merge $base into its branch (git fetch origin && git merge origin/$base), rerun make check, push, and merge again" >&2
+    return 1
+  fi
   gh_token || return 1
-  gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge
+  gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge --match-head-commit "$head"
 }
 
 # gh_duplicate N M: comment on N that it duplicates M, close N as not planned

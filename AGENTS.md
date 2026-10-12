@@ -131,7 +131,10 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   every commit; open a pull request to main whose body
   says `Closes #N` for the GitHub issue it finishes (never `Refs #N`, in
   the body or a commit: that is only a plan's), and merge it with a merge
-  commit once `make check` passes (`hack/lib/github.sh merge PR`). No long-lived or stacked branches: each plan
+  commit once `make check` passes (`hack/lib/github.sh merge PR`). `merge`
+  refuses a branch behind main, since two pull requests green alone can make
+  main red together: merge `origin/main` into the branch, rerun `make check`,
+  push and merge again. No long-lived or stacked branches: each plan
   step lands on its own and leaves main working, with new behaviour off until
   the step that turns it on. When an issue is split into a plan and steps,
   the plan's pull request says `Refs #N`, never `Closes #N`, and no close, fix
