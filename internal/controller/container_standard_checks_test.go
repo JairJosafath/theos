@@ -76,9 +76,20 @@ var _ = Describe("Container Standard update of the checks", func() {
 			"Paths":  Equal([]string{checkWorkflow}), "LeftOut": BeEmpty(), "Stopped": BeEmpty()}))
 		Expect(getContainer(Default, ns).Status.Standard.Checks).To(Equal(c4v1alpha1.ChecksEveryChange),
 			"the checks are recorded once the update merges")
+		Eventually(func(g Gomega) {
+			g.Expect(checksApplied(g, ns)).To(MatchFields(IgnoreExtras, Fields{
+				"Status": Equal(metav1.ConditionFalse), "Reason": Equal(c4v1alpha1.ReasonPending),
+				"Message": Equal("CI runs the full check on every change until pull request " +
+					update.PullRequestURL + " merges")}))
+		}).Should(Succeed())
 
 		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAtChecks(ns, beforeRelease)
+		Eventually(func(g Gomega) {
+			cond := checksApplied(g, ns)
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonBeforeRelease))
+		}).Should(Succeed())
 		Expect(mainFile(ns, checkWorkflow)).To(Equal("check: make check-light\nfull: make check\n"))
 		head := gitFake.mainHead(ns, "orders-api")
 		Expect(head.Message).To(HavePrefix(
@@ -157,10 +168,56 @@ var _ = Describe("Container Standard update of the checks", func() {
 			g.Expect(standardCondition(g, container).Status).To(Equal(metav1.ConditionFalse))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 		Expect(mainFile(ns, checkWorkflow)).To(Equal("check: make test\n"))
+		Expect(checksApplied(Default, ns)).To(MatchFields(IgnoreExtras, Fields{
+			"Status": Equal(metav1.ConditionFalse), "Reason": Equal(c4v1alpha1.ReasonChecksLeftOut),
+			"Message": Equal("CI runs the full check on every change: the Standard update that brings it only " +
+				"before a release stopped (ChecksLeftOut); StandardUpdated says why")}))
 
 		By("forgetting it when the checks go back")
 		setChecks(ns, c4v1alpha1.ChecksEveryChange)
 		eventuallyAtChecks(ns, everyChange)
+		Eventually(func(g Gomega) {
+			cond := checksApplied(g, ns)
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonEveryChange))
+		}).Should(Succeed())
+	})
+
+	It("says CI runs the full check on every change when the Standard came after the scaffold", func() {
+		ns := newProjectNamespace()
+		createFactory(ns)
+		mustCreate(newSystem(ns, "webshop-core"),
+			newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService),
+			&c4v1alpha1.Standard{
+				ObjectMeta: objectMeta(ns, updatedStandard),
+				Spec: c4v1alpha1.StandardSpec{
+					CatalogEntrySpec: newCatalogSpec(templatesURL+ns+"/"+updatedStandard, "v1.0.0",
+						c4v1alpha1.ContainerTypeService),
+					SupportedFrameworks: []string{"python-fastapi"},
+					ChecksBeforeRelease: true,
+				},
+			})
+		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+
+		Expect(patch(container, func() {
+			container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: updatedStandard}
+			container.Spec.Checks = c4v1alpha1.ChecksBeforeRelease
+		})).To(Succeed())
+		Eventually(func(g Gomega) {
+			cond := checksApplied(g, ns)
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonAddedAfterScaffold))
+			g.Expect(cond.Message).To(Equal("The Standard " + updatedStandard + " was not part of the scaffold, " +
+				"so its updates don't reach this Container; CI runs the full check on every change"))
+		}).Should(Succeed())
+
+		By("asking for what CI already runs")
+		setChecks(ns, c4v1alpha1.ChecksEveryChange)
+		Eventually(func(g Gomega) {
+			cond := checksApplied(g, ns)
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonEveryChange))
+		}).Should(Succeed())
 	})
 })
 
@@ -179,4 +236,11 @@ func openedUpdateTo(ns string, to model.StandardVersion) c4v1alpha1.StandardUpda
 		g.Expect(update.PullRequest).NotTo(BeZero())
 	}).WithTimeout(standardSteps).Should(Succeed())
 	return update
+}
+
+// checksApplied returns orders-api's ChecksApplied condition.
+func checksApplied(g Gomega, ns string) metav1.Condition {
+	cond := condition(getContainer(g, ns).Status.Conditions, c4v1alpha1.ConditionChecksApplied)
+	g.Expect(cond).NotTo(BeNil())
+	return *cond
 }
