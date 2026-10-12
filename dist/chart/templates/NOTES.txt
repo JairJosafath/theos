@@ -1,8 +1,11 @@
 c4factory is installed in namespace {{ .Release.Namespace }} as release {{ .Release.Name }}.
 
-The operator needs Agent Sandbox (its Sandbox kind) to start:
+The operator needs Agent Sandbox (its Sandbox kind) to start, its controller
+without leader election, which makes one replica exit on a busy host:
 
   kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
+  kubectl -n agent-sandbox-system patch deployment agent-sandbox-controller --type=json \
+    -p '[{"op":"replace","path":"/spec/template/spec/containers/0/args/0","value":"--leader-elect=false"}]'
 
 Check it:
 

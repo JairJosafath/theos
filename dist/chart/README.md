@@ -20,10 +20,14 @@ token, a model, an Agent and a Crew, and a Gitea issue they turn into a merged
 pull request.
 
 1. **Agent Sandbox.** The operator runs its agents in Sandboxes and won't start
-   without the `Sandbox` kind:
+   without the `Sandbox` kind. The patch turns off its controller's leader
+   election, which makes one replica exit on a busy host; run it alone on an
+   install made without it ([the guide](../../docs/getting-started.md) says why):
 
    ```bash
    kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
+   kubectl -n agent-sandbox-system patch deployment agent-sandbox-controller --type=json \
+     -p '[{"op":"replace","path":"/spec/template/spec/containers/0/args/0","value":"--leader-elect=false"}]'
    ```
 
 2. **The agents' token.** Make it once, in the release's namespace; the
