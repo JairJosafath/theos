@@ -275,10 +275,11 @@ func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1alpha
 	*orig = *brief.DeepCopy()
 	logf.FromContext(ctx).Info("Started Brief round", "round", status.Round, "newPrompts", len(taken),
 		"requests", len(status.RoundRequests), "tending", tend)
-	if len(status.Requests) > 0 {
-		// The workspace this reconcile wrote may list other requests than
-		// the round took, let through or closed since: the planner reads
-		// the round's.
+	if tend || len(status.Requests) > 0 {
+		// The workspace this reconcile wrote was the one between rounds: a
+		// tending round's planner must read that it tends (#871), and the
+		// workspace may list other requests than the round took, let through
+		// or closed since: the planner reads the round's.
 		if _, err := r.prepareWorkspace(ctx, brief); err != nil {
 			return err
 		}

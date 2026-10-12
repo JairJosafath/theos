@@ -216,7 +216,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&TaskReconciler{Client: taskStatusFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			StandardChangeRecheck: time.Second, PullRequestRecheck: time.Second, Recorder: mgr.GetEventRecorder("task"),
 			Now: taskNow},
-		&BriefReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
+		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
 			Issues: githubFake, Now: briefNow},

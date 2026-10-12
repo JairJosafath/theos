@@ -80,6 +80,11 @@ func awaitTendRound(ns string, round int) {
 		task := getTask(g, ns, fmt.Sprintf("cel-lens-plan-%d", round))
 		g.Expect(task.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelBriefRoundKind, c4v1alpha1.BriefRoundKindTend))
 		g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).To(ContainSubstring(model.TendingHeading))
+		// #871: the planner clones the workspace as it was when its Task was
+		// made, and reads it as a tending round's.
+		cloned, ok := planBriefs.briefAt(key(ns, task.Name))
+		g.Expect(ok).To(BeTrue())
+		g.Expect(cloned).To(ContainSubstring(model.TendingHeading))
 	}).Should(Succeed())
 }
 
