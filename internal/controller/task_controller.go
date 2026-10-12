@@ -270,6 +270,9 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	if status.PhaseChangedAt != nil {
 		facts.InPhase = r.now().Sub(status.PhaseChangedAt.Time)
 	}
+	if failedChecks(status) {
+		facts.FailedCommit = status.Commit
+	}
 	if status.AgentBackAt != nil {
 		facts.AgentBackIn = status.AgentBackAt.Sub(r.now())
 	}
@@ -347,7 +350,7 @@ func (r *TaskReconciler) checkFacts(ctx context.Context, task *c4v1alpha1.Task, 
 	status.Checks = &c4v1alpha1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
 	facts.Checks, facts.ChecksURL = checks.State, checks.URL
 	failed := checks.State == gitprovider.CheckFailure || checks.State == gitprovider.CheckError
-	facts.ChecksReruns = int(status.ChecksReruns)
+	facts.ChecksReruns, facts.ChecksRerunDue = int(status.ChecksReruns), status.ChecksRerunDue
 	if status.ChecksRerunAt != nil {
 		facts.ChecksRerunAt = status.ChecksRerunAt.Time
 		facts.SinceChecksRerun = r.now().Sub(status.ChecksRerunAt.Time)

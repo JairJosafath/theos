@@ -1044,6 +1044,71 @@ func TestKilledChecksRunAgain(t *testing.T) {
 	}
 }
 
+// TestPushedAgainRerunsChecks walks a round that pushes again the commit whose
+// checks failed in the round before: its failed jobs run again before the
+// checks are read, without counting towards MaxChecksReruns, while a new
+// commit's checks are read as they come.
+func TestPushedAgainRerunsChecks(t *testing.T) {
+	failed := TaskProgress{Phase: TaskChecking, Round: 1, Commit: "296c7ab", HasChecks: true, ChecksFailed: true}
+	next := NextRound(failed, "The CI checks failed")
+	if !next.HasChecks || next.Round != 2 {
+		t.Fatalf("NextRound() = %+v, want the failed checks kept into round 2", next)
+	}
+	if passed := NextRound(TaskProgress{Round: 1, Commit: "296c7ab", HasChecks: true}, "changes"); passed.HasChecks {
+		t.Errorf("NextRound() = %+v, want checks that didn't fail dropped", passed)
+	}
+
+	implemented := TaskFacts{Phase: TaskImplementing, Round: 2, MaxRounds: 3, FailedCommit: "296c7ab"}
+	for _, tt := range []struct {
+		name, commit string
+		want         TaskAction
+	}{
+		{"the failed commit again", "296c7ab", ActionRerunChecks},
+		{"a new commit", "abc1234", ActionOpenPR},
+	} {
+		f := implemented
+		f.Run = RunState{Started: true, Done: true, Result: &RunResult{Commit: tt.commit}}
+		if got := NextTaskStep(f); got.Action != tt.want {
+			t.Errorf("%s: NextTaskStep() = %+v, want %s", tt.name, got, tt.want)
+		}
+	}
+
+	p := PushedAgain(next, "296c7ab")
+	if p.Phase != TaskChecking || !p.ChecksRerunDue || p.HasChecks {
+		t.Fatalf("PushedAgain() = %+v, want Checking with a rerun due", p)
+	}
+	f := TaskFacts{Phase: TaskChecking, Round: 2, MaxRounds: 3, Checks: "failure", ChecksURL: "http://ci/962",
+		ChecksLog: "--- FAIL: TestRun (0.00s)\nFAIL\n", ChecksRerunDue: true, ChecksReruns: MaxChecksReruns}
+	got := NextTaskStep(f)
+	if got.Action != ActionRerunChecks || got.Feedback != "" || !strings.Contains(got.Message, "http://ci/962") {
+		t.Fatalf("NextTaskStep() = %+v, want ActionRerunChecks though the kills' reruns are spent", got)
+	}
+	running := f
+	running.CIRun = CIRun{Commit: "296c7ab", State: CIRunRunning, Started: time.Now(), Running: time.Minute}
+	if got := NextTaskStep(running); got.Action != ActionWait {
+		t.Errorf("another run still runs: NextTaskStep() = %+v, want ActionWait", got)
+	}
+
+	at := time.Date(2026, 10, 10, 14, 40, 0, 0, time.UTC)
+	p = RerunPushedChecks(p, at)
+	if p.ChecksRerunDue || !p.ChecksRerunAt.Equal(at) || p.ChecksReruns != 0 || p.Round != 2 {
+		t.Fatalf("RerunPushedChecks() = %+v, want the rerun at %s, not counted, in round 2", p, at)
+	}
+	f.ChecksRerunDue, f.ChecksRerunAt, f.SinceChecksRerun = false, at, time.Minute
+	f.CIRun = CIRun{Commit: "296c7ab", State: CIRunCompleted}
+	if got := NextTaskStep(f); got.Action != ActionWait {
+		t.Errorf("before the rerun ended: NextTaskStep() = %+v, want ActionWait, not the old failure", got)
+	}
+	f.ChecksRerunEnded = true
+	if got := NextTaskStep(f); got.Action != ActionRetry {
+		t.Errorf("the rerun failed: NextTaskStep() = %+v, want ActionRetry: the round is spent", got)
+	}
+
+	if opened := OpenedPR(p, "abc1234"); opened.ChecksRerunDue || opened.HasChecks {
+		t.Errorf("OpenedPR() = %+v, want no rerun due for a new commit", opened)
+	}
+}
+
 // TestKilledRunsFailureIsNotRead checks that a failed status read before a
 // run at the commit started since the rerun waits as pending checks do.
 func TestKilledRunsFailureIsNotRead(t *testing.T) {

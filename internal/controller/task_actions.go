@@ -105,7 +105,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionRerunChecks:
-		return r.rerunChecks(ctx, task, status, container, step)
+		return r.rerunChecks(ctx, task, status, container, agents, step)
 
 	case model.ActionAgentUnavailable:
 		if err := r.endRun(ctx, task, status); err != nil {
@@ -210,7 +210,11 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1alpha1.Task, stat
 		r.comment(ctx, task, status, container, fmt.Sprintf("Round %d: %s", status.Round,
 			extrasNote(task, run.Result.Extra)))
 	}
-	setProgress(status, model.OpenedPR(progressOf(status), run.Result.Commit))
+	if step.Action == model.ActionRerunChecks {
+		setProgress(status, model.PushedAgain(progressOf(status), run.Result.Commit))
+	} else {
+		setProgress(status, model.OpenedPR(progressOf(status), run.Result.Commit))
+	}
 	status.Summary = run.Result.Summary
 	status.PullRequest, status.PullRequestURL = int32(pr.Number), pr.URL
 	if failed := run.Result.CheckFailsOnBase; failed != "" {
@@ -696,9 +700,9 @@ func addTokens(tokens *c4v1alpha1.TokenUsage, add model.TokenUsage) *c4v1alpha1.
 func progressOf(status *c4v1alpha1.TaskStatus) model.TaskProgress {
 	p := model.TaskProgress{Phase: string(status.Phase), Round: int(status.Round),
 		ReviewAttempts: int(status.ReviewAttempts), ReviewAgains: int(status.ReviewAgains), Reruns: int(status.Reruns),
-		Restarts: int(status.Restarts), ChecksReruns: int(status.ChecksReruns),
-		Feedback: status.Feedback,
-		Commit:   status.Commit, HasChecks: status.Checks != nil, MergeWhenChecksPass: status.MergeWhenChecksPass}
+		Restarts: int(status.Restarts), ChecksReruns: int(status.ChecksReruns), ChecksRerunDue: status.ChecksRerunDue,
+		Feedback: status.Feedback, ChecksFailed: failedChecks(status),
+		Commit: status.Commit, HasChecks: status.Checks != nil, MergeWhenChecksPass: status.MergeWhenChecksPass}
 	if status.ChecksRerunAt != nil {
 		p.ChecksRerunAt = status.ChecksRerunAt.Time
 	}
@@ -706,6 +710,13 @@ func progressOf(status *c4v1alpha1.TaskStatus) model.TaskProgress {
 		p.ResumedRound = int(status.StandardChange.ResumedRound)
 	}
 	return p
+}
+
+// failedChecks reports whether the Task's recorded checks failed on its commit.
+func failedChecks(status *c4v1alpha1.TaskStatus) bool {
+	checks := status.Checks
+	return checks != nil && checks.Commit == status.Commit &&
+		(checks.State == gitprovider.CheckFailure || checks.State == gitprovider.CheckError)
 }
 
 // setProgress copies a transition's result back into status.
@@ -716,6 +727,7 @@ func setProgress(status *c4v1alpha1.TaskStatus, p model.TaskProgress) {
 	status.Feedback, status.Commit = p.Feedback, p.Commit
 	status.MergeWhenChecksPass = p.MergeWhenChecksPass
 	status.ChecksReruns, status.ChecksRerunAt = int32(p.ChecksReruns), nil
+	status.ChecksRerunDue = p.ChecksRerunDue
 	if !p.ChecksRerunAt.IsZero() {
 		status.ChecksRerunAt = &metav1.Time{Time: p.ChecksRerunAt}
 	}
@@ -745,12 +757,16 @@ func (r *TaskReconciler) finish(task *c4v1alpha1.Task, status *c4v1alpha1.TaskSt
 }
 
 // rerunChecks runs again the failed jobs of the CI runs at the round's commit,
-// which the machine killed for lack of memory, and waits for their result in
-// the same round. It waits while a run at the commit still runs, as the
+// which the machine killed for lack of memory or the round pushed again, and
+// waits for their result in the same round. Ending an implement run, it opens
+// the pull request first, and the checks run again once Checking. It waits while a run at the commit still runs, as the
 // Git host runs a run's jobs again only once it ended. A rerun the Git host
 // refuses fails the Task at no try.
 func (r *TaskReconciler) rerunChecks(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, step model.TaskStep) (ctrl.Result, error) {
+	container *c4v1alpha1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
+	if status.Phase == c4v1alpha1.TaskImplementing {
+		return r.openPR(ctx, task, status, container, agents, step)
+	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -768,21 +784,38 @@ func (r *TaskReconciler) rerunChecks(ctx context.Context, task *c4v1alpha1.Task,
 		return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
 	}
 	failed := model.FailedCommitRuns(runs)
+	if len(failed) == 0 && status.ChecksRerunDue {
+		// Nothing to run again: the failure is read as it stands.
+		status.ChecksRerunDue = false
+		r.progress(task, status, metav1.ConditionTrue, "Checking", fmt.Sprintf(
+			"The Git host lists no failed CI run at %s to run again; reading its checks", status.Commit))
+		return ctrl.Result{}, nil
+	}
 	if len(failed) == 0 {
 		return ctrl.Result{}, r.fail(ctx, task, status, container, model.ReasonNoCIResult, fmt.Sprintf(
 			"%s, but the Git host lists no failed CI run at %s to run again", step.Message, status.Commit))
 	}
 	for _, run := range failed {
 		if err := provider.RerunFailedJobs(gitCtx, repo, run.ID); err != nil {
+			why := "was killed for lack of memory"
+			if status.ChecksRerunDue {
+				why = "failed at a commit the agent pushed again"
+			}
 			return ctrl.Result{}, r.fail(ctx, task, status, container, model.ReasonNoCIResult, fmt.Sprintf(
-				"CI run %s was killed for lack of memory, and the Git host refused to run its failed jobs again: %v",
-				run.URL, err))
+				"CI run %s %s, and the Git host refused to run its failed jobs again: %v", run.URL, why, err))
 		}
 	}
-	setProgress(status, model.RerunChecks(progressOf(status), r.now()))
+	log := logf.FromContext(ctx)
+	if status.ChecksRerunDue {
+		setProgress(status, model.RerunPushedChecks(progressOf(status), r.now()))
+		log.Info("Rerunning the checks of a commit pushed again", "round", status.Round, "commit", status.Commit,
+			"runs", len(failed))
+	} else {
+		setProgress(status, model.RerunChecks(progressOf(status), r.now()))
+		log.Info("Rerunning checks killed for lack of memory", "round", status.Round,
+			"commit", status.Commit, "checksReruns", status.ChecksReruns, "runs", len(failed))
+	}
 	r.progress(task, status, metav1.ConditionTrue, "RerunningChecks", step.Message)
-	logf.FromContext(ctx).Info("Rerunning checks killed for lack of memory", "round", status.Round,
-		"commit", status.Commit, "checksReruns", status.ChecksReruns, "runs", len(failed))
 	return ctrl.Result{}, nil
 }
 

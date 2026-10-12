@@ -253,6 +253,12 @@ type TaskFacts struct {
 	ChecksRerunAt    time.Time
 	SinceChecksRerun time.Duration
 	ChecksRerunEnded bool
+	// ChecksRerunDue means the round pushed again the commit whose checks
+	// failed (PushedAgain): their failed jobs run again before they are read.
+	ChecksRerunDue bool
+	// FailedCommit is the commit whose checks failed in an earlier round, kept
+	// by NextRound; empty when none did.
+	FailedCommit string
 	// InPhase is how long the Task has been in its current phase.
 	InPhase time.Duration
 	// NoFreeSlot means the operator already runs as many agent sandboxes as it may.
@@ -760,8 +766,9 @@ const (
 	// ended while CI ran again: no try and no round is spent.
 	ActionReviewAgain TaskAction = "ReviewAgain"
 	// ActionRerunChecks runs again the failed jobs of the CI runs at the round's
-	// commit, which the machine killed for lack of memory, and waits for their
-	// result in the same round: the agent is told nothing.
+	// commit, which the machine killed for lack of memory or the round pushed
+	// again, and waits for their result in the same round: the agent is told
+	// nothing. Ending an implement run, it opens the pull request first.
 	ActionRerunChecks TaskAction = "RerunChecks"
 	// ActionAwaitPlanCheck records the plan a planner pushed and waits for the
 	// Brief's verdict on it.
@@ -829,6 +836,9 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		return blockedStep(f)
 
 	case TaskChecking:
+		if f.ChecksRerunDue && checksFailed(f.Checks) {
+			return pushedAgainStep(f)
+		}
 		if !f.ChecksRerunAt.IsZero() {
 			// The checks started again at the rerun: their wait counts from then.
 			f.CheckingSince, f.InPhase = f.ChecksRerunAt, min(f.InPhase, f.SinceChecksRerun)
@@ -888,6 +898,17 @@ func killedStep(f TaskFacts) TaskStep {
 	return TaskStep{Action: ActionFail, Reason: ReasonRunnerOutOfMemory, Message: fmt.Sprintf(
 		"CI run %s was killed for lack of memory, %d times in round %d; free memory on the runner or run fewer "+
 			"jobs at once", orUnknown(f.ChecksURL), MaxChecksReruns+1, f.Round)}
+}
+
+// pushedAgainStep runs again the failed jobs at a commit the round pushed
+// again: the failure read is the earlier round's. It waits first while a run
+// at the commit still runs, as killedStep does.
+func pushedAgainStep(f TaskFacts) TaskStep {
+	if f.CIRun.State == CIRunRunning || f.CIRun.State == CIRunQueued {
+		return checksPendingStep(f)
+	}
+	return TaskStep{Action: ActionRerunChecks, Message: fmt.Sprintf("The agent pushed the commit whose CI run %s "+
+		"failed again; running its failed jobs again in round %d", orUnknown(f.ChecksURL), f.Round)}
 }
 
 // rerunPendingStep waits for the failed jobs run again after a kill: the
@@ -1145,6 +1166,12 @@ func implementedStep(f TaskFacts) TaskStep {
 			"Standard change #%d did the whole issue: the branch has nothing beyond main", f.Change.Issue)}
 	}
 	msg := "The agent pushed " + short(res.Commit)
+	action := ActionOpenPR
+	if res.Commit != "" && res.Commit == f.FailedCommit {
+		// The agent found nothing to change: the old failure is not read again.
+		msg += " again, whose checks failed; its failed jobs run again"
+		action = ActionRerunChecks
+	}
 	if len(res.Extra) > 0 {
 		msg += fmt.Sprintf("; besides its Standard change's files it changes %s, which no Standard protects",
 			joinAnd(res.Extra))
@@ -1152,7 +1179,7 @@ func implementedStep(f TaskFacts) TaskStep {
 	if res.CheckFailsOnBase != "" {
 		msg += "; " + checkFailsOnBase
 	}
-	return TaskStep{Action: ActionOpenPR, Message: msg}
+	return TaskStep{Action: action, Message: msg}
 }
 
 // CheckCommand is the check every Standard's repository has: the agent's
