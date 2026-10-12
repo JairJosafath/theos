@@ -231,9 +231,12 @@ what it did. The tag must be the `version` of `dist/chart/Chart.yaml`, or
 that release (`make check` holds the two together).
 
 A release builds on the self-hosted runners' Docker, whose build cache a rerun
-reuses, so a step that leaves a broken layer fails every rerun too. The UI
-image's base is pinned by version and digest (`hack/check-pinned-images.sh`,
-in `make check`), and its `npm ci` step fails unless every native binding the
+reuses, so a step that leaves a broken layer fails every rerun too. Every
+image it builds starts from bases pinned by version and digest
+(`hack/check-pinned-images.sh`, in `make check`, #919), except the agent and
+runner images' `${BASE}`, our own toolchain image built in the same run; to
+take a newer base, bump the tag and its digest together (`docker buildx
+imagetools inspect IMAGE:TAG` prints the digest). The UI's `npm ci` step fails unless every native binding the
 lockfile lists for the platform is installed (`ui/scripts/check-native.mjs`):
 npm skips an optional package it fails to fetch without failing, which broke
 v0.19.0 (#912).

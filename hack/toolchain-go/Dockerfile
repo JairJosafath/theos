@@ -7,16 +7,16 @@
 # CI uses. uv installs the Python a project's `.python-version` pins on first
 # use.
 #
-# UV_VERSION is the one hack/toolchain-base/Dockerfile pins;
+# UV_IMAGE is the one hack/toolchain-base/Dockerfile pins;
 # hack/toolchain-uv_test.sh (make check) fails when they differ.
-ARG UV_VERSION=0.12.21
-FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711
+FROM ${UV_IMAGE} AS uv
 
 # The operator tools, at the versions this repository is built with (its
 # PROJECT, Makefile and go.mod); hack/toolchain-go/operator-tools_test.sh
 # (make check) fails when they differ. Built in their own stage, so their
 # module and build caches stay out of the image.
-FROM golang:1.26-bookworm AS operator-tools
+FROM golang:1.26.9-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c AS operator-tools
 
 ARG KUBEBUILDER_VERSION=4.16.0
 ARG CONTROLLER_TOOLS_VERSION=0.22.0
@@ -27,7 +27,7 @@ ARG ENVTEST_K8S_VERSION=1.37.0
 ENV GOBIN=/out/bin
 RUN mkdir -p /out/bin /out/kubebuilder/bin  && curl -fsSL -o /out/bin/kubebuilder       "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_linux_amd64"  && chmod 0755 /out/bin/kubebuilder  && curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"       | tar -xz -C /out/bin kustomize  && go install "sigs.k8s.io/controller-tools/cmd/controller-gen@v${CONTROLLER_TOOLS_VERSION}"  && go install "sigs.k8s.io/controller-runtime/tools/setup-envtest@v${SETUP_ENVTEST_VERSION}"  && cp -a "$(/out/bin/setup-envtest use "${ENVTEST_K8S_VERSION}" --bin-dir /tmp/envtest -p path)/." /out/kubebuilder/bin/  && chmod -R a+rX,u+w /out  && /out/bin/kubebuilder version && /out/bin/controller-gen --version  && /out/bin/kustomize version && ls /out/kubebuilder/bin
 
-FROM golang:1.26-bookworm
+FROM golang:1.26.9-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c
 
 ARG NODE_VERSION=24.21.0
 ARG GOLANGCI_LINT_VERSION=2.14.0
