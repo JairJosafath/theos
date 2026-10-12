@@ -253,6 +253,20 @@ spec:
                     description: url links to the check run.
                     type: string
                 type: object
+              checksRerunAt:
+                description: |-
+                  checksRerunAt is when the failed jobs last ran again; a failed status is
+                  read as their result only once every run at the commit ended, one started
+                  since.
+                format: date-time
+                type: string
+              checksReruns:
+                description: |-
+                  checksReruns counts the CI runs at this round's commit whose failed jobs
+                  ran again because the machine killed them for lack of memory, without
+                  spending the round.
+                format: int32
+                type: integer
               commit:
                 description: commit is the head of the branch the current round produced.
                 type: string

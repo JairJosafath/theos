@@ -247,6 +247,18 @@ type TaskStatus struct {
 	// +optional
 	Reruns int32 `json:"reruns,omitempty"`
 
+	// checksReruns counts the CI runs at this round's commit whose failed jobs
+	// ran again because the machine killed them for lack of memory, without
+	// spending the round.
+	// +optional
+	ChecksReruns int32 `json:"checksReruns,omitempty"`
+
+	// checksRerunAt is when the failed jobs last ran again; a failed status is
+	// read as their result only once every run at the commit ended, one started
+	// since.
+	// +optional
+	ChecksRerunAt *metav1.Time `json:"checksRerunAt,omitempty"`
+
 	// restarts counts how often this round started over in place: sent back to
 	// resolve conflicts with main, or resumed after its Standard change merged.
 	// It gives each run of the round a sandbox name of its own.

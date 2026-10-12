@@ -104,6 +104,9 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1alpha1.Task, statu
 		log.Info("Rerunning an interrupted run", "round", status.Round, "reruns", status.Reruns)
 		return ctrl.Result{}, nil // the status write triggers the next step
 
+	case model.ActionRerunChecks:
+		return r.rerunChecks(ctx, task, status, container, step)
+
 	case model.ActionAgentUnavailable:
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
@@ -693,9 +696,12 @@ func addTokens(tokens *c4v1alpha1.TokenUsage, add model.TokenUsage) *c4v1alpha1.
 func progressOf(status *c4v1alpha1.TaskStatus) model.TaskProgress {
 	p := model.TaskProgress{Phase: string(status.Phase), Round: int(status.Round),
 		ReviewAttempts: int(status.ReviewAttempts), ReviewAgains: int(status.ReviewAgains), Reruns: int(status.Reruns),
-		Restarts: int(status.Restarts),
+		Restarts: int(status.Restarts), ChecksReruns: int(status.ChecksReruns),
 		Feedback: status.Feedback,
 		Commit:   status.Commit, HasChecks: status.Checks != nil, MergeWhenChecksPass: status.MergeWhenChecksPass}
+	if status.ChecksRerunAt != nil {
+		p.ChecksRerunAt = status.ChecksRerunAt.Time
+	}
 	if status.StandardChange != nil {
 		p.ResumedRound = int(status.StandardChange.ResumedRound)
 	}
@@ -709,6 +715,10 @@ func setProgress(status *c4v1alpha1.TaskStatus, p model.TaskProgress) {
 	status.Reruns, status.Restarts = int32(p.Reruns), int32(p.Restarts)
 	status.Feedback, status.Commit = p.Feedback, p.Commit
 	status.MergeWhenChecksPass = p.MergeWhenChecksPass
+	status.ChecksReruns, status.ChecksRerunAt = int32(p.ChecksReruns), nil
+	if !p.ChecksRerunAt.IsZero() {
+		status.ChecksRerunAt = &metav1.Time{Time: p.ChecksRerunAt}
+	}
 	if !p.HasChecks {
 		status.Checks = nil
 	}
@@ -734,6 +744,48 @@ func (r *TaskReconciler) finish(task *c4v1alpha1.Task, status *c4v1alpha1.TaskSt
 	setCondition(&status.Conditions, task.Generation, ConditionSucceeded, succeeded, reason, message)
 }
 
+// rerunChecks runs again the failed jobs of the CI runs at the round's commit,
+// which the machine killed for lack of memory, and waits for their result in
+// the same round. It waits while a run at the commit still runs, as the
+// Git host runs a run's jobs again only once it ended. A rerun the Git host
+// refuses fails the Task at no try.
+func (r *TaskReconciler) rerunChecks(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container, step model.TaskStep) (ctrl.Result, error) {
+	provider, repo, err := r.gitRepo(ctx, container)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	found, err := provider.CommitRuns(gitCtx, repo, status.Commit)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	runs := workflowRuns(found)
+	if !model.RunsEnded(runs) {
+		r.progress(task, status, metav1.ConditionTrue, "Waiting",
+			step.Message+"; waiting for the CI runs at the commit to end first")
+		return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+	}
+	failed := model.FailedCommitRuns(runs)
+	if len(failed) == 0 {
+		return ctrl.Result{}, r.fail(ctx, task, status, container, model.ReasonNoCIResult, fmt.Sprintf(
+			"%s, but the Git host lists no failed CI run at %s to run again", step.Message, status.Commit))
+	}
+	for _, run := range failed {
+		if err := provider.RerunFailedJobs(gitCtx, repo, run.ID); err != nil {
+			return ctrl.Result{}, r.fail(ctx, task, status, container, model.ReasonNoCIResult, fmt.Sprintf(
+				"CI run %s was killed for lack of memory, and the Git host refused to run its failed jobs again: %v",
+				run.URL, err))
+		}
+	}
+	setProgress(status, model.RerunChecks(progressOf(status), r.now()))
+	r.progress(task, status, metav1.ConditionTrue, "RerunningChecks", step.Message)
+	logf.FromContext(ctx).Info("Rerunning checks killed for lack of memory", "round", status.Round,
+		"commit", status.Commit, "checksReruns", status.ChecksReruns, "runs", len(failed))
+	return ctrl.Result{}, nil
+}
+
 // fail ends the run and fails the Task for reason, saying why on its pull request
 // and handing its issue back to a person.
 func (r *TaskReconciler) fail(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
@@ -750,6 +802,9 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1alpha1.Task, status
 		why += "\n\nCI never reported, so this try doesn't count towards the limit; start or fix the runner first."
 	case model.ReasonRunnerOutOfSpace:
 		why += "\n\nThe runner ran out of room, so this try doesn't count towards the limit; free its space first."
+	case model.ReasonRunnerOutOfMemory:
+		why += "\n\nThe machine kept killing the checks for lack of memory, so this try doesn't count towards " +
+			"the limit; free memory on the runner or run fewer jobs at once first."
 	case model.ReasonApprovalRanOut:
 		why += "\n\nCI kept taking longer than a review run lasts, so this try doesn't count towards the limit; " +
 			"free or speed up the runner first."

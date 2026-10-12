@@ -316,30 +316,8 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	}
 
 	if status.Phase == c4v1alpha1.TaskChecking && status.Commit != "" {
-		provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, task.Namespace, container.Spec.GitProviderRef.Name)
-		if err != nil {
+		if err := r.checkFacts(ctx, task, status, container, &facts); err != nil {
 			return facts, err
-		}
-		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
-		defer cancel()
-		checks, err := provider.CombinedStatus(gitCtx, provider.Repository(container.Name), status.Commit)
-		if err != nil {
-			return facts, err
-		}
-		status.Checks = &c4v1alpha1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
-		facts.Checks, facts.ChecksURL = checks.State, checks.URL
-		if checks.State == gitprovider.CheckFailure || checks.State == gitprovider.CheckError {
-			// Best effort: without the log the agent still gets the link.
-			if log, err := provider.CheckLog(gitCtx, provider.Repository(container.Name), checks.URL); err == nil {
-				facts.ChecksLog = log
-			}
-		}
-		if checks.State != gitprovider.CheckSuccess && checks.State != gitprovider.CheckFailure &&
-			checks.State != gitprovider.CheckError {
-			facts.CIRun = r.ciRun(gitCtx, provider, provider.Repository(container.Name), status.Commit)
-		}
-		if status.PhaseChangedAt != nil {
-			facts.CheckingSince = status.PhaseChangedAt.Time
 		}
 	}
 
@@ -348,6 +326,50 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	}
 	r.approvalFacts(ctx, task, status, &facts)
 	return facts, nil
+}
+
+// checkFacts reads the CI result on the round's commit while the Task is
+// Checking: its state and failed log, and the runs at the commit while it
+// waits, or while a failure may still be the one from before a rerun.
+func (r *TaskReconciler) checkFacts(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+	container *c4v1alpha1.Container, facts *model.TaskFacts) error {
+	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, task.Namespace, container.Spec.GitProviderRef.Name)
+	if err != nil {
+		return err
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	repo := provider.Repository(container.Name)
+	checks, err := provider.CombinedStatus(gitCtx, repo, status.Commit)
+	if err != nil {
+		return err
+	}
+	status.Checks = &c4v1alpha1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
+	facts.Checks, facts.ChecksURL = checks.State, checks.URL
+	failed := checks.State == gitprovider.CheckFailure || checks.State == gitprovider.CheckError
+	facts.ChecksReruns = int(status.ChecksReruns)
+	if status.ChecksRerunAt != nil {
+		facts.ChecksRerunAt = status.ChecksRerunAt.Time
+		facts.SinceChecksRerun = r.now().Sub(status.ChecksRerunAt.Time)
+		if failed {
+			// Until the rerun ends, the failure is the killed run's.
+			facts.CIRun, facts.ChecksRerunEnded = r.rerunState(gitCtx, provider, repo, status)
+		}
+	}
+	if failed && (facts.ChecksRerunAt.IsZero() || facts.ChecksRerunEnded) {
+		// Best effort: without the log the agent still gets the link.
+		if log, err := provider.CheckLog(gitCtx, repo, checks.URL); err == nil {
+			facts.ChecksLog = log
+		}
+	}
+	// A failure whose runs still run waits for them before its jobs run again.
+	if checks.State != gitprovider.CheckSuccess && facts.CIRun == (model.CIRun{}) {
+		facts.CIRun = r.ciRun(gitCtx, provider, repo, status.Commit)
+	}
+	if status.PhaseChangedAt != nil {
+		facts.CheckingSince = status.PhaseChangedAt.Time
+	}
+	return nil
 }
 
 // approvalFacts reads whether the review run that approved a Standard change
@@ -362,6 +384,34 @@ func (r *TaskReconciler) approvalFacts(ctx context.Context, task *c4v1alpha1.Tas
 	}
 }
 
+// rerunState reads whether the runs at the Task's commit whose failed jobs ran
+// again have given their result, and the state of its runs while they haven't. Runs that can't
+// be read are unknown, which waits.
+func (r *TaskReconciler) rerunState(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	status *c4v1alpha1.TaskStatus) (model.CIRun, bool) {
+	runs, err := provider.CommitRuns(ctx, repo, status.Commit)
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read the CI runs of the Task's commit", "commit", status.Commit,
+			"error", err.Error())
+		return model.CIRun{Commit: status.Commit, State: model.CIRunUnknown}, false
+	}
+	seen := workflowRuns(runs)
+	if model.RerunEnded(seen, status.ChecksRerunAt.Time) {
+		return model.CIRun{}, true
+	}
+	return r.runState(ctx, provider, status.Commit, seen), false
+}
+
+// workflowRuns is the model's view of the Git host's runs.
+func workflowRuns(runs []gitprovider.WorkflowRun) []model.WorkflowRun {
+	seen := make([]model.WorkflowRun, 0, len(runs))
+	for _, run := range runs {
+		seen = append(seen, model.WorkflowRun{ID: run.ID, Workflow: run.Workflow, Event: run.Event,
+			Status: run.Status, Conclusion: run.Conclusion, Started: run.Started, URL: run.URL})
+	}
+	return seen
+}
+
 // ciRun reads the state of the CI runs at commit, whose checks have no result
 // yet, and whether a runner is online while one is queued. Runs that can't be
 // read are unknown, which waits up to model.QueuedChecksLimit.
@@ -374,10 +424,14 @@ func (r *TaskReconciler) ciRun(ctx context.Context, provider gitprovider.Provide
 		ci.State = model.CIRunUnknown
 		return ci
 	}
-	seen := make([]model.WorkflowRun, 0, len(runs))
-	for _, run := range runs {
-		seen = append(seen, model.WorkflowRun{Status: run.Status, Started: run.Started, URL: run.URL})
-	}
+	return r.runState(ctx, provider, commit, workflowRuns(runs))
+}
+
+// runState sums up the runs at commit, and whether a runner is online while
+// one is queued.
+func (r *TaskReconciler) runState(ctx context.Context, provider gitprovider.Provider, commit string,
+	seen []model.WorkflowRun) model.CIRun {
+	ci := model.CIRun{Commit: commit}
 	state, run := model.CommitRunState(seen)
 	ci.State, ci.URL, ci.Started = state, run.URL, run.Started
 	switch state {
