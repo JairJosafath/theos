@@ -426,7 +426,8 @@ func TestBehindChanges(t *testing.T) {
 	}
 
 	t.Run("a long change is cut at a line", func(t *testing.T) {
-		diff := []string{"@@ -1,300 +1,300 @@"}
+		diff := make([]string, 0, 300)
+		diff = append(diff, "@@ -1,300 +1,300 @@")
 		for n := range 299 {
 			diff = append(diff, fmt.Sprintf("+line %d of the Standard's longer file", n))
 		}
