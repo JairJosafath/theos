@@ -69,6 +69,22 @@ func TestStandInPlan(t *testing.T) {
 			issues: []string{"lend: Stand-in: start lend", "lend: Stand-in: Add a calendar."},
 		},
 		{
+			name: "a prompt naming AGENTS.md, titled without it",
+			ws: BriefWorkspace{Idea: "Neighbours lend tools.", IdeaPlanned: true, Catalog: noStandard,
+				Objects: []PlanObject{system, lend}, Prompts: []string{
+					"Add a note to `AGENTS.md` and docs/agents/reviewer.md: run make check as CI does.",
+				}},
+			issues: []string{"lend: Stand-in: Add a note to a protected file and a protected file: run make check as CI does."},
+		},
+		{
+			name: "a prompt with criteria of its own naming AGENTS.md",
+			ws: BriefWorkspace{Idea: "Neighbours lend tools.", IdeaPlanned: true, Catalog: noStandard,
+				Objects: []PlanObject{system, lend}, Prompts: []string{
+					"Tell the agents about CI.\n\n## Acceptance criteria\n\n- [ ] AGENTS.md says to run make check",
+				}},
+			issues: []string{"lend: Stand-in: Tell the agents about CI. ## Acceptance criteria - [ ] a protected file says to…"},
+		},
+		{
 			name: "prompts, for the Brief's Container",
 			ws: BriefWorkspace{Idea: "Neighbours lend tools.", IdeaPlanned: true, Catalog: noStandard,
 				Objects: []PlanObject{system, other, lend}, PromptsPlanned: 1, Prompts: []string{
