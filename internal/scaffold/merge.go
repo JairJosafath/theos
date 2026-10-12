@@ -164,9 +164,9 @@ func diffLines(base, side []string) ([]edit, error) {
 	// lcs[x][y] is the length of the longest common subsequence of b[x:] and s[y:].
 	width := len(s) + 1
 	lcs := make([]int32, (len(b)+1)*width)
-	for x := len(b) - 1; x >= 0; x-- {
-		for y := len(s) - 1; y >= 0; y-- {
-			if b[x] == s[y] {
+	for x, bl := range slices.Backward(b) {
+		for y, sl := range slices.Backward(s) {
+			if bl == sl {
 				lcs[x*width+y] = lcs[(x+1)*width+y+1] + 1
 			} else {
 				lcs[x*width+y] = max(lcs[(x+1)*width+y], lcs[x*width+y+1])
