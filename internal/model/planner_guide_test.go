@@ -29,10 +29,12 @@ func guideExampleFiles(t *testing.T, guide string) map[string]string {
 }
 
 // guideExampleCurrent is a first round's namespace: nothing yet, and a catalog
-// with the entries the guide's example names.
+// with the entries the guide's example names. The round takes the idea, so
+// it has a new prompt.
 func guideExampleCurrent() CurrentModel {
 	return CurrentModel{
 		Namespace: "shop",
+		NewPrompt: true,
 		Catalog: []CatalogEntry{
 			{Side: SideFramework, Name: "react-site", SupportedTypes: []string{TypeStaticSite}},
 			{Side: SideFramework, Name: "go-service", SupportedTypes: []string{TypeService}},
