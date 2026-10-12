@@ -404,6 +404,11 @@ func Protected(hasStandard bool) bool { return hasStandard }
 // may change them, whatever the Standard. A path ending in "/" is a directory.
 var PlatformProtectedPaths = []string{".c4factory.yaml", ".devcontainer/", ".gitea/"}
 
+// ProjectNotesPath is the project's own word to its agents about its workspace
+// and ways, read after AGENTS.md when the repository has it. No Standard
+// protects it, so any issue may change it; the factory writes no such file.
+const ProjectNotesPath = "docs/project-notes.md"
+
 // ReleaseTags is the tag pattern that releases a Container; only the operator's
 // Git user may push such tags, since release jobs hold the signing keys.
 const ReleaseTags = "v*"

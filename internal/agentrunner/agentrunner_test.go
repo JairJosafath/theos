@@ -105,6 +105,23 @@ func TestJobFromEnvStandardChange(t *testing.T) {
 	}
 }
 
+// TestPromptsProjectNotes pins that both prompts send the agent to the
+// project's notes right after AGENTS.md, and that AGENTS.md and the role
+// guide win where they disagree.
+func TestPromptsProjectNotes(t *testing.T) {
+	job, _ := JobFromEnv(env(nil))
+	ws := Workspace{Guide: "Write small functions."}
+	for name, prompt := range map[string]string{"implement": ImplementPrompt(job, ws), "review": ReviewPrompt(job, ws)} {
+		agents, notes := strings.Index(prompt, "AGENTS.md"), strings.Index(prompt, model.ProjectNotesPath)
+		if notes < 0 || agents < 0 || notes < agents {
+			t.Errorf("%s prompt names %s at %d, AGENTS.md first at %d; want it after", name, model.ProjectNotesPath, notes, agents)
+		}
+		if !strings.Contains(prompt, "Where it and AGENTS.md or your role guide disagree, AGENTS.md and the role guide win.") {
+			t.Errorf("%s prompt doesn't say AGENTS.md and the role guide win over the project's notes", name)
+		}
+	}
+}
+
 func TestPrompts(t *testing.T) {
 	job, _ := JobFromEnv(env(map[string]string{EnvFeedback: "Handle an empty image.", EnvRound: "2",
 		EnvContext: "Pocket Tools: works fully offline"}))
@@ -1504,7 +1521,7 @@ func TestReviewIsShownTheChangedImages(t *testing.T) {
 	added, changed := encoded(t, 936, 189, png.Encode), encoded(t, 640, 480, jpg)
 	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)
 	implement := filesAgent{files: map[string]string{"added.png": string(added), "shot.jpg": string(changed),
-		"Logo.SVG": string(svg), "broken.gif": "not a gif", "notes.md": "no image\n"}, summary: "done"}
+		"Logo.SVG": string(svg), "broken.gif": "not a gif", "readme-extra.md": "no image\n"}, summary: "done"}
 	if got := Run(ctx, testJob(t, url, RoleImplement, 1), implement, t.TempDir()); got.Error != "" {
 		t.Fatalf("implement = %+v", got)
 	}
@@ -1522,7 +1539,7 @@ func TestReviewIsShownTheChangedImages(t *testing.T) {
 			t.Errorf("review prompt lacks %q:\n%s", want, agent.prompt)
 		}
 	}
-	for _, unwanted := range []string{"same.png", "notes.md"} {
+	for _, unwanted := range []string{"same.png", "readme-extra.md"} {
 		if strings.Contains(agent.prompt, unwanted) {
 			t.Errorf("review prompt lists %s, which the change doesn't add or change as an image", unwanted)
 		}
