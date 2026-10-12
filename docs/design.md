@@ -556,15 +556,22 @@ model and context it needs.
   `Published` say how it went, with the reason; a failure is a Warning Event
   `ReleasePublishFailed`, once per reason, and is retried each poll. See
   [plans/done/release-publishing.md](plans/done/release-publishing.md).
-  *Planned:* with `publishReleases.source.path`, the release also brings the
-  app's source as of its tag into that folder of the repository, the
-  factory's own files (`AGENTS.md`, `docs/agents/`, `.c4factory.yaml`,
-  `.devcontainer/`, `.gitea/`) left out, tagged `source.tagPrefix` + the tag
-  (by default `<path>/vX.Y.Z`, the tag Go reads in a subfolder). It is one
-  commit on the default branch that changes only that folder, made through
-  GitHub's Git Data API with the same token, fast-forward only; folders of
-  apps sharing the repository may not overlap. The source goes first and the
-  release's tag names the same commit, so `Published` means both are out.
+  With `publishReleases.source.path`, the release also brings the app's
+  source as of its tag into that folder of the repository (`.` is the whole
+  repository), the factory's own files (`model.FactoryOwnPaths`: `AGENTS.md`,
+  `docs/agents/`, `.c4factory.yaml`, `.devcontainer/`, `.gitea/`) left out,
+  tagged `source.tagPrefix` + the tag (by default `<path>/vX.Y.Z`, the tag Go
+  reads in a subfolder). It is one commit on the default branch that replaces
+  only that folder, made through GitHub's Git Data API with the same token,
+  fast-forward only: a branch that moved on is built on at the next poll.
+  Folders of Crews publishing to one repository may not overlap (both fail
+  `FolderOverlaps`; a Brief's `spec.releases` refuses it at admission), and a
+  source tag on another folder tree is left alone (`SourceTagTaken`). The
+  source goes first and the release's tag names the same commit, so
+  `Published` means both are out; `status.lastRelease.publish.source` holds
+  the commit, tag and folder link, with a Normal Event `SourcePublished`. A
+  `go.mod` whose module path or tag `go install` can't find from GitHub
+  raises a Warning Event `SourceNotGoInstallable`, and is published anyway.
   See [plans/release-source.md](plans/release-source.md).
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other

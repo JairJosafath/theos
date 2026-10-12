@@ -172,6 +172,43 @@ spec:
                       so a library's release doesn't take Latest from it. A release published
                       before it changed keeps what it got.
                     type: boolean
+                  source:
+                    description: |-
+                      source puts the app's source, as of each release's tag, into a folder
+                      of the repository, with a tag of its own, so go install from GitHub
+                      finds it. The factory's own files are left out. Removing it stops
+                      publishing the source; what is on GitHub stays.
+                    properties:
+                      path:
+                        description: |-
+                          path is the folder, such as engine; "." is the whole repository. The
+                          folder is the app's: each release replaces what it holds. Two Crews
+                          publishing to one repository need folders apart, neither inside the
+                          other.
+                        maxLength: 100
+                        minLength: 1
+                        pattern: ^([.]|[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: path must have no '.', '..' or '.git' folder in
+                            it
+                          rule: self == '.' || !self.matches('(^|/)([.][.]?|[.][gG][iI][tT])(/|$)')
+                      tagPrefix:
+                        description: |-
+                          tagPrefix goes before the Crew's tag in the source's tag. Unset, it is
+                          the path and "/" (engine/v0.6.1, the tag go install looks for), and
+                          nothing for ".".
+                        maxLength: 101
+                        pattern: ^[A-Za-z0-9._/-]*$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: 'tagPrefix must make a git tag name: no leading
+                            ''.'', ''/'' or ''-'', no ''..'', ''//'' or ''/.'', and
+                            no folder ending in .lock'
+                          rule: '!self.matches(''^[./-]|//|/[.]|[.][.]|[.]lock(/|$)'')'
+                    required:
+                    - path
+                    type: object
                   tagPrefix:
                     description: |-
                       tagPrefix goes before the Crew's tag on the target, such as "cli-" when
@@ -406,6 +443,24 @@ spec:
                       message:
                         description: message says what happened last, and why it failed.
                         type: string
+                      source:
+                        description: |-
+                          source is the release's source on GitHub, once it is out, when the Crew
+                          publishes it.
+                        properties:
+                          commit:
+                            description: commit is the commit the source is in.
+                            type: string
+                          tag:
+                            description: tag is the source's tag.
+                            type: string
+                          url:
+                            description: url is the source folder at the tag.
+                            type: string
+                        required:
+                        - commit
+                        - tag
+                        type: object
                       state:
                         description: |-
                           state is Pending until the release runs succeed, Publishing while the

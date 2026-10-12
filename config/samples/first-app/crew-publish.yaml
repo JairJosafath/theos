@@ -1,8 +1,9 @@
 # The Crew of crew.yaml, tagging its releases and publishing each one to a
-# GitHub repository once its release runs succeed (docs/getting-started.md,
-# "Publish releases to GitHub"). It needs Secret orders-cli-github, with the
-# key token, which you create yourself. Not in kustomization.yaml: apply it
-# in place of crew.yaml with kubectl apply -n webshop -f crew-publish.yaml.
+# GitHub repository once its release runs succeed, with the app's source as of
+# its tag (docs/getting-started.md, "Publish releases to GitHub"). It needs
+# Secret orders-cli-github, with the key token, which you create yourself. Not
+# in kustomization.yaml: apply it in place of crew.yaml with
+# kubectl apply -n webshop -f crew-publish.yaml.
 apiVersion: c4.factory.io/v1alpha1
 kind: Crew
 metadata:
@@ -22,3 +23,8 @@ spec:
       repository: your-name/orders-cli
       tokenSecretRef:
         name: orders-cli-github
+    # The app's source, the factory's own files left out, at the repository's
+    # root, tagged as the release (v0.2.0); a folder such as cli would take
+    # the tag cli/v0.2.0 instead.
+    source:
+      path: "."

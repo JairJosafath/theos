@@ -67,6 +67,7 @@ type BriefSpec struct {
 	// +listMapKey=container
 	// +kubebuilder:validation:MaxItems=10
 	// +kubebuilder:validation:XValidation:rule="self.all(a, !has(a.requests) || !has(a.requests.mode) || a.requests.mode == 'Off' || self.exists_one(b, has(b.requests) && has(b.requests.mode) && b.requests.mode != 'Off' && b.github.repository.lowerAscii() == a.github.repository.lowerAscii()))",message="at most one releases entry per GitHub repository may take requests: an issue is read once"
+	// +kubebuilder:validation:XValidation:rule="self.all(a, !has(a.source) || self.all(b, b.container == a.container || !has(b.source) || b.github.repository.lowerAscii() != a.github.repository.lowerAscii() || !(a.source.path == '.' || b.source.path == '.' || a.source.path == b.source.path || a.source.path.startsWith(b.source.path + '/') || b.source.path.startsWith(a.source.path + '/'))))",message="two releases entries of one GitHub repository need source folders apart, neither inside the other"
 	// +optional
 	Releases []BriefRelease `json:"releases,omitempty"`
 
