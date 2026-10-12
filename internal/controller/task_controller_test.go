@@ -417,7 +417,7 @@ var _ = Describe("Task", func() {
 		task := getTask(Default, ns, "add-crop")
 		Expect(task.Status.Round).To(Equal(int32(2)))
 		Expect(task.Status.CostMilliUSD).To(Equal(int64(40)), "the review's cost is counted once")
-		var roles []string
+		roles := make([]string, 0, len(task.Status.Runs))
 		for _, run := range task.Status.Runs {
 			roles = append(roles, fmt.Sprintf("r%d-%s", run.Round, run.Role))
 		}
