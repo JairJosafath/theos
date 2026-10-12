@@ -24,6 +24,7 @@ const packages = {
     ...(process.platform === 'linux' && { libc: [libc] }),
   },
   'node_modules/native-not-aix': { optional: true, os: ['!aix'] },
+  'node_modules/native-not-here': { optional: true, os: [`!${process.platform}`] },
   'node_modules/native-aix': { optional: true, os: ['aix'], cpu: [process.arch] },
   'node_modules/native-other-cpu': { optional: true, os: [process.platform], cpu: ['s390x', 'mips'] },
   ...(process.platform === 'linux' && {
@@ -56,7 +57,7 @@ describe('check-native', () => {
     assert.equal(run.status, 1)
     assert.match(run.stderr, /node_modules\/native-here/)
     assert.match(run.stderr, /node_modules\/native-not-aix/)
-    assert.doesNotMatch(run.stderr, /native-aix|native-other-cpu|native-other-libc/)
+    assert.doesNotMatch(run.stderr, /native-aix|native-not-here|native-other-cpu|native-other-libc/)
   })
 
   it("fails when only this platform's binding is missing", () => {

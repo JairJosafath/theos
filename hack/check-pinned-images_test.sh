@@ -51,6 +51,13 @@ FROM \${IMG}"
 "$CHECK" "$T/Dockerfile" 2>/dev/null
 check "an ARG without a default fails" "$?" 1
 
+df "ARG IMG=node:24-alpine
+FROM alpine:3.24.2@$digest
+ARG IMG=node:24.21.0-alpine3.24@$digest
+FROM \${IMG}"
+"$CHECK" "$T/Dockerfile" 2>/dev/null
+check "an ARG after the first FROM doesn't resolve a FROM" "$?" 1
+
 df "FROM build AS build"
 "$CHECK" "$T/Dockerfile" 2>/dev/null
 check "a FROM naming its own stage fails" "$?" 1
