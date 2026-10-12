@@ -162,7 +162,10 @@ func planRoundCosting(ns string, round, try int, files scaffold.Tree, milliUSD *
 	GinkgoHelper()
 	task := fmt.Sprintf("cel-lens-plan-%d", round)
 	sandbox := fmt.Sprintf("%s-r%d-plan", task, try)
-	Eventually(func(g Gomega) { sandboxExists(g, ns, sandbox) }).Should(Succeed())
+	// The plan's Sandbox comes at the end of a chain of reconciles (the Brief's
+	// repo, its plan Task, the Task's Sandbox): give it a whole round, as the
+	// Brief specs do, not the suite's 10s default, which a loaded device ran out (#942).
+	Eventually(func(g Gomega) { sandboxExists(g, ns, sandbox) }).WithTimeout(wholeRound).Should(Succeed())
 	sha := gitFake.pushPlan(ns, briefRepo, round, files)
 	result := &agentrunner.Result{Role: "plan", Commit: sha,
 		Summary:      "I've rewritten the plan in `plan/` with the refusal fixed. Nothing is committed or pushed.",
