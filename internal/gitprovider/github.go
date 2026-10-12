@@ -27,6 +27,10 @@ const (
 	ReasonTagTaken = "TagTaken"
 	// ReasonGitHubError: anything else: 5xx, rate limits, the network.
 	ReasonGitHubError = "GitHubError"
+	// ReasonBranchProtected: GitHub refuses to move a protected branch.
+	ReasonBranchProtected = "BranchProtected"
+	// ReasonSourceTooLarge: a file is over GitHub's limit for a blob.
+	ReasonSourceTooLarge = "SourceTooLarge"
 )
 
 // ReleaseError is a failed ReleaseTarget call, with the reason it failed.
@@ -60,6 +64,9 @@ type TargetRelease struct {
 	Name    string
 	Body    string
 	Draft   bool
+	// Commit is what the tag is created at when a draft is published: a commit
+	// SHA, a branch, or "" for the default branch.
+	Commit string
 	// URL is the release's page.
 	URL string
 }
@@ -74,16 +81,20 @@ type TargetAsset struct {
 	Uploaded bool
 }
 
-// ReleaseTarget is a repository a Container's releases are published to. It has
-// release calls only: it never pushes a commit or changes a file.
+// ReleaseTarget is a repository a Container's releases are published to, with
+// their source: release calls, and the Git Data calls of a SourceTarget.
 type ReleaseTarget interface {
+	SourceTarget
 	// FindRelease returns the release, drafts included, whose body contains
 	// marker; failing that, the published release tagged tag; nil when there is
 	// neither.
 	FindRelease(ctx context.Context, tag, marker string) (*TargetRelease, error)
 	// CreateDraft creates a draft release of tag, named name, with body. The tag
-	// is created at the default branch's head when the draft is published.
-	CreateDraft(ctx context.Context, tag, name, body string) (TargetRelease, error)
+	// is created when the draft is published, at commit, or at the default
+	// branch's head when commit is "".
+	CreateDraft(ctx context.Context, tag, name, body, commit string) (TargetRelease, error)
+	// RetargetDraft sets the commit draft id's tag is created at.
+	RetargetDraft(ctx context.Context, id int64, commit string) (TargetRelease, error)
 	// ListAssets returns the files attached to release id.
 	ListAssets(ctx context.Context, id int64) ([]TargetAsset, error)
 	// UploadAsset streams size bytes of content to release id as the file name.
@@ -194,11 +205,14 @@ type githubRelease struct {
 	Name    string `json:"name"`
 	Body    string `json:"body"`
 	Draft   bool   `json:"draft"`
-	HTMLURL string `json:"html_url,omitempty"`
+	// TargetCommitish is GitHub's default branch's name when none was given.
+	TargetCommitish string `json:"target_commitish,omitempty"`
+	HTMLURL         string `json:"html_url,omitempty"`
 }
 
 func (r githubRelease) release() TargetRelease {
-	return TargetRelease{ID: r.ID, TagName: r.TagName, Name: r.Name, Body: r.Body, Draft: r.Draft, URL: r.HTMLURL}
+	return TargetRelease{ID: r.ID, TagName: r.TagName, Name: r.Name, Body: r.Body, Draft: r.Draft,
+		Commit: r.TargetCommitish, URL: r.HTMLURL}
 }
 
 type githubAsset struct {
@@ -249,10 +263,22 @@ func (g *githubReleases) FindRelease(ctx context.Context, tag, marker string) (*
 		Message: fmt.Sprintf("github: more than %d releases to look through", githubMaxPages*githubPageSize)}
 }
 
-func (g *githubReleases) CreateDraft(ctx context.Context, tag, name, body string) (TargetRelease, error) {
-	payload, _ := json.Marshal(githubRelease{TagName: tag, Name: name, Body: body, Draft: true})
+func (g *githubReleases) CreateDraft(ctx context.Context, tag, name, body, commit string) (TargetRelease, error) {
+	payload, _ := json.Marshal(githubRelease{TagName: tag, Name: name, Body: body, Draft: true, TargetCommitish: commit})
 	var r githubRelease
 	err := g.call(ctx, http.MethodPost, g.api, g.releases, payload, http.StatusCreated, "creating release "+tag, &r)
+	return r.release(), err
+}
+
+func (g *githubReleases) RetargetDraft(ctx context.Context, id int64, commit string) (TargetRelease, error) {
+	if commit == "" {
+		return TargetRelease{}, &ReleaseError{Reason: ReasonGitHubError,
+			Message: fmt.Sprintf("github: retargeting release %d: no commit", id)}
+	}
+	payload, _ := json.Marshal(map[string]string{"target_commitish": commit})
+	var r githubRelease
+	err := g.call(ctx, http.MethodPatch, g.api, g.releasePath(id), payload, http.StatusOK,
+		"retargeting release "+strconv.FormatInt(id, 10), &r)
 	return r.release(), err
 }
 
@@ -323,12 +349,12 @@ func (g *githubReleases) releasePath(id int64) string {
 	return g.releases + "/" + strconv.FormatInt(id, 10)
 }
 
-func (g *githubReleases) list(ctx context.Context, path string, page int, what string, out any) error {
+func (g *githubAPI) list(ctx context.Context, path string, page int, what string, out any) error {
 	query := fmt.Sprintf("?per_page=%d&page=%d", githubPageSize, page)
 	return g.call(ctx, http.MethodGet, g.api, path+query, nil, http.StatusOK, what, out)
 }
 
-func (g *githubReleases) call(ctx context.Context, method string, host *url.URL, path string, body []byte,
+func (g *githubAPI) call(ctx context.Context, method string, host *url.URL, path string, body []byte,
 	want int, what string, out any) error {
 	var reader io.Reader
 	if body != nil {
@@ -362,7 +388,7 @@ func setGitHubHeaders(req *http.Request, token string) {
 
 // send makes req and decodes a want response into out; any other response is a
 // ReleaseError with its reason.
-func (g *githubReleases) send(req *http.Request, want int, what string, out any) error {
+func (g *githubAPI) send(req *http.Request, want int, what string, out any) error {
 	resp, data, err := g.do(req)
 	if err != nil {
 		return &ReleaseError{Reason: ReasonGitHubError, Message: fmt.Sprintf("github: %s: %v", what, err)}
@@ -418,12 +444,19 @@ func githubFailure(resp *http.Response, data []byte, what string) *ReleaseError 
 		}
 	case http.StatusNotFound:
 		e.Reason = ReasonRepositoryNotFound
+	case http.StatusRequestEntityTooLarge:
+		e.Reason = ReasonSourceTooLarge
 	case http.StatusConflict:
-		if body.says("repository is empty") {
+		switch {
+		case body.protectedBranch():
+			e.Reason = ReasonBranchProtected
+		case body.says("repository is empty"):
 			e.Reason = ReasonEmptyRepository
 		}
 	case http.StatusUnprocessableEntity:
 		switch {
+		case body.protectedBranch():
+			e.Reason = ReasonBranchProtected
 		case body.says("repository is empty"):
 			e.Reason = ReasonEmptyRepository
 		case body.alreadyExists("tag_name"):
@@ -460,6 +493,12 @@ func (b githubErrorBody) says(text string) bool {
 		}
 	}
 	return false
+}
+
+// protectedBranch reports whether GitHub refused a ref update for the
+// branch's protection or a ruleset.
+func (b githubErrorBody) protectedBranch() bool {
+	return b.says("protected branch") || b.says("repository rule violation")
 }
 
 func (b githubErrorBody) alreadyExists(field string) bool {
