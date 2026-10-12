@@ -149,8 +149,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 		message := stoppedUpdate(ns, c4v1alpha1.ReasonChecksLeftOut)
 		Expect(message).To(Equal("CI can't change to run the full check only before a release: " + checkWorkflow +
 			" changed in the repository since v1.0.0 and doesn't merge with the change; CI keeps running it on " +
-			"every change until a person brings it in line with the Standard, or the Container's checks or the " +
-			"Standard's ref change again"))
+			"every change until the Container's checks or the Standard's ref change again"))
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
 			container := getContainer(g, ns)

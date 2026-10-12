@@ -279,10 +279,9 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		s.Update = stopped(c4v1alpha1.ReasonChecksLeftOut)
 		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonChecksLeftOut, fmt.Sprintf(
 			"CI can't change to run the full check %s: %s changed in the repository since %s and doesn't merge "+
-				"with the change; CI keeps running it %s until a person brings %s in line with the Standard, "+
-				"or the Container's checks or the Standard's ref change again",
-			checksWhen(to.Checks), strings.Join(blocked, ", "), from, checksWhen(from.Checks),
-			pronoun(len(blocked))))
+				"with the change; CI keeps running it %s until the Container's checks or the Standard's ref "+
+				"change again",
+			checksWhen(to.Checks), strings.Join(blocked, ", "), from, checksWhen(from.Checks)))
 		log.Info("Did not change the checks of a Container whose repository changed their files",
 			"standard", name, "from", from.String(), "to", to.String(), "leftOut", blocked)
 		return
@@ -530,10 +529,3 @@ func checksWhen(checks string) string {
 	return "on every change"
 }
 
-// pronoun is "it" for one file and "them" for more.
-func pronoun(n int) string {
-	if n == 1 {
-		return "it"
-	}
-	return "them"
-}
