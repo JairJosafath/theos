@@ -463,17 +463,48 @@ func TestTendSummaryAndCounts(t *testing.T) {
 	}
 	want := "Tried cli#1 again: The engine is merged now. Waits on cli#2: The engine has no release yet. " +
 		"Asks you about cli#3: It needs a paid API."
-	if got := TendSummary("", answers); got != want {
+	if got := TendSummary(AutopilotOn, "", answers); got != want {
 		t.Errorf("summary = %q, want %q", got, want)
 	}
-	if got := TendSummary(" Retried\nthe CLI. ", answers); got != "Retried the CLI." {
+	if got := TendSummary(AutopilotOn, " Retried\nthe CLI. ", answers); got != "Retried the CLI." {
 		t.Errorf("summary with summary.md = %q", got)
 	}
-	if got := TendSummary("", nil); got != "Decided nothing." {
+	if got := TendSummary(AutopilotAsk, "", nil); got != "Decided nothing." {
 		t.Errorf("empty summary = %q", got)
 	}
 	if r, c, w, a := TendCounts(answers); r != 1 || c != 0 || w != 1 || a != 1 {
 		t.Errorf("counts = %d %d %d %d", r, c, w, a)
+	}
+}
+
+// In Ask, a tending round that proposes a retry or a close says it proposes
+// and waits, whatever summary.md says, so it agrees with the counts and with
+// Needs you (#872).
+func TestTendSummaryInAsk(t *testing.T) {
+	planned := []FailedAnswer{
+		{Container: "ext", Issue: 299, Answer: AnswerRetry, Why: "Fetch the engine from Gitea as CI does."},
+		{Container: "ext", Issue: 353, Answer: AnswerClose, Why: "It is filed again, split."},
+		{Container: "ext", Issue: 4, Answer: AnswerAsk, Why: "Store pictures need the person."},
+	}
+	answers := TendAnswers(AutopilotAsk, planned, nil, true)
+	got := TendSummary(AutopilotAsk, "The fix goes back to its Crew. #353 is closed.", answers)
+	want := "Autopilot is Ask, so each proposal waits for your answer. " +
+		"Proposes trying ext#299 again: Fetch the engine from Gitea as CI does. " +
+		"Proposes closing ext#353: It is filed again, split. Asks you about ext#4: Store pictures need the person."
+	if got != want {
+		t.Errorf("summary = %q, want %q", got, want)
+	}
+	if r, c, _, a := TendCounts(answers); r != 0 || c != 0 || a != 3 {
+		t.Errorf("counts = %d retried, %d closed, %d asked", r, c, a)
+	}
+	// With nothing proposed, the planner's summary.md stands.
+	waits := []FailedAnswer{{Container: "ext", Issue: 4, Answer: AnswerWait, Why: "The engine has no release."}}
+	if got := TendSummary(AutopilotAsk, "Waits for the engine.", waits); got != "Waits for the engine." {
+		t.Errorf("summary without a proposal = %q", got)
+	}
+	// In On the same asks are the planner's own, and its summary.md stands.
+	if got := TendSummary(AutopilotOn, "Asks about three.", answers); got != "Asks about three." {
+		t.Errorf("summary in On = %q", got)
 	}
 }
 

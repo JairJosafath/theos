@@ -510,32 +510,51 @@ func CheckTendPlan(plan Plan, current CurrentModel) []Refusal {
 	return CheckPlan(plan, current)
 }
 
-// TendSummary is what a Brief's history says a tending round did: the
-// planner's summary.md, or else one sentence per answer.
-func TendSummary(summary string, answers []FailedAnswer) string {
-	if s := strings.Join(strings.Fields(summary), " "); s != "" {
+// TendSummary is what a Brief's history says a tending round did, given
+// the answers TendAnswers left: the planner's summary.md, or else one
+// sentence per answer. In Ask, a round that proposes a retry or a close says
+// it in sentences of its own, since the planner's summary.md reads as if the
+// Brief acted while the proposal waits for the person (#872).
+func TendSummary(mode, summary string, answers []FailedAnswer) string {
+	proposes := AutopilotMode(mode) == AutopilotAsk && slices.ContainsFunc(answers, proposal)
+	if s := strings.Join(strings.Fields(summary), " "); s != "" && !proposes {
 		return ClipSentences(s, maxRoundSummary)
 	}
 	if len(answers) == 0 {
 		return "Decided nothing."
 	}
-	lines := make([]string, 0, len(answers))
+	lines := make([]string, 0, len(answers)+1)
+	if proposes {
+		// First, so clipping a long summary keeps it.
+		lines = append(lines, "Autopilot is Ask, so each proposal waits for your answer.")
+	}
 	for _, a := range answers {
 		name := fmt.Sprintf("%s#%d", a.Container, a.Issue)
+		why := a.Why
 		var what string
-		switch a.Answer {
-		case AnswerRetry:
+		switch {
+		case a.Answer == AnswerRetry:
 			what = "Tried " + name + " again"
-		case AnswerClose:
+		case a.Answer == AnswerClose:
 			what = "Closed " + name
-		case AnswerWait:
+		case a.Answer == AnswerWait:
 			what = "Waits on " + name
+		case proposes && proposal(a) && a.Recommend.Answer == AnswerRetry:
+			what, why = "Proposes trying "+name+" again", a.Recommend.Why
+		case proposes && proposal(a):
+			what, why = "Proposes closing "+name, a.Recommend.Why
 		default:
 			what = "Asks you about " + name
 		}
-		lines = append(lines, what+": "+sentence(a.Why, "no reason given"))
+		lines = append(lines, what+": "+sentence(why, "no reason given"))
 	}
 	return ClipSentences(strings.Join(lines, " "), maxRoundSummary)
+}
+
+// proposal reports whether a is an ask recommending a retry or a close.
+func proposal(a FailedAnswer) bool {
+	return a.Answer == AnswerAsk && a.Recommend != nil &&
+		(a.Recommend.Answer == AnswerRetry || a.Recommend.Answer == AnswerClose)
 }
 
 // TendCounts counts a tending round's answers: retried, closed, waited on and
