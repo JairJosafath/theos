@@ -94,18 +94,52 @@ type ContainerStandardStatus struct {
 	// +required
 	Ref string `json:"ref"`
 
-	// leftOut are the files the last update left out, because the repository had
-	// changed them since; a person brings them up to date.
+	// leftOut are the paths of behind, kept for what reads them.
 	// +listType=atomic
 	// +optional
 	LeftOut []string `json:"leftOut,omitempty"`
+
+	// behind are the Standard's files an update left out, because the
+	// repository had changed them in lines the Standard changed too, each with
+	// the ref its repository copy was last brought to. Each later update merges
+	// them against that ref; they stay until it brings them up to date or a
+	// person settles them.
+	// +listType=map
+	// +listMapKey=path
+	// +optional
+	Behind []StandardFile `json:"behind,omitempty"`
+
+	// kept are the Standard's files a person chose to keep as the repository
+	// has them, each with the ref it was kept at.
+	// +listType=map
+	// +listMapKey=path
+	// +optional
+	Kept []StandardFile `json:"kept,omitempty"`
 
 	// update is the Standard update in flight, or the last one, stopped.
 	// +optional
 	Update *StandardUpdateStatus `json:"update,omitempty"`
 }
 
-// StandardUpdateStatus is one Standard update: a pull request the operator
+// StandardFile is one of a Standard's files in the repository, at a ref of the
+// Standard.
+type StandardFile struct {
+	// path is the file's path in the repository.
+	// +required
+	Path string `json:"path"`
+
+	// ref is the Standard's template ref the file was last brought to, or
+	// kept at.
+	// +required
+	Ref string `json:"ref"`
+
+	// pullRequestURL is the address of the update's pull request that last
+	// left the file out, when one did.
+	// +optional
+	PullRequestURL string `json:"pullRequestURL,omitempty"`
+}
+
+// StandardUpdateStatus is one Standard update:a pull request the operator
 // opened to bring the Standard's files to another ref.
 type StandardUpdateStatus struct {
 	// ref is the Standard's template ref the update brings the files to.

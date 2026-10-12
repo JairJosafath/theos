@@ -211,14 +211,27 @@ describe('containerNextStep', () => {
     expect(containerNextStep(c)?.text).toMatch(/stopped the Standard update to v1\.3\.0/)
   })
 
-  it('names the files the last update left out', () => {
+  it('names the files the updates left out, and the two answers', () => {
     const c = container({
       phase: 'Ready',
       repositoryURL: 'https://git.example/shop/api',
-      standard: { name: 'go-standard', ref: 'v1.3.0', leftOut: ['Makefile', '.golangci.yml'] },
-      conditions: [cond('StandardUpdated', 'True', 'UpToDate')],
+      standard: {
+        name: 'go-standard',
+        ref: 'v1.3.0',
+        leftOut: ['Makefile', '.golangci.yml'],
+        behind: [
+          { path: 'Makefile', ref: 'v1.1.0', pullRequestURL: 'https://git.example/shop/api/pulls/4' },
+          { path: '.golangci.yml', ref: 'v1.2.0', pullRequestURL: 'https://git.example/shop/api/pulls/6' },
+        ],
+      },
+      conditions: [cond('StandardUpdated', 'False', 'FilesBehind')],
     })
-    expect(containerNextStep(c)?.text).toMatch(/left 2 files out .*: Makefile, \.golangci\.yml/)
+    const next = containerNextStep(c)
+    expect(next?.text).toMatch(/left 2 files out .*: Makefile \(at v1\.1\.0\), \.golangci\.yml \(at v1\.2\.0\)\./)
+    expect(next?.text).toMatch(/c4\.factory\.io\/standard-keep=v1\.3\.0/)
+    expect(next?.text).not.toMatch(/by hand/)
+    expect(next?.command).toBe('kubectl -n shop annotate container api c4.factory.io/standard-take=v1.3.0')
+    expect(next?.link).toEqual({ href: 'https://git.example/shop/api/pulls/6', label: 'Open the update pull request' })
   })
 
   it('is nothing while an update runs, or none is in flight', () => {

@@ -61,7 +61,10 @@ func (u Update) Empty() bool {
 
 // PlanUpdate plans bringing a repository's copy of a layer from the old render
 // to the next one. current holds the repository's copy of every path of either
-// render that it has.
+// render, or of behind, that it has. behind are the paths a past update left
+// out, each with the render its repository copy was last brought to: such a
+// path is planned from that render instead of old, so it is merged against
+// its own base and planned even when old and next hold it alike.
 //
 // A path the next render leaves as the old one made it, or that the repository
 // already holds as the next render makes it, needs nothing. A path the
@@ -70,11 +73,18 @@ func (u Update) Empty() bool {
 // since the old render: it is merged line by line with the next render's
 // change (Merge3, base the old render) and written when the two don't overlap,
 // and left out otherwise.
-func PlanUpdate(old, next, current Tree) Update {
+func PlanUpdate(old, next, current Tree, behind map[string]Tree) Update {
 	var u Update
 	paths := append(old.Paths(), next.Paths()...)
+	for p := range behind {
+		paths = append(paths, p)
+	}
 	slices.Sort(paths)
 	for _, p := range slices.Compact(paths) {
+		old := old
+		if base, ok := behind[p]; ok {
+			old = base
+		}
 		switch {
 		case same(old, next, p):
 			// The Standard didn't change it.

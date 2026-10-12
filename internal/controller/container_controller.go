@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -50,6 +51,9 @@ type ContainerReconciler struct {
 	// SecretRecheck is how often a Container waiting for its credentials Secret
 	// looks again; zero means 15 seconds.
 	SecretRecheck time.Duration
+	// Recorder emits the Container's Events about its Standard's files; nil
+	// emits none.
+	Recorder events.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete

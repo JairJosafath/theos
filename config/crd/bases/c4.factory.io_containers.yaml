@@ -317,10 +317,72 @@ spec:
                   at, and the update in flight. Only a Ready Container with a Standard that
                   was part of its scaffold has it.
                 properties:
-                  leftOut:
+                  behind:
                     description: |-
-                      leftOut are the files the last update left out, because the repository had
-                      changed them since; a person brings them up to date.
+                      behind are the Standard's files an update left out, because the
+                      repository had changed them in lines the Standard changed too, each with
+                      the ref its repository copy was last brought to. Each later update merges
+                      them against that ref; they stay until it brings them up to date or a
+                      person settles them.
+                    items:
+                      description: |-
+                        StandardFile is one of a Standard's files in the repository, at a ref of the
+                        Standard.
+                      properties:
+                        path:
+                          description: path is the file's path in the repository.
+                          type: string
+                        pullRequestURL:
+                          description: |-
+                            pullRequestURL is the address of the update's pull request that last
+                            left the file out, when one did.
+                          type: string
+                        ref:
+                          description: |-
+                            ref is the Standard's template ref the file was last brought to, or
+                            kept at.
+                          type: string
+                      required:
+                      - path
+                      - ref
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - path
+                    x-kubernetes-list-type: map
+                  kept:
+                    description: |-
+                      kept are the Standard's files a person chose to keep as the repository
+                      has them, each with the ref it was kept at.
+                    items:
+                      description: |-
+                        StandardFile is one of a Standard's files in the repository, at a ref of the
+                        Standard.
+                      properties:
+                        path:
+                          description: path is the file's path in the repository.
+                          type: string
+                        pullRequestURL:
+                          description: |-
+                            pullRequestURL is the address of the update's pull request that last
+                            left the file out, when one did.
+                          type: string
+                        ref:
+                          description: |-
+                            ref is the Standard's template ref the file was last brought to, or
+                            kept at.
+                          type: string
+                      required:
+                      - path
+                      - ref
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - path
+                    x-kubernetes-list-type: map
+                  leftOut:
+                    description: leftOut are the paths of behind, kept for what reads
+                      them.
                     items:
                       type: string
                     type: array
