@@ -177,7 +177,8 @@ type Provider interface {
 	RemoveIssueLabel(ctx context.Context, repo Repository, number int, label string) error
 	// CommentIssue adds a comment to an issue or a pull request.
 	CommentIssue(ctx context.Context, repo Repository, number int, body string) error
-	// CloseIssue closes an issue.
+	// CloseIssue closes an issue; ErrOpenDependencies when the host won't
+	// while an issue it depends on is open.
 	CloseIssue(ctx context.Context, repo Repository, number int) error
 	// EditIssueBody replaces an issue's body.
 	EditIssueBody(ctx context.Context, repo Repository, number int, body string) error
@@ -298,6 +299,10 @@ var ErrConflict = errors.New("the branch conflicts with its base")
 
 // ErrIssueNotFound is GetIssue's error for an issue the repository doesn't have.
 var ErrIssueNotFound = errors.New("no such issue")
+
+// ErrOpenDependencies is CloseIssue's error for an issue the host won't close
+// while an issue it depends on is open.
+var ErrOpenDependencies = errors.New("the issue still has open dependencies")
 
 // ErrPullRequestNotFound is GetPullRequest's error for a pull request the
 // repository doesn't have, say one deleted or of a repository made again.

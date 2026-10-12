@@ -1012,7 +1012,11 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   filed again, reworded or split, so the Crew's guard stays. Applying the
   round, the operator labels a retried issue `status/ready` in place of
   `status/needs-human`, or closes it, with a comment quoting the why and the
-  round's prompts. See [plans/brief-failed-issues.md](plans/done/brief-failed-issues.md).
+  round's prompts. It closes an issue that waits on another the round closes
+  (a Standard change) after that one, whatever the plan's order; one that
+  waits on an open issue the round doesn't close the Git host won't close, so
+  it stays handed back, with a comment saying so, and `Planned` names it
+  while the rest of the round applies (#976). See [plans/brief-failed-issues.md](plans/done/brief-failed-issues.md).
 - **A Brief looks after its own handed-back work** (#486).
   `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. `status.autopilot`
   reports the mode in effect, set every reconcile, so the UI copies no default
