@@ -73,7 +73,9 @@ owns.
   `BeforeRelease`, it does not tag yet: it creates the branch
   `release-check/vX.Y.Z` at the commit it would tag (the gate is idempotent:
   an existing branch at that commit is reused), and reads the runs at that
-  commit (`CommitRuns`, as for a Task). The `full` job succeeding tags the
+  commit (`CommitRuns`, as for a Task), the `full` job's own context, not the
+  commit's combined state: on that push the `check` job reports skipped, and
+  a branch cut at main's head shares its commit. The `full` job succeeding tags the
   release as today and deletes the branch. Running, the Crew's `Released`
   condition says `FullCheckRunning` with the run's URL. Failing, it does not
   tag: `Released` False, reason `FullCheckFailed`, a Warning Event once, and

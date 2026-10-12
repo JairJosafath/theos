@@ -19,8 +19,10 @@ import (
 var checksBeforeReleaseStandards = []string{"go-standard", "go-operator-standard", "ts-standard", "python-standard"}
 
 type workflowJob struct {
-	If    string      `yaml:"if"`
-	Steps []checkStep `yaml:"steps"`
+	If     string            `yaml:"if"`
+	RunsOn string            `yaml:"runs-on"`
+	Env    map[string]string `yaml:"env"`
+	Steps  []checkStep       `yaml:"steps"`
 }
 
 type workflow struct {
@@ -103,6 +105,9 @@ func TestStandardsRenderBeforeRelease(t *testing.T) {
 			}
 			if full.If != onRelease {
 				t.Errorf("full runs if %q; want only on a release-check branch", full.If)
+			}
+			if full.RunsOn != check.RunsOn || !equalEnv(full.Env, check.Env) {
+				t.Errorf("full runs on %q with env %v; want check's, %q with %v", full.RunsOn, full.Env, check.RunsOn, check.Env)
 			}
 			if len(check.Steps) < 3 || check.Steps[1].ID != "changes" {
 				t.Fatalf("check's steps %+v; want the checkout, then the changes step", check.Steps)
