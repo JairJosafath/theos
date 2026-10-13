@@ -16,6 +16,7 @@ import type {
   Task,
   TaskPhase,
 } from '../k8s/types'
+import { briefTarget } from '../k8s/crews'
 import { findCondition } from '../k8s/types'
 import { describeBriefPhase } from './brief'
 import {
@@ -472,7 +473,8 @@ export function resumeCrewCommand(crew: Crew): string {
 
 /**
  * What a person does next on this Crew: re-run its last release's failed runs;
- * fix what keeps its release from publishing; resume it, through its Brief
+ * fix what keeps its release from publishing; settle a target changed under
+ * its Brief; resume it, through its Brief
  * when the Brief is what paused it; or fix what keeps it Waiting. Undefined
  * when nothing waits on a person.
  */
@@ -490,6 +492,14 @@ export function crewNextStep(crew: Crew, briefs: Brief[]): NextStep | undefined 
     const to = crew.spec.publishReleases?.github
     return {
       text: `Publishing ${release.tag}${to ? ` to ${to.repository}` : ''} failed${release.publish.message ? `: ${release.publish.message}` : ''}. Fix what it names${to ? `, such as the token in Secret ${to.tokenSecretRef.name}` : ''}; the Crew tries again each time it reads the issues.`,
+    }
+  }
+  const target = briefTarget(crew)
+  if (target?.held) {
+    const own = crew.spec.publishReleases?.github.repository
+    return {
+      text: `Its release target differs from Brief ${target.brief}’s: the Crew says ${own ?? 'publish nowhere'}, the Brief ${target.target?.github.repository ?? 'another'}. Nothing is published until they agree: pick one under Releases below, or change the Brief’s spec.releases.`,
+      page: { kind: 'Brief', name: target.brief, label: `Open Brief ${target.brief}` },
     }
   }
   if (release?.goModule?.state === 'Invalid') {
