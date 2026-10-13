@@ -92,7 +92,7 @@ make test       # Run unit and envtest tests
 
 **Before finishing any change:**
 ```
-make check      # manifests, generate, fmt, vet, lint and test in one go
+make check      # manifests, generate, fmt, vet, lint, test and the UI's check in one go
 ```
 
 ## How to Work
@@ -124,7 +124,8 @@ make check      # manifests, generate, fmt, vet, lint and test in one go
   5. Kind and `make e2e`, only when a human asks: the whole loop on stand-in
      agents. No agent runs it, and nothing waits for it.
 
-  `make check` runs tiers 1, 2 and 4 for every change. Node and kubelet
+  `make check` runs tiers 1, 2 and 4 for every change, and the UI's own
+  check (`make ui-test`: typecheck, eslint, Prettier, its tests). Node and kubelet
   behaviour and the Gitea Actions runner itself are not tested before release.
 - **Small pull requests to main.** One branch per issue or plan step, the one
   `take` names (`<type>/<N>-<slug>`, from an up-to-date main), pushed after
