@@ -43,7 +43,7 @@ var _ = Describe("Project", func() {
 			},
 		}
 		framework := &c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "python-fastapi"),
-			Spec: newCatalogSpec("http://gitea:3000/templates/python-fastapi", "v1.3.0", c4v1alpha1.ContainerTypeService)}
+			Spec: newFrameworkSpec("http://gitea:3000/templates/python-fastapi", "v1.3.0", c4v1alpha1.ContainerTypeService)}
 		compute := &c4v1alpha1.Compute{ObjectMeta: objectMeta(ns, "small"),
 			Spec: newCatalogSpec("http://gitea:3000/templates/small", "v1.0.1", c4v1alpha1.ContainerTypeService)}
 		deployment := &c4v1alpha1.Deployment{ObjectMeta: objectMeta(ns, "k8s-manifests"),

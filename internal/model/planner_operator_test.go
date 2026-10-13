@@ -53,6 +53,7 @@ func chartCatalog(t *testing.T) []CatalogEntry {
 					Description         string   `yaml:"description"`
 					SupportedTypes      []string `yaml:"supportedTypes"`
 					SupportedFrameworks []string `yaml:"supportedFrameworks"`
+					DeploysItself       bool     `yaml:"deploysItself"`
 				} `yaml:"spec"`
 			} `yaml:"entries"`
 		} `yaml:"catalog"`
@@ -63,7 +64,8 @@ func chartCatalog(t *testing.T) []CatalogEntry {
 	entries := make([]CatalogEntry, 0, len(values.Catalog.Entries))
 	for _, e := range values.Catalog.Entries {
 		entries = append(entries, CatalogEntry{Side: e.Kind, Name: e.Name, Description: e.Spec.Description,
-			SupportedTypes: e.Spec.SupportedTypes, SupportedFrameworks: e.Spec.SupportedFrameworks})
+			SupportedTypes: e.Spec.SupportedTypes, SupportedFrameworks: e.Spec.SupportedFrameworks,
+			DeploysItself: e.Spec.DeploysItself})
 	}
 	return entries
 }

@@ -165,6 +165,7 @@ describe('containerNextStep', () => {
     ['LayerConflict', 'Scaffolded', /Two templates write the same file/],
     ['UnpinnedRef', 'Scaffolded', /Pin the template’s ref/],
     ['UnsupportedType', 'ChoicesValid', /support this Container’s type/],
+    ['DeploysItself', 'ChoicesValid', /remove the Compute and the Deployment/],
     ['GitError', 'RepositoryCreated', /Fix what the failed condition names/],
   ])('on Failed with %s, says what to fix and gives the retry line', (reason, type, text) => {
     const c = container({
