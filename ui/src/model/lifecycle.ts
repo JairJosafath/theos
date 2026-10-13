@@ -507,6 +507,12 @@ export function crewNextStep(crew: Crew, briefs: Brief[]): NextStep | undefined 
       text: `Go can’t take the module at ${release.tag}${release.goModule.message ? `: ${release.goModule.message}` : ''}. Fix go.mod’s module path; the next release publishes it.`,
     }
   }
+  if (release?.goModule?.state === 'NotFetchable') {
+    const { path, version, message } = release.goModule
+    return {
+      text: `Go can’t fetch ${path ? `${path}@${version ?? release.tag}` : `the module at ${release.tag}`}${message ? `: ${message}` : ''}. Put the version where Go reads its path; the Crew asks the Go proxy again every few minutes.`,
+    }
+  }
   if (status?.phase === 'Paused') {
     const ns = crew.metadata.namespace ?? ''
     const brief = briefs.find(
