@@ -796,10 +796,11 @@ model and context it needs.
 - **A Container type `function`:** serverless code on AWS (Lambda behind an
   API Gateway HTTP API), whose CDK app is its deployment. It is not a
   `service`: nothing runs between requests, and the cloud, not a cluster, runs
-  it. The `aws-lambda-ts` Framework builds it, with the `aws-standard`
-  Standard (a whole TypeScript Standard copied from `ts-standard`, which a
-  test keeps from drifting), and no Compute or Deployment: `make check`
-  synthesizes the stack offline under CDK Nag's AwsSolutions rules and
+  it. The `aws-lambda-ts` Framework (TypeScript) or `aws-lambda-py` (Python,
+  boto3, with a TypeScript CDK app) builds it, with the `aws-standard`
+  Standard (a whole TypeScript Standard copied from `ts-standard`, plus
+  `python-standard`'s Python rules for `aws-lambda-py`, which tests keep from
+  drifting), and no Compute or Deployment: `make check` synthesizes the stack offline under CDK Nag's AwsSolutions rules and
   cfn-lint, and nothing deploys. GitHub issue #1028 has the plan,
   [plans/aws.md](plans/aws.md).
 

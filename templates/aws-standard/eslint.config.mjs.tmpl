@@ -1,4 +1,8 @@
+{{ if eq .Framework "aws-lambda-py" -}}
+// Lint config for the CDK app's TypeScript: typescript-eslint's strictest
+{{ else -}}
 // Lint config for the function's TypeScript and its CDK app: typescript-eslint's strictest
+{{ end -}}
 // type-checked presets, plus the rules below. `make lint` runs ESLint with
 // --max-warnings 0, so any finding fails `make check`. Every rule turned off
 // or changed here says why. Changing this file is the Standard's job, not a
@@ -8,8 +12,14 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
+{{- if eq .Framework "aws-lambda-py" }}
+  // What cdk synth writes, and uv's environment, whose packages ship
+  // JavaScript of their own.
+  globalIgnores(['cdk.out/', '.venv/']),
+{{- else }}
   // What cdk synth writes: templates and the bundled function.
   globalIgnores(['cdk.out/']),
+{{- end }}
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,

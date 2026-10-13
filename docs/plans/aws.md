@@ -168,6 +168,13 @@ main working.
    branch. *Done when:* the same as step 2, for this Framework.
 5. **A Python (boto3) Lambda Framework `aws-lambda-py`** (#1033), with
    `aws-standard` adding ruff and pytest for its branch. Waits on step 2.
+   (Landed as aws-lambda-py v1.0.0 and aws-standard v1.1.0. The branch adds
+   mypy `--strict` too, and copies python-standard's `ruff.toml`, `mypy.ini`
+   and `python.md`'s general sections, which a drift test keeps equal, as it
+   does ts-standard's files. The function is the package `app/`; the stack
+   bundles it with uv's local bundling, the wheels `uv.lock` pins for arm64
+   Linux, never Docker; uv reads its cache or PyPI, as `uvx cfn-lint`
+   already does.)
 6. **A Go (SDK v2) Lambda Framework `aws-lambda-go`** (#1034), with `aws-standard`
    adding the Go checks for its branch. Waits on step 2.
 

@@ -1,0 +1,59 @@
+# make check in a scaffolded aws-lambda-py + aws-standard Container (issue #1033)
+# go run ./hack/render -out /tmp/p1033/app -type function -container items-fn -display-name "Items Fn" Framework=aws-lambda-py Standard=aws-standard
+# then, with no AWS variables, an empty HOME and an empty uv cache, Node v24.21.0, uv 0.12.23:
+# env -i PATH=$PATH HOME=/tmp/p1033/home npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/p1033/uvcold make check
+# on 2026-10-13; uv's download and install lines are left out
+
+npm ci --no-audit --no-fund
+
+added 140 packages in 16s
+uv sync --locked
+Using CPython 3.14.4 interpreter at: /usr/bin/python3.14
+Creating virtual environment at: .venv
+Resolved 25 packages in 25ms
+Prepared 23 packages in 9.98s
+Installed 23 packages in 20ms
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+uv run --no-sync ruff format --diff .
+21 files already formatted
+node_modules/.bin/eslint --max-warnings 0 .
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+node_modules/.bin/tsc --noEmit
+uv run --no-sync mypy app tests
+Success: no issues found in 8 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: /tmp/p1033/app
+configfile: pyproject.toml
+testpaths: tests
+collected 48 items
+
+tests/test_api.py .........                                              [ 18%]
+tests/test_item_store.py ....                                            [ 27%]
+tests/test_items.py ...................................                  [100%]
+
+============================== 48 passed in 0.07s ==============================
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /tmp/p1033/app
+
+Bundling asset test/Handler/Code/Stage...
+Bundling asset items-fn/Handler/Code/Stage...
+ ✓ infra/api_stack.test.ts (5 tests) 2108ms
+ ✓ infra/standard.test.ts (8 tests) 2821ms
+
+ Test Files  2 passed (2)
+      Tests  13 passed (13)
+   Start at  11:47:57
+   Duration  3.72s (tests 79%, import 15%, transform 5%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet
+Bundling asset items-fn/Handler/Code/Stage...
+uvx cfn-lint==1.57.2 --ignore-checks W3005 -- cdk.out/*.template.json
+Installed 9 packages in 19ms
+exit=0

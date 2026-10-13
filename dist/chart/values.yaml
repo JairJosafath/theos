@@ -517,6 +517,13 @@ catalog:
         description: "A serverless HTTP API on AWS: a TypeScript Lambda behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK v3, and its CDK stack in infra/, which is its deployment."
         supportedTypes: [function]
     - kind: Framework
+      name: aws-lambda-py
+      ref: v1.0.0
+      spec:
+        displayName: Serverless API on AWS (Lambda, Python)
+        description: "A serverless HTTP API on AWS: a Python Lambda using boto3 behind an API Gateway HTTP API with IAM auth, items in DynamoDB, managed with uv, and its TypeScript CDK stack in infra/, which is its deployment."
+        supportedTypes: [function]
+    - kind: Framework
       name: python-cli
       ref: v1.0.0
       spec:
@@ -564,14 +571,14 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.0.0
+      ref: v1.1.0
       spec:
-        displayName: TypeScript on AWS quality standard
-        description: "ts-standard's lint and Prettier, plus cdk synth under CDK Nag's AwsSolutions pack, cfn-lint, the Standard's stack assertions, Well-Architected and serverless digests, role guides for agents and the make check CI. Nothing deploys."
+        displayName: AWS serverless quality standard
+        description: "ts-standard's lint and Prettier for the CDK app (and a TypeScript function), python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions pack, cfn-lint, the Standard's stack assertions, Well-Architected and serverless digests, role guides for agents and the make check CI. Nothing deploys."
         supportedTypes: [function]
-        supportedFrameworks: [aws-lambda-ts]
+        supportedFrameworks: [aws-lambda-ts, aws-lambda-py]
         # The CDK app's entry point and the Standard's stack rules are the contract too.
-        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, docs/well-architected.md, infra/main.ts, infra/standard.ts, tsconfig.json, vitest.config.mts, cdk.json]
+        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, ruff.toml, mypy.ini, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, docs/well-architected.md, infra/main.ts, infra/standard.ts, tsconfig.json, vitest.config.mts, cdk.json]
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard

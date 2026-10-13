@@ -11,6 +11,13 @@ package; the other AWS pages are the references the digests follow, not
 fetched again for them: check one before relying on a detail it alone gives.
 The cross-language sources were read on 2026-09-30 for another
 Standard, whose `principles.md` ts-standard adapts; they were not read again.
+{{- if eq .Framework "aws-lambda-py" }}
+The function's Python rules (`python.md`'s general sections, `ruff.toml`,
+`mypy.ini`) are python-standard v1.2.1's, and a test in C4 Factory keeps them
+equal; its Python sources were read on 2026-10-07 for python-standard and not
+read again. Lambda's Python pages and the boto3 guide are references the
+digests follow, not fetched again for them.
+{{- end }}
 Version or date as shown on the page; "live" when the page shows none.
 
 ## TypeScript
@@ -21,6 +28,23 @@ Version or date as shown on the page; "live" when the page shows none.
 | TypeScript handbook, Do's and Don'ts — https://www.typescriptlang.org/docs/handbook/declaration-files/do-s-and-don-ts.html | live                                                                       |
 | typescript-eslint shared configs — https://typescript-eslint.io/users/configs/                                             | live; `strict-type-checked` is not semver-stable, so the version is pinned |
 
+{{ if eq .Framework "aws-lambda-py" -}}
+## Python
+
+| Source                                                                                                | Version / date                                           |
+| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| PEP 8, Style Guide for Python Code — https://peps.python.org/pep-0008/                                | Active; created 05-Jul-2001, post-history to 01-Aug-2013 |
+| PEP 257, Docstring Conventions — https://peps.python.org/pep-0257/                                    | created 29-May-2001, post-history 13-Jun-2001            |
+| Google Python Style Guide — https://google.github.io/styleguide/pyguide.html                          | live                                                     |
+| Typing best practices — https://typing.python.org/en/latest/reference/best_practices.html             | live (the page shows no version)                         |
+| mypy, common issues and solutions — https://mypy.readthedocs.io/en/stable/common_issues.html          | mypy 2.4.0 (stable)                                      |
+| pytest, good integration practices — https://docs.pytest.org/en/stable/explanation/goodpractices.html | live (stable; no version on the page)                    |
+| Lambda, Python handler — https://docs.aws.amazon.com/lambda/latest/dg/python-handler.html             | live                                                     |
+| Lambda, Python deployment packages — https://docs.aws.amazon.com/lambda/latest/dg/python-package.html | live                                                     |
+| boto3 developer guide — https://boto3.amazonaws.com/v1/documentation/api/latest/guide/index.html      | boto3 1.43.112                                           |
+| types-boto3 — https://youtype.github.io/types_boto3_docs/                                             | 1.43.112                                                 |
+
+{{ end -}}
 ## AWS
 
 | Source                                                                                                                                                           | Version / date                       |
@@ -28,19 +52,34 @@ Version or date as shown on the page; "live" when the page shows none.
 | AWS Well-Architected Framework — https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html                                                       | November 6, 2024                     |
 | Serverless Applications Lens — https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/welcome.html                                      | July 14, 2022                        |
 | Lambda, best practices — https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html                                                                        | live                                 |
+{{ if ne .Framework "aws-lambda-py" -}}
 | Lambda, Node.js handler and its best practices — https://docs.aws.amazon.com/lambda/latest/dg/nodejs-handler.html                                                | live                                 |
+{{ end -}}
 | Lambda, JSON log format — https://docs.aws.amazon.com/lambda/latest/dg/monitoring-cloudwatchlogs-logformat.html                                                  | live                                 |
 | API Gateway, HTTP API Lambda integrations (payload 2.0) — https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html | live                                 |
 | API Gateway, HTTP API access control and logging — https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-access-control.html                     | live                                 |
 | DynamoDB, best practices — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/best-practices.html                                                  | live                                 |
+{{ if ne .Framework "aws-lambda-py" -}}
 | AWS SDK for JavaScript v3, developer guide — https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/                                                  | live                                 |
+{{ end -}}
 | AWS CDK v2 developer guide, best practices — https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html                                                        | live                                 |
 | AWS CDK assertions module — https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.assertions-readme.html                                                       | aws-cdk-lib 2.273.0                  |
 | CDK Nag README and RULES.md (AwsSolutions and Serverless packs) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md                                          | cdk-nag 3.0.2, read from the package |
 | cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                                        | 1.57.2 (PyPI, 2026-10-13)            |
 
 ## Tools
-
+{{ if eq .Framework "aws-lambda-py" }}
+The versions pinned in the Framework's `pyproject.toml` and `uv.lock`: boto3
+1.43.112, ruff 0.16.10, mypy 2.4.0, pytest 9.1.1, types-boto3 1.43.112. In
+its `package.json` and `package-lock.json`: TypeScript 6.0.3, ESLint 10.11.0,
+@eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9, vitest 5.0.3,
+@types/node 24.19.1, aws-cdk-lib 2.273.0, constructs 10.8.1, aws-cdk (the
+CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15. The `Makefile` runs cfn-lint
+1.57.2 with uv, and the stack bundles the function with uv for Python 3.14
+on arm64. The CDK Nag rules these docs name were read from cdk-nag 3.0.2's
+`RULES.md`, and `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk
+2.1145.0 writes.
+{{- else }}
 The versions pinned in the Framework's `package.json` and `package-lock.json`:
 TypeScript 6.0.3 (typescript-eslint 8.71.0 supports `<6.1.0`, so not 7.x),
 ESLint 10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9,
@@ -50,6 +89,7 @@ constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
 @types/aws-lambda 8.10.164. The `Makefile` runs cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
+{{- end }}
 
 ## Cross-language (read 2026-09-30)
 

@@ -13,19 +13,29 @@ drift test in C4 Factory's `internal/scaffold` keeps the shared files equal:
 `.editorconfig`, `.prettierrc.json` and `docs/style/typescript.md` render the
 same as ts-standard's for `node-cli`, and every line ts-standard's
 `eslint.config.mjs` and `docs/style/principles.md` render the same for all its
-Frameworks appears in this Standard's, in the same order.
+Frameworks appears in this Standard's, in the same order. For
+`aws-lambda-py`, `ruff.toml` and `mypy.ini` render the same as
+python-standard v1.2.1's, and `docs/style/python.md` holds its `python.md`'s
+general sections, from "Layout and formatting" up to its FastAPI section,
+byte for byte.
 
-- **Supports:** `function`; Frameworks: `aws-lambda-ts`
-- **Per Framework:** it supports one Framework so far, and no file branches
-  on `.Framework` yet. A Framework added later gets its branches in the
-  `Makefile`, `AGENTS.md`, the role guides, `eslint.config.mjs` and
-  `docs/style/`, in the version that adds it.
+- **Supports:** `function`; Frameworks: `aws-lambda-ts`, `aws-lambda-py`
+- **Per Framework:** `aws-lambda-ts` renders as v1.0.0 did. For
+  `aws-lambda-py` (since v1.1.0), a Python function with a TypeScript CDK
+  app, the `Makefile` adds uv, ruff, mypy and pytest to its targets;
+  `ruff.toml`, `mypy.ini` and `docs/style/python.md` render only for it (an
+  all-whitespace render leaves the file out); `eslint.config.mjs` also
+  ignores `.venv/`; and `AGENTS.md`, the role guides, `aws.md`,
+  `principles.md`, `SOURCES.md` and `docs/well-architected.md` speak of `app/handler.py`, boto3 and
+  pytest instead of `src/handler.ts`, the SDK v3 and vitest. A Framework
+  added later gets its branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
-  `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`
+  `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
+  `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
   `strictTypeChecked` and `stylisticTypeChecked` (typed, through the project
   service), plus exhaustive switches, explicit module boundary types,
@@ -58,6 +68,12 @@ Frameworks appears in this Standard's, in the same order.
   ignoring only W3005 (the `DependsOn` CDK puts on a function's role, which
   cfn-lint calls redundant). Synth needs no Docker, AWS account, credentials
   or network: stacks are environment-agnostic and esbuild bundles locally.
+  For `aws-lambda-py`, `deps` also runs `uv sync --locked`, `fmt-check` adds
+  `ruff format --diff`, `lint` `ruff check --no-fix`, `typecheck`
+  `mypy app tests` (not `.`: `cdk.out/` holds a bundled copy of boto3), and
+  `test` runs `pytest --strict-markers --strict-config` before vitest. Its
+  stack bundles the function with uv from uv's cache, which `uv sync` filled,
+  or PyPI when the cache lacks a wheel, as `uvx cfn-lint` already needs.
   `.gitea/workflows/check.yaml` runs it on pull requests and on `main` on a
   runner labelled `go` (which has uv), under the status context
   `check / check`, which the protected `main` requires
@@ -88,6 +104,12 @@ Frameworks appears in this Standard's, in the same order.
   context holds the recommended feature flags; `tsconfig.json`, including
   `src`, `infra` and `vitest.config.mts`; and `vitest.config.mts`, running
   `src/**/*.test.ts` and `infra/**/*.test.ts`. aws-lambda-ts does all of this.
+  `aws-lambda-py` does the same without `src/`: its `tsconfig.json` includes
+  `infra` and `vitest.config.mts`, and vitest runs `infra/**/*.test.ts`. It
+  also owns `pyproject.toml` (the function's packages in `dependencies`,
+  `ruff`, `mypy`, `pytest` and `types-boto3` exact in the `dev` group, pytest
+  reading `tests/`, `[tool.uv] package = false`), `uv.lock`, the package
+  `app/` and `tests/`.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
   They say no test calls AWS (stacks are checked with `Template.fromStack`,
@@ -110,7 +132,7 @@ Frameworks appears in this Standard's, in the same order.
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet.
-- **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`,
+- **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`, `ruff.toml`, `mypy.ini`,
   `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/`,
   `docs/agents/`, `docs/well-architected.md`, `infra/main.ts` and
   `infra/standard.ts` in the catalog entry's `protectedPaths`, plus the

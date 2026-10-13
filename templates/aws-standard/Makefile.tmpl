@@ -5,6 +5,7 @@
 #
 # Nothing here deploys, bootstraps or calls AWS: `synth` only writes
 # CloudFormation into cdk.out/, offline, without Docker or credentials.
+{{- $py := eq .Framework "aws-lambda-py" }}
 
 NAME := {{ .Container }}
 BIN := node_modules/.bin
@@ -13,6 +14,14 @@ CFN_LINT := uvx cfn-lint==1.57.2
 # The CDK CLI offline and quiet: no telemetry, no notices fetched, no check
 # for a newer CLI.
 CDK := CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true $(BIN)/cdk --no-notices
+{{- if $py }}
+# The function's Python tools run from the environment `make deps` synced,
+# never re-resolved.
+RUN := uv run --no-sync
+# The Python the function is made of; cdk.out/ holds a bundled copy of its
+# packages, which is not ours to check.
+PY_SOURCES := app tests
+{{- end }}
 
 .DEFAULT_GOAL := help
 .PHONY: help check check-light deps fmt fmt-check lint typecheck test synth cfn-lint clean
@@ -24,24 +33,55 @@ check: deps fmt-check lint typecheck test synth cfn-lint ## Everything CI checks
 
 check-light: deps fmt-check lint typecheck ## check without the tests, which CI runs on each change with checks BeforeRelease.
 
+{{ if $py -}}
+deps: ## Install the exact packages in package-lock.json and uv.lock, failing when uv.lock is stale.
+	npm ci --no-audit --no-fund
+	uv sync --locked
+{{ else -}}
 deps: ## Install the exact packages in package-lock.json.
 	npm ci --no-audit --no-fund
-
+{{ end }}
+{{- if $py }}
+fmt: ## Format every file with Prettier, and the Python with ruff.
+	$(BIN)/prettier --write .
+	$(RUN) ruff check --select I --fix .
+	$(RUN) ruff format .
+{{- else }}
 fmt: ## Format every file with Prettier.
 	$(BIN)/prettier --write .
+{{- end }}
 
 fmt-check: ## Fail when a file is not formatted.
 	$(BIN)/prettier --check .
+{{- if $py }}
+	$(RUN) ruff format --diff .
+{{- end }}
 
+{{ if $py -}}
+lint: ## Lint with eslint.config.mjs and ruff.toml, failing on any finding.
+	$(BIN)/eslint --max-warnings 0 .
+	$(RUN) ruff check --no-fix .
+{{ else -}}
 lint: ## Lint with eslint.config.mjs, failing on any finding.
 	$(BIN)/eslint --max-warnings 0 .
-
+{{ end }}
+{{- if $py }}
+typecheck: ## Type-check with tsconfig.json, and the Python with mypy.ini (strict).
+	$(BIN)/tsc --noEmit
+	$(RUN) mypy $(PY_SOURCES)
+{{- else }}
 typecheck: ## Type-check with tsconfig.json.
 	$(BIN)/tsc --noEmit
+{{- end }}
 
+{{ if $py -}}
+test: ## Run the function's tests with pytest and the stacks' assertions with vitest.
+	$(RUN) pytest --strict-markers --strict-config
+	$(BIN)/vitest run
+{{ else -}}
 test: ## Run the unit tests and the stacks' assertions.
 	$(BIN)/vitest run
-
+{{ end }}
 synth: ## Write the CloudFormation templates into cdk.out/; fails on a CDK Nag finding.
 	rm -rf cdk.out
 	$(CDK) synth --quiet
