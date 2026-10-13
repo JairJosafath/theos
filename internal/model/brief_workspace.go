@@ -204,6 +204,13 @@ func renderBrief(ws BriefWorkspace) string {
 	if len(ws.Suggestions) > 0 {
 		fmt.Fprintf(&b, "\n## Reviewer suggestions\n\n%d wait for the person's answer, listed in `%s`. "+
 			"Answer one only when a **new** prompt speaks to it.\n", len(ws.Suggestions), WorkspaceSuggestionsFile)
+		if more := len(ws.Suggestions) - MaxWorkspaceSuggestions; more > 0 {
+			fmt.Fprintf(&b, "\n%d more wait unlisted; a plan may still answer one a prompt names, by its "+
+				"Container and number.\n", more)
+		}
+		b.WriteString("\nA suggestion is its Container and number together: the same number in two Containers " +
+			"is two suggestions. Match the repository name or address a prompt writes to an entry's " +
+			"`repository` or `url`, and answer that entry's `container` and `issue`.\n")
 	}
 	switch {
 	case ws.Tending:

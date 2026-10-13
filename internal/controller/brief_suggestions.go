@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 
@@ -72,6 +73,81 @@ func waitingSuggestions(brief *c4v1alpha1.Brief) []model.Suggestion {
 	return out
 }
 
+// waitingSuggestion is open issue i of Container c, a reviewer's suggestion
+// that waits for an answer.
+func waitingSuggestion(c *c4v1alpha1.Container, i gitprovider.Issue) model.Suggestion {
+	return model.Suggestion{Container: c.Name, Repository: repositoryName(c), Number: i.Number, Title: i.Title,
+		URL: i.URL, Criteria: model.MissingAcceptanceCriteria(i.Body) == ""}
+}
+
+// repositoryName is the name of Container c's repository on the Git host, the
+// last part of its address.
+func repositoryName(c *c4v1alpha1.Container) string {
+	if name := path.Base(strings.TrimSuffix(c.Status.RepositoryURL, "/")); name != "." && name != "/" {
+		return name
+	}
+	return c.Name
+}
+
+// suggestionsToCheck are the suggestions a plan's answers are checked
+// against: the ones the Brief's status lists, and, for an answer to one it
+// doesn't list, that number as the Git host has it in each Container the
+// Brief made, when it waits there, so an answer is never refused for the
+// list's length (#1019) and a refusal can say where the number does wait.
+// Past model.MaxSuggestionAnswers answers it reads nothing: the check refuses
+// the plan.
+func (r *BriefReconciler) suggestionsToCheck(ctx context.Context, brief *c4v1alpha1.Brief,
+	answers []model.SuggestionAnswer) ([]model.Suggestion, error) {
+	out := waitingSuggestions(brief)
+	listed := func(container string, number int) bool {
+		return slices.ContainsFunc(out, func(s model.Suggestion) bool {
+			return s.Container == container && s.Number == number
+		})
+	}
+	var numbers []int
+	for _, a := range answers {
+		if !listed(a.Container, a.Issue) && !slices.Contains(numbers, a.Issue) {
+			numbers = append(numbers, a.Issue)
+		}
+	}
+	if len(numbers) == 0 || len(answers) > model.MaxSuggestionAnswers {
+		return out, nil
+	}
+	var containers c4v1alpha1.ContainerList
+	if err := r.List(ctx, &containers, client.InNamespace(brief.Namespace),
+		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		return nil, fmt.Errorf("listing Containers: %w", err)
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	for _, c := range containers.Items {
+		if c.Status.RepositoryURL == "" || !slices.ContainsFunc(numbers, func(n int) bool { return !listed(c.Name, n) }) {
+			continue
+		}
+		provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
+		if err != nil {
+			return nil, err
+		}
+		repo := provider.Repository(c.Name)
+		for _, n := range numbers {
+			if listed(c.Name, n) {
+				continue
+			}
+			issue, err := provider.GetIssue(gitCtx, repo, n)
+			if errors.Is(err, gitprovider.ErrIssueNotFound) {
+				continue
+			}
+			if err != nil {
+				return nil, fmt.Errorf("reading %s#%d: %w", c.Name, n, err)
+			}
+			if issue.State == stateOpen && model.IsSuggestion(issue.Labels, issue.Body) {
+				out = append(out, waitingSuggestion(&c, issue))
+			}
+		}
+	}
+	return out, nil
+}
+
 // lastSuggestions are the suggestions the Brief last saw in Container name.
 func lastSuggestions(brief *c4v1alpha1.Brief, name string) []model.Suggestion {
 	return slices.DeleteFunc(waitingSuggestions(brief), func(s model.Suggestion) bool { return s.Container != name })
@@ -96,7 +172,7 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	for _, a := range answers {
-		forgetSuggestion(brief, a.Container, a.Issue)
+		listed := forgetSuggestion(brief, a.Container, a.Issue)
 		var c c4v1alpha1.Container
 		err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c)
 		if apierrors.IsNotFound(err) {
@@ -133,6 +209,9 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 		}
 		logf.FromContext(ctx).Info("Answered a reviewer's suggestion", "container", a.Container, "number", a.Issue,
 			"answer", a.Answer)
+		if !listed && status.SuggestionsWaiting > 0 {
+			status.SuggestionsWaiting-- // past the status's list, counted all the same
+		}
 		if a.Answer == model.AnswerTake {
 			took++
 		} else {
@@ -170,8 +249,9 @@ func answerSuggestion(ctx context.Context, provider gitprovider.Provider, repo g
 	return provider.CommentIssue(ctx, repo, issue.Number, comment)
 }
 
-// forgetSuggestion takes an answered suggestion off the Brief's list.
-func forgetSuggestion(brief *c4v1alpha1.Brief, container string, number int) {
+// forgetSuggestion takes an answered suggestion off the Brief's list, and
+// reports whether the list had it.
+func forgetSuggestion(brief *c4v1alpha1.Brief, container string, number int) bool {
 	status := &brief.Status
 	before := len(status.Suggestions)
 	status.Suggestions = slices.DeleteFunc(status.Suggestions, func(s c4v1alpha1.BriefSuggestion) bool {
@@ -180,9 +260,11 @@ func forgetSuggestion(brief *c4v1alpha1.Brief, container string, number int) {
 	if len(status.Suggestions) < before && status.SuggestionsWaiting > 0 {
 		status.SuggestionsWaiting--
 	}
+	listed := len(status.Suggestions) < before
 	if len(status.Suggestions) == 0 {
 		status.Suggestions = nil
 	}
+	return listed
 }
 
 // briefOfTaskContainer maps a Container's Task to the Brief that made the
