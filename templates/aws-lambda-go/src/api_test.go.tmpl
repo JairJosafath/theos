@@ -1,0 +1,142 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/aws/aws-lambda-go/events"
+)
+
+// memoryStore is an in-memory ItemStore; failing makes every call fail, as a
+// DynamoDB outage would.
+type memoryStore struct {
+	items   map[string]Item
+	failing bool
+}
+
+func newMemoryStore() *memoryStore { return &memoryStore{items: map[string]Item{}} }
+
+func (m *memoryStore) Get(_ context.Context, id string) (Item, bool, error) {
+	if m.failing {
+		return Item{}, false, errors.New("timeout")
+	}
+	item, ok := m.items[id]
+	return item, ok, nil
+}
+
+func (m *memoryStore) Put(_ context.Context, item Item) error {
+	if m.failing {
+		return errors.New("timeout")
+	}
+	m.items[item.ID] = item
+	return nil
+}
+
+func request(routeKey, id, body string) *events.APIGatewayV2HTTPRequest {
+	req := &events.APIGatewayV2HTTPRequest{
+		Version:  "2.0",
+		RouteKey: routeKey,
+		Body:     body,
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			RequestID: "request-1",
+			RouteKey:  routeKey,
+			Stage:     "$default",
+		},
+	}
+	if id != "" {
+		req.PathParameters = map[string]string{"id": id}
+	}
+	return req
+}
+
+var noLog = slog.New(slog.DiscardHandler)
+
+// message reads the message of an error response.
+func message(t *testing.T, resp Response) string {
+	t.Helper()
+	var body struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &body); err != nil {
+		t.Fatalf("the body %q is not JSON: %v", resp.Body, err)
+	}
+	return body.Message
+}
+
+func TestAnswerPutsThenGetsAnItem(t *testing.T) {
+	store := newMemoryStore()
+	put := answer(t.Context(), request("PUT /items/{id}", "lamp", `{"name":" Lamp ","quantity":3}`), store, noLog)
+	if put.StatusCode != http.StatusOK || put.Body != `{"id":"lamp","name":"Lamp","quantity":3}` {
+		t.Errorf("PUT = %d %s", put.StatusCode, put.Body)
+	}
+	if got := put.Headers["content-type"]; got != "application/json" {
+		t.Errorf("PUT content-type = %q", got)
+	}
+	get := answer(t.Context(), request("GET /items/{id}", "lamp", ""), store, noLog)
+	if get.StatusCode != http.StatusOK || get.Body != put.Body {
+		t.Errorf("GET = %d %s, want 200 %s", get.StatusCode, get.Body, put.Body)
+	}
+}
+
+func TestAnswerReadsABase64Body(t *testing.T) {
+	req := request("PUT /items/{id}", "lamp", base64.StdEncoding.EncodeToString([]byte(`{"name":"Lamp","quantity":1}`)))
+	req.IsBase64Encoded = true
+	if resp := answer(t.Context(), req, newMemoryStore(), noLog); resp.StatusCode != http.StatusOK {
+		t.Errorf("PUT of a base64 body = %d %s", resp.StatusCode, resp.Body)
+	}
+	req.Body = "not base64!"
+	if resp := answer(t.Context(), req, newMemoryStore(), noLog); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("PUT of a bad base64 body = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestAnswerRefusesBadInput(t *testing.T) {
+	for name, tc := range map[string]struct {
+		req    *events.APIGatewayV2HTTPRequest
+		status int
+		msg    string
+	}{
+		"no id":       {request("GET /items/{id}", "", ""), http.StatusBadRequest, `The id must be 1 to 64 letters, digits, "-" or "_".`},
+		"a bad id":    {request("GET /items/{id}", "a b", ""), http.StatusBadRequest, `The id must be 1 to 64 letters, digits, "-" or "_".`},
+		"a bad body":  {request("PUT /items/{id}", "lamp", "{"), http.StatusBadRequest, "The body must be JSON."},
+		"no name":     {request("PUT /items/{id}", "lamp", `{"quantity":1}`), http.StatusBadRequest, `"name" must be a non-empty string of at most 200 characters.`},
+		"a missing":   {request("GET /items/{id}", "chair", ""), http.StatusNotFound, "No item chair."},
+		"a bad route": {request("DELETE /items/{id}", "lamp", ""), http.StatusNotFound, "No route DELETE /items/{id}."},
+	} {
+		resp := answer(t.Context(), tc.req, newMemoryStore(), noLog)
+		if resp.StatusCode != tc.status || message(t, resp) != tc.msg {
+			t.Errorf("%s: %d %s, want %d %q", name, resp.StatusCode, resp.Body, tc.status, tc.msg)
+		}
+	}
+}
+
+func TestAnswerLogsAFailureAndHidesIt(t *testing.T) {
+	var logs bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&logs, nil))
+	store := newMemoryStore()
+	store.failing = true
+	for _, req := range []*events.APIGatewayV2HTTPRequest{
+		request("GET /items/{id}", "lamp", ""),
+		request("PUT /items/{id}", "lamp", `{"name":"Lamp","quantity":1}`),
+	} {
+		logs.Reset()
+		resp := answer(t.Context(), req, store, log)
+		if resp.StatusCode != http.StatusInternalServerError || strings.Contains(resp.Body, "timeout") {
+			t.Errorf("%s with the store down = %d %s, want 500 without the cause", req.RouteKey, resp.StatusCode, resp.Body)
+		}
+		var entry map[string]any
+		if err := json.Unmarshal(logs.Bytes(), &entry); err != nil {
+			t.Fatalf("the log %q is not one JSON entry: %v", logs.String(), err)
+		}
+		if entry["level"] != "ERROR" || entry["error"] != "timeout" || entry["requestId"] != "request-1" || entry["routeKey"] != req.RouteKey {
+			t.Errorf("%s logged %v", req.RouteKey, entry)
+		}
+	}
+}

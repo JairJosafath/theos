@@ -10,3 +10,8 @@ package-lock.json
 
 # Written by cdk synth, should .gitignore ever lose it.
 cdk.out/
+{{- if eq .Framework "aws-lambda-go" }}
+
+# go-standard's, copied byte for byte so the two can't drift.
+.golangci.yml
+{{- end }}

@@ -56,7 +56,7 @@ CloudFormation offline. The same API as `aws-lambda-ts`, in Python.
   templated in each, so `uv sync --locked` and `npm ci` install exactly the
   pinned versions. `allowScripts` lets esbuild's install script run (tsx
   needs it).
-- **Standard:** made for `aws-standard` v1.1.0 or later, which owns
+- **Standard:** made for `aws-standard` v1.2.0 or later, which owns
   `infra/main.ts`, `infra/standard.ts`, `infra/standard.test.ts`,
   `ruff.toml` and `mypy.ini`. `package.json` lists its TypeScript tools with
   exact versions as aws-lambda-ts does, without esbuild, `@types/aws-lambda`

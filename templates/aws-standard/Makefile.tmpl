@@ -5,6 +5,7 @@
 #
 # Nothing here deploys, bootstraps or calls AWS: `synth` only writes
 # CloudFormation into cdk.out/, offline, without Docker or credentials.
+{{- $go := eq .Framework "aws-lambda-go" }}
 {{- $py := eq .Framework "aws-lambda-py" }}
 
 NAME := {{ .Container }}
@@ -25,13 +26,22 @@ PY_SOURCES := app tests
 
 .DEFAULT_GOAL := help
 .PHONY: help check check-light deps fmt fmt-check lint typecheck test synth cfn-lint clean
+{{- if $go }}
+.PHONY: go-deps tidy-check go-fmt-check vet go-lint go-test
+{{- end }}
 
 help: ## List the targets.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+{{ if $go -}}
+check: deps go-deps tidy-check fmt-check go-fmt-check lint vet go-lint typecheck go-test test synth cfn-lint ## Everything CI checks.
+
+check-light: deps go-deps tidy-check fmt-check go-fmt-check lint vet go-lint typecheck ## check without the tests, which CI runs on each change with checks BeforeRelease.
+{{- else -}}
 check: deps fmt-check lint typecheck test synth cfn-lint ## Everything CI checks.
 
 check-light: deps fmt-check lint typecheck ## check without the tests, which CI runs on each change with checks BeforeRelease.
+{{- end }}
 
 {{ if $py -}}
 deps: ## Install the exact packages in package-lock.json and uv.lock, failing when uv.lock is stale.
@@ -41,12 +51,16 @@ deps: ## Install the exact packages in package-lock.json and uv.lock, failing wh
 deps: ## Install the exact packages in package-lock.json.
 	npm ci --no-audit --no-fund
 {{ end }}
-{{- if $py }}
+{{ if $go -}}
+fmt: ## Format every file: Prettier, and gofumpt and goimports for Go.
+	$(BIN)/prettier --write .
+	cd src && golangci-lint fmt
+{{- else if $py -}}
 fmt: ## Format every file with Prettier, and the Python with ruff.
 	$(BIN)/prettier --write .
 	$(RUN) ruff check --select I --fix .
 	$(RUN) ruff format .
-{{- else }}
+{{- else -}}
 fmt: ## Format every file with Prettier.
 	$(BIN)/prettier --write .
 {{- end }}
@@ -61,27 +75,49 @@ fmt-check: ## Fail when a file is not formatted.
 lint: ## Lint with eslint.config.mjs and ruff.toml, failing on any finding.
 	$(BIN)/eslint --max-warnings 0 .
 	$(RUN) ruff check --no-fix .
-{{ else -}}
-lint: ## Lint with eslint.config.mjs, failing on any finding.
-	$(BIN)/eslint --max-warnings 0 .
-{{ end }}
-{{- if $py }}
+
 typecheck: ## Type-check with tsconfig.json, and the Python with mypy.ini (strict).
 	$(BIN)/tsc --noEmit
 	$(RUN) mypy $(PY_SOURCES)
-{{- else }}
+{{ else -}}
+lint: ## Lint with eslint.config.mjs, failing on any finding.
+	$(BIN)/eslint --max-warnings 0 .
+
 typecheck: ## Type-check with tsconfig.json.
 	$(BIN)/tsc --noEmit
-{{- end }}
+{{ end }}
+{{ if $go -}}
+test: ## Run the stacks' assertions, which build the function.
+	$(BIN)/vitest run
 
-{{ if $py -}}
+# The function is its own Go module in src/: node_modules/ holds stray .go
+# files that would otherwise be part of it.
+go-deps: ## Download the modules in src/go.mod.
+	cd src && go mod download
+
+tidy-check: ## Fail when go mod tidy would change src/go.mod or src/go.sum.
+	cd src && go mod tidy -diff
+
+go-fmt-check: ## Fail when the Go code is not formatted, showing the diff.
+	cd src && golangci-lint fmt --diff
+
+vet: ## Run go vet.
+	cd src && go vet ./...
+
+go-lint: ## Lint the Go code with .golangci.yml, failing on any finding.
+	cd src && golangci-lint run
+
+go-test: ## Run the function's tests with the race detector, never from the cache.
+	cd src && go test -race -count=1 ./...
+{{- else if $py -}}
 test: ## Run the function's tests with pytest and the stacks' assertions with vitest.
 	$(RUN) pytest --strict-markers --strict-config
 	$(BIN)/vitest run
-{{ else -}}
+{{- else -}}
 test: ## Run the unit tests and the stacks' assertions.
 	$(BIN)/vitest run
-{{ end }}
+{{- end }}
+
 synth: ## Write the CloudFormation templates into cdk.out/; fails on a CDK Nag finding.
 	rm -rf cdk.out
 	$(CDK) synth --quiet

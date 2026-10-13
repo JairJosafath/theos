@@ -40,7 +40,7 @@ func TestFunctionTypeIsSupportedByTheAWSLayersOnly(t *testing.T) {
 			got = append(got, e.Side+" "+e.Name)
 		}
 	}
-	want := []string{"Framework aws-lambda-ts", "Framework aws-lambda-py", "Standard aws-standard"}
+	want := []string{"Framework aws-lambda-ts", "Framework aws-lambda-go", "Framework aws-lambda-py", "Standard aws-standard"}
 	if !slices.Equal(got, want) {
 		t.Errorf("chart entries supporting %q = %v, want %v", TypeFunction, got, want)
 	}
@@ -51,7 +51,8 @@ func TestPlannerGuideStatesTheFunctionCue(t *testing.T) {
 	for _, rule := range []string{
 		"An idea that asks for AWS Lambda, or serverless on AWS, is a `function`",
 		"so plan no DataStore for it",
-		"such as `aws-lambda-ts`, or `aws-lambda-py` when the idea asks for Python",
+		"such as `aws-lambda-ts` (TypeScript), `aws-lambda-go` (Go: pick it when the idea asks for Go)",
+		"or `aws-lambda-py` (Python: pick it when the idea asks for Python)",
 		"it takes no `computeRef` and no `deploymentRef`",
 	} {
 		if !strings.Contains(guide, rule) {
@@ -78,11 +79,13 @@ func TestFunctionPlansOnTheAWSLambdas(t *testing.T) {
 	if got := check(functionPlan); got != nil {
 		t.Fatalf("the function plan is refused: %v", got)
 	}
-	if got := check(strings.Replace(functionPlan, "aws-lambda-ts", "aws-lambda-py", 1)); got != nil {
-		t.Fatalf("the function plan on aws-lambda-py is refused: %v", got)
+	for _, framework := range []string{"aws-lambda-go", "aws-lambda-py"} {
+		if got := check(strings.Replace(functionPlan, "aws-lambda-ts", framework, 1)); got != nil {
+			t.Errorf("the function plan on %s is refused: %v", framework, got)
+		}
 	}
 	// A Deployment or Compute for the cluster doesn't fit a function, and
-	// aws-lambda-ts builds functions only.
+	// the AWS Frameworks build functions only.
 	for name, model := range map[string]string{
 		"k8s-manifests": functionPlan + "  deploymentRef: {name: k8s-manifests}\n",
 		"small":         functionPlan + "  computeRef: {name: small}\n",
