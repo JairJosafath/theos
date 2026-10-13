@@ -165,24 +165,16 @@ export function ReleaseForm({
   // they were worked out from: one changed since refuses it rather than
   // write back a field someone else changed meanwhile.
   const [publishFrom, setPublishFrom] = useState<string>()
-  // Likewise the Brief whose entry they are, when the Brief sets them.
-  const [briefFrom, setBriefFrom] = useState<string>()
   const [seen, setSeen] = useState(rv)
   if (seen !== rv) {
     setSeen(rv)
     const settled = settledEdits(crew, edits)
     setEdits(settled)
-    if (!('publish' in settled)) {
-      setPublishFrom(undefined)
-      setBriefFrom(undefined)
-    }
+    if (!('publish' in settled)) setPublishFrom(undefined)
   }
   const form = { ...releaseSettings(crew), ...edits }
   const setForm = (next: Partial<CrewReleaseSettings>) => {
-    if ('publish' in next && !('publish' in edits)) {
-      setPublishFrom(rv)
-      setBriefFrom(brief?.metadata.resourceVersion)
-    }
+    if ('publish' in next && !('publish' in edits)) setPublishFrom(rv)
     setEdits({ ...edits, ...next })
   }
   // Publishing is the Crew's own unless its Brief sets it.
@@ -211,7 +203,8 @@ export function ReleaseForm({
       if (briefOps && brief && briefWriter) {
         await briefWriter.setSettings(ns, brief.metadata.name, {
           releases: briefOps,
-          resourceVersion: briefFrom ?? brief.metadata.resourceVersion,
+          // The list is the Brief's as the page shows it now.
+          resourceVersion: brief.metadata.resourceVersion,
         })
       }
     }, 'Saved')
