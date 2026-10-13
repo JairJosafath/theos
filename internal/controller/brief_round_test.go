@@ -685,7 +685,7 @@ spec:
 		// checker's template is missing, so it never gets Ready and the round
 		// keeps applying, reconcile after reconcile.
 		mustCreate(&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "broken"),
-			Spec: newCatalogSpec(templatesURL+"missing", "v1.0.0", c4v1alpha1.ContainerTypeService)})
+			Spec: newFrameworkSpec(templatesURL+"missing", "v1.0.0", c4v1alpha1.ContainerTypeService)})
 		mustCreate(newBrief(ns, "cel-lens"))
 		plan := linterPlan(ns, 1)
 		plan[model.PlanModelFile] = scaffold.File{Data: append(plan[model.PlanModelFile].Data, []byte(`---

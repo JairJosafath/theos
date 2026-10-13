@@ -41,9 +41,9 @@ func createFactory(ns string) {
 			},
 		},
 		&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "python-fastapi"),
-			Spec: newCatalogSpec(templatesURL+"python-fastapi", "v1.3.0", service)},
+			Spec: newFrameworkSpec(templatesURL+"python-fastapi", "v1.3.0", service)},
 		&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "go-kubebuilder"),
-			Spec: newCatalogSpec(templatesURL+"go-kubebuilder", "v1.0.0", operator)},
+			Spec: newFrameworkSpec(templatesURL+"go-kubebuilder", "v1.0.0", operator)},
 		&c4v1alpha1.Compute{ObjectMeta: objectMeta(ns, "small"),
 			Spec: newCatalogSpec(templatesURL+"small", "v1.1.0", service, worker, job, operator)},
 		&c4v1alpha1.Deployment{ObjectMeta: objectMeta(ns, "k8s-manifests"),
@@ -93,6 +93,38 @@ var _ = Describe("Container catalog choices", func() {
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUnsupportedType))
 			g.Expect(cond.Message).To(Equal("python-fastapi does not support static-site"))
+		}).Should(Succeed())
+	})
+
+	It("fails a Container on a Framework that deploys itself when it names a Compute or Deployment", func() {
+		ns := newProjectNamespace()
+		createFactory(ns)
+		fargate := &c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "aws-fargate-ts"),
+			Spec: newFrameworkSpec(templatesURL+"aws-fargate-ts", "v1.0.0", c4v1alpha1.ContainerTypeService)}
+		fargate.Spec.DeploysItself = true
+		onFargate := func(name string) *c4v1alpha1.Container {
+			container := newContainer(ns, name, "webshop-core", c4v1alpha1.ContainerTypeService)
+			container.Spec.FrameworkRef.Name = "aws-fargate-ts"
+			return container
+		}
+		deployed, own := onFargate("orders-api"), onFargate("orders-ecs")
+		own.Spec.ComputeRef, own.Spec.DeploymentRef = nil, nil
+		mustCreate(newSystem(ns, "webshop-core"), fargate, deployed, own)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), deployed)).To(Succeed())
+			g.Expect(deployed.Status.Phase).To(Equal(c4v1alpha1.ContainerFailed))
+			cond := condition(deployed.Status.Conditions, c4v1alpha1.ConditionChoicesValid)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonDeploysItself))
+			g.Expect(cond.Message).To(Equal("aws-fargate-ts deploys itself: its template's app (on AWS, its CDK app) " +
+				"is the Container's deployment, so it takes no Compute and no Deployment; " +
+				"remove computeRef small and deploymentRef k8s-manifests"))
+
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-ecs"), own)).To(Succeed())
+			g.Expect(condition(own.Status.Conditions, c4v1alpha1.ConditionChoicesValid)).
+				To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 	})
 

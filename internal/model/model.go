@@ -48,6 +48,9 @@ type CatalogEntry struct {
 	// ChecksBeforeRelease says a Standard can run the full check only before a
 	// release; false for other sides.
 	ChecksBeforeRelease bool
+	// DeploysItself says a Framework's template is its Container's deployment;
+	// false for other sides.
+	DeploysItself bool
 }
 
 // Supports reports whether the entry lists the Container type.
@@ -110,6 +113,39 @@ func CheckStandard(framework string, standard *CatalogEntry) error {
 		return nil
 	}
 	return &FitError{Standard: standard.Name, Framework: framework}
+}
+
+// SelfDeployError says a Container names a Compute or Deployment while its
+// Framework deploys itself.
+type SelfDeployError struct {
+	Framework string
+	// Refs lists the Container's computeRef and deploymentRef that are set, as
+	// "computeRef small".
+	Refs []string
+}
+
+func (e *SelfDeployError) Error() string {
+	return fmt.Sprintf("%s deploys itself: its template's app (on AWS, its CDK app) is the Container's deployment, "+
+		"so it takes no Compute and no Deployment; remove %s", e.Framework, joinAnd(e.Refs))
+}
+
+// CheckDeploysItself returns a *SelfDeployError when the Framework deploys
+// itself and the Container names a Compute or a Deployment, each "" when unset.
+func CheckDeploysItself(framework CatalogEntry, compute, deployment string) error {
+	if !framework.DeploysItself {
+		return nil
+	}
+	var refs []string
+	if compute != "" {
+		refs = append(refs, "computeRef "+compute)
+	}
+	if deployment != "" {
+		refs = append(refs, "deploymentRef "+deployment)
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return &SelfDeployError{Framework: framework.Name, Refs: refs}
 }
 
 // Element kinds a Relationship can connect, mirroring the API.

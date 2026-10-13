@@ -121,6 +121,10 @@ func newSession(ns, name, container string) *c4v1alpha1.Session {
 	}
 }
 
+func newFrameworkSpec(url, ref string, supported ...c4v1alpha1.ContainerType) c4v1alpha1.FrameworkSpec {
+	return c4v1alpha1.FrameworkSpec{CatalogEntrySpec: newCatalogSpec(url, ref, supported...)}
+}
+
 func newCatalogSpec(url, ref string, supported ...c4v1alpha1.ContainerType) c4v1alpha1.CatalogEntrySpec {
 	return c4v1alpha1.CatalogEntrySpec{
 		SupportedTypes: supported,

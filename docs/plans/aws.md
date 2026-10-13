@@ -114,14 +114,14 @@ lesson gives the AWS templates.
    `aws-ec2-ts` are type `service`. The type lands first, on its own, with
    no catalog entry supporting it, so nothing can pick it until step 2.
 4. **No Deployment layer with the AWS Frameworks.** The CDK app is the
-   deployment. A Deployment can't be limited to Frameworks, so
-   `k8s-manifests` picked with `aws-fargate-ts` fails the Container on the
-   shared `Dockerfile` path, as the one-owner rule intends; the planner
-   guide says AWS Frameworks take no Deployment and no Compute. (Step 3:
-   it doesn't fail. `k8s-manifests` writes no `Dockerfile` for a Framework
-   it doesn't know, so the pair scaffolds with manifests nothing uses, and
-   only the planner guide keeps a Brief from it; #1056 proposes a catalog
-   rule that refuses it.)
+   deployment. Each AWS Framework says `deploysItself: true` in the catalog,
+   and the plan check and the Container reconciler refuse a Container on it
+   that names a Compute or a Deployment (`ChoicesValid=False`, reason
+   `DeploysItself`); the planner guide says it too. (First this decision
+   counted on `k8s-manifests` failing the Container on the shared
+   `Dockerfile` path. Step 3 found it doesn't: `k8s-manifests` writes no
+   `Dockerfile` for a Framework it doesn't know, so the pair scaffolded with
+   manifests nothing uses. #1056 added the flag.)
 5. **The check:** `make check` is ts-standard's (deps, fmt-check, lint,
    typecheck, vitest) plus `synth` (`cdk synth --quiet` with CDK Nag's
    `AwsSolutions` pack applied as an Aspect, so an unsuppressed finding fails

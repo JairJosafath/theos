@@ -159,10 +159,17 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err == nil {
 		err = model.CheckStandard(container.Spec.FrameworkRef.Name, res.standard)
 	}
+	if err == nil {
+		// Resolved, so entries start with the Framework.
+		err = model.CheckDeploysItself(res.entries[0], refName(container.Spec.ComputeRef), refName(container.Spec.DeploymentRef))
+	}
 	if err != nil {
 		reason := c4v1alpha1.ReasonUnsupportedType
 		if _, ok := errors.AsType[*model.FitError](err); ok {
 			reason = c4v1alpha1.ReasonUnsupportedFramework
+		}
+		if _, ok := errors.AsType[*model.SelfDeployError](err); ok {
+			reason = c4v1alpha1.ReasonDeploysItself
 		}
 		status.Phase = c4v1alpha1.ContainerFailed
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionChoicesValid,

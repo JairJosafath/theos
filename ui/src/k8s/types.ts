@@ -213,13 +213,15 @@ export interface Session extends K8sObject {
   }
 }
 
-/** Framework, Compute, Deployment and Connector share one spec. */
+/** Framework, Compute, Deployment and Connector share one spec; a Framework adds deploysItself. */
 export interface CatalogEntry extends K8sObject {
   spec: {
     displayName?: string
     description?: string
     supportedTypes: ContainerType[]
     template: { url: string; ref: string }
+    /** A Framework only: its template is its Container's deployment, so it takes no Compute or Deployment. */
+    deploysItself?: boolean
   }
 }
 

@@ -25,7 +25,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 | Container | An application with its own repository. One repository per Container, no monorepos. |
 | Container type | A fixed list: `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. |
 | Catalog | One entry per side of a Container (Framework, Compute, Deployment, Connector), kept per namespace. Bundles can come later, as a team choice. |
-| Compatibility | Each catalog entry lists the Container types it supports. The operator checks this before scaffolding; no webhook in v1. |
+| Compatibility | Each catalog entry lists the Container types it supports, and a Framework whose template is its own deployment says `deploysItself`, so its Container takes no Compute and no Deployment. The operator checks both before scaffolding; no webhook in v1. |
 | Templates | Catalog entries point to platform-managed template repositories at a pinned tag or commit. |
 | Repositories | New work only. The operator creates each repository; adopting existing ones is out of scope. |
 | Git provider | Its own kind, `GitProvider`, per namespace. Every Container references one. |
@@ -143,7 +143,7 @@ A Container is scaffolded exactly once, from the catalog entries it picks and th
 ### Scaffolding a Container
 
 1. **Resolve references.** The SoftwareSystem, GitProvider and catalog entries must exist. Until they do, the Container stays `Pending` with the missing name in its condition.
-2. **Check types.** Every catalog entry used, including the Connectors reached through Relationships, must list the Container's type. If not, the Container is `Failed` with `ChoicesValid=False`, for example "python-fastapi does not support static-site".
+2. **Check types.** Every catalog entry used, including the Connectors reached through Relationships, must list the Container's type. If not, the Container is `Failed` with `ChoicesValid=False`, for example "python-fastapi does not support static-site". A Framework with `deploysItself: true` (the AWS Frameworks, whose CDK app builds and runs the Container) is its Container's deployment, so a Container on it that names a Compute or a Deployment fails the same way, reason `DeploysItself`, naming the refs to remove. A flag on the Framework, not a list of the Deployments it allows: a Deployment can't know the Frameworks it fits, and the shared-path conflict that would catch some pairs doesn't catch a Deployment whose files render to nothing for a Framework it doesn't know.
 3. **Create the repository** in the GitProvider's organization, named after the Container.
 4. **Render the layers** in a fixed order: Framework, Compute, Deployment, then each Connector. Templates are Go `text/template` files that receive the project, system, container and type names, the names of the chosen Framework, Compute and Deployment (empty when the Container picks none), plus the list of Connectors.
 5. **Assemble the devcontainer.** The operator writes `.devcontainer/devcontainer.json` itself: the Framework's base settings plus one compose file per Connector, such as a Postgres service for local development and tests.
@@ -857,6 +857,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
 - **The operator checks and applies the plan.** A plan writes only story
   kinds (Project, Person, SoftwareSystem, Container, DataStore, Relationship),
   names only installed catalog entries that support the Container's type,
+  no Compute or Deployment on a Framework that deploys itself,
   changes only the story text of what exists (and a Container's `checks`,
   below) and deletes nothing; anything
   else refuses it, and the planner's next round gets the reasons. The operator

@@ -17,6 +17,7 @@ import (
 // +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"
 // +kubebuilder:printcolumn:name="Types",type=string,JSONPath=".spec.supportedTypes"
 // +kubebuilder:printcolumn:name="Ref",type=string,JSONPath=".spec.template.ref"
+// +kubebuilder:printcolumn:name="Deploys Itself",type=boolean,JSONPath=".spec.deploysItself",priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // Framework is a catalog entry: the language, framework and tooling of a Container.
@@ -30,7 +31,19 @@ type Framework struct {
 
 	// spec defines the template and the Container types it supports
 	// +required
-	Spec CatalogEntrySpec `json:"spec"`
+	Spec FrameworkSpec `json:"spec"`
+}
+
+// FrameworkSpec is a catalog entry that can also be its Container's deployment.
+type FrameworkSpec struct {
+	CatalogEntrySpec `json:",inline"`
+
+	// deploysItself says the template carries its own deployment, such as a
+	// CDK app that builds and runs the Container on AWS. A Container with this
+	// Framework takes no Compute and no Deployment; the operator fails one
+	// that names either.
+	// +optional
+	DeploysItself bool `json:"deploysItself,omitempty"`
 }
 
 // +kubebuilder:object:root=true
