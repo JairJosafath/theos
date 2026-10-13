@@ -455,8 +455,19 @@ _Use resources efficiently as demand changes and technology evolves._
 - The newest runtime: `AwsSolutions-L1`.
 - Size memory to the work (Lambda gives CPU in proportion); measure before
   raising it. Serverless `LambdaDefaultMemorySize`: by hand, memory is set.
+{{- if eq .Framework "aws-lambda-go" }}
+- Cold starts: one static binary (`go build`, `CGO_ENABLED=0`, `-ldflags
+  '-s -w'`, `-tags lambda.norpc`) named `bootstrap` on `provided.al2023`
+  for `arm64`; SDK clients made once in `main` or at package scope, before
+  `lambda.Start`, never per request; only the service packages used
+  (`service/dynamodb`), and no heavy work in `init`.
+{{- else if eq .Framework "aws-lambda-py" }}
+- Cold starts: boto3 clients and resources at module scope, small bundles
+  (only the packages `uv.lock` pins, no dev group), no heavy work at import.
+{{- else }}
 - Cold starts: SDK clients at module scope, small bundles (esbuild,
   minified, only the clients used), no heavy work at import.
+{{- end }}
 - Data access by key: `GetItem` and `Query` on keys and indexes; a `Scan` is
   never on a request path.
 - By hand: measure a stated budget with a benchmark, and say what only a
@@ -486,7 +497,7 @@ _Minimize the environmental impact of the workload._
 - Keep what is needed, no longer: log retention, and no data stored that
   the system's needs don't ask for.
 - Efficient code: no polling, no work per request that can be done once at
-  start-up, small bundles.
+  start-up, {{ if eq .Framework "aws-lambda-go" }}a small static binary{{ else }}small bundles{{ end }}.
 - No rule enforces these: review them.
 
 {{ end }}## Acknowledging a finding

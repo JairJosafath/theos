@@ -40,7 +40,8 @@ func TestFunctionTypeIsSupportedByTheAWSLayersOnly(t *testing.T) {
 			got = append(got, e.Side+" "+e.Name)
 		}
 	}
-	if want := []string{"Framework aws-lambda-ts", "Framework aws-lambda-go", "Standard aws-standard"}; !slices.Equal(got, want) {
+	want := []string{"Framework aws-lambda-ts", "Framework aws-lambda-go", "Framework aws-lambda-py", "Standard aws-standard"}
+	if !slices.Equal(got, want) {
 		t.Errorf("chart entries supporting %q = %v, want %v", TypeFunction, got, want)
 	}
 }
@@ -50,7 +51,8 @@ func TestPlannerGuideStatesTheFunctionCue(t *testing.T) {
 	for _, rule := range []string{
 		"An idea that asks for AWS Lambda, or serverless on AWS, is a `function`",
 		"so plan no DataStore for it",
-		"such as `aws-lambda-ts` (TypeScript) or `aws-lambda-go` (Go: pick it when the idea asks for Go)",
+		"such as `aws-lambda-ts` (TypeScript), `aws-lambda-go` (Go: pick it when the idea asks for Go)",
+		"or `aws-lambda-py` (Python: pick it when the idea asks for Python)",
 		"it takes no `computeRef` and no `deploymentRef`",
 	} {
 		if !strings.Contains(guide, rule) {
@@ -59,7 +61,7 @@ func TestPlannerGuideStatesTheFunctionCue(t *testing.T) {
 	}
 }
 
-func TestFunctionPlansOnAWSLambdaTS(t *testing.T) {
+func TestFunctionPlansOnTheAWSLambdas(t *testing.T) {
 	current := CurrentModel{Namespace: "notes", Catalog: chartCatalog(t), GitProvider: "gitea"}
 	files := map[string]string{
 		PlanModelFile:   functionPlan,
@@ -77,8 +79,10 @@ func TestFunctionPlansOnAWSLambdaTS(t *testing.T) {
 	if got := check(functionPlan); got != nil {
 		t.Fatalf("the function plan is refused: %v", got)
 	}
-	if got := check(strings.Replace(functionPlan, "aws-lambda-ts", "aws-lambda-go", 1)); got != nil {
-		t.Errorf("the function plan on aws-lambda-go is refused: %v", got)
+	for _, framework := range []string{"aws-lambda-go", "aws-lambda-py"} {
+		if got := check(strings.Replace(functionPlan, "aws-lambda-ts", framework, 1)); got != nil {
+			t.Errorf("the function plan on %s is refused: %v", framework, got)
+		}
 	}
 	// A Deployment or Compute for the cluster doesn't fit a function, and
 	// the AWS Frameworks build functions only.

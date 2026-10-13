@@ -86,17 +86,19 @@ Push the branch `plan/<round>` with these files:
    `operator` on the Framework that supports it, such as `go-kubebuilder`,
    not a `job` or a `service` that happens to run in the cluster. An idea
    that asks for AWS Lambda, or serverless on AWS, is a `function` on the
-   Framework that supports it, such as `aws-lambda-ts` (TypeScript) or
-   `aws-lambda-go` (Go: pick it when the idea asks for Go), with the Standard
-   that fits it; it takes no `computeRef` and no `deploymentRef`: its CDK
-   app is its deployment (the catalog says `deploysItself: true`, and the
-   plan check refuses either ref), and the table it keeps data in is in that app,
-   so plan no DataStore for it. An idea that asks for EC2, virtual machines
-   or servers you run on AWS is a `service` on the Framework that supports
-   it, such as `aws-ec2-ts`, the same way: the Standard that fits it, no
-   `computeRef`, no `deploymentRef` and no DataStore. An idea that asks for a
-   container service on AWS, ECS or Fargate is a `service` on the Framework
-   that supports it, such as `aws-fargate-ts`, the same way: no
+   Framework that supports it, such as `aws-lambda-ts` (TypeScript),
+   `aws-lambda-go` (Go: pick it when the idea asks for Go) or
+   `aws-lambda-py` (Python: pick it when the idea asks for Python), with the
+   Standard that fits it; it takes no `computeRef` and no `deploymentRef`:
+   its CDK app is its deployment (the catalog says `deploysItself: true`,
+   and the plan check refuses either ref), and the table it keeps data in
+   is in that app, so plan no DataStore for it. An idea that asks for EC2,
+   virtual machines or servers you run on AWS is a `service` on the
+   Framework that supports it, such as `aws-ec2-ts`, the same way: the
+   Standard that fits it, no `computeRef`, no `deploymentRef` and no
+   DataStore. An idea that asks for a container service on AWS, ECS or
+   Fargate is a `service` on the Framework that supports it, such as
+   `aws-fargate-ts`, the same way: no
    `computeRef`, no `deploymentRef` and no DataStore. A `service` that names
    no AWS runs in the cluster, on its other Frameworks. When no
    Framework in

@@ -1,8 +1,9 @@
 # Cross-language principles
 
 Distilled from long-lived style guides. Each rule names its sources (keys at the
-bottom). TypeScript and AWS specifics live in `typescript.md` and
-`aws.md`; where they are stricter, they win.
+bottom). {{ if eq .Framework "aws-lambda-py" }}Python, TypeScript and AWS specifics live in `python.md`,
+`typescript.md` and `aws.md`{{ else }}TypeScript and AWS specifics live in `typescript.md` and
+`aws.md`{{ end }}; where they are stricter, they win.
 
 ## Consistency
 
@@ -117,7 +118,9 @@ bottom). TypeScript and AWS specifics live in `typescript.md` and
   HTTP to them and `main.ts` wires them to the clients.{{ else if eq .Framework "aws-fargate-ts" }}Node's
   HTTP server; one module wraps each AWS service behind an interface;
   `server.ts` reads requests and writes responses, and `main.ts` wires the
-  server to the clients.{{ else }}the
+  server to the clients.{{ else if eq .Framework "aws-lambda-py" }}the
+  Lambda event types; one module wraps each AWS service behind a protocol;
+  `handler.py` wires them to the event and the clients.{{ else }}the
   `aws-lambda` types; one module wraps each AWS service behind an interface;
   `handler.ts` wires them to the event and the clients.{{ end }} [LLVM "Library layering"]
 

@@ -1,0 +1,33 @@
+{{ if eq .Framework "aws-lambda-py" -}}
+# The lint and format rules of this repository. ruff reads this file before
+# pyproject.toml, so a [tool.ruff] table there changes nothing.
+line-length = 100
+# Lint and format every file but the platform's, the build output and uv's
+# cache in CI (.uv).
+extend-exclude = [".devcontainer", ".uv", "dist"]
+
+[lint]
+# Every rule ruff has, with the exact ruff version pinned in pyproject.toml,
+# less the few below. A ruff bump that adds rules is a Standard change.
+select = ["ALL"]
+ignore = [
+    "COM812", # trailing commas: the formatter decides them
+    "CPY001", # copyright headers: the licence is the repository's, not each file's
+    "TD002",  # a TODO names its issue (TD003), not its author
+    "FIX002", # a TODO with an issue is allowed (TD003 still requires the issue)
+]
+
+[lint.per-file-ignores]
+# Tests assert with assert, compare with literal values and need no docstrings
+# or package marker.
+"tests/**" = ["S101", "PLR2004", "D", "INP001"]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[format]
+docstring-code-format = true
+{{ end -}}
