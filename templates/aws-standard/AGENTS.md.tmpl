@@ -2,11 +2,13 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
 # Agent guide
 
-This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` function of {{ .SoftwareSystem }}: an AWS
-Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else if $py }}Python, on boto3,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API, keeping its data
+This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` {{ if eq .Framework "aws-ec2-ts" }}service of {{ .SoftwareSystem }}: an HTTP
+server in TypeScript on EC2 instances in an Auto Scaling group behind an
+internal Application Load Balancer{{ else }}function of {{ .SoftwareSystem }}: an AWS
+Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else if $py }}Python, on boto3,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API{{ end }}, keeping its data
 in DynamoDB, with its infrastructure as a CDK app in `infra/`, scaffolded by
 C4 Factory with the `{{ .Standard }}` Standard. Build it to the rules below. What
-the function is for, and what it must never do, is in the issue you were given
+it is for, and what it must never do, is in the issue you were given
 and the system's needs: follow those.
 
 ## The one rule
@@ -31,7 +33,7 @@ allowed, `tsc` with the strict `tsconfig.json` and mypy `--strict` with
 `make check` must pass before every commit. It installs the exact packages in
 `package-lock.json`, then runs Prettier (check), ESLint with `eslint.config.mjs`
 (typescript-eslint strict, no warnings allowed), `tsc` with the strict
-`tsconfig.json`, the vitest tests (the function's and the stacks'
+`tsconfig.json`, the vitest tests (the code's and the stacks'
 `Template.fromStack` assertions), `cdk synth` with CDK Nag's AWS Solutions
 {{- end }}
 checks, which fail on any finding not acknowledged with a reason, and
@@ -98,8 +100,8 @@ takes from its cache or, when the cache lacks one, PyPI{{ end }}.
   `npm install --save-exact --save-dev` and commit `package-lock.json`.
 {{- else }}
 - Add packages with `npm install --save-exact` (`--save-dev` for tools), and
-  commit `package-lock.json`. esbuild bundles what the function imports into
-  one file, the SDK included, so `node_modules` never ships; what the function
+  commit `package-lock.json`. esbuild bundles what the {{ if eq .Framework "aws-ec2-ts" }}server{{ else }}function{{ end }} imports into
+  one file, the SDK included, so `node_modules` never ships; what it
   imports at run time is a `dependency`, tools and the CDK are
   `devDependencies`. Prefer Node's own modules and the AWS SDK v3's modular
   clients (`@aws-sdk/client-*`, `@aws-sdk/lib-dynamodb`); then few, maintained,
@@ -115,6 +117,12 @@ takes from its cache or, when the cache lacks one, PyPI{{ end }}.
    `main` in `src/main.go` before `lambda.Start`, and reused by every
    invocation; nothing heavy runs in `init`. The binary imports only the
    service modules it uses.
+{{- else if eq .Framework "aws-ec2-ts" -}}
+1. **Start-up and shutdown:** SDK clients and configuration are created
+   once, in `src/main.ts`, and reused by every request; a missing setting
+   stops the server at start-up, not at the first request. On `SIGTERM` the
+   server finishes the requests in flight and exits. The bundle imports only
+   the clients it uses.
 {{- else if $py -}}
 1. **Cold start:** boto3 clients, resources and configuration are created
    once, at module scope in `app/handler.py`, and reused by every invocation;
@@ -132,16 +140,20 @@ takes from its cache or, when the cache lacks one, PyPI{{ end }}.
 3. **Idempotency:** a retried request or event changes nothing twice. Writes
    are puts of a whole item, conditional writes, or keyed by an idempotency
    key; never a blind increment.
-4. **Limits are set:** every function has its timeout and memory set in the
+{{ if eq .Framework "aws-ec2-ts" }}4. **Limits are set:** the server caps what it reads (body size) and keeps
+   idle connections open longer than the load balancer's 60 seconds; the
+   instance type, the Auto Scaling group's minimum and maximum and its scaling
+   policy are set in the stack. A request is answered within the load
+   balancer's idle timeout; SDK calls stay within it.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
    stack, the timeout below API Gateway's 30 seconds and above what the work
-   needs; SDK calls stay within it. The stage is throttled.
+   needs; SDK calls stay within it. The stage is throttled.{{ end }}
 5. **Logs:** structured JSON, one entry per line, through the {{ if $go }}`*slog.Logger`{{ else }}`Log`{{ end }} the
-   function is given; an entry names the request id and what failed. Never
+   code is given; an entry names the request id and what failed. Never
    log a secret, a token or a request body with user data.
 6. **Least privilege:** permissions come from CDK grants
    (`table.grant(fn, 'dynamodb:GetItem')`, `grantReadData`), narrowed to the
    calls the code makes; never an IAM statement with `*` or `service:*`
-   actions, never an AWS managed policy on a function's role.
+   actions, never an AWS managed policy on a role.
 {{- if $go }}
 7. **Errors and context:** every error is handled or returned, wrapped with
    `%w` and what was being done; the invocation's `ctx`, which carries
@@ -176,9 +188,11 @@ takes from its cache or, when the cache lacks one, PyPI{{ end }}.
    the input is untrusted); no non-null assertion without a disable comment
    saying why; no `as` to silence the compiler; exhaustive switches over unions.
 8. **Pure modules:** logic lives in modules that import neither the AWS SDK
-   nor the `aws-lambda` types, tested with plain vitest; one module wraps each
+   {{ if eq .Framework "aws-ec2-ts" }}nor `node:http`, tested with plain vitest; one module wraps each AWS
+   service behind an interface the tests fake; `src/server.ts` adapts HTTP to
+   them and `src/main.ts` only wires them.{{ else }}nor the `aws-lambda` types, tested with plain vitest; one module wraps each
    AWS service behind an interface the tests fake; `src/handler.ts` only
-   wires them.
+   wires them.{{ end }}
 9. **Tests:** next to the code (`foo.test.ts`), `it.each` tables, names that say
    what is expected; no real timers, network or shared state between tests.
    No test calls AWS: SDK clients are stubbed behind their interface, and
@@ -225,16 +239,21 @@ Offline digests (read the one for what you are touching):
 {{ end -}}
 - `docs/style/typescript.md`: Google's TypeScript style, the handbook's do's and
   don'ts and typescript-eslint, each rule marked [lint] or [review]
-- `docs/style/aws.md`: Lambda handlers, API Gateway HTTP APIs, DynamoDB, the
+{{ if eq .Framework "aws-ec2-ts" }}- `docs/style/aws.md`: the HTTP server, EC2 instances in an Auto Scaling
+  group, the Application Load Balancer, the VPC, DynamoDB, the AWS SDK v3,
+  the CDK and CDK Nag, and tests
+- `docs/well-architected.md`: the AWS Well-Architected Framework, pillar{{ else }}- `docs/style/aws.md`: Lambda handlers, API Gateway HTTP APIs, DynamoDB, the
   {{ if $go }}AWS SDK for Go v2{{ else if $py }}boto3{{ else }}AWS SDK v3{{ end }}, the CDK and CDK Nag, and tests
 - `docs/well-architected.md`: the AWS Well-Architected Framework and its
-  Serverless Applications Lens, pillar by pillar, with the CDK Nag rules that
+  Serverless Applications Lens, pillar{{ end }} by pillar, with the CDK Nag rules that
   enforce each
 - `docs/style/principles.md`: cross-language principles, with sources
 - `docs/style/SOURCES.md`: every source URL, with the date it was read
 
 Online (canonical): {{ if $go }}https://go.dev/doc/effective_go · {{ else if $py }}https://peps.python.org/pep-0008/ · https://docs.astral.sh/ruff/rules/ ·
 https://boto3.amazonaws.com/v1/documentation/api/latest/guide/ · {{ end }}https://google.github.io/styleguide/tsguide.html ·
-https://typescript-eslint.io/rules/ · https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html ·
-https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/ ·
+https://typescript-eslint.io/rules/ · {{ if eq .Framework "aws-ec2-ts" }}https://docs.aws.amazon.com/autoscaling/ec2/userguide/ ·
+https://docs.aws.amazon.com/elasticloadbalancing/latest/application/ ·
+https://docs.aws.amazon.com/wellarchitected/latest/framework/ ·{{ else }}https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html ·
+https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/ ·{{ end }}
 https://github.com/cdklabs/cdk-nag/blob/main/RULES.md

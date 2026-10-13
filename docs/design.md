@@ -804,7 +804,9 @@ model and context it needs.
   from drifting), and no Compute or Deployment: `make check` synthesizes
   the stack offline under CDK Nag's AwsSolutions rules and
   cfn-lint, and nothing deploys. GitHub issue #1028 has the plan,
-  [plans/aws.md](plans/aws.md).
+  [plans/aws.md](plans/aws.md). The same Standard serves the `service`
+  Framework `aws-ec2-ts` (EC2 instances in an Auto Scaling group behind an
+  internal Application Load Balancer), also with no Compute or Deployment.
 
 ## Briefs: an idea in plain words
 

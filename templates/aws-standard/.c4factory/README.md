@@ -1,9 +1,9 @@
 # aws-standard (Standard)
 
-How a serverless program on AWS in a C4 Factory Container is written,
-checked and reviewed, its function in TypeScript or Go and its CDK app in
-TypeScript: ts-standard's TypeScript rules (typescript-eslint's strictest
-configs, Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
+How a program on AWS in a C4 Factory Container is written, checked and
+reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
+ts-standard's TypeScript rules (typescript-eslint's strictest configs,
+Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
 checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
 assertions on every stack, the agent guide and role guides, offline style and
 Well-Architected digests, issue and pull request templates, and the
@@ -22,21 +22,32 @@ python-standard v1.2.1's, and `docs/style/python.md` holds its `python.md`'s
 general sections, from "Layout and formatting" up to its FastAPI section,
 byte for byte.
 
-- **Supports:** `function`; Frameworks: `aws-lambda-ts`, `aws-lambda-go`, `aws-lambda-py`
-- **Per Framework:** `aws-lambda-ts` renders as v1.0.0 did, byte for byte.
-  `aws-lambda-go` (since v1.1.0) branches on `.Framework` in the `Makefile`
-  (the Go targets), `AGENTS.md`, the role guides, `docs/style/aws.md` and
-  `SOURCES.md` (the Go handler, `slog`, the SDK for Go v2, `go build`
-  bundling), `.editorconfig` (tabs for `*.go`), `.prettierignore`
-  (`.golangci.yml`) and the workflow (`GOPROXY`, `GOPRIVATE`), and alone gets
-  `.golangci.yml` and `docs/style/go.md`, which render empty, and so are left
-  out, for any other Framework. `aws-lambda-py` (since v1.2.0), a Python
-  function with a TypeScript CDK app, branches the same files but the
-  workflow, `.editorconfig` and `.prettierignore`: the `Makefile` adds uv,
-  ruff, mypy and pytest to its targets; `eslint.config.mjs` also ignores
-  `.venv/`; `principles.md` and `docs/well-architected.md` speak of boto3;
-  and it alone gets `ruff.toml`, `mypy.ini` and `docs/style/python.md`. A
-  Framework added later gets its branches in the version that adds it.
+- **Supports:** `function`, `service`; Frameworks: `aws-lambda-ts`,
+  `aws-lambda-go`, `aws-ec2-ts`, `aws-lambda-py`
+- **Per Framework:** `aws-lambda-go` (since v1.1.0) branches on `.Framework`
+  in the `Makefile` (the Go targets), `AGENTS.md`, the role guides,
+  `docs/style/aws.md` and `SOURCES.md` (the Go handler, `slog`, the SDK for
+  Go v2, `go build` bundling), `.editorconfig` (tabs for `*.go`),
+  `.prettierignore` (`.golangci.yml`) and the workflow (`GOPROXY`,
+  `GOPRIVATE`), and alone gets `.golangci.yml` and `docs/style/go.md`, which
+  render empty, and so are left out, for any other Framework. `aws-ec2-ts`
+  (since v1.2.0) branches in `AGENTS.md`, the role guides, the issue
+  template, `eslint.config.mjs`'s comments and message, `docs/style/aws.md`,
+  `principles.md`, `SOURCES.md` and `docs/well-architected.md`: an EC2
+  digest (the server, the network and load balancer, the instances and the
+  Auto Scaling group) and a Well-Architected digest for a service on
+  instances. Since v1.2.0 an `aws-lambda-ts` Container's docs no longer say
+  "function" where they mean any code, and every Framework's
+  `infra/standard.test.ts` reads tags with extra keys (an Auto Scaling
+  group's `PropagateAtLaunch`) and lets a `Deny` statement name every action
+  (a bucket refusing plain HTTP). `aws-lambda-py` (since v1.3.0), a Python
+  function with a TypeScript CDK app, branches in the `Makefile` (uv, ruff,
+  mypy and pytest in its targets), `AGENTS.md`, the role guides,
+  `eslint.config.mjs` (it also ignores `.venv/`), `docs/style/aws.md`,
+  `principles.md`, `SOURCES.md` and `docs/well-architected.md` (the Python
+  handler, boto3, uv bundling, pytest), and alone gets `ruff.toml`,
+  `mypy.ini` and `docs/style/python.md`. A Framework added later gets its
+  branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
@@ -48,7 +59,7 @@ byte for byte.
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
   `strictTypeChecked` and `stylisticTypeChecked` (typed, through the project
   service), plus exhaustive switches, explicit module boundary types,
-  `prefer-readonly`, sort compare functions, `no-console` (the function logs
+  `prefer-readonly`, sort compare functions, `no-console` (the code logs
   JSON through the `Log` it is given), `process.exit` refused, `eqeqeq` and
   `curly`; unused disable comments are errors. Prettier formats everything but
   the platform's files, the lockfile and `cdk.out/`, which ESLint ignores too.
@@ -67,7 +78,7 @@ byte for byte.
   tests, builds the app the same way with `cdk.json`'s context and asserts on
   every stack: synth passes CDK Nag; no error or warning annotation; the three
   tags on the stack and on every resource with a `Tags` list; no IAM action
-  `*` or `service:*`; every DynamoDB table (`SSESpecification`), S3 bucket,
+  `*` or `service:*` in a statement that allows; every DynamoDB table (`SSESpecification`), S3 bucket,
   SQS queue and SNS topic encrypted at rest; every log group with a retention
   and every Lambda function logging to its own; every stateful resource
   (tables, buckets, queues, topics, log groups, databases, file systems, KMS
@@ -123,14 +134,14 @@ byte for byte.
   `cdk.json`, whose `app` is `node_modules/.bin/tsx infra/main.ts` and whose
   context holds the recommended feature flags; `tsconfig.json`, including
   `src`, `infra` and `vitest.config.mts`; and `vitest.config.mts`, running
-  `src/**/*.test.ts` and `infra/**/*.test.ts`. aws-lambda-ts does all of this.
-  `aws-lambda-go` does the same with no `esbuild` of its own, `tsconfig.json`
-  and vitest without `src`, and the function in `src/` as a Go module with
-  `go.mod` and `go.sum`, built by its stack. `aws-lambda-py` does the same
-  without `src/` and esbuild, and also owns `pyproject.toml` (the function's
-  packages in `dependencies`, `ruff`, `mypy`, `pytest` and `types-boto3`
-  exact in the `dev` group, pytest reading `tests/`, `[tool.uv] package =
-  false`), `uv.lock`, the package `app/` and `tests/`.
+  `src/**/*.test.ts` and `infra/**/*.test.ts`. aws-lambda-ts and aws-ec2-ts
+  do all of this. `aws-lambda-go` does the same with no `esbuild` of its own,
+  `tsconfig.json` and vitest without `src`, and the function in `src/` as a
+  Go module with `go.mod` and `go.sum`, built by its stack. `aws-lambda-py`
+  does the same without `src/` and esbuild, and also owns `pyproject.toml`
+  (the function's packages in `dependencies`, `ruff`, `mypy`, `pytest` and
+  `types-boto3` exact in the `dev` group, pytest reading `tests/`,
+  `[tool.uv] package = false`), `uv.lock`, the package `app/` and `tests/`.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
   They say no test calls AWS (stacks are checked with `Template.fromStack`,
@@ -141,16 +152,18 @@ byte for byte.
   an issue without an unchecked item under "Acceptance criteria" is never picked up.
   The pull request template asks for the CDK Nag acknowledgements a change adds.
 - **Style digests:** `docs/style/` holds ts-standard's TypeScript digest (and
-  go-standard's `go.md` for `aws-lambda-go`) and
-  cross-language principles (adapted for Lambda: what the handler owns, the
-  layering of pure modules, SDK wrappers and the handler), and `aws.md`, from
-  the Lambda, API Gateway, DynamoDB, SDK v3 and CDK guides and CDK Nag's
-  rules. Every rule is marked `[lint]`, `[nag]`, `[test]` or `[review]`;
+  go-standard's `go.md` for `aws-lambda-go`) and cross-language principles
+  (adapted per Framework: what the handler or the server owns, the layering
+  of pure modules, SDK wrappers and the entry point), and `aws.md`, from the
+  Lambda, API Gateway, DynamoDB, SDK and CDK guides and CDK Nag's rules, or
+  for `aws-ec2-ts` the EC2 Auto Scaling, Application Load Balancer, VPC,
+  DynamoDB, SDK v3 and CDK guides. Every rule is marked `[lint]`, `[nag]`,
+  `[test]` or `[review]`;
   `docs/style/SOURCES.md` lists the sources with dates and the pinned
   versions.
 - **Well-Architected:** `docs/well-architected.md` digests the AWS
-  Well-Architected Framework and its Serverless Applications Lens, one
-  section per pillar (operational excellence, security, reliability,
+  Well-Architected Framework (with its Serverless Applications Lens, but for
+  `aws-ec2-ts`), one section per pillar (operational excellence, security, reliability,
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet.

@@ -1,0 +1,3 @@
+node_modules/
+# What cdk synth writes: the templates and the bundled server
+cdk.out/

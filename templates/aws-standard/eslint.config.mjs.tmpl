@@ -1,8 +1,4 @@
-{{ if eq .Framework "aws-lambda-py" -}}
-// Lint config for the CDK app's TypeScript: typescript-eslint's strictest
-{{ else -}}
-// Lint config for the function's TypeScript and its CDK app: typescript-eslint's strictest
-{{ end -}}
+// Lint config for the {{ if eq .Framework "aws-ec2-ts" }}server's TypeScript and its CDK app{{ else if eq .Framework "aws-lambda-py" }}CDK app's TypeScript{{ else }}function's TypeScript and its CDK app{{ end }}: typescript-eslint's strictest
 // type-checked presets, plus the rules below. `make lint` runs ESLint with
 // --max-warnings 0, so any finding fails `make check`. Every rule turned off
 // or changed here says why. Changing this file is the Standard's job, not a
@@ -12,14 +8,9 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-{{- if eq .Framework "aws-lambda-py" }}
-  // What cdk synth writes, and uv's environment, whose packages ship
-  // JavaScript of their own.
-  globalIgnores(['cdk.out/', '.venv/']),
-{{- else }}
-  // What cdk synth writes: templates and the bundled function.
-  globalIgnores(['cdk.out/']),
-{{- end }}
+  // What cdk synth writes: templates and the bundled {{ if eq .Framework "aws-ec2-ts" }}server{{ else }}function{{ end }}{{ if eq .Framework "aws-lambda-py" }};
+  // and uv's environment, whose packages ship JavaScript of their own{{ end }}.
+  globalIgnores(['cdk.out/'{{ if eq .Framework "aws-lambda-py" }}, '.venv/'{{ end }}]),
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
@@ -50,17 +41,18 @@ export default defineConfig(
       '@typescript-eslint/prefer-readonly': 'error',
       // Array#sort without a compare function sorts numbers as strings.
       '@typescript-eslint/require-array-sort-compare': ['error', { ignoreStringArrays: true }],
-      // The function logs structured JSON through the Log it is given, so
+      // The code logs structured JSON through the Log it is given, so
       // tests see what it logs and every entry is one parseable line.
       'no-console': 'error',
-      // process.exit() in a Lambda function kills the execution environment
-      // mid-invocation; throw, or return an error response.
+{{ if eq .Framework "aws-ec2-ts" }}      // process.exit() ends the server mid-request; throw, return an error
+      // response, or on SIGTERM close the server and let the process end.{{ else }}      // process.exit() in a Lambda function kills the execution environment
+      // mid-invocation; throw, or return an error response.{{ end }}
       'no-restricted-properties': [
         'error',
         {
           object: 'process',
           property: 'exit',
-          message: 'Throw, or return an error response; never end the execution environment.',
+          message: {{ if eq .Framework "aws-ec2-ts" }}'Throw, or return an error response; never end the server mid-request.'{{ else }}'Throw, or return an error response; never end the execution environment.'{{ end }},
         },
       ],
       eqeqeq: ['error', 'always'],
