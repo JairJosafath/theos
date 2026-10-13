@@ -44,6 +44,7 @@ var awsFrameworks = []side{
 	{model.TypeFunction, "aws-lambda-ts"},
 	{model.TypeFunction, "aws-lambda-go"},
 	{model.TypeService, "aws-ec2-ts"},
+	{model.TypeService, "aws-fargate-ts"},
 }
 
 func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {

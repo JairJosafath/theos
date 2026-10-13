@@ -1,7 +1,7 @@
 # aws-standard (Standard)
 
-How a program on AWS in a C4 Factory Container is written, checked and
-reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
+How a program on AWS in a C4 Factory Container (a Lambda function, a service
+on EC2 or a container service on Fargate) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
 ts-standard's TypeScript rules (typescript-eslint's strictest configs,
 Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
 checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
@@ -19,7 +19,7 @@ Frameworks appears in this Standard's, in the same order. For
 v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
 
 - **Supports:** `function`, `service`; Frameworks: `aws-lambda-ts`,
-  `aws-lambda-go`, `aws-ec2-ts`
+  `aws-lambda-go`, `aws-ec2-ts`, `aws-fargate-ts`
 - **Per Framework:** `aws-lambda-go` (since v1.1.0) branches on `.Framework`
   in the `Makefile` (the Go targets), `AGENTS.md`, the role guides,
   `docs/style/aws.md` and `SOURCES.md` (the Go handler, `slog`, the SDK for
@@ -36,8 +36,15 @@ v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
   "function" where they mean any code, and every Framework's
   `infra/standard.test.ts` reads tags with extra keys (an Auto Scaling
   group's `PropagateAtLaunch`) and lets a `Deny` statement name every action
-  (a bucket refusing plain HTTP). A Framework added later gets its branches
-  in the version that adds it.
+  (a bucket refusing plain HTTP). `aws-fargate-ts` (since v1.3.0) branches
+  in `AGENTS.md`, the role guides, the issue template and
+  `eslint.config.mjs` (`dist/` ignored; `process.exit` refused because it
+  drops requests in flight), and has its own whole `docs/style/aws.md` (the
+  server, the load balancer, the task and service), `SOURCES.md` and
+  `docs/well-architected.md` (ECS's best practices instead of the Serverless
+  Lens), each one `{{ if eq .Framework "aws-fargate-ts" }}` branch around
+  the file. A Framework added later gets its branches in the version that
+  adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
@@ -117,8 +124,9 @@ v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
   `cdk.json`, whose `app` is `node_modules/.bin/tsx infra/main.ts` and whose
   context holds the recommended feature flags; `tsconfig.json`, including
   `src`, `infra` and `vitest.config.mts`; and `vitest.config.mts`, running
-  `src/**/*.test.ts` and `infra/**/*.test.ts`. aws-lambda-ts and aws-ec2-ts
-  do all of this. `aws-lambda-go` does the same with no `esbuild` of its own,
+  `src/**/*.test.ts` and `infra/**/*.test.ts`. aws-lambda-ts, aws-ec2-ts
+  and aws-fargate-ts (which bundles in its image's build, not in synth) do
+  all of this. `aws-lambda-go` does the same with no `esbuild` of its own,
   `tsconfig.json` and vitest without `src`, and the function in `src/` as a
   Go module with `go.mod` and `go.sum`, built by its stack.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
@@ -136,13 +144,14 @@ v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
   of pure modules, SDK wrappers and the entry point), and `aws.md`, from the
   Lambda, API Gateway, DynamoDB, SDK and CDK guides and CDK Nag's rules, or
   for `aws-ec2-ts` the EC2 Auto Scaling, Application Load Balancer, VPC,
-  DynamoDB, SDK v3 and CDK guides. Every rule is marked `[lint]`, `[nag]`,
+  DynamoDB, SDK v3 and CDK guides, or for `aws-fargate-ts` ECS's best
+  practices and the Application Load Balancer's guides. Every rule is marked `[lint]`, `[nag]`,
   `[test]` or `[review]`;
   `docs/style/SOURCES.md` lists the sources with dates and the pinned
   versions.
 - **Well-Architected:** `docs/well-architected.md` digests the AWS
   Well-Architected Framework (with its Serverless Applications Lens, but for
-  `aws-ec2-ts`), one section per pillar (operational excellence, security, reliability,
+  `aws-ec2-ts`, and with ECS's best practices for `aws-fargate-ts`), one section per pillar (operational excellence, security, reliability,
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet.
