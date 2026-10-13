@@ -23,7 +23,7 @@ const behind = (update?: NonNullable<NonNullable<Container['status']>['standard'
     name: 'go-standard',
     ref: 'v1.3.0',
     behind: [
-      { path: 'Makefile', ref: 'v1.1.0' },
+      { path: 'Makefile', ref: 'v1.1.0', change: '--- Makefile (v1.1.0)\n+++ Makefile (v1.3.0)\n-lint:\n+lint: fmt\n' },
       { path: '.golangci.yml', ref: 'v1.2.0' },
     ],
     update,
@@ -90,6 +90,14 @@ describe('ContainerActions', () => {
     expect(html).toContain('Keep ours')
     expect(html).toContain('lists the lines it drops')
     expect(render(serviceAccount, container('Ready'))).not.toContain('Standard files left out')
+  })
+
+  it('shows each file’s change collapsed beside the take and keep buttons', () => {
+    const html = render(serviceAccount, behind())
+    expect(html).toContain('<details class="left-out-change"><summary>What the Standard changed')
+    expect(html).toContain('+lint: fmt')
+    expect(html.match(/<details/g)).toHaveLength(1)
+    expect(html.indexOf('+lint: fmt')).toBeLessThan(html.indexOf('Keep ours'))
   })
 
   it('offers no answer while a take runs or stopped, and one after another update stopped', () => {
