@@ -222,7 +222,8 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Pr
 			return deleteChangeProposal(ctx, provider, repo, issue)
 		}))
 	}
-	notes = append(notes, r.endIssue(ctx, provider, repo, n, comment)...)
+	notes = append(notes, r.endIssue(ctx, provider, repo, task, comment,
+		fmt.Sprintf("its pull request %s merged", status.PullRequestURL))...)
 	logNotes(ctx, task, notes)
 	return filed
 }
@@ -256,12 +257,15 @@ func (r *TaskReconciler) fileByHand(ctx context.Context, provider gitprovider.Pr
 	return issue.URL, err
 }
 
-// endIssue takes an issue out of progress, closes it and says how its Task
-// ended. The comment comes only once the host took the close, so a close it
-// refuses (an open dependency) leaves no comment saying the open issue is done.
-// It returns the notes' errors.
-func (r *TaskReconciler) endIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, n int,
-	comment string) []error {
+// endIssue takes the Task's issue out of progress, closes it and says how the
+// Task ended. The comment comes only once the host took the close, so a close
+// it refuses (an open dependency) leaves no comment saying the open issue is
+// done: it says instead that the Task ended (ended, how) and why the host
+// refused, and labels the issue status/needs-human so a person sees it. It
+// returns the notes' errors.
+func (r *TaskReconciler) endIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	task *c4v1alpha1.Task, comment, ended string) []error {
+	n := int(task.Spec.Issue)
 	notes := []error{
 		r.gitCall(ctx, func(ctx context.Context) error {
 			return provider.RemoveIssueLabel(ctx, repo, n, model.LabelInProgress)
@@ -270,7 +274,15 @@ func (r *TaskReconciler) endIssue(ctx context.Context, provider gitprovider.Prov
 	closeErr := r.gitCall(ctx, func(ctx context.Context) error { return provider.CloseIssue(ctx, repo, n) })
 	notes = append(notes, closeErr)
 	if closeErr != nil {
-		return notes
+		refused := fmt.Sprintf("Task `%s` ended: %s. The host refused to close this issue: %v\n\n"+
+			"Close it once what keeps it open is done, or label it %s to work it again.",
+			task.Name, ended, closeErr, model.LabelReady)
+		return append(notes,
+			r.gitCall(ctx, func(ctx context.Context) error { return provider.EnsureLabels(ctx, repo, issueLabels()) }),
+			r.gitCall(ctx, func(ctx context.Context) error {
+				return provider.AddIssueLabel(ctx, repo, n, model.LabelNeedsHuman)
+			}),
+			r.gitCall(ctx, func(ctx context.Context) error { return provider.CommentIssue(ctx, repo, n, refused) }))
 	}
 	return append(notes,
 		r.gitCall(ctx, func(ctx context.Context) error { return provider.CommentIssue(ctx, repo, n, comment) }))

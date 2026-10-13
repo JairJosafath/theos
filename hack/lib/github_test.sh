@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, checking and merging, and giving the turn up merged, red, conflicting or out of time, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -865,6 +865,8 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   # The fake make: records it ran, sleeps CHECK_SLEEP, fails when $T/red exists.
   printf '#!/bin/sh\necho "$*" >>"%s/checked"\nsleep "${CHECK_SLEEP:-0}"\n[ ! -e "%s/red" ]\n' "$T" "$T" >"$T/bin/check-make"
   chmod +x "$T/bin/check-make"
+  # land merges main in itself: give it an identity a device without a global one lacks.
+  export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
   export C4_MAKE=$T/bin/check-make GH_LIB_ROOT=$T/land GH_PENDING_DIR=$T/land/.relay GH_LAND_POLL=0.2 GH_LAND_SETTLE=0
   queue() { ls "$Q" | sed 's/\.json//' | sort -n | tr '\n' ' '; }
 
@@ -905,6 +907,28 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   : >"$T/calls"
   out=$(GH_LAND_BEAT=0.2 CHECK_SLEEP=1.5 gh_land 40 2>&1)
   check "land: beats while make check runs" "$? $(($(grep -c '^PATCH ' "$T/calls") >= 3))" "0 1"
+
+  # A fetch that races another worktree's fails once, then lands; one that
+  # keeps failing gives the turn up after GH_LAND_FETCH_TRIES.
+  git() {
+    if [ "${3:-}" = fetch ] && [ "$(cat "$T/fetches" 2>/dev/null || echo 0)" -gt 0 ]; then
+      echo $(($(cat "$T/fetches") - 1)) >"$T/fetches"
+      echo "error: fetching ref refs/remotes/origin/main failed: incorrect old value provided" >&2
+      return 1
+    fi
+    command git "$@"
+  }
+  rm -f "$T/landed"
+  echo 1 >"$T/fetches"
+  out=$(GH_LAND_FETCH_PAUSE=0 gh_land 40 2>&1)
+  check "land: retries a failed fetch and lands" "$? $(cut -d' ' -f1-2 "$T/landed") | $(queue)" "0 merge 40 | "
+  grep -q '#40: git fetch origin failed; trying again in 0s' <<<"$out"; check "land: says it retries the fetch" $? 0
+  rm -f "$T/landed"
+  echo 9 >"$T/fetches"
+  out=$(GH_LAND_FETCH_PAUSE=0 GH_LAND_FETCH_TRIES=3 gh_land 40 2>&1)
+  check "land: a fetch failing every try gives the turn up" "$? $(cat "$T/landed" 2>/dev/null) | $(queue) | $(cat "$T/fetches")" "1  |  | 6"
+  grep -q '#40: git fetch origin failed 3 times' <<<"$out"; check "land: says the fetch failed" $? 0
+  unset -f git
 
   # A red check gives the turn up, says so, and merges nothing.
   rm -f "$T/landed"

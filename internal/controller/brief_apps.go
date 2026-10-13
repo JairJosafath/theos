@@ -99,6 +99,11 @@ func (r *BriefReconciler) app(ctx context.Context, brief *c4v1alpha1.Brief, cont
 			app.LastRelease.PublishState = release.Publish.State
 			app.LastRelease.PublishedURL = release.Publish.URL
 		}
+		if module := release.GoModule; module != nil {
+			app.LastRelease.ModuleState = module.State
+			app.LastRelease.ModulePath = module.Path
+			app.LastRelease.ModuleMessage = module.Message
+		}
 		var c c4v1alpha1.Container
 		if err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: container}, &c); err == nil {
 			app.LastRelease.URL = releasePageURL(c.Status.RepositoryURL, release.Tag)
@@ -138,6 +143,9 @@ func appMessage(app *c4v1alpha1.BriefApp, briefsCrew bool) string {
 	case release.PublishState == "Failed":
 		return fmt.Sprintf("Release %s could not be published to %s; the Crew says why and tries again.",
 			release.Tag, app.PublishTo)
+	case release.ModuleState == "Invalid" || release.ModuleState == "NotFetchable":
+		return fmt.Sprintf("Released %s, but Go can't fetch its module %s; the Crew says why.",
+			release.Tag, release.ModulePath)
 	case release.PublishState == "Published":
 		return fmt.Sprintf("Released %s and published it to %s.", release.Tag, app.PublishTo)
 	case release.PublishState != "":

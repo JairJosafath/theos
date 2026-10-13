@@ -90,6 +90,15 @@ func TestCheckAnswers(t *testing.T) {
 		{"no why", []SuggestionAnswer{{"todo", 5, AnswerTake, " ", false}}, []string{"no why"}},
 		{"long why", []SuggestionAnswer{{"todo", 5, AnswerTake, strings.Repeat("a", MaxAnswerWhy+1), false}},
 			[]string{"keep it under"}},
+		{"missing one that doesn't wait", []SuggestionAnswer{
+			{"todo", 7, AnswerMissing, "The prompt names todo #7.", false}}, nil},
+		{"missing one that waits", []SuggestionAnswer{{"todo", 5, AnswerMissing, "The prompt names it.", false}},
+			[]string{"answers todo#5 missing, but it waits for an answer: take or skip it"}},
+		{"missing with no why", []SuggestionAnswer{{"todo", 7, AnswerMissing, "", false}}, []string{"no why"}},
+		{"missing as a fix", []SuggestionAnswer{{"todo", 7, AnswerMissing, "The prompt names it.", true}},
+			[]string{"answers todo#7 missing as a fix"}},
+		{"missing twice", []SuggestionAnswer{{"todo", 7, AnswerMissing, "why", false},
+			{"todo", 7, AnswerMissing, "why", false}}, []string{"twice"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -216,6 +225,32 @@ func TestWorkspaceSuggestionsPastTheStatus(t *testing.T) {
 			if tc.unlisted == "" && strings.Contains(brief, "unlisted") ||
 				tc.unlisted != "" && !strings.Contains(brief, tc.unlisted) {
 				t.Errorf("brief.md, want unlisted %q:\n%s", tc.unlisted, brief)
+			}
+		})
+	}
+}
+
+func TestUnansweredLine(t *testing.T) {
+	suggestion := "Do this.\n\nSuggested by reviewer-1 while reviewing PR #3 for #2 (Task `todo-2`)."
+	a := SuggestionAnswer{Container: "cel-lens-vscode", Issue: 385, Answer: AnswerMissing}
+	tests := []struct {
+		name         string
+		exists, open bool
+		labels       []string
+		want         string
+	}{
+		{"gone", false, false, nil, "it doesn't exist."},
+		{"closed", true, false, []string{LabelProposed}, "it is closed."},
+		{"ready", true, true, []string{LabelReady}, "it is labelled status/ready."},
+		{"in progress", true, true, []string{"kind/feature", "status/in-progress"}, "it is labelled status/in-progress."},
+		{"not a suggestion", true, true, nil, "it isn't a reviewer's suggestion."},
+		{"waits again", true, true, []string{LabelProposed}, "waits for an answer again"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := UnansweredLine(a, FoundIssue(tc.exists, tc.open, tc.labels, suggestion))
+			if !strings.HasPrefix(got, "A prompt named cel-lens-vscode#385, which ") || !strings.Contains(got, tc.want) {
+				t.Errorf("line = %q, want one containing %q", got, tc.want)
 			}
 		})
 	}

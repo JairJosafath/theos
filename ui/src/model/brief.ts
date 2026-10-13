@@ -112,6 +112,8 @@ export interface BriefView {
 export interface BriefRoundView {
   round: number
   summary?: string
+  /** The reviewers' suggestions a prompt named that the round couldn't answer, a line each. */
+  unanswered?: string[]
   /** How the round ended, in a word or two, when it says. */
   outcome?: string
   usage?: UsageView
@@ -220,6 +222,7 @@ export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
       .map((h) => ({
         round: h.round,
         summary: h.summary?.trim() || undefined,
+        unanswered: h.unanswered?.length ? h.unanswered : undefined,
         outcome: h.outcome ? ROUND_OUTCOMES[h.outcome] : undefined,
         usage: describeUsage(h.costMilliUSD, h.runsWithoutCost, h.tokens, plannerLimit),
       }))
@@ -485,6 +488,8 @@ export interface BriefAppView {
   publishedURL?: string
   /** "3 at a time": how many issues its Crew works on at once; unset while it has no Crew. */
   parallel?: string
+  /** The latest release's Go module, toned by whether Go can fetch it; unset for an app that isn't Go. */
+  module?: { state: string; path?: string; message?: string; tone: Tone }
 }
 
 export function describeBriefApp(app: BriefApp): BriefAppView {
@@ -500,15 +505,32 @@ export function describeBriefApp(app: BriefApp): BriefAppView {
     publishTo: app.publishTo || undefined,
     publishedURL: last?.publishState === 'Published' ? last.publishedURL || undefined : undefined,
     parallel: app.parallel ? `${app.parallel} at a time` : undefined,
+    module:
+      last?.moduleState && last.moduleState !== 'NotGo'
+        ? {
+            state: last.moduleState,
+            path: last.modulePath || undefined,
+            message: last.moduleMessage || undefined,
+            tone: moduleTone(last.moduleState),
+          }
+        : undefined,
   }
 }
 
-/** Off is muted; on is ok once the latest release ran and published, an error when either failed. */
+/** A module nobody can fetch is an error, one on its way is progress. */
+function moduleTone(state: string): Tone {
+  if (state === 'Published') return 'ok'
+  if (state === 'Invalid' || state === 'NotFetchable') return 'error'
+  return 'progress'
+}
+
+/** Off is muted; on is ok once the latest release ran and published, an error when either failed or Go can't fetch its module. */
 function releaseTone(app: BriefApp): Tone {
   if (app.releases !== 'On') return 'unknown'
   const last = app.lastRelease
   if (!last) return 'waiting'
   if (last.run === 'Failed' || last.publishState === 'Failed') return 'error'
+  if (last.moduleState === 'Invalid' || last.moduleState === 'NotFetchable') return 'error'
   if (last.run === 'Waiting' || last.run === 'Running') return 'progress'
   if (last.publishState === 'Pending' || last.publishState === 'Publishing') return 'progress'
   return 'ok'

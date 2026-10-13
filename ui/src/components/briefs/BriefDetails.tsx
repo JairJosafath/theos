@@ -58,6 +58,11 @@ export function BriefDetails({ view, answers }: { view: BriefView; answers?: Ans
                 <span className="mono">Round {r.round}</span>
                 {r.outcome ? <span className="field-hint"> · {r.outcome}</span> : null}
                 {r.summary ? <span className="brief-issue-title"> {r.summary}</span> : null}
+                {r.unanswered?.map((line) => (
+                  <div key={line} className="field-hint">
+                    {line}
+                  </div>
+                ))}
                 {r.usage ? (
                   <div className="field-hint">
                     <UsageLine usage={r.usage} />
@@ -342,6 +347,17 @@ function AppLine({ app }: { app: BriefAppView }) {
         ) : null}
       </div>
       <p className="brief-app-message">{app.message}</p>
+      {app.module ? (
+        <p className="brief-app-module">
+          Go module{' '}
+          <span className={`badge badge-${app.module.tone} badge-sm`}>
+            <span className="badge-dot" aria-hidden="true" />
+            {app.module.state}
+          </span>
+          {app.module.path ? <span className="mono"> {app.module.path}</span> : null}
+          {app.module.message ? <span className="muted"> · {app.module.message}</span> : null}
+        </p>
+      ) : null}
     </li>
   )
 }
