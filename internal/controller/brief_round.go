@@ -589,6 +589,7 @@ func recordRound(status *c4v1alpha1.BriefStatus, task *c4v1alpha1.Task, entry c4
 	entry.Round = status.Round
 	entry.Summary = model.ClipSentences(entry.Summary, 1000)
 	entry.Choices = model.ClipList(entry.Choices, 50, 500)
+	entry.Unanswered = model.ClipList(entry.Unanswered, model.MaxUnanswered, model.MaxAnswerWhy)
 	status.History = model.KeepNewest(append(status.History, entry), 20)
 }
 

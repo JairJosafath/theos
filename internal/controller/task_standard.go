@@ -259,9 +259,10 @@ func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1alp
 	}
 	change := status.StandardChange
 	notes = append(notes, deleteProposal(gitCtx, provider, repo, change))
-	notes = append(notes, r.endIssue(ctx, provider, repo, int(task.Spec.Issue), fmt.Sprintf(
+	notes = append(notes, r.endIssue(ctx, provider, repo, task, fmt.Sprintf(
 		"Done by Standard change #%d (%s): with it merged, this issue needed nothing more.",
-		change.Issue, change.IssueURL))...)
+		change.Issue, change.IssueURL), fmt.Sprintf(
+		"its Standard change #%d (%s) merged and left this issue nothing to do", change.Issue, change.IssueURL))...)
 	logNotes(ctx, task, notes)
 	r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, reasonDoneByStandardChange, step.Message)
 	logf.FromContext(ctx).Info("Merged Task done by its Standard change", "issue", change.Issue)

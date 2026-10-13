@@ -851,9 +851,12 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
     if [ -n "$q" ]; then jq -r "$q" <<<"$data"; else echo "$data"; fi
   }
   gh_merge() { echo "merge $1 at $(git -C "$GH_LIB_ROOT" rev-parse HEAD)" >>"$T/landed"; }
-  g() { git -C "$T/land" -c user.name=t -c user.email=t@t "$@"; }
+  g() { git -C "$T/land" "$@"; }
   git init -q --bare -b main "$T/origin.git"
   git clone -q "$T/origin.git" "$T/land" 2>/dev/null
+  # gh_land's merge commits here too: the clone needs an identity of its own,
+  # as a device's git may have no global one.
+  g config user.name t && g config user.email t@t
   g commit -q --allow-empty -m init && g push -q origin HEAD:main
   g checkout -q -b feat && echo feat >"$T/land/feat" && g add feat && g commit -q -m feat && g push -q -u origin feat
   # main moves on: another pull request merged.
@@ -862,6 +865,8 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   # The fake make: records it ran, sleeps CHECK_SLEEP, fails when $T/red exists.
   printf '#!/bin/sh\necho "$*" >>"%s/checked"\nsleep "${CHECK_SLEEP:-0}"\n[ ! -e "%s/red" ]\n' "$T" "$T" >"$T/bin/check-make"
   chmod +x "$T/bin/check-make"
+  # land merges main in itself: give it an identity a device without a global one lacks.
+  export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
   export C4_MAKE=$T/bin/check-make GH_LIB_ROOT=$T/land GH_PENDING_DIR=$T/land/.relay GH_LAND_POLL=0.2 GH_LAND_SETTLE=0
   queue() { ls "$Q" | sed 's/\.json//' | sort -n | tr '\n' ' '; }
 

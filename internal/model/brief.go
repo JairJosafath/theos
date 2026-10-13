@@ -813,7 +813,7 @@ func checkCreatedRelationship(plan Plan, current CurrentModel, o PlanObject, ref
 	}
 }
 
-var containerTypes = []string{TypeStaticSite, TypeService, TypeJob, TypeWorker, TypeMobileApp, TypeCLI, TypeExtension, TypeOperator}
+var containerTypes = []string{TypeStaticSite, TypeService, TypeJob, TypeWorker, TypeMobileApp, TypeCLI, TypeExtension, TypeOperator, TypeFunction}
 
 var elementKinds = []string{KindPerson, KindSoftwareSystem, KindContainer, KindDataStore}
 

@@ -112,6 +112,8 @@ export interface BriefView {
 export interface BriefRoundView {
   round: number
   summary?: string
+  /** The reviewers' suggestions a prompt named that the round couldn't answer, a line each. */
+  unanswered?: string[]
   /** How the round ended, in a word or two, when it says. */
   outcome?: string
   usage?: UsageView
@@ -220,6 +222,7 @@ export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
       .map((h) => ({
         round: h.round,
         summary: h.summary?.trim() || undefined,
+        unanswered: h.unanswered?.length ? h.unanswered : undefined,
         outcome: h.outcome ? ROUND_OUTCOMES[h.outcome] : undefined,
         usage: describeUsage(h.costMilliUSD, h.runsWithoutCost, h.tokens, plannerLimit),
       }))

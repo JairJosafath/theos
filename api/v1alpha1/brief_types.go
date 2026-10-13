@@ -679,6 +679,15 @@ type BriefRound struct {
 	// +optional
 	Choices []string `json:"choices,omitempty"`
 
+	// unanswered are the reviewers' suggestions a prompt named that the round
+	// couldn't answer, as the plan said (answer missing), in the operator's
+	// words with what it found.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=500
+	// +optional
+	Unanswered []string `json:"unanswered,omitempty"`
+
 	// costMilliUSD is what the round's planning cost, in thousandths of a
 	// US dollar.
 	// +optional
