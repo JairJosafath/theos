@@ -12,6 +12,8 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,7 +98,7 @@ func publishFailedWith(ns, reason, message string) {
 	Consistently(func(g Gomega) {
 		var warnings []eventsv1.Event
 		for _, e := range crewEvents(g, ns) {
-			if e.Reason == "ReleasePublishFailed" {
+			if e.Reason == "ReleasePublishFailed" && strings.Contains(e.Note, message) {
 				warnings = append(warnings, e)
 			}
 		}
@@ -238,6 +240,86 @@ var _ = Describe("Crew publishing releases", func() {
 
 		unreadableSecrets.Delete(secret)
 		publishedTo(ns, repository, files)
+	})
+
+	It("records the repository it published to by GitHub's id", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		token := rand.Text()
+		githubFake.addRepository(repository, token)
+		mustCreate(publishSecret(ns, token))
+		files := publishingCrew(ns, repository)
+
+		publishedTo(ns, repository, files)
+		Eventually(func(g Gomega) {
+			g.Expect(getCrew(g, ns).Status.PublishTarget).To(Equal(&c4v1alpha1.CrewPublishTarget{
+				Repository: repository, ID: githubFake.repositoryID(repository)}))
+		}).Should(Succeed())
+	})
+
+	It("refuses a repository replaced under the name it published to, until a person accepts it", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		token := rand.Text()
+		githubFake.addRepository(repository, token)
+		id := githubFake.repositoryID(repository)
+		// No Secret yet: the Crew published to another repository of the
+		// name before, which is gone.
+		files := publishingCrew(ns, repository)
+		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
+		crew := getCrew(Default, ns)
+		orig := crew.DeepCopy()
+		crew.Status.PublishTarget = &c4v1alpha1.CrewPublishTarget{Repository: repository, ID: id + 500}
+		Expect(k8sClient.Status().Patch(ctx, crew, client.MergeFrom(orig))).To(Succeed())
+
+		mustCreate(publishSecret(ns, token))
+		publishFailedWith(ns, "RepositoryReplaced", repository+" is not the repository this Crew published to "+
+			"before (GitHub id "+strconv.FormatInt(id+500, 10)+", now "+strconv.FormatInt(id, 10)+")")
+		Consistently(func() []fakeGitHubRelease { return githubFake.releases(repository) }, 2*time.Second).
+			Should(BeEmpty(), "nothing is written to the new repository")
+		Expect(githubFake.writes(repository)).To(BeZero())
+		Expect(getCrew(Default, ns).Status.PublishTarget.ID).To(Equal(id+500), "the record stays")
+
+		crew = getCrew(Default, ns)
+		orig = crew.DeepCopy()
+		crew.Annotations = map[string]string{c4v1alpha1.AnnotationAcceptRepository: strconv.FormatInt(id, 10)}
+		Expect(k8sClient.Patch(ctx, crew, client.MergeFrom(orig))).To(Succeed())
+		publishedTo(ns, repository, files)
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.PublishTarget).To(Equal(&c4v1alpha1.CrewPublishTarget{Repository: repository, ID: id}))
+			g.Expect(crew.Annotations).NotTo(HaveKey(c4v1alpha1.AnnotationAcceptRepository),
+				"the annotation goes once the id is recorded")
+			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
+				HaveField("Reason", "PublishRepositoryAccepted"))))
+		}).Should(Succeed())
+	})
+
+	It("refuses a repository GitHub followed a rename to", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		token := rand.Text()
+		githubFake.addRepository(repository, token)
+		githubFake.rename(repository, "acme/private-"+ns)
+		mustCreate(publishSecret(ns, token))
+		publishingCrew(ns, repository)
+
+		publishFailedWith(ns, "RepositoryRenamed", repository+" was renamed to acme/private-"+ns+"; point the "+
+			"Crew's spec.publishReleases at acme/private-"+ns)
+		Expect(githubFake.releases(repository)).To(BeEmpty())
+		Expect(githubFake.writes(repository)).To(BeZero())
+		Expect(getCrew(Default, ns).Status.PublishTarget).To(BeNil())
+	})
+
+	It("names the target and who sets it when GitHub refuses the token", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		githubFake.addRepository(repository, rand.Text())
+		mustCreate(publishSecret(ns, rand.Text()))
+		publishingCrew(ns, repository)
+
+		publishFailedWith(ns, "Unauthorized", "the token can't write releases to "+repository+". Check that "+
+			repository+" is where releases should go (set by the Crew's spec.publishReleases)")
 	})
 
 	It("fails on a repository GitHub doesn't show the token", func() {

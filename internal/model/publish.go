@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -19,8 +20,17 @@ type PublishFacts struct {
 	Namespace, Container, Tag, TagPrefix, App string
 	// Latest says the release becomes the repository's Latest when published.
 	Latest bool
-	// Repository is the GitHub repository, owner/name.
-	Repository string
+	// Repository is the GitHub repository, owner/name. Brief names the Brief
+	// whose spec.releases sets it, "" when the Crew's own
+	// spec.publishReleases does.
+	Repository, Brief string
+	// Recorded is the repository the Crew published to before
+	// (status.publishTarget), nil when none. Accept is the GitHub id a person
+	// accepts in its place (c4.factory.io/accept-repository), or "".
+	Recorded *PublishTarget
+	Accept   string
+	// Remote is the repository GitHub answers for Repository, nil until read.
+	Remote *PublishTarget
 	// Published says status already records this release as published: it is
 	// not touched again.
 	Published bool
@@ -60,6 +70,13 @@ type PublishFacts struct {
 // PublishBranchMoved, PublishGitHubError) and what GitHub said.
 type PublishFailure struct {
 	Reason, Detail string
+}
+
+// PublishTarget is a GitHub repository by name, owner/name, and GitHub's id,
+// which a rename keeps and a new repository under the old name doesn't.
+type PublishTarget struct {
+	Repository string
+	ID         int64
 }
 
 // SourceRelease is a release in Gitea. Missing says there is none for the tag.
@@ -114,6 +131,8 @@ const (
 	PublishReadGitea PublishAction = "ReadGitea"
 	// PublishReadIssues reads the issues merged in the release into Issues.
 	PublishReadIssues PublishAction = "ReadIssues"
+	// PublishReadRepository reads the GitHub repository into Remote.
+	PublishReadRepository PublishAction = "ReadRepository"
 	// PublishReadGitHub reads the GitHub repository's releases into GitHub.
 	PublishReadGitHub PublishAction = "ReadGitHub"
 	// PublishWait waits for the release's runs to succeed.
@@ -167,6 +186,8 @@ const (
 	PublishFolderOverlaps     = "FolderOverlaps"
 	PublishSourceTooLarge     = "SourceTooLarge"
 	PublishBranchProtected    = "BranchProtected"
+	PublishRepositoryRenamed  = "RepositoryRenamed"
+	PublishRepositoryReplaced = "RepositoryReplaced"
 )
 
 // PublishBranchMoved is the failure of a fast-forward GitHub refused because
@@ -286,7 +307,11 @@ func NextPublishStep(f PublishFacts) PublishStep {
 		return fail(PublishNoReleaseFiles, "Gitea has no release %s to publish", f.Tag)
 	case len(f.Gitea.Assets) == 0:
 		return fail(PublishNoReleaseFiles, "Gitea release %s has no files to publish", f.Tag)
-	case f.GitHub == nil:
+	}
+	if step, ok := repositoryStep(f); !ok {
+		return step
+	}
+	if f.GitHub == nil {
 		return PublishStep{Action: PublishReadGitHub}
 	}
 
@@ -336,6 +361,62 @@ func NextPublishStep(f PublishFacts) PublishStep {
 	}
 	return PublishStep{Action: PublishCreateDraft, Tag: tag, Name: ReleaseName(f.App, f.Tag), Body: body,
 		Target: target}
+}
+
+// repositoryStep reads the repository GitHub answers for the target, and
+// fails a target renamed or replaced since the Crew published to it; ok when
+// it is the same.
+func repositoryStep(f PublishFacts) (PublishStep, bool) {
+	switch {
+	case f.Remote == nil:
+		return PublishStep{Action: PublishReadRepository}, false
+	case !strings.EqualFold(f.Remote.Repository, f.Repository):
+		// GitHub followed a rename: the releases would go on under the old name.
+		return fail(PublishRepositoryRenamed, "%s was renamed to %s; point %s at %s, or at another repository; "+
+			"nothing is published until then", f.Repository, f.Remote.Repository, setBy(f), f.Remote.Repository), false
+	case replaced(f):
+		return fail(PublishRepositoryReplaced, "%s is not the repository this Crew published to before "+
+			"(GitHub id %d, now %d): it was deleted or renamed and a new one took its name. Nothing is published "+
+			"to it until you point %s at the repository wanted, or accept this one with the annotation "+
+			"c4.factory.io/accept-repository: \"%d\" on the Crew",
+			f.Repository, f.Recorded.ID, f.Remote.ID, setBy(f), f.Remote.ID), false
+	}
+	return PublishStep{}, true
+}
+
+// replaced says the repository GitHub answers for Repository is another than
+// the one the Crew published to under that name, and no person accepted it.
+func replaced(f PublishFacts) bool {
+	return f.Recorded != nil && strings.EqualFold(f.Recorded.Repository, f.Repository) &&
+		f.Recorded.ID != f.Remote.ID && f.Accept != strconv.FormatInt(f.Remote.ID, 10)
+}
+
+// NextPublishTarget is the repository the Crew records as published to
+// (status.publishTarget) after a pass that read f and ended in step, and
+// whether the pass took Accept, so the annotation can go. A target changed to
+// another repository drops the record; the first publish that succeeds sets
+// it, and an accepted id replaces it.
+func NextPublishTarget(f PublishFacts, step PublishStep) (*PublishTarget, bool) {
+	rec := f.Recorded
+	if rec != nil && !strings.EqualFold(rec.Repository, f.Repository) {
+		rec = nil
+	}
+	if f.Remote == nil || !strings.EqualFold(f.Remote.Repository, f.Repository) {
+		return rec, false
+	}
+	accepted := f.Accept != "" && f.Accept == strconv.FormatInt(f.Remote.ID, 10)
+	if accepted || rec == nil && step.Action == PublishDone {
+		rec = &PublishTarget{Repository: f.Repository, ID: f.Remote.ID}
+	}
+	return rec, accepted
+}
+
+// setBy names where the target repository is set, for a message.
+func setBy(f PublishFacts) string {
+	if f.Brief != "" {
+		return fmt.Sprintf("Brief %s's spec.releases", f.Brief)
+	}
+	return "the Crew's spec.publishReleases"
 }
 
 // doneStep records the release as published at url, with its source when the
@@ -392,8 +473,10 @@ func failed(f PublishFacts, tag string) PublishStep {
 	}
 	switch f.Failure.Reason {
 	case PublishUnauthorized:
-		return fail(PublishUnauthorized, "GitHub refused the token in Secret %s for %s%s",
-			f.Secret, f.Repository, detail)
+		return fail(PublishUnauthorized, "GitHub refused the token in Secret %s for %s: the token can't write "+
+			"releases to %s. Check that %s is where releases should go (set by %s) and that the token is for %s "+
+			"with Contents read and write%s", f.Secret, f.Repository, f.Repository, f.Repository, setBy(f),
+			f.Repository, detail)
 	case PublishRepositoryNotFound:
 		return fail(PublishRepositoryNotFound, "GitHub has no repository %s the token in Secret %s can see%s",
 			f.Repository, f.Secret, detail)

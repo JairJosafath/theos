@@ -227,6 +227,12 @@ const (
 // per value.
 const AnnotationRerunRelease = "c4.factory.io/rerun-release"
 
+// AnnotationAcceptRepository, set on a Crew to the GitHub id of its publish
+// target, accepts that repository in place of the one the Crew published to
+// before (status.publishTarget), which was deleted or renamed and a new one
+// took its name. The operator records the id and removes the annotation.
+const AnnotationAcceptRepository = "c4.factory.io/accept-repository"
+
 // CheckStatus is the combined state of the CI checks on one commit.
 type CheckStatus struct {
 	// commit is the SHA the checks ran on.

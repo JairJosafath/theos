@@ -425,6 +425,8 @@ export interface Crew extends K8sObject {
     waiting?: number[]
     /** The release the Crew tagged last, and how its runs and publishing went. */
     lastRelease?: CrewRelease
+    /** The GitHub repository the Crew published to, by GitHub's id: a renamed or replaced one isn't published to. */
+    publishTarget?: { repository: string; id: number }
     /** The c4.factory.io/rerun-release value the Crew answered last. */
     rerunRelease?: string
     lastPolled?: string
