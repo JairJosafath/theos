@@ -17,9 +17,13 @@ same as ts-standard's for `node-cli`, and every line ts-standard's
 Frameworks appears in this Standard's, in the same order. For
 `aws-lambda-go`, `.golangci.yml` and `docs/style/go.md` are go-standard
 v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
+For `aws-lambda-py`, `ruff.toml` and `mypy.ini` render the same as
+python-standard v1.2.1's, and `docs/style/python.md` holds its `python.md`'s
+general sections, from "Layout and formatting" up to its FastAPI section,
+byte for byte.
 
 - **Supports:** `function`, `service`; Frameworks: `aws-lambda-ts`,
-  `aws-lambda-go`, `aws-ec2-ts`, `aws-fargate-ts`
+  `aws-lambda-go`, `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-py`
 - **Per Framework:** `aws-lambda-go` (since v1.1.0) branches on `.Framework`
   in the `Makefile` (the Go targets), `AGENTS.md`, the role guides,
   `docs/style/aws.md` and `SOURCES.md` (the Go handler, `slog`, the SDK for
@@ -43,17 +47,24 @@ v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
   server, the load balancer, the task and service), `SOURCES.md` and
   `docs/well-architected.md` (ECS's best practices instead of the Serverless
   Lens), each one `{{ if eq .Framework "aws-fargate-ts" }}` branch around
-  the file. Since v1.3.1 `docs/well-architected.md` gives `aws-lambda-go`
-  cold-start advice for a `go build` binary instead of esbuild's, and has
-  the branch for `aws-lambda-py`. A Framework added later gets its branches
-  in the version that adds it.
+  the file. `aws-lambda-py` (since v1.4.0), a Python function with a
+  TypeScript CDK app, branches in the `Makefile` (uv, ruff, mypy and pytest
+  in its targets), `AGENTS.md`, the role guides, `eslint.config.mjs` (it
+  also ignores `.venv/`), `docs/style/aws.md`, `principles.md`, `SOURCES.md`
+  and `docs/well-architected.md` (the Python handler, boto3, uv bundling,
+  pytest), and alone gets `ruff.toml`, `mypy.ini` and
+  `docs/style/python.md`. Since v1.4.1 `docs/well-architected.md` gives
+  `aws-lambda-go` cold-start advice for a `go build` binary instead of
+  esbuild's. A Framework added later gets its branches in the version that
+  adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
-  `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`
+  `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
+  `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
   `strictTypeChecked` and `stylisticTypeChecked` (typed, through the project
   service), plus exhaustive switches, explicit module boundary types,
@@ -96,6 +107,12 @@ v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
   function), `cdk synth` and cfn-lint as above; every Go command runs in
   `src/`, the function's own module. `make fmt` also runs
   `golangci-lint fmt`. Synth builds the function with the runner's Go.
+  For `aws-lambda-py`, `deps` also runs `uv sync --locked`, `fmt-check` adds
+  `ruff format --diff`, `lint` `ruff check --no-fix`, `typecheck`
+  `mypy app tests` (not `.`: `cdk.out/` holds a bundled copy of boto3), and
+  `test` runs `pytest --strict-markers --strict-config` before vitest. Its
+  stack bundles the function with uv from uv's cache, which `uv sync` filled,
+  or PyPI when the cache lacks a wheel, as `uvx cfn-lint` already needs.
   `.gitea/workflows/check.yaml` runs it on pull requests and on `main` on a
   runner labelled `go` (which has uv), under the status context
   `check / check`, which the protected `main` requires
@@ -130,7 +147,11 @@ v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
   and aws-fargate-ts (which bundles in its image's build, not in synth) do
   all of this. `aws-lambda-go` does the same with no `esbuild` of its own,
   `tsconfig.json` and vitest without `src`, and the function in `src/` as a
-  Go module with `go.mod` and `go.sum`, built by its stack.
+  Go module with `go.mod` and `go.sum`, built by its stack. `aws-lambda-py`
+  does the same without `src/` and esbuild, and also owns `pyproject.toml`
+  (the function's packages in `dependencies`, `ruff`, `mypy`, `pytest` and
+  `types-boto3` exact in the `dev` group, pytest reading `tests/`,
+  `[tool.uv] package = false`), `uv.lock`, the package `app/` and `tests/`.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
   They say no test calls AWS (stacks are checked with `Template.fromStack`,
@@ -158,6 +179,7 @@ v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet.
 - **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`, `.golangci.yml`,
+  `ruff.toml`, `mypy.ini`,
   `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/`,
   `docs/agents/`, `docs/well-architected.md`, `infra/main.ts` and
   `infra/standard.ts` in the catalog entry's `protectedPaths`, plus the

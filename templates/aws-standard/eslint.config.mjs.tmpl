@@ -1,4 +1,4 @@
-// Lint config for the {{ if eq .Framework "aws-ec2-ts" }}server's{{ else if eq .Framework "aws-fargate-ts" }}service's{{ else }}function's{{ end }} TypeScript and its CDK app: typescript-eslint's strictest
+// Lint config for the {{ if eq .Framework "aws-ec2-ts" }}server's{{ else if eq .Framework "aws-fargate-ts" }}service's{{ else if eq .Framework "aws-lambda-py" }}Python function's CDK app, in{{ else }}function's{{ end }} TypeScript{{ if ne .Framework "aws-lambda-py" }} and its CDK app{{ end }}: typescript-eslint's strictest
 // type-checked presets, plus the rules below. `make lint` runs ESLint with
 // --max-warnings 0, so any finding fails `make check`. Every rule turned off
 // or changed here says why. Changing this file is the Standard's job, not a
@@ -13,8 +13,9 @@ export default defineConfig(
   // npm run bundle writes.
   globalIgnores(['cdk.out/', 'dist/']),
 {{- else }}
-  // What cdk synth writes: templates and the bundled {{ if eq .Framework "aws-ec2-ts" }}server{{ else }}function{{ end }}.
-  globalIgnores(['cdk.out/']),
+  // What cdk synth writes: templates and the bundled {{ if eq .Framework "aws-ec2-ts" }}server{{ else }}function{{ end }}{{ if eq .Framework "aws-lambda-py" }};
+  // and uv's environment, whose packages ship JavaScript of their own{{ end }}.
+  globalIgnores(['cdk.out/'{{ if eq .Framework "aws-lambda-py" }}, '.venv/'{{ end }}]),
 {{- end }}
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,

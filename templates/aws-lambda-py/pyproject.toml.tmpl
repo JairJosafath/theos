@@ -1,0 +1,28 @@
+[project]
+name = "{{ .Container }}"
+version = "0.0.1"
+description = "The {{ .Container }} function of {{ .SoftwareSystem }}."
+readme = "README.md"
+# The Lambda runtime the stack names: python3.14.
+requires-python = ">=3.14"
+# Bundled into the function from uv.lock, not the runtime's copy.
+dependencies = [
+    "boto3==1.43.112",
+]
+
+[dependency-groups]
+# The tools a Standard checks with are pinned exactly; uv.lock pins the rest.
+dev = [
+    "mypy==2.4.0",
+    "pytest==9.1.1",
+    "ruff==0.16.10",
+    "types-boto3[dynamodb]==1.43.112",
+]
+
+[tool.uv]
+# A Lambda function, not a library: nothing builds a wheel of it.
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
