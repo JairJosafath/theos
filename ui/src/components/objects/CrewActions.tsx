@@ -2,18 +2,27 @@
 // resume it, set how many issues it works on at once, its release settings,
 // and re-run its last release's failed runs. Shown only when the UI server
 // takes actions; with OIDC and nobody signed in, a "Sign in" link instead. The
-// API server decides each write; a refusal shows its message.
+// API server decides each write; a refusal shows its message. Where a Crew
+// publishes is its Brief's when the Brief sets it: the form changes the
+// Brief's spec.releases entry, and a Crew changed under its Brief gets the two
+// ways to settle it.
 
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import type { BriefWriter } from '../../k8s/briefs'
 import {
+  briefReleases,
+  briefTarget,
+  publishPatch,
+  publishValue,
   releasePatch,
   releaseSettings,
   settledEdits,
   sourceTagPrefix,
+  type BriefTarget,
   type CrewReleaseSettings,
   type CrewWriter,
 } from '../../k8s/crews'
-import type { Crew, PublishSource } from '../../k8s/types'
+import type { Brief, Crew, PublishSource } from '../../k8s/types'
 import { SignInLink } from '../Account'
 import { writeError, type WriteError } from '../briefs/errors'
 import { FormError } from '../briefs/PromptForm'
@@ -126,10 +135,27 @@ export function ParallelForm({ crew, writer }: { crew: Crew; writer: CrewWriter 
  * The release settings: tag, prepare, and where to publish with the name of
  * the Secret that holds the token, and the folder the app's source goes to.
  * The browser never reads that Secret; the person makes it in the Crew's
- * namespace. Save sends only what changed.
+ * namespace. Save sends only what changed. When the Crew's Brief sets where
+ * it publishes, the publish fields are its spec.releases entry, saved on
+ * `brief`; tag and prepare stay the Crew's. A Crew held because it was
+ * changed under its Brief shows the two ways to settle it instead.
  */
-export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }) {
+export function ReleaseForm({
+  crew,
+  writer,
+  brief,
+  briefWriter,
+}: {
+  crew: Crew
+  writer: CrewWriter
+  brief?: Brief
+  briefWriter?: BriefWriter
+}) {
   const id = useId()
+  const target = briefTarget(crew)
+  const container = crew.spec.containerRef.name
+  // The Brief's entry, when the page has the Brief and a way to write it.
+  const entry = brief && briefWriter ? brief.spec.releases?.find((r) => r.container === container) : undefined
   // What the person changed; the rest follows the Crew, so a save never writes back a value read earlier.
   const [edits, setEdits] = useState<Partial<CrewReleaseSettings>>({})
   const { sending, error, done, run } = useWrite()
@@ -139,19 +165,35 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
   // they were worked out from: one changed since refuses it rather than
   // write back a field someone else changed meanwhile.
   const [publishFrom, setPublishFrom] = useState<string>()
+  // Likewise the Brief whose entry they are, when the Brief sets them.
+  const [briefFrom, setBriefFrom] = useState<string>()
   const [seen, setSeen] = useState(rv)
   if (seen !== rv) {
     setSeen(rv)
     const settled = settledEdits(crew, edits)
     setEdits(settled)
-    if (!('publish' in settled)) setPublishFrom(undefined)
+    if (!('publish' in settled)) {
+      setPublishFrom(undefined)
+      setBriefFrom(undefined)
+    }
   }
   const form = { ...releaseSettings(crew), ...edits }
   const setForm = (next: Partial<CrewReleaseSettings>) => {
-    if ('publish' in next && !('publish' in edits)) setPublishFrom(rv)
+    if ('publish' in next && !('publish' in edits)) {
+      setPublishFrom(rv)
+      setBriefFrom(brief?.metadata.resourceVersion)
+    }
     setEdits({ ...edits, ...next })
   }
-  const ops = releasePatch(crew, form, publishFrom)
+  // Publishing is the Crew's own unless its Brief sets it.
+  const own = !target
+  const ops = releasePatch(crew, own ? form : { ...form, publish: releaseSettings(crew).publish }, publishFrom)
+  const publishChanged =
+    JSON.stringify(publishValue(form.publish)) !== JSON.stringify(publishValue(releaseSettings(crew).publish))
+  const briefOps =
+    target && !target.held && entry && brief && publishChanged
+      ? briefReleases(brief, container, publishValue(form.publish))
+      : undefined
   const publish: NonNullable<CrewReleaseSettings['publish']> = form.publish ?? {
     repository: '',
     tokenSecret: '',
@@ -162,8 +204,17 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
 
   function submit(e: FormEvent) {
     e.preventDefault()
-    if (!ops.length) return
-    void run(() => writer.setReleases(crew.metadata.namespace ?? '', crew.metadata.name, ops), 'Saved')
+    if (!ops.length && !briefOps) return
+    const ns = crew.metadata.namespace ?? ''
+    void run(async () => {
+      await writer.setReleases(ns, crew.metadata.name, ops)
+      if (briefOps && brief && briefWriter) {
+        await briefWriter.setSettings(ns, brief.metadata.name, {
+          releases: briefOps,
+          resourceVersion: briefFrom ?? brief.metadata.resourceVersion,
+        })
+      }
+    }, 'Saved')
   }
 
   return (
@@ -182,14 +233,24 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
         disabled={sending}
         onChange={(prepareReleases) => setForm({ prepareReleases })}
       />
-      <Check
-        label="Publish releases to GitHub"
-        hint="Copy each tagged release to a GitHub repository once its runs succeed."
-        checked={Boolean(form.publish)}
-        disabled={sending}
-        onChange={(on) => setForm({ publish: on ? (releaseSettings(crew).publish ?? publish) : undefined })}
-      />
-      {form.publish ? (
+      {target ? (
+        <p className="field-hint crew-brief-target">
+          {target.held
+            ? `Where releases go is settled below, with Brief ${target.brief}.`
+            : entry
+              ? `Brief ${target.brief} sets where releases go: saving changes its spec.releases entry for ${container}. To stop publishing, remove the entry on the Brief.`
+              : `Brief ${target.brief} sets where releases go; change it in the Brief’s spec.releases.`}
+        </p>
+      ) : (
+        <Check
+          label="Publish releases to GitHub"
+          hint="Copy each tagged release to a GitHub repository once its runs succeed."
+          checked={Boolean(form.publish)}
+          disabled={sending}
+          onChange={(on) => setForm({ publish: on ? (releaseSettings(crew).publish ?? publish) : undefined })}
+        />
+      )}
+      {form.publish && (own || (!target.held && entry)) ? (
         <div className="crew-publish">
           <Text id={`${id}-repo`} label="Repository" hint="owner/name on github.com">
             <input
@@ -252,13 +313,87 @@ export function ReleaseForm({ crew, writer }: { crew: Crew; writer: CrewWriter }
         </div>
       ) : null}
       <div className="form-row">
-        <button type="submit" className="button button-secondary" disabled={sending || !ops.length}>
+        <button type="submit" className="button button-secondary" disabled={sending || (!ops.length && !briefOps)}>
           {sending ? 'Saving…' : 'Save release settings'}
         </button>
         <Done text={done} />
       </div>
       {error ? <FormError error={error} /> : null}
+      {target?.held ? (
+        <HeldTarget
+          crew={crew}
+          target={target}
+          writer={writer}
+          brief={entry ? brief : undefined}
+          briefWriter={briefWriter}
+        />
+      ) : null}
     </form>
+  )
+}
+
+/**
+ * The two ways to settle a Crew changed under its Brief: take the Crew's
+ * target into the Brief's spec.releases entry (removing the entry when the
+ * Crew publishes nowhere), or put the Brief's back on the Crew. Each write
+ * tests the resourceVersion of what it was worked out from.
+ */
+function HeldTarget({
+  crew,
+  target,
+  writer,
+  brief,
+  briefWriter,
+}: {
+  crew: Crew
+  target: BriefTarget
+  writer: CrewWriter
+  brief?: Brief
+  briefWriter?: BriefWriter
+}) {
+  const { sending, error, done, run } = useWrite()
+  const ns = crew.metadata.namespace ?? ''
+  const own = crew.spec.publishReleases
+  const releases = brief && briefReleases(brief, crew.spec.containerRef.name, own)
+  const back = target.target
+  return (
+    <div className="crew-held" role="group" aria-label="Settle the release target">
+      <div className="form-row">
+        {releases && brief && briefWriter ? (
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={sending}
+            onClick={() =>
+              run(
+                () =>
+                  briefWriter.setSettings(ns, brief.metadata.name, {
+                    releases,
+                    resourceVersion: brief.metadata.resourceVersion,
+                  }),
+                `Brief ${brief.metadata.name} takes it`,
+              )
+            }
+          >
+            {own
+              ? `Use the Crew’s target: ${own.github.repository}`
+              : `Publish nowhere: remove Brief ${brief.metadata.name}’s entry`}
+          </button>
+        ) : null}
+        {back ? (
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={sending}
+            onClick={() => run(() => writer.setReleases(ns, crew.metadata.name, publishPatch(crew, back)), 'Put back')}
+          >
+            {`Put the Brief’s back: ${back.github.repository}`}
+          </button>
+        ) : null}
+        <Done text={done} />
+      </div>
+      {error ? <FormError error={error} /> : null}
+    </div>
   )
 }
 

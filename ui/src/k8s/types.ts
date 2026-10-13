@@ -14,6 +14,7 @@ export interface ObjectMeta {
   creationTimestamp?: string
   deletionTimestamp?: string
   labels?: Record<string, string>
+  annotations?: Record<string, string>
 }
 
 export interface ListMeta {
