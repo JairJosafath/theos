@@ -84,8 +84,18 @@
 #                                        when it would close an issue no line starts with Closes, Fixes or Resolves #N
 #                                        for (prose such as "its PR closes #9"), naming the line to reword, and
 #                                        when its head is behind its base (main): two pull requests green alone can
-#                                        make main red together, so merge main into the branch, rerun make check,
-#                                        push and merge again
+#                                        make main red together: land it instead. Refused as well while another
+#                                        pull request holds the merge turn (land), naming it
+#   hack/lib/github.sh land PR [--wait DURATION]
+#                                        the way to merge PR: wait for the merge turn (one pull request at a time,
+#                                        across every device, first come first served), then, in this checkout of
+#                                        PR's branch, git fetch and merge origin/main, make check, push and merge PR,
+#                                        and give the turn up, merged or not (a conflict or a red check is said; make
+#                                        check's output is kept in .relay/land-PR.log). The turn is a comment on the
+#                                        Maintainer report issue, refreshed every GH_LAND_BEAT seconds while it
+#                                        waits and runs; one older than C4_LAND_TTL (45m) was abandoned and is
+#                                        dropped. Exit 4: not its turn within DURATION (default 2h); its place is
+#                                        given up
 #   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N; drops N's status labels
 #   hack/lib/github.sh closed N          drop closed issue N's status/* labels (open N is left alone); the
 #                                        Issue closed workflow runs it, for issues a pull request's Closes #N closes
@@ -1478,12 +1488,14 @@ gh_close() {
 # fix's prose ("its PR closes #9") closes #9 too, and the message names the line.
 # Refused too when it would close an issue with a "Depends on #S" step still
 # open (gh_closes_check), or GitHub can't be asked whether it would.
+# Refused while another pull request holds the merge turn (gh_land), naming it.
 # Refused last when its head doesn't contain its base's current commit: two
 # pull requests that each pass make check alone can still fail together, so
-# only a branch that has main merged in and passed make check merges. The
-# merge is pinned to the head checked, so a push after the check refuses too.
+# only a branch that has main merged in and passed make check merges (land
+# does both in its turn). The merge is pinned to the head checked, so a push
+# after the check refuses too.
 gh_merge() {
-  local pr=${1:?usage: merge PR} view text refs closing meant line n bad= base head behind
+  local pr=${1:?usage: merge PR} view text refs closing meant line n bad= base head behind turn
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
@@ -1518,6 +1530,12 @@ gh_merge() {
   [ -z "$bad" ] || return 1
   # Nor may it close an issue with a Depends on step still open (closes-check).
   gh_closes_check - <<<"$text" || return 1
+  # Nor may it jump the merge queue: while another pull request holds the turn, only that one merges.
+  turn=$(gh_land_holder) || { echo "github: #$pr: could not ask GitHub who holds the merge turn; merge refused" >&2; return 1; }
+  if [ -n "$turn" ] && [ "${turn%%$'\t'*}" != "$pr" ]; then
+    echo "github: #$pr: it is #${turn%%$'\t'*}'s turn to merge (${turn#*$'\t'}); land with hack/lib/github.sh land $pr, which waits for its turn" >&2
+    return 1
+  fi
   # Nor may it be behind its base: the merged tree is one no make check ran on.
   base=$(jq -r '.baseRefName // "main"' <<<"$view")
   head=$(jq -r '.headRefOid // empty' <<<"$view")
@@ -1525,7 +1543,7 @@ gh_merge() {
   behind=$(gh_api "repos/$C4_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
     echo "github: #$pr: could not ask GitHub whether it is behind $base; merge refused" >&2; return 1; }
   if [ "$behind" != 0 ]; then
-    echo "github: #$pr is $behind commit(s) behind $base: merge $base into its branch (git fetch origin && git merge origin/$base), rerun make check, push, and merge again" >&2
+    echo "github: #$pr is $behind commit(s) behind $base: land it (hack/lib/github.sh land $pr), which merges $base in, reruns make check and merges in its turn" >&2
     return 1
   fi
   gh_token || return 1
@@ -1697,6 +1715,165 @@ gh_maint_release() {
   grep -q 'HTTP 404' <<<"$out" && return 0
   echo "$out" >&2
   return 1
+}
+
+# The merge turn (#1037): merge refuses a pull request behind main, so with
+# several agents landing at once a branch's make check is outrun by the next
+# merge to main, over and over. So one pull request at a time, across every
+# device, merges main in, runs make check and merges. land PR queues for that
+# turn with a comment on the Maintainer report issue that starts with
+# <!-- c4-land -->, names the agent, the pull request, the host and the pid,
+# and is refreshed every GH_LAND_BEAT seconds. The oldest fresh one holds the
+# turn (first come, first served); one not edited within C4_LAND_TTL was
+# abandoned and is deleted by the next land that sees it. land deletes its own
+# when it ends, merged or not.
+GH_LAND_MARKER='<!-- c4-land -->'
+C4_LAND_TTL=${C4_LAND_TTL:-45m}
+GH_LAND_POLL=${GH_LAND_POLL:-60}    # seconds between looks at the queue
+GH_LAND_BEAT=${GH_LAND_BEAT:-300}   # seconds between heartbeats of a place in it
+GH_LAND_SETTLE=${GH_LAND_SETTLE:-3} # seconds between asks whether GitHub saw the push
+GH_LAND_JQ='
+  def turn: .body | sub("^\\s+"; "") | startswith($lm);
+  def fresh: (.updated_at | fromdateiso8601) > (now - $ttl);
+  def lfield($f): [.body | capture($f + " `(?<v>[^`]+)`") | .v] | first // "";
+  def lname: [.body | capture("\\*\\*(?<n>[^*]+)\\*\\*") | .n] | first // "someone";
+  def who: "\(lname) lands #\(lfield("pull request")) (host \(lfield("host"))), heartbeat \((now - (.updated_at | fromdateiso8601)) / 60 | floor)m ago";
+'
+
+# gh_land_issue: the Maintainer report issue's number, or nothing when there is none.
+gh_land_issue() {
+  gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
+    --jq '[.[] | select(.pull_request | not) | .number] | min // empty'
+}
+
+# gh_land_queue N: the merge-turn comments on issue N, as JSON.
+gh_land_queue() {
+  local all ttl
+  ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 1
+  all=$(gh_comments "$1") || return 1
+  jq -c --arg lm "$GH_LAND_MARKER" --argjson ttl "$ttl" "$GH_LAND_JQ"'
+    [.[] | select(turn) | . + {fresh: fresh, who: who, pr: lfield("pull request")}]' <<<"$all"
+}
+
+# gh_land_holder: who holds the merge turn, as PR<tab>WHO; nothing when nobody
+# does. Exit 1: GitHub could not be asked.
+gh_land_holder() {
+  local n q
+  n=$(gh_land_issue) || return 1
+  [ -n "$n" ] || return 0
+  q=$(gh_land_queue "$n") || return 1
+  jq -r '[.[] | select(.fresh)] | min_by(.id) // empty | "\(.pr)\t\(.who)"' <<<"$q"
+}
+
+# gh_land_body PR: a merge-turn comment's body.
+gh_land_body() {
+  local name
+  name=$(jq -r '.name // empty' "$GH_CLAIM_FILE" 2>/dev/null)
+  printf '%s\n**%s** lands pull request `%s` · host `%s` · pid `%s`\nHeartbeat: %s\n' "$GH_LAND_MARKER" \
+    "${name:-${USER:-someone}}" "$1" "${C4_HOST:-$(hostname)}" "${GH_LAND_PID:-$$}" "$(date -u +%Y-%m-%dT%H:%MZ)"
+}
+
+# gh_land PR [--wait DURATION]: wait for the merge turn, take it, merge the
+# base into this checkout's branch, run make check, push and merge PR (gh_merge),
+# then give the turn up, also when a step fails. Exit 0: merged. Exit 1: refused
+# or failed, the reason said. Exit 4: still not its turn after DURATION (default 2h).
+gh_land() {
+  local pr=${1:?usage: land PR [--wait DURATION]} wait=2h
+  [[ $pr =~ ^[0-9]+$ ]] || { echo "github: land takes a pull request number" >&2; return 64; }
+  shift
+  case "${1:-}" in
+    --wait) wait=${2:?usage: land PR [--wait DURATION]} ;;
+    '') ;;
+    *) echo "usage: land PR [--wait DURATION]" >&2; return 64 ;;
+  esac
+  ( gh_land_turn "$pr" "$wait" )
+}
+
+gh_land_turn() {
+  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat beater rc log local_head s who i
+  wait=$(gh_seconds "$2" --wait) || return 64
+  ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 64
+  info=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq '"\(.state) \(.base.ref) \(.head.ref)"') || return 1
+  read -r state base head <<<"$info"
+  [ "$state" = open ] || { echo "github: #$pr is $state; nothing to land" >&2; return 1; }
+  branch=$(git -C "$GH_LIB_ROOT" symbolic-ref --short -q HEAD)
+  [ "$branch" = "$head" ] || {
+    echo "github: #$pr's branch is $head, but this checkout is on ${branch:-a detached HEAD}: land it from its own checkout" >&2; return 1; }
+  [ -z "$(git -C "$GH_LIB_ROOT" status --porcelain --untracked-files=no)" ] || {
+    echo "github: this checkout has uncommitted changes: commit and push them, then land" >&2; return 1; }
+  n=$(gh_report_issue) || return 1
+  id=$(gh_land_body "$pr" | jq -Rs '{body: .}' |
+    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+  [ -n "$id" ] || { echo "github: could not queue #$pr for the merge turn" >&2; return 1; }
+  # Give the place up however this ends; jobs it forks inherit the trap, so only this shell runs it.
+  me=$BASHPID
+  trap 'if [ "$BASHPID" = "'"$me"'" ]; then gh_maint_release "'"$id"'" >/dev/null 2>&1 ||
+    echo "github: could not delete the merge turn (comment '"$id"' on #'"$n"'); it lapses after $C4_LAND_TTL" >&2; fi' EXIT
+  trap 'exit 130' INT TERM
+  t0=$SECONDS beat=$SECONDS
+  while :; do
+    q=$(gh_land_queue "$n") || { echo "github: could not read the merge queue on #$n" >&2; return 1; }
+    while IFS=$'\t' read -r s who; do
+      [ -n "$s" ] || continue
+      gh_maint_release "$s" >/dev/null && echo "github: dropped an abandoned merge turn: $who" >&2
+    done < <(jq -r '.[] | select(.fresh | not) | "\(.id)\t\(.who)"' <<<"$q")
+    jq -e --argjson id "$id" 'any(.[]; .id == $id and .fresh)' <<<"$q" >/dev/null || {
+      echo "github: #$pr lost its place in the merge queue (its comment on #$n is gone or lapsed); land again" >&2; return 1; }
+    first=$(jq -r '[.[] | select(.fresh)] | min_by(.id) | "\(.id)\t\(.who)"' <<<"$q")
+    [ "${first%%$'\t'*}" = "$id" ] && break
+    ahead=$(jq --argjson id "$id" '[.[] | select(.fresh and .id < $id)] | length' <<<"$q")
+    if [ "$said" != "$ahead ${first%%$'\t'*}" ] || ((SECONDS - beat >= GH_LAND_BEAT)); then
+      echo "github: #$pr waits for its turn to land: $ahead ahead; ${first#*$'\t'}" >&2
+      said="$ahead ${first%%$'\t'*}"
+    fi
+    if ((SECONDS - t0 >= wait)); then
+      echo "github: #$pr gave up its place after $2: still $ahead ahead; ${first#*$'\t'}" >&2
+      return 4
+    fi
+    if ((SECONDS - beat >= GH_LAND_BEAT)); then
+      gh_edit_comment "$id" "$(gh_land_body "$pr")" || echo "github: could not refresh #$pr's place in the merge queue" >&2
+      beat=$SECONDS
+    fi
+    sleep "$GH_LAND_POLL"
+  done
+  echo "github: #$pr's turn to land: merging origin/$base, then make check" >&2
+  gh_edit_comment "$id" "$(gh_land_body "$pr")" || true
+  git -C "$GH_LIB_ROOT" fetch -q origin || { echo "github: #$pr: git fetch origin failed" >&2; return 1; }
+  if ! git -C "$GH_LIB_ROOT" merge -q --no-edit "origin/$base" >&2; then
+    git -C "$GH_LIB_ROOT" merge --abort 2>/dev/null
+    echo "github: #$pr: merging origin/$base into $branch conflicts; merge it by hand (git merge origin/$base), make check, push and land again" >&2
+    return 1
+  fi
+  mkdir -p "$GH_PENDING_DIR"
+  log=$GH_PENDING_DIR/land-$pr.log
+  # The heartbeat; its sleep is killed with it, and holds no pipe of the caller's open.
+  (
+    trap 'kill "$s" 2>/dev/null; exit 0' TERM
+    while :; do
+      sleep "$GH_LAND_BEAT" &
+      s=$!
+      wait "$s"
+      gh_edit_comment "$id" "$(gh_land_body "$pr")"
+    done
+  ) >/dev/null 2>&1 &
+  beater=$!
+  "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" check >"$log" 2>&1
+  rc=$?
+  kill "$beater" 2>/dev/null
+  wait "$beater" 2>/dev/null
+  if [ "$rc" != 0 ]; then
+    tail -40 "$log" >&2
+    echo "github: #$pr: make check failed (exit $rc) with origin/$base merged in (the merge is committed here, not pushed; the whole output is in $log); fix it, push and land again" >&2
+    return 1
+  fi
+  git -C "$GH_LIB_ROOT" push -q origin HEAD || { echo "github: #$pr: git push failed" >&2; return 1; }
+  # merge reads the head from GitHub: wait until it shows the push.
+  local_head=$(git -C "$GH_LIB_ROOT" rev-parse HEAD)
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    [ "$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq .head.sha)" = "$local_head" ] && break
+    sleep "$GH_LAND_SETTLE"
+  done
+  gh_merge "$pr"
 }
 
 # gh_red WORKFLOW: print an issue body when WORKFLOW's two newest finished runs
@@ -1898,6 +2075,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     closes-check) gh_closes_check "$@" ;;
     pr-check) gh_pr_check "$@" ;;
     merge) gh_merge "$@" ;;
+    land) gh_land "$@" ;;
     duplicate) gh_duplicate "$@" ;;
     closed) gh_closed "$@" ;;
     create) gh_create "$@" ;;

@@ -111,11 +111,19 @@ Lost claim (the heartbeat hook says so):
 ## Finish
 
 - **Landed:** the pull request says `Closes #N` and is merged as AGENTS.md
-  ("How to Work") says, with `hack/lib/github.sh merge PR` (a merge commit).
-  `merge` refuses a branch behind main: two pull requests that each passed
-  `make check` alone can still break main together. Then `git fetch origin &&
-  git merge origin/main`, rerun `make check`, push and run `merge` again
-  (another may land meanwhile; repeat until it merges). If N is still open: `hack/lib/github.sh close N FILE`,
+  ("How to Work") says, with `hack/lib/github.sh land PR` (a merge commit),
+  run from the branch's checkout with everything committed and pushed. Two
+  pull requests that each passed `make check` alone can still break main
+  together, so `merge` refuses a branch behind main, and `land` takes the
+  merge turn: it waits until the pull requests queued before it have landed
+  or failed, then merges `origin/main` in, reruns `make check`, pushes and
+  merges, and gives the turn up. The wait and the check can take an hour:
+  run it in the background and follow its output (it says its place in the
+  queue every few minutes; `make check`'s output goes to
+  `.relay/land-PR.log`). A conflict or a red check ends the turn with exit 1
+  and says so: fix it on the branch, push and `land` again. Don't merge main
+  in and `merge` by hand: `merge` refuses while another pull request holds the
+  turn. If N is still open: `hack/lib/github.sh close N FILE`,
   FILE naming the pull request, SHAs and evidence. An issue with no plan is
   finished by its own pull request: its body says `Closes #N`, and neither the
   body nor a commit message says `Refs #N` (that is only a plan's), or `merge`
