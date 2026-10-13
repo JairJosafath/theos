@@ -82,6 +82,11 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 		return
 	}
 	if spec == nil || release == nil {
+		if release != nil && release.Publish != nil && release.Publish.State != publishPublished {
+			// Settled to publish nowhere: a release that waited, or failed,
+			// no longer goes out (#1021). One that went out stays recorded.
+			release.Publish = nil
+		}
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionPublished)
 		return
 	}
