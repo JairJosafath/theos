@@ -22,6 +22,7 @@ const (
 	TypeCLI        = "cli"
 	TypeExtension  = "extension"
 	TypeOperator   = "operator"
+	TypeFunction   = "function"
 )
 
 // Catalog sides, in the order their layers are rendered.

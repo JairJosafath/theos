@@ -116,6 +116,7 @@ const CONTAINER_TYPES: Record<ContainerType, string> = {
   cli: 'command-line tool',
   extension: 'editor extension',
   operator: 'Kubernetes operator',
+  function: 'serverless function',
 }
 
 /** The Container type in words, such as "static site". */
