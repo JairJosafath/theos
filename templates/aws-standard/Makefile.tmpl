@@ -1,0 +1,56 @@
+# The quality contract of this repository. CI runs `make check` on every pull
+# request, or, when the Container's checks are BeforeRelease, `make check-light`
+# there and `make check` before each release; agents and people run
+# `make check` before every commit. `make help` lists the targets.
+#
+# Nothing here deploys, bootstraps or calls AWS: `synth` only writes
+# CloudFormation into cdk.out/, offline, without Docker or credentials.
+
+NAME := {{ .Container }}
+BIN := node_modules/.bin
+# cfn-lint, pinned, run through uv like every Python tool on the runner.
+CFN_LINT := uvx cfn-lint==1.57.2
+# The CDK CLI offline and quiet: no telemetry, no notices fetched, no check
+# for a newer CLI.
+CDK := CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true $(BIN)/cdk --no-notices
+
+.DEFAULT_GOAL := help
+.PHONY: help check check-light deps fmt fmt-check lint typecheck test synth cfn-lint clean
+
+help: ## List the targets.
+	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+check: deps fmt-check lint typecheck test synth cfn-lint ## Everything CI checks.
+
+check-light: deps fmt-check lint typecheck ## check without the tests, which CI runs on each change with checks BeforeRelease.
+
+deps: ## Install the exact packages in package-lock.json.
+	npm ci --no-audit --no-fund
+
+fmt: ## Format every file with Prettier.
+	$(BIN)/prettier --write .
+
+fmt-check: ## Fail when a file is not formatted.
+	$(BIN)/prettier --check .
+
+lint: ## Lint with eslint.config.mjs, failing on any finding.
+	$(BIN)/eslint --max-warnings 0 .
+
+typecheck: ## Type-check with tsconfig.json.
+	$(BIN)/tsc --noEmit
+
+test: ## Run the unit tests and the stacks' assertions.
+	$(BIN)/vitest run
+
+synth: ## Write the CloudFormation templates into cdk.out/; fails on a CDK Nag finding.
+	rm -rf cdk.out
+	$(CDK) synth --quiet
+
+# W3005: CDK makes a function depend on its role and the role's policy, which
+# it also references; cfn-lint calls the DependsOn redundant. It is harmless,
+# and not ours to change.
+cfn-lint: ## Lint the templates synth wrote.
+	$(CFN_LINT) --ignore-checks W3005 -- cdk.out/*.template.json
+
+clean: ## Remove what synth wrote.
+	rm -rf cdk.out

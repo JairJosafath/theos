@@ -1,0 +1,84 @@
+{{- /*
+  .Checks picks the workflow: EveryChange (or empty) runs make check on every
+  change; BeforeRelease runs make check-light on every change and make check,
+  in the job full, on a push to a release-check/** branch. {{`${{ … }}`}}
+  writes a Gitea expression as is.
+*/ -}}
+{{- $beforeRelease := eq .Checks "BeforeRelease" -}}
+{{- define "job" }}
+    runs-on: go
+    env:
+      # The runner's /tmp is in memory. npm's cache on its disk stalls the
+      # node, and with it the whole cluster.
+      npm_config_cache: /tmp/npm-cache
+      # uv's cache, for cfn-lint, goes there for the same reason.
+      UV_CACHE_DIR: /tmp/uv-cache
+    steps:
+      - name: Check out
+        run: |
+          git init -q .
+          git -c http.extraHeader="Authorization: token {{`${{ gitea.token }}`}}" \
+            fetch -q --depth 1 "{{`${{ gitea.server_url }}`}}/{{`${{ gitea.repository }}`}}.git" "{{`${{ gitea.sha }}`}}"
+          git checkout -q FETCH_HEAD
+{{- end -}}
+{{- if $beforeRelease -}}
+# Runs the light check, make check-light, on every pull request and on main,
+# and the full check, make check, on a push to a release-check/** branch: the
+# commit a release will be tagged at. The branch protection of main requires
+# a passing "check" context before a merge.
+{{- else -}}
+# Runs the quality contract on every pull request and on main. The branch
+# protection of main requires a passing "check" context before a merge.
+{{- end }}
+name: check
+
+on:
+  push:
+    branches: [main{{ if $beforeRelease }}, "release-check/**"{{ end }}]
+  pull_request:
+
+jobs:
+  check:
+{{- if $beforeRelease }}
+    if: {{`${{ !startsWith(gitea.ref, 'refs/heads/release-check/') }}`}}
+{{- end }}
+{{- template "job" }}
+      # A change to only the changelog, docs/ or images has nothing for the
+      # steps below to verify: the job passes without them, so the required
+      # "check" context still reports and the change merges. Any other file,
+      # a first push, or a base git can't fetch or compare runs them as always.
+      - name: What the change touches
+        id: changes
+        env:
+          TOKEN: {{`${{ gitea.token }}`}}
+          URL: {{`${{ gitea.server_url }}`}}/{{`${{ gitea.repository }}`}}.git
+          BASE: {{`${{ gitea.event.pull_request.base.sha || gitea.event.before }}`}}
+        run: |
+          code=true
+          case $BASE in
+          *[!0]*)
+            if git -c http.extraHeader="Authorization: token $TOKEN" fetch -q --depth 1 "$URL" "$BASE" &&
+              files=$(git diff --no-renames --name-only "$BASE" HEAD) && [ -n "$files" ] &&
+              ! printf '%s\n' "$files" | grep -qvE '^CHANGELOG\.md$|^docs/|\.(png|jpg|gif|svg)$'; then
+              code=false
+              echo "Only the changelog, docs/ or images changed; skipping the checks."
+            fi
+            ;;
+          esac
+          echo "code=$code" >>"$GITHUB_OUTPUT"
+{{- if $beforeRelease }}
+      - name: make check-light
+        if: steps.changes.outputs.code == 'true'
+        run: make check-light
+  # The full check, on the commit a release will be tagged at: always, whatever
+  # the commit changes since the branch's previous push.
+  full:
+    if: startsWith(gitea.ref, 'refs/heads/release-check/')
+{{- template "job" }}
+      - name: make check
+        run: make check
+{{- else }}
+      - name: make check
+        if: steps.changes.outputs.code == 'true'
+        run: make check
+{{- end }}

@@ -1,0 +1,51 @@
+# make check in a scaffolded aws-lambda-ts + aws-standard Container (issue #1030)
+# go run ./hack/render -out /tmp/aws-1030 -type function Framework=aws-lambda-ts Standard=aws-standard
+# then, with no AWS variables, an empty HOME, Node v24.21.0, uv 0.12.23:
+# env -i PATH=$PATH HOME=/tmp/aws-1030-home npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/uv-cache make check
+# on 2026-10-13
+
+npm ci --no-audit --no-fund
+
+added 172 packages in 10s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /tmp/aws-1030
+
+ ✓ src/api.test.ts (8 tests) 13ms
+ ✓ src/items.test.ts (25 tests) 17ms
+ ✓ src/item_store.test.ts (4 tests) 9ms
+Bundling asset test/Handler/Code/Stage...
+Bundling asset sample-app/Handler/Code/Stage...
+
+  ...cf14bb538498ef4956c8b00d242cadcef8ce7b4706e5eb-building/index.js  522.0kb
+  ...bb538498ef4956c8b00d242cadcef8ce7b4706e5eb-building/index.js.map    2.0mb
+
+⚡ Done in 110ms
+
+  ...a902d9c223f0d278bdd277723c14bbe11842839aad7619-building/index.js  522.0kb
+  ...d9c223f0d278bdd277723c14bbe11842839aad7619-building/index.js.map    2.0mb
+
+⚡ Done in 106ms
+ ✓ infra/api_stack.test.ts (5 tests) 1816ms
+ ✓ infra/standard.test.ts (8 tests) 2288ms
+
+ Test Files  5 passed (5)
+      Tests  50 passed (50)
+   Start at  09:56:41
+   Duration  3.39s (tests 64%, import 22%, transform 14%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet
+Bundling asset sample-app/Handler/Code/Stage...
+
+  ...51444140a1de9e29027f788f10f08f29742b4cf94136f0-building/index.js  522.0kb
+  ...4140a1de9e29027f788f10f08f29742b4cf94136f0-building/index.js.map    2.0mb
+
+⚡ Done in 93ms
+uvx cfn-lint==1.57.2 --ignore-checks W3005 -- cdk.out/*.template.json
+exit=0
