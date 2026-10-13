@@ -46,6 +46,9 @@ type roundApply struct {
 	released map[string]bool
 	// took and skipped count the reviewers' suggestions the round answered.
 	took, skipped int
+	// unanswered say what the operator found of the suggestions the plan
+	// answered missing.
+	unanswered []string
 	// retried and closed count the failed issues the round answered.
 	retried, closed int
 	// refused are the closes of failed issues the Git host refused, as
@@ -729,7 +732,8 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 		return err
 	}
 	summary := model.AppliedRoundSummary(plan, run.catalog)
-	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices})
+	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices,
+		Unanswered: run.unanswered})
 	status.Choices = model.ClipList(plan.Choices, 50, 500)
 	status.PromptsPlanned = status.RoundPrompts
 	status.Created = created

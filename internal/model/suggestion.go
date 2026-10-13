@@ -19,7 +19,14 @@ import (
 const (
 	AnswerTake = "take"
 	AnswerSkip = "skip"
+	// AnswerMissing answers a suggestion a prompt names that doesn't wait for
+	// an answer: the operator records what it found on the round (#1019).
+	AnswerMissing = "missing"
 )
+
+// MaxUnanswered is how many missing answers a round records, each at most
+// MaxAnswerWhy bytes.
+const MaxUnanswered = 20
 
 // MaxSuggestions is how many waiting suggestions a Brief lists in its status,
 // MaxWorkspaceSuggestions how many its workspace lists, and
@@ -92,10 +99,11 @@ func parseAnswers(s string) ([]SuggestionAnswer, error) {
 }
 
 // CheckAnswers returns every reason a plan's answers can't be applied: at
-// most MaxSuggestionAnswers, each answers a waiting suggestion once, takes or
-// skips it and says why, takes only one that has acceptance criteria, and
-// marks only one it takes a fix. waiting holds every suggestion an answer
-// names that waits, wherever the operator read it.
+// most MaxSuggestionAnswers, each answers a suggestion once and says why,
+// takes or skips one that waits and answers missing one that doesn't, takes
+// only one that has acceptance criteria, and marks only one it takes a fix.
+// waiting holds every suggestion an answer names that waits, wherever the
+// operator read it.
 func CheckAnswers(answers []SuggestionAnswer, waiting []Suggestion) []Refusal {
 	var out []Refusal
 	refuse := func(format string, args ...any) {
@@ -112,6 +120,16 @@ func CheckAnswers(answers []SuggestionAnswer, waiting []Suggestion) []Refusal {
 		switch {
 		case seen[subject]:
 			refuse("answers %s twice; answer each suggestion once", subject)
+			continue
+		case a.Answer == AnswerMissing:
+			seen[subject] = true
+			if i >= 0 {
+				refuse("answers %s %s, but it waits for an answer: take or skip it", subject, AnswerMissing)
+			}
+			if a.Fix {
+				refuse("answers %s %s as a fix; only a suggestion taken is a fix", subject, AnswerMissing)
+			}
+			refuseWhy(refuse, subject, a.Why)
 			continue
 		case i < 0:
 			refuse("answers %s, which is not a waiting suggestion; answer only those %s lists%s",
@@ -130,15 +148,62 @@ func CheckAnswers(answers []SuggestionAnswer, waiting []Suggestion) []Refusal {
 				refuse("skips %s as a fix; only a suggestion taken is a fix", subject)
 			}
 		default:
-			refuse("answers %s %q; an answer is %s or %s", subject, a.Answer, AnswerTake, AnswerSkip)
+			refuse("answers %s %q; an answer is %s, %s or %s", subject, a.Answer, AnswerTake, AnswerSkip,
+				AnswerMissing)
 		}
-		if strings.TrimSpace(a.Why) == "" {
-			refuse("answers %s with no why: say in plain words which prompt asked for it", subject)
-		} else if len(a.Why) > MaxAnswerWhy {
-			refuse("answers %s with a why of %d bytes; keep it under %d", subject, len(a.Why), MaxAnswerWhy)
-		}
+		refuseWhy(refuse, subject, a.Why)
 	}
 	return out
+}
+
+// refuseWhy refuses an answer's why when it is empty or too long.
+func refuseWhy(refuse func(string, ...any), subject, why string) {
+	if strings.TrimSpace(why) == "" {
+		refuse("answers %s with no why: say in plain words which prompt asked for it", subject)
+	} else if len(why) > MaxAnswerWhy {
+		refuse("answers %s with a why of %d bytes; keep it under %d", subject, len(why), MaxAnswerWhy)
+	}
+}
+
+// What the operator finds of a suggestion a plan answers missing.
+const (
+	FoundGone          = "doesn't exist"
+	FoundClosed        = "is closed"
+	FoundNotSuggestion = "isn't a reviewer's suggestion"
+	// FoundWaiting is one that waits again since the plan was checked.
+	FoundWaiting = "waits for an answer"
+)
+
+// FoundIssue says what the operator found of an issue a plan answers
+// missing: exists says the Git host has it, open that it is open. An open
+// one with a status label other than proposed says which.
+func FoundIssue(exists, open bool, labels []string, body string) string {
+	switch {
+	case !exists:
+		return FoundGone
+	case !open:
+		return FoundClosed
+	}
+	if i := slices.IndexFunc(labels, func(l string) bool {
+		return strings.HasPrefix(l, "status/") && l != LabelProposed
+	}); i >= 0 {
+		return "is labelled " + labels[i] // taken, by an earlier round or a person
+	}
+	if !IsSuggestion(labels, body) {
+		return FoundNotSuggestion
+	}
+	return FoundWaiting
+}
+
+// UnansweredLine is what a round records of a suggestion its plan answered
+// missing, in the operator's words: what it found.
+func UnansweredLine(a SuggestionAnswer, found string) string {
+	if found == FoundWaiting {
+		return Clip(fmt.Sprintf("A prompt named %s#%d, which waits for an answer again since the plan was "+
+			"checked: answer it in a new prompt.", a.Container, a.Issue), MaxAnswerWhy)
+	}
+	return Clip(fmt.Sprintf("A prompt named %s#%d, which no longer waits for an answer: it %s.", a.Container,
+		a.Issue, found), MaxAnswerWhy)
 }
 
 // waitsElsewhere names the Containers where suggestion number waits, for a

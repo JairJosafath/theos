@@ -58,6 +58,11 @@ export function BriefDetails({ view, answers }: { view: BriefView; answers?: Ans
                 <span className="mono">Round {r.round}</span>
                 {r.outcome ? <span className="field-hint"> · {r.outcome}</span> : null}
                 {r.summary ? <span className="brief-issue-title"> {r.summary}</span> : null}
+                {r.unanswered?.map((line) => (
+                  <div key={line} className="field-hint">
+                    {line}
+                  </div>
+                ))}
                 {r.usage ? (
                   <div className="field-hint">
                     <UsageLine usage={r.usage} />

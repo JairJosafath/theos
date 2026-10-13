@@ -695,6 +695,8 @@ export interface Brief extends K8sObject {
       round: number
       summary?: string
       choices?: string[]
+      /** The reviewers' suggestions a prompt named that the round couldn't answer, in the operator's words. */
+      unanswered?: string[]
       costMilliUSD?: number
       /** The round's planner runs whose agent didn't report their cost. */
       runsWithoutCost?: number
