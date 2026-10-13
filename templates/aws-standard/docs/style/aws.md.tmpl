@@ -178,10 +178,11 @@ says why each rule matters.
   listener with an in-memory stream and a recorded response, and checking
   the status code and body; no test starts the server. [review]
 {{- else -}}
-# AWS serverless digest
+# AWS {{ if eq .Framework "aws-ec2-ts" }}EC2{{ else }}serverless{{ end }} digest
 
-Distilled from the Lambda developer guide's best practices and {{ if $go }}Go{{ else }}Node.js{{ end }}
-handler pages, API Gateway's HTTP API docs, DynamoDB's developer guide, the
+Distilled from {{ if eq .Framework "aws-ec2-ts" }}the EC2 Auto Scaling user guide, the Application Load
+Balancer guide, the Amazon VPC guide (endpoints, flow logs){{ else }}the Lambda developer guide's best practices and {{ if $go }}Go{{ else }}Node.js{{ end }}
+handler pages, API Gateway's HTTP API docs{{ end }}, DynamoDB's developer guide, the
 AWS SDK for {{ if $go }}Go v2{{ else }}JavaScript v3{{ end }} guide, the CDK developer guide and its assertions
 module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
 `make check`: {{ if $go }}a golangci-lint linter, an ESLint rule{{ else }}an ESLint rule{{ end }} or the compiler; `[nag: x]` = a CDK Nag rule that
@@ -189,7 +190,38 @@ fails `cdk synth`; `[test]` = an assertion in `infra/standard.test.ts` or a
 stack's own test; `[review]` = check it yourself. `docs/well-architected.md`
 says why each rule matters.
 
-## The handler
+{{ if eq .Framework "aws-ec2-ts" }}## The server
+
+- `src/main.ts` is the entry point the instances run (`node server.mjs`
+  under systemd): it reads the environment, creates the SDK clients and the
+  store, and starts the server from `src/server.ts`. [review]
+- Create SDK clients and read configuration once, at start-up; every
+  request reuses them and their connections. Never create a client per
+  request. [review]
+- Read `process.env` only in `src/main.ts`, once, and fail at start-up with a
+  message naming the variable when one is missing: systemd restarts the
+  server, and the load balancer's health check keeps traffic off it. [review]
+- `src/server.ts` adapts HTTP to `answer` and nothing else: it reads the body
+  up to a limit (413 past it), takes the request id from the load balancer's
+  `X-Amzn-Trace-Id`, and writes one log entry per request. The work is in
+  functions that take what they need (a store, a log), so tests call them
+  without a server. [review]
+- `GET /health` answers 200 without touching DynamoDB: it says the process
+  serves, and a DynamoDB outage must not take every instance out of the
+  target group at once. [review]
+- The server's keep-alive outlasts the load balancer's 60-second idle
+  timeout (`keepAliveTimeout` 65 s, `headersTimeout` above it), or a request
+  racing a close gets a 502. [test]
+- On `SIGTERM` (an instance being replaced or scaled in) stop accepting
+  connections, finish the requests in flight, then let the process end.
+  Never `process.exit()`. [lint: no-restricted-properties]
+- Await every promise, or void it on purpose with a comment: a rejected
+  promise nobody awaits ends the process.
+  [lint: @typescript-eslint/no-floating-promises]
+- Don't keep request data in module-scope variables: the next request on the
+  same instance would see it, and other instances would not. [review]
+
+{{ else }}## The handler
 
 {{ if $go -}}
 - `src/main.go`'s `main` builds what every invocation shares, then calls
@@ -235,14 +267,14 @@ says why each rule matters.
   the same environment would see it. [review]
 {{- end }}
 
-## Requests and responses
+{{ end }}## Requests and responses
 
 - Validate every input at the boundary: path parameters, query strings,
-  headers and the body, {{ if $go }}decoded into typed values and checked{{ else }}narrowed from `unknown` with runtime checks{{ end }}. API
-  Gateway delivers whatever the client sent. [review]
-- A body can arrive base64-encoded (`{{ if $go }}IsBase64Encoded{{ else }}isBase64Encoded{{ end }}`); decode it before
+  headers and the body, {{ if $go }}decoded into typed values and checked{{ else }}narrowed from `unknown` with runtime checks{{ end }}. {{ if eq .Framework "aws-ec2-ts" }}The load balancer passes on{{ else }}API
+  Gateway delivers{{ end }} whatever the client sent. [review]
+{{ if eq .Framework "aws-ec2-ts" }}{{ else }}- A body can arrive base64-encoded (`{{ if $go }}IsBase64Encoded{{ else }}isBase64Encoded{{ end }}`); decode it before
   parsing. [review]
-- Answer expected failures with their status: 400 for bad input, 403, 404,
+{{ end }}- Answer expected failures with their status: 400 for bad input, 403, 404,
   409 for a conflict, 413 for too large, and 500 only for a bug or an
   outage. The body is JSON with a `message` a client can act on. [review]
 - Never return a stack trace, an SDK error's text or an internal name to a
@@ -261,11 +293,18 @@ says why each rule matters.
 {{- end }}
 - Each entry has a `level`, a `message` and the request id; errors say what
   failed and with which input, never a secret, a token or user data. [review]
-- The function's log group is created by the stack, with a retention.
+{{ if eq .Framework "aws-ec2-ts" }}- The server writes to standard output; systemd appends it to
+  `/var/log/server/server.log`, and the CloudWatch agent ships that file to
+  the log group the stack creates, with a retention, one stream per
+  instance. [test: log groups keep logs for a set time]
+- The load balancer writes access logs to an S3 bucket, and the VPC's
+  rejected traffic goes to a flow log. [nag: AwsSolutions-ELB2,
+  AwsSolutions-VPC7]
+{{ else }}- The function's log group is created by the stack, with a retention.
   [nag: none; test: log groups keep logs for a set time]
 - The function logs in JSON format (`loggingFormat: LoggingFormat.JSON`), so
   Lambda's own entries are structured too. [review]
-
+{{ end }}
 ## DynamoDB
 
 - Model the table for its access patterns: every read on a request path is
@@ -313,18 +352,72 @@ says why each rule matters.
 ## The AWS SDK v3
 
 - Import only the clients you use (`@aws-sdk/client-dynamodb`), never a
-  whole SDK; esbuild bundles them into the function. [review]
+  whole SDK; esbuild bundles them into the {{ if eq .Framework "aws-ec2-ts" }}server{{ else }}function{{ end }}. [review]
 - Pin every `@aws-sdk/*` package to the same exact version. [review]
-- A client's region and credentials come from the Lambda environment; never
+- A client's region and credentials come from the {{ if eq .Framework "aws-ec2-ts" }}instance (its role, through IMDSv2, and `AWS_REGION`){{ else }}Lambda environment{{ end }}; never
   pass keys or set a region in code. [review]
 - Wrap each service in one module behind an interface the rest of the code
   depends on; tests fake that interface. [review]
 - The SDK retries throttling and transient errors itself; don't add a retry
   loop around it. Catch what you can answer (a failed condition is a 409),
-  let the rest reach the handler's 500. [review]
+  let the rest reach {{ if eq .Framework "aws-ec2-ts" }}`answer`'s{{ else }}the handler's{{ end }} 500. [review]
 {{- end }}
 
-## API Gateway HTTP API
+{{ if eq .Framework "aws-ec2-ts" }}## The network and the load balancer
+
+- The VPC has isolated subnets in two zones and no NAT gateway or internet
+  gateway: the instances reach S3 (their code, the operating system's
+  packages), DynamoDB and CloudWatch Logs through VPC endpoints, and nothing
+  else. A new AWS service the code calls needs its endpoint. [test; review]
+- The VPC's CIDR is written out (`VPC_CIDR`), so security group rules name
+  it and CDK Nag can read them. [nag: AwsSolutions-EC23]
+- Flow logs record rejected traffic to a log group with a retention.
+  [nag: AwsSolutions-VPC7]
+- The load balancer is internal, its security group open only to the VPC on
+  its listener's port, and the instances' only to the load balancer on the
+  server's port. Making it internet-facing is an issue's decision: it then
+  needs HTTPS with a certificate and an authorizer in front of the routes.
+  [nag: AwsSolutions-EC23; review]
+- It drops invalid header fields and writes access logs to an S3 bucket
+  (SSE-S3, TLS only, public access blocked, kept 90 days) that the log
+  delivery service may write to. [nag: AwsSolutions-ELB2, AwsSolutions-S10;
+  test]
+- The target group checks `GET /health` and gives a stopping instance 30
+  seconds to finish its requests. [test]
+
+## EC2 instances and the Auto Scaling group
+
+- A launch template, never a launch configuration: Amazon Linux 2023 on
+  `arm64` (Graviton: cheaper and lower energy), resolved at deploy time from
+  the public SSM parameter, so synth needs no lookup. [review]
+- IMDSv2 required, the root volume gp3 and encrypted, detailed monitoring
+  on. [nag: AwsSolutions-EC26, AwsSolutions-EC28; test]
+- The instances' own role, granted only what the server calls and the
+  `s3:GetObject` of its own code; no AWS managed policy, no SSH key, no
+  inbound rule but the load balancer's. [nag: AwsSolutions-IAM4,
+  AwsSolutions-IAM5; test]
+- The server ships as an S3 asset: `infra/server_asset.ts` bundles
+  `src/main.ts` with the installed esbuild into one `server.mjs` during
+  synth; never Docker. The user data downloads it, installs Node.js and the
+  CloudWatch agent from the Amazon Linux repositories, and runs it under
+  systemd as its own user. A change to the boot is a change to
+  `bootCommands` and its test. [review]
+- At least two instances in two zones, a maximum set, a cooldown, a
+  target-tracking scaling policy, and the load balancer's health check
+  replacing an instance that fails it. [nag: AwsSolutions-AS1,
+  AwsSolutions-AS2; test]
+- A rolling update replaces one instance at a time and keeps one in
+  service. It sends no resource signals (that would need a CloudFormation
+  endpoint), so it waits a fixed time per instance and doesn't see whether
+  the new one is healthy: a release that can't start replaces every
+  instance. Test the boot before a release. [test; review]
+- systemd restarts the server whenever it stops, and logrotate keeps its
+  log file small on the disk; a change to the boot keeps both. [test]
+- No secrets in the user data or the unit's environment: they are visible
+  to anyone who can describe the launch template. Read them from Secrets
+  Manager at start-up. [review]
+
+{{ else }}## API Gateway HTTP API
 
 - Every route is authorized: IAM (`HttpIamAuthorizer`), a JWT authorizer or a
   Lambda authorizer. [nag: AwsSolutions-APIG4]
@@ -360,7 +453,7 @@ says why each rule matters.
 - No secrets in environment variables: they are visible in the console and
   the template. Read them from Secrets Manager at start-up. [review]
 
-## The CDK app
+{{ end }}## The CDK app
 
 - `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
   Framework's stacks are in `infra/stacks.ts`, which `defineStacks` returns.
@@ -379,7 +472,7 @@ says why each rule matters.
 
 ## Tests
 
-- No test calls AWS, opens a socket or needs credentials. [review]
+- No test calls AWS, opens a socket {{ if eq .Framework "aws-ec2-ts" }}other than on loopback {{ else }}{{ end }}or needs credentials. [review]
 - Stacks are tested with `Template.fromStack` from `aws-cdk-lib/assertions`:
   `hasResourceProperties`, `resourceCountIs`, `Match`. Assert what the
   issue needs (a route, a grant, a setting), not the whole template. [review]
@@ -392,7 +485,9 @@ says why each rule matters.
 {{- else -}}
 - Code that calls AWS is tested through its interface with a fake that
   records commands and answers from memory. [review]
-- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
-  the status code and body. [review]
+{{ if eq .Framework "aws-ec2-ts" }}- Request handling is tested by calling `answer` with a request and checking
+  the status code and body; `src/server.ts` over HTTP on a loopback port the
+  system picks. [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
+  the status code and body. [review]{{ end }}
 {{- end }}
 {{- end }}

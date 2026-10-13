@@ -1,17 +1,15 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
-{{- $fargate := eq .Framework "aws-fargate-ts" -}}
 # Agent guide
 
-This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, {{ if $fargate }}the `{{ .Container }}` service of {{ .SoftwareSystem }}: an HTTP
+This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` {{ if eq .Framework "aws-ec2-ts" }}service of {{ .SoftwareSystem }}: an HTTP
+server in TypeScript on EC2 instances in an Auto Scaling group behind an
+internal Application Load Balancer{{ else if eq .Framework "aws-fargate-ts" }}service of {{ .SoftwareSystem }}: an HTTP
 service in TypeScript on Node, run as a container on Amazon ECS on Fargate
-behind an Application Load Balancer, keeping its data in DynamoDB, with its
-infrastructure as a CDK app in `infra/`, scaffolded by C4 Factory with the
-`{{ .Standard }}` Standard. Build it to the rules below. What the service is
-for,{{ else }}the `{{ .Container }}` function of {{ .SoftwareSystem }}: an AWS
-Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API, keeping its data
+behind an Application Load Balancer{{ else }}function of {{ .SoftwareSystem }}: an AWS
+Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API{{ end }}, keeping its data
 in DynamoDB, with its infrastructure as a CDK app in `infra/`, scaffolded by
 C4 Factory with the `{{ .Standard }}` Standard. Build it to the rules below. What
-the function is for,{{ end }} and what it must never do, is in the issue you were given
+it is for, and what it must never do, is in the issue you were given
 and the system's needs: follow those.
 
 ## The one rule
@@ -28,7 +26,7 @@ vitest `Template.fromStack` assertions, `cdk synth` with CDK Nag's AWS Solutions
 `make check` must pass before every commit. It installs the exact packages in
 `package-lock.json`, then runs Prettier (check), ESLint with `eslint.config.mjs`
 (typescript-eslint strict, no warnings allowed), `tsc` with the strict
-`tsconfig.json`, the vitest tests (the {{ if $fargate }}service's{{ else }}function's{{ end }} and the stacks'
+`tsconfig.json`, the vitest tests (the code's and the stacks'
 `Template.fromStack` assertions), `cdk synth` with CDK Nag's AWS Solutions
 {{- end }}
 checks, which fail on any finding not acknowledged with a reason, and
@@ -37,7 +35,7 @@ reaches `main` without it passing and a review. Never commit red.
 
 Nothing here deploys. No command, test or script calls AWS, bootstraps an
 account or needs credentials: `cdk synth` writes CloudFormation into
-`cdk.out/`, offline.{{ if $fargate }} No check builds the image either: synth only stages
+`cdk.out/`, offline.{{ if eq .Framework "aws-fargate-ts" }} No check builds the image either: synth only stages
 its build context, and `cdk deploy` builds it, with Docker, on the deployer's
 machine.{{ end }}
 
@@ -81,10 +79,8 @@ machine.{{ end }}
   `npm install --save-dev --save-exact` and commit `package-lock.json`.
 {{- else }}
 - Add packages with `npm install --save-exact` (`--save-dev` for tools), and
-  commit `package-lock.json`. esbuild bundles what the {{ if $fargate }}service imports into
-  one file, the SDK included, in the image's build, so `node_modules` never
-  ships; what the service{{ else }}function imports into
-  one file, the SDK included, so `node_modules` never ships; what the function{{ end }}
+  commit `package-lock.json`. esbuild bundles what the {{ if eq .Framework "aws-ec2-ts" }}server{{ else if eq .Framework "aws-fargate-ts" }}service{{ else }}function{{ end }} imports into
+  one file, the SDK included, {{ if eq .Framework "aws-fargate-ts" }}in the image's build, {{ end }}so `node_modules` never ships; what it
   imports at run time is a `dependency`, tools and the CDK are
   `devDependencies`. Prefer Node's own modules and the AWS SDK v3's modular
   clients (`@aws-sdk/client-*`, `@aws-sdk/lib-dynamodb`); then few, maintained,
@@ -100,7 +96,13 @@ machine.{{ end }}
    `main` in `src/main.go` before `lambda.Start`, and reused by every
    invocation; nothing heavy runs in `init`. The binary imports only the
    service modules it uses.
-{{- else if $fargate -}}
+{{- else if eq .Framework "aws-ec2-ts" -}}
+1. **Start-up and shutdown:** SDK clients and configuration are created
+   once, in `src/main.ts`, and reused by every request; a missing setting
+   stops the server at start-up, not at the first request. On `SIGTERM` the
+   server finishes the requests in flight and exits. The bundle imports only
+   the clients it uses.
+{{- else if eq .Framework "aws-fargate-ts" -}}
 1. **Start and stop:** SDK clients and configuration are created once, in
    `src/main.ts`, and reused by every request; nothing heavy runs per
    request that could run once. On `SIGTERM` the server stops taking
@@ -119,23 +121,23 @@ machine.{{ end }}
 3. **Idempotency:** a retried request or event changes nothing twice. Writes
    are puts of a whole item, conditional writes, or keyed by an idempotency
    key; never a blind increment.
-{{- if $fargate }}
-4. **Limits are set:** the task's CPU and memory and the service's scaling
+{{ if eq .Framework "aws-ec2-ts" }}4. **Limits are set:** the server caps what it reads (body size) and keeps
+   idle connections open longer than the load balancer's 60 seconds; the
+   instance type, the Auto Scaling group's minimum and maximum and its scaling
+   policy are set in the stack. A request is answered within the load
+   balancer's idle timeout; SDK calls stay within it.{{ else if eq .Framework "aws-fargate-ts" }}4. **Limits are set:** the task's CPU and memory and the service's scaling
    bounds are set in the stack for the work; every request body has a
    limit; keep-alive outlasts the load balancer's idle timeout, and the
-   container's stop timeout leaves the requests in flight time to finish.
-{{- else }}
-4. **Limits are set:** every function has its timeout and memory set in the
+   container's stop timeout leaves the requests in flight time to finish.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
    stack, the timeout below API Gateway's 30 seconds and above what the work
-   needs; SDK calls stay within it. The stage is throttled.
-{{- end }}
+   needs; SDK calls stay within it. The stage is throttled.{{ end }}
 5. **Logs:** structured JSON, one entry per line, through the {{ if $go }}`*slog.Logger`{{ else }}`Log`{{ end }} the
-   {{ if $fargate }}code{{ else }}function{{ end }} is given; an entry names the request id and what failed. Never
+   code is given; an entry names the request id and what failed. Never
    log a secret, a token or a request body with user data.
 6. **Least privilege:** permissions come from CDK grants
-   ({{ if $fargate }}`table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`{{ else }}`table.grant(fn, 'dynamodb:GetItem')`{{ end }}, `grantReadData`), narrowed to the
+   ({{ if eq .Framework "aws-fargate-ts" }}`table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`{{ else }}`table.grant(fn, 'dynamodb:GetItem')`{{ end }}, `grantReadData`), narrowed to the
    calls the code makes; never an IAM statement with `*` or `service:*`
-   actions, never an AWS managed policy on a {{ if $fargate }}task's{{ else }}function's{{ end }} role.
+   actions, never an AWS managed policy on a role.
 {{- if $go }}
 7. **Errors and context:** every error is handled or returned, wrapped with
    `%w` and what was being done; the invocation's `ctx`, which carries
@@ -156,13 +158,15 @@ machine.{{ end }}
    the input is untrusted); no non-null assertion without a disable comment
    saying why; no `as` to silence the compiler; exhaustive switches over unions.
 8. **Pure modules:** logic lives in modules that import neither the AWS SDK
-   nor {{ if $fargate }}Node's HTTP server, tested with plain vitest; one module wraps each
+   {{ if eq .Framework "aws-ec2-ts" }}nor `node:http`, tested with plain vitest; one module wraps each AWS
+   service behind an interface the tests fake; `src/server.ts` adapts HTTP to
+   them and `src/main.ts` only wires them.{{ else if eq .Framework "aws-fargate-ts" }}nor Node's HTTP server, tested with plain vitest; one module wraps each
    AWS service behind an interface the tests fake; `src/main.ts` only
-   wires them.{{ else }}the `aws-lambda` types, tested with plain vitest; one module wraps each
+   wires them.{{ else }}nor the `aws-lambda` types, tested with plain vitest; one module wraps each
    AWS service behind an interface the tests fake; `src/handler.ts` only
    wires them.{{ end }}
 9. **Tests:** next to the code (`foo.test.ts`), `it.each` tables, names that say
-   what is expected; no real timers, network or shared state between tests{{ if $fargate }};
+   what is expected; no real timers, network or shared state between tests{{ if eq .Framework "aws-fargate-ts" }};
    no test starts the server{{ end }}.
    No test calls AWS: SDK clients are stubbed behind their interface, and
    stacks are checked with `Template.fromStack` assertions.
@@ -174,7 +178,7 @@ machine.{{ end }}
     every stateful resource an explicit removal policy (`RETAIN` for data), and
     every stack the Standard's tags; `infra/standard.test.ts` checks these. No
     secret in an environment variable or the template: secrets are read from
-    Secrets Manager or Parameter Store at run time{{ if $fargate }}, or passed as ECS `secrets`{{ end }}. Nothing in the app needs
+    Secrets Manager or Parameter Store at run time{{ if eq .Framework "aws-fargate-ts" }}, or passed as ECS `secrets`{{ end }}. Nothing in the app needs
     an AWS account to synthesize: no lookups, no `env` from the environment.
 12. **Releases:** user-visible changes get a `CHANGELOG.md` entry under
     "Unreleased"; the version in `package.json` changes only in a release issue.
@@ -200,28 +204,24 @@ Offline digests (read the one for what you are touching):
 {{ end -}}
 - `docs/style/typescript.md`: Google's TypeScript style, the handbook's do's and
   don'ts and typescript-eslint, each rule marked [lint] or [review]
-{{- if $fargate }}
-- `docs/style/aws.md`: the server, the load balancer, the task and service,
+{{ if eq .Framework "aws-ec2-ts" }}- `docs/style/aws.md`: the HTTP server, EC2 instances in an Auto Scaling
+  group, the Application Load Balancer, the VPC, DynamoDB, the AWS SDK v3,
+  the CDK and CDK Nag, and tests
+- `docs/well-architected.md`: the AWS Well-Architected Framework, pillar{{ else if eq .Framework "aws-fargate-ts" }}- `docs/style/aws.md`: the server, the load balancer, the task and service,
   DynamoDB, the AWS SDK v3, the CDK and CDK Nag, and tests
 - `docs/well-architected.md`: the AWS Well-Architected Framework and Amazon
-  ECS's best practices, pillar by pillar, with the CDK Nag rules that
-  enforce each
-{{- else }}
-- `docs/style/aws.md`: Lambda handlers, API Gateway HTTP APIs, DynamoDB, the
+  ECS's best practices, pillar{{ else }}- `docs/style/aws.md`: Lambda handlers, API Gateway HTTP APIs, DynamoDB, the
   AWS SDK {{ if $go }}for Go v2{{ else }}v3{{ end }}, the CDK and CDK Nag, and tests
 - `docs/well-architected.md`: the AWS Well-Architected Framework and its
-  Serverless Applications Lens, pillar by pillar, with the CDK Nag rules that
+  Serverless Applications Lens, pillar{{ end }} by pillar, with the CDK Nag rules that
   enforce each
-{{- end }}
 - `docs/style/principles.md`: cross-language principles, with sources
 - `docs/style/SOURCES.md`: every source URL, with the date it was read
 
 Online (canonical): {{ if $go }}https://go.dev/doc/effective_go · {{ end }}https://google.github.io/styleguide/tsguide.html ·
-{{- if $fargate }}
-https://typescript-eslint.io/rules/ · https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-best-practices.html ·
-https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html ·
-{{- else }}
-https://typescript-eslint.io/rules/ · https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html ·
-https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/ ·
-{{- end }}
+https://typescript-eslint.io/rules/ · {{ if eq .Framework "aws-ec2-ts" }}https://docs.aws.amazon.com/autoscaling/ec2/userguide/ ·
+https://docs.aws.amazon.com/elasticloadbalancing/latest/application/ ·
+https://docs.aws.amazon.com/wellarchitected/latest/framework/ ·{{ else if eq .Framework "aws-fargate-ts" }}https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-best-practices.html ·
+https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html ·{{ else }}https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html ·
+https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/ ·{{ end }}
 https://github.com/cdklabs/cdk-nag/blob/main/RULES.md

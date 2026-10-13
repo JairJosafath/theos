@@ -22,8 +22,8 @@ var tsStandardFrameworks = []side{
 }
 
 // awsStandardShared lists the files aws-standard shares with ts-standard.
-// whole: its rendering for aws-lambda-ts is byte for byte ts-standard's for
-// node-cli. Else, and for every other AWS Framework, every line that
+// whole: its rendering for the TypeScript Frameworks (all but aws-lambda-go)
+// is byte for byte ts-standard's for node-cli. Else, and for aws-lambda-go, every line that
 // ts-standard renders the same for all its Frameworks is in aws-standard's
 // rendering, in the same order: aws-standard replaces only what ts-standard
 // varies per Framework, and adds what an AWS Framework needs.
@@ -38,10 +38,12 @@ var awsStandardShared = []struct {
 	{"docs/style/principles.md", false},
 }
 
-// awsFrameworks is every Framework aws-standard renders for, with its type.
+// awsFrameworks is every Framework aws-standard renders for, with a type it
+// supports.
 var awsFrameworks = []side{
 	{model.TypeFunction, "aws-lambda-ts"},
 	{model.TypeFunction, "aws-lambda-go"},
+	{model.TypeService, "aws-ec2-ts"},
 	{model.TypeService, "aws-fargate-ts"},
 }
 

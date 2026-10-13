@@ -117,23 +117,25 @@ Task that reviews and merges it. Then:
 {{- else -}}
 ## TypeScript and AWS notes
 
-{{ if eq .Framework "aws-fargate-ts" }}- Request handling is tested by calling `answer` with a request, or the
+{{ if eq .Framework "aws-ec2-ts" }}- Request handling is tested by calling `answer` with a request and a fake
+  store, checking the status code and the body; logic lives in modules that
+  import neither the AWS SDK nor `node:http`, tested with plain vitest.
+  `src/server.ts` is tested over HTTP on a loopback port the system picks
+  (`listen(0, '127.0.0.1')`). Keep `src/main.ts` to wiring: the SDK clients
+  created once, the environment read once.{{ else if eq .Framework "aws-fargate-ts" }}- Request handling is tested by calling `answer` with a request, or the
   server's listener with an in-memory stream and a recorded response, and a
   fake store, checking the status code and the body; no test starts the
   server. Logic lives in modules that import neither the AWS SDK nor Node's
   HTTP server, tested with plain vitest. Keep `src/main.ts` to wiring: the
   SDK clients created once, the environment read once, the server closed on
-  `SIGTERM`.
-{{- else -}}
-- Request handling is tested by calling it with an
+  `SIGTERM`.{{ else }}- Request handling is tested by calling it with an
   `APIGatewayProxyEventV2` and a fake store, checking the status code and the
   body; logic lives in modules that import neither the AWS SDK nor the
   `aws-lambda` types, tested with plain vitest. Keep `src/handler.ts` to
-  wiring: the SDK clients at module scope, the environment read once.
-{{- end }}
+  wiring: the SDK clients at module scope, the environment read once.{{ end }}
 - An AWS service is reached through one module that wraps its SDK client
   behind an interface; its tests pass a fake that implements the interface
-  and records the commands. No test calls AWS, opens a socket or needs
+  and records the commands. No test calls AWS, opens a socket {{ if eq .Framework "aws-ec2-ts" }}beyond loopback {{ else }}{{ end }}or needs
   credentials.
 - Infrastructure changes go in the Framework's stacks under `infra/`, and
   each gets a `Template.fromStack` assertion in the stack's test: the
@@ -161,7 +163,7 @@ Task that reviews and merges it. Then:
   They pass in your sandbox and fail on the shared CI runner.
 - A budget in the issue or the needs ("within 200 ms", "10,000 items") gets
   a vitest `bench` on realistic input, not a test; put the numbers and the
-  input size in the summary. A latency budget in AWS ({{ if eq .Framework "aws-fargate-ts" }}task start-up, DynamoDB{{ else }}cold start, DynamoDB{{ end }})
+  input size in the summary. A latency budget in AWS ({{ if eq .Framework "aws-ec2-ts" }}the load balancer{{ else if eq .Framework "aws-fargate-ts" }}task start-up{{ else }}cold start{{ end }}, DynamoDB)
   can only be measured in an account: say so.
 - Timing logic (timeouts, retries) is tested with fake timers
   (`vi.useFakeTimers()`, then `vi.advanceTimersByTime`), or by awaiting the

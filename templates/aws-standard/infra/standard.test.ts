@@ -65,19 +65,17 @@ function resourcesOf(template: Template, type?: string): [string, Resource][] {
   return found;
 }
 
-/** Every IAM policy statement in `value`: each object with an Effect and an Action or NotAction. */
+/** Every IAM policy statement in `value`: an object with an `Effect`, anywhere in it. */
 function statementsIn(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) {
-    return value.flatMap((item: unknown) => statementsIn(item));
+    return (value as unknown[]).flatMap(statementsIn);
   }
   if (typeof value !== 'object' || value === null) {
     return [];
   }
-  const object: Record<string, unknown> = { ...value };
-  const nested = Object.values(object).flatMap((item: unknown) => statementsIn(item));
-  return 'Effect' in object && ('Action' in object || 'NotAction' in object)
-    ? [object, ...nested]
-    : nested;
+  const record = value as Record<string, unknown>;
+  const own = 'Effect' in record ? [record] : [];
+  return [...own, ...Object.values(record).flatMap(statementsIn)];
 }
 
 let stacks: Stack[] = [];
@@ -115,7 +113,10 @@ describe('the Standard', () => {
   });
 
   it('tags every resource that takes a list of tags', () => {
-    const wanted = Object.entries(STANDARD_TAGS).map(([Key, Value]) => ({ Key, Value }));
+    // An Auto Scaling group's tags also say whether instances get them.
+    const wanted: unknown[] = Object.entries(STANDARD_TAGS).map(([Key, Value]): unknown =>
+      expect.objectContaining({ Key, Value }),
+    );
     for (const [name, template] of templates) {
       for (const [id, resource] of resourcesOf(template)) {
         const tags = resource.Properties?.['Tags'];
@@ -128,14 +129,13 @@ describe('the Standard', () => {
 
   it('grants no IAM action with a wildcard service or action', () => {
     for (const [name, template] of templates) {
-      // A Deny may name every action (a bucket refusing plain HTTP denies
-      // s3:*); only what is allowed must be narrow.
       for (const statement of statementsIn(template.toJSON())) {
+        // A Deny may name every action, such as a bucket refusing plain HTTP.
         if (statement['Effect'] === 'Deny') {
           continue;
         }
-        for (const action of [statement['Action'], statement['NotAction']].flat()) {
-          if (action !== undefined) {
+        for (const key of ['Action', 'NotAction']) {
+          for (const action of [statement[key] ?? []].flat()) {
             expect(action, name).not.toMatch(/^\*$|^[a-z0-9-]+:\*$/);
           }
         }

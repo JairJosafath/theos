@@ -802,11 +802,13 @@ model and context it needs.
   `ts-standard`, with `go-standard`'s Go rules for a Go function, which a
   test keeps from drifting), and no Compute or Deployment: `make check`
   synthesizes the stack offline under CDK Nag's AwsSolutions rules and
-  cfn-lint, and nothing deploys. The same Standard fits `aws-fargate-ts`, a
-  `service` on AWS: a Node server in a container on ECS on Fargate behind
-  an Application Load Balancer, whose image synth only stages, with no
-  Compute or Deployment either. GitHub issue #1028 has the plan,
-  [plans/aws.md](plans/aws.md).
+  cfn-lint, and nothing deploys. GitHub issue #1028 has the plan,
+  [plans/aws.md](plans/aws.md). The same Standard serves the `service`
+  Framework `aws-ec2-ts` (EC2 instances in an Auto Scaling group behind an
+  internal Application Load Balancer), also with no Compute or Deployment,
+  and the `service` Framework `aws-fargate-ts` (a Node server in a container
+  on ECS on Fargate behind an internet-facing Application Load Balancer
+  serving HTTPS, whose image synth only stages).
 
 ## Briefs: an idea in plain words
 
