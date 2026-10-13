@@ -479,9 +479,35 @@ describe('describeBriefApp', () => {
     ['publishing', { publishState: 'Publishing', publishedURL: undefined }, 'progress'],
     ['publish failed', { publishState: 'Failed', publishedURL: undefined }, 'error'],
     ['released, not published', { publishState: undefined, publishedURL: undefined }, 'ok'],
+    ['a module Go can’t fetch', { moduleState: 'NotFetchable' }, 'error'],
+    ['an invalid module', { moduleState: 'Invalid' }, 'error'],
+    ['a module waiting for its source tag', { moduleState: 'Waiting' }, 'ok'],
   ])('tones %s as %s', (_, change, tone) => {
     const lastRelease = change && { ...released.lastRelease!, ...change }
     expect(describeBriefApp({ ...released, lastRelease }).tone).toBe(tone)
+  })
+
+  it('shows the module’s state, path and message, and nothing for an app that isn’t Go', () => {
+    const lastRelease = {
+      ...released.lastRelease!,
+      publishState: 'Failed' as const,
+      moduleState: 'Waiting' as const,
+      modulePath: 'github.com/acme/api',
+      moduleMessage: 'Waits for the tag v1.0.0 on acme/api: Unauthorized',
+    }
+    expect(describeBriefApp({ ...released, lastRelease }).module).toEqual({
+      state: 'Waiting',
+      path: 'github.com/acme/api',
+      message: 'Waits for the tag v1.0.0 on acme/api: Unauthorized',
+      tone: 'progress',
+    })
+    expect(
+      describeBriefApp({ ...released, lastRelease: { ...lastRelease, moduleState: 'NotFetchable' } }).module?.tone,
+    ).toBe('error')
+    expect(
+      describeBriefApp({ ...released, lastRelease: { ...lastRelease, moduleState: 'NotGo' } }).module,
+    ).toBeUndefined()
+    expect(describeBriefApp(released).module).toBeUndefined()
   })
 
   it('links the published release only once it is published', () => {

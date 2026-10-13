@@ -270,6 +270,68 @@ describe('needs', () => {
         place: 'Crew',
       },
     },
+    {
+      name: 'a Crew whose Go module waits on a refused GitHub release (#1001)',
+      input: input({
+        crews: [
+          crew({
+            lastRelease: {
+              tag: 'v0.15.1',
+              commit: 'abc',
+              time: T,
+              run: 'Succeeded',
+              publish: { state: 'Failed', message: 'Unauthorized' },
+              goModule: { state: 'Waiting', path: 'github.com/acme/cel-lens/engine', version: 'v0.15.1' },
+            },
+            conditions: [
+              cond('Released', 'True', 'Released', 'Released v0.15.1'),
+              cond('Published', 'False', 'Unauthorized', 'GitHub refused the token'),
+              cond(
+                'ModulePublished',
+                'False',
+                'WaitsForRelease',
+                'Waits for the tag engine/v0.15.1 on acme/cel-lens: Unauthorized, GitHub refused the token',
+              ),
+            ],
+          }),
+        ],
+      }),
+      want: {
+        kind: 'Crew',
+        reason: 'WaitsForRelease',
+        message: 'Waits for the tag engine/v0.15.1 on acme/cel-lens: Unauthorized, GitHub refused the token',
+        place: 'Crew',
+      },
+    },
+    ...(['InvalidModule', 'NotFetchable'] as const).map((reason) => ({
+      name: `a Crew whose Go module is ${reason}`,
+      input: input({
+        crews: [
+          crew({
+            lastRelease: {
+              tag: 'v0.2.0',
+              commit: 'abc',
+              time: T,
+              publish: {
+                state: 'Published' as const,
+                source: { commit: 'abc', tag: 'engine/v0.2.0', url: 'https://github.com/acme/lens/tree/engine/v0.2.0' },
+              },
+            },
+            conditions: [
+              cond('Published', 'True', 'Published', 'Published v0.2.0'),
+              cond('ModulePublished', 'False', reason, 'The Go proxy says: not found'),
+            ],
+          }),
+        ],
+      }),
+      want: {
+        kind: 'Crew',
+        reason,
+        message: 'The Go proxy says: not found',
+        links: ['https://github.com/acme/lens/tree/engine/v0.2.0'],
+        place: 'Crew',
+      },
+    })),
   ]
 
   it.each(cases)('lists $name, with why and where', ({ input, want }) => {
@@ -336,7 +398,17 @@ describe('needs', () => {
         containers: [
           container({ phase: 'Ready', conditions: [cond('StandardUpdated', 'False', 'Updating', 'Waiting for CI')] }),
         ],
-        crews: [crew({ conditions: [cond('Released', 'False', 'WaitsForEarlierRelease', 'v2 waits for v1')] })],
+        crews: [
+          crew({ conditions: [cond('Released', 'False', 'WaitsForEarlierRelease', 'v2 waits for v1')] }),
+          // The source tag is on its way: GitHub took the release, or the proxy is down for now.
+          crew({
+            conditions: [
+              cond('Published', 'True', 'Published', 'Published v0.2.0'),
+              cond('ModulePublished', 'False', 'WaitsForRelease', 'Waits for engine/v0.2.0'),
+            ],
+          }),
+          crew({ conditions: [cond('ModulePublished', 'False', 'ProxyUnavailable', 'proxy.golang.org: timeout')] }),
+        ],
       }),
     )
     expect(items).toEqual([])

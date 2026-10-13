@@ -858,6 +858,22 @@ var _ = Describe("Brief apps", func() {
 			crew := linterCrew(g, ns).Status.LastRelease
 			g.Expect(app.LastRelease.Run).To(Equal(crew.Run))
 		}).Should(Succeed())
+
+		By("carrying the module's state and message, so the Brief points at a module nobody can fetch (#1015)")
+		module := &c4v1alpha1.CrewReleaseGoModule{State: "Waiting", Path: "github.com/acme/cel-lens/engine",
+			Version: "v0.2.0", Message: "Waits for the source tag engine/v0.2.0 on acme/cel-lens: Unauthorized"}
+		Eventually(func(g Gomega) {
+			crew := linterCrew(g, ns)
+			crew.Status.LastRelease.GoModule = module
+			g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			release := briefApp(g, ns, "linter").LastRelease
+			g.Expect(release).NotTo(BeNil())
+			g.Expect(release.ModuleState).To(Equal("Waiting"))
+			g.Expect(release.ModulePath).To(Equal(module.Path))
+			g.Expect(release.ModuleMessage).To(Equal(module.Message))
+		}).Should(Succeed())
 	})
 
 	It("says how to turn releases on for an app whose Crew doesn't release", func() {
@@ -889,6 +905,14 @@ var _ = DescribeTable("appMessage",
 		"Released v0.1.0 and published it to acme/lens."),
 	Entry("publishing failed", c4v1alpha1.BriefApp{Releases: "On", PublishTo: "acme/lens",
 		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", PublishState: "Failed"}}, true,
+		"Release v0.1.0 could not be published to acme/lens; the Crew says why and tries again."),
+	Entry("a module Go can't fetch", c4v1alpha1.BriefApp{Releases: "On", PublishTo: "acme/lens",
+		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", PublishState: "Published", ModuleState: "NotFetchable",
+			ModulePath: "github.com/acme/lens/engine"}}, true,
+		"Released v0.1.0, but Go can't fetch its module github.com/acme/lens/engine; the Crew says why."),
+	Entry("a module waiting on a failed publish says the publish", c4v1alpha1.BriefApp{Releases: "On",
+		PublishTo: "acme/lens", LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", PublishState: "Failed",
+			ModuleState: "Waiting"}}, true,
 		"Release v0.1.0 could not be published to acme/lens; the Crew says why and tries again."),
 	Entry("released, not published", c4v1alpha1.BriefApp{Releases: "On",
 		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", Run: "Running"}}, true, "Released v0.1.0."),

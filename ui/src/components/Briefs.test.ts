@@ -36,12 +36,23 @@ describe('the Brief card', () => {
     expect(html).toContain('Releases <span class="section-hint">3</span>')
   })
 
-  it('links a released app to its Gitea release and its published GitHub release', () => {
+  it('links a released app to its Gitea release, and says where it failed to publish', () => {
     expect(html).toContain('href="http://localhost:3000/webshop/orders-api/releases/tag/v0.2.0"')
-    expect(html).toContain('href="https://github.com/webshop-co/orders-api/releases/tag/v0.2.0"')
+    // GitHub refused the token, so there is no published release to link.
+    expect(html).not.toContain('href="https://github.com/webshop-co/orders-api/releases/tag/v0.2.0"')
+    expect(html).toContain('to webshop-co/orders-api')
     expect(html).toContain('Releases on')
-    expect(html).toContain('Released v0.2.0 and published it to webshop-co/orders-api.')
+    expect(html).toContain(
+      'Release v0.2.0 could not be published to webshop-co/orders-api; the Crew says why and tries again.',
+    )
     expect(html).toContain('3 h ago')
+  })
+
+  it('shows the Go module nobody can fetch yet, with the Crew’s message (#1001)', () => {
+    expect(html).toContain('class="brief-app-module"')
+    expect(html).toContain('Waiting')
+    expect(html).toContain('github.com/webshop-co/orders-api')
+    expect(html).toContain('has no tag v0.2.0 yet: Published is Unauthorized')
   })
 
   it("shows how many issues each app's crew works on at once", () => {

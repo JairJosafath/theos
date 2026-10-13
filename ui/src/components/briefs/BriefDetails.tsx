@@ -342,6 +342,17 @@ function AppLine({ app }: { app: BriefAppView }) {
         ) : null}
       </div>
       <p className="brief-app-message">{app.message}</p>
+      {app.module ? (
+        <p className="brief-app-module">
+          Go module{' '}
+          <span className={`badge badge-${app.module.tone} badge-sm`}>
+            <span className="badge-dot" aria-hidden="true" />
+            {app.module.state}
+          </span>
+          {app.module.path ? <span className="mono"> {app.module.path}</span> : null}
+          {app.module.message ? <span className="muted"> · {app.module.message}</span> : null}
+        </p>
+      ) : null}
     </li>
   )
 }
