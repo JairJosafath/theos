@@ -50,6 +50,22 @@ type fakeIssueState struct {
 	listErrs map[string]error
 	// depErrs makes AddIssueDependency on an issue of an owner/name fail.
 	depErrs map[string]error
+	// closeBlockers, by owner/name#number, are blockers the issue gains when
+	// CloseIssue is next called on it, as one opened after its blockers were
+	// read.
+	closeBlockers map[string]string
+}
+
+// blockOnClose makes the next CloseIssue of an issue of owner/name first give
+// it the blocker ref, as a blocker opened after its blockers were read.
+func (g *fakeGit) blockOnClose(owner, name string, number int, ref string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := g.issueState()
+	if s.closeBlockers == nil {
+		s.closeBlockers = map[string]string{}
+	}
+	s.closeBlockers[fmt.Sprintf("%s/%s#%d", owner, name, number)] = ref
 }
 
 // failDependencies makes adding a dependency to an issue of owner/name fail
@@ -359,6 +375,11 @@ func (p *fakeProvider) CloseIssue(ctx context.Context, repo gitprovider.Reposito
 	i, err := p.issueOf(repo, number)
 	if err != nil {
 		return err
+	}
+	key := fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)
+	if ref, ok := p.git.issueState().closeBlockers[key]; ok {
+		delete(p.git.issueState().closeBlockers, key)
+		i.blockers = append(i.blockers, ref)
 	}
 	if blockers := p.openBlockers(repo, i); len(blockers) > 0 {
 		// As Gitea does, with HTTP 412.
