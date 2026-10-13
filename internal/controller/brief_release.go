@@ -10,6 +10,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -39,20 +40,93 @@ func briefRelease(brief *c4v1alpha1.Brief, container string) *c4v1alpha1.BriefRe
 	return nil
 }
 
-// releaseSpec turns releases on in a Crew's spec (R4), publishing them as
-// entry says when there is one (R5). It never turns anything off (R2).
-func releaseSpec(spec *c4v1alpha1.CrewSpec, entry *c4v1alpha1.BriefRelease) {
+// releaseSpec turns releases on in a Crew's spec (R4). It never turns
+// anything off (R2); briefTarget sets where they are published (R5).
+func releaseSpec(spec *c4v1alpha1.CrewSpec) {
 	spec.TagReleases = true
 	spec.PrepareReleases = true
-	if entry != nil {
-		publish := *entry.CrewPublishReleases.DeepCopy()
-		spec.PublishReleases = &publish
-	}
 }
 
-// releaseCrew turns releases on for the Crew the Brief made for container. A
-// Crew it didn't make, or none yet, is left alone: releases on the first are
-// its owner's, and the second gets them when the Brief makes it.
+// publishJSON is a release target in the one form the Crew's
+// AnnotationBriefPublishReleases holds and the Brief compares; empty for none.
+func publishJSON(p *c4v1alpha1.CrewPublishReleases) string {
+	if p == nil {
+		return ""
+	}
+	out, err := json.Marshal(p)
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// briefMark is the release target the Brief last wrote on the Crew, as
+// publishJSON says it, and whether it wrote one. A mark that isn't JSON is
+// taken as it is, so it matches no entry and the Brief writes it again.
+func briefMark(crew *c4v1alpha1.Crew) (*c4v1alpha1.CrewPublishReleases, string, bool) {
+	raw, ok := crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases]
+	if !ok {
+		return nil, "", false
+	}
+	var p c4v1alpha1.CrewPublishReleases
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		return nil, raw, true
+	}
+	return &p, publishJSON(&p), true
+}
+
+// briefTarget sets the release target of a Crew the Brief made from its
+// spec.releases entry, as model.ReleaseTarget decides: written with the mark,
+// or left as it is when someone changed it on the Crew, which holds it. With
+// no entry the Brief sets no target: the Crew keeps its own (R5), unmarked.
+// It returns whether the Crew is held.
+func briefTarget(crew *c4v1alpha1.Crew, entry *c4v1alpha1.BriefRelease) bool {
+	if entry == nil {
+		delete(crew.Annotations, c4v1alpha1.AnnotationBriefPublishReleases)
+		return false
+	}
+	want := publishJSON(&entry.CrewPublishReleases)
+	_, mark, marked := briefMark(crew)
+	action := model.ReleaseTarget(want, mark, marked, publishJSON(crew.Spec.PublishReleases))
+	if action == model.TargetInSync {
+		return false
+	}
+	if crew.Annotations == nil {
+		crew.Annotations = map[string]string{}
+	}
+	crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases] = want
+	if action == model.TargetHold {
+		return true
+	}
+	publish := *entry.CrewPublishReleases.DeepCopy()
+	crew.Spec.PublishReleases = &publish
+	return false
+}
+
+// targetDiffers is the Crew's release target as it differs from the one its
+// Brief last set; nil when the Brief sets none or the two agree.
+func targetDiffers(crew *c4v1alpha1.Crew) *model.TargetDiffers {
+	mark, want, marked := briefMark(crew)
+	if !marked || want == publishJSON(crew.Spec.PublishReleases) {
+		return nil
+	}
+	d := &model.TargetDiffers{Brief: crew.Labels[c4v1alpha1.LabelBrief], Crew: crew.Name}
+	if mark != nil {
+		d.BriefRepo = mark.GitHub.Repository
+	}
+	if p := crew.Spec.PublishReleases; p != nil {
+		d.CrewRepo = p.GitHub.Repository
+		d.SameRepository = d.CrewRepo == d.BriefRepo
+	} else {
+		d.PublishesNowhere = true
+	}
+	return d
+}
+
+// releaseCrew turns releases on for the Crew the Brief made for container,
+// and sets where they are published (briefTarget). A Crew it didn't make, or
+// none yet, is left alone: releases on the first are its owner's, and the
+// second gets them when the Brief makes it.
 func (r *BriefReconciler) releaseCrew(ctx context.Context, brief *c4v1alpha1.Brief, container string) error {
 	var crew c4v1alpha1.Crew
 	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: container}, &crew)
@@ -66,12 +140,21 @@ func (r *BriefReconciler) releaseCrew(ctx context.Context, brief *c4v1alpha1.Bri
 		return nil
 	}
 	orig := crew.DeepCopy()
-	releaseSpec(&crew.Spec, briefRelease(brief, container))
-	if equality.Semantic.DeepEqual(crew.Spec, orig.Spec) {
+	releaseSpec(&crew.Spec)
+	held := briefTarget(&crew, briefRelease(brief, container))
+	if equality.Semantic.DeepEqual(crew.Spec, orig.Spec) &&
+		maps.Equal(crew.Annotations, orig.Annotations) {
 		return nil
 	}
 	if err := r.Patch(ctx, &crew, client.MergeFrom(orig)); err != nil {
 		return err
+	}
+	if held {
+		logf.FromContext(ctx).Info("Left a Crew's release target that differs from spec.releases",
+			"crew", crew.Name)
+	}
+	if equality.Semantic.DeepEqual(crew.Spec, orig.Spec) {
+		return nil
 	}
 	publishTo := ""
 	if crew.Spec.PublishReleases != nil {
@@ -83,11 +166,26 @@ func (r *BriefReconciler) releaseCrew(ctx context.Context, brief *c4v1alpha1.Bri
 
 // syncReleases brings the Crews the Brief made for its spec.releases entries
 // up to date, whatever its round is doing: an entry added or changed later
-// reaches the Crew without waiting for a round.
+// reaches the Crew without waiting for a round, and a removed one drops the
+// Brief's mark from it.
 func (r *BriefReconciler) syncReleases(ctx context.Context, brief *c4v1alpha1.Brief) error {
+	names := map[string]bool{}
 	for _, entry := range brief.Spec.Releases {
-		if err := r.releaseCrew(ctx, brief, entry.Container); err != nil {
-			return fmt.Errorf("turning on the releases of Crew %s: %w", entry.Container, err)
+		names[entry.Container] = true
+	}
+	var crews c4v1alpha1.CrewList
+	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace),
+		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		return err
+	}
+	for _, crew := range crews.Items {
+		if _, marked := crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases]; marked {
+			names[crew.Name] = true
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(names)) {
+		if err := r.releaseCrew(ctx, brief, name); err != nil {
+			return fmt.Errorf("turning on the releases of Crew %s: %w", name, err)
 		}
 	}
 	return nil

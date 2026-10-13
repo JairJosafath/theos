@@ -478,3 +478,21 @@ func WithNeedsYou(a Attention, more []NeedsYou) Attention {
 	a.NeedsYou = a.NeedsYou[:min(len(a.NeedsYou), MaxNeedsYou)]
 	return a
 }
+
+// InsteadOf adds more to a's Needs you entries in place of any of the same
+// kind and name, so each item is listed once.
+func InsteadOf(a Attention, more []NeedsYou) Attention {
+	if len(more) == 0 {
+		return a
+	}
+	kept := make([]NeedsYou, 0, len(a.NeedsYou))
+	for _, n := range a.NeedsYou {
+		if slices.ContainsFunc(more, func(m NeedsYou) bool { return m.Kind == n.Kind && m.Name == n.Name }) {
+			a.Waiting--
+			continue
+		}
+		kept = append(kept, n)
+	}
+	a.NeedsYou = kept
+	return WithNeedsYou(a, more)
+}
