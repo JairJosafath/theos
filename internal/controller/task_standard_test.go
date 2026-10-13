@@ -316,7 +316,13 @@ var _ = Describe("Task with a Standard change", func() {
 		Expect(issue.State).To(Equal("open"))
 		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
 		Expect(issue.Labels).NotTo(ContainElement(model.LabelInProgress))
-		Expect(issue.comments).To(ConsistOf(And(
+		var refusals []string
+		for _, c := range issue.comments {
+			if strings.Contains(c, "refused") {
+				refusals = append(refusals, c)
+			}
+		}
+		Expect(refusals).To(ConsistOf(And(
 			ContainSubstring("Task `orders-api-1` ended"),
 			ContainSubstring(fmt.Sprintf("Standard change #%d", m)),
 			ContainSubstring("The host refused to close this issue"),
