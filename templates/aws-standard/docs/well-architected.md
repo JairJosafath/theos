@@ -1,0 +1,157 @@
+# Well-Architected
+
+A digest of the AWS Well-Architected Framework and its Serverless Applications
+Lens, for this repository: one section per pillar, what the pillar asks of a
+serverless API, the CDK Nag rules (`AwsSolutions` pack) that enforce it when
+`cdk synth` runs, and what you do by hand where no rule does. Sources and the
+date they were read are in `docs/style/SOURCES.md`. This file belongs to the
+Standard: a task never changes it.
+
+`make check` runs CDK Nag's `AwsSolutions` checks on every stack
+(`infra/standard.ts`): a finding fails synth unless it is acknowledged, on
+one construct, with a reason. `infra/standard.test.ts` checks what CDK Nag
+doesn't: tags, wildcard actions, encryption, log retention, removal policies.
+The Serverless pack's rules are named below where they apply; it is not run,
+so they are review items.
+
+## Operational excellence
+
+_Run and monitor the system, and improve it in small, reversible changes._
+
+- Everything is code: the stacks in `infra/` are the only way resources are
+  made. No change by hand in the console.
+- Changes are small, frequent and checked: `make check` synthesizes and
+  lints every change; nothing here deploys.
+- Observe: structured JSON logs with the request id, a log group per function
+  and an access log per API stage, each with a retention.
+  - `AwsSolutions-APIG1`: the API has access logging.
+  - Serverless `CloudWatchLogGroupRetentionPeriod`, `APIGWStructuredLogging`:
+    by hand; `infra/standard.test.ts` checks that every log group has a
+    retention.
+- Trace when the issue asks for it: X-Ray tracing (`tracing: Tracing.ACTIVE`)
+  costs per trace and needs `xray:Put*` on `*`, which CDK Nag flags
+  (`AwsSolutions-IAM5`); acknowledge that finding with the reason.
+- Tag everything so cost and ownership are traceable: every stack carries
+  `c4factory:project`, `c4factory:system` and `c4factory:container`
+  (`infra/standard.ts`, tested).
+- By hand: alarms on errors, throttles and duration, and a runbook, when the
+  system's needs ask for them.
+
+## Security
+
+_Protect data, systems and assets: identity, least privilege, encryption,
+traceability, and protection at every layer._
+
+- Least privilege: each function has its own role, granted through CDK
+  grants (`table.grant(fn, 'dynamodb:GetItem')`) only the calls its code
+  makes.
+  - `AwsSolutions-IAM4`: no AWS managed policies on a role.
+  - `AwsSolutions-IAM5`: no wildcard actions or resources without an
+    acknowledgement naming the one finding and why.
+  - `infra/standard.test.ts`: no `*` or `service:*` action anywhere.
+- Authenticate every request: every route has an authorizer (IAM, JWT or a
+  Lambda authorizer).
+  - `AwsSolutions-APIG4`: the API implements authorization.
+  - `AwsSolutions-COG4`: a REST API method uses a Cognito authorizer.
+- Encrypt at rest and in transit.
+  - `AwsSolutions-S10`, `AwsSolutions-SQS4`, `AwsSolutions-SNS3`: requests
+    must use TLS.
+  - `AwsSolutions-SQS2`, `AwsSolutions-EFS1`: encryption at rest; DynamoDB
+    is always encrypted, and `infra/standard.test.ts` requires a KMS key
+    (`SSESpecification`) on every table, encryption on every bucket, queue
+    and topic.
+  - `AwsSolutions-KMS5`: customer-managed keys rotate.
+- Protect data from the public: `AwsSolutions-S2` (bucket public access
+  blocked), `AwsSolutions-S5`, `AwsSolutions-EVB1` (no open event bus
+  policy). `AwsSolutions-APIG3` and `AwsSolutions-CFR2` warn when a REST API
+  or a distribution has no WAF.
+- Secrets live in Secrets Manager, rotated (`AwsSolutions-SMG4`), read at
+  start-up; never in an environment variable, the template, a log or the
+  repository.
+- By hand: validate all input at the boundary; never log user data or
+  tokens; never return internal errors to a client.
+
+## Reliability
+
+_Recover from failure, scale with demand, and keep working when a part
+fails._
+
+- Managed, multi-AZ services: Lambda, API Gateway and DynamoDB spread over
+  Availability Zones on their own.
+- Back up data and recover it: point-in-time recovery on every table, and
+  data that outlives its stack.
+  - `AwsSolutions-DDB3`: point-in-time recovery.
+  - `AwsSolutions-RDS10`: deletion protection on databases; set it on tables
+    too (`deletionProtection: true`).
+  - `infra/standard.test.ts`: every stateful resource states its removal
+    policy; data is `RETAIN`.
+- Handle failures in asynchronous work: a queue or event source has a
+  dead-letter queue.
+  - `AwsSolutions-SQS3`: a queue has a DLQ or is one.
+  - Serverless `LambdaDLQ`, `LambdaAsyncFailureDestination`,
+    `SQSRedrivePolicy`, `EventBusDLQ`: by hand, for asynchronous invocations;
+    an API Gateway call is synchronous, and its client retries.
+- Idempotency: a retried request changes nothing twice (whole-item puts,
+  conditional writes, idempotency keys).
+- Limits: timeouts on every function, below the caller's (API Gateway: 30
+  seconds); throttling on every API stage, so a burst can't exhaust the
+  account's concurrency. Serverless `LambdaFunctionDefaultTimeout`,
+  `APIGWDefaultThrottling`: by hand.
+
+## Performance efficiency
+
+_Use resources efficiently as demand changes and technology evolves._
+
+- The newest runtime: `AwsSolutions-L1`.
+- Size memory to the work (Lambda gives CPU in proportion); measure before
+  raising it. Serverless `LambdaDefaultMemorySize`: by hand, memory is set.
+- Cold starts: SDK clients at module scope, small bundles (esbuild,
+  minified, only the clients used), no heavy work at import.
+- Data access by key: `GetItem` and `Query` on keys and indexes; a `Scan` is
+  never on a request path.
+- By hand: measure a stated budget with a benchmark, and say what only a
+  deployed function can show (cold start, latency in AWS).
+
+## Cost optimization
+
+_Deliver value at the lowest price: pay only for what you use, and know
+where the money goes._
+
+- Pay per use: on-demand DynamoDB, Lambda and the HTTP API, which costs
+  less than a REST API.
+- `arm64` (Graviton) functions: cheaper per millisecond than x86.
+- Log retention limits what storage costs grow to (`infra/standard.test.ts`).
+- Tags attribute every cost to its project, system and container.
+- Throttling caps what a runaway client can spend.
+- By hand: right-size memory and timeouts; no provisioned concurrency or
+  capacity unless the issue states the load that needs it.
+
+## Sustainability
+
+_Minimize the environmental impact of the workload._
+
+- Serverless and managed services run only while there is work, on shared
+  infrastructure.
+- `arm64` (Graviton) uses less energy for the same work.
+- Keep what is needed, no longer: log retention, and no data stored that
+  the system's needs don't ask for.
+- Efficient code: no polling, no work per request that can be done once at
+  start-up, small bundles.
+- No rule enforces these: review them.
+
+## Acknowledging a finding
+
+Fix the resource first. When the fix is wrong for this system, acknowledge
+the one finding on the construct the finding's path names (or its nearest
+ancestor you own): a finding on `HandlerRole/DefaultPolicy/Resource`
+is acknowledged on the role, not on the function beside it.
+
+```ts
+Validations.of(role).acknowledge({
+  id: 'AwsSolutions-IAM5[Resource::*]',
+  reason: 'X-Ray PutTraceSegments and PutTelemetryRecords accept no resource but *.',
+});
+```
+
+The reason says why this resource needs it, true and specific; the reviewer
+checks every one, and a vague reason ("not needed", "for now") is blocking.

@@ -1,0 +1,130 @@
+# Agent guide
+
+This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` function of {{ .SoftwareSystem }}: an AWS
+Lambda function in TypeScript behind an API Gateway HTTP API, keeping its data
+in DynamoDB, with its infrastructure as a CDK app in `infra/`, scaffolded by
+C4 Factory with the `{{ .Standard }}` Standard. Build it to the rules below. What
+the function is for, and what it must never do, is in the issue you were given
+and the system's needs: follow those.
+
+## The one rule
+
+`make check` must pass before every commit. It installs the exact packages in
+`package-lock.json`, then runs Prettier (check), ESLint with `eslint.config.mjs`
+(typescript-eslint strict, no warnings allowed), `tsc` with the strict
+`tsconfig.json`, the vitest tests (the function's and the stacks'
+`Template.fromStack` assertions), `cdk synth` with CDK Nag's AWS Solutions
+checks, which fail on any finding not acknowledged with a reason, and
+`cfn-lint` on the templates synth wrote. CI runs the same command, and nothing
+reaches `main` without it passing and a review. Never commit red.
+
+Nothing here deploys. No command, test or script calls AWS, bootstraps an
+account or needs credentials: `cdk synth` writes CloudFormation into
+`cdk.out/`, offline.
+
+## Workflow
+
+1. Read the issue, its acceptance criteria, and your role guide:
+   `docs/agents/implementer.md` or `docs/agents/reviewer.md`.
+2. Read the code you are about to change and match it.
+3. Write a failing test first: one per acceptance criterion, or one that shows the bug.
+4. Make the smallest change that meets every criterion. One concern per commit.
+5. `make check`, then commit with a Conventional Commit message
+   (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`).
+6. `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` never change. Other protected files
+   change only through a Standard change (see your role guide), never in a normal pull
+   request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
+   `Makefile`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
+   `.editorconfig`, `AGENTS.md`, `docs/style/`, `docs/agents/`,
+   `docs/well-architected.md`, `infra/main.ts` and `infra/standard.ts` belong
+   to the Standard. `tsconfig.json`, `vitest.config.mts` and `cdk.json` decide
+   what the checks check and which CDK behaviour the app gets: don't loosen them.
+
+## Lints
+
+- Fix every finding; don't silence it. An `eslint-disable-next-line <rule> -- <why>`
+  is a last resort for a false positive: one rule, one reason. Never
+  `@ts-ignore`; never a file-wide disable.
+- Fix every CDK Nag finding in the stack. An acknowledgement
+  (`Validations.of(construct).acknowledge({ id, reason })`) is a last resort:
+  on the construct the finding's path names, for the one finding (`AwsSolutions-IAM5[Resource::...]`,
+  never a whole rule on a stack), with a reason a reviewer can check.
+- `make fmt` formats; never hand-format.
+- Add packages with `npm install --save-exact` (`--save-dev` for tools), and
+  commit `package-lock.json`. esbuild bundles what the function imports into
+  one file, the SDK included, so `node_modules` never ships; what the function
+  imports at run time is a `dependency`, tools and the CDK are
+  `devDependencies`. Prefer Node's own modules and the AWS SDK v3's modular
+  clients (`@aws-sdk/client-*`, `@aws-sdk/lib-dynamodb`); then few, maintained,
+  well-known packages with a licence that fits. A new install script needs an
+  `allowScripts` entry in `package.json`: allow it only when the package can't
+  work without it.
+
+## Review rules (lint can't check these)
+
+1. **Cold start:** SDK clients and configuration are created once, at module
+   scope in `src/handler.ts`, and reused by every invocation; nothing heavy
+   runs at import beyond that. The bundle imports only the clients it uses.
+2. **The boundary:** every request is validated before use (path, query,
+   body, headers), with unknown input narrowed from `unknown`. Errors are
+   answered with the right HTTP status (400 for bad input, 404, 409, 500 for
+   a bug) and a JSON message a client can act on, never a stack trace or the
+   SDK's error text.
+3. **Idempotency:** a retried request or event changes nothing twice. Writes
+   are puts of a whole item, conditional writes, or keyed by an idempotency
+   key; never a blind increment.
+4. **Limits are set:** every function has its timeout and memory set in the
+   stack, the timeout below API Gateway's 30 seconds and above what the work
+   needs; SDK calls stay within it. The stage is throttled.
+5. **Logs:** structured JSON, one entry per line, through the `Log` the
+   function is given; an entry names the request id and what failed. Never
+   log a secret, a token or a request body with user data.
+6. **Least privilege:** permissions come from CDK grants
+   (`table.grant(fn, 'dynamodb:GetItem')`, `grantReadData`), narrowed to the
+   calls the code makes; never an IAM statement with `*` or `service:*`
+   actions, never an AWS managed policy on a function's role.
+7. **Types:** no `any` (narrow `unknown` at the boundary, checked at runtime when
+   the input is untrusted); no non-null assertion without a disable comment
+   saying why; no `as` to silence the compiler; exhaustive switches over unions.
+8. **Pure modules:** logic lives in modules that import neither the AWS SDK
+   nor the `aws-lambda` types, tested with plain vitest; one module wraps each
+   AWS service behind an interface the tests fake; `src/handler.ts` only
+   wires them.
+9. **Tests:** next to the code (`foo.test.ts`), `it.each` tables, names that say
+   what is expected; no real timers, network or shared state between tests.
+   No test calls AWS: SDK clients are stubbed behind their interface, and
+   stacks are checked with `Template.fromStack` assertions.
+10. **Performance:** when the issue or the system's needs state a budget, a test
+    or benchmark measures it on realistic input and the pull request gives the
+    numbers.
+11. **The stack:** data is encrypted at rest, every log group has a retention,
+    every stateful resource an explicit removal policy (`RETAIN` for data), and
+    every stack the Standard's tags; `infra/standard.test.ts` checks these. No
+    secret in an environment variable or the template: secrets are read from
+    Secrets Manager or Parameter Store at run time. Nothing in the app needs
+    an AWS account to synthesize: no lookups, no `env` from the environment.
+12. **Releases:** user-visible changes get a `CHANGELOG.md` entry under
+    "Unreleased"; the version in `package.json` changes only in a release issue.
+13. **Names:** `lowerCamelCase` values, `UpperCamelCase` types, `CONSTANT_CASE`
+    module constants, acronyms as words (`HttpUrl`); files `snake_case.ts`.
+14. **No dead code:** no commented-out code, speculative options or "for later"
+    features; no TODO without an issue number.
+
+## Style guides
+
+Offline digests (read the one for what you are touching):
+
+- `docs/style/typescript.md`: Google's TypeScript style, the handbook's do's and
+  don'ts and typescript-eslint, each rule marked [lint] or [review]
+- `docs/style/aws.md`: Lambda handlers, API Gateway HTTP APIs, DynamoDB, the
+  AWS SDK v3, the CDK and CDK Nag, and tests
+- `docs/well-architected.md`: the AWS Well-Architected Framework and its
+  Serverless Applications Lens, pillar by pillar, with the CDK Nag rules that
+  enforce each
+- `docs/style/principles.md`: cross-language principles, with sources
+- `docs/style/SOURCES.md`: every source URL, with the date it was read
+
+Online (canonical): https://google.github.io/styleguide/tsguide.html ·
+https://typescript-eslint.io/rules/ · https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html ·
+https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/ ·
+https://github.com/cdklabs/cdk-nag/blob/main/RULES.md

@@ -1,0 +1,141 @@
+# AWS serverless digest
+
+Distilled from the Lambda developer guide's best practices and Node.js
+handler pages, API Gateway's HTTP API docs, DynamoDB's developer guide, the
+AWS SDK for JavaScript v3 guide, the CDK developer guide and its assertions
+module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
+`make check`: an ESLint rule or the compiler; `[nag: x]` = a CDK Nag rule that
+fails `cdk synth`; `[test]` = an assertion in `infra/standard.test.ts` or a
+stack's own test; `[review]` = check it yourself. `docs/well-architected.md`
+says why each rule matters.
+
+## The handler
+
+- `src/handler.ts` exports `handler`, which takes an `APIGatewayProxyEventV2`
+  and returns a result: a status code, headers and a string body. API
+  Gateway's HTTP API sends payload format 2.0. [review]
+- Create SDK clients and read configuration at module scope, once per
+  execution environment; warm invocations reuse them and their connections.
+  Never create a client inside the handler. [review]
+- Read `process.env` only in `src/handler.ts`, once, and fail at start-up
+  with a message naming the variable when one is missing. [review]
+- Keep the handler to wiring; the work is in functions that take what they
+  need (a store, a log), so tests call them without Lambda. [review]
+- Await every promise before returning: work left running after the handler
+  returns is frozen with the environment and may never finish.
+  [lint: @typescript-eslint/no-floating-promises]
+- Never `process.exit()`: it kills the execution environment mid-invocation.
+  [lint: no-restricted-properties]
+- Don't keep request data in module-scope variables: the next invocation in
+  the same environment would see it. [review]
+
+## Requests and responses
+
+- Validate every input at the boundary: path parameters, query strings,
+  headers and the body, narrowed from `unknown` with runtime checks. API
+  Gateway delivers whatever the client sent. [review]
+- A body can arrive base64-encoded (`isBase64Encoded`); decode it before
+  parsing. [review]
+- Answer expected failures with their status: 400 for bad input, 403, 404,
+  409 for a conflict, 413 for too large, and 500 only for a bug or an
+  outage. The body is JSON with a `message` a client can act on. [review]
+- Never return a stack trace, an SDK error's text or an internal name to a
+  client; log it instead, with the request id. [review]
+- Set `content-type` on every response. [review]
+
+## Logs
+
+- Log structured JSON, one entry per line, through the `Log` the code is
+  given; never `console`. [lint: no-console]
+- Each entry has a `level`, a `message` and the request id; errors say what
+  failed and with which input, never a secret, a token or user data. [review]
+- The function's log group is created by the stack, with a retention.
+  [nag: none; test: log groups keep logs for a set time]
+- The function logs in JSON format (`loggingFormat: LoggingFormat.JSON`), so
+  Lambda's own entries are structured too. [review]
+
+## DynamoDB
+
+- Model the table for its access patterns: every read on a request path is
+  a `GetItem` or a `Query` on a key or an index, never a `Scan`. [review]
+- Use the document client (`@aws-sdk/lib-dynamodb`) so items are plain
+  objects; validate what a read returns before using it, since another
+  writer may have stored something else. [review]
+- Writes are idempotent: a `PutItem` of the whole item, or a conditional
+  write (`ConditionExpression`) that refuses a second apply. Never a blind
+  `ADD` on a retried request. [review]
+- Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
+  load. [review]
+- Point-in-time recovery on. [nag: AwsSolutions-DDB3]
+- Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
+  customer-managed). [test: encrypts every table]
+- The table outlives the stack: `RemovalPolicy.RETAIN` and deletion
+  protection. [test: says what happens to stateful resources; review]
+
+## The AWS SDK v3
+
+- Import only the clients you use (`@aws-sdk/client-dynamodb`), never a
+  whole SDK; esbuild bundles them into the function. [review]
+- Pin every `@aws-sdk/*` package to the same exact version. [review]
+- A client's region and credentials come from the Lambda environment; never
+  pass keys or set a region in code. [review]
+- Wrap each service in one module behind an interface the rest of the code
+  depends on; tests fake that interface. [review]
+- The SDK retries throttling and transient errors itself; don't add a retry
+  loop around it. Catch what you can answer (a failed condition is a 409),
+  let the rest reach the handler's 500. [review]
+
+## API Gateway HTTP API
+
+- Every route is authorized: IAM (`HttpIamAuthorizer`), a JWT authorizer or a
+  Lambda authorizer. [nag: AwsSolutions-APIG4]
+- The stage writes access logs to a log group with a retention.
+  [nag: AwsSolutions-APIG1; test]
+- The stage is throttled (`throttle: { rateLimit, burstLimit }`), so a burst
+  can't run up the bill or starve other functions. [review]
+- Routes name their method and path (`GET /items/{id}`); no `ANY /{proxy+}`
+  that hands routing to the function. [review]
+
+## Lambda configuration in the stack
+
+- `NodejsFunction`, bundled by the installed esbuild
+  (`forceDockerBundling: false`); never Docker, which CI and agents lack.
+  [review]
+- The newest Node.js runtime. [nag: AwsSolutions-L1]
+- `arm64` (Graviton): cheaper per millisecond and lower energy. [review]
+- Memory and timeout set for the work, the timeout under API Gateway's 30
+  seconds. [review]
+- Its own role, granted only what the code calls; no AWS managed policies.
+  [nag: AwsSolutions-IAM4]
+- No wildcard permissions: grants (`table.grant(fn, 'dynamodb:GetItem')`),
+  never a hand-written `*`. [nag: AwsSolutions-IAM5; test: no wildcard action]
+- No secrets in environment variables: they are visible in the console and
+  the template. Read them from Secrets Manager at start-up. [review]
+
+## The CDK app
+
+- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+  Framework's stacks are in `infra/stacks.ts`, which `defineStacks` returns.
+  [review]
+- Stacks are environment-agnostic: no `env` from `CDK_DEFAULT_ACCOUNT`, no
+  `fromLookup`, so synth needs no account. [review]
+- Every stack carries the Standard's tags (`c4factory:project`,
+  `c4factory:system`, `c4factory:container`). [test: tags every stack]
+- Every stateful resource says its removal policy. [test]
+- A CDK Nag finding is fixed in the resource. An acknowledgement
+  (`Validations.of(construct).acknowledge({ id, reason })`), on the construct
+  the finding's path names or an ancestor of it, names one finding
+  on one construct, with a reason specific to this system. [review]
+- `cdk.json`'s feature flags are the ones `cdk init` recommends for the
+  pinned CDK; a task never turns one off. [review]
+
+## Tests
+
+- No test calls AWS, opens a socket or needs credentials. [review]
+- Stacks are tested with `Template.fromStack` from `aws-cdk-lib/assertions`:
+  `hasResourceProperties`, `resourceCountIs`, `Match`. Assert what the
+  issue needs (a route, a grant, a setting), not the whole template. [review]
+- Code that calls AWS is tested through its interface with a fake that
+  records commands and answers from memory. [review]
+- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
+  the status code and body. [review]

@@ -1,0 +1,57 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` function of {{ .SoftwareSystem }}, in project {{ .Project }}: an AWS
+Lambda function in TypeScript behind an API Gateway HTTP API, keeping items in
+a DynamoDB table, with its infrastructure as a CDK app. Scaffolded by C4
+Factory.
+
+## The API
+
+Every request is signed with AWS credentials (SigV4): the API's routes use IAM
+authorization, and a caller needs `execute-api:Invoke` on them.
+
+| Route             | Body                                | Answers                                    |
+| ----------------- | ----------------------------------- | ------------------------------------------ |
+| `PUT /items/{id}` | `{ "name": "Lamp", "quantity": 3 }` | 200 and the item; 400 for a bad id or body |
+| `GET /items/{id}` |                                     | 200 and the item; 404 when there is none   |
+
+An id is 1 to 64 letters, digits, `-` or `_`. A name is 1 to 200 characters;
+a quantity a whole number, 0 or more. Every error is JSON with a `message`.
+A `PUT` replaces the whole item, so repeating it is harmless.
+
+## Develop
+
+Open the repository in its devcontainer, which has Node 24 and the Go toolchain.
+
+```sh
+npm ci           # install the exact packages in package-lock.json
+npm test         # unit tests and the stacks' assertions, with vitest
+npm run synth    # write the CloudFormation templates into cdk.out/
+{{- if .Standard }}
+make check       # what CI runs: format, lint, type check, test, synth, cfn-lint
+make help        # every target
+{{- end }}
+```
+
+Nothing here deploys or needs an AWS account: synth runs offline, bundles the
+function with the installed esbuild, and needs neither Docker nor credentials.
+Deploying the stack (`cdk deploy`, after `cdk bootstrap` of the account) is
+for its owner, with their own credentials.
+
+## Layout
+
+- `src/handler.ts` is the Lambda entry point: it creates the DynamoDB client
+  once, at module scope, reads `TABLE_NAME` and hands each request to
+  `answer` in `src/api.ts`.
+- `src/api.ts` routes a request, checks its input and answers with a status
+  code; `src/items.ts` holds the rules, free of AWS; `src/item_store.ts`
+  keeps items in DynamoDB behind the `ItemStore` interface tests fake.
+- `infra/stacks.ts` defines the stacks; `infra/api_stack.ts` is the one
+  stack: the table, the function with its log group and role, and the API
+  with its access log. The stack is named after the package.
+{{- if .Standard }}
+- `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
+  `infra/standard.ts` tags every stack and adds CDK Nag's checks.
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}
