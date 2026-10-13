@@ -432,6 +432,17 @@ describe('crewNextStep', () => {
     expect(crewNextStep(c, [])?.text).toMatch(/Go can’t take the module at v1\.2\.0: lacks \/v2/)
   })
 
+  it('says when Go can’t fetch the module, naming path and version', () => {
+    const c = crew({
+      phase: 'Idle',
+      lastRelease: release({
+        run: 'Succeeded',
+        goModule: { state: 'NotFetchable', path: 'github.com/acme/lens', version: 'v1.2.0', message: 'not found' },
+      }),
+    })
+    expect(crewNextStep(c, [])?.text).toMatch(/^Go can’t fetch github\.com\/acme\/lens@v1\.2\.0: not found\./)
+  })
+
   it('resumes a Crew its paused Brief made through the Brief’s page', () => {
     const briefs = [brief('other', true, []), brief('shop', true, [{ kind: 'Crew', name: 'api' }])]
     expect(crewNextStep(crew({ phase: 'Paused' }, { paused: true }), briefs)).toEqual({

@@ -209,6 +209,79 @@ var _ = Describe("Brief suggestions", func() {
 // #1019: the cel-lens Brief on 0.22.0 had 62 suggestions waiting across the
 // engine and the extension; a prompt named the extension's six newest, which
 // the status's 50 didn't list, and the operator refused the plan.
+// #1019: a prompt that names a suggestion that doesn't wait gets the
+// operator's word on the round, not the planner's claim that it is handled.
+var _ = Describe("Brief suggestions a prompt names that don't wait", func() {
+	var ns string
+	BeforeEach(func() { ns = newProjectNamespace() })
+
+	It("records what the operator found of each missing one, and refuses missing for one that waits", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		mustCreate(newBrief(ns, "cel-lens"))
+		planRound(ns, 1, 1, linterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+
+		suggestion := func(n int) string {
+			return model.FollowUpIssue(model.FollowUp{Body: "A reviewer's idea.",
+				Criteria: []string{fmt.Sprintf("Suggestion %d is done", n)}}, "Agent `reviewer`",
+				"http://gitea/pulls/2", 1, "linter-1")
+		}
+		waiting := gitFake.addIssue(ns, "linter", "Waiting", suggestion(1), []string{model.LabelProposed})
+		closed := gitFake.addIssue(ns, "linter", "Closed", suggestion(2), []string{model.LabelProposed})
+		Expect(gitFake.closeIssue(ns, "linter", closed)).To(Succeed())
+		ready := gitFake.addIssue(ns, "linter", "Taken", suggestion(3), []string{model.LabelReady})
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.SuggestionsWaiting).To(Equal(int32(1)))
+		}).Should(Succeed())
+
+		brief := getBrief(Default, ns)
+		Expect(patch(brief, func() {
+			brief.Spec.Prompts = []string{fmt.Sprintf("Take linter #%d, #%d, #%d and #999.", waiting, closed, ready)}
+		})).To(Succeed())
+		missing := func(numbers ...int) string {
+			var b strings.Builder
+			for _, n := range numbers {
+				fmt.Fprintf(&b, "- {container: linter, issue: %d, answer: missing, why: The prompt names it.}\n", n)
+			}
+			return b.String()
+		}
+
+		By("refusing missing for the one that waits, naming it")
+		planRound(ns, 2, 1, suggestionsPlan(ns, missing(waiting)))
+		Eventually(func(g Gomega) {
+			g.Expect(briefEventNotes(g, ns, eventPlanRefused)).To(ContainElement(ContainSubstring(
+				fmt.Sprintf("answers linter#%d missing, but it waits for an answer: take or skip it", waiting))))
+		}).Should(Succeed())
+
+		By("applying missing for the closed, taken and unknown ones, with the operator's line on the round")
+		planRound(ns, 2, 2, suggestionsPlan(ns, missing(closed, ready, 999)))
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
+		}).Should(Succeed())
+		b := getBrief(Default, ns)
+		last := b.Status.History[len(b.Status.History)-1]
+		Expect(last.Round).To(Equal(int32(2)))
+		// The Crew may have worked the taken one by now.
+		Expect(last.Unanswered).To(HaveExactElements(
+			fmt.Sprintf("A prompt named linter#%d, which no longer waits for an answer: it is closed.", closed),
+			MatchRegexp(`^A prompt named linter#%d, which no longer waits for an answer: it is labelled `+
+				`status/[a-z-]+\.$`, ready),
+			"A prompt named linter#999, which no longer waits for an answer: it doesn't exist.",
+		))
+		Expect(b.Status.SuggestionsWaiting).To(Equal(int32(1)), "the waiting one still waits")
+		for _, n := range []int{waiting, closed, ready} {
+			Expect(gitFake.issue(ns, "linter", n).comments).NotTo(ContainElement(ContainSubstring("for Brief `cel-lens`")),
+				"linter#%d", n)
+		}
+		Expect(gitFake.issue(ns, "linter", closed).State).To(Equal("closed"))
+	})
+})
+
 var _ = Describe("Brief suggestions past the status's list", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })

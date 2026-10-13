@@ -296,8 +296,9 @@ var _ = Describe("Task with a Standard change", func() {
 	})
 
 	// #1008: a close the host refuses, for a dependency opened since, leaves
-	// no comment saying the open issue is done.
-	It("says nothing on its issue when the host refuses the close", func() {
+	// no comment saying the open issue is done. #1042: nor leaves it silent;
+	// it goes to a person, saying why.
+	It("hands its issue to a person, saying why, when the host refuses the close", func() {
 		ns := newProjectNamespace()
 		n, m := blockedBesideChange(ns, 2)
 		mergeChange(ns, 1)
@@ -313,8 +314,20 @@ var _ = Describe("Task with a Standard change", func() {
 		}).Should(Succeed())
 		issue := gitFake.issue(ns, "orders-api", n)
 		Expect(issue.State).To(Equal("open"))
-		Expect(issue.comments).NotTo(ContainElement(ContainSubstring(
-			fmt.Sprintf("Done by Standard change #%d", m))))
+		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
+		Expect(issue.Labels).NotTo(ContainElement(model.LabelInProgress))
+		var refusals []string
+		for _, c := range issue.comments {
+			if strings.Contains(c, "refused") {
+				refusals = append(refusals, c)
+			}
+		}
+		Expect(refusals).To(ConsistOf(And(
+			ContainSubstring("Task `orders-api-1` ended"),
+			ContainSubstring(fmt.Sprintf("Standard change #%d", m)),
+			ContainSubstring("The host refused to close this issue"),
+			ContainSubstring(fmt.Sprintf("#%d", other)))))
+		Expect(issue.comments).NotTo(ContainElement(ContainSubstring("Done by Standard change")))
 	})
 
 	It("closes its pull request when its Standard change did the whole issue", func() {

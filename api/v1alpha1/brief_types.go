@@ -644,6 +644,20 @@ type BriefAppRelease struct {
 	// publishedURL is the published release.
 	// +optional
 	PublishedURL string `json:"publishedURL,omitempty"`
+
+	// moduleState is how publishing the release's Go module went, the Crew's
+	// status.lastRelease.goModule.state; empty when the Crew reports none.
+	// +kubebuilder:validation:Enum=Published;NotGo;Invalid;Failed;Waiting;NotFetchable
+	// +optional
+	ModuleState string `json:"moduleState,omitempty"`
+
+	// modulePath is the module path go.mod declares.
+	// +optional
+	ModulePath string `json:"modulePath,omitempty"`
+
+	// moduleMessage says why the module isn't published, from the Crew.
+	// +optional
+	ModuleMessage string `json:"moduleMessage,omitempty"`
 }
 
 // BriefRound is one round of planning: the idea, or a batch of new prompts.
@@ -664,6 +678,15 @@ type BriefRound struct {
 	// +kubebuilder:validation:items:MaxLength=500
 	// +optional
 	Choices []string `json:"choices,omitempty"`
+
+	// unanswered are the reviewers' suggestions a prompt named that the round
+	// couldn't answer, as the plan said (answer missing), in the operator's
+	// words with what it found.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=500
+	// +optional
+	Unanswered []string `json:"unanswered,omitempty"`
 
 	// costMilliUSD is what the round's planning cost, in thousandths of a
 	// US dollar.

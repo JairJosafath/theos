@@ -680,11 +680,21 @@ export function demoStory(now: number): StoryData {
               'Tasks orders-api-14 and orders-api-15 are working on issues #14 and #15',
               at(25),
             ),
+            cond('Released', 'True', 'Released', 'Released v0.2.0', ago(3 * 3600)),
+            // The issue's case (#1001): GitHub refused the token, so the source tag Go
+            // fetches github.com/webshop-co/orders-api@v0.2.0 from was never pushed.
             cond(
-              'Released',
-              'True',
               'Published',
-              'Released v0.2.0 and published it to webshop-co/orders-api',
+              'False',
+              'Unauthorized',
+              'GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
+              ago(3 * 3600),
+            ),
+            cond(
+              'ModulePublished',
+              'False',
+              'WaitsForRelease',
+              'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for c4factory.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
               ago(3 * 3600),
             ),
             cond(
@@ -702,8 +712,17 @@ export function demoStory(now: number): StoryData {
             time: ago(3 * 3600),
             run: 'Succeeded',
             runURL: `${GITEA_WEB}/webshop/orders-api/actions/runs/12`,
-            publish: { state: 'Published', url: 'https://github.com/webshop-co/orders-api/releases/tag/v0.2.0' },
-            goModule: { state: 'NotGo', message: 'No go.mod at the repository root at v0.2.0' },
+            publish: {
+              state: 'Failed',
+              message: 'GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
+            },
+            goModule: {
+              state: 'Waiting',
+              path: 'github.com/webshop-co/orders-api',
+              version: 'v0.2.0',
+              message:
+                'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for c4factory.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
+            },
           },
         },
         2,
@@ -844,7 +863,7 @@ export function demoStory(now: number): StoryData {
             title: 'Escape the product names on the list page',
           },
         ],
-        // orders-api releases and publishes them to GitHub; storefront's are off.
+        // orders-api releases and publishes them to GitHub, where its token was refused; storefront's are off.
         apps: [
           {
             container: 'orders-api',
@@ -857,10 +876,14 @@ export function demoStory(now: number): StoryData {
               url: `${GITEA_WEB}/webshop/orders-api/releases/tag/v0.2.0`,
               time: ago(3 * 3600),
               run: 'Succeeded',
-              publishState: 'Published',
-              publishedURL: 'https://github.com/webshop-co/orders-api/releases/tag/v0.2.0',
+              publishState: 'Failed',
+              moduleState: 'Waiting',
+              modulePath: 'github.com/webshop-co/orders-api',
+              moduleMessage:
+                'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for c4factory.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
             },
-            message: 'Released v0.2.0 and published it to webshop-co/orders-api.',
+            message:
+              'Release v0.2.0 could not be published to webshop-co/orders-api; the Crew says why and tries again.',
           },
           {
             container: 'storefront',

@@ -65,7 +65,7 @@ export interface ElementRef {
 }
 
 export type ContainerType =
-  'static-site' | 'service' | 'job' | 'worker' | 'mobile-app' | 'cli' | 'extension' | 'operator'
+  'static-site' | 'service' | 'job' | 'worker' | 'mobile-app' | 'cli' | 'extension' | 'operator' | 'function'
 export type ContainerPhase = 'Pending' | 'Scaffolding' | 'Ready' | 'Failed'
 export type SessionPhase = 'Active' | 'Stale'
 export type Actor = 'agent' | 'human'
@@ -508,6 +508,12 @@ export interface BriefApp {
     publishState?: 'Pending' | 'Publishing' | 'Published' | 'Failed'
     /** The published release. */
     publishedURL?: string
+    /** How publishing its Go module went, the Crew's goModule.state; empty when the Crew reports none. */
+    moduleState?: 'Published' | 'NotGo' | 'Invalid' | 'Failed' | 'Waiting' | 'NotFetchable'
+    /** The module path go.mod declares. */
+    modulePath?: string
+    /** Why the module isn't published, from the Crew. */
+    moduleMessage?: string
   }
   /** One plain sentence on how the app's releases go. */
   message?: string
@@ -702,6 +708,8 @@ export interface Brief extends K8sObject {
       round: number
       summary?: string
       choices?: string[]
+      /** The reviewers' suggestions a prompt named that the round couldn't answer, in the operator's words. */
+      unanswered?: string[]
       costMilliUSD?: number
       /** The round's planner runs whose agent didn't report their cost. */
       runsWithoutCost?: number

@@ -58,6 +58,13 @@ export const RELEASE_HELD_BY_PERSON = ['NoMergedIssue', 'TagClash', 'MergedAfter
 /** The StandardUpdated reasons whose update pull request waits on a person. */
 export const STANDARD_UPDATE_HELD = ['ChecksFailed', 'UpdateRefused']
 
+/**
+ * The ModulePublished reasons that say nobody can fetch the Crew's Go module
+ * (docs/plans/module-fetchable.md, decision 8); WaitsForRelease only counts
+ * while the Published condition is False, else the publish is on its way.
+ */
+export const MODULE_NOT_FETCHABLE = ['InvalidModule', 'NotFetchable']
+
 /** Condition reasons that say a Container is on its way, not why it failed. */
 const IN_PROGRESS = ['Scaffolding', 'WaitingForScaffold']
 
@@ -225,6 +232,22 @@ function crewNeeds(crew: Crew, containers: Container[]): Need[] {
       ...why(released, 'Released'),
       place,
       links: repo ? [{ label: 'Its milestones', url: `${repo.replace(/\/$/, '')}/milestones` }] : [],
+    })
+  }
+  const module = findCondition(crew.status?.conditions, 'ModulePublished')
+  const published = findCondition(crew.status?.conditions, 'Published')
+  if (
+    module?.status === 'False' &&
+    (MODULE_NOT_FETCHABLE.includes(module.reason ?? '') ||
+      (module.reason === 'WaitsForRelease' && published?.status === 'False'))
+  ) {
+    const source = crew.status?.lastRelease?.publish?.source?.url
+    items.push({
+      ...base('Crew', crew, 'ModulePublished'),
+      title: 'has a Go module nobody can fetch',
+      ...why(module, 'ModulePublished'),
+      place,
+      links: source ? [{ label: 'Its source on GitHub', url: source }] : [],
     })
   }
   const last = crew.status?.lastRelease

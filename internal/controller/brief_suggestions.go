@@ -158,7 +158,9 @@ func lastSuggestions(brief *c4v1alpha1.Brief, name string) []model.Suggestion {
 // release right after the release in progress when its answer says fix: true,
 // else for the round's release milestone (F6), and else for none, and is
 // labelled ready, for the Crew; one to skip is closed. Each gets a comment
-// with the planner's why and the round's prompts. A suggestion that no longer waits (answered by an earlier try or
+// with the planner's why and the round's prompts. One answered missing is
+// left as it is, and what the operator found of it goes to run.unanswered. A
+// suggestion that no longer waits (answered by an earlier try or
 // by a person on the Git host, or gone with its issue or Container) is left
 // as it is. It returns how many it took and skipped now.
 func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply,
@@ -171,7 +173,16 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 	prompts := takenPrompts(brief)
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
+	run.unanswered = nil
 	for _, a := range answers {
+		if a.Answer == model.AnswerMissing {
+			found, err := r.foundMissing(gitCtx, brief, a)
+			if err != nil {
+				return took, skipped, err
+			}
+			run.unanswered = append(run.unanswered, model.UnansweredLine(a, found))
+			continue
+		}
 		listed := forgetSuggestion(brief, a.Container, a.Issue)
 		var c c4v1alpha1.Container
 		err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c)
@@ -219,6 +230,33 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 		}
 	}
 	return took, skipped, nil
+}
+
+// foundMissing says what the operator finds of the suggestion answer a names
+// missing: a Container the Brief has no more, or an issue its repository
+// doesn't have, doesn't exist.
+func (r *BriefReconciler) foundMissing(ctx context.Context, brief *c4v1alpha1.Brief,
+	a model.SuggestionAnswer) (string, error) {
+	var c c4v1alpha1.Container
+	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c)
+	if apierrors.IsNotFound(err) {
+		return model.FoundGone, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading Container %s: %w", a.Container, err)
+	}
+	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
+	if err != nil {
+		return "", err
+	}
+	issue, err := provider.GetIssue(ctx, provider.Repository(c.Name), a.Issue)
+	if errors.Is(err, gitprovider.ErrIssueNotFound) {
+		return model.FoundGone, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading %s#%d: %w", a.Container, a.Issue, err)
+	}
+	return model.FoundIssue(true, issue.State == stateOpen, issue.Labels, issue.Body), nil
 }
 
 // answerSuggestion takes one suggestion into milestone, 0 for none, or closes

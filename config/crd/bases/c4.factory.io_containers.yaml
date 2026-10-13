@@ -171,6 +171,7 @@ spec:
                 - cli
                 - extension
                 - operator
+                - function
                 type: string
             required:
             - frameworkRef
