@@ -64,6 +64,9 @@ type TargetRepository struct {
 	FullName string
 	// DefaultBranch is the default branch's name, "" in an empty repository.
 	DefaultBranch string
+	// Private is set when GitHub reports the repository private: the public
+	// Go proxy can't read it.
+	Private bool
 }
 
 // SourceTarget is a repository a release's source is written to, through
@@ -135,11 +138,12 @@ func (g *githubReleases) Repository(ctx context.Context) (TargetRepository, erro
 		ID            int64  `json:"id"`
 		FullName      string `json:"full_name"`
 		DefaultBranch string `json:"default_branch"`
+		Private       bool   `json:"private"`
 	}
 	if err := g.call(ctx, http.MethodGet, g.api, g.repo, nil, http.StatusOK, "reading the repository", &r); err != nil {
 		return TargetRepository{}, err
 	}
-	return TargetRepository{ID: r.ID, FullName: r.FullName, DefaultBranch: r.DefaultBranch}, nil
+	return TargetRepository{ID: r.ID, FullName: r.FullName, DefaultBranch: r.DefaultBranch, Private: r.Private}, nil
 }
 
 func (g *githubReleases) DefaultBranch(ctx context.Context) (string, error) {

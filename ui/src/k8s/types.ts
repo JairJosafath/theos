@@ -471,9 +471,16 @@ export interface CrewRelease {
     url?: string
     message?: string
     /** The release's source on GitHub, once it is out. */
-    source?: { commit: string; tag: string; url?: string }
+    source?: { commit: string; tag: string; url?: string; private?: boolean }
   }
-  goModule?: { state: 'Published' | 'NotGo' | 'Invalid' | 'Failed'; path?: string; version?: string; message?: string }
+  goModule?: {
+    state: 'Published' | 'NotGo' | 'Invalid' | 'Failed' | 'Waiting' | 'NotFetchable'
+    path?: string
+    version?: string
+    message?: string
+    /** When the Go proxy was last asked about the version. */
+    checkedTime?: string
+  }
 }
 
 export type BriefPhase = 'Pending' | 'Planning' | 'Applying' | 'Planned' | 'NeedsInput' | 'Failed'

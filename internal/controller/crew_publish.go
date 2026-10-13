@@ -130,7 +130,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 			r.publishFailed(ctx, crew, status, step)
 			return
 		case model.PublishDone:
-			r.published(ctx, crew, status, step)
+			r.published(ctx, crew, status, step, pass.private)
 			return
 		case model.PublishReadGitea, model.PublishReadIssues, model.PublishReadRepository, model.PublishReadGitHub,
 			model.PublishReadSource, model.PublishReadGitHubSource:
@@ -179,6 +179,8 @@ type publishPass struct {
 	gh     *githubSource
 	// source is the release's source, once this pass put its tag out.
 	source *c4v1alpha1.CrewReleaseSource
+	// private is whether GitHub reports the repository private, once read.
+	private *bool
 }
 
 // read takes a read step, adding what it read to the facts; false ends the
@@ -222,6 +224,7 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 			var repo gitprovider.TargetRepository
 			if repo, err = p.target.Repository(ctx); err == nil {
 				p.facts.Remote = &model.PublishTarget{Repository: repo.FullName, ID: repo.ID}
+				p.private = new(repo.Private)
 			}
 		} else if action == model.PublishReadGitHub {
 			p.facts.GitHub, err = targetReleases(ctx, p.target, *p.facts)
@@ -267,7 +270,7 @@ func (p *publishPass) write(ctx context.Context, step model.PublishStep) (bool, 
 			return true, nil
 		}
 		if err == nil {
-			p.source = p.r.sourcePublished(p.log, p.crew, *p.facts, step)
+			p.source = p.r.sourcePublished(p.log, p.crew, *p.facts, step, p.private)
 		}
 	case model.PublishRetargetDraft:
 		if _, err = p.target.RetargetDraft(ctx, step.Release, step.Target); err == nil {
@@ -570,9 +573,10 @@ func (r *CrewReconciler) publishFailed(ctx context.Context, crew *c4v1alpha1.Cre
 	r.setPublish(crew, status, publishFailed, "", step.Reason, step.Message)
 }
 
-// published records the release as published, with a Normal Event.
+// published records the release as published, with a Normal Event, and its
+// source, private as this pass read it, or as recorded when it read nothing.
 func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
-	step model.PublishStep) {
+	step model.PublishStep, private *bool) {
 	tag := status.LastRelease.Tag
 	said := tag + "\n" + model.PublishPublished
 	if last, _ := r.publishSaid.Load(crew.UID); last != said {
@@ -580,16 +584,21 @@ func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, s
 		r.event(crew, corev1.EventTypeNormal, reasonReleasePublished, "PublishRelease", step.Message)
 	}
 	r.publishSaid.Store(crew.UID, said)
+	if prev := status.LastRelease.Publish; private == nil && prev != nil && prev.Source != nil {
+		private = prev.Source.Private
+	}
 	r.setPublish(crew, status, publishPublished, step.URL, model.PublishPublished, step.Message)
 	if s := step.Source; s != nil {
-		status.LastRelease.Publish.Source = &c4v1alpha1.CrewReleaseSource{Commit: s.Commit, Tag: s.Tag, URL: s.URL}
+		status.LastRelease.Publish.Source = &c4v1alpha1.CrewReleaseSource{Commit: s.Commit, Tag: s.Tag, URL: s.URL,
+			Private: private}
 	}
 }
 
 // sourcePublished says the release's source is out, with a Normal Event, and a
-// Warning Event when go install can't fetch it.
+// Warning Event when go install can't fetch it; private is what this pass
+// read of the repository.
 func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew, facts model.PublishFacts,
-	step model.PublishStep) *c4v1alpha1.CrewReleaseSource {
+	step model.PublishStep, private *bool) *c4v1alpha1.CrewReleaseSource {
 	url := model.SourceURL(facts.Repository, facts.Source.Path, step.Tag)
 	log.Info("Published source", "tag", step.Tag, "commit", step.Commit, "url", url)
 	r.event(crew, corev1.EventTypeNormal, reasonSourcePublished, "PublishRelease",
@@ -600,7 +609,7 @@ func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew,
 			fmt.Sprintf("%s; the source of %s is published, but go install can't fetch it from GitHub",
 				step.Warning, facts.Tag))
 	}
-	return &c4v1alpha1.CrewReleaseSource{Commit: step.Commit, Tag: step.Tag, URL: url}
+	return &c4v1alpha1.CrewReleaseSource{Commit: step.Commit, Tag: step.Tag, URL: url, Private: private}
 }
 
 // notePublishSkipped warns, when a Crew that publishes tags a release before
