@@ -724,8 +724,8 @@ model and context it needs.
   update in flight, the condition `StandardUpdated` how it went;
   `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
   [plans/done/standard-update.md](plans/done/standard-update.md),
-  [plans/standard-left-out.md](plans/standard-left-out.md) and
-  [plans/standard-left-out-diff.md](plans/standard-left-out-diff.md).
+  [plans/done/standard-left-out.md](plans/done/standard-left-out.md) and
+  [plans/done/standard-left-out-diff.md](plans/done/standard-left-out-diff.md).
 - **The owner chooses when the full check runs.** A Container's
   `spec.checks` is `EveryChange` (the default: CI runs `make check` on every
   pull request and push to main) or `BeforeRelease`: each change runs the
