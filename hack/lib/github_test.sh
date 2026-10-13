@@ -865,6 +865,8 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   # The fake make: records it ran, sleeps CHECK_SLEEP, fails when $T/red exists.
   printf '#!/bin/sh\necho "$*" >>"%s/checked"\nsleep "${CHECK_SLEEP:-0}"\n[ ! -e "%s/red" ]\n' "$T" "$T" >"$T/bin/check-make"
   chmod +x "$T/bin/check-make"
+  # land merges main in itself: give it an identity a device without a global one lacks.
+  export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
   export C4_MAKE=$T/bin/check-make GH_LIB_ROOT=$T/land GH_PENDING_DIR=$T/land/.relay GH_LAND_POLL=0.2 GH_LAND_SETTLE=0
   queue() { ls "$Q" | sed 's/\.json//' | sort -n | tr '\n' ' '; }
 
