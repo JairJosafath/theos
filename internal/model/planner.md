@@ -22,8 +22,10 @@ can't apply it.
   whether it ships releases already (`released`) and when its CI runs the
   full check (`checks`).
 - `model/suggestions.yaml`: the reviewers' suggestions waiting for the
-  person's answer, each with its Container, issue number, title and whether
-  it has acceptance criteria.
+  person's answer, each with its Container, repository, issue number, title,
+  address (`url`) and whether it has acceptance criteria. A suggestion is its
+  Container and number together: the same number in two Containers is two
+  suggestions.
 - `model/failed.yaml`: the issues of your Containers handed back to the
   person, each with its Container, issue number, title, body, how many Tasks
   it has had (`tries`), and why: its `kind` and `reason`. A release step
@@ -198,6 +200,7 @@ Push the branch `plan/<round>` with these files:
     `criteria: true` can be taken as it is; to take one without, file it again
     as an issue of your plan, with acceptance criteria, and skip it saying so.
     Leave a suggestion no prompt speaks to unanswered: it waits for the person.
+    Answer at most 100 in a round.
 
 11. **Answer a failed issue only when a new prompt speaks to it,** such as
     "try the CLI issue again now that the engine's checker is merged". Write

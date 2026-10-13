@@ -3,6 +3,7 @@ package gitprovider
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -176,8 +178,8 @@ func (g *fakeGit) descends(commit, ancestor string) bool {
 func (g *fakeGit) serve(f *fakeGitHub, w http.ResponseWriter, r *http.Request) {
 	repo := "/repos/" + fakeGitHubRepo
 	if r.URL.Path == repo {
-		f.json(w, http.StatusOK, map[string]any{"full_name": fakeGitHubRepo, "default_branch": g.defaultBranch,
-			"private": g.private})
+		f.json(w, http.StatusOK, map[string]any{"id": fakeGitHubRepoID, "full_name": fakeGitHubRepo,
+			"default_branch": g.defaultBranch, "private": g.private})
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, repo+"/git/")
@@ -420,11 +422,10 @@ func TestGitHubSource(t *testing.T) {
 func readHead(t *testing.T, g ReleaseTarget, head, headTree string) GitCommit {
 	t.Helper()
 	ctx := context.Background()
-	read, err := g.ReadRepository(ctx)
-	if err != nil || read != (GitHubRepository{DefaultBranch: "main"}) {
-		t.Fatalf("ReadRepository() = %+v, %v", read, err)
+	branch, err := g.DefaultBranch(ctx)
+	if err != nil || branch != "main" {
+		t.Fatalf("DefaultBranch() = %q, %v", branch, err)
 	}
-	branch := read.DefaultBranch
 	got, err := g.Ref(ctx, "heads/"+branch)
 	if err != nil || got != head {
 		t.Fatalf("Ref(heads/main) = %q, %v; want %s", got, err, head)
@@ -473,15 +474,16 @@ func checkSourceCalls(t *testing.T, f *fakeGitHub, head, headTree string) {
 	repo := "/repos/" + fakeGitHubRepo
 	git := repo + "/git/"
 	wantCalls := map[string]string{
-		"ReadRepository": "GET " + repo,
-		"Ref":            "GET " + git + "ref/heads/main",
-		"Commit":         "GET " + git + "commits/" + head,
-		"Tree":           "GET " + git + "trees/" + headTree,
-		"CreateBlob":     "POST " + git + "blobs",
-		"CreateTree":     "POST " + git + "trees",
-		"CreateCommit":   "POST " + git + "commits",
-		"CreateRef":      "POST " + git + "refs",
-		"UpdateRef":      "PATCH " + git + "refs/heads/main",
+		"Repository":    "GET " + repo,
+		"DefaultBranch": "GET " + repo,
+		"Ref":           "GET " + git + "ref/heads/main",
+		"Commit":        "GET " + git + "commits/" + head,
+		"Tree":          "GET " + git + "trees/" + headTree,
+		"CreateBlob":    "POST " + git + "blobs",
+		"CreateTree":    "POST " + git + "trees",
+		"CreateCommit":  "POST " + git + "commits",
+		"CreateRef":     "POST " + git + "refs",
+		"UpdateRef":     "PATCH " + git + "refs/heads/main",
 	}
 	for method, call := range wantCalls {
 		if !calls[call] {
@@ -502,13 +504,63 @@ func entryNames(tree GitTree) []string {
 }
 
 // TestGitHubSourceAnnotatedTag peels a tag object to its commit.
+// fakeGitHubRepoID is GitHub's id of fakeGitHubRepo.
+const fakeGitHubRepoID = 4242
+
+func TestGitHubRepository(t *testing.T) {
+	f, g := newFakeGitHub(t)
+	f.git.seed(map[string]string{"README.md": "the repo"})
+	got, err := g.Repository(context.Background())
+	want := TargetRepository{ID: fakeGitHubRepoID, FullName: fakeGitHubRepo, DefaultBranch: "main"}
+	if err != nil || got != want {
+		t.Errorf("Repository() = %+v, %v; want %+v", got, err, want)
+	}
+}
+
+// A renamed repository's old name redirects to it by id, as GitHub's API
+// does: the client follows, and reads the new name and the same id.
+func TestGitHubRepositoryRenamed(t *testing.T) {
+	token := rand.Text()
+	var paths []string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Errorf("request %s %s has Authorization %q", r.Method, r.URL.Path, got)
+		}
+		switch r.URL.Path {
+		case "/repos/" + fakeGitHubRepo:
+			http.Redirect(w, r, "/repositories/4242", http.StatusMovedPermanently)
+		case "/repositories/4242":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":4242,"full_name":"acme/private-cel-lens","default_branch":"main"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+	g, err := Client{}.GitHubReleases(GitHubConfig{Repository: fakeGitHubRepo, Token: token, APIURL: api.URL})
+	if err != nil {
+		t.Fatalf("GitHubReleases() error = %v", err)
+	}
+	got, err := g.Repository(context.Background())
+	want := TargetRepository{ID: 4242, FullName: "acme/private-cel-lens", DefaultBranch: "main"}
+	if err != nil || got != want {
+		t.Errorf("Repository() = %+v, %v; want %+v", got, err, want)
+	}
+	if wantPaths := []string{"GET /repos/" + fakeGitHubRepo, "GET /repositories/4242"}; !reflect.DeepEqual(paths, wantPaths) {
+		t.Errorf("requests = %q, want %q", paths, wantPaths)
+	}
+}
+
 // TestGitHubSourcePrivate reads a private repository as private.
 func TestGitHubSourcePrivate(t *testing.T) {
 	f, g := newFakeGitHub(t)
+	if read, err := g.Repository(context.Background()); err != nil || read.Private {
+		t.Errorf("Repository() of a public repository = %+v, %v; want it public", read, err)
+	}
 	f.git.private = true
-	read, err := g.ReadRepository(context.Background())
-	if err != nil || read != (GitHubRepository{DefaultBranch: "main", Private: true}) {
-		t.Errorf("ReadRepository() of a private repository = %+v, %v; want main, private", read, err)
+	if read, err := g.Repository(context.Background()); err != nil || !read.Private {
+		t.Errorf("Repository() of a private repository = %+v, %v; want it private", read, err)
 	}
 }
 
@@ -629,11 +681,12 @@ func TestGitHubSourceFailures(t *testing.T) {
 			f.fail = func(w http.ResponseWriter) { f.reply(w, tt.status, tt.body) }
 			ctx := context.Background()
 			calls := map[string]func() error{
-				"ReadRepository": func() error { _, err := g.ReadRepository(ctx); return err },
-				"Ref":            func() error { _, err := g.Ref(ctx, "heads/main"); return err },
-				"Commit":         func() error { _, err := g.Commit(ctx, sha); return err },
-				"Tree":           func() error { _, err := g.Tree(ctx, sha, true); return err },
-				"CreateBlob":     func() error { _, err := g.CreateBlob(ctx, 2, strings.NewReader("ab")); return err },
+				"Repository":    func() error { _, err := g.Repository(ctx); return err },
+				"DefaultBranch": func() error { _, err := g.DefaultBranch(ctx); return err },
+				"Ref":           func() error { _, err := g.Ref(ctx, "heads/main"); return err },
+				"Commit":        func() error { _, err := g.Commit(ctx, sha); return err },
+				"Tree":          func() error { _, err := g.Tree(ctx, sha, true); return err },
+				"CreateBlob":    func() error { _, err := g.CreateBlob(ctx, 2, strings.NewReader("ab")); return err },
 				"CreateTree": func() error {
 					_, err := g.CreateTree(ctx, sha, []GitTreeEntry{{Path: "a", Mode: "100644", Type: "blob", SHA: sha}})
 					return err
@@ -645,7 +698,7 @@ func TestGitHubSourceFailures(t *testing.T) {
 			for name, call := range calls {
 				err := call()
 				if name == "Ref" && tt.status == http.StatusNotFound {
-					// No such ref; ReadRepository tells a gone repository apart.
+					// No such ref; DefaultBranch tells a gone repository apart.
 					if err != nil {
 						t.Errorf("Ref() error = %v; want none", err)
 					}

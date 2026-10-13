@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -73,7 +74,12 @@ func TestCheckAnswers(t *testing.T) {
 			{"todo", 6, AnswerSkip, "The prompt skips the rest.", false}}, nil},
 		{"none", nil, nil},
 		{"not waiting", []SuggestionAnswer{{"todo", 7, AnswerSkip, "why", false}}, []string{"todo#7, which is not a waiting"}},
-		{"another Container's number", []SuggestionAnswer{{"web", 5, AnswerSkip, "why", false}}, []string{"web#5"}},
+		{"another Container's number", []SuggestionAnswer{{"web", 5, AnswerSkip, "why", false}},
+			[]string{"web#5, which is not a waiting suggestion; answer only those model/suggestions.yaml lists " +
+				"(#5 waits in Container todo: a suggestion is its Container and number)"}},
+		{"a number that waits nowhere names no Container", []SuggestionAnswer{{"web", 7, AnswerSkip, "why", false}},
+			[]string{"lists"}},
+		{"too many", manyAnswers(MaxSuggestionAnswers + 1), []string{"answers 101 suggestions; answer at most 100"}},
 		{"twice", []SuggestionAnswer{{"todo", 5, AnswerSkip, "why", false}, {"todo", 5, AnswerTake, "why", false}},
 			[]string{"twice"}},
 		{"no criteria", []SuggestionAnswer{{"todo", 6, AnswerTake, "why", false}}, []string{"no acceptance criteria"}},
@@ -100,6 +106,15 @@ func TestCheckAnswers(t *testing.T) {
 	}
 }
 
+// manyAnswers skips todo#5 n times.
+func manyAnswers(n int) []SuggestionAnswer {
+	out := make([]SuggestionAnswer, n)
+	for i := range out {
+		out[i] = SuggestionAnswer{"todo", 5, AnswerSkip, "why", false}
+	}
+	return out
+}
+
 func TestSuggestionComment(t *testing.T) {
 	prompts := []string{"Take the reviewer's suggestions about input safety,\nskip the rest."}
 	take := SuggestionComment(SuggestionAnswer{"todo", 5, AnswerTake, "The prompt takes input safety.", false}, "todo", 2, prompts)
@@ -117,15 +132,18 @@ func TestSuggestionComment(t *testing.T) {
 
 func TestWorkspaceSuggestions(t *testing.T) {
 	ws := BriefWorkspace{Brief: "todo", Idea: "A todo list", GitProvider: "gitea", Suggestions: []Suggestion{
-		{Container: "web", Number: 2, Title: "Add\nalt text", Criteria: true},
-		{Container: "api", Number: 9, Title: "Rate limit"},
+		{Container: "web", Repository: "web", Number: 2, Title: "Add\nalt text", URL: "http://gitea/apps/web/issues/2",
+			Criteria: true},
+		{Container: "api", Repository: "api", Number: 9, Title: "Rate limit", URL: "http://gitea/apps/api/issues/9"},
 	}}
 	files, err := BriefWorkspaceFiles(ws)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "- container: api\n  issue: 9\n  title: Rate limit\n  criteria: false\n" +
-		"- container: web\n  issue: 2\n  title: Add alt text\n  criteria: true\n"
+	want := "- container: api\n  repository: api\n  issue: 9\n  title: Rate limit\n" +
+		"  url: http://gitea/apps/api/issues/9\n  criteria: false\n" +
+		"- container: web\n  repository: web\n  issue: 2\n  title: Add alt text\n" +
+		"  url: http://gitea/apps/web/issues/2\n  criteria: true\n"
 	if got := files[WorkspaceSuggestionsFile]; got != want {
 		t.Errorf("%s =\n%s\nwant\n%s", WorkspaceSuggestionsFile, got, want)
 	}
@@ -139,5 +157,66 @@ func TestWorkspaceSuggestions(t *testing.T) {
 	}
 	if files[WorkspaceSuggestionsFile] != "[]\n" || strings.Contains(files[BriefFile], "Reviewer suggestions") {
 		t.Errorf("with none: %s = %q, brief.md:\n%s", WorkspaceSuggestionsFile, files[WorkspaceSuggestionsFile], files[BriefFile])
+	}
+}
+
+// TestWorkspaceSuggestionsPastTheStatus takes the cel-lens case (#1019): 62
+// suggestions wait across two Containers, more than the status lists, and the
+// workspace lists every one, telling the same number in each apart.
+func TestWorkspaceSuggestionsPastTheStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		engine    int // suggestions waiting in each
+		extension int
+		listed    int
+		unlisted  string // what brief.md says past MaxWorkspaceSuggestions
+	}{
+		{"cel-lens: 62", 30, 32, 62, ""},
+		{"past the workspace's bound", 300, 210, MaxWorkspaceSuggestions, "10 more wait unlisted"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var waiting []Suggestion
+			add := func(container string, n int) {
+				for i := range n {
+					number := 340 + i
+					waiting = append(waiting, Suggestion{Container: container, Repository: container, Number: number,
+						Title: fmt.Sprintf("Suggestion %d", number),
+						URL:   fmt.Sprintf("http://gitea/apps/%s/issues/%d", container, number), Criteria: true})
+				}
+			}
+			add("cel-lens-vscode", tc.extension)
+			add("cel-lens", tc.engine)
+			files, err := BriefWorkspaceFiles(BriefWorkspace{Brief: "cel-lens", Idea: "CEL", GitProvider: "gitea",
+				Suggestions: waiting})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := files[WorkspaceSuggestionsFile]
+			if n := strings.Count(got, "- container: "); n != tc.listed {
+				t.Errorf("%s lists %d, want %d", WorkspaceSuggestionsFile, n, tc.listed)
+			}
+			for _, want := range []string{
+				"- container: cel-lens\n  repository: cel-lens\n  issue: 364\n  title: Suggestion 364\n" +
+					"  url: http://gitea/apps/cel-lens/issues/364\n",
+				"- container: cel-lens-vscode\n  repository: cel-lens-vscode\n  issue: 364\n",
+				"url: http://gitea/apps/cel-lens-vscode/issues/371\n",
+			} {
+				if !strings.Contains(got, want) {
+					t.Errorf("%s lacks %q", WorkspaceSuggestionsFile, want)
+				}
+			}
+			brief := files[BriefFile]
+			for _, want := range []string{fmt.Sprintf("%d wait for the person's answer", tc.engine+tc.extension),
+				"the same number in two Containers is two suggestions", "`repository` or `url`"} {
+				if !strings.Contains(brief, want) {
+					t.Errorf("brief.md lacks %q:\n%s", want, brief)
+				}
+			}
+			if tc.unlisted == "" && strings.Contains(brief, "unlisted") ||
+				tc.unlisted != "" && !strings.Contains(brief, tc.unlisted) {
+				t.Errorf("brief.md, want unlisted %q:\n%s", tc.unlisted, brief)
+			}
+		})
 	}
 }

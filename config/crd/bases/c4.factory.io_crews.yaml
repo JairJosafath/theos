@@ -540,6 +540,29 @@ spec:
                 - Working
                 - Paused
                 type: string
+              publishTarget:
+                description: |-
+                  publishTarget is the GitHub repository the Crew published its releases
+                  to, by GitHub's id: set at the first publish that succeeds, or when
+                  c4.factory.io/accept-repository accepts another, and reset when
+                  spec.publishReleases names another repository. A publish to a repository
+                  renamed or replaced since fails before anything is written to it.
+                properties:
+                  id:
+                    description: |-
+                      id is GitHub's id of the repository, which a rename keeps and a new
+                      repository under the same name doesn't.
+                    format: int64
+                    type: integer
+                  repository:
+                    description: repository is owner/name, as spec.publishReleases
+                      named it.
+                    maxLength: 140
+                    type: string
+                required:
+                - id
+                - repository
+                type: object
               ready:
                 description: |-
                   ready lists the ready issues waiting for a free place, in pick-up order:

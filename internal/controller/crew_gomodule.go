@@ -222,7 +222,7 @@ func (r *CrewReconciler) readPrivate(ctx context.Context, crew *c4v1alpha1.Crew,
 	if err != nil {
 		return
 	}
-	read, err := target.ReadRepository(ctx)
+	read, err := target.Repository(ctx)
 	if err != nil {
 		log.Info("Could not read whether the release target is private", "repository", spec.GitHub.Repository,
 			"error", err.Error())

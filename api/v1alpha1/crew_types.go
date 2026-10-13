@@ -335,6 +335,19 @@ const (
 	CrewPaused CrewPhase = "Paused"
 )
 
+// CrewPublishTarget is a GitHub repository a Crew published to.
+type CrewPublishTarget struct {
+	// repository is owner/name, as spec.publishReleases named it.
+	// +kubebuilder:validation:MaxLength=140
+	// +required
+	Repository string `json:"repository"`
+
+	// id is GitHub's id of the repository, which a rename keeps and a new
+	// repository under the same name doesn't.
+	// +required
+	ID int64 `json:"id"`
+}
+
 // CrewStatus is what the Crew saw on its last look at the issues.
 type CrewStatus struct {
 	// phase is Waiting, Idle, Working or Paused.
@@ -369,6 +382,14 @@ type CrewStatus struct {
 	// until the release is tagged.
 	// +optional
 	FullCheck *CrewFullCheck `json:"fullCheck,omitempty"`
+
+	// publishTarget is the GitHub repository the Crew published its releases
+	// to, by GitHub's id: set at the first publish that succeeds, or when
+	// c4.factory.io/accept-repository accepts another, and reset when
+	// spec.publishReleases names another repository. A publish to a repository
+	// renamed or replaced since fails before anything is written to it.
+	// +optional
+	PublishTarget *CrewPublishTarget `json:"publishTarget,omitempty"`
 
 	// rerunRelease is the c4.factory.io/rerun-release value the operator last
 	// answered, so each value re-runs the failed release runs once.
