@@ -65,7 +65,7 @@ export interface ElementRef {
 }
 
 export type ContainerType =
-  'static-site' | 'service' | 'job' | 'worker' | 'mobile-app' | 'cli' | 'extension' | 'operator'
+  'static-site' | 'service' | 'job' | 'worker' | 'mobile-app' | 'cli' | 'extension' | 'operator' | 'function'
 export type ContainerPhase = 'Pending' | 'Scaffolding' | 'Ready' | 'Failed'
 export type SessionPhase = 'Active' | 'Stale'
 export type Actor = 'agent' | 'human'
@@ -471,9 +471,16 @@ export interface CrewRelease {
     url?: string
     message?: string
     /** The release's source on GitHub, once it is out. */
-    source?: { commit: string; tag: string; url?: string }
+    source?: { commit: string; tag: string; url?: string; private?: boolean }
   }
-  goModule?: { state: 'Published' | 'NotGo' | 'Invalid' | 'Failed'; path?: string; version?: string; message?: string }
+  goModule?: {
+    state: 'Published' | 'NotGo' | 'Invalid' | 'Failed' | 'Waiting' | 'NotFetchable'
+    path?: string
+    version?: string
+    message?: string
+    /** When the Go proxy was last asked about the version. */
+    checkedTime?: string
+  }
 }
 
 export type BriefPhase = 'Pending' | 'Planning' | 'Applying' | 'Planned' | 'NeedsInput' | 'Failed'
@@ -695,6 +702,8 @@ export interface Brief extends K8sObject {
       round: number
       summary?: string
       choices?: string[]
+      /** The reviewers' suggestions a prompt named that the round couldn't answer, in the operator's words. */
+      unanswered?: string[]
       costMilliUSD?: number
       /** The round's planner runs whose agent didn't report their cost. */
       runsWithoutCost?: number

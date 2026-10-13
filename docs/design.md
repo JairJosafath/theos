@@ -23,7 +23,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 | Project scope | One Project per namespace. No references across namespaces; reuse is by copying. |
 | Levels | Person, SoftwareSystem, Container and DataStore. Component and Code are dropped for now. |
 | Container | An application with its own repository. One repository per Container, no monorepos. |
-| Container type | A fixed list: `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`. |
+| Container type | A fixed list: `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. |
 | Catalog | One entry per side of a Container (Framework, Compute, Deployment, Connector), kept per namespace. Bundles can come later, as a team choice. |
 | Compatibility | Each catalog entry lists the Container types it supports. The operator checks this before scaffolding; no webhook in v1. |
 | Templates | Catalog entries point to platform-managed template repositories at a pinned tag or commit. |
@@ -554,9 +554,15 @@ model and context it needs.
   GitHub source folder it first waits for the source tag
   (`WaitsForRelease`, naming the `Published` condition's failure), since the
   proxy remembers a miss for a while; with no proxy, or a private target,
-  that tag is the answer. A version the proxy can't find is `NotFetchable`,
-  saying what Go needs, with a Warning Event `ModuleNotFetchable` once per
-  release; an unreachable proxy is `ProxyUnavailable`, asked again. A false
+  that tag is the answer (whether the target is private is read from GitHub
+  as the tag goes out, `publish.source.private`). A version the proxy can't
+  find is `NotFetchable`, saying what Go needs, with a Warning Event
+  `ModuleNotFetchable` once per release; an unreachable proxy is
+  `ProxyUnavailable`, asked again. `goModule.state` is then `Waiting` or
+  `NotFetchable`, and `goModule.checkedTime` says when the proxy was last
+  asked; an old `Published` with none is checked again. For such a path the
+  Normal Event `ModulePublished` comes when it turns True, at the proxy's
+  first 200, not at the upload. A false
   `ModulePublished` that waits on a person shows in *Needs you* and on the
   Brief. See [plans/module-fetchable.md](plans/module-fetchable.md).
 - **A release can be published to GitHub.** A Crew with
@@ -787,6 +793,12 @@ model and context it needs.
   says to build and push the image and set it there before applying it. Until a catalog entry supports
   a type, the planner answers that it needs input rather than planning it.
   GitHub issue #723 has the plan, [plans/kubebuilder-operators.md](plans/kubebuilder-operators.md).
+- **A Container type `function`:** serverless code on AWS (Lambda behind an
+  API Gateway HTTP API), whose CDK app is its deployment. It is not a
+  `service`: nothing runs between requests, and the cloud, not a cluster, runs
+  it. The type lands before any catalog entry supports it, so until the
+  `aws-lambda-ts` Framework does, the planner answers that it needs input.
+  GitHub issue #1028 has the plan, [plans/aws.md](plans/aws.md).
 
 ## Briefs: an idea in plain words
 
