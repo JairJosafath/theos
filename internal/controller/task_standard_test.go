@@ -295,6 +295,28 @@ var _ = Describe("Task with a Standard change", func() {
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement-s1"), newSandbox()))).To(BeTrue())
 	})
 
+	// #1008: a close the host refuses, for a dependency opened since, leaves
+	// no comment saying the open issue is done.
+	It("says nothing on its issue when the host refuses the close", func() {
+		ns := newProjectNamespace()
+		n, m := blockedBesideChange(ns, 2)
+		mergeChange(ns, 1)
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+		}).Should(Succeed())
+
+		other := gitFake.addIssue(ns, "orders-api", "Sign the package", clearIssue, nil)
+		gitFake.blockOnClose(ns, "orders-api", n, fmt.Sprintf("#%d", other))
+		finishResumed(ns, 1)
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+		}).Should(Succeed())
+		issue := gitFake.issue(ns, "orders-api", n)
+		Expect(issue.State).To(Equal("open"))
+		Expect(issue.comments).NotTo(ContainElement(ContainSubstring(
+			fmt.Sprintf("Done by Standard change #%d", m))))
+	})
+
 	It("closes its pull request when its Standard change did the whole issue", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
