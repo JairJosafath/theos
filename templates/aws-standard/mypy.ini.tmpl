@@ -1,0 +1,9 @@
+{{ if eq .Framework "aws-lambda-py" -}}
+# The type check of this repository. mypy reads this file before
+# pyproject.toml, so a [tool.mypy] table there changes nothing.
+[mypy]
+strict = True
+warn_unreachable = True
+enable_error_code = ignore-without-code, redundant-expr, redundant-self, truthy-bool, truthy-iterable, possibly-undefined, unused-awaitable, explicit-override, mutable-override, deprecated
+exclude = ^(dist|build)/
+{{ end -}}

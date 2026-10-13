@@ -455,8 +455,13 @@ _Use resources efficiently as demand changes and technology evolves._
 - The newest runtime: `AwsSolutions-L1`.
 - Size memory to the work (Lambda gives CPU in proportion); measure before
   raising it. Serverless `LambdaDefaultMemorySize`: by hand, memory is set.
+{{- if eq .Framework "aws-lambda-py" }}
+- Cold starts: boto3 clients and resources at module scope, small bundles
+  (only the packages `uv.lock` pins, no dev group), no heavy work at import.
+{{- else }}
 - Cold starts: SDK clients at module scope, small bundles (esbuild,
   minified, only the clients used), no heavy work at import.
+{{- end }}
 - Data access by key: `GetItem` and `Query` on keys and indexes; a `Scan` is
   never on a request path.
 - By hand: measure a stated budget with a benchmark, and say what only a

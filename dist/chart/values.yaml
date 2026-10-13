@@ -538,6 +538,13 @@ catalog:
         description: "A serverless HTTP API on AWS: a Go Lambda on provided.al2023, built with go build, behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK for Go v2, and its CDK stack in TypeScript in infra/, which is its deployment."
         supportedTypes: [function]
     - kind: Framework
+      name: aws-lambda-py
+      ref: v1.0.0
+      spec:
+        displayName: Serverless API on AWS (Lambda, Python)
+        description: "A serverless HTTP API on AWS: a Python Lambda using boto3 behind an API Gateway HTTP API with IAM auth, items in DynamoDB, managed with uv, and its TypeScript CDK stack in infra/, which is its deployment."
+        supportedTypes: [function]
+    - kind: Framework
       name: python-cli
       ref: v1.0.0
       spec:
@@ -585,14 +592,14 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.3.0
+      ref: v1.4.0
       spec:
         displayName: AWS quality standard
-        description: "ts-standard's lint and Prettier, and go-standard's golangci-lint, go vet and go test for a Go function, plus cdk synth under CDK Nag's AwsSolutions pack, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
+        description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions pack, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
         supportedTypes: [function, service]
-        supportedFrameworks: [aws-lambda-ts, aws-lambda-go, aws-ec2-ts, aws-fargate-ts]
+        supportedFrameworks: [aws-lambda-ts, aws-lambda-go, aws-ec2-ts, aws-fargate-ts, aws-lambda-py]
         # The CDK app's entry point and the Standard's stack rules are the contract too.
-        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .golangci.yml, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, docs/well-architected.md, infra/main.ts, infra/standard.ts, tsconfig.json, vitest.config.mts, cdk.json]
+        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .golangci.yml, ruff.toml, mypy.ini, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, docs/well-architected.md, infra/main.ts, infra/standard.ts, tsconfig.json, vitest.config.mts, cdk.json]
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard

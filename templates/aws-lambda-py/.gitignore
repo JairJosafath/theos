@@ -1,0 +1,9 @@
+node_modules/
+# What cdk synth writes: the templates and the bundled function
+cdk.out/
+# uv's environment and the Python tools' caches
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

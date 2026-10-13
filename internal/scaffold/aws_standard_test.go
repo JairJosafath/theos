@@ -45,6 +45,7 @@ var awsFrameworks = []side{
 	{model.TypeFunction, "aws-lambda-go"},
 	{model.TypeService, "aws-ec2-ts"},
 	{model.TypeService, "aws-fargate-ts"},
+	{model.TypeFunction, "aws-lambda-py"},
 }
 
 func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
@@ -172,5 +173,76 @@ func TestAWSStandardNamesTheTSStandardItCopies(t *testing.T) {
 		if !regexp.MustCompile(`copied\s+from\s+` + standard + `\s+v\d+\.\d+\.\d+`).Match(src) {
 			t.Errorf("aws-standard's SOURCES.md doesn't say which %s version it was copied from", standard)
 		}
+	}
+}
+
+// The part of python-standard's python.md that
+// aws-standard's carries for aws-lambda-py: its general sections, from the
+// first up to the Framework-specific ones.
+const (
+	pythonStandardFirstSection = "## Layout and formatting"
+	pythonStandardEndSection   = "## FastAPI (applies to FastAPI services)"
+)
+
+// TestAWSStandardKeepsPythonStandardsRules checks that aws-standard, for
+// aws-lambda-py, writes python-standard's ruff.toml and mypy.ini byte for
+// byte and its python.md's general sections, and writes none of them for
+// aws-lambda-ts.
+func TestAWSStandardKeepsPythonStandardsRules(t *testing.T) {
+	_, py := renderCombo(t, "cli", []side{{model.SideFramework, "python-cli"}, {model.SideStandard, "python-standard"}})
+	_, aws := renderCombo(t, model.TypeFunction, []side{
+		{model.SideFramework, "aws-lambda-py"},
+		{model.SideStandard, "aws-standard"},
+	})
+	_, awsTS := renderCombo(t, model.TypeFunction, []side{
+		{model.SideFramework, "aws-lambda-ts"},
+		{model.SideStandard, "aws-standard"},
+	})
+	const fix = "copy python-standard's change into templates/aws-standard and name python-standard's " +
+		"version in its docs/style/SOURCES.md"
+	for _, path := range []string{"ruff.toml", "mypy.ini", "docs/style/python.md"} {
+		if _, ok := awsTS.Files[path]; ok {
+			t.Errorf("aws-standard writes %s for aws-lambda-ts", path)
+		}
+		if _, ok := aws.Files[path]; !ok {
+			t.Errorf("aws-standard writes no %s for aws-lambda-py", path)
+		}
+	}
+	for _, path := range []string{"ruff.toml", "mypy.ini"} {
+		if string(aws.Files[path].Data) != string(py.Files[path].Data) {
+			t.Errorf("aws-standard's %s differs from python-standard's: %s", path, fix)
+		}
+	}
+	want := string(py.Files["docs/style/python.md"].Data)
+	first, end := strings.Index(want, pythonStandardFirstSection), strings.Index(want, pythonStandardEndSection)
+	if first < 0 || end < first {
+		t.Fatalf("python-standard's python.md has no %q before %q: update this test", pythonStandardFirstSection,
+			pythonStandardEndSection)
+	}
+	if !strings.Contains(string(aws.Files["docs/style/python.md"].Data), strings.TrimRight(want[first:end], "\n")) {
+		t.Errorf("aws-standard's python.md lacks python-standard's general sections, byte for byte: %s", fix)
+	}
+}
+
+// TestAWSStandardNamesThePythonStandardItCopies checks that aws-standard's
+// SOURCES.md names the python-standard version its Python rules came from:
+// the one templates/versions.txt pins.
+func TestAWSStandardNamesThePythonStandardItCopies(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join(templatesDir, "aws-standard", "docs", "style", "SOURCES.md.tmpl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions, err := os.ReadFile(filepath.Join(templatesDir, "versions.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := regexp.MustCompile(`(?m)^python-standard (v\d+\.\d+\.\d+)$`).FindSubmatch(versions)
+	if pinned == nil {
+		t.Fatal("templates/versions.txt pins no python-standard")
+	}
+	// The rules are copied from the pinned version, which the drift test
+	// compares against.
+	if !strings.Contains(string(src), "are python-standard "+string(pinned[1])+"'s") {
+		t.Errorf("aws-standard's SOURCES.md doesn't say its Python rules are python-standard %s's", pinned[1])
 	}
 }

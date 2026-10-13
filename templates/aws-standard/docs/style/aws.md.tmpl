@@ -1,4 +1,5 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
+{{- $py := eq .Framework "aws-lambda-py" -}}
 {{- if eq .Framework "aws-fargate-ts" -}}
 # AWS container service digest
 
@@ -181,11 +182,11 @@ says why each rule matters.
 # AWS {{ if eq .Framework "aws-ec2-ts" }}EC2{{ else }}serverless{{ end }} digest
 
 Distilled from {{ if eq .Framework "aws-ec2-ts" }}the EC2 Auto Scaling user guide, the Application Load
-Balancer guide, the Amazon VPC guide (endpoints, flow logs){{ else }}the Lambda developer guide's best practices and {{ if $go }}Go{{ else }}Node.js{{ end }}
+Balancer guide, the Amazon VPC guide (endpoints, flow logs){{ else }}the Lambda developer guide's best practices and {{ if $go }}Go{{ else if $py }}Python{{ else }}Node.js{{ end }}
 handler pages, API Gateway's HTTP API docs{{ end }}, DynamoDB's developer guide, the
-AWS SDK for {{ if $go }}Go v2{{ else }}JavaScript v3{{ end }} guide, the CDK developer guide and its assertions
+{{ if $py }}boto3{{ else }}AWS SDK for {{ if $go }}Go v2{{ else }}JavaScript v3{{ end }}{{ end }} guide, the CDK developer guide and its assertions
 module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
-`make check`: {{ if $go }}a golangci-lint linter, an ESLint rule{{ else }}an ESLint rule{{ end }} or the compiler; `[nag: x]` = a CDK Nag rule that
+`make check`: {{ if $go }}a golangci-lint linter, an ESLint rule{{ else if $py }}a ruff rule, mypy, an ESLint rule{{ else }}an ESLint rule{{ end }} or the compiler; `[nag: x]` = a CDK Nag rule that
 fails `cdk synth`; `[test]` = an assertion in `infra/standard.test.ts` or a
 stack's own test; `[review]` = check it yourself. `docs/well-architected.md`
 says why each rule matters.
@@ -247,6 +248,21 @@ says why each rule matters.
   an error response instead. [review]
 - Don't keep request data in package-level variables: the next invocation in
   the same environment would see it. [review]
+{{- else if $py -}}
+- `app/handler.py` defines `handler(event, context)`, which takes an HTTP
+  API event (payload format 2.0, a dict) and returns a dict: a status code,
+  headers and a string body. [review]
+- Create boto3 clients and resources and read configuration at module scope,
+  once per execution environment; warm invocations reuse them and their
+  connections. Never create one inside the handler. [review]
+- Read `os.environ` only in `app/handler.py`, once, and fail at start-up
+  with a message naming the variable when one is missing. [review]
+- Keep the handler to wiring; the work is in functions that take what they
+  need (a store, a log), so tests call them without Lambda. [review]
+- Never `sys.exit()` or `os._exit()`: they end the execution environment
+  mid-invocation. Raise, or return an error response. [review]
+- Don't keep request data in module-scope variables: the next invocation in
+  the same environment would see it. [review]
 {{- else -}}
 - `src/handler.ts` exports `handler`, which takes an `APIGatewayProxyEventV2`
   and returns a result: a status code, headers and a string body. API
@@ -270,7 +286,7 @@ says why each rule matters.
 {{ end }}## Requests and responses
 
 - Validate every input at the boundary: path parameters, query strings,
-  headers and the body, {{ if $go }}decoded into typed values and checked{{ else }}narrowed from `unknown` with runtime checks{{ end }}. {{ if eq .Framework "aws-ec2-ts" }}The load balancer passes on{{ else }}API
+  headers and the body, {{ if $go }}decoded into typed values and checked{{ else if $py }}narrowed from `object` with `isinstance` checks{{ else }}narrowed from `unknown` with runtime checks{{ end }}. {{ if eq .Framework "aws-ec2-ts" }}The load balancer passes on{{ else }}API
   Gateway delivers{{ end }} whatever the client sent. [review]
 {{ if eq .Framework "aws-ec2-ts" }}{{ else }}- A body can arrive base64-encoded (`{{ if $go }}IsBase64Encoded{{ else }}isBase64Encoded{{ end }}`); decode it before
   parsing. [review]
@@ -287,6 +303,9 @@ says why each rule matters.
 - Log structured JSON, one entry per line, through the `*slog.Logger` the
   code is given (`slog.NewJSONHandler` on stderr, made in `main`); never
   `fmt.Print` or the `log` package. [review]
+{{- else if $py -}}
+- Log structured JSON, one entry per line, through the `Log` the code is
+  given; never `print`. [lint: T201]
 {{- else -}}
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `console`. [lint: no-console]
@@ -314,6 +333,10 @@ says why each rule matters.
   with `feature/dynamodb/attributevalue`; validate what a read returns
   before using it, since another writer may have stored something else.
   [review]
+{{- else if $py -}}
+- Use boto3's `Table` resource so items are plain dicts; numbers come back
+  as `Decimal`. Validate what a read returns before using it, since another
+  writer may have stored something else. [review]
 {{- else -}}
 - Use the document client (`@aws-sdk/lib-dynamodb`) so items are plain
   objects; validate what a read returns before using it, since another
@@ -347,6 +370,22 @@ says why each rule matters.
 - The SDK retries throttling and transient errors itself; don't add a retry
   loop around it. Catch what you can answer (a failed condition is a 409,
   found with `errors.As`), wrap the rest with `%w` and let it reach the
+  handler's 500. [review]
+{{- else if $py -}}
+## boto3
+
+- boto3 is a `dependency` pinned exactly in `pyproject.toml`, and the stack
+  bundles the version `uv.lock` pins into the function, not the runtime's
+  copy. Its type stubs (`types-boto3[<service>]`) are dev dependencies at
+  the same version; add the extra for each service you call. [review]
+- A client's region and credentials come from the Lambda environment; never
+  pass keys or set a region in code. [review]
+- Wrap each service in one module behind a `Protocol` the rest of the code
+  depends on, typed with the stubs' `TypedDict`s under `TYPE_CHECKING`;
+  tests pass a fake. [review]
+- boto3 retries throttling and transient errors itself; don't add a retry
+  loop around it. Catch what you can answer (a failed condition,
+  `ConditionalCheckFailedException`, is a 409), let the rest reach the
   handler's 500. [review]
 {{- else -}}
 ## The AWS SDK v3
@@ -437,6 +476,12 @@ says why each rule matters.
   one `bootstrap` binary; never Docker, which CI and agents lack. [review]
 - The `provided.al2023` runtime, handler `bootstrap`; `go1.x` is retired.
   [nag: AwsSolutions-L1]
+{{- else if $py -}}
+- A `Function` whose code is `Code.fromAsset` with local bundling: uv
+  installs the packages `uv.lock` pins, without the dev group, as wheels for
+  arm64 Linux, next to `app/`, from uv's cache or PyPI. Never Docker, which
+  CI and agents lack: the local bundler returns true or throws. [review]
+- The newest Python runtime. [nag: AwsSolutions-L1]
 {{- else -}}
 - `NodejsFunction`, bundled by the installed esbuild
   (`forceDockerBundling: false`); never Docker, which CI and agents lack.
@@ -482,6 +527,12 @@ says why each rule matters.
 - Handlers are tested with `go test` by building an
   `events.APIGatewayV2HTTPRequest` and checking the status code and body.
   The stacks' tests build the function with Go, as synth does. [review]
+{{- else if $py -}}
+- Code that calls AWS is tested with pytest through its `Protocol`, with a
+  fake that records calls and answers from memory; never `moto` or a
+  patched boto3. [review]
+- Handlers are tested by building an HTTP API event dict and checking the
+  status code and body. [review]
 {{- else -}}
 - Code that calls AWS is tested through its interface with a fake that
   records commands and answers from memory. [review]
