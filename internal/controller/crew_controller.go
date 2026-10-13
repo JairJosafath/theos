@@ -71,6 +71,9 @@ type CrewReconciler struct {
 	// Publish reaches the repositories releases are published to; nil means
 	// gitprovider.Client{}.
 	Publish ReleaseTargets
+	// GoProxy is the Go proxy asked whether go get finds a released module
+	// outside c4factory.local/; "" asks none.
+	GoProxy string
 
 	// releaseSaid is, by Crew UID, the reason and message of the last release
 	// the Crew tagged or left to a person, so each held one gets one Warning and
@@ -101,6 +104,12 @@ type CrewReconciler struct {
 	// moduleSaid is, by Crew UID, the tag and outcome of the last Go module
 	// publish reported, so each gets one Event or log line.
 	moduleSaid sync.Map
+	// moduleAnswers is, by Crew UID, the Go proxy's last answer about the
+	// last release's module (moduleAnswer).
+	moduleAnswers sync.Map
+	// moduleWarned is, by Crew UID, the version of the last module reported
+	// not fetchable, so each release gets one Warning.
+	moduleWarned sync.Map
 	// tagged is, by Crew UID, the tag of the last release the Crew tagged, so
 	// a cached Crew that lags behind its status doesn't publish, or write the
 	// module of, an earlier release over the newer one.
@@ -279,11 +288,12 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, con
 	}
 	if crew.Spec.TagReleases {
 		r.noteOverdueRun(ctx, crew, status)
-		r.publishGoModule(ctx, crew, status, provider, repo)
 	}
 	r.publishRelease(ctx, crew, container, status, provider, repo, tasks)
 	if crew.Spec.TagReleases {
-		// After publishing, so a release published this poll files its bumps.
+		// After publishing, so the module reads a source tag put out this poll,
+		// and a release published this poll files its bumps.
+		r.publishGoModule(ctx, crew, status, provider, repo)
 		r.fileBumps(ctx, crew, status, repo)
 	}
 	return filed, preparing

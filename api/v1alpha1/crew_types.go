@@ -232,12 +232,15 @@ type CrewRelease struct {
 
 // CrewReleaseGoModule is how publishing a release's Go module went.
 type CrewReleaseGoModule struct {
-	// state is Published once the module's version is in the registry, NotGo
-	// when the repository has no go.mod at its root at the tag, Invalid when Go
-	// can't take the module at that version, such as a v2.0.0 whose module path
-	// lacks /v2, and Failed while the Git host can't be reached; a failure is
-	// tried again each poll.
-	// +kubebuilder:validation:Enum=Published;NotGo;Invalid;Failed
+	// state is Published once go get finds the version where its path is
+	// read: the registry for a c4factory.local/ path, the Go proxy for any
+	// other. NotGo when the repository has no go.mod at its root at the tag,
+	// Invalid when Go can't take the module at that version, such as a v2.0.0
+	// whose module path lacks /v2, Failed while the Git host can't be reached
+	// (tried again each poll), Waiting while the Crew's GitHub source tag isn't
+	// out or the Go proxy can't be reached, and NotFetchable when the Go proxy
+	// can't fetch the version or the factory can't tell.
+	// +kubebuilder:validation:Enum=Published;NotGo;Invalid;Failed;Waiting;NotFetchable
 	// +required
 	State string `json:"state"`
 
@@ -252,6 +255,11 @@ type CrewReleaseGoModule struct {
 	// message says what happened last, and why the module isn't published.
 	// +optional
 	Message string `json:"message,omitempty"`
+
+	// checkedTime is when the Go proxy was last asked about the version; it is
+	// asked at most every 5 minutes until it finds it.
+	// +optional
+	CheckedTime *metav1.Time `json:"checkedTime,omitempty"`
 }
 
 // CrewReleasePublish is how publishing a release to its target went.
@@ -290,6 +298,11 @@ type CrewReleaseSource struct {
 	// url is the source folder at the tag.
 	// +optional
 	URL string `json:"url,omitempty"`
+
+	// private is set when GitHub reported the repository private as the tag
+	// went out: the public Go proxy can't read it.
+	// +optional
+	Private bool `json:"private,omitempty"`
 }
 
 // CrewReleaseBump is a bump issue filed in a Container that bundles the released

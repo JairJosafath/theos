@@ -101,19 +101,21 @@ type githubSource struct {
 	facts    *model.GitHubSource
 	branch   string
 	headRoot string
+	// private is set when GitHub reports the repository private.
+	private bool
 }
 
-// readGitHubSource reads the default branch's head and the folder's tree at
-// it, with the blobs in it, and the commit the source tag names with the
+// readGitHubSource reads whether the repository is private, the default
+// branch's head and the folder's tree at it, with the blobs in it, and the commit the source tag names with the
 // folder's tree there.
 func readGitHubSource(ctx context.Context, target gitprovider.SourceTarget, path,
 	sourceTag string) (*githubSource, error) {
-	branch, err := target.DefaultBranch(ctx)
+	read, err := target.ReadRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := &githubSource{facts: &model.GitHubSource{}, branch: branch}
-	if out.facts.Head, err = target.Ref(ctx, "heads/"+branch); err != nil {
+	out := &githubSource{facts: &model.GitHubSource{}, branch: read.DefaultBranch, private: read.Private}
+	if out.facts.Head, err = target.Ref(ctx, "heads/"+out.branch); err != nil {
 		return nil, err
 	}
 	if out.facts.Head != "" {

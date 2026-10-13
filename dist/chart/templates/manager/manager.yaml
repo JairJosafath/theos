@@ -87,6 +87,9 @@ spec:
         {{- range .Values.manager.args }}
         - {{ tpl . $ }}
         {{- end }}
+        {{- with .Values.goProxy }}
+        - --go-proxy={{ . }}
+        {{- end }}
         {{- if .Values.agents.enabled }}
         - --shared-secret={{ .Values.agents.credentialsSecret }}
         {{- end }}

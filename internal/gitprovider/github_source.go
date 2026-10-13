@@ -58,11 +58,12 @@ type GitCommit struct {
 // GitHub's Git Data API: it reads and creates git objects and refs, and only
 // ever moves a branch by a fast-forward.
 type SourceTarget interface {
-	// DefaultBranch returns the repository's default branch's name.
-	DefaultBranch(ctx context.Context) (string, error)
+	// ReadRepository returns the repository's default branch's name and
+	// whether it is private.
+	ReadRepository(ctx context.Context) (GitHubRepository, error)
 	// Ref returns the commit ref names (heads/main, tags/engine/v0.6.1), an
 	// annotated tag peeled; "" when there is no such ref. A repository that
-	// is gone reads as no ref: DefaultBranch tells the two apart.
+	// is gone reads as no ref: ReadRepository tells the two apart.
 	Ref(ctx context.Context, ref string) (string, error)
 	// Commit reads commit sha.
 	Commit(ctx context.Context, sha string) (GitCommit, error)
@@ -84,6 +85,14 @@ type SourceTarget interface {
 	// doesn't descend from where ref is, ReasonBranchProtected when GitHub's
 	// protection or rules refuse it.
 	UpdateRef(ctx context.Context, ref, sha string) error
+}
+
+// GitHubRepository is what a SourceTarget reads of its repository.
+type GitHubRepository struct {
+	DefaultBranch string
+	// Private is set when GitHub reports the repository private: the public
+	// Go proxy can't read it.
+	Private bool
 }
 
 // gitPath is /repos/{owner}/{repo}/git/ and its rest.
@@ -115,17 +124,19 @@ func objectPath(sha string) (string, error) {
 	return sha, nil
 }
 
-func (g *githubReleases) DefaultBranch(ctx context.Context) (string, error) {
+func (g *githubReleases) ReadRepository(ctx context.Context) (GitHubRepository, error) {
 	var r struct {
 		DefaultBranch string `json:"default_branch"`
+		Private       bool   `json:"private"`
 	}
 	if err := g.call(ctx, http.MethodGet, g.api, g.repo, nil, http.StatusOK, "reading the repository", &r); err != nil {
-		return "", err
+		return GitHubRepository{}, err
 	}
 	if r.DefaultBranch == "" {
-		return "", &ReleaseError{Reason: ReasonEmptyRepository, Message: "github: the repository has no default branch"}
+		return GitHubRepository{}, &ReleaseError{Reason: ReasonEmptyRepository,
+			Message: "github: the repository has no default branch"}
 	}
-	return r.DefaultBranch, nil
+	return GitHubRepository{DefaultBranch: r.DefaultBranch, Private: r.Private}, nil
 }
 
 type githubObject struct {

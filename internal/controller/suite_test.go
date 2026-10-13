@@ -67,11 +67,13 @@ var (
 	gitFake *fakeGit
 	// githubFake is the GitHub every Crew publishes its releases to.
 	githubFake *fakeGitHub
-	ctx        context.Context
-	cancel     context.CancelFunc
-	testEnv    *envtest.Environment
-	cfg        *rest.Config
-	k8sClient  client.Client
+	// goProxyFake is the Go proxy every Crew asks about its released modules.
+	goProxyFake *fakeGoProxy
+	ctx         context.Context
+	cancel      context.CancelFunc
+	testEnv     *envtest.Environment
+	cfg         *rest.Config
+	k8sClient   client.Client
 	// managerCfg is cfg as the operator's ServiceAccount, bound to the generated
 	// role: a call the role doesn't grant fails the reconciler that makes it.
 	managerCfg *rest.Config
@@ -187,6 +189,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	githubFake = newFakeGitHub()
 	DeferCleanup(githubFake.server.Close)
+	goProxyFake = newFakeGoProxy()
+	DeferCleanup(goProxyFake.server.Close)
 	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
 	Expect(setupReconcilers(mgr)).To(Succeed())
 	go func() {
@@ -221,7 +225,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
 			Issues: githubFake, Now: briefNow},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: gitFake, PollInterval: time.Second,
-			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow},
+			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow,
+			GoProxy: goProxyFake.server.URL},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err
