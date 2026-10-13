@@ -564,7 +564,7 @@ model and context it needs.
   Normal Event `ModulePublished` comes when it turns True, at the proxy's
   first 200, not at the upload. A false
   `ModulePublished` that waits on a person shows in *Needs you* and on the
-  Brief. See [plans/module-fetchable.md](plans/module-fetchable.md).
+  Brief. See [plans/done/module-fetchable.md](plans/done/module-fetchable.md).
 - **A release can be published to GitHub.** A Crew with
   `spec.publishReleases.github` (`repository: owner/name`, and a Secret the
   user creates holding a token for that one repository) copies its last release
