@@ -369,6 +369,11 @@ export function containerNextStep(container: Container): NextStep | undefined {
           text: 'Pick catalog entries that support this Container’s type; the change retries by itself.',
           command,
         }
+      case 'DeploysItself':
+        return {
+          text: 'Its Framework is its own deployment: remove the Compute and the Deployment; the change retries by itself.',
+          command,
+        }
       default:
         return { text: 'Fix what the failed condition names, then retry the scaffold.', command, link: repo }
     }

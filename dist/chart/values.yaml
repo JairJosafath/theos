@@ -516,6 +516,8 @@ catalog:
         displayName: Serverless API on AWS (Lambda, TypeScript)
         description: "A serverless HTTP API on AWS: a TypeScript Lambda behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK v3, and its CDK stack in infra/, which is its deployment."
         supportedTypes: [function]
+        # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
+        deploysItself: true
     - kind: Framework
       name: aws-ec2-ts
       ref: v1.0.0
@@ -523,6 +525,8 @@ catalog:
         displayName: Service on AWS EC2 (TypeScript)
         description: "An HTTP service on AWS infrastructure: a TypeScript Node server on EC2 instances in an Auto Scaling group behind an internal Application Load Balancer, items in DynamoDB through the AWS SDK v3, and its CDK stack in infra/, which is its deployment."
         supportedTypes: [service]
+        # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
+        deploysItself: true
     - kind: Framework
       name: aws-fargate-ts
       ref: v1.0.0
@@ -530,6 +534,8 @@ catalog:
         displayName: Container service on AWS (ECS on Fargate, TypeScript)
         description: "An HTTP service on AWS: a TypeScript Node server in a container on ECS on Fargate behind an Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, and its CDK stack in infra/, which is its deployment."
         supportedTypes: [service]
+        # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
+        deploysItself: true
     - kind: Framework
       name: aws-lambda-go
       ref: v1.0.0
@@ -537,6 +543,8 @@ catalog:
         displayName: Serverless API on AWS (Lambda, Go)
         description: "A serverless HTTP API on AWS: a Go Lambda on provided.al2023, built with go build, behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK for Go v2, and its CDK stack in TypeScript in infra/, which is its deployment."
         supportedTypes: [function]
+        # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
+        deploysItself: true
     - kind: Framework
       name: aws-lambda-py
       ref: v1.0.0
@@ -544,6 +552,8 @@ catalog:
         displayName: Serverless API on AWS (Lambda, Python)
         description: "A serverless HTTP API on AWS: a Python Lambda using boto3 behind an API Gateway HTTP API with IAM auth, items in DynamoDB, managed with uv, and its TypeScript CDK stack in infra/, which is its deployment."
         supportedTypes: [function]
+        # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
+        deploysItself: true
     - kind: Framework
       name: python-cli
       ref: v1.0.0
@@ -592,7 +602,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.4.0
+      ref: v1.4.1
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions pack, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."

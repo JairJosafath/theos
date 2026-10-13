@@ -100,3 +100,74 @@ func TestServicePlansOnAWSFargateTS(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckDeploysItself(t *testing.T) {
+	fargate := CatalogEntry{Side: SideFramework, Name: "aws-fargate-ts", DeploysItself: true}
+	fastapi := CatalogEntry{Side: SideFramework, Name: "python-fastapi"}
+	for name, c := range map[string]struct {
+		framework           CatalogEntry
+		compute, deployment string
+		want                string
+	}{
+		"its own deployment":     {fargate, "", "", ""},
+		"a Framework that needs": {fastapi, "small", "k8s-manifests", ""},
+		"a Compute":              {fargate, "small", "", "remove computeRef small"},
+		"a Deployment":           {fargate, "", "k8s-manifests", "remove deploymentRef k8s-manifests"},
+		"both": {fargate, "small", "k8s-manifests",
+			"aws-fargate-ts deploys itself: its template's app (on AWS, its CDK app) is the Container's deployment, " +
+				"so it takes no Compute and no Deployment; remove computeRef small and deploymentRef k8s-manifests"},
+	} {
+		err := CheckDeploysItself(c.framework, c.compute, c.deployment)
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%s: %v, want none", name, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%s: %v, want one saying %q", name, err, c.want)
+		}
+	}
+}
+
+// Every AWS Framework is its own deployment (plans/aws.md, decision 4).
+func TestAWSFrameworksDeployThemselves(t *testing.T) {
+	for _, entry := range chartCatalog(t) {
+		if entry.Side != SideFramework {
+			continue
+		}
+		if want := strings.HasPrefix(entry.Name, "aws-"); entry.DeploysItself != want {
+			t.Errorf("Framework %s: deploysItself %v, want %v", entry.Name, entry.DeploysItself, want)
+		}
+	}
+}
+
+func TestPlanRefusesADeploymentForAWSFargateTS(t *testing.T) {
+	current := CurrentModel{Namespace: "shop", Catalog: chartCatalog(t), GitProvider: "gitea"}
+	for name, refs := range map[string]string{
+		"a Compute":    "  computeRef: {name: small}\n",
+		"a Deployment": "  deploymentRef: {name: k8s-manifests}\n",
+	} {
+		plan, err := ParsePlan(map[string]string{
+			PlanModelFile:   fargatePlan + refs,
+			PlanChoicesFile: "- orders-api runs on ECS on Fargate, so it is a service on aws-fargate-ts\n",
+			PlanSummaryFile: "Planned an orders API on Fargate.\n",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		refusals := CheckPlan(plan, current)
+		if !slices.ContainsFunc(refusals, func(r Refusal) bool {
+			return r.Subject == "Container/orders-api" && strings.Contains(r.Reason, "frameworkRef: aws-fargate-ts deploys itself") &&
+				strings.Contains(r.Reason, "its CDK app) is the Container's deployment")
+		}) {
+			t.Errorf("the Fargate plan with %s: refusals %v, want one saying aws-fargate-ts deploys itself", name, refusals)
+		}
+	}
+}
+
+func TestWorkspaceCatalogSaysWhichFrameworksDeployThemselves(t *testing.T) {
+	out := workspaceCatalog(chartCatalog(t))
+	for _, e := range out.Frameworks {
+		if want := strings.HasPrefix(e.Name, "aws-"); e.DeploysItself != want {
+			t.Errorf("the workspace catalog's %s: deploysItself %v, want %v", e.Name, e.DeploysItself, want)
+		}
+	}
+}

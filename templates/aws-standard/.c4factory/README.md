@@ -53,8 +53,10 @@ byte for byte.
   also ignores `.venv/`), `docs/style/aws.md`, `principles.md`, `SOURCES.md`
   and `docs/well-architected.md` (the Python handler, boto3, uv bundling,
   pytest), and alone gets `ruff.toml`, `mypy.ini` and
-  `docs/style/python.md`. A Framework added later gets its branches in the
-  version that adds it.
+  `docs/style/python.md`. Since v1.4.1 `docs/well-architected.md` gives
+  `aws-lambda-go` cold-start advice for a `go build` binary instead of
+  esbuild's. A Framework added later gets its branches in the version that
+  adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,

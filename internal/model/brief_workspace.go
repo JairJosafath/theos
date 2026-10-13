@@ -389,6 +389,9 @@ type catalogEntryOut struct {
 	// ChecksBeforeRelease says a Standard can run the full check only before
 	// a release, so a Container's checks: BeforeRelease takes effect.
 	ChecksBeforeRelease bool `yaml:"checksBeforeRelease,omitempty"`
+	// DeploysItself says a Framework is its Container's deployment, so the
+	// Container names no Compute and no Deployment.
+	DeploysItself bool `yaml:"deploysItself,omitempty"`
 }
 
 // workspaceCatalog lists the installed entries by side and name, with what
@@ -411,7 +414,7 @@ func workspaceCatalog(catalog []CatalogEntry) catalogOut {
 		frameworks := slices.Clone(e.SupportedFrameworks)
 		slices.Sort(frameworks)
 		*list = append(*list, catalogEntryOut{e.Name, strings.TrimSpace(e.Description), types, frameworks,
-			e.ChecksBeforeRelease})
+			e.ChecksBeforeRelease, e.DeploysItself})
 	}
 	for _, list := range sides {
 		if *list == nil {
