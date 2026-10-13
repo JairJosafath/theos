@@ -1,0 +1,10 @@
+# The image needs only what its Dockerfile copies; everything else stays out
+# of the build context, so synth stages little and an infra change doesn't
+# change the image.
+*
+!Dockerfile
+!package.json
+!package-lock.json
+!tsconfig.json
+!src/
+src/**/*.test.ts

@@ -1,5 +1,195 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
+{{ if eq .Framework "aws-fargate-ts" -}}
+# Well-Architected
+
+A digest of the AWS Well-Architected Framework and Amazon ECS's best
+practices, for this repository: one section per pillar, what the pillar asks
+of a container service on Fargate behind a load balancer, the CDK Nag rules (`AwsSolutions` pack) that enforce it when
+`cdk synth` runs, and what you do by hand where no rule does. Sources and the
+date they were read are in `docs/style/SOURCES.md`. This file belongs to the
+Standard: a task never changes it.
+
+`make check` runs CDK Nag's `AwsSolutions` checks on every stack
+(`infra/standard.ts`): a finding fails synth unless it is acknowledged, on
+one construct, with a reason. `infra/standard.test.ts` checks what CDK Nag
+doesn't: tags, wildcard actions, encryption, log retention, removal policies.
+
+## Operational excellence
+
+_Run and monitor the system, and improve it in small, reversible changes._
+
+- Everything is code: the stacks in `infra/` are the only way resources are
+  made. No change by hand in the console.
+- Changes are small, frequent and checked: `make check` synthesizes and
+  lints every change; nothing here deploys.
+- Observe: structured JSON logs with the request id, a log group per
+  container, the load balancer's access logs and the VPC's flow log, each
+  kept for a set time, and Container Insights on the cluster.
+  - `AwsSolutions-ECS7`: every container logs.
+  - `AwsSolutions-ECS4`: the cluster has Container Insights.
+  - `AwsSolutions-ELB2`: the load balancer has access logs.
+  - `AwsSolutions-VPC7`: the VPC has a flow log.
+  - `infra/standard.test.ts` checks that every log group has a retention.
+- Deploy safely: a deployment starts new tasks before stopping old ones
+  (minimum healthy 100 %), and the circuit breaker rolls it back when the new
+  tasks never pass the load balancer's health check.
+- Trace when the issue asks for it: X-Ray tracing (an AWS Distro for
+  OpenTelemetry collector beside the app in the task)
+  costs per trace and needs `xray:Put*` on `*`, which CDK Nag flags
+  (`AwsSolutions-IAM5`); acknowledge that finding with the reason.
+- Tag everything so cost and ownership are traceable: every stack carries
+  `c4factory:project`, `c4factory:system` and `c4factory:container`
+  (`infra/standard.ts`, tested).
+- By hand: alarms on errors, 5xx answers, unhealthy targets and CPU, and a runbook, when the
+  system's needs ask for them.
+
+## Security
+
+_Protect data, systems and assets: identity, least privilege, encryption,
+traceability, and protection at every layer._
+
+- Least privilege: the task role, which the code runs as, is granted
+  through CDK grants, such as
+  `table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`, only the
+  calls the code makes; the execution role,
+  which ECS uses to pull the image and write logs, only what CDK grants it.
+  - `AwsSolutions-IAM4`: no AWS managed policies on a role.
+  - `AwsSolutions-IAM5`: no wildcard actions or resources without an
+    acknowledgement naming the one finding and why.
+  - `infra/standard.test.ts`: no `*` or `service:*` action anywhere.
+- Protect the network: the tasks run in private subnets without public IPs
+  and take traffic only from the load balancer's security group; only the
+  load balancer faces the internet.
+  - `AwsSolutions-EC23`: a security group open to `0.0.0.0/0`; the load
+    balancer's is, as a public service's must be, and is acknowledged with
+    that reason. No other group may be.
+  - `AwsSolutions-VPC3`: network ACLs are used sparingly; security groups
+    do the work.
+- Authenticate requests where the issue asks for it: the load balancer can
+  authenticate users (an OIDC provider or Cognito) on its HTTPS listener, or
+  the service checks a token itself. A route without authentication is a
+  choice the issue states.
+- Encrypt at rest and in transit.
+  - Clients speak HTTPS to the load balancer, with TLS 1.3 and 1.2 only
+    (`SslPolicy.RECOMMENDED_TLS`); port 80 only redirects. The load balancer
+    drops invalid header fields.
+  - `AwsSolutions-S10`, `AwsSolutions-SQS4`, `AwsSolutions-SNS3`: requests
+    must use TLS.
+  - `AwsSolutions-SQS2`, `AwsSolutions-EFS1`: encryption at rest; DynamoDB
+    is always encrypted, and `infra/standard.test.ts` requires a KMS key
+    (`SSESpecification`) on every table, encryption on every bucket, queue
+    and topic.
+  - `AwsSolutions-KMS5`: customer-managed keys rotate.
+- Protect data from the public: `AwsSolutions-S2` (bucket public access
+  blocked), `AwsSolutions-S5`, `AwsSolutions-EVB1` (no open event bus
+  policy), `AwsSolutions-ECR1` (no open image repository).
+  A WAF web ACL on the load balancer is for the issue that asks for it.
+- Secrets live in Secrets Manager, rotated (`AwsSolutions-SMG4`), read at
+  start-up or passed as ECS `secrets`; never in an environment variable, the template, a log or the
+  repository.
+  `AwsSolutions-ECS2` flags every plain environment variable: acknowledge
+  it only when each one is plainly not a secret (a table's name), and say so.
+- The container runs as an unprivileged user on a read-only root file
+  system; the image holds the bundle and Node, nothing else.
+- By hand: validate all input at the boundary; never log user data or
+  tokens; never return internal errors to a client.
+
+## Reliability
+
+_Recover from failure, scale with demand, and keep working when a part
+fails._
+
+- Multiple Availability Zones: the VPC spans two, the load balancer serves
+  from both and the service keeps at least two tasks, which ECS spreads over
+  them; DynamoDB spreads on its own. The one NAT gateway is in one zone: it
+  carries only image pulls and logs, and a second costs as much again.
+- Health checks: the load balancer checks `/health` and replaces a task that
+  fails; the check reads nothing, so a DynamoDB outage doesn't stop every
+  task.
+- Scale with demand: the service scales on CPU between its bounds.
+- Back up data and recover it: point-in-time recovery on every table, and
+  data that outlives its stack.
+  - `AwsSolutions-DDB3`: point-in-time recovery.
+  - `AwsSolutions-RDS10`: deletion protection on databases; set it on tables
+    too (`deletionProtection: true`).
+  - `infra/standard.test.ts`: every stateful resource states its removal
+    policy; data is `RETAIN`.
+- Handle failures in asynchronous work: a queue or event source has a
+  dead-letter queue.
+  - `AwsSolutions-SQS3`: a queue has a DLQ or is one.
+- Idempotency: a retried request changes nothing twice (whole-item puts,
+  conditional writes, idempotency keys).
+- Limits and shutdown: a body limit on every request; keep-alive longer than
+  the load balancer's 60-second idle timeout; on `SIGTERM` the server stops
+  taking requests and finishes those in flight, within the container's stop
+  timeout; ECS sends it only after the load balancer has drained the task.
+
+## Performance efficiency
+
+_Use resources efficiently as demand changes and technology evolves._
+
+- The newest Node.js LTS in the image (`node:24-alpine`); a bump is a
+  change to the `Dockerfile`.
+- Size the task's CPU and memory to the work, and the service's scaling
+  bounds to the load the issue states; measure before raising them.
+- Start-up: SDK clients created once, in `src/main.ts`; a small image
+  (esbuild's bundle on Alpine, no `node_modules`), so a new task starts
+  fast.
+- Data access by key: `GetItem` and `Query` on keys and indexes; a `Scan` is
+  never on a request path.
+- By hand: measure a stated budget with a benchmark, and say what only a
+  deployed service can show (start-up, scaling, latency in AWS).
+
+## Cost optimization
+
+_Deliver value at the lowest price: pay only for what you use, and know
+where the money goes._
+
+- A service runs all the time, so it costs by the hour whether busy or not:
+  two small tasks, the load balancer and the NAT gateway are the floor.
+  Scale-out has a ceiling; DynamoDB is on demand.
+- `arm64` (Graviton) tasks: cheaper per vCPU-hour than x86.
+- The DynamoDB gateway endpoint is free and keeps table traffic off the NAT
+  gateway, which charges per gigabyte.
+- Log retention limits what storage costs grow to (`infra/standard.test.ts`);
+  access logs expire from their bucket after 30 days.
+- Tags attribute every cost to its project, system and container.
+- By hand: right-size the task and the scaling bounds; no second NAT
+  gateway, interface endpoints or larger tasks unless the issue states the
+  need.
+
+## Sustainability
+
+_Minimize the environmental impact of the workload._
+
+- Fargate runs the tasks on shared infrastructure; scaling in to the
+  minimum when idle keeps what runs to what the load needs.
+- `arm64` (Graviton) uses less energy for the same work.
+- Keep what is needed, no longer: log retention, and no data stored that
+  the system's needs don't ask for.
+- Efficient code: no polling, no work per request that can be done once at
+  start-up, small images.
+- No rule enforces these: review them.
+
+## Acknowledging a finding
+
+Fix the resource first. When the fix is wrong for this system, acknowledge
+the one finding on the construct the finding's path names (or its nearest
+ancestor you own): a finding on `Task/ExecutionRole/DefaultPolicy/Resource`
+is acknowledged on the execution role, not on the task definition.
+
+```ts
+Validations.of(taskDefinition.obtainExecutionRole()).acknowledge({
+  id: 'AwsSolutions-IAM5[Resource::*]',
+  reason:
+    'ecr:GetAuthorizationToken accepts only the resource "*"; every other action names its resource.',
+});
+```
+
+The reason says why this resource needs it, true and specific; the reviewer
+checks every one, and a vague reason ("not needed", "for now") is blocking.
+{{- else -}}
 {{ if eq .Framework "aws-ec2-ts" }}# Well-Architected
 
 A digest of the AWS Well-Architected Framework, for this repository: one
@@ -326,3 +516,4 @@ Validations.of(role).acknowledge({
 
 The reason says why this resource needs it, true and specific; the reviewer
 checks every one, and a vague reason ("not needed", "for now") is blocking.
+{{- end }}

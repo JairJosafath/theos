@@ -1,5 +1,5 @@
-# #1062: docs/well-architected.md per Framework, rendered by internal/scaffold (aws-standard v1.2.1)
-# diff of aws-lambda-go's render, v1.2.0 -> v1.2.1; aws-lambda-ts and aws-ec2-ts render byte for byte the same (cmp)
+# #1062: docs/well-architected.md per Framework, rendered by internal/scaffold (aws-standard v1.3.1)
+# diff of aws-lambda-go's render, v1.3.0 -> v1.3.1; aws-lambda-ts, aws-ec2-ts and aws-fargate-ts render byte for byte the same (cmp)
 108,109c108,112
 < - Cold starts: SDK clients at module scope, small bundles (esbuild,
 <   minified, only the clients used), no heavy work at import.
@@ -19,5 +19,6 @@ $ go test ./internal/scaffold/ -run TestAWSStandardWellArchitectedFitsTheLanguag
     --- PASS: TestAWSStandardWellArchitectedFitsTheLanguage/aws-lambda-ts (0.00s)
     --- PASS: TestAWSStandardWellArchitectedFitsTheLanguage/aws-lambda-go (0.00s)
     --- PASS: TestAWSStandardWellArchitectedFitsTheLanguage/aws-ec2-ts (0.00s)
+    --- PASS: TestAWSStandardWellArchitectedFitsTheLanguage/aws-fargate-ts (0.00s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.010s
+ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.014s

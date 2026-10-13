@@ -122,7 +122,13 @@ Task that reviews and merges it. Then:
   import neither the AWS SDK nor `node:http`, tested with plain vitest.
   `src/server.ts` is tested over HTTP on a loopback port the system picks
   (`listen(0, '127.0.0.1')`). Keep `src/main.ts` to wiring: the SDK clients
-  created once, the environment read once.{{ else }}- Request handling is tested by calling it with an
+  created once, the environment read once.{{ else if eq .Framework "aws-fargate-ts" }}- Request handling is tested by calling `answer` with a request, or the
+  server's listener with an in-memory stream and a recorded response, and a
+  fake store, checking the status code and the body; no test starts the
+  server. Logic lives in modules that import neither the AWS SDK nor Node's
+  HTTP server, tested with plain vitest. Keep `src/main.ts` to wiring: the
+  SDK clients created once, the environment read once, the server closed on
+  `SIGTERM`.{{ else }}- Request handling is tested by calling it with an
   `APIGatewayProxyEventV2` and a fake store, checking the status code and the
   body; logic lives in modules that import neither the AWS SDK nor the
   `aws-lambda` types, tested with plain vitest. Keep `src/handler.ts` to
@@ -147,18 +153,23 @@ Task that reviews and merges it. Then:
   `make check`, which also runs `cfn-lint` on what synth wrote.
 - Never run `cdk deploy`, `cdk bootstrap`, `cdk diff` against an account or
   any AWS CLI call: there is no account here, and none is needed.
+{{- if eq .Framework "aws-fargate-ts" }}
+- Never build the image in a check: there is no Docker here. A change to the
+  `Dockerfile` or `.dockerignore` says in the summary that a person must
+  build it.
+{{- end }}
 - Tests never measure time: no real timers or `setTimeout` waits, no bounds
   such as "answers within 500 ms" on `performance.now()` or `Date.now()`.
   They pass in your sandbox and fail on the shared CI runner.
 - A budget in the issue or the needs ("within 200 ms", "10,000 items") gets
   a vitest `bench` on realistic input, not a test; put the numbers and the
-  input size in the summary. A latency budget in AWS ({{ if eq .Framework "aws-ec2-ts" }}the load balancer{{ else }}cold start{{ end }}, DynamoDB)
+  input size in the summary. A latency budget in AWS ({{ if eq .Framework "aws-ec2-ts" }}the load balancer{{ else if eq .Framework "aws-fargate-ts" }}task start-up{{ else }}cold start{{ end }}, DynamoDB)
   can only be measured in an account: say so.
 - Timing logic (timeouts, retries) is tested with fake timers
   (`vi.useFakeTimers()`, then `vi.advanceTimersByTime`), or by awaiting the
   event it fires.
 - Say which behaviour needs a person to try in a real AWS account (IAM
-  policies at run time, throttling, cold starts).
+  policies at run time, {{ if eq .Framework "aws-fargate-ts" }}health checks, scaling, deployments{{ else }}throttling, cold starts{{ end }}).
 {{- end }}
 
 ## Your summary

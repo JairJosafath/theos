@@ -1,0 +1,5 @@
+node_modules/
+# What cdk synth writes: the templates and the staged image context
+cdk.out/
+# What npm run bundle writes; the image builds its own
+dist/

@@ -44,6 +44,7 @@ var awsFrameworks = []side{
 	{model.TypeFunction, "aws-lambda-ts"},
 	{model.TypeFunction, "aws-lambda-go"},
 	{model.TypeService, "aws-ec2-ts"},
+	{model.TypeService, "aws-fargate-ts"},
 }
 
 func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
@@ -187,13 +188,15 @@ func TestAWSStandardWellArchitectedFitsTheLanguage(t *testing.T) {
 		{"aws-lambda-go", []string{"go build", "provided.al2023", "arm64", "package scope"},
 			[]string{"esbuild", "module scope", "npm", "bundle"}},
 		{"aws-ec2-ts", []string{"esbuild"}, []string{"go build"}},
+		{"aws-fargate-ts", nil, []string{"go build", "bootstrap"}},
+	}
+	types := map[string]string{}
+	for _, f := range awsFrameworks {
+		types[f.Name] = f.Side
 	}
 	for _, c := range cases {
 		t.Run(c.framework, func(t *testing.T) {
-			typ := model.TypeFunction
-			if c.framework == "aws-ec2-ts" {
-				typ = model.TypeService
-			}
+			typ := types[c.framework]
 			_, r := renderCombo(t, typ, []side{{model.SideFramework, c.framework}, {model.SideStandard, "aws-standard"}})
 			f, ok := r.Files["docs/well-architected.md"]
 			if !ok {

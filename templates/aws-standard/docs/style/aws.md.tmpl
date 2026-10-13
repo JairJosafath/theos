@@ -1,4 +1,183 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
+{{- if eq .Framework "aws-fargate-ts" -}}
+# AWS container service digest
+
+Distilled from Amazon ECS's best practices guide, Elastic Load Balancing's
+Application Load Balancer docs, DynamoDB's developer guide, the
+AWS SDK for JavaScript v3 guide, the CDK developer guide and its assertions
+module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
+`make check`: an ESLint rule or the compiler; `[nag: x]` = a CDK Nag rule that
+fails `cdk synth`; `[test]` = an assertion in `infra/standard.test.ts` or a
+stack's own test; `[review]` = check it yourself. `docs/well-architected.md`
+says why each rule matters.
+
+## The server
+
+- `src/main.ts` is the entry point the image runs: it reads the
+  configuration, creates the SDK clients once, starts Node's HTTP server
+  and stops it on `SIGTERM`. Nothing else runs at start-up. [review]
+- Read `process.env` only in `src/main.ts`, once, and fail at start-up with
+  a message naming the variable when one is missing; ECS then replaces the
+  task, and the deployment's circuit breaker rolls back. [review]
+- Keep `src/main.ts` to wiring; the work is in functions that take what they
+  need (a store, a log), so tests call them without a socket. The server
+  reads requests through the narrow `Incoming` and `Outgoing` interfaces
+  `src/server.ts` defines. [review]
+- Bound what a request may cost: a body limit (413 above it), and no work
+  per request that can be done once at start-up. [review]
+- Keep-alive longer than the load balancer's 60-second idle timeout
+  (`keepAliveTimeout`, and `headersTimeout` above it), so the server never
+  closes a connection the load balancer is about to reuse. [review]
+- On `SIGTERM`, stop taking requests (`server.close()`), finish those in
+  flight and let the process end; ECS sends `SIGKILL` after the stop
+  timeout. Never `process.exit()`: it drops what is in flight.
+  [lint: no-restricted-properties]
+- Handle every promise: await it, or `void` it where Node's callback can't
+  (the request listener), with the listener catching every failure itself.
+  [lint: @typescript-eslint/no-floating-promises]
+- Don't keep request data in module-scope variables: every request in the
+  process would share it. [review]
+- `GET /health` answers 200 while the process runs and reads nothing, so an
+  outage of a dependency doesn't fail every task's health check at once.
+  [review]
+
+## Requests and responses
+
+- Validate every input at the boundary: path parameters, query strings,
+  headers and the body, narrowed from `unknown` with runtime checks. The
+  load balancer delivers whatever the client sent. [review]
+- Path segments arrive percent-encoded; decode them, and answer 400 when one
+  doesn't decode. [review]
+- Answer expected failures with their status: 400 for bad input, 403, 404,
+  405 for a method a path doesn't take, 409 for a conflict, 413 for too large, and 500 only for a bug or an
+  outage. The body is JSON with a `message` a client can act on. [review]
+- Never return a stack trace, an SDK error's text or an internal name to a
+  client; log it instead, with the request id (the load balancer's
+  `X-Amzn-Trace-Id`, or one the server makes). [review]
+- Set `content-type` on every response. [review]
+
+## Logs
+
+- Log structured JSON, one entry per line, through the `Log` the code is
+  given; never `console`. [lint: no-console]
+- Each entry has a `level`, a `message` and the request id; errors say what
+  failed and with which input, never a secret, a token or user data. [review]
+- The container logs through the `awslogs` driver to a log group the stack
+  creates, with a retention. [nag: AwsSolutions-ECS7; test: log groups keep
+  logs for a set time]
+- Write entries to stderr, one JSON object a line; ECS sends each line to
+  CloudWatch Logs as one event. [review]
+
+## DynamoDB
+
+- Model the table for its access patterns: every read on a request path is
+  a `GetItem` or a `Query` on a key or an index, never a `Scan`. [review]
+- Use the document client (`@aws-sdk/lib-dynamodb`) so items are plain
+  objects; validate what a read returns before using it, since another
+  writer may have stored something else. [review]
+- Writes are idempotent: a `PutItem` of the whole item, or a conditional
+  write (`ConditionExpression`) that refuses a second apply. Never a blind
+  `ADD` on a retried request. [review]
+- Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
+  load. [review]
+- Point-in-time recovery on. [nag: AwsSolutions-DDB3]
+- Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
+  customer-managed). [test: encrypts every table]
+- The table outlives the stack: `RemovalPolicy.RETAIN` and deletion
+  protection. [test: says what happens to stateful resources; review]
+
+## The AWS SDK v3
+
+- Import only the clients you use (`@aws-sdk/client-dynamodb`), never a
+  whole SDK; esbuild bundles them into the image. [review]
+- Pin every `@aws-sdk/*` package to the same exact version. [review]
+- A client's region and credentials come from the task, its task role and
+  region; never pass keys or set a region in code. [review]
+- Wrap each service in one module behind an interface the rest of the code
+  depends on; tests fake that interface. [review]
+- The SDK retries throttling and transient errors itself; don't add a retry
+  loop around it. Catch what you can answer (a failed condition is a 409),
+  let the rest reach the `answer`'s 500. [review]
+
+## The load balancer
+
+- Internet-facing, in the public subnets; the tasks are in private subnets
+  without public IPs and take traffic only from its security group.
+  [review]
+- HTTPS on 443 with the deployer's ACM certificate (the `CertificateArn`
+  parameter, so synth needs no account), TLS 1.3 and 1.2 only
+  (`SslPolicy.RECOMMENDED_TLS`); port 80 only redirects to 443. [review]
+- Its security group is open to the internet, which CDK Nag flags: the one
+  acknowledged `AwsSolutions-EC23`, on the load balancer. [nag:
+  AwsSolutions-EC23]
+- Access logs go to an S3 bucket with S3-managed keys (the only encryption
+  Elastic Load Balancing writes with), TLS only, objects expiring, through
+  the log delivery service principal so the stack keeps no region.
+  [nag: AwsSolutions-ELB2, AwsSolutions-S10]
+- Invalid header fields are dropped (`dropInvalidHeaderFields`). [review]
+- The target group checks `/health`, and its deregistration delay fits the
+  longest request: ECS stops a task only after the load balancer has
+  drained it. [review]
+
+## The task and the service in the stack
+
+- The image is `ContainerImage.fromAsset` of the repository, for
+  `linux/arm64`: synth only stages the build context, which `.dockerignore`
+  narrows; `cdk deploy` builds it with Docker on the deployer's machine.
+  Never build an image in `make check`, which has no Docker. [review]
+- The `Dockerfile` pins the Node major (`node:24-alpine`), builds with
+  `npm ci` and esbuild, and runs the bundle alone as the `node` user. [review]
+- `arm64` (Graviton): cheaper per vCPU-hour and lower energy. [review]
+- CPU and memory set for the work; a read-only root file system; a stop
+  timeout that lets requests in flight finish. [review]
+- The task role is granted only what the code calls; the execution role
+  only what CDK grants it to pull the image and write logs. No AWS managed
+  policies. [nag: AwsSolutions-IAM4]
+- No wildcard permissions: CDK grants, such as
+  `table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`, never a
+  hand-written `*`; the execution role's
+  `ecr:GetAuthorizationToken` takes only `*`, and is the one acknowledged
+  `AwsSolutions-IAM5[Resource::*]`. [nag: AwsSolutions-IAM5; test: no
+  wildcard action]
+- No secrets in environment variables: CDK Nag flags every plain variable;
+  pass a secret as an ECS `secret` from Secrets Manager. A variable that is
+  plainly no secret (a table's name) is acknowledged. [nag: AwsSolutions-ECS2]
+- The cluster has Container Insights. [nag: AwsSolutions-ECS4]
+- The service keeps at least two tasks in two zones, deploys with the
+  circuit breaker and rollback, and scales between bounds the issue's load
+  sets. [review]
+- The VPC logs rejected traffic to a log group with a retention, and reaches
+  DynamoDB through a gateway endpoint. [nag: AwsSolutions-VPC7; review]
+
+## The CDK app
+
+- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+  Framework's stacks are in `infra/stacks.ts`, which `defineStacks` returns.
+  [review]
+- Stacks are environment-agnostic: no `env` from `CDK_DEFAULT_ACCOUNT`, no
+  `fromLookup`, so synth needs no account. [review]
+- Every stack carries the Standard's tags (`c4factory:project`,
+  `c4factory:system`, `c4factory:container`). [test: tags every stack]
+- Every stateful resource says its removal policy. [test]
+- A CDK Nag finding is fixed in the resource. An acknowledgement
+  (`Validations.of(construct).acknowledge({ id, reason })`), on the construct
+  the finding's path names or an ancestor of it, names one finding
+  on one construct, with a reason specific to this system. [review]
+- `cdk.json`'s feature flags are the ones `cdk init` recommends for the
+  pinned CDK; a task never turns one off. [review]
+
+## Tests
+
+- No test calls AWS, opens a socket or needs credentials. [review]
+- Stacks are tested with `Template.fromStack` from `aws-cdk-lib/assertions`:
+  `hasResourceProperties`, `resourceCountIs`, `Match`. Assert what the
+  issue needs (a route, a grant, a setting), not the whole template. [review]
+- Code that calls AWS is tested through its interface with a fake that
+  records commands and answers from memory. [review]
+- Requests are tested by calling `answer` with a request, or the server's
+  listener with an in-memory stream and a recorded response, and checking
+  the status code and body; no test starts the server. [review]
+{{- else -}}
 # AWS {{ if eq .Framework "aws-ec2-ts" }}EC2{{ else }}serverless{{ end }} digest
 
 Distilled from {{ if eq .Framework "aws-ec2-ts" }}the EC2 Auto Scaling user guide, the Application Load
@@ -310,4 +489,5 @@ says why each rule matters.
   the status code and body; `src/server.ts` over HTTP on a loopback port the
   system picks. [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
   the status code and body. [review]{{ end }}
+{{- end }}
 {{- end }}

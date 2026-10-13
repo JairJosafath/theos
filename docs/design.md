@@ -805,7 +805,10 @@ model and context it needs.
   cfn-lint, and nothing deploys. GitHub issue #1028 has the plan,
   [plans/aws.md](plans/aws.md). The same Standard serves the `service`
   Framework `aws-ec2-ts` (EC2 instances in an Auto Scaling group behind an
-  internal Application Load Balancer), also with no Compute or Deployment.
+  internal Application Load Balancer), also with no Compute or Deployment,
+  and the `service` Framework `aws-fargate-ts` (a Node server in a container
+  on ECS on Fargate behind an internet-facing Application Load Balancer
+  serving HTTPS, whose image synth only stages).
 
 ## Briefs: an idea in plain words
 
