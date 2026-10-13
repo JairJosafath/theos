@@ -244,7 +244,7 @@ func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now
 	if err != nil {
 		return att, time.Time{}, err
 	}
-	att = model.WithNeedsYou(att, held)
+	att = model.InsteadOf(att, held)
 	var next time.Time
 	attention := make([]c4v1alpha1.BriefHealing, 0, len(att.Healing))
 	for _, h := range att.Healing[:min(len(att.Healing), maxAttention)] {

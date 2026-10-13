@@ -16,6 +16,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -147,7 +148,8 @@ func appMessage(app *c4v1alpha1.BriefApp, briefsCrew bool) string {
 }
 
 // crewReleaseChanges passes a Crew's creation, deletion, spec changes, the
-// release target its Brief marked on it (briefTarget) and
+// release target its Brief marked on it (briefTarget), whether it is held
+// at another (its ReleaseTarget condition) and
 // changes to its latest release: all the Brief's app lines read from it.
 func crewReleaseChanges() builder.WatchesOption {
 	return builder.WithPredicates(predicate.Funcs{
@@ -157,7 +159,14 @@ func crewReleaseChanges() builder.WatchesOption {
 			return !ok1 || !ok2 || oldCrew.Generation != newCrew.Generation ||
 				oldCrew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases] !=
 					newCrew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases] ||
+				releaseTargetHeld(oldCrew) != releaseTargetHeld(newCrew) ||
 				!equality.Semantic.DeepEqual(oldCrew.Status.LastRelease, newCrew.Status.LastRelease)
 		},
 	})
+}
+
+// releaseTargetHeld reports whether the Crew's ReleaseTarget condition says
+// its target differs from its Brief's.
+func releaseTargetHeld(crew *c4v1alpha1.Crew) bool {
+	return meta.IsStatusConditionFalse(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget)
 }

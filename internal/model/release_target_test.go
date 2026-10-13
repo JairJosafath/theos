@@ -64,3 +64,13 @@ func TestReleaseTargetMessages(t *testing.T) {
 		t.Errorf("ReleaseTargetSetByBrief = %s", got)
 	}
 }
+
+func TestInsteadOf(t *testing.T) {
+	stuck := NeedsYou{Kind: AttentionCrew, Name: "linter", Question: "not ready"}
+	issue := NeedsYou{Kind: AttentionIssue, Name: "linter#1"}
+	held := NeedsYou{Kind: AttentionCrew, Name: "linter", Question: "held"}
+	got := InsteadOf(Attention{NeedsYou: []NeedsYou{stuck, issue}, Waiting: 2}, []NeedsYou{held})
+	if got.Waiting != 2 || len(got.NeedsYou) != 2 || got.NeedsYou[0] != issue || got.NeedsYou[1] != held {
+		t.Errorf("InsteadOf = %+v, want the issue and the held Crew, 2 waiting", got)
+	}
+}

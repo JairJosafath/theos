@@ -176,7 +176,7 @@ func targetHeld(g Gomega, ns, crewRepo, briefRepo string) {
 	g.Expect(cond.Message).To(And(ContainSubstring(crewRepo), ContainSubstring(briefRepo)))
 	g.Expect(linterTargetEvents(g, ns)).To(ContainElement(HaveField("Note", cond.Message)))
 	g.Expect(getBrief(g, ns).Status.NeedsYou).To(ContainElement(And(HaveField("Kind", "Crew"),
-		HaveField("Name", "linter"), HaveField("Why", ContainSubstring(crewRepo)),
+		HaveField("Name", "linter"), HaveField("Why", ContainSubstring(crewRepo)), HaveField("Since", Not(BeNil())),
 		HaveField("Recommend", "Change the Brief's spec.releases entry for linter to the Crew's target."))))
 }
 

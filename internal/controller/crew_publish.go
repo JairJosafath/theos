@@ -70,6 +70,15 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 	tasks []c4v1alpha1.Task) {
 	spec := crew.Spec.PublishReleases
 	release := status.LastRelease
+	if d := targetDiffers(crew); d != nil && release != nil &&
+		(release.Publish == nil || release.Publish.State != publishPublished) {
+		// Held, even at no target: the release waits, as a failed publish
+		// does, and goes out at the next poll after the Crew and its Brief
+		// agree.
+		r.setPublish(crew, status, publishPending, "", c4v1alpha1.ReasonTargetDiffersFromBrief,
+			model.ReleaseTargetPublishMessage(*d))
+		return
+	}
 	if spec == nil || release == nil {
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionPublished)
 		return
@@ -77,13 +86,6 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 	log := logf.FromContext(ctx).WithValues("tag", release.Tag, "repository", spec.GitHub.Repository)
 	facts := publishFacts(crew, container, release)
 	if facts.Published {
-		return
-	}
-	if d := targetDiffers(crew); d != nil {
-		// Held: the release waits, as a failed publish does, and goes out at
-		// the next poll after the Crew and its Brief agree.
-		r.setPublish(crew, status, publishPending, "", c4v1alpha1.ReasonTargetDiffersFromBrief,
-			model.ReleaseTargetPublishMessage(*d))
 		return
 	}
 	token, err := r.publishToken(ctx, crew.Namespace, facts.Secret)
@@ -453,12 +455,14 @@ func (r *CrewReconciler) releaseTarget(ctx context.Context, crew *c4v1alpha1.Cre
 		return
 	}
 	message := model.ReleaseTargetDiffersMessage(*d)
-	// The last poll's status write can fail after its Event, so the
-	// Reconciler remembers what it said too.
+	// The Reconciler remembers the target it warned about, as the last
+	// poll's status write can fail after its Event; after a restart the
+	// condition says whether it warned.
 	said := publishJSON(crew.Spec.PublishReleases)
-	last, _ := r.targetSaid.Load(crew.UID)
+	last, remembered := r.targetSaid.Load(crew.UID)
 	cond := apimeta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionReleaseTarget)
-	if (cond == nil || cond.Status != metav1.ConditionFalse || cond.Message != message) && last != said {
+	warned := cond != nil && cond.Status == metav1.ConditionFalse && cond.Message == message
+	if remembered && last != said || !remembered && !warned {
 		logf.FromContext(ctx).Info("Release target differs from the Brief's", "brief", d.Brief,
 			"briefRepository", d.BriefRepo, "crewRepository", d.CrewRepo)
 		r.event(crew, corev1.EventTypeWarning, eventReleaseTargetDiffers, "PublishRelease", message)
