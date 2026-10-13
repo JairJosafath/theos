@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Brief, Condition, Container, Crew, Project, Task } from '../k8s/types'
+import type { Brief, Condition, Container, Crew, Project, StandardFile, Task } from '../k8s/types'
 import { byProject, needs, type NeedsInput } from './needs'
 
 const T = '2026-06-01T10:00:00Z'
@@ -50,6 +50,12 @@ const input = (part: Partial<NeedsInput>): NeedsInput => ({
 })
 
 const repo = { repositoryURL: 'https://git.example/shop/api' }
+const makefileBehind: StandardFile = {
+  path: 'Makefile',
+  ref: 'v1',
+  pullRequestURL: 'https://git.example/shop/api/pulls/3',
+  change: '--- Makefile (v1)\n+++ Makefile (v3)\n@@ -1 +1 @@\n-lint:\n+lint: fmt\n',
+}
 
 describe('needs', () => {
   const cases: {
@@ -61,7 +67,7 @@ describe('needs', () => {
       message: string
       links?: string[]
       command?: string
-      standardAnswer?: { ref: string; take: string; keep: string }
+      standardAnswer?: { ref: string; take: string; keep: string; files: StandardFile[] }
       place: string
     }
   }[] = [
@@ -138,7 +144,7 @@ describe('needs', () => {
               ref: 'v3',
               leftOut: ['Makefile', 'check.yaml'],
               behind: [
-                { path: 'Makefile', ref: 'v1', pullRequestURL: 'https://git.example/shop/api/pulls/3' },
+                makefileBehind,
                 { path: 'check.yaml', ref: 'v2', pullRequestURL: 'https://git.example/shop/api/pulls/3' },
               ],
             },
@@ -157,6 +163,10 @@ describe('needs', () => {
           ref: 'v3',
           take: 'kubectl -n shop annotate container api c4.factory.io/standard-take=v3',
           keep: 'kubectl -n shop annotate container api c4.factory.io/standard-keep=v3',
+          files: [
+            makefileBehind,
+            { path: 'check.yaml', ref: 'v2', pullRequestURL: 'https://git.example/shop/api/pulls/3' },
+          ],
         },
         place: 'Container',
       },

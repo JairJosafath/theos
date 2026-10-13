@@ -16,7 +16,8 @@ func TestStandardBehindNeedsYou(t *testing.T) {
 			"the Standard changed too.",
 		Recommend: "Take the Standard's version: annotate the Container `c4.factory.io/standard-take=v1.2.0`.",
 		Why: "The Standard's fix (go-standard v1.2.0) reaches the app; the repository's own lines that overlap " +
-			"it are listed in the pull request and can be added back.",
+			"it are listed in the pull request and can be added back. What the Standard changed in each file, " +
+			"and the lines a take drops, is on the Container's page.",
 		Since: time.Unix(5, 0)}
 	if got != want {
 		t.Errorf("StandardBehindNeedsYou =\n%+v\nwant\n%+v", got, want)
