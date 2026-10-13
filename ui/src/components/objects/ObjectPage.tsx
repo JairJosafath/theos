@@ -124,6 +124,7 @@ function pageFor(
             containers={data.containers}
             briefs={data.briefs}
             writer={crewWriter}
+            briefWriter={writer}
           />
         )
       )
