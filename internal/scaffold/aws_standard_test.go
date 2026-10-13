@@ -22,8 +22,8 @@ var tsStandardFrameworks = []side{
 }
 
 // awsStandardShared lists the files aws-standard shares with ts-standard.
-// whole: its rendering for aws-lambda-ts is byte for byte ts-standard's for
-// node-cli. Else, and for every other AWS Framework, every line that
+// whole: its rendering for the TypeScript Frameworks (all but aws-lambda-go)
+// is byte for byte ts-standard's for node-cli. Else, and for aws-lambda-go, every line that
 // ts-standard renders the same for all its Frameworks is in aws-standard's
 // rendering, in the same order: aws-standard replaces only what ts-standard
 // varies per Framework, and adds what an AWS Framework needs.
@@ -38,8 +38,13 @@ var awsStandardShared = []struct {
 	{"docs/style/principles.md", false},
 }
 
-// awsFrameworks is every Framework aws-standard renders for.
-var awsFrameworks = []string{"aws-lambda-ts", "aws-lambda-go"}
+// awsFrameworks is every Framework aws-standard renders for, with a type it
+// supports.
+var awsFrameworks = []side{
+	{model.TypeFunction, "aws-lambda-ts"},
+	{model.TypeFunction, "aws-lambda-go"},
+	{model.TypeService, "aws-ec2-ts"},
+}
 
 func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
 	ts := make([]Result, 0, len(tsStandardFrameworks))
@@ -50,8 +55,9 @@ func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
 	node := ts[len(ts)-1]
 	const fix = "copy ts-standard's change into templates/aws-standard and name ts-standard's version " +
 		"in its docs/style/SOURCES.md"
-	for _, framework := range awsFrameworks {
-		_, aws := renderCombo(t, model.TypeFunction, []side{
+	for _, f := range awsFrameworks {
+		framework := f.Name
+		_, aws := renderCombo(t, f.Side, []side{
 			{model.SideFramework, framework},
 			{model.SideStandard, "aws-standard"},
 		})
@@ -61,7 +67,7 @@ func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
 				if !ok {
 					t.Fatalf("aws-standard writes no %s", s.path)
 				}
-				if s.whole && framework == "aws-lambda-ts" {
+				if s.whole && framework != "aws-lambda-go" {
 					if want := node.Files[s.path].Data; string(got.Data) != string(want) {
 						t.Errorf("aws-standard's %s differs from ts-standard's: %s", s.path, fix)
 					}
