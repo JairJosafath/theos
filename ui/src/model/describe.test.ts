@@ -84,6 +84,7 @@ describe('small helpers', () => {
     expect(describeContainerType('cli')).toBe('command-line tool')
     expect(describeContainerType('extension')).toBe('editor extension')
     expect(describeContainerType('operator')).toBe('Kubernetes operator')
+    expect(describeContainerType('function')).toBe('serverless function')
     expect(describeContainerType('plugin')).toBe('plugin')
     expect(describeContainerType(undefined)).toBe('unknown type')
   })

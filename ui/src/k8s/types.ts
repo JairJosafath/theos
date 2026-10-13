@@ -65,7 +65,7 @@ export interface ElementRef {
 }
 
 export type ContainerType =
-  'static-site' | 'service' | 'job' | 'worker' | 'mobile-app' | 'cli' | 'extension' | 'operator'
+  'static-site' | 'service' | 'job' | 'worker' | 'mobile-app' | 'cli' | 'extension' | 'operator' | 'function'
 export type ContainerPhase = 'Pending' | 'Scaffolding' | 'Ready' | 'Failed'
 export type SessionPhase = 'Active' | 'Stale'
 export type Actor = 'agent' | 'human'
