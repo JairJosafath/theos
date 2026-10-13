@@ -1,0 +1,23 @@
+# #1062: docs/well-architected.md per Framework, rendered by internal/scaffold (aws-standard v1.2.1)
+# diff of aws-lambda-go's render, v1.2.0 -> v1.2.1; aws-lambda-ts and aws-ec2-ts render byte for byte the same (cmp)
+108,109c108,112
+< - Cold starts: SDK clients at module scope, small bundles (esbuild,
+<   minified, only the clients used), no heavy work at import.
+---
+> - Cold starts: one static binary (`go build`, `CGO_ENABLED=0`, `-ldflags
+>   '-s -w'`, `-tags lambda.norpc`) named `bootstrap` on `provided.al2023`
+>   for `arm64`; SDK clients made once in `main` or at package scope, before
+>   `lambda.Start`, never per request; only the service packages used
+>   (`service/dynamodb`), and no heavy work in `init`.
+139c142
+<   start-up, small bundles.
+---
+>   start-up, a small static binary.
+
+$ go test ./internal/scaffold/ -run TestAWSStandardWellArchitectedFitsTheLanguage -v
+--- PASS: TestAWSStandardWellArchitectedFitsTheLanguage (0.01s)
+    --- PASS: TestAWSStandardWellArchitectedFitsTheLanguage/aws-lambda-ts (0.00s)
+    --- PASS: TestAWSStandardWellArchitectedFitsTheLanguage/aws-lambda-go (0.00s)
+    --- PASS: TestAWSStandardWellArchitectedFitsTheLanguage/aws-ec2-ts (0.00s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.010s

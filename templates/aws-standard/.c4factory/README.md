@@ -36,8 +36,10 @@ v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
   "function" where they mean any code, and every Framework's
   `infra/standard.test.ts` reads tags with extra keys (an Auto Scaling
   group's `PropagateAtLaunch`) and lets a `Deny` statement name every action
-  (a bucket refusing plain HTTP). A Framework added later gets its branches
-  in the version that adds it.
+  (a bucket refusing plain HTTP). Since v1.2.1 `docs/well-architected.md`
+  gives `aws-lambda-go` cold-start advice for a `go build` binary instead of
+  esbuild's, and has the branch for `aws-lambda-py`. A Framework added later
+  gets its branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
