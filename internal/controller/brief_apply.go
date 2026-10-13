@@ -406,7 +406,8 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 		},
 	}
 	if run.released[c.Name] {
-		releaseSpec(&crew.Spec, briefRelease(brief, c.Name))
+		releaseSpec(&crew.Spec)
+		briefTarget(crew, briefRelease(brief, c.Name))
 	}
 	if brief.Spec.Paused {
 		// A round that was running when the Brief paused makes its Crews

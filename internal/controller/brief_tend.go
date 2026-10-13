@@ -180,6 +180,31 @@ func (r *BriefReconciler) standardBehind(ctx context.Context, brief *c4v1alpha1.
 	return out, nil
 }
 
+// heldTargets are the status.needsYou items of the Crews the Brief made whose
+// release target was changed under it (briefTarget): only a person knows
+// which repository is right.
+func (r *BriefReconciler) heldTargets(ctx context.Context, brief *c4v1alpha1.Brief) ([]model.NeedsYou, error) {
+	var crews c4v1alpha1.CrewList
+	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace),
+		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		return nil, err
+	}
+	var out []model.NeedsYou
+	for _, crew := range crews.Items {
+		d := targetDiffers(&crew)
+		if d == nil {
+			continue
+		}
+		n := model.ReleaseTargetNeedsYou(*d)
+		if cond := meta.FindStatusCondition(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget); cond != nil &&
+			cond.Status == metav1.ConditionFalse {
+			n.Since = cond.LastTransitionTime.Time
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
 // filesBehind is the Container's StandardUpdated condition while its Standard
 // files wait on a person (FilesBehind), nil otherwise.
 func filesBehind(c *c4v1alpha1.Container) *metav1.Condition {
@@ -215,6 +240,11 @@ func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now
 		return att, time.Time{}, err
 	}
 	att = model.WithNeedsYou(att, behind)
+	held, err := r.heldTargets(ctx, brief)
+	if err != nil {
+		return att, time.Time{}, err
+	}
+	att = model.InsteadOf(att, held)
 	var next time.Time
 	attention := make([]c4v1alpha1.BriefHealing, 0, len(att.Healing))
 	for _, h := range att.Healing[:min(len(att.Healing), maxAttention)] {

@@ -942,7 +942,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   `TargetDiffersFromBrief`, a Warning Event `ReleaseTargetDiffers`), and the
   Brief lists the Crew in `status.needsYou` until the Brief's entry or the
   Crew is changed to match; a changed entry is written to the Crew, as the
-  newest act on the owner. `status.apps` and the Brief's card show
+  newest act on the owner. A Crew from before the annotation is adopted when
+  it publishes nowhere or where the entry says, and held otherwise; a removed
+  entry leaves the Crew its target and drops the annotation, so the Crew's
+  own spec is the target again. `status.apps` and the Brief's card show
   each app's latest release and where it went, and say plainly when releases
   are off and how to turn them on. See
   [plans/done/brief-releases.md](plans/done/brief-releases.md) and
