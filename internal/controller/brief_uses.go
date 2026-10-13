@@ -82,9 +82,10 @@ func (r *BriefReconciler) usedModules(ctx context.Context, run *roundApply, issu
 			out.waits = append(out.waits, fmt.Sprintf("%s's first release", name))
 		case release == nil || (want != "" && release.Tag != want):
 			out.waits = append(out.waits, fmt.Sprintf("%s's release %s", name, want))
-		case release.GoModule == nil || release.GoModule.State == moduleStateFailed:
+		case release.GoModule == nil || release.GoModule.State == model.ModuleStateFailed ||
+			release.GoModule.State == model.ModuleStateWaiting:
 			out.waits = append(out.waits, fmt.Sprintf("%s's release %s to publish its Go module", name, release.Tag))
-		case release.GoModule.State != moduleStatePublished:
+		case release.GoModule.State != model.ModuleStatePublished:
 			out.waits = append(out.waits, fmt.Sprintf("%s, whose release %s published no Go module: %s", name,
 				release.Tag, release.GoModule.Message))
 		default:

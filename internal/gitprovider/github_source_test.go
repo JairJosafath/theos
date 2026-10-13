@@ -25,6 +25,7 @@ import (
 // served as GitHub's Git Data API does.
 type fakeGit struct {
 	defaultBranch string
+	private       bool
 	blobs         map[string][]byte
 	// trees holds each tree's direct entries, by name.
 	trees   map[string]map[string]githubTreeEntry
@@ -178,7 +179,7 @@ func (g *fakeGit) serve(f *fakeGitHub, w http.ResponseWriter, r *http.Request) {
 	repo := "/repos/" + fakeGitHubRepo
 	if r.URL.Path == repo {
 		f.json(w, http.StatusOK, map[string]any{"id": fakeGitHubRepoID, "full_name": fakeGitHubRepo,
-			"default_branch": g.defaultBranch})
+			"default_branch": g.defaultBranch, "private": g.private})
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, repo+"/git/")
@@ -548,6 +549,18 @@ func TestGitHubRepositoryRenamed(t *testing.T) {
 	}
 	if wantPaths := []string{"GET /repos/" + fakeGitHubRepo, "GET /repositories/4242"}; !reflect.DeepEqual(paths, wantPaths) {
 		t.Errorf("requests = %q, want %q", paths, wantPaths)
+	}
+}
+
+// TestGitHubSourcePrivate reads a private repository as private.
+func TestGitHubSourcePrivate(t *testing.T) {
+	f, g := newFakeGitHub(t)
+	if read, err := g.Repository(context.Background()); err != nil || read.Private {
+		t.Errorf("Repository() of a public repository = %+v, %v; want it public", read, err)
+	}
+	f.git.private = true
+	if read, err := g.Repository(context.Background()); err != nil || !read.Private {
+		t.Errorf("Repository() of a private repository = %+v, %v; want it private", read, err)
 	}
 }
 

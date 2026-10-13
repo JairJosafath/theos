@@ -199,6 +199,13 @@ prometheus:
   ##
   # annotations: {}
 
+## The Go proxy the operator asks whether go get finds a released Go module
+## whose path is outside c4factory.local/ (the operator's --go-proxy). off asks
+## none, for an install without that egress: the Crew's own GitHub source tag
+## is then the answer.
+##
+goProxy: https://proxy.golang.org
+
 ## Network policies for controlling traffic flow.
 ## Enable to restrict ingress to the controller manager.
 ##

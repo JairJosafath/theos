@@ -17,7 +17,9 @@ import (
 // refs, named by git's own SHA-1s so the operator's hashes match them.
 
 type fakeGitStore struct {
-	branch  string
+	branch string
+	// private is what GitHub says of the repository's visibility.
+	private bool
 	blobs   map[string][]byte
 	trees   map[string][]fakeTreeEntry
 	commits map[string]fakeGitCommit

@@ -554,9 +554,15 @@ model and context it needs.
   GitHub source folder it first waits for the source tag
   (`WaitsForRelease`, naming the `Published` condition's failure), since the
   proxy remembers a miss for a while; with no proxy, or a private target,
-  that tag is the answer. A version the proxy can't find is `NotFetchable`,
-  saying what Go needs, with a Warning Event `ModuleNotFetchable` once per
-  release; an unreachable proxy is `ProxyUnavailable`, asked again. A false
+  that tag is the answer (whether the target is private is read from GitHub
+  as the tag goes out, `publish.source.private`). A version the proxy can't
+  find is `NotFetchable`, saying what Go needs, with a Warning Event
+  `ModuleNotFetchable` once per release; an unreachable proxy is
+  `ProxyUnavailable`, asked again. `goModule.state` is then `Waiting` or
+  `NotFetchable`, and `goModule.checkedTime` says when the proxy was last
+  asked; an old `Published` with none is checked again. For such a path the
+  Normal Event `ModulePublished` comes when it turns True, at the proxy's
+  first 200, not at the upload. A false
   `ModulePublished` that waits on a person shows in *Needs you* and on the
   Brief. See [plans/module-fetchable.md](plans/module-fetchable.md).
 - **A release can be published to GitHub.** A Crew with
