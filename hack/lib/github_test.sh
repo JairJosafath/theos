@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, checking and merging, and giving the turn up merged, red, conflicting or out of time, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -738,6 +738,9 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
     local a
     [ "$1" = graphql ] && { echo "$PR"; return; }
     # compare BASE...HEAD: how far the head is behind its base, BEHIND (0 by default).
+    # The merge queue: TURNS, the comments on the report issue #7 (none by default).
+    [[ $1 == repos/*/issues\?state=open* ]] && { [ -z "${TURNS:-}" ] || echo 7; return; }
+    [[ " $* " == *" repos/$C4_GITHUB_REPO/issues/7/comments"* ]] && { echo "$TURNS"; return; }
     [[ $1 == repos/*/compare/* ]] && { echo "$1" >>"$T/compared"; [ "${BEHIND:-0}" != fail ] || return 1; echo "${BEHIND:-0}"; return; }
     for a in "$@"; do case $a in repos/*/issues/*) a=${a##*/}; [[ " $* " == *" .state "* ]] && { [ -e "$T/open-$a" ] && echo open || echo closed; } || cat "$T/body-$a" 2>/dev/null; return 0 ;; esac; done
     return 1
@@ -791,13 +794,148 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   rm -f "$T/merged" "$T/compared"
   out=$(BEHIND=3 PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: refuses a pull request behind main" "$? $out $(cat "$T/merged" 2>/dev/null)" \
-    '1 github: #16 is 3 commit(s) behind main: merge main into its branch (git fetch origin && git merge origin/main), rerun make check, push, and merge again '
+    '1 github: #16 is 3 commit(s) behind main: land it (hack/lib/github.sh land 16), which merges main in, reruns make check and merges in its turn '
   check "merge: compares main with the head it merges" "$(cat "$T/compared")" "repos/$C4_GITHUB_REPO/compare/main...h1"
   out=$(BEHIND=fail PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: refuses when GitHub can't say whether it is behind" "$? $out $(cat "$T/merged" 2>/dev/null)" \
     '1 github: #16: could not ask GitHub whether it is behind main; merge refused '
   out=$(BEHIND=0 PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: merges a pull request that contains main" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  # While another pull request holds the merge turn, only that one merges.
+  turn() { echo "{\"id\":$1,\"updated_at\":\"$3\",\"body\":\"<!-- c4-land -->\\n**heron-$2** lands pull request \`$2\` · host \`h\` · pid \`1\`\"}"; }
+  old=$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)
+  rm -f "$T/merged"
+  out=$(TURNS="[[$(turn 1 20 "$now"),$(turn 2 16 "$now")]]" PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
+  check "merge: refuses while another pull request holds the merge turn" "$? $out $(cat "$T/merged" 2>/dev/null)" \
+    '1 github: #16: it is #20'"'"'s turn to merge (heron-20 lands #20 (host h), heartbeat 0m ago); land with hack/lib/github.sh land 16, which waits for its turn '
+  out=$(TURNS="[[$(turn 1 20 "$old"),$(turn 2 16 "$now")]]" PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
+  check "merge: its own turn merges, an abandoned one ahead is no turn" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  rm -f "$T/merged"
+  out=$(TURNS='[[]]' PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
+  check "merge: nobody's turn merges" "$? | $(cat "$T/merged")" "0 | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  exit $fail
+) || fail=1
+
+# land: the merge turn. A fake GitHub keeps the report issue #7's comments in
+# $T/q/ID.json; pull request #40's branch feat is in a clone of a bare origin.
+(
+  Q=$T/q
+  rm -rf "$Q" "$T/origin.git" "$T/land"
+  mkdir -p "$Q"
+  stamp() { date -u -d "${1:-now}" +%Y-%m-%dT%H:%M:%SZ; }
+  # put ID PR [WHEN]: a merge-turn comment of heron-PR, edited WHEN (default now).
+  put() { jq -n --argjson id "$1" --arg u "$(stamp "${3:-now}")" --arg b "$GH_LAND_MARKER"$'\n'"**heron-$2** lands pull request \`$2\` · host \`h\` · pid \`1\`" \
+    '{id: $id, updated_at: $u, body: $b}' >"$Q/$1.json"; }
+  gh_api() {
+    local url= a m=GET q= data
+    for a in "$@"; do case $a in repos/*) url=$a ;; POST | PATCH | DELETE) m=$a ;; esac; done
+    while [ $# -gt 0 ]; do [ "$1" = --jq ] && q=$2; shift; done
+    echo "$m $url" >>"$T/calls"
+    case "$m $url" in
+      "GET $R/issues?state=open&labels=maintainer%2Freport"*) data='[{"number":7}]' ;;
+      "GET $R/issues/7/comments"*) data=$(cat "$Q"/*.json 2>/dev/null | jq -sc '[sort_by(.id)]') ;;
+      "POST $R/issues/7/comments")
+        a=$(($(ls "$Q" | sed 's/\.json//' | sort -n | tail -1) + 1))
+        jq -c --argjson id "$a" --arg u "$(stamp)" '{id: $id, updated_at: $u, body}' >"$Q/$a.json"
+        data="{\"id\":$a}" ;;
+      "PATCH $R/issues/comments/"*)
+        a=${url##*/}; [ -e "$Q/$a.json" ] || { echo "HTTP 404" >&2; return 1; }
+        jq -c --argjson id "$a" --arg u "$(stamp)" '{id: $id, updated_at: $u, body}' >"$Q/$a.json" ;;
+      "DELETE $R/issues/comments/"*)
+        a=${url##*/}; [ -e "$Q/$a.json" ] || { echo "HTTP 404" >&2; return 1; }
+        rm "$Q/$a.json" ;;
+      "GET $R/pulls/40") data=$(jq -nc --arg s "$(git -C "$T/origin.git" rev-parse feat)" '{state: "open", base: {ref: "main"}, head: {ref: "feat", sha: $s}}') ;;
+      *) return 1 ;;
+    esac
+    [ -n "${data:-}" ] || return 0
+    if [ -n "$q" ]; then jq -r "$q" <<<"$data"; else echo "$data"; fi
+  }
+  gh_merge() { echo "merge $1 at $(git -C "$GH_LIB_ROOT" rev-parse HEAD)" >>"$T/landed"; }
+  g() { git -C "$T/land" -c user.name=t -c user.email=t@t "$@"; }
+  git init -q --bare -b main "$T/origin.git"
+  git clone -q "$T/origin.git" "$T/land" 2>/dev/null
+  g commit -q --allow-empty -m init && g push -q origin HEAD:main
+  g checkout -q -b feat && echo feat >"$T/land/feat" && g add feat && g commit -q -m feat && g push -q -u origin feat
+  # main moves on: another pull request merged.
+  git clone -q "$T/origin.git" "$T/other" 2>/dev/null
+  echo other >"$T/other/other" && git -C "$T/other" add other && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m other && git -C "$T/other" push -q origin main
+  # The fake make: records it ran, sleeps CHECK_SLEEP, fails when $T/red exists.
+  printf '#!/bin/sh\necho "$*" >>"%s/checked"\nsleep "${CHECK_SLEEP:-0}"\n[ ! -e "%s/red" ]\n' "$T" "$T" >"$T/bin/check-make"
+  chmod +x "$T/bin/check-make"
+  export C4_MAKE=$T/bin/check-make GH_LIB_ROOT=$T/land GH_PENDING_DIR=$T/land/.relay GH_LAND_POLL=0.2 GH_LAND_SETTLE=0
+  queue() { ls "$Q" | sed 's/\.json//' | sort -n | tr '\n' ' '; }
+
+  # Nobody holds it: take, merge main in, check, push, merge, give it up.
+  : >"$T/calls"
+  out=$(gh_land 40 2>&1)
+  check "land: merges main in, checks, pushes and merges" "$? | $(cat "$T/landed") | $(cat "$T/checked")" \
+    "0 | merge 40 at $(git -C "$T/origin.git" rev-parse feat) | -C $T/land check"
+  check "land: the pushed head has main merged in" "$(git -C "$T/origin.git" merge-base --is-ancestor main feat && echo yes)" yes
+  check "land: gives the turn up" "$(queue)" ""
+  check "land: its turn named the agent, pull request and host" "$(grep -c '^POST .*/issues/7/comments' "$T/calls") $(grep -c '^DELETE ' "$T/calls")" "1 1"
+
+  # Another holds it: wait, first come first served, until it is given up.
+  rm -f "$T/landed" "$T/checked"
+  put 1 41; put 2 42
+  (sleep 1; rm "$Q/1.json"; sleep 1; rm "$Q/2.json") &
+  t0=$(date +%s)
+  out=$(gh_land 40 2>&1); rc=$?
+  wait
+  check "land: waits for those ahead" "$rc $(($(date +%s) - t0 >= 2)) $(cat "$T/landed" | cut -d' ' -f1-2)" "0 1 merge 40"
+  grep -q '#40 waits for its turn to land: 2 ahead; heron-41 lands #41 (host h), heartbeat 0m ago' <<<"$out"; check "land: says who is ahead" $? 0
+  grep -q '#40 waits for its turn to land: 1 ahead; heron-42 lands #42' <<<"$out"; check "land: says when the queue moves" $? 0
+  check "land: gives the turn up after waiting" "$(queue)" ""
+
+  # An abandoned turn (no heartbeat for C4_LAND_TTL) is dropped, not waited on.
+  rm -f "$T/landed"
+  put 5 41 '-1 hour'
+  out=$(gh_land 40 2>&1)
+  check "land: takes over an abandoned turn" "$? $(cut -d' ' -f1-2 "$T/landed") | $(queue)" "0 merge 40 | "
+  grep -q 'dropped an abandoned merge turn: heron-41 lands #41 (host h), heartbeat 60m ago' <<<"$out"; check "land: says it dropped it" $? 0
+
+  # Heartbeats: while it waits (whole seconds) and while make check runs.
+  put 6 41
+  : >"$T/calls"
+  GH_LAND_BEAT=1 gh_land 40 --wait 3s >/dev/null 2>&1
+  check "land: beats while it waits" "$? $(($(grep -c '^PATCH ' "$T/calls") >= 1))" "4 1"
+  rm "$Q/6.json" "$T/landed"
+  : >"$T/calls"
+  out=$(GH_LAND_BEAT=0.2 CHECK_SLEEP=1.5 gh_land 40 2>&1)
+  check "land: beats while make check runs" "$? $(($(grep -c '^PATCH ' "$T/calls") >= 3))" "0 1"
+
+  # A red check gives the turn up, says so, and merges nothing.
+  rm -f "$T/landed"
+  git -C "$T/other" -c user.name=t -c user.email=t@t commit -q --allow-empty -m again && git -C "$T/other" push -q origin main
+  touch "$T/red"
+  out=$(gh_land 40 2>&1)
+  check "land: a red check fails, merges nothing, gives the turn up" "$? $(cat "$T/landed" 2>/dev/null) | $(queue)" "1  | "
+  grep -q '#40: make check failed (exit 1) with origin/main merged in' <<<"$out"; check "land: says the check failed" $? 0
+  rm "$T/red"
+
+  # A conflict with main is aborted, gives the turn up and merges nothing.
+  echo main >"$T/other/feat" && git -C "$T/other" add feat && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m clash && git -C "$T/other" push -q origin main
+  out=$(gh_land 40 2>&1)
+  check "land: a conflict fails, merges nothing, gives the turn up" "$? $(cat "$T/landed" 2>/dev/null) | $(queue) | $(g status --porcelain --untracked-files=no)" "1  |  | "
+  grep -q '#40: merging origin/main into feat conflicts' <<<"$out"; check "land: says it conflicts" $? 0
+  g reset -q --hard origin/feat
+
+  # Not its turn within --wait: gives its place up, exit 4.
+  put 8 41
+  out=$(gh_land 40 --wait 1s 2>&1)
+  check "land: gives up after --wait" "$? $(queue)" "4 8 "
+  grep -q '#40 gave up its place after 1s: still 1 ahead; heron-41 lands #41' <<<"$out"; check "land: says it gave up" $? 0
+  rm "$Q/8.json"
+
+  # Refusals before it queues.
+  g checkout -q -b elsewhere
+  out=$(gh_land 40 2>&1)
+  check "land: refuses from another branch" "$? $out | $(queue)" "1 github: #40's branch is feat, but this checkout is on elsewhere: land it from its own checkout | "
+  g checkout -q feat
+  echo dirty >"$T/land/feat"
+  out=$(gh_land 40 2>&1)
+  check "land: refuses uncommitted changes" "$? $(queue)" "1 "
+  g checkout -q -- feat
+  gh_land x 2>/dev/null; check "land: bad argument" $? 64
   exit $fail
 ) || fail=1
 exit $fail
