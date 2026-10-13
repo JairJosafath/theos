@@ -84,6 +84,10 @@ var templateCombos = []struct {
 		{model.SideFramework, "aws-ec2-ts"},
 		{model.SideStandard, "aws-standard"},
 	}},
+	{"aws lambda function in go", "function", []side{
+		{model.SideFramework, "aws-lambda-go"},
+		{model.SideStandard, "aws-standard"},
+	}},
 	{"hello", "cli", []side{
 		{model.SideFramework, "hello"},
 		{model.SideStandard, "hello-standard"},

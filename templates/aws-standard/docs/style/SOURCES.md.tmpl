@@ -13,6 +13,15 @@ fetched again for them: check one before relying on a detail it alone gives.
 The cross-language sources were read on 2026-09-30 for another
 Standard, whose `principles.md` ts-standard adapts; they were not read again.
 Version or date as shown on the page; "live" when the page shows none.
+{{- if eq .Framework "aws-lambda-go" }}
+
+For the Go function, `go.md` and `.golangci.yml` are go-standard's, copied
+from go-standard v1.2.1, and a test in C4 Factory keeps them equal; its Go
+sources were read on 2026-10-02 for go-standard and are listed in its own
+`SOURCES.md`. The Go pages of the AWS docs below are the references the
+digests follow, not fetched for them: check one before relying on a detail
+it alone gives.
+{{- end }}
 
 ## TypeScript
 
@@ -55,6 +64,33 @@ Version or date as shown on the page; "live" when the page shows none.
 | CDK Nag README and RULES.md (AwsSolutions and Serverless packs) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md                                          | cdk-nag 3.0.2, read from the package |
 | cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                                        | 1.57.2 (PyPI, 2026-10-13)            |{{ end }}
 
+{{ if eq .Framework "aws-lambda-go" -}}
+## Go on AWS
+
+| Source                                                                                                                | Version / date |
+| --------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Building Lambda functions with Go — https://docs.aws.amazon.com/lambda/latest/dg/lambda-golang.html                   | live           |
+| Lambda Go handler — https://docs.aws.amazon.com/lambda/latest/dg/golang-handler.html                                  | live           |
+| Deploy Go Lambda functions with .zip file archives — https://docs.aws.amazon.com/lambda/latest/dg/golang-package.html | live           |
+| AWS SDK for Go v2, developer guide — https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/                       | live           |
+| aws-lambda-go — https://github.com/aws/aws-lambda-go                                                                  | v1.55.1        |
+
+{{ end -}}
+{{ if eq .Framework "aws-lambda-go" -}}
+## Tools
+
+The versions pinned in the Framework's `package.json` and `package-lock.json`:
+TypeScript 6.0.3 (typescript-eslint 8.71.0 supports `<6.1.0`, so not 7.x),
+ESLint 10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9,
+vitest 5.0.3, @types/node 24.19.1, aws-cdk-lib 2.273.0, constructs 10.8.1,
+aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15. In `src/go.mod` and
+`src/go.sum`: Go 1.26, github.com/aws/aws-lambda-go 1.55.1,
+github.com/aws/aws-sdk-go-v2 1.47.3, its `config` 1.33.9 and
+`service/dynamodb` 1.70.3. golangci-lint is the runner's (v2.14). The
+`Makefile` runs cfn-lint 1.57.2 with uv. The CDK Nag rules these docs name
+were read from cdk-nag 3.0.2's `RULES.md`, and `cdk.json`'s feature flags are
+the ones `cdk init` of aws-cdk 2.1145.0 writes.
+{{- else -}}
 ## Tools
 
 The versions pinned in the Framework's `package.json` and `package-lock.json`:
@@ -66,6 +102,7 @@ constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
 @types/aws-lambda 8.10.164.{{ end }} The `Makefile` runs cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
+{{- end }}
 
 ## Cross-language (read 2026-09-30)
 

@@ -1,12 +1,17 @@
-# make check in a scaffolded aws-ec2-ts + aws-standard Container (issue #1032)
-# go run ./hack/render -out /tmp/aws-1032 -type service Framework=aws-ec2-ts Standard=aws-standard
+# make check in a scaffolded aws-ec2-ts + aws-standard Container (issue #1032), after merging main (aws-standard v1.2.0)
+# go run ./hack/render -out /tmp/aws-1032-ec2 -type service Framework=aws-ec2-ts Standard=aws-standard
 # then, with no AWS variables, an empty HOME, Node v24.21.0, uv 0.12.23:
 # env -i PATH=$PATH HOME=/tmp/aws-1032-home npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/uv-cache make check
 # on 2026-10-13
 
 npm ci --no-audit --no-fund
 
-added 171 packages in 10s
+added 171 packages in 22s
+npm notice
+npm notice New major version of npm available! 11.19.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
@@ -14,30 +19,44 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 /tmp/aws-1032
+ RUN  v5.0.3 /tmp/aws-1032-ec2
 
- ✓ src/items.test.ts (25 tests) 9ms
- ✓ src/api.test.ts (13 tests) 9ms
- ✓ src/item_store.test.ts (4 tests) 13ms
- ✓ src/server.test.ts (6 tests) 63ms
+ ✓ src/items.test.ts (25 tests) 11ms
+ ✓ src/api.test.ts (13 tests) 10ms
+ ✓ src/item_store.test.ts (4 tests) 7ms
+ ✓ src/server.test.ts (6 tests) 60ms
 Bundling asset test/Server/Stage...
 Bundling asset sample-app/Server/Stage...
- ✓ infra/service_stack.test.ts (10 tests) 1140ms
- ✓ infra/standard.test.ts (8 tests) 1416ms
+ ✓ infra/service_stack.test.ts (10 tests) 1104ms
+ ✓ infra/standard.test.ts (8 tests) 1333ms
 
  Test Files  6 passed (6)
       Tests  66 passed (66)
-   Start at  11:46:38
-   Duration  2.46s (tests 55%, import 27%, transform 17%, worker 1%)
+   Start at  12:06:28
+   Duration  2.13s (tests 62%, import 30%, transform 7%, worker 1%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet
 Bundling asset sample-app/Server/Stage...
 uvx cfn-lint==1.57.2 --ignore-checks W3005 -- cdk.out/*.template.json
+Downloading networkx (2.0MiB)
+Downloading cfn-lint (5.4MiB)
+Downloading sympy (6.0MiB)
+ Downloaded networkx
+ Downloaded cfn-lint
+ Downloaded sympy
+Installed 9 packages in 32ms
 exit=0
 
-# The aws-lambda-ts + aws-standard copy, rendered the same way with -type function, after the Standard's v1.1.0 changes:
+# The other aws-standard Frameworks, rendered the same way (-type function), on v1.2.0:
+# aws-lambda-ts:
  Test Files  5 passed (5)
       Tests  50 passed (50)
+uvx cfn-lint==1.57.2 --ignore-checks W3005 -- cdk.out/*.template.json
+exit=0
+# aws-lambda-go (golangci-lint 2.13.1, go1.26.8):
+ok  	c4factory.local/webshop/sample-app	1.024s
+ Test Files  2 passed (2)
+      Tests  14 passed (14)
 uvx cfn-lint==1.57.2 --ignore-checks W3005 -- cdk.out/*.template.json
 exit=0

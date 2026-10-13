@@ -86,7 +86,8 @@ Push the branch `plan/<round>` with these files:
    `operator` on the Framework that supports it, such as `go-kubebuilder`,
    not a `job` or a `service` that happens to run in the cluster. An idea
    that asks for AWS Lambda, or serverless on AWS, is a `function` on the
-   Framework that supports it, such as `aws-lambda-ts`, with the Standard
+   Framework that supports it, such as `aws-lambda-ts` (TypeScript) or
+   `aws-lambda-go` (Go: pick it when the idea asks for Go), with the Standard
    that fits it; it takes no `computeRef` and no `deploymentRef`: its CDK
    app is its deployment, and the table it keeps data in is in that app,
    so plan no DataStore for it. An idea that asks for EC2, virtual machines

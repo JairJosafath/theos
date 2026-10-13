@@ -1,11 +1,12 @@
+{{- $go := eq .Framework "aws-lambda-go" -}}
 # AWS {{ if eq .Framework "aws-ec2-ts" }}EC2{{ else }}serverless{{ end }} digest
 
 Distilled from {{ if eq .Framework "aws-ec2-ts" }}the EC2 Auto Scaling user guide, the Application Load
-Balancer guide, the Amazon VPC guide (endpoints, flow logs){{ else }}the Lambda developer guide's best practices and Node.js
+Balancer guide, the Amazon VPC guide (endpoints, flow logs){{ else }}the Lambda developer guide's best practices and {{ if $go }}Go{{ else }}Node.js{{ end }}
 handler pages, API Gateway's HTTP API docs{{ end }}, DynamoDB's developer guide, the
-AWS SDK for JavaScript v3 guide, the CDK developer guide and its assertions
+AWS SDK for {{ if $go }}Go v2{{ else }}JavaScript v3{{ end }} guide, the CDK developer guide and its assertions
 module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
-`make check`: an ESLint rule or the compiler; `[nag: x]` = a CDK Nag rule that
+`make check`: {{ if $go }}a golangci-lint linter, an ESLint rule{{ else }}an ESLint rule{{ end }} or the compiler; `[nag: x]` = a CDK Nag rule that
 fails `cdk synth`; `[test]` = an assertion in `infra/standard.test.ts` or a
 stack's own test; `[review]` = check it yourself. `docs/well-architected.md`
 says why each rule matters.
@@ -43,6 +44,31 @@ says why each rule matters.
 
 {{ else }}## The handler
 
+{{ if $go -}}
+- `src/main.go`'s `main` builds what every invocation shares, then calls
+  `lambda.Start` with a function that takes the context and an
+  `*events.APIGatewayV2HTTPRequest` and returns an
+  `events.APIGatewayV2HTTPResponse`: a status code, headers and a string
+  body. API Gateway's HTTP API sends payload format 2.0. [review]
+- Load the SDK's configuration (`config.LoadDefaultConfig`) and create
+  clients in `main`, once per execution environment; warm invocations reuse
+  them and their connections. Never create a client inside the handler.
+  [review]
+- Read the environment only in `main`, once, and fail at start-up with a
+  message naming the variable when one is missing: log it and `os.Exit(1)`,
+  the one place an exit is right. [review]
+- Keep `main` to wiring; the work is in functions that take what they need
+  (a context, a store, a logger), so tests call them without Lambda. [review]
+- Pass the invocation's `ctx` to every SDK call: it carries the function's
+  deadline, so a slow call is cancelled before Lambda kills the environment.
+  [review]
+- No goroutine outlives the handler: work left running after it returns is
+  frozen with the environment and may never finish. [review]
+- Never `panic`, `log.Fatal` or `os.Exit` once `lambda.Start` runs: return
+  an error response instead. [review]
+- Don't keep request data in package-level variables: the next invocation in
+  the same environment would see it. [review]
+{{- else -}}
 - `src/handler.ts` exports `handler`, which takes an `APIGatewayProxyEventV2`
   and returns a result: a status code, headers and a string body. API
   Gateway's HTTP API sends payload format 2.0. [review]
@@ -60,13 +86,14 @@ says why each rule matters.
   [lint: no-restricted-properties]
 - Don't keep request data in module-scope variables: the next invocation in
   the same environment would see it. [review]
+{{- end }}
 
 {{ end }}## Requests and responses
 
 - Validate every input at the boundary: path parameters, query strings,
-  headers and the body, narrowed from `unknown` with runtime checks. {{ if eq .Framework "aws-ec2-ts" }}The load balancer passes on{{ else }}API
+  headers and the body, {{ if $go }}decoded into typed values and checked{{ else }}narrowed from `unknown` with runtime checks{{ end }}. {{ if eq .Framework "aws-ec2-ts" }}The load balancer passes on{{ else }}API
   Gateway delivers{{ end }} whatever the client sent. [review]
-{{ if eq .Framework "aws-ec2-ts" }}{{ else }}- A body can arrive base64-encoded (`isBase64Encoded`); decode it before
+{{ if eq .Framework "aws-ec2-ts" }}{{ else }}- A body can arrive base64-encoded (`{{ if $go }}IsBase64Encoded{{ else }}isBase64Encoded{{ end }}`); decode it before
   parsing. [review]
 {{ end }}- Answer expected failures with their status: 400 for bad input, 403, 404,
   409 for a conflict, 413 for too large, and 500 only for a bug or an
@@ -77,8 +104,14 @@ says why each rule matters.
 
 ## Logs
 
+{{ if $go -}}
+- Log structured JSON, one entry per line, through the `*slog.Logger` the
+  code is given (`slog.NewJSONHandler` on stderr, made in `main`); never
+  `fmt.Print` or the `log` package. [review]
+{{- else -}}
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `console`. [lint: no-console]
+{{- end }}
 - Each entry has a `level`, a `message` and the request id; errors say what
   failed and with which input, never a secret, a token or user data. [review]
 {{ if eq .Framework "aws-ec2-ts" }}- The server writes to standard output; systemd appends it to
@@ -97,9 +130,16 @@ says why each rule matters.
 
 - Model the table for its access patterns: every read on a request path is
   a `GetItem` or a `Query` on a key or an index, never a `Scan`. [review]
+{{ if $go -}}
+- Read and write items as `map[string]types.AttributeValue`, by hand or
+  with `feature/dynamodb/attributevalue`; validate what a read returns
+  before using it, since another writer may have stored something else.
+  [review]
+{{- else -}}
 - Use the document client (`@aws-sdk/lib-dynamodb`) so items are plain
   objects; validate what a read returns before using it, since another
   writer may have stored something else. [review]
+{{- end }}
 - Writes are idempotent: a `PutItem` of the whole item, or a conditional
   write (`ConditionExpression`) that refuses a second apply. Never a blind
   `ADD` on a retried request. [review]
@@ -111,6 +151,25 @@ says why each rule matters.
 - The table outlives the stack: `RemovalPolicy.RETAIN` and deletion
   protection. [test: says what happens to stateful resources; review]
 
+{{ if $go -}}
+## The AWS SDK for Go v2
+
+- Import only the service modules you use
+  (`github.com/aws/aws-sdk-go-v2/service/dynamodb`), never a whole SDK; they
+  are compiled into the one binary. [review]
+- `src/go.sum` pins every module; `make check` fails when `go mod tidy`
+  would change `src/go.mod` or `src/go.sum`. [lint: tidy-check]
+- A client's region and credentials come from the Lambda environment through
+  `config.LoadDefaultConfig`; never pass keys or set a region in code.
+  [review]
+- Wrap each service in one type that depends on an interface of only the
+  client methods it calls (`GetItem`, `PutItem`); tests fake that interface.
+  [review]
+- The SDK retries throttling and transient errors itself; don't add a retry
+  loop around it. Catch what you can answer (a failed condition is a 409,
+  found with `errors.As`), wrap the rest with `%w` and let it reach the
+  handler's 500. [review]
+{{- else -}}
 ## The AWS SDK v3
 
 - Import only the clients you use (`@aws-sdk/client-dynamodb`), never a
@@ -123,6 +182,7 @@ says why each rule matters.
 - The SDK retries throttling and transient errors itself; don't add a retry
   loop around it. Catch what you can answer (a failed condition is a 409),
   let the rest reach {{ if eq .Framework "aws-ec2-ts" }}`answer`'s{{ else }}the handler's{{ end }} 500. [review]
+{{- end }}
 
 {{ if eq .Framework "aws-ec2-ts" }}## The network and the load balancer
 
@@ -191,10 +251,19 @@ says why each rule matters.
 
 ## Lambda configuration in the stack
 
+{{ if $go -}}
+- A `Function` whose code is `Code.fromAsset` of `src/`, built by the
+  installed Go through local bundling (`go build` with `GOOS=linux`,
+  `GOARCH=arm64`, `CGO_ENABLED=0`, `-tags lambda.norpc`, `-trimpath`) into
+  one `bootstrap` binary; never Docker, which CI and agents lack. [review]
+- The `provided.al2023` runtime, handler `bootstrap`; `go1.x` is retired.
+  [nag: AwsSolutions-L1]
+{{- else -}}
 - `NodejsFunction`, bundled by the installed esbuild
   (`forceDockerBundling: false`); never Docker, which CI and agents lack.
   [review]
 - The newest Node.js runtime. [nag: AwsSolutions-L1]
+{{- end }}
 - `arm64` (Graviton): cheaper per millisecond and lower energy. [review]
 - Memory and timeout set for the work, the timeout under API Gateway's 30
   seconds. [review]
@@ -228,9 +297,17 @@ says why each rule matters.
 - Stacks are tested with `Template.fromStack` from `aws-cdk-lib/assertions`:
   `hasResourceProperties`, `resourceCountIs`, `Match`. Assert what the
   issue needs (a route, a grant, a setting), not the whole template. [review]
+{{ if $go -}}
+- Code that calls AWS is tested through its interface with a fake that
+  records the calls and answers from memory. [review]
+- Handlers are tested with `go test` by building an
+  `events.APIGatewayV2HTTPRequest` and checking the status code and body.
+  The stacks' tests build the function with Go, as synth does. [review]
+{{- else -}}
 - Code that calls AWS is tested through its interface with a fake that
   records commands and answers from memory. [review]
 {{ if eq .Framework "aws-ec2-ts" }}- Request handling is tested by calling `answer` with a request and checking
   the status code and body; `src/server.ts` over HTTP on a loopback port the
   system picks. [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
   the status code and body. [review]{{ end }}
+{{- end }}
