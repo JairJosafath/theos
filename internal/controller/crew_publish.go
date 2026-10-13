@@ -70,6 +70,15 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 	tasks []c4v1alpha1.Task) {
 	spec := crew.Spec.PublishReleases
 	release := status.LastRelease
+	if d := targetDiffers(crew); d != nil && release != nil &&
+		(release.Publish == nil || release.Publish.State != publishPublished) {
+		// Held, even at no target: the release waits, as a failed publish
+		// does, and goes out at the next poll after the Crew and its Brief
+		// agree.
+		r.setPublish(crew, status, publishPending, "", c4v1alpha1.ReasonTargetDiffersFromBrief,
+			model.ReleaseTargetPublishMessage(*d))
+		return
+	}
 	if spec == nil || release == nil {
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionPublished)
 		return
@@ -422,6 +431,45 @@ func uploadAsset(ctx context.Context, provider gitprovider.Provider, repo gitpro
 	defer func() { _ = body.Close() }()
 	_, err = target.UploadAsset(ctx, step.Release, asset.Name, size, body)
 	return nil, err
+}
+
+// eventReleaseTargetDiffers is the Warning Event of a Crew held because its
+// release target differs from its Brief's.
+const eventReleaseTargetDiffers = "ReleaseTargetDiffers"
+
+// releaseTarget sets the ReleaseTarget condition of a Crew whose Brief sets
+// where it publishes (AnnotationBriefPublishReleases), with a Warning Event
+// once per target the Crew is held at; a Crew without the annotation has no
+// condition.
+func (r *CrewReconciler) releaseTarget(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus) {
+	if _, ok := crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases]; !ok {
+		apimeta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+		r.targetSaid.Delete(crew.UID)
+		return
+	}
+	d := targetDiffers(crew)
+	if d == nil {
+		setCondition(&status.Conditions, crew.Generation, c4v1alpha1.ConditionReleaseTarget, metav1.ConditionTrue,
+			c4v1alpha1.ReasonReleaseTargetSetByBrief, model.ReleaseTargetSetByBrief(crew.Labels[c4v1alpha1.LabelBrief]))
+		r.targetSaid.Delete(crew.UID)
+		return
+	}
+	message := model.ReleaseTargetDiffersMessage(*d)
+	// The Reconciler remembers the target it warned about, as the last
+	// poll's status write can fail after its Event; after a restart the
+	// condition says whether it warned.
+	said := publishJSON(crew.Spec.PublishReleases)
+	last, remembered := r.targetSaid.Load(crew.UID)
+	cond := apimeta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+	warned := cond != nil && cond.Status == metav1.ConditionFalse && cond.Message == message
+	if remembered && last != said || !remembered && !warned {
+		logf.FromContext(ctx).Info("Release target differs from the Brief's", "brief", d.Brief,
+			"briefRepository", d.BriefRepo, "crewRepository", d.CrewRepo)
+		r.event(crew, corev1.EventTypeWarning, eventReleaseTargetDiffers, "PublishRelease", message)
+	}
+	r.targetSaid.Store(crew.UID, said)
+	setCondition(&status.Conditions, crew.Generation, c4v1alpha1.ConditionReleaseTarget, metav1.ConditionFalse,
+		c4v1alpha1.ReasonReleaseTargetDiffers, message)
 }
 
 // setPublish records how publishing the last release went, in its status and
