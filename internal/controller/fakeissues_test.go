@@ -112,6 +112,13 @@ func (g *fakeGit) addIssue(owner, name, title, body string, labels []string, blo
 	return n
 }
 
+// issueCount is how many issues a repository has, open or closed.
+func (g *fakeGit) issueCount(owner, name string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.issueState().issues[owner+"/"+name])
+}
+
 // issue returns a copy of an issue, with its blockers, assignees and comments.
 //
 //nolint:unparam // takes owner and name like the other helpers
