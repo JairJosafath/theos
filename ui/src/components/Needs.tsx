@@ -10,6 +10,7 @@ import type { Project } from '../k8s/types'
 import { hrefFor, SessionContext, type UrlState } from '../lib/hooks'
 import { byProject, type Need, type Place } from '../model/needs'
 import { SignInLink } from './Account'
+import { LeftOutFiles } from './bits'
 import { writeError, type WriteError } from './briefs/errors'
 import { FormError } from './briefs/PromptForm'
 import { ExternalLinkIcon } from './icons'
@@ -113,7 +114,8 @@ function NeedItem({
 }
 
 /**
- * The take and keep buttons of a Standard's files left out, with actions on
+ * The Standard's files left out, each with what the Standard changed in it,
+ * then the take and keep buttons, with actions on
  * and someone to make the write; otherwise the commands, and in OIDC mode with
  * nobody signed in a sign-in link.
  */
@@ -132,9 +134,12 @@ function Answers({
   const [error, setError] = useState<WriteError>()
   const signedOut = session?.mode === 'oidc' && !session.user
 
+  const files = answer.files.length ? <LeftOutFiles files={answer.files} className="need-why" /> : null
+
   if (!session?.actions || signedOut) {
     return (
       <>
+        {files}
         {signedOut ? (
           <p className="need-why">
             Sign in to take or keep them. <SignInLink />
@@ -162,6 +167,7 @@ function Answers({
 
   return (
     <>
+      {files}
       <div className="need-buttons">
         <button type="button" className="button button-small" onClick={() => send('take')} disabled={!!sending}>
           {sending === 'take' ? 'Asking…' : 'Take the Standard’s version'}

@@ -91,6 +91,23 @@ describe('the read-only object pages', () => {
     expect(html).toContain('href="/?ns=webshop&amp;kind=Container&amp;name=orders-api"')
     expect(text(html)).toContain('ruff.toml, .c4/checks/')
   })
+
+  it('shows the Standard’s change to each file left out on a Container’s page, with actions off', () => {
+    const data = demoStory(NOW)
+    const c = data.containers.find((x) => x.metadata.name === 'orders-api')!
+    c.status = {
+      ...c.status,
+      standard: {
+        name: 'python-standard',
+        ref: 'v1.3.0',
+        behind: [{ path: 'ruff.toml', ref: 'v1.1.0', change: '--- ruff.toml (v1.1.0)\n+++ ruff.toml (v1.3.0)\n+line-length = 120\n' }],
+      },
+    }
+    const html = page('Container', 'orders-api', data)
+    expect(text(html)).toContain('Standard files left out')
+    expect(html).toContain('<details class="left-out-change"><summary>What the Standard changed')
+    expect(html).toContain('+line-length = 120')
+  })
 })
 
 describe('the GitProvider page', () => {
