@@ -123,7 +123,12 @@ lesson gives the AWS templates.
    `AwsSolutions` pack applied as an Aspect, so an unsuppressed finding fails
    synth) and `cfn-lint` on `cdk.out/*.template.json`. A suppression needs a
    written reason, which CDK Nag already requires; the reviewer guide says to
-   check each one.
+   check each one. (Step 2: CDK Nag 3 has no Aspect; the pack is a
+   validation plugin, `Validations.of(app).addPlugins(new
+   AwsSolutionsChecks(app))`, and a finding still fails synth. A suppression
+   is `Validations.of(construct).acknowledge({ id, reason })`. cfn-lint
+   ignores only W3005, which CDK's own `DependsOn` on the function's role
+   trips.)
 6. **AWS defaults the Standard requires:** every stack tagged with project,
    system and container names; encryption at rest on; least-privilege IAM
    through CDK grants, never `*` actions; log retention set; removal policy

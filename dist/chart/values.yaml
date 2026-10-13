@@ -510,6 +510,13 @@ catalog:
         description: A command-line program in TypeScript for Node, bundled with esbuild into one file and packed with npm pack, with flags parsed by util.parseArgs and unit tests.
         supportedTypes: [cli]
     - kind: Framework
+      name: aws-lambda-ts
+      ref: v1.0.0
+      spec:
+        displayName: Serverless API on AWS (Lambda, TypeScript)
+        description: "A serverless HTTP API on AWS: a TypeScript Lambda behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK v3, and its CDK stack in infra/, which is its deployment."
+        supportedTypes: [function]
+    - kind: Framework
       name: python-cli
       ref: v1.0.0
       spec:
@@ -554,6 +561,17 @@ catalog:
         supportedTypes: [extension, static-site, cli]
         supportedFrameworks: [vscode-extension, react-vite, node-cli]
         protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
+        checksBeforeRelease: true
+    - kind: Standard
+      name: aws-standard
+      ref: v1.0.0
+      spec:
+        displayName: TypeScript on AWS quality standard
+        description: "ts-standard's lint and Prettier, plus cdk synth under CDK Nag's AwsSolutions pack, cfn-lint, the Standard's stack assertions, Well-Architected and serverless digests, role guides for agents and the make check CI. Nothing deploys."
+        supportedTypes: [function]
+        supportedFrameworks: [aws-lambda-ts]
+        # The CDK app's entry point and the Standard's stack rules are the contract too.
+        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, docs/well-architected.md, infra/main.ts, infra/standard.ts, tsconfig.json, vitest.config.mts, cdk.json]
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard

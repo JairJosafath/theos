@@ -1,0 +1,27 @@
+// What every stack of this Container gets from the Standard: the tags that
+// say whose it is, and CDK Nag's AWS Solutions checks, so an unacknowledged
+// finding fails `cdk synth`. Changing this file is the Standard's job, not a
+// task's.
+import { Stack, Tags, Validations } from 'aws-cdk-lib';
+import type { App } from 'aws-cdk-lib';
+import { AwsSolutionsChecks } from 'cdk-nag';
+
+/** The tags on every stack, and on every resource in it that takes tags. */
+export const STANDARD_TAGS: Readonly<Record<string, string>> = {
+  'c4factory:project': '{{ .Project }}',
+  'c4factory:system': '{{ .SoftwareSystem }}',
+  'c4factory:container': '{{ .Container }}',
+};
+
+/** Tags every stack in `app` and checks the app with CDK Nag's AWS Solutions rules. */
+export function applyStandard(app: App): void {
+  for (const stack of app.node.findAll().filter((node) => Stack.isStack(node))) {
+    for (const [key, value] of Object.entries(STANDARD_TAGS)) {
+      // The stack's own tags, which CloudFormation copies to what it creates,
+      // and each resource's in the template, for what it doesn't.
+      stack.tags.setTag(key, value);
+      Tags.of(stack).add(key, value);
+    }
+  }
+  Validations.of(app).addPlugins(new AwsSolutionsChecks(app));
+}

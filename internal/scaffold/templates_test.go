@@ -76,6 +76,10 @@ var templateCombos = []struct {
 		{model.SideStandard, "ts-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"aws lambda function", "function", []side{
+		{model.SideFramework, "aws-lambda-ts"},
+		{model.SideStandard, "aws-standard"},
+	}},
 	{"hello", "cli", []side{
 		{model.SideFramework, "hello"},
 		{model.SideStandard, "hello-standard"},
