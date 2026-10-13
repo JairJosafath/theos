@@ -47,7 +47,7 @@ network.
 
 ```bash
 make test                # Unit and envtest tests (real K8s API + etcd, no cluster needed)
-make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack and test
+make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack, ui-test and test
 make validate-yaml       # The YAML against the built-in schemas and our CRDs, offline
 make test-hack           # The shell tests of hack/ (hack/**/*_test.sh), all at once, about a minute
 make test-templates-operator  # The operator combo's make check before and after kubebuilder create api, then its make dist; not in make check
@@ -245,7 +245,10 @@ GitHub workflows never run on pull requests. Lint, tests and UI checks run
 after a merge to main, each only when its paths change, or on demand. No
 workflow starts a Kind cluster on its own: *Test Chart*, *E2E Tests* and
 *Verify Release* run only when a human dispatches them. A pushed tag runs *Release*, which builds and
-publishes and tests nothing. `make check` is the gate before a merge.
+publishes and tests nothing. `make check` is the gate before a merge; it runs
+`make ui-test` (the UI workflow's `npm run check`: typecheck, eslint, Prettier
+and its tests) too, so a UI change can't merge with what would turn *UI* red
+(#1006).
 
 ## Work on the factory: GitHub issues and the relay
 
