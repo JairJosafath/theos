@@ -146,7 +146,8 @@ func appMessage(app *c4v1alpha1.BriefApp, briefsCrew bool) string {
 	}
 }
 
-// crewReleaseChanges passes a Crew's creation, deletion, spec changes and
+// crewReleaseChanges passes a Crew's creation, deletion, spec changes, the
+// release target its Brief marked on it (briefTarget) and
 // changes to its latest release: all the Brief's app lines read from it.
 func crewReleaseChanges() builder.WatchesOption {
 	return builder.WithPredicates(predicate.Funcs{
@@ -154,6 +155,8 @@ func crewReleaseChanges() builder.WatchesOption {
 			oldCrew, ok1 := e.ObjectOld.(*c4v1alpha1.Crew)
 			newCrew, ok2 := e.ObjectNew.(*c4v1alpha1.Crew)
 			return !ok1 || !ok2 || oldCrew.Generation != newCrew.Generation ||
+				oldCrew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases] !=
+					newCrew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases] ||
 				!equality.Semantic.DeepEqual(oldCrew.Status.LastRelease, newCrew.Status.LastRelease)
 		},
 	})
