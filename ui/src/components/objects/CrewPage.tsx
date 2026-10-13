@@ -3,9 +3,12 @@
 // keeps it waiting), then who works and how many at once, its issues, and its
 // last release with its runs, Go module, publishing and bump issues. With the
 // UI server's actions on, the person pauses or resumes it, sets those and its
-// release settings, and re-runs a failed release's runs (CrewActions).
+// release settings, and re-runs a failed release's runs (CrewActions). Where
+// it publishes says so when its Brief sets that, and the form changes it on
+// the Brief.
 
-import type { CrewWriter } from '../../k8s/crews'
+import type { BriefWriter } from '../../k8s/briefs'
+import { briefTarget, type CrewWriter } from '../../k8s/crews'
 import type { Agent, Brief, Container, Crew, CrewRelease, Task } from '../../k8s/types'
 import { useActs } from '../../lib/hooks'
 import { crewSummary, issueList } from '../../model/crews'
@@ -25,6 +28,7 @@ export function CrewPage({
   containers,
   briefs,
   writer,
+  briefWriter,
 }: {
   crew: Crew
   agents: Agent[]
@@ -32,6 +36,7 @@ export function CrewPage({
   containers: Container[]
   briefs: Brief[]
   writer: CrewWriter
+  briefWriter?: BriefWriter
 }) {
   const acts = useActs()
   const ns = crew.metadata.namespace ?? ''
@@ -42,6 +47,8 @@ export function CrewPage({
   const system = container?.spec.softwareSystemRef.name
   const madeBy = briefs.find((b) => b.status?.created?.some((c) => c.kind === 'Crew' && c.name === name))
   const release = crew.status?.lastRelease
+  const target = briefTarget(crew)
+  const setBy = target && briefs.find((b) => (b.metadata.namespace ?? '') === ns && b.metadata.name === target.brief)
   const links: OutLink[] = []
   if (container?.status?.repositoryURL) links.push({ href: container.status.repositoryURL, label: 'Its repository' })
   if (release?.runURL) links.push({ href: release.runURL, label: `Release ${release.tag}’s CI run` })
@@ -129,7 +136,20 @@ export function CrewPage({
             ? 'The Crew tags a release once its milestone is done.'
             : 'The Crew tags no releases: a person tags them.'}
           {crew.spec.prepareReleases ? ' It files each release’s prepare issue.' : ''}
-          {crew.spec.publishReleases ? ` It publishes them to ${crew.spec.publishReleases.github.repository}.` : ''}
+          {target
+            ? null
+            : crew.spec.publishReleases
+              ? ` It publishes them to ${crew.spec.publishReleases.github.repository}.`
+              : ''}
+          {target ? (
+            <PublishSetBy
+              ns={ns}
+              crew={crew}
+              brief={target.brief}
+              held={target.held}
+              briefRepo={target.target?.github.repository}
+            />
+          ) : null}
         </p>
         {release ? (
           <ReleaseFacts release={release} failure={publishFailure(crew)} />
@@ -139,9 +159,46 @@ export function CrewPage({
         {acts === 'act' && release?.run === 'Failed' ? (
           <RerunButton key={`${release.tag}|${release.rerunTime ?? ''}`} crew={crew} writer={writer} />
         ) : null}
-        {acts === 'act' ? <ReleaseForm crew={crew} writer={writer} /> : null}
+        {acts === 'act' ? <ReleaseForm crew={crew} writer={writer} brief={setBy} briefWriter={briefWriter} /> : null}
       </section>
     </main>
+  )
+}
+
+/**
+ * Where a Crew publishes when its Brief sets it: "set by Brief <name>" with a
+ * link, or, for a Crew changed under its Brief, both targets and that it
+ * publishes nothing until they agree.
+ */
+function PublishSetBy({
+  ns,
+  crew,
+  brief,
+  held,
+  briefRepo,
+}: {
+  ns: string
+  crew: Crew
+  brief: string
+  held: boolean
+  briefRepo?: string
+}) {
+  const link = <a href={pageHref(ns, 'Brief', brief)}>Brief {brief}</a>
+  const own = crew.spec.publishReleases?.github.repository
+  if (!held) {
+    return (
+      <>
+        {own ? ` It publishes them to ${own}, set by ` : ' Where it publishes them is set by '}
+        {link}: change it there.
+      </>
+    )
+  }
+  return (
+    <>
+      {' '}
+      It publishes nothing for now: the Crew was changed to {own ? `publish to ${own}` : 'publish nowhere'}, but {link}{' '}
+      says {briefRepo ?? 'another target'}. Use one or the other; until they agree its releases wait.
+    </>
   )
 }
 

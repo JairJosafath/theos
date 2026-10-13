@@ -4,11 +4,74 @@
 // are accepted, so this file copies none of them: a refused write shows the API
 // server's message.
 
-import { RESOURCES, resourcePath, type Crew, type PublishSource } from './types'
+import {
+  RESOURCES,
+  findCondition,
+  resourcePath,
+  type Brief,
+  type BriefRelease,
+  type Crew,
+  type PublishSource,
+} from './types'
 import { errorFromResponse } from './watch'
 
 /** The annotation that asks the operator to re-run a failed release's runs, once per value. */
 export const RERUN_RELEASE = 'c4.factory.io/rerun-release'
+
+/** The label naming the Brief that made a Crew. */
+export const LABEL_BRIEF = 'c4.factory.io/brief'
+
+/** The annotation holding the release target a Crew's Brief last set on it (docs/plans/brief-release-target.md). */
+export const BRIEF_PUBLISH_RELEASES = 'c4.factory.io/brief-publish-releases'
+
+/** Where a Crew publishes its releases; undefined publishes nowhere. */
+export type PublishReleases = NonNullable<Crew['spec']['publishReleases']>
+
+/**
+ * A Crew whose Brief sets where it publishes, as its ReleaseTarget condition
+ * says: `set` while the two agree; `held` while the Crew was changed under the
+ * Brief and publishes nothing. `target` is the one the Brief last set,
+ * undefined when it can't be read.
+ */
+export interface BriefTarget {
+  brief: string
+  held: boolean
+  target?: PublishReleases
+}
+
+/** Who sets the Crew's release target: its Brief, or undefined for the Crew itself. */
+export function briefTarget(crew: Crew): BriefTarget | undefined {
+  const cond = findCondition(crew.status?.conditions, 'ReleaseTarget')
+  const brief = crew.metadata.labels?.[LABEL_BRIEF]
+  if (!cond || !brief) return undefined
+  let target: PublishReleases | undefined
+  try {
+    const mark = JSON.parse(crew.metadata.annotations?.[BRIEF_PUBLISH_RELEASES] ?? '') as Partial<PublishReleases>
+    if (mark?.github?.repository) target = mark as PublishReleases
+  } catch {
+    target = undefined
+  }
+  return { brief, held: cond.status === 'False', target }
+}
+
+/**
+ * The Brief's spec.releases with `container`'s entry set to `publish`, its
+ * requests kept, or without it when `publish` is undefined. Undefined when the
+ * Brief has no entry for it.
+ */
+export function briefReleases(
+  brief: Brief,
+  container: string,
+  publish: PublishReleases | undefined,
+): BriefRelease[] | undefined {
+  const releases = brief.spec.releases ?? []
+  const i = releases.findIndex((r) => r.container === container)
+  if (i < 0) return undefined
+  if (!publish) return releases.filter((_, j) => j !== i)
+  const { requests } = releases[i]
+  const entry: BriefRelease = { container, ...publish, ...(requests ? { requests } : {}) }
+  return releases.map((r, j) => (j === i ? entry : r))
+}
 
 /** A Crew's release settings as its form edits them; the token Secret by name only. */
 export interface CrewReleaseSettings {
@@ -80,22 +143,32 @@ export function releasePatch(crew: Crew, next: CrewReleaseSettings, from?: strin
     next.publish?.latest === now.publish?.latest &&
     next.publish?.source?.path === now.publish?.source?.path &&
     next.publish?.source?.tagPrefix === now.publish?.source?.tagPrefix
-  if (!same && next.publish) {
-    const { repository, tokenSecret, tagPrefix, latest, source } = next.publish
-    const value: NonNullable<Crew['spec']['publishReleases']> = {
-      github: { repository, tokenSecretRef: { name: tokenSecret } },
-    }
-    if (tagPrefix) value.tagPrefix = tagPrefix
-    if (!latest) value.latest = false
-    if (source) value.source = source.tagPrefix === undefined ? { path: source.path } : { ...source }
-    ops.push({ op: 'add', path: '/spec/publishReleases', value })
-  } else if (!same) {
-    ops.push({ op: 'remove', path: '/spec/publishReleases' })
-  }
+  if (!same) ops.push(...publishPatch(crew, publishValue(next.publish), from))
+  return ops
+}
+
+/** The settings form's publish fields as a Crew's spec.publishReleases. */
+export function publishValue(publish: CrewReleaseSettings['publish']): PublishReleases | undefined {
+  if (!publish) return undefined
+  const { repository, tokenSecret, tagPrefix, latest, source } = publish
+  const value: PublishReleases = { github: { repository, tokenSecretRef: { name: tokenSecret } } }
+  if (tagPrefix) value.tagPrefix = tagPrefix
+  if (!latest) value.latest = false
+  if (source) value.source = source.tagPrefix === undefined ? { path: source.path } : { ...source }
+  return value
+}
+
+/**
+ * The JSON patch that sets the Crew's spec.publishReleases to `value`, or
+ * removes it, after a test of `from` (the Crew's resourceVersion by default).
+ */
+export function publishPatch(crew: Crew, value: PublishReleases | undefined, from?: string): Op[] {
+  const ops: Op[] = [
+    value ? { op: 'add', path: '/spec/publishReleases', value } : { op: 'remove', path: '/spec/publishReleases' },
+  ]
   const resourceVersion = from ?? crew.metadata.resourceVersion
-  if (!same && resourceVersion !== undefined) {
+  if (resourceVersion !== undefined)
     ops.unshift({ op: 'test', path: '/metadata/resourceVersion', value: resourceVersion })
-  }
   return ops
 }
 

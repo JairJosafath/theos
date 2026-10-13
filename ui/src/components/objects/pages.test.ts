@@ -100,7 +100,13 @@ describe('the read-only object pages', () => {
       standard: {
         name: 'python-standard',
         ref: 'v1.3.0',
-        behind: [{ path: 'ruff.toml', ref: 'v1.1.0', change: '--- ruff.toml (v1.1.0)\n+++ ruff.toml (v1.3.0)\n+line-length = 120\n' }],
+        behind: [
+          {
+            path: 'ruff.toml',
+            ref: 'v1.1.0',
+            change: '--- ruff.toml (v1.1.0)\n+++ ruff.toml (v1.3.0)\n+line-length = 120\n',
+          },
+        ],
       },
     }
     const html = page('Container', 'orders-api', data)

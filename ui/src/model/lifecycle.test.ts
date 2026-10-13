@@ -403,6 +403,27 @@ describe('crewNextStep', () => {
     expect(crewNextStep(c, [])?.text).toMatch(/^Publishing v1\.2\.0 to acme\/api failed: bad token\. .*Secret gh/)
   })
 
+  it('says a Crew changed under its Brief publishes nothing until the two agree', () => {
+    const brief = { github: { repository: 'acme/api', tokenSecretRef: { name: 'gh' } } }
+    const c = crew(
+      {
+        phase: 'Idle',
+        conditions: [{ type: 'ReleaseTarget', status: 'False', reason: 'DiffersFromBrief', message: '' }],
+      },
+      { publishReleases: { github: { repository: 'acme/api-v2', tokenSecretRef: { name: 'gh' } } } },
+    )
+    c.metadata.labels = { 'c4.factory.io/brief': 'shop' }
+    c.metadata.annotations = { 'c4.factory.io/brief-publish-releases': JSON.stringify(brief) }
+    expect(crewNextStep(c, [])).toEqual({
+      text: expect.stringMatching(
+        /differs from Brief shop’s: the Crew says acme\/api-v2, the Brief acme\/api\. Nothing is published/,
+      ),
+      page: { kind: 'Brief', name: 'shop', label: 'Open Brief shop' },
+    })
+    c.status!.conditions = [{ type: 'ReleaseTarget', status: 'True', reason: 'SetByBrief', message: '' }]
+    expect(crewNextStep(c, [])).toBeUndefined()
+  })
+
   it('says when Go can’t take the module', () => {
     const c = crew({
       phase: 'Idle',

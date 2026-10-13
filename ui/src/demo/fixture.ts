@@ -648,51 +648,70 @@ export function demoStory(now: number): StoryData {
     },
     status,
   })
+  // Where orders-api publishes: the Brief's spec.releases entry, which the Brief set on its Crew.
+  const ordersPublish = {
+    github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'orders-api-github' } },
+  }
+  const ordersCrew = (c: Crew): Crew => ({
+    ...c,
+    metadata: {
+      ...c.metadata,
+      labels: { 'c4.factory.io/brief': 'webshop' },
+      annotations: { 'c4.factory.io/brief-publish-releases': JSON.stringify(ordersPublish) },
+    },
+  })
   const crews: Crew[] = [
-    crew(
-      'orders-api',
-      'Orders API crew',
-      false,
-      {
-        phase: 'Working',
-        activeTasks: ['orders-api-14', 'orders-api-15'],
-        ready: [],
-        waiting: [16, 17, 18],
-        lastPolled: ago(30),
-        conditions: [
-          cond(
-            'Ready',
-            'True',
-            'Working',
-            'Tasks orders-api-14 and orders-api-15 are working on issues #14 and #15',
-            at(25),
-          ),
-          cond(
-            'Released',
-            'True',
-            'Published',
-            'Released v0.2.0 and published it to webshop-co/orders-api',
-            ago(3 * 3600),
-          ),
-        ],
-        // The release its Brief's app shows.
-        lastRelease: {
-          tag: 'v0.2.0',
-          commit: 'a04e6f1c2d3b4e5f60718293a4b5c6d7e8f90a1b',
-          time: ago(3 * 3600),
-          run: 'Succeeded',
-          runURL: `${GITEA_WEB}/webshop/orders-api/actions/runs/12`,
-          publish: { state: 'Published', url: 'https://github.com/webshop-co/orders-api/releases/tag/v0.2.0' },
-          goModule: { state: 'NotGo', message: 'No go.mod at the repository root at v0.2.0' },
+    ordersCrew(
+      crew(
+        'orders-api',
+        'Orders API crew',
+        false,
+        {
+          phase: 'Working',
+          activeTasks: ['orders-api-14', 'orders-api-15'],
+          ready: [],
+          waiting: [16, 17, 18],
+          lastPolled: ago(30),
+          conditions: [
+            cond(
+              'Ready',
+              'True',
+              'Working',
+              'Tasks orders-api-14 and orders-api-15 are working on issues #14 and #15',
+              at(25),
+            ),
+            cond(
+              'Released',
+              'True',
+              'Published',
+              'Released v0.2.0 and published it to webshop-co/orders-api',
+              ago(3 * 3600),
+            ),
+            cond(
+              'ReleaseTarget',
+              'True',
+              'SetByBrief',
+              'Brief webshop sets this in spec.releases; change it there',
+              ago(2 * 86400),
+            ),
+          ],
+          // The release its Brief's app shows.
+          lastRelease: {
+            tag: 'v0.2.0',
+            commit: 'a04e6f1c2d3b4e5f60718293a4b5c6d7e8f90a1b',
+            time: ago(3 * 3600),
+            run: 'Succeeded',
+            runURL: `${GITEA_WEB}/webshop/orders-api/actions/runs/12`,
+            publish: { state: 'Published', url: 'https://github.com/webshop-co/orders-api/releases/tag/v0.2.0' },
+            goModule: { state: 'NotGo', message: 'No go.mod at the repository root at v0.2.0' },
+          },
         },
-      },
-      2,
-      {
-        tagReleases: true,
-        publishReleases: {
-          github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'orders-api-github' } },
+        2,
+        {
+          tagReleases: true,
+          publishReleases: ordersPublish,
         },
-      },
+      ),
     ),
     // Paused by a person until the storefront has a framework that fits it.
     crew('storefront', 'Storefront crew', true, {
@@ -761,6 +780,7 @@ export function demoStory(now: number): StoryData {
           reviewer: { name: 'claude-reviewer' },
         },
         autopilot: 'Ask',
+        releases: [{ container: 'orders-api', ...ordersPublish }],
       },
       status: {
         phase: 'Planned',
