@@ -408,6 +408,12 @@ spec:
                       package registry, under the module path its go.mod declares and with the
                       tag as its version.
                     properties:
+                      checkedTime:
+                        description: |-
+                          checkedTime is when the Go proxy was last asked about the version; it is
+                          asked at most every 5 minutes until it finds it.
+                        format: date-time
+                        type: string
                       message:
                         description: message says what happened last, and why the
                           module isn't published.
@@ -417,16 +423,21 @@ spec:
                         type: string
                       state:
                         description: |-
-                          state is Published once the module's version is in the registry, NotGo
-                          when the repository has no go.mod at its root at the tag, Invalid when Go
-                          can't take the module at that version, such as a v2.0.0 whose module path
-                          lacks /v2, and Failed while the Git host can't be reached; a failure is
-                          tried again each poll.
+                          state is Published once go get finds the version where its path is
+                          read: the registry for a c4factory.local/ path, the Go proxy for any
+                          other. NotGo when the repository has no go.mod at its root at the tag,
+                          Invalid when Go can't take the module at that version, such as a v2.0.0
+                          whose module path lacks /v2, Failed while the Git host can't be reached
+                          (tried again each poll), Waiting while the Crew's GitHub source tag isn't
+                          out or the Go proxy can't be reached, and NotFetchable when the Go proxy
+                          can't fetch the version or the factory can't tell.
                         enum:
                         - Published
                         - NotGo
                         - Invalid
                         - Failed
+                        - Waiting
+                        - NotFetchable
                         type: string
                       version:
                         description: version is the module's version, the release's
@@ -451,6 +462,12 @@ spec:
                           commit:
                             description: commit is the commit the source is in.
                             type: string
+                          private:
+                            description: |-
+                              private is whether GitHub reports the repository private, read as the
+                              tag went out, or after, for a release older than the field: the public
+                              Go proxy can't read a private one.
+                            type: boolean
                           tag:
                             description: tag is the source's tag.
                             type: string
@@ -526,6 +543,29 @@ spec:
                 - Working
                 - Paused
                 type: string
+              publishTarget:
+                description: |-
+                  publishTarget is the GitHub repository the Crew published its releases
+                  to, by GitHub's id: set at the first publish that succeeds, or when
+                  c4.factory.io/accept-repository accepts another, and reset when
+                  spec.publishReleases names another repository. A publish to a repository
+                  renamed or replaced since fails before anything is written to it.
+                properties:
+                  id:
+                    description: |-
+                      id is GitHub's id of the repository, which a rename keeps and a new
+                      repository under the same name doesn't.
+                    format: int64
+                    type: integer
+                  repository:
+                    description: repository is owner/name, as spec.publishReleases
+                      named it.
+                    maxLength: 140
+                    type: string
+                required:
+                - id
+                - repository
+                type: object
               ready:
                 description: |-
                   ready lists the ready issues waiting for a free place, in pick-up order:

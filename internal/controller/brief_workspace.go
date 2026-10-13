@@ -92,7 +92,6 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 	}
 	recordSuggestions(ctx, brief, ws.Suggestions, slices.ContainsFunc(ws.Containers,
 		func(c model.WorkspaceContainer) bool { return c.IssuesUnread }))
-	ws.Suggestions = waitingSuggestions(brief)
 	r.recordFailed(ctx, brief, ws.Failed, slices.ContainsFunc(ws.Containers,
 		func(c model.WorkspaceContainer) bool { return c.IssuesUnread }))
 	rendered, err := model.BriefWorkspaceFiles(ws)
@@ -352,15 +351,17 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1
 			logf.FromContext(ctx).Info("Could not read a Container's issues", "container", c.Name, "error", err.Error())
 			entry.IssuesUnread = true
 			if mine {
-				suggestions = append(suggestions, lastSuggestions(brief, c.Name)...)
+				for _, s := range lastSuggestions(brief, c.Name) {
+					s.Repository = repositoryName(&c)
+					suggestions = append(suggestions, s)
+				}
 				failed = append(failed, lastFailed(brief, c.Name)...)
 			}
 		}
 		for _, i := range issues {
 			entry.Issues = append(entry.Issues, model.WorkspaceIssue{Number: i.Number, Title: i.Title})
 			if mine && model.IsSuggestion(i.Labels, i.Body) {
-				suggestions = append(suggestions, model.Suggestion{Container: c.Name, Number: i.Number, Title: i.Title,
-					URL: i.URL, Criteria: model.MissingAcceptanceCriteria(i.Body) == ""})
+				suggestions = append(suggestions, waitingSuggestion(&c, i))
 			}
 			if mine && model.IsFailedIssue(i.Labels) {
 				f := failedIssue(c.Name, i.Number, i.Title, i.URL, i.Labels, i.Body, tasks[c.Name])

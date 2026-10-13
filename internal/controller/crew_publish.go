@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,7 @@ const (
 	reasonReleasePublished    = "ReleasePublished"
 	reasonPublishFailed       = "ReleasePublishFailed"
 	reasonReleaseNotPublished = "ReleaseNotPublished"
+	reasonRepositoryAccepted  = "PublishRepositoryAccepted"
 )
 
 // States of status.lastRelease.publish.
@@ -89,7 +91,11 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 		return
 	}
 	log := logf.FromContext(ctx).WithValues("tag", release.Tag, "repository", spec.GitHub.Repository)
-	facts := publishFacts(crew, container, release)
+	r.dropAccepted(ctx, crew, status)
+	facts := publishFacts(crew, container, release, status)
+	// The repository published to is recorded however the pass ends.
+	var last model.PublishStep
+	defer func() { r.recordTarget(ctx, crew, status, facts, last) }()
 	if facts.Published {
 		return
 	}
@@ -112,6 +118,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 		tag: release.Tag, facts: &facts, merged: mergedIssues(tasks)}
 	for {
 		step := model.NextPublishStep(facts)
+		last = step
 		var err error
 		switch step.Action {
 		case model.PublishNone:
@@ -123,10 +130,10 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 			r.publishFailed(ctx, crew, status, step)
 			return
 		case model.PublishDone:
-			r.published(ctx, crew, status, step)
+			r.published(ctx, crew, status, step, pass.private)
 			return
-		case model.PublishReadGitea, model.PublishReadIssues, model.PublishReadGitHub, model.PublishReadSource,
-			model.PublishReadGitHubSource:
+		case model.PublishReadGitea, model.PublishReadIssues, model.PublishReadRepository, model.PublishReadGitHub,
+			model.PublishReadSource, model.PublishReadGitHubSource:
 			if !pass.read(pubCtx, step.Action) {
 				return
 			}
@@ -172,6 +179,8 @@ type publishPass struct {
 	gh     *githubSource
 	// source is the release's source, once this pass put its tag out.
 	source *c4v1alpha1.CrewReleaseSource
+	// private is whether GitHub reports the repository private, once read.
+	private *bool
 }
 
 // read takes a read step, adding what it read to the facts; false ends the
@@ -202,7 +211,7 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 			return false
 		}
 		p.r.publishSources.Store(p.crew.UID, sourceRead{tag: p.tag, source: p.facts.SourceFiles})
-	case model.PublishReadGitHub, model.PublishReadGitHubSource:
+	case model.PublishReadRepository, model.PublishReadGitHub, model.PublishReadGitHubSource:
 		if p.target == nil {
 			p.target, err = p.r.releaseTargets().GitHubReleases(gitprovider.GitHubConfig{
 				Repository: p.spec.GitHub.Repository, Token: p.token})
@@ -211,7 +220,13 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 				return false
 			}
 		}
-		if action == model.PublishReadGitHub {
+		if action == model.PublishReadRepository {
+			var repo gitprovider.TargetRepository
+			if repo, err = p.target.Repository(ctx); err == nil {
+				p.facts.Remote = &model.PublishTarget{Repository: repo.FullName, ID: repo.ID}
+				p.private = new(repo.Private)
+			}
+		} else if action == model.PublishReadGitHub {
 			p.facts.GitHub, err = targetReleases(ctx, p.target, *p.facts)
 		} else if p.gh, err = readGitHubSource(ctx, p.target, p.facts.Source.Path,
 			model.SourceTag(*p.facts.Source, p.tag)); err == nil {
@@ -255,7 +270,7 @@ func (p *publishPass) write(ctx context.Context, step model.PublishStep) (bool, 
 			return true, nil
 		}
 		if err == nil {
-			p.source = p.r.sourcePublished(p.log, p.crew, *p.facts, step)
+			p.source = p.r.sourcePublished(p.log, p.crew, *p.facts, step, p.private)
 		}
 	case model.PublishRetargetDraft:
 		if _, err = p.target.RetargetDraft(ctx, step.Release, step.Target); err == nil {
@@ -284,20 +299,63 @@ func (p *publishPass) write(ctx context.Context, step model.PublishStep) (bool, 
 	return true, err
 }
 
-// publishFacts are what the Crew's spec and its last release say of publishing
-// that release.
-func publishFacts(crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
-	release *c4v1alpha1.CrewRelease) model.PublishFacts {
+// publishFacts are what the Crew's spec, its last release and the repository it
+// published to say of publishing that release. A Crew a Brief made has its
+// target set by the Brief's spec.releases.
+func publishFacts(crew *c4v1alpha1.Crew, container *c4v1alpha1.Container, release *c4v1alpha1.CrewRelease,
+	status *c4v1alpha1.CrewStatus) model.PublishFacts {
 	spec := crew.Spec.PublishReleases
 	app := container.Spec.DisplayName
 	if app == "" {
 		app = container.Name
 	}
+	var recorded *model.PublishTarget
+	if t := status.PublishTarget; t != nil {
+		recorded = &model.PublishTarget{Repository: t.Repository, ID: t.ID}
+	}
 	return model.PublishFacts{Configured: true, Namespace: crew.Namespace, Container: crew.Spec.ContainerRef.Name,
 		Tag: release.Tag, TagPrefix: spec.TagPrefix, App: app, Latest: spec.Latest == nil || *spec.Latest,
-		Repository: spec.GitHub.Repository,
-		Published:  release.Publish != nil && release.Publish.State == publishPublished, Runs: release.Run,
+		Repository: spec.GitHub.Repository, Brief: crew.Labels[c4v1alpha1.LabelBrief], Recorded: recorded,
+		Accept:    crew.Annotations[c4v1alpha1.AnnotationAcceptRepository],
+		Published: release.Publish != nil && release.Publish.State == publishPublished, Runs: release.Run,
 		Secret: spec.GitHub.TokenSecretRef.Name, Source: publishSource(crew)}
+}
+
+// recordTarget records in status the repository the Crew published to, after a
+// pass that read facts and ended in last, with a Normal Event when a person's
+// c4.factory.io/accept-repository took another.
+func (r *CrewReconciler) recordTarget(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+	facts model.PublishFacts, last model.PublishStep) {
+	target, accepted := model.NextPublishTarget(facts, last)
+	prev := status.PublishTarget
+	status.PublishTarget = nil
+	if target != nil {
+		status.PublishTarget = &c4v1alpha1.CrewPublishTarget{Repository: target.Repository, ID: target.ID}
+	}
+	if !accepted || prev != nil && prev.ID == target.ID {
+		return
+	}
+	logf.FromContext(ctx).Info("Accepted the publish repository", "repository", target.Repository, "id", target.ID)
+	r.event(crew, corev1.EventTypeNormal, reasonRepositoryAccepted, "PublishRelease", fmt.Sprintf(
+		"Releases go to %s, GitHub id %d, as %s accepts", target.Repository, target.ID,
+		c4v1alpha1.AnnotationAcceptRepository))
+}
+
+// dropAccepted removes c4.factory.io/accept-repository once status records the
+// id it accepts: recorded first, then removed, so a failed status write loses
+// nothing.
+func (r *CrewReconciler) dropAccepted(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus) {
+	value, ok := crew.Annotations[c4v1alpha1.AnnotationAcceptRepository]
+	if !ok || status.PublishTarget == nil || value != strconv.FormatInt(status.PublishTarget.ID, 10) {
+		return
+	}
+	orig := crew.DeepCopy()
+	delete(crew.Annotations, c4v1alpha1.AnnotationAcceptRepository)
+	if err := r.Patch(ctx, crew, client.MergeFrom(orig)); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to remove the accepted repository's annotation")
+		return
+	}
+	logf.FromContext(ctx).Info("Removed the accepted repository's annotation", "id", value)
 }
 
 // publishToken reads the token from the Secret named name, live, so a Secret
@@ -515,9 +573,10 @@ func (r *CrewReconciler) publishFailed(ctx context.Context, crew *c4v1alpha1.Cre
 	r.setPublish(crew, status, publishFailed, "", step.Reason, step.Message)
 }
 
-// published records the release as published, with a Normal Event.
+// published records the release as published, with a Normal Event, and its
+// source, private as this pass read it, or as recorded when it read nothing.
 func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
-	step model.PublishStep) {
+	step model.PublishStep, private *bool) {
 	tag := status.LastRelease.Tag
 	said := tag + "\n" + model.PublishPublished
 	if last, _ := r.publishSaid.Load(crew.UID); last != said {
@@ -525,16 +584,21 @@ func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, s
 		r.event(crew, corev1.EventTypeNormal, reasonReleasePublished, "PublishRelease", step.Message)
 	}
 	r.publishSaid.Store(crew.UID, said)
+	if prev := status.LastRelease.Publish; private == nil && prev != nil && prev.Source != nil {
+		private = prev.Source.Private
+	}
 	r.setPublish(crew, status, publishPublished, step.URL, model.PublishPublished, step.Message)
 	if s := step.Source; s != nil {
-		status.LastRelease.Publish.Source = &c4v1alpha1.CrewReleaseSource{Commit: s.Commit, Tag: s.Tag, URL: s.URL}
+		status.LastRelease.Publish.Source = &c4v1alpha1.CrewReleaseSource{Commit: s.Commit, Tag: s.Tag, URL: s.URL,
+			Private: private}
 	}
 }
 
 // sourcePublished says the release's source is out, with a Normal Event, and a
-// Warning Event when go install can't fetch it.
+// Warning Event when go install can't fetch it; private is what this pass
+// read of the repository.
 func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew, facts model.PublishFacts,
-	step model.PublishStep) *c4v1alpha1.CrewReleaseSource {
+	step model.PublishStep, private *bool) *c4v1alpha1.CrewReleaseSource {
 	url := model.SourceURL(facts.Repository, facts.Source.Path, step.Tag)
 	log.Info("Published source", "tag", step.Tag, "commit", step.Commit, "url", url)
 	r.event(crew, corev1.EventTypeNormal, reasonSourcePublished, "PublishRelease",
@@ -545,7 +609,7 @@ func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew,
 			fmt.Sprintf("%s; the source of %s is published, but go install can't fetch it from GitHub",
 				step.Warning, facts.Tag))
 	}
-	return &c4v1alpha1.CrewReleaseSource{Commit: step.Commit, Tag: step.Tag, URL: url}
+	return &c4v1alpha1.CrewReleaseSource{Commit: step.Commit, Tag: step.Tag, URL: url, Private: private}
 }
 
 // notePublishSkipped warns, when a Crew that publishes tags a release before

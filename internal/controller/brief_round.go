@@ -427,9 +427,13 @@ func (r *BriefReconciler) checkPlan(ctx context.Context, brief *c4v1alpha1.Brief
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+		suggestions, err := r.suggestionsToCheck(ctx, brief, plan.Answers)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		took, open := roundRequests(&brief.Status)
 		refusals = model.RefusalText(slices.Concat(model.CheckPlan(plan, current),
-			model.CheckAnswers(plan.Answers, waitingSuggestions(brief)),
+			model.CheckAnswers(plan.Answers, suggestions),
 			model.CheckFailedAnswers(plan.FailedAnswers, failed),
 			model.CheckRequestAnswers(plan.Requests, took, open, plan.Issues)))
 	}

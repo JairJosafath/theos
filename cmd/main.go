@@ -68,6 +68,7 @@ func main() {
 	var leaseDuration time.Duration
 	var workspaceMemory string
 	var sandboxGoCache string
+	var goProxy string
 	var sessionFeature, sessionBinaryURL string
 	var sharedSecrets, sharedPullSecrets stringList
 	var tlsOpts []func(*tls.Config)
@@ -104,6 +105,9 @@ func main() {
 		"When set, a directory on the node, such as /var/cache/c4factory/go/sandbox, that agent sandboxes "+
 			"share as their Go and golangci-lint build cache, so a round doesn't compile what an earlier one did. "+
 			"Never the CI runner's cache: agents run untrusted code, and Go trusts its cache.")
+	flag.StringVar(&goProxy, "go-proxy", controller.DefaultGoProxy,
+		"The Go proxy asked whether go get finds a released Go module whose path is outside c4factory.local/; "+
+			"off asks none, and the Crew's own GitHub source tag is the answer.")
 	flag.DurationVar(&leaseDuration, "leader-elect-lease-duration", time.Minute,
 		"How long the leader's lease lasts. It renews within two thirds of that, retrying every twelfth. "+
 			"The client default of 15s ends the manager whenever the API server stalls for 10s, which a "+
@@ -320,6 +324,7 @@ func main() {
 		APIReader: mgr.GetAPIReader(),
 		Git:       gitprovider.Client{},
 		Recorder:  mgr.GetEventRecorder("crew"),
+		GoProxy:   goProxyURL(goProxy),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "crew")
 		os.Exit(1)
@@ -352,6 +357,14 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+}
+
+// goProxyURL is the Go proxy the --go-proxy flag names, "" for off.
+func goProxyURL(value string) string {
+	if value == "off" {
+		return ""
+	}
+	return value
 }
 
 // stringList is a repeatable string flag.

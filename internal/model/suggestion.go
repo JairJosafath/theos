@@ -21,9 +21,14 @@ const (
 	AnswerSkip = "skip"
 )
 
-// MaxSuggestions is how many waiting suggestions a Brief lists, in its status
-// and its workspace.
-const MaxSuggestions = 50
+// MaxSuggestions is how many waiting suggestions a Brief lists in its status,
+// MaxWorkspaceSuggestions how many its workspace lists, and
+// MaxSuggestionAnswers how many a plan answers (#1019).
+const (
+	MaxSuggestions          = 50
+	MaxWorkspaceSuggestions = 500
+	MaxSuggestionAnswers    = 100
+)
 
 // PlanSuggestionsFile is where a plan answers the suggestions its round's
 // prompts speak to, and WorkspaceSuggestionsFile where the planner reads them.
@@ -45,9 +50,12 @@ func IsSuggestion(labels []string, body string) bool {
 // Suggestion is a reviewer's suggestion waiting in a Container's repository.
 type Suggestion struct {
 	Container string
-	Number    int
-	Title     string
-	URL       string
+	// Repository is the repository's name on the Git host, as a prompt
+	// writes it.
+	Repository string
+	Number     int
+	Title      string
+	URL        string
 	// Criteria says its body has an "Acceptance criteria" checklist, so it can
 	// be taken as it stands.
 	Criteria bool
@@ -83,13 +91,19 @@ func parseAnswers(s string) ([]SuggestionAnswer, error) {
 	return answers, nil
 }
 
-// CheckAnswers returns every reason a plan's answers can't be applied: each
-// answers a waiting suggestion once, takes or skips it and says why, takes
-// only one that has acceptance criteria, and marks only one it takes a fix.
+// CheckAnswers returns every reason a plan's answers can't be applied: at
+// most MaxSuggestionAnswers, each answers a waiting suggestion once, takes or
+// skips it and says why, takes only one that has acceptance criteria, and
+// marks only one it takes a fix. waiting holds every suggestion an answer
+// names that waits, wherever the operator read it.
 func CheckAnswers(answers []SuggestionAnswer, waiting []Suggestion) []Refusal {
 	var out []Refusal
 	refuse := func(format string, args ...any) {
 		out = append(out, Refusal{PlanSuggestionsFile, fmt.Sprintf(format, args...)})
+	}
+	if len(answers) > MaxSuggestionAnswers {
+		refuse("answers %d suggestions; answer at most %d in a round", len(answers), MaxSuggestionAnswers)
+		return out
 	}
 	seen := map[string]bool{}
 	for _, a := range answers {
@@ -100,8 +114,8 @@ func CheckAnswers(answers []SuggestionAnswer, waiting []Suggestion) []Refusal {
 			refuse("answers %s twice; answer each suggestion once", subject)
 			continue
 		case i < 0:
-			refuse("answers %s, which is not a waiting suggestion; answer only those %s lists",
-				subject, WorkspaceSuggestionsFile)
+			refuse("answers %s, which is not a waiting suggestion; answer only those %s lists%s",
+				subject, WorkspaceSuggestionsFile, waitsElsewhere(waiting, a.Issue))
 			continue
 		}
 		seen[subject] = true
@@ -127,6 +141,23 @@ func CheckAnswers(answers []SuggestionAnswer, waiting []Suggestion) []Refusal {
 	return out
 }
 
+// waitsElsewhere names the Containers where suggestion number waits, for a
+// refusal of an answer that named another Container.
+func waitsElsewhere(waiting []Suggestion, number int) string {
+	var at []string
+	for _, s := range waiting {
+		if s.Number == number && !slices.Contains(at, s.Container) {
+			at = append(at, s.Container)
+		}
+	}
+	if len(at) == 0 {
+		return ""
+	}
+	slices.Sort(at)
+	return fmt.Sprintf(" (#%d waits in Container %s: a suggestion is its Container and number)", number,
+		strings.Join(at, ", "))
+}
+
 // SuggestionComment is what the operator writes on a suggestion it answers
 // for Brief brief in round: the answer, the planner's why and the round's
 // prompts, quoted.
@@ -148,14 +179,16 @@ func SuggestionComment(a SuggestionAnswer, brief string, round int, prompts []st
 }
 
 type suggestionOut struct {
-	Container string `yaml:"container"`
-	Issue     int    `yaml:"issue"`
-	Title     string `yaml:"title"`
-	Criteria  bool   `yaml:"criteria"`
+	Container  string `yaml:"container"`
+	Repository string `yaml:"repository"`
+	Issue      int    `yaml:"issue"`
+	Title      string `yaml:"title"`
+	URL        string `yaml:"url"`
+	Criteria   bool   `yaml:"criteria"`
 }
 
-// workspaceSuggestions renders model/suggestions.yaml: the waiting suggestions,
-// by Container and number.
+// workspaceSuggestions renders model/suggestions.yaml: the first
+// MaxWorkspaceSuggestions waiting suggestions, by Container and number.
 func workspaceSuggestions(suggestions []Suggestion) []suggestionOut {
 	sorted := slices.Clone(suggestions)
 	slices.SortFunc(sorted, func(a, b Suggestion) int {
@@ -164,9 +197,11 @@ func workspaceSuggestions(suggestions []Suggestion) []suggestionOut {
 		}
 		return a.Number - b.Number
 	})
+	sorted = sorted[:min(len(sorted), MaxWorkspaceSuggestions)]
 	out := make([]suggestionOut, 0, len(sorted))
 	for _, s := range sorted {
-		out = append(out, suggestionOut{s.Container, s.Number, oneParagraph(s.Title), s.Criteria})
+		out = append(out, suggestionOut{s.Container, s.Repository, s.Number, oneParagraph(s.Title), s.URL,
+			s.Criteria})
 	}
 	return out
 }

@@ -283,6 +283,7 @@ func TestNextPublishStepSource(t *testing.T) {
 			TagPrefix: "core-", App: "CEL engine", Repository: "JairJosafath/cel-lens", Secret: "s",
 			SecretFound: true, Runs: RunSucceeded, Source: &PublishSource{Path: "engine"},
 			Gitea:        &SourceRelease{Body: "notes\n", Assets: []ReleaseAsset{asset}},
+			Remote:       &PublishTarget{Repository: "JairJosafath/cel-lens", ID: 7},
 			GitHub:       &TargetReleases{},
 			SourceFiles:  src,
 			GitHubSource: &GitHubSource{Head: head, HeadTree: emptyTree, HeadBlobs: []string{engineGo}},
@@ -596,6 +597,9 @@ func TestNextPublishStepSourceRuns(t *testing.T) {
 					switch step.Action {
 					case PublishReadGitea:
 						f.Gitea = &SourceRelease{Body: "notes\n", Assets: []ReleaseAsset{asset}}
+						continue
+					case PublishReadRepository:
+						f.Remote = &PublishTarget{Repository: f.Repository, ID: 7}
 						continue
 					case PublishReadGitHub:
 						_, taken := r.tags["core-v0.6.1"]

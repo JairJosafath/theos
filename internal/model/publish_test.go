@@ -19,6 +19,7 @@ func TestNextPublishStep(t *testing.T) {
 		return TargetRelease{ID: 9, TagName: "v0.2.0", Draft: true, Body: "- Lens the CEL (#3)\n\n" + marker + "\n",
 			Assets: assets}
 	}
+	remote := &PublishTarget{Repository: "JairJosafath/cel-lens", ID: 7}
 	onGitHub := func(releases ...TargetRelease) *TargetReleases { return &TargetReleases{Releases: releases} }
 	// ready is a release whose runs succeeded, with its Secret, read from both
 	// sides unless f says otherwise.
@@ -32,6 +33,9 @@ func TestNextPublishStep(t *testing.T) {
 		f = ready(f)
 		if f.Gitea == nil {
 			f.Gitea = gitea
+		}
+		if f.Remote == nil {
+			f.Remote = remote
 		}
 		if f.GitHub == nil {
 			f.GitHub = onGitHub()
@@ -96,7 +100,16 @@ func TestNextPublishStep(t *testing.T) {
 
 		{name: "GitHub refusing the token fails",
 			facts: failure(PublishUnauthorized), want: PublishStep{Action: PublishFail, Reason: PublishUnauthorized},
-			message: "GitHub refused the token in Secret cel-lens-github for JairJosafath/cel-lens: HTTP 418"},
+			message: "GitHub refused the token in Secret cel-lens-github for JairJosafath/cel-lens: the token can't " +
+				"write releases to JairJosafath/cel-lens. Check that JairJosafath/cel-lens is where releases should " +
+				"go (set by the Crew's spec.publishReleases) and that the token is for JairJosafath/cel-lens with " +
+				"Contents read and write: HTTP 418"},
+		{name: "a refused token names the Brief that sets the target",
+			facts: readyBut(func(f *PublishFacts) {
+				f.Brief, f.Failure = "cel-lens", &PublishFailure{Reason: PublishUnauthorized}
+			}),
+			want:    PublishStep{Action: PublishFail, Reason: PublishUnauthorized},
+			message: "(set by Brief cel-lens's spec.releases)"},
 		{name: "a repository the token can't see fails",
 			facts:   failure(PublishRepositoryNotFound),
 			want:    PublishStep{Action: PublishFail, Reason: PublishRepositoryNotFound},
@@ -121,8 +134,51 @@ func TestNextPublishStep(t *testing.T) {
 		{name: "a Gitea release without files fails",
 			facts: ready(PublishFacts{Gitea: &SourceRelease{Body: "notes"}}),
 			want:  PublishStep{Action: PublishFail, Reason: PublishNoReleaseFiles}, message: "has no files"},
-		{name: "GitHub is read next",
-			facts: ready(PublishFacts{Gitea: gitea}), want: PublishStep{Action: PublishReadGitHub}},
+		{name: "the repository is read next",
+			facts: ready(PublishFacts{Gitea: gitea}), want: PublishStep{Action: PublishReadRepository}},
+		{name: "GitHub's releases are read next",
+			facts: ready(PublishFacts{Gitea: gitea, Remote: remote}), want: PublishStep{Action: PublishReadGitHub}},
+		{name: "the repository GitHub answers by another name was renamed",
+			facts: ready(PublishFacts{Gitea: gitea, Remote: &PublishTarget{Repository: "JairJosafath/private-cel-lens",
+				ID: 7}}),
+			want: PublishStep{Action: PublishFail, Reason: PublishRepositoryRenamed},
+			message: "JairJosafath/cel-lens was renamed to JairJosafath/private-cel-lens; point the Crew's " +
+				"spec.publishReleases at JairJosafath/private-cel-lens, or at another repository"},
+		{name: "a renamed repository names the Brief that sets the target",
+			facts: ready(PublishFacts{Brief: "cel-lens", Gitea: gitea,
+				Remote: &PublishTarget{Repository: "JairJosafath/private-cel-lens", ID: 7}}),
+			want:    PublishStep{Action: PublishFail, Reason: PublishRepositoryRenamed},
+			message: "point Brief cel-lens's spec.releases at JairJosafath/private-cel-lens"},
+		{name: "GitHub's case of the name is the same repository",
+			facts: ready(PublishFacts{Gitea: gitea, Remote: &PublishTarget{Repository: "jairjosafath/CEL-lens", ID: 7}}),
+			want:  PublishStep{Action: PublishReadGitHub}},
+		{name: "the repository the Crew published to before goes on",
+			facts: ready(PublishFacts{Gitea: gitea, Remote: remote, Recorded: remote}),
+			want:  PublishStep{Action: PublishReadGitHub}},
+		{name: "another repository under the name the Crew published to was replaced",
+			facts: ready(PublishFacts{Gitea: gitea, Recorded: remote,
+				Remote: &PublishTarget{Repository: "JairJosafath/cel-lens", ID: 8}}),
+			want: PublishStep{Action: PublishFail, Reason: PublishRepositoryReplaced},
+			message: "JairJosafath/cel-lens is not the repository this Crew published to before (GitHub id 7, now 8): " +
+				"it was deleted or renamed and a new one took its name. Nothing is published to it until you point " +
+				"the Crew's spec.publishReleases at the repository wanted, or accept this one with the annotation " +
+				`c4.factory.io/accept-repository: "8" on the Crew`},
+		{name: "a replaced repository is refused before its releases are read",
+			facts: read(PublishFacts{Recorded: remote, Remote: &PublishTarget{Repository: "JairJosafath/cel-lens", ID: 8},
+				GitHub: onGitHub(draft(vsix, sums))}),
+			want: PublishStep{Action: PublishFail, Reason: PublishRepositoryReplaced}},
+		{name: "an accepted replacement goes on",
+			facts: ready(PublishFacts{Gitea: gitea, Recorded: remote, Accept: "8",
+				Remote: &PublishTarget{Repository: "JairJosafath/cel-lens", ID: 8}}),
+			want: PublishStep{Action: PublishReadGitHub}},
+		{name: "accepting another id leaves the replacement refused",
+			facts: ready(PublishFacts{Gitea: gitea, Recorded: remote, Accept: "9",
+				Remote: &PublishTarget{Repository: "JairJosafath/cel-lens", ID: 8}}),
+			want: PublishStep{Action: PublishFail, Reason: PublishRepositoryReplaced}},
+		{name: "a record of another repository doesn't hold the new target",
+			facts: ready(PublishFacts{Gitea: gitea, Recorded: &PublishTarget{Repository: "JairJosafath/old", ID: 3},
+				Remote: remote}),
+			want: PublishStep{Action: PublishReadGitHub}},
 
 		{name: "a release of the tag without the marker is taken",
 			facts:   read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 4, TagName: "v0.2.0", Body: "mine"})}),
@@ -238,6 +294,9 @@ func TestNextPublishStepRuns(t *testing.T) {
 					case PublishReadIssues:
 						f.Issues = []ReleaseIssue{{1, "First"}}
 						continue
+					case PublishReadRepository:
+						f.Remote = &PublishTarget{Repository: f.Repository, ID: 7}
+						continue
 					case PublishReadGitHub:
 						f.GitHub = gh
 						continue
@@ -327,5 +386,58 @@ func TestPublishMarkerAndTag(t *testing.T) {
 	}
 	if got := PublishMarker("cel-lens", "extension", "v0.2.0"); got != "<!-- c4factory: cel-lens/extension v0.2.0 -->" {
 		t.Errorf("PublishMarker = %q", got)
+	}
+}
+
+func TestNextPublishTarget(t *testing.T) {
+	const repo = "JairJosafath/cel-lens"
+	before := &PublishTarget{Repository: repo, ID: 7}
+	replacement := &PublishTarget{Repository: repo, ID: 8}
+	done := PublishStep{Action: PublishDone}
+	failed := PublishStep{Action: PublishFail}
+	tests := []struct {
+		name         string
+		facts        PublishFacts
+		step         PublishStep
+		want         *PublishTarget
+		wantAccepted bool
+	}{
+		{name: "nothing is recorded before a publish succeeds",
+			facts: PublishFacts{Repository: repo, Remote: before}, step: PublishStep{Action: PublishCreateDraft}},
+		{name: "the first publish that succeeds records the repository",
+			facts: PublishFacts{Repository: repo, Remote: before}, step: done, want: before},
+		{name: "a publish not read this pass records nothing",
+			facts: PublishFacts{Repository: repo}, step: done},
+		{name: "a renamed repository is not recorded",
+			facts: PublishFacts{Repository: repo, Remote: &PublishTarget{Repository: "JairJosafath/private-cel-lens", ID: 7}},
+			step:  done},
+		{name: "the record stays",
+			facts: PublishFacts{Repository: repo, Recorded: before, Remote: before}, step: done, want: before},
+		{name: "a replaced repository leaves the record",
+			facts: PublishFacts{Repository: repo, Recorded: before, Remote: replacement}, step: failed, want: before},
+		{name: "an accepted id is recorded and the annotation taken",
+			facts: PublishFacts{Repository: repo, Recorded: before, Remote: replacement, Accept: "8"},
+			step:  PublishStep{Action: PublishCreateDraft}, want: replacement, wantAccepted: true},
+		{name: "another id than GitHub's isn't accepted",
+			facts: PublishFacts{Repository: repo, Recorded: before, Remote: replacement, Accept: "9"},
+			step:  failed, want: before},
+		{name: "an accept read before the repository waits",
+			facts: PublishFacts{Repository: repo, Recorded: before, Accept: "8"}, step: failed, want: before},
+		{name: "another target drops the record",
+			facts: PublishFacts{Repository: "JairJosafath/elsewhere", Recorded: before}, step: failed},
+		{name: "another target records its own at its first publish",
+			facts: PublishFacts{Repository: "JairJosafath/elsewhere", Recorded: before,
+				Remote: &PublishTarget{Repository: "JairJosafath/elsewhere", ID: 9}},
+			step: done, want: &PublishTarget{Repository: "JairJosafath/elsewhere", ID: 9}},
+		{name: "a target only in another case keeps the record",
+			facts: PublishFacts{Repository: "jairjosafath/CEL-lens", Recorded: before}, step: failed, want: before},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, accepted := NextPublishTarget(tt.facts, tt.step)
+			if !reflect.DeepEqual(got, tt.want) || accepted != tt.wantAccepted {
+				t.Errorf("NextPublishTarget() = %+v, %v; want %+v, %v", got, accepted, tt.want, tt.wantAccepted)
+			}
+		})
 	}
 }
