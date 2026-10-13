@@ -162,6 +162,15 @@ type StandardFile struct {
 	// left the file out, when one did.
 	// +optional
 	PullRequestURL string `json:"pullRequestURL,omitempty"`
+
+	// change is, for a file behind, what the Standard changed in it from ref
+	// to the Standard's ref the files are at, as a unified diff, and the
+	// repository's lines taking the Standard's version would drop, as they
+	// were when the update that left it out was planned. It is cut at 4 KiB,
+	// and only the first 16 files behind carry it; the rest say so.
+	// +kubebuilder:validation:MaxLength=4096
+	// +optional
+	Change string `json:"change,omitempty"`
 }
 
 // StandardUpdateStatus is one Standard update: a pull request the operator
@@ -215,6 +224,14 @@ type StandardUpdateStatus struct {
 	// +listType=atomic
 	// +optional
 	LeftOut []string `json:"leftOut,omitempty"`
+
+	// behind are the files behind once the update merges, each with the ref
+	// its copy is at and the Standard's change to it; status.standard.behind
+	// takes them when it merges.
+	// +listType=map
+	// +listMapKey=path
+	// +optional
+	Behind []StandardFile `json:"behind,omitempty"`
 
 	// stopped is why the update stopped without merging, such as UpdateClosed;
 	// a stopped update waits for the Standard's ref or the Container's effective

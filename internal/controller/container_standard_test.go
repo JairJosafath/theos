@@ -253,6 +253,14 @@ func stoppedUpdate(ns, reason string) string {
 	return message
 }
 
+// makefileChange is the change orders-api's status carries of its Makefile,
+// changed to run pytest, left out at v1.0.0 of updates to ref: the Standard's
+// check target runs make lint test from v1.0.2 to v1.3.0.
+func makefileChange(ref string) string {
+	return "--- Makefile (v1.0.0)\n+++ Makefile (" + ref + ")\n@@ -1,2 +1,2 @@\n check:\n-\ttrue\n" +
+		"+\tmake lint test\n\nThe repository's lines taking it drops:\n-\tpytest"
+}
+
 func mainFile(ns, path string) string {
 	GinkgoHelper()
 	files := gitFake.mainFiles(ns, "orders-api")
@@ -321,10 +329,14 @@ var _ = Describe("Container Standard update", func() {
 		Expect(mainFile(ns, implementer)).To(HaveSuffix("Ask when unsure.\n"))
 		Expect(gitFake.mainFiles(ns, "orders-api")).NotTo(HaveKey(reviewer), "v1.2.0 drops the reviewer's guide")
 		container := getContainer(Default, ns)
+		Expect(update.Behind).To(Equal([]c4v1alpha1.StandardFile{{Path: makefile, Ref: "v1.0.0",
+			Change: makefileChange("v1.2.0")}}), "the update holds the change until it merges")
 		Expect(container.Status.Standard.Behind).To(Equal([]c4v1alpha1.StandardFile{
-			{Path: makefile, Ref: "v1.0.0", PullRequestURL: update.PullRequestURL}}))
+			{Path: makefile, Ref: "v1.0.0", PullRequestURL: update.PullRequestURL, Change: makefileChange("v1.2.0")}}),
+			"the Container carries the Standard's change to the file it leaves out")
 		flagged := "python-strict is at v1.2.0, but its updates left out Makefile (at v1.0.0): the repository " +
-			"changed them in lines the Standard changed too. Take the Standard's version: `" + annotate +
+			"changed them in lines the Standard changed too. What the Standard changed in each is in " +
+			"status.standard.behind and on the Container's page. Take the Standard's version: `" + annotate +
 			"take=v1.2.0`; or keep the repository's: `" + annotate + "keep=v1.2.0`"
 		Expect(standardCondition(Default, container).Message).To(Equal(flagged))
 		Eventually(behindEvents).WithArguments(ns).WithTimeout(standardSteps).Should(Equal([]string{flagged}))
@@ -341,8 +353,8 @@ var _ = Describe("Container Standard update", func() {
 		eventuallyAt(ns, "v1.3.0", makefile)
 		container = getContainer(Default, ns)
 		Expect(container.Status.Standard.Behind).To(Equal([]c4v1alpha1.StandardFile{
-			{Path: makefile, Ref: "v1.0.0", PullRequestURL: next.PullRequestURL}}),
-			"the file stays at the ref its copy was last brought to")
+			{Path: makefile, Ref: "v1.0.0", PullRequestURL: next.PullRequestURL, Change: makefileChange("v1.3.0")}}),
+			"the file stays at the ref its copy was last brought to, its change now up to the new ref")
 		Eventually(behindEvents).WithArguments(ns).WithTimeout(standardSteps).Should(HaveLen(2), "once per ref")
 		Consistently(behindEvents).WithArguments(ns).WithTimeout(2 * time.Second).Should(HaveLen(2))
 
@@ -517,6 +529,31 @@ var _ = Describe("Container Standard update", func() {
 			g.Expect(c.Status.Standard).To(BeNil())
 		}).WithTimeout(standardSteps).Should(Succeed())
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+	})
+
+	It("records the change to a file left out of an update that opens no pull request", func() {
+		ns := newProjectNamespace()
+		updatableContainer(ns)
+		v102 := standardRefs()["v1.0.0"]
+		v102[makefile] = scaffold.File{Data: []byte("check:\n\tmake lint test\n")}
+		gitFake.addTemplate(templatesURL+ns+"/"+updatedStandard, "v1.0.2", v102)
+		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
+		head := gitFake.mainHead(ns, "orders-api")
+
+		bumpStandard(ns, "v1.0.2")
+		eventuallyAt(ns, "v1.0.2", makefile)
+		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty(), "the update has nothing else to write")
+		Expect(gitFake.mainHead(ns, "orders-api")).To(Equal(head))
+		want := []c4v1alpha1.StandardFile{{Path: makefile, Ref: "v1.0.0", Change: makefileChange("v1.0.2")}}
+		Expect(getContainer(Default, ns).Status.Standard.Behind).To(Equal(want))
+
+		By("keeping the change, as the update planned it, through later passes")
+		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest -x\n")}})
+		answer(ns, c4v1alpha1.AnnotationStandardKeep, "v0.9.9") // ignored, after a pass
+		eventuallyAnswered(ns)
+		Consistently(func(g Gomega) {
+			g.Expect(getContainer(g, ns).Status.Standard.Behind).To(Equal(want))
+		}).WithTimeout(2 * time.Second).Should(Succeed())
 	})
 
 	It("records a ref that renders the files main already holds, without a pull request", func() {

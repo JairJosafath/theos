@@ -344,6 +344,15 @@ spec:
                         StandardFile is one of a Standard's files in the repository, at a ref of the
                         Standard.
                       properties:
+                        change:
+                          description: |-
+                            change is, for a file behind, what the Standard changed in it from ref
+                            to the Standard's ref the files are at, as a unified diff, and the
+                            repository's lines taking the Standard's version would drop, as they
+                            were when the update that left it out was planned. It is cut at 4 KiB,
+                            and only the first 16 files behind carry it; the rest say so.
+                          maxLength: 4096
+                          type: string
                         path:
                           description: path is the file's path in the repository.
                           type: string
@@ -383,6 +392,15 @@ spec:
                         StandardFile is one of a Standard's files in the repository, at a ref of the
                         Standard.
                       properties:
+                        change:
+                          description: |-
+                            change is, for a file behind, what the Standard changed in it from ref
+                            to the Standard's ref the files are at, as a unified diff, and the
+                            repository's lines taking the Standard's version would drop, as they
+                            were when the update that left it out was planned. It is cut at 4 KiB,
+                            and only the first 16 files behind carry it; the rest say so.
+                          maxLength: 4096
+                          type: string
                         path:
                           description: path is the file's path in the repository.
                           type: string
@@ -423,6 +441,46 @@ spec:
                     description: update is the Standard update in flight, or the last
                       one, stopped.
                     properties:
+                      behind:
+                        description: |-
+                          behind are the files behind once the update merges, each with the ref
+                          its copy is at and the Standard's change to it; status.standard.behind
+                          takes them when it merges.
+                        items:
+                          description: |-
+                            StandardFile is one of a Standard's files in the repository, at a ref of the
+                            Standard.
+                          properties:
+                            change:
+                              description: |-
+                                change is, for a file behind, what the Standard changed in it from ref
+                                to the Standard's ref the files are at, as a unified diff, and the
+                                repository's lines taking the Standard's version would drop, as they
+                                were when the update that left it out was planned. It is cut at 4 KiB,
+                                and only the first 16 files behind carry it; the rest say so.
+                              maxLength: 4096
+                              type: string
+                            path:
+                              description: path is the file's path in the repository.
+                              type: string
+                            pullRequestURL:
+                              description: |-
+                                pullRequestURL is the address of the update's pull request that last
+                                left the file out, when one did.
+                              type: string
+                            ref:
+                              description: |-
+                                ref is the Standard's template ref the file was last brought to, or
+                                kept at.
+                              type: string
+                          required:
+                          - path
+                          - ref
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - path
+                        x-kubernetes-list-type: map
                       branch:
                         description: branch is the update's branch, and commit the
                           one commit on it.
