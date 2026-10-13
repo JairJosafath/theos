@@ -472,7 +472,8 @@ What each kind's `spec` takes, and nothing else:
 - Project and Person: `displayName`, `description`.
 - SoftwareSystem: those two, `needs` and `kpis`, each a list of strings.
 - Container: those two, `softwareSystemRef`, `type` (one of `static-site`,
-  `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`),
+  `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`,
+  `function`),
   `gitProviderRef` and `frameworkRef`, and when you choose them
   `standardRef`, `computeRef` and `deploymentRef`, and `checks`
   (`EveryChange` or `BeforeRelease`) only as rule 16 says. Every `...Ref` is

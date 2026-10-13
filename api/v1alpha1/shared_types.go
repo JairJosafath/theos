@@ -44,7 +44,7 @@ type ElementRef struct {
 }
 
 // ContainerType is the fixed list of application shapes a Container can take.
-// +kubebuilder:validation:Enum=static-site;service;job;worker;mobile-app;cli;extension;operator
+// +kubebuilder:validation:Enum=static-site;service;job;worker;mobile-app;cli;extension;operator;function
 type ContainerType string
 
 // Container types.
@@ -57,6 +57,7 @@ const (
 	ContainerTypeCLI        ContainerType = "cli"
 	ContainerTypeExtension  ContainerType = "extension"
 	ContainerTypeOperator   ContainerType = "operator"
+	ContainerTypeFunction   ContainerType = "function"
 )
 
 // TemplateSource points to a platform-managed template repository at a pinned ref.

@@ -72,6 +72,11 @@ var _ = Describe("Container", func() {
 		mustCreate(newContainer(ns, "backup-operator", "webshop-core", c4v1alpha1.ContainerTypeOperator))
 	})
 
+	It("accepts the function type", func() {
+		ns := newProjectNamespace()
+		mustCreate(newContainer(ns, "orders-fn", "webshop-core", c4v1alpha1.ContainerTypeFunction))
+	})
+
 	It("rejects a type outside the fixed list", func() {
 		ns := newProjectNamespace()
 		container := newContainer(ns, "orders-api", "webshop-core", "lambda")
