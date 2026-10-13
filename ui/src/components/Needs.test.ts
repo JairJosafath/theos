@@ -30,7 +30,11 @@ const filesBehind: Need = {
     take,
     keep,
     files: [
-      { path: 'Makefile', ref: 'v1', change: '--- Makefile (v1)\n+++ Makefile (v3)\n@@ -1 +1 @@\n-lint:\n+lint: fmt\n' },
+      {
+        path: 'Makefile',
+        ref: 'v1',
+        change: '--- Makefile (v1)\n+++ Makefile (v3)\n@@ -1 +1 @@\n-lint:\n+lint: fmt\n',
+      },
       { path: 'check.yaml', ref: 'v2' },
     ],
   },
