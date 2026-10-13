@@ -1,0 +1,160 @@
+# Evidence for docs/plans/done/standard-left-out.md (#880; steps #890 #891 #892 #893).
+# The tests its steps added, rerun on main at dfcb5b3 by otter-1007 for #1007, go1.26.8.
+# Go: go test -v ./internal/scaffold ./internal/model -run '<the tests below>'
+
+--- PASS: TestMerge3 (0.00s)
+    --- PASS: TestMerge3/edits_in_different_places (0.00s)
+    --- PASS: TestMerge3/a_line_added_on_one_side,_another_changed_on_the_other (0.00s)
+    --- PASS: TestMerge3/lines_removed_on_one_side,_changed_on_the_other (0.00s)
+    --- PASS: TestMerge3/only_theirs_changed (0.00s)
+    --- PASS: TestMerge3/only_ours_changed (0.00s)
+    --- PASS: TestMerge3/edits_at_the_start_and_the_end_of_the_file (0.00s)
+    --- PASS: TestMerge3/the_same_edit_on_both_sides (0.00s)
+    --- PASS: TestMerge3/the_same_edit_on_both_sides_and_one_more_on_ours (0.00s)
+    --- PASS: TestMerge3/overlapping_edits (0.00s)
+    --- PASS: TestMerge3/edits_of_neighbouring_lines_touch,_as_in_git (0.00s)
+    --- PASS: TestMerge3/both_add_different_lines_at_the_same_place (0.00s)
+    --- PASS: TestMerge3/one_overlap_among_clean_edits (0.00s)
+    --- PASS: TestMerge3/a_missing_final_newline_kept (0.00s)
+    --- PASS: TestMerge3/a_final_newline_added_on_one_side,_a_line_changed_on_the_other (0.00s)
+    --- PASS: TestMerge3/CRLF_line_endings_kept (0.00s)
+    --- PASS: TestMerge3/an_empty_base (0.00s)
+    --- PASS: TestMerge3/a_binary_file_refused (0.00s)
+    --- PASS: TestMerge3/a_binary_side_refused (0.00s)
+--- PASS: TestMerge3TooLarge (0.00s)
+--- PASS: TestMergeTheirs (0.00s)
+    --- PASS: TestMergeTheirs/clean_edits_merge_as_in_Merge3 (0.00s)
+    --- PASS: TestMergeTheirs/an_overlap_takes_theirs,_the_other_edits_of_ours_kept (0.00s)
+    --- PASS: TestMergeTheirs/lines_ours_removed_where_theirs_changed_come_back_as_theirs (0.00s)
+    --- PASS: TestMergeTheirs/a_binary_file_refused (0.00s)
+--- PASS: TestPlanUpdate (0.00s)
+    --- PASS: TestPlanUpdate/unchanged_by_the_Standard (0.00s)
+    --- PASS: TestPlanUpdate/already_at_next (0.00s)
+    --- PASS: TestPlanUpdate/clean_write (0.00s)
+    --- PASS: TestPlanUpdate/clean_remove (0.00s)
+    --- PASS: TestPlanUpdate/removed_already (0.00s)
+    --- PASS: TestPlanUpdate/new_path_absent_from_the_repository (0.00s)
+    --- PASS: TestPlanUpdate/new_path_the_repository_has_with_other_content (0.00s)
+    --- PASS: TestPlanUpdate/changed_path_the_repository_changed_too (0.00s)
+    --- PASS: TestPlanUpdate/removed_path_the_repository_changed (0.00s)
+    --- PASS: TestPlanUpdate/changed_path_the_repository_deleted (0.00s)
+    --- PASS: TestPlanUpdate/the_executable_bit_changes (0.00s)
+    --- PASS: TestPlanUpdate/the_repository_changed_only_the_executable_bit (0.00s)
+    --- PASS: TestPlanUpdate/a_clean_merge_written (0.00s)
+    --- PASS: TestPlanUpdate/a_merge_the_repository_already_holds (0.00s)
+    --- PASS: TestPlanUpdate/overlapping_changes_left_out (0.00s)
+    --- PASS: TestPlanUpdate/a_binary_file_left_out (0.00s)
+    --- PASS: TestPlanUpdate/many_paths,_sorted (0.00s)
+    --- PASS: TestPlanUpdate/behind,_unchanged_by_this_step,_still_overlapping (0.00s)
+    --- PASS: TestPlanUpdate/behind,_merged_against_its_own_base (0.00s)
+    --- PASS: TestPlanUpdate/behind,_brought_to_next_in_the_repository (0.00s)
+    --- PASS: TestPlanUpdate/behind,_still_at_its_base (0.00s)
+    --- PASS: TestPlanUpdate/behind,_a_path_the_next_render_no_longer_has (0.00s)
+    --- PASS: TestPlanUpdate/behind,_a_path_neither_render_has (0.00s)
+--- PASS: TestUpdateMessage (0.00s)
+--- PASS: TestPlanTake (0.00s)
+    --- PASS: TestPlanTake/an_overlap_resolved_to_the_Standard,_the_repository's_other_change_kept (0.00s)
+    --- PASS: TestPlanTake/already_as_the_Standard_has_it (0.00s)
+    --- PASS: TestPlanTake/a_file_the_Standard_no_longer_has_is_removed (0.00s)
+    --- PASS: TestPlanTake/a_file_the_repository_removed_comes_back (0.00s)
+    --- PASS: TestPlanTake/a_binary_file_is_replaced_whole (0.00s)
+--- PASS: TestTakeMessage (0.00s)
+--- PASS: TestStandardBehindNeedsYou (0.00s)
+--- PASS: TestStandardUpdateBody (0.00s)
+    --- PASS: TestStandardUpdateBody/everything_planned (0.00s)
+    --- PASS: TestStandardUpdateBody/some_files_left_out (0.00s)
+    --- PASS: TestStandardUpdateBody/a_file_merged (0.00s)
+--- PASS: TestStandardTakeBranchAndTitle (0.00s)
+--- PASS: TestStandardTakeBody (0.00s)
+--- PASS: TestNextStandardStep (0.00s)
+    --- PASS: TestNextStandardStep/files_at_the_target_are_up_to_date (0.00s)
+    --- PASS: TestNextStandardStep/files_behind_the_target_are_planned (0.00s)
+    --- PASS: TestNextStandardStep/empty_checks_read_as_EveryChange (0.00s)
+    --- PASS: TestNextStandardStep/files_at_the_target_ref_with_other_checks_are_planned (0.00s)
+    --- PASS: TestNextStandardStep/files_back_at_their_checks_are_up_to_date (0.00s)
+    --- PASS: TestNextStandardStep/a_stopped_update_the_checks_moved_past_is_forgotten (0.00s)
+    --- PASS: TestNextStandardStep/a_stopped_update_at_the_target_checks_waits (0.00s)
+    --- PASS: TestNextStandardStep/a_held_update_at_the_target_checks_is_planned_again (0.00s)
+    --- PASS: TestNextStandardStep/an_open_update_the_checks_moved_past_is_dropped (0.00s)
+    --- PASS: TestNextStandardStep/an_update_at_the_target_checks_is_followed (0.00s)
+    --- PASS: TestNextStandardStep/a_stopped_update_the_Standard_moved_past_is_forgotten (0.00s)
+    --- PASS: TestNextStandardStep/an_update_the_Standard_moved_past_is_read_first (0.00s)
+    --- PASS: TestNextStandardStep/an_update_the_Standard_moved_past_that_merged_meanwhile_is_recorded (0.00s)
+    --- PASS: TestNextStandardStep/an_open_update_the_Standard_moved_past_is_dropped (0.00s)
+    --- PASS: TestNextStandardStep/a_closed_update_the_Standard_moved_past_is_dropped (0.00s)
+    --- PASS: TestNextStandardStep/a_stopped_update_without_a_pull_request_waits_for_the_Standard (0.00s)
+    --- PASS: TestNextStandardStep/a_stopped_update's_pull_request_is_read_quietly (0.00s)
+    --- PASS: TestNextStandardStep/a_stopped_update_a_person_merged_after_all_is_recorded (0.00s)
+    --- PASS: TestNextStandardStep/a_stopped_update_still_open_waits_for_the_Standard (0.00s)
+    --- PASS: TestNextStandardStep/the_update's_pull_request_is_read_first (0.00s)
+    --- PASS: TestNextStandardStep/a_merged_update_is_recorded (0.00s)
+    --- PASS: TestNextStandardStep/an_update_closed_without_merging_stops (0.00s)
+    --- PASS: TestNextStandardStep/a_take_closed_without_merging_is_forgotten (0.00s)
+    --- PASS: TestNextStandardStep/a_stopped_take_closed_without_merging_is_forgotten (0.00s)
+    --- PASS: TestNextStandardStep/a_merged_take_is_recorded (0.00s)
+    --- PASS: TestNextStandardStep/a_take_the_Standard_moved_past_is_dropped (0.00s)
+    --- PASS: TestNextStandardStep/an_update_that_conflicts_with_main_is_dropped (0.00s)
+    --- PASS: TestNextStandardStep/an_update_someone_else_pushed_to_stops (0.00s)
+    --- PASS: TestNextStandardStep/the_checks_are_read_next (0.00s)
+    --- PASS: TestNextStandardStep/pending_checks_are_waited_for (0.00s)
+    --- PASS: TestNextStandardStep/failed_checks_are_reported (0.00s)
+    --- PASS: TestNextStandardStep/errored_checks_are_reported (0.00s)
+    --- PASS: TestNextStandardStep/the_changed_paths_are_read_next (0.00s)
+    --- PASS: TestNextStandardStep/a_change_too_big_to_check_is_refused (0.00s)
+    --- PASS: TestNextStandardStep/a_change_that_misses_a_required_check_is_refused (0.00s)
+    --- PASS: TestNextStandardStep/a_change_of_nothing_is_refused (0.00s)
+    --- PASS: TestNextStandardStep/a_change_outside_the_plan_is_refused (0.00s)
+    --- PASS: TestNextStandardStep/a_green_change_of_planned_paths_merges (0.00s)
+ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.016s
+ok  	github.com/JairJosafath/c4factory/internal/model	0.033s
+
+# envtest: go test -v ./internal/controller -ginkgo.v -ginkgo.focus='<the specs below>'
+
+Container Standard update merges a file the repository changed in other lines, and names it
+• [2.162 seconds]
+Container Standard update leaves out a file the repository changed in the same lines, and flags it until it merges
+• [6.404 seconds]
+Container Standard files behind takes the Standard's version from one annotation, through a pull request merged once CI passes
+• [5.271 seconds]
+Container Standard files behind leaves the files behind when a person closes the take, ignores a stale answer and records a keep
+• [6.443 seconds]
+Brief autopilot in Ask, lists a Container whose Standard files are behind under Needs you until they aren't
+• [5.468 seconds]
+Brief autopilot in Off, lists a Container whose Standard files are behind under Needs you until they aren't
+• [5.452 seconds]
+Brief autopilot in On, lists a Container whose Standard files are behind under Needs you until they aren't
+• [5.439 seconds]
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/controller	52.857s
+
+# Vitest (ui): npx vitest run --reporter=verbose <the files below>
+
+ ✓ src/k8s/containers.test.ts > retryPatch and taskManifest > sets only the take or the keep annotation, to the Standard’s ref
+ ✓ src/k8s/containers.test.ts > LiveContainerWriter > answers the Standard’s files left out with a merge patch on the Container
+ ✓ src/model/lifecycle.test.ts > containerNextStep > reads a take whose checks failed, or that the factory stopped, as a take
+ ✓ src/model/lifecycle.test.ts > containerNextStep > names the files the updates left out, and the two answers
+ ✓ src/model/lifecycle.test.ts > describeStandardUpdate > reads an update as one from ref to ref
+ ✓ src/model/lifecycle.test.ts > describeStandardUpdate > reads a take as a take of the Standard’s version of its paths
+ ✓ src/model/lifecycle.test.ts > describeStandardUpdate > is nothing without an update
+ ✓ src/components/objects/ContainerActions.test.ts > ContainerActions > offers to take or keep the Standard’s files left out, naming each with its ref
+ ✓ src/components/objects/ContainerActions.test.ts > ContainerActions > offers no answer while a take runs or stopped, and one after another update stopped
+ ✓ src/components/Needs.test.ts > NeedsArea > offers the take and keep buttons of Standard files left out, with actions on
+ ✓ src/components/Needs.test.ts > NeedsArea > shows the take and keep commands without actions
+ ✓ src/components/Needs.test.ts > NeedsArea > says to sign in, with the commands, in OIDC mode with nobody signed in
+ ✓ src/components/Needs.test.ts > NeedsArea > offers no answers on an item without them
+ ✓ src/components/Briefs.test.ts > the Brief card with a Container whose Standard files are behind > shows the question and what the Brief would do
+ ✓ src/components/Briefs.test.ts > the Brief card with a Container whose Standard files are behind > links the item to the Container's page
+ ✓ src/components/Briefs.test.ts > the Brief card with a Container whose Standard files are behind > says a Container is settled on its page, not in a prompt
+
+# node --test test/server.test.mjs (the UI server's allowlist of the take and keep annotations)
+
+    ✔ takes a Container's take of its Standard's files left out, and sends exactly that as the UI
+    ✔ takes a Container's keep of its Standard's files left out, and sends exactly that as the UI
+    ✔ refuses a take and a keep at once with 403, and writes nothing upstream
+    ✔ refuses a take with a retry with 403, and writes nothing upstream
+    ✔ refuses a take as a number with 403, and writes nothing upstream
+    ✔ refuses a keep removed with 403, and writes nothing upstream
+    ✔ refuses the take annotation on a Crew with 403, and writes nothing upstream
+ℹ tests 172
+ℹ pass 172
+ℹ fail 0

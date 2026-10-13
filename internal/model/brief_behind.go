@@ -7,7 +7,7 @@ import (
 )
 
 // A Brief lists each Container it made whose Standard files an update left
-// out under Needs you (plans/standard-left-out.md, step 3). The person answers
+// out under Needs you (plans/done/standard-left-out.md, step 3). The person answers
 // it on the Container, with one annotation; no autopilot mode takes it.
 
 // BehindFile is one of a Container's Standard files an update left out, with
