@@ -37,7 +37,7 @@ export const RELEASE_RUN: Record<NonNullable<CrewRelease['run']>, string> = {
 export const PUBLISH_REASON: Record<string, string> = {
   SecretMissing: 'the token Secret is missing',
   SecretUnreadable: 'the token Secret can’t be read',
-  Unauthorized: 'GitHub refused the token',
+  Unauthorized: 'GitHub refused the token for the target repository',
   RepositoryNotFound: 'GitHub has no such repository the token can see',
   EmptyRepository: 'the repository has no commit yet',
   NoReleaseFiles: 'the release has no files to publish',
@@ -47,6 +47,8 @@ export const PUBLISH_REASON: Record<string, string> = {
   FolderOverlaps: 'its source folder overlaps another Crew’s',
   SourceTooLarge: 'a file of the source is too large for GitHub',
   BranchProtected: 'the repository’s default branch is protected',
+  RepositoryRenamed: 'the target repository was renamed',
+  RepositoryReplaced: 'the target repository is another one than the Crew published to before',
 }
 
 /** Why the Crew's last publish failed, in words; undefined unless it failed for a reason known here. */

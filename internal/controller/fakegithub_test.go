@@ -20,12 +20,17 @@ type fakeGitHub struct {
 	server *httptest.Server
 	mu     sync.Mutex
 	// repos holds each repository's releases by owner/name, git its git
-	// objects and refs, and tokens the token each accepts.
-	repos  map[string][]*fakeGitHubRelease
-	git    map[string]*fakeGitStore
-	tokens map[string]string
-	nextID int64
-	is     *fakeGitHubIssues
+	// objects and refs, tokens the token each accepts, ids GitHub's id of
+	// each, renamed the name GitHub follows each to, and written the
+	// requests that weren't reads each took.
+	written map[string]int
+	repos   map[string][]*fakeGitHubRelease
+	git     map[string]*fakeGitStore
+	tokens  map[string]string
+	ids     map[string]int64
+	renamed map[string]string
+	nextID  int64
+	is      *fakeGitHubIssues
 }
 
 type fakeGitHubRelease struct {
@@ -52,7 +57,8 @@ type fakeGitHubAsset struct {
 
 func newFakeGitHub() *fakeGitHub {
 	f := &fakeGitHub{repos: map[string][]*fakeGitHubRelease{}, git: map[string]*fakeGitStore{},
-		tokens: map[string]string{}}
+		tokens: map[string]string{}, ids: map[string]int64{}, renamed: map[string]string{},
+		written: map[string]int{}}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	return f
 }
@@ -71,6 +77,30 @@ func (f *fakeGitHub) addRepository(repository, token string) {
 	f.repos[repository] = []*fakeGitHubRelease{}
 	f.git[repository] = newFakeGitStore(repository)
 	f.tokens[repository] = token
+	f.nextID++
+	f.ids[repository] = f.nextID
+}
+
+// repositoryID is GitHub's id of repository.
+func (f *fakeGitHub) repositoryID(repository string) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ids[repository]
+}
+
+// writes is the number of requests other than reads repository took.
+func (f *fakeGitHub) writes(repository string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.written[repository]
+}
+
+// rename makes GitHub answer for repository under the name to, as it follows
+// a renamed repository's old name.
+func (f *fakeGitHub) rename(repository, to string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.renamed[repository] = to
 }
 
 // releases returns a copy of repository's releases, with their files.
@@ -84,6 +114,21 @@ func (f *fakeGitHub) releases(repository string) []fakeGitHubRelease {
 		out = append(out, c)
 	}
 	return out
+}
+
+// count counts a request to repository that isn't a read, under f's lock.
+func (f *fakeGitHub) count(req *http.Request, repository string) {
+	if req.Method != http.MethodGet {
+		f.written[repository]++
+	}
+}
+
+// name is the name GitHub answers for repository, under f's lock.
+func (f *fakeGitHub) name(repository string) string {
+	if to, ok := f.renamed[repository]; ok {
+		return to
+	}
+	return repository
 }
 
 func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
@@ -116,8 +161,10 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 		reply(w, http.StatusUnauthorized, map[string]string{"message": "Bad credentials"})
 		return
 	}
+	f.count(req, repository)
 	if whole {
-		reply(w, http.StatusOK, map[string]string{"full_name": repository, "default_branch": f.git[repository].branch})
+		reply(w, http.StatusOK, map[string]any{"id": f.ids[repository], "full_name": f.name(repository),
+			"default_branch": f.git[repository].branch})
 		return
 	}
 	rest := parts[3:]

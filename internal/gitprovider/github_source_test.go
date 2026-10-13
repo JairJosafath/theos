@@ -3,6 +3,7 @@ package gitprovider
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -175,7 +177,8 @@ func (g *fakeGit) descends(commit, ancestor string) bool {
 func (g *fakeGit) serve(f *fakeGitHub, w http.ResponseWriter, r *http.Request) {
 	repo := "/repos/" + fakeGitHubRepo
 	if r.URL.Path == repo {
-		f.json(w, http.StatusOK, map[string]string{"full_name": fakeGitHubRepo, "default_branch": g.defaultBranch})
+		f.json(w, http.StatusOK, map[string]any{"id": fakeGitHubRepoID, "full_name": fakeGitHubRepo,
+			"default_branch": g.defaultBranch})
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, repo+"/git/")
@@ -470,6 +473,7 @@ func checkSourceCalls(t *testing.T, f *fakeGitHub, head, headTree string) {
 	repo := "/repos/" + fakeGitHubRepo
 	git := repo + "/git/"
 	wantCalls := map[string]string{
+		"Repository":    "GET " + repo,
 		"DefaultBranch": "GET " + repo,
 		"Ref":           "GET " + git + "ref/heads/main",
 		"Commit":        "GET " + git + "commits/" + head,
@@ -499,6 +503,54 @@ func entryNames(tree GitTree) []string {
 }
 
 // TestGitHubSourceAnnotatedTag peels a tag object to its commit.
+// fakeGitHubRepoID is GitHub's id of fakeGitHubRepo.
+const fakeGitHubRepoID = 4242
+
+func TestGitHubRepository(t *testing.T) {
+	f, g := newFakeGitHub(t)
+	f.git.seed(map[string]string{"README.md": "the repo"})
+	got, err := g.Repository(context.Background())
+	want := TargetRepository{ID: fakeGitHubRepoID, FullName: fakeGitHubRepo, DefaultBranch: "main"}
+	if err != nil || got != want {
+		t.Errorf("Repository() = %+v, %v; want %+v", got, err, want)
+	}
+}
+
+// A renamed repository's old name redirects to it by id, as GitHub's API
+// does: the client follows, and reads the new name and the same id.
+func TestGitHubRepositoryRenamed(t *testing.T) {
+	token := rand.Text()
+	var paths []string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Errorf("request %s %s has Authorization %q", r.Method, r.URL.Path, got)
+		}
+		switch r.URL.Path {
+		case "/repos/" + fakeGitHubRepo:
+			http.Redirect(w, r, "/repositories/4242", http.StatusMovedPermanently)
+		case "/repositories/4242":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":4242,"full_name":"acme/private-cel-lens","default_branch":"main"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+	g, err := Client{}.GitHubReleases(GitHubConfig{Repository: fakeGitHubRepo, Token: token, APIURL: api.URL})
+	if err != nil {
+		t.Fatalf("GitHubReleases() error = %v", err)
+	}
+	got, err := g.Repository(context.Background())
+	want := TargetRepository{ID: 4242, FullName: "acme/private-cel-lens", DefaultBranch: "main"}
+	if err != nil || got != want {
+		t.Errorf("Repository() = %+v, %v; want %+v", got, err, want)
+	}
+	if wantPaths := []string{"GET /repos/" + fakeGitHubRepo, "GET /repositories/4242"}; !reflect.DeepEqual(paths, wantPaths) {
+		t.Errorf("requests = %q, want %q", paths, wantPaths)
+	}
+}
+
 func TestGitHubSourceAnnotatedTag(t *testing.T) {
 	f, g := newFakeGitHub(t)
 	head, tree := f.git.seed(map[string]string{"a": "a"})
@@ -616,6 +668,7 @@ func TestGitHubSourceFailures(t *testing.T) {
 			f.fail = func(w http.ResponseWriter) { f.reply(w, tt.status, tt.body) }
 			ctx := context.Background()
 			calls := map[string]func() error{
+				"Repository":    func() error { _, err := g.Repository(ctx); return err },
 				"DefaultBranch": func() error { _, err := g.DefaultBranch(ctx); return err },
 				"Ref":           func() error { _, err := g.Ref(ctx, "heads/main"); return err },
 				"Commit":        func() error { _, err := g.Commit(ctx, sha); return err },

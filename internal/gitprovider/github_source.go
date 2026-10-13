@@ -54,10 +54,25 @@ type GitCommit struct {
 	Message string
 }
 
+// TargetRepository is a GitHub repository as GitHub answers for it.
+type TargetRepository struct {
+	// ID is GitHub's id of the repository, which a rename keeps and a new
+	// repository under the old name doesn't.
+	ID int64
+	// FullName is owner/name as GitHub has it now: another than asked for when
+	// GitHub followed a rename.
+	FullName string
+	// DefaultBranch is the default branch's name, "" in an empty repository.
+	DefaultBranch string
+}
+
 // SourceTarget is a repository a release's source is written to, through
 // GitHub's Git Data API: it reads and creates git objects and refs, and only
 // ever moves a branch by a fast-forward.
 type SourceTarget interface {
+	// Repository reads the repository, following GitHub's redirect from a
+	// renamed one's old name.
+	Repository(ctx context.Context) (TargetRepository, error)
 	// DefaultBranch returns the repository's default branch's name.
 	DefaultBranch(ctx context.Context) (string, error)
 	// Ref returns the commit ref names (heads/main, tags/engine/v0.6.1), an
@@ -115,11 +130,21 @@ func objectPath(sha string) (string, error) {
 	return sha, nil
 }
 
-func (g *githubReleases) DefaultBranch(ctx context.Context) (string, error) {
+func (g *githubReleases) Repository(ctx context.Context) (TargetRepository, error) {
 	var r struct {
+		ID            int64  `json:"id"`
+		FullName      string `json:"full_name"`
 		DefaultBranch string `json:"default_branch"`
 	}
 	if err := g.call(ctx, http.MethodGet, g.api, g.repo, nil, http.StatusOK, "reading the repository", &r); err != nil {
+		return TargetRepository{}, err
+	}
+	return TargetRepository{ID: r.ID, FullName: r.FullName, DefaultBranch: r.DefaultBranch}, nil
+}
+
+func (g *githubReleases) DefaultBranch(ctx context.Context) (string, error) {
+	r, err := g.Repository(ctx)
+	if err != nil {
 		return "", err
 	}
 	if r.DefaultBranch == "" {
