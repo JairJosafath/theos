@@ -256,17 +256,24 @@ func (r *TaskReconciler) fileByHand(ctx context.Context, provider gitprovider.Pr
 	return issue.URL, err
 }
 
-// endIssue says on an issue how its Task ended, takes it out of progress and
-// closes it. It returns the notes' errors.
+// endIssue takes an issue out of progress, closes it and says how its Task
+// ended. The comment comes only once the host took the close, so a close it
+// refuses (an open dependency) leaves no comment saying the open issue is done.
+// It returns the notes' errors.
 func (r *TaskReconciler) endIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, n int,
 	comment string) []error {
-	return []error{
-		r.gitCall(ctx, func(ctx context.Context) error { return provider.CommentIssue(ctx, repo, n, comment) }),
+	notes := []error{
 		r.gitCall(ctx, func(ctx context.Context) error {
 			return provider.RemoveIssueLabel(ctx, repo, n, model.LabelInProgress)
 		}),
-		r.gitCall(ctx, func(ctx context.Context) error { return provider.CloseIssue(ctx, repo, n) }),
 	}
+	closeErr := r.gitCall(ctx, func(ctx context.Context) error { return provider.CloseIssue(ctx, repo, n) })
+	notes = append(notes, closeErr)
+	if closeErr != nil {
+		return notes
+	}
+	return append(notes,
+		r.gitCall(ctx, func(ctx context.Context) error { return provider.CommentIssue(ctx, repo, n, comment) }))
 }
 
 // handBack gives a failed Task's issue back to a person, saying why.
