@@ -13,6 +13,12 @@
       npm_config_cache: /tmp/npm-cache
       # uv's cache, for cfn-lint, goes there for the same reason.
       UV_CACHE_DIR: /tmp/uv-cache
+{{- if eq .Framework "aws-lambda-go" }}
+      # The function's modules come from the public proxy; c4factory.local
+      # paths, which no public proxy knows, are never asked of it.
+      GOPROXY: https://proxy.golang.org,direct
+      GOPRIVATE: c4factory.local
+{{- end }}
     steps:
       - name: Check out
         run: |
@@ -42,7 +48,7 @@ jobs:
 {{- if $beforeRelease }}
     if: {{`${{ !startsWith(gitea.ref, 'refs/heads/release-check/') }}`}}
 {{- end }}
-{{- template "job" }}
+{{- template "job" . }}
       # A change to only the changelog, docs/ or images has nothing for the
       # steps below to verify: the job passes without them, so the required
       # "check" context still reports and the change merges. Any other file,
@@ -74,7 +80,7 @@ jobs:
   # the commit changes since the branch's previous push.
   full:
     if: startsWith(gitea.ref, 'refs/heads/release-check/')
-{{- template "job" }}
+{{- template "job" . }}
       - name: make check
         run: make check
 {{- else }}

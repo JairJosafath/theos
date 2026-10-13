@@ -1,0 +1,188 @@
+{{ if eq .Framework "aws-lambda-go" -}}
+# Lint and format config for agent-written Go, for golangci-lint v2.14 (the
+# toolchain image's). `make lint` runs the linters, `make fmt-check` the
+# formatters; any finding fails `make check`.
+#
+# Strict but quiet: the standard linters plus the ones below, each catching a
+# class of real bugs or enforcing a rule from docs/style/go.md. Nothing is
+# excluded by a preset or a hidden default: every exclusion is in this file,
+# with its reason. Changing this file is the Standard's job, not a task's.
+version: "2"
+
+run:
+  # Tests are code that must stay correct too.
+  tests: true
+
+linters:
+  # errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - bodyclose # HTTP response bodies are closed
+    - copyloopvar # no `v := v` copies; loop variables are per iteration since Go 1.22
+    - errname # sentinel errors are ErrX, error types XError
+    - errorlint # errors.Is/As and %w; never == or a type switch on a wrapped error
+    - exhaustive # a switch over an enum names every value
+    - forcetypeassert # v, ok := x.(T); never a panicking x.(T)
+    - gocritic # bugs and simplifications go vet misses
+    - gosec # injection, weak crypto, file permissions, integer overflow
+    - intrange # for i := range n
+    - misspell # spelling in comments and strings
+    - nilerr # returning nil while err != nil
+    - nolintlint # every //nolint names its linter and says why
+    - perfsprint # strconv and errors.New where fmt does the same, slower
+    - predeclared # no variables named len, new, error, any...
+    - revive # golint's style checks, curated below
+    - thelper # test helpers call t.Helper() and take t first
+    - unconvert # no needless conversions
+    - unparam # no parameter that always gets the same value
+    - usestdlibvars # http.MethodGet, http.StatusOK, not "GET", 200
+    - usetesting # t.TempDir, t.Setenv, t.Chdir, t.Context in tests
+    - wastedassign # no assignment that is never read
+
+  settings:
+    errcheck:
+      # A command's writes to stdout and stderr have nowhere to report a
+      # failure. Files and network streams still get their Close, Flush and
+      # Write errors checked.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+    exhaustive:
+      # A default branch does not count: a new enum value must fail the lint
+      # at every switch that has to handle it.
+      default-signifies-exhaustive: false
+
+    gocritic:
+      enabled-tags: [diagnostic, style, performance]
+      disabled-checks:
+        # Passing a big struct by value, or ranging over one, is a decision
+        # for a benchmark, not a lint.
+        - hugeParam
+        - rangeValCopy
+        # Named results only where they document; that is a [review] rule.
+        - unnamedResult
+        # nolintlint already requires the reason.
+        - whyNoLint
+
+    gosec:
+      excludes:
+        # G104 (unchecked errors) repeats errcheck and ignores its settings.
+        - G104
+        # G304: a CLI opens the files its user names, so every os.Open(path)
+        # would flag. Paths from untrusted input are a [review] rule.
+        - G304
+
+    govet:
+      enable-all: true
+      disable:
+        # Ordering struct fields for memory is a measured decision.
+        - fieldalignment
+        # Shadowing err in an inner scope is idiomatic Go.
+        - shadow
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+
+    perfsprint:
+      # fmt.Sprintf("open %s: %v", a, b) reads better than concatenation.
+      strconcat: false
+
+    revive:
+      # Only the rules listed run: golint's set, plus rules for bugs and
+      # clarity that Go's style guides ask for. Left out because another
+      # linter reports the same: error-strings (staticcheck ST1005),
+      # waitgroup-by-value (govet copylocks), unnecessary-stmt (gocritic).
+      rules:
+        # golint's rules (revive's defaults)
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: errorf
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
+        # Added
+        - name: atomic # sync/atomic results are not discarded
+        - name: bare-return # no naked returns
+        - name: bool-literal-in-expr # no `x == true`
+        - name: comment-spacings # `// text`, not `//text`
+        - name: confusing-results # name results of the same type
+        - name: constant-logical-expr # no `x == x`
+        - name: datarace # no named results captured by goroutines
+        - name: deep-exit # os.Exit and log.Fatal only in main and init
+        - name: defer # no defer in loops, recover only in defer
+        - name: duplicated-imports
+        - name: early-return # handle the short case first
+        - name: forbidden-call-in-wg-go # no wg.Done or recover inside wg.Go
+        - name: identical-branches # if and else do the same
+        - name: identical-ifelseif-branches
+        - name: identical-ifelseif-conditions
+        - name: identical-switch-branches
+        - name: identical-switch-conditions
+        - name: if-return # no `if err != nil { return err }; return nil`
+        - name: modifies-value-receiver # writes to a copy are lost
+        - name: package-directory-mismatch # a package is named like its directory
+        - name: redundant-import-alias
+        - name: redundant-test-main-exit # TestMain needs no os.Exit
+        - name: string-of-int # string(rune(i)), never string(i)
+        - name: struct-tag # well-formed json and yaml tags
+        - name: time-equal # t.Equal(u), not t == u
+        - name: unconditional-recursion
+        - name: unexported-naming # no unexported symbols named like exported ones
+        - name: unnecessary-format # Print, not Printf without verbs
+        - name: use-any # any, not interface{}
+        - name: use-waitgroup-go # wg.Go(f), not Add, go and Done
+        - name: useless-break
+        - name: useless-fallthrough
+
+    staticcheck:
+      # golangci-lint's default, made explicit: everything but the six style
+      # checks revive already makes (package comments, naming, receiver names,
+      # doc comment forms).
+      checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022"]
+
+  exclusions:
+    # Only files with Go's standard "Code generated ... DO NOT EDIT." header.
+    generated: strict
+    # No presets: they hide real findings, such as unchecked Close errors and
+    # missing doc comments.
+    presets: []
+
+formatters:
+  enable:
+    - gofumpt # gofmt, stricter
+    - goimports # standard library imports first, then the rest
+  settings:
+    gofumpt:
+      extra:
+        # func(a, b string), not func(a string, b string)
+        group-params: true
+  exclusions:
+    generated: strict
+
+issues:
+  # Report every finding: not only the first 50 per linter, 3 of a kind or
+  # one per line.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false
+{{ end -}}

@@ -1,0 +1,92 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strconv"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+)
+
+// ItemStore is where items live. The handler's logic depends on this, never
+// on DynamoDB.
+type ItemStore interface {
+	// Get returns the item with id, and false when there is none.
+	Get(ctx context.Context, id string) (Item, bool, error)
+	// Put stores item, replacing any item with its id.
+	Put(ctx context.Context, item Item) error
+}
+
+// dynamoAPI is the part of DynamoDB's client the store calls, so a test
+// passes a fake without the network.
+type dynamoAPI interface {
+	GetItem(ctx context.Context, in *dynamodb.GetItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
+	PutItem(ctx context.Context, in *dynamodb.PutItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+}
+
+// DynamoItemStore keeps items in a DynamoDB table whose partition key is the
+// string id.
+type DynamoItemStore struct {
+	client dynamoAPI
+	table  string
+}
+
+// NewDynamoItemStore returns a store on table, sending through client.
+func NewDynamoItemStore(client dynamoAPI, table string) *DynamoItemStore {
+	return &DynamoItemStore{client: client, table: table}
+}
+
+// Get reads the item with id, checking what the table holds.
+func (s *DynamoItemStore) Get(ctx context.Context, id string) (Item, bool, error) {
+	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(s.table),
+		Key:       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: id}},
+	})
+	if err != nil {
+		return Item{}, false, fmt.Errorf("get item %s from table %s: %w", id, s.table, err)
+	}
+	if out.Item == nil {
+		return Item{}, false, nil
+	}
+	item, err := fromAttributes(id, out.Item)
+	if err != nil {
+		return Item{}, false, fmt.Errorf("item %s in table %s is malformed: %w", id, s.table, err)
+	}
+	return item, true, nil
+}
+
+// Put writes item, replacing the one with its id.
+func (s *DynamoItemStore) Put(ctx context.Context, item Item) error {
+	_, err := s.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(s.table),
+		Item: map[string]types.AttributeValue{
+			"id":       &types.AttributeValueMemberS{Value: item.ID},
+			"name":     &types.AttributeValueMemberS{Value: item.Name},
+			"quantity": &types.AttributeValueMemberN{Value: strconv.FormatInt(item.Quantity, 10)},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("put item %s into table %s: %w", item.ID, s.table, err)
+	}
+	return nil
+}
+
+// fromAttributes reads an item's fields from a DynamoDB row and checks them.
+func fromAttributes(id string, row map[string]types.AttributeValue) (Item, error) {
+	name, ok := row["name"].(*types.AttributeValueMemberS)
+	if !ok {
+		return Item{}, ErrBadName
+	}
+	n, ok := row["quantity"].(*types.AttributeValueMemberN)
+	if !ok {
+		return Item{}, ErrBadQuantity
+	}
+	quantity, err := strconv.ParseInt(n.Value, 10, 64)
+	if err != nil {
+		return Item{}, errors.Join(ErrBadQuantity, err)
+	}
+	return checkFields(id, name.Value, quantity)
+}
