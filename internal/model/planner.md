@@ -94,7 +94,11 @@ Push the branch `plan/<round>` with these files:
    app, so plan no DataStore for it. An idea that asks for EC2, virtual
    machines or servers you run on AWS is a `service` on the Framework that
    supports it, such as `aws-ec2-ts`, the same way: the Standard that fits
-   it, no `computeRef`, no `deploymentRef` and no DataStore. When no
+   it, no `computeRef`, no `deploymentRef` and no DataStore. An idea that
+   asks for a container service on AWS, ECS or Fargate is a `service` on the
+   Framework that supports it, such as `aws-fargate-ts`, the same way: no
+   `computeRef`, no `deploymentRef` and no DataStore. A `service` that names
+   no AWS runs in the cluster, on its other Frameworks. When no
    Framework in
    `model/catalog.yaml` supports that type, write `needs-input.md` naming the
    kind of app and saying the catalog can't build it yet, and don't build

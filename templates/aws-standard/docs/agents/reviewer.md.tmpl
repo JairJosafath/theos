@@ -12,7 +12,7 @@ says what to check.
    that proves it. A criterion is met only when a test would fail without the
    change. Missing or untested is not met.
 2. **Correctness and edge cases.** Empty, huge, malformed and non-ASCII
-   bodies, paths and query strings; base64-encoded bodies; a missing item; a
+   bodies, paths and query strings; {{ if eq .Framework "aws-fargate-ts" }}bodies over the limit; percent-encoded paths{{ else }}base64-encoded bodies{{ end }}; a missing item; a
    request retried after a timeout (idempotency); SDK calls that fail or are
    throttled; every error answered with the right HTTP status and a JSON
    message, never a stack trace.
@@ -27,7 +27,7 @@ says what to check.
 3. **Tests.** They test behaviour through the request handling and other
    exports, check the status code and the body, would fail without the
    change, cover the edge cases above, and are deterministic: no real timers
-   or real-time bounds (fake timers instead), no network, no call to AWS (SDK
+   or real-time bounds (fake timers instead), no network{{ if eq .Framework "aws-fargate-ts" }} or server started{{ end }}, no call to AWS (SDK
    clients faked behind their interface). Infrastructure changes have
    `Template.fromStack` assertions.
 {{- end }}
@@ -46,7 +46,9 @@ says what to check.
 {{- else -}}
 4. **Design.** Logic in modules that import neither the AWS SDK nor {{ if eq .Framework "aws-ec2-ts" }}`node:http`;
    one module per AWS service behind an interface; `src/server.ts` only
-   adapts HTTP and `src/main.ts` only wires;{{ else if $py }}the
+   adapts HTTP and `src/main.ts` only wires;{{ else if eq .Framework "aws-fargate-ts" }}Node's
+   HTTP server; one module per AWS service behind an interface;
+   `src/main.ts` only wiring;{{ else if $py }}the
    Lambda event types; one module per AWS service behind a `Protocol`;
    `app/handler.py` only wiring;{{ else }}the
    `aws-lambda` types; one module per AWS service behind an interface;
@@ -56,7 +58,8 @@ says what to check.
 5. **Errors and resources.** {{ if $py }}Exceptions are caught where they can be answered,
    never swallowed by a bare `except`;{{ else }}Promises are awaited or deliberately voided;{{ end }}
    {{ if eq .Framework "aws-ec2-ts" }}SDK clients are created once in `src/main.ts`, never per request; the
-   server stops cleanly on `SIGTERM`;{{ else if $py }}boto3 clients and resources are created once at module scope, never per invocation;{{ else }}SDK clients are created once at module scope, never per invocation;{{ end }} a
+   server stops cleanly on `SIGTERM`;{{ else if eq .Framework "aws-fargate-ts" }}SDK clients are created once in `src/main.ts`, never per request; the
+   server closes on `SIGTERM` and finishes what is in flight;{{ else if $py }}boto3 clients and resources are created once at module scope, never per invocation;{{ else }}SDK clients are created once at module scope, never per invocation;{{ end }} a
    failure is logged once as structured JSON with the request id and
    answered with a status code; no stack trace or SDK error text reaches a
    client.
@@ -64,7 +67,9 @@ says what to check.
 {{ if eq .Framework "aws-ec2-ts" }}6. **Performance and cost.** The instance type and the Auto Scaling group's
    size and scaling policy are set and fit the work; nothing is added that
    runs all month for an occasional need (a NAT gateway, an endpoint, a
-   bigger instance) without the issue asking for it;{{ else }}6. **Performance and cost.** Nothing heavy at import beyond the clients; the
+   bigger instance) without the issue asking for it;{{ else if eq .Framework "aws-fargate-ts" }}6. **Performance and cost.** Nothing per request that could run once; the
+   task's CPU and memory and the service's scaling bounds are set and fit
+   the work, every body has a limit;{{ else }}6. **Performance and cost.** Nothing heavy at import beyond the clients; the
    function's memory and timeout are set and fit the work;{{ end }} DynamoDB is read
    by key or query, never a scan on a request path; budgets from the issue or
    the system's needs are measured by a bench, never by a test with a time
@@ -75,7 +80,8 @@ says what to check.
 8. **Security.** Permissions through CDK grants narrowed to the calls the
    code makes, never `*` actions or AWS managed policies; data encrypted at
    rest; {{ if eq .Framework "aws-ec2-ts" }}the load balancer reachable only from inside the VPC, and
-   instances only from the load balancer, unless the issue says otherwise;{{ else }}every route authorized;{{ end }} input validated before it reaches DynamoDB
+   instances only from the load balancer, unless the issue says otherwise;{{ else if eq .Framework "aws-fargate-ts" }}the tasks reachable only through the load balancer, which serves
+   HTTPS; every route authenticated that the issue says must be;{{ else }}every route authorized;{{ end }} input validated before it reaches DynamoDB
    or a log; no secret in an environment variable, the template, a log or a
    response; new install scripts justified.
 9. **CDK Nag acknowledgements.** Check each
@@ -157,8 +163,8 @@ yourself; the full `make check` runs on the release's commit before its tag.
 - `make check` synthesized the stacks with CDK Nag and ran cfn-lint on them,
   and CI is green on the last commit.
 - Look for: `console` used past the `Log` the code is given; an SDK
-  client created {{ if eq .Framework "aws-ec2-ts" }}per request{{ else }}inside the handler{{ end }}; `process.env` read outside
-  `src/{{ if eq .Framework "aws-ec2-ts" }}main{{ else }}handler{{ end }}.ts`; floating promises hidden behind `void` without a reason;
+  client created {{ if eq .Framework "aws-ec2-ts" }}per request{{ else if eq .Framework "aws-fargate-ts" }}per request{{ else }}inside the handler{{ end }}; `process.env` read outside
+  `src/{{ if eq .Framework "aws-ec2-ts" }}main{{ else if eq .Framework "aws-fargate-ts" }}main{{ else }}handler{{ end }}.ts`;{{ if eq .Framework "aws-fargate-ts" }} a body read without its limit;{{ end }} floating promises hidden behind `void` without a reason;
   `as` casts or disable comments that hide a real type error; a `Scan` on a
 {{- end }}
   request path; a grant wider than the calls the code makes; a resource
@@ -166,6 +172,7 @@ yourself; the full `make check` runs on the release's commit before its tag.
   `env` taken from the environment or a context lookup, which would need an
   AWS account to synthesize.
 {{- end }}
-- Behaviour only a real AWS account can show (IAM at run time, throttling,
-  cold starts, the deployed URL) is "could not be verified": nothing here
+- Behaviour only a real AWS account can show (IAM at run time, {{ if eq .Framework "aws-fargate-ts" }}the image
+  build, health checks, scaling, the deployed URL){{ else }}throttling,
+  cold starts, the deployed URL){{ end }} is "could not be verified": nothing here
   deploys. Say so rather than approving on faith.

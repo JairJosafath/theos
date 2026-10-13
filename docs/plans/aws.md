@@ -117,7 +117,11 @@ lesson gives the AWS templates.
    deployment. A Deployment can't be limited to Frameworks, so
    `k8s-manifests` picked with `aws-fargate-ts` fails the Container on the
    shared `Dockerfile` path, as the one-owner rule intends; the planner
-   guide says AWS Frameworks take no Deployment and no Compute.
+   guide says AWS Frameworks take no Deployment and no Compute. (Step 3:
+   it doesn't fail. `k8s-manifests` writes no `Dockerfile` for a Framework
+   it doesn't know, so the pair scaffolds with manifests nothing uses, and
+   only the planner guide keeps a Brief from it; #1056 proposes a catalog
+   rule that refuses it.)
 5. **The check:** `make check` is ts-standard's (deps, fmt-check, lint,
    typecheck, vitest) plus `synth` (`cdk synth --quiet` with CDK Nag's
    `AwsSolutions` pack applied as an Aspect, so an unsuppressed finding fails
@@ -163,7 +167,12 @@ main working.
    `make check` (synth, CDK Nag, cfn-lint, tests) passes on this device
    with its output in the pull request.
 3. **The PaaS Framework `aws-fargate-ts`** (#1031), and `aws-standard` v1.1.0 with
-   its branch. *Done when:* the same as step 2, for this Framework.
+   its branch. *Done when:* the same as step 2, for this Framework. (Done,
+   as `aws-standard` v1.3.0: steps 6 and 4 merged first and took v1.1.0 and v1.2.0. The
+   image is `ContainerImage.fromAsset`, staged by synth and built by
+   `cdk deploy`; HTTPS takes the certificate as a CloudFormation parameter
+   so the stack stays environment-agnostic, and the load balancer's access
+   logs use the log delivery service principal for the same reason.)
 4. **The IaaS Framework `aws-ec2-ts`** (#1032), and `aws-standard` v1.2.0 with its
    branch. *Done when:* the same as step 2, for this Framework. (Step 4,
    landed as aws-standard v1.2.0, after #1034 took v1.1.0: the
@@ -181,7 +190,7 @@ main working.
    keeps them off.)
 5. **A Python (boto3) Lambda Framework `aws-lambda-py`** (#1033), with
    `aws-standard` adding ruff and pytest for its branch. Waits on step 2.
-   (Landed as aws-lambda-py v1.0.0 and aws-standard v1.3.0. The branch adds
+   (Landed as aws-lambda-py v1.0.0 and aws-standard v1.4.0. The branch adds
    mypy `--strict` too, and copies python-standard's `ruff.toml`, `mypy.ini`
    and `python.md`'s general sections, which a drift test keeps equal, as it
    does ts-standard's files. The function is the package `app/`; the stack

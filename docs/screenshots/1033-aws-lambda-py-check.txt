@@ -6,13 +6,13 @@
 
 npm ci --no-audit --no-fund
 
-added 140 packages in 24s
+added 140 packages in 29s
 uv sync --locked
 Using CPython 3.14.4 interpreter at: /usr/bin/python3.14
 Creating virtual environment at: .venv
-Resolved 25 packages in 20ms
-Prepared 23 packages in 9.63s
-Installed 23 packages in 23ms
+Resolved 25 packages in 83ms
+Prepared 23 packages in 9.62s
+Installed 23 packages in 29ms
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
@@ -36,24 +36,26 @@ tests/test_api.py .........                                              [ 18%]
 tests/test_item_store.py ....                                            [ 27%]
 tests/test_items.py ...................................                  [100%]
 
-============================== 48 passed in 0.10s ==============================
+============================== 48 passed in 0.11s ==============================
 node_modules/.bin/vitest run
 
  RUN  v5.0.3 /tmp/p1033/app
 
 Bundling asset test/Handler/Code/Stage...
 Bundling asset items-fn/Handler/Code/Stage...
- ✓ infra/api_stack.test.ts (5 tests) 2541ms
- ✓ infra/standard.test.ts (8 tests) 3486ms
+ ✓ infra/api_stack.test.ts (5 tests) 3282ms
+ ✓ infra/standard.test.ts (8 tests) 4762ms
+   ✓ the Standard (8)
+     ✓ leaves no error or warning on any stack 332ms
 
  Test Files  2 passed (2)
       Tests  13 passed (13)
-   Start at  12:32:11
-   Duration  4.59s (tests 79%, import 17%, transform 4%)
+   Start at  12:50:38
+   Duration  6.51s (tests 74%, import 16%, transform 10%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet
 Bundling asset items-fn/Handler/Code/Stage...
 uvx cfn-lint==1.57.2 --ignore-checks W3005 -- cdk.out/*.template.json
-Installed 9 packages in 14ms
+Installed 9 packages in 37ms
 exit=0

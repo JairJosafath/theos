@@ -4,7 +4,9 @@
 
 This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` {{ if eq .Framework "aws-ec2-ts" }}service of {{ .SoftwareSystem }}: an HTTP
 server in TypeScript on EC2 instances in an Auto Scaling group behind an
-internal Application Load Balancer{{ else }}function of {{ .SoftwareSystem }}: an AWS
+internal Application Load Balancer{{ else if eq .Framework "aws-fargate-ts" }}service of {{ .SoftwareSystem }}: an HTTP
+service in TypeScript on Node, run as a container on Amazon ECS on Fargate
+behind an Application Load Balancer{{ else }}function of {{ .SoftwareSystem }}: an AWS
 Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else if $py }}Python, on boto3,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API{{ end }}, keeping its data
 in DynamoDB, with its infrastructure as a CDK app in `infra/`, scaffolded by
 C4 Factory with the `{{ .Standard }}` Standard. Build it to the rules below. What
@@ -43,7 +45,9 @@ reaches `main` without it passing and a review. Never commit red.
 Nothing here deploys. No command, test or script calls AWS, bootstraps an
 account or needs credentials: `cdk synth` writes CloudFormation into
 `cdk.out/`, offline{{ if $py }}, but for the wheels it bundles into the function, which uv
-takes from its cache or, when the cache lacks one, PyPI{{ end }}.
+takes from its cache or, when the cache lacks one, PyPI{{ end }}.{{ if eq .Framework "aws-fargate-ts" }} No check builds the image either: synth only stages
+its build context, and `cdk deploy` builds it, with Docker, on the deployer's
+machine.{{ end }}
 
 ## Workflow
 
@@ -100,8 +104,8 @@ takes from its cache or, when the cache lacks one, PyPI{{ end }}.
   `npm install --save-exact --save-dev` and commit `package-lock.json`.
 {{- else }}
 - Add packages with `npm install --save-exact` (`--save-dev` for tools), and
-  commit `package-lock.json`. esbuild bundles what the {{ if eq .Framework "aws-ec2-ts" }}server{{ else }}function{{ end }} imports into
-  one file, the SDK included, so `node_modules` never ships; what it
+  commit `package-lock.json`. esbuild bundles what the {{ if eq .Framework "aws-ec2-ts" }}server{{ else if eq .Framework "aws-fargate-ts" }}service{{ else }}function{{ end }} imports into
+  one file, the SDK included, {{ if eq .Framework "aws-fargate-ts" }}in the image's build, {{ end }}so `node_modules` never ships; what it
   imports at run time is a `dependency`, tools and the CDK are
   `devDependencies`. Prefer Node's own modules and the AWS SDK v3's modular
   clients (`@aws-sdk/client-*`, `@aws-sdk/lib-dynamodb`); then few, maintained,
@@ -123,6 +127,12 @@ takes from its cache or, when the cache lacks one, PyPI{{ end }}.
    stops the server at start-up, not at the first request. On `SIGTERM` the
    server finishes the requests in flight and exits. The bundle imports only
    the clients it uses.
+{{- else if eq .Framework "aws-fargate-ts" -}}
+1. **Start and stop:** SDK clients and configuration are created once, in
+   `src/main.ts`, and reused by every request; nothing heavy runs per
+   request that could run once. On `SIGTERM` the server stops taking
+   requests and finishes those in flight. The bundle imports only the
+   clients it uses.
 {{- else if $py -}}
 1. **Cold start:** boto3 clients, resources and configuration are created
    once, at module scope in `app/handler.py`, and reused by every invocation;
@@ -144,14 +154,17 @@ takes from its cache or, when the cache lacks one, PyPI{{ end }}.
    idle connections open longer than the load balancer's 60 seconds; the
    instance type, the Auto Scaling group's minimum and maximum and its scaling
    policy are set in the stack. A request is answered within the load
-   balancer's idle timeout; SDK calls stay within it.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
+   balancer's idle timeout; SDK calls stay within it.{{ else if eq .Framework "aws-fargate-ts" }}4. **Limits are set:** the task's CPU and memory and the service's scaling
+   bounds are set in the stack for the work; every request body has a
+   limit; keep-alive outlasts the load balancer's idle timeout, and the
+   container's stop timeout leaves the requests in flight time to finish.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
    stack, the timeout below API Gateway's 30 seconds and above what the work
    needs; SDK calls stay within it. The stage is throttled.{{ end }}
 5. **Logs:** structured JSON, one entry per line, through the {{ if $go }}`*slog.Logger`{{ else }}`Log`{{ end }} the
    code is given; an entry names the request id and what failed. Never
    log a secret, a token or a request body with user data.
 6. **Least privilege:** permissions come from CDK grants
-   (`table.grant(fn, 'dynamodb:GetItem')`, `grantReadData`), narrowed to the
+   ({{ if eq .Framework "aws-fargate-ts" }}`table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`{{ else }}`table.grant(fn, 'dynamodb:GetItem')`{{ end }}, `grantReadData`), narrowed to the
    calls the code makes; never an IAM statement with `*` or `service:*`
    actions, never an AWS managed policy on a role.
 {{- if $go }}
@@ -190,11 +203,14 @@ takes from its cache or, when the cache lacks one, PyPI{{ end }}.
 8. **Pure modules:** logic lives in modules that import neither the AWS SDK
    {{ if eq .Framework "aws-ec2-ts" }}nor `node:http`, tested with plain vitest; one module wraps each AWS
    service behind an interface the tests fake; `src/server.ts` adapts HTTP to
-   them and `src/main.ts` only wires them.{{ else }}nor the `aws-lambda` types, tested with plain vitest; one module wraps each
+   them and `src/main.ts` only wires them.{{ else if eq .Framework "aws-fargate-ts" }}nor Node's HTTP server, tested with plain vitest; one module wraps each
+   AWS service behind an interface the tests fake; `src/main.ts` only
+   wires them.{{ else }}nor the `aws-lambda` types, tested with plain vitest; one module wraps each
    AWS service behind an interface the tests fake; `src/handler.ts` only
    wires them.{{ end }}
 9. **Tests:** next to the code (`foo.test.ts`), `it.each` tables, names that say
-   what is expected; no real timers, network or shared state between tests.
+   what is expected; no real timers, network or shared state between tests{{ if eq .Framework "aws-fargate-ts" }};
+   no test starts the server{{ end }}.
    No test calls AWS: SDK clients are stubbed behind their interface, and
    stacks are checked with `Template.fromStack` assertions.
 {{- end }}
@@ -205,7 +221,7 @@ takes from its cache or, when the cache lacks one, PyPI{{ end }}.
     every stateful resource an explicit removal policy (`RETAIN` for data), and
     every stack the Standard's tags; `infra/standard.test.ts` checks these. No
     secret in an environment variable or the template: secrets are read from
-    Secrets Manager or Parameter Store at run time. Nothing in the app needs
+    Secrets Manager or Parameter Store at run time{{ if eq .Framework "aws-fargate-ts" }}, or passed as ECS `secrets`{{ end }}. Nothing in the app needs
     an AWS account to synthesize: no lookups, no `env` from the environment.
 12. **Releases:** user-visible changes get a `CHANGELOG.md` entry under
     "Unreleased"; the version in `{{ if $py }}pyproject.toml{{ else }}package.json{{ end }}` changes only in a release issue.
@@ -242,7 +258,10 @@ Offline digests (read the one for what you are touching):
 {{ if eq .Framework "aws-ec2-ts" }}- `docs/style/aws.md`: the HTTP server, EC2 instances in an Auto Scaling
   group, the Application Load Balancer, the VPC, DynamoDB, the AWS SDK v3,
   the CDK and CDK Nag, and tests
-- `docs/well-architected.md`: the AWS Well-Architected Framework, pillar{{ else }}- `docs/style/aws.md`: Lambda handlers, API Gateway HTTP APIs, DynamoDB, the
+- `docs/well-architected.md`: the AWS Well-Architected Framework, pillar{{ else if eq .Framework "aws-fargate-ts" }}- `docs/style/aws.md`: the server, the load balancer, the task and service,
+  DynamoDB, the AWS SDK v3, the CDK and CDK Nag, and tests
+- `docs/well-architected.md`: the AWS Well-Architected Framework and Amazon
+  ECS's best practices, pillar{{ else }}- `docs/style/aws.md`: Lambda handlers, API Gateway HTTP APIs, DynamoDB, the
   {{ if $go }}AWS SDK for Go v2{{ else if $py }}boto3{{ else }}AWS SDK v3{{ end }}, the CDK and CDK Nag, and tests
 - `docs/well-architected.md`: the AWS Well-Architected Framework and its
   Serverless Applications Lens, pillar{{ end }} by pillar, with the CDK Nag rules that
@@ -254,6 +273,7 @@ Online (canonical): {{ if $go }}https://go.dev/doc/effective_go · {{ else if $p
 https://boto3.amazonaws.com/v1/documentation/api/latest/guide/ · {{ end }}https://google.github.io/styleguide/tsguide.html ·
 https://typescript-eslint.io/rules/ · {{ if eq .Framework "aws-ec2-ts" }}https://docs.aws.amazon.com/autoscaling/ec2/userguide/ ·
 https://docs.aws.amazon.com/elasticloadbalancing/latest/application/ ·
-https://docs.aws.amazon.com/wellarchitected/latest/framework/ ·{{ else }}https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html ·
+https://docs.aws.amazon.com/wellarchitected/latest/framework/ ·{{ else if eq .Framework "aws-fargate-ts" }}https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-best-practices.html ·
+https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html ·{{ else }}https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html ·
 https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/ ·{{ end }}
 https://github.com/cdklabs/cdk-nag/blob/main/RULES.md

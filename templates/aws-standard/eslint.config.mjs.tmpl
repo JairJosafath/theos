@@ -1,4 +1,4 @@
-// Lint config for the {{ if eq .Framework "aws-ec2-ts" }}server's TypeScript and its CDK app{{ else if eq .Framework "aws-lambda-py" }}CDK app's TypeScript{{ else }}function's TypeScript and its CDK app{{ end }}: typescript-eslint's strictest
+// Lint config for the {{ if eq .Framework "aws-ec2-ts" }}server's{{ else if eq .Framework "aws-fargate-ts" }}service's{{ else if eq .Framework "aws-lambda-py" }}Python function's CDK app, in{{ else }}function's{{ end }} TypeScript{{ if ne .Framework "aws-lambda-py" }} and its CDK app{{ end }}: typescript-eslint's strictest
 // type-checked presets, plus the rules below. `make lint` runs ESLint with
 // --max-warnings 0, so any finding fails `make check`. Every rule turned off
 // or changed here says why. Changing this file is the Standard's job, not a
@@ -8,9 +8,15 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
+{{- if eq .Framework "aws-fargate-ts" }}
+  // What cdk synth writes (templates, the image's staged context) and what
+  // npm run bundle writes.
+  globalIgnores(['cdk.out/', 'dist/']),
+{{- else }}
   // What cdk synth writes: templates and the bundled {{ if eq .Framework "aws-ec2-ts" }}server{{ else }}function{{ end }}{{ if eq .Framework "aws-lambda-py" }};
   // and uv's environment, whose packages ship JavaScript of their own{{ end }}.
   globalIgnores(['cdk.out/'{{ if eq .Framework "aws-lambda-py" }}, '.venv/'{{ end }}]),
+{{- end }}
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
@@ -45,14 +51,15 @@ export default defineConfig(
       // tests see what it logs and every entry is one parseable line.
       'no-console': 'error',
 {{ if eq .Framework "aws-ec2-ts" }}      // process.exit() ends the server mid-request; throw, return an error
-      // response, or on SIGTERM close the server and let the process end.{{ else }}      // process.exit() in a Lambda function kills the execution environment
+      // response, or on SIGTERM close the server and let the process end.{{ else if eq .Framework "aws-fargate-ts" }}      // process.exit() drops the requests in flight; on SIGTERM the server
+      // closes and the process ends when they are done.{{ else }}      // process.exit() in a Lambda function kills the execution environment
       // mid-invocation; throw, or return an error response.{{ end }}
       'no-restricted-properties': [
         'error',
         {
           object: 'process',
           property: 'exit',
-          message: {{ if eq .Framework "aws-ec2-ts" }}'Throw, or return an error response; never end the server mid-request.'{{ else }}'Throw, or return an error response; never end the execution environment.'{{ end }},
+          message: {{ if eq .Framework "aws-ec2-ts" }}'Throw, or return an error response; never end the server mid-request.'{{ else if eq .Framework "aws-fargate-ts" }}'Close the server and let the process end; never drop the requests in flight.'{{ else }}'Throw, or return an error response; never end the execution environment.'{{ end }},
         },
       ],
       eqeqeq: ['error', 'always'],
