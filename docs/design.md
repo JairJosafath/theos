@@ -544,6 +544,21 @@ model and context it needs.
   Normal Event `ModulePublished` and the log line `Published Go module`; an
   invalid module is a Warning Event `InvalidModule`, once per release. See
   [plans/done/app-modules.md](plans/done/app-modules.md).
+  `ModulePublished` is True only once `go get <path>@<version>` finds the
+  version where that path is read (#1001). A `c4factory.local/` path is read
+  from the registry, so the upload is the publish. Any other path is read
+  through the public Go proxy, and the upload, still made, counts for
+  nothing there: the operator asks the proxy (`--go-proxy`, by default
+  proxy.golang.org; `off` asks none) for the version, at most every 5
+  minutes, and turns True on its answer. For a path that is the Crew's own
+  GitHub source folder it first waits for the source tag
+  (`WaitsForRelease`, naming the `Published` condition's failure), since the
+  proxy remembers a miss for a while; with no proxy, or a private target,
+  that tag is the answer. A version the proxy can't find is `NotFetchable`,
+  saying what Go needs, with a Warning Event `ModuleNotFetchable` once per
+  release; an unreachable proxy is `ProxyUnavailable`, asked again. A false
+  `ModulePublished` that waits on a person shows in *Needs you* and on the
+  Brief. See [plans/module-fetchable.md](plans/module-fetchable.md).
 - **A release can be published to GitHub.** A Crew with
   `spec.publishReleases.github` (`repository: owner/name`, and a Secret the
   user creates holding a token for that one repository) copies its last release
@@ -1119,8 +1134,10 @@ only when `status` carries the effective one. The plan behind it is
   `StandardUpdated` says its update pull request waits on a person or its
   Standard files are behind (`FilesBehind`); a Task
   `Blocked`, or `Failed` and not yet answered by a newer Task or a round; a
-  Crew whose `Released` leaves a release to a person, or whose
-  `status.lastRelease.run` is `Failed`. Each says why in the condition's own
+  Crew whose `Released` leaves a release to a person, whose
+  `status.lastRelease.run` is `Failed`, or whose `ModulePublished` is False
+  `InvalidModule` or `NotFetchable`, or `WaitsForRelease` while `Published`
+  is False. Each says why in the condition's own
   reason and message, since when, and where it is done: the object's page, a
   link out, or a `kubectl` line. Every item comes from `status`, none from
   timing.
