@@ -165,7 +165,20 @@ main working.
 3. **The PaaS Framework `aws-fargate-ts`** (#1031), and `aws-standard` v1.1.0 with
    its branch. *Done when:* the same as step 2, for this Framework.
 4. **The IaaS Framework `aws-ec2-ts`** (#1032), and `aws-standard` v1.2.0 with its
-   branch. *Done when:* the same as step 2, for this Framework.
+   branch. *Done when:* the same as step 2, for this Framework. (Step 4,
+   landed as aws-standard v1.1.0, the next minor on main then: the
+   instances sit in isolated subnets with no NAT gateway and reach S3,
+   DynamoDB and CloudWatch Logs through endpoints; the load balancer is
+   internal, so no route needs an authorizer and no rule is open to the
+   world. The server ships as an S3 asset that synth bundles with esbuild,
+   and user data runs it under systemd. ALB access logs use the log
+   delivery service principal, since `logAccessLogs` needs a region the
+   environment-agnostic stack doesn't have. aws-ec2-ts turns
+   `exactOptionalPropertyTypes` off: aws-cdk-lib's `Vpc` is not an `IVpc`
+   under it. The Standard's test now lets a `Deny` name every action and
+   reads tags with extra keys. A Deployment or Compute picked with
+   aws-ec2-ts writes no path the Framework does, so only the planner guide
+   keeps them off.)
 5. **A Python (boto3) Lambda Framework `aws-lambda-py`** (#1033), with
    `aws-standard` adding ruff and pytest for its branch. Waits on step 2.
 6. **A Go (SDK v2) Lambda Framework `aws-lambda-go`** (#1034), with `aws-standard`

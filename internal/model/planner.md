@@ -89,7 +89,10 @@ Push the branch `plan/<round>` with these files:
    Framework that supports it, such as `aws-lambda-ts`, with the Standard
    that fits it; it takes no `computeRef` and no `deploymentRef`: its CDK
    app is its deployment, and the table it keeps data in is in that app,
-   so plan no DataStore for it. When no
+   so plan no DataStore for it. An idea that asks for EC2, virtual machines
+   or servers you run on AWS is a `service` on the Framework that supports
+   it, such as `aws-ec2-ts`, the same way: the Standard that fits it, no
+   `computeRef`, no `deploymentRef` and no DataStore. When no
    Framework in
    `model/catalog.yaml` supports that type, write `needs-input.md` naming the
    kind of app and saying the catalog can't build it yet, and don't build

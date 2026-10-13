@@ -1,6 +1,6 @@
 # aws-standard (Standard)
 
-How a serverless TypeScript program on AWS in a C4 Factory Container is
+How a TypeScript program on AWS in a C4 Factory Container is
 written, checked and reviewed: ts-standard's TypeScript rules
 (typescript-eslint's strictest configs, Prettier), CDK Nag's AWS Solutions
 checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
@@ -15,11 +15,21 @@ same as ts-standard's for `node-cli`, and every line ts-standard's
 `eslint.config.mjs` and `docs/style/principles.md` render the same for all its
 Frameworks appears in this Standard's, in the same order.
 
-- **Supports:** `function`; Frameworks: `aws-lambda-ts`
-- **Per Framework:** it supports one Framework so far, and no file branches
-  on `.Framework` yet. A Framework added later gets its branches in the
-  `Makefile`, `AGENTS.md`, the role guides, `eslint.config.mjs` and
-  `docs/style/`, in the version that adds it.
+- **Supports:** `function`, `service`; Frameworks: `aws-lambda-ts`,
+  `aws-ec2-ts`
+- **Per Framework:** `AGENTS.md`, the role guides, the issue template,
+  `eslint.config.mjs`'s comments and message, `docs/style/aws.md`,
+  `principles.md`, `SOURCES.md` and `docs/well-architected.md` branch on
+  `.Framework`: `aws-ec2-ts` gets an EC2 digest (the server, the network and
+  load balancer, the instances and the Auto Scaling group) and a
+  Well-Architected digest for a service on instances; every other Framework
+  gets the serverless ones. A `function` or `aws-lambda-ts` Container gets
+  the same files as in v1.0.0 but for wording that no longer says
+  "function" where it means any code, and `infra/standard.test.ts`, which
+  now reads tags with extra keys (an Auto Scaling group's
+  `PropagateAtLaunch`) and lets a `Deny` statement name every action (a
+  bucket refusing plain HTTP). The `Makefile`, the CI workflow and the CDK
+  app are the same for every Framework.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
@@ -29,7 +39,7 @@ Frameworks appears in this Standard's, in the same order.
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
   `strictTypeChecked` and `stylisticTypeChecked` (typed, through the project
   service), plus exhaustive switches, explicit module boundary types,
-  `prefer-readonly`, sort compare functions, `no-console` (the function logs
+  `prefer-readonly`, sort compare functions, `no-console` (the code logs
   JSON through the `Log` it is given), `process.exit` refused, `eqeqeq` and
   `curly`; unused disable comments are errors. Prettier formats everything but
   the platform's files, the lockfile and `cdk.out/`, which ESLint ignores too.
@@ -45,7 +55,7 @@ Frameworks appears in this Standard's, in the same order.
   tests, builds the app the same way with `cdk.json`'s context and asserts on
   every stack: synth passes CDK Nag; no error or warning annotation; the three
   tags on the stack and on every resource with a `Tags` list; no IAM action
-  `*` or `service:*`; every DynamoDB table (`SSESpecification`), S3 bucket,
+  `*` or `service:*` in a statement that allows; every DynamoDB table (`SSESpecification`), S3 bucket,
   SQS queue and SNS topic encrypted at rest; every log group with a retention
   and every Lambda function logging to its own; every stateful resource
   (tables, buckets, queues, topics, log groups, databases, file systems, KMS
@@ -87,7 +97,8 @@ Frameworks appears in this Standard's, in the same order.
   `cdk.json`, whose `app` is `node_modules/.bin/tsx infra/main.ts` and whose
   context holds the recommended feature flags; `tsconfig.json`, including
   `src`, `infra` and `vitest.config.mts`; and `vitest.config.mts`, running
-  `src/**/*.test.ts` and `infra/**/*.test.ts`. aws-lambda-ts does all of this.
+  `src/**/*.test.ts` and `infra/**/*.test.ts`. aws-lambda-ts and aws-ec2-ts
+  do all of this.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
   They say no test calls AWS (stacks are checked with `Template.fromStack`,
@@ -98,15 +109,16 @@ Frameworks appears in this Standard's, in the same order.
   an issue without an unchecked item under "Acceptance criteria" is never picked up.
   The pull request template asks for the CDK Nag acknowledgements a change adds.
 - **Style digests:** `docs/style/` holds ts-standard's TypeScript digest and
-  cross-language principles (adapted for Lambda: what the handler owns, the
-  layering of pure modules, SDK wrappers and the handler), and `aws.md`, from
-  the Lambda, API Gateway, DynamoDB, SDK v3 and CDK guides and CDK Nag's
-  rules. Every rule is marked `[lint]`, `[nag]`, `[test]` or `[review]`;
+  cross-language principles (adapted per Framework: what the handler or the
+  server owns, the layering of pure modules, SDK wrappers and the entry
+  point), and `aws.md`, from the Lambda, API Gateway, DynamoDB, SDK v3 and
+  CDK guides and CDK Nag's rules, or for `aws-ec2-ts` the EC2 Auto Scaling,
+  Application Load Balancer, VPC, DynamoDB, SDK v3 and CDK guides. Every rule is marked `[lint]`, `[nag]`, `[test]` or `[review]`;
   `docs/style/SOURCES.md` lists the sources with dates and the pinned
   versions.
 - **Well-Architected:** `docs/well-architected.md` digests the AWS
-  Well-Architected Framework and its Serverless Applications Lens, one
-  section per pillar (operational excellence, security, reliability,
+  Well-Architected Framework (with its Serverless Applications Lens, but for
+  `aws-ec2-ts`), one section per pillar (operational excellence, security, reliability,
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet.

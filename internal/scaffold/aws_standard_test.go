@@ -21,6 +21,14 @@ var tsStandardFrameworks = []side{
 	{"cli", "node-cli"},
 }
 
+// awsStandardFrameworks are the Frameworks aws-standard supports, with a
+// type each supports; aws-standard branches on them, so each rendering keeps
+// ts-standard's shared lines.
+var awsStandardFrameworks = []side{
+	{model.TypeFunction, "aws-lambda-ts"},
+	{model.TypeService, "aws-ec2-ts"},
+}
+
 // awsStandardShared lists the files aws-standard shares with ts-standard.
 // whole: its rendering is byte for byte ts-standard's for node-cli. Else
 // every line that ts-standard renders the same for all its Frameworks is in
@@ -44,41 +52,40 @@ func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
 		ts = append(ts, r)
 	}
 	node := ts[len(ts)-1]
-	_, aws := renderCombo(t, model.TypeFunction, []side{
-		{model.SideFramework, "aws-lambda-ts"},
-		{model.SideStandard, "aws-standard"},
-	})
 	const fix = "copy ts-standard's change into templates/aws-standard and name ts-standard's version " +
 		"in its docs/style/SOURCES.md"
-	for _, s := range awsStandardShared {
-		t.Run(s.path, func(t *testing.T) {
-			got, ok := aws.Files[s.path]
-			if !ok {
-				t.Fatalf("aws-standard writes no %s", s.path)
-			}
-			if s.whole {
-				if want := node.Files[s.path].Data; string(got.Data) != string(want) {
-					t.Errorf("aws-standard's %s differs from ts-standard's: %s", s.path, fix)
+	for _, f := range awsStandardFrameworks {
+		_, aws := renderCombo(t, f.Side, []side{{model.SideFramework, f.Name}, {model.SideStandard, "aws-standard"}})
+		for _, s := range awsStandardShared {
+			t.Run(f.Name+"/"+s.path, func(t *testing.T) {
+				got, ok := aws.Files[s.path]
+				if !ok {
+					t.Fatalf("aws-standard writes no %s", s.path)
 				}
-				return
-			}
-			renders := make([][]string, 0, len(ts))
-			for _, r := range ts {
-				renders = append(renders, strings.Split(string(r.Files[s.path].Data), "\n"))
-			}
-			lines := strings.Split(string(got.Data), "\n")
-			i := 0
-			for _, want := range sharedLines(renders) {
-				for i < len(lines) && lines[i] != want {
+				if s.whole {
+					if want := node.Files[s.path].Data; string(got.Data) != string(want) {
+						t.Errorf("aws-standard's %s differs from ts-standard's: %s", s.path, fix)
+					}
+					return
+				}
+				renders := make([][]string, 0, len(ts))
+				for _, r := range ts {
+					renders = append(renders, strings.Split(string(r.Files[s.path].Data), "\n"))
+				}
+				lines := strings.Split(string(got.Data), "\n")
+				i := 0
+				for _, want := range sharedLines(renders) {
+					for i < len(lines) && lines[i] != want {
+						i++
+					}
+					if i == len(lines) {
+						t.Fatalf("aws-standard's %s lacks ts-standard's line %q (or has it out of order): %s",
+							s.path, want, fix)
+					}
 					i++
 				}
-				if i == len(lines) {
-					t.Fatalf("aws-standard's %s lacks ts-standard's line %q (or has it out of order): %s",
-						s.path, want, fix)
-				}
-				i++
-			}
-		})
+			})
+		}
 	}
 }
 
