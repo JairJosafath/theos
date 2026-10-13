@@ -254,6 +254,44 @@ var _ = Describe("Crew publishing releases", func() {
 		Expect(target.Reason).To(Equal("SetByBrief"))
 	})
 
+	It("drops a held release's Pending publish once the hold is settled to publish nowhere (#1021)", func() {
+		ns := newProjectNamespace()
+		publishingCrew(ns, "acme/"+ns, func(crew *c4v1alpha1.Crew) {
+			crew.Labels = map[string]string{c4v1alpha1.LabelBrief: "orders"}
+			crew.Annotations = map[string]string{c4v1alpha1.AnnotationBriefPublishReleases: publishJSON(
+				crew.Spec.PublishReleases)}
+			crew.Spec.PublishReleases = nil
+		})
+
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			release := crew.Status.LastRelease
+			g.Expect(release).NotTo(BeNil())
+			g.Expect(release.Publish).NotTo(BeNil())
+			g.Expect(release.Publish.State).To(Equal("Pending"))
+			cond := condition(crew.Status.Conditions, ConditionPublished)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Reason).To(Equal("TargetDiffersFromBrief"))
+		}).Should(Succeed())
+
+		By("removing the Brief's entry")
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			delete(crew.Annotations, c4v1alpha1.AnnotationBriefPublishReleases)
+			g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			release := crew.Status.LastRelease
+			g.Expect(release).NotTo(BeNil())
+			g.Expect(release.Publish).To(BeNil())
+			g.Expect(condition(crew.Status.Conditions, ConditionPublished)).To(BeNil())
+			app := c4v1alpha1.BriefApp{Releases: releasesOn,
+				LastRelease: &c4v1alpha1.BriefAppRelease{Tag: release.Tag, Run: release.Run}}
+			g.Expect(appMessage(&app, true)).To(Equal("Released v0.1.0."))
+		}).Should(Succeed())
+	})
+
 	It("fails without its Secret, and publishes once the Secret is there", func() {
 		ns := newProjectNamespace()
 		repository := "acme/" + ns
