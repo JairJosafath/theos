@@ -6,7 +6,7 @@
 
 npm ci --no-audit --no-fund
 
-added 171 packages in 18s
+added 171 packages in 20s
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
@@ -16,17 +16,17 @@ node_modules/.bin/vitest run
 
  RUN  v5.0.3 /tmp/aws-1031
 
- ✓ src/items.test.ts (25 tests) 15ms
- ✓ src/api.test.ts (12 tests) 14ms
- ✓ src/server.test.ts (8 tests) 28ms
- ✓ src/item_store.test.ts (4 tests) 7ms
- ✓ infra/service_stack.test.ts (8 tests) 1319ms
- ✓ infra/standard.test.ts (8 tests) 1629ms
+ ✓ src/items.test.ts (25 tests) 31ms
+ ✓ src/api.test.ts (12 tests) 30ms
+ ✓ src/server.test.ts (8 tests) 37ms
+ ✓ src/item_store.test.ts (4 tests) 17ms
+ ✓ infra/service_stack.test.ts (8 tests) 1595ms
+ ✓ infra/standard.test.ts (8 tests) 2249ms
 
  Test Files  6 passed (6)
       Tests  65 passed (65)
-   Start at  11:50:55
-   Duration  2.69s (tests 61%, import 30%, transform 9%, worker 1%)
+   Start at  12:10:51
+   Duration  3.84s (tests 52%, import 30%, transform 17%, worker 1%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet

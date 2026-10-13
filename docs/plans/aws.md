@@ -167,8 +167,9 @@ main working.
    `make check` (synth, CDK Nag, cfn-lint, tests) passes on this device
    with its output in the pull request.
 3. **The PaaS Framework `aws-fargate-ts`** (#1031), and `aws-standard` v1.1.0 with
-   its branch. *Done when:* the same as step 2, for this Framework. (Done:
-   the image is `ContainerImage.fromAsset`, staged by synth and built by
+   its branch. *Done when:* the same as step 2, for this Framework. (Done,
+   as `aws-standard` v1.2.0: step 6 merged first and took v1.1.0. The
+   image is `ContainerImage.fromAsset`, staged by synth and built by
    `cdk deploy`; HTTPS takes the certificate as a CloudFormation parameter
    so the stack stays environment-agnostic, and the load balancer's access
    logs use the log delivery service principal for the same reason.)
@@ -178,6 +179,14 @@ main working.
    `aws-standard` adding ruff and pytest for its branch. Waits on step 2.
 6. **A Go (SDK v2) Lambda Framework `aws-lambda-go`** (#1034), with `aws-standard`
    adding the Go checks for its branch. Waits on step 2.
+   (Step 6: `aws-standard` v1.1.0. The function is its own Go module in
+   `src/`, not at the root: `node_modules/` holds stray `.go` files, aws-cdk's
+   `cdk init` templates among them, that would join a root module and break
+   `go mod tidy`. The stack builds it with `Code.fromAsset` and local
+   bundling that runs `go build` for arm64 into `bootstrap`; no
+   `@aws-cdk/aws-lambda-go-alpha`, an alpha module. `.golangci.yml` and
+   `docs/style/go.md` are go-standard's, byte for byte, kept so by the drift
+   test.)
 
 Steps 3 to 6 each wait on step 2; step 2 waits on step 1. Each bumps
 `aws-standard`, so two of them in flight at once meet in a merge of the

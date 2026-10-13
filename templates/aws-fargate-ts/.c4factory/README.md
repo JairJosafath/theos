@@ -77,7 +77,7 @@ container asset that synth only stages.
   two `name` fields are templated, so `npm ci` installs exactly the versions
   in `package.json`, the same as aws-lambda-ts's but for `@types/aws-lambda`.
   `allowScripts` lets esbuild's install script run.
-- **Standard:** made for `aws-standard` (v1.1.0 or later), which owns
+- **Standard:** made for `aws-standard` (v1.2.0 or later), which owns
   `infra/main.ts`, `infra/standard.ts` and `infra/standard.test.ts`. Lists its
   tools in `devDependencies` with exact versions: `eslint` 10.11.0,
   `@eslint/js` 10.0.1, `typescript-eslint` 8.71.0, `prettier` 3.9.9,

@@ -71,6 +71,50 @@ Task that reviews and merges it. Then:
   that checks what those paths produce; change no other protected file, and do
   not propose another Standard change.
 
+{{ if eq .Framework "aws-lambda-go" -}}
+## Go and AWS notes
+
+- Request handling is tested with `go test` by calling it with an
+  `*events.APIGatewayV2HTTPRequest` and a fake store, checking the status
+  code and the body; the rules live in files that import neither the AWS SDK
+  nor `aws-lambda-go`. Keep `src/main.go` to wiring: the SDK's configuration
+  and clients made once in `main`, the environment read once.
+- An AWS service is reached through one type that wraps its SDK client
+  behind an interface of the methods it calls; its tests pass a fake that
+  implements the interface and records the calls. No test calls AWS, opens a
+  socket or needs credentials.
+- The function is the Go module in `src/`: run Go commands there
+  (`cd src && go test ./...`). After `go get`, run `go mod tidy` and commit
+  `src/go.mod` and `src/go.sum`.
+- Infrastructure changes go in the Framework's stacks under `infra/`, in
+  TypeScript, and each gets a `Template.fromStack` assertion in the stack's
+  test: the resource, its key properties, the IAM actions it is granted.
+  `infra/standard.test.ts` checks the Standard's rules on every stack; fix
+  the stack when it fails, never the test.
+- Permissions come from CDK grants, narrowed to the calls the code makes. A
+  new resource is encrypted at rest, its logs kept for a set time, its
+  removal policy explicit (`RETAIN` for data).
+- When CDK Nag reports a finding, fix the resource. Acknowledge it only when
+  the fix is wrong for this system, on the one construct and the one
+  finding, with a reason the reviewer can check, and list it in your
+  summary. Read `docs/well-architected.md` for what each rule protects.
+- Iterate with `cd src && go test ./...`, `npx vitest` and `make synth`
+  (which builds the function with Go); finish with `make check`, which also
+  runs golangci-lint, `go test -race` and `cfn-lint` on what synth wrote.
+- Never run `cdk deploy`, `cdk bootstrap`, `cdk diff` against an account or
+  any AWS CLI call: there is no account here, and none is needed.
+- Tests never measure time: no `time.Sleep` waits, no bounds such as
+  "answers within 500 ms" on `time.Since`. They pass in your sandbox and fail
+  on the shared CI runner.
+- A budget in the issue or the needs ("within 200 ms", "10,000 items") gets
+  a Go benchmark (`func BenchmarkX(b *testing.B)`) on realistic input, not a
+  test; put the numbers and the input size in the summary. A latency budget
+  in AWS (cold start, DynamoDB) can only be measured in an account: say so.
+- Timing logic (timeouts, retries) is tested with a context the test
+  cancels, or a clock the code is given, never by waiting.
+- Say which behaviour needs a person to try in a real AWS account (IAM
+  policies at run time, throttling, cold starts).
+{{- else -}}
 ## TypeScript and AWS notes
 
 {{ if eq .Framework "aws-fargate-ts" }}- Request handling is tested by calling `answer` with a request, or the
@@ -124,6 +168,7 @@ Task that reviews and merges it. Then:
   event it fires.
 - Say which behaviour needs a person to try in a real AWS account (IAM
   policies at run time, {{ if eq .Framework "aws-fargate-ts" }}health checks, scaling, deployments{{ else }}throttling, cold starts{{ end }}).
+{{- end }}
 
 ## Your summary
 

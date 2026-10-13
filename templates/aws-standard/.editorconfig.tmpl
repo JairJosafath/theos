@@ -14,3 +14,8 @@ indent_style = tab
 
 [*.md]
 trim_trailing_whitespace = false
+{{ if eq .Framework "aws-lambda-go" }}
+# gofumpt and goimports, through make fmt, indent Go with tabs.
+[*.go]
+indent_style = tab
+{{ end -}}

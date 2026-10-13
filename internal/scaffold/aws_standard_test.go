@@ -21,18 +21,12 @@ var tsStandardFrameworks = []side{
 	{"cli", "node-cli"},
 }
 
-// awsStandardFrameworks is every Framework aws-standard renders for, with its
-// type. Its shared files must keep ts-standard's lines for each of them.
-var awsStandardFrameworks = []side{
-	{model.TypeFunction, "aws-lambda-ts"},
-	{model.TypeService, "aws-fargate-ts"},
-}
-
 // awsStandardShared lists the files aws-standard shares with ts-standard.
-// whole: its rendering is byte for byte ts-standard's for node-cli. Else
-// every line that ts-standard renders the same for all its Frameworks is in
-// aws-standard's rendering, in the same order: aws-standard replaces only
-// what ts-standard varies per Framework.
+// whole: its rendering for aws-lambda-ts is byte for byte ts-standard's for
+// node-cli. Else, and for every other AWS Framework, every line that
+// ts-standard renders the same for all its Frameworks is in aws-standard's
+// rendering, in the same order: aws-standard replaces only what ts-standard
+// varies per Framework, and adds what an AWS Framework needs.
 var awsStandardShared = []struct {
 	path  string
 	whole bool
@@ -44,6 +38,13 @@ var awsStandardShared = []struct {
 	{"docs/style/principles.md", false},
 }
 
+// awsFrameworks is every Framework aws-standard renders for, with its type.
+var awsFrameworks = []side{
+	{model.TypeFunction, "aws-lambda-ts"},
+	{model.TypeFunction, "aws-lambda-go"},
+	{model.TypeService, "aws-fargate-ts"},
+}
+
 func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
 	ts := make([]Result, 0, len(tsStandardFrameworks))
 	for _, f := range tsStandardFrameworks {
@@ -53,18 +54,19 @@ func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
 	node := ts[len(ts)-1]
 	const fix = "copy ts-standard's change into templates/aws-standard and name ts-standard's version " +
 		"in its docs/style/SOURCES.md"
-	for _, f := range awsStandardFrameworks {
+	for _, f := range awsFrameworks {
+		framework := f.Name
 		_, aws := renderCombo(t, f.Side, []side{
-			{model.SideFramework, f.Name},
+			{model.SideFramework, framework},
 			{model.SideStandard, "aws-standard"},
 		})
 		for _, s := range awsStandardShared {
-			t.Run(f.Name+"/"+s.path, func(t *testing.T) {
+			t.Run(framework+"/"+s.path, func(t *testing.T) {
 				got, ok := aws.Files[s.path]
 				if !ok {
 					t.Fatalf("aws-standard writes no %s", s.path)
 				}
-				if s.whole {
+				if s.whole && framework != "aws-lambda-go" {
 					if want := node.Files[s.path].Data; string(got.Data) != string(want) {
 						t.Errorf("aws-standard's %s differs from ts-standard's: %s", s.path, fix)
 					}
@@ -87,6 +89,38 @@ func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
 					i++
 				}
 			})
+		}
+	}
+}
+
+// awsStandardGoShared lists the files aws-standard copies from go-standard,
+// byte for byte, for aws-lambda-go, and writes for no other Framework.
+var awsStandardGoShared = []string{".golangci.yml", "docs/style/go.md"}
+
+func TestAWSStandardKeepsGoStandardsFilesForGo(t *testing.T) {
+	_, goStd := renderCombo(t, "cli", []side{{model.SideFramework, "go-cli"}, {model.SideStandard, "go-standard"}})
+	_, goAWS := renderCombo(t, model.TypeFunction, []side{
+		{model.SideFramework, "aws-lambda-go"},
+		{model.SideStandard, "aws-standard"},
+	})
+	_, tsAWS := renderCombo(t, model.TypeFunction, []side{
+		{model.SideFramework, "aws-lambda-ts"},
+		{model.SideStandard, "aws-standard"},
+	})
+	for _, path := range awsStandardGoShared {
+		want, ok := goStd.Files[path]
+		if !ok {
+			t.Fatalf("go-standard writes no %s", path)
+		}
+		got, ok := goAWS.Files[path]
+		if !ok {
+			t.Errorf("aws-standard writes no %s for aws-lambda-go", path)
+		} else if string(got.Data) != string(want.Data) {
+			t.Errorf("aws-standard's %s differs from go-standard's: copy go-standard's change into "+
+				"templates/aws-standard and name go-standard's version in its docs/style/SOURCES.md", path)
+		}
+		if _, ok := tsAWS.Files[path]; ok {
+			t.Errorf("aws-standard writes %s for aws-lambda-ts, which has no Go", path)
 		}
 	}
 }
@@ -125,13 +159,16 @@ func sharedLines(renders [][]string) []string {
 }
 
 // TestAWSStandardNamesTheTSStandardItCopies checks that aws-standard's
-// SOURCES.md names the ts-standard version its shared files were copied from.
+// SOURCES.md names the ts-standard version its shared files were copied from,
+// and the go-standard version its Go files were.
 func TestAWSStandardNamesTheTSStandardItCopies(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join(templatesDir, "aws-standard", "docs", "style", "SOURCES.md.tmpl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`copied from ts-standard v\d+\.\d+\.\d+`).Match(src) {
-		t.Error("aws-standard's SOURCES.md doesn't say which ts-standard version it was copied from")
+	for _, standard := range []string{"ts-standard", "go-standard"} {
+		if !regexp.MustCompile(`copied\s+from\s+` + standard + `\s+v\d+\.\d+\.\d+`).Match(src) {
+			t.Errorf("aws-standard's SOURCES.md doesn't say which %s version it was copied from", standard)
+		}
 	}
 }

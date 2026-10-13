@@ -1,0 +1,60 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` function of {{ .SoftwareSystem }}, in project {{ .Project }}: an AWS
+Lambda function in Go, on the AWS SDK for Go v2, behind an API Gateway HTTP
+API, keeping items in a DynamoDB table, with its infrastructure as a CDK app. Scaffolded by C4
+Factory.
+
+## The API
+
+Every request is signed with AWS credentials (SigV4): the API's routes use IAM
+authorization, and a caller needs `execute-api:Invoke` on them.
+
+| Route             | Body                                | Answers                                    |
+| ----------------- | ----------------------------------- | ------------------------------------------ |
+| `PUT /items/{id}` | `{ "name": "Lamp", "quantity": 3 }` | 200 and the item; 400 for a bad id or body |
+| `GET /items/{id}` |                                     | 200 and the item; 404 when there is none   |
+
+An id is 1 to 64 letters, digits, `-` or `_`. A name is 1 to 200 characters;
+a quantity a whole number, 0 or more. Every error is JSON with a `message`.
+A `PUT` replaces the whole item, so repeating it is harmless.
+
+## Develop
+
+Open the repository in its devcontainer, which has Go 1.26 and Node 24.
+
+```sh
+npm ci                     # install the CDK app's exact packages
+(cd src && go test ./...)  # the function's tests
+npm test                   # the stacks' assertions, with vitest
+npm run synth              # build the function, write the templates into cdk.out/
+{{- if .Standard }}
+make check                 # what CI runs: format, lint, vet, test, synth, cfn-lint
+make help                  # every target
+{{- end }}
+```
+
+Nothing here deploys or needs an AWS account: synth runs offline, builds the
+function with the installed Go, and needs neither Docker nor credentials.
+Deploying the stack (`cdk deploy`, after `cdk bootstrap` of the account) is
+for its owner, with their own credentials.
+
+## Layout
+
+- `src/` is the function, a Go module of its own (`src/go.mod`). `main.go`
+  is the Lambda entry point: it loads the AWS configuration and creates the
+  DynamoDB client once, reads `TABLE_NAME` and hands each request to
+  `answer` in `api.go`.
+- `api.go` routes a request, checks its input and answers with a status
+  code; `items.go` holds the rules, free of AWS; `item_store.go` keeps items
+  in DynamoDB behind the `ItemStore` interface tests fake.
+- `infra/stacks.ts` defines the stacks; `infra/api_stack.ts` is the one
+  stack: the table, the function, built by `go build` into one `bootstrap`
+  binary for arm64, with its log group and role, and the API with its access
+  log. The stack is named after the package.
+{{- if .Standard }}
+- `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
+  `infra/standard.ts` tags every stack and adds CDK Nag's checks.
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}

@@ -1,3 +1,4 @@
+{{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $fargate := eq .Framework "aws-fargate-ts" -}}
 # Agent guide
 
@@ -7,7 +8,7 @@ behind an Application Load Balancer, keeping its data in DynamoDB, with its
 infrastructure as a CDK app in `infra/`, scaffolded by C4 Factory with the
 `{{ .Standard }}` Standard. Build it to the rules below. What the service is
 for,{{ else }}the `{{ .Container }}` function of {{ .SoftwareSystem }}: an AWS
-Lambda function in TypeScript behind an API Gateway HTTP API, keeping its data
+Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API, keeping its data
 in DynamoDB, with its infrastructure as a CDK app in `infra/`, scaffolded by
 C4 Factory with the `{{ .Standard }}` Standard. Build it to the rules below. What
 the function is for,{{ end }} and what it must never do, is in the issue you were given
@@ -15,11 +16,21 @@ and the system's needs: follow those.
 
 ## The one rule
 
+{{ if $go -}}
+`make check` must pass before every commit. It installs the exact packages in
+`package-lock.json` and the modules in `src/go.sum`, then checks that
+`go mod tidy` changes nothing, runs Prettier and gofumpt (check), ESLint with
+`eslint.config.mjs` on the CDK app (typescript-eslint strict, no warnings
+allowed), `go vet`, golangci-lint with `.golangci.yml`, `tsc` with the strict
+`tsconfig.json`, the function's Go tests (`go test -race`), the stacks'
+vitest `Template.fromStack` assertions, `cdk synth` with CDK Nag's AWS Solutions
+{{- else -}}
 `make check` must pass before every commit. It installs the exact packages in
 `package-lock.json`, then runs Prettier (check), ESLint with `eslint.config.mjs`
 (typescript-eslint strict, no warnings allowed), `tsc` with the strict
 `tsconfig.json`, the vitest tests (the {{ if $fargate }}service's{{ else }}function's{{ end }} and the stacks'
 `Template.fromStack` assertions), `cdk synth` with CDK Nag's AWS Solutions
+{{- end }}
 checks, which fail on any finding not acknowledged with a reason, and
 `cfn-lint` on the templates synth wrote. CI runs the same command, and nothing
 reaches `main` without it passing and a review. Never commit red.
@@ -42,7 +53,7 @@ machine.{{ end }}
 6. `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` never change. Other protected files
    change only through a Standard change (see your role guide), never in a normal pull
    request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
-   `Makefile`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
+   `Makefile`, `eslint.config.mjs`, {{ if $go }}`.golangci.yml`, {{ end }}`.prettierrc.json`, `.prettierignore`,
    `.editorconfig`, `AGENTS.md`, `docs/style/`, `docs/agents/`,
    `docs/well-architected.md`, `infra/main.ts` and `infra/standard.ts` belong
    to the Standard. `tsconfig.json`, `vitest.config.mts` and `cdk.json` decide
@@ -51,6 +62,7 @@ machine.{{ end }}
 ## Lints
 
 - Fix every finding; don't silence it. An `eslint-disable-next-line <rule> -- <why>`
+  {{- if $go }} or a `//nolint:<linter> // <why>`{{ end }}
   is a last resort for a false positive: one rule, one reason. Never
   `@ts-ignore`; never a file-wide disable.
 - Fix every CDK Nag finding in the stack. An acknowledgement
@@ -58,6 +70,16 @@ machine.{{ end }}
   on the construct the finding's path names, for the one finding (`AwsSolutions-IAM5[Resource::...]`,
   never a whole rule on a stack), with a reason a reviewer can check.
 - `make fmt` formats; never hand-format.
+{{- if $go }}
+- The function is its own Go module in `src/`, apart from `node_modules/`.
+  Add a module with `go get` in `src/`, then `go mod tidy`, and commit
+  `src/go.mod` and `src/go.sum`. `go build` compiles the function into one
+  `bootstrap` binary, so nothing else ships. Prefer Go's standard library and
+  the AWS SDK for Go v2's service modules (`github.com/aws/aws-sdk-go-v2/service/*`);
+  then few, maintained, well-known modules with a licence that fits. The CDK
+  app's packages are `devDependencies` in `package.json`: add one with
+  `npm install --save-dev --save-exact` and commit `package-lock.json`.
+{{- else }}
 - Add packages with `npm install --save-exact` (`--save-dev` for tools), and
   commit `package-lock.json`. esbuild bundles what the {{ if $fargate }}service imports into
   one file, the SDK included, in the image's build, so `node_modules` never
@@ -69,10 +91,16 @@ machine.{{ end }}
   well-known packages with a licence that fits. A new install script needs an
   `allowScripts` entry in `package.json`: allow it only when the package can't
   work without it.
+{{- end }}
 
 ## Review rules (lint can't check these)
 
-{{ if $fargate -}}
+{{ if $go -}}
+1. **Cold start:** the SDK's configuration and clients are created once, in
+   `main` in `src/main.go` before `lambda.Start`, and reused by every
+   invocation; nothing heavy runs in `init`. The binary imports only the
+   service modules it uses.
+{{- else if $fargate -}}
 1. **Start and stop:** SDK clients and configuration are created once, in
    `src/main.ts`, and reused by every request; nothing heavy runs per
    request that could run once. On `SIGTERM` the server stops taking
@@ -101,13 +129,29 @@ machine.{{ end }}
    stack, the timeout below API Gateway's 30 seconds and above what the work
    needs; SDK calls stay within it. The stage is throttled.
 {{- end }}
-5. **Logs:** structured JSON, one entry per line, through the `Log` the
+5. **Logs:** structured JSON, one entry per line, through the {{ if $go }}`*slog.Logger`{{ else }}`Log`{{ end }} the
    {{ if $fargate }}code{{ else }}function{{ end }} is given; an entry names the request id and what failed. Never
    log a secret, a token or a request body with user data.
 6. **Least privilege:** permissions come from CDK grants
    ({{ if $fargate }}`table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`{{ else }}`table.grant(fn, 'dynamodb:GetItem')`{{ end }}, `grantReadData`), narrowed to the
    calls the code makes; never an IAM statement with `*` or `service:*`
    actions, never an AWS managed policy on a {{ if $fargate }}task's{{ else }}function's{{ end }} role.
+{{- if $go }}
+7. **Errors and context:** every error is handled or returned, wrapped with
+   `%w` and what was being done; the invocation's `ctx`, which carries
+   Lambda's deadline, goes to every SDK call. No `panic`, `log.Fatal` or
+   `os.Exit` past start-up in `main`; no goroutine left running when the
+   handler returns. In the CDK app: no `any`, no `as` to silence the
+   compiler, exhaustive switches over unions.
+8. **Pure code:** the rules live in files that import neither the AWS SDK
+   nor `aws-lambda-go`, tested with plain `go test`; one type wraps each AWS
+   service behind an interface of the client methods it calls, which tests
+   fake; `src/main.go` only wires them.
+9. **Tests:** next to the code (`foo_test.go`), table-driven, names that say
+   what is expected; no real timers, network or shared state between tests.
+   No test calls AWS: SDK clients are faked behind their interface, and
+   stacks are checked with `Template.fromStack` assertions.
+{{- else }}
 7. **Types:** no `any` (narrow `unknown` at the boundary, checked at runtime when
    the input is untrusted); no non-null assertion without a disable comment
    saying why; no `as` to silence the compiler; exhaustive switches over unions.
@@ -122,6 +166,7 @@ machine.{{ end }}
    no test starts the server{{ end }}.
    No test calls AWS: SDK clients are stubbed behind their interface, and
    stacks are checked with `Template.fromStack` assertions.
+{{- end }}
 10. **Performance:** when the issue or the system's needs state a budget, a test
     or benchmark measures it on realistic input and the pull request gives the
     numbers.
@@ -133,8 +178,15 @@ machine.{{ end }}
     an AWS account to synthesize: no lookups, no `env` from the environment.
 12. **Releases:** user-visible changes get a `CHANGELOG.md` entry under
     "Unreleased"; the version in `package.json` changes only in a release issue.
+{{- if $go }}
+13. **Names:** Go's: `mixedCaps`,
+    initialisms in one case (`ID`, `HTTPURL`), files `snake_case.go`. The CDK
+    app's TypeScript: `lowerCamelCase` values, `UpperCamelCase` types,
+    `CONSTANT_CASE` module constants, files `snake_case.ts`.
+{{- else }}
 13. **Names:** `lowerCamelCase` values, `UpperCamelCase` types, `CONSTANT_CASE`
     module constants, acronyms as words (`HttpUrl`); files `snake_case.ts`.
+{{- end }}
 14. **No dead code:** no commented-out code, speculative options or "for later"
     features; no TODO without an issue number.
 
@@ -142,6 +194,10 @@ machine.{{ end }}
 
 Offline digests (read the one for what you are touching):
 
+{{ if $go -}}
+- `docs/style/go.md`: Effective Go, Go Code Review Comments and Google's Go
+  style, each rule marked [lint] or [review]
+{{ end -}}
 - `docs/style/typescript.md`: Google's TypeScript style, the handbook's do's and
   don'ts and typescript-eslint, each rule marked [lint] or [review]
 {{- if $fargate }}
@@ -152,7 +208,7 @@ Offline digests (read the one for what you are touching):
   enforce each
 {{- else }}
 - `docs/style/aws.md`: Lambda handlers, API Gateway HTTP APIs, DynamoDB, the
-  AWS SDK v3, the CDK and CDK Nag, and tests
+  AWS SDK {{ if $go }}for Go v2{{ else }}v3{{ end }}, the CDK and CDK Nag, and tests
 - `docs/well-architected.md`: the AWS Well-Architected Framework and its
   Serverless Applications Lens, pillar by pillar, with the CDK Nag rules that
   enforce each
@@ -160,7 +216,7 @@ Offline digests (read the one for what you are touching):
 - `docs/style/principles.md`: cross-language principles, with sources
 - `docs/style/SOURCES.md`: every source URL, with the date it was read
 
-Online (canonical): https://google.github.io/styleguide/tsguide.html ·
+Online (canonical): {{ if $go }}https://go.dev/doc/effective_go · {{ end }}https://google.github.io/styleguide/tsguide.html ·
 {{- if $fargate }}
 https://typescript-eslint.io/rules/ · https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-best-practices.html ·
 https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html ·
