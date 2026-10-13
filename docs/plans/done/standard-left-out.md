@@ -133,3 +133,6 @@ Each is its own issue and pull request, and leaves `main` working.
 Kind would show the whole loop on a real Gitea and runner; no step waits for
 it. Bringing cel-lens-core's `check.yaml` up to date now is not part of this
 plan: once step 4 lands, its owners answer it with one annotation.
+
+Evidence: the tests the four steps added, rerun on main
+([the run](../../screenshots/standard-left-out.txt)).

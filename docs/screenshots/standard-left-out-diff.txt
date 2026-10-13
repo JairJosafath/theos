@@ -1,0 +1,49 @@
+# Evidence for docs/plans/done/standard-left-out-diff.md (#975; steps #979 #980 #981).
+# The tests its steps added, rerun on main at dfcb5b3 by otter-1007 for #1007, go1.26.8.
+# Go: go test -v ./internal/scaffold ./internal/model -run '<the tests below>'
+
+--- PASS: TestStandardChange (0.00s)
+    --- PASS: TestStandardChange/a_changed_line,_with_its_context (0.00s)
+    --- PASS: TestStandardChange/changes_far_apart_are_two_hunks,_three_lines_of_context_each (0.00s)
+    --- PASS: TestStandardChange/changes_six_lines_apart_share_a_hunk (0.00s)
+    --- PASS: TestStandardChange/lines_added_at_the_end (0.00s)
+    --- PASS: TestStandardChange/an_added_file (0.00s)
+    --- PASS: TestStandardChange/a_removed_file (0.00s)
+    --- PASS: TestStandardChange/a_binary_file (0.00s)
+    --- PASS: TestStandardChange/only_the_executable_bit (0.00s)
+    --- PASS: TestStandardChange/the_executable_bit_and_the_content (0.00s)
+    --- PASS: TestStandardChange/CRLF_lines_show_without_their_CR (0.00s)
+    --- PASS: TestStandardChange/a_change_of_line_endings_only_is_noted (0.00s)
+    --- PASS: TestStandardChange/no_final_newline (0.00s)
+    --- PASS: TestStandardChange/unchanged (0.00s)
+--- PASS: TestStandardChangeTooLarge (0.00s)
+--- PASS: TestStandardBehindNeedsYou (0.00s)
+--- PASS: TestStandardUpdateBodyLeftOut (0.00s)
+    --- PASS: TestStandardUpdateBodyLeftOut/a_long_diff_is_cut (0.00s)
+    --- PASS: TestStandardUpdateBodyLeftOut/a_body_past_its_bound_names_the_rest (0.00s)
+    --- PASS: TestStandardUpdateBodyLeftOut/a_body_past_its_bound_names_as_many_files_as_fit (0.00s)
+--- PASS: TestBehindChanges (0.00s)
+    --- PASS: TestBehindChanges/a_long_change_is_cut_at_a_line (0.00s)
+    --- PASS: TestBehindChanges/one_line_past_the_bound_is_cut_at_a_character (0.00s)
+    --- PASS: TestBehindChanges/only_the_first_files_carry_their_change (0.00s)
+ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.016s
+ok  	github.com/JairJosafath/c4factory/internal/model	0.033s
+
+# envtest: go test -v ./internal/controller -ginkgo.v -ginkgo.focus='<the specs below>'
+# The first checks the update's pull request body carries the Standard's change to Makefile and the lines a take drops (#979).
+
+Container Standard update leaves out a file the repository changed in the same lines, and flags it until it merges
+• [6.404 seconds]
+Container Standard update records the change to a file left out of an update that opens no pull request
+• [3.342 seconds]
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/controller	52.857s
+
+# Vitest (ui): npx vitest run --reporter=verbose <the files below>
+
+ ✓ src/components/objects/ContainerActions.test.ts > ContainerActions > shows each file’s change collapsed beside the take and keep buttons
+ ✓ src/components/Needs.test.ts > NeedsArea > shows each file’s change collapsed beside the answers, with actions on or off
+ ✓ src/components/Briefs.test.ts > the Brief card with a Container whose Standard files are behind > says a Container is settled on its page, not in a prompt
+ ✓ src/components/objects/pages.test.ts > the read-only object pages > shows the Standard’s change to each file left out on a Container’s page, with actions off
+ Test Files  7 passed (7)
+      Tests  165 passed (165)

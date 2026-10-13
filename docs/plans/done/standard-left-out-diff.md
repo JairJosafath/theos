@@ -101,3 +101,6 @@ Each is its own issue and pull request, and leaves `main` working.
    step 2.
 
 Kind would show the loop on a real Gitea; no step waits for it.
+
+Evidence: the tests the three steps added, rerun on main
+([the run](../../screenshots/standard-left-out-diff.txt)).
