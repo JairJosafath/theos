@@ -3,7 +3,7 @@
 // item comes from status, never from timing, and says why in the condition's
 // own words and where it is done: a place in the UI, a link out, a kubectl line.
 
-import type { Brief, Condition, Container, Crew, Project, Task } from '../k8s/types'
+import type { Brief, Condition, Container, Crew, Project, StandardFile, Task } from '../k8s/types'
 import { findCondition } from '../k8s/types'
 import type { Area } from './areas'
 import { failureAnswered } from './attention'
@@ -38,9 +38,10 @@ export interface Need {
   command?: string
   /**
    * The two answers to a Standard's files left out, at the Standard's ref the
-   * Container's status names: a button each with actions on, else their commands.
+   * Container's status names: a button each with actions on, else their commands,
+   * and the files left out with what the Standard changed in each.
    */
-  standardAnswer?: { ref: string; take: string; keep: string }
+  standardAnswer?: { ref: string; take: string; keep: string; files: StandardFile[] }
 }
 
 export interface NeedsInput {
@@ -165,6 +166,7 @@ function containerNeeds(c: Container): Need[] {
         ref: c.status?.standard?.ref ?? '',
         take: standardTakeCommand(c),
         keep: standardKeepCommand(c),
+        files: c.status?.standard?.behind ?? [],
       },
     })
   }

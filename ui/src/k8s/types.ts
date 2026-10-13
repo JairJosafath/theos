@@ -112,6 +112,12 @@ export interface StandardFile {
   path: string
   ref: string
   pullRequestURL?: string
+  /**
+   * For a file behind, what the Standard changed in it from ref to the
+   * Standard's ref, as a unified diff, and the repository's lines a take would
+   * drop; cut at 4 KiB, and only the first 16 files behind carry it.
+   */
+  change?: string
 }
 
 export interface Container extends K8sObject {

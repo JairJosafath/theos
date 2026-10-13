@@ -4,17 +4,21 @@
 // refs and its Standard with the update pull request in flight, and when CI
 // runs its full check (ContainerChecks, which sets it with UI actions on);
 // with UI actions on, a scaffold retry, an answer to the Standard's files left
-// out and a Task from a goal (ContainerActions).
+// out and a Task from a goal (ContainerActions). The files left out show what
+// the Standard changed in each, beside the take and keep buttons, or on their
+// own when nobody here may answer them.
 
+import { useContext } from 'react'
 import type { ContainerWriter } from '../../k8s/containers'
 import type { Brief, CatalogEntry, Container, Crew, Relationship, Session } from '../../k8s/types'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
 import { containerNextStep, describeStandardUpdate } from '../../model/lifecycle'
 import { sessionsOf } from '../../model/story'
-import { SessionRow } from '../bits'
+import { SessionContext } from '../../lib/hooks'
+import { LeftOutFiles, SessionRow } from '../bits'
 import { ExternalLinkIcon } from '../icons'
 import { ObjectHeader, type OutLink } from '../ObjectHeader'
-import { ContainerActions } from './ContainerActions'
+import { answersLeftOut, ContainerActions } from './ContainerActions'
 import { ContainerChecks } from './ContainerChecks'
 import { relationshipsOf } from './rows'
 import { pageHref, storyHref } from './links'
@@ -37,9 +41,11 @@ export function ContainerPage({
   crews: Crew[]
   writer: ContainerWriter
 }) {
+  const session = useContext(SessionContext)
   const ns = container.metadata.namespace ?? ''
   const name = container.metadata.name
   const status = container.status
+  const behind = status?.standard?.behind ?? []
   const system = container.spec.softwareSystemRef.name
   const own = sessionsOf(sessions, name)
   const madeBy = briefs.find((b) => b.status?.created?.some((c) => c.kind === 'Container' && c.name === name))
@@ -84,6 +90,18 @@ export function ContainerPage({
         crew={crews.find((c) => c.spec.containerRef.name === name)}
         writer={writer}
       />
+
+      {behind.length && !answersLeftOut(session, container) ? (
+        <section className="panel" aria-labelledby="container-left-out">
+          <h2 className="panel-title small-title" id="container-left-out">
+            Standard files left out
+          </h2>
+          <p className="panel-text">
+            {status!.standard!.name}’s updates left these out, as the repository changed them in the same lines:
+          </p>
+          <LeftOutFiles files={behind} className="panel-text" />
+        </section>
+      ) : null}
 
       <section className="panel" aria-labelledby="container-templates">
         <h2 className="panel-title small-title" id="container-templates">

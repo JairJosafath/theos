@@ -7,11 +7,13 @@
 
 import { useContext, useId, useRef, useState, type FormEvent } from 'react'
 import type { ContainerWriter, StandardAnswer } from '../../k8s/containers'
+import type { UiSession } from '../../k8s/session'
 import type { Container, Crew } from '../../k8s/types'
 import { SessionContext } from '../../lib/hooks'
 import { SignInLink } from '../Account'
 import { writeError, type WriteError } from '../briefs/errors'
 import { FormError } from '../briefs/PromptForm'
+import { LeftOutFiles } from '../bits'
 import { ExternalLinkIcon } from '../icons'
 import { pageHref } from './links'
 
@@ -126,6 +128,15 @@ function RetryScaffold({ container, writer }: { container: Container; writer: Co
 }
 
 /**
+ * Whether these actions show the Standard's files left out, with their take
+ * and keep buttons: actions are on, someone may write, and the files are
+ * answerable. Otherwise the Container page lists them itself.
+ */
+export function answersLeftOut(session: UiSession | undefined, container: Container): boolean {
+  return !!session?.actions && !(session.mode === 'oidc' && !session.user) && answerable(container)
+}
+
+/**
  * Whether a person may answer the Standard's files left out: some are behind
  * and no take runs or waits. The operator ignores an answer while a take is in
  * flight, stopped or not.
@@ -165,13 +176,7 @@ function StandardFilesBehind({ container, writer }: { container: Container; writ
       <p className="panel-text">
         {standard.name}’s updates left these out, as the repository changed them in the same lines:
       </p>
-      <ul className="panel-text">
-        {(standard.behind ?? []).map((b) => (
-          <li key={b.path}>
-            <span className="mono">{b.path}</span> <span className="muted">at {b.ref}</span>
-          </li>
-        ))}
-      </ul>
+      <LeftOutFiles files={standard.behind ?? []} className="panel-text" />
       <p className="panel-text">
         Taking opens a pull request with {standard.name} {standard.ref}’s version that keeps the repository’s other
         changes and lists the lines it drops. Keeping leaves the repository’s version until the Standard changes the
