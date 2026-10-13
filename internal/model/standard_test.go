@@ -403,6 +403,33 @@ func TestStandardUpdateBodyLeftOut(t *testing.T) {
 			t.Errorf("body doesn't count the files it can't name:\n%s", body[len(body)-500:])
 		}
 	})
+
+	t.Run("a body with thousands of files keeps every section within its bound", func(t *testing.T) {
+		many := func(dir string) []string {
+			paths := make([]string, 0, 3000)
+			for n := range 3000 {
+				paths = append(paths, fmt.Sprintf("%s/a-long-directory-name/file-%d.md", dir, n))
+			}
+			return paths
+		}
+		files := make([]LeftOutFile, 0, 3000)
+		for _, path := range many("left") {
+			files = append(files, LeftOutFile{Path: path, Ref: "v1.1.6",
+				Diff: []string{"@@ -1 +1 @@", "-" + strings.Repeat("a", 400), "+" + strings.Repeat("b", 400)}})
+		}
+		body := StandardUpdateBody("go-standard", StandardVersion{Ref: "v1.1.6"}, StandardVersion{Ref: "v1.2.1"},
+			many("files"), many("merged"), LeftOut{Take: take, Keep: keep, Files: files})
+		if len(body) > maxBodyLength {
+			t.Errorf("body is %d characters, past %d", len(body), maxBodyLength)
+		}
+		for _, want := range []string{"## Files\n\n- `files/", " more\n\n## Merged with the repository's changes\n",
+			"- `merged/", " more\n\n## Left out\n", "### `left/", " more files.\n\n",
+			"The operator merges this pull request itself"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("body doesn't hold %q", want)
+			}
+		}
+	})
 }
 
 func TestBehindChanges(t *testing.T) {

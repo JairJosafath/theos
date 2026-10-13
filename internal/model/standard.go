@@ -350,11 +350,14 @@ type LeftOut struct {
 }
 
 // Bounds of a Standard update's body: the diff lines shown per left-out file,
-// and the body's length, below GitHub's 65,536 characters.
+// the body's length, below GitHub's 65,536 characters, and where the Files
+// and Merged lists stop, so the sections after them keep their room.
 const (
 	maxDiffLines   = 200
 	maxBodyLength  = 60000
 	bodyCloseSlack = 1000
+	filesEnd       = maxBodyLength * 2 / 5
+	mergedEnd      = maxBodyLength * 3 / 5
 )
 
 // StandardUpdateBody is that pull request's description. merged are the paths
@@ -371,13 +374,13 @@ func StandardUpdateBody(name string, from, to StandardVersion, paths, merged []s
 	b.WriteString(".\n\n")
 	if len(paths) > 0 {
 		b.WriteString("## Files\n\n")
-		writeCodeList(&b, paths)
+		writeCodeList(&b, paths, filesEnd)
 	}
 	if len(merged) > 0 {
 		fmt.Fprintf(&b, "## Merged with the repository's changes\n\nThese files changed in the repository since `%s` "+
 			"too, in other lines, so the update merges the Standard's changes with the repository's, line by line; "+
 			"read them as a merge:\n\n", from.Ref)
-		writeCodeList(&b, merged)
+		writeCodeList(&b, merged, mergedEnd)
 	}
 	if len(leftOut.Files) > 0 {
 		writeLeftOut(&b, to.Ref, leftOut)
@@ -616,10 +619,17 @@ func writeDiff(b *strings.Builder, lines []string, limit int) {
 	}
 }
 
-// writeCodeList writes items as a Markdown list in code font, then a blank line.
-func writeCodeList(b *strings.Builder, items []string) {
-	for _, item := range items {
-		fmt.Fprintf(b, "- `%s`\n", item)
+// writeCodeList writes items as a Markdown list in code font, then a blank line,
+// as many as keep the body within end characters, the rest counted.
+func writeCodeList(b *strings.Builder, items []string, end int) {
+	const moreRoom = len("- and 9999999 more\n")
+	for i, item := range items {
+		line := fmt.Sprintf("- `%s`\n", item)
+		if b.Len()+len(line)+moreRoom > end {
+			fmt.Fprintf(b, "- and %d more\n", len(items)-i)
+			break
+		}
+		b.WriteString(line)
 	}
 	b.WriteString("\n")
 }
