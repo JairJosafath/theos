@@ -60,7 +60,7 @@ export const STANDARD_UPDATE_HELD = ['ChecksFailed', 'UpdateRefused']
 
 /**
  * The ModulePublished reasons that say nobody can fetch the Crew's Go module
- * (docs/plans/module-fetchable.md, decision 8); WaitsForRelease only counts
+ * (docs/plans/done/module-fetchable.md, decision 8); WaitsForRelease only counts
  * while the Published condition is False, else the publish is on its way.
  */
 export const MODULE_NOT_FETCHABLE = ['InvalidModule', 'NotFetchable']
