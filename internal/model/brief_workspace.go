@@ -210,7 +210,9 @@ func renderBrief(ws BriefWorkspace) string {
 		}
 		b.WriteString("\nA suggestion is its Container and number together: the same number in two Containers " +
 			"is two suggestions. Match the repository name or address a prompt writes to an entry's " +
-			"`repository` or `url`, and answer that entry's `container` and `issue`.\n")
+			"`repository` or `url`, and answer that entry's `container` and `issue`. A suggestion a new prompt " +
+			"names that no entry lists, answer `missing`, with why: the operator says on the round what it " +
+			"found. Never write in `choices.md` that a named suggestion is handled.\n")
 	}
 	switch {
 	case ws.Tending:

@@ -462,6 +462,11 @@ func (in *BriefRound) DeepCopyInto(out *BriefRound) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.Unanswered != nil {
+		in, out := &in.Unanswered, &out.Unanswered
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Tokens != nil {
 		in, out := &in.Tokens, &out.Tokens
 		*out = new(TokenUsage)

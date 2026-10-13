@@ -418,6 +418,23 @@ describe('describeUsage', () => {
     ])
   })
 
+  it('shows under a round’s summary the suggestions a prompt named that it couldn’t answer', () => {
+    const line = 'A prompt named cel-lens-vscode#385, which no longer waits for an answer: it is closed.'
+    const view = describeBrief({
+      ...brief('cel-lens', '2026-01-01T00:00:00Z'),
+      status: {
+        history: [
+          { round: 93, outcome: 'Applied', unanswered: [] },
+          { round: 94, summary: 'Took 2 suggestions', outcome: 'Applied', unanswered: [line] },
+        ],
+      },
+    })
+    expect(view.rounds.map((r) => [r.round, r.unanswered])).toEqual([
+      [94, [line]],
+      [93, undefined],
+    ])
+  })
+
   it('marks a round past its planner Agent’s limit when it is known', () => {
     const view = describeBrief(
       {

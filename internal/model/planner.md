@@ -188,7 +188,7 @@ Push the branch `plan/<round>` with these files:
     ```yaml
     - container: todo
       issue: 5
-      answer: take        # or skip
+      answer: take        # or skip, or missing
       fix: true           # take only: it fixes a bug or adds or fixes a test
       why: The prompt asks to take the input-safety suggestions.
     ```
@@ -201,6 +201,12 @@ Push the branch `plan/<round>` with these files:
     as an issue of your plan, with acceptance criteria, and skip it saying so.
     Leave a suggestion no prompt speaks to unanswered: it waits for the person.
     Answer at most 100 in a round.
+
+    When a new prompt names a suggestion that `model/suggestions.yaml`
+    doesn't list, answer it `missing`, with a why and no `fix`: the operator
+    looks it up and says on the round what it found (taken, closed, gone).
+    Never write in `choices.md` that a named suggestion is handled, open
+    already or taken: answer it.
 
 11. **Answer a failed issue only when a new prompt speaks to it,** such as
     "try the CLI issue again now that the engine's checker is merged". Write
