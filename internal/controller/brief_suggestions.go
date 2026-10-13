@@ -222,8 +222,9 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 }
 
 // answerSuggestion takes one suggestion into milestone, 0 for none, or closes
-// it. What marks it answered, the ready label or the closing, comes last, so a
-// try that stops part way is done again whole.
+// it. A take's ready label, what marks it answered, comes last, so a try
+// that stops part way is done again whole. A skip closes first, so a try that
+// stops after it leaves the issue closed without its comment.
 func answerSuggestion(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
 	issue gitprovider.Issue, a model.SuggestionAnswer, milestone int64, comment string) error {
 	if a.Answer == model.AnswerTake {
@@ -240,10 +241,12 @@ func answerSuggestion(ctx context.Context, provider gitprovider.Provider, repo g
 		}
 		return provider.AddIssueLabel(ctx, repo, issue.Number, model.LabelReady)
 	}
-	if err := provider.CommentIssue(ctx, repo, issue.Number, comment); err != nil {
+	// The close comes first, so one the host refuses (a dependency added on the
+	// host) leaves the issue uncommented, and the next try comments it once.
+	if err := provider.CloseIssue(ctx, repo, issue.Number); err != nil {
 		return err
 	}
-	return provider.CloseIssue(ctx, repo, issue.Number)
+	return provider.CommentIssue(ctx, repo, issue.Number, comment)
 }
 
 // forgetSuggestion takes an answered suggestion off the Brief's list, and
