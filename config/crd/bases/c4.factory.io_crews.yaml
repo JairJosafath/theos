@@ -461,8 +461,9 @@ spec:
                             type: string
                           private:
                             description: |-
-                              private is set when GitHub reported the repository private as the tag
-                              went out: the public Go proxy can't read it.
+                              private is whether GitHub reports the repository private, read as the
+                              tag went out, or after, for a release older than the field: the public
+                              Go proxy can't read a private one.
                             type: boolean
                           tag:
                             description: tag is the source's tag.

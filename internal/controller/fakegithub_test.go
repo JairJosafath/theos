@@ -73,6 +73,13 @@ func (f *fakeGitHub) addRepository(repository, token string) {
 	f.tokens[repository] = token
 }
 
+// setPrivate makes GitHub report repository private.
+func (f *fakeGitHub) setPrivate(repository string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.git[repository].private = true
+}
+
 // releases returns a copy of repository's releases, with their files.
 func (f *fakeGitHub) releases(repository string) []fakeGitHubRelease {
 	f.mu.Lock()
@@ -117,7 +124,8 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if whole {
-		reply(w, http.StatusOK, map[string]string{"full_name": repository, "default_branch": f.git[repository].branch})
+		reply(w, http.StatusOK, map[string]any{"full_name": repository, "default_branch": f.git[repository].branch,
+			"private": f.git[repository].private})
 		return
 	}
 	rest := parts[3:]

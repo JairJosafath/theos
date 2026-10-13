@@ -360,11 +360,11 @@ func main() {
 }
 
 // goProxyURL is the Go proxy the --go-proxy flag names, "" for off.
-func goProxyURL(flag string) string {
-	if flag == "off" {
+func goProxyURL(value string) string {
+	if value == "off" {
 		return ""
 	}
-	return flag
+	return value
 }
 
 // stringList is a repeatable string flag.

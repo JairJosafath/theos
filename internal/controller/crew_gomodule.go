@@ -50,9 +50,10 @@ const goProxyTimeout = time.Minute
 
 // moduleAnswer is the Go proxy's last answer about a release's module.
 type moduleAnswer struct {
-	tag    string
-	answer model.ProxyAnswer
-	detail string
+	tag     string
+	answer  model.ProxyAnswer
+	detail  string
+	checked time.Time
 }
 
 // publishGoModule publishes the Go module of the Crew's last release to the
@@ -103,17 +104,19 @@ func (r *CrewReconciler) publishGoModule(ctx context.Context, crew *c4v1alpha1.C
 			registry = model.RegistryNoGoMod
 		}
 	}
+	if registry == model.RegistryUploaded {
+		r.readPrivate(ctx, crew, release)
+	}
 	facts := r.moduleFacts(crew, status, m, registry, detail)
 	d := model.DecideModule(facts)
-	asked := false
-	if d.Ask {
-		asked = true
+	asked := d.Ask
+	if asked {
 		facts.Answer, facts.AnswerDetail = r.askGoProxy(ctx, m.Path, m.Version)
 		now := metav1.NewTime(r.now())
 		facts.Checked = now.Time
 		m.CheckedTime = &now
 		r.moduleAnswers.Store(crew.UID, moduleAnswer{tag: release.Tag, answer: facts.Answer,
-			detail: facts.AnswerDetail})
+			detail: facts.AnswerDetail, checked: now.Time})
 		d = model.DecideModule(facts)
 	}
 	m.State, m.Message = d.State, d.Message
@@ -181,21 +184,51 @@ func (r *CrewReconciler) moduleFacts(crew *c4v1alpha1.Crew, status *c4v1alpha1.C
 		f.Repository = spec.GitHub.Repository
 	}
 	if p := release.Publish; p != nil && p.Source != nil {
-		f.SourceTag, f.Private = p.Source.Tag, p.Source.Private
+		f.SourceTag, f.Private = p.Source.Tag, p.Source.Private != nil && *p.Source.Private
 	}
 	if c := apimeta.FindStatusCondition(status.Conditions, ConditionPublished); c != nil &&
 		c.Status == metav1.ConditionFalse {
 		f.PublishedReason, f.PublishedMessage = c.Reason, c.Message
 	}
-	if m.CheckedTime == nil {
-		return f
-	}
-	if a, ok := r.moduleAnswers.Load(crew.UID); ok && a.(moduleAnswer).tag == release.Tag {
-		f.Answer, f.AnswerDetail, f.Checked = a.(moduleAnswer).answer, a.(moduleAnswer).detail, m.CheckedTime.Time
-	} else if m.State == model.ModuleStatePublished {
+	if a, ok := r.moduleAnswers.Load(crew.UID); ok && a.(moduleAnswer).tag == release.Tag &&
+		(m.CheckedTime != nil || m.State != model.ModuleStatePublished) {
+		// Remembered even when the status write that records it failed; a
+		// Published never checked is an older factory's, checked again.
+		a := a.(moduleAnswer)
+		f.Answer, f.AnswerDetail, f.Checked = a.answer, a.detail, a.checked
+	} else if m.CheckedTime != nil && m.State == model.ModuleStatePublished {
 		f.Answer, f.Checked = model.ProxyFound, m.CheckedTime.Time
 	}
 	return f
+}
+
+// readPrivate reads whether the Crew's GitHub target is private for a release
+// whose source went out before the operator recorded it, once: the module
+// rule needs it, and the publish, done, reads GitHub no more. A failed read
+// leaves it unknown, read as public, and is tried again on the next poll.
+func (r *CrewReconciler) readPrivate(ctx context.Context, crew *c4v1alpha1.Crew, release *c4v1alpha1.CrewRelease) {
+	spec := crew.Spec.PublishReleases
+	if spec == nil || release.Publish == nil || release.Publish.Source == nil ||
+		release.Publish.Source.Private != nil {
+		return
+	}
+	log := logf.FromContext(ctx)
+	token, err := r.publishToken(ctx, crew.Namespace, spec.GitHub.TokenSecretRef.Name)
+	if err != nil || token == "" {
+		return
+	}
+	target, err := r.releaseTargets().GitHubReleases(gitprovider.GitHubConfig{Repository: spec.GitHub.Repository,
+		Token: token})
+	if err != nil {
+		return
+	}
+	read, err := target.ReadRepository(ctx)
+	if err != nil {
+		log.Info("Could not read whether the release target is private", "repository", spec.GitHub.Repository,
+			"error", err.Error())
+		return
+	}
+	release.Publish.Source.Private = new(read.Private)
 }
 
 // askGoProxy asks the Go proxy for a module version's .info, as go get does,

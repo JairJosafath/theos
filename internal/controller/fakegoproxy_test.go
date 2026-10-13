@@ -60,9 +60,9 @@ func (p *fakeGoProxy) setFound(path, version string, found bool) {
 	p.found[path+"@"+version] = found
 }
 
-// asks is how often the proxy was asked for path at version.
-func (p *fakeGoProxy) asks(path, version string) int {
+// asks is how often the proxy was asked for path at v0.1.0, the specs' release.
+func (p *fakeGoProxy) asks(path string) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.asked[path+"@"+version]
+	return p.asked[path+"@v0.1.0"]
 }

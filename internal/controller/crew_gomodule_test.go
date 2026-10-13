@@ -73,7 +73,7 @@ var _ = Describe("Crew Go modules", func() {
 		// would show. A Crew read from a cache that lags its status may ask once
 		// more, and finds the version there.
 		Consistently(func(g Gomega) {
-			g.Expect(goProxyFake.asks(ordersModule(ns), "v0.1.0")).To(BeZero(), "the registry is the publish")
+			g.Expect(goProxyFake.asks(ordersModule(ns))).To(BeZero(), "the registry is the publish")
 			g.Expect(gitFake.moduleUploads(ordersModule(ns), "v0.1.0")).To(Equal(1))
 			g.Expect(gitFake.modulePublishes(ns, "orders-api", "v0.1.0")).To(BeNumerically("<=", 2))
 			events := moduleEvents(g, ns, "ModulePublished")
@@ -190,7 +190,7 @@ var _ = Describe("Crew Go modules", func() {
 				HavePrefix("Uploaded "+module+" v0.1.0 to the registry"),
 				ContainSubstring("where "+repository+" has no tag engine/v0.1.0 yet: Published is Unauthorized, ")))
 		}).Should(Succeed())
-		Expect(goProxyFake.asks(module, "v0.1.0")).To(BeZero(), "a miss asked early is cached by the proxy")
+		Expect(goProxyFake.asks(module)).To(BeZero(), "a miss asked early is cached by the proxy")
 		Expect(moduleEvents(Default, ns, "ModulePublished")).To(BeEmpty())
 
 		var secret corev1.Secret
@@ -215,8 +215,47 @@ var _ = Describe("Crew Go modules", func() {
 		Consistently(func(g Gomega) {
 			g.Expect(moduleEvents(g, ns, "ModulePublished")).To(HaveLen(1))
 			// Found is found: never asked again.
-			g.Expect(goProxyFake.asks(module, "v0.1.0")).To(BeNumerically("<=", 2))
+			g.Expect(goProxyFake.asks(module)).To(BeNumerically("<=", 2))
 		}, 3*time.Second).Should(Succeed())
+	})
+
+	It("takes the source tag of a private target, whose privacy an old status lacks, read again", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		module := "github.com/" + repository + "/engine"
+		token := rand.Text()
+		githubFake.addRepository(repository, token)
+		githubFake.setPrivate(repository)
+		gitFake.setGoMod(ns, "orders-api", module)
+		mustCreate(publishSecret(ns, token))
+		sourcePublished(ns, repository, "engine", sourceCrew(ns, repository, "engine", module))
+
+		message := "Published " + module + " v0.1.0; " + repository + " is private, so fetch it with GOPRIVATE=" + module
+		published := func() {
+			GinkgoHelper()
+			Eventually(func(g Gomega) {
+				crew := getCrew(g, ns)
+				g.Expect(crew.Status.LastRelease.Publish.Source.Private).To(Equal(new(true)))
+				m := crew.Status.LastRelease.GoModule
+				g.Expect(m).NotTo(BeNil())
+				g.Expect(m.State).To(Equal("Published"))
+				g.Expect(m.Message).To(Equal(message))
+				cond := condition(crew.Status.Conditions, ConditionModulePublished)
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			}, 20*time.Second).Should(Succeed())
+		}
+		published()
+
+		// As a factory before #1001 left it: the source out, its privacy unknown.
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			crew.Status.LastRelease.Publish.Source.Private = nil
+			crew.Status.LastRelease.GoModule.Message = "Published " + module + " v0.1.0"
+			g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
+		}).Should(Succeed())
+		published()
+		Expect(goProxyFake.asks(module)).To(BeZero(), "the public proxy can't read a private target")
+		Expect(moduleEvents(Default, ns, "ModuleNotFetchable")).To(BeEmpty())
 	})
 
 	It("reports a module the Go proxy can't fetch, with one Warning, and asks again every 5 minutes", func() {
@@ -248,13 +287,13 @@ var _ = Describe("Crew Go modules", func() {
 				HaveField("Note", message))))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(goProxyFake.asks(module, "v0.1.0")).To(Equal(1), "asked at most every 5 minutes")
+			g.Expect(goProxyFake.asks(module)).To(Equal(1), "asked at most every 5 minutes")
 		}, 3*time.Second).Should(Succeed())
 
 		skewCrewClock(6 * time.Minute)
-		Eventually(func() int { return goProxyFake.asks(module, "v0.1.0") }).Should(Equal(2))
+		Eventually(func() int { return goProxyFake.asks(module) }).Should(Equal(2))
 		Consistently(func(g Gomega) {
-			g.Expect(goProxyFake.asks(module, "v0.1.0")).To(Equal(2))
+			g.Expect(goProxyFake.asks(module)).To(Equal(2))
 			events := moduleEvents(g, ns, "ModuleNotFetchable")
 			g.Expect(events).To(HaveLen(1), "one Warning per release")
 			g.Expect(events[0].Series).To(BeNil())
@@ -296,7 +335,7 @@ var _ = Describe("Crew Go modules", func() {
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Reason).To(Equal("NotFetchable"))
 		}).Should(Succeed())
-		Expect(goProxyFake.asks(module, "v0.1.0")).To(Equal(2))
+		Expect(goProxyFake.asks(module)).To(Equal(2))
 	})
 })
 
@@ -316,7 +355,7 @@ var _ = Describe("Crew Go modules with no Go proxy", func() {
 		Expect(condition(status.Conditions, ConditionModulePublished).Reason).To(Equal("WaitsForRelease"))
 
 		status.LastRelease.Publish = &c4v1alpha1.CrewReleasePublish{State: "Published",
-			Source: &c4v1alpha1.CrewReleaseSource{Commit: "abc", Tag: "engine/v0.15.1"}}
+			Source: &c4v1alpha1.CrewReleaseSource{Commit: "abc", Tag: "engine/v0.15.1", Private: new(false)}}
 		r.publishGoModule(ctx, crew, status, nil, gitprovider.Repository{})
 		m := status.LastRelease.GoModule
 		Expect(m.State).To(Equal("Published"))

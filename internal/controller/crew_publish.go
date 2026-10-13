@@ -255,7 +255,7 @@ func (p *publishPass) write(ctx context.Context, step model.PublishStep) (bool, 
 			return true, nil
 		}
 		if err == nil {
-			p.source = p.r.sourcePublished(p.log, p.crew, *p.facts, step, p.gh != nil && p.gh.private)
+			p.source = p.r.sourcePublished(p.log, p.crew, *p.facts, step, p.gh)
 		}
 	case model.PublishRetargetDraft:
 		if _, err = p.target.RetargetDraft(ctx, step.Release, step.Target); err == nil {
@@ -527,12 +527,12 @@ func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, s
 		r.event(crew, corev1.EventTypeNormal, reasonReleasePublished, "PublishRelease", step.Message)
 	}
 	r.publishSaid.Store(crew.UID, said)
-	private := false
+	var private *bool
 	if prev := status.LastRelease.Publish; prev != nil && prev.Source != nil {
 		private = prev.Source.Private
 	}
 	if gh != nil {
-		private = gh.private
+		private = new(gh.private)
 	}
 	r.setPublish(crew, status, publishPublished, step.URL, model.PublishPublished, step.Message)
 	if s := step.Source; s != nil {
@@ -542,9 +542,10 @@ func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, s
 }
 
 // sourcePublished says the release's source is out, with a Normal Event, and a
-// Warning Event when go install can't fetch it; private is the repository's.
+// Warning Event when go install can't fetch it, private as gh, what this pass
+// read of GitHub, says.
 func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew, facts model.PublishFacts,
-	step model.PublishStep, private bool) *c4v1alpha1.CrewReleaseSource {
+	step model.PublishStep, gh *githubSource) *c4v1alpha1.CrewReleaseSource {
 	url := model.SourceURL(facts.Repository, facts.Source.Path, step.Tag)
 	log.Info("Published source", "tag", step.Tag, "commit", step.Commit, "url", url)
 	r.event(crew, corev1.EventTypeNormal, reasonSourcePublished, "PublishRelease",
@@ -555,7 +556,11 @@ func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew,
 			fmt.Sprintf("%s; the source of %s is published, but go install can't fetch it from GitHub",
 				step.Warning, facts.Tag))
 	}
-	return &c4v1alpha1.CrewReleaseSource{Commit: step.Commit, Tag: step.Tag, URL: url, Private: private}
+	source := &c4v1alpha1.CrewReleaseSource{Commit: step.Commit, Tag: step.Tag, URL: url}
+	if gh != nil {
+		source.Private = new(gh.private)
+	}
+	return source
 }
 
 // notePublishSkipped warns, when a Crew that publishes tags a release before

@@ -299,10 +299,11 @@ type CrewReleaseSource struct {
 	// +optional
 	URL string `json:"url,omitempty"`
 
-	// private is set when GitHub reported the repository private as the tag
-	// went out: the public Go proxy can't read it.
+	// private is whether GitHub reports the repository private, read as the
+	// tag went out, or after, for a release older than the field: the public
+	// Go proxy can't read a private one.
 	// +optional
-	Private bool `json:"private,omitempty"`
+	Private *bool `json:"private,omitempty"`
 }
 
 // CrewReleaseBump is a bump issue filed in a Container that bundles the released
