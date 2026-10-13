@@ -144,26 +144,26 @@ lesson gives the AWS templates.
 Each step is a GitHub issue that names #1028, lands on its own and leaves
 main working.
 
-1. **The `function` Container type.** Enum value in
+1. **The `function` Container type** (#1029). Enum value in
    `api/v1alpha1/shared_types.go`, `make manifests`, `internal/model`'s
    type constants, the UI's copies (`ui/src/k8s/types.ts`,
    `ui/src/model/describe.ts`), the planner guide's type list, and the
    design's type list. *Done when:* `make check` passes with an envtest
    spec creating a `function` Container and a model test that no catalog
    entry in the chart supports it yet.
-2. **`aws-standard` and the serverless Framework `aws-lambda-ts`.** Both
+2. **`aws-standard` and the serverless Framework `aws-lambda-ts`** (#1030). Both
    v1.0.0, in one step because neither renders or checks without the other.
    *Done when:* `make check` passes with the combo row rendering,
    the drift test against ts-standard, and the chart entry; a scaffolded copy's
    `make check` (synth, CDK Nag, cfn-lint, tests) passes on this device
    with its output in the pull request.
-3. **The PaaS Framework `aws-fargate-ts`**, and `aws-standard` v1.1.0 with
+3. **The PaaS Framework `aws-fargate-ts`** (#1031), and `aws-standard` v1.1.0 with
    its branch. *Done when:* the same as step 2, for this Framework.
-4. **The IaaS Framework `aws-ec2-ts`**, and `aws-standard` v1.2.0 with its
+4. **The IaaS Framework `aws-ec2-ts`** (#1032), and `aws-standard` v1.2.0 with its
    branch. *Done when:* the same as step 2, for this Framework.
-5. **A Python (boto3) Lambda Framework `aws-lambda-py`**, with
+5. **A Python (boto3) Lambda Framework `aws-lambda-py`** (#1033), with
    `aws-standard` adding ruff and pytest for its branch. Waits on step 2.
-6. **A Go (SDK v2) Lambda Framework `aws-lambda-go`**, with `aws-standard`
+6. **A Go (SDK v2) Lambda Framework `aws-lambda-go`** (#1034), with `aws-standard`
    adding the Go checks for its branch. Waits on step 2.
 
 Steps 3 to 6 each wait on step 2; step 2 waits on step 1. Each bumps
