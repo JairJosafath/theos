@@ -49,7 +49,8 @@ A lite device runs every test tier but Kind
 the gate, so it verifies every issue:
 
 - `make check`: the table tests, every template rendered, the YAML validated
-  offline against the CRDs and their CEL rules, and envtest.
+  offline against the CRDs and their CEL rules, envtest, and the UI's check
+  (`make ui-test`: typecheck, eslint, Prettier and its tests).
 - `make test-gitea`, which tests `internal/gitprovider` against a Gitea of this
   checkout's own (`make gitea-local`, no Kubernetes; see
   [docs/dev/testenv.md](docs/dev/testenv.md#local-gitea)), and `make
