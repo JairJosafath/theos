@@ -893,14 +893,15 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "land: takes over an abandoned turn" "$? $(cut -d' ' -f1-2 "$T/landed") | $(queue)" "0 merge 40 | "
   grep -q 'dropped an abandoned merge turn: heron-41 lands #41 (host h), heartbeat 60m ago' <<<"$out"; check "land: says it dropped it" $? 0
 
-  # Heartbeats: while it waits and while make check runs.
-  rm -f "$T/landed"
+  # Heartbeats: while it waits (whole seconds) and while make check runs.
   put 6 41
-  (sleep 1; rm "$Q/6.json") &
   : >"$T/calls"
-  out=$(GH_LAND_BEAT=0.3 CHECK_SLEEP=1 gh_land 40 2>&1)
-  wait
-  check "land: beats while it waits and while make check runs" "$? $(($(grep -c '^PATCH ' "$T/calls") >= 4))" "0 1"
+  GH_LAND_BEAT=1 gh_land 40 --wait 3s >/dev/null 2>&1
+  check "land: beats while it waits" "$? $(($(grep -c '^PATCH ' "$T/calls") >= 1))" "4 1"
+  rm "$Q/6.json" "$T/landed"
+  : >"$T/calls"
+  out=$(GH_LAND_BEAT=0.2 CHECK_SLEEP=1.5 gh_land 40 2>&1)
+  check "land: beats while make check runs" "$? $(($(grep -c '^PATCH ' "$T/calls") >= 3))" "0 1"
 
   # A red check gives the turn up, says so, and merges nothing.
   rm -f "$T/landed"

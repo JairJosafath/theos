@@ -1790,7 +1790,7 @@ gh_land() {
 }
 
 gh_land_turn() {
-  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat beater rc log local_head s who i
+  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat rc log local_head s who i
   wait=$(gh_seconds "$2" --wait) || return 64
   ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 64
   info=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq '"\(.state) \(.base.ref) \(.head.ref)"') || return 1
@@ -1807,7 +1807,8 @@ gh_land_turn() {
   [ -n "$id" ] || { echo "github: could not queue #$pr for the merge turn" >&2; return 1; }
   # Give the place up however this ends; jobs it forks inherit the trap, so only this shell runs it.
   me=$BASHPID
-  trap 'if [ "$BASHPID" = "'"$me"'" ]; then gh_maint_release "'"$id"'" >/dev/null 2>&1 ||
+  GH_LAND_BEATER=
+  trap 'if [ "$BASHPID" = "'"$me"'" ]; then [ -z "$GH_LAND_BEATER" ] || kill "$GH_LAND_BEATER" 2>/dev/null; gh_maint_release "'"$id"'" >/dev/null 2>&1 ||
     echo "github: could not delete the merge turn (comment '"$id"' on #'"$n"'); it lapses after $C4_LAND_TTL" >&2; fi' EXIT
   trap 'exit 130' INT TERM
   t0=$SECONDS beat=$SECONDS
@@ -1856,11 +1857,12 @@ gh_land_turn() {
       gh_edit_comment "$id" "$(gh_land_body "$pr")"
     done
   ) >/dev/null 2>&1 &
-  beater=$!
+  GH_LAND_BEATER=$!
   "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" check >"$log" 2>&1
   rc=$?
-  kill "$beater" 2>/dev/null
-  wait "$beater" 2>/dev/null
+  kill "$GH_LAND_BEATER" 2>/dev/null
+  wait "$GH_LAND_BEATER" 2>/dev/null
+  GH_LAND_BEATER=
   if [ "$rc" != 0 ]; then
     tail -40 "$log" >&2
     echo "github: #$pr: make check failed (exit $rc) with origin/$base merged in (the merge is committed here, not pushed; the whole output is in $log); fix it, push and land again" >&2
