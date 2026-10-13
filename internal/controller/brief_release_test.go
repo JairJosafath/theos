@@ -860,8 +860,11 @@ var _ = Describe("Brief apps", func() {
 		}).Should(Succeed())
 
 		By("carrying the module's state and message, so the Brief points at a module nobody can fetch (#1015)")
-		module := &c4v1alpha1.CrewReleaseGoModule{State: "Waiting", Path: "github.com/acme/cel-lens/engine",
-			Version: "v0.2.0", Message: "Waits for the source tag engine/v0.2.0 on acme/cel-lens: Unauthorized"}
+		// Invalid is settled at the upload, so the Crew's own module poll keeps it;
+		// a Waiting one it decides again, and may rewrite before the Brief copies it.
+		module := &c4v1alpha1.CrewReleaseGoModule{State: model.ModuleStateInvalid,
+			Path: "github.com/acme/cel-lens/engine", Version: "v0.2.0",
+			Message: "Did not publish github.com/acme/cel-lens/engine v0.2.0: go.mod names another module"}
 		Eventually(func(g Gomega) {
 			crew := linterCrew(g, ns)
 			crew.Status.LastRelease.GoModule = module
@@ -870,7 +873,7 @@ var _ = Describe("Brief apps", func() {
 		Eventually(func(g Gomega) {
 			release := briefApp(g, ns, "linter").LastRelease
 			g.Expect(release).NotTo(BeNil())
-			g.Expect(release.ModuleState).To(Equal("Waiting"))
+			g.Expect(release.ModuleState).To(Equal(model.ModuleStateInvalid))
 			g.Expect(release.ModulePath).To(Equal(module.Path))
 			g.Expect(release.ModuleMessage).To(Equal(module.Message))
 		}).Should(Succeed())
