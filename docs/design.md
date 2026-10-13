@@ -800,7 +800,10 @@ model and context it needs.
   Standard (a whole TypeScript Standard copied from `ts-standard`, which a
   test keeps from drifting), and no Compute or Deployment: `make check`
   synthesizes the stack offline under CDK Nag's AwsSolutions rules and
-  cfn-lint, and nothing deploys. GitHub issue #1028 has the plan,
+  cfn-lint, and nothing deploys. The same Standard fits `aws-fargate-ts`, a
+  `service` on AWS: a Node server in a container on ECS on Fargate behind
+  an Application Load Balancer, whose image synth only stages, with no
+  Compute or Deployment either. GitHub issue #1028 has the plan,
   [plans/aws.md](plans/aws.md).
 
 ## Briefs: an idea in plain words

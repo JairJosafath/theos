@@ -1,4 +1,5 @@
-// Lint config for the function's TypeScript and its CDK app: typescript-eslint's strictest
+{{- $fargate := eq .Framework "aws-fargate-ts" -}}
+// Lint config for the {{ if $fargate }}service's{{ else }}function's{{ end }} TypeScript and its CDK app: typescript-eslint's strictest
 // type-checked presets, plus the rules below. `make lint` runs ESLint with
 // --max-warnings 0, so any finding fails `make check`. Every rule turned off
 // or changed here says why. Changing this file is the Standard's job, not a
@@ -8,8 +9,14 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
+{{- if $fargate }}
+  // What cdk synth writes (templates, the image's staged context) and what
+  // npm run bundle writes.
+  globalIgnores(['cdk.out/', 'dist/']),
+{{- else }}
   // What cdk synth writes: templates and the bundled function.
   globalIgnores(['cdk.out/']),
+{{- end }}
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
@@ -40,9 +47,21 @@ export default defineConfig(
       '@typescript-eslint/prefer-readonly': 'error',
       // Array#sort without a compare function sorts numbers as strings.
       '@typescript-eslint/require-array-sort-compare': ['error', { ignoreStringArrays: true }],
-      // The function logs structured JSON through the Log it is given, so
+      // The {{ if $fargate }}service{{ else }}function{{ end }} logs structured JSON through the Log it is given, so
       // tests see what it logs and every entry is one parseable line.
       'no-console': 'error',
+{{- if $fargate }}
+      // process.exit() drops the requests in flight; on SIGTERM the server
+      // closes and the process ends when they are done.
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'process',
+          property: 'exit',
+          message: 'Close the server and let the process end; never drop the requests in flight.',
+        },
+      ],
+{{- else }}
       // process.exit() in a Lambda function kills the execution environment
       // mid-invocation; throw, or return an error response.
       'no-restricted-properties': [
@@ -53,6 +72,7 @@ export default defineConfig(
           message: 'Throw, or return an error response; never end the execution environment.',
         },
       ],
+{{- end }}
       eqeqeq: ['error', 'always'],
       curly: ['error', 'all'],
     },

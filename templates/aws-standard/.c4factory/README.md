@@ -1,7 +1,7 @@
 # aws-standard (Standard)
 
-How a serverless TypeScript program on AWS in a C4 Factory Container is
-written, checked and reviewed: ts-standard's TypeScript rules
+How a TypeScript program on AWS in a C4 Factory Container, serverless or a
+container service, is written, checked and reviewed: ts-standard's TypeScript rules
 (typescript-eslint's strictest configs, Prettier), CDK Nag's AWS Solutions
 checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
 assertions on every stack, the agent guide and role guides, offline style and
@@ -15,11 +15,17 @@ same as ts-standard's for `node-cli`, and every line ts-standard's
 `eslint.config.mjs` and `docs/style/principles.md` render the same for all its
 Frameworks appears in this Standard's, in the same order.
 
-- **Supports:** `function`; Frameworks: `aws-lambda-ts`
-- **Per Framework:** it supports one Framework so far, and no file branches
-  on `.Framework` yet. A Framework added later gets its branches in the
-  `Makefile`, `AGENTS.md`, the role guides, `eslint.config.mjs` and
-  `docs/style/`, in the version that adds it.
+- **Supports:** `function`, `service`; Frameworks: `aws-lambda-ts`,
+  `aws-fargate-ts`
+- **Per Framework:** `AGENTS.md`, the role guides, the task issue template,
+  `eslint.config.mjs`, `docs/style/aws.md`, `principles.md`, `SOURCES.md` and
+  `docs/well-architected.md` branch on `.Framework`: `aws-fargate-ts` gets
+  the container service's text (the server, the load balancer, the task and
+  service, ECS's best practices, `dist/` ignored, `process.exit` refused
+  because it drops requests in flight), and any other Framework
+  aws-lambda-ts's, unchanged from v1.0.0. The `Makefile`, CI and
+  `infra/` don't branch. A Framework added later gets its branches in the
+  version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
@@ -32,7 +38,8 @@ Frameworks appears in this Standard's, in the same order.
   `prefer-readonly`, sort compare functions, `no-console` (the function logs
   JSON through the `Log` it is given), `process.exit` refused, `eqeqeq` and
   `curly`; unused disable comments are errors. Prettier formats everything but
-  the platform's files, the lockfile and `cdk.out/`, which ESLint ignores too.
+  the platform's files, the lockfile and `cdk.out/`, which ESLint ignores too
+  (and `dist/`, for aws-fargate-ts, whose `.gitignore` Prettier reads).
 - **CDK:** `infra/standard.ts` tags every stack, and every resource in it
   that takes tags, with `c4factory:project`, `c4factory:system` and
   `c4factory:container` (the stack's own tags too, set explicitly, as the
@@ -45,7 +52,8 @@ Frameworks appears in this Standard's, in the same order.
   tests, builds the app the same way with `cdk.json`'s context and asserts on
   every stack: synth passes CDK Nag; no error or warning annotation; the three
   tags on the stack and on every resource with a `Tags` list; no IAM action
-  `*` or `service:*`; every DynamoDB table (`SSESpecification`), S3 bucket,
+  `*` or `service:*` in a statement that allows (a `Deny`, such as a bucket's
+  TLS-only `s3:*`, may name every action); every DynamoDB table (`SSESpecification`), S3 bucket,
   SQS queue and SNS topic encrypted at rest; every log group with a retention
   and every Lambda function logging to its own; every stateful resource
   (tables, buckets, queues, topics, log groups, databases, file systems, KMS
@@ -87,7 +95,8 @@ Frameworks appears in this Standard's, in the same order.
   `cdk.json`, whose `app` is `node_modules/.bin/tsx infra/main.ts` and whose
   context holds the recommended feature flags; `tsconfig.json`, including
   `src`, `infra` and `vitest.config.mts`; and `vitest.config.mts`, running
-  `src/**/*.test.ts` and `infra/**/*.test.ts`. aws-lambda-ts does all of this.
+  `src/**/*.test.ts` and `infra/**/*.test.ts`. aws-lambda-ts and
+  aws-fargate-ts do all of this.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
   They say no test calls AWS (stacks are checked with `Template.fromStack`,
@@ -98,14 +107,16 @@ Frameworks appears in this Standard's, in the same order.
   an issue without an unchecked item under "Acceptance criteria" is never picked up.
   The pull request template asks for the CDK Nag acknowledgements a change adds.
 - **Style digests:** `docs/style/` holds ts-standard's TypeScript digest and
-  cross-language principles (adapted for Lambda: what the handler owns, the
-  layering of pure modules, SDK wrappers and the handler), and `aws.md`, from
-  the Lambda, API Gateway, DynamoDB, SDK v3 and CDK guides and CDK Nag's
-  rules. Every rule is marked `[lint]`, `[nag]`, `[test]` or `[review]`;
+  cross-language principles (adapted per Framework: what the handler or the
+  server owns, the layering of pure modules, SDK wrappers and the wiring),
+  and `aws.md`, from the Lambda and API Gateway guides, or ECS's and the
+  Application Load Balancer's, and the DynamoDB, SDK v3 and CDK guides and
+  CDK Nag's rules. Every rule is marked `[lint]`, `[nag]`, `[test]` or `[review]`;
   `docs/style/SOURCES.md` lists the sources with dates and the pinned
   versions.
 - **Well-Architected:** `docs/well-architected.md` digests the AWS
-  Well-Architected Framework and its Serverless Applications Lens, one
+  Well-Architected Framework and its Serverless Applications Lens, or ECS's
+  best practices for aws-fargate-ts, one
   section per pillar (operational excellence, security, reliability,
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
@@ -125,4 +136,6 @@ same path, except `.c4factory/`, which is input for the factory. Files ending in
 `.tmpl` are rendered with Go `text/template` (missing keys are errors) and lose the
 suffix; the workflow writes its `${{ }}` expressions as template strings.
 Other files are copied byte for byte. `infra/standard.ts` is the one TypeScript file rendered: it
-holds the tag values (`.Project`, `.SoftwareSystem`, `.Container`).
+holds the tag values (`.Project`, `.SoftwareSystem`, `.Container`). A
+Markdown template that branches starts with
+`{{- $fargate := eq .Framework "aws-fargate-ts" -}}`.

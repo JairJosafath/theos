@@ -1,0 +1,48 @@
+# make check in a scaffolded aws-fargate-ts + aws-standard Container (issue #1031)
+# go run ./hack/render -out /tmp/aws-1031 -type service Framework=aws-fargate-ts Standard=aws-standard
+# then, with no AWS variables, an empty HOME, Node v24.21.0, uv 0.12.23, no Docker used:
+# env -i PATH=$PATH HOME=/tmp/aws-1031-home npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/uv-cache make check
+# on 2026-10-13
+
+npm ci --no-audit --no-fund
+
+added 171 packages in 18s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /tmp/aws-1031
+
+ ✓ src/items.test.ts (25 tests) 15ms
+ ✓ src/api.test.ts (12 tests) 14ms
+ ✓ src/server.test.ts (8 tests) 28ms
+ ✓ src/item_store.test.ts (4 tests) 7ms
+ ✓ infra/service_stack.test.ts (8 tests) 1319ms
+ ✓ infra/standard.test.ts (8 tests) 1629ms
+
+ Test Files  6 passed (6)
+      Tests  65 passed (65)
+   Start at  11:50:55
+   Duration  2.69s (tests 61%, import 30%, transform 9%, worker 1%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet
+uvx cfn-lint==1.57.2 --ignore-checks W3005 -- cdk.out/*.template.json
+exit=0
+
+# A copy rendered with -checks BeforeRelease passes make check-light (exit 0),
+# and its .gitea/workflows/check.yaml parses as YAML with jobs [check, full].
+#
+# Not part of any check (make check needs no Docker): on this device the image
+# was built by hand to see the Dockerfile works.
+#   docker build --platform linux/arm64 .            -> built, arm64, no emulation
+#                                                       (the build stage runs on the builder's platform)
+#   docker build -t fg1031:test .                     -> built for the host
+#   docker run --read-only -e TABLE_NAME=t -p 18080:8080 fg1031:test
+#   curl localhost:18080/health                       -> {"status":"ok"}
+#   PUT of a 70,000-byte body                         -> 413 Payload Too Large, connection: close
+#   curl -X DELETE localhost:18080/items/x            -> {"message":"DELETE is not allowed on /items/{id}."}
+#   docker stop                                       -> logged "Stopping.", exit 0 in 0.2 s

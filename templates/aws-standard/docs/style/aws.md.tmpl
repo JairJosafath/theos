@@ -1,7 +1,15 @@
+{{- $fargate := eq .Framework "aws-fargate-ts" -}}
+{{ if $fargate -}}
+# AWS container service digest
+
+Distilled from Amazon ECS's best practices guide, Elastic Load Balancing's
+Application Load Balancer docs, DynamoDB's developer guide, the
+{{- else -}}
 # AWS serverless digest
 
 Distilled from the Lambda developer guide's best practices and Node.js
 handler pages, API Gateway's HTTP API docs, DynamoDB's developer guide, the
+{{- end }}
 AWS SDK for JavaScript v3 guide, the CDK developer guide and its assertions
 module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
 `make check`: an ESLint rule or the compiler; `[nag: x]` = a CDK Nag rule that
@@ -9,6 +17,37 @@ fails `cdk synth`; `[test]` = an assertion in `infra/standard.test.ts` or a
 stack's own test; `[review]` = check it yourself. `docs/well-architected.md`
 says why each rule matters.
 
+{{ if $fargate -}}
+## The server
+
+- `src/main.ts` is the entry point the image runs: it reads the
+  configuration, creates the SDK clients once, starts Node's HTTP server
+  and stops it on `SIGTERM`. Nothing else runs at start-up. [review]
+- Read `process.env` only in `src/main.ts`, once, and fail at start-up with
+  a message naming the variable when one is missing; ECS then replaces the
+  task, and the deployment's circuit breaker rolls back. [review]
+- Keep `src/main.ts` to wiring; the work is in functions that take what they
+  need (a store, a log), so tests call them without a socket. The server
+  reads requests through the narrow `Incoming` and `Outgoing` interfaces
+  `src/server.ts` defines. [review]
+- Bound what a request may cost: a body limit (413 above it), and no work
+  per request that can be done once at start-up. [review]
+- Keep-alive longer than the load balancer's 60-second idle timeout
+  (`keepAliveTimeout`, and `headersTimeout` above it), so the server never
+  closes a connection the load balancer is about to reuse. [review]
+- On `SIGTERM`, stop taking requests (`server.close()`), finish those in
+  flight and let the process end; ECS sends `SIGKILL` after the stop
+  timeout. Never `process.exit()`: it drops what is in flight.
+  [lint: no-restricted-properties]
+- Handle every promise: await it, or `void` it where Node's callback can't
+  (the request listener), with the listener catching every failure itself.
+  [lint: @typescript-eslint/no-floating-promises]
+- Don't keep request data in module-scope variables: every request in the
+  process would share it. [review]
+- `GET /health` answers 200 while the process runs and reads nothing, so an
+  outage of a dependency doesn't fail every task's health check at once.
+  [review]
+{{- else -}}
 ## The handler
 
 - `src/handler.ts` exports `handler`, which takes an `APIGatewayProxyEventV2`
@@ -28,19 +67,24 @@ says why each rule matters.
   [lint: no-restricted-properties]
 - Don't keep request data in module-scope variables: the next invocation in
   the same environment would see it. [review]
+{{- end }}
 
 ## Requests and responses
 
 - Validate every input at the boundary: path parameters, query strings,
-  headers and the body, narrowed from `unknown` with runtime checks. API
+  headers and the body, narrowed from `unknown` with runtime checks. {{ if $fargate }}The
+  load balancer delivers whatever the client sent. [review]
+- Path segments arrive percent-encoded; decode them, and answer 400 when one
+  doesn't decode. [review]{{ else }}API
   Gateway delivers whatever the client sent. [review]
 - A body can arrive base64-encoded (`isBase64Encoded`); decode it before
-  parsing. [review]
+  parsing. [review]{{ end }}
 - Answer expected failures with their status: 400 for bad input, 403, 404,
-  409 for a conflict, 413 for too large, and 500 only for a bug or an
+  {{ if $fargate }}405 for a method a path doesn't take, {{ end }}409 for a conflict, 413 for too large, and 500 only for a bug or an
   outage. The body is JSON with a `message` a client can act on. [review]
 - Never return a stack trace, an SDK error's text or an internal name to a
-  client; log it instead, with the request id. [review]
+  client; log it instead, with the request id{{ if $fargate }} (the load balancer's
+  `X-Amzn-Trace-Id`, or one the server makes){{ end }}. [review]
 - Set `content-type` on every response. [review]
 
 ## Logs
@@ -49,10 +93,18 @@ says why each rule matters.
   given; never `console`. [lint: no-console]
 - Each entry has a `level`, a `message` and the request id; errors say what
   failed and with which input, never a secret, a token or user data. [review]
+{{- if $fargate }}
+- The container logs through the `awslogs` driver to a log group the stack
+  creates, with a retention. [nag: AwsSolutions-ECS7; test: log groups keep
+  logs for a set time]
+- Write entries to stderr, one JSON object a line; ECS sends each line to
+  CloudWatch Logs as one event. [review]
+{{- else }}
 - The function's log group is created by the stack, with a retention.
   [nag: none; test: log groups keep logs for a set time]
 - The function logs in JSON format (`loggingFormat: LoggingFormat.JSON`), so
   Lambda's own entries are structured too. [review]
+{{- end }}
 
 ## DynamoDB
 
@@ -75,16 +127,38 @@ says why each rule matters.
 ## The AWS SDK v3
 
 - Import only the clients you use (`@aws-sdk/client-dynamodb`), never a
-  whole SDK; esbuild bundles them into the function. [review]
+  whole SDK; esbuild bundles them into the {{ if $fargate }}image{{ else }}function{{ end }}. [review]
 - Pin every `@aws-sdk/*` package to the same exact version. [review]
-- A client's region and credentials come from the Lambda environment; never
-  pass keys or set a region in code. [review]
+- A client's region and credentials come from the {{ if $fargate }}task, its task role and
+  region; never pass keys or set a region in code. [review]{{ else }}Lambda environment; never
+  pass keys or set a region in code. [review]{{ end }}
 - Wrap each service in one module behind an interface the rest of the code
   depends on; tests fake that interface. [review]
 - The SDK retries throttling and transient errors itself; don't add a retry
   loop around it. Catch what you can answer (a failed condition is a 409),
-  let the rest reach the handler's 500. [review]
+  let the rest reach the {{ if $fargate }}`answer`'s{{ else }}handler's{{ end }} 500. [review]
 
+{{ if $fargate -}}
+## The load balancer
+
+- Internet-facing, in the public subnets; the tasks are in private subnets
+  without public IPs and take traffic only from its security group.
+  [review]
+- HTTPS on 443 with the deployer's ACM certificate (the `CertificateArn`
+  parameter, so synth needs no account), TLS 1.3 and 1.2 only
+  (`SslPolicy.RECOMMENDED_TLS`); port 80 only redirects to 443. [review]
+- Its security group is open to the internet, which CDK Nag flags: the one
+  acknowledged `AwsSolutions-EC23`, on the load balancer. [nag:
+  AwsSolutions-EC23]
+- Access logs go to an S3 bucket with S3-managed keys (the only encryption
+  Elastic Load Balancing writes with), TLS only, objects expiring, through
+  the log delivery service principal so the stack keeps no region.
+  [nag: AwsSolutions-ELB2, AwsSolutions-S10]
+- Invalid header fields are dropped (`dropInvalidHeaderFields`). [review]
+- The target group checks `/health`, and its deregistration delay fits the
+  longest request: ECS stops a task only after the load balancer has
+  drained it. [review]
+{{- else -}}
 ## API Gateway HTTP API
 
 - Every route is authorized: IAM (`HttpIamAuthorizer`), a JWT authorizer or a
@@ -95,7 +169,39 @@ says why each rule matters.
   can't run up the bill or starve other functions. [review]
 - Routes name their method and path (`GET /items/{id}`); no `ANY /{proxy+}`
   that hands routing to the function. [review]
+{{- end }}
 
+{{ if $fargate -}}
+## The task and the service in the stack
+
+- The image is `ContainerImage.fromAsset` of the repository, for
+  `linux/arm64`: synth only stages the build context, which `.dockerignore`
+  narrows; `cdk deploy` builds it with Docker on the deployer's machine.
+  Never build an image in `make check`, which has no Docker. [review]
+- The `Dockerfile` pins the Node major (`node:24-alpine`), builds with
+  `npm ci` and esbuild, and runs the bundle alone as the `node` user. [review]
+- `arm64` (Graviton): cheaper per vCPU-hour and lower energy. [review]
+- CPU and memory set for the work; a read-only root file system; a stop
+  timeout that lets requests in flight finish. [review]
+- The task role is granted only what the code calls; the execution role
+  only what CDK grants it to pull the image and write logs. No AWS managed
+  policies. [nag: AwsSolutions-IAM4]
+- No wildcard permissions: CDK grants, such as
+  `table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`, never a
+  hand-written `*`; the execution role's
+  `ecr:GetAuthorizationToken` takes only `*`, and is the one acknowledged
+  `AwsSolutions-IAM5[Resource::*]`. [nag: AwsSolutions-IAM5; test: no
+  wildcard action]
+- No secrets in environment variables: CDK Nag flags every plain variable;
+  pass a secret as an ECS `secret` from Secrets Manager. A variable that is
+  plainly no secret (a table's name) is acknowledged. [nag: AwsSolutions-ECS2]
+- The cluster has Container Insights. [nag: AwsSolutions-ECS4]
+- The service keeps at least two tasks in two zones, deploys with the
+  circuit breaker and rollback, and scales between bounds the issue's load
+  sets. [review]
+- The VPC logs rejected traffic to a log group with a retention, and reaches
+  DynamoDB through a gateway endpoint. [nag: AwsSolutions-VPC7; review]
+{{- else -}}
 ## Lambda configuration in the stack
 
 - `NodejsFunction`, bundled by the installed esbuild
@@ -111,6 +217,7 @@ says why each rule matters.
   never a hand-written `*`. [nag: AwsSolutions-IAM5; test: no wildcard action]
 - No secrets in environment variables: they are visible in the console and
   the template. Read them from Secrets Manager at start-up. [review]
+{{- end }}
 
 ## The CDK app
 
@@ -137,5 +244,11 @@ says why each rule matters.
   issue needs (a route, a grant, a setting), not the whole template. [review]
 - Code that calls AWS is tested through its interface with a fake that
   records commands and answers from memory. [review]
+{{- if $fargate }}
+- Requests are tested by calling `answer` with a request, or the server's
+  listener with an in-memory stream and a recorded response, and checking
+  the status code and body; no test starts the server. [review]
+{{- else }}
 - Handlers are tested by building an `APIGatewayProxyEventV2` and checking
   the status code and body. [review]
+{{- end }}

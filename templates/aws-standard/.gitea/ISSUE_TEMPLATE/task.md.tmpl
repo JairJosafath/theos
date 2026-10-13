@@ -28,7 +28,7 @@ Size it for one pull request: a few files, one concern.
 Observable, testable outcomes, one unchecked checklist item each. Each becomes
 a test, and the reviewer reports each one as met or not met. For example:
 `DELETE /items/{id}` answers 204 and a later `GET` answers 404, and the
-function's role may delete items but still not scan the table.
+{{ if eq .Framework "aws-fargate-ts" }}task's{{ else }}function's{{ end }} role may delete items but still not scan the table.
 -->
 
 ## Out of scope

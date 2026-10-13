@@ -65,6 +65,21 @@ function resourcesOf(template: Template, type?: string): [string, Resource][] {
   return found;
 }
 
+/** Every IAM policy statement in `value`: each object with an Effect and an Action or NotAction. */
+function statementsIn(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item: unknown) => statementsIn(item));
+  }
+  if (typeof value !== 'object' || value === null) {
+    return [];
+  }
+  const object: Record<string, unknown> = { ...value };
+  const nested = Object.values(object).flatMap((item: unknown) => statementsIn(item));
+  return 'Effect' in object && ('Action' in object || 'NotAction' in object)
+    ? [object, ...nested]
+    : nested;
+}
+
 let stacks: Stack[] = [];
 let templates: [string, Template][] = [];
 
@@ -113,11 +128,16 @@ describe('the Standard', () => {
 
   it('grants no IAM action with a wildcard service or action', () => {
     for (const [name, template] of templates) {
-      const json = JSON.stringify(template.toJSON());
-      for (const match of json.matchAll(/"(?:Not)?Action":(\[[^\]]*\]|"[^"]*")/g)) {
-        const actions: unknown = JSON.parse(match[1] ?? '[]');
-        for (const action of [actions].flat()) {
-          expect(action, name).not.toMatch(/^\*$|^[a-z0-9-]+:\*$/);
+      // A Deny may name every action (a bucket refusing plain HTTP denies
+      // s3:*); only what is allowed must be narrow.
+      for (const statement of statementsIn(template.toJSON())) {
+        if (statement['Effect'] === 'Deny') {
+          continue;
+        }
+        for (const action of [statement['Action'], statement['NotAction']].flat()) {
+          if (action !== undefined) {
+            expect(action, name).not.toMatch(/^\*$|^[a-z0-9-]+:\*$/);
+          }
         }
       }
     }

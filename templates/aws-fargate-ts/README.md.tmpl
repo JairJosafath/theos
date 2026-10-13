@@ -1,0 +1,70 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` service of {{ .SoftwareSystem }}, in project {{ .Project }}: an HTTP
+service in TypeScript on Node, run as a container on Amazon ECS on Fargate
+behind an Application Load Balancer, keeping items in a DynamoDB table, with
+its infrastructure as a CDK app. Scaffolded by C4 Factory.
+
+## The API
+
+The load balancer serves HTTPS on port 443 with the certificate the deployer
+names, and redirects plain HTTP to it.
+
+| Route             | Body                                | Answers                                    |
+| ----------------- | ----------------------------------- | ------------------------------------------ |
+| `PUT /items/{id}` | `{ "name": "Lamp", "quantity": 3 }` | 200 and the item; 400 for a bad id or body |
+| `GET /items/{id}` |                                     | 200 and the item; 404 when there is none   |
+| `GET /health`     |                                     | 200 while the process runs                 |
+
+An id is 1 to 64 letters, digits, `-` or `_`. A name is 1 to 200 characters;
+a quantity a whole number, 0 or more. A body is at most 64 KiB. Every error is
+JSON with a `message`. A `PUT` replaces the whole item, so repeating it is
+harmless.
+
+## Develop
+
+Open the repository in its devcontainer, which has Node 24 and the Go toolchain.
+
+```sh
+npm ci           # install the exact packages in package-lock.json
+npm test         # unit tests and the stacks' assertions, with vitest
+npm run bundle   # bundle the service into dist/main.cjs with esbuild
+npm run synth    # write the CloudFormation templates into cdk.out/
+{{- if .Standard }}
+make check       # what CI runs: format, lint, type check, test, synth, cfn-lint
+make help        # every target
+{{- end }}
+```
+
+Run it locally with `TABLE_NAME=<table> node dist/main.cjs` after
+`npm run bundle`; it listens on `PORT`, 8080 by default, and reads AWS
+credentials and the region the SDK's usual way.
+
+Nothing here deploys or needs an AWS account: synth runs offline and only
+stages the image's build context in `cdk.out/`, so it needs neither Docker
+nor credentials. Deploying is for the stack's owner, with their own
+credentials and Docker: `cdk bootstrap` once per account and region, then
+`cdk deploy --parameters CertificateArn=<arn>` with an ACM certificate for
+the service's domain, and a DNS record pointing that domain at the
+`LoadBalancerDns` output.
+
+## Layout
+
+- `src/main.ts` is the entry point the image runs: it reads `TABLE_NAME` and
+  `PORT`, creates the DynamoDB client once, starts the HTTP server and stops
+  it on `SIGTERM`.
+- `src/server.ts` reads each request (at most 64 KiB) and writes the answer;
+  `src/api.ts` routes a request, checks its input and answers with a status
+  code; `src/items.ts` holds the rules, free of AWS; `src/item_store.ts`
+  keeps items in DynamoDB behind the `ItemStore` interface tests fake.
+- `Dockerfile` bundles the service with esbuild and runs it on Node as the
+  `node` user; `.dockerignore` keeps everything else out of the image.
+- `infra/stacks.ts` defines the stacks; `infra/service_stack.ts` is the one
+  stack: the VPC, the table, the cluster, the task and its service, and the
+  load balancer with its access logs. The stack is named after the package.
+{{- if .Standard }}
+- `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
+  `infra/standard.ts` tags every stack and adds CDK Nag's checks.
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}

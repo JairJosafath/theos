@@ -1,3 +1,4 @@
+{{- $fargate := eq .Framework "aws-fargate-ts" -}}
 # Sources
 
 Every source read to write `docs/style/` and `docs/well-architected.md`. This
@@ -5,9 +6,15 @@ Standard was copied from ts-standard v1.4.1: its TypeScript rules
 (`typescript.md`, the ESLint config, Prettier) and `principles.md` are
 ts-standard's, and a test in C4 Factory keeps them equal. The TypeScript
 sources were read on 2026-10-02 for ts-standard. Of the AWS sources, the
+{{ if $fargate -}}
+Well-Architected Framework, Amazon ECS's best practices index and its
+connection draining page, and the Application Load Balancer's access log
+page were read on 2026-10-13, and CDK Nag's rules from the installed package;
+{{- else -}}
 Well-Architected Framework, its Serverless Applications Lens and Lambda's best
 practices were read on 2026-10-13, and CDK Nag's rules from the installed
-package; the other AWS pages are the references the digests follow, not
+package;
+{{- end }} the other AWS pages are the references the digests follow, not
 fetched again for them: check one before relying on a detail it alone gives.
 The cross-language sources were read on 2026-09-30 for another
 Standard, whose `principles.md` ts-standard adapts; they were not read again.
@@ -23,6 +30,23 @@ Version or date as shown on the page; "live" when the page shows none.
 
 ## AWS
 
+{{ if $fargate -}}
+| Source                                                                                                                                             | Version / date                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| AWS Well-Architected Framework — https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html                                         | November 6, 2024                     |
+| Amazon ECS, best practices — https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-best-practices.html                                   | live                                 |
+| Amazon ECS, load balancer connection draining — https://docs.aws.amazon.com/AmazonECS/latest/developerguide/load-balancer-connection-draining.html | live                                 |
+| Amazon ECS, task and container security — https://docs.aws.amazon.com/AmazonECS/latest/developerguide/security-tasks-containers.html               | live                                 |
+| Amazon ECS, network security — https://docs.aws.amazon.com/AmazonECS/latest/developerguide/security-network.html                                   | live                                 |
+| Application Load Balancer, access logs — https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html            | live                                 |
+| Application Load Balancer, HTTPS listeners — https://docs.aws.amazon.com/elasticloadbalancing/latest/application/create-https-listener.html        | live                                 |
+| DynamoDB, best practices — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/best-practices.html                                    | live                                 |
+| AWS SDK for JavaScript v3, developer guide — https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/                                    | live                                 |
+| AWS CDK v2 developer guide, best practices — https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html                                          | live                                 |
+| AWS CDK assertions module — https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.assertions-readme.html                                         | aws-cdk-lib 2.273.0                  |
+| CDK Nag README and RULES.md (AwsSolutions and Serverless packs) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md                            | cdk-nag 3.0.2, read from the package |
+| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                          | 1.57.2 (PyPI, 2026-10-13)            |
+{{- else -}}
 | Source                                                                                                                                                           | Version / date                       |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | AWS Well-Architected Framework — https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html                                                       | November 6, 2024                     |
@@ -38,6 +62,7 @@ Version or date as shown on the page; "live" when the page shows none.
 | AWS CDK assertions module — https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.assertions-readme.html                                                       | aws-cdk-lib 2.273.0                  |
 | CDK Nag README and RULES.md (AwsSolutions and Serverless packs) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md                                          | cdk-nag 3.0.2, read from the package |
 | cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                                        | 1.57.2 (PyPI, 2026-10-13)            |
+{{- end }}
 
 ## Tools
 
@@ -46,8 +71,9 @@ TypeScript 6.0.3 (typescript-eslint 8.71.0 supports `<6.1.0`, so not 7.x),
 ESLint 10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9,
 vitest 5.0.3, esbuild 0.28.2, @types/node 24.19.1, aws-cdk-lib 2.273.0,
 constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
-@aws-sdk/client-dynamodb 3.1150.0, @aws-sdk/lib-dynamodb 3.1150.0,
-@types/aws-lambda 8.10.164. The `Makefile` runs cfn-lint 1.57.2 with uv. The
+@aws-sdk/client-dynamodb 3.1150.0, @aws-sdk/lib-dynamodb 3.1150.0{{ if $fargate }}. The
+`Dockerfile` builds on `node:24-alpine`. The `Makefile` runs{{ else }},
+@types/aws-lambda 8.10.164. The `Makefile` runs{{ end }} cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
 
