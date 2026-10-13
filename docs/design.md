@@ -976,12 +976,23 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   How well a real planner plans an idea is the person's run.
 - **The person answers the reviewers' suggestions in a prompt** (#375). A
   reviewer's follow-up waiting, `status/proposed`, in the repository of a
-  Container the Brief made is listed in the Brief's `status.suggestions` and
-  card, and in the workspace's `model/suggestions.yaml`; the Brief reads them
-  every reconcile, when one of those Containers' Tasks ends, and every ten
-  minutes. A plan answers only the ones a new prompt speaks to, in
-  `plan/suggestions.yaml`: `take`, which needs acceptance criteria, or `skip`,
-  each with why. The operator checks the answers with the plan; applying the
+  Container the Brief made is counted in the Brief's `suggestionsWaiting`,
+  the first 50 listed in `status.suggestions` and its card, and every one (up
+  to 500, `brief.md` saying how many more) in the workspace's
+  `model/suggestions.yaml`, with its Container, repository, number and
+  address: a suggestion is its repository and number, and the same number in
+  two repositories is two suggestions (#1019). The Brief reads them every
+  reconcile, when one of those Containers' Tasks ends, and every ten
+  minutes. A plan answers only the ones a new prompt speaks to, at most 100,
+  in `plan/suggestions.yaml`: `take`, which needs acceptance criteria, or
+  `skip`, each with why; or `missing`, for one a prompt names that doesn't
+  wait for an answer. The operator checks an answer against the Git host when
+  the status doesn't list it, so no suggestion is out of a prompt's reach,
+  and refuses `missing` for one that waits. A round records each `missing`
+  answer in `status.rounds[].unanswered`, in the operator's words with what
+  it found (ready, closed, gone, not a suggestion), on the round's card: a
+  plan never says in its choices that a named suggestion is handled.
+  The operator checks the answers with the plan; applying the
   round, it takes a suggestion out of the Later milestone, into the round's
   release milestone when its Container ships releases, and labels it
   `status/ready`, or closes it, with a comment quoting the planner's why and the
