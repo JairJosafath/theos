@@ -553,11 +553,16 @@ var _ = Describe("Brief failed issues", func() {
 		failLinterTask(ns, model.IssueTaskName("linter", waited, 1), waited)
 		asked := gitFake.addIssue(ns, "linter", "Lint rule 2", linterIssue(2), []string{model.LabelReady})
 		failLinterTask(ns, model.IssueTaskName("linter", asked, 1), asked)
+		// Settled: the Brief may list an issue as a person's before it sees
+		// its failed Task, so wait for both reasons to name their Task.
 		var failed []c4v1alpha1.BriefFailedIssue
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.FailedWaiting).To(Equal(int32(2)))
 			g.Expect(b.Status.Failed).To(HaveLen(2))
+			for _, f := range b.Status.Failed {
+				g.Expect(f.Kind).To(Equal(model.FailedTask))
+			}
 			failed = b.Status.Failed
 		}).Should(Succeed())
 		comments := map[int]int{waited: len(gitFake.issue(ns, "linter", waited).comments),
