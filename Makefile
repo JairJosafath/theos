@@ -157,9 +157,14 @@ test-e2e: e2e ## Same as e2e.
 
 # A pass is recorded under the tree as the check left it, after manifests,
 # generate and fmt, so a tree with stale generated files never hits the cache.
+# The UI's own check (make ui-test: typecheck, eslint, prettier, its tests) is
+# part of it: the UI workflow runs only after a merge to main, so nothing else
+# before a merge would see a UI change break it (#1006). ./dev setup installs
+# Node on every device, a lite one too.
+CHECK_UI := $(if $(wildcard ui/package.json),ui-test)
 .PHONY: check
 ifeq ($(CHECK_CACHED),)
-check: manifests generate fmt vet lint validate-yaml test-hack test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests too.
+check: manifests generate fmt vet lint validate-yaml test-hack $(CHECK_UI) test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
 	@git diff --quiet -- config/crd config/rbac api || \
 		{ echo "Generated files changed; commit them with your change:"; git diff --stat -- config/crd config/rbac api; }
 	@hack/check-cache.sh record
