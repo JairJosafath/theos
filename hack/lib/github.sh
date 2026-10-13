@@ -89,7 +89,8 @@
 #   hack/lib/github.sh land PR [--wait DURATION]
 #                                        the way to merge PR: wait for the merge turn (one pull request at a time,
 #                                        across every device, first come first served), then, in this checkout of
-#                                        PR's branch, git fetch and merge origin/main, make check, push and merge PR,
+#                                        PR's branch, git fetch (retried GH_LAND_FETCH_TRIES times) and merge
+#                                        origin/main, make check, push and merge PR,
 #                                        and give the turn up, merged or not (a conflict or a red check is said; make
 #                                        check's output is kept in .relay/land-PR.log). The turn is a comment on the
 #                                        Maintainer report issue, refreshed every GH_LAND_BEAT seconds while it
@@ -1732,6 +1733,10 @@ C4_LAND_TTL=${C4_LAND_TTL:-45m}
 GH_LAND_POLL=${GH_LAND_POLL:-60}    # seconds between looks at the queue
 GH_LAND_BEAT=${GH_LAND_BEAT:-300}   # seconds between heartbeats of a place in it
 GH_LAND_SETTLE=${GH_LAND_SETTLE:-3} # seconds between asks whether GitHub saw the push
+# git fetch tries before land gives its turn up; worktrees share refs/remotes,
+# so a fetch in another one at the same moment fails this one's ref update.
+GH_LAND_FETCH_TRIES=${GH_LAND_FETCH_TRIES:-5}
+GH_LAND_FETCH_PAUSE=${GH_LAND_FETCH_PAUSE:-5} # seconds between those tries
 GH_LAND_JQ='
   def turn: .body | sub("^\\s+"; "") | startswith($lm);
   def fresh: (.updated_at | fromdateiso8601) > (now - $ttl);
@@ -1790,7 +1795,7 @@ gh_land() {
 }
 
 gh_land_turn() {
-  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat rc log local_head s who i
+  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat rc log local_head s who i try=1
   wait=$(gh_seconds "$2" --wait) || return 64
   ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 64
   info=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq '"\(.state) \(.base.ref) \(.head.ref)"') || return 1
@@ -1839,7 +1844,12 @@ gh_land_turn() {
   done
   echo "github: #$pr's turn to land: merging origin/$base, then make check" >&2
   gh_edit_comment "$id" "$(gh_land_body "$pr")" || true
-  git -C "$GH_LIB_ROOT" fetch -q origin || { echo "github: #$pr: git fetch origin failed" >&2; return 1; }
+  until git -C "$GH_LIB_ROOT" fetch -q origin; do
+    ((try >= GH_LAND_FETCH_TRIES)) && { echo "github: #$pr: git fetch origin failed $try times" >&2; return 1; }
+    echo "github: #$pr: git fetch origin failed; trying again in ${GH_LAND_FETCH_PAUSE}s" >&2
+    sleep "$GH_LAND_FETCH_PAUSE"
+    ((try++))
+  done
   if ! git -C "$GH_LIB_ROOT" merge -q --no-edit "origin/$base" >&2; then
     git -C "$GH_LIB_ROOT" merge --abort 2>/dev/null
     echo "github: #$pr: merging origin/$base into $branch conflicts; merge it by hand (git merge origin/$base), make check, push and land again" >&2
