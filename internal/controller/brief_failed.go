@@ -385,10 +385,12 @@ func (r *BriefReconciler) openFailed(ctx, gitCtx context.Context, brief *c4v1alp
 	return answering{answer: a, provider: provider, repo: repo, issue: issue}, true, nil
 }
 
-// answerFailedIssue retries or closes one failed issue. What marks it
-// answered, the ready label in place of needs-human or the closing, comes
-// last, so a try that stops part way is done again, its comment maybe twice;
-// the clarification is appended once a round.
+// answerFailedIssue retries or closes one failed issue. A retry's ready
+// label in place of needs-human, what marks it answered, comes last, so a
+// try that stops part way is done again, its comment maybe twice; the
+// clarification is appended once a round. A close closes first, so a try
+// that stops after it leaves the issue closed without its comment, or its
+// proposal undeleted.
 func answerFailedIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
 	issue gitprovider.Issue, a model.FailedAnswer, round int, comment string) error {
 	if a.Answer == model.AnswerRetry {
@@ -410,14 +412,16 @@ func answerFailedIssue(ctx context.Context, provider gitprovider.Provider, repo 
 		}
 		return provider.RemoveIssueLabel(ctx, repo, issue.Number, model.LabelNeedsHuman)
 	}
+	// The close comes first, so one the host refuses (a blocker opened since
+	// they were read) leaves the issue as it was, its proposal kept (#994).
+	if err := provider.CloseIssue(ctx, repo, issue.Number); err != nil {
+		return err
+	}
 	if err := provider.CommentIssue(ctx, repo, issue.Number, comment); err != nil {
 		return err
 	}
 	// A closed Standard change is never retried: nothing reads its proposal.
-	if err := deleteChangeProposal(ctx, provider, repo, issue); err != nil {
-		return err
-	}
-	return provider.CloseIssue(ctx, repo, issue.Number)
+	return deleteChangeProposal(ctx, provider, repo, issue)
 }
 
 // forgetFailed takes an answered failed issue off the Brief's list.

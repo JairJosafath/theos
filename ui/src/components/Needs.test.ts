@@ -25,7 +25,15 @@ const filesBehind: Need = {
   message: 'go-standard is at v3, but its updates left out Makefile',
   place: { label: 'Open it', to: { page: { ns: 'shop', kind: 'Container', name: 'api' } } },
   links: [],
-  standardAnswer: { ref: 'v3', take, keep },
+  standardAnswer: {
+    ref: 'v3',
+    take,
+    keep,
+    files: [
+      { path: 'Makefile', ref: 'v1', change: '--- Makefile (v1)\n+++ Makefile (v3)\n@@ -1 +1 @@\n-lint:\n+lint: fmt\n' },
+      { path: 'check.yaml', ref: 'v2' },
+    ],
+  },
 }
 beforeAll(() => vi.stubGlobal('window', { location: { pathname: '/', search: '', hash: '' } }))
 
@@ -67,6 +75,16 @@ describe('NeedsArea', () => {
     expect(html).toContain('href="/ui/login?return=')
     expect(html).toContain(keep)
     expect(html).not.toContain('Keep ours')
+  })
+
+  it('shows each file’s change collapsed beside the answers, with actions on or off', () => {
+    for (const session of [serviceAccount, { actions: false, mode: 'off', user: null } as UiSession, signedOut]) {
+      const html = render(session)
+      expect(html).toContain('<details class="left-out-change"><summary>What the Standard changed')
+      expect(html).toContain('+lint: fmt')
+      expect(html).toContain('check.yaml')
+      expect(html.match(/<details/g)).toHaveLength(1)
+    }
   })
 
   it('offers no answers on an item without them', () => {

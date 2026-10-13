@@ -43,6 +43,7 @@ func StandardBehindNeedsYou(b StandardBehind) NeedsYou {
 			"them in lines the Standard changed too.", b.Container, b.Standard, b.Ref, strings.Join(files, ", ")),
 		Recommend: fmt.Sprintf("Take the Standard's version: annotate the Container `%s`.", b.Take),
 		Why: fmt.Sprintf("The Standard's fix (%s %s) reaches the app; the repository's own lines that overlap it "+
-			"are listed in the pull request and can be added back.", b.Standard, b.Ref),
+			"are listed in the pull request and can be added back. What the Standard changed in each file, "+
+			"and the lines a take drops, is on the Container's page.", b.Standard, b.Ref),
 		Since: b.Since}
 }

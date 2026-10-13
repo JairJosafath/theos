@@ -1,6 +1,6 @@
 // Small building blocks shared by the cards and panels.
 
-import type { Condition, ContainerPhase, CrewPhase, Session } from '../k8s/types'
+import type { Condition, ContainerPhase, CrewPhase, Session, StandardFile } from '../k8s/types'
 import {
   describeCondition,
   describeContainerPhase,
@@ -198,5 +198,27 @@ export function UsageLine({ usage }: { usage: UsageView }) {
         </span>
       ))}
     </span>
+  )
+}
+
+/**
+ * The Standard's files left out, each with its ref and, collapsed, what the
+ * Standard changed in it and the lines a take drops, as status says them.
+ */
+export function LeftOutFiles({ files, className }: { files: StandardFile[]; className?: string }) {
+  return (
+    <ul className={['left-out', className].filter(Boolean).join(' ')}>
+      {files.map((f) => (
+        <li key={f.path}>
+          <span className="mono">{f.path}</span> <span className="muted">at {f.ref}</span>
+          {f.change ? (
+            <details className="left-out-change">
+              <summary>What the Standard changed, and what taking it drops</summary>
+              <pre className="pre">{f.change}</pre>
+            </details>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   )
 }

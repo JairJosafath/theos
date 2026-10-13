@@ -328,6 +328,71 @@ var _ = Describe("Brief failed issues", func() {
 		Expect(gitFake.hasBranch(ns, "linter", proposal.Branch)).To(BeFalse())
 	})
 
+	// #994: a blocker opened after the round read the blockers makes the
+	// host refuse the close itself; the issue stays as it was.
+	It("leaves an issue whose close the host refuses as it was, and closes it once on a later round", func() {
+		createFactory(ns)
+		briefAgents(ns, 2)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, linterPlan(ns, 0))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+
+		proposal := model.Proposal{Branch: model.ProposalBranch("linter-1"), Paths: []string{"Makefile"},
+			Reason: "make dist must build the packages"}
+		title, body := model.StandardChangeIssue(1, "linter-1", proposal)
+		gitFake.pushBranch(ns, "linter", proposal.Branch, "sha-proposal")
+		n := gitFake.addIssue(ns, "linter", title, body, []string{model.LabelStandardChange, model.LabelNeedsHuman})
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Failed).To(ConsistOf(HaveField("Number", int32(n))))
+		}).Should(Succeed())
+
+		By("a round whose close the host refuses for a blocker opened since it was read")
+		other := gitFake.addIssue(ns, "linter", "Lint rule 3", linterIssue(3), nil)
+		gitFake.blockOnClose(ns, "linter", n, fmt.Sprintf("#%d", other))
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Drop the Makefile change."} })).To(Succeed())
+		closeAnswer := fmt.Sprintf("- {container: linter, issue: %d, answer: close, why: The prompt drops it.}\n", n)
+		planRound(ns, 2, 1, failedPlan(ns, closeAnswer))
+		// The host refused the close; the round's next pass read the blocker.
+		refused := fmt.Sprintf("could not close linter#%d (waits on #%d), which stays handed back", n, other)
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
+			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Message).To(And(HavePrefix("Applied round 2; "), ContainSubstring(refused)))
+			g.Expect(b.Status.Failed).To(ConsistOf(HaveField("Number", int32(n))), "it stays handed back")
+		}).Should(Succeed())
+		issue := gitFake.issue(ns, "linter", n)
+		Expect(issue.State).To(Equal("open"))
+		Expect(issue.comments).To(ConsistOf(
+			ContainSubstring("Brief `cel-lens`'s round 2 answered this with close, but it can't be closed")))
+		Expect(gitFake.hasBranch(ns, "linter", proposal.Branch)).To(BeTrue(), "its proposal is kept")
+
+		By("a later round closing it once its blocker is closed")
+		Expect(gitFake.closeIssue(ns, "linter", other)).To(Succeed())
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() {
+			brief.Spec.Prompts = append(brief.Spec.Prompts, "Drop it again.")
+		})).To(Succeed())
+		planRound(ns, 3, 1, failedPlan(ns, closeAnswer))
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.issue(ns, "linter", n).State).To(Equal("closed"))
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Failed).To(BeEmpty())
+		}).Should(Succeed())
+		Expect(gitFake.issue(ns, "linter", n).comments).To(HaveLen(2))
+		Expect(gitFake.issue(ns, "linter", n).comments).To(ContainElement(
+			ContainSubstring("Closed for Brief `cel-lens` in round 3.")))
+		Expect(gitFake.issue(ns, "linter", n).comments).NotTo(ContainElement(
+			ContainSubstring("Closed for Brief `cel-lens` in round 2.")))
+		Expect(gitFake.hasBranch(ns, "linter", proposal.Branch)).To(BeFalse())
+	})
+
 	// #624: a release step's last try found its milestone empty; work merged
 	// into it since, so it has something to release now.
 	It("shows a failed release step's milestone as it is now and refuses closing it after new merges", func() {
