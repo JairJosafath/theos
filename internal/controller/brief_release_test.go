@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -106,6 +108,76 @@ func linterCrew(g Gomega, ns string) *c4v1alpha1.Crew {
 	crew := &c4v1alpha1.Crew{}
 	g.Expect(k8sClient.Get(ctx, key(ns, "linter"), crew)).To(Succeed())
 	return crew
+}
+
+// setLinterTarget changes the repository the linter's Crew publishes to, as a
+// person would on the Crew.
+func setLinterTarget(ns, repository string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		crew := linterCrew(g, ns)
+		crew.Spec.PublishReleases.GitHub.Repository = repository
+		g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
+	}).Should(Succeed())
+}
+
+// markLinter removes the Brief's mark from the linter's Crew, as on a Crew
+// made before it, changed by change when given, in one write.
+func markLinter(ns string, change func(*c4v1alpha1.Crew)) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		crew := linterCrew(g, ns)
+		delete(crew.Annotations, c4v1alpha1.AnnotationBriefPublishReleases)
+		if change != nil {
+			change(crew)
+		}
+		g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
+	}).Should(Succeed())
+}
+
+// linterTargetEvents are the ReleaseTargetDiffers Events of the linter's Crew.
+func linterTargetEvents(g Gomega, ns string) []eventsv1.Event {
+	var events eventsv1.EventList
+	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+	var out []eventsv1.Event
+	for _, e := range events.Items {
+		if e.Regarding.Kind == "Crew" && e.Regarding.Name == "linter" && e.Reason == "ReleaseTargetDiffers" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// targetSetByBrief checks that the linter's Crew publishes to repository,
+// marked so, says Brief cel-lens sets it, and the Brief needs nothing of it.
+func targetSetByBrief(g Gomega, ns, repository string) {
+	crew := linterCrew(g, ns)
+	g.Expect(crew.Spec.PublishReleases.GitHub.Repository).To(Equal(repository))
+	g.Expect(crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases]).
+		To(ContainSubstring(`"repository":"` + repository + `"`))
+	cond := condition(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+	g.Expect(cond).NotTo(BeNil())
+	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+	g.Expect(cond.Reason).To(Equal("SetByBrief"))
+	g.Expect(cond.Message).To(Equal("Brief cel-lens sets this in spec.releases; change it there"))
+	g.Expect(getBrief(g, ns).Status.NeedsYou).NotTo(ContainElement(HaveField("Kind", "Crew")))
+}
+
+// targetHeld checks that the linter's Crew, changed to crewRepo under a Brief
+// that says briefRepo, is held: the condition, the Event and the Brief's
+// needsYou item say so.
+func targetHeld(g Gomega, ns, crewRepo, briefRepo string) {
+	crew := linterCrew(g, ns)
+	g.Expect(crew.Spec.PublishReleases.GitHub.Repository).To(Equal(crewRepo))
+	cond := condition(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+	g.Expect(cond).NotTo(BeNil())
+	g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+	g.Expect(cond.Reason).To(Equal("DiffersFromBrief"))
+	g.Expect(cond.Message).To(And(ContainSubstring(crewRepo), ContainSubstring(briefRepo)))
+	g.Expect(linterTargetEvents(g, ns)).To(ContainElement(HaveField("Note", cond.Message)))
+	g.Expect(getBrief(g, ns).Status.NeedsYou).To(ContainElement(And(HaveField("Kind", "Crew"),
+		HaveField("Name", "linter"), HaveField("Why", ContainSubstring(crewRepo)), HaveField("Since", Not(BeNil())),
+		HaveField("Recommend", "Change the Brief's spec.releases entry for linter to the Crew's target."))))
 }
 
 // wholeRound is how long a spec waits for a round to apply end to end: the
@@ -518,6 +590,54 @@ var _ = Describe("Brief releases", func() {
 		crew = linterCrew(Default, ns)
 		Expect(crew.Spec.TagReleases).To(BeTrue())
 		Expect(crew.Spec.PublishReleases.GitHub.Repository).To(Equal("acme/lens"))
+		Eventually(func(g Gomega) {
+			crew := linterCrew(g, ns)
+			g.Expect(crew.Annotations).NotTo(HaveKey(c4v1alpha1.AnnotationBriefPublishReleases))
+			g.Expect(condition(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget)).To(BeNil())
+		}).Should(Succeed())
+	})
+
+	It("holds a Crew whose target was changed under it, until the Crew or the entry settles it (#991)", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		brief := newBrief(ns, "cel-lens")
+		brief.Spec.Releases = []c4v1alpha1.BriefRelease{linterRelease("acme/cel-lens")}
+		mustCreate(brief)
+		planRound(ns, 1, 1, linterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		}).Should(Succeed())
+
+		By("marking the Crew with the target the Brief set, and saying the Brief sets it")
+		Eventually(func(g Gomega) { targetSetByBrief(g, ns, "acme/cel-lens") }).Should(Succeed())
+
+		By("leaving a Crew changed under the Brief, held and flagged")
+		setLinterTarget(ns, "acme/private-cel-lens")
+		Eventually(func(g Gomega) { targetHeld(g, ns, "acme/private-cel-lens", "acme/cel-lens") }).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(linterCrew(g, ns).Spec.PublishReleases.GitHub.Repository).To(Equal("acme/private-cel-lens"))
+		}, 2*time.Second).Should(Succeed())
+		Expect(linterTargetEvents(Default, ns)).To(HaveLen(1))
+
+		By("settling it by putting the Crew back")
+		setLinterTarget(ns, "acme/cel-lens")
+		Eventually(func(g Gomega) { targetSetByBrief(g, ns, "acme/cel-lens") }).Should(Succeed())
+
+		By("settling it by changing the entry to the Crew's target")
+		setLinterTarget(ns, "acme/private-cel-lens")
+		Eventually(func(g Gomega) { targetHeld(g, ns, "acme/private-cel-lens", "acme/cel-lens") }).Should(Succeed())
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() { brief.Spec.Releases[0].GitHub.Repository = "acme/private-cel-lens" })).
+			To(Succeed())
+		Eventually(func(g Gomega) { targetSetByBrief(g, ns, "acme/private-cel-lens") }).Should(Succeed())
+
+		By("adopting a Crew from before the mark that publishes where the entry says")
+		markLinter(ns, nil)
+		Eventually(func(g Gomega) { targetSetByBrief(g, ns, "acme/private-cel-lens") }).Should(Succeed())
+
+		By("holding a Crew from before the mark that publishes elsewhere")
+		markLinter(ns, func(crew *c4v1alpha1.Crew) { crew.Spec.PublishReleases.GitHub.Repository = "acme/other" })
+		Eventually(func(g Gomega) { targetHeld(g, ns, "acme/other", "acme/private-cel-lens") }).Should(Succeed())
 	})
 
 	It("leaves alone a Crew the Brief didn't make", func() {

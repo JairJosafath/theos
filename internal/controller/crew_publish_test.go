@@ -209,6 +209,53 @@ var _ = Describe("Crew publishing releases", func() {
 		Expect(rel.makeLatest).To(Equal("false"))
 	})
 
+	It("publishes nothing while its target differs from its Brief's, and publishes once they agree (#991)", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		token := rand.Text()
+		githubFake.addRepository(repository, token)
+		mustCreate(publishSecret(ns, token))
+		files := publishingCrew(ns, repository, func(crew *c4v1alpha1.Crew) {
+			crew.Labels = map[string]string{c4v1alpha1.LabelBrief: "orders"}
+			crew.Annotations = map[string]string{c4v1alpha1.AnnotationBriefPublishReleases: `{"github":` +
+				`{"repository":"acme/old-orders","tokenSecretRef":{"name":"orders-api-github"}}}`}
+		})
+
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			target := condition(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+			g.Expect(target).NotTo(BeNil())
+			g.Expect(target.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(target.Reason).To(Equal("DiffersFromBrief"))
+			g.Expect(target.Message).To(ContainSubstring("points to " + repository + ", but Brief orders's " +
+				"spec.releases entry for orders-api says acme/old-orders"))
+			cond := condition(crew.Status.Conditions, ConditionPublished)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(cond.Reason).To(Equal("TargetDiffersFromBrief"))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			var warnings []eventsv1.Event
+			for _, e := range crewEvents(g, ns) {
+				if e.Reason == "ReleaseTargetDiffers" {
+					warnings = append(warnings, e)
+				}
+			}
+			g.Expect(warnings).To(HaveLen(1))
+			g.Expect(warnings[0].Series).To(BeNil())
+			g.Expect(githubFake.releases(repository)).To(BeEmpty())
+		}, 3*time.Second).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases] = publishJSON(crew.Spec.PublishReleases)
+			g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
+		}).Should(Succeed())
+		publishedTo(ns, repository, files)
+		target := condition(getCrew(Default, ns).Status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+		Expect(target.Reason).To(Equal("SetByBrief"))
+	})
+
 	It("fails without its Secret, and publishes once the Secret is there", func() {
 		ns := newProjectNamespace()
 		repository := "acme/" + ns

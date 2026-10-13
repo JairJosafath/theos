@@ -91,6 +91,9 @@ type CrewReconciler struct {
 	// publishSaid is, by Crew UID, the tag and reason of the last publish
 	// failure or success reported, so each gets one Event.
 	publishSaid sync.Map
+	// targetSaid is, by Crew UID, the target of the last Crew held because
+	// its release target differs from its Brief's, so each gets one Event.
+	targetSaid sync.Map
 	// publishSources is, by Crew UID, the last release's source read from
 	// Gitea (sourceRead), so each poll of its publish doesn't download the
 	// archive again.
@@ -128,6 +131,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	status := crew.Status.DeepCopy()
 	status.ObservedGeneration = crew.Generation
+	r.releaseTarget(ctx, &crew, status)
 
 	var container c4v1alpha1.Container
 	err := r.Get(ctx, client.ObjectKey{Namespace: crew.Namespace, Name: crew.Spec.ContainerRef.Name}, &container)

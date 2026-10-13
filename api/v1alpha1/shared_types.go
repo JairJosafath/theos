@@ -209,6 +209,27 @@ const AnnotationPausedBy = "c4.factory.io/paused-by"
 // PausedByBrief is AnnotationPausedBy's value on a Crew its Brief paused.
 const PausedByBrief = "brief"
 
+// AnnotationBriefPublishReleases on a Crew a Brief made holds the JSON of the
+// spec.publishReleases its Brief last wrote from a spec.releases entry
+// (docs/plans/brief-release-target.md). A Crew whose spec.publishReleases
+// differs from it was changed under the Brief and publishes nothing until the
+// two agree. A Crew without it publishes where its own spec says.
+const AnnotationBriefPublishReleases = "c4.factory.io/brief-publish-releases"
+
+// ConditionReleaseTarget on a Crew with AnnotationBriefPublishReleases says
+// that its Brief sets where it publishes: True, reason
+// ReasonReleaseTargetSetByBrief, while the two agree; False, reason
+// ReasonReleaseTargetDiffers, while the Crew was changed under the Brief.
+const ConditionReleaseTarget = "ReleaseTarget"
+
+// Reasons of ConditionReleaseTarget, and of the Published condition of a
+// held Crew.
+const (
+	ReasonReleaseTargetSetByBrief = "SetByBrief"
+	ReasonReleaseTargetDiffers    = "DiffersFromBrief"
+	ReasonTargetDiffersFromBrief  = "TargetDiffersFromBrief"
+)
+
 // AnnotationRetry, set or changed on a Failed Container, makes the operator try
 // to scaffold it again: after emptying its repository, for example.
 const AnnotationRetry = "c4.factory.io/retry"
