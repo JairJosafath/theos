@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { Crew } from '../k8s/types'
+import type { Crew, CrewRelease } from '../k8s/types'
 import { publishFailure } from './releases'
 
-const crew = (state: string, reason: string): Crew => ({
+const crew = (state: NonNullable<CrewRelease['publish']>['state'], reason: string): Crew => ({
   metadata: { name: 'cel-lens', namespace: 'cel-lens' },
   spec: { containerRef: { name: 'cel-lens' }, implementer: { name: 'i' }, reviewer: { name: 'r' } },
   status: {
