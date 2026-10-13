@@ -1,8 +1,9 @@
 # aws-standard (Standard)
 
-How a serverless TypeScript program on AWS in a C4 Factory Container is
-written, checked and reviewed: ts-standard's TypeScript rules
-(typescript-eslint's strictest configs, Prettier), CDK Nag's AWS Solutions
+How a serverless program on AWS in a C4 Factory Container is written,
+checked and reviewed, its function in TypeScript or Go and its CDK app in
+TypeScript: ts-standard's TypeScript rules (typescript-eslint's strictest
+configs, Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
 checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
 assertions on every stack, the agent guide and role guides, offline style and
 Well-Architected digests, issue and pull request templates, and the
@@ -13,19 +14,27 @@ drift test in C4 Factory's `internal/scaffold` keeps the shared files equal:
 `.editorconfig`, `.prettierrc.json` and `docs/style/typescript.md` render the
 same as ts-standard's for `node-cli`, and every line ts-standard's
 `eslint.config.mjs` and `docs/style/principles.md` render the same for all its
-Frameworks appears in this Standard's, in the same order.
+Frameworks appears in this Standard's, in the same order. For
+`aws-lambda-go`, `.golangci.yml` and `docs/style/go.md` are go-standard
+v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
 
-- **Supports:** `function`; Frameworks: `aws-lambda-ts`
-- **Per Framework:** it supports one Framework so far, and no file branches
-  on `.Framework` yet. A Framework added later gets its branches in the
-  `Makefile`, `AGENTS.md`, the role guides, `eslint.config.mjs` and
-  `docs/style/`, in the version that adds it.
+- **Supports:** `function`; Frameworks: `aws-lambda-ts`, `aws-lambda-go`
+- **Per Framework:** `aws-lambda-ts` renders as v1.0.0 did, byte for byte.
+  `aws-lambda-go` (since v1.1.0) branches on `.Framework` in the `Makefile`
+  (the Go targets), `AGENTS.md`, the role guides, `docs/style/aws.md` and
+  `SOURCES.md` (the Go handler, `slog`, the SDK for Go v2, `go build`
+  bundling), `.editorconfig` (tabs for `*.go`), `.prettierignore`
+  (`.golangci.yml`) and the workflow (`GOPROXY`, `GOPRIVATE`), and alone gets
+  `.golangci.yml` and `docs/style/go.md`, which render empty, and so are left
+  out, for any other Framework. A Framework added later gets its branches in
+  the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
-  `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`
+  `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
+  `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
   `strictTypeChecked` and `stylisticTypeChecked` (typed, through the project
   service), plus exhaustive switches, explicit module boundary types,
@@ -33,6 +42,9 @@ Frameworks appears in this Standard's, in the same order.
   JSON through the `Log` it is given), `process.exit` refused, `eqeqeq` and
   `curly`; unused disable comments are errors. Prettier formats everything but
   the platform's files, the lockfile and `cdk.out/`, which ESLint ignores too.
+  For `aws-lambda-go`, golangci-lint with go-standard's `.golangci.yml` (its
+  formatters gofumpt and goimports, its linters) lints and formats `src/`,
+  and Prettier skips `.golangci.yml`.
 - **CDK:** `infra/standard.ts` tags every stack, and every resource in it
   that takes tags, with `c4factory:project`, `c4factory:system` and
   `c4factory:container` (the stack's own tags too, set explicitly, as the
@@ -58,6 +70,13 @@ Frameworks appears in this Standard's, in the same order.
   ignoring only W3005 (the `DependsOn` CDK puts on a function's role, which
   cfn-lint calls redundant). Synth needs no Docker, AWS account, credentials
   or network: stacks are environment-agnostic and esbuild bundles locally.
+  For `aws-lambda-go`, `make check` = `npm ci`, `go mod download`,
+  `go mod tidy -diff`, `prettier --check`, `golangci-lint fmt --diff`,
+  `eslint`, `go vet`, `golangci-lint run`, `tsc --noEmit`,
+  `go test -race -count=1`, `vitest run` (the stacks' tests, which build the
+  function), `cdk synth` and cfn-lint as above; every Go command runs in
+  `src/`, the function's own module. `make fmt` also runs
+  `golangci-lint fmt`. Synth builds the function with the runner's Go.
   `.gitea/workflows/check.yaml` runs it on pull requests and on `main` on a
   runner labelled `go` (which has uv), under the status context
   `check / check`, which the protected `main` requires
@@ -69,7 +88,8 @@ Frameworks appears in this Standard's, in the same order.
 - **Checks before a release** (`checksBeforeRelease: true`): with the
   Container's `checks: BeforeRelease`, `check.yaml` renders a `check` job that
   runs `make check-light` (`npm ci`, `prettier --check`, `eslint
-  --max-warnings 0`, `tsc --noEmit`; no tests, synth or cfn-lint) on pull
+  --max-warnings 0`, `tsc --noEmit`, and for `aws-lambda-go` the Go module,
+  tidy, format, vet and lint checks; no tests, synth or cfn-lint) on pull
   requests and on `main`, with the same skip, and a `full` job that runs
   `make check` on a push to a `release-check/**` branch, whatever the push
   changes (status context `check / full (push)`). With `EveryChange`, the
@@ -88,6 +108,9 @@ Frameworks appears in this Standard's, in the same order.
   context holds the recommended feature flags; `tsconfig.json`, including
   `src`, `infra` and `vitest.config.mts`; and `vitest.config.mts`, running
   `src/**/*.test.ts` and `infra/**/*.test.ts`. aws-lambda-ts does all of this.
+  `aws-lambda-go` does the same with no `esbuild` of its own, `tsconfig.json`
+  and vitest without `src`, and the function in `src/` as a Go module with
+  `go.mod` and `go.sum`, built by its stack.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
   They say no test calls AWS (stacks are checked with `Template.fromStack`,
@@ -97,7 +120,8 @@ Frameworks appears in this Standard's, in the same order.
 - **Issues:** `.gitea/ISSUE_TEMPLATE/task.md` has the sections the factory needs;
   an issue without an unchecked item under "Acceptance criteria" is never picked up.
   The pull request template asks for the CDK Nag acknowledgements a change adds.
-- **Style digests:** `docs/style/` holds ts-standard's TypeScript digest and
+- **Style digests:** `docs/style/` holds ts-standard's TypeScript digest (and
+  go-standard's `go.md` for `aws-lambda-go`) and
   cross-language principles (adapted for Lambda: what the handler owns, the
   layering of pure modules, SDK wrappers and the handler), and `aws.md`, from
   the Lambda, API Gateway, DynamoDB, SDK v3 and CDK guides and CDK Nag's
@@ -110,7 +134,7 @@ Frameworks appears in this Standard's, in the same order.
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet.
-- **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`,
+- **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`, `.golangci.yml`,
   `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/`,
   `docs/agents/`, `docs/well-architected.md`, `infra/main.ts` and
   `infra/standard.ts` in the catalog entry's `protectedPaths`, plus the

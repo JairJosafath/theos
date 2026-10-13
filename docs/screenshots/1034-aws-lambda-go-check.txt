@@ -1,0 +1,45 @@
+# make check in a scaffolded aws-lambda-go + aws-standard Container (issue #1034)
+# go run ./hack/render -out /tmp/aws-1034 -type function Framework=aws-lambda-go Standard=aws-standard
+# then, with no AWS variables, an empty HOME, Node v24.21.0, go1.26.8, golangci-lint 2.13.1, uv 0.12.23 (x86_64-unknown-linux-gnu):
+# env -i PATH=$PATH HOME=/tmp/aws-1034-home npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/uv-cache GOCACHE=/tmp/aws-1034-gocache GOMODCACHE=/tmp/aws-1034-gomod make check
+# (a cold Go build and module cache); on 2026-10-13
+
+npm ci --no-audit --no-fund
+
+added 140 packages in 15s
+cd src && go mod download
+cd src && go mod tidy -diff
+go: downloading github.com/stretchr/testify v1.7.2
+go: downloading gopkg.in/yaml.v3 v3.0.1
+go: downloading github.com/davecgh/go-spew v1.1.1
+go: downloading github.com/pmezard/go-difflib v1.0.0
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+cd src && golangci-lint fmt --diff
+node_modules/.bin/eslint --max-warnings 0 .
+cd src && go vet ./...
+cd src && golangci-lint run
+0 issues.
+node_modules/.bin/tsc --noEmit
+cd src && go test -race -count=1 ./...
+ok  	c4factory.local/webshop/sample-app	1.024s
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /tmp/aws-1034
+
+Bundling asset test/Handler/Code/Stage...
+Bundling asset sample-app/Handler/Code/Stage...
+ ✓ infra/api_stack.test.ts (6 tests) 15778ms
+ ✓ infra/standard.test.ts (8 tests) 15792ms
+
+ Test Files  2 passed (2)
+      Tests  14 passed (14)
+   Start at  11:33:11
+   Duration  16.53s (tests 97%, import 3%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet
+Bundling asset sample-app/Handler/Code/Stage...
+uvx cfn-lint==1.57.2 --ignore-checks W3005 -- cdk.out/*.template.json
+exit=0
