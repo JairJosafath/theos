@@ -9,8 +9,8 @@ metadata:
 ---
 # The same access as config/ui/rbac.yaml: reading the story, the Sessions, the
 # catalog and the factory's work in every namespace, and for the health view
-# pods, nodes and their metrics. The writes are below, by ui.actions.enabled.
-# No status subresources, no Secrets.
+# nodes and their metrics, and pods and theirs where the factory runs. The
+# writes are below, by ui.actions.enabled. No status subresources, no Secrets.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -62,10 +62,10 @@ metadata:
     {{- include "c4-factory.uiLabels" . | nindent 4 }}
 rules:
 - apiGroups: [""]
-  resources: [pods, nodes]
+  resources: [nodes]
   verbs: [get, list]
 - apiGroups: [metrics.k8s.io]
-  resources: [pods, nodes]
+  resources: [nodes]
   verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -82,6 +82,45 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "c4-factory.uiName" . }}
   namespace: {{ .Release.Namespace }}
+---
+# Pods and their metrics, bound only in the namespaces of ui.components (and
+# Gitea's): each must exist at install. The operator lets the UI read them in
+# every project namespace too, for the agent sandboxes (--ui-service-account).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "c4-factory.uiName" . }}-pods
+  labels:
+    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: [pods]
+  verbs: [get, list]
+- apiGroups: [metrics.k8s.io]
+  resources: [pods]
+  verbs: [get, list]
+{{- $namespaces := list }}
+{{- range include "c4-factory.uiComponents" . | fromJsonArray }}
+{{- $namespaces = append $namespaces .namespace }}
+{{- end }}
+{{- range $namespaces | uniq | sortAlpha }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "c4-factory.uiName" $ }}-pods
+  namespace: {{ . }}
+  labels:
+    {{- include "c4-factory.uiLabels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "c4-factory.uiName" $ }}-pods
+subjects:
+- kind: ServiceAccount
+  name: {{ include "c4-factory.uiName" $ }}
+  namespace: {{ $.Release.Namespace }}
+{{- end }}
 {{- $actions := include "c4-factory.uiActions" . }}
 {{- if not $actions }}
 ---

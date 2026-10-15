@@ -62,6 +62,6 @@ Kubernetes' own control plane (API server about 340 MiB). Monitoring adds about
   `kube-controller-manager` restarted). Rebuild it rarely, or not while Tasks run.
 - **History is in memory:** a restart of the UI pod starts the hour afresh. Fine
   for watching; a Task's own timeline is durable.
-- **The UI's ServiceAccount can read pods cluster-wide** (for the health
-  summary). The browser never sees them, but the token could; namespaced Roles
-  per component would narrow it.
+- ~~**The UI's ServiceAccount can read pods cluster-wide**~~ (for the health
+  summary). Since #1080 it reads them only in the components' namespaces and
+  the Projects', through namespaced RoleBindings; nodes stay cluster-wide.

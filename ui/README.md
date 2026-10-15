@@ -143,8 +143,10 @@ application/json-patch+json`: a patch whose one operation is `add` at
 
 3. In the cluster, the ServiceAccount's reader ClusterRole allows only `get`,
    `list` and `watch` on the `c4.factory.io` resources (Briefs included), plus
-   `get` and `list` on pods, nodes and `metrics.k8s.io` for the health summary
-   below. A separate ClusterRole, `c4-factory-ui-brief-writer`, grants only
+   `get` and `list` on nodes and their `metrics.k8s.io` figures for the health
+   summary below, cluster-wide. Pods and theirs it may read only where the
+   factory runs: a RoleBinding in each component's namespace, and one the
+   operator makes in each project namespace (`--ui-service-account`). A separate ClusterRole, `c4-factory-ui-brief-writer`, grants only
    `create` and `patch` on `briefs`. No Secrets, no other writes.
 
 ### Actions: `ui.actions.enabled`
@@ -222,7 +224,8 @@ link under its message.
 ### The factory's health
 
 `GET /factory/health` is answered by [health.mjs](health.mjs), not proxied: the
-server lists pods, nodes and metrics-server's figures itself and sends only a
+server lists nodes, the pods of the components' and the Projects' namespaces,
+and metrics-server's figures itself and sends only a
 summary (component states, restarts, CPU and memory, agent slots and sandboxes,
 the last hour), never a pod spec. It samples every 15 seconds in the background
 (`FACTORY_SAMPLE_SECONDS`; 0 turns it off) and keeps an hour in memory, timing

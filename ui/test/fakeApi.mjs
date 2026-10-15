@@ -190,7 +190,10 @@ export function fakeApi(namespace) {
       res.writeHead(200, { 'content-type': 'application/json' })
       return res.end(JSON.stringify(obj))
     }
-    if (req.method === 'GET' && (url.pathname === '/api/v1/pods' || url.pathname === '/api/v1/nodes')) {
+    if (
+      req.method === 'GET' &&
+      (/^\/api\/v1\/namespaces\/[^/]+\/pods$/.test(url.pathname) || url.pathname === '/api/v1/nodes')
+    ) {
       res.writeHead(200, { 'content-type': 'application/json' })
       return res.end(JSON.stringify({ metadata: { resourceVersion: String(rv) }, items: [] }))
     }

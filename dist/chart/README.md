@@ -38,7 +38,9 @@ pull request.
 1. **Agent Sandbox.** The operator runs its agents in Sandboxes and won't start
    without the `Sandbox` kind. The patch turns off its controller's leader
    election, which makes one replica exit on a busy host; run it alone on an
-   install made without it ([the guide](../../docs/getting-started.md) says why):
+   install made without it ([the guide](../../docs/getting-started.md) says why).
+   Install it before the chart: the chart lets the UI read pods in its
+   namespace, `agent-sandbox-system`, which must exist:
 
    ```bash
    kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml

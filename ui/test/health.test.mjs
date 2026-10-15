@@ -268,12 +268,18 @@ describe('componentsFromEnv', () => {
 })
 
 describe('createHealthHandler', () => {
+  const projects = '/apis/c4.factory.io/v1alpha1/projects'
+  const namespaces = [...new Set(DEFAULT_COMPONENTS.map((c) => c.namespace))]
   const answers = {
-    '/api/v1/pods': { status: 200, body: { items: [] } },
     '/api/v1/nodes': { status: 200, body: { items: [node] } },
-    '/apis/metrics.k8s.io/v1beta1/pods': { status: 404, body: { message: 'not found' } },
     '/apis/metrics.k8s.io/v1beta1/nodes': { status: 404, body: { message: 'not found' } },
+    [projects]: { status: 200, body: { items: [] } },
   }
+  const answer = (path) =>
+    answers[path] ??
+    (path.startsWith('/apis/metrics.k8s.io/')
+      ? { status: 404, body: { message: 'not found' } }
+      : { status: 200, body: { items: [] } })
 
   it('reads the API once per cache period, even for callers at the same time', async () => {
     const calls = []
@@ -281,47 +287,80 @@ describe('createHealthHandler', () => {
     const health = createHealthHandler({
       getJson: async (path) => {
         calls.push(path)
-        return answers[path]
+        return answer(path)
       },
       now: () => clock,
     })
+    const reads = 3 + 2 * namespaces.length
     const [a, b] = await Promise.all([health(), health()])
     assert.equal(a, b)
-    assert.equal(calls.length, 4)
+    assert.equal(calls.length, reads)
     await health()
-    assert.equal(calls.length, 4, 'cached')
+    assert.equal(calls.length, reads, 'cached')
     clock += 6_000
     await health()
-    assert.equal(calls.length, 8, 'read again after the cache period')
+    assert.equal(calls.length, 2 * reads, 'read again after the cache period')
+  })
+
+  it("reads pods only in the components' and the Projects' namespaces", async () => {
+    const calls = []
+    const health = await createHealthHandler({
+      components: DEFAULT_COMPONENTS.filter((c) => c.key === 'operator'),
+      getJson: async (path) => {
+        calls.push(path)
+        if (path === projects) {
+          return { status: 200, body: { items: [{ metadata: { namespace: 'apps', name: 'apps' } }] } }
+        }
+        if (path === '/api/v1/namespaces/apps/pods') {
+          return { status: 200, body: { items: [pod('apps', 'sb', { 'c4.factory.io/agent-sandbox': 'true' })] } }
+        }
+        return answer(path)
+      },
+    })()
+    assert.deepEqual(calls.filter((p) => p.includes('pods')).sort(), [
+      '/api/v1/namespaces/apps/pods',
+      '/api/v1/namespaces/c4-factory-system/pods',
+      '/apis/metrics.k8s.io/v1beta1/namespaces/apps/pods',
+      '/apis/metrics.k8s.io/v1beta1/namespaces/c4-factory-system/pods',
+    ])
+    assert.deepEqual(
+      health.agents.sandboxes.map((s) => s.name),
+      ['sb'],
+    )
   })
 
   it('treats missing metrics as no metrics, not as an error', async () => {
-    const health = await createHealthHandler({ getJson: async (path) => answers[path] })()
+    const health = await createHealthHandler({ getJson: async (path) => answer(path) })()
     assert.equal(health.metrics, false)
     assert.deepEqual(health.errors, [])
   })
 
-  it('reports a failed read', async () => {
+  it('reports a failed read, and only its namespace as unknown', async () => {
+    const refused = '/api/v1/namespaces/gitea/pods'
     const health = await createHealthHandler({
-      getJson: async (path) =>
-        path === '/api/v1/pods' ? { status: 403, body: { message: 'forbidden' } } : answers[path],
+      getJson: async (path) => (path === refused ? { status: 403, body: { message: 'forbidden' } } : answer(path)),
     })()
     assert.equal(health.state, 'unknown')
-    assert.deepEqual(health.errors, ['/api/v1/pods: 403 forbidden'])
+    assert.deepEqual(health.errors, [`${refused}: 403 forbidden`])
+    for (const c of health.components) assert.equal(c.state === 'unknown', c.namespace === 'gitea', c.key)
   })
 
   it('lists a failed read once, however many times the health was loaded', async () => {
     let clock = NOW
     const health = createHealthHandler({
+      components: DEFAULT_COMPONENTS.filter((c) => c.key === 'operator'),
       getJson: async (path) =>
-        path.startsWith('/api/v1/') ? { status: 404, body: { message: 'not found' } } : answers[path],
+        path.startsWith('/api/v1/') ? { status: 404, body: { message: 'not found' } } : answer(path),
       now: () => clock,
     })
     for (let i = 0; i < 3; i++) {
       await Promise.all([health(), health()])
       clock += 6_000
     }
-    assert.deepEqual((await health()).errors, ['/api/v1/pods: 404 not found', '/api/v1/nodes: 404 not found'])
+    assert.deepEqual((await health()).errors, [
+      '/api/v1/nodes: 404 not found',
+      '/api/v1/namespaces/c4-factory-system/pods: 404 not found',
+    ])
   })
 })
 

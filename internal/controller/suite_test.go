@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -55,6 +56,10 @@ const (
 	testOperatorVersion = "1.2.3"
 	testChartVersion    = "0.9.0"
 )
+
+// testUIAccount is the UI's ServiceAccount, in the operator's namespace, that
+// the Project reconciler lets read each project namespace's pods.
+const testUIAccount = "c4-factory-ui"
 
 // testScaffoldTimeout bounds a scaffold attempt in tests; the fake Git host answers at once.
 const testScaffoldTimeout = 3 * time.Second
@@ -210,7 +215,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&ProjectReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
 			SharedSecrets: []string{sharedToken}, SharedPullSecrets: []string{sharedPullSecret},
 			SourceNamespace: operatorNamespace, SharedSecretsRecheck: time.Second,
-			OperatorVersion: testOperatorVersion, ChartVersion: testChartVersion},
+			OperatorVersion: testOperatorVersion, ChartVersion: testChartVersion,
+			UIServiceAccount: k8stypes.NamespacedName{Namespace: operatorNamespace, Name: testUIAccount}},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container")},
