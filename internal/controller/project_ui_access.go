@@ -27,8 +27,7 @@ const UIPodReaderName = "c4-factory-ui-pods"
 // UIPodReaderRules are the rules of UIPodReaderName. The operator holds them
 // itself, which is what lets it grant them.
 var UIPodReaderRules = []rbacv1.PolicyRule{
-	{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
-	{APIGroups: []string{"metrics.k8s.io"}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
+	{APIGroups: []string{"", "metrics.k8s.io"}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
 }
 
 // +kubebuilder:rbac:groups=metrics.k8s.io,resources=pods,verbs=get;list

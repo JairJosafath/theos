@@ -180,9 +180,12 @@ bound_to_ui=$(awk 'function flush() { if (b && ui && r != "") print r; b = 0; ui
 	/^---/ { flush(); next } /^kind: ClusterRoleBinding$/ { b = 1 } /^[a-z]/ { sec = $1 }
 	sec == "roleRef:" && /^  name: / { r = $2 } sec == "subjects:" && $0 == "  name: c4-factory-ui" { ui = 1 }
 	END { flush() }' "$OUT/chart-gitea.yaml")
-want "no ClusterRole is bound to the UI's ServiceAccount" "$bound_to_ui" '^c4-factory-ui-reader$'
+want "can't find the ClusterRoles bound to the UI's ServiceAccount" "$bound_to_ui" '^c4-factory-ui-health$'
 for role in $bound_to_ui; do
-	if grep -qE '^  resources: \[.*\bpods\b' <<<"$(doc "$OUT/chart-gitea.yaml" ClusterRole "$role")"; then
+	# pods in a flow list or a block list of resources
+	if awk '/^  resources:/ { r = 1 } /^  [a-z]/ && !/^  resources:/ { r = 0 } /^- / { r = 0 }
+		r && /(\[|, |^  - )pods(\]|,|$)/ { found = 1 } END { exit !found }' \
+		<<<"$(doc "$OUT/chart-gitea.yaml" ClusterRole "$role")"; then
 		echo "The chart: ClusterRole $role grants the UI pods cluster-wide; bind c4-factory-ui-pods per namespace" >&2
 		exit 1
 	fi
