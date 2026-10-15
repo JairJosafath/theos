@@ -127,6 +127,7 @@ const (
 	ReasonValid                = "Valid"
 	ReasonUnsupportedType      = "UnsupportedType"
 	ReasonUnsupportedFramework = "UnsupportedFramework"
+	ReasonUnsupportedCI        = "UnsupportedCI"
 	ReasonDeploysItself        = "DeploysItself"
 	ReasonCreated              = "Created"
 	ReasonScaffolding          = "Scaffolding"

@@ -47,7 +47,7 @@ func takeAll(ns, repository string, numbers []int, plan scaffold.Tree) map[int][
 			g.Expect(r.Stage).To(Equal(model.RequestPlanned))
 			became[int(r.Number)] = r.Issues
 		}
-	}).WithTimeout(wholeRound).Should(Succeed())
+	}).Should(Succeed())
 	for _, n := range numbers {
 		Eventually(func(g Gomega) {
 			_, comments := githubFake.gitHubIssue(repository, n)
@@ -94,7 +94,7 @@ var _ = Describe("Brief requests shipped", func() {
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 
 		theme := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please.")
 		early := githubFake.openIssue(repository, "gray-lenovo", "Light theme", "Too.")
@@ -184,7 +184,7 @@ var _ = Describe("Brief requests shipped", func() {
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 
 		theme := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please.")
 		became := takeAll(ns, repository, []int{theme},

@@ -39,7 +39,7 @@ and the `make check` contract CI runs.
   directory, so a packaging or build problem fails CI.
   `.gitea/workflows/check.yaml` runs it on pull requests and on `main` on a
   runner labelled `go`, under the status context `check / check`, which the
-  protected `main` requires (`model.CheckContexts`). npm's cache goes to the
+  protected `main` requires (Gitea Actions' check contexts, `model.CI` in `internal/model/ci.go`). npm's cache goes to the
   runner's memory-backed `/tmp`.
   A change to only `CHANGELOG.md`, `docs/` or images (`.png`, `.jpg`, `.gif`,
   `.svg`) skips the steps after the checkout and passes, so the context still

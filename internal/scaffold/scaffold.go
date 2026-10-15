@@ -73,6 +73,9 @@ type Input struct {
 	// Checks is when CI runs the full check: EveryChange or BeforeRelease, as
 	// model.EffectiveChecks decides. Empty reads as EveryChange.
 	Checks string
+	// CI is the CI system the Container's repository runs. A layer's
+	// .c4factory/ci/<CI.Name>/ folder renders at the repository root.
+	CI model.CI
 }
 
 // Layer is one catalog entry's template repository at a pinned ref.
@@ -104,6 +107,10 @@ type Result struct {
 const (
 	// metaDir holds a template's input for the factory. It is never copied.
 	metaDir = ".c4factory/"
+	// ciDir holds a folder per CI system the template supports, named after
+	// it, such as giteaActions. Only the Container's CI system's folder is
+	// rendered, at the repository root.
+	ciDir = metaDir + "ci/"
 	// templateSuffix marks files rendered with text/template.
 	templateSuffix = ".tmpl"
 	// IdentityPath is the identity file the Session client reads.
@@ -144,6 +151,23 @@ func (e *TemplateError) Error() string {
 }
 
 func (e *TemplateError) Unwrap() error { return e.Err }
+
+// UnsupportedCIError reports a layer that keeps CI files, but none for the
+// Container's CI system.
+type UnsupportedCIError struct {
+	Layer string
+	CI    string
+	// Supported are the CI systems the layer has files for, sorted.
+	Supported []string
+}
+
+func (e *UnsupportedCIError) Error() string {
+	ci := e.CI
+	if ci == "" {
+		ci = "no CI system"
+	}
+	return fmt.Sprintf("%s doesn't support %s; it supports %s", e.Layer, ci, strings.Join(e.Supported, ", "))
+}
 
 // Build renders the layers into one repository tree. Layers must come in the
 // fixed order Framework, Standard, Compute, Deployment, then each Connector, with exactly one
@@ -222,23 +246,60 @@ func checkLayers(in Input, layers []Layer) error {
 	return nil
 }
 
+// checkCI fails a layer that keeps files for CI systems but none for the
+// Container's. A layer without .c4factory/ci/ works with any CI system.
+func checkCI(in Input, layer Layer) error {
+	var supported []string
+	for _, p := range layer.Files.Paths() {
+		rest, ok := strings.CutPrefix(p, ciDir)
+		if !ok {
+			continue
+		}
+		name, _, inFolder := strings.Cut(rest, "/")
+		if !inFolder {
+			continue // a file beside the CI systems' folders, such as a README
+		}
+		if name == in.CI.Name && in.CI.Name != "" {
+			return nil
+		}
+		if !slices.Contains(supported, name) {
+			supported = append(supported, name)
+		}
+	}
+	if len(supported) == 0 {
+		return nil
+	}
+	return &UnsupportedCIError{Layer: layer.Name, CI: in.CI.Name, Supported: supported}
+}
+
 func isOperatorPath(p string) bool {
 	return p == IdentityPath || strings.HasPrefix(p, devcontainerDir)
 }
 
 // renderLayer returns the files a layer adds to the repository: everything except
-// .c4factory/, with .tmpl files rendered and whitespace-only results left out.
+// .c4factory/, and what .c4factory/ci/ holds for the Container's CI system, at
+// the root, with .tmpl files rendered and whitespace-only results left out.
 func renderLayer(in Input, layer Layer) (Tree, error) {
+	if err := checkCI(in, layer); err != nil {
+		return nil, err
+	}
+	ownCI := ciDir + in.CI.Name + "/"
 	out := Tree{}
 	for _, p := range layer.Files.Paths() {
 		if err := checkPath(p); err != nil {
 			return nil, &TemplateError{Layer: layer.Name, Path: p, Err: err}
 		}
-		if strings.HasPrefix(p, metaDir) {
+		source := p
+		if rest, ok := strings.CutPrefix(p, ownCI); ok && in.CI.Name != "" {
+			if strings.HasPrefix(rest, metaDir) {
+				return nil, &TemplateError{Layer: layer.Name, Path: p, Err: fmt.Errorf("CI files can't write %s", metaDir)}
+			}
+			source = rest
+		} else if strings.HasPrefix(p, metaDir) {
 			continue
 		}
 		f := layer.Files[p]
-		target, data, keep, err := renderFile(in, p, f.Data)
+		target, data, keep, err := renderFile(in, source, f.Data)
 		if err == nil {
 			err = checkPath(target)
 		}

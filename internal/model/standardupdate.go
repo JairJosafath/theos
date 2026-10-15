@@ -23,6 +23,8 @@ type StandardUpdateFacts struct {
 	Checks    string
 	ChecksURL string
 	Contexts  map[string]string
+	// CI is the Container's CI system, whose check contexts main requires.
+	CI CI
 	// Files are the paths the pull request changes, nil until read.
 	Files *UpdateFiles
 }
@@ -212,7 +214,7 @@ func followStep(f StandardUpdateFacts) StandardStep {
 	case f.Files.Unchecked != "":
 		return refuseMerge(u, "not every changed path can be checked: "+f.Files.Unchecked)
 	}
-	if why := StandardUpdateRefusal(f.Checks, f.Contexts, f.Files.Changed, u.Paths); why != "" {
+	if why := StandardUpdateRefusal(f.CI, f.Checks, f.Contexts, f.Files.Changed, u.Paths); why != "" {
 		return refuseMerge(u, why)
 	}
 	return StandardStep{Action: StandardForceMerge}

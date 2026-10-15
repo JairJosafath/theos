@@ -636,9 +636,10 @@ func writeCodeList(b *strings.Builder, items []string, end int) {
 
 // StandardUpdateRefusal says why a Standard update's pull request may not merge,
 // or "" when it may: CI is green, every check main's protection requires
-// passed, and it changes something and only the planned paths.
-func StandardUpdateRefusal(checks string, contexts map[string]string, changed, planned []string) string {
-	if refusal := checksRefusal(checks, contexts); refusal != "" {
+// passed (ci's check contexts), and it changes something and only the
+// planned paths.
+func StandardUpdateRefusal(ci CI, checks string, contexts map[string]string, changed, planned []string) string {
+	if refusal := checksRefusal(ci.CheckContexts, checks, contexts); refusal != "" {
 		return refusal
 	}
 	if len(changed) == 0 {

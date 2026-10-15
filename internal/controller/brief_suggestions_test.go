@@ -293,7 +293,7 @@ var _ = Describe("Brief suggestions past the status's list", func() {
 		planRound(ns, 1, 1, twoContainersPlan(ns, 1, ""))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 
 		By("filing 31 suggestions in each, #364 and #371 in both")
 		var engine, extension []int
@@ -346,7 +346,7 @@ var _ = Describe("Brief suggestions past the status's list", func() {
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 			g.Expect(b.Status.SuggestionsWaiting).To(Equal(int32(56)))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		for _, n := range newest {
 			taken := gitFake.issue(ns, "linter-vscode", n)
 			Expect(taken.Labels).To(ConsistOf(model.LabelReady), "linter-vscode#%d", n)
