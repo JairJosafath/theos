@@ -308,6 +308,11 @@ enforces.
   Secret in the release namespace that the operator copies into project
   namespaces, so the fix reads one Secret; a namespace receives copies only
   with a label a namespace's own users can't set.
+  The Gitea CI runners run the agents' code in host mode on the cluster
+  network, outside the fence
+  ([#1076](https://github.com/JairJosafath/c4factory/issues/1076)). Until
+  both gaps close, one install is one trust domain; the user docs say so
+  ([getting-started](getting-started.md#what-the-factory-trusts)).
 - **App values are needs, not platform rules.** "Works offline, no login, no ads"
   is a need on a SoftwareSystem, not a rule of the platform; the agents get the
   needs with every Task.

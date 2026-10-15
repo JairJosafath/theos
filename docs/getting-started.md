@@ -31,6 +31,25 @@ VERSION=0.23.0
 gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 ```
 
+## What the factory trusts
+
+One install is one trust domain: run it on a device you own, for people you
+would hand the Claude token to, and never on a shared or production cluster.
+Anyone who can create a Project or a Brief in the cluster, the UI's users
+included, can have the factory run code that holds the Claude token and
+reaches the cluster network, through an agent's sandbox or a CI job. Two
+gaps make that so, and two issues close them:
+
+- **The Claude token is readable inside an agent's sandbox.** The agent's
+  code can read it and send it anywhere public HTTPS reaches. An egress proxy
+  that adds the token to the agent's requests, so the sandbox never holds it,
+  closes this ([#1075](https://github.com/JairJosafath/c4factory/issues/1075)).
+- **The Gitea CI runners run the agents' code on the cluster network.** They
+  run every project's checks in host mode, sharing the runner's own files, and
+  no NetworkPolicy fences them. A fresh environment per job with no cluster
+  network beyond what a check needs closes this
+  ([#1076](https://github.com/JairJosafath/c4factory/issues/1076)).
+
 ## 1. Install the factory
 
 **Agent Sandbox.** The operator runs its agents in Sandboxes and won't start
