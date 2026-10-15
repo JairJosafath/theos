@@ -86,11 +86,41 @@ Lost claim (the heartbeat hook says so):
 4. Give the user the URL and the line to start the next session with:
    `Continue GitHub issue #N.`
 
+## Review before landing
+
+A pull request that changes more than 400 lines in hand-written files gets a
+review pass before it lands; `land` refuses it until it has one, and
+`hack/lib/github.sh review-check PR` tells you whether it does. Generated files
+(`zz_generated.*`, `config/crd/bases/`, `config/rbac/role.yaml`), lockfiles
+and `docs/screenshots/` don't count. Smaller pull requests land as before.
+
+1. Run `/code-review` in a subagent (the Agent tool, model named: sonnet or
+   opus), not in your own context: the author reads past its own mistakes.
+   Give it the branch against `origin/main` and ask for its findings back.
+2. Post them on the pull request as one comment (`gh pr comment PR
+   --body-file FILE`) that starts with `Review:` and has an `Agent: <name>`
+   line, each finding one top-level list item:
+   ```
+   Review: /code-review (opus subagent) of <head SHA>
+   Agent: otter-23
+
+   - <finding, file:line>
+   ```
+   No findings: `Review: no findings` and the `Agent:` line.
+3. Fix what it found, commit and push; then edit the comment
+   (`gh api --method PATCH repos/OWNER/REPO/issues/comments/ID -f body=...`)
+   so every finding says `Fixed in <SHA>` or `Dismissed: <reason>`. A
+   sub-item may explain; only top-level items are findings.
+4. `land`. It takes the newest `Review:` comment posted through the owner's
+   account with an `Agent:` line, and refuses while any finding in it says
+   neither Fixed nor Dismissed, quoting the first.
+
 ## Finish
 
 - **Landed:** the pull request says `Closes #N` and is merged as AGENTS.md
   ("How to Work") says, with `hack/lib/github.sh land PR` (a merge commit),
-  run from the branch's checkout with everything committed and pushed. Two
+  run from the branch's checkout with everything committed and pushed, and
+  over 400 changed lines, reviewed first ("Review before landing"). Two
   pull requests that each passed `make check` alone can still break main
   together, so `merge` refuses a branch behind main, and `land` takes the
   merge turn: it waits until the pull requests queued before it have landed
