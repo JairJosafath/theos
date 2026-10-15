@@ -50,12 +50,12 @@ func (r *ProjectReconciler) ensureSessionAccess(ctx context.Context, project *c4
 			{
 				APIGroups: []string{c4v1alpha1.SchemeGroupVersion.Group},
 				Resources: []string{"sessions"},
-				Verbs:     []string{"get", "create", "update", "patch", "delete"},
+				Verbs:     []string{verbGet, "create", "update", "patch", "delete"},
 			},
 			{
 				APIGroups: []string{c4v1alpha1.SchemeGroupVersion.Group},
 				Resources: []string{"sessions/status"},
-				Verbs:     []string{"get", "update", "patch"},
+				Verbs:     []string{verbGet, "update", "patch"},
 			},
 		}
 		return controllerutil.SetControllerReference(project, role, r.Scheme)

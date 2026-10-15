@@ -27,8 +27,11 @@ const UIPodReaderName = "c4-factory-ui-pods"
 // UIPodReaderRules are the rules of UIPodReaderName. The operator holds them
 // itself, which is what lets it grant them.
 var UIPodReaderRules = []rbacv1.PolicyRule{
-	{APIGroups: []string{"", "metrics.k8s.io"}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
+	{APIGroups: []string{"", "metrics.k8s.io"}, Resources: []string{"pods"}, Verbs: []string{verbGet, "list"}},
 }
+
+// verbGet is the RBAC verb the project namespace's Roles grant most.
+const verbGet = "get"
 
 // +kubebuilder:rbac:groups=metrics.k8s.io,resources=pods,verbs=get;list
 
