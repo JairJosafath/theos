@@ -297,9 +297,13 @@ A session that ends on a usage limit or a failed login pauses the relay until
 the limit resets (`.relay/paused-until`): every worker waits, and the watch
 starts nothing. A session whose transcript stops changing for `RELAY_IDLE`
 (45m) is ended and counts as failed. A session that ends without a handoff and
-without a new commit on the issue's branch is a failed one; at `RELAY_MAX_FAILS`
+without a new commit on the issue's branch, or on `<branch>-2` or
+`<branch>-<name>` (local or pushed), is a failed one; at `RELAY_MAX_FAILS`
 (3) in a row the relay sets the issue to `status/needs-maintainer` with a
-comment naming each session, and a handoff or a commit resets the count.
+comment naming each session, and a handoff or a commit resets the count. One
+that leaves the issue in `status/waiting` (a plan's parent) has finished, like
+a handoff; one that sets it back to `status/ready` or `status/proposed` isn't
+counted either way.
 
 ### Sharing the Kind clusters between checkouts
 
