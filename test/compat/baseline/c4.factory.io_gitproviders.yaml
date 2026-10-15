@@ -1,0 +1,95 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gitproviders.c4.factory.io
+spec:
+  group: c4.factory.io
+  names:
+    categories:
+    - c4
+    kind: GitProvider
+    listKind: GitProviderList
+    plural: gitproviders
+    singular: gitprovider
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.provider
+      name: Provider
+      type: string
+    - jsonPath: .spec.url
+      name: URL
+      type: string
+    - jsonPath: .spec.owner
+      name: Owner
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GitProvider is where repositories are created, with credentials.
+          Owned by the Project.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of GitProvider
+            properties:
+              credentialsSecretRef:
+                description: credentialsSecretRef names a Secret with keys "username"
+                  and "token".
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              owner:
+                description: owner is the organization that holds Container repositories.
+                maxLength: 100
+                minLength: 1
+                type: string
+              provider:
+                default: gitea
+                description: provider is the kind of Git hosting.
+                enum:
+                - gitea
+                type: string
+              url:
+                description: url is the base address of the Git host, such as http://gitea.gitea.svc.cluster.local:3000.
+                pattern: ^https?://
+                type: string
+            required:
+            - credentialsSecretRef
+            - owner
+            - url
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}

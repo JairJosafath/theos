@@ -129,6 +129,12 @@ same values. `helm uninstall` keeps namespace `gitea` and Gitea's volume, so
 the repositories survive a reinstall, and the project namespaces with their
 models; delete a namespace to drop it.
 
+An upgrade keeps your `c4.factory.io` objects valid: within `v1alpha1` a
+release never removes, renames or retypes a field, never adds a required one
+and never tightens a rule so that an object applied before is refused after;
+a change that must break waits for a `v1beta1` that converts them. See
+[Compatibility](../../docs/design.md#compatibility).
+
 ### Private images
 
 The chart and the images on GHCR are private until the owner makes them
