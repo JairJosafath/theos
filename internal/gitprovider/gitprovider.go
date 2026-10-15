@@ -308,6 +308,10 @@ var ErrOpenDependencies = errors.New("the issue still has open dependencies")
 // repository doesn't have, say one deleted or of a repository made again.
 var ErrPullRequestNotFound = errors.New("no such pull request")
 
+// ErrNoCILog is CheckLog's error for a CI job the Git host keeps no log of:
+// one whose runner went away before it sent any.
+var ErrNoCILog = errors.New("the CI job has no log")
+
 // SameHost reports whether two URLs point at the same host, so a Git provider's
 // credentials can be reused for a template on it.
 func SameHost(a, b string) bool {

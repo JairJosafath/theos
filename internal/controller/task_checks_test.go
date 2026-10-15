@@ -135,6 +135,58 @@ var _ = Describe("A Task's checks", func() {
 		}).Should(Succeed())
 	})
 
+	It("runs the failed jobs its runner abandoned again, in the same round, at no round", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		// The runner's pod restarts mid-job: it cancels the job on its way down.
+		cancelled := killedRun(ns, time.Now().Add(-20*time.Minute))
+		cancelled.Conclusion = "cancelled"
+		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", cancelled)
+		gitFake.setCheckLog("2026-10-15T12:00:00.1234567Z go test ./...\n2026-10-15T12:00:09.1234567Z Job cancelled\n")
+		DeferCleanup(gitFake.setCheckLog, "")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
+		var at time.Time
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(task.Status.ChecksReruns).To(Equal(int32(1)))
+			g.Expect(task.Status.ChecksRerunAt).NotTo(BeNil())
+			g.Expect(task.Status.Feedback).To(BeEmpty(), "the agent is told nothing")
+			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).
+				To(HaveField("Message", ContainSubstring("was abandoned by its runner")))
+			at = task.Status.ChecksRerunAt.Time
+		}).Should(Succeed())
+
+		By("running them again when the rerun's runner dies with no word, and Gitea fails the job")
+		gitFake.setCheckLog("2026-10-15T12:30:00.1234567Z go test ./...\n2026-10-15T12:30:01.1234567Z === RUN   TestCrop\n")
+		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", killedRun(ns, at.Add(time.Second)))
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(2))
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(task.Status.ChecksReruns).To(Equal(int32(2)))
+			at = task.Status.ChecksRerunAt.Time
+		}).Should(Succeed())
+
+		By("reviewing once the rerun passes")
+		rerun := killedRun(ns, at.Add(time.Second))
+		rerun.Conclusion = "success"
+		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", rerun)
+		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+		}).Should(Succeed())
+	})
+
 	It("fails a Task whose checks are killed a third time in a round, costing no try", func() {
 		ns := newProjectNamespace()
 		killedChecks(ns, killedRun(ns, time.Now().Add(-20*time.Minute)))

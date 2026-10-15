@@ -232,8 +232,10 @@ type TaskFacts struct {
 	// Checks is the CI state on the round's commit, and ChecksURL where to see it.
 	Checks    string
 	ChecksURL string
-	// ChecksLog is the failed CI job's log, when it could be read.
-	ChecksLog string
+	// ChecksLog is the failed CI job's log, when it could be read, and
+	// ChecksNoLog means the job started and the Git host has no log of it.
+	ChecksLog   string
+	ChecksNoLog bool
 	// CIRun is the state of the runs at the round's commit while its checks
 	// are pending, and CheckingSince when the Task entered Checking.
 	CIRun         CIRun
@@ -245,7 +247,8 @@ type TaskFacts struct {
 	ReviewAgains int
 	// Reruns counts the free reruns of interrupted runs in this round.
 	Reruns int
-	// ChecksReruns counts the reruns of killed CI jobs in this round, and
+	// ChecksReruns counts the reruns of CI jobs the runner failed in this
+	// round, killed for lack of memory or abandoned, and
 	// ChecksRerunAt is when the last one was asked for, SinceChecksRerun how long
 	// ago. ChecksRerunEnded means the rerun gave its result (RerunEnded), so a
 	// failed status is the rerun's, not the killed run's.
@@ -465,9 +468,15 @@ const ReasonRunnerOutOfSpace = "RunnerOutOfSpace"
 // runner's fault, not the change's, so it costs its issue no try.
 const ReasonRunnerOutOfMemory = "RunnerOutOfMemory"
 
+// ReasonRunnerLost is the reason of a Task whose CI jobs their runner
+// abandoned (RunnerAbandoned) more than MaxChecksReruns times in a round: the
+// runner's fault, not the change's, so it costs its issue no try.
+const ReasonRunnerLost = "RunnerLost"
+
 // MaxChecksReruns is how often a round's failed CI jobs run again after the
-// machine killed them for lack of memory. The cap keeps a runner that is always
-// short of memory from looping forever.
+// machine killed them for lack of memory or their runner abandoned them. The
+// cap keeps a runner that is always short of memory, or keeps dying, from
+// looping forever.
 const MaxChecksReruns = 2
 
 // ReasonApprovalRanOut is the reason of a Task whose approved Standard change
@@ -480,7 +489,7 @@ const ReasonApprovalRanOut = "ApprovalRanOut"
 // its CI runner's fault, so the failure costs its issue no try.
 func RunnerFault(reason string) bool {
 	switch reason {
-	case ReasonNoCIResult, ReasonRunnerOutOfSpace, ReasonRunnerOutOfMemory, ReasonApprovalRanOut:
+	case ReasonNoCIResult, ReasonRunnerOutOfSpace, ReasonRunnerOutOfMemory, ReasonRunnerLost, ReasonApprovalRanOut:
 		return true
 	}
 	return false
@@ -508,6 +517,53 @@ func RunnerOutOfSpace(log string) bool {
 func RunnerKilled(log string) bool {
 	return runnerSays(log, func(line string) bool { return killedLine.MatchString(strings.TrimSpace(line)) })
 }
+
+// RunnerAbandoned reports whether a failed CI job ended because its runner
+// went away, not because the change failed it. Gitea 1.27 says so in no field,
+// so it reads what the runner left:
+//   - cancelled: the run ended cancelled. A runner told to stop (its pod
+//     restarting, say) cancels its job; Gitea keeps no record of who
+//     cancelled a run, and a person's cancel in its UI leaves the same log, so
+//     every cancel counts, and MaxChecksReruns bounds what a person's costs.
+//   - noLog: the job started, but Gitea has no log of it: its runner died
+//     before it sent a line.
+//   - a log as Gitea serves it, a timestamp on every line, that stops before
+//     the runner said how the job ended ("Job failed"), or whose last line is
+//     the runner's "Early termination": the runner died mid-job, and Gitea
+//     failed the job once it stopped reporting (its zombie task timeout).
+//
+// A log that can't be read is none of these: the failure is read as the change's.
+func RunnerAbandoned(cancelled, noLog bool, log string) bool {
+	return cancelled || noLog || cutOffLog(log)
+}
+
+// cutOffLog reports whether a CI log as Gitea serves it stops before its
+// runner said how the job ended. The runner sends that line at its log level
+// info, which hack/runner/config.yaml keeps.
+func cutOffLog(log string) bool {
+	lines := strings.Split(strings.TrimRight(log, "\n"), "\n")
+	last := lines[len(lines)-1]
+	if !giteaLogLine.MatchString(last) {
+		return false
+	}
+	if strings.TrimSpace(stripLogPrefix(last)) == "Early termination" {
+		return true
+	}
+	for _, line := range lines {
+		if jobEndedLine.MatchString(strings.TrimSpace(stripLogPrefix(line))) {
+			return false
+		}
+	}
+	return true
+}
+
+var (
+	// giteaLogLine is a line of a CI log as Gitea serves it: its time, then
+	// what the runner sent.
+	giteaLogLine = regexp.MustCompile(`^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z `)
+	// jobEndedLine is the runner saying how a job ended, as it does last.
+	jobEndedLine = regexp.MustCompile(`^(🏁\s+)?Job (succeeded|failed|cancelled)$`)
+)
 
 // killedLine is a line of the runner or toolchain saying a job was killed for
 // lack of memory.
@@ -622,6 +678,9 @@ type CIRun struct {
 	// host that doesn't say counts as having one: a wrong "offline" fails good
 	// work, a wrong "online" only waits longer.
 	NoRunnerOnline bool
+	// Cancelled means a failed run at the commit, the newest of its workflow
+	// and event, ended cancelled (see CancelledRun).
+	Cancelled bool
 }
 
 // WorkflowRun is one CI run at a commit, as the Git host lists it.
@@ -653,6 +712,17 @@ func FailedCommitRuns(runs []WorkflowRun) []WorkflowRun {
 		seen[key] = true
 	}
 	return failed
+}
+
+// CancelledRun reports whether one of the failed runs at a commit
+// (FailedCommitRuns) ended cancelled.
+func CancelledRun(runs []WorkflowRun) bool {
+	for _, run := range FailedCommitRuns(runs) {
+		if run.Conclusion == checkCancelled {
+			return true
+		}
+	}
+	return false
 }
 
 // RunsEnded reports whether every run at a commit has ended: only then are
@@ -865,7 +935,12 @@ func nextTaskStep(f TaskFacts) TaskStep {
 						"free the runner's space or restart it", orUnknown(f.ChecksURL))}
 			}
 			if RunnerKilled(f.ChecksLog) {
-				return killedStep(f)
+				return rerunStep(f, "was killed for lack of memory", ReasonRunnerOutOfMemory,
+					"free memory on the runner or run fewer jobs at once")
+			}
+			if RunnerAbandoned(f.CIRun.Cancelled, f.ChecksNoLog, f.ChecksLog) {
+				return rerunStep(f, "was abandoned by its runner", ReasonRunnerLost,
+					"check why the runners stop mid-job (a runner pod that restarts ends its job)")
 			}
 			feedback := fmt.Sprintf("The CI checks failed (%s). Run the check command, find the failure and fix it.",
 				orUnknown(f.ChecksURL))
@@ -886,21 +961,21 @@ func nextTaskStep(f TaskFacts) TaskStep {
 	return TaskStep{Action: ActionNone}
 }
 
-// killedStep runs again the checks the machine killed for lack of memory, up
-// to MaxChecksReruns times in a round, and then fails the Task at no try.
-func killedStep(f TaskFacts) TaskStep {
+// rerunStep runs again the checks that failed through the runner's fault, as
+// why says, up to MaxChecksReruns times in a round, and then fails the Task
+// for reason at no try, saying what to do.
+func rerunStep(f TaskFacts, why, reason, todo string) TaskStep {
 	switch {
 	case f.CIRun.State == CIRunRunning || f.CIRun.State == CIRunQueued:
 		// The Git host runs a run's jobs again only once it ended.
 		return checksPendingStep(f)
 	case f.ChecksReruns < MaxChecksReruns:
-		return TaskStep{Action: ActionRerunChecks, Message: fmt.Sprintf("CI run %s was killed for lack of memory; "+
-			"running its failed jobs again (rerun %d of %d in round %d)", orUnknown(f.ChecksURL), f.ChecksReruns+1,
-			MaxChecksReruns, f.Round)}
+		return TaskStep{Action: ActionRerunChecks, Message: fmt.Sprintf("CI run %s %s; running its failed jobs "+
+			"again (rerun %d of %d in round %d)", orUnknown(f.ChecksURL), why, f.ChecksReruns+1, MaxChecksReruns,
+			f.Round)}
 	}
-	return TaskStep{Action: ActionFail, Reason: ReasonRunnerOutOfMemory, Message: fmt.Sprintf(
-		"CI run %s was killed for lack of memory, %d times in round %d; free memory on the runner or run fewer "+
-			"jobs at once", orUnknown(f.ChecksURL), MaxChecksReruns+1, f.Round)}
+	return TaskStep{Action: ActionFail, Reason: reason, Message: fmt.Sprintf("CI run %s %s, %d times in round %d; %s",
+		orUnknown(f.ChecksURL), why, MaxChecksReruns+1, f.Round, todo)}
 }
 
 // pushedAgainStep runs again the failed jobs at a commit the round pushed

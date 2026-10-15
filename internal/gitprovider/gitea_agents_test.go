@@ -160,8 +160,8 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(http.StatusCreated, map[string]string{})
 	case call == "PATCH "+repo+"/tag_protections/7":
 		reply(http.StatusOK, map[string]string{})
-	case call == "GET "+repo+"/actions/jobs/27/logs":
-		_, _ = io.WriteString(w, "make: *** [Makefile:21: test] Error 1\n")
+	case strings.HasPrefix(call, "GET "+repo+"/actions/jobs/"):
+		serveJobLog(strings.TrimPrefix(call, "GET "+repo+"/actions/jobs/"), w, reply)
 	case strings.HasPrefix(call, "GET "+repo+"/commits/"):
 		_, _ = io.WriteString(w, g.statuses)
 	case call == "GET /api/v1/users/photo-editor-agent", call == "DELETE /api/v1/admin/users/photo-editor-agent":
@@ -430,6 +430,20 @@ func TestPullRequests(t *testing.T) {
 	}
 }
 
+// serveJobLog serves the log of a CI job: 27 failed, 28 started and has no
+// log file, 29 an empty one, and any other hasn't started.
+func serveJobLog(path string, w http.ResponseWriter, reply func(int, any)) {
+	switch path {
+	case "27/logs":
+		_, _ = io.WriteString(w, "make: *** [Makefile:21: test] Error 1\n")
+	case "28/logs":
+		reply(http.StatusNotFound, map[string]string{"message": "logs not found"})
+	case "29/logs":
+	default:
+		reply(http.StatusNotFound, map[string]string{"message": "job not started"})
+	}
+}
+
 func TestCheckLog(t *testing.T) {
 	_, p := newAgentGitea(t)
 	repo := p.Repository("photo-editor")
@@ -439,6 +453,15 @@ func TestCheckLog(t *testing.T) {
 	}
 	if _, err := p.CheckLog(context.Background(), repo, "http://gitea/apps/photo-editor/actions/runs/27"); err == nil {
 		t.Error("CheckLog() accepted a link without a job")
+	}
+	for _, job := range []string{"28", "29"} {
+		if _, err := p.CheckLog(context.Background(), repo, "/apps/photo-editor/actions/runs/27/jobs/"+job); !errors.Is(err, ErrNoCILog) {
+			t.Errorf("CheckLog() of job %s, which started and has no log: error = %v, want ErrNoCILog", job, err)
+		}
+	}
+	if _, err := p.CheckLog(context.Background(), repo, "/apps/photo-editor/actions/runs/27/jobs/30"); err == nil ||
+		errors.Is(err, ErrNoCILog) {
+		t.Errorf("CheckLog() of a job not started: error = %v, want another error", err)
 	}
 }
 
