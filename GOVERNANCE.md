@@ -14,8 +14,8 @@ the project, people and agents alike, follows the
 
 | Role | Who | Does |
 | --- | --- | --- |
-| Owner | listed in [MAINTAINERS.md](MAINTAINERS.md) | Sets the project's direction, holds everything [reserved](#reserved-to-the-owner) below, and has the final say on any decision. |
-| Maintainer | the relay's maintainer session (`hack/relay.sh --maintain`), one at a time | Runs the project for the owner: escalations, triage, decisions the design leaves open, review of merged work, reporters, hygiene and releases. It decides; it doesn't build. |
+| Owner | one person, listed in [MAINTAINERS.md](MAINTAINERS.md); the user in a session, the human where a rule is about a cluster | Sets the project's direction, holds everything [reserved](#reserved-to-the-owner) below, and has the final say on any decision. |
+| Maintainer | the relay's maintainer session (`hack/relay.sh --maintain`), one at a time | Runs the project for the owner: escalations, triage, decisions the design leaves open, review of merged work, reporters, hygiene and releases. It decides; it doesn't build. Triage is included: a triage session (`hack/relay.sh --triage`, the `triage` skill) readies sound proposed issues within minutes of their filing, on the maintainer's behalf. |
 | Agents | relay sessions, and sessions the owner starts | Build: one issue each, as [AGENTS.md](AGENTS.md) says. They escalate to the maintainer. |
 | Reporters | anyone who files an issue (`source/user`) | Say what they want. They get an answer and are kept informed. |
 
@@ -28,8 +28,8 @@ The maintainer decides these without asking the owner, following the
   [docs/design.md](docs/design.md). It chooses an approach, records it with
   its reasons on the issue, and readies the issue. The session that builds it
   writes the plan or the change to the design.
-- **Triage:** status, kind, priority, duplicates, splitting work, and closing
-  an issue the project won't do, with the reason.
+- **Triage** (the `triage` skill): status, kind, priority, duplicates,
+  splitting work, and closing an issue the project won't do, with the reason.
 - **Corrections:** when an agent breaks a rule, the maintainer marks the wrong
   comment outdated, posts the right one and restores the right status. When a
   rule, prompt or doc caused the mistake, it files the fix as an issue.
@@ -52,6 +52,9 @@ choice it would make and why. The list is in the *Needs you* section of the
 pinned *Maintainer report* issue, which is the one place the owner reads.
 
 - Credentials, access, accounts and secrets.
+- What agents may run: the permission rules in `.claude/settings.json`. Today
+  they allow exactly `hack/lib/github.sh land` and `hack/release.sh`, the two
+  commands the owner already gave the relay, and no agent widens them.
 - Money: anything that costs more, such as more agents, a bigger model or a
   paid service.
 - Licensing, trademarks, this governance and the Code of Conduct.
@@ -97,6 +100,10 @@ An agent never sends the owner a list of open questions. Designing is our job
 
 - Overrule any decision by commenting on its issue.
 - Stop the maintainer with `WATCH_MAINTAIN=0`, or stop the whole relay with
-  `touch .relay/stop` ([docs/dev/testenv.md](docs/dev/testenv.md)).
+  `touch .relay/stop`; resume it by starting the watch again
+  (`hack/relay-watch.sh`), which removes `.relay/stop`
+  ([docs/dev/testenv.md](docs/dev/testenv.md)).
+- Read the pinned *Maintainer report* when they choose: its *Updated* line says
+  when the maintainer last swept. The relay never waits on the owner.
 - Only the owner changes this document, [MAINTAINERS.md](MAINTAINERS.md) and
   the Code of Conduct. The maintainer may propose a change under *Needs you*.

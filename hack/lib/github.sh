@@ -180,12 +180,12 @@ GH_CLAIM_JQ='
 # name|color|description, the same words the factory uses in Gitea. GitHub
 # refuses a description longer than 100 characters.
 GH_LABELS=(
-  'status/proposed|c5def5|Proposed; the relay'"'"'s triage or the user readies it when it is sound'
-  'status/ready|0e8a16|Ready: the next session may take it'
-  'status/in-progress|fbca04|A session works on it; continue from its newest handoff comment'
-  'status/waiting|bfdadc|A plan'"'"'s parent: waits on its steps (Depends on #S), closes itself after the last'
-  'status/needs-maintainer|e99695|Waits on the maintainer'"'"'s decision; the newest comment says what it needs'
-  'status/needs-human|d93f0b|Waits on the owner; only the maintainer sets it, and the newest comment says why'
+  'status/proposed|c5def5|Filed, not yet decided: triage, the maintainer or the owner readies it'
+  'status/ready|0e8a16|Decided and unblocked: the relay picks it'
+  'status/in-progress|fbca04|An agent holds a claim on it'
+  'status/waiting|bfdadc|A plan'"'"'s parent, waiting on its steps, not on an agent'
+  'status/needs-maintainer|e99695|An agent escalated it; the newest comment says what it needs'
+  'status/needs-human|d93f0b|The maintainer sent it to the owner; only the maintainer sets it'
   'priority/urgent|b60205|Picked before every other ready issue'
   'kind/bug|d73a4a|Something is broken'
   'kind/feature|a2eeef|New behaviour'

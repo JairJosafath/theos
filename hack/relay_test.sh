@@ -154,26 +154,31 @@ check "prompt: never sets needs-human" "$(grep -c 'status 1 needs-human' <<<"$ou
   exit $fail
 ) || fail=1
 
-# Triage, as a dry run: the proposed issues go into its prompt; none, no session.
+# Triage, as a dry run: the proposed issues go into its prompt, which loads the
+# triage skill; the rules are the skill's. None proposed, no session.
 rm -f "$STOP" "$DIR/admitted"
 meminfo 8
 gh_proposed() { printf '40\n41\n'; }
 out=$(DRY_RUN=1 triage)
+skill=$(cat "$(dirname "$0")/../.claude/skills/triage/SKILL.md")
 check "triage: names the issues" "$(grep -c 'status/proposed: #40 #41\.' <<<"$out")" 1
-check "triage: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$out")" 1
-check "triage: needs-human stays the user's" "$(grep -c "needs-human stays the user's" <<<"$out")" 1
-check "triage: writes a missing Depends on itself" "$(grep -c 'a "Depends on #M" line it lacks' <<<"$out")" 1
-check "triage: gives a kind label before readying" "$(grep -c 'exactly one `kind/\*` label' <<<"$out") $(grep -c 'refuses an issue with no kind' <<<"$out")" "1 1"
-check "triage: escalates a user's decision to the maintainer" "$(grep -c 'hack/lib/github.sh status N needs-maintainer' <<<"$out")" 1
-check "triage: never sets needs-human" "$(grep -c 'status N needs-human' <<<"$out") $(grep -c 'never set status/needs-human' <<<"$out")" "0 1"
-check "triage: needs-maintainer is the maintainer's" "$(grep -c "needs-maintainer is the maintainer's" <<<"$out")" 1
-check "triage: readies an unsettled design as design work" "$(grep -c '^- Ready it as design work' <<<"$out")" 1
-check "triage: a design issue's plan says Refs, not Closes (#491)" "$(grep -c 'request says `Refs #N`, never `Closes #N`' <<<"$out")" 1
-check "triage: a design issue waits on its steps (#491)" "$(grep -c 'a "Depends on #S" line per step' <<<"$out")" 1
-check "triage: the plan is not the issue's Done when (#491)" "$(grep -c 'that is its "Done when"' <<<"$out")" 0
-check "triage: never asks how to build it" "$(grep -c 'Never ask how to' <<<"$out")" 1
-check "triage: a direction comes with the choice it would make" "$(grep -c 'says the choice you would make and why' <<<"$out")" 1
-check "triage: no cluster steps" "$(grep -cE 'cluster acquire|make deploy|needs/cluster' <<<"$out")" 0
+check "triage: loads the skill" "$(grep -c 'Load the `triage` skill and follow it' <<<"$out")" 1
+check "triage: escalates to the maintainer, never the owner" "$(grep -c 'send what needs a decision to the maintainer' <<<"$out") $(grep -c 'sent to the user' <<<"$out")" "1 0"
+check "triage: no cluster steps" "$(grep -cE 'cluster acquire|make deploy|needs/cluster' <<<"$out$skill")" 0
+check "triage skill: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$skill")" 1
+check "triage skill: needs-human is the owner's" "$(grep -c "needs-human is the owner's" <<<"$skill")" 1
+check "triage skill: writes a missing Depends on itself" "$(grep -c 'a "Depends on #M" line it lacks' <<<"$skill")" 1
+check "triage skill: gives a kind label before readying" "$(grep -c 'exactly one `kind/\*` label' <<<"$skill") $(grep -c 'refuses an issue with no kind' <<<"$skill")" "1 1"
+check "triage skill: escalates a decision to the maintainer" "$(grep -c 'hack/lib/github.sh status N needs-maintainer' <<<"$skill")" 1
+check "triage skill: never sets needs-human" "$(grep -c 'status N needs-human' <<<"$out$skill") $(grep -c 'never set status/needs-human' <<<"$skill")" "0 1"
+check "triage skill: needs-maintainer is the maintainer's" "$(grep -c "needs-maintainer is the maintainer's" <<<"$skill")" 1
+check "triage skill: readies an unsettled design as design work" "$(grep -c '^- Ready it as design work' <<<"$skill")" 1
+check "triage skill: a design issue's plan says Refs, not Closes (#491)" "$(grep -c 'request says `Refs #N`, never `Closes #N`' <<<"$skill")" 1
+check "triage skill: a design issue waits on its steps (#491)" "$(grep -c 'a "Depends on #S" line per step' <<<"$skill")" 1
+check "triage skill: the plan is not the issue's Done when (#491)" "$(grep -c 'that is its "Done when"' <<<"$skill")" 0
+check "triage skill: never asks how to build it" "$(grep -c 'Never ask how to' <<<"$skill")" 1
+check "triage skill: a direction comes with the choice it would make" "$(grep -c 'says the choice you would make and why' <<<"$skill")" 1
+check "triage skill: never to the owner" "$(grep -c 'never to the owner' <<<"$skill")" 1
 gh_proposed() { :; }
 rm -f "$DIR/admitted"
 check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues; no triage"

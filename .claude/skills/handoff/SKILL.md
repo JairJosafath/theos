@@ -33,13 +33,10 @@ said to work it in this session; otherwise leave it to the relay.
 
 ## Labels
 
-One `status/*` at a time, swapped with `hack/lib/github.sh status N <status>`:
-`proposed` (waits for the user), `ready`, `in-progress`, `needs-maintainer`
-(an agent escalated it; the newest comment says what it needs),
-`needs-human` (the maintainer sent it to the owner; only the maintainer sets
-it, [GOVERNANCE.md](../../../GOVERNANCE.md)). Both release your claim. A
-`needs/cluster` label left on an old issue gates nothing: take and work it
-like any other.
+One `status/*` at a time, swapped with `hack/lib/github.sh status N <status>`.
+AGENTS.md ("Working in Sessions") says what each status means. `waiting` is a
+plan's parent waiting on its steps, not on an agent. `waiting`,
+`needs-maintainer` and `needs-human` release your claim.
 
 ## No cluster
 
@@ -51,29 +48,10 @@ behaviour ([docs/dev/testenv.md](../../../docs/dev/testenv.md#test-tiers)).
 When only a real node would show something, land the code with the tests the
 lower tiers can give and say in the pull request what a human run of Kind
 would check. Kind is a tier only a human runs: `cluster acquire` refuses
-without `C4_HUMAN_CLUSTER=1`, which no agent sets.
-
-### For a human: lease a cluster
-
-With `C4_HUMAN_CLUSTER=1` set, only around the steps that touch one (deploys,
-samples, e2e, factory-ops, `make up`/`down`), never for the whole issue:
-
-1. Do the cluster-free work first: code, `make check`, envtest.
-2. `C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire` prints the cluster
-   leased to this checkout (waits up to 30m, `--wait 10m` for less). Exit 4
-   names the holders. A pool cluster belongs to nobody between leases, so an
-   earlier install may still be on it: when what is installed isn't yours,
-   pass `--fresh`. It prefers a cluster not created yet, else deletes and
-   recreates the one it leased, and only that one; never `kind delete
-   cluster` or `make cluster-delete` by hand. To install a release
-   (`docs/getting-started.md`, the chart), pass `--fresh --bare`: the same,
-   with nothing installed, since the chart brings its own Gitea and helm
-   can't take over the testenv's. A plain acquire never hands out a bare
-   cluster as is: it prefers others and recreates one it must take.
-3. Make targets now use it; kubectl takes `--context kind-<name>` on every
-   call, never `kubectl config use-context` (every checkout shares the
-   kubeconfig). `make deploy` this branch first: never trust what is deployed.
-4. Verify, then `hack/lib/github.sh cluster release`.
+without `C4_HUMAN_CLUSTER=1`, which no agent sets. A human who needs a Kind
+cluster follows
+[docs/dev/testenv.md](../../../docs/dev/testenv.md#sharing-the-kind-clusters-between-checkouts)
+("Sharing the Kind clusters between checkouts").
 
 ## Sign your work
 
@@ -155,11 +133,14 @@ Lost claim (the heartbeat hook says so):
 - **Plan finished:** when the issue you close finishes a plan's last step,
   move the plan to `docs/plans/done/` in the same pull request (`git mv`),
   fix the relative links inside it, and update every link to it
-  (`grep -rn <plan>.md` finds none left at the old path).
+  (`grep -rn <plan>.md` finds none left at the old path). The evidence
+  AGENTS.md asks for ("Show, don't claim") goes in `docs/screenshots/` in
+  the same pull request.
 - **Stuck on a decision:** escalate to the maintainer,
   `hack/lib/github.sh status N needs-maintainer`, plus a comment saying what
-  you need: something only the user can give (a tag, access, credentials,
-  money), or a direction you're unsure of, with the choice you'd make and why.
+  you need: something only the owner can give (access, credentials, money;
+  a tag is the maintainer's to cut), or a direction you're unsure of, with
+  the choice you'd make and why.
   The relay's watch starts the maintainer within a minute; it decides, or
   sends the issue on to the owner (`status/needs-human`, which only it sets).
   How to build it is ours to decide (AGENTS.md, "Designing is our job"),
@@ -168,3 +149,12 @@ Lost claim (the heartbeat hook says so):
   kind/<kind>` (a body line `Depends on #M` if it waits on another issue). Don't start it in this
   session. Write it so the relay's triage can ready it: one piece of work, a
   checkable "Done when", and what it waits on.
+
+## Refused
+
+Auto mode may refuse a command (`land`, `release`, editing an issue you didn't
+file). That is not a failure of the command: say which command was refused,
+once, in the pull request body and the handoff, and carry on. When it blocks
+landing, `hack/lib/github.sh status N needs-maintainer` with a comment naming
+the command. The allow rules in `.claude/settings.json` are the owner's: never
+edit them, and never do the refused thing through another command.

@@ -25,7 +25,7 @@
 # after it (Depends on #M, or an #M in the triage's comment), and in any case
 # after WATCH_RETRIAGE seconds (default 10800, 3h); .relay/triaged keeps its
 # time and the issues it saw across restarts. status/needs-maintainer is the
-# maintainer's and status/needs-human stays the user's.
+# maintainer's and status/needs-human stays the owner's.
 #
 # On an idle round it also logs, once per change, what holds back the issues
 # pick skips for an open "Depends on #M" when nobody works #M (hack/lib/github.sh

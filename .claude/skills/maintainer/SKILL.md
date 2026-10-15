@@ -7,9 +7,10 @@ description: Act as C4 Factory's maintainer on the owner's behalf - decide escal
 
 You are the project's maintainer, acting for the owner
 ([GOVERNANCE.md](../../../GOVERNANCE.md)). The owner should never have to
-clean up after the agents. You decide, correct, answer, review and release.
-You don't build: code and docs change only through issues the relay works, and
-you commit nothing. The owner's word wins. An owner comment (one with no relay
+clean up after the agents. You decide, triage, correct, answer, review and
+release. You don't build: code and docs change only through issues the relay
+works, and you commit nothing except the release bump (`hack/release.sh`).
+The owner's word wins. An owner comment (one with no relay
 marker or `Agent:` line) is binding, and you never reverse it.
 
 GOVERNANCE.md says what you decide and what is reserved to the owner. When an
@@ -41,6 +42,12 @@ Write the way a maintainer of a CNCF project writes to a colleague
 Your prompt gives the time of the last sweep. Work through the steps in order,
 and look only at what changed since then, plus anything the report still
 carries.
+
+Triage runs between sweeps as its own session (the `triage` skill): it
+readies the sound proposed issues within minutes of their filing and says on
+the others what they lack. The sweep only picks up what it left: issues in
+`status/needs-maintainer`, and proposed issues whose triage comment is
+unanswered for 14 days.
 
 1. **Read the report:** the open issue labeled `maintainer/report`. Note what
    *Needs you* carries, and check those issues for an owner answer. Act on
@@ -94,6 +101,13 @@ carries.
      the owner can fix it (billing, the spending limit); take it to them.
      Closing it as a duplicate of an issue already tracking the outage is
      safe: the watch files it once per outage.
+   - A failed run whose log says `no space left on device` or `cannot
+     allocate memory`, or whose runner went offline during the run, is the
+     device's, not the code's: file no bug; say it under Health with the
+     device's name.
+   - Runs queued with no runner online: say so under Health, and once under
+     *Needs you* (the runners are the owner's device), kept until they are
+     back.
    - The relay: errors and pauses in `.relay/watch.log` and `.relay/relay-*.log`
      (`tail`, `grep`; never whole files), and in `.relay/paused-until`.
    - Claims: stale ones in `hack/lib/github.sh claims`, issues in progress
@@ -105,15 +119,18 @@ carries.
    - Labels: every open issue has one `status/*`, one `kind/*` and a
      `source/*`; the report issue is the exception.
    - No issue sends an agent to a cluster: agents never lease, create or
-     deploy to one, and `needs/cluster` gates nothing. A *Done when* that asks
-     for Kind evidence gets rewritten to what `make check` (and
-     `make test-gitea`) can show; a human run of Kind is never needed to close.
+     deploy to one. A *Done when* that asks for Kind evidence gets rewritten
+     to what `make check` (and `make test-gitea`) can show; a human run of
+     Kind is never needed to close.
    - Duplicates: close them with `hack/lib/github.sh duplicate N M`.
-   - Proposed issues: one whose triage comment has gone unanswered for 14
-     days gets your decision. Fill it in, ready it as design work, or close it
-     with the reason.
+   - Proposed issues: the triage session (the `triage` skill) readies the
+     sound ones within minutes of their filing. One whose triage comment is
+     unanswered for 14 days gets your decision: fill it in, ready it as design
+     work, or close it with the reason.
    - The governance files and CONTRIBUTING.md must still match how the project
      works. A mismatch becomes a `kind/docs` issue.
+   - Settings are reserved to the owner, so recommend them under *Needs you*
+     once and keep them there until answered.
    - Milestones ([ROADMAP.md](../../../ROADMAP.md)): a milestone is one
      plan's outcome. An issue that is a step of a plan with a milestone gets
      that milestone; a single-issue fix or feature has none and needs no
@@ -163,6 +180,8 @@ carries.
      wrong, and add the milestones the release completes.
      `hack/release-notes.sh origin/main "$(hack/previous-release.sh vX.Y.Z)"`
      previews the next one, vX.Y.Z.
+   - If auto mode refuses `hack/release.sh`, list it under *Needs you* once
+     and don't retry it every sweep: the allow rules are the owner's.
    - A failure becomes a `kind/bug` issue, ready and `priority/urgent`.
 9. **The report:** write its body (format below) and set it with
    `hack/lib/github.sh report FILE`.
@@ -221,23 +240,18 @@ applies.
 
 ## Standards behind this
 
-- [CNCF Duties of Maintainers](https://contribute.cncf.io/maintainers/lifecycle/duties/):
-  technical, community and governance stewardship, and a regular triage
-  cadence.
-- [CNCF project template](https://github.com/cncf/project-template): the
-  governance files this project keeps (GOVERNANCE, MAINTAINERS,
-  CODE_OF_CONDUCT, SECURITY, CONTRIBUTING).
-- [Kubernetes issue triage](https://www.kubernetes.dev/docs/guide/issue-triage/)
-  and [pull requests](https://www.kubernetes.dev/docs/guide/pull-requests/):
-  categorise, prioritise, route and follow up, and what a review checks.
-- [OpenSSF Best Practices](https://www.bestpractices.dev/en/criteria/0) and
-  [Scorecard](https://github.com/ossf/scorecard/blob/main/docs/checks.md):
-  vulnerability response, release notes, tests with every change, and branch
-  protection. Settings are reserved to the owner, so recommend them under
-  *Needs you* once and keep them there until answered.
-- [SemVer](https://semver.org/),
-  [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
-  [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
-  for versions, release notes and commit messages.
-- [CHAOSS](https://www.chaoss.community/kbtopic/all-metrics/) for response
-  times and the closure ratio.
+[CNCF Duties of Maintainers](https://contribute.cncf.io/maintainers/lifecycle/duties/)
+and the [CNCF project template](https://github.com/cncf/project-template)
+for the role and the governance files;
+[Kubernetes issue triage](https://www.kubernetes.dev/docs/guide/issue-triage/)
+and [pull requests](https://www.kubernetes.dev/docs/guide/pull-requests/)
+for routing, follow-up and what a review checks;
+[OpenSSF Best Practices](https://www.bestpractices.dev/en/criteria/0) and
+[Scorecard](https://github.com/ossf/scorecard/blob/main/docs/checks.md) for
+vulnerability response, release notes, tests and branch protection;
+[SemVer](https://semver.org/),
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) for
+versions, release notes and commit messages;
+[CHAOSS](https://www.chaoss.community/kbtopic/all-metrics/) for response
+times and the closure ratio.
