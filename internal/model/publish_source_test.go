@@ -39,8 +39,8 @@ func engineSource() []SourceFile {
 
 func TestFactoryOwnPaths(t *testing.T) {
 	want := []string{".c4factory.yaml", ".devcontainer/", ".gitea/", "AGENTS.md", "docs/agents/"}
-	if !slices.Equal(FactoryOwnPaths, want) {
-		t.Errorf("FactoryOwnPaths = %q, want %q", FactoryOwnPaths, want)
+	if got := FactoryOwnPaths(giteaActions); !slices.Equal(got, want) {
+		t.Errorf("FactoryOwnPaths(giteaActions) = %q, want %q", got, want)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestNewSource(t *testing.T) {
 		{Path: ".devcontainer/devcontainer.json", Mode: ModeFile, Blob: runSh},
 		{Path: ".gitea/workflows/ci.yaml", Mode: ModeFile, Blob: runSh},
 	}
-	got, err := NewSource(slices.Concat(own, engineSource()), "github.com/JairJosafath/cel-lens/engine")
+	got, err := NewSource(giteaActions, slices.Concat(own, engineSource()), "github.com/JairJosafath/cel-lens/engine")
 	switch {
 	case err != nil:
 		t.Fatal(err)
@@ -136,10 +136,10 @@ func TestNewSource(t *testing.T) {
 		{Path: ".gitea-notes", Mode: ModeFile, Blob: runSh},
 		{Path: "Makefile", Mode: ModeFile, Blob: runSh},
 	}
-	if got, err := NewSource(app, ""); err != nil || len(got.Files) != len(app) {
-		t.Errorf("NewSource(app files) = %+v, %v, want them all kept", got, err)
+	if got, err := NewSource(giteaActions, app, ""); err != nil || len(got.Files) != len(app) {
+		t.Errorf("NewSource(giteaActions, app files) = %+v, %v, want them all kept", got, err)
 	}
-	if _, err := NewSource([]SourceFile{{Path: "../x", Mode: ModeFile, Blob: runSh}}, ""); err == nil {
+	if _, err := NewSource(giteaActions, []SourceFile{{Path: "../x", Mode: ModeFile, Blob: runSh}}, ""); err == nil {
 		t.Error("NewSource of a bad path: no error")
 	}
 }
@@ -268,7 +268,7 @@ func TestNextPublishStepSource(t *testing.T) {
 	)
 	marker := PublishMarker("cel-lens", "engine", tag)
 	asset := ReleaseAsset{ID: 1, Name: "engine-linux", Size: 4096}
-	src, err := NewSource(engineSource(), module)
+	src, err := NewSource(giteaActions, engineSource(), module)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +534,7 @@ func (r *fakeSourceRepo) read() *GitHubSource {
 // of both sides, from nothing on GitHub and from every half-done state, and
 // with another app's commit landing first.
 func TestNextPublishStepSourceRuns(t *testing.T) {
-	src, err := NewSource(engineSource(), "github.com/o/r/engine")
+	src, err := NewSource(giteaActions, engineSource(), "github.com/o/r/engine")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,6 +27,7 @@ func TestNextStandardStep(t *testing.T) {
 	// f has one, is open and holds the operator's commit.
 	following := func(f StandardUpdateFacts) StandardUpdateFacts {
 		f.Name, f.Ref, f.Target, f.Update = "python-strict", "v1", "v2", running()
+		f.CI = giteaActions
 		if f.PR == nil {
 			f.PR = open
 		}

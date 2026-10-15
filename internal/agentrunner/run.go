@@ -314,7 +314,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		result.Empty = true
 		return result
 	}
-	split := model.SplitChange(changed, model.AgentProtectedPaths(job.ProtectedPaths), job.AllowedPaths, job.Issue > 0)
+	split := model.SplitChange(changed, protectedList(job), job.AllowedPaths, job.Issue > 0)
 	if err := checkSplit(job, split); err != nil {
 		result.Error = err.Error()
 		return result

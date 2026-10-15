@@ -12,11 +12,11 @@ import (
 	"strings"
 )
 
-// FactoryOwnPaths are the factory's own files in a Container's repository:
-// those no agent may change and those the operator and the Standard's CI own,
-// sorted. A published source leaves them out; everything else at the tag is
-// the app's.
-var FactoryOwnPaths = AgentProtectedPaths(AgentNeverPaths)
+// FactoryOwnPaths returns the factory's own files in a Container's repository
+// on the CI system ci: those no agent may change and those the operator and
+// the CI system own, sorted. A published source leaves them out; everything
+// else at the tag is the app's.
+func FactoryOwnPaths(ci CI) []string { return AgentProtectedPaths(ci, AgentNeverPaths) }
 
 // MaxSourceBlob is the largest file GitHub takes as a blob, 100 MiB.
 const MaxSourceBlob = 100 << 20
@@ -107,14 +107,15 @@ type SourcePlace struct {
 }
 
 // NewSource keeps the files of a Container's repository at a tag that are the
-// app's, all but FactoryOwnPaths, and hashes them into a git tree. goModule is
+// app's, all but FactoryOwnPaths of its CI system ci, and hashes them into a git tree. goModule is
 // the module path the root go.mod declares, or "". It fails on files no git
 // tree can hold: a bad path or mode, one path twice, or a file where a folder
 // is.
-func NewSource(files []SourceFile, goModule string) (*ReleaseSource, error) {
+func NewSource(ci CI, files []SourceFile, goModule string) (*ReleaseSource, error) {
+	own := FactoryOwnPaths(ci)
 	var kept []SourceFile
 	for _, f := range files {
-		if !coveredByAny(FactoryOwnPaths, f.Path) {
+		if !coveredByAny(own, f.Path) {
 			kept = append(kept, f)
 		}
 	}

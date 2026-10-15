@@ -123,13 +123,20 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 
-	in := scaffoldInput(container, res.use.Connectors,
+	ci, err := gitProviderCI(res.provider)
+	if err != nil {
+		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
+	}
+	in := scaffoldInput(container, ci, res.use.Connectors,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease))
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
 	if err != nil {
 		reason := c4v1alpha1.ReasonFailed
 		if _, ok := errors.AsType[*scaffold.ConflictError](err); ok {
 			reason = c4v1alpha1.ReasonLayerConflict
+		}
+		if _, ok := errors.AsType[*scaffold.UnsupportedCIError](err); ok {
+			reason = c4v1alpha1.ReasonUnsupportedCI
 		}
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, reason, err.Error())
 	}
@@ -215,11 +222,14 @@ func (r *ContainerReconciler) condition(container *c4v1alpha1.Container, status 
 	setCondition(&status.Conditions, container.Generation, condType, s, reason, message)
 }
 
-// scaffoldInput is what every template of the Container renders with.
-// connectors are the unique Connector names, sorted, and checks is when CI runs
-// the full check (model.EffectiveChecks).
-func scaffoldInput(container *c4v1alpha1.Container, connectors []string, checks string) scaffold.Input {
+// scaffoldInput is what every template of the Container renders with. ci is
+// the CI system its repository runs, connectors are the unique Connector
+// names, sorted, and checks is when CI runs the full check
+// (model.EffectiveChecks).
+func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []string,
+	checks string) scaffold.Input {
 	in := scaffold.Input{
+		CI:             ci,
 		Project:        container.Namespace,
 		SoftwareSystem: container.Spec.SoftwareSystemRef.Name,
 		Container:      container.Name,

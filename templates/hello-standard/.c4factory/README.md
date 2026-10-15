@@ -8,7 +8,7 @@ runs `hello.sh` and expects `hello, world`.
 - **Check contract:** `make check`, which the agents run after each round.
   `.gitea/workflows/check.yaml` runs `sh hello.sh` on a runner labelled `base`
   under the status context `check / check`, which the protected `main` requires
-  (`model.CheckContexts`).
+  (Gitea Actions' check contexts, `model.CI` in `internal/model/ci.go`).
 - **No role guides:** without `docs/agents/implementer.md` and `reviewer.md` the
   agents work from their prompts alone.
 

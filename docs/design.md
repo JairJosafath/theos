@@ -1363,11 +1363,17 @@ implementation and no port.
   CI port.
 - **What a CI system writes is a business rule, not an adapter.** Where the
   workflow files go (`.gitea/workflows/`, `.github/workflows/`,
-  `.gitlab-ci.yml`), the check contexts the merge rules require (today
-  `model.CheckContexts`) and the paths the platform protects (today
-  `model.PlatformProtectedPaths`) are one row per CI system in a table in
-  `internal/model`. `scaffold.Input` names the CI system, and the templates
-  render that system's files (#1095).
+  `.gitlab-ci.yml`), the check contexts the merge rules require and the paths
+  the platform protects are one row per CI system in a table in
+  `internal/model` (`model.CI`, in `ci.go`); the rules take the row, and a
+  Container's is its Git host's own CI system (`model.HostCI`) until
+  `GitProvider.spec.ci` comes with a second one. `scaffold.Input` names the CI
+  system, and a template keeps each system's files under
+  `.c4factory/ci/<name>/` (`.c4factory/ci/giteaActions/.gitea/...`), which
+  renders at the repository root only for the Container's system. A template
+  with CI files but none for the Container's system fails the Container with
+  reason `UnsupportedCI`, naming the systems it has; one without
+  `.c4factory/ci/` works on any (#1095).
 
 **A port is a narrow Go interface, with its shared types in its own file, one
 fake and one contract suite.** A host adapter implements several ports (Gitea

@@ -24,7 +24,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
@@ -958,8 +960,17 @@ func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 			p := tt.provider
 			task := &c4v1alpha1.Task{Spec: c4v1alpha1.TaskSpec{Issue: 2, AllowedProtectedPaths: makefile}}
 			status := &c4v1alpha1.TaskStatus{Commit: "sha-1", PullRequest: 1, Review: tt.review}
-			refusal, err := (&TaskReconciler{}).gatedMerge(context.Background(), &p, gitprovider.Repository{}, task,
-				status, &c4v1alpha1.Container{}, nil)
+			scheme := runtime.NewScheme()
+			if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&c4v1alpha1.GitProvider{
+				ObjectMeta: objectMeta("apps", "gitea"), Spec: c4v1alpha1.GitProviderSpec{Provider: c4v1alpha1.GitProviderGitea}}).
+				Build()
+			container := &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "orders-api"),
+				Spec: c4v1alpha1.ContainerSpec{GitProviderRef: c4v1alpha1.LocalRef{Name: "gitea"}}}
+			refusal, err := (&TaskReconciler{Client: c}).gatedMerge(context.Background(), &p, gitprovider.Repository{},
+				task, status, container, nil)
 			if p.merges != 0 {
 				t.Errorf("merged %d times, want none", p.merges)
 			}
