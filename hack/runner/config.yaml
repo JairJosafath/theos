@@ -1,5 +1,7 @@
 # Gitea runner settings; see `gitea-runner config generate` for every option.
 log:
+  # info, debug or trace: the operator reads a job log without the runner's
+  # closing "Job failed" line as cut off, its runner lost (model.RunnerAbandoned).
   level: info
 runner:
   file: /data/.runner
