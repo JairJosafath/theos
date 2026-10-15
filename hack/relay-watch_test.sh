@@ -510,6 +510,7 @@ case "$1 $2 $* " in
     for a in "$@"; do [[ $a == */check-runs/* ]] && id=${a##*/check-runs/} id=${id%%/*}; done
     jq -r "$q" "$FAKE/annotations-$id.json" 2>/dev/null || echo '[]' | jq -r "$q" ;;
   *" --method POST "*)
+    [ -f "$FAKE/post.fail" ] && { echo "HTTP 502" >&2; exit 1; }
     n=$(($(jq length "$FAKE/issues.json") + 100))
     jq --argjson n "$n" '. + [input + {number: $n}]' "$FAKE/issues.json" - >"$FAKE/issues.new" &&
       mv "$FAKE/issues.new" "$FAKE/issues.json" && echo "$n" ;;
@@ -749,6 +750,26 @@ check "flake: no [FAIL] line, no record" "$(grep -c '	805	' "$DIR/flakes.tsv")" 
 check "flake: an unreadable log is read again next round" "$(grep -cx 806 "$DIR/flakes-runs")" 0
 check "flake: the runs read are kept" "$(sort "$DIR/flakes-runs" | tr '\n' ' ')" "804 805 "
 check "flake: --count lists this week's specs" "$("$HERE/lib/github.sh" flakes --count)" "1	Old spec"
+
+# A spec with backslashes, in a log with CRLF line ends: one name in every
+# run. Its bug can't be filed at first: the next round files it, though no
+# run is new.
+rm -f "$DIR/flakes.tsv" "$DIR/flakes-runs"
+echo '[]' >"$T/runs-.json"
+printf '  ^[[38;5;9m[FAIL]^[[0m ^[[0mParse ^[[38;5;9m^[[1m[It] matches \\d+ and a\\nb^[[0m\r\n' >"$T/log-811.txt"
+tr -d '\r' <"$T/log-811.txt" >"$T/log-812.txt"
+failed 811 '2 hours'
+failed 812 '1 hour'
+touch "$T/post.fail"
+: >"$LOG"
+flake_round
+check "flake: a failed filing is logged" "$(logged 'Parse matches .*could not file its issue')" 1
+rm "$T/post.fail"
+flake_round
+check "flake: CR and backslashes: one name" "$(cut -f1 "$DIR/flakes.tsv" | sort -u)" 'Parse matches \d+ and a\nb'
+check "flake: the next round files it" "$(jq -r '.[].title' "$T/issues.json")" 'Flaky: Parse matches \d+ and a\nb'
+flake_round
+check "flake: filed once" "$(filed)" 1
 rm -f "$T/runs-.json" "$T"/log-*.txt "$T"/log-*.fail "$DIR/flakes.tsv" "$DIR/flakes-runs" "$T/log-reads"
 echo '[]' >"$T/issues.json"
 

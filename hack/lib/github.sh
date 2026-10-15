@@ -1970,11 +1970,13 @@ gh_red() {
 }
 
 # gh_fail_specs: the Ginkgo specs a failed log on stdin names in its
-# "[FAIL] <spec>" summary lines, once each, colour codes and "[It] " dropped.
+# "[FAIL] <spec>" summary lines, once each, colour codes, carriage returns
+# and "[It] " dropped and tabs made spaces (the spec is a column of a TSV).
 # gh run view --log-failed writes a colour code's escape as the text "^[" when
 # its output isn't a terminal, and as the byte when it is: both go.
 gh_fail_specs() {
-  LC_ALL=C sed -E "s/("$'\e'"|\\^\\[)\\[[0-9;]*m//g" | sed -nE 's/^.*\[FAIL\] +(.*[^ ])[ \r]*$/\1/p' | sed 's/\[It\] //g' | awk '!seen[$0]++'
+  tr -d '\r' | LC_ALL=C sed -E "s/("$'\e'"|\\^\\[)\\[[0-9;]*m//g" | sed -nE 's/^.*\[FAIL\] +(.*[^ ])[ ]*$/\1/p' |
+    sed 's/\[It\] //g; s/\t/ /g' | awk '!seen[$0]++'
 }
 
 # gh_flakes [--days N] [--seen FILE] [--count]: see the usage above. A run
