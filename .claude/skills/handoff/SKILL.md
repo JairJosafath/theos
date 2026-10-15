@@ -107,13 +107,14 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
    - <finding, file:line>
    ```
    No findings: `Review: no findings` and the `Agent:` line.
-3. Fix what it found, commit and push; then edit the comment
-   (`gh api --method PATCH repos/OWNER/REPO/issues/comments/ID -f body=...`)
-   so every finding says `Fixed in <SHA>` or `Dismissed: <reason>`. A
-   sub-item may explain; only top-level items are findings.
+3. Fix what it found, commit and push; then edit the comment from a file
+   (`gh api --method PATCH repos/OWNER/REPO/issues/comments/ID -F body=@FILE`)
+   so every finding starts with its verdict: `- Fixed in <SHA>: <finding>` or
+   `- Dismissed (<reason>): <finding>`. Only top-level list items outside a
+   code fence are findings; a sub-item may explain.
 4. `land`. It takes the newest `Review:` comment posted through the owner's
-   account with an `Agent:` line, and refuses while any finding in it says
-   neither Fixed nor Dismissed, quoting the first.
+   account with an `Agent:` line, and refuses while any finding in it starts
+   with neither Fixed nor Dismissed, quoting the first.
 
 ## Finish
 

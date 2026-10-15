@@ -104,7 +104,7 @@
 #                                        lockfiles and docs/screenshots/ don't count); over GH_REVIEW_LINES it
 #                                        needs a comment that starts with Review:, by the owner's account (an
 #                                        owner, member or collaborator) with an Agent: NAME line, whose every
-#                                        top-level list item (a finding) says Fixed or Dismissed. Exit 1: it
+#                                        top-level list item (a finding) starts with Fixed or Dismissed. Exit 1: it
 #                                        needs one and has none, saying why
 #   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N; drops N's status labels
 #   hack/lib/github.sh closed N          drop closed issue N's status/* labels (open N is left alone); the
@@ -1798,7 +1798,7 @@ gh_land_body() {
 # with a review: a comment starting with Review:, posted through the owner's
 # account (every agent posts as the owner, so an outsider's comment never
 # counts) and naming its agent on an Agent: line, each finding a top-level
-# list item that says Fixed or Dismissed (the handoff skill has the format).
+# list item that starts with Fixed or Dismissed (the handoff skill has the format).
 GH_REVIEW_LINES=${GH_REVIEW_LINES:-400}
 GH_REVIEW_SKIP='(^|/)zz_generated\.[^/]*$|^config/crd/bases/|^config/rbac/role\.yaml$|^docs/screenshots/|(^|/)(go\.sum|go\.work\.sum|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|uv\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|Chart\.lock)$'
 
@@ -1828,8 +1828,13 @@ gh_review_check() {
     def review: .body // "" | sub("^\\s+"; "") | startswith("Review:");
     def ours: .author_association | IN("OWNER", "MEMBER", "COLLABORATOR");
     def agent: [.body | capture("(?m)^[ \\t]*Agent:[ \\t]*(?<n>[^\\s]+)") | .n] | first;
-    def open: [.body | split("\n")[] | select(test("^([-*+]|[0-9]+[.)])\\s"))
-      | select(test("(?i)\\b(fixed|dismissed)\\b") | not)];
+    # A finding is a top-level list item outside a code fence, a rule (* * *) is none;
+    # settled, it starts with Fixed or Dismissed (bold or not).
+    def open: [foreach (.body | gsub("[\r\t]"; " ") | split("\n")[]) as $l ({f: false};
+        .l = $l | if $l | test("^\\s*(```|~~~)") then .f = (.f | not) | .l = null else . end; .)
+      | select(.f | not) | .l // empty
+      | select(test("^([-*+]|[0-9]+[.)])\\s+\\S") and (test("^([-*_]\\s*){3,}$") | not))
+      | select(test("(?i)^([-*+]|[0-9]+[.)])\\s+[*_[]*(fixed|dismissed)\\b") | not)];
     [.[][] | select(review)] as $all
     | ([$all[] | select(ours and agent != null)] | last) as $r
     | if $r == null then
@@ -1851,7 +1856,7 @@ gh_review_check() {
     open)
       local rest=${verdict#*$'\t'} url item n
       IFS=$'\t' read -r url item n <<<"$rest"
-      echo "github: #$pr changes $lines lines in hand-written files (over $GH_REVIEW_LINES); $n finding(s) of its review ($url) say neither Fixed nor Dismissed, the first: \"$item\"; fix or dismiss each and say so in the comment" >&2 ;;
+      echo "github: #$pr changes $lines lines in hand-written files (over $GH_REVIEW_LINES); $n finding(s) of its review ($url) start with neither Fixed nor Dismissed, the first: \"$item\"; fix or dismiss each and say so in the comment" >&2 ;;
   esac
   return 1
 }

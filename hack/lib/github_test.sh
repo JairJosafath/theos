@@ -1013,14 +1013,17 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   GH_REVIEW_LINES=1000 gh_review_check 50 2>/dev/null; check "review-check: GH_REVIEW_LINES sets the threshold" $? 0
 
   files '[{filename: "a.go", additions: 500, deletions: 0}]'
-  { comment OWNER $'Review: /code-review (opus subagent)\nAgent: otter-9\n\n- Fixed in abc123: nil map\n- Dismissed: the retry is bounded\n  - an aside\n1. fixed: off by one'; } | comments
+  { comment OWNER $'Review: /code-review (opus subagent)\nAgent: otter-9\n\n- Fixed in abc123: nil map\n- **Dismissed**: the retry is bounded\n  - an aside\n1. fixed in def456: off by one\n\n* * *\n```\n- a quoted line\n```\n'; } | comments
   out=$(gh_review_check 50 2>&1)
   check "review-check: a review with every finding settled lands" "$? $out" "0 github: #50 changes 500 lines in hand-written files; reviewed by otter-9 (u)"
   comment MEMBER $'Review: no findings\nAgent: otter-9' | comments
   gh_review_check 50 2>/dev/null; check "review-check: a review with no findings lands" $? 0
   comment OWNER $'Review:\nAgent: otter-9\n\n- Fixed: one\n- the lock is taken twice\n* a third' | comments
   out=$(gh_review_check 50 2>&1)
-  check "review-check: an open finding refuses, naming it" "$? $(grep -c '2 finding(s) of its review (u) say neither Fixed nor Dismissed, the first: "- the lock is taken twice"' <<<"$out")" "1 1"
+  check "review-check: an open finding refuses, naming it" "$? $(grep -c '2 finding(s) of its review (u) start with neither Fixed nor Dismissed, the first: "- the lock is taken twice"' <<<"$out")" "1 1"
+  comment OWNER $'Review:\nAgent: otter-9\n\n- the cache is not fixed after restart\r' | comments
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: a finding that only mentions fixed is open" "$? $(grep -c 'the first: "- the cache is not fixed after restart "' <<<"$out")" "1 1"
   comment NONE $'Review: LGTM\nAgent: otter-9' | comments
   out=$(gh_review_check 50 2>&1)
   check "review-check: an outsider's review doesn't count" "$? $(grep -c "its Review: comment by x (NONE) doesn't count" <<<"$out")" "1 1"
