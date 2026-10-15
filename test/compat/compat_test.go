@@ -15,10 +15,10 @@ package compat
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 
@@ -154,12 +154,7 @@ func compareSchema(path string, base, cur *schema, breaks *[]string) {
 			*breaks = append(*breaks, fmt.Sprintf("%s.%s: newly required", path, r))
 		}
 	}
-	names := make([]string, 0, len(base.Properties))
-	for name := range base.Properties {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(base.Properties)) {
 		compareSchema(path+"."+name, base.Properties[name], cur.Properties[name], breaks)
 	}
 	if base.Items != nil {
@@ -175,12 +170,7 @@ func compareSchema(path string, base, cur *schema, breaks *[]string) {
 // finds.
 func compareCRDs(base, cur map[string]crd) []string {
 	var breaks []string
-	names := make([]string, 0, len(base))
-	for name := range base {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(base)) {
 		c, ok := cur[name]
 		if !ok {
 			breaks = append(breaks, name+": removed")
