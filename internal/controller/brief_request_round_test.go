@@ -40,7 +40,7 @@ var _ = Describe("Brief requests in rounds", func() {
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 
 		theme := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please add a dark theme.")
 		rules := githubFake.openIssue(repository, "gray-lenovo", "Lint rules", "Lint my rules.")
@@ -109,7 +109,7 @@ var _ = Describe("Brief requests in rounds", func() {
 				HaveField("Stage", model.RequestPlanned), HaveField("Round", int32(2)),
 				HaveField("Issues", []string{fmt.Sprintf("linter#%d", filed.Number)}),
 				HaveField("Release", "v0.2.0"))), "the skipped one is closed, so it leaves the list")
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(gitFake.issue(ns, "linter", int(filed.Number)).Title).To(Equal("Lint rule 1"))
 
 		Eventually(func(g Gomega) {
