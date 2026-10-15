@@ -380,16 +380,18 @@ check "flush fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 77
 check "flush fails, pending kept" "$([ -e "$T/main/.relay/pending-handoff-77.md" ] && echo kept || echo gone)" kept
 rm -rf "$T"/{main,wt2,wt3}/.relay
 
-# Pick order: an in-progress issue nobody holds, else ready + urgent, else
-# ready, oldest first; proposed and needs-human issues are never picked, nor
-# ones that depend on an open issue.
+# Pick order: urgent first (in-progress nobody holds, else ready), else an
+# in-progress issue nobody holds, else ready, oldest first; proposed and
+# needs-human issues are never picked, nor ones that depend on an open issue.
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
 issues() { jq -c '[[.[] | {number: .[0], title: "t", html_url: "u", body: (.[2] // ""), labels: (.[1] | map({name: .}))}]]'; }
 all='[[80, ["status/needs-human"]], [81, ["status/proposed"]], [82, ["status/ready"]],
   [83, ["status/ready", "priority/urgent"], "Depends on #81"], [84, ["status/ready", "priority/urgent"]],
   [85, ["status/in-progress"]]]'
-check "pick, in-progress first" "$(OPEN=$(issues <<<"$all") gh_pick | cut -f1,4)" "85	in-progress"
-check "pick, then ready + urgent" "$(OPEN=$(jq 'map(select(.[0] != 85))' <<<"$all" | issues) gh_pick | cut -f1,4)" "84	ready-urgent"
+check "pick, ready + urgent first" "$(OPEN=$(issues <<<"$all") gh_pick | cut -f1,4)" "84	ready-urgent"
+check "pick, then in-progress" "$(OPEN=$(jq 'map(select(.[0] != 84))' <<<"$all" | issues) gh_pick | cut -f1,4)" "85	in-progress"
+check "pick, in-progress + urgent before ready + urgent" \
+  "$(OPEN=$(jq '. + [[86, ["status/in-progress", "priority/urgent"]]]' <<<"$all" | issues) gh_pick | cut -f1,4)" "86	in-progress"
 check "pick, then ready" "$(OPEN=$(jq 'map(select(.[0] < 83))' <<<"$all" | issues) gh_pick | cut -f1,4)" "82	ready"
 OPEN=$(jq 'map(select(.[0] < 82))' <<<"$all" | issues) gh_pick >/dev/null
 check "pick, only proposed and needs-human" $? 1
