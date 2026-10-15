@@ -262,7 +262,7 @@ check`, and leaves main working.
 | 3. `Container.spec.deploy` and the deploy loop | #1162 | #1161 | the field and its CEL (`after` names an earlier entry, at most 5, unique targets); the operator ships the Crew's last release to each entry in order, holding for `after` and approval, pinned versions, one deploy at a time; `status.deploys` and `Deployed` with every reason; the Events; `Incompatible` from the requirement table; envtest against the fake Deployer covers each reason, the chain, approval, a rollback by pin and a target added later |
 | 4. Deploys in the UI | #1163 | #1162 | the DeployTarget list and page; the Container page's deploys (version, phase, health, URL); *Needs you* items for `WaitingForApproval`, `DeployFailed` and `Degraded`; with UI actions on, the approve action (a JSON patch of one entry's `approved` only), listed in `ui/README.md`; `make ui-test` |
 
-#1069 to #1072 wait on #1068, so they start when step 4 closes it.
+#1069 to #1072 wait on #1068, so they start once step 4 finishes it.
 
 ## Out of scope
 
