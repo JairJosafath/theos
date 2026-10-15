@@ -112,6 +112,11 @@
 #                                        (a run whose jobs never started doesn't count). Exit 3: GitHub
 #                                        started none of the newest run's failed jobs (failed payments, a
 #                                        spending limit); prints an issue body with their annotation
+#   hack/lib/github.sh flakes [--days N] [--seen FILE] [--count]
+#                                        the Ginkgo specs that failed on main in the last N days (default 7):
+#                                        SPEC<tab>RUN<tab>TIME for each [FAIL] line of each failed run's log.
+#                                        --seen skips the runs FILE lists and writes there the runs it read
+#                                        (the relay watch's); --count prints COUNT<tab>SPEC instead, most first
 #   hack/lib/github.sh activity          one line that changes whenever an issue or pull request changes (the
 #                                        Maintainer report excluded) or main moves; the relay watch compares it
 #   hack/lib/github.sh report FILE       set FILE as the body of the pinned Maintainer report issue (label
@@ -1964,6 +1969,52 @@ gh_red() {
   echo "Filed by hack/relay-watch.sh. The session that fixes main closes this issue; when the cause already has an open issue, close this one as its duplicate (\`hack/lib/github.sh duplicate N M\`)."
 }
 
+# gh_fail_specs: the Ginkgo specs a failed log on stdin names in its
+# "[FAIL] <spec>" summary lines, once each, colour codes, carriage returns
+# and "[It] " dropped and tabs made spaces (the spec is a column of a TSV).
+# gh run view --log-failed writes a colour code's escape as the text "^[" when
+# its output isn't a terminal, and as the byte when it is: both go.
+gh_fail_specs() {
+  tr -d '\r' | LC_ALL=C sed -E "s/("$'\e'"|\\^\\[)\\[[0-9;]*m//g" | sed -nE 's/^.*\[FAIL\] +(.*[^ ])[ ]*$/\1/p' |
+    sed 's/\[It\] //g; s/\t/ /g' | awk '!seen[$0]++'
+}
+
+# gh_flakes [--days N] [--seen FILE] [--count]: see the usage above. A run
+# whose log can't be read is left out of FILE, so the next call reads it again;
+# FILE keeps only the runs still in the window.
+gh_flakes() {
+  local days=7 seen= count= since runs id at log out= read=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --days) days=${2:?usage: flakes [--days N] [--seen FILE] [--count]}; shift 2 ;;
+      --seen) seen=${2:?usage: flakes [--days N] [--seen FILE] [--count]}; shift 2 ;;
+      --count) count=1; shift ;;
+      *) echo "usage: flakes [--days N] [--seen FILE] [--count]" >&2; return 64 ;;
+    esac
+  done
+  gh_token || return 1
+  since=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ) || return 1
+  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --status failure --created ">=${since%%T*}" --limit 100 \
+    --json databaseId,createdAt --jq ".[] | select(.createdAt >= \"$since\") | \"\(.databaseId)\t\(.createdAt)\"") || return 1
+  while IFS=$'\t' read -r id at; do
+    [ -n "$id" ] || continue
+    if [ -n "$seen" ] && grep -qxF "$id" "$seen" 2>/dev/null; then
+      read+="$id"$'\n'
+      continue
+    fi
+    log=$(gh run view "$id" --repo "$C4_GITHUB_REPO" --log-failed 2>/dev/null) || continue
+    read+="$id"$'\n'
+    out+=$(gh_fail_specs <<<"$log" | awk -v r="$id" -v t="$at" '{ print $0 "\t" r "\t" t }')$'\n'
+  done <<<"$runs"
+  [ -z "$seen" ] || printf '%s' "$read" | grep -v '^$' >"$seen"
+  out=$(grep -v '^$' <<<"$out")
+  if [ -n "$count" ]; then
+    [ -z "$out" ] || cut -f1 <<<"$out" | sort | uniq -c | sort -k1,1nr -k2 | sed -E 's/^ *([0-9]+) /\1\t/'
+  else
+    [ -z "$out" ] || printf '%s\n' "$out"
+  fi
+}
+
 # gh_lost RUN: exit 0 when failed RUN failed for its runner, not its code: a
 # self-hosted runner stopped mid-job (its step is cancelled, "The operation
 # was canceled.") or never took the job (the job is cancelled, without steps,
@@ -2093,6 +2144,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     create) gh_create "$@" ;;
     intake) gh_intake "$@" ;;
     red) gh_red "$@" ;;
+    flakes) gh_flakes "$@" ;;
     activity) gh_activity ;;
     report) gh_report "$@" ;;
     *)
