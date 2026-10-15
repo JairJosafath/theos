@@ -73,7 +73,7 @@ owner's decision, and it isn't on the roadmap until they make it.
 
 All four come from [docs/design.md](docs/design.md):
 
-- runtime health of the apps;
+- runtime health of the apps beyond what a deploy target's tool reports;
 - git providers other than Gitea;
 - short-lived Session tokens;
 - a webhook that refuses an incompatible Container up front.

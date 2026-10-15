@@ -32,8 +32,10 @@ The board's source is [docs/images/how-it-works.excalidraw](docs/images/how-it-w
 4. **Work shows up in the model.** Humans and agents code in devcontainers. A small
    client registers each one as a Session, so you can see who is working on what.
 
-Shipping, runtime health and provisioning real databases are left to existing tools
-such as ArgoCD, Flux and Crossplane.
+Shipping goes through the tool that owns each place an app runs (the GitHub API,
+CloudFormation, Argo CD or Flux): the factory hands it each release and shows
+the health that tool reports. Monitoring the apps and provisioning real
+databases are left to existing tools such as Crossplane.
 
 ## Status
 
