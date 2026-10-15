@@ -371,6 +371,63 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(gitFake.historyCount(ns, "orders-api")).To(Equal(reads))
 	})
 
+	It("builds nothing for an External system, and scaffolds once it turns Internal", func() {
+		ns := newProjectNamespace()
+		system := newSystem(ns, "webshop-core")
+		system.Spec.Location = c4v1alpha1.SystemExternal
+		createFactory(ns)
+		mustCreate(system, newOrdersDB(ns),
+			newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService))
+
+		var container c4v1alpha1.Container
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
+			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+			g.Expect(cond).To(HaveField("Reason", c4v1alpha1.ReasonExternalSystem))
+			g.Expect(cond.Message).To(ContainSubstring("SoftwareSystem webshop-core is External"))
+		}).Should(Succeed())
+		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerPending))
+		var db c4v1alpha1.DataStore
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-db"), &db)).To(Succeed())
+			cond := condition(db.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+			g.Expect(cond).To(HaveField("Reason", c4v1alpha1.ReasonExternalSystem))
+		}).Should(Succeed())
+		Consistently(func() int { return gitFake.historyCount(ns, "orders-api") }, "1s").Should(BeZero())
+
+		By("scaffolding once the system turns Internal")
+		Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), system)).To(Succeed())
+		Expect(patch(system, func() { system.Spec.Location = c4v1alpha1.SystemInternal })).To(Succeed())
+		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-db"), &db)).To(Succeed())
+			cond := condition(db.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+			g.Expect(cond).To(HaveField("Status", metav1.ConditionTrue))
+		}).Should(Succeed())
+
+		By("staying Ready when it turns External again")
+		reads := gitFake.historyCount(ns, "orders-api")
+		Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), system)).To(Succeed())
+		Expect(patch(system, func() { system.Spec.Location = c4v1alpha1.SystemExternal })).To(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
+			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		}, "1s").Should(Succeed())
+		Expect(gitFake.historyCount(ns, "orders-api")).To(Equal(reads))
+	})
+
+	It("defaults a SoftwareSystem's location to Internal", func() {
+		ns := newProjectNamespace()
+		system := newSystem(ns, "webshop-core")
+		mustCreate(system)
+		Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), system)).To(Succeed())
+		Expect(system.Spec.Location).To(Equal(c4v1alpha1.SystemInternal))
+
+		bad := newSystem(ns, "stripe")
+		bad.Spec.Location = "Elsewhere"
+		Expect(k8sClient.Create(ctx, bad)).To(MatchError(ContainSubstring("spec.location")))
+	})
+
 	It("records a Git host that runs out of time, and tries again", func() {
 		ns := newProjectNamespace()
 		release := gitFake.hang(ns, "orders-api")

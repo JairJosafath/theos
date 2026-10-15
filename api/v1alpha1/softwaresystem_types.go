@@ -12,8 +12,27 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// SystemLocation says whether the factory builds a SoftwareSystem's Containers.
+// +kubebuilder:validation:Enum=Internal;External
+type SystemLocation string
+
+const (
+	// SystemInternal is a system the factory builds: its Containers are scaffolded.
+	SystemInternal SystemLocation = "Internal"
+	// SystemExternal is a system the story only names, such as a payment provider.
+	// It has no Containers or DataStores of its own.
+	SystemExternal SystemLocation = "External"
+)
+
 // SoftwareSystemSpec defines the desired state of SoftwareSystem.
 type SoftwareSystemSpec struct {
+	// location is Internal for a system the factory builds, External for one
+	// the story only names. An External system's Containers and DataStores
+	// never resolve.
+	// +kubebuilder:default=Internal
+	// +optional
+	Location SystemLocation `json:"location,omitempty"`
+
 	// displayName is a human-friendly name, such as "Webshop Core".
 	// +kubebuilder:validation:MaxLength=100
 	// +optional
@@ -70,6 +89,7 @@ type SoftwareSystemStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4,shortName=sys
 // +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"
+// +kubebuilder:printcolumn:name="Location",type=string,JSONPath=".spec.location"
 // +kubebuilder:printcolumn:name="Containers",type=integer,JSONPath=".status.containers"
 // +kubebuilder:printcolumn:name="Ready",type=integer,JSONPath=".status.readyContainers"
 // +kubebuilder:printcolumn:name="Sessions",type=integer,JSONPath=".status.activeSessions"

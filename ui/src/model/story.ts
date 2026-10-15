@@ -38,6 +38,8 @@ export interface PersonNode extends NodeBase {
 
 export interface SystemNode extends NodeBase {
   role: 'system' | 'external-system'
+  /** spec.location is External: a system the factory doesn't build. */
+  external: boolean
   needs: string[]
   kpis: string[]
   /** status.summary, or counts of what the system holds when that isn't there yet. */
@@ -173,6 +175,7 @@ class StoryIndex {
       title: titleOf(system),
       description: system.spec?.description,
       role,
+      external: system.spec?.location === 'External',
       needs: system.spec?.needs ?? [],
       kpis: system.spec?.kpis ?? [],
       summary:
@@ -331,7 +334,9 @@ export function buildContextDiagram(data: StoryData): Diagram {
   const looseEnds: string[] = []
   const nodes: DiagramNode[] = [
     ...data.people.map((p) => index.personNode(p.metadata.name)!),
-    ...data.systems.map((s) => index.systemNode(s.metadata.name, 'system')!),
+    ...data.systems.map((s) =>
+      index.systemNode(s.metadata.name, s.spec?.location === 'External' ? 'external-system' : 'system')!,
+    ),
   ]
 
   // Where each end of a Relationship shows up at this level.

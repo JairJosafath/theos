@@ -46,6 +46,7 @@ func (r *DataStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	var missing []string
+	external := false
 	var system c4v1alpha1.SoftwareSystem
 	err := r.Get(ctx, types.NamespacedName{Namespace: store.Namespace, Name: store.Spec.SoftwareSystemRef.Name}, &system)
 	switch {
@@ -59,6 +60,7 @@ func (r *DataStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if err := adopt(ctx, r.Client, r.Scheme, &system, &store, labels); err != nil {
 			return ctrl.Result{}, err
 		}
+		external = system.Spec.Location == c4v1alpha1.SystemExternal
 	}
 
 	var connector c4v1alpha1.Connector
@@ -74,6 +76,9 @@ func (r *DataStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if len(missing) > 0 {
 		setCondition(&status.Conditions, store.Generation, c4v1alpha1.ConditionReferencesResolved,
 			metav1.ConditionFalse, c4v1alpha1.ReasonNotFound, notFoundMessage(missing))
+	} else if external {
+		setCondition(&status.Conditions, store.Generation, c4v1alpha1.ConditionReferencesResolved,
+			metav1.ConditionFalse, c4v1alpha1.ReasonExternalSystem, externalMessage(system.Name))
 	} else {
 		setCondition(&status.Conditions, store.Generation, c4v1alpha1.ConditionReferencesResolved,
 			metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
@@ -84,6 +89,12 @@ func (r *DataStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	orig := store.DeepCopy()
 	store.Status = *status
 	return ctrl.Result{}, r.Status().Patch(ctx, &store, client.MergeFrom(orig))
+}
+
+// externalMessage says why a Container or DataStore of an External system
+// doesn't resolve.
+func externalMessage(system string) string {
+	return "SoftwareSystem " + system + " is External: the factory builds nothing for it"
 }
 
 // notFoundMessage lists missing references, such as "SoftwareSystem webshop-core not found".
@@ -107,7 +118,7 @@ func (r *DataStoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.DataStore{}).
-		Watches(&c4v1alpha1.SoftwareSystem{}, allInNamespace, createOrDelete()).
+		Watches(&c4v1alpha1.SoftwareSystem{}, allInNamespace, specChanged()).
 		Watches(&c4v1alpha1.Connector{}, allInNamespace, createOrDelete()).
 		Named("datastore").
 		Complete(r)
