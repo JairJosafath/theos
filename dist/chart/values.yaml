@@ -304,6 +304,8 @@ ui:
   ## The factory's components on the UI's health view (ui/health.mjs): where
   ## their pods run and a label selector for them. An empty namespace is the
   ## release's; the ui entry's empty selector is the UI's own pod labels. Add your Git host and CI runner here when they run in the cluster.
+  ## The UI may read pods only in these namespaces (and the projects'): the
+  ## chart binds a Role in each, so each must exist at install.
   ##
   components:
     - key: operator

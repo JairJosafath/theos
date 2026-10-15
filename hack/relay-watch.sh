@@ -51,6 +51,12 @@
 # status/needs-maintainer, with the annotation, and no "main is red", once per
 # outage (.relay/ci-stopped), even when it is closed as a duplicate.
 #
+# In the same round it records each Ginkgo spec that failed on main
+# (hack/lib/github.sh flakes) in .relay/flakes.tsv, and files a "Flaky: <spec>"
+# bug, status/ready and not urgent, when one failed in two runs within
+# WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails twice in a row,
+# so it never turns main red. An open one is not filed again.
+#
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh
 # --maintain), which acts as the project's maintainer on the owner's behalf and
 # keeps the pinned Maintainer report: when none runs (.relay/maintain.lock),
@@ -112,6 +118,7 @@ CI_EVERY=${WATCH_CI_EVERY:-900}
 TRIM_EVERY=${WATCH_TRIM_EVERY:-1800}
 MAINTAIN_EVERY=${WATCH_MAINTAIN:-7200}
 PARENTS_EVERY=${WATCH_PARENTS:-600}
+FLAKE_DAYS=${WATCH_FLAKE_DAYS:-7}
 
 WORKERS=1 MODE=start
 while [ $# -gt 0 ]; do
@@ -279,6 +286,61 @@ ci_round() {
   done < <(ci_workflows)
   [ -n "$unstarted$unread" ] || rm -f "$DIR/ci-stopped"
   CI_SAID=$said
+}
+
+# flake_round: record each spec that failed on main (hack/lib/github.sh
+# flakes, which reads each failed run's log once: $DIR/flakes-runs) in
+# $DIR/flakes.tsv, SPEC<tab>RUN<tab>TIME, and file a "Flaky: <spec>" bug,
+# status/ready and not urgent, for a spec just recorded that failed twice in
+# FLAKE_DAYS days. A flake rarely fails two runs in a row, so ci_round's "main
+# is red" misses it. hack/lib/github.sh create leaves an open issue with the
+# title alone, so a spec that fails again files nothing new while its bug is
+# open. GitHub caps a title at 256 characters: a longer spec is cut, at 240
+# characters whatever the locale, the same way each time. A failure to read
+# or file is logged once until it works; a spec whose bug could not be filed
+# is tried again next round (FLAKE_RETRY), though no run of it is new.
+FLAKE_SAID= FLAKE_RETRY=
+flake_round() {
+  local out rc spec n since title body said= retry=
+  out=$(github flakes --days "$FLAKE_DAYS" --seen "$DIR/flakes-runs" 2>"$DIR/flakes.err")
+  rc=$?
+  if [ "$rc" != 0 ]; then
+    out=$(cat "$DIR/flakes.err")
+    [ "$FLAKE_SAID" = err ] || log "could not read the specs that failed on main (flakes, exit $rc): ${out//$'\n'/; }"
+    FLAKE_SAID=err
+    return 0
+  fi
+  [ "$FLAKE_SAID" != err ] || FLAKE_SAID=
+  [ -n "$out$FLAKE_RETRY" ] || return 0
+  [ -z "$out" ] || printf '%s\n' "$out" >>"$DIR/flakes.tsv"
+  since=$(date -u -d "$FLAKE_DAYS days ago" +%Y-%m-%dT%H:%M:%SZ)
+  while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
+    # The spec goes in through the environment: awk -v would read its backslashes.
+    n=$(S=$spec awk -F'\t' -v t="$since" '$1 == ENVIRON["S"] && $3 >= t { r[$2] = 1 } END { print length(r) }' "$DIR/flakes.tsv")
+    if [ "$n" -lt 2 ]; then
+      log "a spec failed on main: $spec"
+      continue
+    fi
+    title="Flaky: $(LC_ALL=C.UTF-8 bash -c 'printf %s "${1:0:240}"' _ "$spec")"
+    body="The spec \`$spec\` failed on main in $n runs in the last $FLAKE_DAYS days, yet main isn't red twice in a row: it is flaky.
+
+## Runs
+
+$(S=$spec awk -F'\t' -v t="$since" -v repo="${C4_GITHUB_REPO:-JairJosafath/c4factory}" \
+  '$1 == ENVIRON["S"] && $3 >= t && !r[$2]++ { print "- https://github.com/" repo "/actions/runs/" $2 " at " $3 }' "$DIR/flakes.tsv")
+
+Find why it fails now and then (a race, a timeout too short for a busy runner, an order it depends on) and fix the spec or the code; retrying until it passes is no fix. \`hack/lib/github.sh flakes --count\` lists the specs that failed on main this week. Filed by hack/relay-watch.sh, which files no other issue for this spec while this one is open."
+    out=$(github create "$title" - status/ready kind/bug source/dev <<<"$body" 2>&1)
+    rc=$?
+    if [ "$rc" = 0 ]; then
+      log "a spec failed on main $n times in $FLAKE_DAYS days: $spec; issue #${out##*$'\n'}"
+    else
+      said=fail retry+=$spec$'\n'
+      [ "$FLAKE_SAID" = fail ] || log "a spec failed on main $n times in $FLAKE_DAYS days: $spec; could not file its issue (exit $rc): ${out//$'\n'/; }"
+    fi
+  done < <({ [ -z "$out" ] || cut -f1 <<<"$out"; printf '%s' "$FLAKE_RETRY"; } | awk '!seen[$0]++')
+  FLAKE_SAID=$said FLAKE_RETRY=$retry
 }
 
 # start WHY: log WHY and run hack/relay.sh for the workers that aren't running.
@@ -672,6 +734,7 @@ while :; do
   if [ $((now - CI_T)) -ge "$CI_EVERY" ]; then
     CI_T=$now
     ci_round
+    flake_round
   fi
   if [ $((now - PULL_T)) -ge "$PULL_EVERY" ]; then
     PULL_T=$now

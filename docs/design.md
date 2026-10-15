@@ -376,7 +376,10 @@ without kubectl, and cheaply: it lives on a laptop.
 - **The UI server reads the factory's health itself** (`GET /factory/health`):
   pods, nodes and metrics-server, summarized; pod specs never reach the browser,
   which still reads only `c4.factory.io`. It samples every 15 seconds and keeps
-  an hour in memory, including its own API round trip.
+  an hour in memory, including its own API round trip. Nodes and their metrics
+  it reads cluster-wide; pods and theirs only where the factory runs: the
+  components' namespaces, where the chart binds a Role, and each Project's,
+  where the operator does (`--ui-service-account`).
 - **No Prometheus or Grafana.** Process data lives in the resources, live usage
   comes from metrics-server (about 30 MiB), and the last hour from the UI server.
 - **Lifecycle targets:** `make down` stops the Kind node, `make up` brings it back

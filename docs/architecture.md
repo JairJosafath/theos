@@ -60,7 +60,8 @@ settings, a release re-run, a Container's scaffold retry, checks and answer to
 its Standard's bump, a Task from a goal and a Standard's `ref`. They are made as
 the UI's ServiceAccount over port-forward, or as the person signed in with OIDC
 behind an Ingress, so the cluster's RBAC decides. It shares nothing with the Go code but the resource shapes. For the Factory and Work areas it also reads pods, nodes and
-metrics-server itself (`ui/health.mjs`) and sends the browser only a summary.
+metrics-server itself (`ui/health.mjs`) and sends the browser only a summary;
+pods only in the components' and the Projects' namespaces.
 
 `make lint` enforces the rows marked "must not import" with golangci-lint's
 `depguard`, so a wrong import fails the build rather than a review.

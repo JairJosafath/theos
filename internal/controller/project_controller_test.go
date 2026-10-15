@@ -11,6 +11,7 @@ package controller
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -92,6 +93,42 @@ var _ = Describe("Project", func() {
 			g.Expect(k8sClient.Get(ctx, key(ns, SessionAccountName), &role)).To(Succeed())
 			g.Expect(role.Rules).To(HaveLen(2))
 		}).Should(Succeed())
+	})
+
+	It("lets the UI read the namespace's pods and their metrics, and nothing else (#1080)", func() {
+		ns := newProjectNamespace()
+		var project c4v1alpha1.Project
+		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+
+		var role rbacv1.Role
+		var binding rbacv1.RoleBinding
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, UIPodReaderName), &role)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, key(ns, UIPodReaderName), &binding)).To(Succeed())
+		}).Should(Succeed())
+		Expect(controlledBy(&role, &project)).To(BeTrue())
+		Expect(controlledBy(&binding, &project)).To(BeTrue())
+		Expect(role.Rules).To(Equal(UIPodReaderRules))
+		Expect(binding.Subjects).To(ConsistOf(rbacv1.Subject{
+			Kind: rbacv1.ServiceAccountKind, Name: testUIAccount, Namespace: operatorNamespace,
+		}))
+
+		ui := "system:serviceaccount:" + operatorNamespace + ":" + testUIAccount
+		may := func(namespace, group, resource, verb string) bool {
+			review := &authorizationv1.SubjectAccessReview{Spec: authorizationv1.SubjectAccessReviewSpec{
+				User: ui,
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Namespace: namespace, Group: group, Resource: resource, Verb: verb,
+				},
+			}}
+			Expect(k8sClient.Create(ctx, review)).To(Succeed())
+			return review.Status.Allowed
+		}
+		Expect(may(ns, "", "pods", "list")).To(BeTrue())
+		Expect(may(ns, "metrics.k8s.io", "pods", "list")).To(BeTrue())
+		Expect(may(ns, "", "secrets", "get")).To(BeFalse())
+		Expect(may(ns, "", "pods", "delete")).To(BeFalse())
+		Expect(may("default", "", "pods", "list")).To(BeFalse(), "only in project namespaces")
 	})
 
 	It("rolls up containers and sessions", func() {

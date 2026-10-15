@@ -23,6 +23,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -71,6 +72,7 @@ func main() {
 	var goProxy string
 	var sessionFeature, sessionBinaryURL string
 	var sharedSecrets, sharedPullSecrets stringList
+	var uiServiceAccount string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -124,6 +126,9 @@ func main() {
 			"c4.factory.io/shared-secrets=true, such as claude-credentials; repeatable. None: nothing is shared.")
 	flag.Var(&sharedPullSecrets, "shared-pull-secret",
 		"An image pull Secret in the operator's namespace to share like --shared-secret; repeatable.")
+	flag.StringVar(&uiServiceAccount, "ui-service-account", "",
+		"The UI's ServiceAccount, as namespace/name, let read the pods and their metrics in every project "+
+			"namespace for the Factory view's health. None: the UI sees no agent sandboxes.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -143,6 +148,16 @@ func main() {
 			os.Exit(1)
 		}
 		workspaceQuantity = &q
+	}
+
+	var uiAccount types.NamespacedName
+	if uiServiceAccount != "" {
+		ns, name, ok := strings.Cut(uiServiceAccount, "/")
+		if !ok || ns == "" || name == "" {
+			setupLog.Error(nil, "Invalid --ui-service-account: want namespace/name", "value", uiServiceAccount)
+			os.Exit(1)
+		}
+		uiAccount = types.NamespacedName{Namespace: ns, Name: name}
 	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
@@ -255,6 +270,7 @@ func main() {
 		SourceNamespace:   podNamespace,
 		OperatorVersion:   buildinfo.Version,
 		ChartVersion:      os.Getenv("C4_CHART_VERSION"),
+		UIServiceAccount:  uiAccount,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "project")
 		os.Exit(1)

@@ -9,6 +9,7 @@ import http from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
+import { DEFAULT_COMPONENTS } from '../health.mjs'
 import { identity, oidcFromEnv } from '../oidc.mjs'
 import { actionsFromEnv, allowedHostsFromEnv, createServer, resolveUpstream } from '../server.mjs'
 
@@ -152,12 +153,18 @@ describe('server.mjs', () => {
     const health = await res.json()
     assert.ok(Array.isArray(health.components) && health.components.length > 0)
     assert.equal(typeof health.agents.maxSandboxes, 'number')
-    assert.deepEqual(seen.map((r) => r.url).sort(), [
-      '/api/v1/nodes',
-      '/api/v1/pods',
-      '/apis/metrics.k8s.io/v1beta1/nodes',
-      '/apis/metrics.k8s.io/v1beta1/pods',
-    ])
+    // Pods only in the components' and the Projects' namespaces, never cluster-wide (#1080).
+    const namespaces = [...new Set(DEFAULT_COMPONENTS.map((c) => c.namespace))]
+    assert.deepEqual(
+      seen.map((r) => r.url).sort(),
+      [
+        '/api/v1/nodes',
+        '/apis/c4.factory.io/v1alpha1/projects',
+        '/apis/metrics.k8s.io/v1beta1/nodes',
+        ...namespaces.map((ns) => `/api/v1/namespaces/${ns}/pods`),
+        ...namespaces.map((ns) => `/apis/metrics.k8s.io/v1beta1/namespaces/${ns}/pods`),
+      ].sort(),
+    )
     assert.ok(seen.every((r) => r.method === 'GET' && !r.headers.authorization))
   })
 
