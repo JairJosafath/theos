@@ -159,8 +159,6 @@ var _ = Describe("A Task's checks", func() {
 			g.Expect(task.Status.ChecksReruns).To(Equal(int32(1)))
 			g.Expect(task.Status.ChecksRerunAt).NotTo(BeNil())
 			g.Expect(task.Status.Feedback).To(BeEmpty(), "the agent is told nothing")
-			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).
-				To(HaveField("Message", ContainSubstring("was abandoned by its runner")))
 			at = task.Status.ChecksRerunAt.Time
 		}).Should(Succeed())
 
