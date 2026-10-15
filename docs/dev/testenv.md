@@ -403,6 +403,13 @@ payments, a spending limit), no code is at fault: the watch files one
 the annotation, and no `main is red`. It keeps that issue's number in
 `.relay/ci-stopped` until every workflow runs its jobs again, and files no
 other while the outage lasts, even after the issue is closed as a duplicate.
+A flaky spec rarely fails twice in a row, so in the same round the watch
+records each Ginkgo spec that failed on main (the `[FAIL]` lines of each failed
+run's log, `hack/lib/github.sh flakes`) in `.relay/flakes.tsv`, spec, run and
+time, and files `Flaky: <spec>`, a ready `kind/bug` that isn't urgent, when one
+failed in two runs within `WATCH_FLAKE_DAYS` days (7); while it is open, a
+third failure files nothing. `hack/lib/github.sh flakes --count` lists the
+specs that failed on main this week, from GitHub, on any device.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
