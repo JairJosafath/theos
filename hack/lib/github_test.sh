@@ -555,7 +555,8 @@ long=$(for l in "${GH_LABELS[@]}"; do d=${l#*|}; d=${d#*|}; [ ${#d} -le 100 ] ||
 check "labels: descriptions fit GitHub's 100 characters" "$long" ""
 
 # parents: a plan's parent (in progress or waiting, Depends on #S per step, a
-# merged pull request that says Refs #N and adds its plan in docs/plans/)
+# merged pull request that says Refs #N and adds its plan in docs/plans/ or
+# changes docs/design.md)
 # closes with a comment once every step closed; one with a step open stays
 # open and, unclaimed, goes to status/waiting; Depends on lines without a
 # merged plan close nothing. pick skips a waiting parent, and blocked tells it
@@ -576,8 +577,10 @@ check "labels: descriptions fit GitHub's 100 characters" "$long" ""
       "GET $R/issues/120/timeline"*) xref 120 M130 ;;
       "GET $R/issues/"12[389]/timeline* | "GET $R/issues/"14[024]/timeline*) a=${url#*issues/}; xref "${a%%/*}" M131 ;;
       "GET $R/issues/126/timeline"*) xref 126 O132 M133 ;;
+      "GET $R/issues/146/timeline"*) xref 146 M134 ;;
       "GET $R/issues/"*/timeline*) echo '[[]]' ;;
       "GET $R/pulls/"13[01]/files*) printf 'docs/plans/p.md\nhack/x.sh\n' ;;
+      "GET $R/pulls/134/files"*) printf 'docs/design.md\n' ;;
       "GET $R/pulls/"*/files*) echo hack/x.sh ;;
       "GET $R/issues/"12[1257]) echo "closed completed" ;;
       "GET $R/issues/141") echo "closed not_planned" ;;
@@ -617,17 +620,20 @@ POST $R/issues/123/labels"
   check "parents --apply M: a step without parents" "$(gh_parents --apply 999 2>&1)" ""
   check "parents --apply M: a plain wait closes nothing" "$(gh_parents --apply 127 2>&1)$(grep -c 126 "$T/calls")" "0"
   gh_parents --bogus 2>/dev/null; check "parents, bad argument" $? 1
-  # Not closed: a step closed as not planned, a step GitHub can't show, a
-  # parent its plan's session still holds.
+  # Not closed: a step GitHub can't show, a parent its plan's session still
+  # holds. Closed: a parent whose step closed as not planned (a duplicate),
+  # and one whose plan only changed docs/design.md.
   : >"$T/calls"
   odd=$(issues <<<'[[140, ["status/in-progress"], "Depends on #141"], [142, ["status/in-progress"], "Depends on #143"],
-    [144, ["status/in-progress"], "Depends on #121"]]')
-  out=$(OPEN=$odd CLAIMS=$(claimed 140 142 144) gh_parents --apply 2>"$T/err")
-  check "parents --apply: not planned, missing or held stays open" "$? $out | $(cat "$T/calls")" "0  | "
-  check "parents --apply: says which step it could not see" "$(cat "$T/err")" "github: #142 depends on #143, which GitHub could not show; #142 stays open"
-  check "parents: lists them as waiting" "$(OPEN=$odd gh_parents 2>/dev/null)" "#140 waits on #141 (of #141; plan #131)
+    [144, ["status/in-progress"], "Depends on #121"], [146, ["status/in-progress"], "Depends on #121"]]')
+  check "parents: lists what each does" "$(OPEN=$odd gh_parents 2>/dev/null)" "#140 closes: its steps #141 closed; plan #131
 #142 waits on #143 (of #143; plan #131)
-#144 closes: its steps #121 closed; plan #131"
+#144 closes: its steps #121 closed; plan #131
+#146 closes: its steps #121 closed; plan #134"
+  out=$(OPEN=$odd CLAIMS=$(claimed 142 144) gh_parents --apply 2>"$T/err")
+  check "parents --apply: not planned or design-only closes, missing or held stays open" "$? $out | $(grep -E 'PATCH|POST' "$T/calls" | tr '\n' ' ')" "0 #140 closed: its steps #141 closed; plan #131
+#146 closed: its steps #121 closed; plan #134 | POST $R/issues/140/comments PATCH $R/issues/140 POST $R/issues/146/comments PATCH $R/issues/146 "
+  check "parents --apply: says which step it could not see" "$(cat "$T/err")" "github: #142 depends on #143, which GitHub could not show; #142 stays open"
   # close tends the parents of the issue it closed.
   : >"$T/calls"
   echo landed | gh_close 122 - >/dev/null 2>&1
