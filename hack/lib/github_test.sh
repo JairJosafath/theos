@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for pick and take handing out former needs/cluster issues on a device without a cluster,
+# Tests for take claiming an issue on a device without a cluster,
 # acquire refusing without the human opt-in (C4_HUMAN_CLUSTER=1),
 # and the cluster pool's leases (acquire, wait, exit 4, stale lease, two leases
 # on two clusters, a third waiting, a released cluster reused, a missing one
@@ -42,10 +42,10 @@ gh_api() {
     */issues/9[0-9]) cat "$T/issue-${url##*/}.json" ;;
     */labels/user%2Flaptop-2) echo '{}' ;;
     */labels/user%2F*) return 1 ;;
-    */issues/50/labels*) printf 'needs/cluster\nstatus/in-progress\n' ;;
+    */issues/50/labels*) printf 'status/in-progress\n' ;;
     */issues/51/labels*) printf 'status/in-progress\n' ;;
     */issues/7[2-5]/labels*) printf 'kind/bug\nstatus/in-progress\nstatus/ready\n' ;;
-    */issues/60) echo '{"number":60,"title":"Deploy","labels":[{"name":"needs/cluster"},{"name":"kind/feature"}]}' ;;
+    */issues/60) echo '{"number":60,"title":"Deploy","labels":[{"name":"kind/feature"}]}' ;;
     */issues/71) return 1 ;; # closing #71 fails
     */issues/73) echo closed ;; # --jq .state, as take asks
     */issues/74) echo open ;;
@@ -62,7 +62,7 @@ gh_api() {
         { [ -e "$T/hold74" ] && sed 's/heron-73/heron-74/' || cat; } ;;
     */issues/comments\?since*) echo "${CLAIMS:-[[]]}" ;;
     */issues/comments*) echo '[[]]' ;;
-    */issues\?state=open*) [ -e "$T/no-open" ] && return 0; [ -n "${OPEN:-}" ] && { echo "$OPEN"; return; }; echo '[[{"number":60,"title":"Deploy","html_url":"u60","body":"","labels":[{"name":"needs/cluster"},{"name":"status/ready"}]},{"number":61,"title":"Docs","html_url":"u61","body":"","labels":[{"name":"status/ready"}]}]]' ;;
+    */issues\?state=open*) [ -e "$T/no-open" ] && return 0; [ -n "${OPEN:-}" ] && { echo "$OPEN"; return; }; echo '[[{"number":60,"title":"Deploy","html_url":"u60","body":"","labels":[{"name":"status/ready"}]},{"number":61,"title":"Docs","html_url":"u61","body":"","labels":[{"name":"status/ready"}]}]]' ;;
     *) return 0 ;;
   esac
 }
@@ -241,17 +241,13 @@ grep -q "which this checkout already leased, was created bare (acquire --bare): 
 gh_cluster acquire --wait 0 --fresh >/dev/null 2>&1; check "fresh: a bare cluster becomes a testenv one" "$([ -e "$BARE" ] && echo kept || echo gone) $(tail -1 "$T/made")" "gone -C $T/main cluster gitea seed KIND_CLUSTER=c4factory"
 rm -f "$LEASE" "$LEASE2" "$BARE" "$BARE2" "$T/made"; echo c4factory >"$T/kind-clusters"
 
-# A former needs/cluster issue (60) is picked and taken like any other: without a cluster, or while another checkout holds the lease.
+# take claims an issue without a cluster, and while another checkout holds the lease.
 clear; lease "$T/wt2" 50 "$(date +%s)"
-check "pick, lease held elsewhere" "$(gh_pick | cut -f1)" 60
-check "pick, no cluster: a needs/cluster issue" "$(C4_CLUSTER=none gh_pick | cut -f1)" 60
 rm -f "$T/posted"; out=$(C4_CLUSTER=none gh_take 60 2>/dev/null); check "take 60, no cluster" "$? $(cut -f1 <<<"$out" | grep -c .)" "0 1"
 rm -f "$T/main/.relay/claim"
 rm -f "$T/posted"; gh_take 60 >/dev/null 2>&1; check "take 60, lease held elsewhere" $? 0
 rm -f "$T/main/.relay/claim"
-gh_label 61 needs/cluster >/dev/null 2>&1; check "label needs/cluster, lease held elsewhere" $? 0
-C4_CLUSTER=none gh_label 61 needs/cluster >/dev/null 2>&1; check "label needs/cluster, no cluster" $? 0
-gh_label 61 kind/docs >/dev/null 2>&1; check "label other" $? 0
+gh_label 61 kind/docs >/dev/null 2>&1; check "label" $? 0
 
 # release, handoff, close and needs-human drop this checkout's lease when it works on that issue.
 clear; claim "$T/main" 72 "$(date +%s)"; lease "$T/main" 72 "$(date +%s)"

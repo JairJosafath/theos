@@ -16,8 +16,10 @@ task. Read the rest when the task needs it:
 | change API types, reconcilers or log lines | [docs/dev/api-and-controllers.md](docs/dev/api-and-controllers.md) |
 | set up a device, or change `./dev` or `.vscode/` | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
+| run, pause or change the relay (workers, triage, the maintainer) | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
 | act as the maintainer, decide who decides, or review and clean up what the relay's agents did | [GOVERNANCE.md](GOVERNANCE.md) and the `maintainer` skill |
+| triage a `status/proposed` issue | the `triage` skill |
 | plan or cut a release, or set a milestone | [ROADMAP.md](ROADMAP.md) |
 | make, store, pass or test a credential, or a secret scanner fails a pull request | the `secrets` skill |
 | take an issue, or continue work someone left in flight (a relay session, or the user said to) | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
@@ -127,28 +129,16 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   `make check` runs tiers 1, 2 and 4 for every change, and the UI's own
   check (`make ui-test`: typecheck, eslint, Prettier, its tests). Node and kubelet
   behaviour and the Gitea Actions runner itself are not tested before release.
-- **Small pull requests to main.** One branch per issue or plan step, the one
-  `take` names (`<type>/<N>-<slug>`, from an up-to-date main), pushed after
-  every commit; open a pull request to main whose body
-  says `Closes #N` for the GitHub issue it finishes (never `Refs #N`, in
-  the body or a commit: that is only a plan's), and merge it with a merge
-  commit once `make check` passes, with `hack/lib/github.sh land PR`. Two
-  pull requests green alone can make main red together, so `merge` refuses a
-  branch behind main; `land` waits for the merge turn (one pull request at a
-  time across every device, first come first served), then merges
-  `origin/main` into the branch, reruns `make check`, pushes and merges, and
-  gives the turn up, merged or not. Don't loop merge-main, check, merge by
-  hand: `merge` refuses while another pull request holds the turn. No long-lived or stacked branches: each plan
-  step lands on its own and leaves main working, with new behaviour off until
-  the step that turns it on. When an issue is split into a plan and steps,
-  the plan's pull request says `Refs #N`, never `Closes #N`, and no close, fix
-  or resolve word next to `#N` anywhere in its body or commits, even in prose
-  ("its PR closes #N" closes N; `merge` refuses it); the issue stays
-  open, `status/waiting` (waiting on its steps, not on an agent), its body a
-  `Depends on #S` line per step so `pick` skips it, and it closes itself when
-  its last step closes (`hack/lib/github.sh parents`). Never close it by
-  hand: `hack/close-guard.sh` denies a pull request or commit, and
-  `hack/lib/github.sh close` an issue, that would close it while a step is open.
+- **Small pull requests to main.** One branch per issue, the one `take` names
+  (`<type>/<N>-<slug>`, from an up-to-date main), pushed after every commit; a
+  pull request to main whose body says `Closes #N`, merged with
+  `hack/lib/github.sh land PR` once `make check` passes (`land` takes the merge
+  turn, one across every device, merges `origin/main` in, reruns `make check`
+  and merges). No long-lived or stacked branches. A plan's pull request says
+  `Refs #N` and never a closing word next to `#N`; the parent gets a
+  `Depends on #S` line per step, goes `status/waiting` and closes itself when
+  its last step closes. Never close a parent by hand (`hack/close-guard.sh`
+  and `hack/lib/github.sh close` refuse). The `handoff` skill has the procedure.
 - **Main keeps itself current.** `hack/pull.sh` fast-forwards local main when
   that is safe and never touches a branch or uncommitted work. VS Code runs it
   every 5 minutes, Claude Code at session start, the relay before each session;
@@ -165,16 +155,26 @@ Quality drops as a session's context grows, long before the window is full.
 Treat about 140k tokens as the limit, and keep each session to one piece of work.
 
 - **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
-  piece of work, labeled `status/*`, `priority/urgent`, `kind/*`;
-  `hack/lib/github.sh` reads and writes them. No issue needs a cluster:
-  every one is verified by Go tests, so a device without Kind
-  (`./dev setup --lite`, `C4_CLUSTER=none`) works every ready issue.
-- **Every issue carries `source/dev`** (developing the factory) or `source/user`
-  with `user/<name>` (reported from a device running the Helm release).
+  piece of work, labeled `status/*`, `priority/urgent`, `kind/*` and
+  `source/dev` (developing the factory) or `source/user` with `user/<name>`
+  (reported from a device running the Helm release); `hack/lib/github.sh`
+  reads and writes them. No issue needs a cluster: every one is verified by Go
+  tests, so a device without Kind (`./dev setup --lite`, `C4_CLUSTER=none`)
+  works every ready issue. What each status means:
+  - `status/proposed`: filed, not yet decided. Whoever may decide readies it:
+    the owner (a session the user runs files what the user decided as
+    `ready`), the maintainer, or the relay's triage (the `triage` skill). An
+    agent's follow-up is filed `proposed`.
+  - `status/ready`: decided and unblocked; the relay picks it.
+  - `status/in-progress`: an agent holds a claim.
+  - `status/waiting`: a plan's parent, waiting on its steps, not on an agent.
+  - `status/needs-maintainer`: an agent escalated it; the newest comment says
+    what it needs.
+  - `status/needs-human`: the maintainer sent it to the owner; only the
+    maintainer sets it.
 - **Issues are the relay's.** Relay agents pick up every ready issue. A session
   the user started picks or takes one only when the user says to work it in
-  that session; an issue it files for the user is `status/ready`, for the
-  relay.
+  that session; the list above says who readies what.
 - **One issue, plan step or fix per session.** Start the next one fresh.
 - **Agents work in parallel.** Take an issue with `hack/lib/github.sh take N`
   before working it; it names you (`otter-23`). Sign commits with an
@@ -188,33 +188,27 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 - **Delegate broad searches** to a subagent; it returns the conclusion, not the
   file dumps. Keep large outputs out of the context: filter with `jq`, `grep`,
   `tail`, `--tail=N`, and summary flags.
-- **Hand off before the context gets big**, or when work stops mid-way: the
-  `handoff` skill posts the in-flight state as a comment on the issue, and the
-  next session starts by reading the newest one. Close the issue when its work
-  lands.
-- **Hand off between tasks, never inside one.** Finish the task in flight (its
-  implementation and review) first; after a task, past about 100k tokens, hand
-  off instead of starting the next.
-- **Overnight, `hack/relay.sh [--workers N]`** runs headless sessions, each on
-  the in-progress or next ready issue; worker k works in the worktree
-  `.claude/worktrees/relay-k` and logs to `.relay/relay-k.log`.
-  `hack/relay-watch.sh [--workers N]` keeps it ready, starting it within a
-  minute of an issue becoming ready. When nothing is ready, it starts a triage
-  session (`hack/relay.sh --triage`) that readies the sound `status/proposed`
-  issues and comments on the others what they lack (run it by hand to
-  triage now; the watch counts that triage); `status/needs-human`
-  stays the user's. Every 2 hours when anything changed (`WATCH_MAINTAIN`),
-  busy or idle, and within a minute of an issue reaching
-  `status/needs-maintainer`, it starts the maintainer (`hack/relay.sh
-  --maintain`, the `maintainer` skill), which decides for the owner and keeps
-  the pinned *Maintainer report* issue (`hack/lib/github.sh report`).
-  **Agents escalate to the maintainer** (`hack/lib/github.sh status N
-  needs-maintainer` and a comment saying what is needed); only the maintainer
-  sets `status/needs-human`. A usage limit or a failed login pauses the relay until it
-  resets (`.relay/paused-until`); an issue whose sessions end three times in a
-  row without a handoff or a commit goes to `status/needs-maintainer`. A session
-  whose transcript stops changing for 45 minutes (`RELAY_IDLE`) is ended and
-  counts as one of those.
+- **Hand off between tasks.** After a task, past about 100k tokens, hand off
+  instead of starting the next: the `handoff` skill posts the in-flight state
+  as a comment on the issue. When you must stop inside one (the context, a
+  lost claim, the user says stop), hand off anyway and say exactly where it
+  stands. The next session starts by reading the newest handoff. Close the
+  issue when its work lands.
+- **The relay** (`hack/relay.sh`, kept running by `hack/relay-watch.sh`) runs
+  headless sessions, each on the in-progress or next ready issue. Its triage
+  session readies sound `status/proposed` issues (the `triage` skill); its
+  maintainer session (`hack/relay.sh --maintain`, the `maintainer` skill)
+  decides escalations, keeps the pinned *Maintainer report* and cuts releases.
+  Agents escalate with `hack/lib/github.sh status N needs-maintainer` and a
+  comment saying what is needed; only the maintainer sets `status/needs-human`.
+  The relay's pauses, strikes and idle rule are in
+  [docs/dev/testenv.md](docs/dev/testenv.md).
+- **A refused command is not a failed one.** Auto mode may refuse a command (a
+  merge, a release, an edit to an issue you didn't file). Say which command was
+  refused, once, in the pull request, the handoff or the report, and go on with
+  what you can; escalate with `needs-maintainer` if it blocks the issue. The
+  allow rules in `.claude/settings.json` are the owner's: never edit them, and
+  never do the refused thing through another command.
 - **On a device running many sessions, memory is the limit.** A session at rest is cheap;
   heavy jobs (`make check`, `test`, `lint`, `docker-build`, `deploy`, `e2e`) are
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`

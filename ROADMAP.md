@@ -33,7 +33,9 @@ Each milestone is a GitHub milestone with a *Done when*. Versions follow from
 what lands, so no milestone is tied to a version number. Only work a user of
 the release would notice gets a milestone; work on the relay, `hack/`, the
 skills and the governance files doesn't.
-A plan with several steps gets its own milestone when it is planned.
+A plan gets its own milestone when its outcome is one a release's user would
+notice; a plan whose steps are mostly relay, `hack/` or docs work has none, and
+its user-visible steps join an existing milestone or none.
 
 | Milestone | Outcome | State |
 | --- | --- | --- |

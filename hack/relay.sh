@@ -20,17 +20,17 @@
 # Triage: with nothing ready, hack/relay-watch.sh starts one triage session
 # (--triage) on the open status/proposed issues, which relay sessions file
 # their follow-ups as. Its worker switches its worktree to origin/main and runs
-# one session that takes no issue and changes no code: it readies each sound
-# proposed issue (clear, says when it is done, no duplicate, names what it
-# waits on with Depends on #M), fills a gap it can write itself (a Depends on
-# #M line) and readies the issue, comments on the
-# others what they lack, readies one the design doesn't settle as design work
-# (designing is ours, never a question for the user), escalates one that
-# nothing it can write moves on (it needs a decision: something only the user
-# can give, or a direction it is unsure of, with the choice it would make) to
-# the maintainer (status/needs-maintainer), closes duplicates, and ends with an
-# account of what it did. It never takes an issue out of
-# status/needs-maintainer or status/needs-human.
+# one session that takes no issue and changes no code: the maintainer's triage
+# (the triage skill, .claude/skills/triage/SKILL.md, has its rules). It readies
+# each sound proposed issue, fills a gap it can write itself (a Depends on #M
+# line) and readies the issue, comments on the others what they lack, readies
+# one the design doesn't settle as design work (designing is ours, never a
+# question for the reporter), escalates one that nothing it can write moves on
+# (it needs a decision: something only the owner can give, or a direction it
+# is unsure of, with the choice it would make) to the maintainer
+# (status/needs-maintainer), closes duplicates, and ends with an account of
+# what it did. It never takes an issue out of status/needs-maintainer or
+# status/needs-human.
 #
 # The maintainer: hack/relay-watch.sh starts one maintainer session
 # (--maintain) every 2 hours when anything changed, acting as the project's
@@ -61,7 +61,7 @@
 # tests, validate-yaml, envtest) is the gate, and Kind is a manual tier only a
 # human runs (hack/lib/github.sh cluster acquire refuses without
 # C4_HUMAN_CLUSTER=1, which the relay never sets). No prompt here tells a
-# session to use one, and every issue is any worker's, needs/cluster or not.
+# session to use one, and every issue is any worker's.
 #
 # Workers load their code once, from this checkout. Before each pick a worker
 # runs hack/pull.sh here, and when that changed hack/relay.sh,
@@ -138,7 +138,7 @@ MEM_WAIT=${RELAY_MEM_WAIT:-3600}   # seconds a worker waits for headroom before 
 MEM_POLL=${RELAY_MEM_POLL:-60}
 MEMINFO=${RELAY_MEMINFO:-/proc/meminfo}
 LIMIT_WAIT=${RELAY_LIMIT_WAIT:-30m} # the pause after a limit whose message names no reset time
-MAX_FAILS=${RELAY_MAX_FAILS:-3}     # failed sessions in a row before an issue goes to the user
+MAX_FAILS=${RELAY_MAX_FAILS:-3}     # failed sessions in a row before an issue goes to the maintainer
 IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change this long is ended
 IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
@@ -192,8 +192,10 @@ Rules for this headless run:
 - Never wait on the factory (a Crew, a Task, an agent) longer than about 20
   minutes in one stretch; if it still isn't done, note it in the handoff and
   move on to other work or hand off.
-- If an action is refused (permissions, auto mode), don't retry it: write it in
-  the handoff under Decisions as open, for the user, and carry on.
+- If an action is refused (permissions, auto mode), don't retry it and never
+  do it through another command: say which command, once, in the pull request
+  body and the handoff (the handoff skill, "Refused"), and carry on; when it
+  blocks landing, escalate to the maintainer.
 - Work on $branch, never on main; the relay has switched this worktree to it
   (from origin if an earlier agent pushed it, else from origin/main). Push
   after every commit: \`git push -u origin HEAD\`.
@@ -215,9 +217,9 @@ Rules for this headless run:
     never close it by hand.
   - Stuck on a decision: \`hack/lib/github.sh status $n needs-maintainer\` and
     a comment saying why and what you need. The relay then picks the next
-    issue, and the maintainer decides it or takes it to the user. How to build
+    issue, and the maintainer decides it or takes it to the owner. How to build
     it is yours to decide (AGENTS.md, "Designing is our job"): this is for
-    what only the user can give (a tag, access, credentials, money), or a
+    what only the owner can give (access, credentials, money), or a
     direction you are unsure of, asked with the choice you would make and
     why. Never set status/needs-human: only the maintainer does.
 - Never lease, create or deploy to a Kind cluster, and never run make e2e,
@@ -233,100 +235,29 @@ Rules for this headless run:
 EOF
 }
 
-# triage_prompt ISSUES: the triage session's prompt, for the proposed ISSUES (#1 #2 ...).
+# triage_prompt ISSUES: the triage session's prompt, for the proposed ISSUES
+# (#1 #2 ...). The rules are the triage skill's.
 triage_prompt() {
   cat <<EOF
 You run headless, started by hack/relay-watch.sh (hack/relay.sh --triage)
 while the user sleeps; no person is watching and nobody can answer a question.
-No issue on $C4_GITHUB_REPO is ready for the relay, and these wait in
-status/proposed: $1. Your work is to triage them, so the relay has sound work:
-ready each one that is sound, and say on the others what they lack. You take
-no issue, change no code, commit nothing and open no pull request; this
-worktree, relay-$K, is on origin/main for reading only.
-
-Start with \`hack/lib/github.sh proposed\` (the list now; triage those) and
-\`hack/lib/github.sh show N\` for each. Read docs/design.md and AGENTS.md, and
-list the open issues to compare against: \`gh issue list --repo $C4_GITHUB_REPO
---state open --limit 200 --json number,title,labels,milestone\` (gh has the
-token). \`hack/lib/github.sh milestones\` lists the open milestones, and
-ROADMAP.md says what each one's outcome is.
-
-Designing is our work, not the reporter's or the user's (AGENTS.md,
-"Designing is our job"): an issue that wants something docs/design.md doesn't
-settle yet lacks a design, which a session makes, not an answer from the user.
-Never ask how to build something; ask the reporter only to elaborate what they
-want.
-
-For each proposed issue, decide one of these:
-- Ready it, \`hack/lib/github.sh status N ready\`, when it is clear (one piece
-  of work, its goal fits docs/design.md or says which part of the design it
-  changes), says when it is done (a checkable "Done when"), isn't a duplicate
-  of an open issue, and names what it waits on with a "Depends on #M" line in
-  its body, or waits on nothing. Before you ready any issue, it carries
-  exactly one \`kind/*\` label (kind/bug, kind/feature, kind/improvement,
-  kind/chore or kind/docs: \`take\` names its branch by it, and the release
-  notes file it by it) and a \`source/*\` one; give it the one that fits
-  (\`gh issue edit N --repo $C4_GITHUB_REPO --add-label kind/bug\`, and
-  \`--remove-label\` for a second kind), or \`hack/lib/github.sh intake N\`
-  for its source. \`status N ready\` refuses an issue with no kind.
-- Ready it as design work, when what it wants is clear but docs/design.md
-  doesn't settle how, or it is more than one piece of work: comment (first
-  line \`<!-- relay-triage -->\`) that its session makes the design choices,
-  writes them and why in a plan in docs/plans/ (and the change to
-  docs/design.md), and files the steps as status/proposed issues, each with
-  its own "Done when". The plan is not the issue's deliverable: its pull
-  request says \`Refs #N\`, never \`Closes #N\`; the issue stays open and
-  status/waiting, its body a "Depends on #S" line per step, and it closes
-  itself when its last step closes. Say that in the comment: the session is
-  done when the plan is merged and its steps are filed, the issue when its
-  last step lands. Then ready it.
-- Fill the gap and ready it, when the only thing missing is something you
-  can write yourself: a "Depends on #M" line it lacks (add it to the body with
-  \`gh issue edit N --repo $C4_GITHUB_REPO --body-file FILE\`, keeping the
-  rest of the body as it is). Then ready it and say what
-  you wrote in a comment (first line \`<!-- relay-triage -->\`).
-- Leave it proposed, with a comment (\`hack/lib/github.sh comment N FILE\`,
-  its first line \`<!-- relay-triage -->\`) saying what is missing, when it
-  falls short of that in a way you can't fill (what it wants is unclear: ask
-  the reporter to elaborate), or when it waits on something that can still
-  move it (an open issue: name it as #M, so the watch reads it again when #M
-  closes). When its newest triage comment still says what is
-  missing and nothing changed since, leave it without a new comment.
-- When nothing else can move it and it needs something only the user can give
-  (a tag, access, credentials, money), or you are unsure which way the factory
-  should go, escalate it to the maintainer with
-  \`hack/lib/github.sh status N needs-maintainer\` and a comment (first line
-  \`<!-- relay-triage -->\`) saying what it needs; for a direction, the comment
-  says the choice you would make and why, never a list of open questions. The
-  maintainer decides it or takes it to the user; never set status/needs-human
-  yourself.
-- Close it as a duplicate, \`hack/lib/github.sh duplicate N M\`, when open
-  issue #M covers the same work.
-
-When you ready an issue, any of the three ways, and a user of the release
-would notice what it changes (the CRDs, the operator, the UI, the chart,
-templates, docs a user reads), give it the open milestone whose outcome it
-serves, if one fits: \`hack/lib/github.sh milestone N "TITLE"\`, the title
-exactly as \`milestones\` prints it. When none fits, it gets none; never
-create, rename or close a milestone. Work on the relay, \`hack/\`, the skills
-or the governance files (AGENTS.md, GOVERNANCE.md, ROADMAP.md, docs/dev/)
-gets no milestone (ROADMAP.md).
+You are the maintainer's triage session for $C4_GITHUB_REPO: no issue is
+ready for the relay, and these wait in status/proposed: $1.
+Load the \`triage\` skill and follow it: ready each one that is sound, say on
+the others what they lack, and send what needs a decision to the maintainer.
+You take no issue, change no code, commit nothing and open no pull request;
+this worktree, relay-$K, is on origin/main for reading only.
 
 Rules for this headless run:
 - Never use the Fable model: not for subagents, not for anything. Always name
   the model when dispatching (sonnet or opus). Dispatch every subagent with
   run_in_background: false and never end your turn while one is running.
-- Touch only the issues listed as proposed: never set status/in-progress or
-  status/waiting,
-  never take an issue out of status/needs-maintainer or status/needs-human
-  (needs-maintainer is the maintainer's, needs-human stays the user's), never take an issue, edit a body only to
-  add a "Depends on #M" line, never a title, set a milestone only on an issue
-  you ready, and file no new issues.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   your account.
-- End your turn with a short account, the relay's log of this triage: readied
-  (#N, one line why, and its milestone or none), left proposed (#N, what is missing), closed as
-  duplicates (#N of #M), sent to the user (#N, the question).
+- End your turn with a short account, the relay's log of this triage: one
+  line per issue, readied (why, and its milestone or none), left proposed
+  (what is missing), closed as a duplicate (of #M) or sent to the maintainer
+  (what it needs).
 EOF
 }
 
@@ -998,7 +929,7 @@ work() {
     case $result in
       closed) log "session $i closed #$ISSUE" ;;
       needs-maintainer) log "session $i escalated #$ISSUE to the maintainer (status/needs-maintainer)" ;;
-      needs-human) log "session $i left #$ISSUE waiting for the user (status/needs-human)" ;;
+      needs-human) log "session $i left #$ISSUE waiting for the owner (status/needs-human)" ;;
       handed-off) log "session $i handed off #$ISSUE" ;;
       unknown) log "could not read #$ISSUE after session $i; stopping"; break ;;
       *)
