@@ -10,7 +10,7 @@ C4 Factory turns an idea into a working, scaffolded repository by first telling 
 
 - **Storytelling first.** The model shows who uses what, what exists and why, and who is working on it right now.
 - **The CRDs are the truth.** Anything can write them: kubectl, GitOps, agents or the UI. The UI enforces nothing; the rules live in the CRD schemas and the operator.
-- **A thin factory.** Open-source tools do the real work: uv for Python, each framework's own tooling, ArgoCD or Flux for shipping. The factory scaffolds and reports.
+- **A thin factory.** Open-source tools do the real work: uv for Python, each framework's own tooling, and for shipping the tool that owns each target (the GitHub API, CloudFormation, Argo CD or Flux). The factory scaffolds, hands each release to that tool and reports.
 - **Humans and agents are equal.** Both work in devcontainers, and both show up in the model as Sessions.
 
 ## Decisions so far
@@ -31,9 +31,9 @@ These were settled in the design discussion on 30 September 2026 and shape every
 | Git provider | Its own kind, `GitProvider`, per namespace. Every Container references one. |
 | Scaffolding | Once, at creation. Staying compliant afterwards is the Container owner's job. Status records the template versions used. |
 | Data stores | Their own kind, `DataStore`, backed by a Connector. A Relationship from a Container to a DataStore adds that Connector to the Container's scaffold. |
-| Shipping | Outside the operator. Deployment templates produce standard files that existing tools pick up. The one exception: the operator can copy a Container's releases to a GitHub repository the user names. |
+| Shipping (2026-10-15) | CI builds, the operator ships. Deployment templates write the files a tool reads; CI builds what ships with no deploy credential; the operator hands each release to the tool that owns a `DeployTarget` the Container names, with the target's credential, and reports. [Deploys](#deploys-each-release-to-its-targets). |
 | Sessions | Devcontainers run anywhere. A small client inside registers a Session on its Container and reports minimal status. |
-| Status | v1 shows only the factory's own steps plus active Sessions. Runtime health comes later. |
+| Status | v1 shows only the factory's own steps plus active Sessions. A deployed Container also shows the health its target's tool reports; monitoring the app itself is left to existing tools. |
 | Components (2026-10-15) | The factory is built from ports (GitHost, Issues, CI, AgentAccess, Registry, AgentRuntime, Deployer), each a narrow interface with a fake and a contract suite. Helm decides what is installed, custom resources what is used. A port is swappable only once two real adapters pass its contract. [Factory components](#factory-components-ports-and-adapters). |
 | Operations (2026-10-15) | The tier is where the app runs: a deploy target says `production` or `development`, every AWS repository synthesizes both, and a deploy that says nothing is `development`. A Container says in `spec.operations` what it promises in any tier: its backup retention and copy region, its recovery objectives and who its alarms tell; the AWS templates render the block and their checks enforce it. [plans/aws-production.md](plans/aws-production.md). |
 
@@ -1402,8 +1402,10 @@ each project uses:
   name as `Crew.spec.publishReleases.github` is (`spec.ci.giteaActions`,
   `spec.ci.githubActions`, `spec.ci.gitlabCI`), so CEL validates each member;
   a CEL rule allowing exactly one comes with the second member.
-- **Deploys get a new kind** whose targets are a union keyed by field name;
-  #1068 names it and its members.
+- **Deploys get a new kind,** `DeployTarget`, whose members are a union
+  keyed by field name: `github` first, then `cloudFormation` (#1071),
+  `argoCD` and `flux` (#1072), each added with its adapter.
+  [Deploys](#deploys-each-release-to-its-targets).
 - **The agent runtime has one implementation** and no field. A field to
   choose appears with the second implementation, never before, so no
   resource offers a choice the operator cannot make.
@@ -1420,8 +1422,9 @@ template (a Deployment catalog entry, as `k8s-manifests` is) writes the files
 the target's tool reads. CI builds what ships (an image, release files) with
 no deploy credential and publishes it to the Registry. The Deployer holds the
 target's credential, ships what CI built (by digest or release asset, never
-by rebuilding), and reads the target's state back into status. #1068 decides
-the kind, the targets and the status.
+by rebuilding), and reads the target's state back into status.
+[Deploys](#deploys-each-release-to-its-targets) has the kind, the targets and
+the status.
 
 **The credential path of each port.** A user's credential never reaches code
 the agents wrote. Each port names its Secret and who reads it:
@@ -1433,7 +1436,7 @@ the agents wrote. Each port names its Secret and who reads it:
 | AgentAccess | the Container's agent Git Secret, minted by the operator from the GitProvider's credential, owned by the Container | the operator, which passes it to that Container's sandboxes | a token that writes to that repository only and cannot merge to `main` |
 | CI jobs | none of the user's | the CI system | the host's own job token (Gitea's or GitHub's `GITHUB_TOKEN`, GitLab's `CI_JOB_TOKEN`), scoped to the repository; it may push to the host's registry |
 | AgentRuntime | the operator's ServiceAccount | the operator | no Kubernetes token; the AgentAccess token and the Agent's own credential Secret |
-| Deployer | the deploy target's Secret, named in the deploy resource (today `Crew.spec.publishReleases.github.tokenSecretRef`), made by the user | the operator only | nothing: CI builds without it, the operator ships |
+| Deployer | the DeployTarget's `credentialsSecretRef` (and `Crew.spec.publishReleases.github.tokenSecretRef` until #1070), made by the user | the operator only | nothing: CI builds without it, the operator ships |
 
 **How the ports stay well designed.**
 
@@ -1456,6 +1459,56 @@ the agents wrote. Each port names its Secret and who reads it:
   port: its interface, how it is picked, its implementations, its contract
   test and its credential path. A new port or adapter adds or changes its row
   in the same pull request, and the maintainer reviews it against the table.
+
+## Deploys: each release to its targets
+
+The owner wants each app the factory builds shipped where it runs: open-source
+code to GitHub (#1070), an AWS app to an account (#1071), a Kubernetes app to
+a cluster (#1072), with images built on release (#1069). This section is the
+model they share; [plans/deploy.md](plans/deploy.md) has the reasons and the
+steps.
+
+- **A place is a `DeployTarget`,** namespaced and shared by any number of
+  Containers. One member says what it is (`github: {repository: o/r}` first;
+  `cloudFormation`, `argoCD` and `flux` come with their adapters), beside a
+  `credentialsSecretRef` the user makes, a `tier` (`development`, the
+  default, or `production`), an `approval` (`Required` or `None`; empty is
+  `Required` for production) and non-secret deploy-time `parameters`. Its
+  condition `Ready` says whether the target accepts the credential
+  (`SecretMissing`, `SecretIncomplete`, `CredentialRefused`, `Unreachable`).
+- **A Container names its targets in `spec.deploy`:** entries keyed by
+  `target`, each with an optional `after` (an earlier entry that must run a
+  version first), `version` (a pinned tag; how a person rolls back) and
+  `approved` (the version a person let into a target that needs approval).
+  The list is mutable and never scaffolds again. A Crew or Brief names no
+  target.
+- **CI builds, the operator ships.** CI makes release files, an image by
+  digest and synthesized templates with no deploy credential. The operator
+  holds the target's Secret and hands the release to the tool that owns the
+  target (the GitHub API, CloudFormation, Argo CD or Flux); it never builds,
+  runs repository code or writes rollouts. A user's credential never reaches
+  code the agents wrote.
+- **On each release, in order.** The release is the one the Container's
+  Crew tagged, once its release runs succeed. Each entry ships its pinned
+  version or the newest, after its `after` entry runs it and, where needed,
+  once `approved` names it. Shipping starts the deploy and the operator reads
+  the state back each poll; a rollout the tool reports failed is not retried
+  by itself.
+- **Targets need files, they never write them.** What a target's tool reads
+  comes from the Container's Deployment or self-deploying Framework at
+  scaffold. A table in `internal/model` says what each member needs; a
+  Container that lacks it is `Incompatible` for that target, and a release
+  missing a file fails `ArtifactMissing`, fixed by a template bump.
+- **What it reports.** `status.deploys[]` per target: the version running
+  and wanted, the phase (`Waiting`, `Deploying`, `Deployed`, `Failed`), the
+  health the tool reports (`Healthy`, `Progressing`, `Degraded`, `Unknown`)
+  and the URL. The condition `Deployed` sums them (`Incompatible`,
+  `TargetNotReady`, `DeployFailed`, `WaitingForApproval`,
+  `WaitingForPrevious`, `Deploying`, `NoRelease`). *Needs you* shows a
+  deploy waiting for approval, failed or degraded.
+- **The release copy folds in.** `Crew.spec.publishReleases.github` keeps
+  working and shares the GitHub adapter's code; #1070 moves it onto a
+  DeployTarget with a migration.
 
 ## Distribution and issues
 
@@ -1505,8 +1558,8 @@ condition to say nothing is running. See
 
 ## Out of scope for v1
 
-- **Shipping.** No builds, registries or rollouts; existing tools pick up the scaffolded files. Since v4 a Crew can copy its releases to a GitHub repository: a release target, not a git provider, where the factory never pushes.
-- **Runtime health of the apps.** Reading back from ArgoCD or monitoring comes later. (The factory watches its own health since v3.)
+- **Shipping.** No builds, registries or rollouts in v1; existing tools pick up the scaffolded files. Since v4 a Crew copies its releases to a GitHub repository, and [Deploys](#deploys-each-release-to-its-targets) now ships each release to its targets.
+- **Runtime health of the apps.** The factory shows only what a deploy target's tool reports (Argo CD's health, a stack's status); monitoring the app itself is left to existing tools. (The factory watches its own health since v3.)
 - **Existing repositories and monorepos.** New work only, one repository per Container.
 - **Component and Code levels.** Dropped until Containers work end to end.
 - **Template updates.** Scaffolding happens once; no pull requests to existing repositories.
