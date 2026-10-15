@@ -62,10 +62,10 @@ var _ = Describe("Hello page", Ordered, ContinueOnFailure, func() {
 			g.Expect(list.Items).To(HaveLen(1))
 			for _, c := range list.Items {
 				g.Expect(c.Status.Phase).To(Equal(c4v1alpha1.ContainerReady), c.Name)
-				// The Standard's ref moves (templates/versions.txt), and a cluster
-				// kept from an earlier run holds the hello Container from then.
+				// The refs move (templates/versions.txt), and a cluster kept from
+				// an earlier run holds the hello Container from then.
 				g.Expect(c.Status.ScaffoldedFrom).To(HaveExactElements(
-					"hello-html@v1.0.0", HavePrefix(standard+"@")), c.Name)
+					HavePrefix("hello-html@"), HavePrefix(standard+"@")), c.Name)
 			}
 		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 

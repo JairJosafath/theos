@@ -376,10 +376,11 @@ func writeRelated(b *strings.Builder, ws Workspace) {
 	}
 }
 
-// protectedList is what the agent must not change: the platform's paths and the
-// Standard's.
+// protectedList is what the agent must not change: the paths the operator
+// sent, the platform's for the Container's CI system and the Standard's, and
+// the operator's own, which are the same on every CI system.
 func protectedList(job Job) []string {
-	return model.AgentProtectedPaths(job.ProtectedPaths)
+	return model.AgentProtectedPaths(model.CI{}, job.ProtectedPaths)
 }
 
 // neverList names the paths no Standard change may touch, as prose.

@@ -49,7 +49,7 @@ var _ = Describe("Session", func() {
 			g.Expect(session.Status.Phase).To(Equal(c4v1alpha1.SessionStale))
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.ActiveSessions).To(BeZero())
-		}).WithTimeout(testStaleAfter + 5*time.Second).Should(Succeed())
+		}).Should(Succeed())
 	})
 
 	It("keeps its Container for life", func() {

@@ -10,7 +10,7 @@ Standard.
 - **Check contract:** `make check` greps `index.html` for `hello, world`.
   `.gitea/workflows/check.yaml` runs it on a runner labelled `base` under the
   status context `check / check`, which the protected `main` requires
-  (`model.CheckContexts`).
+  (Gitea Actions' check contexts, `model.CI` in `internal/model/ci.go`).
 - **Standard:** none needed; a Standard that also writes `Makefile` or
   `.gitea/workflows/check.yaml` conflicts with it.
 

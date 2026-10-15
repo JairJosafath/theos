@@ -389,11 +389,11 @@ func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Pr
 	if status.Review != nil {
 		verdict = status.Review.Verdict
 	}
-	protected, err := protectedPaths(ctx, r.Client, container)
+	ci, protected, err := protection(ctx, r.Client, container)
 	if err != nil {
 		return "", err // never merge a path nobody checked
 	}
-	if why := model.GatedMergeRefusal(checks.State, checks.Contexts, verdict, changed,
+	if why := model.GatedMergeRefusal(ci, checks.State, checks.Contexts, verdict, changed,
 		task.Spec.AllowedProtectedPaths, protected); why != "" {
 		return why, nil
 	}

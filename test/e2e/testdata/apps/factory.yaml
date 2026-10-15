@@ -21,7 +21,7 @@ spec:
   supportedTypes: [static-site]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/hello-html
-    ref: v1.0.0
+    ref: v1.1.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Standard

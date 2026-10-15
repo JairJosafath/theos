@@ -66,11 +66,13 @@ func providerFor(ctx context.Context, c client.Client, apiReader client.Reader, 
 	return access.provider, err
 }
 
-// gitAccess is a GitProvider, its credentials and the Provider built from them.
+// gitAccess is a GitProvider, its credentials, the Provider built from them
+// and its CI system.
 type gitAccess struct {
 	gitProvider *c4v1alpha1.GitProvider
 	creds       gitprovider.Credentials
 	provider    gitprovider.Provider
+	ci          model.CI
 }
 
 // gitAccessFor reads a GitProvider in namespace ns and its credentials, straight
@@ -98,7 +100,11 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 	if err != nil {
 		return gitAccess{}, err
 	}
-	return gitAccess{gitProvider: &provider, creds: creds, provider: p}, nil
+	ci, err := gitProviderCI(&provider)
+	if err != nil {
+		return gitAccess{}, err
+	}
+	return gitAccess{gitProvider: &provider, creds: creds, provider: p, ci: ci}, nil
 }
 
 // reportChecksApplied sets ChecksApplied: whether the Container's Standard runs

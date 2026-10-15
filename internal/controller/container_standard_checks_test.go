@@ -72,7 +72,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpdating))
 			g.Expect(cond.Message).To(Equal("Pull request " + update.PullRequestURL + " brings python-strict from " +
 				"v1.0.0 to v1.0.0 with the full check before release; it merges once CI passes"))
-		}).WithTimeout(standardSteps).Should(Succeed())
+		}).Should(Succeed())
 		Expect(update).To(MatchFields(IgnoreExtras, Fields{
 			"Ref": Equal("v1.0.0"), "Checks": Equal(c4v1alpha1.ChecksBeforeRelease),
 			"Branch": Equal("standard-update/python-strict-v1.0.0-before-release"),
@@ -142,7 +142,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 			cond := condition(getContainer(g, ns).Status.Conditions, c4v1alpha1.ConditionChecksApplied)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonStandardRunsFullChecks))
-		}).WithTimeout(standardSteps).Should(Succeed())
+		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
 			container := getContainer(g, ns)
@@ -273,7 +273,7 @@ func openedUpdateTo(ns string, to model.StandardVersion) c4v1alpha1.StandardUpda
 		g.Expect(update.Checks).To(BeEquivalentTo(to.Checks))
 		g.Expect(update.Stopped).To(BeEmpty())
 		g.Expect(update.PullRequest).NotTo(BeZero())
-	}).WithTimeout(standardSteps).Should(Succeed())
+	}).Should(Succeed())
 	return update
 }
 

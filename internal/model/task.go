@@ -377,10 +377,11 @@ func ResumeFeedback(issue int, paths []string, earlier string) string {
 // when it may: CI is green, every check main's protection requires passed (the
 // merge overrides that protection, so it must not be laxer), the reviewer
 // approved, and the change changes an allowed path and no protected path
-// outside the allowed ones, case ignored. contexts is the state of each check on the commit by its context.
-func GatedMergeRefusal(checks string, contexts map[string]string, verdict string, changed, allowed,
+// outside the allowed ones, case ignored. contexts is the state of each check on the commit by its
+// context, and ci the Container's CI system, whose check contexts main requires.
+func GatedMergeRefusal(ci CI, checks string, contexts map[string]string, verdict string, changed, allowed,
 	protected []string) string {
-	if refusal := checksRefusal(checks, contexts); refusal != "" {
+	if refusal := checksRefusal(ci.CheckContexts, checks, contexts); refusal != "" {
 		return refusal
 	}
 	if verdict != VerdictApprove {
@@ -410,12 +411,16 @@ func GatedMergeRefusal(checks string, contexts map[string]string, verdict string
 
 // checksRefusal says why a commit's checks don't let a merge that overrides
 // main's protection through, or "" when CI is green and every check main
-// requires passed.
-func checksRefusal(checks string, contexts map[string]string) string {
+// requires (required, the CI system's check contexts) passed.
+func checksRefusal(required []string, checks string, contexts map[string]string) string {
+	if len(required) == 0 {
+		// A CI system always names its contexts; none means it wasn't given.
+		return "no CI system names the checks main requires"
+	}
 	if checks != checkSuccess {
 		return fmt.Sprintf("CI is %s, not success", orUnknown(checks))
 	}
-	if missing := UnpassedChecks(contexts); len(missing) > 0 {
+	if missing := UnpassedChecks(required, contexts); len(missing) > 0 {
 		for i, m := range missing {
 			missing[i] = strconv.Quote(m)
 		}

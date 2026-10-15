@@ -10,7 +10,7 @@ import (
 )
 
 func TestSplitChange(t *testing.T) {
-	std := AgentProtectedPaths([]string{"AGENTS.md", "Makefile", "docs/agents/"})
+	std := AgentProtectedPaths(giteaActions, []string{"AGENTS.md", "Makefile", "docs/agents/"})
 	for _, tt := range []struct {
 		name                      string
 		changed, protected, allow []string
@@ -33,7 +33,7 @@ func TestSplitChange(t *testing.T) {
 			ChangeSplit{Task: []string{"Makefile", "release_test.go"}, Refused: []string{".gitea/workflows/check.yaml", "AGENTS.md"}}},
 		{"gated: a protected path in another case refused", []string{"Makefile", "makefile", "Agents.md"}, std,
 			[]string{"Makefile"}, true, ChangeSplit{Task: []string{"Makefile"}, Refused: []string{"makefile", "Agents.md"}}},
-		{"unprotected AGENTS.md is the Task's", []string{"AGENTS.md"}, AgentProtectedPaths(nil), nil, true,
+		{"unprotected AGENTS.md is the Task's", []string{"AGENTS.md"}, AgentProtectedPaths(giteaActions, nil), nil, true,
 			ChangeSplit{Task: []string{"AGENTS.md"}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -530,7 +530,7 @@ func TestStandardUpdateRefusal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := StandardUpdateRefusal(tt.checks, tt.contexts, tt.changed, tt.planned); got != tt.want {
+			if got := StandardUpdateRefusal(giteaActions, tt.checks, tt.contexts, tt.changed, tt.planned); got != tt.want {
 				t.Errorf("StandardUpdateRefusal() = %q, want %q", got, tt.want)
 			}
 		})

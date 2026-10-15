@@ -730,6 +730,12 @@ README](../dist/chart/README.md#values)), or turn `agents.enabled` or
 `catalog.enabled` off and keep your own. An object the chart stops rendering
 stays until you delete it.
 
+**Your objects keep working.** Within `c4.factory.io/v1alpha1` a release
+never removes, renames or retypes a field, never adds a required one and
+never tightens a rule so that an object you applied before is refused after;
+a change that must break waits for a `v1beta1` that converts your objects.
+See [Compatibility](design.md#compatibility).
+
 **A quiet moment anyway.** Pause a Brief, and with it every Crew it made, in
 one step: the Pause button on its card in the UI sets its `spec.paused` to
 `true`, and Resume sets it back to `false`. Pause a Crew of your own with its

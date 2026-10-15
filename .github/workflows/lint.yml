@@ -1,7 +1,10 @@
 name: Lint
 
 # Go sources, the linter's configuration and the YAML that make validate-yaml
-# checks (with the templates and tools it renders them with).
+# checks (with the templates and tools it renders them with), and what the
+# shell tests of hack/ read (make test-hack). It runs on pull requests to main
+# too, with the same paths, so vet, lint and the shell tests answer before
+# hack/lib/github.sh land (hack/check-workflows.sh).
 on:
   push:
     branches: [main]
@@ -12,17 +15,40 @@ on:
       - .golangci.yml
       - .custom-gcl.yml
       - Makefile
+      - PROJECT
       - '**/*.yaml'
       - dist/chart/**
       - templates/**
-      - hack/validate-yaml.sh
-      - hack/k8s-openapi.sh
-      - .github/workflows/lint.yml
+      - hack/**
+      - dev
+      - ui/Dockerfile
+      - docs/getting-started.md
+      - .claude/skills/**
+      - .github/workflows/**
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - .golangci.yml
+      - .custom-gcl.yml
+      - Makefile
+      - PROJECT
+      - '**/*.yaml'
+      - dist/chart/**
+      - templates/**
+      - hack/**
+      - dev
+      - ui/Dockerfile
+      - docs/getting-started.md
+      - .claude/skills/**
+      - .github/workflows/**
   workflow_dispatch:
 
-# One pending run per branch: a running one finishes, so main keeps getting a
-# verdict, and GitHub cancels the older pending ones when a newer push comes
-# (hack/check-workflows.sh, docs/dev/testenv.md).
+# One pending run per branch or pull request: a running one finishes, so main
+# keeps getting a verdict, and GitHub cancels the older pending ones when a
+# newer push comes (hack/check-workflows.sh, docs/dev/testenv.md).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
@@ -56,3 +82,24 @@ jobs:
         env:
           # hack/k8s-openapi.sh lists the Kubernetes schemas through the GitHub API.
           GITHUB_TOKEN: ${{ github.token }}
+
+  test-hack:
+    permissions:
+      contents: read
+    name: Shell tests of hack/
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          # A self-hosted runner keeps its Go caches on a volume (make gh-runner).
+          cache: ${{ runner.environment == 'github-hosted' }}
+
+      - name: Run the shell tests
+        run: make test-hack
