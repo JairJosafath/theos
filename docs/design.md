@@ -289,8 +289,9 @@ enforces.
   Standard's protected files (only the operator's gated merge of a Standard change
   passes, after its own checks) and keeps `v*` tags to the operator; a per-project
   NetworkPolicy allows only DNS, the Git host and public HTTPS; each run has a
-  deadline. The Claude token is readable inside the sandbox; Agent Substrate's
-  egress credential injection is the later fix. The token's one source is a
+  deadline. The Claude token is readable inside the sandbox; a model proxy in
+  the release namespace that adds it to the agent's requests is the fix
+  ([plan](plans/model-proxy.md)). The token's one source is a
   Secret in the release namespace that the operator copies into project
   namespaces, so the fix reads one Secret; a namespace receives copies only
   with a label a namespace's own users can't set.
