@@ -101,6 +101,11 @@ unanswered for 14 days.
      the owner can fix it (billing, the spending limit); take it to them.
      Closing it as a duplicate of an issue already tracking the outage is
      safe: the watch files it once per outage.
+   - Flaky specs: `hack/lib/github.sh flakes --count` lists the specs that
+     failed on main in the last seven days, with how often. List them under
+     Health (`Flaky this week: none` when there are none), so a family shows
+     before it costs a day; the watch files a
+     `Flaky: <spec>` bug for one that failed twice.
    - A failed run whose log says `no space left on device` or `cannot
      allocate memory`, or whose runner went offline during the run, is the
      device's, not the code's: file no bug; say it under Health with the
@@ -221,6 +226,7 @@ Updated 2026-10-07 03:10 · next sweep about 05:10
 
 ## Health
 Relay: 12 workers, 3 busy · main: green · last release: v0.3.1 (2026-10-06)
+Flaky this week: 2× Brief apps copies a Crew's latest release… (#N) · 1× Crew release bumps files the bumps…
 Open: 4 ready, 3 in progress, 1 proposed
 Milestones: Briefs 3 open, 5 closed · Upgrades 6 open, 0 closed · 1.0 9 open, 0 closed
 
