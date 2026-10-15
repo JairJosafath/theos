@@ -96,7 +96,16 @@
 #                                        Maintainer report issue, refreshed every GH_LAND_BEAT seconds while it
 #                                        waits and runs; one older than C4_LAND_TTL (45m) was abandoned and is
 #                                        dropped. Exit 4: not its turn within DURATION (default 2h); its place is
-#                                        given up
+#                                        given up. Refused before it queues when PR changes more than
+#                                        GH_REVIEW_LINES (400) lines in hand-written files and carries no review
+#                                        pass (review-check)
+#   hack/lib/github.sh review-check PR   whether PR may land as reviewed: the lines it changes in hand-written
+#                                        files (zz_generated.*, config/crd/bases/, config/rbac/role.yaml,
+#                                        lockfiles and docs/screenshots/ don't count); over GH_REVIEW_LINES it
+#                                        needs a comment that starts with Review:, by the owner's account (an
+#                                        owner, member or collaborator) with an Agent: NAME line, whose every
+#                                        top-level list item (a finding) starts with Fixed or Dismissed. Exit 1: it
+#                                        needs one and has none, saying why
 #   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N; drops N's status labels
 #   hack/lib/github.sh closed N          drop closed issue N's status/* labels (open N is left alone); the
 #                                        Issue closed workflow runs it, for issues a pull request's Closes #N closes
@@ -1786,6 +1795,75 @@ gh_land_body() {
     "${name:-${USER:-someone}}" "$1" "${C4_HOST:-$(hostname)}" "${GH_LAND_PID:-$$}" "$(date -u +%Y-%m-%dT%H:%MZ)"
 }
 
+# The review pass (#1104): nothing read a change before it landed but its
+# author, and bugs named earlier pull requests as their cause. So a pull
+# request over GH_REVIEW_LINES changed lines in hand-written files lands only
+# with a review: a comment starting with Review:, posted through the owner's
+# account (every agent posts as the owner, so an outsider's comment never
+# counts) and naming its agent on an Agent: line, each finding a top-level
+# list item that starts with Fixed or Dismissed (the handoff skill has the format).
+GH_REVIEW_LINES=${GH_REVIEW_LINES:-400}
+GH_REVIEW_SKIP='(^|/)zz_generated\.[^/]*$|^config/crd/bases/|^config/rbac/role\.yaml$|^docs/screenshots/|(^|/)(go\.sum|go\.work\.sum|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|uv\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|Chart\.lock)$'
+
+# gh_review_lines PR: the lines PR adds and deletes in hand-written files.
+gh_review_lines() {
+  local files
+  files=$(gh_api --paginate "repos/$C4_GITHUB_REPO/pulls/$1/files?per_page=100" \
+    --jq '.[] | "\(.additions + .deletions)\t\(.filename)"') || return 1
+  # Through the environment: awk -v would read the regexp's backslashes as escapes.
+  SKIP=$GH_REVIEW_SKIP awk -F'\t' '$2 !~ ENVIRON["SKIP"] { n += $1 } END { print n + 0 }' <<<"$files"
+}
+
+# gh_review_check PR: exit 0 when PR is small or carries a review pass that
+# counts (see above); else exit 1, saying what is missing.
+gh_review_check() {
+  local pr=${1:?usage: review-check PR} lines pages verdict
+  [[ $pr =~ ^[0-9]+$ ]] || { echo "github: review-check takes a pull request number" >&2; return 64; }
+  lines=$(gh_review_lines "$pr") || { echo "github: #$pr: could not ask GitHub how many lines it changes" >&2; return 1; }
+  if ((lines <= GH_REVIEW_LINES)); then
+    echo "github: #$pr changes $lines lines in hand-written files: no review pass needed" >&2
+    return 0
+  fi
+  pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$pr/comments?per_page=100") || {
+    echo "github: #$pr: could not read its comments" >&2; return 1; }
+  # The newest Review: comment that counts decides; an outsider's or one naming no agent never does.
+  verdict=$(jq -r '
+    def review: .body // "" | sub("^\\s+"; "") | startswith("Review:");
+    def ours: .author_association | IN("OWNER", "MEMBER", "COLLABORATOR");
+    def agent: [.body | capture("(?m)^[ \\t]*Agent:[ \\t]*(?<n>[^\\s]+)") | .n] | first;
+    # A finding is a top-level list item outside a code fence, a rule (* * *) is none;
+    # settled, it starts with Fixed or Dismissed (bold or not).
+    def open: [foreach (.body | gsub("[\r\t]"; " ") | split("\n")[]) as $l ({f: false};
+        .l = $l | if $l | test("^\\s*(```|~~~)") then .f = (.f | not) | .l = null else . end; .)
+      | select(.f | not) | .l // empty
+      | select(test("^([-*+]|[0-9]+[.)])\\s+\\S") and (test("^([-*_]\\s*){3,}$") | not))
+      | select(test("(?i)^([-*+]|[0-9]+[.)])\\s+[*_[]*(fixed|dismissed)\\b") | not)];
+    [.[][] | select(review)] as $all
+    | ([$all[] | select(ours and agent != null)] | last) as $r
+    | if $r == null then
+        ($all | last) as $l
+        | if $l == null then "none"
+          elif ($l | ours | not) then "outsider\t\($l.user.login) (\($l.author_association))"
+          else "noagent\t\($l.html_url)" end
+      elif ($r | open | length) > 0 then "open\t\($r.html_url)\t\($r | open | first)\t\($r | open | length)"
+      else "ok\t\($r | agent)\t\($r.html_url)" end' <<<"$pages") || return 1
+  local how="run /code-review in a subagent, post its findings as a comment that starts with Review: and names the agent on an Agent: line, fix or dismiss each, then land (the handoff skill, \"Review before landing\")"
+  case ${verdict%%$'\t'*} in
+    ok)
+      verdict=${verdict#*$'\t'}
+      echo "github: #$pr changes $lines lines in hand-written files; reviewed by ${verdict%%$'\t'*} (${verdict#*$'\t'})" >&2
+      return 0 ;;
+    none) echo "github: #$pr changes $lines lines in hand-written files (over $GH_REVIEW_LINES) and has no review pass: $how" >&2 ;;
+    outsider) echo "github: #$pr changes $lines lines in hand-written files (over $GH_REVIEW_LINES); its Review: comment by ${verdict#*$'\t'} doesn't count, only one posted through the owner's account does: $how" >&2 ;;
+    noagent) echo "github: #$pr changes $lines lines in hand-written files (over $GH_REVIEW_LINES); its Review: comment (${verdict#*$'\t'}) names no agent: add an Agent: NAME line to it" >&2 ;;
+    open)
+      local rest=${verdict#*$'\t'} url item n
+      IFS=$'\t' read -r url item n <<<"$rest"
+      echo "github: #$pr changes $lines lines in hand-written files (over $GH_REVIEW_LINES); $n finding(s) of its review ($url) start with neither Fixed nor Dismissed, the first: \"$item\"; fix or dismiss each and say so in the comment" >&2 ;;
+  esac
+  return 1
+}
+
 # gh_land PR [--wait DURATION]: wait for the merge turn, take it, merge the
 # base into this checkout's branch, run make check, push and merge PR (gh_merge),
 # then give the turn up, also when a step fails. Exit 0: merged. Exit 1: refused
@@ -1814,6 +1892,7 @@ gh_land_turn() {
     echo "github: #$pr's branch is $head, but this checkout is on ${branch:-a detached HEAD}: land it from its own checkout" >&2; return 1; }
   [ -z "$(git -C "$GH_LIB_ROOT" status --porcelain --untracked-files=no)" ] || {
     echo "github: this checkout has uncommitted changes: commit and push them, then land" >&2; return 1; }
+  gh_review_check "$pr" || return 1
   n=$(gh_report_issue) || return 1
   id=$(gh_land_body "$pr" | jq -Rs '{body: .}' |
     gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
@@ -2142,6 +2221,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     pr-check) gh_pr_check "$@" ;;
     merge) gh_merge "$@" ;;
     land) gh_land "$@" ;;
+    review-check) gh_review_check "$@" ;;
     duplicate) gh_duplicate "$@" ;;
     closed) gh_closed "$@" ;;
     create) gh_create "$@" ;;
