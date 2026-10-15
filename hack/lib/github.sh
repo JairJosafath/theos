@@ -365,8 +365,10 @@ GH_PARENT_MARKER='<!-- relay-parent -->'
 
 # gh_plan_pr N: N's plan: the newest merged pull request whose body says
 # Refs #N (or Closes, Fixes, Resolves #N), found in N's timeline, and that
-# adds or changes a file in docs/plans/; nothing if none. The plan file is
-# what tells a plan from a step's partial work that says Refs #N.
+# adds or changes a file in docs/plans/ or docs/design.md (a plan written as a
+# change to the design, AGENTS.md "Designing is our job"); nothing if none.
+# The plan file is what tells a plan from a step's partial work that says
+# Refs #N.
 gh_plan_pr() {
   local pages pr files
   pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$1/timeline?per_page=100") || return 1
@@ -375,7 +377,7 @@ gh_plan_pr() {
     | select((.body // "") | test("(?i)\\b(refs|closes|fixes|resolves) #\($n)\\b"))
     | .number] | unique | reverse | .[]' <<<"$pages"); do
     files=$(gh_api --paginate "repos/$C4_GITHUB_REPO/pulls/$pr/files?per_page=100" --jq '.[].filename') || return 1
-    grep -q '^docs/plans/' <<<"$files" && { echo "$pr"; return 0; }
+    grep -qE '^docs/(plans/|design\.md$)' <<<"$files" && { echo "$pr"; return 0; }
   done
   return 0
 }
@@ -421,15 +423,16 @@ gh_parents() {
     steps=$(sed 's/[0-9][0-9]*/#&/g; s/ /, /g' <<<"$all")
     if [ -z "$left" ]; then
       # Not among the open issues: closed, or a pull request; ask each. A step
-      # closed as not planned (a duplicate) did not finish the plan, and one
-      # GitHub can't answer for (no such issue) keeps the parent open too.
+      # closed however (completed, or not planned: a duplicate whose work lands
+      # elsewhere) counts as closed; one GitHub can't answer for (no such
+      # issue) keeps the parent open.
       for d in $all; do
         if ! says=$(gh_api "repos/$C4_GITHUB_REPO/issues/$d" --jq '"\(.state) \(.state_reason // "")"' 2>/dev/null); then
           echo "github: #$n depends on #$d, which GitHub could not show; #$n stays open" >&2
           left+=" $d"
           continue
         fi
-        [[ $says == closed* && $says != "closed not_planned" ]] || left+=" $d"
+        [[ $says == closed* ]] || left+=" $d"
       done
       left=${left# }
     fi
