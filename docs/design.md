@@ -34,6 +34,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 | Shipping | Outside the operator. Deployment templates produce standard files that existing tools pick up. The one exception: the operator can copy a Container's releases to a GitHub repository the user names. |
 | Sessions | Devcontainers run anywhere. A small client inside registers a Session on its Container and reports minimal status. |
 | Status | v1 shows only the factory's own steps plus active Sessions. Runtime health comes later. |
+| Components (2026-10-15) | The factory is built from ports (GitHost, Issues, CI, AgentAccess, Registry, AgentRuntime, Deployer), each a narrow interface with a fake and a contract suite. Helm decides what is installed, custom resources what is used. A port is swappable only once two real adapters pass its contract. [Factory components](#factory-components-ports-and-adapters). |
 | Operations (2026-10-15) | The tier is where the app runs: a deploy target says `production` or `development`, every AWS repository synthesizes both, and a deploy that says nothing is `development`. A Container says in `spec.operations` what it promises in any tier: its backup retention and copy region, its recovery objectives and who its alarms tell; the AWS templates render the block and their checks enforce it. [plans/aws-production.md](plans/aws-production.md). |
 
 ## The model
@@ -1304,6 +1305,153 @@ server's message when it refuses one. The UI still enforces nothing.
   model editor of its own; a Container's `spec.checks` is a setting, not the
   model.
 
+## Factory components: ports and adapters
+
+The owner wants a device to build the factory from parts it can swap: a GitHub
+or GitLab organization instead of the in-cluster Gitea, the device's own Argo
+CD for deploys, later another CI system or agent runtime. This section decides
+the parts (ports), how a device picks an implementation of each (an adapter),
+and how each port is tested. It changes no behaviour; #1094 splits the Git
+host interface, #1095 makes the templates' CI files an input, #1068 adds the
+Deployer, #1088 builds the second host. [architecture.md](architecture.md#ports)
+keeps the Ports table, one row per port.
+
+**A port is cut by what the controllers call, not by one product's API.**
+`gitprovider.Provider` has 57 methods, called from 27 files in `internal/controller`.
+Grouped by caller they fall into these ports:
+
+| Port | What the operator asks of it | Today |
+| --- | --- | --- |
+| GitHost | repositories, history, files, pushes, branches, tags, branch rules, pull requests and merges, commit statuses, the source at a tag | Gitea, inside `Provider` |
+| Issues | issues, comments, labels, assignment, milestones, dependencies | Gitea, inside `Provider`; request intake on GitHub (`IssueTracker`) |
+| CI | workflow runs of a commit or tag, rerunning failed jobs, a job's log, runners online | Gitea Actions, inside `Provider` |
+| AgentAccess | a credential that writes to one Container's (or Brief's) repository only, and revoking it | Gitea bot users, inside `Provider` |
+| Registry | publishing a Go module, the Go proxy address; container images (#1069) | Gitea packages, inside `Provider` |
+| AgentRuntime | start a run, read its state and result, stop it, list the runs held | Agent Sandbox, hard-coded (`SandboxGVK`) |
+| Deployer | ship a release to a target, read back its state | the GitHub release copy (`ReleaseTarget`); #1068 |
+
+Three parts stay outside the ports. The catalog swaps already, as template
+repositories at pinned refs. The agent harness is the runner's choice
+(`Agent.spec.harness`), inside the sandbox, not the operator's. Fetching a
+template is plain Git over HTTPS, the same on every host, so it is one
+implementation and no port.
+
+- **Request intake folds into Issues.** Reading requests from a GitHub
+  repository's issues is the Issues port on a second host. Intake uses a
+  narrow part of it (list open issues, comment, find a comment, close, ask
+  whether an author is a member), so a host that offers only that part can
+  serve intake and not the factory's own work board.
+- **The release copy folds into Deployer.** Copying a release to a GitHub
+  repository is a deploy of open-source code to a VCS host (#1070). Until #1070
+  moves it, `Crew.spec.publishReleases.github` and `ReleaseTarget` stay as
+  they are, listed as the Deployer's first adapter.
+- **Statuses are the host's, runs are the CI's.** Every CI system reports to
+  the host's commit statuses or checks, so `CombinedStatus` stays in GitHost
+  and the merge rules read only it. GitHub Actions reports check runs, which
+  GitHub's combined status leaves out, so the GitHub adapter folds check runs
+  and statuses into one `CheckStatus`, and the check contexts match check-run
+  names. The CI port answers what the statuses link
+  to: runs, reruns, logs and runners. Runner isolation (#1076) belongs to the
+  CI port.
+- **What a CI system writes is a business rule, not an adapter.** Where the
+  workflow files go (`.gitea/workflows/`, `.github/workflows/`,
+  `.gitlab-ci.yml`), the check contexts the merge rules require (today
+  `model.CheckContexts`) and the paths the platform protects (today
+  `model.PlatformProtectedPaths`) are one row per CI system in a table in
+  `internal/model`. `scaffold.Input` names the CI system, and the templates
+  render that system's files (#1095).
+
+**A port is a narrow Go interface, with its shared types in its own file, one
+fake and one contract suite.** A host adapter implements several ports (Gitea
+implements GitHost, Issues, CI, AgentAccess and Registry); a controller takes
+only the ports it calls. What a host lacks, its adapter emulates, or the port
+makes it an optional capability: a second small interface the adapter may
+implement, found by a type assertion, and reported with a condition reason
+when missing rather than failing the Container. Where a Gitea-only behaviour
+meets other hosts:
+
+| Behaviour | Gitea | GitHub | GitLab | The port says |
+| --- | --- | --- | --- | --- |
+| A credential for one repository | a bot user per Container, its token | an App installation token limited to that repository, an hour long | a project access token | AgentAccess returns the credential and when it expires; the operator mints a new one before a run that would outlive it (today Gitea's token is minted once per Container and kept in its Secret) |
+| Merging past branch rules | admin force merge | the App as a ruleset bypass actor | merge as maintainer | `Merge` takes whether to bypass; an adapter that cannot fails its contract |
+| Protected file paths | branch rule `ProtectedPaths` | push rulesets that restrict file paths (some plans), or CODEOWNERS review | Code Owners, paid tiers | the operator refuses to merge a pull request that touches a platform path (`model.PlatformProtectedPaths`), whatever the host; a host rule is extra |
+| Exclusive scoped labels | native | none | scoped labels (`a::b`) | adding a label removes the others of its scope; the adapter does it when the host doesn't |
+| Issue dependencies | native | "blocked by" | issue links that block | `OpenBlockers` and `AddIssueDependency` are part of Issues |
+| Runners online | admin API | runners API | runners API | may answer "unknown", as it can now |
+| Go modules | the owner's Go registry | none: the module is fetched from its tag | Go proxy | optional capability of Registry |
+| Events | webhooks (#1084) | webhooks | webhooks | polling is the contract; webhooks are an optional capability of GitHost |
+
+**How a device picks: Helm decides what is installed, custom resources decide
+what is used.** The chart installs Gitea, its runners and Agent Sandbox when
+asked (`gitea.enabled`, `runners.*`); a device with its own GitHub
+organization or Argo CD installs none of them. The resources then name what
+each project uses:
+
+- **The Git host is `GitProvider.spec.provider`:** `gitea`, `github` or
+  `gitlab`, each value added with its adapter. A block named after the host
+  (`spec.github`, `spec.gitlab`) holds what only it needs, such as a GitHub
+  App's ID; CEL allows only the block that matches `provider`.
+- **CI and registry default to the host's own** (Gitea Actions and Gitea
+  packages on Gitea, GitHub Actions and GHCR on GitHub). A GitProvider that
+  uses another sets `spec.ci` or `spec.registry`, each a union keyed by field
+  name as `Crew.spec.publishReleases.github` is (`spec.ci.giteaActions`,
+  `spec.ci.githubActions`, `spec.ci.gitlabCI`), so CEL validates each member;
+  a CEL rule allowing exactly one comes with the second member.
+- **Deploys get a new kind** whose targets are a union keyed by field name;
+  #1068 names it and its members.
+- **The agent runtime has one implementation** and no field. A field to
+  choose appears with the second implementation, never before, so no
+  resource offers a choice the operator cannot make.
+
+**Where the code lives.** The ports, their shared types and the per-CI table
+are plain Go with no Kubernetes; each adapter is its own package, and only
+`cmd/main.go` imports adapters. It builds the adapters a GitProvider names
+and passes the controllers ports, as it passes `gitprovider.Client{}` now. A
+depguard rule makes a controller importing an adapter fail `make lint`.
+[architecture.md](architecture.md#ports) has the packages.
+
+**What a deployer is.** An adapter in the operator, plus a template. The
+template (a Deployment catalog entry, as `k8s-manifests` is) writes the files
+the target's tool reads. CI builds what ships (an image, release files) with
+no deploy credential and publishes it to the Registry. The Deployer holds the
+target's credential, ships what CI built (by digest or release asset, never
+by rebuilding), and reads the target's state back into status. #1068 decides
+the kind, the targets and the status.
+
+**The credential path of each port.** A user's credential never reaches code
+the agents wrote. Each port names its Secret and who reads it:
+
+| Port | Secret | Read by | An agent or CI job gets instead |
+| --- | --- | --- | --- |
+| GitHost, Issues, CI, Registry | the GitProvider's `credentialsSecretRef` (a Gitea token; a GitHub App's ID and private key; a GitLab group token), made by the user; the operator reads runs, logs and runners with it too | the operator only | nothing of it |
+| Issues, for request intake | the Brief's GitHub token Secret (`releases[].requests`), made by the user | the operator only | nothing of it |
+| AgentAccess | the Container's agent Git Secret, minted by the operator from the GitProvider's credential, owned by the Container | the operator, which passes it to that Container's sandboxes | a token that writes to that repository only and cannot merge to `main` |
+| CI jobs | none of the user's | the CI system | the host's own job token (Gitea's or GitHub's `GITHUB_TOKEN`, GitLab's `CI_JOB_TOKEN`), scoped to the repository; it may push to the host's registry |
+| AgentRuntime | the operator's ServiceAccount | the operator | no Kubernetes token; the AgentAccess token and the Agent's own credential Secret |
+| Deployer | the deploy target's Secret, named in the deploy resource (today `Crew.spec.publishReleases.github.tokenSecretRef`), made by the user | the operator only | nothing: CI builds without it, the operator ships |
+
+**How the ports stay well designed.**
+
+- **A contract suite per port.** One Go test suite per port states its
+  behaviour (what `ErrConflict` means, that `OpenPullRequest` returns the open
+  one, that exclusive labels replace each other). It runs against the port's
+  fake in `make test`, against Gitea in `make test-gitea`, and against every
+  other adapter in a target of its own. The controllers' tests use the fake,
+  so a passing fake means the controller tests describe a real host.
+- **The second-implementation rule.** A port is called swappable only once its
+  fake and two real adapters pass its contract. Until then the docs say it has
+  one implementation.
+- **A host-neutral guard.** A Go test fails on `gitea` or `.gitea/` in Go code
+  and templates outside the Gitea adapter, its integration tests and the
+  per-CI table. It starts from an allowlist of today's hits, each a file and
+  a count, which may only shrink: a new file or a higher count fails, and so
+  does a count higher than the file has, so a fix shrinks the list in the same
+  change. The chart and `config/` install Gitea and are outside it.
+- **A Ports table** in [architecture.md](architecture.md#ports), one row per
+  port: its interface, how it is picked, its implementations, its contract
+  test and its credential path. A new port or adapter adds or changes its row
+  in the same pull request, and the maintainer reviews it against the table.
+
 ## Distribution and issues
 
 This repository develops the factory and holds no product. The factory ships
@@ -1358,7 +1506,7 @@ condition to say nothing is running. See
 - **Component and Code levels.** Dropped until Containers work end to end.
 - **Template updates.** Scaffolding happens once; no pull requests to existing repositories.
 - **Provisioning data stores.** A Connector only scaffolds; creating real databases is left to tools such as Crossplane.
-- **Git providers other than Gitea.** The GitProvider interface allows more later.
+- **Git providers other than Gitea.** Gitea is the only host; the ports a second one plugs into are in [Factory components](#factory-components-ports-and-adapters), and none is proven swappable yet (#1088).
 
 ## Test tiers
 
@@ -1414,7 +1562,7 @@ Gitea keeps the cluster light: one container and SQLite, no separate database. T
 
 ## Risks and open points
 
-- **Gitea instead of GitHub or GitLab.** Chosen to keep the test cluster light; other providers can follow behind the same GitProvider interface.
+- **Gitea instead of GitHub or GitLab.** Chosen to keep the test cluster light. Another host needs the Git host split into ports (#1094) and an adapter that passes their contracts (#1088); see [Factory components](#factory-components-ports-and-adapters).
 - **Shared files between layers.** A Connector often needs a dependency in `pyproject.toml`, which the Framework owns. In v1 the Framework template receives the Connector list and wires the ones it knows. Revisit if that couples Frameworks to Connectors too much.
 - **Session credentials.** The per-namespace ServiceAccount lets any client touch any Session in its project. Limiting a client to its own Session needs short-lived tokens, later.
 - **Compatibility is checked late.** The operator checks types after creation, so an invalid Container exists briefly. A webhook can reject it up front later.
