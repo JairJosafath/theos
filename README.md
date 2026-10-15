@@ -44,9 +44,10 @@ the work and what needs a person. [docs/design.md](docs/design.md) holds the des
 [docs/results.md](docs/results.md) shows v1 working, with screenshots, and
 [docs/results-v3.md](docs/results-v3.md) the factory watching itself.
 
-Next is the Helm release: devices install the factory from a chart, build their
-products with it, and report problems here (see *Report an issue*). Until it
-lands, the install path is the Kind one below.
+Devices install the factory from its Helm chart (see
+[docs/getting-started.md](docs/getting-started.md)), build their products with
+it, and report problems here (see *Report an issue*). The Kind path below is
+for developing the factory itself.
 
 [ROADMAP.md](ROADMAP.md) has the release train, the milestones and what 1.0
 means.
@@ -64,7 +65,7 @@ make cluster gitea seed   # a Kind cluster with Gitea and the tagged templates
 make deploy sample        # the operator, and the webshop story
 kubectl get c4 -n webshop # the story as the operator sees it
 make session              # a test Session: a pod working on orders-api
-make ui ui-forward        # the read-only UI on http://localhost:8080
+make ui ui-forward        # the UI on http://localhost:8080
 make e2e                  # all of the above, then check the whole loop
 ```
 
