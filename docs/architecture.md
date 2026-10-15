@@ -36,8 +36,10 @@ every scaffolded repository.
 | API types | `api/v1alpha1` | apimachinery | anything under `internal/` |
 | Business rules | `internal/model`, `internal/scaffold` | the standard library, `text/template`, YAML; `scaffold` may use `model` | Kubernetes, controller-runtime, `net/http`, `api/`, other `internal/` layers |
 | Adapters | `internal/gitprovider` | `net/http`, go-git, business rules | Kubernetes, controller-runtime, `api/`, `internal/controller` |
+| Ports (from #1094) | `internal/ports` and its `fake`, `contract` | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |
+| Adapters (from #1094) | `internal/adapters/*` | ports, business rules; host adapters `net/http` and go-git; runtime and deploy adapters client-go | `api/`, `internal/controller`; host adapters also Kubernetes |
 | Sandbox runner | `internal/agentrunner`, `cmd/c4agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/gitprovider`, `internal/controller` |
-| Clients of the API | `internal/controller`, `internal/sessionclient` | everything above | `cmd/` |
+| Clients of the API | `internal/controller`, `internal/sessionclient` | everything above but adapters (from #1094) | `cmd/`, `internal/adapters/*` |
 | Build info | `internal/buildinfo` | nothing | everything; only `cmd/*` reads it |
 | Assets | `features` | `internal/scaffold` | everything else |
 | Entry points | `cmd/*` | everything | nothing imports them |
@@ -74,9 +76,57 @@ pods only in the components' and the Projects' namespaces.
   values, calls the business rules and adapters, and writes status. If a controller
   grows an `if` about templates or types, that logic belongs in `internal/model` or
   `internal/scaffold`.
-- **Git providers are swappable.** The controllers use the `gitprovider.Provider`
-  interface. Gitea is the only implementation in v1; others slot in behind the same
-  interface.
+- **The Git host sits behind an interface, but only Gitea is proven.** The
+  controllers use `gitprovider.Provider`, whose shape is Gitea's. The ports a
+  second host plugs into, and the rule for calling one swappable, are in
+  [Ports](#ports).
+
+## Ports
+
+The factory's swappable parts, decided in
+[design.md](design.md#factory-components-ports-and-adapters). A new port or
+adapter changes its row here in the same pull request; the maintainer reviews
+it against this table. Where the code lives:
+
+- **Ports** are in `internal/ports`, one file per port with its interface and
+  shared types, and may import only the standard library, `internal/model`
+  and `internal/scaffold`. Their fakes are in `internal/ports/fake`, their
+  contract suites in `internal/ports/contract` (`contract.GitHost(t, env)`
+  and so on), which each adapter's tests call.
+- **Adapters** are in `internal/adapters/<implementation>`, one package each:
+  `gitea` implements GitHost, Issues, CI, AgentAccess and Registry,
+  `agentsandbox` implements AgentRuntime, and `github`, `gitlab`, `argocd`
+  follow. Plain Git over HTTPS (go-git: template fetches and pushes) is
+  shared in `internal/adapters/git`. A host adapter imports no Kubernetes;
+  the runtime and deploy adapters may use client-go, never `api/` or
+  `internal/controller`.
+- **Controllers take ports.** Only `cmd/main.go` imports adapters: it builds
+  the adapters a GitProvider names and gives each reconciler the ports it
+  calls. A depguard rule denies `internal/adapters` and `internal/gitprovider`
+  in `internal/controller`.
+- **The per-CI table** (workflow path, check contexts, protected paths) is in
+  `internal/model`, so `internal/scaffold` reads it without an adapter.
+- **The host-neutral guard** is a Go test beside the ports
+  (`internal/ports/hostneutral_test.go`, from #1094) with its allowlist of
+  today's `gitea` and `.gitea/` hits, file and count, which may only shrink.
+
+Until #1094 lands, `internal/gitprovider` holds all of the Git host's ports
+as one interface, `Provider`, and the controllers' fake is
+`internal/controller/fakegit_test.go`; the column *Today* says where each
+port is now.
+
+| Port | Interface | Picked by | Implementations | Contract test | Credential path | Today |
+| --- | --- | --- | --- | --- | --- | --- |
+| GitHost | repositories, files, pushes, branches, tags, branch rules, pull requests, merges (with bypass), commit statuses, source at a tag; optional: webhooks (#1084) | `GitProvider.spec.provider` | Gitea | to write (#1094): fake in `make test`, Gitea in `make test-gitea` | GitProvider Secret, operator only | `gitprovider.Provider` |
+| Issues | issues, comments, labels (exclusive by scope), assignment, milestones, dependencies; intake uses list, comment, find comment, close, membership | `GitProvider.spec.provider`; intake by the Brief's `releases[].requests` | Gitea; GitHub for intake only | to write (#1094) | GitProvider Secret; intake by the Brief's token Secret; operator only | `Provider` and `IssueTracker` |
+| CI | runs of a commit or tag, rerun failed jobs, a job's log, runners online (may be unknown); the per-CI table in `internal/model` | the host's own, else `GitProvider.spec.ci.<member>` | Gitea Actions | to write (#1094) | jobs: none of the user's, the host's job token scoped to the repository; the operator reads runs with the GitProvider Secret | `Provider`; `model.CheckContexts`, `model.PlatformProtectedPaths` |
+| AgentAccess | mint a credential that writes to one repository, with its expiry; revoke old ones; remove | `GitProvider.spec.provider` | Gitea (a bot user per Container or Brief) | to write (#1094): writes its repository, not another, cannot merge to `main`, revoked means refused | minted from the GitProvider Secret into the Container's agent Git Secret, passed to its sandboxes | `Provider` |
+| Registry | Go modules (optional), Go proxy address, container images (#1069) | the host's own, else `GitProvider.spec.registry.<member>` | Gitea packages | to write (#1094) | GitProvider Secret for the operator; CI pushes with its job token | `Provider`, `Repository.GoProxy` |
+| AgentRuntime | start a run, its state and result, stop it, list held runs; the fence is the adapter's | Helm installs one; no field until a second | Agent Sandbox | to write; the sandbox's pod spec and fence tests in `make test` | operator ServiceAccount; the sandbox gets no Kubernetes token | `SandboxGVK`, `buildSandbox`, `runState` in `internal/controller` |
+| Deployer | ship a built release to a target, read its state back; a Deployment template writes the tool's files | a new kind, a union keyed by target (#1068) | GitHub releases | to write (#1068) | the target's Secret, named in the deploy resource (today `publishReleases.github.tokenSecretRef`), operator only; CI never holds it | `ReleaseTarget` in `internal/gitprovider/github.go` |
+
+No port is swappable yet: none has two real adapters passing a full contract (Issues on GitHub covers intake only). A port is called
+swappable here once its fake and two real adapters pass its contract.
 
 ## Flow of one scaffold
 
