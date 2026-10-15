@@ -1462,8 +1462,8 @@ func TestGatedMergeRefusal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GatedMergeRefusal(tt.checks, tt.contexts, tt.verdict, tt.changed, tt.allowed,
-				AgentProtectedPaths([]string{"Makefile", "README.md"}))
+			got := GatedMergeRefusal(giteaActions, tt.checks, tt.contexts, tt.verdict, tt.changed, tt.allowed,
+				AgentProtectedPaths(giteaActions, []string{"Makefile", "README.md"}))
 			if tt.want == "" && got != "" || !strings.Contains(got, tt.want) {
 				t.Errorf("GatedMergeRefusal() = %q, want %q", got, tt.want)
 			}

@@ -385,7 +385,10 @@ func TestRunImplementFailures(t *testing.T) {
 	})
 	t.Run("protected path", func(t *testing.T) {
 		url := bareRepo(t, map[string]string{".gitea/workflows/check.yaml": "on: push\n"})
-		got := Run(ctx, testJob(t, url, RoleImplement, 1), editAgent{path: ".gitea/workflows/check.yaml"}, t.TempDir())
+		job := testJob(t, url, RoleImplement, 1)
+		// The operator sends the platform's paths for the Container's CI system.
+		job.ProtectedPaths = []string{".c4factory.yaml", ".devcontainer/", ".gitea/"}
+		got := Run(ctx, job, editAgent{path: ".gitea/workflows/check.yaml"}, t.TempDir())
 		if !strings.Contains(got.Error, ".gitea/workflows/check.yaml, which the platform and the Standard protect") {
 			t.Errorf("Error = %q", got.Error)
 		}
