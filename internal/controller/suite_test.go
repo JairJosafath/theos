@@ -96,8 +96,11 @@ const managerUser = "system:serviceaccount:system:controller-manager"
 
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
-	// Reconcilers run in the background; give them time on a busy machine or CI runner.
-	SetDefaultEventuallyTimeout(10 * time.Second)
+	// Reconcilers run in the background, a chain of them per wait, and a loaded
+	// device or CI runner has taken past 10s for one (#1099). A passing Eventually
+	// returns as soon as it holds, so only a failing spec waits the full 30s.
+	// Consistently keeps Gomega's own default; a spec gives its own duration.
+	SetDefaultEventuallyTimeout(30 * time.Second)
 	SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
 
 	// End the suite 30s before go test's -timeout (Makefile), so Ginkgo fails the

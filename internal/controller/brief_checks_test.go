@@ -46,7 +46,7 @@ var _ = Describe("Brief checks", func() {
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(linterContainer(Default, ns).Spec.Checks).To(Equal(c4v1alpha1.ChecksEveryChange))
 
 		By("showing the planner each Container's checks")
@@ -65,7 +65,7 @@ var _ = Describe("Brief checks", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(linterContainer(Default, ns).Spec.Checks).To(Equal(c4v1alpha1.ChecksBeforeRelease))
 
 		By("saying in the round's summary that it can't take effect without a Standard")
@@ -85,7 +85,7 @@ var _ = Describe("Brief checks", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(3)))
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(linterContainer(Default, ns).Spec.Checks).To(Equal(c4v1alpha1.ChecksEveryChange))
 	})
 
@@ -96,7 +96,7 @@ var _ = Describe("Brief checks", func() {
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		container := linterContainer(Default, ns)
 		Expect(patch(container, func() { delete(container.Labels, c4v1alpha1.LabelBrief) })).To(Succeed())
 
