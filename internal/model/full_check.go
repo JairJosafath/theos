@@ -10,7 +10,7 @@ import (
 
 // A Container whose checks are BeforeRelease runs its full check only on the
 // commit a release will be tagged at, before the tag
-// (plans/checks-before-release.md): its Crew pushes the branch
+// (plans/done/checks-before-release.md): its Crew pushes the branch
 // FullCheckBranch there and tags once the runs that push started end well.
 
 // FullCheckBranch is the branch whose push runs release tag's full check.

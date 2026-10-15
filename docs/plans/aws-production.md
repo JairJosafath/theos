@@ -25,7 +25,7 @@ the block from an idea.
 
 ## Where we stand
 
-What [plans/aws.md](aws.md) built is a strict foundation: every stack
+What [plans/done/aws.md](done/aws.md) built is a strict foundation: every stack
 synthesizes under CDK Nag's `AwsSolutions` pack, and a finding fails `make
 check`. That is stricter than any outside source the research in #1067
 found. But the Well-Architected digest names the serious topics and then
@@ -238,7 +238,7 @@ What each existing Framework gets, as #1067's *Done when* asks:
 
 Each step is a GitHub issue that names #1067, lands on its own with `make
 check`, and leaves main working. A template step bumps the four places
-[plans/aws.md](aws.md) names (the tag, `templates/versions.txt`, the chart's
+[plans/done/aws.md](done/aws.md) names (the tag, `templates/versions.txt`, the chart's
 `catalog.entries`, the tests and samples) and shows a scaffolded copy's
 `make check` output in its pull request.
 
@@ -259,7 +259,7 @@ check`, and leaves main working. A template step bumps the four places
 
 Steps 3 to 6 each bump `aws-standard`; two in flight at once meet in a merge
 of the Standard's version, and the second to merge takes the next minor, as
-[plans/aws.md](aws.md) did.
+[plans/done/aws.md](done/aws.md) did.
 
 ## Design
 

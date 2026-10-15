@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 // Where a Crew publishes is its Brief's when the Brief sets it
-// (docs/plans/brief-release-target.md): the Crew page says so, its release
+// (docs/plans/done/brief-release-target.md): the Crew page says so, its release
 // form changes the Brief's spec.releases entry, and a Crew changed under its
 // Brief shows both targets and the two ways to settle it, each a patch that
 // tests the resourceVersion it was worked out from.

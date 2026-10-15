@@ -23,7 +23,7 @@ import (
 )
 
 // A Brief pauses and resumes every Crew it made in one step (decisions 4 and
-// 5 of docs/plans/upgrade-in-place.md).
+// 5 of docs/plans/done/upgrade-in-place.md).
 
 const (
 	reasonBriefPaused  = "Paused"

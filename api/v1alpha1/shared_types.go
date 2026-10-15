@@ -213,7 +213,7 @@ const PausedByBrief = "brief"
 
 // AnnotationBriefPublishReleases on a Crew a Brief made holds the JSON of the
 // spec.publishReleases its Brief last wrote from a spec.releases entry
-// (docs/plans/brief-release-target.md). A Crew whose spec.publishReleases
+// (docs/plans/done/brief-release-target.md). A Crew whose spec.publishReleases
 // differs from it was changed under the Brief and publishes nothing until the
 // two agree. A Crew without it publishes where its own spec says.
 const AnnotationBriefPublishReleases = "c4.factory.io/brief-publish-releases"

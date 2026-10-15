@@ -569,7 +569,7 @@ ten minutes and at once when the entry changes. A request let through starts
 a round, like a new prompt; the round takes it or skips it, and the Brief says
 on the issue what it became (the issues and their release) or why it was
 skipped, and closes a skipped one. The comment when its release ships is step
-5 of [the plan](plans/brief-requests.md).
+5 of [the plan](plans/done/brief-requests.md).
 
 `requests.accepted` and `requests.declined` hold at most 200 numbers each,
 and the operator never changes them. Once an issue is closed and done with,

@@ -28,7 +28,7 @@ spec:
   standardRef: {name: aws-standard}
 `
 
-// The function type's first templates (plans/aws.md, step 2): only the AWS
+// The function type's first templates (plans/done/aws.md, step 2): only the AWS
 // layers support it in the chart.
 func TestFunctionTypeIsSupportedByTheAWSLayersOnly(t *testing.T) {
 	if !slices.Contains(containerTypes, TypeFunction) {

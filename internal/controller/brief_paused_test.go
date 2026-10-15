@@ -52,7 +52,7 @@ func pausedMessage(ns, message string) {
 	}, wholeRound).Should(Succeed())
 }
 
-// Decisions 4 and 5 of docs/plans/upgrade-in-place.md (#683).
+// Decisions 4 and 5 of docs/plans/done/upgrade-in-place.md (#683).
 var _ = Describe("Brief paused", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })
