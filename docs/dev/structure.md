@@ -40,6 +40,7 @@ hack/runner/, hack/agent/          The CI runner and agent images, built on the 
 hack/gh-runner/                    Self-hosted GitHub Actions runners for this repository (make gh-runner RUNNERS=N)
 hack/render/                       Renders templates locally, the way the operator scaffolds
 test/chart/                        The chart against envtest: its upgrade-only hooks (make test)
+test/compat/                       The v1alpha1 compatibility guard and its baseline CRDs (make test)
 test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox)
 test/e2e/                          End-to-end tests against the Kind cluster (make e2e)
 test/e2e/testdata/apps/            The e2e fixture project: one hello-world Container, Agents and Tasks

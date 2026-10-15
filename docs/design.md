@@ -1506,6 +1506,38 @@ person who wants a quiet moment pauses a Brief and waits for its `Paused`
 condition to say nothing is running. See
 [plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md).
 
+## Compatibility
+
+**An object a client stored keeps validating across upgrades** (#1097). All
+of `c4.factory.io` serves `v1alpha1` only, and until a later version is
+served, a release keeps every `v1alpha1` object of the one before valid and
+meaning what it meant. Within `v1alpha1` a release never:
+
+- removes or renames a field, or changes its type;
+- adds a required field, or makes an optional one required;
+- removes an enum value;
+- tightens a CEL rule or a bound so an object that validated before fails
+  after;
+- changes what a default, or an unset field, means.
+
+Adding an optional field, an enum value, a condition type, a condition
+reason or a kind is fine. A change that must break one of these waits for
+`v1beta1` (#1082), which is served beside `v1alpha1` and converts every
+`v1alpha1` object; `v1beta1` comes after the shapes it would freeze settle
+(the Git host's ports, #1093, and the deploy model, #1068).
+
+The status is held to it as the spec is: the UI and a client's scripts read
+it. The promise is about the API, not about what the operator does with an
+object, which a release may change as the release notes say.
+
+`make check` guards what a schema can show. `test/compat/baseline/` holds
+`config/crd/bases` as of the last release, which `hack/release.sh` copies
+there in the pull request that names the release; the test in `test/compat`
+fails when the current CRDs drop a kind, a served version or a field, change
+a field's type, drop an enum value, or require a field under an object the
+baseline already had (a required field inside a new optional object is
+fine). CEL rules and what a default means are left to review.
+
 ## Out of scope for v1
 
 - **Shipping.** No builds, registries or rollouts; existing tools pick up the scaffolded files. Since v4 a Crew can copy its releases to a GitHub repository: a release target, not a git provider, where the factory never pushes.

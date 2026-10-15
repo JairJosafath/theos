@@ -11,9 +11,12 @@ RELEASE=$HACK/release.sh
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 
-# tree DIR VERSION: the chart and guide lines release.sh reads, naming VERSION.
+# tree DIR VERSION: the chart and guide lines release.sh reads, naming VERSION,
+# a CRD, and a baseline with a CRD since removed.
 tree() {
-  mkdir -p "$1/dist/chart" "$1/docs"
+  mkdir -p "$1/dist/chart" "$1/docs" "$1/config/crd/bases" "$1/test/compat/baseline"
+  echo "kind: CustomResourceDefinition # $2" >"$1/config/crd/bases/things.yaml"
+  echo "kind: CustomResourceDefinition # old" >"$1/test/compat/baseline/gone.yaml"
   printf 'apiVersion: v2\nname: c4-factory\nversion: %s\nappVersion: "dev"\n' "$2" >"$1/dist/chart/Chart.yaml"
   printf 'The commands use the release `%s`; for a later one, change `VERSION`.\n\n```bash\nVERSION=%s\n```\n\nVERSION=%s\n' \
     "$2" "$2" "$2" >"$1/docs/getting-started.md"
@@ -47,6 +50,7 @@ check "--bump: names the version" $? 0
 ROOT=$T/bump "$RELEASE" --check v1.3.0
 check "  and --check agrees" $? 0
 check "  the rest of the chart is kept" "$(grep -c 'appVersion: "dev"' "$T/bump/dist/chart/Chart.yaml")" 1
+check "  the CRDs become the baseline" "$(ls "$T/bump/test/compat/baseline")" things.yaml
 
 # The release command: a bare origin with main at 1.2.0, a clone, and a fake gh
 # whose pr merge merges the branch into origin's main with a merge commit.
@@ -84,6 +88,7 @@ run patch
 check "patch: bumps, merges and tags" $? 0
 check "  the tag is origin's main, the merge commit" "$(git -C "$T/origin.git" rev-parse v1.2.1^{commit})" "$(git -C "$T/origin.git" rev-parse main)"
 check "  main names the release" "$(git -C "$T/origin.git" show main:dist/chart/Chart.yaml | grep -c '^version: 1.2.1$')" 1
+check "  main's baseline is its CRDs" "$(git -C "$T/origin.git" ls-tree --name-only main test/compat/baseline/)" test/compat/baseline/things.yaml
 check "  merged with a merge commit" "$(grep -c 'pr merge https://github.com/o/c4factory/pull/7 --merge' "$T/gh.log")" 1
 check "  the bump branch is gone" "$(git -C "$T/origin.git" branch --list 'chore/*' | wc -l)" 0
 check "  the clone's checkout is untouched" "$(sed -n 's/^version: //p' "$T/clone/dist/chart/Chart.yaml")" 1.2.0
