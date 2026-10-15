@@ -1,0 +1,295 @@
+# Plan: AWS Containers fit for production
+
+GitHub issue #1067, filed by the owner (`source/dev`). Agent: otter-1067. This
+is the plan #1067 asks for as its first step; it widens the issue from
+"Well-Architected defaults and more serverless Frameworks" to what the owner
+said on 2026-10-15: the factory's AWS output must be production-grade, not
+demo-grade, think in backup and recovery and the serious side of running
+software in the cloud, and do each of those only as far as the user
+configures it.
+
+## Goal
+
+A Container on an AWS Framework comes out of the factory ready to run in
+production: its data is backed up and can be restored by a written procedure,
+someone is told when it fails, nothing of value can be deleted by accident,
+and every one of those is a choice the Container's spec states and the
+repository's checks enforce. A Brief's planner makes the same choices from
+the idea. New serverless Frameworks arrive on that footing, not before it.
+
+Done when every step below is merged: `make check` in this repository renders
+every AWS Framework with the `operations` block, a scaffolded copy's `make
+check` fails when its stack doesn't honour the block, `docs/runbook.md` in
+every AWS repository says how to restore and roll back, and the planner picks
+the block from an idea.
+
+## Where we stand
+
+What [plans/aws.md](aws.md) built is a strict foundation: every stack
+synthesizes under CDK Nag's `AwsSolutions` pack, and a finding fails `make
+check`. That is stricter than any outside source the research in #1067
+found. But the Well-Architected digest names the serious topics and then
+defers each one "by hand, when the system's needs ask for it", and nothing
+asks. On 2026-10-15 the five Frameworks stand like this:
+
+| Topic | aws-lambda-ts, -py, -go | aws-fargate-ts | aws-ec2-ts |
+| --- | --- | --- | --- |
+| Data | DynamoDB table, `RETAIN`, deletion protection, PITR | the same, plus the load balancer's log bucket | the same |
+| Backup beyond PITR | none | none | none |
+| Restore procedure | none | none | none |
+| Alarms, notifications, dashboard | none | none; `removeDefaultDeploymentAlarm` | none (`AS3` acknowledged) |
+| Environments | none | none | none |
+| Configurable without editing code | stack name and tags | the same, plus `CertificateArn` | the same |
+| Termination protection, stack outputs | neither | protection no, `LoadBalancerDns` yes | neither |
+| Network | managed | 2 zones, one NAT gateway, public ALB on TLS | 2 zones, no NAT, internal ALB on plain HTTP |
+
+And the Standard's own test is weaker than its digest claims: the digest
+says "every stateful resource states its removal policy; data is `RETAIN`"
+(`docs/well-architected.md.tmpl:114`), the test accepts any deletion policy
+(`standard.test.ts:179-189`), and nothing checks PITR or deletion protection
+beyond CDK Nag's `DDB3`.
+
+Nothing deploys, which is right for this plan: deploying is #1071's, on the
+deploy model of #1068, and this plan hands those two what they need (stack
+outputs and deploy-time parameters). The owner's observation holds: the
+Well-Architected approach was asked for, and the pillars that cost money or
+need a decision (reliability's backup and recovery, operational excellence's
+alarms and runbooks) were written down and left to the reader.
+
+## Decisions
+
+1. **Production by default; the Container says what it wants.** A new
+   optional block, `Container.spec.operations`, is the one place a user says
+   how seriously the app is run. Its `tier` sets every default, and the other
+   fields override one each:
+
+   ```yaml
+   spec:
+     operations:
+       tier: production        # production (the default) or development
+       backups:
+         retentionDays: 35     # daily copies kept this long by AWS Backup; 0 = point-in-time recovery only
+         copyToRegion: ""      # a second region the copies go to; empty = none
+       recovery:
+         rpo: 1h               # the objectives the runbook, the alarms and the checks are written to
+         rto: 4h
+       alerts:
+         email: ""             # who the alarms tell; empty = the alarms exist, nobody is subscribed
+   ```
+
+   Why production is the default: the factory's purpose is production-level
+   output, and a user who forgets the block must get the safe, more
+   expensive one, never a demo that loses data. Why a `development` tier
+   exists: backups, a NAT gateway per zone and tracing cost money, and a
+   user trying an idea out says so once. What the tiers mean:
+
+   | Default | `production` | `development` |
+   | --- | --- | --- |
+   | Removal policy of data (tables, data buckets) | `RETAIN` | `DESTROY` |
+   | Deletion protection on tables, termination protection on the stack | on | off |
+   | Point-in-time recovery | on | off |
+   | AWS Backup plan (daily, `retentionDays`, its own vault and KMS key) | on | off |
+   | Cross-region copy | when `copyToRegion` is set | never |
+   | Alarms and a dashboard | on | on |
+   | Subscription to the alarms | when `email` is set | when `email` is set |
+   | X-Ray tracing | on | off |
+   | Log retention | 1 year | 1 month |
+   | NAT gateways (aws-fargate-ts) | one per zone | one |
+   | `rpo`, `rto` defaults | 1h, 4h | 1d, 1d |
+
+   The block is immutable once the Container is scaffolded (`self ==
+   oldSelf`, like `softwareSystemRef`): the scaffold renders it into
+   `infra/operations.ts`, and from then on that file is the truth, changed
+   by a Task on the repository like any other code. A field a client sets
+   today is never removed or reinterpreted (the `v1alpha1` promise of
+   [plans/before-clients-return.md](before-clients-return.md)). `rpo` and
+   `rto` are stated objectives: they are written into the runbook and the
+   README, the planner derives them from the idea, and the Standard's test
+   checks the two things it can see (point-in-time recovery when `rpo` is
+   under a day; a copy region in the runbook's regional-loss procedure when
+   one is set). The rest of what they promise only a restore drill in an
+   account shows, and the runbook says so.
+
+2. **Two layers of knobs, and no third.** Scaffold-time choices
+   (`operations`) decide the resource graph and render into
+   `infra/operations.ts`, which the stacks read at synth. Deploy-time values
+   that differ per environment (the alert email, a certificate ARN, a domain)
+   are CloudFormation parameters whose defaults come from that file, so a
+   deploy target of #1068 overrides them per environment without a change to
+   the code. Nothing reads `cdk.json` context or environment variables at
+   synth: a synth is the same on every machine, which is what makes `make
+   check` a verdict. Environments themselves (staging, production, approval)
+   are #1068's; this plan gives each stack what a target needs: outputs for
+   its entry point and its alarm topic, and the parameters above.
+
+3. **Backup and recovery, by what holds data.** DynamoDB: point-in-time
+   recovery (35 days, seconds of RPO in the region) plus an AWS Backup plan
+   (`AWS::Backup::BackupPlan`, `BackupSelection` by the stack's tags, a
+   `BackupVault` with its own key) for the retention and the cross-region
+   copy PITR can't give. A data bucket (none today; the queue and static-site
+   Frameworks below add some) is versioned, with a lifecycle rule; a log
+   bucket is not data and keeps its expiry. Instances and tasks hold no
+   data: `docs/style/aws.md` makes that a rule, and the EBS root is not backed
+   up. No vault lock: it is irreversible and an account-level choice. A
+   relational database comes with an AWS Connector, not in this plan (see
+   *Not in this plan*). Restore is a procedure, written: `docs/runbook.md`,
+   a Standard file with a branch per Framework, says how to restore the
+   table to a point in time and from a vault copy, how to roll a deployment
+   back, and what each alarm means and what to do first. The implementer
+   guide says a change to data handling updates the runbook's
+   Framework branch.
+
+4. **Alarms are code, and nobody is told without asking.** Each stack
+   builds its alarms with `cdk-monitoring-constructs` (the owner's research
+   in #1067): errors, throttles and duration for a function; 5xx, latency
+   and unhealthy targets for a load balancer; CPU, memory and running tasks
+   for a service; CPU and in-service instances for an Auto Scaling group;
+   throttled requests and system errors for a table; the dead-letter queue's
+   depth where there is one. They go to one SNS topic per stack, encrypted,
+   with an email subscription only when `alerts.email` is set; the topic's
+   ARN is a stack output, so a target of #1068 can subscribe its own channel
+   later. A dashboard per stack. `aws-fargate-ts` stops removing ECS's
+   deployment alarm and `aws-ec2-ts` stops acknowledging `AS3`: the topic is
+   what they subscribe to.
+
+5. **The Standard enforces what its digest claims.** `standard.test.ts`
+   reads `infra/operations.ts` and asserts, per tier, the removal policies,
+   deletion and termination protection, point-in-time recovery, the backup
+   plan and vault, the alarms and topic, the subscription, tracing, log
+   retention, and that every stack has an output for its entry point and
+   its topic. `cfn-lint` runs with `--include-checks I` (I3011 deletion
+   policies on stateful resources, I3013 retention periods). The digest's
+   "by hand" items that a rule can check stop being by hand. What stays by
+   hand is listed in the digest with the reason (a restore drill, a game
+   day, right-sizing from measured load).
+
+6. **X-Ray follows the tier.** On in `production`, off in `development`:
+   the digest kept it off for cost and for the `IAM5` wildcard it needs, and
+   the tier is where that trade-off is made once. The acknowledgement of
+   `AwsSolutions-IAM5` for `xray:Put*` lives in the Standard's
+   `infra/standard.ts` with its reason, not in every stack.
+
+7. **The `ServerlessChecks` pack runs too**, after the `function` Frameworks
+   carry `operations`, with one reasoned acknowledgement per rule #1067
+   found wrong or duplicated (`LambdaDLQ` on synchronous handlers,
+   `LambdaEventSourceMappingDestination` for SQS sources, the five
+   duplicates of `AwsSolutions` rules). The alternative, `cfn-lint-serverless`,
+   is a public preview and is left.
+
+8. **Powertools where it exists.** `aws-lambda-ts` and `aws-lambda-py` take
+   Powertools for AWS Lambda's Logger, Metrics and Idempotency utilities
+   (idempotency backed by a DynamoDB table the stack makes, so a retried
+   request changes nothing twice, which today the digest asks for by hand);
+   `aws-lambda-go` keeps `slog` JSON logs, as there is no Go Powertools.
+
+9. **Account-level services are the target's, not the Container's.**
+   GuardDuty, Security Hub, CloudTrail, AWS Config, Budgets and the cost
+   allocation tags' activation are set once per account and never by a
+   Container's stack. #1071's plan writes which the factory needs in a
+   target account and which it recommends, next to the role it needs; this
+   plan's `docs/runbook.md` names them as what the account owner provides.
+
+10. **Hardening comes before new Frameworks.** Every Framework this plan adds
+    is built on `operations`, the alarms and the runbook, so steps 2 to 7
+    land first. The new Frameworks follow #1067's order, by how common the
+    shape is, and each is a `deploysItself` Framework under `aws-standard`
+    rather than a Deployment layer, because the AWS gate (synth, CDK Nag,
+    the Standard's test) lives in the Standard and a Deployment can't bring
+    one. Step Functions is left out: a workflow spans the Containers it
+    calls and fits one repository per Container poorly; it gets its own
+    issue when a Brief asks for one.
+
+11. **The data stays in the Framework.** Today each AWS Framework makes its
+    own table, and the planner plans no DataStore for it. Modelling AWS data
+    stores as DataStores with Connectors (DynamoDB, RDS) is the right shape
+    and a bigger change than this plan; it is filed as a proposed follow-up
+    (#1117), and this plan's backup rules are written per resource so that
+    Connector can reuse them.
+
+## Track A, per Framework
+
+What each existing Framework gets, as #1067's *Done when* asks:
+
+| Item | aws-lambda-ts | aws-lambda-py | aws-lambda-go | aws-fargate-ts | aws-ec2-ts |
+| --- | --- | --- | --- | --- | --- |
+| `infra/operations.ts`, backups, alarms, topic, dashboard, outputs, termination protection, runbook | step 3 | step 4 | step 4 | step 5 | step 6 |
+| Powertools (Logger, Metrics, Idempotency) | step 3 | step 4 | no (none for Go) | no (not Lambda) | no |
+| `ServerlessChecks` pack | step 7 | step 7 | step 7 | no | no |
+| `cfn-lint --include-checks I` | step 3 (the Standard, every Framework) | | | | |
+| X-Ray by tier | step 3 | step 4 | step 4 | step 5 (ADOT collector) | no |
+| Framework-specific | | | | NAT per zone in production; ECS deployment alarm kept | TLS on the internal ALB (`CertificateArn`); `cfn-signal` so a rolling update stops on a failed health check |
+
+## Steps
+
+Each step is a GitHub issue that names #1067, lands on its own with `make
+check`, and leaves main working. A template step bumps the four places
+[plans/aws.md](aws.md) names (the tag, `templates/versions.txt`, the chart's
+`catalog.entries`, the tests and samples) and shows a scaffolded copy's
+`make check` output in its pull request.
+
+| Step | Issue | Waits on | How we know |
+| --- | --- | --- | --- |
+| 1. This plan and the design change | #1067 (`Refs`) | | landed in `docs/plans/` and `docs/design.md` |
+| 2. `Container.spec.operations` | #1107 | | the field, its CEL (enum, patterns, immutability once scaffolded) and defaults; `scaffold.Input.Operations`; `internal/model`'s tier defaults as a table-tested function; the UI's types and Container page; the planner guide's rule and `plan/model.yaml` check; samples; the `v1alpha1` guard sees only additions; envtest creates a Container with and without the block |
+| 3. `aws-lambda-ts` v1.1.0 and `aws-standard` v1.5.0 | #1108 | #1107 | `infra/operations.ts` rendered from the block; backup plan and vault; alarms, topic, subscription, dashboard; outputs; termination protection; X-Ray by tier; Powertools; `docs/runbook.md`; the digest rewritten; the Standard's test enforces decision 5; `cfn-lint -I`; a scaffolded copy's `make check` passes in both tiers, and fails when `operations.ts` and the stack disagree |
+| 4. `aws-lambda-py` and `aws-lambda-go` follow | #1109 | #1108 | the same, Powertools for Python, `slog` for Go; `aws-standard` bump |
+| 5. `aws-fargate-ts` follows | #1110 | #1108 | the same, plus NAT per zone in production, the ECS deployment alarm, ADOT tracing by tier; `aws-standard` bump |
+| 6. `aws-ec2-ts` follows | #1111 | #1108 | the same, plus TLS on the ALB with `CertificateArn`, `cfn-signal` on the rolling update, the no-data-on-instances rule; `aws-standard` bump |
+| 7. `ServerlessChecks` next to `AwsSolutions` | #1112 | #1109 | the pack runs in `infra/standard.ts`; each acknowledgement names its rule and reason; the digest's "by hand" list shrinks to what no rule checks |
+| 8. Queue consumer Framework `aws-queue-ts` (type `worker`) | #1113 | #1108 | SQS to Lambda with a DLQ, `reportBatchItemFailures`, Powertools batch; `enforceSSL` and log retention the source pattern lacks; `operations`, alarms (DLQ depth) and runbook; catalog entry, `templateCombos` row, planner rule |
+| 9. Static site Framework `aws-static-site-ts` (type `static-site`) | #1114 | #1108 | a Vite app on S3 behind CloudFront with OAC, access logs, a minimum TLS version, a WAF web ACL in production, the bucket versioned; the rest as step 8 |
+| 10. Scheduled job Framework `aws-schedule-ts` (type `job`) | #1115 | #1108 | EventBridge Scheduler to Lambda with a DLQ and retry policy, the scheduler's role scoped to the one function; the rest as step 8 |
+| 11. Event consumer Framework `aws-event-ts` (type `worker`) | #1116 | #1108 | an EventBridge rule to Lambda with a rule-target DLQ and retries; the rest as step 8 |
+
+Steps 3 to 6 each bump `aws-standard`; two in flight at once meet in a merge
+of the Standard's version, and the second to merge takes the next minor, as
+[plans/aws.md](aws.md) did.
+
+## Design
+
+- **The block in the API.** `OperationsSpec` in `api/v1alpha1/container_types.go`
+  with `Tier` (enum `production`, `development`, default `production`),
+  `Backups{RetentionDays int32 (0..3650), CopyToRegion string (an AWS region
+  pattern or empty)}`, `Recovery{RPO, RTO string (`^[0-9]+(m|h|d)$`)}` and
+  `Alerts{Email string}`. Defaults are applied by `internal/model`, not by
+  CRD defaulting, so a client that sets only `tier` reads back only `tier`
+  and a stored object never changes shape on upgrade. Immutability: a CEL
+  rule `self == oldSelf` once `status.phase` is past `Pending`, written as
+  the step finds the schema allows; failing that, immutable always, and the
+  step says which.
+- **The rendered file.** `infra/operations.ts` exports one frozen object the
+  stacks and the Standard's test import: the tier, the resolved defaults
+  and the overrides, with a comment that it was rendered at scaffold and is
+  changed by a Task. The Framework owns it; it is not a protected path.
+  `docs/runbook.md` is the Standard's and protected.
+- **The Standard's test** keeps its shape (synth every stack, assert on the
+  templates) and adds one `describe` per decision-5 item, each reading the
+  tier from `infra/operations.ts`. A Framework branch (`{{ if eq .Framework
+  ... }}`) adds the resources only that Framework has, as `well-architected.md`
+  already does.
+- **The planner** sets `operations` from the idea: `development` only when
+  the idea says prototype, demo, trial, experiment or throwaway; `email`,
+  `rpo`, `rto` and `copyToRegion` when the idea states them; otherwise the
+  block is left out and the defaults apply. A rule in
+  `internal/model/planner.md` and a `plan/model.yaml` check.
+- **The digest** (`docs/well-architected.md`) gets, per pillar, what the
+  tier does and what a user changes in `infra/operations.ts`; its
+  Reliability section names RPO and RTO, the backup plan, the copy and the
+  restore procedure; its Cost section says what `production` costs over
+  `development` in words (NAT gateways, backups, tracing, retention) so an
+  agent picking a tier for a Task knows the trade.
+- **Sources** for the new digest sections, read and dated in `SOURCES.md`:
+  the Well-Architected Framework's reliability pillar (REL09 backup, REL13
+  disaster recovery, REL06 and OPS08 monitoring and alarms), AWS Backup's
+  developer guide for DynamoDB, DynamoDB's point-in-time recovery page,
+  `cdk-monitoring-constructs`' README at the pinned version, and the
+  Serverless Applications Lens.
+
+## Not in this plan
+
+Deploying, CDK bootstrap, environments, approval and status read-back
+(#1068, #1071); an account's baseline services (decision 9, documented by
+#1071); AWS data stores as DataStores with DynamoDB and RDS Connectors
+(#1117, a proposed follow-up); a Step Functions Framework (decision 10); a
+WAF on an API Gateway HTTP API, which WAF doesn't support (CloudFront in front
+of it is a later Framework choice); Terraform, SAM and Pulumi.
