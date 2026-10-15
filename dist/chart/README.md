@@ -178,6 +178,7 @@ as the run's artifact); a failing release gets an issue titled
 | --- | --- |
 | `manager.image`, `ui.image` | repository, tag (default `Chart.appVersion`), pullPolicy |
 | `manager.args` | the operator's flags (`go run ./cmd --help`); the defaults are the Kind environment's |
+| `sessionBinaryURL` | where scaffolded devcontainers download `c4session`, the Session client (`--session-binary-url`, `${arch}` becomes `amd64` or `arm64`); default the binaries attached to this chart's GitHub release. While the repository is private they need a GitHub login to download, so point it at a server of your own; empty sets none |
 | `ui.enabled` | install the UI (default true); `ui.service` and `ui.resources` |
 | `ui.allowedHosts` | host names the UI answers besides localhost, for an Ingress in front of it; any other Host is refused |
 | `ui.actions.enabled` | off by default; on, the UI also sets Brief and Crew settings, re-runs a failed release, retries a scaffold, makes a Task from a goal and bumps a Standard's ref (design.md, *UI actions*). Over port-forward its ServiceAccount makes them; with `ui.allowedHosts` the chart needs `ui.auth.oidc` |
