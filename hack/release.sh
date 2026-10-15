@@ -6,16 +6,19 @@
 # the release its prose names. This bumps both in a pull request of their own,
 # merges it with a merge commit, and tags that commit; the pushed tag starts
 # Release, which checks the same thing (--check) before it builds anything.
+# The same pull request copies config/crd/bases to test/compat/baseline, the
+# CRDs make check holds the next release to (docs/design.md, "Compatibility").
 #
 #   hack/release.sh X.Y.Z|patch|minor   bump, merge and tag vX.Y.Z (patch and
 #                                       minor count up from the chart's version)
-#   hack/release.sh --bump X.Y.Z        only bump the two files under ROOT
+#   hack/release.sh --bump X.Y.Z        only bump the two files and the
+#                                       baseline under ROOT
 #   hack/release.sh --check vX.Y.Z      exit 1 unless the files under ROOT name X.Y.Z
 #
 # The release command works in a worktree of its own from origin/main, so the
 # checkout it runs in is never touched. It refuses a version that isn't above
 # the chart's, or whose tag origin already has. GOVERNANCE.md lets the
-# maintainer run it: the bump is the only change it commits.
+# maintainer run it: the bump and the baseline are the only change it commits.
 #
 #   ROOT     the tree --bump and --check read (default the repository's root)
 #   REMOTE   the remote to fetch main from and push to (default origin)
@@ -26,6 +29,8 @@ ROOT=${ROOT:-$(dirname "$HACK")}
 REMOTE=${REMOTE:-origin}
 CHART=dist/chart/Chart.yaml
 GUIDE=docs/getting-started.md
+CRDS=config/crd/bases
+BASELINE=test/compat/baseline
 
 usage() {
   echo "usage: hack/release.sh X.Y.Z|patch|minor | --bump X.Y.Z | --check vX.Y.Z" >&2
@@ -55,9 +60,13 @@ check() {
   return $bad
 }
 
-# bump DIR VERSION: names VERSION in DIR's chart and guide.
+# bump DIR VERSION: names VERSION in DIR's chart and guide, and makes DIR's
+# CRDs the baseline the next release keeps.
 bump() {
   local dir=$1 to=$2
+  rm -rf "${dir:?}/$BASELINE"
+  mkdir -p "$dir/$BASELINE"
+  cp "$dir/$CRDS"/*.yaml "$dir/$BASELINE/"
   sed -i "s/^version: .*/version: $to/" "$dir/$CHART"
   sed -i -e "s/^VERSION=.*/VERSION=$to/" \
     -e "s/The commands use the release \`[^\`]*\`/The commands use the release \`$to\`/" "$dir/$GUIDE"
@@ -112,10 +121,11 @@ fi
 
 branch=chore/release-$tag
 bump "$WT" "$to"
-git -C "$WT" commit --quiet -m "chore: release $tag" -- "$CHART" "$GUIDE"
+git -C "$WT" add -A "$BASELINE"
+git -C "$WT" commit --quiet -m "chore: release $tag" -- "$CHART" "$GUIDE" "$BASELINE"
 git -C "$WT" push --quiet "$REMOTE" "HEAD:refs/heads/$branch"
 url=$(cd "$WT" && gh pr create --base main --head "$branch" --title "chore: release $tag" \
-  --body "Names $tag in \`$CHART\` and \`$GUIDE\`, so the guide at the tag installs that release (#370). Made by \`hack/release.sh\`.")
+  --body "Names $tag in \`$CHART\` and \`$GUIDE\`, so the guide at the tag installs that release (#370), and copies \`$CRDS\` to \`$BASELINE\`, the CRDs the next release keeps (#1097). Made by \`hack/release.sh\`.")
 echo "opened $url"
 (cd "$WT" && gh pr merge "$url" --merge)
 # GitHub deletes a merged branch itself where the repository says so, at any

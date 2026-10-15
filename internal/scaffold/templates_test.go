@@ -242,6 +242,21 @@ func renderCombo(t *testing.T, typ string, sides []side) ([]Layer, Result) {
 // renderComboChecks is renderCombo with the Container's effective checks.
 func renderComboChecks(t *testing.T, typ string, sides []side, checks string) ([]Layer, Result) {
 	t.Helper()
+	in, layers := loadCombo(t, typ, sides, checks)
+
+	// Build names the template and file of a render error, and the
+	// path and both templates of a conflict.
+	result, err := Build(in, layers, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return layers, result
+}
+
+// loadCombo reads the templates of sides from templates/ and returns them
+// with the input of a Container of type typ on Gitea Actions.
+func loadCombo(t *testing.T, typ string, sides []side, checks string) (Input, []Layer) {
+	t.Helper()
 	in := Input{
 		Project:        "webshop",
 		SoftwareSystem: "shop",
@@ -249,6 +264,7 @@ func renderComboChecks(t *testing.T, typ string, sides []side, checks string) ([
 		DisplayName:    "Sample App",
 		Type:           typ,
 		Checks:         checks,
+		CI:             giteaActions(t),
 	}
 	layers := make([]Layer, 0, len(sides))
 	for _, l := range sides {
@@ -270,14 +286,7 @@ func renderComboChecks(t *testing.T, typ string, sides []side, checks string) ([
 			in.Connectors = append(in.Connectors, l.Name)
 		}
 	}
-
-	// Build names the template and file of a render error, and the
-	// path and both templates of a conflict.
-	result, err := Build(in, layers, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return layers, result
+	return in, layers
 }
 
 // TestEveryTemplateHasACombo fails when a folder in templates/ is rendered by

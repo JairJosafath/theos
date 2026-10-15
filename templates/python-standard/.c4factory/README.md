@@ -28,7 +28,7 @@ the `make check` contract CI runs.
   cache and that Python (about 250 MB for python-fastapi) go in `.uv/` in the
   checkout, in the runner's memory-backed work directory, which the job's end
   frees; the checks skip `.uv/`. The status context is `check / check`, which
-  the protected `main` requires (`model.CheckContexts`).
+  the protected `main` requires (Gitea Actions' check contexts, `model.CI` in `internal/model/ci.go`).
   A change to only `CHANGELOG.md`, `docs/` or images (`.png`, `.jpg`, `.gif`,
   `.svg`) skips the steps after the checkout and passes, so the context still
   reports; any other file, `README.md` included, or a first push runs them.

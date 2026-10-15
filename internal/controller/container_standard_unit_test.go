@@ -65,8 +65,13 @@ func TestScaffoldInput(t *testing.T) {
 			DeploymentRef:     &c4v1alpha1.LocalRef{Name: "k8s-manifests"},
 		},
 	}
-	got := scaffoldInput(container, []string{"postgres"}, model.ChecksBeforeRelease)
+	ci, err := model.HostCI("gitea")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := scaffoldInput(container, ci, []string{"postgres"}, model.ChecksBeforeRelease)
 	want := scaffold.Input{
+		CI:      ci,
 		Project: "webshop", SoftwareSystem: "webshop-core", Container: "orders-api", DisplayName: "Orders API",
 		Type: "service", Framework: "python-fastapi", Standard: "python-strict", Deployment: "k8s-manifests",
 		Connectors: []string{"postgres"}, Checks: "BeforeRelease",

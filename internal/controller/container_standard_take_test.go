@@ -43,7 +43,7 @@ func answer(ns, key, value string) {
 			}
 			container.Annotations[key] = value
 		})).To(Succeed())
-	}).WithTimeout(standardSteps).Should(Succeed())
+	}).Should(Succeed())
 }
 
 // eventuallyAnswered waits until the operator removed the answers from orders-api.
@@ -53,7 +53,7 @@ func eventuallyAnswered(ns string) {
 		annotations := getContainer(g, ns).Annotations
 		g.Expect(annotations).NotTo(HaveKey(c4v1alpha1.AnnotationStandardTake))
 		g.Expect(annotations).NotTo(HaveKey(c4v1alpha1.AnnotationStandardKeep))
-	}).WithTimeout(standardSteps).Should(Succeed())
+	}).Should(Succeed())
 }
 
 // openedTake waits for a take in flight, and returns it.
@@ -69,7 +69,7 @@ func openedTake(ns string) c4v1alpha1.StandardUpdateStatus {
 		g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpdating))
 		g.Expect(cond.Message).To(Equal("Pull request " + take.PullRequestURL +
 			" takes the version of python-strict at v1.2.0 of Makefile; it merges once CI passes"))
-	}).WithTimeout(standardSteps).Should(Succeed())
+	}).Should(Succeed())
 	return take
 }
 
@@ -132,7 +132,7 @@ var _ = Describe("Container Standard files behind", func() {
 			cond := standardCondition(g, container)
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpToDate))
-		}).WithTimeout(standardSteps).Should(Succeed())
+		}).Should(Succeed())
 		Expect(mainFile(ns, makefile)).To(Equal("# Ours.\ncheck:\n\tpytest\n"))
 
 		By("planning a kept file again once a ref changes it")
