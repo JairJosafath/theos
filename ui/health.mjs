@@ -87,6 +87,9 @@ const RECENT_RESTART_MS = 15 * 60_000
 
 const CACHE_MS = 5_000
 
+/** Every Project, one per namespace: where the agent sandboxes run. */
+const PROJECTS_PATH = '/apis/c4.factory.io/v1alpha1/projects'
+
 const SUFFIXES = {
   n: 1e-9,
   u: 1e-6,
@@ -214,9 +217,11 @@ function overallState(components) {
 /**
  * Turns raw API lists into the health summary.
  * @param {{ components?: typeof DEFAULT_COMPONENTS, pods?: any[] | null, podMetrics?: any[] | null,
- *   nodes?: any[] | null, nodeMetrics?: any[] | null, now?: number, errors?: string[] }} input
+ *   nodes?: any[] | null, nodeMetrics?: any[] | null, now?: number, errors?: string[],
+ *   unreadNamespaces?: string[] }} input
  *   pods and nodes are null when they could not be read (state unknown); podMetrics
- *   and nodeMetrics are null when metrics-server is not installed.
+ *   and nodeMetrics are null when metrics-server is not installed. A component in
+ *   one of unreadNamespaces, whose pods could not be read, is unknown too.
  */
 export function summarizeHealth({
   components = DEFAULT_COMPONENTS,
@@ -226,6 +231,7 @@ export function summarizeHealth({
   nodeMetrics = null,
   now = Date.now(),
   errors = [],
+  unreadNamespaces = [],
 }) {
   const metricsByPod = new Map((podMetrics ?? []).map((m) => [`${m.metadata?.namespace}/${m.metadata?.name}`, m]))
   const metricsFor = (pod) => metricsByPod.get(`${pod.metadata?.namespace}/${pod.metadata?.name}`)
@@ -252,7 +258,10 @@ export function summarizeHealth({
       role: component.role ?? '',
       namespace: component.namespace,
       optional: Boolean(component.optional),
-      state: podsKnown ? componentState(podSummaries, component.optional) : 'unknown',
+      state:
+        podsKnown && !unreadNamespaces.includes(component.namespace)
+          ? componentState(podSummaries, component.optional)
+          : 'unknown',
       pods: podSummaries,
     }
   })
@@ -283,7 +292,7 @@ export function summarizeHealth({
   return {
     generatedAt: new Date(now).toISOString(),
     state:
-      !podsKnown || !nodesKnown
+      !podsKnown || !nodesKnown || summarized.some((c) => c.state === 'unknown')
         ? 'unknown'
         : nodeSummaries.length && nodeSummaries.every((n) => n.ready)
           ? overallState(summarized)
@@ -396,14 +405,42 @@ export function createHealthHandler({
       }
       return null
     }
-    const [pods, nodes, podMetrics, nodeMetrics] = await Promise.all([
-      list('/api/v1/pods'),
+    // Pods only where the factory runs (#1080): the components' namespaces, where
+    // the chart lets the UI read them, and the Projects', where the operator does.
+    const [nodes, nodeMetrics, projects] = await Promise.all([
       // The node list is small and served by the API server itself: its time is the API's latency.
       list('/api/v1/nodes', { timed: true }),
-      list('/apis/metrics.k8s.io/v1beta1/pods', { optional: true }),
       list('/apis/metrics.k8s.io/v1beta1/nodes', { optional: true }),
+      list(PROJECTS_PATH),
     ])
-    const health = summarizeHealth({ components, pods, nodes, podMetrics, nodeMetrics, now: now(), errors })
+    const namespaces = [
+      ...new Set([...components.map((c) => c.namespace), ...(projects ?? []).map((p) => p.metadata?.namespace)]),
+    ]
+      .filter(Boolean)
+      .sort()
+    const [podLists, metricsLists] = await Promise.all([
+      Promise.all(namespaces.map((ns) => list(`/api/v1/namespaces/${encodeURIComponent(ns)}/pods`))),
+      Promise.all(
+        namespaces.map((ns) =>
+          list(`/apis/metrics.k8s.io/v1beta1/namespaces/${encodeURIComponent(ns)}/pods`, { optional: true }),
+        ),
+      ),
+    ])
+    // null when nothing could be read, as one cluster-wide list would be.
+    const joined = (lists) => (lists.length && lists.every((l) => l === null) ? null : lists.flatMap((l) => l ?? []))
+    const pods = joined(podLists)
+    const podMetrics = joined(metricsLists)
+    const unreadNamespaces = namespaces.filter((_, i) => podLists[i] === null)
+    const health = summarizeHealth({
+      components,
+      pods,
+      nodes,
+      podMetrics,
+      nodeMetrics,
+      now: now(),
+      errors,
+      unreadNamespaces,
+    })
     history = addSample(history, sampleOf(health, apiMs, apiFailed))
     return { ...health, history }
   }

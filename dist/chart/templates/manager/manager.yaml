@@ -96,6 +96,9 @@ spec:
         {{- range .Values.global.imagePullSecrets }}
         - --shared-pull-secret={{ .name }}
         {{- end }}
+        {{- if .Values.ui.enabled }}
+        - --ui-service-account={{ .Release.Namespace }}/{{ include "c4-factory.uiName" . }}
+        {{- end }}
         command:
         - /manager
         # The namespace the shared Secrets are read from, into every project

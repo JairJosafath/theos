@@ -5,7 +5,16 @@
 #   make ui-forward  open it on http://localhost:8080
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: c4-factory-ui
+# Everything without a namespace goes in c4-factory-ui; the RoleBindings that
+# let the UI read pods keep theirs (rbac.yaml).
+transformers:
+- |-
+  apiVersion: builtin
+  kind: NamespaceTransformer
+  metadata:
+    name: ui-namespace
+    namespace: c4-factory-ui
+  unsetOnly: true
 labels:
 - pairs:
     app.kubernetes.io/part-of: c4-factory
