@@ -12,10 +12,10 @@ The board's source is [images/architecture.excalidraw](images/architecture.excal
 
 ```
      cmd/main.go            cmd/c4session          cmd/c4agent               ui/ (server.mjs + React)
-     (operator manager)     (Session client CLI)   (runner in a sandbox)     (read-only UI)
+     (operator manager)     (Session client CLI)   (runner in a sandbox)     (the UI)
           │                       │                      │                        │
           ▼                       ▼                      ▼                        ▼
-  internal/controller     internal/sessionclient  internal/agentrunner     Kubernetes API, GET only
+  internal/controller     internal/sessionclient  internal/agentrunner     Kubernetes API: GETs, Brief writes, actions
                                                   (git + agent CLI; result
                                                    in the termination message)
      │        │        │               │
@@ -45,15 +45,21 @@ every scaffolded repository.
 | Entry points | `cmd/*` | everything | nothing imports them |
 
 The UI in `ui/` is a separate program. Its server proxies GET requests to the
-Kubernetes API, under `/apis/c4.factory.io/` only, and is read-only by construction
-but for three writes: creating a Brief (`POST` of kind `Brief` into a namespace that
+Kubernetes API, under `/apis/c4.factory.io/` only. With its actions off (the
+default), it is read-only by construction but for three writes: creating a Brief (`POST` of kind `Brief` into a namespace that
 holds a Project; only its name and spec go upstream), appending a follow-up
 prompt to one (a JSON patch whose only operation is `add` at `/spec/prompts/-`),
 and pausing or resuming one (a JSON patch whose only operation is `add` of a
 boolean at `/spec/paused`).
 The server refuses every other write, and its RBAC grants only `create` and
 `patch` on `briefs` beyond its reads, so what a Brief may say stays the CRD's to
-check. It shares nothing with the Go code but the resource shapes. For the Factory and Work areas it also reads pods, nodes and
+check. With `ui.actions.enabled`, the server's action table (`ACTIONS` in
+`ui/server.mjs`, listed in [ui/README.md](../ui/README.md)) takes a few more,
+each one method, path, content type and body shape: a Brief's and a Crew's
+settings, a release re-run, a Container's scaffold retry, checks and answer to
+its Standard's bump, a Task from a goal and a Standard's `ref`. They are made as
+the UI's ServiceAccount over port-forward, or as the person signed in with OIDC
+behind an Ingress, so the cluster's RBAC decides. It shares nothing with the Go code but the resource shapes. For the Factory and Work areas it also reads pods, nodes and
 metrics-server itself (`ui/health.mjs`) and sends the browser only a summary.
 
 `make lint` enforces the rows marked "must not import" with golangci-lint's
