@@ -117,6 +117,7 @@ export function demoStory(now: number): StoryData {
       kind: 'SoftwareSystem',
       metadata: meta('payment-provider', created),
       spec: {
+        location: 'External',
         displayName: 'Payment Provider',
         description: 'Takes card and wallet payments.',
         needs: ['Payments never charge twice'],

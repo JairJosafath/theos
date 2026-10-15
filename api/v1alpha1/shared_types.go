@@ -145,6 +145,9 @@ const (
 	ReasonUpdateClosed         = "UpdateClosed"
 	ReasonUpdateRefused        = "UpdateRefused"
 	ReasonFilesBehind          = "FilesBehind"
+	// ReasonExternalSystem: the Container or DataStore names an External
+	// SoftwareSystem, which the factory never builds.
+	ReasonExternalSystem = "ExternalSystem"
 	// ReasonChecksLeftOut: an update that changes the Container's checks would
 	// leave out a file the change of checks writes, changed in the repository
 	// since, so it isn't opened and the checks stay as they are.

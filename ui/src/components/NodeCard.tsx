@@ -134,7 +134,7 @@ function ExternalCard({ node }: { node: SystemNode }) {
   return (
     <div className="node-body card-body">
       <div className="node-title">{node.title}</div>
-      <div className="node-kind">Software system · outside</div>
+      <div className="node-kind">{node.external ? 'Software system · external' : 'Software system · outside'}</div>
       {node.description ? <p className="node-desc clamp-2">{node.description}</p> : null}
     </div>
   )
