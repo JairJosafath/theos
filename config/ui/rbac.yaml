@@ -53,10 +53,10 @@ subjects:
   name: c4-factory-ui
   namespace: c4-factory-ui
 ---
-# For GET /factory/health, read by server.mjs itself: the factory's pods and the
-# node, and their CPU and memory from metrics-server. The server sends the
-# browser only a summary (names, states, restarts, usage), never pod specs, and
-# the browser can't reach these paths through /k8s. Still no Secrets, no writes.
+# For GET /factory/health, read by server.mjs itself: the node, and its CPU
+# and memory from metrics-server. The server sends the browser only a summary
+# (names, states, restarts, usage), never pod specs, and the browser can't
+# reach these paths through /k8s. Still no Secrets, no writes.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -65,10 +65,10 @@ metadata:
     app.kubernetes.io/name: c4-factory-ui
 rules:
 - apiGroups: [""]
-  resources: [pods, nodes]
+  resources: [nodes]
   verbs: [get, list]
 - apiGroups: [metrics.k8s.io]
-  resources: [pods, nodes]
+  resources: [nodes]
   verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -81,6 +81,103 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: c4-factory-ui-health
+subjects:
+- kind: ServiceAccount
+  name: c4-factory-ui
+  namespace: c4-factory-ui
+---
+# The pods and their metrics, for the same summary: only in the namespaces of
+# ui/health.mjs's components, bound below. The operator lets the UI read them
+# in each project namespace too, for the agent sandboxes (--ui-service-account).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: c4-factory-ui-pods
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+rules:
+- apiGroups: [""]
+  resources: [pods]
+  verbs: [get, list]
+- apiGroups: [metrics.k8s.io]
+  resources: [pods]
+  verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: c4-factory-ui-pods
+  namespace: c4-factory-system
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: c4-factory-ui-pods
+subjects:
+- kind: ServiceAccount
+  name: c4-factory-ui
+  namespace: c4-factory-ui
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: c4-factory-ui-pods
+  namespace: gitea
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: c4-factory-ui-pods
+subjects:
+- kind: ServiceAccount
+  name: c4-factory-ui
+  namespace: c4-factory-ui
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: c4-factory-ui-pods
+  namespace: agent-sandbox-system
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: c4-factory-ui-pods
+subjects:
+- kind: ServiceAccount
+  name: c4-factory-ui
+  namespace: c4-factory-ui
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: c4-factory-ui-pods
+  namespace: c4-factory-ui
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: c4-factory-ui-pods
+subjects:
+- kind: ServiceAccount
+  name: c4-factory-ui
+  namespace: c4-factory-ui
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: c4-factory-ui-pods
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: c4-factory-ui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: c4-factory-ui-pods
 subjects:
 - kind: ServiceAccount
   name: c4-factory-ui

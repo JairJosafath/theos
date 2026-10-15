@@ -128,8 +128,8 @@ echo "The chart's catalog matches templates/versions.txt; off, it renders no cat
 # uninstall; the seed may label only the project namespaces; the operator reads
 # the shared Secrets from its own namespace. chart-gitea.yaml renders project
 # apps with pull Secret ghcr, chart-gitea-bare.yaml with agents.enabled=false
-# and projectNamespaces.create=false. That neither renders a Secret is
-# helm-lint's check.
+# and projectNamespaces.create=false (and ui.enabled=false, for the UI check
+# below). That neither renders a Secret is helm-lint's check.
 # doc FILE KIND NAME prints the rendered object KIND/NAME, or nothing.
 doc() {
 	awk -v kind="$2" -v name="$3" '/^---/ { if (k && n) printf "%s", d; d = ""; k = 0; n = 0; next }
@@ -167,6 +167,46 @@ if grep -qE -e '--shared-(pull-)?secret' <<<"$(doc "$OUT/chart-gitea-bare.yaml" 
 	exit 1
 fi
 echo "The chart makes the project Namespaces, lets the seed label them and turns sharing on"
+
+# The UI reads pods only where the factory runs (#1080): no ClusterRole bound to
+# its ServiceAccount grants pods; ClusterRole c4-factory-ui-pods is bound by a
+# RoleBinding in each namespace of its components (ui.components and Gitea's),
+# and the operator binds the same rules in every project namespace
+# (--ui-service-account), never without the UI. Nodes and their metrics stay
+# cluster-wide.
+# The ClusterRoles bound to the UI's ServiceAccount: each ClusterRoleBinding's
+# roleRef name when one of its subjects is c4-factory-ui.
+bound_to_ui=$(awk 'function flush() { if (b && ui && r != "") print r; b = 0; ui = 0; r = ""; sec = "" }
+	/^---/ { flush(); next } /^kind: ClusterRoleBinding$/ { b = 1 } /^[a-z]/ { sec = $1 }
+	sec == "roleRef:" && /^  name: / { r = $2 } sec == "subjects:" && $0 == "  name: c4-factory-ui" { ui = 1 }
+	END { flush() }' "$OUT/chart-gitea.yaml")
+want "can't find the ClusterRoles bound to the UI's ServiceAccount" "$bound_to_ui" '^c4-factory-ui-health$'
+for role in $bound_to_ui; do
+	# pods in a flow list or a block list of resources
+	if awk '/^  resources:/ { r = 1 } /^  [a-z]/ && !/^  resources:/ { r = 0 } /^- / { r = 0 }
+		r && /(\[|, |^  - )pods(\]|,|$)/ { found = 1 } END { exit !found }' \
+		<<<"$(doc "$OUT/chart-gitea.yaml" ClusterRole "$role")"; then
+		echo "The chart: ClusterRole $role grants the UI pods cluster-wide; bind c4-factory-ui-pods per namespace" >&2
+		exit 1
+	fi
+done
+want "the UI can't read nodes cluster-wide" "$(doc "$OUT/chart-gitea.yaml" ClusterRole c4-factory-ui-health)" \
+	'^  resources: \[nodes\]$'
+want "ClusterRole c4-factory-ui-pods doesn't grant pods" "$(doc "$OUT/chart-gitea.yaml" ClusterRole c4-factory-ui-pods)" \
+	'^  resources: \[pods\]$'
+bound=$(awk '/^---/ { k = 0; n = 0 } /^kind: RoleBinding$/ { k = 1 } k && $0 == "  name: c4-factory-ui-pods" { n = 1 }
+	k && n && /^  namespace: / { print $2; k = 0 }' "$OUT/chart-gitea.yaml" | sort | tr '\n' ' ')
+if [ "$bound" != "agent-sandbox-system c4-factory-system gitea kube-system " ]; then
+	echo "The chart binds c4-factory-ui-pods in [$bound], not in its components' namespaces" >&2
+	exit 1
+fi
+want "the operator doesn't let the UI read project namespaces' pods" "$manager" \
+	'^        - --ui-service-account=c4-factory-system/c4-factory-ui$'
+if grep -qF -- '--ui-service-account' <<<"$(doc "$OUT/chart-gitea-bare.yaml" Deployment c4-factory-controller-manager)"; then
+	echo "The chart: the operator names a UI ServiceAccount with ui.enabled=false" >&2
+	exit 1
+fi
+echo "The chart lets the UI read pods only in its components' namespaces and, through the operator, the projects'"
 
 # The test environment shares the Claude token (make claude-secret): the
 # manager names it and its own namespace, and the namespaces make seed and the

@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -57,6 +58,9 @@ type ProjectReconciler struct {
 	// buildinfo.Version and the chart's C4_CHART_VERSION.
 	OperatorVersion string
 	ChartVersion    string
+	// UIServiceAccount is the UI's ServiceAccount, let read the pods of every
+	// project namespace (ensureUIPodReader); none when its name is empty.
+	UIServiceAccount types.NamespacedName
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects,verbs=get;list;watch;create;update;patch;delete
@@ -97,6 +101,9 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 	if err := r.ensureSessionAccess(ctx, &project); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.ensureUIPodReader(ctx, &project); err != nil {
 		return ctrl.Result{}, err
 	}
 	if err := r.ensureAgentNetwork(ctx, &project); err != nil {

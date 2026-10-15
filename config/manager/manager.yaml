@@ -78,6 +78,9 @@ spec:
           # claude-secret, copied into every project namespace labeled
           # c4.factory.io/shared-secrets=true (docs/dev/testenv.md).
           - --shared-secret=claude-credentials
+          # The UI of config/ui reads the agent sandboxes' pods in each project
+          # namespace; nowhere else but the factory's own (#1080).
+          - --ui-service-account=c4-factory-ui/c4-factory-ui
         env:
           - name: POD_NAMESPACE
             valueFrom:
