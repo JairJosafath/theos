@@ -325,7 +325,7 @@ func TestImplementedStepNamesExtras(t *testing.T) {
 }
 
 // A round whose check fails on main in the workspace too goes on to the pull
-// request and CI, saying so (docs/plans/workspace-check-differs.md).
+// request and CI, saying so (docs/plans/done/workspace-check-differs.md).
 func TestImplementedStepCheckFailsOnBase(t *testing.T) {
 	got := NextTaskStep(TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Run: RunState{Started: true,
 		Done: true, Result: &RunResult{Commit: "abcdef1234", CheckFailsOnBase: "curl: (22) 404 Not Found"}}})

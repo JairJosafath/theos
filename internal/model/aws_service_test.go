@@ -28,7 +28,7 @@ spec:
   standardRef: {name: aws-standard}
 `
 
-// The PaaS Framework (plans/aws.md, step 3): aws-fargate-ts builds services,
+// The PaaS Framework (plans/done/aws.md, step 3): aws-fargate-ts builds services,
 // and aws-standard fits it and aws-lambda-ts alike.
 func TestAWSFargateTSIsAServiceFrameworkOfAWSStandard(t *testing.T) {
 	var fargate, standard *CatalogEntry
@@ -127,7 +127,7 @@ func TestCheckDeploysItself(t *testing.T) {
 	}
 }
 
-// Every AWS Framework is its own deployment (plans/aws.md, decision 4).
+// Every AWS Framework is its own deployment (plans/done/aws.md, decision 4).
 func TestAWSFrameworksDeployThemselves(t *testing.T) {
 	for _, entry := range chartCatalog(t) {
 		if entry.Side != SideFramework {

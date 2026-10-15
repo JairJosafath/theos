@@ -41,7 +41,7 @@ go run ./hack/render -out "$OUT/backup-operator" -type operator -container backu
 # c4factory-catalog, which the seed applies (hack/seed/catalog.sh): validated
 # below as chart-*-catalog.yaml. With Gitea, the chart renders no
 # c4.factory.io object of its own and none of them is a Helm hook, so an
-# upgrade changes them in place (docs/plans/upgrade-in-place.md).
+# upgrade changes them in place (docs/plans/done/upgrade-in-place.md).
 # catalog_objects FILE [CONFIGMAP] prints the objects in ConfigMap CONFIGMAP
 # (default c4factory-catalog) of the render FILE.
 catalog_objects() {

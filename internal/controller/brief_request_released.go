@@ -26,7 +26,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// When a request ships (docs/plans/brief-requests.md, decision 9's released
+// When a request ships (docs/plans/done/brief-requests.md, decision 9's released
 // stage): once every issue a planned request became is closed and a
 // published release holds each, or it was done in a Container that
 // publishes nowhere, the Brief says where on the issue, once, and closes it

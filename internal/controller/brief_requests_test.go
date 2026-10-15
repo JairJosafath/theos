@@ -71,7 +71,7 @@ func requestsCondition(g Gomega, ns string) *metav1.Condition {
 	return condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionRequests)
 }
 
-// Step 3 of docs/plans/brief-requests.md: the Brief reads its releases
+// Step 3 of docs/plans/done/brief-requests.md: the Brief reads its releases
 // repository's issues; no round takes a request yet.
 var _ = Describe("Brief requests", func() {
 	var ns string

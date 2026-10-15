@@ -253,7 +253,7 @@ enforces.
   way: when the check fails on the base, the implementer is sent back once
   to do the issue, since that is not a reason to block, and a second blocked
   note stands. A base that can't be checked out counts as passing
-  ([plan](plans/workspace-check-differs.md)).
+  ([plan](plans/done/workspace-check-differs.md)).
   The
   Container's Crew decides how many Tasks run at once.
 - **A Task waits for checks a runner will run.** The commit status gives the
@@ -267,7 +267,7 @@ enforces.
   That failure is the infrastructure's, so it costs the issue no try; a later
   try that continues its pull request, with green checks on the commit the
   failed try pushed, goes straight to review
-  ([plan](plans/checks-wait-for-runner.md)). Checks that fail because the
+  ([plan](plans/done/checks-wait-for-runner.md)). Checks that fail because the
   runner ran out of room (the log says `no space left on device`) are the
   infrastructure's too: the Task fails, reason `RunnerOutOfSpace`, costing no
   round and no try. The runners keep `/tmp` from job to job, so they clear
@@ -298,8 +298,9 @@ enforces.
   Standard's protected files (only the operator's gated merge of a Standard change
   passes, after its own checks) and keeps `v*` tags to the operator; a per-project
   NetworkPolicy allows only DNS, the Git host and public HTTPS; each run has a
-  deadline. The Claude token is readable inside the sandbox; Agent Substrate's
-  egress credential injection is the later fix. The token's one source is a
+  deadline. The Claude token is readable inside the sandbox; a model proxy in
+  the release namespace that adds it to the agent's requests is the fix
+  ([plan](plans/model-proxy.md)). The token's one source is a
   Secret in the release namespace that the operator copies into project
   namespaces, so the fix reads one Secret; a namespace receives copies only
   with a label a namespace's own users can't set.
@@ -602,7 +603,7 @@ model and context it needs.
   name but another id fails `RepositoryReplaced`, before anything is written
   to it, until the target is changed or the annotation
   `c4.factory.io/accept-repository: <id>` accepts the new one. See
-  [plans/brief-release-target.md](plans/brief-release-target.md).
+  [plans/done/brief-release-target.md](plans/done/brief-release-target.md).
   With `publishReleases.source.path`, the release also brings the app's
   source as of its tag into that folder of the repository (`.` is the whole
   repository), the factory's own files (`model.FactoryOwnPaths`: `AGENTS.md`,
@@ -619,7 +620,7 @@ model and context it needs.
   the commit, tag and folder link, with a Normal Event `SourcePublished`. A
   `go.mod` whose module path or tag `go install` can't find from GitHub
   raises a Warning Event `SourceNotGoInstallable`, and is published anyway.
-  See [plans/release-source.md](plans/release-source.md).
+  See [plans/done/release-source.md](plans/done/release-source.md).
 - **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
   it picked up at once: the Crew starts it on its next poll, before every other
   issue, whatever its release, even when every place is taken (once running, it
@@ -652,7 +653,7 @@ model and context it needs.
   never retry it. The planner doesn't give agents a person's work: it files
   it as its own plan issue labelled `kind/by-hand`, which the operator files
   `status/needs-human` in Later, and no issue waits on it. See
-  [plans/honest-evidence.md](plans/honest-evidence.md).
+  [plans/done/honest-evidence.md](plans/done/honest-evidence.md).
 - **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
   users, the Container's Relationships, and read-only clones of the related
   Containers' repositories: the agent of a client reads the service it calls.
@@ -781,7 +782,7 @@ model and context it needs.
   whose merge doesn't count as merged after the prepare issue; no run within
   the hour leaves the release to a person (`NoFullCheck`). A person who tags
   by hand pushes the branch and waits for `full` the same way. See
-  [plans/checks-before-release.md](plans/checks-before-release.md).
+  [plans/done/checks-before-release.md](plans/done/checks-before-release.md).
 - **New shapes, same operator.** Container types `cli` and `extension`, with
   their templates in the template catalog in `templates/`; a Go and Node toolchain whose image ships a warm build cache, a CI runner
   labelled `go`, and two agent sandboxes at once.
@@ -802,7 +803,7 @@ model and context it needs.
   `install.yaml` names the image `controller:<tag>`, and the operator's README
   says to build and push the image and set it there before applying it. Until a catalog entry supports
   a type, the planner answers that it needs input rather than planning it.
-  GitHub issue #723 has the plan, [plans/kubebuilder-operators.md](plans/kubebuilder-operators.md).
+  GitHub issue #723 has the plan, [plans/done/kubebuilder-operators.md](plans/done/kubebuilder-operators.md).
 - **A Container type `function`:** serverless code on AWS (Lambda behind an
   API Gateway HTTP API), whose CDK app is its deployment. It is not a
   `service`: nothing runs between requests, and the cloud, not a cluster, runs
@@ -814,7 +815,7 @@ model and context it needs.
   from drifting), and no Compute or Deployment: `make check` synthesizes
   the stack offline under CDK Nag's AwsSolutions rules and
   cfn-lint, and nothing deploys. GitHub issue #1028 has the plan,
-  [plans/aws.md](plans/aws.md). The same Standard serves the `service`
+  [plans/done/aws.md](plans/done/aws.md). The same Standard serves the `service`
   Framework `aws-ec2-ts` (EC2 instances in an Auto Scaling group behind an
   internal Application Load Balancer), also with no Compute or Deployment,
   and the `service` Framework `aws-fargate-ts` (a Node server in a container
@@ -966,7 +967,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   to its end. Its condition `Paused` names the Tasks still running, then says
   nothing is. Set back to false, it unpauses only the Crews it marked, so a
   Crew a person paused by hand stays paused. The Brief's card pauses and
-  resumes it. See [plans/upgrade-in-place.md](plans/upgrade-in-place.md).
+  resumes it. See [plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md).
 - **A Brief files no issue that no change may make** (#909). `AGENTS.md`,
   `docs/agents/` and `.c4factory.yaml` (`model.AgentNeverPaths`) change
   through no pull request, so `brief.md` names them and a prompt that asks
@@ -1019,7 +1020,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   [plans/done/brief-releases.md](plans/done/brief-releases.md) and
   [plans/done/brief-patch-releases.md](plans/done/brief-patch-releases.md)
   and [plans/done/fixes-patch-next.md](plans/done/fixes-patch-next.md)
-  and [plans/brief-release-target.md](plans/brief-release-target.md).
+  and [plans/done/brief-release-target.md](plans/done/brief-release-target.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
   the Brief on the first Framework, with an issue for it, and an issue for
@@ -1076,7 +1077,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   the operator never writes them: it lists in `status.requestsSettled` the
   numbers whose issues are closed and no request has, the UI's *Accept* and
   *Decline* drop those, and a kubectl user may (#824). See
-  [plans/brief-requests.md](plans/brief-requests.md).
+  [plans/done/brief-requests.md](plans/done/brief-requests.md).
 - **A failed issue shows on the Brief and is tried again from it** (#429).
   An open issue handed back with `status/needs-human` in the repository of a
   Container the Brief made is listed in the Brief's `status.failed` and card,
@@ -1344,7 +1345,7 @@ reach it being rerun without spending the round. New Agent values apply from
 the next run, and a new Standard ref through its update pull request. A
 person who wants a quiet moment pauses a Brief and waits for its `Paused`
 condition to say nothing is running. See
-[plans/upgrade-in-place.md](plans/upgrade-in-place.md).
+[plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md).
 
 ## Out of scope for v1
 

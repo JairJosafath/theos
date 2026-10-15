@@ -83,7 +83,7 @@ func publishLinter(ns, repository, tag string) string {
 	return url
 }
 
-// Step 5 of docs/plans/brief-requests.md: a request hears when it ships.
+// Step 5 of docs/plans/done/brief-requests.md: a request hears when it ships.
 var _ = Describe("Brief requests shipped", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })

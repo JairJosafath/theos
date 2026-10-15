@@ -1,5 +1,5 @@
 // A Brief's requests: the GitHub issues of its releases repositories it takes
-// as input to planning (docs/plans/brief-requests.md). For display, how far
+// as input to planning (docs/plans/done/brief-requests.md). For display, how far
 // each got; for the Brief page's buttons, the releases list that accepts or
 // declines one, and that sets an entry's requests. The CRD judges every value.
 

@@ -27,7 +27,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// A Brief's requests (docs/plans/brief-requests.md): the open issues of each
+// A Brief's requests (docs/plans/done/brief-requests.md): the open issues of each
 // spec.releases repository that takes them, opened by a person the entry
 // allows, kept in status.requests. A stranger's issue is never kept, nor
 // commented on.

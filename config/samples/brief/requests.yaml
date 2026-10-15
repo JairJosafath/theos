@@ -1,5 +1,5 @@
 # cel-lens with its linter's releases published to GitHub, taking requests
-# from that repository's issues (docs/plans/brief-requests.md): an issue
+# from that repository's issues (docs/plans/done/brief-requests.md): an issue
 # opened by gray-lenovo or a member of team gray-org/maintainers waits under
 # status.needsYou until its number is added to accepted, or to declined.
 # Needs Secret cel-lens-github, with the key token: a fine-grained token for

@@ -11,7 +11,7 @@ import (
 // open (OpenCriterion): they need what no agent's sandbox has, so a person does
 // them. The operator files one on merge, status/needs-human in the Later
 // milestone, so no Crew picks it and no release waits on it
-// (plans/honest-evidence.md, decisions 4-5).
+// (plans/done/honest-evidence.md, decisions 4-5).
 
 // LabelByHand marks an issue only a person can do.
 const LabelByHand = "kind/by-hand"

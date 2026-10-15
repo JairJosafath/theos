@@ -28,7 +28,7 @@ func requestsPlan(ns, answers string) scaffold.Tree {
 	return files
 }
 
-// Step 4 of docs/plans/brief-requests.md: a round takes requests, and says
+// Step 4 of docs/plans/done/brief-requests.md: a round takes requests, and says
 // on each issue what it became.
 var _ = Describe("Brief requests in rounds", func() {
 	var ns string

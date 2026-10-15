@@ -14,7 +14,7 @@ import (
 )
 
 // The Standards that can run the full check only before a release
-// (docs/plans/checks-before-release.md): their check.yaml renders the
+// (docs/plans/done/checks-before-release.md): their check.yaml renders the
 // Container's effective checks and their Makefile has check-light.
 var checksBeforeReleaseStandards = []string{"go-standard", "go-operator-standard", "ts-standard", "python-standard"}
 

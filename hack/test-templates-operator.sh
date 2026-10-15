@@ -9,7 +9,7 @@
 # gitea-release runs for a tag, `make dist VERSION=v0.1.0`, and fails unless
 # dist/ holds the binaries, install.yaml and SHA256SUMS. No cluster, no
 # Docker. make check doesn't run it; a change to either operator template does
-# (docs/plans/kubebuilder-operators.md, decision 6).
+# (docs/plans/done/kubebuilder-operators.md, decision 6).
 #
 # The Makefile passes this repository's pinned tools, which the rendered repo
 # finds on PATH at the versions it pins, and the envtest binaries, so nothing
