@@ -217,12 +217,10 @@ var _ = Describe("Brief", func() {
 					"the Brief went before its wait was over")
 			}
 
-			// The wait runs from the deletion, then a requeue lets the Brief go;
-			// on a loaded runner both take longer than the default timeout.
+			// The wait runs from the deletion, then a requeue lets the Brief go.
 			Eventually(func() bool {
 				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
-			}).WithTimeout(testBotDeleteTimeout+20*time.Second).Should(BeTrue(),
-				"the finalizer held the Brief past its wait")
+			}).Should(BeTrue(), "the finalizer held the Brief past its wait")
 			Eventually(func(g Gomega) {
 				g.Expect(briefEventNotes(g, ns, "BotLeft")).To(ContainElement(And(ContainSubstring(user),
 					ContainSubstring("connection refused"), ContainSubstring("waited "+testBotDeleteTimeout.String()))))

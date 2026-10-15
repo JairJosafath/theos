@@ -165,7 +165,7 @@ func planRoundCosting(ns string, round, try int, files scaffold.Tree, milliUSD *
 	// The plan's Sandbox comes at the end of a chain of reconciles (the Brief's
 	// repo, its plan Task, the Task's Sandbox): give it a whole round, as the
 	// Brief specs do, not the suite's 10s default, which a loaded device ran out (#942).
-	Eventually(func(g Gomega) { sandboxExists(g, ns, sandbox) }).WithTimeout(wholeRound).Should(Succeed())
+	Eventually(func(g Gomega) { sandboxExists(g, ns, sandbox) }).Should(Succeed())
 	sha := gitFake.pushPlan(ns, briefRepo, round, files)
 	result := &agentrunner.Result{Role: "plan", Commit: sha,
 		Summary:      "I've rewritten the plan in `plan/` with the refusal fixed. Nothing is committed or pushed.",
@@ -707,7 +707,7 @@ spec:
 			g.Expect(b.Status.Issues[0]).To(And(HaveField("Round", int32(1)), HaveField("N", int32(1))))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(
 				HaveField("Message", ContainSubstring("Container checker")))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(gitFake.closeIssue(ns, "linter", int(getBrief(Default, ns).Status.Issues[0].Number))).To(Succeed())
 
 		By("a reconcile reading a cached Brief that doesn't show the recorded issue yet (#501)")

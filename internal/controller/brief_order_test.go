@@ -80,9 +80,6 @@ The CLI checks a file with the core's checker.
 	}
 }
 
-// Each wait for the round's issues spans a whole round's reconciles, the
-// Containers scaffolded and a failed apply retried after its backoff, so it
-// takes wholeRound: 10s ran out on a loaded device (#832).
 var _ = Describe("Brief issue order", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })
@@ -105,7 +102,7 @@ var _ = Describe("Brief issue order", func() {
 			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", "Applying"),
 				HaveField("Message", ContainSubstring("waits for Container core"))))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.openIssues(ns, "cli")).To(BeEmpty())
 			g.Expect(getBrief(g, ns).Status.Issues).To(BeEmpty())
@@ -119,7 +116,7 @@ var _ = Describe("Brief issue order", func() {
 			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", model.ReasonApplyFailed),
 				HaveField("Message", ContainSubstring("dependencies are down"))))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		cli := gitFake.issue(ns, "cli", 1)
 		Expect(cli.Labels).NotTo(ContainElement(model.LabelReady), "no Crew may take it before it depends on the core's")
 		Expect(cli.blockers).To(BeEmpty())
@@ -129,7 +126,7 @@ var _ = Describe("Brief issue order", func() {
 		gitFake.failDependencies(ns, "cli", nil)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		cli = gitFake.issue(ns, "cli", 1)
 		Expect(cli.blockers).To(Equal([]string{ns + "/core#1"}))
 		Expect(cli.Labels).To(ContainElements(model.LabelReady, "kind/feature"))
@@ -162,7 +159,7 @@ The README shows the CLI checking a file.
 
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		core, cli := gitFake.issue(ns, "core", 1), gitFake.issue(ns, "cli", 1)
 		Expect(core.milestone).To(BeEmpty())
 		Expect(cli.Labels).To(ConsistOf(model.LabelNeedsHuman, "kind/docs", model.LabelByHand),
@@ -198,7 +195,7 @@ The README shows the CLI checking a file.
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).
 				To(HaveField("Status", metav1.ConditionTrue))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))
 		Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
 		cli := gitFake.issue(ns, "cli", 1)
