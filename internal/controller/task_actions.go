@@ -869,7 +869,7 @@ func (r *TaskReconciler) rerunChecks(ctx context.Context, task *c4v1alpha1.Task,
 	}
 	for _, run := range failed {
 		if err := provider.RerunFailedJobs(gitCtx, repo, run.ID); err != nil {
-			why := "was killed for lack of memory"
+			why := "failed through its runner's fault"
 			if status.ChecksRerunDue {
 				why = "failed at a commit the agent pushed again"
 			}
@@ -884,7 +884,7 @@ func (r *TaskReconciler) rerunChecks(ctx context.Context, task *c4v1alpha1.Task,
 			"runs", len(failed))
 	} else {
 		setProgress(status, model.RerunChecks(progressOf(status), r.now()))
-		log.Info("Rerunning checks killed for lack of memory", "round", status.Round,
+		log.Info("Rerunning checks the runner failed", "round", status.Round,
 			"commit", status.Commit, "checksReruns", status.ChecksReruns, "runs", len(failed))
 	}
 	r.progress(task, status, metav1.ConditionTrue, "RerunningChecks", step.Message)
@@ -910,6 +910,9 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1alpha1.Task, status
 	case model.ReasonRunnerOutOfMemory:
 		why += "\n\nThe machine kept killing the checks for lack of memory, so this try doesn't count towards " +
 			"the limit; free memory on the runner or run fewer jobs at once first."
+	case model.ReasonRunnerLost:
+		why += "\n\nThe runner kept abandoning the checks, so this try doesn't count towards the limit; keep the " +
+			"runners up first."
 	case model.ReasonApprovalRanOut:
 		why += "\n\nCI kept taking longer than a review run lasts, so this try doesn't count towards the limit; " +
 			"free or speed up the runner first."

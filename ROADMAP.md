@@ -62,7 +62,7 @@ all of these:
 - the agent fence closes its known gap: today the Claude token is readable
   inside the sandbox ([docs/design.md](docs/design.md), v2);
 - the [OpenSSF Best Practices](https://www.bestpractices.dev/) passing
-  criteria;
+  criteria ([docs/openssf.md](docs/openssf.md) has the gaps);
 - a device builds and releases an app from a Brief with only the published
   release and [docs/getting-started.md](docs/getting-started.md).
 
