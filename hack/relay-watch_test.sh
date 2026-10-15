@@ -4,7 +4,8 @@
 # issues pick skips, with pick, blocked, cycles, the proposed list and
 # hack/relay.sh faked; that it tends the plans' parents (parents faked); when a triage reads a proposed issue again, with
 # hack/lib/github.sh's proposed against a stubbed GitHub; and when a CI round
-# files a "main is red" issue, with gh faked under the real hack/lib/github.sh;
+# files a "main is red" issue, and when a flake round records a failed spec
+# and files a "Flaky:" bug, with gh faked under the real hack/lib/github.sh;
 # when it starts the maintainer, on a schedule or for an issue escalated to it,
 # with the activity, the escalated issues and hack/relay.sh --maintain faked;
 # --install and --uninstall with systemctl, loginctl and crontab faked; and the
@@ -495,9 +496,13 @@ for ((i = 0; i < $#; i++)); do
   esac
 done
 case "$1 $2 $* " in
-  "run list"*) cat "$FAKE/runs-$wf.json" 2>/dev/null || echo '[]' ;;
+  "run list"*)
+    if [ -n "$q" ]; then jq -r "$q" "$FAKE/runs-$wf.json" 2>/dev/null || echo '[]' | jq -r "$q"
+    else cat "$FAKE/runs-$wf.json" 2>/dev/null || echo '[]'; fi ;;
   "run view"*)
-    if [[ " $* " == *" --log-failed "* ]]; then seq -f 'log line %g' 1 50
+    if [[ " $* " == *" --log-failed "* ]] && [ -f "$FAKE/log-$3.fail" ]; then exit 1
+    elif [[ " $* " == *" --log-failed "* ]] && [ -f "$FAKE/log-$3.txt" ]; then echo "$3" >>"$FAKE/log-reads"; cat "$FAKE/log-$3.txt"
+    elif [[ " $* " == *" --log-failed "* ]]; then seq -f 'log line %g' 1 50
     elif [ -f "$FAKE/jobs-$3.json" ]; then jq -r "$q" "$FAKE/jobs-$3.json"
     else echo '{"jobs":[{"databaseId":1,"name":"Run on Ubuntu","conclusion":"failure","steps":[{"name":"Test","conclusion":"failure"}]},
       {"databaseId":2,"name":"Setup","conclusion":"success","steps":[{"name":"Set up","conclusion":"success"}]}]}' | jq -r "$q"; fi ;;
@@ -684,6 +689,68 @@ ci_round
 check "ci: a job that timed out counts" "$(filed)" 1
 echo '[]' >"$T/issues.json"
 rm -f "$T"/jobs-*.json
+
+# Flaky specs, with the same fake gh: the failed runs on main in
+# $T/runs-.json, each one's failed log in $T/log-RUN.txt, from a real Tests
+# run's log (gh writes its colour codes as the text "^[").
+SPEC="Brief apps copies a Crew's latest release to the Brief, and says an entry's app isn't made"
+ago() { date -u -d "$1 ago" +%Y-%m-%dT%H:%M:%SZ; }
+failed() { # failed RUN AGO: RUN failed on main AGO ago
+  jq --argjson id "$1" --arg at "$(ago "$2")" '. + [{databaseId: $id, createdAt: $at}]' "$T/runs-.json" >"$T/runs.new" &&
+    mv "$T/runs.new" "$T/runs-.json"
+}
+flaky_issues() { jq '[.[] | select(.title | startswith("Flaky: "))] | length' "$T/issues.json"; }
+echo '[]' >"$T/issues.json"
+echo '[]' >"$T/runs-.json"
+: >"$LOG"
+cp "$HERE/testdata/ginkgo-fail.log" "$T/log-801.txt"
+failed 801 '3 days'
+flake_round
+check "flake: one failure is recorded" "$(cat "$DIR/flakes.tsv")" "$SPEC	801	$(jq -r '.[0].createdAt' "$T/runs-.json")"
+check "flake: one failure files nothing" "$(filed)" 0
+check "flake: logged" "$(logged "a spec failed on main: $SPEC$")" 1
+flake_round
+check "flake: a run's log is read once" "$(wc -l <"$T/log-reads")" 1
+check "flake: a run is recorded once" "$(wc -l <"$DIR/flakes.tsv")" 1
+
+# The same spec in a second run within seven days: one bug, not urgent.
+sed 's/\^\[/\x1b/g' "$HERE/testdata/ginkgo-fail.log" >"$T/log-802.txt"
+failed 802 '1 hour'
+flake_round
+check "flake: the escape byte is read like its text" "$(cut -f1-2 "$DIR/flakes.tsv" | tail -1)" "$SPEC	802"
+check "flake: a second failure files one bug" "$(filed)" 1
+check "flake: its title" "$(jq -r '.[0].title' "$T/issues.json")" "Flaky: $SPEC"
+check "flake: its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/ready kind/bug source/dev"
+check "flake: the body names both runs" "$(jq -r '.[0].body' "$T/issues.json" | grep -c '^- https://github.com/.*/actions/runs/80[12] at ')" 2
+check "flake: logged with the issue" "$(logged "a spec failed on main 2 times in 7 days: $SPEC; issue #100$")" 1
+
+# A third failure while the bug is open files no other.
+cp "$T/log-801.txt" "$T/log-803.txt"
+failed 803 '10 minutes'
+flake_round
+check "flake: a third failure doesn't duplicate the open bug" "$(filed)" 1
+check "flake: the third is recorded" "$(wc -l <"$DIR/flakes.tsv")" 3
+
+# A failure older than the window doesn't count, and a log with no [FAIL]
+# line, or one that can't be read yet, records nothing.
+echo '[]' >"$T/issues.json"
+printf 'Old spec\t700\t%s\n' "$(ago '9 days')" >"$DIR/flakes.tsv"
+rm -f "$DIR/flakes-runs" "$T/log-reads"
+echo '[]' >"$T/runs-.json"
+printf '  ^[[38;5;9m[FAIL]^[[0m ^[[0mOld ^[[38;5;9m^[[1m[It] spec^[[0m\n' >"$T/log-804.txt"
+failed 804 '1 hour'
+seq -f 'log line %g' 1 5 >"$T/log-805.txt"
+failed 805 '1 hour'
+failed 806 '1 hour'
+touch "$T/log-806.fail"
+flake_round
+check "flake: a failure past the window doesn't count" "$(filed)" 0
+check "flake: no [FAIL] line, no record" "$(grep -c '	805	' "$DIR/flakes.tsv")" 0
+check "flake: an unreadable log is read again next round" "$(grep -cx 806 "$DIR/flakes-runs")" 0
+check "flake: the runs read are kept" "$(sort "$DIR/flakes-runs" | tr '\n' ' ')" "804 805 "
+check "flake: --count lists this week's specs" "$("$HERE/lib/github.sh" flakes --count)" "1	Old spec"
+rm -f "$T/runs-.json" "$T"/log-*.txt "$T"/log-*.fail "$DIR/flakes.tsv" "$DIR/flakes-runs" "$T/log-reads"
+echo '[]' >"$T/issues.json"
 
 # The groups: a watch, or a user manager, without a group the user has in
 # /etc/group says so, with the fix; one with all of them says nothing.
