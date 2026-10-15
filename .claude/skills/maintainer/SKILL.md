@@ -172,9 +172,9 @@ unanswered for 14 days.
      commit, so the guide at the tag installs that release. The tag starts
      *Release*, which refuses a tag the chart or the guide doesn't name
      (`hack/release.sh --check`). No relay session or issue is needed.
-   - Watch *Release*. *Verify Release* starts Kind, so it runs only when a
-     human dispatches it; never dispatch it yourself. Read its runs when
-     there are any.
+   - Watch *Release*. A minor's *Release* dispatches *Verify Release* on
+     its own (#1105); a patch's doesn't. Never dispatch it yourself. Read
+     its runs, and add the minor's to the release's evidence.
    - The GitHub release has notes in
      [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) categories
      (Added, Changed, Fixed, Security). *Release* drafts them from the pull

@@ -243,8 +243,9 @@ v0.19.0 (#912).
 
 GitHub workflows never run on pull requests. Lint, tests and UI checks run
 after a merge to main, each only when its paths change, or on demand. No
-workflow starts a Kind cluster on its own: *Test Chart*, *E2E Tests* and
-*Verify Release* run only when a human dispatches them. A pushed tag runs *Release*, which builds and
+workflow starts a Kind cluster on its own: *Test Chart* and *E2E Tests* run
+only when a human dispatches them, and *Verify Release* when a human does or
+*Release* has published a minor. A pushed tag runs *Release*, which builds and
 publishes and tests nothing. `make check` is the gate before a merge; it runs
 `make ui-test` (the UI workflow's `npm run check`: typecheck, eslint, Prettier
 and its tests) too, so a UI change can't merge with what would turn *UI* red
@@ -507,10 +508,15 @@ guide names another version; `hack/release_test.sh` holds both to that, and
 The relay can't pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. Once *Release* has
 published `vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`)
-checks it twice, each on a Kind cluster of its own, building nothing. It
-starts Kind, so it runs only when a human dispatches it: Actions → Verify
-Release → Run workflow, or `gh workflow run verify-release.yml -f
-tag=vX.Y.Z`. Agents never dispatch it.
+checks it twice, each on a Kind cluster of its own, building nothing.
+*Release* dispatches it on main, with `from` empty, for every minor it
+publishes (`vX.Y.0`, #1105); `hack/check-workflows.sh` keeps that step and its
+condition. A patch isn't checked: it ships a fix within the hour on the
+upgrade path its minor checked. A human checks any other release by hand:
+Actions → Verify Release → Run workflow, or `gh workflow run
+verify-release.yml -f tag=vX.Y.Z`. Agents never dispatch it. A failed run on
+main files (or comments on) `Release vX.Y.Z fails its check`, ready and
+urgent, as the watch does for a red main.
 
 The install check installs the published chart and images on a fresh cluster,
 waits for the seed's repositories, both runners, the manager and the UI, and
