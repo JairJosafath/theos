@@ -1534,9 +1534,11 @@ object, which a release may change as the release notes say.
 `config/crd/bases` as of the last release, which `hack/release.sh` copies
 there in the pull request that names the release; the test in `test/compat`
 fails when the current CRDs drop a kind, a served version or a field, change
-a field's type, drop an enum value, or require a field under an object the
-baseline already had (a required field inside a new optional object is
-fine). CEL rules and what a default means are left to review.
+a field's type, add an enum to a field or drop an enum value, tighten a
+bound (a length, item count or number range, a pattern, a format, a list or
+map type), or require a field under an object the baseline already had (a
+required field inside a new optional object is fine). CEL rules and what a
+default means are left to review.
 
 ## Out of scope for v1
 

@@ -34,6 +34,21 @@ type schema struct {
 	AdditionalProperties json.RawMessage    `json:"additionalProperties"`
 	Required             []string           `json:"required"`
 	Enum                 []json.RawMessage  `json:"enum"`
+
+	MaxLength     *float64 `json:"maxLength"`
+	MaxItems      *float64 `json:"maxItems"`
+	MaxProperties *float64 `json:"maxProperties"`
+	Maximum       *float64 `json:"maximum"`
+	MinLength     *float64 `json:"minLength"`
+	MinItems      *float64 `json:"minItems"`
+	MinProperties *float64 `json:"minProperties"`
+	Minimum       *float64 `json:"minimum"`
+
+	Pattern     string   `json:"pattern"`
+	Format      string   `json:"format"`
+	ListType    string   `json:"x-kubernetes-list-type"`
+	ListMapKeys []string `json:"x-kubernetes-list-map-keys"`
+	MapType     string   `json:"x-kubernetes-map-type"`
 }
 
 // crdVersion is one version of a CRD.
@@ -63,6 +78,45 @@ func typeOf(s *schema) string {
 	return s.Type
 }
 
+// widens says whether a value of type from is always a value of type to.
+func widens(from, to string) bool {
+	return from == to || (to == "int-or-string" && (from == "integer" || from == "string"))
+}
+
+// compareBounds adds to breaks every bound cur tightens: a maximum lowered or
+// added, a minimum raised or added, a pattern, format or list or map type
+// changed.
+func compareBounds(path string, base, cur *schema, breaks *[]string) {
+	upper := func(name string, b, c *float64) {
+		if c != nil && (b == nil || *c < *b) {
+			*breaks = append(*breaks, fmt.Sprintf("%s: %s tightened", path, name))
+		}
+	}
+	lower := func(name string, b, c *float64) {
+		if c != nil && (b == nil || *c > *b) {
+			*breaks = append(*breaks, fmt.Sprintf("%s: %s tightened", path, name))
+		}
+	}
+	same := func(name, b, c string) {
+		if b != c {
+			*breaks = append(*breaks, fmt.Sprintf("%s: %s %q became %q", path, name, b, c))
+		}
+	}
+	upper("maxLength", base.MaxLength, cur.MaxLength)
+	upper("maxItems", base.MaxItems, cur.MaxItems)
+	upper("maxProperties", base.MaxProperties, cur.MaxProperties)
+	upper("maximum", base.Maximum, cur.Maximum)
+	lower("minLength", base.MinLength, cur.MinLength)
+	lower("minItems", base.MinItems, cur.MinItems)
+	lower("minProperties", base.MinProperties, cur.MinProperties)
+	lower("minimum", base.Minimum, cur.Minimum)
+	same("pattern", base.Pattern, cur.Pattern)
+	same("format", base.Format, cur.Format)
+	same("x-kubernetes-list-type", base.ListType, cur.ListType)
+	same("x-kubernetes-list-map-keys", strings.Join(base.ListMapKeys, ","), strings.Join(cur.ListMapKeys, ","))
+	same("x-kubernetes-map-type", base.MapType, cur.MapType)
+}
+
 // mapValues is the schema of a map's values, or nil when it has none.
 func mapValues(s *schema) *schema {
 	var v schema
@@ -73,16 +127,20 @@ func mapValues(s *schema) *schema {
 }
 
 // compareSchema adds to breaks every way cur refuses an object base accepted
-// at path: a lost path, a changed type, a lost enum value, a field required
-// under an object the base already had.
+// at path: a lost path, a changed type, a new enum or a lost enum value, a
+// tightened bound, a field required under an object the base already had.
 func compareSchema(path string, base, cur *schema, breaks *[]string) {
 	if cur == nil {
 		*breaks = append(*breaks, path+": removed")
 		return
 	}
-	if typeOf(base) != typeOf(cur) {
+	if !widens(typeOf(base), typeOf(cur)) {
 		*breaks = append(*breaks, fmt.Sprintf("%s: type %q became %q", path, typeOf(base), typeOf(cur)))
 		return
+	}
+	compareBounds(path, base, cur, breaks)
+	if len(base.Enum) == 0 && len(cur.Enum) > 0 {
+		*breaks = append(*breaks, path+": enum added")
 	}
 	if len(cur.Enum) > 0 {
 		for _, v := range base.Enum {
@@ -292,6 +350,48 @@ properties:
       tags: {type: array, items: {type: object}}
       labels: {type: object, additionalProperties: {type: integer}}
 `, []string{`.spec.labels{}: type "string" became "integer"`, ".spec.tags[].key: removed"}},
+		{"an enum on a free field is refused", `
+type: object
+properties:
+  spec:
+    type: object
+    required: [name]
+    properties:
+      name: {type: string, enum: [a, b]}
+      replicas: {type: integer}
+      mode: {type: string, enum: [Fast, Slow]}
+      tags: {type: array, items: {type: object, properties: {key: {type: string}}}}
+      labels: {type: object, additionalProperties: {type: string}}
+`, []string{".spec.name: enum added"}},
+		{"tightened bounds are refused", `
+type: object
+properties:
+  spec:
+    type: object
+    required: [name]
+    properties:
+      name: {type: string, maxLength: 63, pattern: "^[a-z]+$"}
+      replicas: {type: integer, minimum: 1}
+      mode: {type: string, enum: [Fast, Slow]}
+      tags: {type: array, x-kubernetes-list-type: set, items: {type: object, properties: {key: {type: string}}}}
+      labels: {type: object, additionalProperties: {type: string}}
+`, []string{
+			".spec.name: maxLength tightened", `.spec.name: pattern "" became "^[a-z]+$"`,
+			".spec.replicas: minimum tightened", `.spec.tags: x-kubernetes-list-type "" became "set"`,
+		}},
+		{"a field widened to int-or-string is accepted", `
+type: object
+properties:
+  spec:
+    type: object
+    required: [name]
+    properties:
+      name: {type: string}
+      replicas: {x-kubernetes-int-or-string: true}
+      mode: {type: string, enum: [Fast, Slow]}
+      tags: {type: array, items: {type: object, properties: {key: {type: string}}}}
+      labels: {type: object, additionalProperties: {type: string}}
+`, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
