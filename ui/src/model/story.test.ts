@@ -118,6 +118,17 @@ describe('buildContextDiagram', () => {
     expect(system.summaryReported).toBe(true)
   })
 
+  it('draws an External system as another system, and the rest as systems', () => {
+    const d = buildContextDiagram(demoStory(NOW))
+    const systems = d.nodes.filter((n): n is SystemNode => n.kind === 'SoftwareSystem')
+    expect(systems.map((s) => `${s.role}:${s.name}`).sort()).toEqual([
+      'external-system:payment-provider',
+      'system:warehouse',
+      'system:webshop-core',
+    ])
+    expect(systems.find((s) => s.name === 'payment-provider')!.external).toBe(true)
+  })
+
   it('rolls links between parts of different systems up to those systems, one arrow per pair', () => {
     const d = buildContextDiagram(demoStory(NOW))
     const byPair = Object.fromEntries(d.edges.map((e) => [`${e.source} -> ${e.target}`, e]))
@@ -192,6 +203,11 @@ describe('buildContainerDiagram', () => {
     ])
     const phases = d.nodes.filter((n): n is ContainerNode => n.role === 'container').map((c) => c.phase)
     expect(phases.sort()).toEqual(['Failed', 'Pending', 'Ready', 'Scaffolding'])
+    // Both sit outside; only the one the factory doesn't build says so.
+    const external = Object.fromEntries(
+      d.nodes.filter((n): n is SystemNode => n.kind === 'SoftwareSystem').map((n) => [n.name, n.external]),
+    )
+    expect(external).toEqual({ 'payment-provider': true, warehouse: false })
   })
 
   it('marks a link added after scaffolding, and only that one', () => {

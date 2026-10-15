@@ -25,6 +25,9 @@ spec:
     - jsonPath: .spec.displayName
       name: Display Name
       type: string
+    - jsonPath: .spec.location
+      name: Location
+      type: string
     - jsonPath: .status.containers
       name: Containers
       type: integer
@@ -80,6 +83,16 @@ spec:
                 maxItems: 20
                 type: array
                 x-kubernetes-list-type: atomic
+              location:
+                default: Internal
+                description: |-
+                  location is Internal for a system the factory builds, External for one
+                  the story only names. An External system's Containers and DataStores
+                  never resolve.
+                enum:
+                - Internal
+                - External
+                type: string
               needs:
                 description: needs are the outcomes the system exists for, in the
                   words of its users.

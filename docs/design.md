@@ -67,6 +67,7 @@ The story kinds, abbreviated:
 kind: SoftwareSystem
 metadata: {name: webshop-core, namespace: webshop}
 spec:
+  location: Internal                 # the default; External for a system the story only names
   displayName: Webshop Core
   description: Catalog, cart and ordering
   needs: [Customers can reorder in two clicks]
@@ -137,13 +138,15 @@ status:                            # written by the client; the operator only ma
 
 Fields stay minimal on purpose. Metadata such as `displayName` and `description` is on every story kind; `metadata.name` is the stable id and can't change.
 
+A SoftwareSystem's `location` is the "type" side of a system in the drawing: `Internal`, the default, for a system the factory builds, or `External` for one the story only names, such as a payment provider or a partner's API. The word is Structurizr's, and the field is an enum rather than a flag so a third kind can follow. It says who builds the system, not where it sits in a view: the container view still draws every other system outside its boundary, and only an External one says so on its card. An External system holds no Containers or DataStores: one that names it stays unresolved, `ReferencesResolved=False` with reason `ExternalSystem`, and a Container stays `Pending` until the system turns `Internal`. A Container scaffolded before its system turned External keeps its repository and stays `Ready`, since scaffolding happens once. Relationships to and from an External system are story only, like every link but Container to DataStore. Why a field and not the drawing: the UI used to guess from where a system sat in the view, which can't tell a neighbour the factory builds from a vendor it never will, and a planner Agent or a reader of the YAML needs the answer too.
+
 ## How it works
 
 A Container is scaffolded exactly once, from the catalog entries it picks and the DataStores it points to. After that, the factory reports, and carries only its Standard's updates to it (since v4, [A Standard's fixes reach its Containers](#v4-issues-crews-and-roles)).
 
 ### Scaffolding a Container
 
-1. **Resolve references.** The SoftwareSystem, GitProvider and catalog entries must exist. Until they do, the Container stays `Pending` with the missing name in its condition.
+1. **Resolve references.** The SoftwareSystem, GitProvider and catalog entries must exist, and the SoftwareSystem must be `Internal`. Until they do, the Container stays `Pending` with the missing name, or reason `ExternalSystem`, in its condition.
 2. **Check types.** Every catalog entry used, including the Connectors reached through Relationships, must list the Container's type. If not, the Container is `Failed` with `ChoicesValid=False`, for example "python-fastapi does not support static-site". A Framework with `deploysItself: true` (the AWS Frameworks, whose CDK app builds and runs the Container) is its Container's deployment, so a Container on it that names a Compute or a Deployment fails the same way, reason `DeploysItself`, naming the refs to remove. A flag on the Framework, not a list of the Deployments it allows: a Deployment can't know the Frameworks it fits, and the shared-path conflict that would catch some pairs doesn't catch a Deployment whose files render to nothing for a Framework it doesn't know.
 3. **Create the repository** in the GitProvider's organization, named after the Container.
 4. **Render the layers** in a fixed order: Framework, Compute, Deployment, then each Connector. Templates are Go `text/template` files that receive the project, system, container and type names, the names of the chosen Framework, Compute and Deployment (empty when the Container picks none), plus the list of Connectors.
@@ -1415,4 +1418,3 @@ Gitea keeps the cluster light: one container and SQLite, no separate database. T
 - **Shared files between layers.** A Connector often needs a dependency in `pyproject.toml`, which the Framework owns. In v1 the Framework template receives the Connector list and wires the ones it knows. Revisit if that couples Frameworks to Connectors too much.
 - **Session credentials.** The per-namespace ServiceAccount lets any client touch any Session in its project. Limiting a client to its own Session needs short-lived tokens, later.
 - **Compatibility is checked late.** The operator checks types after creation, so an invalid Container exists briefly. A webhook can reject it up front later.
-- **Open: the "type" side of a SoftwareSystem** in the drawing. Its meaning, for example internal versus external, isn't decided yet.

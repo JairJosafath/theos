@@ -137,6 +137,15 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	r.reportChecksApplied(ctx, &container, status)
 
+	// The factory builds nothing for an External system. A Container scaffolded
+	// before its system turned External passed the Ready branch above.
+	if system.Spec.Location == c4v1alpha1.SystemExternal {
+		status.Phase = c4v1alpha1.ContainerPending
+		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
+			metav1.ConditionFalse, c4v1alpha1.ReasonExternalSystem, externalMessage(system.Name))
+		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
+	}
+
 	res, missing, err := r.resolve(ctx, &container)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -273,7 +282,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.Container{}, specOrAsked()).
 		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).
-		Watches(&c4v1alpha1.SoftwareSystem{}, systemContainers, createOrDelete()).
+		Watches(&c4v1alpha1.SoftwareSystem{}, systemContainers, specChanged()).
 		Watches(&c4v1alpha1.Relationship{}, sourceContainer, specChanged()).
 		Watches(&c4v1alpha1.GitProvider{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Framework{}, waitingContainers, specChanged()).
