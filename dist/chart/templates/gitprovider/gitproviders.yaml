@@ -7,7 +7,7 @@ the release's CRDs do. Not hooks: Helm re-creates a hook on every upgrade, and
 a Git step in the gap fails for want of its GitProvider. They are rendered into
 ConfigMap c4factory-gitproviders, which Job gitproviders (apply.yaml) applies in
 place after every install and upgrade, as the seed does c4factory-catalog
-(docs/plans/upgrade-in-place.md).
+(docs/plans/done/upgrade-in-place.md).
 */}}
 {{- with .Values.gitProviders }}
 apiVersion: v1

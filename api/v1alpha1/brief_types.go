@@ -88,7 +88,7 @@ type BriefSpec struct {
 	// +optional
 	Parallel int32 `json:"parallel,omitempty"`
 
-	// paused stops the Brief's work in one step (docs/plans/upgrade-in-place.md):
+	// paused stops the Brief's work in one step (docs/plans/done/upgrade-in-place.md):
 	// while true, the Brief pauses every Crew it made, marking each with
 	// c4.factory.io/paused-by: brief, starts no new round (a new prompt waits)
 	// and tends no failed issue; a planner Task already started runs to its
@@ -113,7 +113,7 @@ type BriefRelease struct {
 	CrewPublishReleases `json:",inline"`
 
 	// requests says whether the Brief takes requests from the repository's
-	// GitHub issues, and whose (docs/plans/brief-requests.md). Unset takes
+	// GitHub issues, and whose (docs/plans/done/brief-requests.md). Unset takes
 	// none.
 	// +optional
 	Requests *BriefRequests `json:"requests,omitempty"`

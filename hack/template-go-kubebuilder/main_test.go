@@ -12,7 +12,7 @@ import (
 )
 
 // initPaths is every path kubebuilder 4.16.0's `kubebuilder init --plugins go/v4`
-// writes, with who owns it (docs/plans/kubebuilder-operators.md, decision 3).
+// writes, with who owns it (docs/plans/done/kubebuilder-operators.md, decision 3).
 var initPaths = map[string]owner{
 	".custom-gcl.yml":                 dropped,
 	".devcontainer/devcontainer.json": dropped,

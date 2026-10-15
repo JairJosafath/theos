@@ -73,7 +73,7 @@ type BriefWorkspace struct {
 	// Releases are the Brief's spec.releases entries (plans/done/brief-releases.md, R5).
 	Releases []WorkspaceRelease
 	// Requests are the requests from GitHub issues the round plans like new
-	// prompts (WorkspaceRequests; docs/plans/brief-requests.md, decision 7).
+	// prompts (WorkspaceRequests; docs/plans/done/brief-requests.md, decision 7).
 	Requests []Request
 	// SpecParallel is the Brief's spec.parallel; PromptParallel the number a
 	// prompt of round PromptParallelRound gave. 0 is unset

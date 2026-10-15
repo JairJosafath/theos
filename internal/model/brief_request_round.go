@@ -10,7 +10,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// How a round takes requests (docs/plans/brief-requests.md, decisions 7 and
+// How a round takes requests (docs/plans/done/brief-requests.md, decisions 7 and
 // 8): the requests it takes, what the planner reads of them, and its answers.
 
 // WorkspaceRequestsFile is where the planner reads the requests its round

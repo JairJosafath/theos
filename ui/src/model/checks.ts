@@ -1,5 +1,5 @@
 // When a Container's CI runs its full check (design.md, "The owner chooses
-// when the full check runs"; docs/plans/checks-before-release.md): what the
+// when the full check runs"; docs/plans/done/checks-before-release.md): what the
 // owner asked in spec.checks, what the repository runs (status.standard.checks)
 // and, when the Standard can't, the ChecksApplied condition saying so. Pure,
 // and read only from the Container.

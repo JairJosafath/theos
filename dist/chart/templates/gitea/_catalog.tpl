@@ -4,7 +4,7 @@ GitProvider, catalog and Agents, rendered into ConfigMap c4factory-catalog
 (catalog-configmap.yaml). Not release objects: on an install their kinds exist
 only once the release's CRDs do. Not hooks: Helm re-creates a hook on every
 upgrade, so running Tasks would lose their Agent and Git steps their
-GitProvider, and hand edits would be lost (docs/plans/upgrade-in-place.md).
+GitProvider, and hand edits would be lost (docs/plans/done/upgrade-in-place.md).
 */}}
 {{- define "c4-factory.catalogObjects" -}}
 {{- if .Values.gitea.enabled }}

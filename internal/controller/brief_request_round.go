@@ -22,7 +22,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// How a round takes requests (docs/plans/brief-requests.md, decisions 7 to
+// How a round takes requests (docs/plans/done/brief-requests.md, decisions 7 to
 // 9): a new round takes every request let through, the planner answers each
 // in plan/requests.yaml, and applying the round records what each became,
 // which the Brief then says on the issue, once.

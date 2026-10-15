@@ -11,7 +11,7 @@ import (
 )
 
 // aws-standard is a whole TypeScript Standard copied from ts-standard
-// (plans/aws.md, retrospective rule 3): a Container has one Standard, so it
+// (plans/done/aws.md, retrospective rule 3): a Container has one Standard, so it
 // can't sit on top of ts-standard. These tests keep the copy from drifting.
 
 // tsStandardFrameworks is every Framework ts-standard renders for, with its type.
