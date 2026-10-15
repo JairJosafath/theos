@@ -58,30 +58,40 @@ alarms and runbooks) were written down and left to the reader.
 
 ## Decisions
 
-1. **Production by default; the Container says what it wants.** A new
-   optional block, `Container.spec.operations`, is the one place a user says
-   how seriously the app is run. Its `tier` sets every default, and the other
-   fields override one each:
+1. **The tier is where the app runs, and `development` unless something says
+   `production`.** The owner decided on 2026-10-15: the default is
+   `development`, as long as switching is easy. So the tier is not a property
+   of the Container, which is the same code wherever it runs, but of the
+   place it is deployed to: a deploy target of #1068 says `production` or
+   `development`, and every AWS repository synthesizes its stacks for both
+   tiers on every check and release (`cdk.out/production/`,
+   `cdk.out/development/`), so a target picks the one it wants and nothing
+   is re-scaffolded, re-planned or edited to go to production. A hand deploy
+   picks the same way, `cdk deploy -c tier=production`, and is `development`
+   when it says nothing. What the Container does say, in a new optional and
+   mutable block `Container.spec.operations`, is what the app promises
+   whatever tier runs it:
 
    ```yaml
    spec:
      operations:
-       tier: production        # production (the default) or development
        backups:
-         retentionDays: 35     # daily copies kept this long by AWS Backup; 0 = point-in-time recovery only
+         retentionDays: 35     # daily copies kept this long by AWS Backup in production; 0 = point-in-time recovery only
          copyToRegion: ""      # a second region the copies go to; empty = none
        recovery:
          rpo: 1h               # the objectives the runbook, the alarms and the checks are written to
          rto: 4h
        alerts:
-         email: ""             # who the alarms tell; empty = the alarms exist, nobody is subscribed
+         email: ""             # who the alarms tell by default; a target overrides it per environment
    ```
 
-   Why production is the default: the factory's purpose is production-level
-   output, and a user who forgets the block must get the safe, more
-   expensive one, never a demo that loses data. Why a `development` tier
-   exists: backups, a NAT gateway per zone and tracing cost money, and a
-   user trying an idea out says so once. What the tiers mean:
+   Why `development` is the default: a stack that nobody has yet pointed at
+   production costs little and is thrown away freely, and the moment it
+   matters is the moment a target is made, which is where the choice is
+   asked. Why not a tier on the Container: it would be rendered once, and a
+   Container that grows from a trial into production would need a change to
+   the code to get there; a target is made for exactly that moment. What
+   the tiers mean:
 
    | Default | `production` | `development` |
    | --- | --- | --- |
@@ -95,32 +105,37 @@ alarms and runbooks) were written down and left to the reader.
    | X-Ray tracing | on | off |
    | Log retention | 1 year | 1 month |
    | NAT gateways (aws-fargate-ts) | one per zone | one |
-   | `rpo`, `rto` defaults | 1h, 4h | 1d, 1d |
 
-   The block is immutable once the Container is scaffolded (`self ==
-   oldSelf`, like `softwareSystemRef`): the scaffold renders it into
-   `infra/operations.ts`, and from then on that file is the truth, changed
-   by a Task on the repository like any other code. A field a client sets
-   today is never removed or reinterpreted (the `v1alpha1` promise of
+   The block renders into `infra/operations.ts` at scaffold, and a change
+   to it afterwards reaches the repository the way a Standard bump does: the
+   operator renders the file again and opens and merges a pull request with
+   it (step 12), reported by a condition `OperationsApplied`. Until that
+   step lands, the file is changed by a Task like any other code, and the
+   condition says `ChangedAfterScaffold`. A field a client sets today is
+   never removed or reinterpreted (the `v1alpha1` promise of
    [plans/before-clients-return.md](before-clients-return.md)). `rpo` and
-   `rto` are stated objectives: they are written into the runbook and the
-   README, the planner derives them from the idea, and the Standard's test
-   checks the two things it can see (point-in-time recovery when `rpo` is
-   under a day; a copy region in the runbook's regional-loss procedure when
-   one is set). The rest of what they promise only a restore drill in an
-   account shows, and the runbook says so.
+   `rto` are stated objectives for the production tier: they are written
+   into the runbook and the README, the planner derives them from the idea,
+   and the Standard's test checks the two things it can see (point-in-time
+   recovery when `rpo` is under a day; a copy region in the runbook's
+   regional-loss procedure when one is set). The rest of what they promise
+   only a restore drill in an account shows, and the runbook says so.
 
-2. **Two layers of knobs, and no third.** Scaffold-time choices
-   (`operations`) decide the resource graph and render into
-   `infra/operations.ts`, which the stacks read at synth. Deploy-time values
-   that differ per environment (the alert email, a certificate ARN, a domain)
-   are CloudFormation parameters whose defaults come from that file, so a
-   deploy target of #1068 overrides them per environment without a change to
-   the code. Nothing reads `cdk.json` context or environment variables at
-   synth: a synth is the same on every machine, which is what makes `make
-   check` a verdict. Environments themselves (staging, production, approval)
-   are #1068's; this plan gives each stack what a target needs: outputs for
-   its entry point and its alarm topic, and the parameters above.
+2. **Two layers of knobs, and no third.** The app's layer is
+   `operations`: it renders into `infra/operations.ts`, which the stacks
+   read at synth, and it is the same for every environment. The
+   environment's layer is the target's: the tier, read at synth from the one
+   context value `tier` (`development` when absent) so that the resource
+   graph differs per tier and nowhere else, and the deploy-time values that
+   differ per environment (the alert email, a certificate ARN, a domain),
+   which are CloudFormation parameters whose defaults come from
+   `operations.ts`, so a deploy target of #1068 overrides them without a
+   change to the code. Nothing else reads context or environment variables
+   at synth: a synth for a tier is the same on every machine, which is what
+   makes `make check` a verdict, and `make check` synthesizes both tiers.
+   Environments themselves (staging, production, approval) are #1068's;
+   this plan gives each stack what a target needs: a tier to name, outputs
+   for its entry point and its alarm topic, and the parameters above.
 
 3. **Backup and recovery, by what holds data.** DynamoDB: point-in-time
    recovery (35 days, seconds of RPO in the region) plus an AWS Backup plan
@@ -230,8 +245,8 @@ check`, and leaves main working. A template step bumps the four places
 | Step | Issue | Waits on | How we know |
 | --- | --- | --- | --- |
 | 1. This plan and the design change | #1067 (`Refs`) | | landed in `docs/plans/` and `docs/design.md` |
-| 2. `Container.spec.operations` | #1107 | | the field, its CEL (enum, patterns, immutability once scaffolded) and defaults; `scaffold.Input.Operations`; `internal/model`'s tier defaults as a table-tested function; the UI's types and Container page; the planner guide's rule and `plan/model.yaml` check; samples; the `v1alpha1` guard sees only additions; envtest creates a Container with and without the block |
-| 3. `aws-lambda-ts` v1.1.0 and `aws-standard` v1.5.0 | #1108 | #1107 | `infra/operations.ts` rendered from the block; backup plan and vault; alarms, topic, subscription, dashboard; outputs; termination protection; X-Ray by tier; Powertools; `docs/runbook.md`; the digest rewritten; the Standard's test enforces decision 5; `cfn-lint -I`; a scaffolded copy's `make check` passes in both tiers, and fails when `operations.ts` and the stack disagree |
+| 2. `Container.spec.operations` | #1107 | | the field (no tier), its CEL (patterns, ranges) and defaults; mutable, with the condition `OperationsApplied` saying `ChangedAfterScaffold` until step 12; `scaffold.Input.Operations`; `internal/model`'s defaults as a table-tested function; the UI's types and Container page; the planner guide's rule and `plan/model.yaml` check; samples; the `v1alpha1` guard sees only additions; envtest creates a Container with and without the block, and changes it |
+| 3. `aws-lambda-ts` v1.1.0 and `aws-standard` v1.5.0 | #1108 | #1107 | `infra/operations.ts` rendered from the block; the tier from the `tier` context, `development` when absent, synthesized for both tiers into `cdk.out/<tier>/` by `make check` and CI; backup plan and vault; alarms, topic, subscription, dashboard; outputs; termination protection; X-Ray by tier; Powertools; `docs/runbook.md`; the digest rewritten; the Standard's test enforces decision 5 for both tiers; `cfn-lint -I` on both; a scaffolded copy's `make check` passes, and fails when `operations.ts` and a stack disagree |
 | 4. `aws-lambda-py` and `aws-lambda-go` follow | #1109 | #1108 | the same, Powertools for Python, `slog` for Go; `aws-standard` bump |
 | 5. `aws-fargate-ts` follows | #1110 | #1108 | the same, plus NAT per zone in production, the ECS deployment alarm, ADOT tracing by tier; `aws-standard` bump |
 | 6. `aws-ec2-ts` follows | #1111 | #1108 | the same, plus TLS on the ALB with `CertificateArn`, `cfn-signal` on the rolling update, the no-data-on-instances rule; `aws-standard` bump |
@@ -240,6 +255,7 @@ check`, and leaves main working. A template step bumps the four places
 | 9. Static site Framework `aws-static-site-ts` (type `static-site`) | #1114 | #1108 | a Vite app on S3 behind CloudFront with OAC, access logs, a minimum TLS version, a WAF web ACL in production, the bucket versioned; the rest as step 8 |
 | 10. Scheduled job Framework `aws-schedule-ts` (type `job`) | #1115 | #1108 | EventBridge Scheduler to Lambda with a DLQ and retry policy, the scheduler's role scoped to the one function; the rest as step 8 |
 | 11. Event consumer Framework `aws-event-ts` (type `worker`) | #1116 | #1108 | an EventBridge rule to Lambda with a rule-target DLQ and retries; the rest as step 8 |
+| 12. A change to `operations` reaches the repository | #1119 | #1108 | a changed block renders `infra/operations.ts` again and the operator opens and merges the pull request, as a Standard bump does; `OperationsApplied=True` names the merged commit; envtest on a faked git provider |
 
 Steps 3 to 6 each bump `aws-standard`; two in flight at once meet in a merge
 of the Standard's version, and the second to merge takes the next minor, as
@@ -248,30 +264,39 @@ of the Standard's version, and the second to merge takes the next minor, as
 ## Design
 
 - **The block in the API.** `OperationsSpec` in `api/v1alpha1/container_types.go`
-  with `Tier` (enum `production`, `development`, default `production`),
-  `Backups{RetentionDays int32 (0..3650), CopyToRegion string (an AWS region
-  pattern or empty)}`, `Recovery{RPO, RTO string (`^[0-9]+(m|h|d)$`)}` and
-  `Alerts{Email string}`. Defaults are applied by `internal/model`, not by
-  CRD defaulting, so a client that sets only `tier` reads back only `tier`
-  and a stored object never changes shape on upgrade. Immutability: a CEL
-  rule `self == oldSelf` once `status.phase` is past `Pending`, written as
-  the step finds the schema allows; failing that, immutable always, and the
-  step says which.
+  with `Backups{RetentionDays int32 (0..3650), CopyToRegion string (an AWS
+  region pattern or empty)}`, `Recovery{RPO, RTO string (`^[0-9]+(m|h|d)$`)}`
+  and `Alerts{Email string}`; no tier. Defaults are applied by
+  `internal/model`, not by CRD defaulting, so a client that sets one field
+  reads back that field and a stored object never changes shape on upgrade.
+  The block is mutable; `OperationsApplied` on the Container says whether
+  the repository's `infra/operations.ts` matches it.
+- **The tier at synth.** `infra/main.ts` (the Standard's) reads
+  `app.node.tryGetContext('tier')`, accepts `production` or `development`,
+  defaults to `development`, and passes it to every stack; `make synth`
+  runs `cdk synth -c tier=<t> -o cdk.out/<t>` for both, `cfn-lint` lints
+  both, and the Standard's test synthesizes the app twice, once per tier.
+  The release attaches both outputs, so #1071's deployer ships the one its
+  target names. A tier is never read from a file in the repository.
 - **The rendered file.** `infra/operations.ts` exports one frozen object the
-  stacks and the Standard's test import: the tier, the resolved defaults
-  and the overrides, with a comment that it was rendered at scaffold and is
-  changed by a Task. The Framework owns it; it is not a protected path.
-  `docs/runbook.md` is the Standard's and protected.
+  stacks and the Standard's test import: the resolved defaults and the
+  overrides of the block, with a comment that the factory renders it from
+  `spec.operations` and overwrites it on a change. The Framework owns it;
+  it is not a protected path. `docs/runbook.md` is the Standard's and
+  protected.
 - **The Standard's test** keeps its shape (synth every stack, assert on the
-  templates) and adds one `describe` per decision-5 item, each reading the
-  tier from `infra/operations.ts`. A Framework branch (`{{ if eq .Framework
-  ... }}`) adds the resources only that Framework has, as `well-architected.md`
-  already does.
-- **The planner** sets `operations` from the idea: `development` only when
-  the idea says prototype, demo, trial, experiment or throwaway; `email`,
-  `rpo`, `rto` and `copyToRegion` when the idea states them; otherwise the
-  block is left out and the defaults apply. A rule in
-  `internal/model/planner.md` and a `plan/model.yaml` check.
+  templates) and adds one `describe` per decision-5 item and tier, reading
+  the block from `infra/operations.ts`. A Framework branch (`{{ if eq
+  .Framework ... }}`) adds the resources only that Framework has, as
+  `well-architected.md` already does.
+- **The operations pull request** (step 12) follows the Standard bump's
+  path in `internal/controller`: render the one file, branch, commit, open
+  the pull request, merge it when its checks pass, and set the condition;
+  the same fake git provider tests it.
+- **The planner** sets `operations` from the idea: `email`, `rpo`, `rto`
+  and `copyToRegion` when the idea states them; otherwise the block is left
+  out and the defaults apply. It never picks a tier: that is the target's.
+  A rule in `internal/model/planner.md` and a `plan/model.yaml` check.
 - **The digest** (`docs/well-architected.md`) gets, per pillar, what the
   tier does and what a user changes in `infra/operations.ts`; its
   Reliability section names RPO and RTO, the backup plan, the copy and the

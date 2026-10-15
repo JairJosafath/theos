@@ -34,7 +34,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 | Shipping | Outside the operator. Deployment templates produce standard files that existing tools pick up. The one exception: the operator can copy a Container's releases to a GitHub repository the user names. |
 | Sessions | Devcontainers run anywhere. A small client inside registers a Session on its Container and reports minimal status. |
 | Status | v1 shows only the factory's own steps plus active Sessions. Runtime health comes later. |
-| Operations (2026-10-15) | Production by default. A Container says in `spec.operations` how seriously it is run: a `tier` (`production` unless it says `development`) and the backup, recovery and alert choices it wants; the AWS templates render the block and their checks enforce it. [plans/aws-production.md](plans/aws-production.md). |
+| Operations (2026-10-15) | The tier is where the app runs: a deploy target says `production` or `development`, every AWS repository synthesizes both, and a deploy that says nothing is `development`. A Container says in `spec.operations` what it promises in any tier: its backup retention and copy region, its recovery objectives and who its alarms tell; the AWS templates render the block and their checks enforce it. [plans/aws-production.md](plans/aws-production.md). |
 
 ## The model
 
@@ -811,20 +811,25 @@ model and context it needs.
   and the `service` Framework `aws-fargate-ts` (a Node server in a container
   on ECS on Fargate behind an internet-facing Application Load Balancer
   serving HTTPS, whose image synth only stages).
-- **Production by default on AWS:** a Container on an AWS Framework says in
-  `spec.operations` how seriously it is run. Its `tier` is `production`
-  unless the Container says `development`, and sets every default: data
-  retained and protected from deletion, point-in-time recovery and a daily
-  AWS Backup plan with a stated retention and an optional second region,
-  alarms on every stack to an SNS topic that tells the given email, X-Ray
-  tracing, a year of logs. `development` turns the costly ones off. The
-  block renders once, at scaffold, into `infra/operations.ts`, which the
-  stacks read and the Standard's test enforces, and a Task changes it like
-  any other code; deploy-time values (an alert email, a certificate) are
+- **The tier is where an AWS app runs.** Every AWS repository synthesizes
+  its stacks for two tiers, and the place it is deployed to picks one: a
+  deploy target says `production` or `development`, and a hand deploy that
+  says nothing is `development`. `production` means data retained and
+  protected from deletion, point-in-time recovery and a daily AWS Backup
+  plan with a stated retention and an optional second region, alarms on
+  every stack to an SNS topic, X-Ray tracing and a year of logs;
+  `development` turns the costly ones off. What the app promises in any
+  tier is the Container's, in `spec.operations`: its backup retention and
+  copy region, its recovery objectives (RPO, RTO) and who its alarms tell.
+  The block renders into `infra/operations.ts`, which the stacks read and
+  the Standard's test enforces; a change to the block reaches the
+  repository by a pull request the operator opens and merges, as a Standard
+  bump does. Deploy-time values (an alert email, a certificate) are
   CloudFormation parameters a deploy target overrides. Every AWS
   repository carries `docs/runbook.md`: how to restore, roll back and
-  answer each alarm. A Brief's planner sets the block from the idea. GitHub
-  issue #1067 has the plan, [plans/aws-production.md](plans/aws-production.md).
+  answer each alarm. A Brief's planner sets the block from the idea and
+  never a tier. GitHub issue #1067 has the plan,
+  [plans/aws-production.md](plans/aws-production.md).
 
 ## Briefs: an idea in plain words
 
