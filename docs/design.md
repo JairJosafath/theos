@@ -277,7 +277,16 @@ enforces.
   137 or `JavaScript heap out of memory`) are the infrastructure's as well, but
   pass once the machine has room: the Task runs the failed jobs again in the
   same round and tells the agent nothing, up to twice a round; a third killed
-  job fails the Task, reason `RunnerOutOfMemory`, costing no try. When an
+  job fails the Task, reason `RunnerOutOfMemory`, costing no try. Checks
+  their runner abandoned are rerun the same way, sharing those two reruns: a
+  run that ended cancelled (a runner that stops, its pod restarting, cancels
+  its job; Gitea records no one who cancelled a run, and a person's cancel in
+  its UI leaves the same traces, so every cancel counts and the cap bounds
+  what a person's costs), a job that started and has no log, or a log that
+  stops before the runner says how the job ended (`Job failed`), or ends in
+  its `Early termination` (a runner killed mid-job, whose job Gitea fails
+  once it stops reporting). The next abandoned run fails the Task, reason
+  `RunnerLost`, costing no try. When an
   implementer pushes again the commit whose checks failed, having found
   nothing to fix, its failed jobs run again before the Task reads the checks;
   a failure from before a rerun is never read as its result
@@ -401,7 +410,7 @@ model and context it needs.
   Gitea dependencies (also across repositories) to close, and starts up to `parallel`
   Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
   first after the Standard changes that `Blocked` Tasks wait on, up to three
-  tries per issue (a `NoCIResult`, `RunnerOutOfSpace`, `RunnerOutOfMemory` or `ApprovalRanOut` failure is not one). A try continues an earlier try's pull request that is
+  tries per issue (a `NoCIResult`, `RunnerOutOfSpace`, `RunnerOutOfMemory`, `RunnerLost` or `ApprovalRanOut` failure is not one). A try continues an earlier try's pull request that is
   still open: it works on that branch, with that try's feedback, and reports
   to that pull request (`status.continues` names the earlier Task). When the
   earlier try ended waiting for the checks of its commit (red checks

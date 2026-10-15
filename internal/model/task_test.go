@@ -957,7 +957,8 @@ func TestRunnerOutOfSpace(t *testing.T) {
 		}
 	}
 	for reason, want := range map[string]bool{ReasonNoCIResult: true, ReasonRunnerOutOfSpace: true,
-		ReasonRunnerOutOfMemory: true, ReasonApprovalRanOut: true, "RoundsExhausted": false, "": false} {
+		ReasonRunnerOutOfMemory: true, ReasonRunnerLost: true, ReasonApprovalRanOut: true, "RoundsExhausted": false,
+		"": false} {
 		if got := RunnerFault(reason); got != want {
 			t.Errorf("RunnerFault(%q) = %v, want %v", reason, got, want)
 		}
@@ -1046,6 +1047,115 @@ func TestKilledChecksRunAgain(t *testing.T) {
 	own.ChecksLog = "--- FAIL: TestRun (0.00s)\n    run_test.go:12: Run() = signal: killed, want nil\nFAIL\n"
 	if got := NextTaskStep(own); got.Action != ActionRetry || !strings.Contains(got.Feedback, "flaky") {
 		t.Errorf("a test's own signal: killed: NextTaskStep() = %+v, want ActionRetry with the failure as feedback", got)
+	}
+}
+
+func TestRunnerAbandoned(t *testing.T) {
+	const at = "2026-10-15T12:00:00.1234567Z "
+	failed := at + "--- FAIL: TestA (0.00s)\n" + at + "    a_test.go:9: got 1, want 2\n" + at + "FAIL\n" +
+		at + "make: *** [Makefile:12: test] Error 1\n" + at + "##[error]Process completed with exit code 2.\n"
+	for _, tc := range []struct {
+		name      string
+		cancelled bool
+		noLog     bool
+		log       string
+		want      bool
+	}{
+		{name: "a run cancelled while no one asked: its runner stopped", cancelled: true,
+			log: at + "go test ./...\n" + at + "Job cancelled\n" + at + "context canceled\n", want: true},
+		{name: "a job that started and has no log", noLog: true, want: true},
+		{name: "a log cut off mid-test, failed by Gitea once the runner stopped reporting",
+			log: at + "go test ./...\n" + at + "=== RUN   TestA\n", want: true},
+		{name: "the runner's last words when it ended with no result",
+			log: at + "go test ./...\n" + at + "Early termination\n", want: true},
+		{name: "a failed test", log: failed + at + "Job failed\n"},
+		{name: "a failed test, the runner's error after its result", log: failed + at + "Job failed\n" +
+			at + "exit status 2\n"},
+		{name: "an older runner's flag", log: failed + at + "🏁  Job failed\n"},
+		{name: "a log without Gitea's times", log: "--- FAIL: TestA (0.00s)\nFAIL\n"},
+		{name: "a log that couldn't be read"},
+		{name: "a test that prints the runner's words", log: at + "    a_test.go:9: Early termination\n" +
+			at + "Job failed\n"},
+	} {
+		if got := RunnerAbandoned(tc.cancelled, tc.noLog, tc.log); got != tc.want {
+			t.Errorf("%s: RunnerAbandoned() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestCancelledRun(t *testing.T) {
+	cancelled := WorkflowRun{Workflow: "check.yaml", Event: "pull_request", Status: CIRunCompleted,
+		Conclusion: "cancelled"}
+	failed, passed := cancelled, cancelled
+	failed.Conclusion, passed.Conclusion = "failure", "success"
+	for _, tc := range []struct {
+		name string
+		runs []WorkflowRun
+		want bool
+	}{
+		{name: "a cancelled run", runs: []WorkflowRun{cancelled}, want: true},
+		{name: "a failed run", runs: []WorkflowRun{failed}},
+		{name: "a cancelled run whose rerun failed", runs: []WorkflowRun{failed, cancelled}},
+		{name: "a cancelled run whose rerun passed", runs: []WorkflowRun{passed, cancelled}},
+		{name: "no runs"},
+	} {
+		if got := CancelledRun(tc.runs); got != tc.want {
+			t.Errorf("%s: CancelledRun() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestAbandonedChecksRunAgain walks a round whose checks their runner
+// abandons: a cancelled run, a job with no log, a log cut off. Each time its
+// failed jobs run again in the same round, with no feedback for the agent,
+// sharing MaxChecksReruns with the jobs killed for lack of memory, and the
+// next abandoned run fails the Task at no try.
+func TestAbandonedChecksRunAgain(t *testing.T) {
+	const at = "2026-10-15T12:00:00.1234567Z "
+	for _, tc := range []struct {
+		name string
+		f    TaskFacts
+	}{
+		{name: "a cancelled run", f: TaskFacts{CIRun: CIRun{State: CIRunCompleted, Cancelled: true},
+			ChecksLog: at + "Job cancelled\n"}},
+		{name: "no log", f: TaskFacts{ChecksNoLog: true}},
+		{name: "a lost runner's log", f: TaskFacts{ChecksLog: at + "go test ./...\n" + at + "=== RUN   TestA\n"}},
+	} {
+		f := tc.f
+		f.Phase, f.Round, f.MaxRounds, f.Checks, f.ChecksURL = TaskChecking, 2, 3, "failure", "http://ci/962"
+		p := TaskProgress{Phase: TaskChecking, Round: 2, Commit: "296c7ab", HasChecks: true}
+		at := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+		for i := range MaxChecksReruns {
+			got := NextTaskStep(f)
+			if got.Action != ActionRerunChecks || got.Feedback != "" ||
+				!strings.Contains(got.Message, "http://ci/962 was abandoned by its runner") {
+				t.Fatalf("%s, %d: NextTaskStep() = %+v, want ActionRerunChecks with no feedback", tc.name, i+1, got)
+			}
+			p = RerunChecks(p, at)
+			if p.Round != 2 || p.ChecksReruns != i+1 {
+				t.Fatalf("%s, %d: RerunChecks() = %+v, want round 2, %d reruns", tc.name, i+1, p, i+1)
+			}
+			f.ChecksReruns, f.ChecksRerunAt, f.ChecksRerunEnded = p.ChecksReruns, p.ChecksRerunAt, true
+		}
+		got := NextTaskStep(f)
+		if got.Action != ActionFail || got.Reason != ReasonRunnerLost || !RunnerFault(got.Reason) ||
+			!strings.Contains(got.Message, "3 times in round 2") {
+			t.Errorf("%s: the cap: NextTaskStep() = %+v, want ActionFail, reason %s", tc.name, got, ReasonRunnerLost)
+		}
+	}
+
+	running := TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "failure", ChecksNoLog: true,
+		CIRun: CIRun{State: CIRunRunning, Started: time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC),
+			Running: time.Minute}}
+	if got := NextTaskStep(running); got.Action != ActionWait {
+		t.Errorf("an abandoned job while another run still runs: NextTaskStep() = %+v, want ActionWait", got)
+	}
+
+	failed := TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "failure",
+		CIRun:     CIRun{State: CIRunCompleted},
+		ChecksLog: at + "--- FAIL: TestA (0.00s)\n" + at + "FAIL\n" + at + "Job failed\n"}
+	if got := NextTaskStep(failed); got.Action != ActionRetry {
+		t.Errorf("a run the change failed: NextTaskStep() = %+v, want ActionRetry, a fix round", got)
 	}
 }
 

@@ -382,6 +382,10 @@ const checkSuccess = "success"
 // push run off main.
 const checkSkipped = "skipped"
 
+// checkCancelled is the conclusion of a CI run that was cancelled; Gitea
+// reports such a run's check as failed.
+const checkCancelled = "cancelled"
+
 // checkFailure and checkError are the states of a commit's checks that failed.
 const (
 	checkFailure = "failure"

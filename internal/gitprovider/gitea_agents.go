@@ -617,7 +617,8 @@ func randomSecret() (string, error) {
 }
 
 // CheckLog returns the log of the CI job a check status links to, such as
-// /apps/app/actions/runs/27/jobs/27.
+// /apps/app/actions/runs/27/jobs/27, or ErrNoCILog when the job started and
+// Gitea has no log of it.
 func (g *gitea) CheckLog(ctx context.Context, repo Repository, checkURL string) (string, error) {
 	_, job, ok := strings.Cut(checkURL, "/jobs/")
 	job = strings.Trim(job, "/")
@@ -629,7 +630,12 @@ func (g *gitea) CheckLog(ctx context.Context, repo Repository, checkURL string) 
 	if err != nil {
 		return "", err
 	}
-	if status != http.StatusOK {
+	switch {
+	case status == http.StatusNotFound && strings.Contains(apiMessage(data), "logs not found"),
+		status == http.StatusOK && strings.TrimSpace(string(data)) == "":
+		// Gitea has no log file for a job whose runner sent no line.
+		return "", fmt.Errorf("gitea: job %s: %w", job, ErrNoCILog)
+	case status != http.StatusOK:
 		return "", fmt.Errorf("gitea: reading the log of job %s failed (HTTP %d): %s", job, status, apiMessage(data))
 	}
 	return string(data), nil

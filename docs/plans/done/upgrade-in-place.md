@@ -148,6 +148,7 @@ A Gitea Actions job killed by a runner pod's restart shows as a failed
 check, which costs the Task a fix round; whether Gitea marks such a job
 failed or cancelled is something only a real runner shows, so it waits for a
 human Kind run of an upgrade with a check in flight, which would also show
-the whole upgrade leaving a running Task alone. Pausing the whole factory
+the whole upgrade leaving a running Task alone. Since #1074 such a job, cancelled or
+cut off, is rerun at no round instead. Pausing the whole factory
 (every Brief and Crew in every project) is a loop over the Briefs; if it is
 wanted, it is its own issue.

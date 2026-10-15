@@ -10,6 +10,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -364,9 +365,8 @@ func (r *TaskReconciler) checkFacts(ctx context.Context, task *c4v1alpha1.Task, 
 	}
 	if failed && (facts.ChecksRerunAt.IsZero() || facts.ChecksRerunEnded) {
 		// Best effort: without the log the agent still gets the link.
-		if log, err := provider.CheckLog(gitCtx, repo, checks.URL); err == nil {
-			facts.ChecksLog = log
-		}
+		log, err := provider.CheckLog(gitCtx, repo, checks.URL)
+		facts.ChecksLog, facts.ChecksNoLog = log, errors.Is(err, gitprovider.ErrNoCILog)
 	}
 	// A failure whose runs still run waits for them before its jobs run again.
 	if checks.State != gitprovider.CheckSuccess && facts.CIRun == (model.CIRun{}) {
@@ -440,6 +440,7 @@ func (r *TaskReconciler) runState(ctx context.Context, provider gitprovider.Prov
 	ci := model.CIRun{Commit: commit}
 	state, run := model.CommitRunState(seen)
 	ci.State, ci.URL, ci.Started = state, run.URL, run.Started
+	ci.Cancelled = model.CancelledRun(seen)
 	switch state {
 	case model.CIRunRunning:
 		if !run.Started.IsZero() {
