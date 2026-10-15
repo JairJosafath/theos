@@ -294,7 +294,7 @@ const maxPausedNames = 20
 
 // BriefPausedMessage is the message of a paused Brief's Paused condition: the
 // Tasks still running in its Crews and its planner Task, by name, until none
-// is (decision 5 of docs/plans/upgrade-in-place.md).
+// is (decision 5 of docs/plans/done/upgrade-in-place.md).
 func BriefPausedMessage(running []string) string {
 	switch len(running) {
 	case 0:

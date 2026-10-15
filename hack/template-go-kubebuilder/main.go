@@ -58,7 +58,7 @@ func (o owner) String() string {
 	return [...]string{"Framework", "Standard", "dropped"}[o]
 }
 
-// rules sorts the paths `kubebuilder init` writes (docs/plans/kubebuilder-operators.md,
+// rules sorts the paths `kubebuilder init` writes (docs/plans/done/kubebuilder-operators.md,
 // decision 3). A pattern ending in "/" matches every path under that folder;
 // any other pattern matches one path.
 var rules = []struct {
@@ -211,7 +211,7 @@ const (
 
 // releaseNote says what go-operator-standard's `make dist` writes and that the
 // manager image in install.yaml is a placeholder to replace
-// (docs/plans/kubebuilder-operators.md, decision 8). It is template text: the
+// (docs/plans/done/kubebuilder-operators.md, decision 8). It is template text: the
 // README is a .tmpl once the substitutions name the Container.
 const releaseNote = `### From a release
 

@@ -5,7 +5,7 @@ Milestone 6 in [docs/design.md](../docs/design.md#mvp-v1-plan): someone who has
 never used kubectl can read the story in a browser. It reads everything and,
 with actions off, changes only three things: it creates a Brief from an app
 idea, adds a follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)),
-and pauses or resumes one ([docs/plans/upgrade-in-place.md](../docs/plans/upgrade-in-place.md)).
+and pauses or resumes one ([docs/plans/done/upgrade-in-place.md](../docs/plans/done/upgrade-in-place.md)).
 With actions on it takes a few more (_Actions_ below). design.md's _The UI:
 areas and object pages_ says what it shows and why.
 

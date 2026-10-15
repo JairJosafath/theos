@@ -10,7 +10,7 @@ package model
 
 import "fmt"
 
-// A Brief's release target (docs/plans/brief-release-target.md): the Brief
+// A Brief's release target (docs/plans/done/brief-release-target.md): the Brief
 // remembers on the Crew the target it last set, so it tells a change of its
 // spec.releases entry from a change made on the Crew.
 

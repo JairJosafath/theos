@@ -707,7 +707,7 @@ var _ = Describe("Brief releases", func() {
 		})
 	})
 
-	// Step 1 of docs/plans/brief-requests.md: decision 1's rules.
+	// Step 1 of docs/plans/done/brief-requests.md: decision 1's rules.
 	Describe("spec.releases[].requests", func() {
 		requesting := func(repository string, requests c4v1alpha1.BriefRequests) c4v1alpha1.BriefRelease {
 			entry := linterRelease(repository)

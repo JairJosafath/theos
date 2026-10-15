@@ -12,7 +12,7 @@ import (
 // planner reads.
 const chartValues = "../../dist/chart/values.yaml"
 
-// operatorIdea is the idea plans/kubebuilder-operators.md, step 5, plans.
+// operatorIdea is the idea plans/done/kubebuilder-operators.md, step 5, plans.
 const operatorIdea = "an operator that backs up every PVC labelled `backup: nightly`"
 
 // operatorPlan is a planner's plan for operatorIdea: the cue in planner.md

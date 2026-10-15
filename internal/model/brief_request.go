@@ -10,7 +10,7 @@ import (
 
 // A request is an open GitHub issue of a Brief's releases repository, opened
 // by a person the Brief allows, that the Brief takes as input to a planning
-// round (docs/plans/brief-requests.md). These are its rules: which issues are
+// round (docs/plans/done/brief-requests.md). These are its rules: which issues are
 // requests, the stage a request is in, and what the operator says on it.
 
 // The modes of a releases entry's requests.
