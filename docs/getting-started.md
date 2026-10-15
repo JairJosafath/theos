@@ -714,7 +714,8 @@ stays until you delete it.
 **A quiet moment anyway.** Pause a Brief, and with it every Crew it made, in
 one step: the Pause button on its card in the UI sets its `spec.paused` to
 `true`, and Resume sets it back to `false`. Pause a Crew of your own with its
-`spec.paused` through kubectl; the UI has no Crew button. A paused Crew starts no issue and a paused
+`spec.paused` through kubectl, or, with the UI's actions on (*UI actions behind
+an Ingress* below), with the Pause crew button on its page. A paused Crew starts no issue and a paused
 Brief no round, but a Task already started runs to its end. The Brief's
 `Paused` condition, which its card shows while it is paused, counts them down
 until it says `Paused; nothing is running`; for a Crew, `kubectl get tasks`
@@ -735,7 +736,8 @@ stays paused.
 ## UI actions behind an Ingress
 
 Off by default, the UI's actions (a Brief's and a Crew's settings, a release
-re-run, a scaffold retry, a Task from a goal, a Standard's `ref`) are made as
+re-run, a scaffold retry, a Container's checks and its answer to a Standard's
+bump, a Task from a goal, a Standard's `ref`) are made as
 the UI's ServiceAccount over port-forward, with `ui.actions.enabled: true`
 alone. Behind an Ingress a person signs in with OIDC, and every write is made
 as them, so your cluster's RBAC decides who does what.

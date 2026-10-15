@@ -1,7 +1,8 @@
 # c4factory Helm chart
 
 Installs the whole C4 Factory: the operator, its CRDs and RBAC, the admission
-policy (a Project is named after its namespace), the read-only UI, and Gitea,
+policy (a Project is named after its namespace), the UI (it writes only Briefs
+unless `ui.actions.enabled` is set), and Gitea,
 seeded with the tagged templates, with its `base` and `go` CI runners. A device
 installs [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
 itself, first. The Kind test environment installs with kustomize and `make`
