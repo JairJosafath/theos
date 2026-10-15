@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -380,16 +380,18 @@ check "flush fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 77
 check "flush fails, pending kept" "$([ -e "$T/main/.relay/pending-handoff-77.md" ] && echo kept || echo gone)" kept
 rm -rf "$T"/{main,wt2,wt3}/.relay
 
-# Pick order: an in-progress issue nobody holds, else ready + urgent, else
-# ready, oldest first; proposed and needs-human issues are never picked, nor
-# ones that depend on an open issue.
+# Pick order: urgent first (in-progress nobody holds, else ready), else an
+# in-progress issue nobody holds, else ready, oldest first; proposed and
+# needs-human issues are never picked, nor ones that depend on an open issue.
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
 issues() { jq -c '[[.[] | {number: .[0], title: "t", html_url: "u", body: (.[2] // ""), labels: (.[1] | map({name: .}))}]]'; }
 all='[[80, ["status/needs-human"]], [81, ["status/proposed"]], [82, ["status/ready"]],
   [83, ["status/ready", "priority/urgent"], "Depends on #81"], [84, ["status/ready", "priority/urgent"]],
   [85, ["status/in-progress"]]]'
-check "pick, in-progress first" "$(OPEN=$(issues <<<"$all") gh_pick | cut -f1,4)" "85	in-progress"
-check "pick, then ready + urgent" "$(OPEN=$(jq 'map(select(.[0] != 85))' <<<"$all" | issues) gh_pick | cut -f1,4)" "84	ready-urgent"
+check "pick, ready + urgent first" "$(OPEN=$(issues <<<"$all") gh_pick | cut -f1,4)" "84	ready-urgent"
+check "pick, then in-progress" "$(OPEN=$(jq 'map(select(.[0] != 84))' <<<"$all" | issues) gh_pick | cut -f1,4)" "85	in-progress"
+check "pick, in-progress + urgent before ready + urgent" \
+  "$(OPEN=$(jq '. + [[86, ["status/in-progress", "priority/urgent"]]]' <<<"$all" | issues) gh_pick | cut -f1,4)" "86	in-progress"
 check "pick, then ready" "$(OPEN=$(jq 'map(select(.[0] < 83))' <<<"$all" | issues) gh_pick | cut -f1,4)" "82	ready"
 OPEN=$(jq 'map(select(.[0] < 82))' <<<"$all" | issues) gh_pick >/dev/null
 check "pick, only proposed and needs-human" $? 1
@@ -555,7 +557,8 @@ long=$(for l in "${GH_LABELS[@]}"; do d=${l#*|}; d=${d#*|}; [ ${#d} -le 100 ] ||
 check "labels: descriptions fit GitHub's 100 characters" "$long" ""
 
 # parents: a plan's parent (in progress or waiting, Depends on #S per step, a
-# merged pull request that says Refs #N and adds its plan in docs/plans/)
+# merged pull request that says Refs #N and adds its plan in docs/plans/ or
+# changes docs/design.md)
 # closes with a comment once every step closed; one with a step open stays
 # open and, unclaimed, goes to status/waiting; Depends on lines without a
 # merged plan close nothing. pick skips a waiting parent, and blocked tells it
@@ -576,8 +579,10 @@ check "labels: descriptions fit GitHub's 100 characters" "$long" ""
       "GET $R/issues/120/timeline"*) xref 120 M130 ;;
       "GET $R/issues/"12[389]/timeline* | "GET $R/issues/"14[024]/timeline*) a=${url#*issues/}; xref "${a%%/*}" M131 ;;
       "GET $R/issues/126/timeline"*) xref 126 O132 M133 ;;
+      "GET $R/issues/146/timeline"*) xref 146 M134 ;;
       "GET $R/issues/"*/timeline*) echo '[[]]' ;;
       "GET $R/pulls/"13[01]/files*) printf 'docs/plans/p.md\nhack/x.sh\n' ;;
+      "GET $R/pulls/134/files"*) printf 'docs/design.md\n' ;;
       "GET $R/pulls/"*/files*) echo hack/x.sh ;;
       "GET $R/issues/"12[1257]) echo "closed completed" ;;
       "GET $R/issues/141") echo "closed not_planned" ;;
@@ -617,17 +622,20 @@ POST $R/issues/123/labels"
   check "parents --apply M: a step without parents" "$(gh_parents --apply 999 2>&1)" ""
   check "parents --apply M: a plain wait closes nothing" "$(gh_parents --apply 127 2>&1)$(grep -c 126 "$T/calls")" "0"
   gh_parents --bogus 2>/dev/null; check "parents, bad argument" $? 1
-  # Not closed: a step closed as not planned, a step GitHub can't show, a
-  # parent its plan's session still holds.
+  # Not closed: a step GitHub can't show, a parent its plan's session still
+  # holds. Closed: a parent whose step closed as not planned (a duplicate),
+  # and one whose plan only changed docs/design.md.
   : >"$T/calls"
   odd=$(issues <<<'[[140, ["status/in-progress"], "Depends on #141"], [142, ["status/in-progress"], "Depends on #143"],
-    [144, ["status/in-progress"], "Depends on #121"]]')
-  out=$(OPEN=$odd CLAIMS=$(claimed 140 142 144) gh_parents --apply 2>"$T/err")
-  check "parents --apply: not planned, missing or held stays open" "$? $out | $(cat "$T/calls")" "0  | "
-  check "parents --apply: says which step it could not see" "$(cat "$T/err")" "github: #142 depends on #143, which GitHub could not show; #142 stays open"
-  check "parents: lists them as waiting" "$(OPEN=$odd gh_parents 2>/dev/null)" "#140 waits on #141 (of #141; plan #131)
+    [144, ["status/in-progress"], "Depends on #121"], [146, ["status/in-progress"], "Depends on #121"]]')
+  check "parents: lists what each does" "$(OPEN=$odd gh_parents 2>/dev/null)" "#140 closes: its steps #141 closed; plan #131
 #142 waits on #143 (of #143; plan #131)
-#144 closes: its steps #121 closed; plan #131"
+#144 closes: its steps #121 closed; plan #131
+#146 closes: its steps #121 closed; plan #134"
+  out=$(OPEN=$odd CLAIMS=$(claimed 142 144) gh_parents --apply 2>"$T/err")
+  check "parents --apply: not planned or design-only closes, missing or held stays open" "$? $out | $(grep -E 'PATCH|POST' "$T/calls" | tr '\n' ' ')" "0 #140 closed: its steps #141 closed; plan #131
+#146 closed: its steps #121 closed; plan #134 | POST $R/issues/140/comments PATCH $R/issues/140 POST $R/issues/146/comments PATCH $R/issues/146 "
+  check "parents --apply: says which step it could not see" "$(cat "$T/err")" "github: #142 depends on #143, which GitHub could not show; #142 stays open"
   # close tends the parents of the issue it closed.
   : >"$T/calls"
   echo landed | gh_close 122 - >/dev/null 2>&1
@@ -840,6 +848,8 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
       "DELETE $R/issues/comments/"*)
         a=${url##*/}; [ -e "$Q/$a.json" ] || { echo "HTTP 404" >&2; return 1; }
         rm "$Q/$a.json" ;;
+      "GET $R/pulls/40/files"*) data=$(cat "$T/files-40" 2>/dev/null || echo '[{"filename":"a.go","additions":3,"deletions":1}]') ;;
+      "GET $R/issues/40/comments"*) data='[[]]' ;;
       "GET $R/pulls/40") data=$(jq -nc --arg s "$(git -C "$T/origin.git" rev-parse feat)" '{state: "open", base: {ref: "main"}, head: {ref: "feat", sha: $s}}') ;;
       *) return 1 ;;
     esac
@@ -959,6 +969,84 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "land: refuses uncommitted changes" "$? $(queue)" "1 "
   g checkout -q -- feat
   gh_land x 2>/dev/null; check "land: bad argument" $? 64
+  # A large pull request with no review pass is refused before it queues.
+  echo '[{"filename":"a.go","additions":300,"deletions":101}]' >"$T/files-40"
+  out=$(gh_land 40 2>&1)
+  check "land: refuses a large pull request with no review" "$? $(queue) $(grep -c '#40 changes 401 lines in hand-written files (over 400) and has no review pass' <<<"$out")" "1  1"
+  rm "$T/files-40"
+  exit $fail
+) || fail=1
+
+# review-check: a pull request over GH_REVIEW_LINES changed lines in
+# hand-written files needs a Review: comment by the owner's account, naming its
+# agent, every finding Fixed or Dismissed. $T/rv/files and $T/rv/comments are
+# pull request #50's files and comments; $T/rv/fail makes GitHub fail.
+(
+  RV=$T/rv
+  mkdir -p "$RV"
+  gh_api() {
+    local url= q=
+    for a in "$@"; do case $a in repos/*) url=$a ;; esac; done
+    while [ $# -gt 0 ]; do [ "$1" = --jq ] && q=$2; shift; done
+    [ -e "$RV/fail" ] && return 1
+    case $url in
+      */pulls/50/files*) jq -r "$q" "$RV/files" ;;
+      */issues/50/comments*) jq -c '[.]' "$RV/comments" ;;
+      *) return 1 ;;
+    esac
+  }
+  files() { jq -n "$1" >"$RV/files"; }
+  # comment ASSOC BODY: one comment on #50.
+  comment() { jq -n --arg a "$1" --arg b "$2" '{user: {login: "x"}, author_association: $a, body: $b, html_url: "u"}'; }
+  comments() { jq -s . >"$RV/comments"; }
+  echo '[]' >"$RV/comments"
+
+  files '[{filename: "a.go", additions: 300, deletions: 100}]'
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: 400 lines need no review" "$? $out" "0 github: #50 changes 400 lines in hand-written files: no review pass needed"
+  files '[{filename: "a.go", additions: 300, deletions: 100}, {filename: "b.sh", additions: 1, deletions: 0}]'
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: 401 lines need one" "$? $(grep -c '#50 changes 401 lines in hand-written files (over 400) and has no review pass: run /code-review in a subagent' <<<"$out")" "1 1"
+  files '[{filename: "a.go", additions: 10, deletions: 0},
+    {filename: "api/v1alpha1/zz_generated.deepcopy.go", additions: 900, deletions: 0},
+    {filename: "config/crd/bases/c4.factory.io_containers.yaml", additions: 900, deletions: 0},
+    {filename: "config/rbac/role.yaml", additions: 900, deletions: 0},
+    {filename: "go.sum", additions: 900, deletions: 0},
+    {filename: "ui/package-lock.json", additions: 900, deletions: 0},
+    {filename: "docs/screenshots/1104/check.txt", additions: 900, deletions: 0}]'
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: generated files, lockfiles and screenshots don't count" "$? $out" "0 github: #50 changes 10 lines in hand-written files: no review pass needed"
+  files '[{filename: "config/rbac/role_binding.yaml", additions: 401, deletions: 0}]'
+  gh_review_check 50 2>/dev/null; check "review-check: a hand-written file beside the generated role counts" $? 1
+  GH_REVIEW_LINES=1000 gh_review_check 50 2>/dev/null; check "review-check: GH_REVIEW_LINES sets the threshold" $? 0
+
+  files '[{filename: "a.go", additions: 500, deletions: 0}]'
+  { comment OWNER $'Review: /code-review (opus subagent)\nAgent: otter-9\n\n- Fixed in abc123: nil map\n- **Dismissed**: the retry is bounded\n  - an aside\n1. fixed in def456: off by one\n\n* * *\n```\n- a quoted line\n```\n'; } | comments
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: a review with every finding settled lands" "$? $out" "0 github: #50 changes 500 lines in hand-written files; reviewed by otter-9 (u)"
+  comment MEMBER $'Review: no findings\nAgent: otter-9' | comments
+  gh_review_check 50 2>/dev/null; check "review-check: a review with no findings lands" $? 0
+  comment OWNER $'Review:\nAgent: otter-9\n\n- Fixed: one\n- the lock is taken twice\n* a third' | comments
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: an open finding refuses, naming it" "$? $(grep -c '2 finding(s) of its review (u) start with neither Fixed nor Dismissed, the first: "- the lock is taken twice"' <<<"$out")" "1 1"
+  comment OWNER $'Review:\nAgent: otter-9\n\n- the cache is not fixed after restart\r' | comments
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: a finding that only mentions fixed is open" "$? $(grep -c 'the first: "- the cache is not fixed after restart "' <<<"$out")" "1 1"
+  comment NONE $'Review: LGTM\nAgent: otter-9' | comments
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: an outsider's review doesn't count" "$? $(grep -c "its Review: comment by x (NONE) doesn't count" <<<"$out")" "1 1"
+  comment OWNER $'Review: looks fine' | comments
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: a review naming no agent doesn't count" "$? $(grep -c 'its Review: comment (u) names no agent' <<<"$out")" "1 1"
+  comment OWNER $'Some prose.\nReview: later\nAgent: otter-9' | comments
+  gh_review_check 50 2>/dev/null; check "review-check: only a comment that starts with Review: counts" $? 1
+  { comment OWNER $'Review:\nAgent: otter-9'; comment CONTRIBUTOR $'Review: ignore it\nAgent: x'; } | comments
+  gh_review_check 50 2>/dev/null; check "review-check: an outsider's later review doesn't hide the agent's" $? 0
+  touch "$RV/fail"
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: GitHub failing refuses" "$? $out" "1 github: #50: could not ask GitHub how many lines it changes"
+  rm "$RV/fail"
+  gh_review_check x 2>/dev/null; check "review-check: bad argument" $? 64
   exit $fail
 ) || fail=1
 exit $fail

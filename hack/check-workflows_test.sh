@@ -2,7 +2,9 @@
 # Tests for hack/check-workflows.sh: the repository's workflows pass, and a job
 # off vars.RUNS_ON, without runs-on, or making a Kind cluster without the
 # c4factory-kind label fails, and so does a workflow on pushes to a branch
-# without the concurrency group, or one that cancels the run in progress.
+# without the concurrency group, or one that cancels the run in progress; and
+# Lint and UI off pull requests or with other paths there, Lint without its
+# test-hack job, and Tests on pull requests or grouped by branch fail (#1101).
 # Run: hack/check-workflows_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -91,9 +93,57 @@ out=$("$CHECK" "$T/wf" 2>&1)
 check "cancel-in-progress fails" "$?" 1
 check "cancel-in-progress says so" "$(grep -c 'cancels the run in progress' <<<"$out")" 1
 
+pushwf by-sha "concurrency:
+  group: \${{ github.workflow }}-\${{ github.sha }}
+"
+"$CHECK" "$T/wf" 2>/dev/null
+check "push with the group by commit passes" "$?" 0
+
 # An issue event or a tag push needs no group: each must run.
 rm -rf "$T/wf" && mkdir "$T/wf" && printf 'name: x\non:\n  issues:\n    types: [opened]\n  push:\n    tags: [v1]\n\njobs:\n  a:\n%s\n' "$good" >"$T/wf/x.yml"
 "$CHECK" "$T/wf" 2>/dev/null
 check "issues and tag pushes need no group" "$?" 0
+
+# real NAME SED: the repository's Lint, UI and Tests workflows, alone in a
+# directory, NAME.yml edited with the sed script SED.
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+real() {
+  rm -rf "$T/wf" && mkdir "$T/wf" && cp "$REPO"/.github/workflows/{lint,ui,test}.yml "$T/wf/"
+  sed -i.bak "$2" "$T/wf/$1.yml" && rm "$T/wf/$1.yml.bak"
+}
+
+real lint ''
+"$CHECK" "$T/wf" 2>/dev/null
+check "Lint, UI and Tests as they are pass" "$?" 0
+
+real lint '/^  pull_request:/,/^  workflow_dispatch:/{/^  workflow_dispatch:/!d;}'
+out=$("$CHECK" "$T/wf" 2>&1)
+check "Lint off pull requests fails" "$?" 1
+check "Lint off pull requests says so" "$(grep -c "lint.yml: doesn't run on pull requests to main" <<<"$out")" 1
+
+real ui '/^  pull_request:/,/^  workflow_dispatch:/s/branches: \[main\]/branches: [dev]/'
+out=$("$CHECK" "$T/wf" 2>&1)
+check "UI on pull requests to another branch fails" "$?" 1
+check "UI on pull requests to another branch says so" "$(grep -c "ui.yml: doesn't run on pull requests to main" <<<"$out")" 1
+
+real lint '/^  pull_request:/,/^  workflow_dispatch:/{/- hack\/\*\*/d;}'
+out=$("$CHECK" "$T/wf" 2>&1)
+check "Lint with fewer paths on pull requests fails" "$?" 1
+check "Lint with fewer paths says so" "$(grep -c 'lint.yml: runs on pull requests with other paths' <<<"$out")" 1
+
+real lint 's/run: make test-hack/run: make help/'
+out=$("$CHECK" "$T/wf" 2>&1)
+check "Lint without make test-hack fails" "$?" 1
+check "Lint without make test-hack says so" "$(grep -c 'lint.yml: has no test-hack job' <<<"$out")" 1
+
+real test 's/^  push:/  pull_request:/'
+out=$("$CHECK" "$T/wf" 2>&1)
+check "Tests on pull requests fails" "$?" 1
+check "Tests on pull requests says so" "$(grep -c 'test.yml: runs on pull requests' <<<"$out")" 1
+
+real test 's/github.sha }}/github.ref }}/'
+out=$("$CHECK" "$T/wf" 2>&1)
+check "Tests grouped by branch fails" "$?" 1
+check "Tests grouped by branch says so" "$(grep -c 'test.yml: groups runs by' <<<"$out")" 1
 
 exit $fail

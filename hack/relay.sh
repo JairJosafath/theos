@@ -90,15 +90,16 @@
 # writes .relay/paused-until (the reset time the message gives, else now plus
 # RELAY_LIMIT_WAIT, default 30m), and until then every worker waits in admit
 # without picking or claiming, and the watch starts nothing. A session that
-# ends without a handoff and without a new commit on the issue's branch counts
-# as failed: a strike, a comment on the issue. At RELAY_MAX_FAILS (default 3)
-# strikes, from any device and none older than RELAY_STRIKE_TTL (default 24h),
-# the relay escalates the issue to the maintainer (status/needs-maintainer)
-# with one comment linking each. A session that leaves its issue in
-# status/needs-maintainer or status/needs-human has finished, as one that
-# closes it or hands it off. A
-# handoff or a new commit, on any device, resets the count; a paused session
-# doesn't count.
+# ends without a handoff and without a new commit on the issue's branch (or on
+# <branch>-2 or <branch>-<name>, local or pushed) counts as failed: a strike, a
+# comment on the issue. At RELAY_MAX_FAILS (default 3) strikes, from any device
+# and none older than RELAY_STRIKE_TTL (default 24h), the relay escalates the
+# issue to the maintainer (status/needs-maintainer) with one comment linking
+# each. A session that leaves its issue in status/needs-maintainer,
+# status/needs-human or status/waiting has finished, as one that closes it or
+# hands it off; one that sets it back to status/ready or status/proposed isn't
+# counted. A handoff or a new commit, on any device, resets the count; a paused
+# session doesn't count.
 # A session whose transcript (under $CLAUDE_CONFIG_DIR/projects/) hasn't
 # changed for RELAY_IDLE (default 45m) is stuck: the relay ends it (SIGTERM,
 # then SIGKILL after RELAY_IDLE_KILL) and counts it as failed, commit or not.
@@ -211,7 +212,8 @@ Rules for this headless run:
     (\`hack/lib/github.sh handoff $n FILE\`). The next session continues #$n.
   - Finished: open a pull request to main whose body says \`Closes #$n\`, merge
     it with a merge commit once \`make check\` passes (\`hack/lib/github.sh land PR\`: it waits for the
-    merge turn, merges main in, reruns make check and merges; run it in the background and follow it), and if the issue is still
+    merge turn, merges main in, reruns make check and merges; run it in the background and follow it; over 400
+    changed lines it refuses until a review pass is posted: the handoff skill, \"Review before landing\"), and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue. A pull
     request that only writes a plan and files its steps says \`Refs #$n\`
@@ -409,7 +411,9 @@ handoff_id() {
 }
 
 # outcome N BEFORE: how the session left issue N: closed, needs-maintainer,
-# needs-human, handed-off (a handoff comment newer than BEFORE) or nothing.
+# needs-human, waiting (a plan's parent, its steps filed), released (set back
+# to ready or proposed), handed-off (a handoff comment newer than BEFORE) or
+# nothing.
 outcome() {
   local n=$1 before=$2 state latest
   state=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" \
@@ -418,9 +422,25 @@ outcome() {
     closed*) echo closed; return 0 ;;
     *status/needs-maintainer*) echo needs-maintainer; return 0 ;;
     *status/needs-human*) echo needs-human; return 0 ;;
+    *status/waiting*) echo waiting; return 0 ;;
   esac
   latest=$(handoff_id "$n") || return 1
-  if [ -n "$latest" ] && [ "$latest" != "$before" ]; then echo handed-off; else echo nothing; fi
+  if [ -n "$latest" ] && [ "$latest" != "$before" ]; then
+    echo handed-off
+  else
+    case $state in
+      *status/ready* | *status/proposed*) echo released ;;
+      *) echo nothing ;;
+    esac
+  fi
+}
+
+# branch_refs BRANCH: the issue's branch and its renamed copies (<branch>-2,
+# <branch>-<name> after a takeover), local and on origin, each with its commit.
+# A session that commits or pushes on any of them changes it.
+branch_refs() {
+  git -C "$WT" for-each-ref --format='%(refname) %(objectname)' \
+    "refs/heads/$1" "refs/heads/$1-*" "refs/remotes/origin/$1" "refs/remotes/origin/$1-*"
 }
 
 # running_workers: how many workers hold their lock now.
@@ -909,7 +929,7 @@ maintain() {
 
 # work: the worker's sessions, one after another (see the header).
 work() {
-  local i id rc try claim name branch before head out limited result reason released
+  local i id rc try claim name branch before head refs out limited result reason released
   for i in $(seq 1 "$MAX_SESSIONS"); do
     [ -e "$STOP" ] && { log "stop file found; stopping"; break; }
     if [ -z "$DRY_RUN" ]; then
@@ -968,6 +988,7 @@ work() {
       break
     }
     head=$(git -C "$WT" rev-parse -q --verify "refs/heads/$branch")
+    refs=$(branch_refs "$branch")
     log "session $i start: id $id, $name on #$ISSUE ($HOW) $TITLE, branch $branch, HEAD ${head:0:7}"
     out="$DIR/session-$K-$i-$(date +%Y%m%d-%H%M%S)"
     session "session $i" "$out" "$id" "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")"
@@ -980,6 +1001,8 @@ work() {
       case $result in
         closed) reason=finished ;;
         handed-off) reason="handed off" ;;
+        waiting) reason="waiting on its steps" ;;
+        released) reason="set back to ready or proposed" ;;
         *) reason="session ended without a handoff$([ "$limited" != 3 ] || echo " (a limit)")" ;;
       esac
       if released=$(gh_release "$reason" 2>&1); then
@@ -989,13 +1012,19 @@ work() {
       fi
     fi
     case $result in
-      closed | needs-maintainer | needs-human | handed-off) forget_fails "$ISSUE" ;;
+      closed | needs-maintainer | needs-human | waiting | handed-off) forget_fails "$ISSUE" ;;
     esac
     case $result in
       closed) log "session $i closed #$ISSUE" ;;
       needs-maintainer) log "session $i escalated #$ISSUE to the maintainer (status/needs-maintainer)" ;;
       needs-human) log "session $i left #$ISSUE waiting for the owner (status/needs-human)" ;;
       handed-off) log "session $i handed off #$ISSUE" ;;
+      waiting) log "session $i left #$ISSUE waiting on its steps (status/waiting)" ;;
+      released)
+        # Given back, not failed: no strike, and the count stands.
+        log "session $i set #$ISSUE back to ready or proposed without a handoff; not counted against it; stopping (claude --resume $id in $WT to see why)"
+        break
+        ;;
       unknown) log "could not read #$ISSUE after session $i; stopping"; break ;;
       *)
         # A limit pauses the device and isn't the issue's failure: wait it out in admit.
@@ -1006,9 +1035,9 @@ work() {
         if [ -n "$S_IDLE" ]; then
           log "session $i was stopped idle on #$ISSUE; stopping (claude --resume $id in $WT to see why)"
           failed "$ISSUE" "$id" "$out"
-        elif [ "$(git -C "$WT" rev-parse -q --verify "refs/heads/$branch")" != "$head" ]; then
+        elif [ "$(branch_refs "$branch")" != "$refs" ]; then
           forget_fails "$ISSUE"
-          log "session $i left no handoff on #$ISSUE but committed on $branch; stopping (claude --resume $id in $WT to see why)"
+          log "session $i left no handoff on #$ISSUE but committed on $branch or a copy of it; stopping (claude --resume $id in $WT to see why)"
         else
           log "session $i left no handoff on #$ISSUE and no commit; stopping (claude --resume $id in $WT to see why)"
           failed "$ISSUE" "$id" "$out"

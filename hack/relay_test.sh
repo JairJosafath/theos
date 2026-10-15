@@ -151,6 +151,11 @@ check "prompt: never sets needs-human" "$(grep -c 'status 1 needs-human' <<<"$ou
   STATE='closed status/in-progress'; check "outcome: closed" "$(outcome 1 7)" closed
   STATE='open status/in-progress'; check "outcome: nothing" "$(outcome 1 7)" nothing
   STATE='open status/in-progress'; check "outcome: handed off" "$(outcome 1 6)" handed-off
+  STATE='open status/waiting,kind/feature'; check "outcome: waiting" "$(outcome 1 7)" waiting
+  STATE='open status/waiting'; check "outcome: waiting after a handoff" "$(outcome 1 6)" waiting
+  STATE='open status/ready'; check "outcome: set back to ready" "$(outcome 1 7)" released
+  STATE='open status/proposed'; check "outcome: set back to proposed" "$(outcome 1 7)" released
+  STATE='open status/ready'; check "outcome: ready after a handoff" "$(outcome 1 6)" handed-off
   exit $fail
 ) || fail=1
 
@@ -213,6 +218,8 @@ check "maintain: a dry run records nothing" "$(cat "$DIR/maintained")" "86400 x 
 WT=$T/wt
 git init -q -b b "$WT"
 git -C "$WT" -c user.name=t -c user.email=t@t commit -q --allow-empty -m first
+git init -q --bare "$T/origin.git"
+git -C "$WT" remote add origin "$T/origin.git"
 mkdir -p "$T/bin"
 cat >"$T/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
@@ -240,11 +247,17 @@ case $(cat "$FAKE") in
   handoff) echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"handed off","num_turns":9}' ;;
   lease) sleep 3; cp "$LEASES" "$LEASES.during"; echo '{"is_error":false,"result":"swept","num_turns":9}' ;;
   commit) git -c user.name=t -c user.email=t@t commit -q --allow-empty -m more; echo '{"is_error":false,"result":"committed","num_turns":9}' ;;
+  commit-2) git switch -q -C b-2; git -c user.name=t -c user.email=t@t commit -q --allow-empty -m more; echo '{"is_error":false,"result":"committed on b-2","num_turns":9}' ;;
+  push-name) c=$(git -c user.name=t -c user.email=t@t commit-tree -p HEAD -m more 'HEAD^{tree}')
+    git push -q origin "$c:refs/heads/b-otter-175"; echo '{"is_error":false,"result":"pushed b-otter-175","num_turns":9}' ;;
+  waiting) echo 'open status/waiting' >"$STATE"; echo '{"is_error":false,"result":"waiting","num_turns":9}' ;;
+  ready) echo 'open status/ready' >"$STATE"; echo '{"is_error":false,"result":"gave it back","num_turns":9}' ;;
 esac
 FAKE
 chmod +x "$T/bin/claude"
-export PATH=$T/bin:$PATH FAKE=$T/fake HANDOFF=$T/handoff CLAUDE_CONFIG_DIR=$T/claude
+export PATH=$T/bin:$PATH FAKE=$T/fake HANDOFF=$T/handoff STATE=$T/state CLAUDE_CONFIG_DIR=$T/claude
 echo 1 >"$HANDOFF"
+echo 'open status/in-progress' >"$STATE"
 update() { :; }
 worktree() { :; }
 drop_lease() { :; }
@@ -252,7 +265,7 @@ gh_claim_read() { return 1; }
 pick() { ISSUE=175 TITLE=t URL=u HOW=ready; }
 gh_take() { echo take >>"$T/takes"; printf 'otter-175\tb\n'; }
 handoff_id() { cat "$HANDOFF"; }
-outcome() { if [ "$(handoff_id)" != "$2" ]; then echo handed-off; else echo nothing; fi; }
+gh_api() { cat "$STATE"; }
 # #175's comments, in $COMMENTS; add_comment BODY [AGE] adds one AGE seconds old.
 COMMENTS=$T/comments.json
 echo '[]' >"$COMMENTS"
@@ -366,6 +379,36 @@ n=$(jq length "$COMMENTS")
 echo commit >"$FAKE"
 work
 check "fails: nothing to reset, no comment" "$(jq length "$COMMENTS")" "$n"
+# A commit on <branch>-2, or a push to <branch>-<name> after a takeover, is a
+# commit too (#1122).
+echo fail >"$FAKE"
+work
+echo commit-2 >"$FAKE"
+work
+check "fails: a commit on b-2 resets" "$(counted)" 0
+grep -q "committed on b or a copy of it" "$LOG"; check "fails: b-2 logged as a commit" $? 0
+echo fail >"$FAKE"
+work
+echo push-name >"$FAKE"
+work
+check "fails: a push to b-otter-175 resets" "$(counted)" 0
+# A plan's parent left status/waiting is a success, like a handoff; one set
+# back to ready isn't a strike, and leaves the count as it was (#1122).
+echo fail >"$FAKE"
+work
+echo waiting >"$FAKE"
+work
+check "fails: waiting resets" "$(counted)" 0
+grep -q "session 1 left #175 waiting on its steps" "$LOG"; check "fails: waiting logged" $? 0
+echo 'open status/in-progress' >"$STATE"
+echo fail >"$FAKE"
+work
+echo ready >"$FAKE"
+work
+check "fails: ready is no strike" "$(counted)" 1
+grep -q "session 1 set #175 back to ready or proposed without a handoff; not counted" "$LOG"; check "fails: ready logged" $? 0
+echo 'open status/in-progress' >"$STATE"
+no_strikes
 : >"$LOG"
 echo fail >"$FAKE"
 work; work

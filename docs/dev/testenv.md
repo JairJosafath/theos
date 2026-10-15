@@ -297,15 +297,18 @@ A session that ends on a usage limit or a failed login pauses the relay until
 the limit resets (`.relay/paused-until`): every worker waits, and the watch
 starts nothing. A session whose transcript stops changing for `RELAY_IDLE`
 (45m) is ended and counts as failed. A session that ends without a handoff and
-without a new commit on the issue's branch is a failed one: a strike, a
-comment on the issue naming the session, its host and the last lines of its
-stderr and account. The count is read from the issue, so every device's
-strikes add up; one older than `RELAY_STRIKE_TTL` (24h) doesn't count. At
-`RELAY_MAX_FAILS` (3) the relay posts one comment linking them and sets the
-issue to `status/needs-maintainer`; when only that status swap fails, the next
-failed session retries it without a new comment (`.relay/escalated-<issue>`).
-A handoff, a commit or a finish on any device resets the count: the relay
-posts a reset comment when any strike counts.
+without a new commit on the issue's branch, or on `<branch>-2` or
+`<branch>-<name>` (local or pushed), is a failed one: a strike, a comment on
+the issue naming the session, its host and the last lines of its stderr and
+account. The count is read from the issue, so every device's strikes add up;
+one older than `RELAY_STRIKE_TTL` (24h) doesn't count. At `RELAY_MAX_FAILS`
+(3) the relay posts one comment linking them and sets the issue to
+`status/needs-maintainer`; when only that status swap fails, the next failed
+session retries it without a new comment (`.relay/escalated-<issue>`). A
+handoff, a commit or a finish on any device resets the count: the relay posts
+a reset comment when any strike counts. One that leaves the issue in
+`status/waiting` (a plan's parent) has finished, like a handoff; one that sets
+it back to `status/ready` or `status/proposed` isn't counted either way.
 
 ### Sharing the Kind clusters between checkouts
 
@@ -725,19 +728,26 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   memory. `hack/check-workflows.sh` (in `make check`) fails a job whose
   `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
   without the label.
-- **Superseded runs on main are dropped.** *Tests*, *Lint* and *UI* run on
-  every push to main and carry the `concurrency` group
-  `${{ github.workflow }}-${{ github.ref }}` without `cancel-in-progress`: a
-  running job always finishes, so main keeps getting a verdict while merges
-  come in, and only the newest pending run per workflow waits; GitHub cancels
-  the older pending ones. The "main is red" watch (`gh_red` in `hack/lib/github.sh`) skips cancelled runs,
+- **Lint and UI run on pull requests too; Tests tests every merge commit.**
+  *Lint* (with its `test-hack` job, `make test-hack`) and *UI* run on pushes
+  to main and on pull requests to main, with the same path filters, so vet,
+  lint and the shell tests answer before `hack/lib/github.sh land`. They carry
+  the `concurrency` group `${{ github.workflow }}-${{ github.ref }}` without
+  `cancel-in-progress`: a running job always finishes, and only the newest
+  pending run per branch or pull request waits; GitHub cancels the older
+  pending ones. *Tests* runs on pushes to main only (a run takes about twelve
+  minutes, and `land` runs `make check` on the merged tree), grouped by
+  `${{ github.workflow }}-${{ github.sha }}`, so no run is dropped and every
+  merge commit gets its own verdict. The "main is red" watch (`gh_red` in `hack/lib/github.sh`) skips cancelled runs,
   and failed runs a self-hosted runner lost (`gh_lost`): a runner stopped
   mid-job cancels its step ("The operation was canceled.", Ginkgo prints
   "Interrupted by User"), and a job no runner took is cancelled without steps.
   Neither says anything about the code. *Issue intake*
   and *Issue closed* have no group, since each issue event must run.
-  `hack/check-workflows.sh` fails a workflow on pushes to a branch without the
-  group, or with `cancel-in-progress`.
+  `hack/check-workflows.sh` fails a workflow on pushes to a branch without
+  one of the two groups, or with `cancel-in-progress`; Lint or UI off pull
+  requests to main or with other paths there; Lint without its `test-hack`
+  job; and Tests on pull requests or grouped by anything but the commit.
 - Jobs use the device's Docker through its socket, on the host's network, so
   `docker build` and Kind work and a Kind cluster a job makes answers on
   127.0.0.1. The socket is root on the device, which is acceptable for a
