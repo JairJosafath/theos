@@ -17,7 +17,7 @@ issue and pull request templates, and the `make check` contract CI runs.
   `golangci-lint fmt --diff`, `go vet`, `golangci-lint run`,
   `go test -race -count=1`. `.gitea/workflows/check.yaml` runs it on pull
   requests and on `main` on a runner labelled `go`, under the status context
-  `check / check`, which the protected `main` requires (`model.CheckContexts`).
+  `check / check`, which the protected `main` requires (Gitea Actions' check contexts, `model.CI` in `internal/model/ci.go`).
   A change to only `CHANGELOG.md`, `docs/` or images (`.png`, `.jpg`, `.gif`,
   `.svg`) skips the steps after the checkout and passes, so the context still
   reports; any other file, `README.md` included, or a first push runs them.

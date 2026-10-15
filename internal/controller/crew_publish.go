@@ -114,7 +114,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 
 	pubCtx, cancel := context.WithTimeout(ctx, publishTimeout)
 	defer cancel()
-	pass := &publishPass{r: r, crew: crew, log: log, provider: provider, repo: repo, spec: spec, token: token,
+	pass := &publishPass{r: r, crew: crew, container: container, log: log, provider: provider, repo: repo, spec: spec, token: token,
 		tag: release.Tag, facts: &facts, merged: mergedIssues(tasks)}
 	for {
 		step := model.NextPublishStep(facts)
@@ -163,15 +163,17 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 // release, the GitHub client and what it read of the source folder, which the
 // writes use.
 type publishPass struct {
-	r        *CrewReconciler
-	crew     *c4v1alpha1.Crew
-	log      logr.Logger
-	provider gitprovider.Provider
-	repo     gitprovider.Repository
-	spec     *c4v1alpha1.CrewPublishReleases
-	token    string
-	tag      string
-	facts    *model.PublishFacts
+	r    *CrewReconciler
+	crew *c4v1alpha1.Crew
+	// container is the Container whose release goes out.
+	container *c4v1alpha1.Container
+	log       logr.Logger
+	provider  gitprovider.Provider
+	repo      gitprovider.Repository
+	spec      *c4v1alpha1.CrewPublishReleases
+	token     string
+	tag       string
+	facts     *model.PublishFacts
 	// merged are the issues of the Container's Merged Tasks.
 	merged []int
 	target gitprovider.ReleaseTarget
@@ -206,7 +208,7 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 			p.facts.SourceFiles = last.(sourceRead).source
 			break
 		}
-		if p.facts.SourceFiles, err = readSource(ctx, p.provider, p.repo, p.tag); err != nil {
+		if p.facts.SourceFiles, err = readSource(ctx, p.r.Client, p.container, p.provider, p.repo, p.tag); err != nil {
 			p.log.Error(err, "Failed to read the release's source from Gitea")
 			return false
 		}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -23,10 +24,15 @@ func main() {
 	flag.StringVar(&in.DisplayName, "display-name", "Sample App", "Container display name")
 	flag.StringVar(&in.Type, "type", "cli", "Container type")
 	flag.StringVar(&in.Checks, "checks", "", "when CI runs the full check: EveryChange (the default) or BeforeRelease")
+	ci := flag.String("ci", model.CIGiteaActions, "the CI system the repository runs")
 	flag.Parse()
 	if *out == "" || flag.NArg() == 0 {
 		fmt.Fprintln(os.Stderr, "usage: render -out DIR Side=template ...")
 		os.Exit(2)
+	}
+	var err error
+	if in.CI, err = model.CIByName(*ci); err != nil {
+		fail(err)
 	}
 
 	layers := make([]scaffold.Layer, 0, flag.NArg())
