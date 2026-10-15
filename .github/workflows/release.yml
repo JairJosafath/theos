@@ -3,7 +3,9 @@ name: Release
 # A pushed vX.Y.Z tag publishes c4factory, so a device installs it without
 # building anything: the operator, UI, seed, toolchain, agent and runner images to
 # ghcr.io/<owner>/c4factory/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
-# to oci://ghcr.io/<owner>/c4factory/charts and to a GitHub release for the tag.
+# to oci://ghcr.io/<owner>/c4factory/charts and to a GitHub release for the tag,
+# with the c4session binaries the chart's --session-binary-url names, so a
+# scaffolded devcontainer downloads its Session client from the release (#1079).
 # One job builds the images in order with the local Docker daemon, so the agent
 # and runner images build on the toolchains just built. It runs no tests:
 # releases are cut from main. The release's notes are hack/release-notes.sh's
@@ -72,6 +74,20 @@ jobs:
           done
           docker images "$REGISTRY/*"
 
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # The names are the chart's sessionBinaryURL with ${arch} filled in.
+      - name: Build the Session client
+        run: |
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags=-s -o "c4session-linux-$arch" ./cmd/c4session
+          done
+          ls -l c4session-linux-*
+
       - name: Install Helm
         run: |
           make install-helm
@@ -84,6 +100,7 @@ jobs:
           helm template c4-factory "c4-factory-$VERSION.tgz" >rendered.yaml
           grep "image: \"$REGISTRY/operator:$VERSION\"" rendered.yaml
           grep "image: \"$REGISTRY/ui:$VERSION\"" rendered.yaml
+          grep -F -- "--session-binary-url=https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/c4session-linux-\${arch}" rendered.yaml
 
       - name: Push the images and the chart
         if: env.PUBLISH == 'true'
@@ -109,5 +126,5 @@ jobs:
           echo "The notes list what merged since ${prev:-the start of history}."
           REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" "$prev" >notes.md
           cat notes.md
-          gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" \
+          gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" c4session-linux-amd64 c4session-linux-arm64 \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
