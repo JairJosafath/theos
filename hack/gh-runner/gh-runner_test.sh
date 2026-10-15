@@ -76,8 +76,8 @@ case "$*" in
       [ -e "$r" ] || continue
       read -r n l <"$r"
       jq -n --arg n "$n" --arg l "$l" '{id: 7, name: $n, status: "online", busy: false,
-        labels: (["self-hosted", "Linux", "X64"] | map({id: 0, name: ., type: "read-only"}))
-          + ($l | split(",") | map({id: 0, name: ., type: "custom"}))}'
+        labels: ((["self-hosted", "Linux", "X64"] | map({id: 0, name: ., type: "read-only"}))
+          + ($l | split(",") | map({id: 0, name: ., type: "custom"})))}'
     done | jq -s '{runners: .}' | jq -r "$jq_expr" ;;
 esac
 FAKE
