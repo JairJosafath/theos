@@ -13,7 +13,7 @@ export function titleOf(obj: { metadata: { name: string }; spec?: { displayName?
 export const KIND_LABEL: Record<DiagramNode['role'], string> = {
   person: 'Person',
   system: 'Software system',
-  'external-system': 'Software system (outside this one)',
+  'external-system': 'Other software system',
   container: 'Container',
   datastore: 'Data store',
 }

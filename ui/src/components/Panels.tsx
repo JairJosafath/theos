@@ -390,7 +390,7 @@ export function Legend({ view }: { view: 'context' | 'containers' }) {
             <li>
               <span className="legend-box fill-external" aria-hidden="true" />
               <span>
-                <strong>Other system</strong> outside the one shown
+                <strong>Other system</strong> outside the one shown, or one the factory doesn't build
               </span>
             </li>
             <li>

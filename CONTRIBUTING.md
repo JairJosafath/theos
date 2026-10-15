@@ -33,6 +33,17 @@ Vulnerabilities go to [SECURITY.md](SECURITY.md), never to an issue.
 - [ROADMAP.md](ROADMAP.md) says how releases go out, which outcomes the
   milestones track, and what 1.0 means.
 
+## Tests and warnings
+
+- New behaviour comes with tests, and a fixed bug with the test that would
+  have caught it. Test each rule at the lowest tier that can see it
+  ([AGENTS.md](AGENTS.md), *Test the rules where they live*).
+- `make check` runs the tests, `go vet`, golangci-lint and the UI's checks. A
+  warning fails it, so fix the warning instead of silencing it; a
+  `//nolint` says why on the same line.
+- [docs/openssf.md](docs/openssf.md) checks the project against the
+  OpenSSF Best Practices passing criteria.
+
 ## License
 
 C4 Factory is proprietary; all rights are reserved ([LICENSE](LICENSE)). By

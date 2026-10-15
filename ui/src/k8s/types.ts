@@ -90,6 +90,8 @@ export interface Person extends K8sObject {
 
 export interface SoftwareSystem extends K8sObject {
   spec?: {
+    /** Internal (the default): the factory builds its Containers. External: the story only names it. */
+    location?: 'Internal' | 'External'
     displayName?: string
     description?: string
     needs?: string[]
