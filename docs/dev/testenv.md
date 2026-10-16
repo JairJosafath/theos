@@ -367,7 +367,9 @@ it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
 A session that ends on a usage limit or a failed login pauses the relay until
 the limit resets (`.relay/paused-until`): every worker waits, and the watch
-starts nothing. A session whose transcript stops changing for `RELAY_IDLE`
+starts nothing. Its claim's comment then names the limit and keeps its host,
+as every released or expired claim does: `released this issue: session ended
+without a handoff (a limit: OAuth session expired) · host ...`. A session whose transcript stops changing for `RELAY_IDLE`
 (45m) is ended and counts as failed. A session that ends without a handoff and
 without a new commit on the issue's branch, or on `<branch>-2` or
 `<branch>-<name>` (local or pushed), is a failed one: a strike, a comment on
