@@ -246,7 +246,7 @@ check`, and leaves main working. A template step bumps the four places
 | --- | --- | --- | --- |
 | 1. This plan and the design change | #1067 (`Refs`) | | landed in `docs/plans/` and `docs/design.md` |
 | 2. `Container.spec.operations` | #1107 | | the field (no tier), its CEL (patterns, ranges) and defaults; mutable, with the condition `OperationsApplied` saying `ChangedAfterScaffold` until step 12; `scaffold.Input.Operations`; `internal/model`'s defaults as a table-tested function; the UI's types and Container page; the planner guide's rule and `plan/model.yaml` check; samples; the `v1alpha1` guard sees only additions; envtest creates a Container with and without the block, and changes it |
-| 3. `aws-lambda-ts` v1.1.0 and `aws-standard` v1.5.0 | #1108 | #1107 | `infra/operations.ts` rendered from the block; the tier from the `tier` context, `development` when absent, synthesized for both tiers into `cdk.out/<tier>/` by `make check` and CI; backup plan and vault; alarms, topic, subscription, dashboard; outputs; termination protection; X-Ray by tier; Powertools; `docs/runbook.md`; the digest rewritten; the Standard's test enforces decision 5 for both tiers; `cfn-lint -I` on both; a scaffolded copy's `make check` passes, and fails when `operations.ts` and a stack disagree |
+| 3. `aws-lambda-ts` v1.1.0 and `aws-standard` v1.6.0 | #1108 | #1107 | `infra/operations.ts` rendered from the block; the tier from the `tier` context, `development` when absent, synthesized for both tiers into `cdk.out/<tier>/` by `make check` and CI; backup plan and vault; alarms, topic, subscription, dashboard; outputs; termination protection; X-Ray by tier; Powertools; `docs/runbook.md`; the digest rewritten; the Standard's test enforces decision 5 for both tiers; `cfn-lint -I` on both; a scaffolded copy's `make check` passes, and fails when `operations.ts` and a stack disagree |
 | 4. `aws-lambda-py` and `aws-lambda-go` follow | #1109 | #1108 | the same, Powertools for Python, `slog` for Go; `aws-standard` bump |
 | 5. `aws-fargate-ts` follows | #1110 | #1108 | the same, plus NAT per zone in production, the ECS deployment alarm, ADOT tracing by tier; `aws-standard` bump |
 | 6. `aws-ec2-ts` follows | #1111 | #1108 | the same, plus TLS on the ALB with `CertificateArn`, `cfn-signal` on the rolling update, the no-data-on-instances rule; `aws-standard` bump |
@@ -260,6 +260,54 @@ check`, and leaves main working. A template step bumps the four places
 Steps 3 to 6 each bump `aws-standard`; two in flight at once meet in a merge
 of the Standard's version, and the second to merge takes the next minor, as
 [plans/done/aws.md](done/aws.md) did.
+
+### Step 3, as built
+
+`aws-standard` v1.5.0 was taken by the CI-system change, so step 3 is
+`aws-lambda-ts` v1.1.0 with `aws-standard` v1.6.0. What it settled, which
+steps 4 to 6 copy (`docs/screenshots/1108-aws-lambda-ts-check.txt` has the
+evidence):
+
+- **The Standard owns the tiers.** `infra/standard.ts` exports `Tier`,
+  `TIERS`, `TIER_RULES` (keep data, point-in-time recovery, backups,
+  tracing, log retention), the `Operations` type and `tierOf(app)`;
+  `applyStandard(app, tier)` sets termination protection and acknowledges
+  `AwsSolutions-IAM5[Resource::*]` only on a policy whose `*` statements are
+  X-Ray's, and `AwsSolutions-DDB3` only where the tier has no point-in-time
+  recovery. `infra/main.ts` calls `defineStacks(app, tier)` through a type
+  with both parameters, so an older `stacks.ts` taking the app alone still
+  compiles: the other Frameworks pass `make check` on v1.6.0 unchanged.
+- **The Standard's test applies the block where there is one.** It imports
+  `infra/operations.ts` at run time when the file exists and skips the
+  per-tier `describe`s when it doesn't, so a repository scaffolded before
+  the block (any Framework at its version before its step) passes a
+  Standard update. Its checks are per resource type (every table, function,
+  HTTP API), so a Framework that adds `infra/operations.ts` gets them
+  without a Standard change; a load balancer's or service's alarms are
+  added to `ALARMED_METRICS` by the step that needs them.
+- **Names a deploy target reads:** the parameter `AlertEmail` (default
+  `alerts.email`; the email subscription has the condition `HasAlertEmail`,
+  so an empty one subscribes nobody) and the outputs `EntryPoint` and
+  `AlarmTopicArn`, the same in every Framework.
+- **The copy region is a second stack.** In production with
+  `copyToRegion`, `defineStacks` adds `<name>-backup-copy` in that region,
+  holding the vault (`<name>-copies`) and its key, and the main stack
+  depends on it; the plan's copy action names that vault's ARN. A stack
+  holding only a vault and its key is exempt from the topic, alarm and
+  output checks.
+- **Framework files to copy:** `infra/alarms.ts` (topic, key, parameter,
+  subscription, `MonitoringFacade`, dashboard, `AlarmTopicArn`) and
+  `infra/backups.ts` (`Backups`, `BackupCopyStack`); every table is built
+  with the tier's rules, the idempotency table included.
+- **The docs branch per Framework.** `docs/runbook.md` renders empty, and
+  so is left out, for a Framework without the block, and
+  `docs/well-architected.md` has an `aws-lambda-ts` branch beside the
+  serverless one `aws-lambda-py` and `aws-lambda-go` still use; step 4
+  moves them onto it.
+- **`ts`, a template function,** quotes a string as Prettier does, for
+  `infra/operations.ts`'s strings (an email may hold a `'`).
+- **No release job yet:** `make check` and CI synthesize both tiers, but
+  `aws-standard` has no release that attaches `cdk.out/`; that is #1071's.
 
 ## Design
 

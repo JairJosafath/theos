@@ -3,6 +3,10 @@
 //
 //	go run ./hack/render -out /tmp/app -type cli \
 //	  Framework=go-cli Standard=go-standard Deployment=gitea-release
+//
+// The Container's spec.operations is the factory's defaults unless the
+// -retention-days, -copy-to-region, -rpo, -rto or -alert-email flags set a
+// field, as an AWS Framework renders it into infra/operations.ts.
 package main
 
 import (
