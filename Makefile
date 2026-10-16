@@ -129,7 +129,8 @@ TEST_FLAGS = -timeout $(TEST_TIMEOUT) $(if $(COVER),-coverprofile cover.out) $(i
 # read, so every envtest run made the other suites' cached results stale. The
 # tests get a cache home outside the module, one per device, so envtest runs in
 # every checkout see each other's ports; GOCACHE stays where go env puts it.
-TEST_CACHE_HOME ?= $(or $(TMPDIR),/tmp)/c4factory-test-cache
+# Under $HOME, not $TMPDIR: the relay's TMPDIR lies inside a checkout (#1326).
+TEST_CACHE_HOME ?= $(HOME)/.cache/c4factory/test-cache
 
 .PHONY: test
 # make test tests only the packages the change since origin/main can affect,
