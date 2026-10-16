@@ -874,7 +874,7 @@ var _ = Describe("Task with a gated merge", func() {
 				"It also changes `tests/test_release.py`, which no Standard protects")
 		}
 		Eventually(notes).Should(Equal(1))
-		Consistently(notes, "500ms").Should(Equal(1))
+		Consistently(notes, "1s").Should(Equal(1))
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
 	})
 
