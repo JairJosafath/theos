@@ -441,10 +441,10 @@ const updatedChecksFeedback = "Your change was approved, but main moved since it
 	"merged into your branch the CI checks fail (%s). Pull your branch, run the check command, and fix the " +
 	"failure so both your change and what merged into main keep working."
 
-// cancelledChecksFeedback is the feedback of a round whose CI run a person
+// cancelledChecksFeedback ends the feedback of a round whose CI run a person
 // cancelled in the Git host (CancelledByPerson).
-const cancelledChecksFeedback = "Someone cancelled the CI checks (%s) before they ended. Run the check command, " +
-	"make sure it passes and ends in good time, fix what fails or hangs, and push."
+const cancelledChecksFeedback = "Someone cancelled the checks before they ended: make sure the check command " +
+	"passes and ends in good time, and fix what fails or hangs."
 
 // AgentRetryDelay is how long a Task waits for an unavailable agent that didn't
 // say when it is back.
@@ -732,9 +732,9 @@ func (j CIJob) Cancelled() bool { return j.Conclusion == checkCancelled }
 // Task's commit. Gitea keeps no record of who cancelled a run, and a runner
 // ends a job's log the same way whoever cancelled it ("Job cancelled"), so it
 // reads the jobs' runners instead: a runner told to stop (its pod replaced,
-// say) cancels its job and goes away, and the pod that replaces it registers as
-// a new runner, while a person's cancel leaves the runner online, taking the
-// next job. A job no runner started was cancelled by a person (or by Gitea,
+// say) cancels its job and goes away, and the factory's runner registers as a
+// new one each time it starts (hack/runner/entrypoint.sh), while a person's
+// cancel leaves the runner online, taking the next job. A job no runner started was cancelled by a person (or by Gitea,
 // past any of the Task's bounds). read false means the jobs couldn't be read:
 // the cancel counts as the runner's, MaxChecksReruns bounding what a person's
 // costs.
@@ -1016,20 +1016,17 @@ func nextTaskStep(f TaskFacts) TaskStep {
 					"whether its runner went away, which shows within %s", orUnknown(f.ChecksURL),
 					spellDuration(RunnerGoneAfter))}
 			}
-			// A person's cancel costs the round, whatever the log says: the runner
-			// stayed.
-			if f.CIRun.CancelledBy != CancelledByPerson &&
-				RunnerAbandoned(f.CIRun.CancelledBy == CancelledByRunner, f.ChecksNoLog, f.ChecksLog) {
+			if RunnerAbandoned(f.CIRun.CancelledBy == CancelledByRunner, f.ChecksNoLog, f.ChecksLog) {
 				return rerunStep(f, "was abandoned by its runner", ReasonRunnerLost,
 					"check why the runners stop mid-job (a runner pod that restarts ends its job)")
 			}
 			feedback := fmt.Sprintf("The CI checks failed (%s). Run the check command, find the failure and fix it.",
 				orUnknown(f.ChecksURL))
-			switch {
-			case f.CIRun.CancelledBy == CancelledByPerson:
-				feedback = fmt.Sprintf(cancelledChecksFeedback, orUnknown(f.ChecksURL))
-			case f.MergeWhenChecksPass:
+			if f.MergeWhenChecksPass {
 				feedback = fmt.Sprintf(updatedChecksFeedback, orUnknown(f.ChecksURL))
+			}
+			if f.CIRun.CancelledBy == CancelledByPerson {
+				feedback += " " + cancelledChecksFeedback
 			}
 			if excerpt := CheckFailures(f.ChecksLog); excerpt != "" {
 				feedback += " A test that passes for you but fails in CI is flaky: make it deterministic." +

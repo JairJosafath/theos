@@ -1205,13 +1205,21 @@ func TestPersonCancelledChecks(t *testing.T) {
 		CIRun:     CIRun{State: CIRunCompleted, CancelledBy: CancelledByPerson},
 		ChecksLog: at + "go test ./...\n" + at + "Job cancelled\n"}
 	got := NextTaskStep(f)
-	if got.Action != ActionRetry || !strings.Contains(got.Feedback, "Someone cancelled the CI checks (http://ci/1143)") {
+	if got.Action != ActionRetry || !strings.Contains(got.Feedback, "The CI checks failed (http://ci/1143)") ||
+		!strings.Contains(got.Feedback, "Someone cancelled the checks before they ended") {
 		t.Errorf("a person's cancel: NextTaskStep() = %+v, want ActionRetry, a fix round saying so", got)
 	}
-	noLog := f
-	noLog.ChecksLog, noLog.ChecksNoLog = "", true
-	if got := NextTaskStep(noLog); got.Action != ActionRetry {
-		t.Errorf("a person's cancel before the job's first line: NextTaskStep() = %+v, want ActionRetry", got)
+	merged := f
+	merged.MergeWhenChecksPass = true
+	if got := NextTaskStep(merged); got.Action != ActionRetry || !strings.Contains(got.Feedback, "main moved") ||
+		!strings.Contains(got.Feedback, "Someone cancelled the checks") {
+		t.Errorf("a person's cancel with main merged in: NextTaskStep() = %+v, want both said", got)
+	}
+	// Another run's runner died at the same commit: its cut-off log still says so.
+	lost := f
+	lost.ChecksLog = at + "go test ./...\n" + at + "=== RUN   TestA\n"
+	if got := NextTaskStep(lost); got.Action != ActionRerunChecks {
+		t.Errorf("a person's cancel next to a lost runner's job: NextTaskStep() = %+v, want ActionRerunChecks", got)
 	}
 	last := f
 	last.Round = 3

@@ -291,13 +291,14 @@ enforces.
   `RunnerLost`, costing no try. Gitea records no one who cancelled a run,
   and the runner's log ends the same way whoever did (`Job cancelled`), so
   the operator reads the cancelled jobs' runners: a runner that cancelled its
-  job went away, and its pod's successor registers as a new runner, while a
-  person's cancel in Gitea leaves the runner online. A cancelled job whose
-  runner is offline or gone is the runner's; one whose runner is still online
-  two minutes after it ended (a runner that went away shows offline by then)
-  is a person's, and costs the round like any failed check, its feedback
-  saying someone cancelled them. Until then the Task waits; a Gitea that
-  doesn't say counts the cancel as the runner's. When an
+  job stopped, and the factory's runner registers as a new one each time it
+  starts, while a person's cancel in Gitea leaves the runner online. A
+  cancelled job whose runner is offline or gone is the runner's; one whose
+  runner is still online two minutes after it ended (a runner that stopped
+  shows offline by then), or that no runner started, is a person's, and
+  costs the round like any failed check, its feedback saying someone
+  cancelled them. Until then the Task waits; jobs or a runner Gitea doesn't
+  say of count the cancel as the runner's. When an
   implementer pushes again the commit whose checks failed, having found
   nothing to fix, its failed jobs run again before the Task reads the checks;
   a failure from before a rerun is never read as its result

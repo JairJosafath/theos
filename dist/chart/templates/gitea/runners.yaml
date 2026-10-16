@@ -97,9 +97,6 @@ spec:
               mountPath: /cache/go
         {{- end }}
       volumes:
-        # The registration: a replaced pod registers as a new runner, so the
-        # operator tells a job this runner cancelled on its way down from one a
-        # person cancelled, whose runner stays online (model.Canceller).
         - name: data
           emptyDir: {}
         # Checkouts and test output in memory, to spare the disk.

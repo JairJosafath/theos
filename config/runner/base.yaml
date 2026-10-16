@@ -45,9 +45,6 @@ spec:
             - name: tmp
               mountPath: /tmp
       volumes:
-        # The registration: a replaced pod registers as a new runner, so the
-        # operator tells a job this runner cancelled on its way down from one a
-        # person cancelled, whose runner stays online (model.Canceller).
         - name: data
           emptyDir: {}
         - name: work

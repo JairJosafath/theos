@@ -311,8 +311,7 @@ const runnerPages = 10
 // an admin's, or a failed call.
 func (g *gitea) RunnersOnline(ctx context.Context) (online int, known bool) {
 	for page := 1; page <= runnerPages; page++ {
-		query := url.Values{"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
-		status, data, err := g.do(ctx, http.MethodGet, "/api/v1/admin/actions/runners?"+query.Encode(), nil)
+		status, data, err := g.do(ctx, http.MethodGet, "/api/v1/admin/actions/runners?"+pageQuery(page).Encode(), nil)
 		if err != nil || status != http.StatusOK {
 			return 0, false
 		}
@@ -326,8 +325,7 @@ func (g *gitea) RunnersOnline(ctx context.Context) (online int, known bool) {
 			return 0, false
 		}
 		for _, r := range runners.Runners {
-			switch {
-			case r.Busy, r.Status == "online", r.Status == "idle", r.Status == "active":
+			if runnerOnline(r.Status, r.Busy) {
 				online++
 			}
 		}
@@ -361,7 +359,22 @@ func (g *gitea) RunnerOnline(ctx context.Context, id int64) (online, known bool)
 	if json.Unmarshal(data, &runner) != nil {
 		return false, false
 	}
-	return runner.Busy || runner.Status == "online" || runner.Status == "idle" || runner.Status == "active", true
+	return runnerOnline(runner.Status, runner.Busy), true
+}
+
+// runnerOnline reports whether a runner Gitea lists with status and busy is
+// online: idle or busy.
+func runnerOnline(status string, busy bool) bool {
+	switch {
+	case busy, status == "online", status == "idle", status == "active":
+		return true
+	}
+	return false
+}
+
+// pageQuery asks for page of a list Gitea pages.
+func pageQuery(page int) url.Values {
+	return url.Values{"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
 }
 
 // WorkflowJob is a job of a CI workflow run.
@@ -384,9 +397,8 @@ const jobPages = 3
 func (g *gitea) RunJobs(ctx context.Context, repo Repository, id int64) ([]WorkflowJob, error) {
 	var out []WorkflowJob
 	for page := 1; page <= jobPages; page++ {
-		query := url.Values{"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
 		path := "/api/v1/repos/" + repoPath(repo) + "/actions/runs/" + strconv.FormatInt(id, 10) + "/jobs?" +
-			query.Encode()
+			pageQuery(page).Encode()
 		status, data, err := g.do(ctx, http.MethodGet, path, nil)
 		if err != nil {
 			return nil, err

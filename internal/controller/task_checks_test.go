@@ -248,7 +248,7 @@ var _ = Describe("A Task's checks", func() {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
-			g.Expect(task.Status.Feedback).To(ContainSubstring("Someone cancelled the CI checks"))
+			g.Expect(task.Status.Feedback).To(ContainSubstring("Someone cancelled the checks before they ended"))
 			sandboxExists(g, ns, "add-crop-r2-implement")
 		}).Should(Succeed())
 		Expect(gitFake.reruns(ns, "orders-api", 962)).To(BeZero(), "a person's cancel is not run again")
