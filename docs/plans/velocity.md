@@ -60,7 +60,10 @@ changes how they work.
    stays first: a red main or a dead relay blocks the velocity work too. The
    label was created on GitHub and put on the 21 open issues it fits before
    the pick order changed, so the order applies the moment #1280 lands.
-   Triage gives it to a proposed issue of that kind.
+   Triage gives it to a proposed issue of that kind. Since #1329 the
+   priority labels are a scale, `priority/1` to `priority/10`, 1 first and
+   none counting as 5: velocity is `priority/3` and urgent is `priority/1`
+   ([docs/dev/testenv.md](../dev/testenv.md)).
 2. **`land` is optimistic.** The check runs on the merged tree before the
    turn is queued for; the turn is taken to confirm `origin/main` is still
    the SHA that was merged, and the merge follows at once. Only when main

@@ -326,10 +326,12 @@ touch .relay/stop                  # stop the watch, and every worker after its 
 ```
 
 The relay picks the issue its worker's last session reserved (`create --next`,
-below), else `priority/urgent` issues, then `priority/velocity` ones (what
-makes development itself faster, [docs/plans/velocity.md](../plans/velocity.md)),
-then the rest; within each, the oldest `status/in-progress` issue nobody
-holds, else the oldest `status/ready` one, skipping issues with a live claim
+below), else by `priority/N`, 1 first: an issue with no priority label counts
+as 5, and of several labels the lowest counts. 1 is something broken now (a
+red main, a dead relay, a failed release check), 3 what makes development
+itself faster ([docs/plans/velocity.md](../plans/velocity.md)), 10 last.
+Within a number, the oldest `status/in-progress` issue nobody holds goes
+first, else the oldest `status/ready` one, skipping issues with a live claim
 or an open `Depends on #M`, and claims it (see
 [docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
 k runs its sessions in the git worktree `.claude/worktrees/relay-k`, switched
@@ -344,7 +346,7 @@ A follow-up a session decided goes to the front of its own worker's queue:
 `hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>` files it
 `status/ready` and reserves it, with a claim comment that says "reserved this
 issue" and a line in the worktree's `.relay/next`. That worker's next `pick`
-returns it before every other issue, urgent ones too, and its `take` turns
+returns it before every other issue, `priority/1` ones too, and its `take` turns
 the reservation into the claim; every other `pick` skips it and every other
 `take` refuses it, until the reservation is `C4_LEASE_TTL` (2h) old, after
 which anyone picks it. The log shows such a session as `(next)`. The watch's
@@ -492,7 +494,7 @@ session does (the watch only reads that file), so the watch starts no second
 triage for the same issues, only for one filed after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
 a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
-ready and urgent, so the next session fixes main before anything else; a single
+ready and `priority/1`, so the next session fixes main before anything else; a single
 failure files nothing. When GitHub started none of the newest failed run's
 jobs (no steps, an annotation saying the job was not started: failed
 payments, a spending limit), no code is at fault: the watch files one
@@ -503,8 +505,8 @@ other while the outage lasts, even after the issue is closed as a duplicate.
 A flaky spec rarely fails twice in a row, so in the same round the watch
 records each Ginkgo spec that failed on main (the `[FAIL]` lines of each failed
 run's log, `hack/lib/github.sh flakes`) in `.relay/flakes.tsv`, spec, run and
-time, and files `Flaky: <spec>`, a ready `kind/bug` with `priority/velocity`,
-not urgent, when one failed in two runs within `WATCH_FLAKE_DAYS` days (7);
+time, and files `Flaky: <spec>`, a ready `kind/bug` with `priority/3`,
+when one failed in two runs within `WATCH_FLAKE_DAYS` days (7);
 while it is open, a third failure files nothing.
 `hack/lib/github.sh flakes --count` lists the specs that failed on main this
 week, from GitHub, on any device.
@@ -636,7 +638,7 @@ upgrade path its minor checked. A human checks any other release by hand:
 Actions → Verify Release → Run workflow, or `gh workflow run
 verify-release.yml -f tag=vX.Y.Z`. Agents never dispatch it. A failed run on
 main files (or comments on) `Release vX.Y.Z fails its check`, ready and
-urgent, as the watch does for a red main.
+`priority/1`, as the watch does for a red main.
 
 The install check installs the published chart and images on a fresh cluster,
 waits for the seed's repositories, both runners, the manager and the UI, and
@@ -678,7 +680,7 @@ the newest samples that made their own catalog and Agents, from history.
 
 Their results are the run's job summaries and the artifacts
 `release-vX.Y.Z-install` and `release-vX.Y.Z-upgrade` (Actions → Verify
-Release). When a dispatch on main fails it files `Release vX.Y.Z fails its check` (`status/ready`, `priority/urgent`), or
+Release). When a dispatch on main fails it files `Release vX.Y.Z fails its check` (`status/ready`, `priority/1`), or
 comments on the open one, so the relay picks it up; the issue says which check
 failed and if the runner ran short of memory or disk. A dispatch on another
 branch only reports in its run. Any published release can be checked; add
@@ -843,6 +845,7 @@ make gh-runner-status                       # whether Docker answers, their cont
 gh variable delete RUNS_ON                  # back to ubuntu-latest
 make gh-runner-down                         # stop them all and remove them from GitHub
 docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
+hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that are gone, every 2 minutes
 ```
 
 - Runner *i* is the container `c4factory-gh-runner-i`, registered as
@@ -855,7 +858,8 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   and GitHub has no runner to fall back on.
 - The runners run on the device's Docker. On WSL that is Docker Desktop, with
   WSL integration on for the distro. The containers (`--restart
-  unless-stopped`) stop when it stops and start again with it. The relay watch
+  unless-stopped`) stop when it stops and start again with it, unless it
+  comes back without them (the keeper, below). The relay watch
   notes runs queued on main for over 30 minutes in the Maintainer report
   (above). `make gh-runner-status` then says which part is down. Docker not
   answering from this distro means starting Docker Desktop. A container down
@@ -863,6 +867,33 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   its container is up has its reason in `docker logs --tail 50
   c4factory-gh-runner-i`. It exits 1 unless every runner is online. Setting
   `RUNS_ON` back is the owner's call.
+- **The keeper.** Docker Desktop on WSL loses its data disk now and then
+  (2026-10-08, 10-09, 10-12, 10-15): it comes back without the containers,
+  volumes and image, so `--restart unless-stopped` has nothing to restart,
+  and jobs waited hours. `hack/gh-runner/gh-runner.sh install`, run once per
+  device from the main checkout, installs a systemd user timer
+  (`c4factory-gh-runner-keep.timer`; without systemd, a crontab line) that
+  runs `gh-runner.sh keep` every 2 minutes. `make gh-runner RUNNERS=N` records
+  N, with the names, work directories and repository it used, in
+  `~/.local/state/c4factory/gh-runner/runners`; `keep` starts the recorded
+  runners whose container is gone or not up (building the image and
+  registering them again when those went too), and nothing else:
+  - it never recreates a container that is up, which would kill its job,
+    even when the checkout's image is newer;
+  - it never changes the count, and `make gh-runner-down` removes the
+    record, so the runners stay down until the next `make gh-runner`;
+  - with Docker not reachable it starts nothing and logs that once: only the
+    owner restarts Docker Desktop (after a data-disk failure, `wsl
+    --shutdown`), and the relay watch's *Runners offline* note is the alarm;
+  - it skips its turn while `make gh-runner` or `make gh-runner-down` runs.
+
+  Its log is `~/.local/state/c4factory/gh-runner/keep.log`, under `$HOME`
+  since `./dev` points the XDG folders into `.dev/`. It runs without `./dev
+  run`, with the installer's `PATH` and the device's `gh` login. The systemd
+  user manager needs the `docker` group, and `install` warns when it lacks it
+  (as `hack/relay-watch.sh --install` does). A container stopped by hand with
+  `docker stop` starts again; `make gh-runner-down` is the way to keep them
+  down. `gh-runner.sh uninstall` removes the keeper.
 - `make gh-runner RUNNERS=N` again with a smaller N removes the runners above
   N, from Docker and from GitHub; `RUNNERS` defaults to 1. A device that ran
   the single runner from before (container `c4factory-gh-runner`, named
