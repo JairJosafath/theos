@@ -7,7 +7,8 @@
 # proposed issues and the maintainer's prompt, as dry runs; the triage's own
 # worktree and lock, which it starts in however many workers run; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
-# session the relay ends when its transcript stops growing; and idle workers,
+# session the relay ends when its transcript stops growing, and each session's
+# TMPDIR, in its worktree, emptied before and removed after it; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
 # first in admit; the maintainer lease, which keeps a second device's
 # maintainer from starting while one runs; a maintainer sweep, which
@@ -280,6 +281,9 @@ case $(cat "$FAKE") in
   login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
   env) env >"$FAKE.env"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"env","num_turns":1}' ;;
+  tmp) echo "$TMPDIR" >"$FAKE.tmpdir"; if [ -e "$TMPDIR/left" ]; then echo kept; else echo gone; fi >"$FAKE.left"
+    d=$(mktemp -d); echo "$d" >"$FAKE.scratch"; mkdir "$d/ro" && touch "$d/ro/f" && chmod a-w "$d/ro"
+    echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"tmp","num_turns":1}' ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
   handoff) echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"handed off","num_turns":9}' ;;
   lease) sleep 3; cp "$LEASES" "$LEASES.during"; echo '{"is_error":false,"result":"swept","num_turns":9}' ;;
@@ -394,6 +398,18 @@ check "env: no Claude Code or VS Code session variables" \
 check "env: no human cluster opt-in (#1128)" "$(grep -c '^C4_HUMAN_CLUSTER=' "$FAKE.env")" 0
 check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|C4_HEADLESS=1)$" "$FAKE.env")" 3
 check "env: names the worker, for create --next (#1284)" "$(grep -c "^C4_RELAY_WORKER=$K$" "$FAKE.env")" 1
+no_strikes
+
+# Each session's TMPDIR is its worktree's .dev/tmp, not the device's shared
+# /tmp tmpfs: emptied before it starts and removed after it ends (#1269).
+echo tmp >"$FAKE"
+mkdir -p "$WT/.dev/tmp" && echo old >"$WT/.dev/tmp/left"
+work
+check "tmp #1269: TMPDIR is the worktree's .dev/tmp" "$(cat "$FAKE.tmpdir")" "$WT/.dev/tmp"
+check "tmp #1269: a dead session's scratch is gone before the next starts" "$(cat "$FAKE.left")" gone
+check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$WT/.dev/tmp/"?*) echo in ;; esac)" in
+check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$WT/.dev/tmp" && echo left)" ""
+check "tmp #1269: nothing logged" "$(grep -c 'could not remove' "$LOG")" 0
 no_strikes
 
 # Failed sessions are strikes, comments on the issue: a handoff or a commit

@@ -153,8 +153,9 @@
 #   hack/lib/github.sh report-note KEY [HEALTH [NEEDS]]
 #                                        put the line HEALTH under the Maintainer report's Health and NEEDS
 #                                        (default HEALTH) as a task under its Needs you, each marked
-#                                        <!-- watch:KEY --> and replacing the lines KEY marked before; with no
-#                                        text, remove them. The relay watch's notes; the maintainer keeps them
+#                                        <!-- watch:KEY --> and replacing the lines KEY marked before; an
+#                                        empty NEEDS ("") puts HEALTH under Health only; with no text, remove
+#                                        them. The relay watch's notes; the maintainer keeps them
 #   hack/lib/github.sh intake N          label issue N by where it came from: a "### Reported by" name in its
 #                                        body gives user/<name> + source/user, else source/dev; adds
 #                                        status/proposed when it has no status. Only for issues from the
@@ -1906,12 +1907,15 @@ gh_report() {
 
 # gh_note_body KEY [HEALTH [NEEDS]]: the report body on stdin with the lines
 # marked <!-- watch:KEY --> replaced by HEALTH, first under "## Health", and
-# "- [ ] NEEDS", first under "## Needs you" (see the usage above). A heading
-# the body lacks is added at its end. Needs you's "Nothing." line goes while
-# a note is there, and comes back when removing the note empties it.
+# "- [ ] NEEDS", first under "## Needs you" (see the usage above). NEEDS
+# unset is HEALTH; an empty one leaves Needs you alone (#1269), and with no
+# HEALTH there is no NEEDS either. A heading the body lacks is added at its
+# end. Needs you's "Nothing." line goes while a NEEDS line is there, and comes
+# back when a note without one leaves Needs you empty.
 GH_NOTHING='Nothing. The project runs without you.'
 gh_note_body() {
-  local key="<!-- watch:${1:?usage: report-note KEY [HEALTH [NEEDS]]} -->" health=${2:-} needs=${3:-${2:-}}
+  local key="<!-- watch:${1:?usage: report-note KEY [HEALTH [NEEDS]]} -->" health=${2:-} needs=${3-${2:-}}
+  [ -n "$health" ] || needs=
   H=$health N=$needs awk -v key="$key" -v nothing="$GH_NOTHING" '
     { l[++n] = $0 }
     # empty(J): whether the section after line J has no line but blank ones.
@@ -1931,14 +1935,14 @@ gh_note_body() {
       for (i = 1; i <= n; i++) {
         if (index(l[i], key)) continue
         if (l[i] ~ /^## /) sec = l[i]
-        if (h != "" && sec == "## Needs you" && index(l[i], nothing) == 1) continue
+        if (nd != "" && sec == "## Needs you" && index(l[i], nothing) == 1) continue
         o[++m] = l[i]
       }
       while (m > 0 && o[m] ~ /^[ \t]*$/) m--
       for (j = 1; j <= m; j++) {
-        if (h != "" && o[j] == "## Needs you" && !needs_done) { j = put(j, "- [ ] " nd " " key); needs_done = 1; continue }
+        if (nd != "" && o[j] == "## Needs you" && !needs_done) { j = put(j, "- [ ] " nd " " key); needs_done = 1; continue }
         if (h != "" && o[j] == "## Health" && !health_done) { j = put(j, h " " key); health_done = 1; continue }
-        if (h == "" && o[j] == "## Needs you" && empty(j)) {
+        if (nd == "" && o[j] == "## Needs you" && empty(j)) {
           print o[j]; print ""; print nothing
           for (j++; j <= m && o[j] !~ /^## /; j++) ;
           if (j <= m) { print ""; j-- }
@@ -1946,7 +1950,7 @@ gh_note_body() {
         }
         print o[j]
       }
-      if (h != "" && !needs_done) { if (m) print ""; print "## Needs you"; print ""; print "- [ ] " nd " " key; m++ }
+      if (nd != "" && !needs_done) { if (m) print ""; print "## Needs you"; print ""; print "- [ ] " nd " " key; m++ }
       if (h != "" && !health_done) { if (m) print ""; print "## Health"; print ""; print h " " key }
     }'
 }

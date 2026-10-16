@@ -63,11 +63,20 @@ Lost claim (the heartbeat hook says so):
 `git push origin HEAD:refs/heads/<branch>-otter-23`, then
 `hack/lib/github.sh comment N -` naming that branch, and stop.
 
+## Scratch
+
+Scratch goes under `$TMPDIR`: make it with `mktemp -d` (or `mktemp` for a
+file), never a literal `/tmp/...` path, and remove it before you land.
+`/tmp` is a small tmpfs every session on the device shares, and one
+session's copies and caches filled it and failed every `make check` (#1269).
+The relay points `$TMPDIR` at your worktree's `.dev/tmp` and removes it after
+the session.
+
 ## Write a handoff
 
 1. Commit and push first, so the SHAs you name exist on the remote.
-2. Write it to a scratch file, first line `<!-- relay-handoff -->`, under 150
-   lines, secrets redacted. Short sections:
+2. Write it to a scratch file (`mktemp`), first line `<!-- relay-handoff -->`,
+   under 150 lines, secrets redacted. Short sections:
    - **Agent:** your name.
    - **Goal:** the outcome in two sentences, and who asked for it.
    - **Where it stands:** done (commit SHAs), in progress, not started; the

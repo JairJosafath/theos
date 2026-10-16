@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for status and closed swapping the labels in one PUT so a second writer between the read and the write leaves one status label (none after closed), never two, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -662,6 +662,30 @@ Relay: 9 workers · main: green
   check "report-note: the same note edits nothing" "$(calls | grep -c PATCH)" 0
   gh_report_note runners
   check "report-note: removed, the report is as it was" "$(diff "$T/sweep" "$T/body7")" ""
+  # An empty NEEDS puts the line under Health only: Needs you and its
+  # Nothing. line stay as they were (#1269).
+  gh_report_note tmp-h '/tmp on h is 93% full' ''
+  check "report-note #1269: a Health-only note leaves Needs you alone" "$(cat "$T/body7")" "<!-- relay-maintainer -->
+Updated 03:10
+
+## Needs you
+
+$GH_NOTHING
+
+## Health
+/tmp on h is 93% full <!-- watch:tmp-h -->
+Relay: 9 workers · main: green
+
+## Since 01:10
+- Decided: #1"
+  gh_report_note tmp-h
+  check "report-note #1269: a Health-only note removed, the report is as it was" "$(diff "$T/sweep" "$T/body7")" ""
+  gh_report_note runners A
+  gh_report_note runners A ''
+  check "report-note #1269: a note gone Health-only brings Nothing. back" \
+    "$(grep -c "^$GH_NOTHING$" "$T/body7") $(grep -c 'watch:runners' "$T/body7")" "1 1"
+  gh_report_note runners
+  check "report-note #1269: and removed, the report is as it was" "$(diff "$T/sweep" "$T/body7")" ""
   rm -f "$T/report"
   check "report-note: no report fails" "$(gh_report_note runners x 2>&1; echo $?)" "github: no Maintainer report issue to note in
 1"
@@ -675,6 +699,12 @@ Relay: 9 workers · main: green
 ## Health
 
 A <!-- watch:runners -->"
+  printf 'Just text\n' | gh_note_body tmp-h A '' >"$T/out"
+  check "report-note #1269: a Health-only note adds no Needs you" "$(cat "$T/out")" "Just text
+
+## Health
+
+A <!-- watch:tmp-h -->"
   exit $fail
 ) || fail=1
 
@@ -703,7 +733,9 @@ A <!-- watch:runners -->"
   }
   queued() { rm -f "$T/asked"; gh_queued "$@"; echo "exit $?"; }
   asked() { cat "$T/asked" 2>/dev/null | tr '\n' ' '; }
-  RUNS=$(jq -nc --arg g "$(ago '9 days')" --arg a "$(ago '2 hours')" --arg b "$(ago '40 minutes')" --arg c "$(ago '5 minutes')" \
+  # One clock reading per age: a second ago() later wants a different second than the runs carry.
+  t9d=$(ago '9 days') t40m=$(ago '40 minutes')
+  RUNS=$(jq -nc --arg g "$t9d" --arg a "$(ago '2 hours')" --arg b "$t40m" --arg c "$(ago '5 minutes')" \
     '[{databaseId: 4, status: "queued", createdAt: $b}, {databaseId: 1, status: "queued", createdAt: $g},
       {databaseId: 5, status: "queued", createdAt: $c}, {databaseId: 2, status: "queued", createdAt: $a},
       {databaseId: 9, status: "in_progress", createdAt: $g}]')
@@ -711,14 +743,14 @@ A <!-- watch:runners -->"
   JOBS[4]='{"jobs":[{"status":"completed"},{"status":"queued"}]}'
   PAGES=('{"runners":[{"status":"offline"},{"status":"offline"}]}' '{"runners":[{"status":"offline"}]}')
   check "queued: no jobs named, not counted; every runner offline" "$(queued)|$(asked)" \
-    "$(printf 'no-jobs\t1\t%s\nwaiting\t%s\t2\t0\nexit 0' "$(ago '9 days')" "$(ago '40 minutes')")|1 2 4 runners "
+    "$(printf 'no-jobs\t1\t%s\nwaiting\t%s\t2\t0\nexit 0' "$t9d" "$t40m")|1 2 4 runners "
   PAGES=('{"runners":[{"status":"offline"},{"status":"online"}]}' '{"runners":[{"status":"online"}]}')
-  check "queued: says how many runners are online" "$(queued | sed -n 2p)" "$(printf 'waiting\t%s\t2\t2' "$(ago '40 minutes')")"
+  check "queued: says how many runners are online" "$(queued | sed -n 2p)" "$(printf 'waiting\t%s\t2\t2' "$t40m")"
   PAGES=('{"runners":[{"status":"online"}]}')
   check "queued: one online" "$(queued | sed -n 2p | cut -f4)" 1
   JOBS[4]='{"jobs":[]}'
   check "queued: only runs without a job queued: exit 1, runners not asked" "$(queued)|$(asked)" \
-    "$(printf 'no-jobs\t1\t%s\nno-jobs\t4\t%s\nexit 1' "$(ago '9 days')" "$(ago '40 minutes')")|1 2 4 "
+    "$(printf 'no-jobs\t1\t%s\nno-jobs\t4\t%s\nexit 1' "$t9d" "$t40m")|1 2 4 "
   check "queued: none that old: nothing asked" "$(queued --minutes 20000)|$(asked)" "exit 1|"
   check "queued: GitHub can't list the runners: exit 2" "$(JOBS[4]='{"jobs":[{"status":"queued"}]}'; gh_api() { return 1; }; queued | tail -1)" "exit 2"
   exit $fail

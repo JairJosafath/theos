@@ -61,15 +61,29 @@ byte for byte.
   which renders empty, and so is left out, for every other Framework, and
   branches in `AGENTS.md`, the role guides, `docs/style/aws.md` and
   `SOURCES.md` (the operations sources, read 2026-10-16); and the Go
-  digest's cold-start line is wrapped so Prettier keeps it. A Framework
-  added later gets its branches in the version that adds it.
+  digest's cold-start line is wrapped so Prettier keeps it. Since v1.7.0
+  `aws-fargate-ts` (from its v1.1.0) has the same: a tiered
+  `docs/well-architected.md` (NAT gateways per tier, the collector, the
+  deployment alarms), its own branch of `docs/runbook.md` (the table, a
+  rolling deployment rolled back by the circuit breaker and the deployment
+  alarms, each alarm, traces, the network, what production costs over
+  development), and the branches in `AGENTS.md`, the role guides,
+  `docs/style/aws.md` and `SOURCES.md`; the templates name the Frameworks
+  with operations once, as `$tiered`. The Standard's test checks a load
+  balancer's, target group's and ECS service's alarms, the collector in
+  every task by tier, no X-Ray writes where the tier doesn't trace, a
+  backup selection by the tag as `ListOfTags` or as a condition on `*`,
+  and no load balancer's access-log bucket left in a selection; and both
+  runbook branches say that AWS Backup's advanced DynamoDB features, which
+  a cross-region copy needs, are a setting of the account in each region.
+  A Framework added later gets its branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
-  `aws-lambda-ts` also `docs/runbook.md`; for
+  `aws-lambda-ts` and `aws-fargate-ts` also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -85,7 +99,8 @@ byte for byte.
 - **CDK:** `infra/standard.ts` names the tiers (`Tier`, `TIERS`:
   `production` and `development`), what each means for every stack
   (`TIER_RULES`: keeping and protecting data, point-in-time recovery, AWS
-  Backup, X-Ray, log retention one year or one month), the `Operations` type
+  Backup, X-Ray (active on a function, a collector beside the app in a
+  task), log retention one year or one month), the `Operations` type
   a Framework's `infra/operations.ts` has, `tierOf(app)`, the app's
   `tier` context value, `development` when it has none, refusing any other,
   and `stackNameFor(name, tier)`, which adds `-development` to a
@@ -124,14 +139,26 @@ byte for byte.
   when `rpo` is under a day), the backup plan and vault (in production with `retentionDays`
   over 0: one plan whose rules are daily, keep `retentionDays` and copy to
   `copyToRegion`'s vault when set, one vault with its own key, one selection
-  by the `c4factory:container` tag, and a copy stack in that region; else
-  none), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
+  of exactly what carries the `c4factory:container` tag, as `ListOfTags` or
+  as one `aws:ResourceTag` condition on `*`, and a copy stack in that
+  region; else none; and no load balancer's access-log bucket in any
+  selection's reach unless its `NotResources` names it), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
   the topic, alarms on every function's `Errors`, `Throttles` and
   `Duration`, every table's `ReadThrottleEvents`, `WriteThrottleEvents` and
-  `SystemErrors`, every HTTP API's `5xx`), the subscription (the
+  `SystemErrors`, every HTTP API's `5xx`, every load balancer's
+  `HTTPCode_ELB_5XX_Count`, `HTTPCode_Target_5XX_Count` and
+  `TargetResponseTime`, every target group's `UnHealthyHostCount`, every
+  ECS service's `CPUUtilization`, `MemoryUtilization` and
+  `RunningTaskCount`; an alarm watches a resource when its definition
+  refers to it by `Ref` or by `Fn::GetAtt`, as a load balancer's and target
+  group's full names and a service's name are), the subscription (the
   `AlertEmail` parameter defaulting to `alerts.email`, one email
   subscription to it under a condition that it is not empty), tracing
-  (`Active` by tier), log retention (the tier's) and the two outputs
+  (`Active` by tier on a function; on a task definition, one container on
+  the `aws-otel-collector` image and one sending to it through
+  `OTEL_EXPORTER_OTLP_ENDPOINT` where the tier traces, neither elsewhere; no
+  statement allowing X-Ray's writes where it doesn't), log retention (the
+  tier's) and the two outputs
   (`AlarmTopicArn`, the topic, and `EntryPoint`). A stack holding only a
   backup vault and its key, the copy's, serves nothing and has no topic,
   alarms or outputs. A repository with no `infra/operations.ts`, scaffolded
@@ -188,7 +215,7 @@ byte for byte.
   exporting `defineStacks(app: App, tier: Tier): Stack[]` (one written
   before tiers takes the app alone), which adds every stack for the tier to
   `app` without an `env` from the environment or a context lookup; and,
-  from `aws-lambda-ts` v1.1.0 on, `infra/operations.ts`, rendered from
+  from `aws-lambda-ts` v1.1.0 and `aws-fargate-ts` v1.1.0 on, `infra/operations.ts`, rendered from
   `.Operations`, exporting `OPERATIONS` of the `Operations` type, which its
   stacks read;
   `cdk.json`, whose `app` is `node_modules/.bin/tsx infra/main.ts` and whose
@@ -229,16 +256,19 @@ byte for byte.
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet. For `aws-lambda-ts`
-  it also says what each tier does per pillar and what `infra/operations.ts`
+  and `aws-fargate-ts` it also says what each tier does per pillar and what `infra/operations.ts`
   changes, its Reliability section names the RPO and RTO, the backup plan,
   the copy and the restore procedure, its Cost section says in words what
   production costs over development, and what stays by hand (a restore
   drill, a game day, right-sizing from measured load) is listed with why.
-- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, renders the
+- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts` and `aws-fargate-ts`
+  (a branch each), renders the
   Container's operations block and says how to restore the items to a point
   in time, from the vault and from the copy, how to bring back a deleted
-  table, how to roll a deployment back, what each alarm means and what to do
-  first, which account-level services the account's owner provides
+  table, how to roll a deployment back (for `aws-fargate-ts`, what the
+  circuit breaker and the deployment alarms do), what each alarm means and
+  what to do first, for `aws-fargate-ts` where the traces are, what the NAT
+  gateways do per tier and what production costs over development, which account-level services the account's owner provides
   (GuardDuty, Security Hub, CloudTrail, AWS Config, Budgets, the cost
   allocation tags' activation), and how to drill a restore.
 - **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`, `.golangci.yml`,
