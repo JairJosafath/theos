@@ -483,7 +483,8 @@ case $(cat "$FAKE") in
   oauth-noturn) echo '{"is_error":false,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","num_turns":0}'; exit 1 ;;
   login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
-  env) env >"$FAKE.env"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"env","num_turns":1}' ;;
+  stray) echo x >"$MAIN/stray"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"strayed","num_turns":1}' ;;
+  env) env >"$FAKE.env"; (cd - >/dev/null && pwd) >"$FAKE.cd"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"env","num_turns":1}' ;;
   tmp) echo "$TMPDIR" >"$FAKE.tmpdir"; (cd "$TMPDIR" && GIT_CEILING_DIRECTORIES=${FAKE%/*} git rev-parse --show-toplevel) >"$FAKE.repo" 2>/dev/null
      if [ -e "$TMPDIR/left" ]; then echo kept; else echo gone; fi >"$FAKE.left"
     d=$(mktemp -d); echo "$d" >"$FAKE.scratch"; mkdir "$d/ro" && touch "$d/ro/f" && chmod a-w "$d/ro"
@@ -501,6 +502,10 @@ esac
 FAKE
 chmod +x "$T/bin/claude"
 export PATH=$T/bin:$PATH FAKE=$T/fake HANDOFF=$T/handoff STATE=$T/state CLAUDE_CONFIG_DIR=$T/claude
+# The main checkout the relay runs from, apart from the worktree (#1371).
+REPO=$T/repo-main MAIN=$T/repo-main
+export MAIN
+git init -q "$REPO"
 echo 1 >"$HANDOFF"
 echo 'open status/in-progress' >"$STATE"
 update() { :; }
@@ -640,6 +645,27 @@ check "env: no Claude Code or VS Code session variables" \
 check "env: no human cluster opt-in (#1128)" "$(grep -c '^C4_HUMAN_CLUSTER=' "$FAKE.env")" 0
 check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|C4_HEADLESS=1)$" "$FAKE.env")" 3
 check "env: names the worker, for create --next (#1284)" "$(grep -c "^C4_RELAY_WORKER=$K$" "$FAKE.env")" 1
+check "env #1371: OLDPWD is the worktree, not the main checkout" "$(grep '^OLDPWD=' "$FAKE.env")" "OLDPWD=$WT"
+check "env #1371: cd - stays in the worktree" "$(cat "$FAKE.cd")" "$WT"
+no_strikes
+
+# A session that leaves the main checkout with uncommitted changes, which stop
+# hack/pull.sh for every session on the device, is named in the log and its
+# account; the files stay (#1371). Changes that were there before it started
+# aren't its own.
+echo stray >"$FAKE"
+: >"$LOG"
+work
+check "stray #1371: logged with the path" "$(grep -c "session 1 left the main checkout $REPO with uncommitted changes, which stop hack/pull.sh: stray$" "$LOG")" 1
+check "stray #1371: in the session's account" "$(cat "$DIR"/session-*.md | grep -c "this session left the main checkout $REPO with uncommitted changes: stray$")" 1
+check "stray #1371: the file stays" "$(cat "$REPO/stray")" x
+: >"$LOG"
+work
+check "stray #1371: what was there before isn't the session's" "$(grep -c 'left the main checkout' "$LOG")" 0
+rm "$REPO/stray"
+echo handoff >"$FAKE"
+work
+check "stray #1371: a clean main logs nothing" "$(grep -c 'left the main checkout' "$LOG")" 0
 no_strikes
 
 # Each session's TMPDIR is SCRATCH/<its worktree>, not the device's shared

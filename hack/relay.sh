@@ -842,12 +842,25 @@ scratch_clear() {
   rm -rf "$1" 2>/dev/null || log "could not remove all of $1"
 }
 
+# stray WHAT OUT BEFORE: when session WHAT left the main checkout dirty, unlike
+# BEFORE (its git status --porcelain when the session started), name the paths
+# in the log and in its account OUT.md, so the next "pull: main has
+# uncommitted changes" has a culprit (#1371). The files stay as they are.
+stray() {
+  local now paths
+  now=$(git -C "$REPO" status --porcelain 2>/dev/null)
+  [ -n "$now" ] && [ "$now" != "$3" ] || return 0
+  paths=$(cut -c4- <<<"$now" | paste -sd' ')
+  log "$1 left the main checkout $REPO with uncommitted changes, which stop hack/pull.sh: $paths"
+  printf '\nThe relay: this session left the main checkout %s with uncommitted changes: %s\n' "$REPO" "$paths" >>"$2.md"
+}
+
 # session WHAT OUT ID PROMPT: run headless session ID in the worktree with
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT. Exit 3: it ended on one of LIMITS, whose message
 # S_LIMIT holds.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$SCRATCH/${WT##*/}
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after dirty tmp=$SCRATCH/${WT##*/}
   t0=$(date +%s)
   # Checked here, not in the watch: a session that ends before the watch runs
   # would take the log line with it.
@@ -865,9 +878,12 @@ session() {
   # left there goes first.
   # C4_RELAY_WORKER names the worker (1, 2, ..., triage, maintainer): create
   # --next reserves only for a numbered one's next session.
+  # OLDPWD is the worktree too: the cd would leave it at the main checkout,
+  # and an agent's cd - or cd "$OLDPWD" would write to main (#1371).
   scratch_clear "$tmp"
   mkdir -p "$tmp"
-  (cd "$WT" && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+  dirty=$(git -C "$REPO" status --porcelain 2>/dev/null)
+  (cd "$WT" && export OLDPWD=$WT && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
@@ -891,6 +907,7 @@ session() {
   else
     log "$what end: exit $rc after ${mins}m, no result; see $out.err"
   fi
+  stray "$what" "$out" "$dirty"
   [ "$rc" = 124 ] && log "$what hit the $SESSION_TIMEOUT timeout"
   [ "$rc" = 143 ] && log "$what was killed (SIGTERM)"
   S_RC=$rc S_MINS=$mins S_LIMIT=

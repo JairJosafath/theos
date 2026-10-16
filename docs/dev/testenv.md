@@ -404,6 +404,11 @@ envtest's once filled; and outside any git checkout, so a test that runs git in
 a `mktemp -d` directory finds no repository above it, as it would in the
 worktree. The relay empties it before the session starts and removes it when
 the session ends.
+Its `OLDPWD` is its worktree too, not the main checkout the relay runs from,
+so an agent's `cd -` stays in the worktree (#1371). A session that leaves the
+main checkout with uncommitted changes, which stop `hack/pull.sh` for every
+session on the device, is named with the paths in the worker's log and at the
+end of its account; the relay leaves the files as they are.
 Before the session, the relay also replaces a worktree's `.dev/` of its own,
 the caches `make check` left there before `hack/dev/env.sh` pointed worktrees
 at the main checkout's (#1132), with the link to the main checkout's `.dev/`,
