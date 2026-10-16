@@ -148,8 +148,8 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   and names the issue in the spec or table case (`#1019`), at the lowest tier
   that sees the bug, and the pull request body names the test. `land` and
   `merge` refuse a pull request closing a `kind/bug` issue that changes no
-  test file (`*_test.go`, `*_test.sh`, `*.test.ts`), unless a line of its
-  body says `No test: <why>` (a docs-only or chart-only fix).
+  test file (`*_test.go`, `*_test.sh`, `*.test.ts`, `*.test.mjs`), unless a
+  line of its body says `No test: <why>` (a docs-only or chart-only fix).
 - **Show, don't claim.** When a plan is done, save evidence in
   `docs/screenshots/`. Test output is the evidence; no plan asks an agent for
   Kind evidence (`kubectl get` output, screenshots of a running factory).
