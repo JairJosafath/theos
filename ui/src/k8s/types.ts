@@ -161,8 +161,24 @@ export interface Container extends K8sObject {
   }
   status?: {
     phase?: ContainerPhase
-    /** The operations the scaffold rendered with, every field filled in. */
+    /** The operations infra/operations.ts was last rendered with, every field filled in. */
     operations?: Operations
+    /**
+     * The pull request that renders infra/operations.ts again from a changed spec.operations: in
+     * flight, stopped, or merged (it stays, naming its commit, until the next change).
+     */
+    operationsUpdate?: {
+      /** The block it renders, every field filled in. */
+      operations: Operations
+      branch?: string
+      commit?: string
+      pullRequest?: number
+      pullRequestURL?: string
+      /** Why it stopped without merging, such as UpdateClosed. */
+      stopped?: string
+      /** The commit on main that holds the block, once merged. */
+      mergeCommit?: string
+    }
     repositoryURL?: string
     scaffoldedFrom?: string[]
     appliedRelationships?: string[]

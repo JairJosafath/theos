@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -53,12 +54,31 @@ type standardUpdate struct {
 	answered bool
 }
 
+// liveContainer returns whether the cached container is the one on the API
+// server, read at most once however often it is asked. The cache can lag
+// behind our own status writes, and the Standard and operations updates act in
+// Git from the update in status. They take their steps only from the live
+// Container, so a reconcile queued during the last pass doesn't open an update
+// a second time or leave the one it replaced open; the watch brings the newer
+// one.
+func (r *ContainerReconciler) liveContainer(ctx context.Context, container *c4v1alpha1.Container) func() bool {
+	return sync.OnceValue(func() bool {
+		var live c4v1alpha1.Container
+		if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(container), &live); err != nil {
+			logf.FromContext(ctx).Info("Could not read Container", "error", err.Error())
+			return false
+		}
+		return live.ResourceVersion == container.ResourceVersion
+	})
+}
+
 // updateStandard keeps the Container's Standard files at its Standard's ref, one
-// step per reconcile, and reports it in status. The Container names a Standard.
-// It reports whether the pass answered the person's annotation, which the
-// caller removes once the status is written.
+// step per reconcile, and reports it in status. The Container names a Standard;
+// live says whether it is the one on the API server (liveContainer). It
+// reports whether the pass answered the person's annotation, which the caller
+// removes once the status is written.
 func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus) bool {
+	status *c4v1alpha1.ContainerStatus, live func() bool) bool {
 	name := container.Spec.StandardRef.Name
 	if status.Standard == nil || status.Standard.Name != name {
 		ref := model.ScaffoldedRef(status.ScaffoldedFrom, name)
@@ -83,16 +103,7 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 		return false
 	}
 
-	// The cache can lag behind our own status writes, and the steps act in Git
-	// from the update in status. Take them only from the live Container, so a
-	// reconcile queued during the last pass doesn't open an update a second time
-	// or leave the one it replaced open; the watch brings the newer one.
-	var live c4v1alpha1.Container
-	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(container), &live); err != nil {
-		logf.FromContext(ctx).Info("Could not read Container", "error", err.Error())
-		return false
-	}
-	if live.ResourceVersion != container.ResourceVersion {
+	if !live() {
 		return false
 	}
 

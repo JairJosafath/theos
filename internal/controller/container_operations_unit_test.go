@@ -40,12 +40,13 @@ func TestReportOperationsApplied(t *testing.T) {
 	scaffoldedWith := func(spec *c4v1alpha1.OperationsSpec) *c4v1alpha1.OperationsSpec {
 		return operationsStatus(specOperations(&c4v1alpha1.Container{Spec: c4v1alpha1.ContainerSpec{Operations: spec}}))
 	}
+	const updates = "the update acts"
 	for _, tt := range []struct {
 		name     string
 		phase    c4v1alpha1.ContainerPhase
 		spec     *c4v1alpha1.OperationsSpec
 		recorded *c4v1alpha1.OperationsSpec
-		want     string // the reason; empty for no condition
+		want     string // the reason; empty for no condition, updates for the update's pass to act
 	}{
 		{"not scaffolded yet", c4v1alpha1.ContainerScaffolding, rpo("15m"), nil, ""},
 		{"scaffolded without the block", c4v1alpha1.ContainerReady, nil, scaffoldedWith(nil),
@@ -54,10 +55,9 @@ func TestReportOperationsApplied(t *testing.T) {
 			c4v1alpha1.ReasonAppliedAtScaffold},
 		{"the defaults written out are no change", c4v1alpha1.ContainerReady, rpo("1h"), scaffoldedWith(nil),
 			c4v1alpha1.ReasonAppliedAtScaffold},
-		{"changed after the scaffold", c4v1alpha1.ContainerReady, rpo("5m"), scaffoldedWith(rpo("15m")),
-			c4v1alpha1.ReasonChangedAfterScaffold},
-		{"added after the scaffold", c4v1alpha1.ContainerReady, rpo("5m"), scaffoldedWith(nil),
-			c4v1alpha1.ReasonChangedAfterScaffold},
+		// An operations update carries these (#1119).
+		{"changed after the scaffold", c4v1alpha1.ContainerReady, rpo("5m"), scaffoldedWith(rpo("15m")), updates},
+		{"added after the scaffold", c4v1alpha1.ContainerReady, rpo("5m"), scaffoldedWith(nil), updates},
 		{"scaffolded before the factory kept it, no block", c4v1alpha1.ContainerReady, nil, nil, ""},
 		{"scaffolded before the factory kept it, an empty block", c4v1alpha1.ContainerReady,
 			&c4v1alpha1.OperationsSpec{}, nil, ""},
@@ -67,8 +67,14 @@ func TestReportOperationsApplied(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			container := &c4v1alpha1.Container{Spec: c4v1alpha1.ContainerSpec{Operations: tt.spec}}
 			status := &c4v1alpha1.ContainerStatus{Phase: tt.phase, Operations: tt.recorded}
-			(&ContainerReconciler{}).reportOperationsApplied(container, status)
+			reported := (&ContainerReconciler{}).reportOperationsApplied(container, status)
 			c := meta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionOperationsApplied)
+			if reported == (tt.want == updates) {
+				t.Fatalf("reportOperationsApplied() = %v, want %v", reported, tt.want != updates)
+			}
+			if tt.want == updates {
+				tt.want = ""
+			}
 			switch {
 			case tt.want == "" && c != nil:
 				t.Errorf("OperationsApplied = %s/%s, want none", c.Status, c.Reason)

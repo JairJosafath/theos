@@ -890,6 +890,23 @@ func (g *fakeGit) hasBranch(owner, name, branch string) bool {
 	return ok
 }
 
+// branchEdits are the files the commit PushBranch made on branch of owner/name
+// writes, nil for a path it removes.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) branchEdits(owner, name, branch string) map[string]*scaffold.File {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return maps.Clone(g.agentState().edits[owner+"/"+name+"@"+branch])
+}
+
+// template is the template registered at url and ref.
+func (g *fakeGit) template(url, ref string) scaffold.Tree {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.templates[url+"@"+ref]
+}
+
 // setCheckLog sets the log the fake host serves for every CI job.
 func (g *fakeGit) setCheckLog(log string) {
 	g.mu.Lock()

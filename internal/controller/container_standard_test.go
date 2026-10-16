@@ -434,7 +434,7 @@ var _ = Describe("Container Standard update", func() {
 		r := &ContainerReconciler{Client: k8sClient, Scheme: scheme.Scheme, APIReader: k8sClient, Git: gitFake,
 			ScaffoldTimeout: testScaffoldTimeout}
 		status := stale.Status.DeepCopy()
-		r.updateStandard(ctx, stale, status)
+		r.updateStandard(ctx, stale, status, r.liveContainer(ctx, stale))
 		Expect(status.Standard).To(Equal(stale.Status.Standard))
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
 			"Number": BeEquivalentTo(first.PullRequest), "HeadSHA": Equal(first.Commit), "State": Equal("open")})))

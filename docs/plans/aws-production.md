@@ -109,9 +109,10 @@ alarms and runbooks) were written down and left to the reader.
    The block renders into `infra/operations.ts` at scaffold, and a change
    to it afterwards reaches the repository the way a Standard bump does: the
    operator renders the file again and opens and merges a pull request with
-   it (step 12), reported by a condition `OperationsApplied`. Until that
-   step lands, the file is changed by a Task like any other code, and the
-   condition says `ChangedAfterScaffold`. A field a client sets today is
+   it (step 12), reported by a condition `OperationsApplied`. A Framework
+   that renders no `infra/operations.ts` can't be carried, and the
+   condition says `ChangedAfterScaffold`: a Task changes the file like any
+   other code. A field a client sets today is
    never removed or reinterpreted (the `v1alpha1` promise of
    [plans/before-clients-return.md](before-clients-return.md)). `rpo` and
    `rto` are stated objectives for the production tier: they are written
@@ -724,7 +725,28 @@ the evidence. What it settled beyond step 3:
 - **The operations pull request** (step 12) follows the Standard bump's
   path in `internal/controller`: render the one file, branch, commit, open
   the pull request, merge it when its checks pass, and set the condition;
-  the same fake git provider tests it.
+  the same fake git provider tests it. Step 12 chose the rest: the
+  decisions are `model.NextOperationsStep`, a slimmed
+  `NextStandardStep`, table-tested. The Framework renders at the ref it was
+  scaffolded at, with the scaffold's Connectors and the recorded checks, and
+  only its `infra/operations.ts` is taken; main already holding that file
+  records the block with no pull request. The pull request is
+  `status.operationsUpdate` (the block it renders, branch, commit, number,
+  address, why it stopped), on branch `operations-update/<the block's
+  hash>`. It merges as admin under the same refusal a Standard update has,
+  the planned paths being `infra/operations.ts` alone; then
+  `status.operations` takes its block and the record stays with
+  `mergeCommit`, so `OperationsApplied=True`, reason `UpdateMerged`, names
+  the commit until the next change replaces it. A block changed again while
+  one is open closes it and plans the new block; one a person closes stops
+  until the block changes again; failed CI is `ChecksFailed` with the pull
+  request, and a re-run that passes merges it. A Framework that renders no
+  `infra/operations.ts` records a stopped update and reports
+  `ChangedAfterScaffold`, and a Container scaffolded before the record
+  keeps reporting `ChangedAfterScaffold` too, since its repository has none
+  of the block. Both run on one live read of the Container per reconcile,
+  and a Container with an open update is rechecked whether or not it has a
+  Standard.
 - **The planner** sets `operations` from the idea: `email`, `rpo`, `rto`
   and `copyToRegion` when the idea states them; otherwise the block is left
   out and the defaults apply. It never picks a tier: that is the target's.

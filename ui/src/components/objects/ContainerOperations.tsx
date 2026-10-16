@@ -1,7 +1,7 @@
 // A Container's operations on its page: backup retention and copy region,
-// RPO and RTO, and who the alarms tell, as the scaffold rendered them (or the
-// spec with the defaults filled in), and OperationsApplied when False (the
-// block changed after the scaffold). Read only.
+// RPO and RTO, and who the alarms tell, as the spec asks with the defaults
+// filled in, and OperationsApplied when False (a changed block whose pull
+// request hasn't merged, or can't be made). Read only.
 
 import { Fragment } from 'react'
 import type { Container } from '../../k8s/types'
