@@ -802,14 +802,14 @@ flake_round
 check "flake: a run's log is read once" "$(wc -l <"$T/log-reads")" 1
 check "flake: a run is recorded once" "$(wc -l <"$DIR/flakes.tsv")" 1
 
-# The same spec in a second run within seven days: one bug, not urgent.
+# The same spec in a second run within seven days: one bug, velocity, not urgent.
 sed 's/\^\[/\x1b/g' "$HERE/testdata/ginkgo-fail.log" >"$T/log-802.txt"
 failed 802 '1 hour'
 flake_round
 check "flake: the escape byte is read like its text" "$(cut -f1-2 "$DIR/flakes.tsv" | tail -1)" "$SPEC	802"
 check "flake: a second failure files one bug" "$(filed)" 1
 check "flake: its title" "$(jq -r '.[0].title' "$T/issues.json")" "Flaky: $SPEC"
-check "flake: its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/ready kind/bug source/dev"
+check "flake: its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/ready priority/velocity kind/bug source/dev"
 check "flake: the body names both runs" "$(jq -r '.[0].body' "$T/issues.json" | grep -c '^- https://github.com/.*/actions/runs/80[12] at ')" 2
 check "flake: logged with the issue" "$(logged "a spec failed on main 2 times in 7 days: $SPEC; issue #100$")" 1
 

@@ -45,6 +45,10 @@ it. It never passes through triage: leave it alone, as every ready issue.
   and a `source/*` one. Give the one that fits (`gh issue edit N --add-label
   kind/bug`, `--remove-label` for a second kind; `hack/lib/github.sh intake N`
   for its source). `status N ready` refuses an issue with no kind.
+- `priority/velocity` when it makes development itself faster: the relay,
+  `land`, `make check`, a flake, the device or the scripts and skills agents
+  work with (`gh issue edit N --add-label priority/velocity`). The relay picks
+  it after urgent, before the rest.
 - Its milestone, when a user of the release would notice the change (CRDs,
   operator, UI, chart, templates, docs a user reads): the open milestone
   whose outcome it serves, `hack/lib/github.sh milestone N "TITLE"`, the

@@ -303,10 +303,12 @@ touch .relay/stop                  # stop the watch, and every worker after its 
 ```
 
 The relay picks the issue its worker's last session reserved (`create --next`,
-below), else the oldest `status/in-progress` issue nobody holds, else the
-oldest `status/ready` + `priority/urgent` one, else the oldest `status/ready`
-one, skipping issues with a live claim or an open `Depends on #M`, and claims
-it (see [docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
+below), else `priority/urgent` issues, then `priority/velocity` ones (what
+makes development itself faster, [docs/plans/velocity.md](../plans/velocity.md)),
+then the rest; within each, the oldest `status/in-progress` issue nobody
+holds, else the oldest `status/ready` one, skipping issues with a live claim
+or an open `Depends on #M`, and claims it (see
+[docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
 k runs its sessions in the git worktree `.claude/worktrees/relay-k`, switched
 to the issue's branch; uncommitted changes a dead session left there are
 stashed, not dropped. Claims keep workers and hand-started sessions off each
@@ -473,10 +475,11 @@ other while the outage lasts, even after the issue is closed as a duplicate.
 A flaky spec rarely fails twice in a row, so in the same round the watch
 records each Ginkgo spec that failed on main (the `[FAIL]` lines of each failed
 run's log, `hack/lib/github.sh flakes`) in `.relay/flakes.tsv`, spec, run and
-time, and files `Flaky: <spec>`, a ready `kind/bug` that isn't urgent, when one
-failed in two runs within `WATCH_FLAKE_DAYS` days (7); while it is open, a
-third failure files nothing. `hack/lib/github.sh flakes --count` lists the
-specs that failed on main this week, from GitHub, on any device.
+time, and files `Flaky: <spec>`, a ready `kind/bug` with `priority/velocity`,
+not urgent, when one failed in two runs within `WATCH_FLAKE_DAYS` days (7);
+while it is open, a third failure files nothing.
+`hack/lib/github.sh flakes --count` lists the specs that failed on main this
+week, from GitHub, on any device.
 A queued run never fails, so `red` can't see that every self-hosted runner is
 offline (Docker Desktop stopped). So in the same round the watch asks
 `hack/lib/github.sh queued`. When a run on main has had a job waiting more

@@ -462,9 +462,10 @@ check "flush fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 77
 check "flush fails, pending kept" "$([ -e "$T/main/.relay/pending-handoff-77.md" ] && echo kept || echo gone)" kept
 rm -rf "$T"/{main,wt2,wt3}/.relay
 
-# Pick order: urgent first (in-progress nobody holds, else ready), else an
-# in-progress issue nobody holds, else ready, oldest first; proposed and
-# needs-human issues are never picked, nor ones that depend on an open issue.
+# Pick order: urgent first (in-progress nobody holds, else ready), else
+# velocity the same way, else an in-progress issue nobody holds, else ready,
+# oldest first; proposed and needs-human issues are never picked, nor ones
+# that depend on an open issue.
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
 issues() { jq -c '[[.[] | {number: .[0], title: "t", html_url: "u", body: (.[2] // ""), labels: (.[1] | map({name: .}))}]]'; }
 all='[[80, ["status/needs-human"]], [81, ["status/proposed"]], [82, ["status/ready"]],
@@ -477,6 +478,18 @@ check "pick, in-progress + urgent before ready + urgent" \
 check "pick, then ready" "$(OPEN=$(jq 'map(select(.[0] < 83))' <<<"$all" | issues) gh_pick | cut -f1,4)" "82	ready"
 OPEN=$(jq 'map(select(.[0] < 82))' <<<"$all" | issues) gh_pick >/dev/null
 check "pick, only proposed and needs-human" $? 1
+
+# Velocity (#1280): after urgent, before the rest, in-progress nobody holds
+# before ready; a plain ready issue older than it waits.
+velocity='[[82, ["status/ready"]], [84, ["status/ready", "priority/urgent"]],
+  [86, ["status/ready", "priority/velocity"]], [87, ["status/in-progress", "priority/velocity"]]]'
+check "pick, urgent before velocity" "$(OPEN=$(issues <<<"$velocity") gh_pick | cut -f1,4)" "84	ready-urgent"
+check "pick, in-progress + velocity before ready + velocity" \
+  "$(OPEN=$(jq 'map(select(.[0] != 84))' <<<"$velocity" | issues) gh_pick | cut -f1,4)" "87	in-progress-velocity"
+check "pick, in-progress + velocity nobody holds before an older ready" \
+  "$(OPEN=$(jq 'map(select(.[0] == 82 or .[0] == 87))' <<<"$velocity" | issues) gh_pick | cut -f1,4)" "87	in-progress-velocity"
+check "pick, ready + velocity before an older ready" \
+  "$(OPEN=$(jq 'map(select(.[0] == 82 or .[0] == 86))' <<<"$velocity" | issues) gh_pick | cut -f1,4)" "86	ready-velocity"
 
 # A parent issue split into a plan and steps stays open and in progress with
 # no claim, its body a "Depends on #S" line per step: pick skips it while a
