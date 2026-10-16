@@ -38,6 +38,11 @@ check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" k
 check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP $MIN_FREE_GB")" "9 2 120 30"
 check "defaults: RELAY_MIN_FREE_GB and RELAY_DISK_PATHS" "$(RELAY_MIN_FREE_GB=5 RELAY_DISK_PATHS='/a /b'; . "$(dirname "$0")/relay.sh"; echo "$MIN_FREE_GB" $(disk_paths))" "5 /a /b"
 check "defaults: scratch in the user's cache, not ./dev's XDG_CACHE_HOME (#1307, #1326)" "$(unset RELAY_SCRATCH; HOME=/h XDG_CACHE_HOME=/repo/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
+# With XDG_CACHE_HOME inside a real git checkout, as ./dev sets it, the
+# scratch is in no git checkout (#1347).
+git init -q "$T/main" && mkdir -p "$T/home"
+scratch=$(unset RELAY_SCRATCH; HOME=$T/home XDG_CACHE_HOME=$T/main/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")
+check "defaults #1347: scratch in no git checkout" "$(mkdir -p "$scratch" && cd "$scratch" && GIT_CEILING_DIRECTORIES=$T git rev-parse --show-toplevel 2>/dev/null)" ""
 
 # No disk is low unless a test says so; the disk guard's own tests stub df.
 export RELAY_MIN_FREE_GB=0 RELAY_DISK_PATHS=/
