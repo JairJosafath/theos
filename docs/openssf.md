@@ -94,7 +94,7 @@ because the form asks for them.
 | crypto_random | MUST | Met | passwords and tokens come from `crypto/rand`; no `math/rand` outside tests |
 | delivery_mitm | MUST | Met | images and the chart from `ghcr.io` over HTTPS; images pinned by digest where the chart or Dockerfile pins them |
 | delivery_unsigned | MUST | Met | downloaded tools are checked against pinned SHA-256 sums (`hack/testenv.mk`, the Helm download in the `Makefile`), never fetched over HTTP |
-| vulnerabilities_fixed_60_days | MUST | **Gap** | `govulncheck ./...` on 2026-10-15 found 16 reachable vulnerabilities: the Go toolchain (1.26.8; `net/http`, `html/template`, `crypto/tls`, `net/textproto` fixed in 1.26.9), `golang.org/x/net`, `golang.org/x/crypto`, `google.golang.org/grpc`, `go.opentelemetry.io/otel` and `golang.org/x/image`. Follow-up: #1147 |
+| vulnerabilities_fixed_60_days | MUST | Met | `govulncheck ./...` on 2026-10-16 finds no vulnerability the code reaches ([docs/screenshots/1147-govulncheck.txt](screenshots/1147-govulncheck.txt)). #1147 fixed the 16 it found on 2026-10-15: Go 1.26.9 (`go.mod`'s `toolchain`, which CI's `setup-go` follows, and the images' builders), `golang.org/x/net`, `golang.org/x/crypto`, `google.golang.org/grpc`, `go.opentelemetry.io/otel` and `golang.org/x/image`. Two remain that the code doesn't reach: `github.com/google/cel-go` (fixed in v0.30.0; `k8s.io/apiserver` holds v0.29.2) and `golang.org/x/crypto/openpgp` (unmaintained, no fix; nothing imports it) |
 | vulnerabilities_critical_fixed | SHOULD | **Gap** | nothing runs `govulncheck` yet, so a new one goes unseen. Follow-up: #1148 |
 | no_leaked_credentials | MUST | Met | the [`secrets` skill](../.claude/skills/secrets/SKILL.md), `make helm-lint` fails on a rendered Secret, GitGuardian on pull requests |
 
@@ -114,7 +114,7 @@ because the form asks for them.
 ## For the owner
 
 Only the owner can close these. Nothing else stands between the repository and
-the passing badge once the follow-ups (#1147, #1148) land.
+the passing badge once the follow-up #1148 lands.
 
 1. **Choose a FLOSS licence** (floss_license, floss_license_osi). The
    contributors already agreed to relicensing ([CONTRIBUTING.md](../CONTRIBUTING.md),

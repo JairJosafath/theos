@@ -53,8 +53,8 @@ unanswered for 14 days.
    *Needs you* carries, and check those issues for an owner answer. Act on
    each answer, and drop the items that no longer apply.
 2. **Escalations:** issues in `status/needs-maintainer`
-   (`hack/lib/github.sh escalated`; sessions, triage, three failed sessions
-   in a row and dependency cycles all land there), and issues in
+   (`hack/lib/github.sh escalated`; sessions, triage, three strikes (failed
+   sessions within a day) and dependency cycles all land there), and issues in
    `status/needs-human` whose newest comment came from an agent (a relay
    marker or an `Agent:` line), not from the owner. For each:
    - If the decision is yours, make it. Comment with the decision and your
