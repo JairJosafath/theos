@@ -203,10 +203,19 @@ cmd_setup() {
 
   local main
   main="$(main_checkout)"
-  if [ -n "$main" ] && [ ! -e "$DEV" ]; then
-    [ -d "$main/.dev" ] || die "this is a worktree of $main; run ./dev setup there first"
-    ln -s "$main/.dev" "$DEV"
+  if [ -n "$main" ] && [ ! -L "$DEV" ]; then
+    [ -d "$main/.dev/bin" ] || die "this is a worktree of $main; run ./dev setup there first"
     step "Worktree: sharing $main/.dev"
+    if [ -e "$DEV" ]; then
+      # make, a test or VS Code made a .dev/ here before the link (#1132).
+      # hack/dev/env.sh uses the main checkout's anyway; what this one holds
+      # (caches, maybe a Claude login) goes only when someone asks.
+      info "This worktree has a .dev/ of its own, left from before the link: ./dev run"
+      info "and ./dev shell use $main/.dev all the same. VS Code reads this"
+      info "folder's .dev/: ./dev nuke deletes it, then ./dev setup links the shared one."
+    else
+      ln -s "$main/.dev" "$DEV"
+    fi
     return 0
   fi
 
@@ -304,9 +313,11 @@ cmd_clean() {
 # --- shell, run, nuke ----------------------------------------------------------
 
 cmd_shell() {
-  [ -f "$DEV/zsh/.zshrc" ] || die "run ./dev setup first"
+  # shellcheck source=hack/dev/env.sh
+  source "$C4_ROOT/hack/dev/env.sh"
+  [ -f "$C4_DEV/zsh/.zshrc" ] || die "run ./dev setup first"
   cd "$C4_ROOT"
-  ZDOTDIR="$DEV/zsh" exec zsh -i
+  ZDOTDIR="$C4_DEV/zsh" exec zsh -i
 }
 
 cmd_run() {
@@ -323,6 +334,21 @@ cmd_nuke() {
     return 0
   fi
   [ -d "$DEV" ] || { echo "Nothing to remove: there is no .dev/ here."; return 0; }
+
+  # A worktree's own .dev/, left from before the link (#1132): delete only it.
+  # hack/dev/env.sh points a worktree at the main checkout's .dev/, whose
+  # kubeconfig names every Kind cluster of the device; those stay.
+  if [ -n "$(main_checkout)" ]; then
+    echo "This deletes this worktree's own .dev/, left from before it shared the main checkout's:"
+    echo "  - $DEV ($(du -sh "$DEV" 2>/dev/null | cut -f1))"
+    echo "The main checkout's .dev/ and the Kind clusters stay."
+    read -r -p "Continue? [y/N] " answer
+    [[ "$answer" =~ ^[Yy]$ ]] || { echo "Nothing deleted."; return 0; }
+    chmod -R u+w "$DEV" 2>/dev/null || true
+    rm -rf "$DEV"
+    echo "Done. ./dev setup links the main checkout's .dev/ here."
+    return 0
+  fi
 
   # shellcheck source=hack/dev/env.sh
   source "$C4_ROOT/hack/dev/env.sh"

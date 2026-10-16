@@ -462,9 +462,10 @@ check "flush fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 77
 check "flush fails, pending kept" "$([ -e "$T/main/.relay/pending-handoff-77.md" ] && echo kept || echo gone)" kept
 rm -rf "$T"/{main,wt2,wt3}/.relay
 
-# Pick order: urgent first (in-progress nobody holds, else ready), else an
-# in-progress issue nobody holds, else ready, oldest first; proposed and
-# needs-human issues are never picked, nor ones that depend on an open issue.
+# Pick order: urgent first (in-progress nobody holds, else ready), else
+# velocity the same way, else an in-progress issue nobody holds, else ready,
+# oldest first; proposed and needs-human issues are never picked, nor ones
+# that depend on an open issue.
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
 issues() { jq -c '[[.[] | {number: .[0], title: "t", html_url: "u", body: (.[2] // ""), labels: (.[1] | map({name: .}))}]]'; }
 all='[[80, ["status/needs-human"]], [81, ["status/proposed"]], [82, ["status/ready"]],
@@ -477,6 +478,18 @@ check "pick, in-progress + urgent before ready + urgent" \
 check "pick, then ready" "$(OPEN=$(jq 'map(select(.[0] < 83))' <<<"$all" | issues) gh_pick | cut -f1,4)" "82	ready"
 OPEN=$(jq 'map(select(.[0] < 82))' <<<"$all" | issues) gh_pick >/dev/null
 check "pick, only proposed and needs-human" $? 1
+
+# Velocity (#1280): after urgent, before the rest, in-progress nobody holds
+# before ready; a plain ready issue older than it waits.
+velocity='[[82, ["status/ready"]], [84, ["status/ready", "priority/urgent"]],
+  [86, ["status/ready", "priority/velocity"]], [87, ["status/in-progress", "priority/velocity"]]]'
+check "pick, urgent before velocity" "$(OPEN=$(issues <<<"$velocity") gh_pick | cut -f1,4)" "84	ready-urgent"
+check "pick, in-progress + velocity before ready + velocity" \
+  "$(OPEN=$(jq 'map(select(.[0] != 84))' <<<"$velocity" | issues) gh_pick | cut -f1,4)" "87	in-progress-velocity"
+check "pick, in-progress + velocity nobody holds before an older ready" \
+  "$(OPEN=$(jq 'map(select(.[0] == 82 or .[0] == 87))' <<<"$velocity" | issues) gh_pick | cut -f1,4)" "87	in-progress-velocity"
+check "pick, ready + velocity before an older ready" \
+  "$(OPEN=$(jq 'map(select(.[0] == 82 or .[0] == 86))' <<<"$velocity" | issues) gh_pick | cut -f1,4)" "86	ready-velocity"
 
 # A parent issue split into a plan and steps stays open and in progress with
 # no claim, its body a "Depends on #S" line per step: pick skips it while a
@@ -714,7 +727,9 @@ A <!-- watch:tmp-h -->"
 # The line says how many of the repository's runners are online, over every
 # page; GitHub is asked for them only when a run waits.
 (
-  ago() { date -u -d "$1 ago" +%Y-%m-%dT%H:%M:%SZ; }
+  # Counts back from the pinned GH_NOW, never the real clock: a second ticking
+  # between building RUNS and a check's expectation failed it (#1299).
+  ago() { date -u -d "$now $1 ago" +%Y-%m-%dT%H:%M:%SZ; }
   declare -A JOBS
   NONE='{"jobs":[]}'
   gh() {
@@ -1256,6 +1271,137 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   out=$(gh_land 40 2>&1)
   check "land: refuses a large pull request with no review" "$? $(queue) $(grep -c '#40 changes 401 lines in hand-written files (over 400) and has no review pass' <<<"$out")" "1  1"
   rm "$T/files-40"
+  exit $fail
+) || fail=1
+
+# create --next (#1284): a follow-up its finder decided is filed ready and
+# reserved for this checkout's next session. Every other checkout's pick skips
+# it and take refuses it; this checkout's pick returns it first and its take
+# turns the reservation into the claim; after C4_LEASE_TTL anyone picks it.
+# Refused without kind/bug, kind/chore or kind/docs, or with another status.
+# A fake GitHub keeps the issues and comments in $NX.
+(
+  NX=$T/nx
+  mkdir -p "$NX"
+  unset C4_RELAY_WORKER # the relay's sessions run these tests too
+  export C4_HOST=h
+  rm -rf "$T"/{main,wt2,wt3}/.relay
+  echo '[{"number": 150, "title": "Older", "body": "", "state": "open", "html_url": "u150",
+    "labels": [{"name": "status/proposed"}, {"name": "kind/chore"}]}]' >"$NX/issues"
+  echo '[]' >"$NX/comments"
+  gh_api() {
+    local url= q= m=GET slurp= in= out n t
+    while [ $# -gt 0 ]; do
+      case $1 in
+        repos/*) url=${1#"repos/$C4_GITHUB_REPO/"} ;;
+        --jq) q=$2; shift ;;
+        --method) m=$2; shift ;;
+        --slurp) slurp=1 ;;
+        --input) in=$(cat) ;;
+      esac
+      shift
+    done
+    t=$(date -u -d "@$(gh_now)" +%Y-%m-%dT%H:%M:%SZ)
+    n=${url#issues/}; n=${n%%[/?]*}
+    case $m:$url in
+      GET:issues\?state=open*) out=$(jq -c '[.[] | select(.state == "open")]' "$NX/issues") ;;
+      POST:issues)
+        out=$(jq -c --argjson n "$(jq '[.[].number] | max + 1' "$NX/issues")" \
+          '{number: $n, title, body, state: "open", html_url: "u\($n)", labels: [.labels[] | {name: .}]}' <<<"$in")
+        jq --argjson i "$out" '. + [$i]' "$NX/issues" >"$NX/new" && mv "$NX/new" "$NX/issues" ;;
+      GET:issues/comments\?since*) out=$(jq -c '[.[] | . + {issue_url: "x/issues/\(.issue)", html_url: "c\(.id)"}]' "$NX/comments") ;;
+      GET:issues/comments/*)
+        out=$(jq -c --argjson id "${url##*/}" '.[] | select(.id == $id) | {id, updated_at, body}' "$NX/comments")
+        [ -n "$out" ] || { echo "HTTP 404" >&2; return 1; } ;;
+      PATCH:issues/comments/*)
+        jq --argjson id "${url##*/}" --arg t "$t" --argjson in "$in" 'map(if .id == $id then .body = $in.body | .updated_at = $t else . end)' \
+          "$NX/comments" >"$NX/new" && mv "$NX/new" "$NX/comments"; return ;;
+      DELETE:issues/comments/*)
+        jq --argjson id "${url##*/}" 'map(select(.id != $id))' "$NX/comments" >"$NX/new" && mv "$NX/new" "$NX/comments"; return ;;
+      GET:issues/*/comments*)
+        out=$(jq -c --argjson n "$n" '[.[] | select(.issue == $n) | {id, created_at, updated_at, html_url: "c\(.id)", user: {login: "x"}, body}]' "$NX/comments") ;;
+      POST:issues/*/comments)
+        out=$(jq -c --argjson id "$(jq '[.[].id] | max // 999 | . + 1' "$NX/comments")" --argjson n "$n" --arg t "$t" \
+          '{id: $id, issue: $n, created_at: $t, updated_at: $t, body}' <<<"$in")
+        jq --argjson c "$out" '. + [$c]' "$NX/comments" >"$NX/new" && mv "$NX/new" "$NX/comments" ;;
+      GET:issues/*/labels*) out=$(jq -c --argjson n "$n" '.[] | select(.number == $n) | .labels' "$NX/issues") ;;
+      PUT:issues/*/labels)
+        jq --argjson n "$n" --argjson in "$in" 'map(if .number == $n then .labels = [$in.labels[] | {name: .}] else . end)' \
+          "$NX/issues" >"$NX/new" && mv "$NX/new" "$NX/issues"; return ;;
+      GET:issues/*) out=$(jq -c --argjson n "$n" '.[] | select(.number == $n)' "$NX/issues") ;;
+      *) echo "fake GitHub: no $m $url" >&2; return 1 ;;
+    esac
+    [ -z "$slurp" ] || out="[$out]"
+    if [ -n "$q" ]; then jq -r "$q" <<<"$out"; else echo "$out"; fi
+  }
+  gh_set_status() { real_set_status "$@"; }
+  labels() { jq -r --argjson n "$1" '.[] | select(.number == $n) | [.labels[].name] | join(" ")' "$NX/issues"; }
+  comments() { jq -r --argjson n "$1" '[.[] | select(.issue == $n)] | length, (.[] | .body | split("\n")[1])' "$NX/comments"; }
+  issues() { jq length "$NX/issues"; }
+  next() { jq -c '[.issue, .id]' "$1/.relay/next" 2>/dev/null | tr '\n' ' '; }
+  echo 'Fails: TestRetry in x_test.go' >"$NX/body"
+  # wt2's session works #150 and files its follow-ups.
+  claim "$T/wt2" 150 "$GH_NOW"
+
+  out=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "No kind" "$NX/body" 2>&1)
+  check "create --next, no kind/*: refused" "$? $(issues) $out" \
+    "1 1 github: create --next needs a kind/* label: kind/bug, kind/chore or kind/docs"
+  out=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "A feature" "$NX/body" kind/feature 2>&1)
+  check "create --next, a feature: refused, to be proposed" "$? $(issues) $(grep -c 'file a kind/feature status/proposed' <<<"$out")" "1 1 1"
+  out=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Proposed" "$NX/body" status/proposed kind/bug 2>&1)
+  check "create --next, another status: refused" "$? $(issues) $out" "1 1 github: create --next files the issue status/ready; leave out status/proposed"
+
+  b=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Fix the retry" "$NX/body" kind/bug 2>"$T/err")
+  check "create --next: filed ready" "$? $b $(labels "$b")" "0 151 status/ready kind/bug source/dev"
+  check "create --next: one reservation comment" "$(comments "$b")" "1
+**heron-150** reserved this issue for the next session in \`wt2\` · host \`h\` · from #150"
+  check "create --next: .relay/next names it" "$(next "$T/wt2")" "[151,1000] "
+  check "create --next: says so" "$(cat "$T/err")" "github: reserved #151 for this checkout's next session, for 2h"
+  check "create --next, status/ready given: one status" \
+    "$(C4_RELAY_WORKER=2 as "$T/wt3" gh_create --next "Doc it" "$NX/body" status/ready kind/docs 2>/dev/null; labels 152)" "152
+status/ready kind/docs source/dev"
+  rm -rf "$T/wt3/.relay"
+  jq 'map(if .number == 152 then .state = "closed" else . end)' "$NX/issues" >"$NX/new" && mv "$NX/new" "$NX/issues"
+
+  gh_pick >/dev/null; check "pick, another checkout: skips it" $? 1
+  check "claims: shows the reservation" "$(gh_claims | cut -f1-4)" "#151	heron-150	reserved	h"
+  gh_create Urgent "$NX/body" status/ready priority/urgent kind/bug >/dev/null # 153
+  check "pick, another checkout: the urgent one" "$(gh_pick | cut -f1,4)" "153	ready-urgent"
+  check "pick, this checkout: its reservation first, before urgent" "$(as "$T/wt2" gh_pick | cut -f1,4)" "151	next"
+  check "pick, the watch: every worker's reservations count (GH_NEXT_FILES)" \
+    "$(GH_NEXT_FILES="$T/none/.relay/next"$'\n'"$T/wt2/.relay/next" gh_pick | cut -f1,4)" "151	next"
+  out=$(as "$T/wt3" gh_take 151 2>&1); check "take, another checkout: refused" "$? $(cut -d, -f1 <<<"$out")" "4 github: #151 is claimed by heron-150 on host h"
+
+  rm -f "$T/wt2/.relay/claim" # the relay released the last session's claim
+  out=$(as "$T/wt2" gh_take 151 2>&1)
+  check "take, this checkout: its reservation is its claim" "$? $out" "0 otter-151	fix/151-fix-the-retry"
+  check "take, this checkout: the one comment says it works on it" "$(comments 151 | sed 's/ · branch.*//')" "1
+**otter-151** works on this issue · host \`h\`"
+  check "take, this checkout: the claim is the reservation's comment" "$(jq .id "$T/wt2/.relay/claim")" 1000
+  check "take, this checkout: in progress" "$(labels 151)" "kind/bug source/dev status/in-progress"
+  check "take, this checkout: .relay/next emptied" "$([ -e "$T/wt2/.relay/next" ] && echo kept || echo gone)" gone
+  check "pick, another checkout, after: still skips it" "$(gh_pick | cut -f1,4)" "153	ready-urgent"
+
+  # The reservation expires: after C4_LEASE_TTL anyone picks and takes it.
+  b=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Write the doc" "$NX/body" kind/docs 2>/dev/null)
+  jq 'map(if .number == 151 or .number == 153 then .state = "closed" else . end)' "$NX/issues" >"$NX/new" && mv "$NX/new" "$NX/issues"
+  later=$((GH_NOW + 2 * 3600 + 60))
+  gh_pick >/dev/null; check "expiry: skipped before the TTL" $? 1
+  check "expiry: another checkout picks it after the TTL" "$(GH_NOW=$later gh_pick | cut -f1,4)" "$b	ready"
+  check "expiry: this checkout no longer picks it first" "$(GH_NOW=$later as "$T/wt2" gh_pick | cut -f1,4)" "$b	ready"
+  out=$(GH_NOW=$later gh_take "$b" 2>&1); check "expiry: another checkout takes it" "$? $out" "0 otter-$b	docs/$b-write-the-doc"
+  check "expiry: the reservation says it expired" "$(comments "$b" | sed -n 2p)" "**otter-151**'s reservation expired, taken over by otter-$b"
+  GH_NOW=$later as "$T/wt2" gh_next_drop 0 7200
+  check "expiry: .relay/next drops it" "$([ -e "$T/wt2/.relay/next" ] && echo kept || echo gone)" gone
+
+  # Outside a relay worker's session there is no next session: filed ready,
+  # not reserved. The triage's and the maintainer's sessions run no pick.
+  rm -rf "$T/wt2/.relay"
+  b=$(as "$T/wt2" gh_create --next "Hand filed" "$NX/body" kind/chore 2>"$T/err")
+  check "create --next, no relay session: ready, not reserved" "$(labels "$b") $(comments "$b") $(next "$T/wt2")" "status/ready kind/chore source/dev 0 "
+  check "create --next, no relay session: says so" "$(cat "$T/err")" "github: #$b is ready and not reserved: only a relay worker's session has a next session to reserve it for"
+  b=$(C4_RELAY_WORKER=maintainer as "$T/wt2" gh_create --next "Maintainer filed" "$NX/body" kind/bug 2>/dev/null)
+  check "create --next, the maintainer's session: ready, not reserved" "$(labels "$b") $(comments "$b") $(next "$T/wt2")" "status/ready kind/bug source/dev 0 "
   exit $fail
 ) || fail=1
 

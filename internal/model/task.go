@@ -441,6 +441,11 @@ const updatedChecksFeedback = "Your change was approved, but main moved since it
 	"merged into your branch the CI checks fail (%s). Pull your branch, run the check command, and fix the " +
 	"failure so both your change and what merged into main keep working."
 
+// cancelledChecksFeedback ends the feedback of a round whose CI run a person
+// cancelled in the Git host (CancelledByPerson).
+const cancelledChecksFeedback = "Someone cancelled the checks before they ended: make sure the check command " +
+	"passes and ends in good time, and fix what fails or hangs."
+
 // AgentRetryDelay is how long a Task waits for an unavailable agent that didn't
 // say when it is back.
 const AgentRetryDelay = 15 * time.Minute
@@ -526,10 +531,8 @@ func RunnerKilled(log string) bool {
 // RunnerAbandoned reports whether a failed CI job ended because its runner
 // went away, not because the change failed it. Gitea 1.27 says so in no field,
 // so it reads what the runner left:
-//   - cancelled: the run ended cancelled. A runner told to stop (its pod
-//     restarting, say) cancels its job; Gitea keeps no record of who
-//     cancelled a run, and a person's cancel in its UI leaves the same log, so
-//     every cancel counts, and MaxChecksReruns bounds what a person's costs.
+//   - cancelled: the run ended cancelled by its runner (CancelledByRunner). A
+//     runner told to stop (its pod replaced, say) cancels its job.
 //   - noLog: the job started, but Gitea has no log of it: its runner died
 //     before it sent a line.
 //   - a log as Gitea serves it, a timestamp on every line, that stops before
@@ -683,9 +686,73 @@ type CIRun struct {
 	// host that doesn't say counts as having one: a wrong "offline" fails good
 	// work, a wrong "online" only waits longer.
 	NoRunnerOnline bool
-	// Cancelled means a failed run at the commit, the newest of its workflow
-	// and event, ended cancelled (see CancelledRun).
-	Cancelled bool
+	// CancelledBy says who cancelled a failed run at the commit, the newest of
+	// its workflow and event (see CancelledRuns and Canceller); empty when none
+	// ended cancelled.
+	CancelledBy string
+}
+
+// Who cancelled a failed CI run at a Task's commit (CIRun.CancelledBy).
+const (
+	// CancelledByRunner means a runner told to stop cancelled its job and went
+	// away, or that the Git host doesn't say.
+	CancelledByRunner = "runner"
+	// CancelledByPerson means the runner of every cancelled job stayed online:
+	// a person cancelled the run in the Git host.
+	CancelledByPerson = "person"
+	// CancelledByUnsure means a cancelled job's runner is still online, but the
+	// job ended too lately for a runner that went away to show offline yet.
+	CancelledByUnsure = "unsure"
+)
+
+// RunnerGoneAfter is how long after a cancelled CI job ended its runner, had
+// it gone away, shows offline: Gitea shows a runner offline a minute after it
+// last wrote down hearing from it, which it writes at most 30 seconds apart,
+// and a runner's pod has 30 seconds to stop.
+const RunnerGoneAfter = 2 * time.Minute
+
+// CIJob is a job of a CI run, as the Git host lists it.
+type CIJob struct {
+	// Conclusion is how it ended: success, failure, cancelled or skipped.
+	Conclusion string
+	// Runner is the ID of the runner that ran it; zero when none started it.
+	Runner int64
+	// RunnerOnline means the Git host says that runner is online now, and
+	// RunnerUnknown that it doesn't say.
+	RunnerOnline  bool
+	RunnerUnknown bool
+	// Ended is when it ended.
+	Ended time.Time
+}
+
+// Cancelled reports whether the job ended cancelled.
+func (j CIJob) Cancelled() bool { return j.Conclusion == checkCancelled }
+
+// Canceller tells who cancelled the cancelled jobs of the failed runs at a
+// Task's commit. Gitea keeps no record of who cancelled a run, and a runner
+// ends a job's log the same way whoever cancelled it ("Job cancelled"), so it
+// reads the jobs' runners instead: a runner told to stop (its pod replaced,
+// say) cancels its job and goes away, and the factory's runner registers as a
+// new one each time its pod starts (hack/runner/register.sh), while a person's
+// cancel leaves the runner online, taking the next job. A job no runner started was cancelled by a person (or by Gitea,
+// past any of the Task's bounds). read false means the jobs couldn't be read:
+// the cancel counts as the runner's, MaxChecksReruns bounding what a person's
+// costs.
+func Canceller(jobs []CIJob, read bool, now time.Time) string {
+	if !read {
+		return CancelledByRunner
+	}
+	who := CancelledByPerson
+	for _, job := range jobs {
+		switch {
+		case !job.Cancelled(), job.Runner == 0:
+		case job.RunnerUnknown || !job.RunnerOnline:
+			return CancelledByRunner
+		case now.Sub(job.Ended) < RunnerGoneAfter:
+			who = CancelledByUnsure
+		}
+	}
+	return who
 }
 
 // WorkflowRun is one CI run at a commit, as the Git host lists it.
@@ -719,15 +786,16 @@ func FailedCommitRuns(runs []WorkflowRun) []WorkflowRun {
 	return failed
 }
 
-// CancelledRun reports whether one of the failed runs at a commit
-// (FailedCommitRuns) ended cancelled.
-func CancelledRun(runs []WorkflowRun) bool {
+// CancelledRuns are the failed runs at a commit (FailedCommitRuns) that ended
+// cancelled.
+func CancelledRuns(runs []WorkflowRun) []WorkflowRun {
+	var cancelled []WorkflowRun
 	for _, run := range FailedCommitRuns(runs) {
 		if run.Conclusion == checkCancelled {
-			return true
+			cancelled = append(cancelled, run)
 		}
 	}
-	return false
+	return cancelled
 }
 
 // RunsEnded reports whether every run at a commit has ended: only then are
@@ -943,7 +1011,12 @@ func nextTaskStep(f TaskFacts) TaskStep {
 				return rerunStep(f, "was killed for lack of memory", ReasonRunnerOutOfMemory,
 					"free memory on the runner or run fewer jobs at once")
 			}
-			if RunnerAbandoned(f.CIRun.Cancelled, f.ChecksNoLog, f.ChecksLog) {
+			if f.CIRun.CancelledBy == CancelledByUnsure {
+				return TaskStep{Action: ActionWait, Message: fmt.Sprintf("CI run %s was cancelled; waiting to tell "+
+					"whether its runner went away, which shows within %s", orUnknown(f.ChecksURL),
+					spellDuration(RunnerGoneAfter))}
+			}
+			if RunnerAbandoned(f.CIRun.CancelledBy == CancelledByRunner, f.ChecksNoLog, f.ChecksLog) {
 				return rerunStep(f, "was abandoned by its runner", ReasonRunnerLost,
 					"check why the runners stop mid-job (a runner pod that restarts ends its job)")
 			}
@@ -951,6 +1024,9 @@ func nextTaskStep(f TaskFacts) TaskStep {
 				orUnknown(f.ChecksURL))
 			if f.MergeWhenChecksPass {
 				feedback = fmt.Sprintf(updatedChecksFeedback, orUnknown(f.ChecksURL))
+			}
+			if f.CIRun.CancelledBy == CancelledByPerson {
+				feedback += " " + cancelledChecksFeedback
 			}
 			if excerpt := CheckFailures(f.ChecksLog); excerpt != "" {
 				feedback += " A test that passes for you but fails in CI is flaky: make it deterministic." +

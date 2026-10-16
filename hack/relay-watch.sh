@@ -20,7 +20,7 @@
 # free worker): it reads each proposed issue against docs/design.md and the
 # open issues, readies the sound ones, comments on the others what they lack
 # and closes duplicates. It takes no issue and changes no code. Triage runs
-# again, at most every WATCH_TRIAGE seconds (default 1800) and never while one
+# again, at most every WATCH_TRIAGE seconds (default 600) and never while one
 # runs (.relay/triage.lock), when a proposed issue it hasn't seen appears, when
 # one changed after it (its body, title, labels or a comment that isn't the
 # triage's own), when one waits on an issue that closed after it (Depends on
@@ -58,9 +58,9 @@
 #
 # In the same round it records each Ginkgo spec that failed on main
 # (hack/lib/github.sh flakes) in .relay/flakes.tsv, and files a "Flaky: <spec>"
-# bug, status/ready and not urgent, when one failed in two runs within
-# WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails twice in a row,
-# so it never turns main red. An open one is not filed again.
+# bug, status/ready and priority/velocity, not urgent, when one failed in two
+# runs within WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails
+# twice in a row, so it never turns main red. An open one is not filed again.
 #
 # In the same round it notices runs on main that wait for a runner: a queued
 # run never fails, so red sees nothing while the device's self-hosted runners
@@ -146,7 +146,7 @@ STOP="$DIR/stop"
 LOG="$DIR/watch.log"
 EVERY=${WATCH_EVERY:-60}
 RETRY=${WATCH_RETRY:-600}
-TRIAGE_EVERY=${WATCH_TRIAGE:-1800}
+TRIAGE_EVERY=${WATCH_TRIAGE:-600}
 RETRIAGE=${WATCH_RETRIAGE:-10800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 CI_EVERY=${WATCH_CI_EVERY:-900}
@@ -193,7 +193,10 @@ triaging() { [ -e "$DIR/triage.lock" ] && ! flock -n "$DIR/triage.lock" true; }
 # pick_next, proposed, blocked, cycles, parents, activity, escalated, run_relay,
 # run_triage, run_maintain, trim_caches, report_note, tmp_use and tmp_largest:
 # what the watch asks and starts (faked in the tests).
-pick_next() { github pick; }
+# pick_next counts every worker's reservations (create --next, .relay/next in
+# its worktree) as its own, so an issue a worker reserved starts the relay
+# after that worker stopped; only that worker's pick takes it first.
+pick_next() { GH_NEXT_FILES=$(printf '%s\n' "$REPO"/.claude/worktrees/relay-[0-9]*/.relay/next) github pick; }
 blocked() { github blocked --unworked; }
 cycles() { github cycles --report; }
 parents() { github parents --apply; }
@@ -483,7 +486,7 @@ $(S=$spec awk -F'\t' -v t="$since" -v repo="${C4_GITHUB_REPO:-JairJosafath/c4fac
   '$1 == ENVIRON["S"] && $3 >= t && !r[$2]++ { print "- https://github.com/" repo "/actions/runs/" $2 " at " $3 }' "$DIR/flakes.tsv")
 
 Find why it fails now and then (a race, a timeout too short for a busy runner, an order it depends on) and fix the spec or the code; retrying until it passes is no fix. \`hack/lib/github.sh flakes --count\` lists the specs that failed on main this week. Filed by hack/relay-watch.sh, which files no other issue for this spec while this one is open."
-    out=$(github create "$title" - status/ready kind/bug source/dev <<<"$body" 2>&1)
+    out=$(github create "$title" - status/ready priority/velocity kind/bug source/dev <<<"$body" 2>&1)
     rc=$?
     if [ "$rc" = 0 ]; then
       log "a spec failed on main $n times in $FLAKE_DAYS days: $spec; issue #${out##*$'\n'}"

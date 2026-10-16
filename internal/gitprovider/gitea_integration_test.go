@@ -266,6 +266,17 @@ func TestGiteaCommitRunsIntegration(t *testing.T) {
 		t.Errorf("CommitRuns() with no runner online = %+v, want it queued and not started", runs[0])
 	}
 	t.Logf("runners online: %d; run: %+v", online, runs[0])
+	jobs, err := p.RunJobs(ctx, repo, runs[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 || jobs[0].ID == 0 || online == 0 && (jobs[0].RunnerID != 0 || !jobs[0].Completed.IsZero()) {
+		t.Errorf("RunJobs() = %+v, want the run's one job, with no runner and no end while none is online", jobs)
+	}
+	// #1143: a runner Gitea no longer has reads as gone, not as unknown.
+	if online, known := p.RunnerOnline(ctx, 1<<40); online || !known {
+		t.Errorf("RunnerOnline() of a runner Gitea doesn't have = %t, %t; want offline, known", online, known)
+	}
 	if other, err := p.CommitRuns(ctx, repo, strings.Repeat("0", 40)); err != nil || len(other) != 0 {
 		t.Errorf("CommitRuns() of a commit with no runs = %+v, %v; want none", other, err)
 	}

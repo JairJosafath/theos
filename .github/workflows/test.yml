@@ -56,12 +56,14 @@ jobs:
           # A self-hosted runner keeps its Go caches on a volume (make gh-runner).
           cache: ${{ runner.environment == 'github-hosted' }}
 
+      # COVER=1: the coverage each package prints stays in the log; a local
+      # make test leaves it out (docs/dev/testenv.md).
       - name: Running Tests
         env:
           C4_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
         run: |
           go mod tidy
-          make test
+          COVER=1 make test
 
       - name: Slowest controller specs
         if: always()
