@@ -419,6 +419,16 @@ time, and files `Flaky: <spec>`, a ready `kind/bug` that isn't urgent, when one
 failed in two runs within `WATCH_FLAKE_DAYS` days (7); while it is open, a
 third failure files nothing. `hack/lib/github.sh flakes --count` lists the
 specs that failed on main this week, from GitHub, on any device.
+A queued run never fails, so `red` can't see that every self-hosted runner is
+offline (Docker Desktop stopped). So in the same round the watch asks
+`hack/lib/github.sh queued`. When a run on main has waited more than
+`WATCH_QUEUED` minutes (30) for a runner, it puts `Runners offline since T: N
+runs queued` under the Maintainer report's Health, and as a task under Needs
+you (`hack/lib/github.sh report-note runners`). Each line is marked
+`<!-- watch:runners -->`, the maintainer's sweep keeps it, and later rounds
+update the count or put it back. `.relay/runners-offline` holds the note
+while the runners are offline. The first round in which no run waits that
+long removes both lines. `make gh-runner-status` says why (below).
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
@@ -697,7 +707,7 @@ needs no code change. On the device, with `gh` logged in to the repository:
 ```bash
 make gh-runner RUNNERS=3                    # build, register c4factory-<hostname>-1..3 once, start them
 gh variable set RUNS_ON --body self-hosted  # every job goes to them
-make gh-runner-status                       # their containers, and whether GitHub sees them online
+make gh-runner-status                       # whether Docker answers, their containers, whether GitHub sees them online
 gh variable delete RUNS_ON                  # back to ubuntu-latest
 make gh-runner-down                         # stop them all and remove them from GitHub
 docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
@@ -709,7 +719,18 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   lives on a volume of its own (`c4factory-gh-runner-i-config`), so `docker
   restart`, a reboot and a new image keep it. GitHub drops a runner that stays
   offline for 14 days; `make gh-runner` then registers it again. With
-  `RUNS_ON` set and the runners down, jobs wait in the queue.
+  `RUNS_ON` set and the runners down, jobs wait in the queue: nothing fails,
+  and GitHub has no runner to fall back on.
+- The runners run on the device's Docker. On WSL that is Docker Desktop, with
+  WSL integration on for the distro. The containers (`--restart
+  unless-stopped`) stop when it stops and start again with it. The relay watch
+  notes runs queued on main for over 30 minutes in the Maintainer report
+  (above). `make gh-runner-status` then says which part is down. Docker not
+  answering from this distro means starting Docker Desktop. A container down
+  means running `make gh-runner RUNNERS=N`. A runner GitHub sees offline while
+  its container is up has its reason in `docker logs --tail 50
+  c4factory-gh-runner-i`. It exits 1 unless every runner is online. Setting
+  `RUNS_ON` back is the owner's call.
 - `make gh-runner RUNNERS=N` again with a smaller N removes the runners above
   N, from Docker and from GitHub; `RUNNERS` defaults to 1. A device that ran
   the single runner from before (container `c4factory-gh-runner`, named
