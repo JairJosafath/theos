@@ -46,7 +46,8 @@ network.
 ## Testing & Development
 
 ```bash
-make test                # Unit and envtest tests (real K8s API + etcd, no cluster needed)
+make test                # Unit and envtest tests of the packages the change affects (real K8s API + etcd, no cluster needed)
+make test TEST_ALL=1     # The same, every package
 make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack, ui-test and test
 make validate-yaml       # The YAML against the built-in schemas and our CRDs, offline
 make test-hack           # The shell tests of hack/ (hack/**/*_test.sh), all at once, about a minute
@@ -75,10 +76,62 @@ fails on a render error, a path two layers write, or YAML that doesn't parse. A 
 template needs a row there. In tests, write with merge patches
 (`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
 
+`make test` tests only the packages the change since `origin/main` (its merge
+base, with uncommitted and untracked files) can affect: a package with a changed
+file (its directory or one below it, so embedded files count) and every package
+whose test binary links one, transitively (`hack/test-packages.sh`, #1295). It
+prints which ran and why: `make test: testing 2 of 21 packages, ...; changed:
+internal/model`, or `testing every package (21): <reason>`. A changed non-Go
+file in a package, or a changed `//go:embed` line, also tests `cmd`: its
+`TestDockerContextHasEmbeddedFiles` checks the embeds of every package a
+Dockerfile builds without linking them (#1321). A file directly under
+`test/e2e/` (the e2e suite) tests nothing; one in `test/e2e/standin/` tests
+that package. It tests every package on the branch `main` (a detached HEAD at
+main's commit is no branch: it diffs against `origin/main` and tests no
+package), without a merge base, with `TEST_ALL=1` or `FORCE=1`, and
+after a change to a file a Go test may read without importing it: `go.mod`,
+`go.sum`, the `Makefile`, the `hack/` files Go tests read (`hack/seed/`,
+`hack/boilerplate.go.txt`, `hack/setup.sh`, `hack/release.sh`, `hack/new.sh`,
+`hack/go-test.sh`), `config/` (the CRDs and RBAC envtest loads), `api/`,
+`dist/`, `templates/`, `test/crds/`, any `testdata/`, the workflows, a
+Dockerfile, `README.md`, `docs/getting-started.md` or a file in no listed path.
+A change only to `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest of
+`.github/`, a top-level `*.md` or the rest of `hack/` outside its Go packages
+tests no package; `make test-hack` gates the shell scripts (#1318). A Go test
+that names a new `hack/` path fails `hack/test-packages_test.sh` until the
+path joins that list. `land`'s `make check` selects
+the same way. The *Tests* workflow sets `TEST_ALL=1`, so a merge to main it
+runs on tests every package and catches what a selection missed; but its
+`paths` filter skips a merge that changes only `*.md`, `docs/`, `ui/`,
+`config/ui/`, `config/samples/`, `test/e2e/`, the linter configs, `hack/` (but
+the four files it names), `dev`, `.vscode/` or `.github/` (but its own
+workflow) files, so such a merge gets only `land`'s selection. With `COVER=1`,
+`cover.out` covers the packages that ran (`mode: set` and nothing else when none
+did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage. DigitalOcean's `gta`
+selects the same way, but it loads every package of every module in the build
+list (`go list ...`), which this module's `go.mod` can't (`go mod tidy` wants
+more requirements) and which takes a minute where `go list -test ./...` takes
+half a second.
+
 `make test` bounds each package at `TEST_TIMEOUT` (20m; the Makefile says why). The
 controller suite ends itself 30 s before that, failing the spec that was running by
 name. With `C4_SLOWEST_SPECS=FILE` it writes its 10 slowest specs to FILE; the
 *Tests* workflow prints them, so a slow run's log says which specs to speed up.
+
+The controller suite runs its specs one after another, so `make test` runs it
+as `C4_TEST_PROCS` go tests at once (default 2), beside one go test of the
+other packages (`hack/go-test.sh`, #1283). Each part gets
+`C4_TEST_SHARD=i/n` and runs its share of the suite's top-level containers
+against its own control plane and manager; a container is never split, since
+Ginkgo already runs them in random order but the specs inside one may share
+state. The split is the same in every part, and a part that ran another
+number of specs than its containers hold fails. Go's test cache answers each
+part on its own, and their profiles (`COVER=1`) and slowest specs
+(`C4_SLOWEST_SPECS`) are merged into one. With `C4_TEST_PROCS` unset and less
+than `C4_TEST_MIN_MEM_GIB` (default 4) of `MemAvailable`, the suite runs in
+one process; `C4_TEST_PROCS=1` always does. A spec run outside `make test`
+(an IDE, `go test` by hand) runs the whole suite in one process, as before.
+What it costs is under [Memory on the cluster device](#memory-on-the-cluster-device).
 
 `make validate-yaml` checks the YAML without a cluster or a network, with
 `kubectl-validate` and `helm` from the device's tool directory: the samples, the e2e fixtures, the
@@ -110,6 +163,29 @@ compiled test binary: `internal/controller` (envtest CRDs, `templates/`, and the
 sources `typeneutral_test.go` reads), `internal/sessionclient` (envtest CRDs) and
 `internal/scaffold` (`templates_test.go` reads `templates/`). Those files sit
 outside the package, so `//go:embed` can't reach them.
+
+In a checkout, `make test` answers each unchanged package from Go's test
+cache, `ok <package> (cached)`, in no time (#1282). Go keys a package's result
+on its test binary (the package and all it imports), the `go test` flags, the
+value of each environment variable the test read (`KUBEBUILDER_ASSETS`,
+`HELM`, the `ETCD_*` of `ENVTEST_ENV`) and the size and mtime of each file in
+the module it opened (the CRDs, the role, the admission policy, `templates/`).
+So a change to `hack/`, docs or the UI reruns no Go test, and a changed CRD
+reruns the suites that read it. controller-gen rewrites every file it
+generates, changed or not, so `manifests` and `generate` run it through
+`hack/keep-mtime.sh`, which gives a file rewritten with the same bytes its old
+mtime back. envtest reserves each port it hands out as a file in
+`$XDG_CACHE_HOME/kubebuilder-envtest`, and `./dev` puts `XDG_CACHE_HOME` in
+`.dev/`, inside the module, where each envtest run changed a directory the
+other suites had read; `make test` gives the tests `TEST_CACHE_HOME` instead
+(`~/.cache/c4factory/test-cache`, one per device, outside any checkout, #1326) and keeps `GOCACHE`. A
+result is not cached when a file the test read changed in the 2 seconds
+before; the next run caches it. Coverage is collected only when
+asked: `COVER=1 make test` writes `cover.out`, and CI's Tests workflow asks.
+To rerun what is cached, `FORCE=1 make test` (or `FORCE=1 make check`, which
+skips the check cache too) passes `-count=1`; `go clean -testcache` forgets
+every cached result. `hack/keep-mtime_test.sh` tests the script and the flags
+`make test` passes.
 
 The agents' Claude token lives in one file per device, outside git:
 `.dev/secrets/claude-token` in the main checkout (the `.dev/` every worktree
@@ -279,29 +355,67 @@ hack/relay-watch.sh --install --workers 2  # the same, kept up by systemd (or cr
 touch .relay/stop                  # stop the watch, and every worker after its current session
 ```
 
-The relay picks the oldest `status/in-progress` issue nobody holds, else the
-oldest `status/ready` + `priority/urgent` one, else the oldest `status/ready`
-one, skipping issues with a live claim or an open `Depends on #M`, and claims
-it (see [docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
+The relay picks the issue its worker's last session reserved (`create --next`,
+below), else by `priority/N`, 1 first: an issue with no priority label counts
+as 5, and of several labels the lowest counts. 1 is something broken now (a
+red main, a dead relay, a failed release check), 3 what makes development
+itself faster ([docs/plans/velocity.md](../plans/velocity.md)), 10 last.
+Within a number, the oldest `status/in-progress` issue nobody holds goes
+first, else the oldest `status/ready` one, skipping issues with a live claim
+or an open `Depends on #M`, and claims it (see
+[docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
 k runs its sessions in the git worktree `.claude/worktrees/relay-k`, switched
 to the issue's branch; uncommitted changes a dead session left there are
-stashed, not dropped. Claims keep workers and hand-started sessions off each
+stashed, not dropped. Before it claims anything, a worker checks that a
+session there could commit (#1289): `git -C <worktree> var
+GIT_COMMITTER_IDENT`, in the environment the session gets, which sees the
+global, `$XDG_CONFIG_HOME/git/config` and repository configs alike. When git
+has no committer identity there, the worker logs git's reason, starts no
+session and stops, and puts one line under the Maintainer report's *Needs
+you* naming the host and the worktree (`report-note ident-<host>-relay-k`),
+so the owner sets `user.name` and `user.email`; the line goes away at the
+first check that passes again. Triage and maintainer sessions commit nothing
+and skip the check. `land`'s own merge of main says what stopped it when it
+fails with no conflict, such as `fatal: empty ident name`. Claims keep workers and hand-started sessions off each
 other's issues, so the relay starts right away. A session that ends still
 holding its claim gets it released; a worker stops when a session leaves no
 handoff comment and doesn't close the issue or escalate it
 (`status/needs-maintainer`; only the maintainer sets `status/needs-human`). With
 nothing ready a worker stops.
+A follow-up a session decided goes to the front of its own worker's queue:
+`hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>` files it
+`status/ready` and reserves it, with a claim comment that says "reserved this
+issue" and a line in the worktree's `.relay/next`. That worker's next `pick`
+returns it before every other issue, `priority/1` ones too, and its `take` turns
+the reservation into the claim; every other `pick` skips it and every other
+`take` refuses it, until the reservation is `C4_LEASE_TTL` (2h) old, after
+which anyone picks it. The log shows such a session as `(next)`. The watch's
+`pick` counts every worker's `.relay/next`, so a reserved issue starts the
+relay after its worker stopped. Outside a worker's session (a hand-started
+one, the triage's, the maintainer's: `C4_RELAY_WORKER`, which the relay sets,
+is no number) `--next` files the issue ready and reserves nothing.
+Follow-ups that need a decision are still filed `status/proposed` for the
+triage.
 Each session, the triage's and the maintainer's too, gets
-`TMPDIR=<its worktree>/.dev/tmp` (#1269), on disk and gitignored, not the
-device's `/tmp`, a small tmpfs every session shares, which one session's
-scratch, Go's build dirs and envtest's once filled: the relay empties it before
-the session starts and removes it when the session ends.
+`TMPDIR=~/.cache/c4factory/tmp/<its worktree>` (#1269, #1307;
+`RELAY_SCRATCH` moves the parent): on disk, not the device's `/tmp`, a small
+tmpfs every session shares, which one session's scratch, Go's build dirs and
+envtest's once filled; and outside any git checkout, so a test that runs git in
+a `mktemp -d` directory finds no repository above it, as it would in the
+worktree. The relay empties it before the session starts and removes it when
+the session ends.
+Before the session, the relay also replaces a worktree's `.dev/` of its own,
+the caches `make check` left there before `hack/dev/env.sh` pointed worktrees
+at the main checkout's (#1132), with the link to the main checkout's `.dev/`,
+as `./dev setup` makes in a worktree, and logs what that freed (#1246).
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
 A session that ends on a usage limit or a failed login pauses the relay until
 the limit resets (`.relay/paused-until`): every worker waits, and the watch
-starts nothing. A session whose transcript stops changing for `RELAY_IDLE`
+starts nothing. Its claim's comment then names the limit and keeps its host,
+as every released or expired claim does: `released this issue: session ended
+without a handoff (a limit: OAuth session expired) · host ...`. A session whose transcript stops changing for `RELAY_IDLE`
 (45m) is ended and counts as failed. A session that ends without a handoff and
 without a new commit on the issue's branch, or on `<branch>-2` or
 `<branch>-<name>` (local or pushed), is a failed one: a strike, a comment on
@@ -310,7 +424,9 @@ account. The count is read from the issue, so every device's strikes add up;
 one older than `RELAY_STRIKE_TTL` (24h) doesn't count. At `RELAY_MAX_FAILS`
 (3) the relay posts one comment linking them and sets the issue to
 `status/needs-maintainer`; when only that status swap fails, the next failed
-session retries it without a new comment (`.relay/escalated-<issue>`). A
+session on any device retries it without a new strike or comment: the newest
+of the issue's handoff, reset and escalation comments is the escalation, and
+the issue wasn't labeled `status/needs-maintainer` after it. A
 handoff, a commit or a finish on any device resets the count: the relay posts
 a reset comment when any strike counts. One that leaves the issue in
 `status/waiting` (a plan's parent) has finished, like a handoff; one that sets
@@ -405,26 +521,40 @@ to origin/main, while their state (`.relay/`, the workers' worktrees) stays in
 the main checkout. One started from the checkout moves there at its first pull,
 and one whose code there changed restarts on it; `RELAY_PULL=0` keeps them on
 the code where they were started, to try relay changes from a branch. Every 30 minutes
-(`WATCH_TRIM_EVERY`) it runs `hack/trim-go-cache.sh` and logs what that
-dropped: nine workers grow Go's build cache by gigabytes an hour.
+(`WATCH_TRIM_EVERY`) it runs `hack/prune-caches.sh` and logs what that
+dropped: nine workers grow Go's build cache by gigabytes an hour, and WSL's and
+Docker Desktop's disk images never shrink (#1343). It prunes:
+- with `hack/trim-go-cache.sh`, Go's build cache (`GOCACHE`), golangci-lint's
+  and Go's default cache `~/.cache/go-build`, which `go` runs outside `./dev`
+  fill, to `C4_GOCACHE_MAX_GB` (4) each; `C4_TRIM_GO=0` turns it off;
+- the GH runners' cache volume `c4factory-gh-runner-cache`: the same trim over
+  its `go-build` and `golangci-lint`, in a throwaway container of the runner
+  image, keeping what was used in the last two hours, so a running job keeps
+  its cache; skipped without the volume or the image,
+  `C4_PRUNE_RUNNER_CACHE=0` turns it off;
+- Docker's build cache unused for `C4_PRUNE_DOCKER_UNTIL` (72h, so the latest
+  builds stay warm) and the dangling images; `C4_PRUNE_DOCKER=0` turns it off.
+
+Without `docker` it skips the last two.
+
 Busy or idle, with issues ready or not (#1191), it starts a triage of the
 `status/proposed` issues: for a new one, for one that changed since the last
 triage or waits on an issue that closed since, and every `WATCH_RETRIAGE` (3h)
-in any case, at most every `WATCH_TRIAGE` (30m) and never while one runs. Past
+in any case, at most every `WATCH_TRIAGE` (10m) and never while one runs. Past
 `WATCH_TRIAGE` it asks GitHub for the proposed issues at most every
 `WATCH_RETRY` (10m), as each ask reads every open issue. The triage runs in its own worktree,
 `.claude/worktrees/relay-triage`, on origin/main, under `.relay/triage.lock`,
 as the maintainer does: it needs no free worker, doesn't count against
 `RELAY_MAX_WORKERS` and, running no `make`, takes no `HEAVY_JOBS` slot; it
 goes through `admit` like any session and logs to `.relay/relay-triage.log`.
-To triage now, say after a plan files its steps `status/proposed`, run
+To triage now, say after a session files follow-ups `status/proposed`, run
 `./dev run hack/relay.sh --triage`: it starts one triage session unless one
 runs, and records its time and issues in `.relay/triaged`, as every triage
 session does (the watch only reads that file), so the watch starts no second
 triage for the same issues, only for one filed after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
 a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
-ready and urgent, so the next session fixes main before anything else; a single
+ready and `priority/1`, so the next session fixes main before anything else; a single
 failure files nothing. When GitHub started none of the newest failed run's
 jobs (no steps, an annotation saying the job was not started: failed
 payments, a spending limit), no code is at fault: the watch files one
@@ -435,10 +565,11 @@ other while the outage lasts, even after the issue is closed as a duplicate.
 A flaky spec rarely fails twice in a row, so in the same round the watch
 records each Ginkgo spec that failed on main (the `[FAIL]` lines of each failed
 run's log, `hack/lib/github.sh flakes`) in `.relay/flakes.tsv`, spec, run and
-time, and files `Flaky: <spec>`, a ready `kind/bug` that isn't urgent, when one
-failed in two runs within `WATCH_FLAKE_DAYS` days (7); while it is open, a
-third failure files nothing. `hack/lib/github.sh flakes --count` lists the
-specs that failed on main this week, from GitHub, on any device.
+time, and files `Flaky: <spec>`, a ready `kind/bug` with `priority/3`,
+when one failed in two runs within `WATCH_FLAKE_DAYS` days (7);
+while it is open, a third failure files nothing.
+`hack/lib/github.sh flakes --count` lists the specs that failed on main this
+week, from GitHub, on any device.
 A queued run never fails, so `red` can't see that every self-hosted runner is
 offline (Docker Desktop stopped). So in the same round the watch asks
 `hack/lib/github.sh queued`. When a run on main has had a job waiting more
@@ -460,8 +591,8 @@ percent full (90), the watch puts `/tmp on HOST is N% full; largest: ...`,
 naming its three largest entries, under the Maintainer report's Health only,
 with no Needs you line (`hack/lib/github.sh report-note tmp-<host> TEXT ""`).
 `.relay/tmp-full` holds the note while it lasts; the first round under the
-threshold removes it. Relay sessions keep their scratch in their worktree's
-`.dev/tmp`, so what fills `/tmp` is someone else's.
+threshold removes it. Relay sessions keep their scratch in
+`~/.cache/c4factory/tmp`, so what fills `/tmp` is someone else's.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
@@ -567,7 +698,7 @@ upgrade path its minor checked. A human checks any other release by hand:
 Actions → Verify Release → Run workflow, or `gh workflow run
 verify-release.yml -f tag=vX.Y.Z`. Agents never dispatch it. A failed run on
 main files (or comments on) `Release vX.Y.Z fails its check`, ready and
-urgent, as the watch does for a red main.
+`priority/1`, as the watch does for a red main.
 
 The install check installs the published chart and images on a fresh cluster,
 waits for the seed's repositories, both runners, the manager and the UI, and
@@ -609,7 +740,7 @@ the newest samples that made their own catalog and Agents, from history.
 
 Their results are the run's job summaries and the artifacts
 `release-vX.Y.Z-install` and `release-vX.Y.Z-upgrade` (Actions → Verify
-Release). When a dispatch on main fails it files `Release vX.Y.Z fails its check` (`status/ready`, `priority/urgent`), or
+Release). When a dispatch on main fails it files `Release vX.Y.Z fails its check` (`status/ready`, `priority/1`), or
 comments on the open one, so the relay picks it up; the issue says which check
 failed and if the runner ran short of memory or disk. A dispatch on another
 branch only reports in its run. Any published release can be checked; add
@@ -662,17 +793,43 @@ queue:
   workers is `RELAY_ADMIT_GAP` seconds old (default 120), and stops after
   `RELAY_MEM_WAIT` seconds (default 3600) without headroom. It logs the wait.
 - Heavy jobs queue device-wide: `make check`, `test`, `lint`, `lint-fix`,
-  `docker-build`, `deploy`, `e2e`, `test-e2e` and `test-templates-operator` take one of `HEAVY_JOBS` slots
+  `vulncheck`, `docker-build`, `deploy`, `e2e`, `test-e2e` and `test-templates-operator` take one of `HEAVY_JOBS` slots
   (default 2; 0 turns the queue off) before anything builds, shared by every
   checkout on the device (`hack/heavy-slot.sh`: `flock`ed files in
   `<git common dir>/heavy-slots`). A `make` that finds them all taken waits,
   printing who holds them (pid, checkout, goals, since when) and how many jobs
   wait ahead of it; the wait is not a hang, so give the command a long timeout
   or run it in the background. Waiters get slots first come, first served:
-  each holds a numbered ticket, and a waiter that dies loses its turn. A job
-  that ends, fails or is killed frees its slot within a second; its sub-makes
-  don't take another. `hack/heavy-slot.sh status` shows the slots and the
-  waiters.
+  each holds a numbered ticket, and a waiter that dies loses its turn. One
+  job goes first: the `make check` that `land` runs under the merge turn
+  (`C4_HEAVY_FIRST=1`, which the Makefile turns into `hack/heavy-slot.sh
+  acquire --first`) takes the next slot that frees, ahead of every waiter,
+  since every device's lands wait on it while the other checks hold up only
+  their own. It never takes a held slot, and one pull request at a time holds
+  the turn across every device, so the other waiters can't starve. The check
+  `land` runs before it queues for the turn waits its turn like any other. A
+  job that ends, fails or is killed frees its slot within a second; its
+  sub-makes don't take another. `hack/heavy-slot.sh status` shows the slots
+  and the waiters, the one going first marked `goes first` and the slot it
+  took `went first`.
+- The controller suite runs in `C4_TEST_PROCS` processes (default 2), each
+  with its own control plane and manager (#1283). Measured on 2026-10-16 on
+  this device (9.6 GiB, `HEAVY_JOBS=1` then), the suite alone, the peak RSS
+  of its whole process tree (go test, the test binaries, etcd,
+  kube-apiserver):
+
+  | `C4_TEST_PROCS` | Wall time | Peak RSS |
+  | --- | --- | --- |
+  | 1 | 834 s | 1.0 GiB |
+  | 2 | 484 s | 2.2 GiB |
+  | 4 | 242 s | 4.4 GiB |
+
+  Each part costs about 1.1 GiB. Two checks at once at 2 take about 4.4 GiB
+  for their suites and leave the device above `RELAY_MIN_MEM_GIB`; at 4 they
+  would take 8.8 GiB, more than it has free. So the default is 2, and below
+  `C4_TEST_MIN_MEM_GIB` (4 GiB, two parts and the relay's 2 GiB of
+  headroom) of `MemAvailable` the suite runs in one process. A device with
+  memory to spare runs `C4_TEST_PROCS=4 make check`.
 - Two checks at once still start several envtest control planes at once, so
   `make test` gives them slack: 2 minutes for etcd and kube-apiserver to
   start (`ENVTEST_START_TIMEOUT`), and etcd a 10 s election timeout
@@ -694,6 +851,8 @@ queue:
   cached pass counts as a pass. A failure records nothing; `FORCE=1 make
   check` always runs the whole check and records it. Tool versions,
   `go.mod`/`go.sum` and the Makefile are in the tree, so bumping them misses.
+  On a miss, Go's test cache (above) still answers each unchanged package: a
+  `hack/`-only change reruns the other tiers, not the envtest suites.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
   before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
   `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;
@@ -709,10 +868,62 @@ queue:
 `/proc/meminfo` (`RELAY_MEMINFO`), `hack/heavy-guard_test.sh` the hook,
 with `ps` and `docker` faked too, and `hack/heavy-slot_test.sh` the slots: two
 jobs running while a third waits, a slot freed by a job that ends or is killed,
-the oldest waiter taking the next free slot and a dead waiter skipped, and the
-Makefile queueing its heavy goals. `hack/check-cache_test.sh` tests the
+the oldest waiter taking the next free slot and a dead waiter skipped, a
+`--first` waiter taking the next free slot ahead of older waiters but never a
+held one while the others keep their order, and the Makefile queueing its
+heavy goals, going first only with `C4_HEAVY_FIRST`, which its recipes don't
+inherit. `hack/check-cache_test.sh` tests the
 check cache: a pass, then a hit on the same tree from another worktree, a miss
 on one changed byte (tracked or untracked), and `FORCE=1` queueing again.
+
+### Disk space on WSL
+
+On 2026-10-16 the Windows drive C: filled while the relay ran; the machine had
+to be powered off, and tracked files in two checkouts came back 0 bytes
+(#1344). Inside WSL `df /` showed 930 GB free the whole time: WSL's disk is a
+dynamic `ext4.vhdx` on C: (74 GB, 60 GB in use), and Docker Desktop's
+`docker_data.vhdx` another (22.5 GB). Neither file shrinks when files inside
+are deleted, so the real limit is the drive that holds them.
+
+So before each session, where it waits for memory, a worker checks the free
+space on each watched filesystem: `/`, the checkouts' and, under WSL, the
+drive of each distro's `BasePath` (Docker Desktop's included), read from
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` with `reg.exe` and
+mapped with `wslpath`, or `/mnt/c` when that fails. `RELAY_DISK_PATHS`
+(space-separated) overrides the list. While one has less than
+`RELAY_MIN_FREE_GB` (default 30) free, the worker starts no session, logs the
+path, its free space and the minimum (at most once per path an hour, across
+workers: `.relay/disk-low-<path>`), and prunes the caches at once
+(`hack/prune-caches.sh`). The wait counts toward `RELAY_MEM_WAIT` like the
+wait for memory. Sessions already running go on.
+
+Deleting files inside WSL frees space in the distro, not on C:. Only
+compacting the `.vhdx` returns it to Windows:
+
+1. Quit Docker Desktop, then in PowerShell `wsl --shutdown`.
+2. In an administrator `diskpart`, for WSL's disk (its folder is the
+   distro's `BasePath`, `%LOCALAPPDATA%\wsl\{<guid>}\ext4.vhdx` on a
+   recent WSL):
+
+   ```
+   select vdisk file="C:\Users\<you>\AppData\Local\wsl\{<guid>}\ext4.vhdx"
+   attach vdisk readonly
+   compact vdisk
+   detach vdisk
+   ```
+
+3. The same for Docker Desktop's disk,
+   `%LOCALAPPDATA%\Docker\wsl\disk\docker_data.vhdx`, with Docker Desktop
+   still quit.
+
+WSL's own `wsl --manage <distro> --set-sparse true` would shrink the disk as
+it goes, but WSL marks sparse VHDs unsafe (they can corrupt the disk), so
+compact by hand instead.
+
+`hack/relay_test.sh` tests the guard with a stub `df`: no session below the
+minimum on any watched path and the path in the log, sessions above it, the
+settings, one line an hour; and the `.vhdx` lookup with stub `reg.exe` and
+`wslpath`, the `/mnt/c` fallback included.
 
 ### CPU on the cluster device
 
@@ -761,6 +972,7 @@ make gh-runner-status                       # whether Docker answers, their cont
 gh variable delete RUNS_ON                  # back to ubuntu-latest
 make gh-runner-down                         # stop them all and remove them from GitHub
 docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
+hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that are gone, every 2 minutes
 ```
 
 - Runner *i* is the container `c4factory-gh-runner-i`, registered as
@@ -773,7 +985,8 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   and GitHub has no runner to fall back on.
 - The runners run on the device's Docker. On WSL that is Docker Desktop, with
   WSL integration on for the distro. The containers (`--restart
-  unless-stopped`) stop when it stops and start again with it. The relay watch
+  unless-stopped`) stop when it stops and start again with it, unless it
+  comes back without them (the keeper, below). The relay watch
   notes runs queued on main for over 30 minutes in the Maintainer report
   (above). `make gh-runner-status` then says which part is down. Docker not
   answering from this distro means starting Docker Desktop. A container down
@@ -781,6 +994,33 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   its container is up has its reason in `docker logs --tail 50
   c4factory-gh-runner-i`. It exits 1 unless every runner is online. Setting
   `RUNS_ON` back is the owner's call.
+- **The keeper.** Docker Desktop on WSL loses its data disk now and then
+  (2026-10-08, 10-09, 10-12, 10-15): it comes back without the containers,
+  volumes and image, so `--restart unless-stopped` has nothing to restart,
+  and jobs waited hours. `hack/gh-runner/gh-runner.sh install`, run once per
+  device from the main checkout, installs a systemd user timer
+  (`c4factory-gh-runner-keep.timer`; without systemd, a crontab line) that
+  runs `gh-runner.sh keep` every 2 minutes. `make gh-runner RUNNERS=N` records
+  N, with the names, work directories and repository it used, in
+  `~/.local/state/c4factory/gh-runner/runners`; `keep` starts the recorded
+  runners whose container is gone or not up (building the image and
+  registering them again when those went too), and nothing else:
+  - it never recreates a container that is up, which would kill its job,
+    even when the checkout's image is newer;
+  - it never changes the count, and `make gh-runner-down` removes the
+    record, so the runners stay down until the next `make gh-runner`;
+  - with Docker not reachable it starts nothing and logs that once: only the
+    owner restarts Docker Desktop (after a data-disk failure, `wsl
+    --shutdown`), and the relay watch's *Runners offline* note is the alarm;
+  - it skips its turn while `make gh-runner` or `make gh-runner-down` runs.
+
+  Its log is `~/.local/state/c4factory/gh-runner/keep.log`, under `$HOME`
+  since `./dev` points the XDG folders into `.dev/`. It runs without `./dev
+  run`, with the installer's `PATH` and the device's `gh` login. The systemd
+  user manager needs the `docker` group, and `install` warns when it lacks it
+  (as `hack/relay-watch.sh --install` does). A container stopped by hand with
+  `docker stop` starts again; `make gh-runner-down` is the way to keep them
+  down. `gh-runner.sh uninstall` removes the keeper.
 - `make gh-runner RUNNERS=N` again with a smaller N removes the runners above
   N, from Docker and from GitHub; `RUNNERS` defaults to 1. A device that ran
   the single runner from before (container `c4factory-gh-runner`, named
@@ -799,7 +1039,8 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   memory. `hack/check-workflows.sh` (in `make check`) fails a job whose
   `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
   without the label.
-- **Lint and UI run on pull requests too; Tests tests every merge commit.**
+- **Lint and UI run on pull requests too; Tests tests every merge commit its
+  `paths` match.**
   *Lint* (with its `test-hack` job, `make test-hack`) and *UI* run on pushes
   to main and on pull requests to main, with the same path filters, so vet,
   lint and the shell tests answer before `hack/lib/github.sh land`. They carry
@@ -819,6 +1060,14 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   one of the two groups, or with `cancel-in-progress`; Lint or UI off pull
   requests to main or with other paths there; Lint without its `test-hack`
   job; and Tests on pull requests or grouped by anything but the commit.
+- **Vulnerabilities runs govulncheck.** *Vulnerabilities* (`vulncheck.yml`)
+  runs `make vulncheck` (`govulncheck ./...`, which needs the network and so
+  stays out of `make check`) on pushes to main and pull requests to main that
+  change the Go code, the modules or the `Makefile`, and every Monday at 04:23
+  UTC, so a new advisory shows up without a change. It fails on a known
+  vulnerability the code reaches, in a module or in the standard library of
+  `go.mod`'s toolchain; two failed runs on main file "main is red:
+  Vulnerabilities", which a bump of the toolchain or the module fixes.
 - Jobs use the device's Docker through its socket, on the host's network, so
   `docker build` and Kind work and a Kind cluster a job makes answers on
   127.0.0.1. The socket is root on the device, which is acceptable for a

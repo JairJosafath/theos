@@ -20,7 +20,7 @@
 # free worker): it reads each proposed issue against docs/design.md and the
 # open issues, readies the sound ones, comments on the others what they lack
 # and closes duplicates. It takes no issue and changes no code. Triage runs
-# again, at most every WATCH_TRIAGE seconds (default 1800) and never while one
+# again, at most every WATCH_TRIAGE seconds (default 600) and never while one
 # runs (.relay/triage.lock), when a proposed issue it hasn't seen appears, when
 # one changed after it (its body, title, labels or a comment that isn't the
 # triage's own), when one waits on an issue that closed after it (Depends on
@@ -46,7 +46,7 @@
 # Every WATCH_CI_EVERY seconds (default 900) it checks main's CI: each
 # workflow in .github/workflows that runs on a push to main and whose two
 # newest finished runs on main failed (hack/lib/github.sh red) gets an issue
-# titled "main is red: <workflow>", status/ready and priority/urgent, so pick
+# titled "main is red: <workflow>", status/ready and priority/1, so pick
 # takes it first. hack/lib/github.sh create skips a title that is open, so a
 # red main that lasts, or both devices' watches, file one issue; a single
 # failure files nothing. The session that fixes main closes it. When GitHub
@@ -58,9 +58,9 @@
 #
 # In the same round it records each Ginkgo spec that failed on main
 # (hack/lib/github.sh flakes) in .relay/flakes.tsv, and files a "Flaky: <spec>"
-# bug, status/ready and not urgent, when one failed in two runs within
-# WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails twice in a row,
-# so it never turns main red. An open one is not filed again.
+# bug, status/ready and priority/3, not 1, when one failed in two
+# runs within WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails
+# twice in a row, so it never turns main red. An open one is not filed again.
 #
 # In the same round it notices runs on main that wait for a runner: a queued
 # run never fails, so red sees nothing while the device's self-hosted runners
@@ -81,7 +81,7 @@
 # under the Maintainer report's Health only (hack/lib/github.sh report-note
 # tmp-<host>, with no Needs you line), kept current while it lasts
 # (.relay/tmp-full), and removes it when /tmp drops back. Relay sessions keep
-# their scratch in their worktree's .dev/tmp (#1269), so what fills /tmp is
+# their scratch in ~/.cache/c4factory/tmp (#1269, #1307), so what fills /tmp is
 # someone else's.
 #
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh
@@ -107,8 +107,9 @@
 # branch this checkout has, and keep their state (.relay/) here (#1126,
 # hack/lib/relay-code.sh). RELAY_PULL=0 keeps it on the code where it was
 # started, to try relay changes from a branch. Every WATCH_TRIM_EVERY seconds
-# (default 1800) it runs hack/trim-go-cache.sh: nine workers' builds grow Go's
-# build cache by gigabytes an hour, faster than opening VS Code trims it.
+# (default 1800) it runs hack/prune-caches.sh: nine workers' builds grow Go's
+# build cache by gigabytes an hour, faster than opening VS Code trims it, and
+# the GH runners' cache volume and Docker's build cache grow too (#1343).
 #
 #   hack/relay-watch.sh                start the watch, detached, for one worker
 #   hack/relay-watch.sh --workers N    for N workers (1-99); on the cluster device RELAY_MAX_WORKERS (default 9)
@@ -124,6 +125,10 @@
 # The unit runs the watch with --foreground: in its own process, waiting for the
 # lock while a watch started by hand holds it. The crontab line runs it with
 # --cron: started detached unless a watch runs or .relay/stop is there.
+#
+# At start, the watch runs hack/lib/github.sh labels once, so the
+# repository's labels follow the code and retired ones go (#1329); a failure
+# is logged and the watch goes on.
 #
 # At start, the watch logs a warning when it lacks one of the user's groups in
 # /etc/group, and --install prints it when the systemd user manager does: a
@@ -146,7 +151,7 @@ STOP="$DIR/stop"
 LOG="$DIR/watch.log"
 EVERY=${WATCH_EVERY:-60}
 RETRY=${WATCH_RETRY:-600}
-TRIAGE_EVERY=${WATCH_TRIAGE:-1800}
+TRIAGE_EVERY=${WATCH_TRIAGE:-600}
 RETRIAGE=${WATCH_RETRIAGE:-10800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 CI_EVERY=${WATCH_CI_EVERY:-900}
@@ -193,17 +198,20 @@ triaging() { [ -e "$DIR/triage.lock" ] && ! flock -n "$DIR/triage.lock" true; }
 # pick_next, proposed, blocked, cycles, parents, activity, escalated, run_relay,
 # run_triage, run_maintain, trim_caches, report_note, tmp_use and tmp_largest:
 # what the watch asks and starts (faked in the tests).
-pick_next() { github pick; }
+# pick_next counts every worker's reservations (create --next, .relay/next in
+# its worktree) as its own, so an issue a worker reserved starts the relay
+# after that worker stopped; only that worker's pick takes it first.
+pick_next() { GH_NEXT_FILES=$(printf '%s\n' "$REPO"/.claude/worktrees/relay-[0-9]*/.relay/next) github pick; }
 blocked() { github blocked --unworked; }
 cycles() { github cycles --report; }
 parents() { github parents --apply; }
-proposed() { github proposed; }
+proposed() { github proposed "$@"; }
 run_relay() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --triage; }
 activity() { github activity; }
 escalated() { github escalated; }
 run_maintain() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --maintain; }
-trim_caches() { "$CODE/hack/trim-go-cache.sh"; }
+trim_caches() { "$CODE/hack/prune-caches.sh"; }
 report_note() { github report-note "$@"; }
 # tmp_use: the percent of /tmp's filesystem in use, a bare number.
 tmp_use() { df -P /tmp | awk 'NR == 2 { sub(/%/, "", $5); print $5 }'; }
@@ -262,7 +270,7 @@ ci_workflows() {
   done
 }
 
-# ci_round: file an urgent issue for each workflow that is red on main. When
+# ci_round: file a priority/1 issue for each workflow that is red on main. When
 # GitHub started none of a workflow's jobs (red exits 3), the code isn't at
 # fault: it files one "GitHub Actions starts no jobs" issue for the maintainer
 # instead, which every such workflow shares. CI_SAID holds the workflows whose
@@ -291,7 +299,7 @@ ci_round() {
     rc=$?
     case $rc in
       0)
-        out=$(github create "main is red: $name" - status/ready priority/urgent kind/bug source/dev <<<"$body" 2>&1)
+        out=$(github create "main is red: $name" - status/ready priority/1 kind/bug source/dev <<<"$body" 2>&1)
         rc=$?
         if [ "$rc" != 0 ]; then
           said+=" fail:$file"
@@ -443,7 +451,7 @@ tmp_round() {
 # flake_round: record each spec that failed on main (hack/lib/github.sh
 # flakes, which reads each failed run's log once: $DIR/flakes-runs) in
 # $DIR/flakes.tsv, SPEC<tab>RUN<tab>TIME, and file a "Flaky: <spec>" bug,
-# status/ready and not urgent, for a spec just recorded that failed twice in
+# status/ready and priority/3, for a spec just recorded that failed twice in
 # FLAKE_DAYS days. A flake rarely fails two runs in a row, so ci_round's "main
 # is red" misses it. hack/lib/github.sh create leaves an open issue with the
 # title alone, so a spec that fails again files nothing new while its bug is
@@ -483,7 +491,7 @@ $(S=$spec awk -F'\t' -v t="$since" -v repo="${C4_GITHUB_REPO:-JairJosafath/c4fac
   '$1 == ENVIRON["S"] && $3 >= t && !r[$2]++ { print "- https://github.com/" repo "/actions/runs/" $2 " at " $3 }' "$DIR/flakes.tsv")
 
 Find why it fails now and then (a race, a timeout too short for a busy runner, an order it depends on) and fix the spec or the code; retrying until it passes is no fix. \`hack/lib/github.sh flakes --count\` lists the specs that failed on main this week. Filed by hack/relay-watch.sh, which files no other issue for this spec while this one is open."
-    out=$(github create "$title" - status/ready kind/bug source/dev <<<"$body" 2>&1)
+    out=$(github create "$title" - status/ready priority/3 kind/bug source/dev <<<"$body" 2>&1)
     rc=$?
     if [ "$rc" = 0 ]; then
       log "a spec failed on main $n times in $FLAKE_DAYS days: $spec; issue #${out##*$'\n'}"
@@ -747,6 +755,20 @@ own_groups() {
   [ -z "$warning" ] || log "$warning"
 }
 
+# sync_labels: make the repository's labels hack/lib/github.sh's, once at start:
+# create the missing ones, update descriptions and delete the retired ones
+# (GH_RETIRED_LABELS, #1329). It logs what changed, and a failure, and the
+# watch goes on either way.
+sync_labels() {
+  local out
+  if out=$(github labels 2>&1); then
+    grep -v ': exists$' <<<"$out" | while IFS= read -r line; do [ -z "$line" ] || log "labels: $line"; done
+  else
+    log "labels failed; the watch goes on: $(tail -n 1 <<<"$out")"
+  fi
+  return 0
+}
+
 # manager_groups: the groups of this user's systemd user manager.
 manager_groups() {
   local pid
@@ -908,6 +930,7 @@ unset C4_RELAY_WATCH_CHILD C4_RELAY_WATCH_RESTART
 CODE_SUM=$(code_sum)
 log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}$([ "$MODE" = foreground ] && echo ", under systemd"), code $CODE at $(git -C "$CODE" rev-parse --short HEAD 2>/dev/null), $WORKERS worker(s), asks GitHub every ${EVERY}s"
 own_groups
+sync_labels
 PULL_T=0 PULLED= CI_T=0
 while :; do
   [ -e "$STOP" ] && { log "stop file found; stopping"; exit 0; }

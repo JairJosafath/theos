@@ -96,6 +96,14 @@ var templateCombos = []struct {
 		{model.SideFramework, "aws-lambda-py"},
 		{model.SideStandard, "aws-standard"},
 	}},
+	{"aws queue consumer", "worker", []side{
+		{model.SideFramework, "aws-queue-ts"},
+		{model.SideStandard, "aws-standard"},
+	}},
+	{"aws static site", "static-site", []side{
+		{model.SideFramework, "aws-static-site-ts"},
+		{model.SideStandard, "aws-standard"},
+	}},
 	{"hello", "cli", []side{
 		{model.SideFramework, "hello"},
 		{model.SideStandard, "hello-standard"},

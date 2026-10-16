@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 # Tests for the relay's memory guard in hack/relay.sh: the worker cap on the
 # device with the Kind cluster, and the wait for headroom before a pick, with a
-# faked /proc/meminfo; the flush of a kept handoff, which releases the
+# faked /proc/meminfo; the disk guard, with a stub df, and its .vhdx lookup,
+# with stub reg.exe and wslpath (#1344); the flush of a kept handoff, which releases the
 # session's claim so the relay has none left to release; the prompts, which
 # never send a session to a cluster; the triage of the
 # proposed issues and the maintainer's prompt, as dry runs; the triage's own
-# worktree and lock, which it starts in however many workers run; and, with claude faked, the pause a usage
-# limit sets, the issue that goes to the user after failed sessions and the
+# worktree and lock, which it starts in however many workers run; against a
+# fake origin, switch_branch's three ways to the issue's branch (the local one
+# fast-forwarded, origin's, a new one from origin/main), worktree()'s fetch,
+# creation and stash of what a session left, and update() pulling nothing
+# under RELAY_PULL=0 and stopping, not restarting, on the stop file; and, with claude faked, the pause a usage
+# limit sets and the limit the claim's release names, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing, and each session's
-# TMPDIR, in its worktree, emptied before and removed after it; and idle workers,
+# TMPDIR, outside any checkout, emptied before and removed after it; a
+# worktree's own .dev/, which becomes the link to the main checkout's; the worktree
+# with no git identity, which starts no session (#1289); and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
 # first in admit; the maintainer lease, which keeps a second device's
 # maintainer from starting while one runs; a maintainer sweep, which
@@ -19,7 +26,7 @@ T=$(mktemp -d)
 # Only this shell cleans up (#544): a job killed just after it is forked, before
 # it resets the traps it inherits, runs this trap too, and would remove $T.
 trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
-unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN
+unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN RELAY_MIN_FREE_GB RELAY_DISK_PATHS RELAY_OSRELEASE
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 # Jobs killed as soon as they start, as maintain kills its heartbeat and
@@ -28,8 +35,17 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
 check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" kept
 # The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
 # 2 GiB free and 120s between session starts.
-check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP")" "9 2 120"
+check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP $MIN_FREE_GB")" "9 2 120 30"
+check "defaults: RELAY_MIN_FREE_GB and RELAY_DISK_PATHS" "$(RELAY_MIN_FREE_GB=5 RELAY_DISK_PATHS='/a /b'; . "$(dirname "$0")/relay.sh"; echo "$MIN_FREE_GB" $(disk_paths))" "5 /a /b"
+check "defaults: scratch in the user's cache, not ./dev's XDG_CACHE_HOME (#1307, #1326)" "$(unset RELAY_SCRATCH; HOME=/h XDG_CACHE_HOME=/repo/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
+# With XDG_CACHE_HOME inside a real git checkout, as ./dev sets it, the
+# scratch is in no git checkout (#1347).
+git init -q "$T/main" && mkdir -p "$T/home"
+scratch=$(unset RELAY_SCRATCH; HOME=$T/home XDG_CACHE_HOME=$T/main/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")
+check "defaults #1347: scratch in no git checkout" "$(mkdir -p "$scratch" && cd "$scratch" && GIT_CEILING_DIRECTORIES=$T git rev-parse --show-toplevel 2>/dev/null)" ""
 
+# No disk is low unless a test says so; the disk guard's own tests stub df.
+export RELAY_MIN_FREE_GB=0 RELAY_DISK_PATHS=/
 export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 RELAY_ADMIT_GAP=300 RELAY_MEM_POLL=1 RELAY_MEM_WAIT=30
 # shellcheck source=hack/relay.sh
 . "$(dirname "$0")/relay.sh"
@@ -79,6 +95,84 @@ MEM_WAIT=1 admit; check "admit: gives up" $? 1
 touch "$STOP"
 admit; check "admit: stop file" $? 1
 
+# The disk guard (#1344): a stub df reports each path's mount and free GB from
+# $T/df (PATH MOUNT GB lines); a stub trim records its runs.
+rm -f "$STOP" "$DIR/admitted"
+mkdir -p "$T/dfbin"
+cat >"$T/dfbin/df" <<'STUB'
+#!/usr/bin/env bash
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+awk -v p="${@: -1}" '$1 == p { printf "dev 1 1 %d 1%% %s\n", $3 * 1048576, $2; found = 1 } END { exit !found }' "$DF"
+STUB
+chmod +x "$T/dfbin/df"
+export DF=$T/df
+printf '/ / 100\n/repo / 100\n/mnt/c/wsl /mnt/c 12\n/mnt/d /mnt/d 50\n' >"$DF"
+trim_caches() { echo trim >>"$T/trims"; }
+disk() { PATH=$T/dfbin:$PATH "$@"; }
+meminfo 8
+OSRELEASE=$T/osrelease
+echo 'Linux 6.8.0-generic' >"$OSRELEASE"
+MIN_FREE_GB=30 DISK_PATHS='/ /repo /mnt/d'
+disk admit; check "disk: above the minimum, a session starts" $? 0
+check "disk: no trim above it" "$(cat "$T/trims" 2>/dev/null)" ""
+rm -f "$DIR/admitted"
+DISK_PATHS='/ /repo /mnt/c/wsl /mnt/d'
+: >"$LOG"
+MEM_WAIT=1 disk admit; check "disk: below on one path, no session" $? 1
+check "disk: no start slot taken" "$(test -e "$DIR/admitted" && echo taken)" ""
+check "disk: the log names the path, its free space and the minimum" \
+  "$(grep -c 'waiting for disk: /mnt/c/wsl has 12 GB free, a session needs 30 (RELAY_MIN_FREE_GB)' "$LOG")" 1
+check "disk: names no path above it" "$(grep -c 'waiting for disk: /mnt/c/wsl' "$LOG") $(grep -c 'waiting for disk' "$LOG")" "1 1"
+check "disk: trims the caches at once" "$(wc -l <"$T/trims")" 1
+MEM_WAIT=1 disk admit; check "disk: still below" $? 1
+check "disk: the line repeats at most once an hour" "$(grep -c 'waiting for disk' "$LOG")" 1
+check "disk: so does the trim" "$(wc -l <"$T/trims")" 1
+touch -d '-61 minutes' "$DIR/disk-low--mnt-c-wsl"
+MEM_WAIT=1 disk admit
+check "disk: after an hour it says it again" "$(grep -c 'waiting for disk' "$LOG")" 2
+check "disk: and trims again" "$(wc -l <"$T/trims")" 2
+check "disk: outside WSL no word of the .vhdx" "$(grep -c vhdx "$LOG")" 0
+echo 6.18.54.1-microsoft-standard-WSL2 >"$OSRELEASE"
+rm -f "$DIR"/disk-low-*
+: >"$LOG"
+MEM_WAIT=1 disk admit
+check "disk: under WSL it says only compacting the .vhdx helps" "$(grep -c 'only compacting the .vhdx.*docs/dev/testenv.md' "$LOG")" 1
+MIN_FREE_GB=10 disk admit; check "disk: RELAY_MIN_FREE_GB lowers the minimum" $? 0
+rm -f "$DIR/admitted" "$DIR"/disk-low-*
+printf '/mnt/c/wsl /mnt/c 12\n/mnt/c/docker /mnt/c 12\n' >"$DF"
+: >"$LOG"
+MEM_WAIT=1 DISK_PATHS='/mnt/c/wsl /mnt/c/docker' disk admit
+check "disk: one line per filesystem, for the first path on it" "$(grep 'waiting for disk' "$LOG" | sed 's/.*disk: \([^ ]*\).*/\1/')" /mnt/c/wsl
+rm -f "$DIR/admitted" "$DIR"/disk-low-*
+echo 'Linux 6.8.0-generic' >"$OSRELEASE"
+
+# The .vhdx lookup: stub reg.exe and wslpath; /mnt/c when they give nothing.
+mkdir -p "$T/regbin"
+cat >"$T/regbin/reg.exe" <<'STUB'
+#!/usr/bin/env bash
+[ -n "$REG_FAIL" ] && exit 1
+printf '\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss\\{0283}\r\n'
+printf '    BasePath    REG_SZ    C:\\Users\\j\\AppData\\Local\\wsl\\{0283}\r\n\r\n'
+printf 'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss\\{6923}\r\n'
+printf '    BasePath    REG_SZ    \\\\?\\D:\\Docker\\wsl\\main\r\n\r\nEnd of search: 2 match(es) found.\r\n'
+STUB
+cat >"$T/regbin/wslpath" <<'STUB'
+#!/usr/bin/env bash
+[ -n "$WSLPATH_FAIL" ] && exit 1
+[ "$1" = -u ] && shift
+case $1 in [A-Z]:\\*) d=${1%%:*}; r=${1#?:}; echo "/mnt/${d,,}${r//\\//}" ;; *) exit 1 ;; esac
+STUB
+chmod +x "$T/regbin/reg.exe" "$T/regbin/wslpath"
+vhdx() { PATH=$T/regbin:$PATH vhdx_dirs | paste -sd' '; }
+check "vhdx: nothing outside WSL" "$(vhdx)" ""
+echo 6.18.54.1-microsoft-standard-WSL2 >"$OSRELEASE"
+check "vhdx: each distro's BasePath, mapped" "$(vhdx)" "/mnt/c/Users/j/AppData/Local/wsl/{0283} /mnt/d/Docker/wsl/main"
+check "vhdx: /mnt/c when reg.exe fails" "$(REG_FAIL=1 vhdx)" /mnt/c
+check "vhdx: /mnt/c when wslpath fails" "$(WSLPATH_FAIL=1 vhdx)" /mnt/c
+check "vhdx: watched with / and the checkouts" "$(DISK_PATHS= REPO=/repo PATH=$T/regbin:$PATH disk_paths | paste -sd' ')" "/ /repo /mnt/c/Users/j/AppData/Local/wsl/{0283} /mnt/d/Docker/wsl/main"
+OSRELEASE=/proc/sys/kernel/osrelease
+MIN_FREE_GB=0 DISK_PATHS=/
+
 # The maintainer goes first (#262): while it waits in admit, no worker takes
 # the start slot; a crashed maintainer's file holds no one.
 rm -f "$STOP" "$DIR/admitted"
@@ -123,6 +217,31 @@ for c in unset none; do
   check "prompt, C4_CLUSTER $c: no cluster steps" "$(grep -cE 'cluster acquire|cluster release|make deploy|--fresh|needs/cluster' <<<"$out")" 0
   check "prompt, C4_CLUSTER $c: never a cluster" "$(grep -c 'Never lease, create or deploy to a Kind cluster' <<<"$out")" 2
 done
+
+# A follow-up (#1284): fixed in the pull request when it is already there,
+# filed --next when decided, proposed when it needs a decision; a session on
+# a --next issue is told where it came from.
+out=$(prompt 1 t u ready n b)
+check "prompt: a small follow-up goes in the pull request" "$(grep -c 'Also fixes:' <<<"$out")" 1
+check "prompt: a decided follow-up is filed --next" "$(grep -c 'hack/lib/github.sh create --next TITLE FILE' <<<"$out")" 1
+check "prompt: the rest is filed proposed" "$(grep -c 'FILE status/proposed kind/<kind>' <<<"$out")" 1
+check "prompt, next: the last session filed it" "$(prompt 1 t u next n b | grep -c 'filed it with create --next: the issue body is the goal')" 1
+
+# A resumed issue continues from its newest handoff at every priority (#1309):
+# pick says in-progress for a priority/3 one (#1329), and its prompt says so.
+(
+  mkdir -p "$DIR"
+  gh_api() {
+    case $* in
+      *issues/comments*) echo '[[]]' ;;
+      *issues\?state=open*) echo '[[{"number":7,"title":"t","html_url":"u","body":"","labels":[{"name":"status/in-progress"},{"name":"priority/3"}]}]]' ;;
+    esac
+  }
+  pick; check "pick, in-progress + priority/3: in-progress (#1309)" "$? $ISSUE $HOW" "0 7 in-progress"
+  check "prompt, in-progress + priority/3: continues from the handoff (#1309)" \
+    "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" n b | grep -c 'continue from its newest handoff comment')" 1
+  exit $fail
+) || fail=1
 
 # A session escalates to the maintainer, never to the user.
 out=$(prompt 1 t u ready n b)
@@ -242,11 +361,104 @@ rm -f "$DIR/admitted"
 check "maintain: the last sweep's time" "$(DRY_RUN=1 maintain | grep -c "The last sweep was at $(date -d @86400 -Is);")" 1
 check "maintain: a dry run records nothing" "$(cat "$DIR/maintained")" "86400 x y"
 
+# limit_name: the few words for each limit a session can end on (#1199), the
+# most specific first: an expired OAuth session also failed to authenticate.
+while IFS='|' read -r msg want; do
+  check "limit_name: $msg" "$(limit_name "$msg")" "$want"
+done <<'EOF2'
+Failed to authenticate: OAuth session expired and could not be refreshed|OAuth session expired
+API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"OAuth token has expired."}}|OAuth token expired
+OAuth token revoked · Please run /login|OAuth token revoked
+Invalid API key · Please run /login|invalid API key
+Not logged in · Please run /login|not logged in
+API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}|authentication failed
+Credit balance is too low|credit balance too low
+You've hit your session limit · resets 3am (UTC)|usage limit
+Usage limit reached · resets 5pm|usage limit
+EOF2
+limit_name "the build failed" >/dev/null; check "limit_name: no limit" $? 1
+
+# switch_branch, worktree and update (#1129), in a scratch clone of a fake
+# origin, so no stash lands in the real checkout; another device, up, pushes to it.
+(
+  S=$T/sw
+  REPO=$S/repo WT=$S/wt LOG=$S/log GH_PENDING_DIR=$S/wt/.relay K=7 PULL=1 STOP=$S/stop CODE_SUM= DRY_RUN=
+  mkdir -p "$S"
+  # tip REPO REV MSG: a new commit on top of REV, with its tree.
+  tip() { git -C "$1" -c user.name=t -c user.email=t@t commit-tree -p "$2" -m "$3" "$2^{tree}"; }
+  at() { echo "$(git -C "$WT" rev-parse --abbrev-ref HEAD) $(git -C "$WT" rev-parse HEAD)"; }
+  sha() { git -C "$REPO" rev-parse "$1"; }
+  upstream() { git -C "$REPO" for-each-ref --format='%(upstream:short)' "refs/heads/$1"; }
+  git init -q --bare -b main "$S/origin.git"
+  git init -q -b main "$S/up"
+  echo 1 >"$S/up/f"
+  git -C "$S/up" add f
+  git -C "$S/up" -c user.name=t -c user.email=t@t commit -q -m first
+  git -C "$S/up" remote add origin "$S/origin.git"
+  git -C "$S/up" push -q origin main
+  git clone -q "$S/origin.git" "$REPO"
+  git -C "$S/up" push -q origin "$(tip "$S/up" main second):refs/heads/main"
+  # A missing worktree is created after the fetch, detached at origin/main, with .relay ignored.
+  worktree
+  check "worktree: created at the fetched origin/main" "$? $(at)" "0 HEAD $(git -C "$S/origin.git" rev-parse main)"
+  check "worktree: creation logged, .relay ignored" "$(grep -c "created the worktree $WT$" "$LOG") $(cat "$GH_PENDING_DIR/.gitignore")" "1 *"
+  # switch_branch, each way: up pushes a1 ahead of the local one, a2 apart
+  # from it and b, which only origin has; a3 is local only and checked out in
+  # the main checkout, so the switch ignores other worktrees; c is nowhere.
+  m=$(sha origin/main)
+  git -C "$REPO" branch -q a1 "$m"
+  git -C "$REPO" branch -q a2 "$(tip "$REPO" "$m" "local a2")"
+  git -C "$REPO" switch -q -c a3
+  git -C "$S/up" push -q origin "$(tip "$S/up" "$m" "origin a1"):refs/heads/a1" \
+    "$(tip "$S/up" "$m" "origin a2"):refs/heads/a2" "$(tip "$S/up" "$m" "origin b"):refs/heads/b"
+  git -C "$REPO" fetch -q origin
+  switch_branch a1; check "switch: local behind origin, fast-forwarded" "$? $(at)" "0 a1 $(sha origin/a1)"
+  l=$(sha a2)
+  switch_branch a2; check "switch: diverged, the local commit kept" "$? $(at)" "0 a2 $l"
+  check "switch: diverged, logged" "$(grep -c 'local a2 and origin/a2 have diverged; the session sorts it out$' "$LOG")" 1
+  l=$(sha a3)
+  switch_branch a3; check "switch: local only, checked out elsewhere, unchanged" "$? $(at)" "0 a3 $l"
+  switch_branch b; check "switch: origin only, tracking origin/b" "$? $(at) $(upstream b)" "0 b $(sha origin/b) origin/b"
+  switch_branch c; check "switch: neither, from origin/main, no upstream" "$? $(at) $(upstream c)" "0 c $m "
+  # A switch git refuses fails: a name it rejects, or d, whose f a local change would overwrite.
+  switch_branch 'c..d'; check "switch: a name git rejects" "$(($? != 0)) $(at)" "1 c $m"
+  git -C "$REPO" switch -q -c d
+  echo 2 >"$REPO/f"
+  git -C "$REPO" -c user.name=t -c user.email=t@t commit -q -am d
+  echo 3 >"$WT/f"
+  switch_branch d; check "switch: refused over a local change" "$? $(at)" "1 c $m"
+  # What a dead session left uncommitted, a changed file and a new one, is
+  # stashed in the scratch clone, and the tree is clean.
+  echo new >"$WT/n"
+  worktree
+  check "worktree: stashed" "$? $(git -C "$WT" stash list | grep -c ': relay-7: left uncommitted on c, ') $(git -C "$WT" stash show --include-untracked --name-only | paste -sd,)" "0 1 f,n"
+  check "worktree: clean after, logged" "$(git -C "$WT" status --porcelain) $(grep -c "stashed uncommitted changes left in $WT " "$LOG")" " 1"
+  # A fetch that fails (origin gone) prepares nothing.
+  mv "$S/origin.git" "$S/gone.git"
+  worktree; check "worktree: the fetch fails" "$? $(grep -c 'git fetch failed$' "$LOG")" "1 1"
+  mv "$S/gone.git" "$S/origin.git"
+  # update: RELAY_PULL=0 pulls nothing; a worker due to restart on
+  # relay-code's copy (it runs from the clone, not from relay-code) stops
+  # instead when the stop file is there. Each runs in a subshell, for its
+  # exit; the restart itself is "relay code" below.
+  CODE=$REPO
+  mkdir -p "$REPO/hack"
+  printf '#!/usr/bin/env bash\necho pulled\n' >"$REPO/hack/pull.sh"
+  chmod +x "$REPO/hack/pull.sh"
+  : >"$LOG"
+  (PULL=0 update 5); check "update: RELAY_PULL=0 pulls nothing" "$? $(grep -c pulled "$LOG")" "0 0"
+  touch "$STOP"
+  (update 4); check "update: the stop file stops it, no restart" \
+    "$? $(grep -c pulled "$LOG") $(grep -c 'stop file found; stopping$' "$LOG") $(grep -c restarting "$LOG")" "0 1 1 0"
+  exit $fail
+) || fail=1
+
 # The sessions, with claude faked (FAKE: limit, fail, handoff or commit) and
 # GitHub faked: one ready issue, #175 on branch b.
 WT=$T/wt
 git init -q -b b "$WT"
-git -C "$WT" -c user.name=t -c user.email=t@t commit -q --allow-empty -m first
+git -C "$WT" config user.name t && git -C "$WT" config user.email t@t
+git -C "$WT" commit -q --allow-empty -m first
 git init -q --bare "$T/origin.git"
 git -C "$WT" remote add origin "$T/origin.git"
 mkdir -p "$T/bin"
@@ -272,7 +484,8 @@ case $(cat "$FAKE") in
   login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
   env) env >"$FAKE.env"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"env","num_turns":1}' ;;
-  tmp) echo "$TMPDIR" >"$FAKE.tmpdir"; if [ -e "$TMPDIR/left" ]; then echo kept; else echo gone; fi >"$FAKE.left"
+  tmp) echo "$TMPDIR" >"$FAKE.tmpdir"; (cd "$TMPDIR" && GIT_CEILING_DIRECTORIES=${FAKE%/*} git rev-parse --show-toplevel) >"$FAKE.repo" 2>/dev/null
+     if [ -e "$TMPDIR/left" ]; then echo kept; else echo gone; fi >"$FAKE.left"
     d=$(mktemp -d); echo "$d" >"$FAKE.scratch"; mkdir "$d/ro" && touch "$d/ro/f" && chmod a-w "$d/ro"
     echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"tmp","num_turns":1}' ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
@@ -309,16 +522,52 @@ eval "$(declare -f gh_comments | sed '1s/^gh_comments/gh_comments_api/')"
 gh_comments() { if [ "$1" = 175 ]; then cat "$COMMENTS"; else gh_comments_api "$1"; fi; }
 gh_comment() { cat >"$T/comment"; add_comment "$(cat "$T/comment")"; jq -r 'last.html_url' "$COMMENTS"; }
 counted() { strikes 175 | grep -c .; }
-no_strikes() { echo '[]' >"$COMMENTS"; }
-gh_set_status() { echo "$1 $2" >"$T/status"; }
+# #175's label events, in $EVENTS; a status swap adds one.
+EVENTS=$T/events.json
+echo '[]' >"$EVENTS"
+label_events() { cat "$EVENTS"; }
+no_strikes() { echo '[]' >"$COMMENTS"; echo '[]' >"$EVENTS"; }
+set_status() {
+  echo "$1 $2" >"$T/status"
+  jq --arg l "status/$2" --arg t "$(date -u +%FT%TZ)" '. + [{event: "labeled", created_at: $t, label: {name: $l}}]' \
+    "$EVENTS" >"$EVENTS.new" && mv "$EVENTS.new" "$EVENTS"
+}
+gh_set_status() { set_status "$@"; }
 takes() { cat "$T/takes" 2>/dev/null | wc -l | tr -d ' '; }
 rm -f "$STOP" "$DIR/admitted"
 : >"$LOG"
 ADMIT_GAP=0 MAX_SESSIONS=1 MEM_POLL=1
 
+# A worktree where git has no committer identity starts no session (#1289):
+# the worker logs why, puts one line under Needs you naming the host and the
+# worktree, once, and takes it away when the identity is back.
+gh_report_note() { echo "$*" >>"$T/notes"; }
+printf '[user]\n\tuseConfigOnly = true\n' >"$T/noident"
+git -C "$WT" config --unset user.name && git -C "$WT" config --unset user.email
+echo handoff >"$FAKE"
+(export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/none; work; work)
+check "no identity (#1289): no claim, no session" "$(takes) $(grep -c 'session 1 start' "$LOG")" "0 0"
+grep -q "git has no committer identity in $WT, so no session could commit: fatal: no email was given" "$LOG"; check "no identity (#1289): logs git's reason" $? 0
+check "no identity (#1289): one report note, naming host and worktree" \
+  "$(grep -c . "$T/notes") $(grep -c "^ident-$(hostname)-wt .*$(hostname).*$WT" "$T/notes")" "1 1"
+git -C "$WT" config user.name t && git -C "$WT" config user.email t@t
+(export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/none; work)
+check "identity back (#1289): the note goes, a session starts" \
+  "$(tail -n1 "$T/notes") $(takes) $(grep -c 'session 1 start' "$LOG")" "ident-$(hostname)-wt 1 1"
+(export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/none; work)
+check "identity (#1289): asks GitHub nothing once the note is gone" "$(grep -c . "$T/notes") $(takes)" "2 2"
+unset -f gh_report_note
+rm -f "$T/takes"
+: >"$LOG"
+
 # A usage limit pauses the device until the time it names, and isn't counted.
+# The claim's release names the limit (#1199).
 echo limit >"$FAKE"
+gh_claim_read() { [ -e "$T/claimed" ]; }
+gh_take() { echo take >>"$T/takes"; : >"$T/claimed"; printf 'otter-175\tb\n'; }
+gh_release() { rm -f "$T/claimed"; echo "$1" >"$T/released"; echo "released #175 (otter-175): $1"; }
 work
+check "limit: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: usage limit)"
 want=$(TZ=UTC date -d 3am +%s)
 [ "$want" -le "$(date +%s)" ] && want=$((want + 86400))
 check "limit: paused until the reset" "$(cut -d' ' -f1 "$DIR/paused-until")" "$want"
@@ -341,6 +590,7 @@ echo login >"$FAKE"
 LIMIT_WAIT=10m work
 check "login: paused for RELAY_LIMIT_WAIT" "$(($(cut -d' ' -f1 "$DIR/paused-until") - $(date +%s) > 590))" 1
 check "login: not counted" "$(counted)" 0
+check "login: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: not logged in)"
 rm -f "$DIR/paused-until"
 # An expired OAuth session, in an error result, pauses too and isn't counted.
 echo oauth >"$FAKE"
@@ -348,6 +598,7 @@ LIMIT_WAIT=10m work
 check "oauth: paused for RELAY_LIMIT_WAIT" "$(($(cut -d' ' -f1 "$DIR/paused-until") - $(date +%s) > 590))" 1
 grep -q "paused the relay until .*: Failed to authenticate: OAuth session expired" "$LOG"; check "oauth: logged" $? 0
 check "oauth: not counted" "$(counted)" 0
+check "oauth: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: OAuth session expired)"
 rm -f "$DIR/paused-until"
 # A session that ends well and only mentions a login failure pauses nothing.
 echo oauth-ok >"$FAKE"
@@ -388,19 +639,46 @@ check "env: no Claude Code or VS Code session variables" \
   "$(grep -E '^(CLAUDECODE|CLAUDE_CODE_(SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|ENTRYPOINT|MESSAGING_SOCKET|MESSAGING_TOKEN)|CLAUDE_EFFORT|CLAUDE_PID|AI_AGENT|ELECTRON_RUN_AS_NODE|VSCODE_[A-Z_]*|GIT_ASKPASS|TERM_PROGRAM)=' "$FAKE.env")" ""
 check "env: no human cluster opt-in (#1128)" "$(grep -c '^C4_HUMAN_CLUSTER=' "$FAKE.env")" 0
 check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|C4_HEADLESS=1)$" "$FAKE.env")" 3
+check "env: names the worker, for create --next (#1284)" "$(grep -c "^C4_RELAY_WORKER=$K$" "$FAKE.env")" 1
 no_strikes
 
-# Each session's TMPDIR is its worktree's .dev/tmp, not the device's shared
-# /tmp tmpfs: emptied before it starts and removed after it ends (#1269).
+# Each session's TMPDIR is SCRATCH/<its worktree>, not the device's shared
+# /tmp tmpfs (#1269) nor inside a git checkout, where git in a test's scratch
+# would find the worktree (#1307): emptied before it starts and removed after
+# it ends.
 echo tmp >"$FAKE"
-mkdir -p "$WT/.dev/tmp" && echo old >"$WT/.dev/tmp/left"
+SCRATCH=$T/cache/c4factory/tmp
+mkdir -p "$SCRATCH/wt" && echo old >"$SCRATCH/wt/left"
 work
-check "tmp #1269: TMPDIR is the worktree's .dev/tmp" "$(cat "$FAKE.tmpdir")" "$WT/.dev/tmp"
+check "tmp #1269: TMPDIR is SCRATCH/<worktree>" "$(cat "$FAKE.tmpdir")" "$SCRATCH/wt"
+check "tmp #1307: TMPDIR is in no git checkout" "$(cat "$FAKE.repo")" ""
 check "tmp #1269: a dead session's scratch is gone before the next starts" "$(cat "$FAKE.left")" gone
-check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$WT/.dev/tmp/"?*) echo in ;; esac)" in
-check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$WT/.dev/tmp" && echo left)" ""
+check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$SCRATCH/wt/"?*) echo in ;; esac)" in
+check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$SCRATCH/wt" && echo left)" ""
 check "tmp #1269: nothing logged" "$(grep -c 'could not remove' "$LOG")" 0
 no_strikes
+
+# Before a session, a worktree's .dev/ of its own, the caches make check left
+# there before #1132, becomes the link to the main checkout's (#1246).
+(
+  REPO=$T/main WT=$T/wt-dev
+  mkdir -p "$REPO/.dev/cache" "$WT/.dev/cache/go-build" && head -c 300000 /dev/zero >"$WT/.dev/cache/go-build/x"
+  mkdir "$WT/.dev/cache/go-build/ro" && chmod a-w "$WT/.dev/cache/go-build/ro"
+  share_dev
+  check "share_dev #1246: a .dev/ of its own becomes the link" "$(readlink "$WT/.dev")" "$REPO/.dev"
+  check "share_dev #1246: the main checkout's .dev/ stays" "$(test -d "$REPO/.dev/cache" && echo kept)" kept
+  check "share_dev #1246: logs what it freed" "$(grep -c "freed [0-9.]*[KM] in $WT/.dev, a .dev/ of its own; linked it to $REPO/.dev" "$LOG")" 1
+  : >"$LOG"
+  share_dev
+  check "share_dev #1246: an already linked one stays" "$(readlink "$WT/.dev")" "$REPO/.dev"
+  check "share_dev #1246: an already linked one logs nothing" "$(cat "$LOG")" ""
+  rm "$WT/.dev"
+  share_dev
+  check "share_dev #1246: a worktree without .dev/ gets the link" "$(readlink "$WT/.dev")" "$REPO/.dev"
+  rm "$WT/.dev" && mkdir "$WT/.dev" && rm -r "$REPO/.dev"
+  share_dev
+  check "share_dev #1246: no main .dev/, nothing changes" "$(test -d "$WT/.dev" && ! test -L "$WT/.dev" && echo kept)" kept
+)
 
 # Failed sessions are strikes, comments on the issue: a handoff or a commit
 # resets the count; the third escalates the issue to the maintainer, with one
@@ -412,7 +690,10 @@ check "fails: not yet the maintainer's" "$(cat "$T/status" 2>/dev/null)" ""
 grep -q "^\*\*Strike:\*\* session .* exit 0 after 0m" "$T/comment"; check "fails: a strike names its session" $? 0
 check "fails: a strike has its stderr and account" "$(grep -c '^boom \|^gave up$' "$T/comment")" 2
 echo handoff >"$FAKE"
+pick() { ISSUE=175 TITLE=t URL=u HOW=next; }
 work
+pick() { ISSUE=175 TITLE=t URL=u HOW=ready; }
+check "next: the log names the issue a --next reserved (#1284)" "$(grep -c 'session 1 start: id .*, otter-175 on #175 (next) t' "$LOG")" 1
 check "fails: a handoff resets" "$(counted)" 0
 check "fails: the reset is a comment" "$(head -1 "$T/comment")" "$STRIKE_RESET_MARKER"
 echo fail >"$FAKE"
@@ -500,11 +781,32 @@ check "swap fails: one escalation comment" "$(jq --arg e "$STRIKE_ESCALATED_MARK
 grep -q "setting it to status/needs-maintainer failed; trying again after the next failed session" "$LOG"
 check "swap fails: logged" $? 0
 n=$(jq length "$COMMENTS")
-gh_set_status() { echo "$1 $2" >"$T/status"; }
+gh_set_status() { set_status "$@"; }
 work
 check "swap retried: the maintainer's" "$(cat "$T/status")" "175 needs-maintainer"
 check "swap retried: no new comment" "$(jq length "$COMMENTS")" "$n"
-check "swap retried: done" "$(test -e "$DIR/escalated-175" && echo kept)" ""
+# Swapped, then set back to ready by the maintainer: a failed session is a
+# strike again, not another swap.
+rm -f "$T/status"
+work
+check "swap done: a strike, not a swap" "$(cat "$T/status" 2>/dev/null) $(counted)" " 1"
+
+# #1213: device A posts the escalation and its swap fails; device B, with
+# nothing of A's in .relay, fails a session on #175 and retries the swap
+# alone: it sets needs-maintainer and posts nothing.
+no_strikes; rm -f "$T/status"
+for i in 1 2 3; do add_comment "$STRIKE_MARKER
+**Strike:** session \`a$i\` on host \`a\`" $((400 - i))
+done
+add_comment "$STRIKE_ESCALATED_MARKER
+The relay stopped working #175" 300
+n=$(jq length "$COMMENTS")
+: >"$LOG"
+work
+check "swap elsewhere #1213: B sets needs-maintainer" "$(cat "$T/status" 2>/dev/null)" "175 needs-maintainer"
+check "swap elsewhere #1213: B posts nothing" "$(jq length "$COMMENTS")" "$n"
+grep -q "#175 reached 3 strikes; set it to status/needs-maintainer: https://github.com/x/issues/175#issuecomment-4" "$LOG"
+check "swap elsewhere #1213: logged" $? 0
 
 # A session whose transcript stops growing is ended and counted as failed; one
 # that keeps writing, or writes none, runs on.

@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"testing"
 	"time"
@@ -82,6 +83,9 @@ var (
 	// managerCfg is cfg as the operator's ServiceAccount, bound to the generated
 	// role: a call the role doesn't grant fails the reconciler that makes it.
 	managerCfg *rest.Config
+	// managerClient is the manager's cached client, the reconcilers' view: a
+	// spec waits on it when a reconcile must not see an object it deleted (#1300).
+	managerClient client.Client
 )
 
 // The operator's namespace in the suite, and the Secrets it shares from there.
@@ -110,19 +114,105 @@ func TestControllers(t *testing.T) {
 	if deadline, ok := t.Deadline(); ok {
 		suiteConfig.Timeout = time.Until(deadline) - 30*time.Second
 	}
-	RunSpecs(t, "Controller Suite", suiteConfig, reporterConfig)
+	if s := os.Getenv("C4_TEST_SHARD"); s != "" {
+		if _, err := fmt.Sscanf(s, "%d/%d", &shard.index, &shard.total); err != nil || shard.index < 1 || shard.index > shard.total {
+			t.Fatalf("C4_TEST_SHARD=%q: want i/n, 1 <= i <= n", s)
+		}
+		if len(suiteConfig.FocusFiles) > 0 {
+			t.Fatal("C4_TEST_SHARD focuses the shard's files; drop -ginkgo.focus-file, or C4_TEST_SHARD")
+		}
+		suiteConfig.FocusFiles, shard.specs = shardFocus(PreviewSpecs(suiteName), shard.index, shard.total)
+	}
+	RunSpecs(t, suiteName, suiteConfig, reporterConfig)
 }
+
+const suiteName = "Controller Suite"
+
+// shard is this process's part of the suite. hack/go-test.sh runs the suite as
+// C4_TEST_PROCS processes at once, each with its own control plane and
+// manager, C4_TEST_SHARD=i/n naming which part (#1283); go test's cache
+// answers each part on its own. Unset, the process runs the whole suite.
+var shard struct {
+	index, total int
+	// specs is how many specs the shard runs; the suite fails when it ran
+	// another number, so a spec no shard picked can't pass unseen.
+	specs int
+}
+
+// shardFocus splits the specs the preview would run among n shards and
+// returns the focus-file filters of shard i and how many specs it has. A
+// top-level container is never split: Ginkgo runs those in random order, so
+// they are independent of each other, while the specs inside one may share
+// state (Ordered, a BeforeAll, a fixed name). The containers go to the
+// shard with the fewest specs, largest first, so every shard gets the same
+// split of the same suite.
+func shardFocus(preview Report, i, n int) ([]string, int) {
+	type group struct {
+		location types.CodeLocation
+		specs    int
+	}
+	var groups []*group
+	byKey := map[string]*group{}
+	for _, s := range preview.SpecReports {
+		if s.LeafNodeType != types.NodeTypeIt || s.State != types.SpecStatePassed {
+			continue // filtered out, pending, or not a spec
+		}
+		loc := s.LeafNodeLocation
+		if len(s.ContainerHierarchyLocations) > 0 {
+			loc = s.ContainerHierarchyLocations[0]
+		}
+		key := loc.String()
+		if byKey[key] == nil {
+			byKey[key] = &group{location: loc}
+			groups = append(groups, byKey[key])
+		}
+		byKey[key].specs++
+	}
+	slices.SortFunc(groups, func(a, b *group) int {
+		return cmp.Or(cmp.Compare(b.specs, a.specs), cmp.Compare(a.location.String(), b.location.String()))
+	})
+	load := make([]int, n)
+	// A filter no spec matches, for a shard with no container.
+	filters, specs := []string{"^$:0"}, 0
+	for _, g := range groups {
+		least := 0
+		for j := range load {
+			if load[j] < load[least] {
+				least = j
+			}
+		}
+		load[least] += g.specs
+		if least == i-1 {
+			filters = append(filters, fmt.Sprintf("^%s$:%d", regexp.QuoteMeta(g.location.FileName), g.location.LineNumber))
+			specs += g.specs
+		}
+	}
+	return filters, specs
+}
+
+var _ = ReportAfterSuite("the shard ran its specs", func(report Report) {
+	if shard.total == 0 {
+		return
+	}
+	Expect(report.PreRunStats.SpecsThatWillRun).To(Equal(shard.specs),
+		"shard %d/%d ran other specs than its containers hold: a spec matched another shard's filter, or none",
+		shard.index, shard.total)
+})
 
 // slowestSpecs is how many specs the report names.
 const slowestSpecs = 10
 
 // When C4_SLOWEST_SPECS names a file, the suite writes its slowest specs there,
 // so the Tests job's log names what made a slow run slow (go test shows no
-// output of a package that passes).
+// output of a package that passes). A shard writes FILE.i, which
+// hack/go-test.sh merges into FILE.
 var _ = ReportAfterSuite("slowest specs", func(report Report) {
 	path := os.Getenv("C4_SLOWEST_SPECS")
 	if path == "" {
 		return
+	}
+	if shard.total > 0 {
+		path = fmt.Sprintf("%s.%d", path, shard.index)
 	}
 	var specs []SpecReport
 	for _, s := range report.SpecReports {
@@ -132,8 +222,8 @@ var _ = ReportAfterSuite("slowest specs", func(report Report) {
 	}
 	slices.SortFunc(specs, func(a, b SpecReport) int { return cmp.Compare(b.RunTime, a.RunTime) })
 	var out bytes.Buffer
-	fmt.Fprintf(&out, "Controller Suite: %d specs in %s; the %d slowest:\n",
-		len(specs), report.RunTime.Round(time.Second), min(slowestSpecs, len(specs)))
+	fmt.Fprintf(&out, suiteName+": %d specs in %.0fs; the %d slowest:\n",
+		len(specs), report.RunTime.Seconds(), min(slowestSpecs, len(specs)))
 	for _, s := range specs[:min(slowestSpecs, len(specs))] {
 		fmt.Fprintf(&out, "%6.1fs  %s  (%s)\n", s.RunTime.Seconds(), s.FullText(), s.LeafNodeLocation)
 	}
@@ -193,6 +283,7 @@ var _ = BeforeSuite(func() {
 		Metrics: metricsserver.Options{BindAddress: "0"},
 	})
 	Expect(err).NotTo(HaveOccurred())
+	managerClient = mgr.GetClient()
 	gitFake, err = newFakeGit(filepath.Join("..", "..", "templates"))
 	Expect(err).NotTo(HaveOccurred())
 	githubFake = newFakeGitHub()

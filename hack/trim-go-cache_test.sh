@@ -55,5 +55,22 @@ echo "$out" | grep -q "still over the limit"; check "over even then: says so" $?
 
 check "missing directory: exit 0" "$(trim 1 >/dev/null; C4_GOCACHE_MAX_MB=1 "$TRIM" "$T/none"; echo $?)" 0
 
+# With no arguments (#1343): GOCACHE, golangci-lint's cache and Go's default
+# cache ~/.cache/go-build, once when that is GOCACHE. A stub go names GOCACHE.
+mkdir -p "$T/bin" "$T/home/.cache"
+printf '#!/bin/sh\necho "$GOCACHE_STUB"\n' >"$T/bin/go" && chmod +x "$T/bin/go"
+noargs() { HOME=$T/home XDG_CACHE_HOME= GOLANGCI_LINT_CACHE=$T/lint GOCACHE_STUB=$1 PATH="$T/bin:$PATH" C4_GOCACHE_MAX_MB=1 "$TRIM"; }
+fake; rm -rf "$T/home/.cache/go-build"; cp -a "$T/cache" "$T/home/.cache/go-build"
+out=$(noargs "$T/cache")
+check "no arguments: trims GOCACHE" "$(left)" "0 "
+check "no arguments: trims ~/.cache/go-build too" "$(find "$T/home/.cache/go-build" -mindepth 2 -type f | wc -l | tr -d ' ')" 2
+check "no arguments: one line for each" "$(echo "$out" | grep -c 'limit 1 MB; dropped')" 2
+fake; rm -rf "$T/home/.cache/go-build"; mv "$T/cache" "$T/home/.cache/go-build"
+out=$(noargs "$T/home/.cache/go-build")
+check "GOCACHE is ~/.cache/go-build: trims it once" "$(echo "$out" | grep -c 'limit 1 MB; dropped')" 1
+ln -s "$T/home/.cache/go-build" "$T/link"
+out=$(noargs "$T/link")
+check "GOCACHE links to ~/.cache/go-build: trims it once" "$(echo "$out" | grep -c 'limit 1 MB; dropped')" 1
+
 [ "$fail" = 0 ] && echo PASS || echo FAIL
 exit "$fail"

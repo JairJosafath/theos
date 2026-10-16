@@ -19,7 +19,7 @@ You need:
 - the GitHub CLI (`gh`), logged in, while this repository, the chart and the
   images on GHCR are private.
 
-The commands use the release `0.24.0`; for a later one, change `VERSION`. Run
+The commands use the release `0.26.0`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
 match the release (`gh` clones it while the repository is private). From the
 release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
@@ -27,7 +27,7 @@ its own template tags and agent image, and the samples make neither; `0.3.0`'s
 samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
-VERSION=0.24.0
+VERSION=0.26.0
 gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 ```
 
@@ -102,7 +102,7 @@ makes its namespace, labeled `c4.factory.io/shared-secrets=true` so the
 operator shares the pull secret and the agents' token into it, and the seed
 makes a Gitea organization, Secret `gitea-credentials` with its token
 and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
-pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-go`, `aws-lambda-py`, `aws-lambda-ts`, `go-cli`, `go-kubebuilder`, `node-cli`,
+pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-go`, `aws-lambda-py`, `aws-lambda-ts`, `aws-queue-ts`, `aws-static-site-ts`, `go-cli`, `go-kubebuilder`, `node-cli`,
 `python-cli`, `python-fastapi`, `react-vite` and `vscode-extension`, Standards `aws-standard`, `go-standard`,
 `go-operator-standard`, `ts-standard` and `python-standard`, Compute `small`,
 Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four
@@ -741,7 +741,7 @@ wait for a quiet moment. Use the new `VERSION` and the same values as the
 install (`--reuse-values` keeps them):
 
 ```bash
-VERSION=0.24.0
+VERSION=0.26.0
 helm upgrade c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
   -n c4-factory-system --reuse-values --wait --timeout 10m
 ```

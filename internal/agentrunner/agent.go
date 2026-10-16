@@ -105,7 +105,7 @@ func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *
 		stdout.stopAt = guard.stopAt()
 		stdout.stop = func() { s.stopped = true; cancel() }
 	}
-	cmd := exec.CommandContext(sessionCtx, command[0], command[1:]...)
+	cmd := exec.CommandContext(sessionCtx, command[0], command[1:]...) //nolint:gosec // the Agent's command; running it is the runner's job
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Env = append(os.Environ(), a.Env...)
@@ -366,7 +366,7 @@ func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	if a.NoChange {
 		return "Nothing to do.", nil
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "STAND-IN.md"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(filepath.Join(dir, "STAND-IN.md"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644) //nolint:gosec // in the checkout
 	if err != nil {
 		return "", err
 	}
@@ -420,7 +420,7 @@ func unavailable(output string, now time.Time) (bool, time.Time) {
 func (a FakeAgent) plan(dir string) (string, error) {
 	workspace := map[string]string{}
 	for _, name := range model.WorkspaceFiles {
-		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name))) //nolint:gosec // the workspace's fixed names
 		if err != nil {
 			return "", err
 		}
@@ -431,10 +431,10 @@ func (a FakeAgent) plan(dir string) (string, error) {
 		return "", err
 	}
 	for name, data := range plan {
-		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o750); err != nil {
 			return "", err
 		}
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o600); err != nil {
 			return "", err
 		}
 	}

@@ -97,7 +97,7 @@ the function with Go and synthesizes the CloudFormation offline.
 - **Lockfile:** `package-lock.json` is aws-lambda-ts's with the function's
   packages pruned (the SDK and Powertools), kept current with `npm install`
   in a rendered copy; only its two `name` fields are templated.
-- **Standard:** made for `aws-standard` v1.8.0 or later, whose `aws-lambda-go`
+- **Standard:** made for `aws-standard` v1.10.0 or later, whose `aws-lambda-go`
   branch adds the Go checks (`go mod tidy -diff`, `golangci-lint fmt`,
   `go vet`, `golangci-lint run`, `go test -race`, all in `src/`), and which
   owns `infra/main.ts`, `infra/standard.ts` (the tier, `TIER_RULES` and the

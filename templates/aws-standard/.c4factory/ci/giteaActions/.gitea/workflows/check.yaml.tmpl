@@ -49,10 +49,18 @@ jobs:
     if: {{`${{ !startsWith(gitea.ref, 'refs/heads/release-check/') }}`}}
 {{- end }}
 {{- template "job" . }}
+{{- if eq .Framework "aws-static-site-ts" }}
+      # A change to only the changelog or docs/ has nothing for the
+      # steps below to verify (an image is part of the site, so it is checked):
+      # the job passes without them, so the required
+      # "check" context still reports and the change merges. Any other file,
+      # a first push, or a base git can't fetch or compare runs them as always.
+{{- else }}
       # A change to only the changelog, docs/ or images has nothing for the
       # steps below to verify: the job passes without them, so the required
       # "check" context still reports and the change merges. Any other file,
       # a first push, or a base git can't fetch or compare runs them as always.
+{{- end }}
       - name: What the change touches
         id: changes
         env:
@@ -65,9 +73,15 @@ jobs:
           *[!0]*)
             if git -c http.extraHeader="Authorization: token $TOKEN" fetch -q --depth 1 "$URL" "$BASE" &&
               files=$(git diff --no-renames --name-only "$BASE" HEAD) && [ -n "$files" ] &&
+{{- if eq .Framework "aws-static-site-ts" }}
+              ! printf '%s\n' "$files" | grep -qvE '^CHANGELOG\.md$|^docs/'; then
+              code=false
+              echo "Only the changelog or docs/ changed; skipping the checks."
+{{- else }}
               ! printf '%s\n' "$files" | grep -qvE '^CHANGELOG\.md$|^docs/|\.(png|jpg|gif|svg)$'; then
               code=false
               echo "Only the changelog, docs/ or images changed; skipping the checks."
+{{- end }}
             fi
             ;;
           esac

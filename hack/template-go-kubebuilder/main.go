@@ -284,7 +284,7 @@ func frameworkFiles(dir string) (map[string]file, error) {
 		if o != framework {
 			return nil
 		}
-		data, err := os.ReadFile(full)
+		data, err := os.ReadFile(full) //nolint:gosec // a file of the tree it walks
 		if err != nil {
 			return err
 		}
@@ -354,7 +354,7 @@ func write(dir string, files map[string]file) error {
 			mode = 0o755
 		}
 		dst := filepath.Join(dir, filepath.FromSlash(p))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil { //nolint:gosec // a template tree to commit
 			return err
 		}
 		if err := os.WriteFile(dst, f.data, mode); err != nil {

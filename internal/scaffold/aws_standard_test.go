@@ -46,6 +46,8 @@ var awsFrameworks = []side{
 	{model.TypeService, "aws-ec2-ts"},
 	{model.TypeService, "aws-fargate-ts"},
 	{model.TypeFunction, "aws-lambda-py"},
+	{model.TypeStaticSite, "aws-static-site-ts"},
+	{model.TypeWorker, "aws-queue-ts"},
 }
 
 func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
@@ -249,7 +251,7 @@ func TestAWSStandardNamesThePythonStandardItCopies(t *testing.T) {
 
 // TestAWSStandardWellArchitectedFitsTheLanguage checks that each Framework's
 // docs/well-architected.md gives build and cold-start advice for its own
-// language: a Go function names no Node tooling. Since aws-standard v1.8.0
+// language: a Go function names no Node tooling. Since aws-standard v1.10.0
 // the three Lambda Frameworks share the digest of the tiers, and only the
 // TypeScript and Python ones have Powertools: there is none for Go.
 func TestAWSStandardWellArchitectedFitsTheLanguage(t *testing.T) {
@@ -269,6 +271,9 @@ func TestAWSStandardWellArchitectedFitsTheLanguage(t *testing.T) {
 		{"aws-lambda-py", []string{
 			"uv.lock", "module scope", "infra/operations.ts", "Powertools' Idempotency, in `app/once.py`",
 		}, []string{"esbuild", "go build", "bootstrap"}},
+		{"aws-static-site-ts", []string{"Vite", "CloudFront"}, []string{"go build", "bootstrap", "cold start"}},
+		{"aws-queue-ts", []string{"esbuild", "module scope", "dead-letter queue", "ReportBatchItemFailures"},
+			[]string{"go build", "bootstrap", "API Gateway"}},
 	}
 	types := map[string]string{}
 	for _, f := range awsFrameworks {

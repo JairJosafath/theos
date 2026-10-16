@@ -9,13 +9,15 @@
 # origin/main's code (see below) and starts its sessions, one after another, in its own git
 # worktree .claude/worktrees/relay-k, switched to each issue's branch; the
 # worktree's .relay/ holds its claim. Each round picks an issue
-# (hack/lib/github.sh pick: an in-progress one nobody holds, else the oldest
-# ready + urgent one, else the oldest ready one) and claims it (take); when
-# another agent claims it first, it picks again, up to 5 times. Claims keep the
-# workers and hand-started sessions off each other's issues. A session that ends
-# still holding its claim gets it released. With nothing
-# ready, a worker stops, without waiting in admit: it asks (pick is read-only)
-# before admit as well as after, so an idle worker takes no session-start slot.
+# (hack/lib/github.sh pick: a ready one this worker's last session filed with
+# create --next, which reserves it for this worktree, else by priority/N, 1
+# first and no label counting as 5; within a number, an in-progress one nobody
+# holds, else the oldest ready one) and claims it (take); when another agent claims it
+# first, it picks again, up to 5 times. Claims keep the workers and
+# hand-started sessions off each other's issues. A session that ends still
+# holding its claim gets it released. With nothing ready, a worker stops,
+# without waiting in admit: it asks (pick is read-only) before admit as well
+# as after, so an idle worker takes no session-start slot.
 #
 # Triage: hack/relay-watch.sh starts one triage session (--triage) on the
 # open status/proposed issues, which relay sessions file their follow-ups as,
@@ -81,10 +83,12 @@
 # sessions run as from a plain project shell: hack/lib/session-env.sh drops that
 # session's variables (CLAUDECODE, CLAUDE_CODE_SESSION_ID, VSCODE_*, ...).
 #
-# Each session gets TMPDIR=<its worktree>/.dev/tmp (#1269), on disk and
-# gitignored, not the device's /tmp: a small tmpfs every session shares, which
-# one session's scratch, Go's build dirs and envtest's filled. The relay
-# empties it before the session starts and removes it when the session ends.
+# Each session gets TMPDIR=~/.cache/c4factory/tmp/<its worktree> (#1269,
+# #1307): on disk, not the device's /tmp, a small tmpfs every session shares,
+# which one session's scratch, Go's build dirs and envtest's filled; and outside
+# any git checkout, so a test that runs git in a mktemp -d directory finds no
+# repository above it. The relay empties it before the session starts and
+# removes it when the session ends.
 #
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-99); workers already running are left alone
@@ -96,8 +100,15 @@
 # not a count, holds them). On every device a worker waits before each pick
 # until MemAvailable is at least RELAY_MIN_MEM_GIB (default 2) and the last
 # session start is RELAY_ADMIT_GAP seconds old (default 120), and stops after
-# waiting RELAY_MEM_WAIT seconds (default 3600). Heavy jobs (make check, test,
+# waiting RELAY_MEM_WAIT seconds (default 3600). It also waits while a watched
+# filesystem has less than RELAY_MIN_FREE_GB free (default 30): /, the
+# checkouts' and, under WSL, the Windows drives holding the distros' .vhdx
+# files, whose free space df / never shows (#1344); RELAY_DISK_PATHS overrides
+# the list. Heavy jobs (make check, test,
 # lint, deploy, ...) queue device-wide for HEAVY_JOBS slots (hack/heavy-slot.sh).
+# A worker whose worktree has no git committer identity (#1289) starts no
+# session, logs why, stops, and puts a line under the Maintainer report's
+# Needs you naming the host and worktree, until the identity is back.
 # A session that ends on a usage limit or a failed login pauses the device: it
 # writes .relay/paused-until (the reset time the message gives, else now plus
 # RELAY_LIMIT_WAIT, default 30m), and until then every worker waits in admit
@@ -153,12 +164,16 @@ ADMIT_GAP=${RELAY_ADMIT_GAP:-120}  # seconds between session starts across worke
 MEM_WAIT=${RELAY_MEM_WAIT:-3600}   # seconds a worker waits for headroom before it stops
 MEM_POLL=${RELAY_MEM_POLL:-60}
 MEMINFO=${RELAY_MEMINFO:-/proc/meminfo}
+MIN_FREE_GB=${RELAY_MIN_FREE_GB:-30} # GB free each watched filesystem needs before a session starts (#1344)
+DISK_PATHS=${RELAY_DISK_PATHS:-}     # the watched paths, space-separated; empty: disk_paths finds them
+OSRELEASE=${RELAY_OSRELEASE:-/proc/sys/kernel/osrelease}
 LIMIT_WAIT=${RELAY_LIMIT_WAIT:-30m} # the pause after a limit whose message names no reset time
 MAX_FAILS=${RELAY_MAX_FAILS:-3}     # strikes (failed sessions) before an issue goes to the maintainer
 STRIKE_TTL=${RELAY_STRIKE_TTL:-24h} # a strike older than this doesn't count
 IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change this long is ended
 IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
+SCRATCH=${RELAY_SCRATCH:-$HOME/.cache/c4factory/tmp} # the sessions' TMPDIRs, outside any checkout (#1307); not XDG_CACHE_HOME, which ./dev puts in .dev/ (#1326)
 
 K=${C4_RELAY_WORKER:-1}
 # The maintainer and the triage are no numbered workers: each has its own
@@ -186,11 +201,11 @@ GH_CLAIM_FILE="$GH_PENDING_DIR/claim"
 # N, worked by agent NAME on BRANCH.
 prompt() {
   local n=$1 title=$2 url=$3 how=$4 name=$5 branch=$6 start
-  if [ "$how" = in-progress ]; then
-    start="A session worked on it before you: continue from its newest handoff comment."
-  else
-    start="No session has worked on it yet: the issue body is the goal."
-  fi
+  case $how in
+    in-progress) start="A session worked on it before you: continue from its newest handoff comment." ;;
+    next) start="The session before you in this worktree found it and filed it with create --next: the issue body is the goal." ;;
+    *) start="No session has worked on it yet: the issue body is the goal." ;;
+  esac
   cat <<EOF
 You run headless, started by hack/relay.sh while the user sleeps; no person is
 watching and nobody can answer a question. Your work is GitHub issue #$n on
@@ -229,8 +244,10 @@ Rules for this headless run:
   - Hand off: the handoff skill posts a handoff comment on #$n
     (\`hack/lib/github.sh handoff $n FILE\`). The next session continues #$n.
   - Finished: open a pull request to main whose body says \`Closes #$n\`, merge
-    it with a merge commit once \`make check\` passes (\`hack/lib/github.sh land PR\`: it waits for the
-    merge turn, merges main in, reruns make check and merges; run it in the background and follow it; over 400
+    it with a merge commit (\`hack/lib/github.sh land PR\`: it merges main in and runs make check, then
+    takes the merge turn and merges, checking again only when main moved; its check is the check, so
+    while you work run the targeted tests and run make check by hand only when land failed and you
+    need the whole output; run land in the background and follow it; over 400
     changed lines it refuses until a review pass is posted: the handoff skill, \"Review before landing\"), and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue. A pull
@@ -250,9 +267,14 @@ Rules for this headless run:
   gate, and Kind is a tier only a human runs. When only a real node would show
   something, land the code with the tests the lower tiers can give and say in
   the pull request what a human run of Kind would check.
-- Work you find outside #$n: file it with
-  \`hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>\`; don't
-  start it.
+- Work you find outside #$n: under about 30 lines, in a file your pull
+  request already changes and inside #$n's scope, fix it in the pull request
+  and name it under \`Also fixes:\` in its body. Else, when it is decided (a
+  bug whose failing test you can name, a chore or doc whose Done-when you can
+  state), file it with \`hack/lib/github.sh create --next TITLE FILE
+  kind/<bug|chore|docs>\`: it is ready and this worktree's next session starts
+  on it. Anything that needs a decision: \`hack/lib/github.sh create TITLE
+  FILE status/proposed kind/<kind>\`. Don't start either.
 - End your turn with a short account of what you did and what is next; it is
   the relay's log of your session.
 EOF
@@ -349,8 +371,10 @@ flush() {
   return 1
 }
 
-# pick: set ISSUE, TITLE, URL and HOW (in-progress, ready-urgent, ready) to the
-# issue to work next. Exit 1: nothing to pick; exit 2: GitHub could not be asked.
+# pick: set ISSUE, TITLE, URL and HOW (next, in-progress or ready, at every
+# priority) to the issue to work next; next is one this worker's last session
+# reserved (create --next, .relay/next in its worktree).
+# Exit 1: nothing to pick; exit 2: GitHub could not be asked.
 pick() {
   local row rc
   row=$(gh_pick 2>"$DIR/pick.err")
@@ -368,6 +392,7 @@ worktree() {
     git -C "$REPO" worktree add -q --detach "$WT" origin/main 2>>"$LOG" || return 1
     log "created the worktree $WT"
   fi
+  share_dev
   mkdir -p "$GH_PENDING_DIR"
   [ -e "$GH_PENDING_DIR/.gitignore" ] || echo '*' >"$GH_PENDING_DIR/.gitignore"
   if [ -n "$(git -C "$WT" status --porcelain)" ]; then
@@ -375,6 +400,52 @@ worktree() {
       return 1
     log "stashed uncommitted changes left in $WT (git -C $WT stash list)"
   fi
+}
+
+# share_dev: link the worktree's .dev/ to the main checkout's, as ./dev setup
+# links a worktree's. A real .dev/ there holds caches that make check made
+# before hack/dev/env.sh pointed worktrees at the main checkout's (#1132):
+# gigabytes no one reads, so it goes (#1246). The worker's lock is held and no
+# session runs in the worktree.
+share_dev() {
+  local dev=$WT/.dev main=$REPO/.dev freed
+  [ -L "$dev" ] && return 0
+  [ -d "$main" ] || return 0
+  if [ -e "$dev" ]; then
+    freed=$(du -sh "$dev" 2>/dev/null | cut -f1)
+    scratch_clear "$dev"
+    [ -e "$dev" ] && { log "could not replace $dev with a link to $main"; return 0; }
+    log "freed ${freed:-?} in $dev, a .dev/ of its own; linked it to $main (#1246)"
+  fi
+  ln -s "$main" "$dev" 2>>"$LOG" || log "could not link $dev to $main"
+}
+
+# can_commit: whether a session in the worktree could commit (#1289): git var
+# GIT_COMMITTER_IDENT there, in the environment the session gets, sees the
+# global, XDG and repository configs alike. When it can't, log git's reason
+# and put a line under the Maintainer report's Needs you, once, naming the
+# host and the worktree; when it can again, take the line away. The mark file
+# remembers the note, so a worktree that can commit asks GitHub nothing.
+can_commit() {
+  local err key="ident-$(hostname)-${WT##*/}" mark=$DIR/no-ident-$K
+  if err=$(git -C "$WT" var GIT_COMMITTER_IDENT 2>&1 >/dev/null); then
+    if [ -e "$mark" ] && gh_report_note "$key" >/dev/null 2>>"$LOG"; then
+      rm -f "$mark"
+      log "git has a committer identity in $WT again; took the report note away"
+    fi
+    return 0
+  fi
+  log "git has no committer identity in $WT, so no session could commit: $(grep fatal <<<"$err" || tail -n1 <<<"$err")"
+  if [ ! -e "$mark" ]; then
+    if gh_report_note "$key" "\`$(hostname)\`: git has no committer identity in \`$WT\`; relay worker $K starts no session there" \
+      "Set git's user.name and user.email on \`$(hostname)\` (\`git -C $WT var GIT_COMMITTER_IDENT\` must pass): relay worker $K starts no session in \`$WT\` until then" \
+      >/dev/null 2>>"$LOG"; then
+      : >"$mark"
+    else
+      log "could not put the missing identity in the Maintainer report"
+    fi
+  fi
+  return 1
 }
 
 # code_sum: a checksum of the relay's own code, to see whether a pull changed it.
@@ -489,6 +560,69 @@ mem_gib() {
   awk '/^MemAvailable:/ { print int($2 / 1048576); found = 1 } END { exit !found }' "$MEMINFO"
 }
 
+# vhdx_dirs: under WSL, the Linux paths of the directories holding each
+# distro's virtual disk (Docker Desktop's included): their BasePath under
+# HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss, from reg.exe, mapped
+# with wslpath. /mnt/c when neither gives one. Nothing outside WSL.
+vhdx_dirs() {
+  local base out=
+  grep -qi microsoft "$OSRELEASE" 2>/dev/null || return 0
+  while read -r base; do
+    base=$(wslpath -u "${base#\\\\?\\}" 2>/dev/null) && [ -n "$base" ] && out+="$base"$'\n'
+  done < <(timeout 20 reg.exe query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss' /s /v BasePath 2>/dev/null |
+    tr -d '\r' | sed -n 's/^ *BasePath  *REG_[A-Z_]*  *//p')
+  if [ -n "$out" ]; then printf '%s' "$out"; else echo /mnt/c; fi
+}
+
+# disk_paths: the watched paths, one per line: RELAY_DISK_PATHS, else /, the
+# checkouts' and vhdx_dirs. Looked up once per worker: reg.exe is slow.
+disk_paths() {
+  if [ -z "$DISK_PATHS" ]; then
+    DISK_PATHS=$({ echo /; echo "$REPO"; vhdx_dirs; } | tr '\n' ' ')
+  fi
+  printf '%s\n' $DISK_PATHS
+}
+
+# disk_low: print PATH<tab>GB-free for each watched filesystem with less than
+# RELAY_MIN_FREE_GB free, one per filesystem (the first path naming it). A
+# path df can't read is skipped.
+disk_low() {
+  local p line mounts=$'\n' free mnt
+  while read -r p; do
+    line=$(df -Pk "$p" 2>/dev/null | tail -n +2 | tail -n 1) && [ -n "$line" ] || continue
+    free=$(awk '{ print int($4 / 1048576) }' <<<"$line")
+    mnt=$(awk '{ print $NF }' <<<"$line")
+    [[ $mounts == *$'\n'"$mnt"$'\n'* ]] && continue
+    mounts+="$mnt"$'\n'
+    [ "$free" -lt "$MIN_FREE_GB" ] && printf '%s\t%s\n' "$p" "$free"
+  done < <(disk_paths)
+}
+
+# trim_caches: prune the device's build caches (hack/prune-caches.sh, #1343),
+# so a disk below RELAY_MIN_FREE_GB may pass the next check.
+trim_caches() { "$CODE/hack/prune-caches.sh" 2>&1 | while read -r l; do log "$l"; done; }
+
+# disk_wait: exit 0 while a watched filesystem is below RELAY_MIN_FREE_GB. The
+# first time a path is low, and then at most once an hour across workers
+# (.relay/disk-low-<path>), it logs the path, its free space and the minimum,
+# and trims the caches at once.
+disk_wait() {
+  local p free low= mark now said= hint=
+  grep -qi microsoft "$OSRELEASE" 2>/dev/null &&
+    hint="; under WSL only compacting the .vhdx returns space to Windows: docs/dev/testenv.md, \"Disk space on WSL\""
+  now=$(date +%s)
+  while IFS=$'\t' read -r p free; do
+    low=1
+    mark="$DIR/disk-low-${p//[^a-zA-Z0-9]/-}"
+    [ $((now - $(stat -c %Y "$mark" 2>/dev/null || echo 0))) -lt 3600 ] && continue
+    [ -n "$DRY_RUN" ] || touch "$mark"
+    log "waiting for disk: $p has ${free} GB free, a session needs ${MIN_FREE_GB} (RELAY_MIN_FREE_GB); starting no session$hint"
+    said=1
+  done < <(disk_low)
+  [ -n "$said" ] && [ -z "$DRY_RUN" ] && trim_caches
+  [ -n "$low" ]
+}
+
 # paused: print the time .relay/paused-until holds and why, and exit 0, while
 # the device is paused for a limit.
 paused() {
@@ -498,13 +632,39 @@ paused() {
   echo "$until $why"
 }
 
-# limit_message OUT: the line that says session OUT ended on a usage limit or a
-# failed login. It reads the CLI's own words only, never the agent's final
-# message (#655): the result when it is an error, or when the session exited
-# non-zero (S_RC) before any turn ran; and the tail of OUT.err when there is no
-# result or the session exited non-zero.
+# LIMITS: the limits a session can end on, each as WORDS:REGEX, most specific
+# first: REGEX matches the CLI's words for it (case-insensitive, extended), and
+# WORDS name it where its claim is released (#1199), as an expired login needs
+# another fix than a usage limit.
+LIMITS=(
+  'OAuth session expired:oauth session expired'
+  'OAuth token expired:oauth token (has )?expired'
+  'OAuth token revoked:oauth token (has )?revoked'
+  'invalid API key:invalid api key'
+  'not logged in:not logged in|please run /login'
+  'authentication failed:failed to authenticate|authentication_error'
+  'credit balance too low:credit balance (is )?too low'
+  "usage limit:you've hit your|you've reached your|you're out of usage|out of usage credits|usage limit reached"
+)
+
+# limit_name MESSAGE: the WORDS of the first of LIMITS that MESSAGE matches.
+# Exit 1: none does.
+limit_name() {
+  local l
+  for l in "${LIMITS[@]}"; do
+    grep -qiE -- "${l#*:}" <<<"$1" && { echo "${l%%:*}"; return 0; }
+  done
+  return 1
+}
+
+# limit_message OUT: the line that says session OUT ended on one of LIMITS.
+# It reads the CLI's own words only, never the agent's final message (#655):
+# the result when it is an error, or when the session exited non-zero (S_RC)
+# before any turn ran; and the tail of OUT.err when there is no result or the
+# session exited non-zero.
 limit_message() {
-  local out=$1
+  local out=$1 l re=
+  for l in "${LIMITS[@]}"; do re+=${re:+|}${l#*:}; done
   {
     if jq -e 'has("result")' "$out.json" >/dev/null 2>&1; then
       jq -r --arg rc "${S_RC:-0}" 'select(.is_error == true or ($rc != "0" and (.num_turns // 0) == 0)) | .result // empty' "$out.json"
@@ -512,7 +672,7 @@ limit_message() {
     else
       tail -n 20 "$out.err" 2>/dev/null
     fi
-  } | grep -m1 -iE "you've hit your|you've reached your|you're out of usage|out of usage credits|usage limit reached|not logged in|please run /login|invalid api key|oauth token (has )?(expired|revoked)|oauth session expired|failed to authenticate|authentication_error|credit balance (is )?too low"
+  } | grep -m1 -iE -- "$re"
 }
 
 # reset_time MESSAGE: the epoch second a limit MESSAGE says it resets at
@@ -549,7 +709,8 @@ pause() {
 }
 
 # admit: wait until the device has headroom for one more session: no pause for
-# a limit (.relay/paused-until), MemAvailable at least RELAY_MIN_MEM_GIB, and
+# a limit (.relay/paused-until), each watched disk at least RELAY_MIN_FREE_GB
+# free (disk_wait), MemAvailable at least RELAY_MIN_MEM_GIB, and
 # the last session start across workers at least RELAY_ADMIT_GAP seconds ago,
 # so one session's build shows in memory before the next starts. Polls every
 # RELAY_MEM_POLL seconds; exit 1 when the stop file appears or the wait for
@@ -589,6 +750,13 @@ admit_wait() {
       continue
     fi
     [ -n "$said" ] && { log "the pause is over"; said=; }
+    if disk_wait; then
+      [ -n "$DRY_RUN" ] && return 1
+      [ -e "$STOP" ] && { log "stop file found while waiting for disk"; return 1; }
+      [ $(($(date +%s) - t0)) -ge "$MEM_WAIT" ] && { log "no disk space after $((MEM_WAIT / 60))m"; return 1; }
+      sleep "$MEM_POLL"
+      continue
+    fi
     mem=$(mem_gib) || { log "could not read MemAvailable from $MEMINFO; starting anyway"; return 0; }
     now=$(date +%s)
     exec 8>"$DIR/admit.lock"
@@ -676,9 +844,10 @@ scratch_clear() {
 
 # session WHAT OUT ID PROMPT: run headless session ID in the worktree with
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
-# and log its end as WHAT.
+# and log its end as WHAT. Exit 3: it ended on one of LIMITS, whose message
+# S_LIMIT holds.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$WT/.dev/tmp
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$SCRATCH/${WT##*/}
   t0=$(date +%s)
   # Checked here, not in the watch: a session that ends before the watch runs
   # would take the log line with it.
@@ -691,11 +860,14 @@ session() {
   # the session leaves behind would hold it after the worker exits, and the
   # watch would see the worker as running.
   # Started from a Claude Code session or not, the session gets the same
-  # environment (#645). Its TMPDIR is in its worktree, not the shared /tmp
-  # (#1269), and starts empty: what a dead session left there goes first.
+  # environment (#645). Its TMPDIR is under SCRATCH, not the shared /tmp
+  # (#1269) nor in a checkout (#1307), and starts empty: what a dead session
+  # left there goes first.
+  # C4_RELAY_WORKER names the worker (1, 2, ..., triage, maintainer): create
+  # --next reserves only for a numbered one's next session.
   scratch_clear "$tmp"
   mkdir -p "$tmp"
-  (cd "$WT" && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+  (cd "$WT" && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
@@ -721,8 +893,9 @@ session() {
   fi
   [ "$rc" = 124 ] && log "$what hit the $SESSION_TIMEOUT timeout"
   [ "$rc" = 143 ] && log "$what was killed (SIGTERM)"
-  S_RC=$rc S_MINS=$mins
+  S_RC=$rc S_MINS=$mins S_LIMIT=
   if msg=$(limit_message "$out"); then
+    S_LIMIT=$msg
     pause "$msg"
     return 3
   fi
@@ -754,11 +927,13 @@ strikes() {
 # strike on issue N, a comment on N; at RELAY_MAX_FAILS strikes that count,
 # escalate N to the maintainer (status/needs-maintainer) with one comment
 # naming them. When that comment is posted but the status swap fails, the
-# next failed session retries the swap alone (.relay/escalated-N).
+# next failed session on any device retries the swap alone (unescalated).
 failed() {
   local n=$1 url urls count
-  if [ -e "$DIR/escalated-$n" ]; then
-    escalate "$n" "$(cat "$DIR/escalated-$n")"
+  if ! url=$(unescalated "$n" 2>>"$LOG"); then
+    log "#$n: could not read whether its escalation is still to swap; counting the session"
+  elif [ -n "$url" ]; then
+    escalate "$n" "$url"
     return 0
   fi
   if ! url=$(strike_comment "$n" "$2" "$3" | gh_comment "$n" - 2>>"$LOG"); then
@@ -775,19 +950,44 @@ failed() {
     return 0
   fi
   if url=$(escalation_comment "$n" "$urls" | gh_comment "$n" - 2>>"$LOG"); then
-    echo "$url" >"$DIR/escalated-$n"
     escalate "$n" "$url"
   else
     log "#$n has $count strikes, but posting the comment for the maintainer failed; trying again after the next"
   fi
 }
 
+# unescalated N: the URL of N's escalation comment when its status swap never
+# happened, or nothing: the newest of N's handoff, reset and escalation
+# comments is an escalation, and N wasn't labeled status/needs-maintainer at
+# or after it. Read from the issue, so any device retries the swap (#1213);
+# one the maintainer set back to ready after the swap isn't escalated again.
+unescalated() {
+  local all esc at url
+  all=$(gh_comments "$1") || return 1
+  esc=$(jq -r --arg h "$GH_HANDOFF_MARKER" --arg r "$STRIKE_RESET_MARKER" --arg e "$STRIKE_ESCALATED_MARKER" '
+    def starts($m): .body | sub("^\\s+"; "") | startswith($m);
+    [.[] | select(starts($h) or starts($r) or starts($e))] | last // empty
+    | select(starts($e)) | "\(.created_at) \(.html_url)"' <<<"$all") || return 1
+  [ -n "$esc" ] || return 0
+  read -r at url <<<"$esc"
+  all=$(label_events "$1") || return 1
+  jq -e --arg at "$at" 'any(.[]; .event == "labeled" and .label.name == "status/needs-maintainer" and .created_at >= $at)' \
+    <<<"$all" >/dev/null && return 0
+  echo "$url"
+}
+
+# label_events N: issue N's events as one JSON array.
+label_events() {
+  local pages
+  pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$1/events?per_page=100") || return 1
+  jq -c '[.[][] | {event, created_at, label: {name: .label.name}}]' <<<"$pages"
+}
+
 # escalate N URL: set N to status/needs-maintainer, its comment for the
-# maintainer at URL posted; keep .relay/escalated-N for a retry when that fails.
+# maintainer at URL posted; when that fails, the next failed session retries.
 escalate() {
   if gh_set_status "$1" needs-maintainer >/dev/null 2>>"$LOG"; then
     log "#$1 reached $MAX_FAILS strikes; set it to status/needs-maintainer: $2"
-    rm -f "$DIR/escalated-$1"
   else
     log "#$1 reached $MAX_FAILS strikes and has its comment ($2), but setting it to status/needs-maintainer failed; trying again after the next failed session"
   fi
@@ -825,7 +1025,6 @@ escalation_comment() {
 # a reset comment when any count, so every device stops counting them.
 forget_fails() {
   local urls
-  rm -f "$DIR/escalated-$1"
   urls=$(strikes "$1" 2>>"$LOG") || { log "#$1: could not read its strikes to reset them"; return 0; }
   [ -n "$urls" ] || return 0
   if printf '%s\n%s\n' "$STRIKE_RESET_MARKER" "The relay on host \`$(hostname)\` saw a handoff, a commit or a finish on #$1; the $(grep -c . <<<"$urls") strike(s) before this comment no longer count." |
@@ -955,7 +1154,7 @@ maintain() {
 
 # work: the worker's sessions, one after another (see the header).
 work() {
-  local i id rc try claim name branch before head refs out limited result reason released
+  local i id rc try claim name branch before head refs out limited limit result reason released
   for i in $(seq 1 "$MAX_SESSIONS"); do
     [ -e "$STOP" ] && { log "stop file found; stopping"; break; }
     if [ -z "$DRY_RUN" ]; then
@@ -964,6 +1163,7 @@ work() {
       if [ "$i" = 1 ] && gh_claim_read; then
         log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
       fi
+      can_commit || { log "stopping: a session here couldn't commit"; break; }
     fi
     flush || { log "GitHub can't be reached; stopping"; break; }
 
@@ -1027,7 +1227,13 @@ work() {
         handed-off) reason="handed off" ;;
         waiting) reason="waiting on its steps" ;;
         released) reason="set back to ready or proposed" ;;
-        *) reason="session ended without a handoff$([ "$limited" != 3 ] || echo " (a limit)")" ;;
+        *)
+          reason="session ended without a handoff"
+          if [ "$limited" = 3 ]; then
+            limit=$(limit_name "$S_LIMIT") || limit=
+            reason+=" (a limit${limit:+: $limit})"
+          fi
+          ;;
       esac
       if released=$(gh_release "$reason" 2>&1); then
         log "${released//$'\n'/; }"

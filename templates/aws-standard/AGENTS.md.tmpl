@@ -1,17 +1,24 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- /* The Frameworks built for a tier from infra/operations.ts: the three
-     Lambda Frameworks and aws-fargate-ts. */ -}}
-{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" -}}
+     Lambda Frameworks, aws-fargate-ts and aws-queue-ts. */ -}}
+{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-queue-ts" -}}
+{{- $queue := eq .Framework "aws-queue-ts" -}}
+{{- $site := eq .Framework "aws-static-site-ts" -}}
+{{- $ops := or $tiered $site -}}
 # Agent guide
 
 This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` {{ if eq .Framework "aws-ec2-ts" }}service of {{ .SoftwareSystem }}: an HTTP
 server in TypeScript on EC2 instances in an Auto Scaling group behind an
 internal Application Load Balancer{{ else if eq .Framework "aws-fargate-ts" }}service of {{ .SoftwareSystem }}: an HTTP
 service in TypeScript on Node, run as a container on Amazon ECS on Fargate
-behind an Application Load Balancer{{ else }}function of {{ .SoftwareSystem }}: an AWS
-Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else if $py }}Python, on boto3,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API{{ end }}, keeping its data
-in DynamoDB, with its infrastructure as a CDK app in `infra/`, scaffolded by
+behind an Application Load Balancer{{ else if $queue }}worker of {{ .SoftwareSystem }}: an SQS
+queue with a dead-letter queue, consumed in batches by an AWS Lambda
+function in TypeScript{{ else if $site }}static site of {{ .SoftwareSystem }}: a page in
+TypeScript, built by Vite, served from a private S3 bucket through a
+CloudFront distribution{{ else }}function of {{ .SoftwareSystem }}: an AWS
+Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else if $py }}Python, on boto3,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API{{ end }}{{ if not $site }}, keeping its data
+in DynamoDB{{ end }}, with its infrastructure as a CDK app in `infra/`, scaffolded by
 C4 Factory with the `{{ .Standard }}` Standard. Build it to the rules below. What
 it is for, and what it must never do, is in the issue you were given
 and the system's needs: follow those.
@@ -39,7 +46,7 @@ allowed, `tsc` with the strict `tsconfig.json` and mypy `--strict` with
 `package-lock.json`, then runs Prettier (check), ESLint with `eslint.config.mjs`
 (typescript-eslint strict, no warnings allowed), `tsc` with the strict
 `tsconfig.json`, the vitest tests (the code's and the stacks'
-`Template.fromStack` assertions), `cdk synth` with CDK Nag's AWS Solutions
+`Template.fromStack` assertions), `cdk synth`{{ if $site }}, which builds the site with Vite,{{ end }} with CDK Nag's AWS Solutions
 {{- end }}
 checks, which fail on any finding not acknowledged with a reason, and
 `cfn-lint` on the templates synth wrote. CI runs the same command, and nothing
@@ -50,7 +57,8 @@ account or needs credentials: `cdk synth` writes CloudFormation into
 `cdk.out/`, offline{{ if $py }}, but for the wheels it bundles into the function, which uv
 takes from its cache or, when the cache lacks one, PyPI{{ end }}.{{ if eq .Framework "aws-fargate-ts" }} No check builds the image either: synth only stages
 its build context, and `cdk deploy` builds it, with Docker, on the deployer's
-machine.{{ end }}
+machine.{{ end }}{{ if $site }} Vite builds the site at synth, into an asset there, offline
+too; `npm run dev` serves it on your machine.{{ end }}
 
 ## Workflow
 
@@ -66,10 +74,10 @@ machine.{{ end }}
    request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
    `Makefile`, `eslint.config.mjs`, {{ if $go }}`.golangci.yml`, {{ else if $py }}`ruff.toml`, `mypy.ini`, {{ end }}`.prettierrc.json`, `.prettierignore`,
    `.editorconfig`, `AGENTS.md`, `docs/style/`, `docs/agents/`,
-   `docs/well-architected.md`, {{ if $tiered }}`docs/runbook.md`, {{ end }}`infra/main.ts` and `infra/standard.ts` belong
+   `docs/well-architected.md`, {{ if $ops }}`docs/runbook.md`, {{ end }}`infra/main.ts` and `infra/standard.ts` belong
    to the Standard. `tsconfig.json`, `vitest.config.mts` and `cdk.json` decide
    what the checks check and which CDK behaviour the app gets: don't loosen them.
-{{- if $tiered }}
+{{- if $ops }}
    `infra/operations.ts` is the factory's: it renders the file from the
    Container's `spec.operations`. Change it only to what that block says,
    when an issue changes the block, and never delete it; the stacks read it.
@@ -110,6 +118,14 @@ machine.{{ end }}
   a licence that fits, with wheels for arm64 Linux: the bundle installs
   wheels only. The CDK app's packages are npm `devDependencies`: add them with
   `npm install --save-exact --save-dev` and commit `package-lock.json`.
+{{- else if $site }}
+- Add packages with `npm install --save-exact` (`--save-dev` for tools), and
+  commit `package-lock.json`. Vite bundles what the page imports into the
+  site, so `node_modules` never ships; what the page imports is a
+  `dependency`, tools and the CDK are `devDependencies`. Prefer the
+  browser's own APIs; then few, small, maintained, well-known packages with
+  a licence that fits. A new install script needs an `allowScripts` entry in
+  `package.json`: allow it only when the package can't work without it.
 {{- else }}
 - Add packages with `npm install --save-exact` (`--save-dev` for tools), and
   commit `package-lock.json`. esbuild bundles what the {{ if eq .Framework "aws-ec2-ts" }}server{{ else if eq .Framework "aws-fargate-ts" }}service{{ else }}function{{ end }} imports into
@@ -124,6 +140,37 @@ machine.{{ end }}
 
 ## Review rules (lint can't check these)
 
+{{ if $site -}}
+1. **The page is plain TypeScript:** `index.html` holds the markup, and
+   `src/main.ts` only finds its elements and wires their events to pure
+   functions. A missing element fails at load, with its selector, not later.
+2. **Accessibility:** semantic elements (`button`, `a`, `label`, headings in
+   order), every input labelled, images with `alt`, everything usable by
+   keyboard with visible focus, status messages in an `aria-live` region
+   (WCAG 2.2 AA).
+3. **Errors users see** are on the page and say what happened and what to do;
+   never only in the console. A failed request leaves the page usable.
+4. **Never a secret in the site:** everything Vite builds, and everything in
+   `public/`, is public. Untrusted input (the URL, a form, a fetched answer)
+   is written as text (`textContent`), never as HTML (`innerHTML`) or into a
+   `javascript:` URL.
+5. **Input:** empty, huge, malformed and non-ASCII input never breaks the
+   page.
+6. **The site's files:** what the page loads is imported from `src/`, which
+   Vite bundles under hashed names, or is in `public/`, copied as it is and
+   referenced by its path. A deploy replaces every file in the bucket: nothing
+   is put there any other way.
+7. **Types:** no `any` (narrow `unknown` at the boundary, checked at runtime when
+   the input is untrusted); no non-null assertion without a disable comment
+   saying why; no `as` to silence the compiler; exhaustive switches over unions.
+8. **Pure modules:** logic lives in modules that don't touch the DOM, tested
+   with plain vitest in Node; `src/main.ts` only wires them to the page. A
+   test that needs the DOM brings its own environment.
+9. **Tests:** next to the code (`foo.test.ts`), `it.each` tables, names that say
+   what is expected; no real timers, network or shared state between tests.
+   No test calls AWS: the stack is checked with `Template.fromStack`
+   assertions.
+{{- else -}}
 {{ if $go -}}
 1. **Cold start:** the SDK's configuration and clients are created once, in
    `main` in `src/main.go` before `lambda.Start`, and reused by every
@@ -150,11 +197,20 @@ machine.{{ end }}
    scope in `src/handler.ts`, and reused by every invocation; nothing heavy
    runs at import beyond that. The bundle imports only the clients it uses.
 {{- end }}
+{{ if $queue -}}
+2. **The boundary:** every message is validated before use (its body, its
+   attributes), with unknown input narrowed from `unknown`, whoever sent it.
+   A message that fails throws, so the batch reports it alone and SQS
+   delivers it again; one no retry can fix throws too, and waits in the
+   dead-letter queue for a person. Never swallow a failure: a message the
+   handler drops is lost.
+{{- else -}}
 2. **The boundary:** every request is validated before use (path, query,
    body, headers), with {{ if $py }}untrusted input narrowed from `object` with `isinstance`{{ else }}unknown input narrowed from `unknown`{{ end }}. Errors are
    answered with the right HTTP status (400 for bad input, 404, 409, 500 for
    a bug) and a JSON message a client can act on, never a stack trace or the
    SDK's error text.
+{{- end }}
 3. **Idempotency:** a retried request or event changes nothing twice. Writes
    are puts of a whole item, conditional writes, or keyed by an idempotency
    key; never a blind increment.
@@ -165,12 +221,15 @@ machine.{{ end }}
    balancer's idle timeout; SDK calls stay within it.{{ else if eq .Framework "aws-fargate-ts" }}4. **Limits are set:** the task's CPU and memory and the service's scaling
    bounds are set in the stack for the work; every request body has a
    limit; keep-alive outlasts the load balancer's idle timeout, and the
-   container's stop timeout leaves the requests in flight time to finish.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
+   container's stop timeout leaves the requests in flight time to finish.{{ else if $queue }}4. **Limits are set:** the function's timeout and memory, the batch size,
+   the event source's maximum concurrency, and the queue's visibility
+   timeout (six times the function's, plus the batching window) and redrive count are set in the
+   stack; SDK calls stay within the timeout.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
    stack, the timeout below API Gateway's 30 seconds and above what the work
    needs; SDK calls stay within it. The stage is throttled.{{ end }}
 5. **Logs:** structured JSON, one entry per line, through the {{ if $go }}`*slog.Logger`{{ else }}`Log`{{ end }} the
-   code is given; an entry names the request id and what failed. Never
-   log a secret, a token or a request body with user data.
+   code is given; an entry names the {{ if $queue }}message id{{ else }}request id{{ end }} and what failed. Never
+   log a secret, a token or a {{ if $queue }}message{{ else }}request{{ end }} body with user data.
 6. **Least privilege:** permissions come from CDK grants
    ({{ if eq .Framework "aws-fargate-ts" }}`table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`{{ else }}`table.grant(fn, 'dynamodb:GetItem')`{{ end }}, `grantReadData`), narrowed to the
    calls the code makes; never an IAM statement with `*` or `service:*`
@@ -222,22 +281,35 @@ machine.{{ end }}
    No test calls AWS: SDK clients are stubbed behind their interface, and
    stacks are checked with `Template.fromStack` assertions.
 {{- end }}
+{{- end }}
 10. **Performance:** when the issue or the system's needs state a budget, a test
     or benchmark measures it on realistic input and the pull request gives the
     numbers.
 11. **The stack:** data is encrypted at rest, every log group has a retention,
     every stateful resource an explicit removal policy (`RETAIN` for data), and
     every stack the Standard's tags; `infra/standard.test.ts` checks these. No
-    secret in an environment variable or the template: secrets are read from
-    Secrets Manager or Parameter Store at run time{{ if eq .Framework "aws-fargate-ts" }}, or passed as ECS `secrets`{{ end }}. Nothing in the app needs
+    secret in {{ if $site }}the site or the template.{{ else }}an environment variable or the template: secrets are read from
+    Secrets Manager or Parameter Store at run time{{ if eq .Framework "aws-fargate-ts" }}, or passed as ECS `secrets`{{ end }}.{{ end }} Nothing in the app needs
     an AWS account to synthesize: no lookups, no `env` from the environment.
+{{- if $site }}
+    The stack is built for a tier, `production` or `development`, which a
+    deploy names (`-c tier=production`) and `infra/standard.ts`'s
+    `TIER_RULES` defines, and keeps what `infra/operations.ts` promises: in
+    production the site's bucket kept and versioned, its earlier versions
+    expiring after a set time, and a web application firewall; the
+    distribution and the function that copies the site with their alarms on
+    the stack's topic; the `EntryPoint` and `AlarmTopicArn` outputs.
+    `infra/standard.test.ts` checks both tiers. Nothing at synth reads a
+    context value but `tier`, or an environment variable. A change to what
+    the stack keeps, or how, updates `docs/runbook.md`, as a Standard change.
+{{- end }}
 {{- if $tiered }}
     The stacks are built for a tier, `production` or `development`, which a
     deploy names (`-c tier=production`) and `infra/standard.ts`'s
     `TIER_RULES` defines, and keep what `infra/operations.ts` promises: data
     kept, protected and backed up in production; every {{ if eq .Framework "aws-fargate-ts" }}load balancer,
     target group, service and table{{ else }}function, table and
-    API{{ end }} with its alarms on the stack's topic; every stack with its
+    {{ if $queue }}dead-letter queue{{ else }}API{{ end }}{{ end }} with its alarms on the stack's topic; every stack with its
     `EntryPoint` and `AlarmTopicArn` outputs. `infra/standard.test.ts` checks
     both tiers. Nothing at synth reads a context value but `tier`, or an
     environment variable. A change to what the stacks keep, or how, updates
@@ -281,7 +353,9 @@ Offline digests (read the one for what you are touching):
 - `docs/well-architected.md`: the AWS Well-Architected Framework, pillar{{ else if eq .Framework "aws-fargate-ts" }}- `docs/style/aws.md`: the server, the load balancer, the task and service,
   DynamoDB, the AWS SDK v3, the CDK and CDK Nag, and tests
 - `docs/well-architected.md`: the AWS Well-Architected Framework and Amazon
-  ECS's best practices, pillar{{ else }}- `docs/style/aws.md`: Lambda handlers, API Gateway HTTP APIs, DynamoDB, the
+  ECS's best practices, pillar{{ else if $site }}- `docs/style/aws.md`: the page, the S3 bucket, the CloudFront distribution
+  and its firewall, the CDK and CDK Nag, and tests
+- `docs/well-architected.md`: the AWS Well-Architected Framework, pillar{{ else }}- `docs/style/aws.md`: Lambda handlers, {{ if $queue }}SQS queues and batches{{ else }}API Gateway HTTP APIs{{ end }}, DynamoDB, the
   {{ if $go }}AWS SDK for Go v2{{ else if $py }}boto3{{ else }}AWS SDK v3{{ end }}, the CDK and CDK Nag, and tests
 - `docs/well-architected.md`: the AWS Well-Architected Framework and its
   Serverless Applications Lens, pillar{{ end }} by pillar, with the CDK Nag rules that
@@ -289,6 +363,9 @@ Offline digests (read the one for what you are touching):
 {{ if $tiered -}}
 - `docs/runbook.md`: restoring the data, rolling a deployment back, and what
   each alarm means
+{{ else if $site -}}
+- `docs/runbook.md`: restoring the site's files, rolling a deployment back,
+  and what each alarm means
 {{ end -}}
 - `docs/style/principles.md`: cross-language principles, with sources
 - `docs/style/SOURCES.md`: every source URL, with the date it was read
@@ -298,6 +375,9 @@ https://boto3.amazonaws.com/v1/documentation/api/latest/guide/ · {{ end }}https
 https://typescript-eslint.io/rules/ · {{ if eq .Framework "aws-ec2-ts" }}https://docs.aws.amazon.com/autoscaling/ec2/userguide/ ·
 https://docs.aws.amazon.com/elasticloadbalancing/latest/application/ ·
 https://docs.aws.amazon.com/wellarchitected/latest/framework/ ·{{ else if eq .Framework "aws-fargate-ts" }}https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-best-practices.html ·
+https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html ·{{ else if $site }}https://vite.dev/guide/ ·
+https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/ ·
+https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html ·
 https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html ·{{ else }}https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html ·
 https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/ ·{{ end }}
 https://github.com/cdklabs/cdk-nag/blob/main/RULES.md

@@ -741,7 +741,7 @@ jobs:
             gh issue comment "$number" -R "$GITHUB_REPOSITORY" --body-file body.md
           else
             gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body-file body.md \
-              --label status/ready --label priority/urgent --label kind/bug --label source/dev
+              --label status/ready --label priority/1 --label kind/bug --label source/dev
           fi
 
       - name: Delete kind cluster

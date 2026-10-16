@@ -381,8 +381,14 @@ var _ = Describe("Task", func() {
 		Expect(task.Status.Round).To(Equal(int32(1)))
 		Expect(task.Status.Runs).To(HaveLen(1), "the retry keeps the run's result instead of implementing again")
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
-		Expect(countContaining(gitFake.pullComments(ns, "orders-api", int(task.Status.PullRequest)),
-			"`make check` fails in the agent's workspace on main too")).To(Equal(1))
+		// The status is written before the note is posted, so the note may
+		// follow it; it is posted once all the same.
+		notes := func() int {
+			return countContaining(gitFake.pullComments(ns, "orders-api", int(task.Status.PullRequest)),
+				"`make check` fails in the agent's workspace on main too")
+		}
+		Eventually(notes).Should(Equal(1))
+		Consistently(notes, "2s").Should(Equal(1))
 		Consistently(func(g Gomega) {
 			var events eventsv1.EventList
 			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())

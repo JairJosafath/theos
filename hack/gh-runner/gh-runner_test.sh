@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests for hack/gh-runner/gh-runner.sh: N runners up, fewer up, down, the
-# single runner from before there were several, and status with Docker
-# unreachable, a container down and a runner offline, with docker, gh and stat
+# single runner from before there were several, status with Docker
+# unreachable, a container down and a runner offline, and the keeper (keep,
+# install, uninstall), with docker, gh, stat, systemctl, loginctl and crontab
 # faked. The fake Docker keeps its containers, volumes and registrations as
 # files; the fake GitHub lists the registrations, each online.
 # Run: hack/gh-runner/gh-runner_test.sh
@@ -35,7 +36,8 @@ case "$1" in
   inspect)
     c=${*: -1}; [ -e "$S/containers/$c" ] || exit 1
     case "$3" in *rev*) cat "$S/containers/$c" ;; *StartedAt*) echo 2026-10-07T00:00:00Z ;; esac ;;
-  stop|start) [ -e "$S/containers/$2" ] ;;
+  stop) [ -e "$S/containers/$2" ] ;;
+  start) [ -e "$S/containers/$2" ] && rm -f "$S/exited-$2" ;;
   rm) rm "$S/containers/$2" ;;
   # More than a pipe holds after the line: a grep -q on its pipe would exit
   # early and, under the script's pipefail, read a "no".
@@ -92,7 +94,8 @@ printf '#!/bin/sh\necho 999\n' >"$T/bin/stat"
 printf '#!/bin/sh\necho "$*" >>"$S/slept"\n' >"$T/bin/sleep"
 chmod +x "$T/bin/"*
 
-gh_runner() { PATH="$T/bin:$PATH" GH_RUNNER_NAME=c4factory-dev GH_RUNNER_WORK="$T/work" "$SCRIPT" "$@"; }
+# HOME too: up records in it, and down removes the record.
+gh_runner() { PATH="$T/bin:$PATH" HOME="$T/home" GH_RUNNER_NAME=c4factory-dev GH_RUNNER_WORK="$T/work" "$SCRIPT" "$@"; }
 containers() { ls "$S/containers" | sort | paste -sd' '; }
 configs() { ls "$S/volumes" | grep -- '-config$' | sort | paste -sd' '; }
 regs() { cat "$S"/reg/* 2>/dev/null | sort | paste -sd';'; }
@@ -177,5 +180,150 @@ RUNNERS=0 gh_runner up >/dev/null 2>&1
 check "RUNNERS=0 refused" "$?" 64
 RUNNERS=x gh_runner up >/dev/null 2>&1
 check "RUNNERS=x refused" "$?" 64
+check "a refused up records nothing" "$(cat "$T/home/.local/state/c4factory/gh-runner/runners")" "RUNNERS=1
+GH_RUNNER_NAME=c4factory-dev
+GH_RUNNER_WORK=$T/work
+C4_GITHUB_REPO=JairJosafath/c4factory"
+
+# The keeper (#1248). up records the count, with the names, work directories
+# and repository it used; keep starts the runners the record names whose
+# container is gone or not up, and never changes the record.
+rec=$T/home/.local/state/c4factory/gh-runner/runners
+RUNNERS=3 gh_runner up >/dev/null 2>&1
+check "up records the count" "$(sed -n 1p "$rec")" "RUNNERS=3"
+cp "$rec" "$T/recorded"
+recorded() { cmp -s "$rec" "$T/recorded" && echo same; }
+
+# All up: nothing to do, nothing said.
+gh_runner keep >"$T/out" 2>&1
+check "keep, all up: exit" "$?" 0
+check "keep, all up: says nothing" "$(cat "$T/out")" ""
+
+# Docker Desktop recreated its data disk: the containers, volumes,
+# registrations and image are gone. keep makes the recorded three again, in
+# the recorded work directories, whatever RUNNERS and GH_RUNNER_WORK say now.
+rm -f "$S"/containers/* "$S"/volumes/* "$S"/reg/* "$S/image"
+RUNNERS=1 GH_RUNNER_WORK=$T/elsewhere gh_runner keep >"$T/out" 2>&1
+check "keep, all gone: exit" "$?" 0
+check "keep, all gone: the recorded count" "$(containers)" "c4factory-gh-runner-1 c4factory-gh-runner-2 c4factory-gh-runner-3"
+check "keep, all gone: registered again" "$(regs)" "c4factory-dev-1 c4factory,c4factory-kind;c4factory-dev-2 c4factory;c4factory-dev-3 c4factory"
+check "keep, all gone: says which, with the time" \
+  "$(grep -c '^[0-9-]* [0-9:]* gh-runner: runner(s) 1 2 3 of 3 not up; starting them$' "$T/out")" 1
+check "keep, all gone: builds the image" "$(grep -c 'building' "$T/out")" 1
+check "keep, all gone: the recorded work directories" "$([ -e "$T/elsewhere" ] && echo moved)" ""
+check "keep, all gone: the record stays" "$(recorded)" same
+
+# Runner 1 is up from an older image, 2 is gone, 3 stopped: 1 stays as it is,
+# since making it again would kill its job; 2 is made, 3 started.
+echo older >"$S/containers/c4factory-gh-runner-1"
+rm "$S/containers/c4factory-gh-runner-2"
+touch "$S/exited-c4factory-gh-runner-3"
+gh_runner keep >"$T/out" 2>&1
+check "keep, one up: exit" "$?" 0
+check "keep, one up: says which" "$(grep -c 'runner(s) 2 3 of 3 not up' "$T/out")" 1
+check "keep, one up: leaves it alone" "$(cat "$S/containers/c4factory-gh-runner-1")" older
+check "keep, one up: makes the gone one" "$(containers)" "c4factory-gh-runner-1 c4factory-gh-runner-2 c4factory-gh-runner-3"
+check "keep, one up: starts the stopped one" "$([ -e "$S/exited-c4factory-gh-runner-3" ] && echo stopped)" ""
+check "keep, one up: the record stays" "$(recorded)" same
+
+# Docker not reachable: nothing starts, and it is said once, until Docker
+# answers again.
+rm "$S/containers/c4factory-gh-runner-2"
+touch "$S/no-docker"
+gh_runner keep >"$T/out" 2>&1
+check "keep, no Docker: exit" "$?" 0
+check "keep, no Docker: says so" "$(grep -c 'Docker is not reachable; starting nothing' "$T/out")" 1
+check "keep, no Docker: starts nothing" "$(containers)" "c4factory-gh-runner-1 c4factory-gh-runner-3"
+gh_runner keep >"$T/out" 2>&1
+check "keep, no Docker again: says it once" "$(cat "$T/out")" ""
+rm "$S/no-docker"
+gh_runner keep >"$T/out" 2>&1
+check "keep, Docker back: says so" "$(grep -c 'Docker answers again' "$T/out")" 1
+check "keep, Docker back: starts the gone one" "$(containers)" "c4factory-gh-runner-1 c4factory-gh-runner-2 c4factory-gh-runner-3"
+check "keep, Docker back: the record stays" "$(recorded)" same
+
+# While up or down runs, keep skips its turn.
+rm "$S/containers/c4factory-gh-runner-2"
+exec 9>"$T/home/.local/state/c4factory/gh-runner/lock"
+flock 9
+gh_runner keep >"$T/out" 2>&1
+check "keep, while up runs: exit" "$?" 0
+check "keep, while up runs: starts nothing" "$(containers)" "c4factory-gh-runner-1 c4factory-gh-runner-3"
+exec 9>&-
+
+# down removes the record: the keeper starts nothing until the next up.
+gh_runner down >/dev/null 2>&1
+check "down: removes the record" "$([ -e "$rec" ] && echo there)" ""
+gh_runner keep >"$T/out" 2>&1
+check "keep after down: exit" "$?" 0
+check "keep after down: starts nothing" "$(containers)" ""
+check "keep after down: says nothing" "$(cat "$T/out")" ""
+
+# install with systemd: a timer and a oneshot service that run this checkout's
+# keep every 2 minutes, without ./dev run, under the installer's PATH, logging
+# next to the record; enabled, started, with linger. From a copy of the script
+# outside any git checkout.
+F=$T/fake
+mkdir -p "$F" "$T/repo/hack/gh-runner"
+cp "$SCRIPT" "$T/repo/hack/gh-runner/"
+cat >"$T/bin/systemctl" <<'SH'
+#!/bin/sh
+echo "systemctl $*" >>"$F/calls"
+case "$*" in *show-environment*) [ ! -e "$F/no-systemd" ] ;; esac
+SH
+printf '#!/bin/sh\necho "loginctl $*" >>"$F/calls"\n' >"$T/bin/loginctl"
+printf '#!/bin/sh\nexit 1\n' >"$T/bin/pgrep"
+cat >"$T/bin/crontab" <<'SH'
+#!/bin/sh
+case "$1" in
+  -l) [ -e "$F/crontab" ] || exit 1; cat "$F/crontab" ;;
+  -) t=$(cat); printf "%s\n" "$t" >"$F/crontab" ;;
+esac
+SH
+chmod +x "$T/bin/"*
+export F
+keeper() { PATH="$T/bin:$PATH" HOME="$T/home" GIT_CEILING_DIRECTORIES=$T "$T/repo/hack/gh-runner/gh-runner.sh" "$@"; }
+units=$T/home/.config/systemd/user
+log=$T/home/.local/state/c4factory/gh-runner/keep.log
+keeper install >"$T/out" 2>&1
+check "install: exit" "$?" 0
+check "install: runs this checkout's keep, without ./dev" \
+  "$(grep -c "^ExecStart=\"$T/repo/hack/gh-runner/gh-runner.sh\" keep$" "$units/c4factory-gh-runner-keep.service")" 1
+check "install: a oneshot" "$(grep -c '^Type=oneshot$' "$units/c4factory-gh-runner-keep.service")" 1
+check "install: keeps the installer's PATH" \
+  "$(grep -cF "Environment=\"PATH=$T/bin:$PATH\"" "$units/c4factory-gh-runner-keep.service")" 1
+check "install: logs next to the record" "$(grep -c "^Standard\(Output\|Error\)=append:$log$" "$units/c4factory-gh-runner-keep.service")" 2
+check "install: every 2 minutes" "$(grep -c '^OnCalendar=\*:0/2$' "$units/c4factory-gh-runner-keep.timer")" 1
+check "install: enables and starts the timer" "$(paste -sd';' "$F/calls")" \
+  "systemctl --user show-environment;systemctl --user daemon-reload;systemctl --user enable --now c4factory-gh-runner-keep.timer;loginctl enable-linger $(id -un)"
+check "install: says where it logs" "$(grep -c "log: $log" "$T/out")" 1
+
+# uninstall: disabled, stopped and gone.
+: >"$F/calls"
+keeper uninstall >/dev/null 2>&1
+check "uninstall: exit" "$?" 0
+check "uninstall: disables and stops the timer" "$(grep -c 'disable --now c4factory-gh-runner-keep.timer' "$F/calls")" 1
+check "uninstall: removes the units" "$(ls "$units")" ""
+
+# install without systemd: a crontab line, the user's other lines kept;
+# installing again doesn't add another; uninstall removes it.
+touch "$F/no-systemd"
+echo '0 3 * * * backup' >"$F/crontab"
+keeper install >/dev/null 2>&1
+keeper install >/dev/null 2>&1
+check "install, cron: keeps the other lines" "$(grep -c backup "$F/crontab")" 1
+check "install, cron: keep every 2 minutes, without ./dev" \
+  "$(grep -c "^\*/2 \* \* \* \* PATH=.* $T/repo/hack/gh-runner/gh-runner.sh keep >>$log 2>&1 # c4factory gh-runner keeper$" "$F/crontab")" 1
+keeper uninstall >/dev/null 2>&1
+check "uninstall, cron: removes the line" "$(paste -sd';' "$F/crontab")" "0 3 * * * backup"
+
+# Not from a worktree: it changes branches, and goes.
+git init -q "$T/main"
+git -C "$T/main" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$T/main" worktree add -q "$T/main-wt"
+mkdir -p "$T/main-wt/hack/gh-runner"
+cp "$SCRIPT" "$T/main-wt/hack/gh-runner/"
+PATH="$T/bin:$PATH" HOME="$T/home" "$T/main-wt/hack/gh-runner/gh-runner.sh" install >"$T/out" 2>&1
+check "install from a worktree: refused" "$? | $(cat "$T/out")" "1 | gh-runner: install the keeper from the main checkout, not a worktree"
 
 exit $fail

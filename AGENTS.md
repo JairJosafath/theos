@@ -29,9 +29,10 @@ task. Read the rest when the task needs it:
 
 Business rules live in `internal/model` and `internal/scaffold` and must not
 import Kubernetes, controller-runtime, `net/http` or `api/`; `make lint` enforces
-the layering. Run `make check` before finishing a change; a tree that already
-passed on this device answers from the cache, which counts as a pass
-(`FORCE=1 make check` reruns it).
+the layering. `make check` gates every change; `hack/lib/github.sh land` runs it
+before it merges, so run it by hand only when you need its whole output. A tree
+that already passed on this device answers from the cache, which counts as a
+pass (`FORCE=1 make check` reruns it).
 
 ## Critical Rules
 
@@ -92,7 +93,7 @@ make lint-fix   # Auto-fix code style
 make test       # Run unit and envtest tests
 ```
 
-**Before finishing any change:**
+**Before finishing any change** (`land` runs it for you):
 ```
 make check      # manifests, generate, fmt, vet, lint, test and the UI's check in one go
 ```
@@ -132,10 +133,14 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
 - **Small pull requests to main.** One branch per issue, the one `take` names
   (`<type>/<N>-<slug>`, from an up-to-date main), pushed after every commit; a
   pull request to main whose body says `Closes #N`, merged with
-  `hack/lib/github.sh land PR` once `make check` passes (`land` takes the merge
-  turn, one across every device, merges `origin/main` in, reruns `make check`
-  and merges; over 400 changed lines it wants a review pass first, the
-  `handoff` skill's "Review before landing"). No long-lived or stacked branches. A plan's pull request says
+  `hack/lib/github.sh land PR`. `land`'s check is the check: while you work,
+  run the targeted tests (`make test-hack`, `go test ./internal/...`,
+  `make ui-test`), then land; `land` merges `origin/main` in and runs
+  `make check` before it queues, then takes the merge turn, one across every
+  device, and merges at once, checking again under the turn only when main
+  moved. Run `make check` by hand only when `land` failed and you need the
+  whole output. Over 400 changed lines it wants a review pass first, the
+  `handoff` skill's "Review before landing". No long-lived or stacked branches. A plan's pull request says
   `Refs #N` and never a closing word next to `#N`; the parent gets a
   `Depends on #S` line per step, goes `status/waiting` and closes itself when
   its last step closes. Never close a parent by hand (`hack/close-guard.sh`
@@ -148,8 +153,8 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   and names the issue in the spec or table case (`#1019`), at the lowest tier
   that sees the bug, and the pull request body names the test. `land` and
   `merge` refuse a pull request closing a `kind/bug` issue that changes no
-  test file (`*_test.go`, `*_test.sh`, `*.test.ts`), unless a line of its
-  body says `No test: <why>` (a docs-only or chart-only fix).
+  test file (`*_test.go`, `*_test.sh`, `*.test.ts`, `*.test.mjs`), unless a
+  line of its body says `No test: <why>` (a docs-only or chart-only fix).
 - **Show, don't claim.** When a plan is done, save evidence in
   `docs/screenshots/`. Test output is the evidence; no plan asks an agent for
   Kind evidence (`kubectl get` output, screenshots of a running factory).
@@ -162,16 +167,20 @@ Quality drops as a session's context grows, long before the window is full.
 Treat about 140k tokens as the limit, and keep each session to one piece of work.
 
 - **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
-  piece of work, labeled `status/*`, `priority/urgent`, `kind/*` and
+  piece of work, labeled `status/*`, `priority/*`, `kind/*` and
   `source/dev` (developing the factory) or `source/user` with `user/<name>`
   (reported from a device running the Helm release); `hack/lib/github.sh`
   reads and writes them. No issue needs a cluster: every one is verified by Go
   tests, so a device without Kind (`./dev setup --lite`, `C4_CLUSTER=none`)
-  works every ready issue. What each status means:
+  works every ready issue. `priority/1` to `priority/10` order the relay's
+  picks, 1 first; an issue with none counts as 5. 1 is something broken now
+  (a red main, a dead relay, a failed release check); 3 marks what makes
+  development itself faster (the relay, `land`, `make check`, flakes, the
+  scripts). What each status means:
   - `status/proposed`: filed, not yet decided. Whoever may decide readies it:
     the owner (a session the user runs files what the user decided as
     `ready`), the maintainer, or the relay's triage (the `triage` skill). An
-    agent's follow-up is filed `proposed`.
+    agent files a follow-up `proposed` only when it needs a decision (below).
   - `status/ready`: decided and unblocked; the relay picks it.
   - `status/in-progress`: an agent holds a claim.
   - `status/waiting`: a plan's parent, waiting on its steps, not on an agent.
@@ -183,6 +192,13 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   the user started picks or takes one only when the user says to work it in
   that session; the list above says who readies what.
 - **One issue, plan step or fix per session.** Start the next one fresh.
+- **A follow-up stays with its finder.** Fix it in the pull request when it
+  is already there: under about 30 lines, in a file the pull request changes,
+  in the issue's scope, named under `Also fixes:` in its body. File it
+  `hack/lib/github.sh create --next` when you can name its test (a bug's
+  failing test, a chore's or doc's Done-when): it is ready, and your relay
+  worker's next session starts on it. File it `status/proposed` when it needs
+  a decision. The `handoff` skill has the details.
 - **Agents work in parallel.** Take an issue with `hack/lib/github.sh take N`
   before working it; it names you (`otter-23`). Sign commits with an
   `Agent: otter-23` trailer and say it in the pull request and handoff. One
@@ -217,14 +233,14 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   allow rules in `.claude/settings.json` are the owner's: never edit them, and
   never do the refused thing through another command.
 - **On a device running many sessions, memory is the limit.** A session at rest is cheap;
-  heavy jobs (`make check`, `test`, `lint`, `docker-build`, `deploy`, `e2e`) are
+  heavy jobs (`make check`, `test`, `lint`, `vulncheck`, `docker-build`, `deploy`, `e2e`) are
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
   that waits for one prints who holds them, and that wait is not a hang;
   [docs/dev/testenv.md](docs/dev/testenv.md) has the numbers.
 - **Scratch goes under `$TMPDIR`.** `/tmp` is a small tmpfs every session on the
   device shares; one session's copies and caches filled it and failed every
   `make check` (#1269). Make scratch with `mktemp -d` (it honours `$TMPDIR`; the
-  relay points it at your worktree's `.dev/tmp` and removes it after the
-  session), never a literal `/tmp/...` path, and remove it before you land.
+  relay points it at `~/.cache/c4factory/tmp/<worktree>`, outside any git
+  checkout (#1307), and removes it after the session), never a literal `/tmp/...` path, and remove it before you land.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?

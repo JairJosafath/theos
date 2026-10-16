@@ -39,7 +39,7 @@ const (
 	EnvRound        = "C4_ROUND"
 	EnvMaxRounds    = "C4_MAX_ROUNDS"
 	EnvGitUsername  = "C4_GIT_USERNAME"
-	EnvGitToken     = "C4_GIT_TOKEN"
+	EnvGitToken     = "C4_GIT_TOKEN" //nolint:gosec // an environment variable's name
 	EnvCheckCommand = "C4_CHECK_COMMAND"
 	EnvContext      = "C4_CONTEXT"
 	// EnvProtectedPaths lists the paths the agent must not change, the

@@ -10,22 +10,52 @@
 # and when a /tmp at 90% goes under its Health only (how full /tmp is faked);
 # when it starts the maintainer, on a schedule or for an issue escalated to it,
 # with the activity, the escalated issues and hack/relay.sh --maintain faked;
+# that it syncs the labels at start (github faked);
 # --install and --uninstall with systemctl, loginctl and crontab faked; and the
 # stop file and the lock in a scratch copy of the watch, never this checkout's
 # .relay/; and the move to origin/main's code in relay-code from a checkout on
 # another branch, against a scratch origin.
 # Run: hack/relay-watch_test.sh
 T=$(mktemp -d)
+# $T may lie inside a checkout (the relay's TMPDIR, #1326): git stops at it.
+export GIT_CEILING_DIRECTORIES=$T
 # Only this shell cleans up (#544): a job killed just after it is forked, before
 # it resets the traps it inherits, runs this trap too, and would remove $T.
 trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
 unset C4_CLUSTER
+# Git looks no further up than $T: with $TMPDIR inside a checkout, $T/repo
+# would be that checkout, and --install refuses a worktree.
+export GIT_CEILING_DIRECTORIES=${T%/*}
 # shellcheck source=hack/relay-watch.sh
 . "$(dirname "$0")/relay-watch.sh"
 DIR=$T/relay LOG=$T/log WORKERS=2 RETRY=600 TRIAGE_EVERY=1800
 mkdir -p "$DIR"
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
+
+# pick_next counts every worker's reservations (create --next, #1284).
+(
+  REPO=$T/repo
+  mkdir -p "$REPO"/.claude/worktrees/relay-{1,2,triage}/.relay
+  touch "$REPO"/.claude/worktrees/relay-{2,triage}/.relay/next
+  github() { echo "$GH_NEXT_FILES"; }
+  touch "$REPO"/.claude/worktrees/relay-1/.relay/next
+  check "pick_next: every worker's .relay/next, not the triage's" "$(pick_next)" \
+    "$REPO/.claude/worktrees/relay-1/.relay/next
+$REPO/.claude/worktrees/relay-2/.relay/next"
+  exit $fail
+) || fail=1
+
+# proposed passes its arguments on, --since included (#1251): the real wrapper
+# and github, against a fake hack/lib/github.sh.
+(
+  CODE=$T/code
+  mkdir -p "$CODE/hack/lib"
+  printf '#!/bin/sh\necho "$*"\n' >"$CODE/hack/lib/github.sh"
+  chmod +x "$CODE/hack/lib/github.sh"
+  check "proposed: passes --since on (#1251)" "$(proposed --since 1700000000)" "proposed --since 1700000000"
+  exit $fail
+) || fail=1
 
 PICKED= PICK_RC=1 RELAY_RC=0 PROPOSED= PROPOSED_RC=0 TRIAGE_RC=0 BLOCKED= BLOCKED_RC=0 CYCLES=
 pick_next() { [ -n "$PICKED" ] && printf '%s\n' "$PICKED"; return "$PICK_RC"; }
@@ -583,6 +613,8 @@ case "$1 $2 $* " in
   *"/check-runs/"*)
     for a in "$@"; do [[ $a == */check-runs/* ]] && id=${a##*/check-runs/} id=${id%%/*}; done
     jq -r "$q" "$FAKE/annotations-$id.json" 2>/dev/null || echo '[]' | jq -r "$q" ;;
+  *"/actions/runs?"*) # the API's queued runs, one page: $FAKE/runs-.json renamed
+    jq '{workflow_runs: [.[] | {id: .databaseId, status, created_at: .createdAt}]}' "$FAKE/runs-.json" | jq -r "$q" ;;
   *"/actions/runners"*) jq -r "$q" "$FAKE/runners.json" ;;
   *" --method POST "*)
     [ -f "$FAKE/post.fail" ] && { echo "HTTP 502" >&2; exit 1; }
@@ -629,7 +661,7 @@ runs test.yml failure failure success
 ci_round
 check "ci: two failures file one issue" "$(filed)" 1
 check "ci: its title" "$(jq -r '.[0].title' "$T/issues.json")" "main is red: Tests"
-check "ci: its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/ready priority/urgent kind/bug source/dev"
+check "ci: its labels, priority/1 (#1329)" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/ready priority/1 kind/bug source/dev"
 body=$(jq -r '.[0].body' "$T/issues.json")
 check "ci: the body names both runs and commits" "$(grep -c '^- \[89[89]\](https://x/runs/89[89]) .*, failure, commit abcdef[12]: Merge pull request #[12]$' <<<"$body")" 2
 check "ci: the body names the failing jobs" "$(grep -cx '  - failed job: Run on Ubuntu' <<<"$body")" 2
@@ -789,14 +821,14 @@ flake_round
 check "flake: a run's log is read once" "$(wc -l <"$T/log-reads")" 1
 check "flake: a run is recorded once" "$(wc -l <"$DIR/flakes.tsv")" 1
 
-# The same spec in a second run within seven days: one bug, not urgent.
+# The same spec in a second run within seven days: one bug, priority/3 (#1329).
 sed 's/\^\[/\x1b/g' "$HERE/testdata/ginkgo-fail.log" >"$T/log-802.txt"
 failed 802 '1 hour'
 flake_round
 check "flake: the escape byte is read like its text" "$(cut -f1-2 "$DIR/flakes.tsv" | tail -1)" "$SPEC	802"
 check "flake: a second failure files one bug" "$(filed)" 1
 check "flake: its title" "$(jq -r '.[0].title' "$T/issues.json")" "Flaky: $SPEC"
-check "flake: its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/ready kind/bug source/dev"
+check "flake: its labels, priority/3 (#1329)" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/ready priority/3 kind/bug source/dev"
 check "flake: the body names both runs" "$(jq -r '.[0].body' "$T/issues.json" | grep -c '^- https://github.com/.*/actions/runs/80[12] at ')" 2
 check "flake: logged with the issue" "$(logged "a spec failed on main 2 times in 7 days: $SPEC; issue #100$")" 1
 
@@ -845,11 +877,29 @@ check "flake: CR and backslashes: one name" "$(cut -f1 "$DIR/flakes.tsv" | sort 
 check "flake: the next round files it" "$(jq -r '.[].title' "$T/issues.json")" 'Flaky: Parse matches \d+ and a\nb'
 flake_round
 check "flake: filed once" "$(filed)" 1
+
+# A shell test that fails on main counts as its file and case: the FAIL line
+# test-hack.sh shows under the test's own, not its ok lines, nor a Go
+# "--- FAIL" after test-hack's summary (#1208).
+rm -f "$DIR/flakes.tsv" "$DIR/flakes-runs"
+echo '[]' >"$T/runs-.json"
+{
+  printf 'Lint\tRun make check\t2026-10-16T03:12:40.1Z ok   hack/a_test.sh (2s)\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.1Z FAIL hack/lib/github_test.sh (exit 1, 135s):\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.1Z     FAIL take: claims it: got [x] want [y]\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.1Z     ok   take: names the branch\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.2Z test-hack: 1 of 29 shell tests failed\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:45.1Z     --- FAIL: TestNothing (0.00s)\n'
+} >"$T/log-821.txt"
+failed 821 '1 hour'
+flake_round
+check "flake: a shell test's case is recorded" "$(cut -f1-2 "$DIR/flakes.tsv")" "hack/lib/github_test.sh: take: claims it	821"
+check "flake: --count lists it" "$("$HERE/lib/github.sh" flakes --count)" "1	hack/lib/github_test.sh: take: claims it"
 rm -f "$T/runs-.json" "$T"/log-*.txt "$T"/log-*.fail "$DIR/flakes.tsv" "$DIR/flakes-runs" "$T/log-reads"
 echo '[]' >"$T/issues.json"
 
 # Runners offline: a run queued on main for 40 minutes puts the note in the
-# Maintainer report (report_note faked; the runs are gh run list's output,
+# Maintainer report (report_note faked; the runs are GitHub's actions/runs list,
 # read by the real hack/lib/github.sh queued), 10 minutes says nothing, and
 # runs that start again take it out. A failure is logged once.
 NOTE_RC=0
@@ -1002,6 +1052,17 @@ check "groups: the watch logs the missing group" \
 : >"$LOG"
 OWN="1000 4 27 1001" own_groups
 check "groups: all there, nothing logged" "$(cat "$LOG")" ""
+# At start it runs labels once (#1329): what changed is logged, a failure is
+# logged and the watch goes on.
+(
+  github() { echo "github $*" >>"$T/labels-calls"; printf 'label status/ready: exists\nlabel old/word: retired\n'; }
+  : >"$LOG"; sync_labels
+  check "labels: runs hack/lib/github.sh labels, logs what changed (#1329)" "$? $(cat "$T/labels-calls") $(grep -c 'labels: ' "$LOG") $(logged 'labels: label old/word: retired$')" "0 github labels 1 1"
+  github() { echo "github: HTTP 502" >&2; return 1; }
+  : >"$LOG"; sync_labels
+  check "labels: a failure is logged and the watch goes on (#1329)" "$? $(logged 'labels failed; the watch goes on: github: HTTP 502$')" "0 1"
+  exit $fail
+) || fail=1
 MANAGER="1000 4 27"
 manager_groups() { echo "$MANAGER"; }
 

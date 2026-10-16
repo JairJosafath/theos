@@ -25,6 +25,10 @@ type fakeReleaseState struct {
 	// how many runners are online, unknown while nil.
 	commitRuns map[string][]gitprovider.WorkflowRun
 	runners    *int
+	// runJobs is the jobs of a run, by owner/name#run ID, and onlineRunners
+	// the IDs of the runners online; any other runner is offline.
+	runJobs       map[string][]gitprovider.WorkflowJob
+	onlineRunners map[int64]bool
 	// reruns counts the RerunFailedJobs calls, by owner/name#run ID, and
 	// refused is the runs whose re-run the host refuses.
 	reruns  map[string]int
@@ -67,8 +71,10 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			runs: map[string][]gitprovider.WorkflowRun{}, published: map[string]*gitprovider.Release{},
 			assets: map[string][]byte{}, created: map[string]gitprovider.Milestone{},
 			goMods: map[string]string{}, uploads: map[string]int{}, moduleFailures: map[string]int{},
-			modulePublishes: map[string]int{}, moduleDelays: map[string]time.Duration{}, reruns: map[string]int{}, refused: map[string]bool{},
-			commitRuns: map[string][]gitprovider.WorkflowRun{}, sources: map[string][]fakeSourceFile{}}
+			modulePublishes: map[string]int{}, moduleDelays: map[string]time.Duration{}, reruns: map[string]int{},
+			refused: map[string]bool{}, commitRuns: map[string][]gitprovider.WorkflowRun{},
+			sources: map[string][]fakeSourceFile{}, runJobs: map[string][]gitprovider.WorkflowJob{},
+			onlineRunners: map[int64]bool{}}
 	}
 	return g.releases
 }
@@ -203,6 +209,21 @@ func (p *fakeProvider) RunnersOnline(context.Context) (int, bool) {
 		return *n, true
 	}
 	return 0, false
+}
+
+// RunJobs returns the jobs a test set for run id, none until it does.
+func (p *fakeProvider) RunJobs(_ context.Context, repo gitprovider.Repository, id int64) (
+	[]gitprovider.WorkflowJob, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	return slices.Clone(p.git.releaseState().runJobs[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, id)]), nil
+}
+
+// RunnerOnline says a runner a test set online is, and any other isn't.
+func (p *fakeProvider) RunnerOnline(_ context.Context, id int64) (online, known bool) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	return p.git.releaseState().onlineRunners[id], true
 }
 
 // setCommitRuns sets the CI runs at commit.

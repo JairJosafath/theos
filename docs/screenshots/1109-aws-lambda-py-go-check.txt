@@ -242,3 +242,226 @@ aws-ec2-ts v1.0.0: make check exit 0, Tests 79 passed | 24 skipped (103)
 # The Standard's test skips the per-tier checks of what infra/operations.ts promises:
 aws-lambda-py v1.0.0: make check exit 0, pytest 48 passed in 0.06s, vitest Tests 26 passed | 24 skipped (50)
 aws-lambda-go v1.0.0: make check exit 0, vitest Tests 27 passed | 24 skipped (51)
+
+## After merging origin/main again (aws-standard v1.10.0)
+
+# main gained aws-static-site-ts v1.0.0 with aws-standard v1.8.0 (#1287) and aws-queue-ts v1.0.0 with
+# aws-standard v1.9.0 (#1291), so this branch's Standard is v1.10.0. Rendered as above with hack/render
+# (aws-queue-ts as -type worker, aws-static-site-ts as -type static-site), the defaults, and run the same
+# way with Node v24.22.0, uv, Python 3.14.4, Go 1.26.9 and golangci-lint 2.14.0, on 2026-10-16.
+# Trimmed: npm notices, download and install lines, bundling lines.
+
+### py
+
+npm ci --no-audit --no-fund
+
+added 141 packages in 2m
+uv sync --locked
+Using CPython 3.14.4 interpreter at: /usr/bin/python3.14
+Creating virtual environment at: .venv
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+uv run --no-sync ruff format --diff .
+24 files already formatted
+node_modules/.bin/eslint --max-warnings 0 .
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+node_modules/.bin/tsc --noEmit
+uv run --no-sync mypy app tests
+Success: no issues found in 10 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: <scratch>/py
+configfile: pyproject.toml
+testpaths: tests
+collected 63 items
+
+tests/test_api.py .........                                              [ 14%]
+tests/test_item_store.py ....                                            [ 20%]
+tests/test_items.py ...................................                  [ 76%]
+tests/test_once.py ...............                                       [100%]
+
+============================== 63 passed in 4.86s ==============================
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 <scratch>/py
+
+ ✓ infra/standard.test.ts (57 tests) 28081ms
+   ✓ the Standard, in production (10)
+     ✓ leaves no error or warning on any stack 778ms
+   ✓ the Standard, in development (10)
+     ✓ leaves no error or warning on any stack 680ms
+ ✓ infra/api_stack.test.ts (14 tests) 33360ms
+   ✓ ApiStack (12)
+     ✓ defaults the alert email to alerts.email 4664ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 3427ms
+     ✓ copies the backups to the vault in copyToRegion 3252ms
+
+ Test Files  2 passed (2)
+      Tests  71 passed (71)
+   Start at  22:31:05
+   Duration  44.48s (tests 74%, import 19%, transform 7%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+### go
+
+npm ci --no-audit --no-fund
+
+added 141 packages in 23s
+cd src && go mod download
+cd src && go mod tidy -diff
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+cd src && golangci-lint fmt --diff
+node_modules/.bin/eslint --max-warnings 0 .
+cd src && go vet ./...
+cd src && golangci-lint run
+0 issues.
+node_modules/.bin/tsc --noEmit
+cd src && go test -race -count=1 ./...
+ok  	c4factory.local/webshop/sample-app	1.043s
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 <scratch>/go
+
+ ✓ infra/standard.test.ts (57 tests) 40818ms
+ ✓ infra/api_stack.test.ts (15 tests) 42340ms
+   ✓ ApiStack (13)
+     ✓ defaults the alert email to alerts.email 1009ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 771ms
+     ✓ copies the backups to the vault in copyToRegion 723ms
+
+ Test Files  2 passed (2)
+      Tests  72 passed (72)
+   Start at  22:34:33
+   Duration  45.13s (tests 94%, import 4%, transform 2%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+### queue
+
+npm ci --no-audit --no-fund
+
+added 180 packages in 3m
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 <scratch>/queue
+
+ ✓ src/batch.test.ts (3 tests) 56ms
+ ✓ src/consume.test.ts (9 tests) 80ms
+ ✓ src/items.test.ts (26 tests) 60ms
+ ✓ src/item_store.test.ts (1 test) 24ms
+
+  ...d9cf53686d9b91166d428b9490b8f204edd5489292d42a-building/index.js  600.6kb
+  ...53686d9b91166d428b9490b8f204edd5489292d42a-building/index.js.map    2.5mb
+
+⚡ Done in 471ms
+
+  ...9874a734c22a4d0428559b310f2043e00883112642e3f1-building/index.js  600.6kb
+  ...a734c22a4d0428559b310f2043e00883112642e3f1-building/index.js.map    2.5mb
+
+⚡ Done in 524ms
+
+  ...f6966bfe785aa3fbf84b100f3456a1cd190dfb0daf11c4-building/index.js  600.6kb
+  ...6bfe785aa3fbf84b100f3456a1cd190dfb0daf11c4-building/index.js.map    2.5mb
+
+⚡ Done in 912ms
+
+  ...d6d8b4012cbf69d82638b1b0ebf88e34455c2d80cc6569-building/index.js  600.6kb
+  ...b4012cbf69d82638b1b0ebf88e34455c2d80cc6569-building/index.js.map    2.5mb
+
+⚡ Done in 922ms
+
+  ...5a69f1ff402acbd6b6a3d0ada5b89d0a6efded5fdb54f1-building/index.js  600.6kb
+  ...f1ff402acbd6b6a3d0ada5b89d0a6efded5fdb54f1-building/index.js.map    2.5mb
+
+⚡ Done in 1291ms
+ ✓ infra/standard.test.ts (57 tests) 21195ms
+   ✓ the Standard, in production (10)
+     ✓ leaves no error or warning on any stack 670ms
+   ✓ the Standard, in development (10)
+     ✓ leaves no error or warning on any stack 466ms
+
+  ...634e357e695b5e3e66a642315464254fa81a061da50640-building/index.js  600.6kb
+  ...357e695b5e3e66a642315464254fa81a061da50640-building/index.js.map    2.5mb
+
+⚡ Done in 454ms
+
+  ...a74d28e794f43875783871bd47529c6ac51b2182a0f008-building/index.js  600.6kb
+  ...28e794f43875783871bd47529c6ac51b2182a0f008-building/index.js.map    2.5mb
+
+⚡ Done in 573ms
+ ✓ infra/queue_stack.test.ts (16 tests) 26574ms
+   ✓ QueueStack (14)
+     ✓ defaults the alert email to alerts.email 4870ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 2755ms
+     ✓ copies the backups to the vault in copyToRegion 3019ms
+
+ Test Files  6 passed (6)
+      Tests  112 passed (112)
+   Start at  22:30:56
+   Duration  37.40s (tests 64%, import 22%, transform 14%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+
+  ...c6a88f304827e2f6b3ae32348ffd5350eb1b85944d5485-building/index.js  600.6kb
+  ...8f304827e2f6b3ae32348ffd5350eb1b85944d5485-building/index.js.map    2.4mb
+
+⚡ Done in 344ms
+
+  ...fcce2769cb928fb25dfe235cdd11444dd8c864e8065834-building/index.js  600.6kb
+  ...2769cb928fb25dfe235cdd11444dd8c864e8065834-building/index.js.map    2.4mb
+
+⚡ Done in 288ms
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+### site
+
+npm ci --no-audit --no-fund
+
+added 141 packages in 2m
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 <scratch>/site
+
+ ✓ src/greeting.test.ts (5 tests) 17ms
+ ✓ infra/standard.test.ts (57 tests) 16324ms
+   ✓ the Standard, in production (10)
+     ✓ leaves no error or warning on any stack 613ms
+   ✓ the Standard, in development (10)
+     ✓ leaves no error or warning on any stack 1130ms
+ ✓ infra/site_stack.test.ts (13 tests) 17581ms
+   ✓ SiteStack (9)
+     ✓ keeps the site in a private, versioned bucket in production, earlier versions for a while 3792ms
+
+ Test Files  3 passed (3)
+      Tests  75 passed (75)
+   Start at  22:30:43
+   Duration  24.93s (tests 68%, transform 18%, import 15%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0

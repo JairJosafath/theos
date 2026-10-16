@@ -114,7 +114,8 @@ Standard was copied from ts-standard v1.5.0: its TypeScript rules
 ts-standard's, and a test in C4 Factory keeps them equal. The TypeScript
 sources were read on 2026-10-02 for ts-standard. Of the AWS sources, the
 {{ if eq .Framework "aws-ec2-ts" }}Well-Architected Framework was read on 2026-10-13, and the Application Load
-Balancer's access log page on 2026-10-13 for the aws-ec2-ts Framework,{{ else }}Well-Architected Framework, its Serverless Applications Lens and Lambda's best
+Balancer's access log page on 2026-10-13 for the aws-ec2-ts Framework,{{ else if eq .Framework "aws-static-site-ts" }}Well-Architected Framework was read on 2026-10-13, its pillars' pages on
+backups, recovery and alarms on 2026-10-16 for aws-lambda-ts,{{ else }}Well-Architected Framework, its Serverless Applications Lens and Lambda's best
 practices were read on 2026-10-13,{{ end }} and CDK Nag's rules from the installed
 package; the other AWS pages are the references the digests follow, not
 fetched again for them: check one before relying on a detail it alone gives.
@@ -128,6 +129,12 @@ read again. Lambda's Python pages and the boto3 guide are references the
 digests follow, not fetched again for them.
 {{- end }}
 Version or date as shown on the page; "live" when the page shows none.
+{{- if eq .Framework "aws-static-site-ts" }}
+
+For the static site, the CloudFront, S3, AWS WAF and Vite pages below are
+the references the digests follow, not fetched for them: check one before
+relying on a detail it alone gives.
+{{- end }}
 {{- if eq .Framework "aws-lambda-go" }}
 
 For the Go function, `go.md` and `.golangci.yml` are go-standard's, copied
@@ -180,7 +187,40 @@ it alone gives.
 | AWS CDK v2 developer guide, best practices — https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html                                              | live                                 |
 | AWS CDK assertions module — https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.assertions-readme.html                                             | aws-cdk-lib 2.273.0                  |
 | CDK Nag README and RULES.md (AwsSolutions and Serverless packs) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md                                | cdk-nag 3.0.2, read from the package |
-| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                              | 1.57.2 (PyPI, 2026-10-13)            |{{ else }}| Source                                                                                                                                                           | Version / date                       |
+| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                              | 1.57.2 (PyPI, 2026-10-13)            |{{ else if eq .Framework "aws-queue-ts" }}| Source                                                                                                                      | Version / date                       |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| AWS Well-Architected Framework — https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html                  | November 6, 2024                     |
+| Serverless Applications Lens — https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/welcome.html | July 14, 2022                        |
+| Lambda, best practices — https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html                                   | live                                 |
+| Lambda, Node.js handler and its best practices — https://docs.aws.amazon.com/lambda/latest/dg/nodejs-handler.html           | live                                 |
+| Lambda, JSON log format — https://docs.aws.amazon.com/lambda/latest/dg/monitoring-cloudwatchlogs-logformat.html             | live                                 |
+| Lambda, using Lambda with Amazon SQS — https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html                           | live                                 |
+| Lambda, configuring an SQS event source — https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-configure.html          | live; read 2026-10-16                |
+| DynamoDB, best practices — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/best-practices.html             | live                                 |
+| AWS SDK for JavaScript v3, developer guide — https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/             | live                                 |
+| AWS CDK v2 developer guide, best practices — https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html                   | live                                 |
+| AWS CDK assertions module — https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.assertions-readme.html                  | aws-cdk-lib 2.273.0                  |
+| CDK Nag README and RULES.md (AwsSolutions and Serverless packs) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md     | cdk-nag 3.0.2, read from the package |
+| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                   | 1.57.2 (PyPI, 2026-10-13)            |{{ else if eq .Framework "aws-static-site-ts" }}| Source                                                                                                                                                                                       | Version / date                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| AWS Well-Architected Framework — https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html                                                                                   | November 6, 2024                     |
+| Reliability pillar, REL09 Back up data — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/back-up-data.html                                                             | live, read 2026-10-16                |
+| Reliability pillar, REL13 Plan for disaster recovery — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/plan-for-disaster-recovery-dr.html                              | live, read 2026-10-16                |
+| Reliability pillar, REL06 Monitor workload resources — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/monitor-workload-resources.html                                 | live, read 2026-10-16                |
+| Operational excellence pillar, OPS08 workload observability — https://docs.aws.amazon.com/wellarchitected/latest/operational-excellence-pillar/ops_workload_observability_create_alerts.html | live, read 2026-10-16                |
+| CloudFront, restricting access to an S3 origin — https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html                            | live                                 |
+| CloudFront, protocols and ciphers for viewers — https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/secure-connections-supported-viewer-protocols-ciphers.html                | live                                 |
+| CloudFront, standard logging — https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/AccessLogs.html                                                                            | live                                 |
+| CloudFront, managed response headers policies — https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-response-headers-policies.html                              | live                                 |
+| Amazon S3, security best practices — https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html                                                                      | live                                 |
+| Amazon S3, versioning — https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html                                                                                                | live                                 |
+| AWS WAF, AWS managed rule groups — https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-list.html                                                                   | live                                 |
+| Vite, building for production — https://vite.dev/guide/build                                                                                                                                 | Vite 8.3.3                           |
+| AWS CDK v2 developer guide, best practices — https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html                                                                                    | live                                 |
+| AWS CDK assertions module — https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.assertions-readme.html                                                                                   | aws-cdk-lib 2.273.0                  |
+| CDK Nag README and RULES.md (AwsSolutions pack) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md                                                                                      | cdk-nag 3.0.2, read from the package |
+| cdk-monitoring-constructs README — https://github.com/cdklabs/cdk-monitoring-constructs/blob/v10.3.2/README.md                                                                               | 10.3.2                               |
+| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                                                                    | 1.57.2 (PyPI, 2026-10-13)            |{{ else }}| Source                                                                                                                                                           | Version / date                       |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | AWS Well-Architected Framework — https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html                                                       | November 6, 2024                     |
 | Serverless Applications Lens — https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/welcome.html                                      | July 14, 2022                        |
@@ -226,6 +266,18 @@ github.com/aws/aws-lambda-go 1.55.1, github.com/aws/aws-sdk-go-v2 1.47.3, its
 (v2.14). The `Makefile` runs cfn-lint 1.57.2 with uv. The CDK Nag rules these
 docs name were read from cdk-nag 3.0.2's `RULES.md`, and `cdk.json`'s feature
 flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
+{{- else if eq .Framework "aws-static-site-ts" -}}
+## Tools
+
+The versions pinned in the Framework's `package.json` and `package-lock.json`:
+TypeScript 6.0.3 (typescript-eslint 8.71.0 supports `<6.1.0`, so not 7.x),
+ESLint 10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9,
+vitest 5.0.3, Vite 8.3.3, @types/node 24.19.1, aws-cdk-lib 2.273.0,
+constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2,
+cdk-monitoring-constructs 10.3.2, tsx 4.23.15. The `Makefile` runs cfn-lint
+1.57.2 with uv. The CDK Nag rules these docs name were read from cdk-nag
+3.0.2's `RULES.md`, and `cdk.json`'s feature flags are the ones `cdk init` of
+aws-cdk 2.1145.0 writes.
 {{- else if eq .Framework "aws-lambda-py" -}}
 ## Tools
 
@@ -252,12 +304,12 @@ constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
 @types/aws-lambda 8.10.164.{{ end }} The `Makefile` runs cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
-{{- if eq .Framework "aws-lambda-ts" }} The
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }} The
 operations (the alarms, Powertools) add cdk-monitoring-constructs 10.3.2 and
-@aws-lambda-powertools/logger, metrics and idempotency 2.36.0.
+@aws-lambda-powertools/{{ if eq .Framework "aws-queue-ts" }}batch, {{ end }}logger, metrics and idempotency 2.36.0.
 {{- end }}
 {{- end }}
-{{- if $lambda }}
+{{- if or $lambda (eq .Framework "aws-queue-ts") }}
 
 ## Operations (read 2026-10-16)
 
@@ -287,6 +339,21 @@ give none.
 {{- end }}
 | cfn-lint rules, I3011 and I3013 — https://github.com/aws-cloudformation/cfn-lint/blob/main/docs/rules.md                                                                                                                        | 1.57.2         |
 | Pricing: DynamoDB, AWS Backup, CloudWatch, X-Ray — https://aws.amazon.com/dynamodb/pricing/on-demand/, https://aws.amazon.com/backup/pricing/, https://aws.amazon.com/cloudwatch/pricing/, https://aws.amazon.com/xray/pricing/ | live           |
+{{- if eq .Framework "aws-queue-ts" }}
+
+## Queues (read 2026-10-16)
+
+Read for the queue, its dead-letter queue, the event source and `docs/runbook.md`'s redrive.
+
+| Source                                                                                                                                                   | Version / date |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Lambda, handling errors for an SQS event source (partial batch responses) — https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-errorhandling.html | live           |
+| Lambda, maximum concurrency for SQS event sources — https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-scaling.html                               | live           |
+| SQS, dead-letter queues — https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html                         | live           |
+| SQS, StartMessageMoveTask (redrive) — https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_StartMessageMoveTask.html                | live           |
+| SQS, server-side encryption — https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-server-side-encryption.html                 | live           |
+| Powertools for AWS Lambda (TypeScript), Batch Processing — https://docs.aws.amazon.com/powertools/typescript/latest/features/batch/                      | 2.36.0         |
+{{- end }}
 {{- end }}
 
 ## Cross-language (read 2026-09-30)
