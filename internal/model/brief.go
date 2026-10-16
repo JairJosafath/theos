@@ -86,6 +86,9 @@ type PlanObject struct {
 	// Checks is a Container's spec.checks: from a plan, empty when model.yaml
 	// leaves it out, which leaves the Container's setting alone.
 	Checks string
+	// Operations is a Container's spec.operations: nil when model.yaml leaves
+	// it out, which leaves the defaults to the factory.
+	Operations *OperationsChoices
 	// Connector is a DataStore's.
 	Connector string
 
@@ -351,14 +354,69 @@ type planSystemSpec struct {
 
 type planContainerSpec struct {
 	planText          `yaml:",inline"`
-	SoftwareSystemRef planLocalRef  `yaml:"softwareSystemRef"`
-	Type              string        `yaml:"type"`
-	GitProviderRef    planLocalRef  `yaml:"gitProviderRef"`
-	FrameworkRef      planLocalRef  `yaml:"frameworkRef"`
-	StandardRef       *planLocalRef `yaml:"standardRef"`
-	ComputeRef        *planLocalRef `yaml:"computeRef"`
-	DeploymentRef     *planLocalRef `yaml:"deploymentRef"`
-	Checks            string        `yaml:"checks"`
+	SoftwareSystemRef planLocalRef    `yaml:"softwareSystemRef"`
+	Type              string          `yaml:"type"`
+	GitProviderRef    planLocalRef    `yaml:"gitProviderRef"`
+	FrameworkRef      planLocalRef    `yaml:"frameworkRef"`
+	StandardRef       *planLocalRef   `yaml:"standardRef"`
+	ComputeRef        *planLocalRef   `yaml:"computeRef"`
+	DeploymentRef     *planLocalRef   `yaml:"deploymentRef"`
+	Checks            string          `yaml:"checks"`
+	Operations        *planOperations `yaml:"operations"`
+}
+
+type planOperations struct {
+	Backups *struct {
+		RetentionDays *int32 `yaml:"retentionDays"`
+		CopyToRegion  string `yaml:"copyToRegion"`
+	} `yaml:"backups"`
+	Recovery *struct {
+		RPO string `yaml:"rpo"`
+		RTO string `yaml:"rto"`
+	} `yaml:"recovery"`
+	Alerts *struct {
+		Email string `yaml:"email"`
+	} `yaml:"alerts"`
+}
+
+// choices is the block as model reads it.
+func (p *planOperations) choices() *OperationsChoices {
+	if p == nil {
+		return nil
+	}
+	var c OperationsChoices
+	if b := p.Backups; b != nil {
+		c.RetentionDays, c.CopyToRegion = b.RetentionDays, b.CopyToRegion
+	}
+	if r := p.Recovery; r != nil {
+		c.RPO, c.RTO = r.RPO, r.RTO
+	}
+	if a := p.Alerts; a != nil {
+		c.Email = a.Email
+	}
+	return &c
+}
+
+// errPlanTier refuses a tier on a plan's Container: where the app runs, and so
+// its tier, is a deploy target's (plans/aws-production.md, decision 1).
+var errPlanTier = errors.New("a Container has no tier: production or development is the deploy target's to " +
+	"say, never the plan's; leave tier out, and write in operations only what the idea states")
+
+// hasTier reports whether a Container's spec node writes a tier, in spec or
+// in spec.operations.
+func hasTier(spec *yaml.Node) bool {
+	value := func(n *yaml.Node, key string) *yaml.Node {
+		if n == nil || n.Kind != yaml.MappingNode {
+			return nil
+		}
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if n.Content[i].Value == key {
+				return n.Content[i+1]
+			}
+		}
+		return nil
+	}
+	return value(spec, "tier") != nil || value(value(spec, "operations"), "tier") != nil
 }
 
 type planDataStoreSpec struct {
@@ -436,6 +494,9 @@ func decodePlanSpec(node *yaml.Node, o *PlanObject) error {
 		}
 		o.DisplayName, o.Description, o.Needs, o.KPIs = spec.DisplayName, spec.Description, spec.Needs, spec.KPIs
 	case KindContainer:
+		if hasTier(node) {
+			return errPlanTier
+		}
 		var spec planContainerSpec
 		if err := strict(&spec); err != nil {
 			return err
@@ -444,7 +505,7 @@ func decodePlanSpec(node *yaml.Node, o *PlanObject) error {
 		o.SoftwareSystem, o.Type, o.GitProvider = spec.SoftwareSystemRef.Name, spec.Type, spec.GitProviderRef.Name
 		o.Framework, o.Standard = spec.FrameworkRef.Name, spec.StandardRef.name()
 		o.Compute, o.Deployment = spec.ComputeRef.name(), spec.DeploymentRef.name()
-		o.Checks = spec.Checks
+		o.Checks, o.Operations = spec.Checks, spec.Operations.choices()
 	case KindDataStore:
 		var spec planDataStoreSpec
 		if err := strict(&spec); err != nil {
@@ -643,6 +704,7 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 	}
 	checkParallel(plan, current, refuse)
 	checkChecks(plan, current, refuse)
+	checkOperations(plan, current, refuse)
 	return out
 }
 

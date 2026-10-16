@@ -73,6 +73,10 @@ type Input struct {
 	// Checks is when CI runs the full check: EveryChange or BeforeRelease, as
 	// model.EffectiveChecks decides. Empty reads as EveryChange.
 	Checks string
+	// Operations is the Container's spec.operations with its defaults filled
+	// in (model.ResolveOperations), for a template to render
+	// infra/operations.ts from. It holds no tier: that is the deploy target's.
+	Operations model.Operations
 	// CI is the CI system the Container's repository runs. A layer's
 	// .c4factory/ci/<CI.Name>/ folder renders at the repository root.
 	CI model.CI
