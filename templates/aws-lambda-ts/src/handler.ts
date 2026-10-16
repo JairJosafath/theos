@@ -13,6 +13,7 @@ import type {
 import { answer, PUT_ITEM, route } from './api';
 import type { Log } from './api';
 import { DynamoDbItemStore } from './item_store';
+import { answeringOnce, keepingOnlySuccess } from './once';
 
 /** The value of an environment variable the stack sets. */
 function setting(name: string): string {
@@ -35,19 +36,27 @@ const log: Log = (message, attributes) => {
 };
 
 // A PUT sent again with the same Idempotency-Key header gets the first answer
-// back and writes nothing twice; one without the header is simply run. A
-// request that throws records nothing, so a retry runs it again.
+// back and writes nothing twice; one without the header is simply run. Only
+// what changed something is kept: a refusal or a failure keeps no record, so
+// a corrected retry runs again. The key sent with another path or body is
+// refused (422), and so is a retry while the first is still running (409).
 const idempotency = new IdempotencyConfig({
   eventKeyJmesPath: 'headers."idempotency-key"',
+  payloadValidationJmesPath: '[rawPath, body]',
   throwOnNoIdempotencyKey: false,
 });
-const putOnce = makeIdempotent((event: APIGatewayProxyEventV2) => route(event, store), {
-  persistenceStore: new DynamoDBPersistenceLayer({
-    tableName: setting('IDEMPOTENCY_TABLE_NAME'),
-    awsSdkV3Client: dynamoDb,
-  }),
-  config: idempotency,
-});
+const putOnce = answeringOnce(
+  makeIdempotent(
+    keepingOnlySuccess((event: APIGatewayProxyEventV2) => route(event, store)),
+    {
+      persistenceStore: new DynamoDBPersistenceLayer({
+        tableName: setting('IDEMPOTENCY_TABLE_NAME'),
+        awsSdkV3Client: dynamoDb,
+      }),
+      config: idempotency,
+    },
+  ),
+);
 
 /** The Lambda entry point the stack names: wiring only, the work is in `route`. */
 export async function handler(

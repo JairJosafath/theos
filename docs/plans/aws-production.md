@@ -304,6 +304,12 @@ evidence):
   `docs/well-architected.md` has an `aws-lambda-ts` branch beside the
   serverless one `aws-lambda-py` and `aws-lambda-go` still use; step 4
   moves them onto it.
+- **Synthesizing both tiers doubles the test hooks' work:** a
+  `vitest.config.mts` gives `hookTimeout` room (aws-lambda-ts 120 s); step 5
+  gives `aws-fargate-ts` one, which it lacks.
+- **Every development stack is named `<name>-development`**
+  (`stackNameFor`), so a hand `cdk deploy` with no tier never strips a
+  production stack of its protections, and the Standard's test checks it.
 - **`ts`, a template function,** quotes a string as Prettier does, for
   `infra/operations.ts`'s strings (an email may hold a `'`).
 - **No release job yet:** `make check` and CI synthesize both tiers, but

@@ -19,7 +19,8 @@ An id is 1 to 64 letters, digits, `-` or `_`. A name is 1 to 200 characters;
 a quantity a whole number, 0 or more. Every error is JSON with a `message`.
 A `PUT` replaces the whole item, so repeating it is harmless; a `PUT` sent
 again with the same `Idempotency-Key` header within an hour gets the first
-answer back and writes nothing.
+answer back and writes nothing. The same key with another path or body is
+answered 422, and a retry while the first is still running 409.
 
 ## Develop
 
@@ -44,6 +45,9 @@ The stacks are built for a tier, `production` or `development`, which is the
 place they run, not the code: `make synth` writes both, into
 `cdk.out/production/` and `cdk.out/development/`, and a deploy picks one
 (`cdk deploy -c tier=production`; without `-c tier` it is `development`).
+The production stack is `{{ .Container }}`, the development one
+`{{ .Container }}-development`, so a deploy that names no tier never changes
+production.
 Production keeps the tables when the stack goes, protects them and the stack
 from deletion, recovers them to any second of the last 35 days, backs them up
 daily with AWS Backup, traces with X-Ray and keeps logs a year; development
@@ -53,7 +57,7 @@ and have a dashboard.
 What the app promises whatever the tier, the backups' retention and copy
 region, the recovery objectives and who the alarms tell, is in
 `infra/operations.ts`, which C4 Factory renders from the Container's
-`spec.operations`: change the block, not the file. The alert email is the
+`spec.operations`: change the block, and the file follows it. The alert email is the
 stack's `AlertEmail` parameter, which a deploy can set per environment. Each
 stack outputs `EntryPoint`, the API's URL, and `AlarmTopicArn`, the topic its
 alarms notify.

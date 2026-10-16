@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { defineStacks } from './stacks';
-import { applyStandard, STANDARD_TAGS, TIER_RULES, TIERS, tierOf } from './standard';
+import { applyStandard, stackNameFor, STANDARD_TAGS, TIER_RULES, TIERS, tierOf } from './standard';
 import type { Operations, Tier } from './standard';
 
 /** A resource in a synthesized template, as far as these rules read it. */
@@ -334,6 +334,15 @@ describe.runIf(operations !== undefined).each(TIERS)(
     const serving = (): [string, Template][] =>
       app(tier).templates.filter(([, template]) => !holdsOnlyACopyVault(template));
 
+    describe('the stack names', () => {
+      it("name every stack for the tier, so a deploy without one never changes production's", () => {
+        for (const stack of app(tier).stacks) {
+          const base = stack.stackName.replace(/-development$/, '');
+          expect(stack.stackName).toBe(stackNameFor(base, tier));
+        }
+      });
+    });
+
     describe('the removal policies', () => {
       it('keep every table, backup vault and vault key where the tier keeps data, else delete them', () => {
         const policy = rules.keepData ? 'Retain' : 'Delete';
@@ -373,6 +382,22 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('point-in-time recovery', () => {
+      it('is on for every table in production when the RPO is under a day', () => {
+        const [, count = '', unit = ''] = /^(\d+)([mhd])$/.exec(promised().recovery.rpo) ?? [];
+        const minutes = Number(count) * ({ m: 1, h: 60, d: 1440 }[unit] ?? Number.NaN);
+        expect(minutes, `recovery.rpo ${promised().recovery.rpo}`).toBeGreaterThan(0);
+        if (tier !== 'production' || minutes >= 1440) {
+          return;
+        }
+        for (const [name, template] of app(tier).templates) {
+          for (const [id, table] of resourcesOf(template, 'AWS::DynamoDB::Table')) {
+            expect(table.Properties?.['PointInTimeRecoverySpecification'], `${name}/${id}`).toEqual(
+              expect.objectContaining({ PointInTimeRecoveryEnabled: true }),
+            );
+          }
+        }
+      });
+
       it('is on for every table where the tier recovers data, and off elsewhere', () => {
         for (const [name, template] of app(tier).templates) {
           for (const [id, table] of resourcesOf(template, 'AWS::DynamoDB::Table')) {
@@ -443,6 +468,17 @@ describe.runIf(operations !== undefined).each(TIERS)(
         } else {
           expect(copyStacks).toEqual([]);
         }
+      });
+    });
+
+    describe('the runbook', () => {
+      it('restores from the copy region, when there is one', () => {
+        const { retentionDays, copyToRegion } = promised().backups;
+        const runbook = path.join(import.meta.dirname, '..', 'docs', 'runbook.md');
+        if (retentionDays === 0 || copyToRegion === '' || !existsSync(runbook)) {
+          return;
+        }
+        expect(readFileSync(runbook, 'utf8')).toContain(copyToRegion);
       });
     });
 

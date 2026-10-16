@@ -45,8 +45,8 @@ func main() {
 	if in.CI, err = model.CIByName(*ci); err != nil {
 		fail(err)
 	}
-	if *retention > int(model.MaxRetentionDays) {
-		fail(fmt.Errorf("-retention-days %d: at most %d", *retention, model.MaxRetentionDays))
+	if *retention < -1 || *retention > int(model.MaxRetentionDays) {
+		fail(fmt.Errorf("-retention-days %d: 0 to %d, or -1 to leave it out", *retention, model.MaxRetentionDays))
 	}
 	if *retention >= 0 {
 		days := int32(*retention)

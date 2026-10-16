@@ -3,6 +3,7 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { ApiStack } from './api_stack';
+import { copyVaultName } from './backups';
 import type { Operations, Tier } from './standard';
 
 const OPERATIONS: Operations = {
@@ -216,5 +217,18 @@ describe('ApiStack', () => {
         },
       },
     );
+  });
+});
+
+describe('copyVaultName', () => {
+  it('names the copy vault after the stack', () => {
+    expect(copyVaultName('orders')).toBe('orders-copies');
+  });
+
+  it('keeps a long name within 50 characters, and two long names apart', () => {
+    const long = `${'a'.repeat(40)}-one`;
+    const other = `${'a'.repeat(40)}-two`;
+    expect(copyVaultName(long)).toHaveLength(50);
+    expect(copyVaultName(long)).not.toBe(copyVaultName(other));
   });
 });

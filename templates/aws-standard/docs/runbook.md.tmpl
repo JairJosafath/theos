@@ -127,9 +127,12 @@ live (`expiration`, for the `Idempotency` table) and the three
   `cdk deploy -c tier=production`. The function, the API and the alarms go
   back; the data does not. If the bad version wrote bad data, restore the
   items as above to the moment it was deployed.
-- A change that would replace a table (a new key) fails on deletion
-  protection, and the stack rolls back: data is never replaced by a deploy.
-  Moving data to a new table is a migration, planned and run by a person.
+- Never deploy a change that replaces a table (a new key, a new name): the
+  deploy makes a new, empty table and keeps the old one outside the stack,
+  its data unreachable by the function. Moving data to a new table is a
+  migration, planned and run by a person; if it happened by mistake, deploy
+  the last good commit and bring the old table back as in
+  [The table is gone](#the-table-is-gone).
 - Termination protection refuses `cdk destroy` in production. Turning it
   off is the account owner's decision; the tables and the vault stay anyway.
 

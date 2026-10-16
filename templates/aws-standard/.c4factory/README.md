@@ -86,8 +86,10 @@ byte for byte.
   `production` and `development`), what each means for every stack
   (`TIER_RULES`: keeping and protecting data, point-in-time recovery, AWS
   Backup, X-Ray, log retention one year or one month), the `Operations` type
-  a Framework's `infra/operations.ts` has, and `tierOf(app)`, the app's
-  `tier` context value, `development` when it has none, refusing any other.
+  a Framework's `infra/operations.ts` has, `tierOf(app)`, the app's
+  `tier` context value, `development` when it has none, refusing any other,
+  and `stackNameFor(name, tier)`, which adds `-development` to a
+  development stack's name.
   `applyStandard(app, tier)` tags every stack, and every resource in it that
   takes tags, with `c4factory:project`, `c4factory:system` and
   `c4factory:container` (the stack's own tags too, set explicitly, as the
@@ -116,13 +118,14 @@ byte for byte.
   termination protection by tier. When the repository has
   `infra/operations.ts`, it imports its `OPERATIONS` at run time, checks its
   shape, and adds a `describe` per tier and item of what it promises: the
-  removal policies (tables `Retain` or `Delete` by tier, every backup vault
-  and its key `Retain`), deletion and termination protection, point-in-time
-  recovery, the backup plan and vault (in production with `retentionDays`
+  stack names (`stackNameFor`), the removal policies (tables `Retain` or
+  `Delete` by tier, every backup vault and its key `Retain`), deletion and
+  termination protection, point-in-time recovery (and on in production
+  when `rpo` is under a day), the backup plan and vault (in production with `retentionDays`
   over 0: one plan whose rules are daily, keep `retentionDays` and copy to
   `copyToRegion`'s vault when set, one vault with its own key, one selection
   by the `c4factory:container` tag, and a copy stack in that region; else
-  none), the alarms and topic (one topic, a dashboard, every alarm notifying
+  none), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
   the topic, alarms on every function's `Errors`, `Throttles` and
   `Duration`, every table's `ReadThrottleEvents`, `WriteThrottleEvents` and
   `SystemErrors`, every HTTP API's `5xx`), the subscription (the

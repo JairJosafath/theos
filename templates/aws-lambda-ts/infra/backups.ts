@@ -4,11 +4,15 @@ import { BackupPlan, BackupPlanRule, BackupResource, BackupVault } from 'aws-cdk
 import { Schedule } from 'aws-cdk-lib/aws-events';
 import { Key } from 'aws-cdk-lib/aws-kms';
 import { Construct } from 'constructs';
+import { createHash } from 'node:crypto';
 
 /** The name of the vault in `copyToRegion` that `stackName`'s backups are copied to. */
 export function copyVaultName(stackName: string): string {
-  // A vault name is at most 50 letters, digits, - and _.
-  return `${stackName.slice(0, 43)}-copies`;
+  // A vault name is at most 50 letters, digits, - and _: a longer stack name
+  // keeps its start and a hash of the whole, so two never share a vault.
+  const hash = createHash('sha256').update(stackName).digest('hex').slice(0, 8);
+  const name = stackName.length <= 43 ? stackName : `${stackName.slice(0, 34)}-${hash}`;
+  return `${name}-copies`;
 }
 
 /** What `Backups` backs up, and for how long. */

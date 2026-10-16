@@ -88,6 +88,15 @@ export interface Operations {
   };
 }
 
+/**
+ * The name of the stack named `name` in production, for `tier`: development
+ * stacks carry the tier's name too, so a deploy that names no tier makes or
+ * changes a development stack and never strips a production one.
+ */
+export function stackNameFor(name: string, tier: Tier): string {
+  return tier === 'production' ? name : `${name}-${tier}`;
+}
+
 /** The tier `app` is synthesized for: its `tier` context value, `development` when it has none. */
 export function tierOf(app: App): Tier {
   const value: unknown = app.node.tryGetContext('tier');

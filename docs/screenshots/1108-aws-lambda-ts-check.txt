@@ -8,7 +8,7 @@
 
 npm ci --no-audit --no-fund
 
-added 178 packages in 9s
+added 178 packages in 12s
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
@@ -18,77 +18,78 @@ node_modules/.bin/vitest run
 
  RUN  v5.0.3 /tmp/aws-1108
 
- ✓ src/api.test.ts (8 tests) 7ms
- ✓ src/items.test.ts (25 tests) 10ms
- ✓ src/item_store.test.ts (4 tests) 7ms
+ ✓ src/api.test.ts (8 tests) 31ms
+ ✓ src/items.test.ts (25 tests) 32ms
+ ✓ src/once.test.ts (7 tests) 14ms
+ ✓ src/item_store.test.ts (4 tests) 6ms
 Bundling asset test/Handler/Code/Stage...
+
+  ...4919d62f728e880ce61ba970e44b3fbe4d1f4b1715752e-building/index.js  596.4kb
+  ...d62f728e880ce61ba970e44b3fbe4d1f4b1715752e-building/index.js.map    2.4mb
+
+⚡ Done in 292ms
 Bundling asset sample-app/Handler/Code/Stage...
-
-  ...a516cf1fd4be54f1f69dd003c938a4548f01b4591b5717-building/index.js  595.8kb
-  ...cf1fd4be54f1f69dd003c938a4548f01b4591b5717-building/index.js.map    2.4mb
-
-⚡ Done in 138ms
-
-  ...4709e16aac93b3017fdcb6fb904de760693208741c0667-building/index.js  595.8kb
-  ...e16aac93b3017fdcb6fb904de760693208741c0667-building/index.js.map    2.4mb
-
-⚡ Done in 109ms
-Bundling asset test/Handler/Code/Stage...
-Bundling asset sample-app/Handler/Code/Stage...
-
-  ...34a4a00b3a904b20b8203441ef32e812949ac95dd36b08-building/index.js  595.8kb
-  ...a00b3a904b20b8203441ef32e812949ac95dd36b08-building/index.js.map    2.4mb
-
-⚡ Done in 1030ms
-
-  ...e28a22488eab974e593edf050595519b7fb44ff773116e-building/index.js  595.8kb
-  ...22488eab974e593edf050595519b7fb44ff773116e-building/index.js.map    2.4mb
-
-⚡ Done in 250ms
-Bundling asset test/Handler/Code/Stage...
- ✓ infra/standard.test.ts (39 tests) 5668ms
-
-  ...86a15a6682a2d86a3136265f11706f41d124bfcfade4f3-building/index.js  595.8kb
-  ...5a6682a2d86a3136265f11706f41d124bfcfade4f3-building/index.js.map    2.4mb
-
-⚡ Done in 391ms
 Bundling asset test/Handler/Code/Stage...
 
-  ...8ee814e4ca4a2cbe7226b68e724cc780f135f040dba271-building/index.js  595.8kb
-  ...14e4ca4a2cbe7226b68e724cc780f135f040dba271-building/index.js.map    2.4mb
+  ...b69b9cf6e2fa80df2c6fa5f6f197ef7b544e8362cee11f-building/index.js  596.4kb
+  ...9cf6e2fa80df2c6fa5f6f197ef7b544e8362cee11f-building/index.js.map    2.4mb
 
-⚡ Done in 108ms
+⚡ Done in 81ms
+
+  ...f15a8038fc91290fb8fef5658d51c4baed96a7249c33d2-building/index.js  596.4kb
+  ...8038fc91290fb8fef5658d51c4baed96a7249c33d2-building/index.js.map    2.4mb
+
+⚡ Done in 129ms
 Bundling asset test/Handler/Code/Stage...
 
-  ...cb484ec6b905df88b61c2ca959ae41e458221e866f64bf-building/index.js  595.8kb
-  ...4ec6b905df88b61c2ca959ae41e458221e866f64bf-building/index.js.map    2.4mb
+  ...288178d5ca8669b2af0473e44887febd3452178d60efc5-building/index.js  596.4kb
+  ...78d5ca8669b2af0473e44887febd3452178d60efc5-building/index.js.map    2.4mb
 
-⚡ Done in 71ms
- ✓ infra/api_stack.test.ts (12 tests) 6889ms
+⚡ Done in 90ms
+Bundling asset test/Handler/Code/Stage...
+Bundling asset sample-app-development/Handler/Code/Stage...
+
+  ...cf0008d659dc59a95b576ee5585b74312668504be3e430-building/index.js  596.4kb
+  ...08d659dc59a95b576ee5585b74312668504be3e430-building/index.js.map    2.4mb
+
+⚡ Done in 83ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...9a9bb2db58d23387292e816df50a13e9b1b5713698d390-building/index.js  596.4kb
+  ...b2db58d23387292e816df50a13e9b1b5713698d390-building/index.js.map    2.4mb
+
+⚡ Done in 258ms
+
+  ...5324ee3c7252e9a1147415ce90a86448e55e502f7381c6-building/index.js  596.4kb
+  ...ee3c7252e9a1147415ce90a86448e55e502f7381c6-building/index.js.map    2.4mb
+
+⚡ Done in 271ms
+ ✓ infra/api_stack.test.ts (14 tests) 5662ms
    ✓ ApiStack (12)
-     ✓ defaults the alert email to alerts.email 896ms
-     ✓ keeps only point-in-time recovery when retentionDays is 0 582ms
-     ✓ copies the backups to the vault in copyToRegion 455ms
+     ✓ defaults the alert email to alerts.email 589ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 501ms
+     ✓ copies the backups to the vault in copyToRegion 1698ms
+ ✓ infra/standard.test.ts (45 tests) 4922ms
 
- Test Files  5 passed (5)
-      Tests  88 passed (88)
-   Start at  07:41:08
-   Duration  8.16s (tests 81%, import 11%, transform 8%)
+ Test Files  6 passed (6)
+      Tests  103 passed (103)
+   Start at  08:03:48
+   Duration  7.79s (tests 75%, import 20%, transform 4%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
 Bundling asset sample-app/Handler/Code/Stage...
 
-  ...2ab499f75f1e47e13d66420e1c8d487bf1512d9bf684a9-building/index.js  595.8kb
+  ...2ab499f75f1e47e13d66420e1c8d487bf1512d9bf684a9-building/index.js  596.4kb
   ...99f75f1e47e13d66420e1c8d487bf1512d9bf684a9-building/index.js.map    2.4mb
 
-⚡ Done in 1049ms
-Bundling asset sample-app/Handler/Code/Stage...
+⚡ Done in 1151ms
+Bundling asset sample-app-development/Handler/Code/Stage...
 
-  ...8d446130b0409126813ef020c36865b7240ffbada7e5a1-building/index.js  595.8kb
+  ...8d446130b0409126813ef020c36865b7240ffbada7e5a1-building/index.js  596.4kb
   ...6130b0409126813ef020c36865b7240ffbada7e5a1-building/index.js.map    2.4mb
 
-⚡ Done in 87ms
+⚡ Done in 228ms
 uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
 make check exit 0
 
@@ -97,21 +98,34 @@ make check exit 0
 #   -copy-to-region eu-central-1 -alert-email ops@example.com Framework=aws-lambda-ts Standard=aws-standard
 # make check (as above): the vitest summary, the templates synth wrote, and the exit status
 
- Test Files  5 passed (5)
-      Tests  88 passed (88)
-cdk.out/development/sample-app.template.json
+ Test Files  6 passed (6)
+      Tests  103 passed (103)
+cdk.out/development/sample-app-development.template.json
 cdk.out/production/sample-app-backup-copy.template.json
 cdk.out/production/sample-app.template.json
 make check exit 0
 
-# It fails when infra/operations.ts and a stack disagree. In /tmp/aws-1108, the stack
-# keeps backups 30 days whatever infra/operations.ts says (35):
-#   sed -i 's/retentionDays: backups.retentionDays,/retentionDays: 30,/' infra/api_stack.ts
-# make test (NO_COLOR=1), the failures:
+# It fails when infra/operations.ts and a stack disagree: in /tmp/aws-1108, the stack keeps
+# its backups 30 days whatever infra/operations.ts says (35). vitest run (NO_COLOR=1), the failures:
 
-       × back up daily for retentionDays in a vault with its own key, copied to copyToRegion 14ms
-     × backs up daily for retentionDays in production, and not at all in development 7ms
-     × copies the backups to the vault in copyToRegion 518ms
+diff --git a/infra/api_stack.ts b/infra/api_stack.ts
+index 1ffc733..2460b69 100644
+--- a/infra/api_stack.ts
++++ b/infra/api_stack.ts
+@@ -181,7 +181,7 @@ export class ApiStack extends Stack {
+ 
+     if (rules.backups && backups.retentionDays > 0) {
+       new Backups(this, 'Backups', {
+-        retentionDays: backups.retentionDays,
++        retentionDays: 30,
+         copyToRegion: backups.copyToRegion,
+         tag: props.backupTag,
+       });
+
+       × back up daily for retentionDays in a vault with its own key, copied to copyToRegion 12ms
+     × backs up daily for retentionDays in production, and not at all in development 4ms
+     × copies the backups to the vault in copyToRegion 424ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
  FAIL  infra/api_stack.test.ts > ApiStack > backs up daily for retentionDays in production, and not at all in development
 AssertionError: Template has 1 resources with type AWS::Backup::BackupPlan, but none match as expected.
 !!           Expected 35 but received 30
@@ -120,8 +134,8 @@ AssertionError: Template has 1 resources with type AWS::Backup::BackupPlan, but 
 !!               Expected 35 but received 30
  FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the backup plan and vault > back up daily for retentionDays in a vault with its own key, copied to copyToRegion
 AssertionError: sample-app: expected { CopyActions: [], …(4) } to match object { …(3) }
-      Tests  3 failed | 85 passed (88)
-make: *** [Makefile:46: test] Error 1
+- Expected
+      Tests  3 failed | 100 passed (103)
 
 # And when a stack ignores the tier: X-Ray always on.
 
@@ -140,22 +154,23 @@ index 1ffc733..80dee26 100644
          IDEMPOTENCY_TABLE_NAME: idempotency.tableName,
 
        × traces every function with X-Ray where the tier traces, and none elsewhere 6ms
-     × traces with X-Ray in production only 6ms
-     × lets the handler only get and put items, keep idempotency records, and write its logs 9ms
+     × traces with X-Ray in production only 5ms
+     × lets the handler only get and put items, keep idempotency records, and write its logs 8ms
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
  FAIL  infra/api_stack.test.ts > ApiStack > traces with X-Ray in production only
 AssertionError: Template has 1 resources with type AWS::Lambda::Function, but none match as expected.
  FAIL  infra/api_stack.test.ts > ApiStack > lets the handler only get and put items, keep idempotency records, and write its logs
 AssertionError: expected [ '"dynamodb:DeleteItem"', …(9) ] to deeply equal [ '"dynamodb:DeleteItem"', …(7) ]
  FAIL  infra/standard.test.ts > what infra/operations.ts promises, in development > tracing > traces every function with X-Ray where the tier traces, and none elsewhere
-AssertionError: sample-app/Handler886CB40B: expected true to be false // Object.is equality
-      Tests  3 failed | 85 passed (88)
+AssertionError: sample-app-development/Handler886CB40B: expected true to be false // Object.is equality
+      Tests  3 failed | 100 passed (103)
 
-# The other AWS Frameworks at their current versions with aws-standard v1.6.0, each rendered
-# with hack/render and checked with make check (aws-lambda-go with golangci-lint 2.13.1 on PATH):
+# The other AWS Frameworks at their pinned versions (templates/versions.txt) with aws-standard
+# v1.6.0, each rendered with hack/render and checked with make check (aws-lambda-go with
+# golangci-lint 2.13.1 on PATH):
 aws-lambda-py v1.0.0: make check exit 0
 aws-lambda-go v1.0.0: make check exit 0
 aws-fargate-ts v1.0.0: make check exit 0
 aws-ec2-ts v1.0.0: make check exit 0
-# and aws-lambda-ts v1.0.0 (origin/main's, no infra/operations.ts), as a Standard update would leave it:
-aws-lambda-ts v1.0.0: make check exit 0, Tests 63 passed | 18 skipped (81)
+# and aws-lambda-ts v1.0.0 (origin/main's, no infra/operations.ts), as a Standard update leaves it:
+aws-lambda-ts v1.0.0: make check exit 0, Tests 63 passed | 24 skipped (87)

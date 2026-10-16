@@ -374,8 +374,9 @@ apply; it is not run, so they are review items.
 The tier is where the stacks run, and a deploy names it:
 `cdk deploy -c tier=production`, or `development` when it names none. The
 code never picks one, and nothing else is read at synth: a synth of a tier is
-the same on every machine. `infra/standard.ts` (`TIER_RULES`) says what each
-tier means:
+the same on every machine. A development stack's name ends in
+`-development`, so a deploy that names no tier never changes a production
+stack. `infra/standard.ts` (`TIER_RULES`) says what each tier means:
 
 | Every stack                                     | `production`                        | `development`   |
 | ----------------------------------------------- | ----------------------------------- | --------------- |
@@ -388,8 +389,8 @@ tier means:
 | Alarms, their topic and a dashboard             | on                                  | on              |
 
 What the Container promises in either tier is `infra/operations.ts`, which
-the factory renders from its `spec.operations` and overwrites when the block
-changes: change the block, not the file.
+the factory renders from its `spec.operations`; a change to the block is
+written into the file, never the other way.
 
 - `backups.retentionDays`: days AWS Backup keeps each daily backup in
   production; 0 keeps point-in-time recovery only.
@@ -508,7 +509,9 @@ fails._
   - Development backs up nothing: its data goes with its stack.
 - Nothing of value is deleted by accident, in production: tables are
   `RETAIN` with deletion protection, and the stack has termination
-  protection; a change that would replace a table fails and rolls back.
+  protection. A change that replaces a table (a new key) keeps the old one
+  but leaves it outside the stack, empty of the new one's data: review
+  every change to a table's key as a migration.
   - `AwsSolutions-DDB3`: point-in-time recovery; `infra/standard.ts`
     acknowledges it in development only.
   - `infra/standard.test.ts`: per tier, the removal policies, the
@@ -527,8 +530,9 @@ fails._
 - Idempotency: a retried request changes nothing twice. A `PUT` replaces
   the whole item, and one sent again with the same `Idempotency-Key` header
   gets the first answer back: Powertools' Idempotency keeps it for an hour
-  in the stack's idempotency table, and a request that throws keeps nothing,
-  so its retry runs again.
+  in the stack's idempotency table. A refusal or a failure keeps nothing,
+  so a corrected retry runs again; the key sent with another path or body
+  is refused (422), and a retry while the first still runs too (409).
 - Limits: timeouts on every function, below the caller's (API Gateway: 30
   seconds); throttling on every API stage, so a burst can't exhaust the
   account's concurrency. Serverless `LambdaFunctionDefaultTimeout`,

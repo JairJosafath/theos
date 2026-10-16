@@ -10,9 +10,11 @@ CloudFormation offline.
   `Logger` and `Metrics` and the idempotent PUT at module scope, reads
   `TABLE_NAME` and `IDEMPOTENCY_TABLE_NAME`, and passes each
   `APIGatewayProxyEventV2` to `answer` in `src/api.ts` with a `route`:
-  Powertools' `makeIdempotent` around `route` for `PUT /items/{id}` (keyed by
-  the `Idempotency-Key` header; a request without one is just run), `route`
-  itself for the rest. `route` checks input and answers with status codes,
+  for `PUT /items/{id}`, Powertools' `makeIdempotent` around `route` (keyed
+  by the `Idempotency-Key` header, validated against the path and body; a
+  request without the header is just run), with `src/once.ts` throwing a
+  refusal out of it so no record of it is kept and answering an
+  in-progress retry 409 and a reused key 422; `route` itself for the rest. `route` checks input and answers with status codes,
   throwing what the store throws; `answer` logs that and answers 500. The
   handler counts `AnsweredRequests` and `FailedRequests` and the cold start
   with `Metrics`. `src/items.ts` holds the rules and imports neither the SDK
@@ -27,11 +29,12 @@ CloudFormation offline.
   changes; it is not a protected path.
 - **Infrastructure:** `infra/stacks.ts` exports `defineStacks(app: App, tier:
   Tier): Stack[]`, which adds one stack named after the package (the
-  Container), `infra/api_stack.ts`, built for the tier with the Standard's
-  `TIER_RULES`, and in production with `copyToRegion` and backups set a
+  Container, and `<name>-development` in development, the Standard's
+  `stackNameFor`), `infra/api_stack.ts`, built for the tier with the
+  Standard's `TIER_RULES`, and in production with `copyToRegion` and backups set a
   second, `<name>-backup-copy` in that region (`infra/backups.ts`'s
   `BackupCopyStack`: the vault the backups are copied to, named
-  `<name>-copies`, with its own key, both `RETAIN`), which the first depends
+  `<name>-copies`, a name over 43 characters cut with a hash, with its own key, both `RETAIN`), which the first depends
   on. The stack has two on-demand DynamoDB tables, the items and
   Powertools' idempotency records (TTL `expiration`), KMS-encrypted, with
   point-in-time recovery, deletion protection and `RETAIN` in production
@@ -74,7 +77,8 @@ CloudFormation offline.
   Docker. `cdk.json`'s `app` runs `infra/main.ts` with tsx, and its context
   holds the feature flags `cdk init` of aws-cdk 2.1145.0 recommends.
 - **Tests:** vitest runs `src/**/*.test.ts` and `infra/**/*.test.ts` in
-  Node, with a 60-second timeout for the tests that synthesize a stack.
+  Node, with a 60-second timeout for the tests that synthesize a stack and
+  120 seconds for a `beforeAll` that synthesizes both tiers.
 - **Type check:** `tsconfig.json` is `strict` with `noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes` and the other strict flags, Node's types and
   `resolveJsonModule`; `noEmit`. It includes `src`, `infra` and
