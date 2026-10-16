@@ -662,6 +662,52 @@ A <!-- watch:runners -->"
   exit $fail
 ) || fail=1
 
+# queued (#1236): a run queued past --minutes counts only while it has a job
+# queued. One GitHub made no jobs for is named and not counted, and neither is
+# one whose jobs started; the runs after the first that waits count unasked.
+# The line says how many of the repository's runners are online, over every
+# page; GitHub is asked for them only when a run waits.
+(
+  ago() { date -u -d "$1 ago" +%Y-%m-%dT%H:%M:%SZ; }
+  declare -A JOBS
+  NONE='{"jobs":[]}'
+  gh() {
+    case "$1 $2" in
+      "run list") echo "$RUNS" ;;
+      "run view") echo "$3" >>"$T/asked"; jq -r "${@: -1}" <<<"${JOBS[$3]:-$NONE}" ;;
+      *) return 1 ;;
+    esac
+  }
+  gh_api() {
+    local a q= p
+    for a in "$@"; do [ "$p" != --jq ] || q=$a; p=$a; done
+    [[ " $* " == *" $R/actions/runners?per_page=100 "* ]] || return 1
+    echo runners >>"$T/asked"
+    for p in "${PAGES[@]}"; do jq -r "$q" <<<"$p"; done
+  }
+  queued() { rm -f "$T/asked"; gh_queued "$@"; echo "exit $?"; }
+  asked() { cat "$T/asked" 2>/dev/null | tr '\n' ' '; }
+  RUNS=$(jq -nc --arg g "$(ago '9 days')" --arg a "$(ago '2 hours')" --arg b "$(ago '40 minutes')" --arg c "$(ago '5 minutes')" \
+    '[{databaseId: 4, status: "queued", createdAt: $b}, {databaseId: 1, status: "queued", createdAt: $g},
+      {databaseId: 5, status: "queued", createdAt: $c}, {databaseId: 2, status: "queued", createdAt: $a},
+      {databaseId: 9, status: "in_progress", createdAt: $g}]')
+  JOBS[2]='{"jobs":[{"status":"in_progress"},{"status":"completed"}]}'
+  JOBS[4]='{"jobs":[{"status":"completed"},{"status":"queued"}]}'
+  PAGES=('{"runners":[{"status":"offline"},{"status":"offline"}]}' '{"runners":[{"status":"offline"}]}')
+  check "queued: no jobs named, not counted; every runner offline" "$(queued)|$(asked)" \
+    "$(printf 'no-jobs\t1\t%s\nwaiting\t%s\t2\t0\nexit 0' "$(ago '9 days')" "$(ago '40 minutes')")|1 2 4 runners "
+  PAGES=('{"runners":[{"status":"offline"},{"status":"online"}]}' '{"runners":[{"status":"online"}]}')
+  check "queued: says how many runners are online" "$(queued | sed -n 2p)" "$(printf 'waiting\t%s\t2\t2' "$(ago '40 minutes')")"
+  PAGES=('{"runners":[{"status":"online"}]}')
+  check "queued: one online" "$(queued | sed -n 2p | cut -f4)" 1
+  JOBS[4]='{"jobs":[]}'
+  check "queued: only runs without a job queued: exit 1, runners not asked" "$(queued)|$(asked)" \
+    "$(printf 'no-jobs\t1\t%s\nno-jobs\t4\t%s\nexit 1' "$(ago '9 days')" "$(ago '40 minutes')")|1 2 4 "
+  check "queued: none that old: nothing asked" "$(queued --minutes 20000)|$(asked)" "exit 1|"
+  check "queued: GitHub can't list the runners: exit 2" "$(JOBS[4]='{"jobs":[{"status":"queued"}]}'; gh_api() { return 1; }; queued | tail -1)" "exit 2"
+  exit $fail
+) || fail=1
+
 # Labels: GitHub refuses a description longer than 100 characters.
 long=$(for l in "${GH_LABELS[@]}"; do d=${l#*|}; d=${d#*|}; [ ${#d} -le 100 ] || echo "${l%%|*}"; done)
 check "labels: descriptions fit GitHub's 100 characters" "$long" ""
