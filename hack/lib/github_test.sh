@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for status and closed swapping the labels in one PUT so a second writer between the read and the write leaves one status label (none after closed), never two, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), retrying a failed fetch, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -1044,7 +1044,7 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   rm -f "$T/merged" "$T/compared"
   out=$(BEHIND=3 PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: refuses a pull request behind main" "$? $out $(cat "$T/merged" 2>/dev/null)" \
-    '1 github: #16 is 3 commit(s) behind main: land it (hack/lib/github.sh land 16), which merges main in, reruns make check and merges in its turn '
+    '1 github: #16 is 3 commit(s) behind main: land it (hack/lib/github.sh land 16), which merges main in, runs make check and merges in its turn '
   check "merge: compares main with the head it merges" "$(cat "$T/compared")" "repos/$C4_GITHUB_REPO/compare/main...h1"
   out=$(BEHIND=fail PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: refuses when GitHub can't say whether it is behind" "$? $out $(cat "$T/merged" 2>/dev/null)" \
@@ -1147,14 +1147,18 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   # main moves on: another pull request merged.
   git clone -q "$T/origin.git" "$T/other" 2>/dev/null
   echo other >"$T/other/other" && git -C "$T/other" add other && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m other && git -C "$T/other" push -q origin main
-  # The fake make: records it ran, fails when $T/red exists. With CHECK_BEATS=N
-  # it first waits (up to about 30 s) until land has beaten N times since it
-  # started, and writes the beats it saw to $T/beats: a loaded device slows the
-  # beats down, it doesn't drop them (#1192).
-  cat >"$T/bin/check-make" <<EOF
+  # The fake make: records it ran, fails when $T/red exists, and while $T/move
+  # counts down, another pull request merges to main during it. A run that
+  # moves nothing, with CHECK_BEATS=N, first waits (up to about 30 s) until land
+  # has beaten N times since it started, and writes the beats it saw to
+  # $T/beats: a loaded device slows the beats down, it doesn't drop them (#1192).
+  cat >"$T/bin/check-make" <<MAKE
 #!/bin/sh
 echo "\$*" >>"$T/checked"
-if [ -n "\${CHECK_BEATS:-}" ]; then
+if [ "\$(cat "$T/move" 2>/dev/null || echo 0)" -gt 0 ]; then
+  echo \$((\$(cat "$T/move") - 1)) >"$T/move"
+  git -C "$T/other" pull -q --no-rebase origin main && git -C "$T/other" commit -q --allow-empty -m moved && git -C "$T/other" push -q origin main
+elif [ -n "\${CHECK_BEATS:-}" ]; then
   b0=\$(grep -c '^PATCH ' "$T/calls") i=0
   while n=\$((\$(grep -c '^PATCH ' "$T/calls") - b0)); [ "\$n" -lt "\$CHECK_BEATS" ] && [ "\$i" -lt 300 ]; do
     sleep 0.1; i=\$((i + 1))
@@ -1162,7 +1166,7 @@ if [ -n "\${CHECK_BEATS:-}" ]; then
   echo "\$n" >"$T/beats"
 fi
 [ ! -e "$T/red" ]
-EOF
+MAKE
   chmod +x "$T/bin/check-make"
   # land merges main in itself: give it an identity a device without a global one lacks.
   export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
@@ -1178,6 +1182,32 @@ EOF
   check "land: the pushed head has main merged in" "$(git -C "$T/origin.git" merge-base --is-ancestor main feat && echo yes)" yes
   check "land: gives the turn up" "$(queue)" ""
   check "land: its turn named the agent, pull request and host" "$(grep -c '^POST .*/issues/7/comments' "$T/calls") $(grep -c '^DELETE ' "$T/calls")" "1 1"
+  grep -q 'land: #40: its turn; origin/main is still [0-9a-f]\{12\}, as checked: merging at once' "$T/land/.relay/land-40.log"; check "land: main unchanged, merges at once" $? 0
+  grep -q 'land: #40: merged; held the turn [0-9]*s, 0 check(s) under it' "$T/land/.relay/land-40.log"; check "land: logs how long it held the turn" $? 0
+
+  # Main moved during the check before the turn: a second check runs under it
+  # (#1281), and waits until land has beaten twice while it runs (#1192).
+  rm -f "$T/landed" "$T/checked" "$T/beats"
+  echo 1 >"$T/move"
+  : >"$T/calls"
+  out=$(GH_LAND_BEAT=0.2 CHECK_BEATS=2 gh_land 40 2>&1)
+  check "land: main moved, checks again under the turn and merges" "$? | $(cat "$T/landed") | $(wc -l <"$T/checked")" \
+    "0 | merge 40 at $(git -C "$T/origin.git" rev-parse feat) | 2"
+  check "land: the merged head has the moved main in" "$(git -C "$T/origin.git" merge-base --is-ancestor main feat && echo yes)" yes
+  check "land: beats while the check under the turn runs" "$(($(cat "$T/beats" 2>/dev/null || echo 0) >= 2))" 1
+  grep -q '#40: its turn; origin/main moved since the check' <<<"$out"; check "land: says main moved" $? 0
+  grep -q 'land: #40: merged; held the turn [0-9]*s, 1 check(s) under it' "$T/land/.relay/land-40.log"; check "land: logs the check under the turn" $? 0
+  check "land: gives the turn up after checking under it" "$(queue)" ""
+
+  # Main keeps moving under the turn: over 2 checks it says so; past GH_LAND_RECHECKS it gives up.
+  rm -f "$T/landed" "$T/checked"
+  echo 4 >"$T/move"
+  out=$(GH_LAND_RECHECKS=3 gh_land 40 2>&1)
+  check "land: main moves 4 times, at most 3 checks under the turn" "$? | $(cat "$T/landed" 2>/dev/null) | $(wc -l <"$T/checked") | $(queue)" "1 |  | 4 | "
+  grep -q '#40: origin/main moved under the turn again: check 3 of at most 3' "$T/land/.relay/land-40.log"; check "land: logs the third check under the turn" $? 0
+  grep -q '#40: origin/main moved again after 3 checks under the turn' <<<"$out"; check "land: says it gave up on a moving main" $? 0
+  rm -f "$T/move"
+  g push -q origin HEAD
 
   # Another holds it: wait, first come first served, until it is given up.
   # Each turn ahead is given up only once land has read the queue with it in
@@ -1206,15 +1236,12 @@ EOF
   check "land: takes over an abandoned turn" "$? $(cut -d' ' -f1-2 "$T/landed") | $(queue)" "0 merge 40 | "
   grep -q 'dropped an abandoned merge turn: heron-41 lands #41 (host h), heartbeat 60m ago' <<<"$out"; check "land: says it dropped it" $? 0
 
-  # Heartbeats: while it waits (whole seconds) and while make check runs.
+  # Heartbeats while it waits (whole seconds); while a check runs under the turn is above.
   put 6 41
   : >"$T/calls"
   GH_LAND_BEAT=1 gh_land 40 --wait 3s >/dev/null 2>&1
   check "land: beats while it waits" "$? $(($(grep -c '^PATCH ' "$T/calls") >= 1))" "4 1"
-  rm "$Q/6.json" "$T/landed"
-  : >"$T/calls"
-  out=$(GH_LAND_BEAT=0.2 CHECK_BEATS=2 gh_land 40 2>&1)
-  check "land: beats while make check runs" "$? $(($(cat "$T/beats" 2>/dev/null || echo 0) >= 2))" "0 1"
+  rm "$Q/6.json"
 
   # A fetch that races another worktree's fails once, then lands; one that
   # keeps failing gives the turn up after GH_LAND_FETCH_TRIES.
@@ -1247,13 +1274,6 @@ EOF
   grep -q '#40: make check failed (exit 1) with origin/main merged in' <<<"$out"; check "land: says the check failed" $? 0
   rm "$T/red"
 
-  # A conflict with main is aborted, gives the turn up and merges nothing.
-  echo main >"$T/other/feat" && git -C "$T/other" add feat && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m clash && git -C "$T/other" push -q origin main
-  out=$(gh_land 40 2>&1)
-  check "land: a conflict fails, merges nothing, gives the turn up" "$? $(cat "$T/landed" 2>/dev/null) | $(queue) | $(g status --porcelain --untracked-files=no)" "1  |  | "
-  grep -q '#40: merging origin/main into feat conflicts' <<<"$out"; check "land: says it conflicts" $? 0
-  g reset -q --hard origin/feat
-
   # Not its turn within --wait: gives its place up, exit 4.
   put 8 41
   out=$(gh_land 40 --wait 1s 2>&1)
@@ -1274,11 +1294,17 @@ EOF
   out=$(LANDPR=$(jq '.closingIssuesReferences.nodes[0].labels.nodes[0].name = "kind/bug"' <<<"$NOBUG") gh_land 40 2>&1)
   check "land: refuses a bug fix without a test before it queues" "$? $(queue) $(grep -c '^POST ' "$T/calls")" "1  0"
   grep -q '#40 closes #5, a kind/bug issue, but changes no test file' <<<"$out"; check "land: says the rule" $? 0
-  # (main conflicts with feat by now: queueing is as far as it gets.)
   : >"$T/calls"
   out=$(LANDPR=$(jq '.closingIssuesReferences.nodes[0].labels.nodes[0].name = "kind/bug" | .files.nodes[0].path = "feat_test.sh"' <<<"$NOBUG") gh_land 40 2>&1)
   check "land: queues a bug fix with a test" "$(grep -c '^POST ' "$T/calls") $(grep -c 'kind/bug' <<<"$out")" "1 0"
-  g merge --abort 2>/dev/null; g reset -q --hard origin/feat
+  # A conflict with main is aborted, before it queues, and merges nothing.
+  rm -f "$T/landed"
+  echo main >"$T/other/feat" && git -C "$T/other" add feat && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m clash && git -C "$T/other" push -q origin main
+  out=$(gh_land 40 2>&1)
+  check "land: a conflict fails before it queues, merges nothing" "$? $(cat "$T/landed" 2>/dev/null) | $(queue) | $(g status --porcelain --untracked-files=no)" "1  |  | "
+  grep -q '#40: merging origin/main into feat conflicts' <<<"$out"; check "land: says it conflicts" $? 0
+  g reset -q --hard origin/feat
+
   gh_land x 2>/dev/null; check "land: bad argument" $? 64
   # A large pull request with no review pass is refused before it queues.
   echo '[{"filename":"a.go","additions":300,"deletions":101}]' >"$T/files-40"
