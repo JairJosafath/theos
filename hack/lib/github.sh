@@ -131,11 +131,15 @@
 #                                        --seen skips the runs FILE lists and writes there the runs it read
 #                                        (the relay watch's); --count prints COUNT<tab>SPEC instead, most first
 #   hack/lib/github.sh queued [--minutes M]
-#                                        whether runs on main wait for a runner: when the oldest run queued on
-#                                        main was queued more than M minutes ago (default 30), prints
-#                                        OLDEST<tab>COUNT, its createdAt and how many runs are queued there.
-#                                        Exit 1: none waits that long. A queued run never fails, so red can't
-#                                        see runners that are all offline; the relay watch asks this
+#                                        whether runs on main wait for a runner: when the oldest run on main
+#                                        with a job queued was queued more than M minutes ago (default 30),
+#                                        prints waiting<tab>OLDEST<tab>COUNT<tab>ONLINE: its createdAt, how
+#                                        many runs are queued there and how many of the repository's runners
+#                                        are online. Exit 1: none waits that long. A run queued that long with
+#                                        no jobs is GitHub's: no runner can take it, and GitHub won't cancel
+#                                        it (#1236). It isn't counted, and prints no-jobs<tab>ID<tab>CREATED,
+#                                        whatever the exit. A queued run never fails, so red can't see runners
+#                                        that are all offline; the relay watch asks this
 #   hack/lib/github.sh activity          one line that changes whenever an issue or pull request changes (the
 #                                        Maintainer report excluded) or main moves; the relay watch compares it
 #   hack/lib/github.sh report FILE       set FILE as the body of the pinned Maintainer report issue (label
@@ -2218,8 +2222,12 @@ gh_red() {
 }
 
 # gh_queued [--minutes M]: see the usage above; exit 2 when GitHub can't say.
+# The runs queued longer than M are asked for their jobs, oldest first, up to
+# the first with a job queued: its wait is the one reported, and the runs
+# after it count unasked, so a round costs a call per run before it, not one
+# per run. The runners are asked only when a run waits.
 gh_queued() {
-  local minutes=30 runs
+  local minutes=30 runs id at old jobs since= n=0 online
   while [ $# -gt 0 ]; do
     case $1 in
       --minutes) minutes=${2:?usage: queued [--minutes M]}; shift 2 ;;
@@ -2230,11 +2238,24 @@ gh_queued() {
   gh_token || return 2
   runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --status queued --limit 100 \
     --json databaseId,status,createdAt) || return 2
-  runs=$(jq -r --argjson m "$minutes" '[.[] | select(.status == "queued")] | sort_by(.createdAt) |
-    select(length > 0 and (now - (.[0].createdAt | fromdateiso8601)) > $m * 60) | "\(.[0].createdAt)\t\(length)"' <<<"$runs") ||
-    return 2
-  [ -n "$runs" ] || return 1
-  echo "$runs"
+  runs=$(jq -r --argjson m "$minutes" '[.[] | select(.status == "queued")] | sort_by(.createdAt) | .[] |
+    "\(.databaseId)\t\(.createdAt)\t\((now - (.createdAt | fromdateiso8601)) > $m * 60)"' <<<"$runs") || return 2
+  while IFS=$'\t' read -r id at old; do
+    [ -n "$id" ] || continue
+    if [ -n "$since" ]; then n=$((n + 1)); continue; fi
+    [ "$old" = true ] || break
+    jobs=$(gh run view "$id" --repo "$C4_GITHUB_REPO" --json jobs \
+      --jq '"\(.jobs | length) \([.jobs[] | select(.status == "queued")] | length)"') || return 2
+    case $jobs in
+      "0 0") printf 'no-jobs\t%s\t%s\n' "$id" "$at" ;;
+      *" 0") ;; # no job of it waits for a runner: they started, or wait on something else
+      *) since=$at n=1 ;;
+    esac
+  done <<<"$runs"
+  [ -n "$since" ] || return 1
+  online=$(gh_api --paginate "repos/$C4_GITHUB_REPO/actions/runners?per_page=100" \
+    --jq '[.runners[] | select(.status == "online")] | length') || return 2
+  printf 'waiting\t%s\t%s\t%s\n' "$since" "$n" "$(awk '{ s += $1 } END { print s + 0 }' <<<"$online")"
 }
 
 # gh_fail_specs: the Ginkgo specs a failed log on stdin names in its

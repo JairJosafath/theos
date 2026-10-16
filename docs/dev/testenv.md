@@ -436,14 +436,20 @@ third failure files nothing. `hack/lib/github.sh flakes --count` lists the
 specs that failed on main this week, from GitHub, on any device.
 A queued run never fails, so `red` can't see that every self-hosted runner is
 offline (Docker Desktop stopped). So in the same round the watch asks
-`hack/lib/github.sh queued`. When a run on main has waited more than
-`WATCH_QUEUED` minutes (30) for a runner, it puts `Runners offline since T: N
-runs queued` under the Maintainer report's Health, and as a task under Needs
-you (`hack/lib/github.sh report-note runners`). Each line is marked
-`<!-- watch:runners -->`, the maintainer's sweep keeps it, and later rounds
-update the count or put it back. `.relay/runners-offline` holds the note
-while the runners are offline. The first round in which no run waits that
-long removes both lines. `make gh-runner-status` says why (below).
+`hack/lib/github.sh queued`. When a run on main has had a job waiting more
+than `WATCH_QUEUED` minutes (30) for a runner, it puts a note under the
+Maintainer report's Health, and as a task under Needs you
+(`hack/lib/github.sh report-note runners`). With no runner of the repository
+online the note is `Runners offline since T: N runs queued`, and the task asks
+for Docker Desktop. With some online it is `N runs queued since T with M
+runners online`: the runners are busy, or none has the labels the jobs ask
+for. Each line is marked `<!-- watch:runners -->`, the maintainer's sweep
+keeps it, and later rounds update it or put it back. `.relay/runners-offline`
+holds the note while it lasts. The first round in which no run waits that
+long removes both lines. `make gh-runner-status` says why (below). A run
+GitHub made no jobs for stays queued for good, and GitHub won't cancel it
+(#1236): no runner can take it, so the watch logs it once, by id
+(`.relay/runs-without-jobs`), and never notes it.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
