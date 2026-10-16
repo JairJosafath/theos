@@ -394,6 +394,22 @@ describe.each(TIERS)('the Standard, in %s', (tier) => {
     }
   });
 
+  it('delivers again only the messages that failed, from every queue a function consumes', () => {
+    for (const [name, template] of app(tier).templates) {
+      const queues = resourcesOf(template, 'AWS::SQS::Queue').map(([id]) => `"${id}"`);
+      for (const [id, mapping] of resourcesOf(template, 'AWS::Lambda::EventSourceMapping')) {
+        // A source without an ARN (a self-managed Kafka cluster) is no queue.
+        const source = JSON.stringify(mapping.Properties?.['EventSourceArn'] ?? '');
+        if (source.includes(':sqs:') || queues.some((queue) => source.includes(queue))) {
+          // Without it one bad message fails its whole batch, again and again.
+          expect(mapping.Properties?.['FunctionResponseTypes'], `${name}/${id}`).toContain(
+            'ReportBatchItemFailures',
+          );
+        }
+      }
+    }
+  });
+
   it('says what happens to the data of every stateful resource when it is removed', () => {
     for (const [name, template] of app(tier).templates) {
       for (const [id, resource] of resourcesOf(template)) {
@@ -655,6 +671,31 @@ describe.runIf(operations !== undefined).each(TIERS)(
                 expect(watching.length, `${name}/${watchedId} ${metric}`).toBeGreaterThan(0);
               }
             }
+          }
+        }
+      });
+    });
+
+    describe('the dead-letter queues', () => {
+      it('alarm on the first message in every dead-letter queue', () => {
+        for (const [name, template] of serving()) {
+          const alarms = resourcesOf(template, 'AWS::CloudWatch::Alarm');
+          for (const [, queue] of resourcesOf(template, 'AWS::SQS::Queue')) {
+            const redrive = JSON.stringify(queue.Properties?.['RedrivePolicy'] ?? {});
+            const target = /"Fn::GetAtt":\["([^"]+)","Arn"\]/.exec(redrive)?.[1];
+            if (target === undefined) {
+              continue;
+            }
+            const watching = alarms.filter(([, alarm]) => {
+              const json = JSON.stringify(alarm.Properties);
+              return (
+                json.includes('"MetricName":"ApproximateNumberOfMessagesVisible"') &&
+                json.includes(`"${target}"`) &&
+                alarm.Properties?.['Threshold'] === 0 &&
+                alarm.Properties['ComparisonOperator'] === 'GreaterThanThreshold'
+              );
+            });
+            expect(watching.length, `${name}/${target} depth`).toBeGreaterThan(0);
           }
         }
       });

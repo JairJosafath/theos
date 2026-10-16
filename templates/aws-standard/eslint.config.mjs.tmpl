@@ -61,7 +61,8 @@ export default defineConfig(
       'no-console': 'error',
 {{ if eq .Framework "aws-ec2-ts" }}      // process.exit() ends the server mid-request; throw, return an error
       // response, or on SIGTERM close the server and let the process end.{{ else if eq .Framework "aws-fargate-ts" }}      // process.exit() drops the requests in flight; on SIGTERM the server
-      // closes and the process ends when they are done.{{ else if eq .Framework "aws-static-site-ts" }}      // The page has no process; in the CDK app, process.exit() ends synth
+      // closes and the process ends when they are done.{{ else if eq .Framework "aws-queue-ts" }}      // process.exit() in a Lambda function kills the execution environment
+      // mid-batch; throw, and the batch reports the message failed.{{ else if eq .Framework "aws-static-site-ts" }}      // The page has no process; in the CDK app, process.exit() ends synth
       // without saying what failed. Throw, and synth fails with the error.{{ else }}      // process.exit() in a Lambda function kills the execution environment
       // mid-invocation; throw, or return an error response.{{ end }}
       'no-restricted-properties': [
@@ -69,7 +70,7 @@ export default defineConfig(
         {
           object: 'process',
           property: 'exit',
-          message: {{ if eq .Framework "aws-ec2-ts" }}'Throw, or return an error response; never end the server mid-request.'{{ else if eq .Framework "aws-fargate-ts" }}'Close the server and let the process end; never drop the requests in flight.'{{ else if eq .Framework "aws-static-site-ts" }}'Throw, so synth fails with the error.'{{ else }}'Throw, or return an error response; never end the execution environment.'{{ end }},
+          message: {{ if eq .Framework "aws-ec2-ts" }}'Throw, or return an error response; never end the server mid-request.'{{ else if eq .Framework "aws-fargate-ts" }}'Close the server and let the process end; never drop the requests in flight.'{{ else if eq .Framework "aws-queue-ts" }}'Throw: the batch reports the failed message; never end the environment.'{{ else if eq .Framework "aws-static-site-ts" }}'Throw, so synth fails with the error.'{{ else }}'Throw, or return an error response; never end the execution environment.'{{ end }},
         },
       ],
       eqeqeq: ['error', 'always'],

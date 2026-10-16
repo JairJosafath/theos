@@ -43,6 +43,10 @@ var awsOperationsFrameworks = []struct {
 	{side{model.TypeStaticSite, "aws-static-site-ts"}, []string{
 		"Site-Fault-Rate-Critical", "Deploy-Fault-Count-Critical", "list-object-versions", "create-invalidation",
 	}, true},
+	{side{model.TypeWorker, "aws-queue-ts"}, []string{
+		"Messages-DLQ-Queue-Message-Count-Max-Critical", "Messages-Queue-Message-Age-Max-Warning",
+		"aws sqs start-message-move-task", "`DeadLetters` queue", "the longest the worker may be",
+	}, false},
 }
 
 // hasOperations reports whether framework renders infra/operations.ts.
@@ -115,6 +119,7 @@ func TestAWSFrameworksWithoutOperationsRenderNoBlock(t *testing.T) {
 var runbookSays = map[string][]string{
 	"aws-lambda-ts":  tableRunbookSays,
 	"aws-fargate-ts": tableRunbookSays,
+	"aws-queue-ts":   tableRunbookSays,
 	"aws-static-site-ts": {
 		"(RPO): 15m", "(RTO): 2h", "eu-west-1", "ops@example.com", "35 days",
 		"continue-update-rollback", "GuardDuty",
