@@ -113,3 +113,52 @@ func TestStoryObjectWritesOnlyThePlannedOperations(t *testing.T) {
 		})
 	}
 }
+
+func TestOperationsInFlight(t *testing.T) {
+	block := func(rpo string) *c4v1alpha1.OperationsSpec {
+		return operationsStatus(specOperations(&c4v1alpha1.Container{Spec: c4v1alpha1.ContainerSpec{
+			Operations: &c4v1alpha1.OperationsSpec{Recovery: &c4v1alpha1.OperationsRecovery{RPO: rpo}}}}))
+	}
+	open := func(edit func(*c4v1alpha1.OperationsUpdateStatus)) *c4v1alpha1.OperationsUpdateStatus {
+		u := &c4v1alpha1.OperationsUpdateStatus{Operations: block("5m"), Branch: "operations-update/1",
+			Commit: "c0ffee", PullRequest: 7, PullRequestURL: "http://gitea/shop/api/pulls/7"}
+		if edit != nil {
+			edit(u)
+		}
+		return u
+	}
+	for _, tt := range []struct {
+		name   string
+		update *c4v1alpha1.OperationsUpdateStatus
+		// recorded is status.operations, the block main was last rendered with.
+		recorded     *c4v1alpha1.OperationsSpec
+		want, merged bool
+	}{
+		{"no update", nil, block("1h"), false, false},
+		{"an open pull request", open(nil), block("1h"), true, false},
+		{"merged at a commit", open(func(u *c4v1alpha1.OperationsUpdateStatus) { u.MergeCommit = "beef" }),
+			block("5m"), false, true},
+		// #1119: a merge the host named no commit for, and main couldn't be read.
+		{"merged without a commit", open(nil), block("5m"), false, true},
+		// #1119: a person closed it, so reading it again at each recheck finds nothing new.
+		{"closed by a person", open(func(u *c4v1alpha1.OperationsUpdateStatus) {
+			u.Stopped = c4v1alpha1.ReasonUpdateClosed
+		}), block("1h"), false, false},
+		{"refused, still open", open(func(u *c4v1alpha1.OperationsUpdateStatus) {
+			u.Stopped = c4v1alpha1.ReasonUpdateRefused
+		}), block("1h"), false, false},
+		{"stopped before a pull request", &c4v1alpha1.OperationsUpdateStatus{Operations: block("5m"),
+			Stopped: c4v1alpha1.ReasonChangedAfterScaffold}, block("1h"), false, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			status := &c4v1alpha1.ContainerStatus{Phase: c4v1alpha1.ContainerReady, Operations: tt.recorded,
+				OperationsUpdate: tt.update}
+			if got := operationsInFlight(status); got != tt.want {
+				t.Errorf("operationsInFlight() = %v, want %v", got, tt.want)
+			}
+			if got := operationsMerged(status); got != tt.merged {
+				t.Errorf("operationsMerged() = %v, want %v", got, tt.merged)
+			}
+		})
+	}
+}

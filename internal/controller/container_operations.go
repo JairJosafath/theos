@@ -134,6 +134,10 @@ func (r *ContainerReconciler) operationsUpToDate(container *c4v1alpha1.Container
 		reason, message = c4v1alpha1.ReasonUpdateMerged, fmt.Sprintf(
 			"Pull request %s merged spec.operations into %s as %s", u.PullRequestURL, model.OperationsFile,
 			u.MergeCommit)
+	case u != nil && u.PullRequestURL != "":
+		// The host named no commit for the merge, and main couldn't be read.
+		reason, message = c4v1alpha1.ReasonUpdateMerged, fmt.Sprintf(
+			"Pull request %s merged spec.operations into %s", u.PullRequestURL, model.OperationsFile)
 	case u != nil && u.MergeCommit != "":
 		reason, message = c4v1alpha1.ReasonUpToDate, fmt.Sprintf("%s at %s already renders spec.operations",
 			model.OperationsFile, u.MergeCommit)

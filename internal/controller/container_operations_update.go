@@ -42,47 +42,70 @@ type operationsUpdate struct {
 	status    *c4v1alpha1.ContainerStatus
 	// git reaches the Container's Git host; it is built on first use.
 	git *gitAccess
+	// failed says the pass ended on a Git error, which the next recheck retries.
+	failed bool
 }
 
 // updateOperations keeps the repository's infra/operations.ts rendered from
 // spec.operations, one step per reconcile, and reports it in OperationsApplied.
 // live says whether the cached Container is the one on the API server: the
-// steps act in Git from the update in status, so they are taken only then.
+// steps act in Git from the update in status, so they are taken only then. It
+// reports whether the pass ended on a Git error, for the caller to retry.
 func (r *ContainerReconciler) updateOperations(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus, live func() bool) {
+	status *c4v1alpha1.ContainerStatus, live func() bool) bool {
 	if r.reportOperationsApplied(container, status) || !live() {
-		return
+		return false
 	}
 	// Git calls get a deadline of their own, so the status write after them still lands.
 	gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
 	defer cancel()
 	u := &operationsUpdate{r: r, container: container, status: status}
 	u.run(ctx, gitCtx)
+	return u.failed
 }
 
 // operationsInFlight says the Container's operations update has a pull request
-// that hasn't merged, which the operator reads again at each recheck.
+// that hasn't merged or stopped, which the operator reads again at each
+// recheck. A stopped one is read again only when the Container is reconciled
+// for another reason, as a stopped Standard update is.
 func operationsInFlight(status *c4v1alpha1.ContainerStatus) bool {
 	u := status.OperationsUpdate
-	return status.Phase == c4v1alpha1.ContainerReady && u != nil && u.MergeCommit == "" && u.PullRequest != 0
+	return status.Phase == c4v1alpha1.ContainerReady && u != nil && u.PullRequest != 0 && u.Stopped == "" &&
+		!operationsMerged(status)
+}
+
+// operationsMerged says the update in status merged: it names the commit on
+// main that holds its block, or its block is the one status records main
+// rendered with. Only a merge records an update's block, and a new update is
+// planned only for a block other than the recorded one, so the second holds
+// for a merge the host named no commit for.
+func operationsMerged(status *c4v1alpha1.ContainerStatus) bool {
+	u := status.OperationsUpdate
+	if u == nil {
+		return false
+	}
+	return u.MergeCommit != "" || (status.Operations != nil &&
+		model.ResolveOperations(operationsChoices(u.Operations)) ==
+			model.ResolveOperations(operationsChoices(status.Operations)))
 }
 
 // operationsFacts are the facts of the Container's operations update before
 // anything is read. status records the block the repository was rendered with.
 func operationsFacts(container *c4v1alpha1.Container, status *c4v1alpha1.ContainerStatus) model.OperationsUpdateFacts {
 	return model.OperationsUpdateFacts{Target: specOperations(container),
-		Recorded: scaffoldedOperations(container, status), Update: operationsInStatus(status.OperationsUpdate)}
+		Recorded: scaffoldedOperations(container, status), Update: operationsInStatus(status)}
 }
 
 // operationsInStatus is the update in status as the model sees it, or nil.
-func operationsInStatus(update *c4v1alpha1.OperationsUpdateStatus) *model.OperationsUpdateInFlight {
+func operationsInStatus(status *c4v1alpha1.ContainerStatus) *model.OperationsUpdateInFlight {
+	update := status.OperationsUpdate
 	if update == nil {
 		return nil
 	}
 	return &model.OperationsUpdateInFlight{
 		Operations: model.ResolveOperations(operationsChoices(update.Operations)), Stopped: update.Stopped,
 		PullRequest: int(update.PullRequest), PullRequestURL: update.PullRequestURL, Branch: update.Branch,
-		Commit: update.Commit, Merged: update.MergeCommit != "",
+		Commit: update.Commit, Merged: operationsMerged(status),
 	}
 }
 
@@ -98,7 +121,7 @@ func (u *operationsUpdate) run(ctx, gitCtx context.Context) {
 		// What was read stays in f when the update is gone: the model looks at it
 		// only while an update is in flight, and only Plan, which ends the pass,
 		// starts one.
-		f.Recorded, f.Update = scaffoldedOperations(u.container, u.status), operationsInStatus(u.status.OperationsUpdate)
+		f.Recorded, f.Update = scaffoldedOperations(u.container, u.status), operationsInStatus(u.status)
 		step := model.NextOperationsStep(f)
 		switch step.Action {
 		case model.OperationsReadPR:
@@ -148,7 +171,7 @@ func (u *operationsUpdate) run(ctx, gitCtx context.Context) {
 		case model.OperationsForget:
 			u.status.OperationsUpdate = nil
 		case model.OperationsRecordMerge:
-			u.merged(ctx, mergeCommit)
+			u.merged(ctx, gitCtx, mergeCommit)
 		case model.OperationsDrop:
 			if !u.drop(ctx, gitCtx, step.Message) {
 				return
@@ -175,11 +198,11 @@ func (u *operationsUpdate) run(ctx, gitCtx context.Context) {
 			u.updating()
 			return
 		case model.OperationsForceMerge:
+			// The merge is recorded at once: a host slow to show it merged must
+			// not merge it again, or drop it.
 			if !u.forceMerge(ctx, gitCtx) {
 				return
 			}
-			// Read the pull request again for the commit the merge made.
-			f.PR = nil
 		default: // model.OperationsNone
 			return
 		}
@@ -339,8 +362,8 @@ func (u *operationsUpdate) stopClosed(ctx, gitCtx context.Context, message strin
 	log.Info("Stopped an operations update closed without merging", "url", update.PullRequestURL)
 }
 
-// forceMerge merges the update's pull request with the admin override. It
-// reports false on a Git error.
+// forceMerge merges the update's pull request with the admin override and
+// records it. It reports false on a Git error.
 func (u *operationsUpdate) forceMerge(ctx, gitCtx context.Context) bool {
 	update := u.status.OperationsUpdate
 	git, ok := u.access(ctx)
@@ -358,6 +381,14 @@ func (u *operationsUpdate) forceMerge(ctx, gitCtx context.Context) bool {
 		return false
 	}
 	logf.FromContext(ctx).Info("Merged an operations update with the admin override", "url", update.PullRequestURL)
+	// The pull request is read again only to name the commit the merge made; a
+	// failed read leaves it to main's head.
+	pr, err := git.provider.GetPullRequest(gitCtx, git.provider.Repository(u.container.Name), int(update.PullRequest))
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read a merged operations update", "url", update.PullRequestURL,
+			"error", err.Error())
+	}
+	u.merged(ctx, gitCtx, pr.MergeCommit)
 	return true
 }
 
@@ -386,13 +417,40 @@ func (u *operationsUpdate) drop(ctx, gitCtx context.Context, why string) bool {
 // merged records the update's pull request as merged at mergeCommit: the
 // repository's infra/operations.ts renders its block. The pass goes on, and
 // its next step reports it: up to date, or the next update.
-func (u *operationsUpdate) merged(ctx context.Context, mergeCommit string) {
+func (u *operationsUpdate) merged(ctx, gitCtx context.Context, mergeCommit string) {
 	update := u.status.OperationsUpdate
-	// A host that doesn't say which commit the merge made leaves the update's own.
-	update.MergeCommit, update.Stopped = cmp.Or(mergeCommit, update.Commit), ""
+	// A host that doesn't say which commit the merge made leaves main's head,
+	// which holds the block; the update's own commit is on no branch now. When
+	// that can't be read either, the merge is recorded without a commit:
+	// status.operations holds the block, which operationsMerged sees.
+	if mergeCommit == "" {
+		mergeCommit = u.mainHead(ctx, gitCtx)
+	}
+	update.MergeCommit, update.Stopped = mergeCommit, ""
 	u.status.Operations = update.Operations.DeepCopy()
 	logf.FromContext(ctx).Info("Recorded a merged operations update", "url", update.PullRequestURL,
 		"commit", update.MergeCommit)
+}
+
+// mainHead is the commit main points at, or "" when it can't be read: a
+// failure is only logged, as the merge it names is recorded either way.
+func (u *operationsUpdate) mainHead(ctx, gitCtx context.Context) string {
+	git := u.git
+	if git == nil {
+		access, err := gitAccessFor(ctx, u.r.Client, u.r.APIReader, u.r.Git, u.container.Namespace,
+			u.container.Spec.GitProviderRef.Name)
+		if err != nil {
+			logf.FromContext(ctx).Info("Could not read main for a merged operations update", "error", err.Error())
+			return ""
+		}
+		git = &access
+	}
+	head, err := git.provider.BranchCommit(gitCtx, git.provider.Repository(u.container.Name),
+		gitprovider.DefaultBranch)
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read main for a merged operations update", "error", err.Error())
+	}
+	return head
 }
 
 // access returns the Container's Git host, building it on first use. A failure
@@ -428,6 +486,7 @@ func (u *operationsUpdate) keep() {
 // gitError reports a Git error. The update's progress stays, and the next
 // recheck tries again.
 func (u *operationsUpdate) gitError(ctx context.Context, err error) {
+	u.failed = true
 	u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonGitError, err.Error()+"; retrying")
 	logf.FromContext(ctx).Info("Could not update infra/operations.ts", "error", err.Error())
 }

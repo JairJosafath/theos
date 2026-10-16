@@ -129,10 +129,11 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		} else {
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 		}
-		r.updateOperations(ctx, &container, status, live)
-		// A pull request in flight is read again at each recheck, with or without
-		// a Standard.
-		if operationsInFlight(status) && result.RequeueAfter == 0 {
+		failed := r.updateOperations(ctx, &container, status, live)
+		// A Git error is retried, and a pull request in flight read again, at
+		// each recheck, with or without a Standard: the status write doesn't
+		// reconcile the Container again.
+		if (failed || operationsInFlight(status)) && result.RequeueAfter == 0 {
 			result.RequeueAfter = r.checksRecheck()
 		}
 		// After the updates' steps, so it reads what the repository runs now.

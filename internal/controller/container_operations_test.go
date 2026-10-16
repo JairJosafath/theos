@@ -284,6 +284,42 @@ var _ = Describe("Container operations", func() {
 		Expect(mainFile(ns, model.OperationsFile)).To(Equal(operationsFile("15m", "")))
 	})
 
+	// #1119: a Container without a Standard has no checks recheck of its own.
+	It("retries a Git error before the pull request opens, on a Container without a Standard", func() {
+		ns := newProjectNamespace()
+		createOperationsContainer(ns, nil)
+		Expect(getContainer(Default, ns).Spec.StandardRef).To(BeNil())
+		url := templatesURL + ns + "/" + opsFramework
+		tree := gitFake.template(url, "v1.3.0")
+		gitFake.dropTemplate(url, "v1.3.0")
+
+		changeOperations(ns, func(o *c4v1alpha1.OperationsSpec) {
+			o.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
+		})
+		eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonGitError)
+		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+
+		By("opening it at a recheck once the host answers, with no change to the Container")
+		gitFake.addTemplate(url, "v1.3.0", tree)
+		openedOperations(ns, "5m")
+	})
+
+	// #1119: the merge is recorded when the operator makes it, and a host that
+	// names no merge commit leaves main's head, not the branch's pre-squash commit.
+	It("records its own merge at main's head when the host names no merge commit", func() {
+		ns := newProjectNamespace()
+		createOperationsContainer(ns, nil)
+		gitFake.leaveMergeCommitsUnnamed(ns, "orders-api")
+
+		changeOperations(ns, func(o *c4v1alpha1.OperationsSpec) {
+			o.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
+		})
+		update := openedOperations(ns, "5m")
+		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		mergedOperations(ns, update)
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{int(update.PullRequest)}))
+	})
+
 	DescribeTable("refuses a value outside the block's patterns and ranges",
 		func(ops c4v1alpha1.OperationsSpec, field string) {
 			ns := newProjectNamespace()
