@@ -43,7 +43,23 @@ const ALARMED_METRICS: Readonly<Record<string, readonly string[]>> = {
   'AWS::Lambda::Function': ['Errors', 'Throttles', 'Duration'],
   'AWS::DynamoDB::Table': ['ReadThrottleEvents', 'WriteThrottleEvents', 'SystemErrors'],
   'AWS::ApiGatewayV2::Api': ['5xx'],
+  // A load balancer's own 5xx, its targets' 5xx and how long they take.
+  'AWS::ElasticLoadBalancingV2::LoadBalancer': [
+    'HTTPCode_ELB_5XX_Count',
+    'HTTPCode_Target_5XX_Count',
+    'TargetResponseTime',
+  ],
+  'AWS::ElasticLoadBalancingV2::TargetGroup': ['UnHealthyHostCount'],
+  // Container Insights counts the running tasks.
+  'AWS::ECS::Service': ['CPUUtilization', 'MemoryUtilization', 'RunningTaskCount'],
 };
+
+// The image of the AWS Distro for OpenTelemetry collector, which a task
+// runs beside its app to send the app's traces to X-Ray.
+const COLLECTOR_IMAGE = 'public.ecr.aws/aws-observability/aws-otel-collector:';
+
+// The actions that write traces to X-Ray.
+const XRAY_WRITE_ACTIONS = ['xray:PutTraceSegments', 'xray:PutTelemetryRecords'];
 
 /** The feature flags `cdk synth` reads from cdk.json, so the tests build the same app. */
 function cdkContext(): Record<string, unknown> {
@@ -145,9 +161,22 @@ function only<T>(items: readonly T[], what: string): T {
   return item;
 }
 
-/** A JSON reference to the resource `id`, as a template writes it. */
-function ref(id: string): string {
-  return JSON.stringify({ Ref: id });
+/**
+ * Whether `json`, a part of a template, refers to the resource `id`: by
+ * `Ref`, as a table's or function's name, or by `Fn::GetAtt`, as a load
+ * balancer's or target group's full name and a service's name.
+ */
+function refersTo(json: string, id: string): boolean {
+  return (
+    json.includes(JSON.stringify({ Ref: id })) ||
+    json.includes(`{"Fn::GetAtt":[${JSON.stringify(id)},`)
+  );
+}
+
+/** The container definitions of a task definition, as records. */
+function containersOf(taskDefinition: Resource): Record<string, unknown>[] {
+  const containers = taskDefinition.Properties?.['ContainerDefinitions'];
+  return Array.isArray(containers) ? (containers as unknown[]).filter(isRecord) : [];
 }
 
 /** A stack that holds only the vault a backup is copied to, and its key: it serves nothing. */
@@ -483,7 +512,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the alarms and topic', () => {
-      it('alarm on every function, table and API, to the one encrypted topic, with a dashboard', () => {
+      it('alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard', () => {
         for (const [name, template] of serving()) {
           const [topicId] = only(resourcesOf(template, 'AWS::SNS::Topic'), `${name}'s topics`);
           expect(resourcesOf(template, 'AWS::CloudWatch::Dashboard').length, name).toBe(1);
@@ -496,7 +525,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
               for (const metric of metrics) {
                 const watching = alarms.filter(([, alarm]) => {
                   const json = JSON.stringify(alarm.Properties);
-                  return json.includes(`"MetricName":"${metric}"`) && json.includes(ref(watchedId));
+                  return json.includes(`"MetricName":"${metric}"`) && refersTo(json, watchedId);
                 });
                 expect(watching.length, `${name}/${watchedId} ${metric}`).toBeGreaterThan(0);
               }
@@ -538,6 +567,47 @@ describe.runIf(operations !== undefined).each(TIERS)(
             const config = fn.Properties?.['TracingConfig'];
             const active = isRecord(config) && config['Mode'] === 'Active';
             expect(active, `${name}/${id}`).toBe(rules.tracing);
+          }
+        }
+      });
+
+      it('traces every task through an ADOT collector beside the app where the tier traces, and none elsewhere', () => {
+        for (const [name, template] of app(tier).templates) {
+          for (const [id, task] of resourcesOf(template, 'AWS::ECS::TaskDefinition')) {
+            const containers = containersOf(task);
+            const collectors = containers.filter(
+              (container) =>
+                typeof container['Image'] === 'string' &&
+                container['Image'].startsWith(COLLECTOR_IMAGE),
+            );
+            const sending = containers.filter((container) =>
+              JSON.stringify(container['Environment'] ?? []).includes(
+                '"Name":"OTEL_EXPORTER_OTLP_ENDPOINT"',
+              ),
+            );
+            if (rules.tracing) {
+              expect(collectors.length, `${name}/${id} collectors`).toBe(1);
+              expect(
+                sending.length,
+                `${name}/${id} containers sending to the collector`,
+              ).toBeGreaterThan(0);
+            } else {
+              expect([collectors, sending], `${name}/${id}`).toEqual([[], []]);
+            }
+          }
+        }
+      });
+
+      it('grants no X-Ray writes where the tier does not trace', () => {
+        if (rules.tracing) {
+          return;
+        }
+        for (const [name, template] of app(tier).templates) {
+          for (const statement of statementsIn(template.toJSON())) {
+            const actions = [statement['Action'] ?? []].flat();
+            for (const action of XRAY_WRITE_ACTIONS) {
+              expect(actions, name).not.toContain(action);
+            }
           }
         }
       });

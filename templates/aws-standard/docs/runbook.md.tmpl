@@ -183,4 +183,254 @@ point in time into a new table, check a few items, time it, and delete the
 table; write down how long it took. Once a year, a game day: break the
 development stack the way an incident would, and answer it with this
 runbook alone.
+{{- else if eq .Framework "aws-fargate-ts" -}}
+{{- $ops := .Operations -}}
+# Runbook
+
+What to do when `{{ .Container }}` goes wrong in AWS: restore its data, roll a
+deployment back, and answer an alarm. It is written for the production tier
+(`cdk deploy -c tier=production`): a development stack keeps no data worth
+restoring, and only its alarms and deployments apply. This file belongs to
+the Standard; a change to what the stacks keep or how they back it up
+changes it too, through a Standard change.
+
+Everything below is done by a person with the account's credentials, in the
+stack's region unless it says otherwise. Nothing in this repository calls
+AWS, and no agent runs these commands.
+
+## What the Container promises
+
+`infra/operations.ts` holds the Container's `spec.operations`; when it and
+this list differ, it is right.
+
+- Recovery point objective (RPO): {{ $ops.Recovery.RPO }}, the most data a restore may lose.
+- Recovery time objective (RTO): {{ $ops.Recovery.RTO }}, the longest the service may be without its data.
+{{- if eq $ops.Backups.RetentionDays 0 }}
+- Backups: point-in-time recovery only (`retentionDays` is 0); no AWS Backup plan.
+{{- else }}
+- Backups: daily, kept {{ $ops.Backups.RetentionDays }} days{{ if $ops.Backups.CopyToRegion }}, each copied to {{ $ops.Backups.CopyToRegion }}{{ end }}.
+{{- end }}
+- Alarms tell: {{ if $ops.Alerts.Email }}{{ $ops.Alerts.Email }}, by default{{ else }}nobody by default; a deploy sets the `AlertEmail` parameter{{ end }}.
+
+Point-in-time recovery restores any second of the last 35 days, up to about
+five minutes before now, so it meets an RPO of minutes. {{ if eq $ops.Backups.RetentionDays 0 -}}
+With no backups beyond it, damage older than 35 days can't be undone.
+{{- else -}}
+The daily backups cover what it can't: damage older than 35 days{{ if $ops.Backups.CopyToRegion }}, and
+with the copy in {{ $ops.Backups.CopyToRegion }}, the loss of the whole region{{ end }}.
+{{- end }} Whether a
+restore fits the RTO only a drill shows: see [Drills](#drills). The tasks
+hold no data: a task that stops loses nothing but the requests it was
+answering.
+
+## What the stack keeps
+
+| Resource                                 | Holds                                                     | When the stack is deleted            |
+| ---------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
+| `Items` table                            | the items                                                 | kept; deletion protection is on      |
+{{- if ne $ops.Backups.RetentionDays 0 }}
+| backup vault and key                     | the daily backups                                         | kept, with every backup in it        |
+{{- end }}
+| load balancer's log bucket               | its access logs, a year each                              | kept, emptying itself as they expire |
+| log groups                               | the app's, the collector's and the VPC's rejected traffic | deleted; kept one year until then    |
+| alarm topic and its key                  | nothing                                                   | deleted                              |
+| the VPC, cluster, service, load balancer | nothing                                                   | deleted                              |
+
+The physical names are in the stack:
+`aws cloudformation describe-stack-resources --stack-name {{ .Container }}`.
+A development stack's log bucket is kept too, as CloudFormation can't
+delete a bucket that holds objects: it empties itself within a month, and
+then `aws s3 rb` removes it.
+
+## Restore the items to a point in time
+
+When: bad writes (a bug, a wrong script) or deleted items, within the last
+35 days.
+
+1. Find the last good moment: the deploy or script that did the damage, or
+   the first bad request in the app's logs.
+2. Restore to a new table beside the live one:
+   `aws dynamodb restore-table-to-point-in-time --source-table-name <items table> --target-table-name <items table>-restored --restore-date-time <time, ISO 8601>`.
+   It takes minutes for a small table, longer for a large one; wait until
+   `aws dynamodb describe-table` says `ACTIVE`.
+3. Check the restored table holds what you expect (`aws dynamodb get-item`
+   on a few known ids).
+4. Repair the live table from it: write back the items the damage changed,
+   with a short script using the SDK, or `aws dynamodb batch-write-item`.
+   The live table keeps its name, its alarms, its backups and its place in
+   the stack.
+5. Delete the restored table (`aws dynamodb delete-table`) and write down
+   what happened and when.
+
+A restored table lacks what a restore doesn't carry: auto scaling, IAM
+policies, CloudWatch alarms, tags, streams, time to live and point-in-time
+recovery. That is why the live table is repaired, not replaced.
+{{- if ne $ops.Backups.RetentionDays 0 }}
+
+## Restore from a backup in the vault
+
+When: the damage is older than 35 days, or point-in-time recovery was off.
+
+1. List the backups:
+   `aws backup list-recovery-points-by-backup-vault --backup-vault-name <the vault, Backups/Vault in the stack>`.
+2. Restore the one before the damage to a new table: in the AWS Backup
+   console, _Protected resources_, the table, the recovery point, _Restore_,
+   with a new table name; or `aws backup start-restore-job` with the
+   recovery point's ARN, `--metadata TargetTableName=<new name>` and a role
+   that has `AWSBackupServiceRolePolicyForRestores`.
+3. Go on from step 3 of the point-in-time restore.
+{{- if $ops.Backups.CopyToRegion }}
+
+When the stack's region is lost, the copies are in {{ $ops.Backups.CopyToRegion }}, in the vault
+of the `{{ .Container }}-backup-copy` stack. Restore one there as above, in that region,
+and give the restore an encryption key there (the vault's own key will do).
+Deploy the stack to {{ $ops.Backups.CopyToRegion }} (`cdk deploy -c tier=production` with that
+region, and a certificate in it), then fill its new table from the restored
+one as in step 4, and point the service's domain at the new `EntryPoint`. AWS
+Backup copies DynamoDB backups across regions only with its advanced
+features for DynamoDB on in the stack's region: a backup plan turns them on
+by itself, and AWS Backup's _Settings_ page says whether they are.
+{{- end }}
+{{- end }}
+
+## The table is gone
+
+The stack refers to its table by name. If the table was deleted by hand
+(after deletion protection was turned off), restore it under its own name:
+point-in-time recovery from the deleted table's system backup
+(`<name>$DeletedTableBackup`, kept 35 days){{ if ne $ops.Backups.RetentionDays 0 }} or a backup from the vault{{ end }},
+with `--target-table-name` the old name. Then set again what a restore
+doesn't carry: point-in-time recovery
+(`aws dynamodb update-continuous-backups`), deletion protection and the
+three `c4factory:` tags, which the backup plan selects by. Deploy the stack
+again (`cdk deploy -c tier=production`) and check it reports no drift.
+
+## Roll a deployment back
+
+A deployment of the service (a new image or task definition, from
+`cdk deploy`) is a rolling one: ECS starts new tasks beside the old ones,
+sends them traffic once they pass the load balancer's health check on
+`/health`, and only then stops the old ones, so the service never runs fewer
+than its two tasks. Two things fail a deployment and return the service to
+the last one that completed, by themselves:
+
+- The circuit breaker, when the new tasks don't start or keep failing the
+  health check: three failures in a row (half the desired count, at least
+  three).
+- The deployment alarms, when the new tasks start but answer badly:
+  `LoadBalancer-5xx-Critical`, `Service-5xx-Critical` and
+  `Service-Unhealthy-Tasks-Critical`. ECS watches them while the deployment
+  runs and for a bake time after it (under five minutes), which is why a
+  deployment takes that much longer to complete. An alarm already firing
+  when a deployment starts is ignored for that deployment, so a deploy that
+  fixes an incident still goes out.
+
+Either way CloudFormation sees the service fail to stabilize and rolls the
+whole stack back (`UPDATE_ROLLBACK_COMPLETE`). `aws ecs describe-services
+--cluster <cluster> --services <service> --query 'services[0].deployments'`
+says which deployment is running, its `rolloutState` and why it failed
+(`rolloutStateReason`); the service's events say the same.
+
+- If the stack stops in `UPDATE_ROLLBACK_FAILED`, fix what it names and run
+  `aws cloudformation continue-update-rollback --stack-name {{ .Container }}`.
+- A deploy that succeeded but misbehaves later: deploy the last good commit.
+  Check out its tag or commit, run `make check`, then
+  `cdk deploy -c tier=production --parameters CertificateArn=<arn>`. The
+  service, the load balancer and the alarms go back; the data does not. If
+  the bad version wrote bad data, restore the items as above to the moment
+  it was deployed.
+- Never deploy a change that replaces the table (a new key, a new name): the
+  deploy makes a new, empty table and keeps the old one outside the stack,
+  its data unreachable by the service. Moving data to a new table is a
+  migration, planned and run by a person; if it happened by mistake, deploy
+  the last good commit and bring the old table back as in
+  [The table is gone](#the-table-is-gone).
+- Termination protection refuses `cdk destroy` in production. Turning it
+  off is the account owner's decision; the table, the vault and the log
+  bucket stay anyway.
+
+## Alarms
+
+Every alarm notifies the stack's alarm topic (the output `AlarmTopicArn`);
+the `AlertEmail` parameter subscribes an address, which must confirm the
+email AWS sends it. The dashboard `{{ .Container }}` shows each alarm's metric. Each
+alarm fires on one bad five-minute period and clears itself when the next
+one is good. An alarm's name is the stack's, `{{ .Container }}-`, then the name below.
+The load balancer reports nothing while no requests come, which its alarms
+count as good.
+
+| Alarm                                             | Means                                                                                                                  | First                                                                                                                                                        |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `LoadBalancer-5xx-Critical`                       | the load balancer answered 5xx itself: no healthy task to send a request to (502, 503), or none answered in time (504) | look at the running and unhealthy tasks on the dashboard, then the app's logs for an error at start-up; a deployment that just went out rolls back by itself |
+| `Service-5xx-Critical`                            | the app answered 5xx: a request failed, most often at the table                                                        | read the app's logs for `The request failed.` and the request id; check the table's alarms; roll back if a deploy just went out                              |
+| `Service-Latency-P99-Warning`                     | the slowest answers take over a second                                                                                 | check the table's latency and the tasks' CPU on the dashboard; a slow request's trace in X-Ray shows where the time went                                     |
+| `Service-Unhealthy-Tasks-Critical`                | a task fails the health check on `/health`                                                                             | read that task's logs (stream `app/App/<task id>`); ECS replaces it, and a deployment rolls back                                                             |
+| `Service-CPU-Usage-Warning`                       | the tasks use over 90 % of their CPU: scaling is at its four tasks, or can't keep up                                   | check the request count; raise the most tasks or the task's CPU in `infra/service_stack.ts`                                                                  |
+| `Service-Memory-Usage-Warning`                    | the tasks use over 90 % of their memory: a leak, or a task too small                                                   | watch whether memory only grows between deploys (a leak); otherwise raise the task's memory                                                                  |
+| `Service-Running-Tasks-Critical`                  | fewer than two tasks run: tasks stop, or new ones can't start                                                          | read the service's events and a stopped task's `stoppedReason` (`aws ecs describe-tasks`); an image that can't be pulled points at a NAT gateway or ECR      |
+| `Items-Read-Throttled-Events-Critical`, `-Write-` | DynamoDB throttled reads or writes: a hot key or a burst past on-demand's limits                                       | find the key in the logs; on-demand adapts within minutes, a hot key needs a change to the key design                                                        |
+| `Items-SystemError-Count-Critical`                | DynamoDB failed requests on its side                                                                                   | check the AWS Health Dashboard for DynamoDB in the region; the SDK retries, so watch whether `Service-5xx` fires too                                         |
+
+When an alarm fires, note the time, what you saw and what you did; when it
+has fired before for the same cause, that cause needs a fix, not another
+note.
+
+## Traces
+
+In production every request but the health checks is traced: the app sends
+its spans to the AWS Distro for OpenTelemetry collector beside it in the
+task, which sends them to X-Ray, under the service name `{{ .Container }}`. A
+trace shows the request and each call it made to DynamoDB. With no traces in
+X-Ray, read the collector's log group (`CollectorLogs` in the stack): the
+collector is not essential, so when it fails the app goes on, untraced.
+Development traces nothing.
+
+## The network
+
+The tasks reach ECR, CloudWatch Logs and X-Ray through NAT gateways, and
+DynamoDB through a gateway endpoint that needs none. Production has a NAT
+gateway in each of its two zones: when one zone fails, the tasks in the
+other keep their way out, and the load balancer sends every request to
+them. Development has one: when its zone fails, no task can pull its image
+or write its logs.
+
+## What production costs over development
+
+Every hour, production pays for a second NAT gateway (each charges by the
+hour and by the gigabyte it carries) and for the collector beside each task,
+which shares the task's CPU and memory; X-Ray charges per trace past its
+free tier, and every request but the health checks is traced. Then
+point-in-time recovery{{ if ne $ops.Backups.RetentionDays 0 }} and AWS Backup's storage{{ end }} by the table's size{{ if and (ne $ops.Backups.RetentionDays 0) $ops.Backups.CopyToRegion }}, the
+copies' transfer to {{ $ops.Backups.CopyToRegion }} and their storage there{{ end }}{{ if ne $ops.Backups.RetentionDays 0 }}, a KMS key per vault{{ end }},
+and a year of logs instead of a month. The two tasks, the load balancer,
+the alarms and the dashboard cost the same in both tiers.
+
+## What the account provides
+
+The stacks hold only this Container's resources. These are set once per
+account, by its owner, and never by a stack here:
+
+- GuardDuty, for threat detection in the account.
+- Security Hub, for the account's security findings in one place.
+- CloudTrail, recording every API call to an S3 bucket kept apart.
+- AWS Config, recording how resources change.
+- AWS Budgets, with an alert on what the account spends.
+- The cost allocation tags' activation: `c4factory:project`,
+  `c4factory:system` and `c4factory:container` attribute costs only once the
+  account activates them in Billing.
+- The ACM certificate the load balancer serves (the `CertificateArn`
+  parameter) and the DNS record pointing its domain at `EntryPoint`.
+
+A vault lock on the backup vault is the account owner's call too: in
+compliance mode it can never be undone.
+
+## Drills
+
+Only a drill shows that a restore works and fits the RTO ({{ $ops.Recovery.RTO }}). At least
+once a quarter, and after a change to the table: restore the items to a
+point in time into a new table, check a few items, time it, and delete the
+table; write down how long it took. Once a year, a game day on the
+development stack: stop a task (`aws ecs stop-task`) and watch the service
+replace it, deploy an image that fails its health check and watch the
+deployment roll back, and answer what fires with this runbook alone.
 {{- end }}

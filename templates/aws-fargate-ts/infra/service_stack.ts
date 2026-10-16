@@ -8,6 +8,7 @@ import {
   Validations,
 } from 'aws-cdk-lib';
 import type { StackProps } from 'aws-cdk-lib';
+import { ComparisonOperator, Metric, Stats, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
 import { AttributeType, BillingMode, Table, TableEncryption } from 'aws-cdk-lib/aws-dynamodb';
 import {
   FlowLogDestination,
@@ -18,7 +19,9 @@ import {
 } from 'aws-cdk-lib/aws-ec2';
 import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
 import {
+  AlarmBehavior,
   Cluster,
+  ContainerDependencyCondition,
   ContainerImage,
   ContainerInsights,
   CpuArchitecture,
@@ -27,32 +30,88 @@ import {
   LogDrivers,
   OperatingSystemFamily,
 } from 'aws-cdk-lib/aws-ecs';
+import type { ContainerDefinition } from 'aws-cdk-lib/aws-ecs';
 import {
   ApplicationLoadBalancer,
   ApplicationProtocol,
+  HttpCodeElb,
+  HttpCodeTarget,
   ListenerAction,
   ListenerCertificate,
   SslPolicy,
 } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { PolicyStatement, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
-import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { LogGroup } from 'aws-cdk-lib/aws-logs';
+import type { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { BlockPublicAccess, Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
+import type { CustomThreshold } from 'cdk-monitoring-constructs';
 import type { Construct } from 'constructs';
 import path from 'node:path';
+
+import { Alarms } from './alarms';
+import { Backups } from './backups';
+import { TIER_RULES } from './standard';
+import type { Operations, Tier } from './standard';
 
 // The repository root: the Dockerfile and the service's code are there.
 const ROOT = path.join(import.meta.dirname, '..');
 // The port the service listens on in its container: src/main.ts's default.
 const PORT = 8080;
+// The Availability Zones the VPC spans.
+const ZONES = 2;
+// NAT gateways per tier: one per zone in production, so the tasks in a zone
+// keep their way out when the other zone fails; one in development, for half
+// the price.
+const NAT_GATEWAYS: Readonly<Record<Tier, number>> = { production: ZONES, development: 1 };
+// The fewest tasks the service runs, one per zone, and the most it scales to.
+const MIN_TASKS = 2;
+const MAX_TASKS = 4;
+// The AWS Distro for OpenTelemetry collector that runs beside the app where
+// the tier traces, pinned by tag, and the configuration in its image that
+// takes spans over OTLP and sends them to X-Ray, and nothing else.
+const COLLECTOR_IMAGE = 'public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0';
+const COLLECTOR_CONFIG = '/etc/ecs/ecs-xray.yaml';
+// Where the app sends its spans: the collector's OTLP over HTTP receiver, in
+// the same task. src/tracing.ts starts only when it is set.
+const OTLP_ENDPOINT = 'http://localhost:4318';
+// The only actions X-Ray's exporter needs, which take no resource but `*`.
+const XRAY_WRITE_ACTIONS = ['xray:PutTraceSegments', 'xray:PutTelemetryRecords'];
+// The slowest answer the latency alarm allows, at the 99th percentile: an
+// item is one DynamoDB call, which takes milliseconds.
+const MAX_LATENCY = Duration.seconds(1);
+// The alarms that fail a deployment and roll it back, by their names after
+// the stack's: a 5xx from the load balancer or the tasks, or a task failing
+// its health check.
+const DEPLOYMENT_ALARMS = [
+  'LoadBalancer-5xx-Critical',
+  'Service-5xx-Critical',
+  'Service-Unhealthy-Tasks-Critical',
+];
+
+/** What the stack is built for. */
+export interface ServiceStackProps extends StackProps {
+  /** Where it runs: what it keeps, backs up and traces, and how many NAT gateways it has. */
+  readonly tier: Tier;
+  /** What the Container promises whatever the tier: `OPERATIONS`. */
+  readonly operations: Operations;
+  /** The tag, key and value, every resource of the stack carries: what its backups select. */
+  readonly backupTag: readonly [string, string];
+}
 
 /**
  * The Container's one stack: a service of Fargate tasks in private subnets,
  * behind an internet-facing Application Load Balancer that serves HTTPS
  * with the certificate the deployer names, keeping items in a DynamoDB table.
+ * Every part has alarms, to a topic the stack outputs with the load
+ * balancer's name, and a deployment that sets off a 5xx or unhealthy-task
+ * alarm rolls back; production keeps and backs up the data and traces every
+ * request.
  */
 export class ServiceStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props: ServiceStackProps) {
     super(scope, id, props);
+    const rules = TIER_RULES[props.tier];
+    const { backups, alerts } = props.operations;
 
     // The certificate is the deployer's: an ACM certificate for the domain
     // the service answers on. A parameter, so synth needs no account.
@@ -62,22 +121,25 @@ export class ServiceStack extends Stack {
       allowedPattern: '^arn:aws[a-z-]*:acm:[a-z0-9-]+:[0-9]{12}:certificate/.+$',
     });
 
+    // The table holds data: kept, protected and recoverable where the tier
+    // keeps data, thrown away with the stack where it doesn't.
     const table = new Table(this, 'Items', {
       partitionKey: { name: 'id', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
       encryption: TableEncryption.AWS_MANAGED,
-      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
-      deletionProtection: true,
-      // The data outlives the stack: deleting the stack keeps the table.
-      removalPolicy: RemovalPolicy.RETAIN,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: rules.pointInTimeRecovery,
+      },
+      deletionProtection: rules.keepData,
+      removalPolicy: rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     });
 
     // Two zones, the load balancer in public subnets and the tasks in private
-    // ones; one NAT gateway, for ECR and CloudWatch Logs, and a gateway
+    // ones; NAT gateways for ECR, CloudWatch Logs and X-Ray, and a gateway
     // endpoint, free, so DynamoDB traffic never leaves the VPC.
     const vpc = new Vpc(this, 'Network', {
-      maxAzs: 2,
-      natGateways: 1,
+      maxAzs: ZONES,
+      natGateways: NAT_GATEWAYS[props.tier],
       subnetConfiguration: [
         { name: 'Public', subnetType: SubnetType.PUBLIC, cidrMask: 24 },
         { name: 'Private', subnetType: SubnetType.PRIVATE_WITH_EGRESS, cidrMask: 24 },
@@ -89,7 +151,7 @@ export class ServiceStack extends Stack {
       restrictDefaultSecurityGroup: false,
     });
     const flowLogs = new LogGroup(this, 'FlowLogs', {
-      retention: RetentionDays.ONE_MONTH,
+      retention: rules.logRetention,
       removalPolicy: RemovalPolicy.DESTROY,
     });
     vpc.addFlowLog('FlowLog', {
@@ -102,7 +164,7 @@ export class ServiceStack extends Stack {
       containerInsightsV2: ContainerInsights.ENABLED,
     });
     const serviceLogs = new LogGroup(this, 'ServiceLogs', {
-      retention: RetentionDays.ONE_MONTH,
+      retention: rules.logRetention,
       removalPolicy: RemovalPolicy.DESTROY,
     });
     const taskDefinition = new FargateTaskDefinition(this, 'Task', {
@@ -113,7 +175,7 @@ export class ServiceStack extends Stack {
         operatingSystemFamily: OperatingSystemFamily.LINUX,
       },
     });
-    taskDefinition.addContainer('App', {
+    const app = taskDefinition.addContainer('App', {
       // Synth only stages the build context in cdk.out/; `cdk deploy` builds
       // and pushes the image, with Docker, on the deployer's machine.
       image: ContainerImage.fromAsset(ROOT, { platform: Platform.LINUX_ARM64 }),
@@ -125,9 +187,13 @@ export class ServiceStack extends Stack {
       // SIGKILL after this: time for the requests still in flight to finish.
       stopTimeout: Duration.seconds(30),
     });
+    if (rules.tracing) {
+      this.traceThroughCollector(taskDefinition, app, rules.logRetention);
+    }
     Validations.of(taskDefinition).acknowledge({
       id: 'AwsSolutions-ECS2',
-      reason: 'The one variable, TABLE_NAME, is the name of the stack’s own table, not a secret.',
+      reason:
+        'The variables name the stack’s own table and, where the tier traces, the collector’s address in the task and the service’s name in its traces; none is a secret.',
     });
     // Only the calls the service makes.
     table.grant(taskDefinition.taskRole, 'dynamodb:GetItem', 'dynamodb:PutItem');
@@ -144,24 +210,29 @@ export class ServiceStack extends Stack {
     const service = new FargateService(this, 'Service', {
       cluster,
       taskDefinition,
-      desiredCount: 2,
+      desiredCount: MIN_TASKS,
       // A deployment starts new tasks before stopping old ones, and rolls
-      // back when the new ones never get healthy.
+      // back when the new ones never get healthy (the circuit breaker) or
+      // set off a deployment alarm (below).
       minHealthyPercent: 100,
       maxHealthyPercent: 200,
       circuitBreaker: { enable: true, rollback: true },
       vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
       assignPublicIp: false,
     });
-    const scaling = service.autoScaleTaskCount({ minCapacity: 2, maxCapacity: 4 });
+    const scaling = service.autoScaleTaskCount({ minCapacity: MIN_TASKS, maxCapacity: MAX_TASKS });
     scaling.scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 70 });
 
+    // Access logs are logs, not data: they expire after the tier's log
+    // retention. The bucket outlives the stack in either tier, as
+    // CloudFormation can't delete a bucket that holds objects; it empties
+    // itself as they expire.
     const accessLogs = new Bucket(this, 'LoadBalancerLogs', {
       // Elastic Load Balancing writes access logs only with S3-managed keys.
       encryption: BucketEncryption.S3_MANAGED,
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
-      lifecycleRules: [{ expiration: Duration.days(30) }],
+      lifecycleRules: [{ expiration: Duration.days(rules.logRetention) }],
       removalPolicy: RemovalPolicy.RETAIN,
     });
     Validations.of(accessLogs).acknowledge({
@@ -186,7 +257,7 @@ export class ServiceStack extends Stack {
       certificates: [ListenerCertificate.fromArn(certificateArn.valueAsString)],
       sslPolicy: SslPolicy.RECOMMENDED_TLS,
     });
-    https.addTargets('Service', {
+    const targetGroup = https.addTargets('Service', {
       port: PORT,
       protocol: ApplicationProtocol.HTTP,
       targets: [service],
@@ -200,10 +271,169 @@ export class ServiceStack extends Stack {
       defaultAction: ListenerAction.redirect({ protocol: 'HTTPS', port: '443', permanent: true }),
     });
 
-    new CfnOutput(this, 'LoadBalancerDns', {
-      description: 'Point the certificate’s domain at this name (a CNAME or an alias record).',
+    // Each alarm fires on the first bad five minutes: a 5xx from the load
+    // balancer or the tasks, slow answers, a task failing its health check,
+    // the tasks short of CPU or memory or fewer than the service's minimum,
+    // and the table throttled or failing. docs/runbook.md says what each
+    // means and what to do first.
+    const alarms = new Alarms(this, 'Alarms', alerts.email);
+    // No requests is no 5xx and no slow answer.
+    const above = (threshold: number): CustomThreshold => ({
+      threshold,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingDataOverride: TreatMissingData.NOT_BREACHING,
+    });
+    alarms.monitoring
+      .monitorCustom({
+        alarmFriendlyName: 'LoadBalancer',
+        humanReadableName: 'Load balancer',
+        metricGroups: [
+          {
+            title: '5xx answers of its own',
+            metrics: [
+              {
+                // 502, 503 and 504: no task answered, or none in time.
+                metric: loadBalancer.metrics.httpCodeElb(HttpCodeElb.ELB_5XX_COUNT, {
+                  statistic: Stats.SUM,
+                }),
+                alarmFriendlyName: '5xx',
+                addAlarm: { Critical: above(0) },
+              },
+            ],
+          },
+        ],
+      })
+      .monitorCustom({
+        alarmFriendlyName: 'Service',
+        humanReadableName: 'Service',
+        metricGroups: [
+          {
+            title: '5xx answers from the tasks',
+            metrics: [
+              {
+                metric: loadBalancer.metrics.httpCodeTarget(HttpCodeTarget.TARGET_5XX_COUNT, {
+                  statistic: Stats.SUM,
+                }),
+                alarmFriendlyName: '5xx',
+                addAlarm: { Critical: above(0) },
+              },
+            ],
+          },
+          {
+            title: 'Latency',
+            metrics: [
+              {
+                metric: loadBalancer.metrics.targetResponseTime({ statistic: Stats.p(99) }),
+                alarmFriendlyName: 'Latency-P99',
+                addAlarm: { Warning: above(MAX_LATENCY.toSeconds()) },
+              },
+            ],
+          },
+          {
+            title: 'Running tasks',
+            metrics: [
+              {
+                // Container Insights' count, against the fewest the service runs.
+                metric: new Metric({
+                  namespace: 'ECS/ContainerInsights',
+                  metricName: 'RunningTaskCount',
+                  dimensionsMap: {
+                    ClusterName: cluster.clusterName,
+                    ServiceName: service.serviceName,
+                  },
+                  statistic: Stats.AVERAGE,
+                }),
+                alarmFriendlyName: 'Running-Tasks',
+                addAlarm: {
+                  Critical: {
+                    threshold: MIN_TASKS,
+                    comparisonOperator: ComparisonOperator.LESS_THAN_THRESHOLD,
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      })
+      .monitorFargateApplicationLoadBalancer({
+        fargateService: service,
+        applicationLoadBalancer: loadBalancer,
+        applicationTargetGroup: targetGroup,
+        alarmFriendlyName: 'Service',
+        // A task is unhealthy when every load balancer node finds it so
+        // (the minimum), as Elastic Load Balancing's guide advises.
+        invertLoadBalancerTaskCountMetricsStatistics: true,
+        addUnhealthyTaskCountAlarm: { Critical: { maxUnhealthyTasks: 0 } },
+        addCpuUsageAlarm: { Warning: { maxUsagePercent: 90 } },
+        addMemoryUsageAlarm: { Warning: { maxUsagePercent: 90 } },
+      })
+      .monitorDynamoTable({
+        table,
+        alarmFriendlyName: 'Items',
+        billingMode: BillingMode.PAY_PER_REQUEST,
+        addSystemErrorCountAlarm: { Critical: { maxErrorCount: 0 } },
+        addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
+        addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
+      });
+
+    // A deployment that sets off one of these rolls back. ECS reads the
+    // alarms by name: the names are written out, since a reference to an
+    // alarm, whose metric names the service, would make the two depend on
+    // each other.
+    const rollBackOn = DEPLOYMENT_ALARMS.map((alarm) => `${this.stackName}-${alarm}`);
+    const created = new Set(alarms.monitoring.createdAlarms().map((alarm) => alarm.alarmName));
+    for (const name of rollBackOn) {
+      if (!created.has(name)) {
+        throw new Error(`The deployment alarm ${name} is not one of the stack's alarms.`);
+      }
+    }
+    service.enableDeploymentAlarms(rollBackOn, { behavior: AlarmBehavior.ROLLBACK_ON_ALARM });
+
+    if (rules.backups && backups.retentionDays > 0) {
+      new Backups(this, 'Backups', {
+        retentionDays: backups.retentionDays,
+        copyToRegion: backups.copyToRegion,
+        tag: props.backupTag,
+      });
+    }
+
+    new CfnOutput(this, 'EntryPoint', {
+      description:
+        'The load balancer’s DNS name: point the certificate’s domain at it (a CNAME or an alias record).',
       value: loadBalancer.loadBalancerDnsName,
     });
+  }
+
+  /**
+   * Runs the AWS Distro for OpenTelemetry collector beside `app`, which
+   * sends it its spans, and lets the task write them to X-Ray.
+   */
+  private traceThroughCollector(
+    taskDefinition: FargateTaskDefinition,
+    app: ContainerDefinition,
+    logRetention: RetentionDays,
+  ): void {
+    const collectorLogs = new LogGroup(this, 'CollectorLogs', {
+      retention: logRetention,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    const collector = taskDefinition.addContainer('Collector', {
+      image: ContainerImage.fromRegistry(COLLECTOR_IMAGE),
+      command: [`--config=${COLLECTOR_CONFIG}`],
+      // A collector that stops loses traces, not requests: the task goes on.
+      essential: false,
+      logging: LogDrivers.awsLogs({ streamPrefix: 'collector', logGroup: collectorLogs }),
+      readonlyRootFilesystem: true,
+    });
+    app.addContainerDependencies({
+      container: collector,
+      condition: ContainerDependencyCondition.START,
+    });
+    app.addEnvironment('OTEL_EXPORTER_OTLP_ENDPOINT', OTLP_ENDPOINT);
+    app.addEnvironment('OTEL_SERVICE_NAME', this.stackName);
+    taskDefinition.taskRole.addToPrincipalPolicy(
+      new PolicyStatement({ actions: XRAY_WRITE_ACTIONS, resources: ['*'] }),
+    );
   }
 
   /**
