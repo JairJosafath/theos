@@ -77,15 +77,22 @@ tier_paths() {
 }
 
 # tier_tools TIER: the versions of the tools TIER runs that the Makefile
-# doesn't pin. A missing tool's error is keyed like a version, never a failure
-# of the key: CI's shell tests run without Node (#1285).
+# doesn't pin. A missing tool is keyed as missing, never a failure of the key:
+# CI's shell tests run without Node (#1285). Not as bash's error, which names
+# the script as it was called, so make's hack/check-cache.sh and a full path
+# keyed apart (#1399).
 tier_tools() {
   case $1 in
-    ui-test) node --version; npm --version ;;
+    ui-test) version node --version; version npm --version ;;
     test-hack) bash --version | head -1; git --version ;;
-    validate-yaml) go version ;;
+    validate-yaml) version go version ;;
   esac 2>&1
   return 0
+}
+
+# version TOOL ARGS...: TOOL's version, or "TOOL: missing" when it isn't on PATH.
+version() {
+  if command -v "$1" >/dev/null; then "$@"; else echo "$1: missing"; fi
 }
 
 # tier_desc TIER: what TIER's key covers, in a word, for the cached line.
