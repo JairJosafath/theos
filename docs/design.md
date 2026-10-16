@@ -846,7 +846,11 @@ model and context it needs.
   The block renders into `infra/operations.ts`, which the stacks read and
   the Standard's test enforces; a change to the block reaches the
   repository by a pull request the operator opens and merges, as a Standard
-  bump does. Deploy-time values (an alert email, a certificate) are
+  bump does. The Container's `OperationsApplied` says whether it has: until
+  that pull request exists (the plan's step 12), a change after the
+  scaffold leaves it False, reason `ChangedAfterScaffold`. What the block
+  leaves out, `internal/model` fills in (35 days, `1h`, `4h`), never CRD
+  defaulting, so the Container reads back as it was written. Deploy-time values (an alert email, a certificate) are
   CloudFormation parameters a deploy target overrides. Every AWS
   repository carries `docs/runbook.md`: how to restore, roll back and
   answer each alarm. A Brief's planner sets the block from the idea and

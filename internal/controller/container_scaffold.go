@@ -128,7 +128,8 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 	}
 	in := scaffoldInput(container, ci, res.use.Connectors,
-		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease))
+		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
+		specOperations(container))
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
 	if err != nil {
 		reason := c4v1alpha1.ReasonFailed
@@ -189,6 +190,10 @@ func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.C
 		}
 	}
 	status.AppliedRelationships, status.AppliedConnectors = appliedStatus(relationships)
+	// The commit an earlier attempt pushed doesn't say its operations, so a
+	// recovered scaffold records the block as it is now.
+	status.Operations = operationsStatus(specOperations(container))
+	r.reportOperationsApplied(container, status)
 	r.condition(container, status, c4v1alpha1.ConditionScaffolded, metav1.ConditionTrue,
 		c4v1alpha1.ReasonScaffolded, message)
 	// The scaffold's push starts CI; read its result like every later reconcile
@@ -224,10 +229,11 @@ func (r *ContainerReconciler) condition(container *c4v1alpha1.Container, status 
 
 // scaffoldInput is what every template of the Container renders with. ci is
 // the CI system its repository runs, connectors are the unique Connector
-// names, sorted, and checks is when CI runs the full check
-// (model.EffectiveChecks).
+// names, sorted, checks is when CI runs the full check
+// (model.EffectiveChecks) and ops its operations block, the defaults filled
+// in.
 func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []string,
-	checks string) scaffold.Input {
+	checks string, ops model.Operations) scaffold.Input {
 	in := scaffold.Input{
 		CI:             ci,
 		Project:        container.Namespace,
@@ -238,6 +244,7 @@ func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []st
 		Framework:      container.Spec.FrameworkRef.Name,
 		Connectors:     connectors,
 		Checks:         checks,
+		Operations:     ops,
 	}
 	if container.Spec.StandardRef != nil {
 		in.Standard = container.Spec.StandardRef.Name

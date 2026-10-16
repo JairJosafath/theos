@@ -85,11 +85,14 @@
 #                                        for (prose such as "its PR closes #9"), naming the line to reword, and
 #                                        when its head is behind its base (main): two pull requests green alone can
 #                                        make main red together: land it instead. Refused as well while another
-#                                        pull request holds the merge turn (land), naming it
+#                                        pull request holds the merge turn (land), naming it, and when it closes a
+#                                        kind/bug issue but changes no test file (*_test.go, *_test.sh, *.test.ts)
+#                                        and no line of its body says No test: <why>
 #   hack/lib/github.sh land PR [--wait DURATION]
 #                                        the way to merge PR: wait for the merge turn (one pull request at a time,
 #                                        across every device, first come first served), then, in this checkout of
-#                                        PR's branch, git fetch (retried GH_LAND_FETCH_TRIES times) and merge
+#                                        PR's branch (a bug fix without a test is refused before it queues, as merge
+#                                        refuses it), git fetch (retried GH_LAND_FETCH_TRIES times) and merge
 #                                        origin/main, make check, push and merge PR,
 #                                        and give the turn up, merged or not (a conflict or a red check is said; make
 #                                        check's output is kept in .relay/land-PR.log). The turn is a comment on the
@@ -1511,6 +1514,8 @@ gh_close() {
 # fix's prose ("its PR closes #9") closes #9 too, and the message names the line.
 # Refused too when it would close an issue with a "Depends on #S" step still
 # open (gh_closes_check), or GitHub can't be asked whether it would.
+# Refused when it closes a kind/bug issue and changes no test file, unless its
+# body says why on a line No test: <why> (gh_bugfix_check).
 # Refused while another pull request holds the merge turn (gh_land), naming it.
 # Refused last when its head doesn't contain its base's current commit: two
 # pull requests that each pass make check alone can still fail together, so
@@ -1522,7 +1527,8 @@ gh_merge() {
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
-      body baseRefName headRefOid closingIssuesReferences(first: 100) { nodes { number } } commits(last: 100) { nodes { commit { message } } } } } }' \
+      body baseRefName headRefOid closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
+      files(first: 100) { totalCount nodes { path } } commits(last: 100) { nodes { commit { message } } } } } }' \
     --jq .data.repository.pullRequest) || return 1
   text=$(jq -r '.body // "", (.commits.nodes[]?.commit.message)' <<<"$view")
   closing=$(jq -r '.closingIssuesReferences.nodes[]?.number' <<<"$view")
@@ -1553,6 +1559,8 @@ gh_merge() {
   [ -z "$bad" ] || return 1
   # Nor may it close an issue with a Depends on step still open (closes-check).
   gh_closes_check - <<<"$text" || return 1
+  # Nor may it fix a bug without a test.
+  gh_bugfix_check "$pr" "$view" || return 1
   # Nor may it jump the merge queue: while another pull request holds the turn, only that one merges.
   turn=$(gh_land_holder) || { echo "github: #$pr: could not ask GitHub who holds the merge turn; merge refused" >&2; return 1; }
   if [ -n "$turn" ] && [ "${turn%%$'\t'*}" != "$pr" ]; then
@@ -1571,6 +1579,36 @@ gh_merge() {
   fi
   gh_token || return 1
   gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge --match-head-commit "$head"
+}
+
+# gh_bugfix_check PR VIEW: refuse (exit 1, naming the rule and the issue) a
+# pull request that closes a kind/bug issue but changes no test file
+# (*_test.go, *_test.sh, *.test.ts or .tsx), unless a line of its body is
+# "No test: <why>" (a docs-only or chart-only fix says so). VIEW is the pull
+# request as gh_merge's GraphQL query reads it: body, closingIssuesReferences
+# with their labels, and files. Bugs came back after fixes with no test that
+# would have caught them (#606 then #864, #835 then #1019). A pull request of
+# more than 100 files is let through: the first 100 can't say it has none.
+gh_bugfix_check() {
+  local pr=$1 view=$2 bugs
+  bugs=$(jq -r '.closingIssuesReferences.nodes[]? | select(any(.labels.nodes[]?; .name == "kind/bug")) | "#\(.number)"' <<<"$view" | paste -sd, - | sed 's/,/, /g')
+  [ -n "$bugs" ] || return 0
+  jq -e '((.files.totalCount // 0) > 100) or any(.files.nodes[]?.path; test("(_test\\.(go|sh)|\\.test\\.tsx?)$"))' <<<"$view" >/dev/null && return 0
+  grep -qiE '^[[:space:]]*No test:[[:space:]]*[^[:space:]]' <<<"$(jq -r '.body // ""' <<<"$view")" && return 0
+  echo "github: #$pr closes $bugs, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why>" >&2
+  return 1
+}
+
+# gh_bugfix_pr PR: gh_bugfix_check for pull request PR, read from GitHub;
+# land runs it before it queues for the merge turn.
+gh_bugfix_pr() {
+  local pr=$1 view
+  view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
+    query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
+      body closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
+      files(first: 100) { totalCount nodes { path } } } } }' \
+    --jq .data.repository.pullRequest) || { echo "github: #$pr: could not ask GitHub what it closes and changes; land refused" >&2; return 1; }
+  gh_bugfix_check "$pr" "$view"
 }
 
 # gh_duplicate N M: comment on N that it duplicates M, close N as not planned
@@ -1897,6 +1935,7 @@ gh_land_turn() {
     echo "github: #$pr's branch is $head, but this checkout is on ${branch:-a detached HEAD}: land it from its own checkout" >&2; return 1; }
   [ -z "$(git -C "$GH_LIB_ROOT" status --porcelain --untracked-files=no)" ] || {
     echo "github: this checkout has uncommitted changes: commit and push them, then land" >&2; return 1; }
+  gh_bugfix_pr "$pr" || return 1
   gh_review_check "$pr" || return 1
   n=$(gh_report_issue) || return 1
   id=$(gh_land_body "$pr" | jq -Rs '{body: .}' |

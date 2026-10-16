@@ -20,6 +20,7 @@ import { ExternalLinkIcon } from '../icons'
 import { ObjectHeader, type OutLink } from '../ObjectHeader'
 import { answersLeftOut, ContainerActions } from './ContainerActions'
 import { ContainerChecks } from './ContainerChecks'
+import { ContainerOperations } from './ContainerOperations'
 import { relationshipsOf } from './rows'
 import { pageHref, storyHref } from './links'
 import '../briefs.css'
@@ -172,6 +173,8 @@ export function ContainerPage({
       </section>
 
       {container.spec.standardRef ? <ContainerChecks container={container} writer={writer} /> : null}
+
+      <ContainerOperations container={container} />
 
       {update && described ? (
         <section className="panel" aria-labelledby="container-standard">
