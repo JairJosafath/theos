@@ -3,7 +3,7 @@
 # same bytes its old mtime back, and for the Makefile's use of it and of Go's
 # test cache: manifests and generate keep the mtimes of what they regenerate,
 # make test passes no -coverprofile unless COVER=1 and -count=1 only for
-# FORCE=1 (#1282).
+# FORCE=1, and runs the tests with a cache home outside the module (#1282).
 # Run: hack/keep-mtime_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -64,5 +64,9 @@ line=$(C4_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_G
 [[ $line == *' go test -trimpath '* ]]; check "GO_TRIM still passed" $? 0
 [[ $line == KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=*' ETCD_ELECTION_TIMEOUT='*' ETCD_HEARTBEAT_INTERVAL='*' go test '* ]]
 check "ENVTEST_ENV still set" $? 0
+# envtest's port files: a cache home outside the module, and Go's own cache kept.
+xdg=$(sed -n 's/.* XDG_CACHE_HOME="\([^"]*\)" .*/\1/p' <<<"$line")
+[ -n "$xdg" ] && [[ $xdg != "$ROOT"/* ]]; check "tests: XDG_CACHE_HOME outside the module" $? 0
+check "tests: GOCACHE kept" "$(sed -n 's/.* GOCACHE="\([^"]*\)" .*/\1/p' <<<"$line")" "$(go env GOCACHE)"
 
 exit $fail

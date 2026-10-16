@@ -121,8 +121,13 @@ So a change to `hack/`, docs or the UI reruns no Go test, and a changed CRD
 reruns the suites that read it. controller-gen rewrites every file it
 generates, changed or not, so `manifests` and `generate` run it through
 `hack/keep-mtime.sh`, which gives a file rewritten with the same bytes its old
-mtime back. A result is not cached when a file the test read changed in the
-2 seconds before; the next run caches it. Coverage is collected only when
+mtime back. envtest reserves each port it hands out as a file in
+`$XDG_CACHE_HOME/kubebuilder-envtest`, and `./dev` puts `XDG_CACHE_HOME` in
+`.dev/`, inside the module, where each envtest run changed a directory the
+other suites had read; `make test` gives the tests `TEST_CACHE_HOME` instead
+(`$TMPDIR/c4factory-test-cache`, one per device) and keeps `GOCACHE`. A
+result is not cached when a file the test read changed in the 2 seconds
+before; the next run caches it. Coverage is collected only when
 asked: `COVER=1 make test` writes `cover.out`, and CI's Tests workflow asks.
 To rerun what is cached, `FORCE=1 make test` (or `FORCE=1 make check`, which
 skips the check cache too) passes `-count=1`; `go clean -testcache` forgets

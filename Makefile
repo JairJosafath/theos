@@ -124,10 +124,17 @@ ENVTEST_ENV = KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=$(ENVTEST_START_TIMEOUT) \
 # made, and locally nobody reads cover.out. FORCE=1 reruns every package
 # (-count=1); go clean -testcache forgets every result.
 TEST_FLAGS = -timeout $(TEST_TIMEOUT) $(if $(COVER),-coverprofile cover.out) $(if $(FORCE),-count=1)
+# envtest reserves each port it hands out as a file in
+# $XDG_CACHE_HOME/kubebuilder-envtest. ./dev puts XDG_CACHE_HOME in .dev/,
+# inside the module, and Go tracks the listing of each directory there a test
+# read, so every envtest run made the other suites' cached results stale. The
+# tests get a cache home outside the module, one per device, so envtest runs in
+# every checkout see each other's ports; GOCACHE stays where go env puts it.
+TEST_CACHE_HOME ?= $(or $(TMPDIR),/tmp)/c4factory-test-cache
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest install-helm ## Run tests; Go's test cache answers unchanged packages (FORCE=1 reruns them, COVER=1 writes cover.out).
-	$(ENVTEST_ENV) HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') $(TEST_FLAGS)
+	$(ENVTEST_ENV) XDG_CACHE_HOME="$(TEST_CACHE_HOME)" GOCACHE="$(shell go env GOCACHE)" HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') $(TEST_FLAGS)
 
 # The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
 # calls, so none needs a cluster or the network. make check runs them.
