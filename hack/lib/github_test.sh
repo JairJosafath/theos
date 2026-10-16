@@ -733,7 +733,9 @@ A <!-- watch:tmp-h -->"
   }
   queued() { rm -f "$T/asked"; gh_queued "$@"; echo "exit $?"; }
   asked() { cat "$T/asked" 2>/dev/null | tr '\n' ' '; }
-  RUNS=$(jq -nc --arg g "$(ago '9 days')" --arg a "$(ago '2 hours')" --arg b "$(ago '40 minutes')" --arg c "$(ago '5 minutes')" \
+  # One clock reading per age: a second ago() later wants a different second than the runs carry.
+  t9d=$(ago '9 days') t40m=$(ago '40 minutes')
+  RUNS=$(jq -nc --arg g "$t9d" --arg a "$(ago '2 hours')" --arg b "$t40m" --arg c "$(ago '5 minutes')" \
     '[{databaseId: 4, status: "queued", createdAt: $b}, {databaseId: 1, status: "queued", createdAt: $g},
       {databaseId: 5, status: "queued", createdAt: $c}, {databaseId: 2, status: "queued", createdAt: $a},
       {databaseId: 9, status: "in_progress", createdAt: $g}]')
@@ -741,14 +743,14 @@ A <!-- watch:tmp-h -->"
   JOBS[4]='{"jobs":[{"status":"completed"},{"status":"queued"}]}'
   PAGES=('{"runners":[{"status":"offline"},{"status":"offline"}]}' '{"runners":[{"status":"offline"}]}')
   check "queued: no jobs named, not counted; every runner offline" "$(queued)|$(asked)" \
-    "$(printf 'no-jobs\t1\t%s\nwaiting\t%s\t2\t0\nexit 0' "$(ago '9 days')" "$(ago '40 minutes')")|1 2 4 runners "
+    "$(printf 'no-jobs\t1\t%s\nwaiting\t%s\t2\t0\nexit 0' "$t9d" "$t40m")|1 2 4 runners "
   PAGES=('{"runners":[{"status":"offline"},{"status":"online"}]}' '{"runners":[{"status":"online"}]}')
-  check "queued: says how many runners are online" "$(queued | sed -n 2p)" "$(printf 'waiting\t%s\t2\t2' "$(ago '40 minutes')")"
+  check "queued: says how many runners are online" "$(queued | sed -n 2p)" "$(printf 'waiting\t%s\t2\t2' "$t40m")"
   PAGES=('{"runners":[{"status":"online"}]}')
   check "queued: one online" "$(queued | sed -n 2p | cut -f4)" 1
   JOBS[4]='{"jobs":[]}'
   check "queued: only runs without a job queued: exit 1, runners not asked" "$(queued)|$(asked)" \
-    "$(printf 'no-jobs\t1\t%s\nno-jobs\t4\t%s\nexit 1' "$(ago '9 days')" "$(ago '40 minutes')")|1 2 4 "
+    "$(printf 'no-jobs\t1\t%s\nno-jobs\t4\t%s\nexit 1' "$t9d" "$t40m")|1 2 4 "
   check "queued: none that old: nothing asked" "$(queued --minutes 20000)|$(asked)" "exit 1|"
   check "queued: GitHub can't list the runners: exit 2" "$(JOBS[4]='{"jobs":[{"status":"queued"}]}'; gh_api() { return 1; }; queued | tail -1)" "exit 2"
   exit $fail
