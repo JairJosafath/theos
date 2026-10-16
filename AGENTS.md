@@ -162,12 +162,15 @@ Quality drops as a session's context grows, long before the window is full.
 Treat about 140k tokens as the limit, and keep each session to one piece of work.
 
 - **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
-  piece of work, labeled `status/*`, `priority/urgent`, `kind/*` and
+  piece of work, labeled `status/*`, `priority/*`, `kind/*` and
   `source/dev` (developing the factory) or `source/user` with `user/<name>`
   (reported from a device running the Helm release); `hack/lib/github.sh`
   reads and writes them. No issue needs a cluster: every one is verified by Go
   tests, so a device without Kind (`./dev setup --lite`, `C4_CLUSTER=none`)
-  works every ready issue. What each status means:
+  works every ready issue. `priority/velocity` marks what makes development
+  itself faster (the relay, `land`, `make check`, flakes, the scripts); the
+  relay picks it after `priority/urgent`, before the rest. What each status
+  means:
   - `status/proposed`: filed, not yet decided. Whoever may decide readies it:
     the owner (a session the user runs files what the user decided as
     `ready`), the maintainer, or the relay's triage (the `triage` skill). An

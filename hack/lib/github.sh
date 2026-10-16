@@ -153,10 +153,10 @@
 #
 # FILE may be - for stdin. Pickup order, oldest first: a priority/urgent issue
 # (a status/in-progress one without a live claim, else a status/ready one),
-# else a status/in-progress issue without a live claim, else a status/ready
-# one; issues with a live claim, or whose body says "Depends on #M" while #M is
-# open, are skipped. A handoff comment starts with the line
-# <!-- relay-handoff -->.
+# else a priority/velocity one (the same way), else a status/in-progress issue
+# without a live claim, else a status/ready one; issues with a live claim, or
+# whose body says "Depends on #M" while #M is open, are skipped. A handoff
+# comment starts with the line <!-- relay-handoff -->.
 #
 # The Kind cluster: agents never create, lease or deploy to one; Go tests,
 # validate-yaml, envtest and the local Gitea are the gate, and Kind is a tier
@@ -228,6 +228,7 @@ GH_LABELS=(
   'status/needs-maintainer|e99695|An agent escalated it; the newest comment says what it needs'
   'status/needs-human|d93f0b|The maintainer sent it to the owner; only the maintainer sets it'
   'priority/urgent|b60205|Picked before every other issue, in progress or ready'
+  'priority/velocity|b60205|Makes development itself faster (relay, land, checks, flakes, tooling); picked after urgent'
   'kind/bug|d73a4a|Something is broken'
   'kind/feature|a2eeef|New behaviour'
   'kind/chore|ededed|Upkeep: operations, releases, tooling'
@@ -312,10 +313,12 @@ gh_recent_claims() {
 }
 
 # gh_pick: the issue to work next, as NUMBER TITLE URL STATUS (tab-separated),
-# STATUS being in-progress, ready-urgent or ready. Urgent comes first, so a
-# "main is red" fix (the relay watch files it ready and urgent) is worked
-# before an in-progress issue that keeps failing; within each, an in-progress
-# issue without a live claim comes before a ready one, oldest first. Exit 1:
+# STATUS being in-progress, ready-urgent, in-progress-velocity, ready-velocity
+# or ready. Urgent comes first, so a "main is red" fix (the relay watch files
+# it ready and urgent) is worked before an in-progress issue that keeps
+# failing; then velocity, what makes development itself faster
+# (docs/plans/velocity.md); then the rest. Within each, an in-progress issue
+# without a live claim comes before a ready one, oldest first. Exit 1:
 # nothing to pick; exit 2: GitHub could not be asked.
 gh_pick() {
   local ttl issues claims row
@@ -335,6 +338,8 @@ gh_pick() {
         | {number, title, html_url, labels: [.labels[].name]}] as $free
     | [($free[] | select(has("status/in-progress") and has("priority/urgent")) | . + {how: "in-progress"}),
        ($free[] | select(has("status/ready") and has("priority/urgent")) | . + {how: "ready-urgent"}),
+       ($free[] | select(has("status/in-progress") and has("priority/velocity")) | . + {how: "in-progress-velocity"}),
+       ($free[] | select(has("status/ready") and has("priority/velocity")) | . + {how: "ready-velocity"}),
        ($free[] | select(has("status/in-progress")) | . + {how: "in-progress"}),
        ($free[] | select(has("status/ready")) | . + {how: "ready"})]
     | first // empty | [.number, .title, .html_url, .how] | @tsv' <<<"$issues") || return 2

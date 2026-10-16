@@ -9,13 +9,14 @@
 # origin/main's code (see below) and starts its sessions, one after another, in its own git
 # worktree .claude/worktrees/relay-k, switched to each issue's branch; the
 # worktree's .relay/ holds its claim. Each round picks an issue
-# (hack/lib/github.sh pick: an in-progress one nobody holds, else the oldest
-# ready + urgent one, else the oldest ready one) and claims it (take); when
-# another agent claims it first, it picks again, up to 5 times. Claims keep the
-# workers and hand-started sessions off each other's issues. A session that ends
-# still holding its claim or the cluster lease gets them released. With nothing
-# ready, a worker stops, without waiting in admit: it asks (pick is read-only)
-# before admit as well as after, so an idle worker takes no session-start slot.
+# (hack/lib/github.sh pick: urgent first, then velocity, then the rest; within
+# each, an in-progress one nobody holds, else the oldest ready one) and claims
+# it (take); when another agent claims it first, it picks again, up to 5
+# times. Claims keep the workers and hand-started sessions off each other's
+# issues. A session that ends still holding its claim or the cluster lease
+# gets them released. With nothing ready, a worker stops, without waiting in
+# admit: it asks (pick is read-only) before admit as well as after, so an idle
+# worker takes no session-start slot.
 #
 # Triage: hack/relay-watch.sh starts one triage session (--triage) on the
 # open status/proposed issues, which relay sessions file their follow-ups as,
@@ -345,8 +346,9 @@ flush() {
   return 1
 }
 
-# pick: set ISSUE, TITLE, URL and HOW (in-progress, ready-urgent, ready) to the
-# issue to work next. Exit 1: nothing to pick; exit 2: GitHub could not be asked.
+# pick: set ISSUE, TITLE, URL and HOW (in-progress, ready-urgent,
+# in-progress-velocity, ready-velocity, ready) to the issue to work next.
+# Exit 1: nothing to pick; exit 2: GitHub could not be asked.
 pick() {
   local row rc
   row=$(gh_pick 2>"$DIR/pick.err")
