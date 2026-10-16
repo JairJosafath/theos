@@ -19,11 +19,15 @@
 #   - TEST_ALL or FORCE is set (FORCE=1 make check reruns all of it),
 #   - the branch is main, or no merge base with TEST_BASE is found,
 #   - a file changed that a Go test may read without importing it: go.mod,
-#     go.sum, the Makefile, hack/, config/ (the CRDs and RBAC envtest loads),
-#     api/, dist/, templates/, test/crds, testdata, the workflows, a Dockerfile,
+#     go.sum, the Makefile, the hack/ files Go tests read (hack/seed/,
+#     hack/boilerplate.go.txt, hack/setup.sh, hack/release.sh, hack/new.sh,
+#     hack/go-test.sh), config/ (the CRDs and RBAC envtest loads), api/, dist/,
+#     templates/, test/crds, testdata, the workflows, a Dockerfile,
 #     docs/getting-started.md, or any file outside the paths below.
 # A change only to paths no Go test reads (docs/, .claude/, .vscode/, ui/,
-# the other .github/ files, the top-level *.md but README.md) tests nothing.
+# the other .github/ files, the top-level *.md but README.md, the rest of
+# hack/ outside its packages) tests nothing. The shell scripts in hack/ have
+# their own gate, make test-hack (#1318).
 #
 # The digitalocean/gta tool does the same selection, but loads every package
 # of every module in the build list (go list ...), which this module's go.mod
@@ -81,7 +85,8 @@ embeds() {
 declare -A changed=()
 for f in "${files[@]}"; do
   case "$f" in
-    go.mod | go.sum | go.work | go.work.sum | Makefile | *.mk | hack/* | config/* | api/* | dist/* | \
+    go.mod | go.sum | go.work | go.work.sum | Makefile | *.mk | hack/seed/* | hack/boilerplate.go.txt | \
+      hack/setup.sh | hack/release.sh | hack/new.sh | hack/go-test.sh | config/* | api/* | dist/* | \
       templates/* | test/crds/* | testdata/* | */testdata/* | .github/workflows/* | Dockerfile | \
       */Dockerfile | *.Dockerfile | .dockerignore | docs/getting-started.md | README.md)
       full "$f changed, which a Go test may read without importing it"
@@ -103,7 +108,7 @@ for f in "${files[@]}"; do
     test/e2e/*) continue ;;
     # A Go file in no package: a deleted package's, whose importers changed too.
     *.go) [ -e "$f" ] || continue ;;
-    docs/* | .claude/* | .vscode/* | ui/* | .github/*) continue ;;
+    docs/* | .claude/* | .vscode/* | ui/* | .github/* | hack/*) continue ;;
   esac
   [[ "$f" == */* || "$f" != *.md ]] || continue
   full "$f changed, which a Go test may read without importing it"

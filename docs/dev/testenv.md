@@ -90,11 +90,16 @@ that package. It tests every package on the branch `main` (a detached HEAD at
 main's commit is no branch: it diffs against `origin/main` and tests no
 package), without a merge base, with `TEST_ALL=1` or `FORCE=1`, and
 after a change to a file a Go test may read without importing it: `go.mod`,
-`go.sum`, the `Makefile`, `hack/`, `config/` (the CRDs and RBAC envtest loads),
-`api/`, `dist/`, `templates/`, `test/crds/`, any `testdata/`, the workflows, a
+`go.sum`, the `Makefile`, the `hack/` files Go tests read (`hack/seed/`,
+`hack/boilerplate.go.txt`, `hack/setup.sh`, `hack/release.sh`, `hack/new.sh`,
+`hack/go-test.sh`), `config/` (the CRDs and RBAC envtest loads), `api/`,
+`dist/`, `templates/`, `test/crds/`, any `testdata/`, the workflows, a
 Dockerfile, `README.md`, `docs/getting-started.md` or a file in no listed path.
 A change only to `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest of
-`.github/` or a top-level `*.md` tests no package. `land`'s `make check` selects
+`.github/`, a top-level `*.md` or the rest of `hack/` outside its Go packages
+tests no package; `make test-hack` gates the shell scripts (#1318). A Go test
+that names a new `hack/` path fails `hack/test-packages_test.sh` until the
+path joins that list. `land`'s `make check` selects
 the same way. The *Tests* workflow sets `TEST_ALL=1`, so a merge to main it
 runs on tests every package and catches what a selection missed; but its
 `paths` filter skips a merge that changes only `*.md`, `docs/`, `ui/`,
