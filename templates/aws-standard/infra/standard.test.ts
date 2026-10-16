@@ -53,7 +53,18 @@ const ALARMED_METRICS: Readonly<Record<string, readonly string[]>> = {
   // Container Insights counts the running tasks.
   'AWS::ECS::Service': ['CPUUtilization', 'MemoryUtilization', 'RunningTaskCount'],
   'AWS::CloudFront::Distribution': ['5xxErrorRate'],
+  // The Scheduler's metrics are per schedule group: a run it dropped, or
+  // couldn't put in the dead-letter queue, is lost.
+  'AWS::Scheduler::ScheduleGroup': [
+    'InvocationDroppedCount',
+    'InvocationsFailedToBeSentToDeadLetterCount',
+  ],
 };
+
+// Where a message or event that failed for good goes: a queue's redrive
+// policy, a function's or a schedule's or a rule target's dead-letter
+// config, or an asynchronous invocation's on-failure destination.
+const DEAD_LETTER_KEYS = ['RedrivePolicy', 'DeadLetterConfig', 'OnFailure'];
 
 // What AWS Backup's plan backs up; a stack holding none of it has no plan.
 // A data bucket keeps its earlier versions instead.
@@ -201,13 +212,48 @@ function selectsByTag(selection: unknown, key: string, value: string | undefined
 /**
  * Whether `json`, a part of a template, refers to the resource `id`: by
  * `Ref`, as a table's or function's name, or by `Fn::GetAtt`, as a load
- * balancer's or target group's full name and a service's name.
+ * balancer's or target group's full name and a service's name, or by the
+ * `Name` the resource has in the template, as a schedule group's name CDK
+ * makes at synth.
  */
-function refersTo(json: string, id: string): boolean {
+function refersTo(json: string, id: string, resource?: Resource): boolean {
+  const name = resource?.Properties?.['Name'];
   return (
     json.includes(JSON.stringify({ Ref: id })) ||
-    json.includes(`{"Fn::GetAtt":[${JSON.stringify(id)},`)
+    json.includes(`{"Fn::GetAtt":[${JSON.stringify(id)},`) ||
+    (typeof name === 'string' && json.includes(JSON.stringify(name)))
   );
+}
+
+/** The ids of the queues in `template` that something sends what failed for good to. */
+function deadLetterQueues(template: Template): Set<string> {
+  const queues = new Set(resourcesOf(template, 'AWS::SQS::Queue').map(([id]) => id));
+  const found = new Set<string>();
+  const visit = (value: unknown, deadLetter: boolean): void => {
+    if (Array.isArray(value)) {
+      for (const item of value as unknown[]) {
+        visit(item, deadLetter);
+      }
+      return;
+    }
+    if (!isRecord(value)) {
+      return;
+    }
+    const getAtt = value['Fn::GetAtt'];
+    if (deadLetter && Array.isArray(getAtt) && getAtt[1] === 'Arn') {
+      const [id] = getAtt as unknown[];
+      if (typeof id === 'string' && queues.has(id)) {
+        found.add(id);
+      }
+    }
+    for (const [key, child] of Object.entries(value)) {
+      visit(child, deadLetter || DEAD_LETTER_KEYS.includes(key));
+    }
+  };
+  for (const [, resource] of resourcesOf(template)) {
+    visit(resource.Properties, false);
+  }
+  return found;
 }
 
 /** The container definitions of a task definition, as records. */
@@ -406,6 +452,31 @@ describe.each(TIERS)('the Standard, in %s', (tier) => {
             'ReportBatchItemFailures',
           );
         }
+      }
+    }
+  });
+
+  it('retries every schedule’s target, sends what it could not deliver to a dead-letter queue, and keeps it in a group of its stack', () => {
+    for (const [name, template] of app(tier).templates) {
+      const groups = resourcesOf(template, 'AWS::Scheduler::ScheduleGroup');
+      const queues = deadLetterQueues(template);
+      for (const [id, schedule] of resourcesOf(template, 'AWS::Scheduler::Schedule')) {
+        const target = schedule.Properties?.['Target'];
+        const deadLetter = isRecord(target) ? JSON.stringify(target['DeadLetterConfig'] ?? {}) : '';
+        expect(
+          [...queues].some((queue) => refersTo(deadLetter, queue)),
+          `${name}/${id} dead-letter queue`,
+        ).toBe(true);
+        expect(isRecord(target) && isRecord(target['RetryPolicy']), `${name}/${id} retries`).toBe(
+          true,
+        );
+        // The Scheduler's metrics are per group: in the default group, the
+        // stack's alarms couldn't tell its runs from any other schedule's.
+        const group = JSON.stringify(schedule.Properties?.['GroupName'] ?? '');
+        expect(
+          groups.some(([groupId, resource]) => refersTo(group, groupId, resource)),
+          `${name}/${id} group`,
+        ).toBe(true);
       }
     }
   });
@@ -653,7 +724,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the alarms and topic', () => {
-      it('alarm on every function, table, API, load balancer, target group, service and distribution, to the one encrypted topic, with a dashboard', () => {
+      it('alarm on every function, table, API, load balancer, target group, service, distribution and schedule group, to the one encrypted topic, with a dashboard', () => {
         for (const [name, template] of serving()) {
           const [topicId] = only(resourcesOf(template, 'AWS::SNS::Topic'), `${name}'s topics`);
           expect(resourcesOf(template, 'AWS::CloudWatch::Dashboard').length, name).toBe(1);
@@ -662,11 +733,13 @@ describe.runIf(operations !== undefined).each(TIERS)(
             expect(alarm.Properties?.['AlarmActions'], `${name}/${id}`).toEqual([{ Ref: topicId }]);
           }
           for (const [type, metrics] of Object.entries(ALARMED_METRICS)) {
-            for (const [watchedId] of resourcesOf(template, type)) {
+            for (const [watchedId, watched] of resourcesOf(template, type)) {
               for (const metric of metrics) {
                 const watching = alarms.filter(([, alarm]) => {
                   const json = JSON.stringify(alarm.Properties);
-                  return json.includes(`"MetricName":"${metric}"`) && refersTo(json, watchedId);
+                  return (
+                    json.includes(`"MetricName":"${metric}"`) && refersTo(json, watchedId, watched)
+                  );
                 });
                 expect(watching.length, `${name}/${watchedId} ${metric}`).toBeGreaterThan(0);
               }
@@ -680,12 +753,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
       it('alarm on the first message in every dead-letter queue', () => {
         for (const [name, template] of serving()) {
           const alarms = resourcesOf(template, 'AWS::CloudWatch::Alarm');
-          for (const [, queue] of resourcesOf(template, 'AWS::SQS::Queue')) {
-            const redrive = JSON.stringify(queue.Properties?.['RedrivePolicy'] ?? {});
-            const target = /"Fn::GetAtt":\["([^"]+)","Arn"\]/.exec(redrive)?.[1];
-            if (target === undefined) {
-              continue;
-            }
+          for (const target of deadLetterQueues(template)) {
             const watching = alarms.filter(([, alarm]) => {
               const json = JSON.stringify(alarm.Properties);
               return (

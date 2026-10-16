@@ -1,9 +1,13 @@
-{{ if eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-queue-ts" -}}
+{{ if eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-queue-ts" "aws-schedule-ts" -}}
 {{- $ops := .Operations -}}
 {{- /* Powertools' idempotency records: none in Go, which has no Powertools. */ -}}
 {{- $idempotency := ne .Framework "aws-lambda-go" -}}
 {{- /* A queue consumer: an SQS queue and its dead-letter queue, no API. */ -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
+{{- /* A scheduled job: an EventBridge Scheduler schedule, its function and its dead-letter queue. */ -}}
+{{- $schedule := eq .Framework "aws-schedule-ts" -}}
+{{- $items := "items" -}}
+{{- if $schedule -}}{{- $items = "runs" -}}{{- end -}}
 # Runbook
 
 What to do when `{{ .Container }}` goes wrong in AWS: restore its data, roll a
@@ -23,7 +27,7 @@ AWS, and no agent runs these commands.
 this list differ, it is right.
 
 - Recovery point objective (RPO): {{ $ops.Recovery.RPO }}, the most data a restore may lose.
-- Recovery time objective (RTO): {{ $ops.Recovery.RTO }}, the longest the {{ if $queue }}worker{{ else }}API{{ end }} may be without its data.
+- Recovery time objective (RTO): {{ $ops.Recovery.RTO }}, the longest the {{ if $queue }}worker{{ else if $schedule }}job{{ else }}API{{ end }} may be without its data.
 {{- if eq $ops.Backups.RetentionDays 0 }}
 - Backups: point-in-time recovery only (`retentionDays` is 0); no AWS Backup plan.
 {{- else }}
@@ -55,6 +59,19 @@ restore fits the RTO only a drill shows: see [Drills](#drills).
 | log groups              | the function's logs                          | deleted; kept one year until then |
 | alarm topic and its key | nothing                                      | deleted                           |
 
+{{ else if $schedule -}}
+| Resource                | Holds                                     | When the stack is deleted         |
+| ----------------------- | ----------------------------------------- | --------------------------------- |
+| `Runs` table            | a record of each run that finished        | kept; deletion protection is on   |
+| `Idempotency` table     | the runs done, for a day each             | kept; deletion protection is on   |
+| `DeadLetters` queue     | the runs that failed every retry, 14 days | kept                              |
+{{- if ne $ops.Backups.RetentionDays 0 }}
+| backup vault and key    | the daily backups                         | kept, with every backup in it     |
+{{- end }}
+| log groups              | the function's logs                       | deleted; kept one year until then |
+| alarm topic and its key | nothing                                   | deleted                           |
+| schedule and its group  | nothing                                   | deleted                           |
+
 {{ else -}}
 | Resource                | Holds                                         | When the stack is deleted         |
 | ----------------------- | --------------------------------------------- | --------------------------------- |
@@ -74,24 +91,26 @@ The physical names are in the stack:
 {{- if $idempotency }}
 The `Idempotency` table needs no restore: its records expire within the
 hour, and an empty one only means {{ if $queue }}a message delivered again is stored again, which
-puts the same item{{ else }}a repeated `PUT` runs again{{ end }}.{{ if $queue }} The queues are not backed up: a message lives
-days, not months, and its producer holds what it sent.{{ end }}
-{{- end }}
+puts the same item{{ else if $schedule }}a run delivered again runs again, which
+puts the same record{{ else }}a repeated `PUT` runs again{{ end }}.
+{{- end }}{{ if $queue }} The queues are not backed up: a message lives
+days, not months, and its producer holds what it sent.{{ else if $schedule }} The dead-letter queue is not backed up: a run
+waits there 14 days at most, and its scheduled time is all it holds.{{ end }}
 
-## Restore the items to a point in time
+## Restore the {{ $items }} to a point in time
 
-When: bad writes (a bug, a wrong script) or deleted items, within the last
+When: bad writes (a bug, a wrong script) or deleted {{ if $schedule }}records{{ else }}items{{ end }}, within the last
 35 days.
 
 1. Find the last good moment: the deploy or script that did the damage, or
-   the first bad {{ if $queue }}message{{ else }}request{{ end }} in the function's logs.
+   the first bad {{ if $queue }}message{{ else if $schedule }}run{{ else }}request{{ end }} in the function's logs.
 2. Restore to a new table beside the live one:
-   `aws dynamodb restore-table-to-point-in-time --source-table-name <items table> --target-table-name <items table>-restored --restore-date-time <time, ISO 8601>`.
+   `aws dynamodb restore-table-to-point-in-time --source-table-name <{{ $items }} table> --target-table-name <{{ $items }} table>-restored --restore-date-time <time, ISO 8601>`.
    It takes minutes for a small table, longer for a large one; wait until
    `aws dynamodb describe-table` says `ACTIVE`.
 3. Check the restored table holds what you expect (`aws dynamodb get-item`
    on a few known ids).
-4. Repair the live table from it: write back the items the damage changed,
+4. Repair the live table from it: write back the {{ if $schedule }}records{{ else }}items{{ end }} the damage changed,
    with a short script using the SDK, or `aws dynamodb batch-write-item`.
    The live table keeps its name, its alarms, its backups and its place in
    the stack.
@@ -177,6 +196,83 @@ The queue URLs and ARNs are in the stack:
 (`Messages`, `DeadLetters`), and the stack's `EntryPoint` and `QueueArn`
 outputs name the queue the worker consumes.
 {{- end }}
+{{- if $schedule }}
+
+## Run dead-lettered runs again
+
+When: the `DeadLetters-Queue-Message-Count-Max-Critical` alarm fired, and
+the cause is found. A run reaches the dead-letter queue when it threw on
+its first invocation and on Lambda's two retries within the hour, or when
+the schedule could not invoke the function in 10 attempts within the hour.
+It waits there 14 days, then SQS deletes it.
+
+1. Read why it failed: the function's logs say
+   `The run failed; Lambda retries it.` with the event and the error, three
+   times per run. A `Malformed` error means the schedule's input was
+   changed, or someone invoked the function by hand: fix the input, and
+   delete the message. Any other error is the job's or DynamoDB's: fix and
+   deploy first. A message the schedule sent says why in its attributes
+   (`ERROR_CODE`, `ERROR_MESSAGE`).
+2. Read the messages without consuming them:
+   `aws sqs receive-message --queue-url <dead-letter queue URL> --max-number-of-messages 10 --visibility-timeout 0 --message-attribute-names All`.
+   Each body is the event of one run:
+   `{"scheduledTime": "...", "attemptNumber": "..."}`.
+3. Run each again: invoke the function (the stack's `FunctionName` output)
+   with the run's own scheduled time, as its first attempt:
+   `aws lambda invoke --function-name <FunctionName> --invocation-type Event --cli-binary-format raw-in-base64-out --payload '{"scheduledTime": "<its scheduledTime>", "attemptNumber": "1"}' response.json`.
+   It runs as the schedule's invocation would, retries and dead-letter
+   queue included; the function's logs say `The run finished.` when it did.
+4. Delete the message (`aws sqs delete-message` with its receipt handle)
+   once the run finished, or when no fix can save it; write down what it
+   held.
+
+A run already done is not run again: Powertools' Idempotency keeps the
+record of each run that finished, by its scheduled time, for a day, and a
+run delivered again in that day does nothing. A dead-lettered event whose
+error is `IdempotencyAlreadyInProgressError` came while the run was still
+going: look for its record in the `Runs` table before running it again. A
+run invoked later runs again and puts its record again, under the same
+scheduled time. A run that failed keeps no record, so running it again
+always runs it.
+
+The queue's URL and ARN are in the stack:
+`aws cloudformation describe-stack-resources --stack-name {{ .Container }}`
+(`DeadLetters`).
+
+## Runs the Scheduler lost
+
+When: the `Schedule-InvocationDroppedCount-Critical` or
+`Schedule-InvocationsFailedToBeSentToDeadLetterCount-Critical` alarm fired.
+The Scheduler dropped a run, or could not send a run it gave up on to the
+dead-letter queue: the run is in neither the function's logs nor the queue.
+
+1. Find why: the schedule's role (`lambda:InvokeFunction` on the function,
+   `sqs:SendMessage` on the dead-letter queue) and the dead-letter queue's
+   policy and encryption, which a change outside the stack may have broken;
+   `aws cloudformation detect-stack-drift --stack-name {{ .Container }}` finds such a
+   change. Fix it and deploy.
+2. Find the scheduled time the run was meant for: the schedule's
+   expression (`SCHEDULE` in `infra/job_stack.ts`) and the alarm's time.
+3. Run that scheduled time by hand, as in step 3 of
+   [Run dead-lettered runs again](#run-dead-lettered-runs-again).
+
+## Pause the job
+
+To stop the runs for a while (a broken dependency, a migration), disable
+the schedule; nothing else changes, and enabling it again resumes at the
+next scheduled time. The runs it skips are not run later.
+
+- By hand:
+  `aws scheduler update-schedule --name <schedule> --group-name <group> --state DISABLED`,
+  with the schedule's whole definition again (its expression, time zone,
+  flexible time window and target, as `aws scheduler get-schedule` gives
+  them): the update replaces the schedule, and what it leaves out is
+  reset. `--state ENABLED` resumes. A deploy that changes the schedule
+  sets it back to what the stack says, enabled.
+- Through the stack: set the schedule's `enabled: false` in
+  `infra/job_stack.ts` and run `cdk deploy -c tier=production`; the change
+  is reviewed like any other.
+{{- end }}
 
 ## Roll a deployment back
 
@@ -186,9 +282,9 @@ outputs name the queue the worker consumes.
   `aws cloudformation continue-update-rollback --stack-name {{ .Container }}`.
 - A deploy that succeeded but misbehaves: deploy the last good commit.
   Check out its tag or commit, run `make check`, then
-  `cdk deploy -c tier=production`. The function, the {{ if $queue }}queues{{ else }}API{{ end }} and the alarms go
+  `cdk deploy -c tier=production`. The function, the {{ if $queue }}queues{{ else if $schedule }}schedule{{ else }}API{{ end }} and the alarms go
   back; the data does not. If the bad version wrote bad data, restore the
-  items as above to the moment it was deployed.
+  {{ $items }} as above to the moment it was deployed.
 - Never deploy a change that replaces a table (a new key, a new name): the
   deploy makes a new, empty table and keeps the old one outside the stack,
   its data unreachable by the function. Moving data to a new table is a
@@ -217,6 +313,19 @@ one is good. An alarm's name is the stack's, `{{ .Container }}-`, then the name 
 | `Items-Read-Throttled-Events-Critical`, `-Write-` | DynamoDB throttled reads or writes: a hot key or a burst past on-demand's limits          | find the key in the logs; on-demand adapts within minutes, a hot key needs a change to the key design      |
 | `Items-SystemError-Count-Critical`                | DynamoDB failed requests on its side                                                      | check the AWS Health Dashboard for DynamoDB in the region; the messages are delivered again                |
 | `Idempotency-...`                                 | the same, for the idempotency records                                                     | as for `Items`; while it lasts, messages may fail and be delivered again                                   |
+
+{{ else if $schedule -}}
+| Alarm                                                          | Means                                                                                     | First                                                                                                     |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `Schedule-InvocationDroppedCount-Critical`                     | the Scheduler dropped a run, which reached neither the function nor the dead-letter queue | see [Runs the Scheduler lost](#runs-the-scheduler-lost), then run that scheduled time by hand             |
+| `Schedule-InvocationsFailedToBeSentToDeadLetterCount-Critical` | the Scheduler gave up on a run and could not send it to the dead-letter queue             | check the dead-letter queue's policy and encryption and the schedule's role, as in the same section       |
+| `DeadLetters-Queue-Message-Count-Max-Critical`                 | a run failed every retry and waits in the dead-letter queue                               | read why in the function's logs, then [run it again](#run-dead-lettered-runs-again)                       |
+| `Handler-Fault-Count-Critical`                                 | a run failed: the function threw or timed out; Lambda retries it twice                    | read the function's logs around the time; an error at start-up (a missing variable) means a broken deploy |
+| `Handler-Throttled-Count-Critical`                             | Lambda refused calls: the account's or function's concurrency is used up                  | check the account's concurrent executions; Lambda keeps the run and tries again within the hour           |
+| `Handler-Latency-P99-Warning`                                  | a run took over 4 of its 5 minutes                                                        | check DynamoDB's latency on the dashboard and the run's duration in its logs; a timeout is next           |
+| `Runs-Read-Throttled-Events-Critical`, `-Write-`               | DynamoDB throttled reads or writes: a burst past on-demand's limits                       | on-demand adapts within minutes; the run fails and Lambda retries it                                      |
+| `Runs-SystemError-Count-Critical`                              | DynamoDB failed requests on its side                                                      | check the AWS Health Dashboard for DynamoDB in the region; the run fails and Lambda retries it            |
+| `Idempotency-...`                                              | the same, for the idempotency records                                                     | as for `Runs`; while it lasts, runs may fail and be retried                                               |
 
 {{ else -}}
 | Alarm                                             | Means                                                                            | First                                                                                                           |
@@ -256,8 +365,8 @@ compliance mode it can never be undone.
 ## Drills
 
 Only a drill shows that a restore works and fits the RTO ({{ $ops.Recovery.RTO }}). At least
-once a quarter, and after a change to the tables: restore the items to a
-point in time into a new table, check a few items, time it, and delete the
+once a quarter, and after a change to the tables: restore the {{ $items }} to a
+point in time into a new table, check a few {{ if $schedule }}records{{ else }}items{{ end }}, time it, and delete the
 table; write down how long it took. Once a year, a game day: break the
 development stack the way an incident would, and answer it with this
 runbook alone.

@@ -52,6 +52,10 @@ var awsOperationsFrameworks = []struct {
 		"Messages-DLQ-Queue-Message-Count-Max-Critical", "Messages-Queue-Message-Age-Max-Warning",
 		"aws sqs start-message-move-task", "`DeadLetters` queue", "the longest the worker may be",
 	}, false, true},
+	{side{model.TypeJob, "aws-schedule-ts"}, []string{
+		"Schedule-InvocationDroppedCount-Critical", "DeadLetters-Queue-Message-Count-Max-Critical",
+		"aws lambda invoke", "`DeadLetters` queue",
+	}, false, true},
 }
 
 // hasOperations reports whether framework renders infra/operations.ts.
@@ -122,11 +126,12 @@ func TestAWSFrameworksWithoutOperationsRenderNoBlock(t *testing.T) {
 // default): the block's values and the steps its kind of data shares;
 // awsOperationsFrameworks adds the lines only its own branch has.
 var runbookSays = map[string][]string{
-	"aws-lambda-ts":  tableRunbookSays,
-	"aws-lambda-py":  tableRunbookSays,
-	"aws-lambda-go":  tableRunbookSays,
-	"aws-fargate-ts": tableRunbookSays,
-	"aws-queue-ts":   tableRunbookSays,
+	"aws-lambda-ts":   tableRunbookSays,
+	"aws-lambda-py":   tableRunbookSays,
+	"aws-lambda-go":   tableRunbookSays,
+	"aws-fargate-ts":  tableRunbookSays,
+	"aws-queue-ts":    tableRunbookSays,
+	"aws-schedule-ts": tableRunbookSays,
 	"aws-static-site-ts": {
 		"(RPO): 15m", "(RTO): 2h", "eu-west-1", "ops@example.com", "35 days",
 		"continue-update-rollback", "GuardDuty",

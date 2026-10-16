@@ -133,7 +133,7 @@ issues closed per hour over a day, from `gh issue list --search closed:`.
 | Turn held per landing | 14.9 min median, 17.7 p90 | |
 | Checks retried because main moved, a day | 14 | |
 | `make check`, any change | 15 min median, 52 p90 | |
-| `make check`, `hack/`-only change, warm device | the same | |
+| `make check`, `hack/`-only change, warm device | the same | 538 s after the slot on 3st8JJ at load 44: the shell tests ran, `validate-yaml` and `ui-test` cached; most of it the controller suite, whose last run had failed so Go held no result (#1285) |
 | `internal/controller` suite | about 730 s; 834 s at 1 proc on gray-lenovo, 2026-10-16 | 484 s at 2 procs (the default), 242 s at 4, same device and day (#1283) |
 | Session length, 3st8JJ | 68 min median, 140 p90 | |
 | Issues closed an hour, 6 workers | 2 to 5 | |

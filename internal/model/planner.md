@@ -102,13 +102,17 @@ Push the branch `plan/<round>` with these files:
    `computeRef`, no `deploymentRef` and no DataStore. An idea that asks for
    a website or web page on AWS, S3 or CloudFront is a `static-site` on the
    Framework that supports it, such as `aws-static-site-ts`, the same way:
-   no `computeRef`, no `deploymentRef` and no DataStore. An idea that
-   consumes a queue on AWS, names SQS, or works through messages or jobs in
-   the background on AWS is a `worker` on the Framework that supports it,
-   such as `aws-queue-ts`, the same way: no `computeRef`, no
+   no `computeRef`, no `deploymentRef` and no DataStore. An idea that runs
+   on a schedule on AWS (every night, every hour, a cron, EventBridge
+   Scheduler) is a `job` on the Framework that supports it, such as
+   `aws-schedule-ts`, the same way: no `computeRef`, no `deploymentRef` and
+   no DataStore, since the schedule and the table are in its CDK app. An
+   idea that consumes a queue on AWS, names SQS, or works through messages
+   in the background on AWS is a `worker` on the Framework that supports
+   it, such as `aws-queue-ts`, the same way: no `computeRef`, no
    `deploymentRef` and no DataStore, since the queue and the table are in
-   its CDK app. A `service`, `static-site` or `worker` that names no AWS
-   runs in the cluster, on its other Frameworks. When no
+   its CDK app. A `service`, `static-site`, `worker` or `job` that names no
+   AWS runs in the cluster, on its other Frameworks. When no
    Framework in
    `model/catalog.yaml` supports that type, write `needs-input.md` naming the
    kind of app and saying the catalog can't build it yet, and don't build

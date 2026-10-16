@@ -17,8 +17,9 @@ aws-fargate-ts v1.1.0
 aws-lambda-go v1.1.0
 aws-lambda-py v1.1.0
 aws-queue-ts v1.0.0
+aws-schedule-ts v1.0.0
 aws-static-site-ts v1.0.0
-aws-standard v1.10.0
+aws-standard v1.12.0
 python-standard v1.3.0
 gitea-release v1.2.0
 hello v1.0.0

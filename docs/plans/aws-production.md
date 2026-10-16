@@ -318,8 +318,8 @@ evidence):
 ### Step 4, as built
 
 `aws-lambda-py` v1.1.0 and `aws-lambda-go` v1.1.0 with `aws-standard`
-v1.10.0: steps 5, 9 and 8 merged first and took v1.7.0, v1.8.0 and v1.9.0,
-so step 4 takes the next minor
+v1.12.0: steps 5, 9, 8 and 10 merged first and took v1.7.0, v1.8.0, v1.9.0
+and v1.10.0, and step 6 (#1111) takes v1.11.0, so step 4 takes v1.12.0
 (`docs/screenshots/1109-aws-lambda-py-go-check.txt` has the evidence):
 
 - **The infra is aws-lambda-ts's.** `infra/operations.ts.tmpl`,
@@ -351,7 +351,7 @@ so step 4 takes the next minor
   runtime, so step 4 left them as step 5 made them.
 - **A Python or Go build is slower than esbuild:** both `vitest.config.mts`
   give the hooks 180 s.
-- **A v1.0.0 repository on v1.10.0** gets the tier docs and a runbook its
+- **A v1.0.0 repository on v1.12.0** gets the tier docs and a runbook its
   stack doesn't have yet, as aws-lambda-ts v1.0.0 did on v1.6.0 (#1249).
 
 ### Step 5, as built
@@ -586,6 +586,41 @@ What it settled, which steps 8, 10 and 11 can reuse:
 - **The WAF is production's.** It has three AWS managed rule groups and a
   rate limit per address. In development `AwsSolutions-CFR2` is
   acknowledged, since a firewall costs a monthly fee per stack.
+
+### Step 10, as built
+
+`aws-schedule-ts` v1.0.0, a `job` Framework under `aws-standard` v1.10.0
+(`docs/screenshots/1115-aws-schedule-ts-check.txt` has the evidence). What
+it settled, which step 11 can copy:
+
+- **Two levels of retry, one dead-letter queue.** The Scheduler invokes the
+  function asynchronously, so its retry policy (10 attempts within an hour)
+  covers only handing the run to Lambda; a run that throws is retried by
+  Lambda's own `EventInvokeConfig` (twice within an hour). The schedule
+  target's `DeadLetterConfig` and the function's both name the one queue.
+  No redrive policy names it, so `AwsSolutions-SQS3` is acknowledged.
+- **The scheduled time is the run's key.** The target's input is
+  `{"scheduledTime": <aws.scheduler.scheduled-time>, "attemptNumber":
+  <aws.scheduler.attempt-number>}`, and Powertools' Idempotency is keyed by
+  `scheduledTime`, which every retry of a run, at either level, keeps.
+- **The schedule's role is the stack's own.** `LambdaInvoke` would make one
+  granting `lambda:InvokeFunction` on `<arn>` and `<arn>:*`; the stack's
+  role grants the function's ARN only, and `sqs:SendMessage` on the
+  dead-letter queue, and only `scheduler.amazonaws.com` for this account
+  and this schedule group may assume it. The target gets it
+  `withoutPolicyUpdates()`.
+- **A schedule group per stack.** The Scheduler's metrics are per group,
+  so the stack's schedule is in its own; its alarms are
+  `InvocationDroppedCount` and `InvocationsFailedToBeSentToDeadLetterCount`,
+  a run lost. CDK names the group at synth, so the Standard's
+  `refersTo` also matches a resource's literal `Name`.
+- **Three Standard rules, per resource type:** `AWS::Scheduler::ScheduleGroup`
+  joins `ALARMED_METRICS`; a dead-letter queue is any queue a
+  `RedrivePolicy`, `DeadLetterConfig` or `OnFailure` names (step 11's rule
+  target gets the depth alarm without a change); every schedule has a
+  retry policy, a dead-letter queue and a group of its stack.
+- **Outputs:** `EntryPoint` is the schedule's ARN; `FunctionName` is added,
+  which a person invokes to run a dead-lettered run again.
 
 ## Design
 

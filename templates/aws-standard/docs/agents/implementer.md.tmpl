@@ -1,16 +1,17 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}
 {{- /* The Frameworks built for a tier from infra/operations.ts: the three
-     Lambda Frameworks, aws-fargate-ts and aws-queue-ts. */ -}}
-{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-queue-ts" -}}
+     Lambda Frameworks, aws-fargate-ts, aws-queue-ts and aws-schedule-ts. */ -}}
+{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-queue-ts" "aws-schedule-ts" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
+{{- $schedule := eq .Framework "aws-schedule-ts" -}}
 {{- /* The tiers and the runbook, for every tiered Framework: the Go notes and the others both say it. */ -}}
 {{- define "operations" }}
 - The stacks take the tier from `defineStacks(app, tier)` and the
   Container's promises from `infra/operations.ts`. A new resource follows
   `TIER_RULES` as the ones beside it do: a table's removal policy, deletion
   protection and point-in-time recovery by tier, its alarms from the
-  stack's `Alarms`{{ if eq .Framework "aws-queue-ts" }}, a queue's dead-letter queue and its depth alarm{{ end }}. `infra/standard.test.ts` checks both tiers. Never read
+  stack's `Alarms`{{ if eq .Framework "aws-queue-ts" }}, a queue's dead-letter queue and its depth alarm{{ else if eq .Framework "aws-schedule-ts" }}, a schedule's retry policy, dead-letter queue and group{{ end }}. `infra/standard.test.ts` checks both tiers. Never read
   another context value or an environment variable at synth.{{ if eq .Framework "aws-fargate-ts" }} An alarm
   that should roll a deployment back joins `DEPLOYMENT_ALARMS` in
   `infra/service_stack.ts` by its name, never by a reference to the alarm,
@@ -54,7 +55,7 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
 - **Keep the change focused:** one issue, one pull request, small Conventional
   Commits.
 - **Update what users read** in the same change when behaviour they see
-  changes: `README.md` ({{ if $site }}what the page does, the parameters a deploy sets{{ else if $queue }}the message's shape, what fails it and what is retried{{ else }}routes, request and response shapes, status codes{{ end }})
+  changes: `README.md` ({{ if $site }}what the page does, the parameters a deploy sets{{ else if $queue }}the message's shape, what fails it and what is retried{{ else if $schedule }}when the job runs, what a run does, what fails it and what is retried{{ else }}routes, request and response shapes, status codes{{ end }})
   and a `CHANGELOG.md` entry under "Unreleased".
 - **`make check` green before every commit.** When a rule fires, fix the code.
 - **Protected files** (the Standard's and the platform's, listed in
@@ -174,7 +175,14 @@ Task that reviews and merges it. Then:
   `consumeBatch` with an `SQSEvent`, checking its `batchItemFailures`.
   Logic lives in modules that import neither the AWS SDK nor the
   `aws-lambda` types, tested with plain vitest. Keep `src/handler.ts` to
-  wiring: the SDK clients at module scope, the environment read once.{{ else if $site }}- The page's logic lives in modules that don't touch the DOM, tested with
+  wiring: the SDK clients at module scope, the environment read once.{{ else if $schedule }}- The job's work goes in `runJob` in `src/job.ts`, tested by calling it
+  with an event and a fake store, checking what it stored or that it
+  threw; `checkingFirst` and `reporting` by calling them with fake work.
+  The handler runs `runJob` once per scheduled time through `checkingFirst`
+  and Powertools' Idempotency; never bypass them. Logic lives in modules
+  that import neither the AWS SDK nor the `aws-lambda` types, tested with
+  plain vitest. Keep `src/handler.ts` to wiring: the SDK clients at module
+  scope, the environment read once.{{ else if $site }}- The page's logic lives in modules that don't touch the DOM, tested with
   plain vitest in Node; `src/main.ts` only finds the page's elements and
   wires their events to them. Try the page with `npm run dev`, which serves
   it locally; a test that needs the DOM brings its own environment.{{ else }}- Request handling is tested by calling it with an

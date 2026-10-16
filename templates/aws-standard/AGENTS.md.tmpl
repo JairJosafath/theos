@@ -1,9 +1,10 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- /* The Frameworks built for a tier from infra/operations.ts: the three
-     Lambda Frameworks, aws-fargate-ts and aws-queue-ts. */ -}}
-{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-queue-ts" -}}
+     Lambda Frameworks, aws-fargate-ts, aws-queue-ts and aws-schedule-ts. */ -}}
+{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-queue-ts" "aws-schedule-ts" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
+{{- $schedule := eq .Framework "aws-schedule-ts" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}
 {{- $ops := or $tiered $site -}}
 # Agent guide
@@ -14,7 +15,9 @@ internal Application Load Balancer{{ else if eq .Framework "aws-fargate-ts" }}se
 service in TypeScript on Node, run as a container on Amazon ECS on Fargate
 behind an Application Load Balancer{{ else if $queue }}worker of {{ .SoftwareSystem }}: an SQS
 queue with a dead-letter queue, consumed in batches by an AWS Lambda
-function in TypeScript{{ else if $site }}static site of {{ .SoftwareSystem }}: a page in
+function in TypeScript{{ else if $schedule }}job of {{ .SoftwareSystem }}: an EventBridge
+Scheduler schedule that invokes an AWS Lambda function in TypeScript, with
+a dead-letter queue for the runs that keep failing{{ else if $site }}static site of {{ .SoftwareSystem }}: a page in
 TypeScript, built by Vite, served from a private S3 bucket through a
 CloudFront distribution{{ else }}function of {{ .SoftwareSystem }}: an AWS
 Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else if $py }}Python, on boto3,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API{{ end }}{{ if not $site }}, keeping its data
@@ -204,6 +207,13 @@ too; `npm run dev` serves it on your machine.{{ end }}
    delivers it again; one no retry can fix throws too, and waits in the
    dead-letter queue for a person. Never swallow a failure: a message the
    handler drops is lost.
+{{- else if $schedule -}}
+2. **The boundary:** every event is validated before use (its scheduled
+   time, its attempt number), with unknown input narrowed from `unknown`,
+   whoever invoked the function. A run that fails throws, so Lambda retries
+   it and then sends it to the dead-letter queue; one no retry can fix
+   throws too, and waits there for a person. Never swallow a failure: a run
+   the handler drops is lost.
 {{- else -}}
 2. **The boundary:** every request is validated before use (path, query,
    body, headers), with {{ if $py }}untrusted input narrowed from `object` with `isinstance`{{ else }}unknown input narrowed from `unknown`{{ end }}. Errors are
@@ -211,9 +221,12 @@ too; `npm run dev` serves it on your machine.{{ end }}
    a bug) and a JSON message a client can act on, never a stack trace or the
    SDK's error text.
 {{- end }}
-3. **Idempotency:** a retried request or event changes nothing twice. Writes
+3. **Idempotency:** {{ if $schedule }}a run delivered again{{ else }}a retried request or event{{ end }} changes nothing twice. Writes
    are puts of a whole item, conditional writes, or keyed by an idempotency
-   key; never a blind increment.
+   key; never a blind increment.{{ if $schedule }} The job's work goes in `runJob` in `src/job.ts`,
+   which the handler runs through `checkingFirst` and Powertools' Idempotency,
+   keyed by the scheduled time, so a run delivered twice runs once; never
+   bypass them.{{ end }}
 {{ if eq .Framework "aws-ec2-ts" }}4. **Limits are set:** the server caps what it reads (body size) and keeps
    idle connections open longer than the load balancer's 60 seconds; the
    instance type, the Auto Scaling group's minimum and maximum and its scaling
@@ -224,12 +237,15 @@ too; `npm run dev` serves it on your machine.{{ end }}
    container's stop timeout leaves the requests in flight time to finish.{{ else if $queue }}4. **Limits are set:** the function's timeout and memory, the batch size,
    the event source's maximum concurrency, and the queue's visibility
    timeout (six times the function's, plus the batching window) and redrive count are set in the
-   stack; SDK calls stay within the timeout.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
+   stack; SDK calls stay within the timeout.{{ else if $schedule }}4. **Limits are set:** the function's timeout and memory, the schedule's
+   expression and retry policy, and Lambda's retries and maximum event age
+   are set in the stack; a run finishes within the timeout, and SDK calls
+   stay within it.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
    stack, the timeout below API Gateway's 30 seconds and above what the work
    needs; SDK calls stay within it. The stage is throttled.{{ end }}
 5. **Logs:** structured JSON, one entry per line, through the {{ if $go }}`*slog.Logger`{{ else }}`Log`{{ end }} the
-   code is given; an entry names the {{ if $queue }}message id{{ else }}request id{{ end }} and what failed. Never
-   log a secret, a token or a {{ if $queue }}message{{ else }}request{{ end }} body with user data.
+   code is given; an entry names the {{ if $queue }}message id{{ else if $schedule }}scheduled time{{ else }}request id{{ end }} and what failed. Never
+   log a secret, a token or {{ if $queue }}a message{{ else if $schedule }}an event{{ else }}a request{{ end }} body with user data.
 6. **Least privilege:** permissions come from CDK grants
    ({{ if eq .Framework "aws-fargate-ts" }}`table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`{{ else }}`table.grant(fn, 'dynamodb:GetItem')`{{ end }}, `grantReadData`), narrowed to the
    calls the code makes; never an IAM statement with `*` or `service:*`
@@ -309,7 +325,7 @@ too; `npm run dev` serves it on your machine.{{ end }}
     `TIER_RULES` defines, and keep what `infra/operations.ts` promises: data
     kept, protected and backed up in production; every {{ if eq .Framework "aws-fargate-ts" }}load balancer,
     target group, service and table{{ else }}function, table and
-    {{ if $queue }}dead-letter queue{{ else }}API{{ end }}{{ end }} with its alarms on the stack's topic; every stack with its
+    {{ if or $queue $schedule }}dead-letter queue{{ else }}API{{ end }}{{ end }} with its alarms on the stack's topic; every stack with its
     `EntryPoint` and `AlarmTopicArn` outputs. `infra/standard.test.ts` checks
     both tiers. Nothing at synth reads a context value but `tier`, or an
     environment variable. A change to what the stacks keep, or how, updates
@@ -355,7 +371,7 @@ Offline digests (read the one for what you are touching):
 - `docs/well-architected.md`: the AWS Well-Architected Framework and Amazon
   ECS's best practices, pillar{{ else if $site }}- `docs/style/aws.md`: the page, the S3 bucket, the CloudFront distribution
   and its firewall, the CDK and CDK Nag, and tests
-- `docs/well-architected.md`: the AWS Well-Architected Framework, pillar{{ else }}- `docs/style/aws.md`: Lambda handlers, {{ if $queue }}SQS queues and batches{{ else }}API Gateway HTTP APIs{{ end }}, DynamoDB, the
+- `docs/well-architected.md`: the AWS Well-Architected Framework, pillar{{ else }}- `docs/style/aws.md`: Lambda handlers, {{ if $queue }}SQS queues and batches{{ else if $schedule }}EventBridge Scheduler schedules{{ else }}API Gateway HTTP APIs{{ end }}, DynamoDB, the
   {{ if $go }}AWS SDK for Go v2{{ else if $py }}boto3{{ else }}AWS SDK v3{{ end }}, the CDK and CDK Nag, and tests
 - `docs/well-architected.md`: the AWS Well-Architected Framework and its
   Serverless Applications Lens, pillar{{ end }} by pillar, with the CDK Nag rules that
