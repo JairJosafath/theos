@@ -151,7 +151,8 @@
 #                                        Maintainer report excluded) or main moves; the relay watch compares it
 #   hack/lib/github.sh report FILE       set FILE as the body of the pinned Maintainer report issue (label
 #                                        maintainer/report, no status), creating and pinning it the first time;
-#                                        prints its URL
+#                                        prints its URL. The watch's notes (report-note) the old body has and
+#                                        FILE lacks are kept
 #   hack/lib/github.sh report-note KEY [HEALTH [NEEDS]]
 #                                        put the line HEALTH under the Maintainer report's Health and NEEDS
 #                                        (default HEALTH) as a task under its Needs you, each marked
@@ -1887,11 +1888,13 @@ gh_report_find() {
 # it (and the label) and pin it; a pin that fails is said, not fatal. The issue
 # carries no status, so nothing picks or triages it.
 gh_report() {
-  local body n url id line color desc
+  local body n url id line color desc old
   body=$(gh_read "${1:?usage: report FILE}") || return 1
   [ -n "$body" ] || { echo "github: empty report" >&2; return 1; }
   n=$(gh_report_find) || return 1
   if [ -n "$n" ]; then
+    old=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
+    body=$(gh_keep_watch "$old" <<<"$body") || return 1
     jq -n --arg b "$body" '{body: $b}' |
       gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - --jq .html_url
     return
@@ -1910,6 +1913,26 @@ gh_report() {
   gh_api graphql -f query='mutation($id: ID!) { pinIssue(input: {issueId: $id}) { issue { number } } }' \
     -f id="$id" >/dev/null || echo "github: created $url but could not pin it; pin it by hand" >&2
   echo "$url"
+}
+
+# gh_keep_watch OLD: the report body on stdin with every note of the watch
+# that OLD, the body it replaces, has and it lacks put back in its section
+# (#1212): a sweep's report doesn't drop the watch's lines.
+gh_keep_watch() {
+  local new key line sec health needs
+  new=$(cat)
+  while IFS= read -r key; do
+    [ -n "$key" ] && [[ $new != *"<!-- watch:$key -->"* ]] || continue
+    health= needs= sec=
+    while IFS= read -r line; do
+      [[ $line != "## "* ]] || sec=$line
+      [[ $line == *" <!-- watch:$key -->" ]] || continue
+      line=${line%" <!-- watch:$key -->"}
+      if [ "$sec" = "## Needs you" ]; then needs=${line#"- [ ] "}; else health=$line; fi
+    done <<<"$1"
+    new=$(gh_note_body "$key" "${health:-$needs}" "$needs" <<<"$new") || return 1
+  done < <(grep -o '<!-- watch:[^ ]* -->' <<<"$1" | sed 's/^<!-- watch://; s/ -->$//' | awk '!seen[$0]++')
+  printf '%s\n' "$new"
 }
 
 # gh_note_body KEY [HEALTH [NEEDS]]: the report body on stdin with the lines
@@ -1963,15 +1986,23 @@ gh_note_body() {
 }
 
 # gh_report_note KEY [HEALTH [NEEDS]]: see the usage above. The report is
-# edited only when the note changes it; exit 1 when there is no report.
+# edited only when the note changes it; exit 1 when there is no report. The
+# body is read again just before the edit, and a body that changed in between
+# (a sweep's report) starts the note over, up to three tries (#1212).
 gh_report_note() {
-  local n body new
+  local n body new try
   n=$(gh_report_find) || return 1
   [ -n "$n" ] || { echo "github: no Maintainer report issue to note in" >&2; return 1; }
-  body=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
-  new=$(gh_note_body "$@" <<<"$body") || return 1
-  [ "$new" != "$body" ] || return 0
-  jq -n --arg b "$new" '{body: $b}' | gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - >/dev/null
+  for try in 1 2 3; do
+    body=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
+    new=$(gh_note_body "$@" <<<"$body") || return 1
+    [ "$new" != "$body" ] || return 0
+    [ "$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""')" = "$body" ] || continue
+    jq -n --arg b "$new" '{body: $b}' | gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - >/dev/null
+    return
+  done
+  echo "github: report-note: the Maintainer report kept changing; try again" >&2
+  return 1
 }
 
 # The maintainer lease (#526): the maintainer runs once per project, not once
@@ -2432,9 +2463,10 @@ gh_queued() {
   done
   [[ $minutes =~ ^[0-9]+$ ]] || { echo "usage: queued [--minutes M]" >&2; return 64; }
   gh_token || return 2
-  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --status queued --limit 100 \
-    --json databaseId,status,createdAt) || return 2
-  runs=$(jq -r --argjson m "$minutes" "$GH_NOW_JQ"'[.[] | select(.status == "queued")] | sort_by(.createdAt) | .[] |
+  # Every page: the list comes newest first, and a cut one loses the oldest (#1212).
+  runs=$(gh_api --paginate "repos/$C4_GITHUB_REPO/actions/runs?branch=main&status=queued&per_page=100" \
+    --jq '.workflow_runs[] | {databaseId: .id, status, createdAt: .created_at}') || return 2
+  runs=$(jq -sr --argjson m "$minutes" "$GH_NOW_JQ"'[.[] | select(.status == "queued")] | sort_by(.createdAt) | .[] |
     "\(.databaseId)\t\(.createdAt)\t\((now - (.createdAt | fromdateiso8601)) > $m * 60)"' <<<"$runs") || return 2
   while IFS=$'\t' read -r id at old; do
     [ -n "$id" ] || continue
